@@ -13,6 +13,7 @@ from app.schemas import (
     AnalyzeResponse,
     CategorySummary,
     Insight,
+    OperationalSummary,
     ReconciliationSummary,
     TopExpense,
     TransactionPreview,
@@ -48,6 +49,11 @@ class AnalyzeService:
         total_inflows = round(sum(item.amount for item in transactions if item.amount > 0), 2)
         total_outflows = round(sum(item.amount for item in transactions if item.amount < 0), 2)
         net_total = round(total_inflows + total_outflows, 2)
+        total_volume = round(sum(abs(item.amount) for item in transactions), 2)
+        inflow_count = sum(1 for item in transactions if item.amount > 0)
+        outflow_count = sum(1 for item in transactions if item.amount < 0)
+        reconciled_entries = sum(1 for status in reconciliation_result.statuses if status != "unmatched")
+        unmatched_entries = len(transactions) - reconciled_entries
         top_expenses_rows = sorted((item for item in transactions if item.amount < 0), key=lambda x: x.amount)[:10]
 
         analysis_data = AnalysisData(
@@ -71,6 +77,13 @@ class AnalyzeService:
             total_inflows=analysis_data.total_inflows,
             total_outflows=analysis_data.total_outflows,
             net_total=analysis_data.net_total,
+            operational_summary=OperationalSummary(
+                total_volume=total_volume,
+                inflow_count=inflow_count,
+                outflow_count=outflow_count,
+                reconciled_entries=reconciled_entries,
+                unmatched_entries=unmatched_entries,
+            ),
             reconciliation=ReconciliationSummary(
                 matched_groups=analysis_data.matched_groups,
                 reversed_entries=analysis_data.reversed_entries,

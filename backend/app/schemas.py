@@ -7,6 +7,14 @@ class ReconciliationSummary(BaseModel):
     potential_duplicates: int
 
 
+class OperationalSummary(BaseModel):
+    total_volume: float
+    inflow_count: int
+    outflow_count: int
+    reconciled_entries: int
+    unmatched_entries: int
+
+
 class CategorySummary(BaseModel):
     category: str
     total: float
@@ -41,10 +49,10 @@ class AnalyzeResponse(BaseModel):
     total_inflows: float
     total_outflows: float
     net_total: float
+    operational_summary: OperationalSummary
     reconciliation: ReconciliationSummary
     categories: list[CategorySummary]
     top_expenses: list[TopExpense]
     insights: list[Insight]
     preview_transactions: list[TransactionPreview]
     expires_at: str | None
-

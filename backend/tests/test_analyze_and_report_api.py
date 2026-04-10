@@ -9,6 +9,7 @@ from app.schemas import (
     AnalyzeResponse,
     CategorySummary,
     Insight,
+    OperationalSummary,
     ReconciliationSummary,
     TopExpense,
     TransactionPreview,
@@ -29,6 +30,13 @@ class FakeAnalyzeService:
             total_inflows=100.0,
             total_outflows=-20.0,
             net_total=80.0,
+            operational_summary=OperationalSummary(
+                total_volume=120.0,
+                inflow_count=1,
+                outflow_count=1,
+                reconciled_entries=0,
+                unmatched_entries=1,
+            ),
             reconciliation=ReconciliationSummary(
                 matched_groups=0,
                 reversed_entries=0,
@@ -118,4 +126,3 @@ def test_report_happy_path_and_not_found() -> None:
     assert missing.status_code == 404
     assert missing.json()["detail"] == "Analysis not found"
     app.dependency_overrides.clear()
-

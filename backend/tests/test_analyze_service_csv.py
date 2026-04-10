@@ -14,6 +14,11 @@ def test_analyze_service_uses_real_csv_content(tmp_path) -> None:
     assert result.total_inflows == 2500.00
     assert result.total_outflows == -58.90
     assert result.net_total == 2441.10
+    assert result.operational_summary.total_volume == 2558.9
+    assert result.operational_summary.inflow_count == 1
+    assert result.operational_summary.outflow_count == 1
+    assert result.operational_summary.reconciled_entries == 0
+    assert result.operational_summary.unmatched_entries == 2
     assert result.preview_transactions[0].description == "IFOOD"
     assert result.preview_transactions[1].description == "SALARIO"
     assert result.expires_at is not None
@@ -32,6 +37,8 @@ def test_analyze_service_detects_internal_transfer_match(tmp_path) -> None:
 
     assert result.reconciliation.matched_groups == 1
     assert result.reconciliation.reversed_entries == 0
+    assert result.operational_summary.reconciled_entries == 2
+    assert result.operational_summary.unmatched_entries == 0
     statuses = [row.reconciliation_status for row in result.preview_transactions]
     assert statuses == ["matched_transfer", "matched_transfer"]
 
@@ -49,6 +56,8 @@ def test_analyze_service_detects_reversal_pair(tmp_path) -> None:
 
     assert result.reconciliation.matched_groups == 0
     assert result.reconciliation.reversed_entries == 2
+    assert result.operational_summary.reconciled_entries == 2
+    assert result.operational_summary.unmatched_entries == 0
     statuses = [row.reconciliation_status for row in result.preview_transactions]
     assert statuses == ["reversed", "reversed"]
 
@@ -84,5 +93,7 @@ def test_analyze_service_detects_possible_duplicate_group(tmp_path) -> None:
     result = service.analyze(filename="sample.csv", raw_bytes=raw)
 
     assert result.reconciliation.potential_duplicates == 1
+    assert result.operational_summary.reconciled_entries == 2
+    assert result.operational_summary.unmatched_entries == 0
     statuses = [row.reconciliation_status for row in result.preview_transactions]
     assert statuses == ["grouped", "grouped"]
