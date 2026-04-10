@@ -1,6 +1,8 @@
 import json
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Callable
 
 from openpyxl import Workbook
 
@@ -9,19 +11,30 @@ from app.application.models import AnalysisData
 
 
 class TempAnalysisStorage:
-    def __init__(self, root_dir: Path) -> None:
+    def __init__(
+        self,
+        root_dir: Path,
+        ttl_seconds: int = 24 * 60 * 60,
+        now_provider: Callable[[], datetime] | None = None,
+    ) -> None:
         self.root_dir = root_dir
+        self.ttl_seconds = ttl_seconds
+        self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
         self.root_dir.mkdir(parents=True, exist_ok=True)
 
-    def save_analysis(self, data: AnalysisData) -> None:
+    def save_analysis(self, data: AnalysisData) -> str:
         analysis_dir = self.root_dir / data.analysis_id
         analysis_dir.mkdir(parents=True, exist_ok=True)
+        now = self.now_provider()
+        expires_at = now + timedelta(seconds=self.ttl_seconds)
 
         json_path = analysis_dir / "analysis.json"
         json_path.write_text(
             json.dumps(
                 {
                     **asdict(data),
+                    "created_at": now.isoformat(),
+                    "expires_at": expires_at.isoformat(),
                     "preview_transactions": [asdict(item) for item in data.preview_transactions],
                 },
                 ensure_ascii=True,
@@ -37,10 +50,34 @@ class TempAnalysisStorage:
         for item in data.preview_transactions:
             sheet.append([item.date, item.description, item.amount, item.category, item.reconciliation_status])
         workbook.save(analysis_dir / "report.xlsx")
+        return expires_at.isoformat()
 
     def get_report_path(self, analysis_id: str) -> Path:
-        report_path = self.root_dir / analysis_id / "report.xlsx"
+        analysis_dir = self.root_dir / analysis_id
+        report_path = analysis_dir / "report.xlsx"
         if not report_path.exists():
+            raise AnalysisNotFoundError
+        if self._is_expired(analysis_dir):
+            self._cleanup_analysis(analysis_dir)
             raise AnalysisNotFoundError
         return report_path
 
+    def _is_expired(self, analysis_dir: Path) -> bool:
+        metadata_path = analysis_dir / "analysis.json"
+        try:
+            content = json.loads(metadata_path.read_text(encoding="utf-8"))
+            expires_at_raw = content.get("expires_at")
+            if not isinstance(expires_at_raw, str):
+                return False
+            expires_at = datetime.fromisoformat(expires_at_raw)
+            return self.now_provider() > expires_at
+        except (OSError, TypeError, json.JSONDecodeError, ValueError):
+            return False
+
+    def _cleanup_analysis(self, analysis_dir: Path) -> None:
+        for file in analysis_dir.glob("**/*"):
+            if file.is_file():
+                file.unlink(missing_ok=True)
+        for directory in sorted((item for item in analysis_dir.glob("**/*") if item.is_dir()), key=lambda x: len(x.parts), reverse=True):
+            directory.rmdir()
+        analysis_dir.rmdir()

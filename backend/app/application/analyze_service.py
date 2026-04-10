@@ -64,7 +64,7 @@ class AnalyzeService:
             net_total=net,
             preview_transactions=preview_rows,
         )
-        self.storage.save_analysis(analysis_data)
+        expires_at = self.storage.save_analysis(analysis_data)
 
         return AnalyzeResponse(
             analysis_id=analysis_id,
@@ -113,6 +113,5 @@ class AnalyzeService:
                 )
                 for row in preview_rows
             ],
-            expires_at=None,
+            expires_at=expires_at,
         )
-
