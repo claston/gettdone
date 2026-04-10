@@ -67,6 +67,6 @@ def test_analyze_service_applies_single_normalizer_rules(tmp_path) -> None:
     assert result.total_inflows == 2500.00
     assert result.total_outflows == -58.90
     assert result.net_total == 2441.10
-    assert result.preview_transactions[0].description == "IFOOD SAO PAULO"
+    assert result.preview_transactions[0].description == "IFOOD"
     assert result.preview_transactions[1].description == "SALARIO"
     assert result.preview_transactions[1].amount == 2500.00
