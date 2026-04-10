@@ -1,0 +1,57 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>gettdone | MVP</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="page">
+    <header class="hero card">
+      <p class="eyebrow">gettdone</p>
+      <h1>Conciliação financeira sem complicação</h1>
+      <p class="sub">Upload, processamento, preview e download de relatório.</p>
+      <p id="api-status" class="muted">Validando API...</p>
+    </header>
+
+    <section class="card">
+      <form id="analyze-form" class="upload-form">
+        <label for="file-input">Arquivo do extrato</label>
+        <input id="file-input" name="file" type="file" accept=".csv,.xlsx,.ofx" required />
+
+        <label for="api-base">URL da API</label>
+        <input id="api-base" name="apiBase" type="url" value="http://127.0.0.1:8000" />
+
+        <button id="submit-btn" type="submit">Analisar extrato</button>
+      </form>
+      <p class="muted">Sem login e sem dashboard no MVP.</p>
+      <p id="error" class="error" hidden></p>
+    </section>
+
+    <section id="result" class="card" hidden>
+      <h2>Preview da análise</h2>
+      <div id="stats" class="stats"></div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Descrição</th>
+              <th>Valor</th>
+              <th>Categoria</th>
+              <th>Conciliação</th>
+            </tr>
+          </thead>
+          <tbody id="preview-body"></tbody>
+        </table>
+      </div>
+
+      <a id="download-link" class="download" href="#" target="_blank" rel="noopener">Baixar relatório</a>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>

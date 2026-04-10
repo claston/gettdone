@@ -1,0 +1,112 @@
+﻿:root {
+  --bg: #f5f7fb;
+  --card: #ffffff;
+  --line: #d8dfec;
+  --text: #102238;
+  --muted: #4f6278;
+  --primary: #0f766e;
+  --primary-strong: #0b5f59;
+  --danger: #b42318;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+  color: var(--text);
+  background: radial-gradient(circle at top right, #d9eef6 0%, var(--bg) 40%, #eef3ff 100%);
+}
+
+.page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 24px 16px 40px;
+  display: grid;
+  gap: 16px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 8px 24px rgba(16, 34, 56, 0.06);
+}
+
+.hero h1 { margin: 8px 0; }
+.eyebrow {
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--primary);
+  text-transform: uppercase;
+}
+.sub, .muted { color: var(--muted); }
+
+.upload-form { display: grid; gap: 10px; }
+
+input[type="file"],
+input[type="url"],
+button {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  font: inherit;
+}
+
+button {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+  cursor: pointer;
+}
+
+button:hover { background: var(--primary-strong); }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.error {
+  color: var(--danger);
+  margin: 8px 0 0;
+  font-weight: 600;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.stats .metric {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  background: #f9fbff;
+}
+
+.table-wrap { overflow-x: auto; }
+
+.table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+th, td {
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  padding: 8px;
+  white-space: nowrap;
+}
+
+.download {
+  margin-top: 12px;
+  display: inline-block;
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.download:hover { text-decoration: underline; }
