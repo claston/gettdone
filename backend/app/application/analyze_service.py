@@ -4,8 +4,10 @@ from uuid import uuid4
 from app.application.csv_parser import parse_csv_transactions
 from app.application.errors import UnsupportedFileTypeError
 from app.application.models import AnalysisData, NormalizedTransaction, TransactionRow
+from app.application.ofx_parser import parse_ofx_transactions
 from app.application.reconciliation import reconcile_transactions
 from app.application.storage_service import TempAnalysisStorage
+from app.application.xlsx_parser import parse_xlsx_transactions
 from app.schemas import (
     AnalyzeResponse,
     CategorySummary,
@@ -84,13 +86,9 @@ class AnalyzeService:
             ],
             insights=[
                 Insight(
-                    type="csv_real_parser" if extension == "csv" else "foundation_mode",
-                    title="CSV processado" if extension == "csv" else "Fundacao ativa",
-                    description=(
-                        "Extrato CSV processado com parser real e normalizacao inicial."
-                        if extension == "csv"
-                        else "Pipeline base criada. Proxima etapa: parser real para XLSX/OFX."
-                    ),
+                    type=f"{extension}_real_parser",
+                    title=f"{extension.upper()} processado",
+                    description=f"Extrato {extension.upper()} processado com parser real e normalizacao inicial.",
                 )
             ],
             preview_transactions=[
@@ -109,27 +107,6 @@ class AnalyzeService:
     def _build_transactions_for_extension(self, extension: str, raw_bytes: bytes) -> list[NormalizedTransaction]:
         if extension == "csv":
             return parse_csv_transactions(raw_bytes)
-
-        byte_size = max(len(raw_bytes), 1)
-        debit = round(-(byte_size % 500) - 120.5, 2)
-        credit = round((byte_size % 900) + 350.75, 2)
-        return [
-            NormalizedTransaction(
-                date="2026-04-01",
-                description="IFOOD SAO PAULO",
-                amount=-58.90,
-                type="outflow",
-            ),
-            NormalizedTransaction(
-                date="2026-04-02",
-                description="PIX TRANSFERENCIA",
-                amount=debit,
-                type="outflow",
-            ),
-            NormalizedTransaction(
-                date="2026-04-02",
-                description="PIX RECEBIDO",
-                amount=credit,
-                type="inflow",
-            ),
-        ]
+        if extension == "xlsx":
+            return parse_xlsx_transactions(raw_bytes)
+        return parse_ofx_transactions(raw_bytes)
