@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from app.application import AnalyzeService, UnsupportedFileTypeError
+from app.application import AnalyzeService, InvalidFileContentError, UnsupportedFileTypeError
 from app.dependencies import get_analyze_service
 from app.schemas import AnalyzeResponse
 
@@ -17,4 +17,5 @@ async def analyze(
         return service.analyze(filename=file.filename or "", raw_bytes=data)
     except UnsupportedFileTypeError:
         raise HTTPException(status_code=400, detail="Unsupported file type. Use CSV, XLSX, or OFX.")
-
+    except InvalidFileContentError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))

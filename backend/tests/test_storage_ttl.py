@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from openpyxl import load_workbook
 
 from app.application import AnalysisNotFoundError, TempAnalysisStorage
 from app.application.models import AnalysisData, TransactionRow
@@ -61,3 +62,17 @@ def test_get_report_path_raises_not_found_and_cleans_directory_when_expired(tmp_
         storage.get_report_path("an_testttl")
 
     assert not (tmp_path / "an_testttl").exists()
+
+
+def test_save_analysis_formats_report_for_readability(tmp_path) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    storage.save_analysis(_build_analysis_data())
+
+    report_path = tmp_path / "an_testttl" / "report.xlsx"
+    workbook = load_workbook(report_path)
+    sheet = workbook["Transacoes"]
+
+    assert sheet.freeze_panes == "A2"
+    assert sheet.auto_filter.ref == "A1:E2"
+    assert sheet.column_dimensions["B"].width is not None
+    assert sheet.column_dimensions["B"].width >= 12

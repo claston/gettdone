@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Callable
 
 from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 
 from app.application.errors import AnalysisNotFoundError
 from app.application.models import AnalysisData
@@ -49,6 +50,7 @@ class TempAnalysisStorage:
         sheet.append(["date", "description", "amount", "category", "reconciliation_status"])
         for item in data.preview_transactions:
             sheet.append([item.date, item.description, item.amount, item.category, item.reconciliation_status])
+        self._format_transacoes_sheet(sheet)
         workbook.save(analysis_dir / "report.xlsx")
         return expires_at.isoformat()
 
@@ -81,3 +83,16 @@ class TempAnalysisStorage:
         for directory in sorted((item for item in analysis_dir.glob("**/*") if item.is_dir()), key=lambda x: len(x.parts), reverse=True):
             directory.rmdir()
         analysis_dir.rmdir()
+
+    def _format_transacoes_sheet(self, sheet) -> None:
+        if sheet.max_row >= 1 and sheet.max_column >= 1:
+            sheet.freeze_panes = "A2"
+            sheet.auto_filter.ref = sheet.dimensions
+
+        for column_index in range(1, sheet.max_column + 1):
+            column_letter = get_column_letter(column_index)
+            max_len = 0
+            for row_index in range(1, sheet.max_row + 1):
+                cell_value = sheet.cell(row=row_index, column=column_index).value
+                max_len = max(max_len, len(str(cell_value)) if cell_value is not None else 0)
+            sheet.column_dimensions[column_letter].width = min(max(max_len + 2, 12), 80)

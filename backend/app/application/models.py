@@ -11,6 +11,14 @@ class TransactionRow:
 
 
 @dataclass
+class NormalizedTransaction:
+    date: str
+    description: str
+    amount: float
+    type: str
+
+
+@dataclass
 class AnalysisData:
     analysis_id: str
     file_type: str
@@ -19,4 +27,3 @@ class AnalysisData:
     total_outflows: float
     net_total: float
     preview_transactions: list[TransactionRow]
-
