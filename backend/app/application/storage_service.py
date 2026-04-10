@@ -51,6 +51,7 @@ class TempAnalysisStorage:
         for item in data.preview_transactions:
             sheet.append([item.date, item.description, item.amount, item.category, item.reconciliation_status])
         self._format_transacoes_sheet(sheet)
+        self._add_conciliacao_sheet(workbook, data)
         workbook.save(analysis_dir / "report.xlsx")
         return expires_at.isoformat()
 
@@ -96,3 +97,20 @@ class TempAnalysisStorage:
                 cell_value = sheet.cell(row=row_index, column=column_index).value
                 max_len = max(max_len, len(str(cell_value)) if cell_value is not None else 0)
             sheet.column_dimensions[column_letter].width = min(max(max_len + 2, 12), 80)
+
+    def _add_conciliacao_sheet(self, workbook: Workbook, data: AnalysisData) -> None:
+        sheet = workbook.create_sheet(title="Conciliacao")
+        sheet.append(["metric", "value"])
+        sheet.append(["matched_groups", data.matched_groups])
+        sheet.append(["reversed_entries", data.reversed_entries])
+        sheet.append(["potential_duplicates", data.potential_duplicates])
+        sheet.append([])
+        sheet.append(["date", "description", "amount", "category", "reconciliation_status"])
+        for item in data.preview_transactions:
+            if item.reconciliation_status != "unmatched":
+                sheet.append([item.date, item.description, item.amount, item.category, item.reconciliation_status])
+
+        if sheet.max_row == 6:
+            sheet.append(["-", "No reconciled entries in preview", "", "", "unmatched"])
+
+        self._format_transacoes_sheet(sheet)

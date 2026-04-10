@@ -4,6 +4,7 @@ from uuid import uuid4
 from app.application.csv_parser import parse_csv_transactions
 from app.application.errors import UnsupportedFileTypeError
 from app.application.models import AnalysisData, NormalizedTransaction, TransactionRow
+from app.application.reconciliation import reconcile_transactions
 from app.application.storage_service import TempAnalysisStorage
 from app.schemas import (
     AnalyzeResponse,
@@ -28,15 +29,16 @@ class AnalyzeService:
 
         analysis_id = f"an_{uuid4().hex[:12]}"
         transactions = self._build_transactions_for_extension(extension, raw_bytes)
+        reconciliation_result = reconcile_transactions(transactions)
         preview_rows = [
             TransactionRow(
                 date=item.date,
                 description=item.description,
                 amount=item.amount,
                 category="Outros",
-                reconciliation_status="unmatched",
+                reconciliation_status=reconciliation_result.statuses[idx],
             )
-            for item in transactions[:20]
+            for idx, item in enumerate(transactions[:20])
         ]
 
         total_inflows = round(sum(item.amount for item in transactions if item.amount > 0), 2)
@@ -52,6 +54,9 @@ class AnalyzeService:
             total_outflows=total_outflows,
             net_total=net_total,
             preview_transactions=preview_rows,
+            matched_groups=reconciliation_result.matched_groups,
+            reversed_entries=reconciliation_result.reversed_entries,
+            potential_duplicates=reconciliation_result.potential_duplicates,
         )
         expires_at = self.storage.save_analysis(analysis_data)
 
@@ -63,9 +68,9 @@ class AnalyzeService:
             total_outflows=analysis_data.total_outflows,
             net_total=analysis_data.net_total,
             reconciliation=ReconciliationSummary(
-                matched_groups=0,
-                reversed_entries=0,
-                potential_duplicates=0,
+                matched_groups=analysis_data.matched_groups,
+                reversed_entries=analysis_data.reversed_entries,
+                potential_duplicates=analysis_data.potential_duplicates,
             ),
             categories=[CategorySummary(category="Outros", total=net_total, count=len(transactions))],
             top_expenses=[

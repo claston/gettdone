@@ -76,3 +76,4 @@ def test_save_analysis_formats_report_for_readability(tmp_path) -> None:
     assert sheet.auto_filter.ref == "A1:E2"
     assert sheet.column_dimensions["B"].width is not None
     assert sheet.column_dimensions["B"].width >= 12
+    assert "Conciliacao" in workbook.sheetnames
