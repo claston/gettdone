@@ -41,7 +41,6 @@ async def reconcile(
         if "missing required columns" in detail:
             raise HTTPException(status_code=422, detail="Sheet is missing required columns: date, amount, description.")
         raise HTTPException(status_code=400, detail=detail)
-
     return ReconcileIntakeResponse(
         status="accepted",
         bank_filename=bank_filename,
