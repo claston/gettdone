@@ -1,38 +1,20 @@
-﻿const DEFAULT_API_BASE = "http://127.0.0.1:8000";
+const DEFAULT_API_BASE = "http://127.0.0.1:8000";
 
 const form = document.getElementById("analyze-form");
-const fileInput = document.getElementById("file-input");
+const bankFileInput = document.getElementById("bank-file-input");
+const sheetFileInput = document.getElementById("sheet-file-input");
 const apiBaseInput = document.getElementById("api-base");
 const submitBtn = document.getElementById("submit-btn");
 const errorNode = document.getElementById("error");
+const uploadSuccessNode = document.getElementById("upload-success");
 const resultNode = document.getElementById("result");
 const statsNode = document.getElementById("stats");
 const expiresInfoNode = document.getElementById("expires-info");
 const resultExpiresInfoNode = document.getElementById("result-expires-info");
-const beforeAfterWrap = document.getElementById("before-after-wrap");
-const beforeAfterBody = document.getElementById("before-after-body");
-const previewBody = document.getElementById("preview-body");
-const downloadLink = document.getElementById("download-link");
 const apiStatus = document.getElementById("api-status");
 
 function normalizeApiBase(value) {
   return (value || DEFAULT_API_BASE).replace(/\/+$/, "");
-}
-
-function formatCurrency(value) {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL"
-  }).format(Number(value || 0));
-}
-
-function updateTrustMessage(expiresAt) {
-  const formattedExpiresAt = formatExpiresAt(expiresAt);
-  const message = formattedExpiresAt
-    ? `Processamento temporário: esta análise expira em ${formattedExpiresAt}.`
-    : "Processamento temporário: suas análises expiram automaticamente.";
-  expiresInfoNode.textContent = message;
-  resultExpiresInfoNode.textContent = message;
 }
 
 function formatExpiresAt(expiresAt) {
@@ -51,6 +33,15 @@ function formatExpiresAt(expiresAt) {
   }).format(date);
 }
 
+function updateTrustMessage(expiresAt) {
+  const formattedExpiresAt = formatExpiresAt(expiresAt);
+  const message = formattedExpiresAt
+    ? `Processamento temporario: esta analise expira em ${formattedExpiresAt}.`
+    : "Processamento temporario: suas analises expiram automaticamente.";
+  expiresInfoNode.textContent = message;
+  resultExpiresInfoNode.textContent = message;
+}
+
 function setError(message) {
   if (!message) {
     errorNode.hidden = true;
@@ -61,16 +52,21 @@ function setError(message) {
   errorNode.textContent = message;
 }
 
+function setSuccess(message) {
+  if (!message) {
+    uploadSuccessNode.hidden = true;
+    uploadSuccessNode.textContent = "";
+    return;
+  }
+  uploadSuccessNode.hidden = false;
+  uploadSuccessNode.textContent = message;
+}
+
 function renderStats(data) {
-  const operational = data.operational_summary || {};
   const metrics = [
-    ["Transações", String(data.transactions_total)],
-    ["Entradas", formatCurrency(data.total_inflows)],
-    ["Saídas", formatCurrency(data.total_outflows)],
-    ["Saldo", formatCurrency(data.net_total)],
-    ["Volume Total", formatCurrency(operational.total_volume || 0)],
-    ["Qtd Entradas", String(operational.inflow_count || 0)],
-    ["Qtd Saídas", String(operational.outflow_count || 0)]
+    ["Status", String(data.status || "-")],
+    ["Extrato", `${data.bank_filename || "-"} (${(data.bank_file_type || "-").toUpperCase()})`],
+    ["Planilha", `${data.sheet_filename || "-"} (${(data.sheet_file_type || "-").toUpperCase()})`]
   ];
 
   statsNode.innerHTML = "";
@@ -85,56 +81,6 @@ function renderStats(data) {
     text.style.margin = "6px 0 0";
     item.append(strong, text);
     statsNode.appendChild(item);
-  }
-}
-
-function renderPreviewRows(rows) {
-  previewBody.innerHTML = "";
-  for (const row of rows) {
-    const tr = document.createElement("tr");
-    const values = [
-      row.date,
-      row.description,
-      formatCurrency(row.amount),
-      row.category,
-      row.reconciliation_status
-    ];
-
-    for (const value of values) {
-      const td = document.createElement("td");
-      td.textContent = String(value);
-      tr.appendChild(td);
-    }
-
-    previewBody.appendChild(tr);
-  }
-}
-
-function renderBeforeAfterRows(rows) {
-  beforeAfterBody.innerHTML = "";
-  const hasRows = Array.isArray(rows) && rows.length > 0;
-  beforeAfterWrap.hidden = !hasRows;
-  if (!hasRows) {
-    return;
-  }
-
-  for (const row of rows) {
-    const tr = document.createElement("tr");
-    const values = [
-      row.date,
-      row.description_before,
-      row.description_after,
-      formatCurrency(row.amount_before),
-      formatCurrency(row.amount_after)
-    ];
-
-    for (const value of values) {
-      const td = document.createElement("td");
-      td.textContent = String(value);
-      tr.appendChild(td);
-    }
-
-    beforeAfterBody.appendChild(tr);
   }
 }
 
@@ -161,45 +107,50 @@ apiBaseInput.addEventListener("change", () => {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   setError("");
+  setSuccess("");
   resultNode.hidden = true;
 
-  if (!fileInput.files || !fileInput.files[0]) {
-    setError("Selecione um arquivo CSV, XLSX ou OFX.");
+  if (!bankFileInput.files || !bankFileInput.files[0]) {
+    setError("Selecione um arquivo de extrato (CSV, XLSX ou OFX).");
     return;
   }
 
-  const file = fileInput.files[0];
+  if (!sheetFileInput.files || !sheetFileInput.files[0]) {
+    setError("Selecione um arquivo de planilha (CSV ou XLSX).");
+    return;
+  }
+
+  const bankFile = bankFileInput.files[0];
+  const sheetFile = sheetFileInput.files[0];
   const baseUrl = normalizeApiBase(apiBaseInput.value);
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("bank_file", bankFile);
+  formData.append("sheet_file", sheetFile);
   updateTrustMessage("");
 
   submitBtn.disabled = true;
-  submitBtn.textContent = "Processando...";
+  submitBtn.textContent = "Enviando...";
 
   try {
-    const response = await fetch(`${baseUrl}/analyze`, {
+    const response = await fetch(`${baseUrl}/reconcile`, {
       method: "POST",
       body: formData
     });
 
     const payload = await response.json();
     if (!response.ok) {
-      throw new Error(payload.detail || "Falha ao processar arquivo.");
+      throw new Error(payload.detail || "Falha ao enviar os arquivos.");
     }
 
     renderStats(payload);
-    renderPreviewRows(payload.preview_transactions || []);
-    renderBeforeAfterRows(payload.preview_before_after || []);
-    updateTrustMessage(payload.expires_at);
-    downloadLink.href = `${baseUrl}/report/${payload.analysis_id}`;
+    setSuccess("Upload aceito com sucesso. Proxima etapa: parsing e matching.");
     resultNode.hidden = false;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro inesperado.";
     setError(message);
   } finally {
     submitBtn.disabled = false;
-    submitBtn.textContent = "Analisar extrato";
+    submitBtn.textContent = "Enviar para conciliacao";
   }
 });
 

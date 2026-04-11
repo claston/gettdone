@@ -24,56 +24,26 @@
       </div>
 
       <form id="analyze-form" class="upload-form">
-        <label for="file-input">Arquivo do extrato</label>
-        <input id="file-input" name="file" type="file" accept=".csv,.xlsx,.ofx" required />
+        <label for="bank-file-input">Arquivo do extrato</label>
+        <input id="bank-file-input" name="bank_file" type="file" accept=".csv,.xlsx,.ofx" required />
+
+        <label for="sheet-file-input">Arquivo da planilha operacional</label>
+        <input id="sheet-file-input" name="sheet_file" type="file" accept=".csv,.xlsx" required />
 
         <label for="api-base">URL da API</label>
         <input id="api-base" name="apiBase" type="url" value="http://127.0.0.1:8000" />
 
-        <button id="submit-btn" type="submit">Analisar extrato</button>
+        <button id="submit-btn" type="submit">Enviar para conciliação</button>
       </form>
       <p class="muted">Sem login e sem dashboard no MVP.</p>
       <p id="error" class="error" hidden></p>
+      <p id="upload-success" class="success" hidden></p>
     </section>
 
     <section id="result" class="card" hidden>
-      <h2>Preview da análise</h2>
+      <h2>Upload recebido</h2>
       <p id="result-expires-info" class="trust-expiry">Processamento temporário: suas análises expiram automaticamente.</p>
       <div id="stats" class="stats"></div>
-
-      <h3>Antes vs Depois</h3>
-      <div id="before-after-wrap" class="table-wrap" hidden>
-        <table>
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th>Descrição (antes)</th>
-              <th>Descrição (depois)</th>
-              <th>Valor (antes)</th>
-              <th>Valor (depois)</th>
-            </tr>
-          </thead>
-          <tbody id="before-after-body"></tbody>
-        </table>
-      </div>
-
-      <h3>Preview normalizado</h3>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th>Descrição</th>
-              <th>Valor</th>
-              <th>Categoria</th>
-              <th>Conciliação</th>
-            </tr>
-          </thead>
-          <tbody id="preview-body"></tbody>
-        </table>
-      </div>
-
-      <a id="download-link" class="download" href="#" target="_blank" rel="noopener">Baixar relatório</a>
     </section>
   </main>
 
