@@ -30,6 +30,11 @@ def classify_reconciliation_rows(
         sheet = sheet_rows[match.sheet_index]
         bank_id = bank_row_ids[match.bank_index]
         sheet_id = sheet_row_ids[match.sheet_index]
+        status, reason = _classify_matched_pair(
+            bank=bank,
+            sheet=sheet,
+            fallback_reason=match.reason,
+        )
         rows.append(
             LedgerReconciliationRow(
                 row_id=bank_id,
@@ -37,10 +42,10 @@ def classify_reconciliation_rows(
                 date=bank.date,
                 description=bank.description,
                 amount=bank.amount,
-                status="conciliado",
+                status=status,
                 match_rule=match.match_rule,
                 matched_row_id=sheet_id,
-                reason=match.reason,
+                reason=reason,
             )
         )
         rows.append(
@@ -50,27 +55,27 @@ def classify_reconciliation_rows(
                 date=sheet.date,
                 description=sheet.description,
                 amount=sheet.amount,
-                status="conciliado",
+                status=status,
                 match_rule=match.match_rule,
                 matched_row_id=bank_id,
-                reason=match.reason,
+                reason=reason,
             )
         )
 
     unmatched_bank_indexes = [idx for idx in range(len(bank_rows)) if idx not in matched_bank_indexes]
     unmatched_sheet_indexes = [idx for idx in range(len(sheet_rows)) if idx not in matched_sheet_indexes]
 
-    divergent_pairs = _pair_divergent_amount_mismatch(
+    divergent_pairs = _pair_divergent_candidates(
         bank_rows=bank_rows,
         sheet_rows=sheet_rows,
         unmatched_bank_indexes=unmatched_bank_indexes,
         unmatched_sheet_indexes=unmatched_sheet_indexes,
     )
 
-    divergent_bank_indexes = {bank_idx for bank_idx, _ in divergent_pairs}
-    divergent_sheet_indexes = {sheet_idx for _, sheet_idx in divergent_pairs}
+    divergent_bank_indexes = {bank_idx for bank_idx, _, _ in divergent_pairs}
+    divergent_sheet_indexes = {sheet_idx for _, sheet_idx, _ in divergent_pairs}
 
-    for bank_idx, sheet_idx in divergent_pairs:
+    for bank_idx, sheet_idx, reason in divergent_pairs:
         bank = bank_rows[bank_idx]
         sheet = sheet_rows[sheet_idx]
         bank_id = bank_row_ids[bank_idx]
@@ -85,7 +90,7 @@ def classify_reconciliation_rows(
                 status="divergente",
                 match_rule="none",
                 matched_row_id=sheet_id,
-                reason="amount_mismatch",
+                reason=reason,
             )
         )
         rows.append(
@@ -98,7 +103,7 @@ def classify_reconciliation_rows(
                 status="divergente",
                 match_rule="none",
                 matched_row_id=bank_id,
-                reason="amount_mismatch",
+                reason=reason,
             )
         )
 
@@ -150,13 +155,28 @@ def classify_reconciliation_rows(
     )
 
 
-def _pair_divergent_amount_mismatch(
+def _classify_matched_pair(
+    bank: NormalizedTransaction,
+    sheet: NormalizedTransaction,
+    fallback_reason: str,
+) -> tuple[str, str]:
+    bank_date = _parse_iso_date(bank.date)
+    sheet_date = _parse_iso_date(sheet.date)
+    if bank_date is not None and sheet_date is not None:
+        day_distance = abs((bank_date - sheet_date).days)
+        if day_distance > _DIVERGENCE_DATE_TOLERANCE_DAYS:
+            return "divergente", "date_out_of_tolerance_window"
+
+    return "conciliado", fallback_reason
+
+
+def _pair_divergent_candidates(
     bank_rows: list[NormalizedTransaction],
     sheet_rows: list[NormalizedTransaction],
     unmatched_bank_indexes: list[int],
     unmatched_sheet_indexes: list[int],
-) -> list[tuple[int, int]]:
-    pairs: list[tuple[int, int]] = []
+) -> list[tuple[int, int, str]]:
+    pairs: list[tuple[int, int, str]] = []
     used_sheet_indexes: set[int] = set()
 
     for bank_idx in unmatched_bank_indexes:
@@ -166,6 +186,7 @@ def _pair_divergent_amount_mismatch(
             continue
 
         best_sheet_idx: int | None = None
+        best_reason: str | None = None
         best_similarity: float = 0.0
 
         for sheet_idx in unmatched_sheet_indexes:
@@ -173,28 +194,31 @@ def _pair_divergent_amount_mismatch(
                 continue
 
             sheet = sheet_rows[sheet_idx]
-            if round(bank.amount, 2) == round(sheet.amount, 2):
-                continue
 
             sheet_date = _parse_iso_date(sheet.date)
             if sheet_date is None:
-                continue
-
-            day_distance = abs((bank_date - sheet_date).days)
-            if day_distance > _DIVERGENCE_DATE_TOLERANCE_DAYS:
                 continue
 
             similarity = _description_similarity(bank.description, sheet.description)
             if similarity < _DIVERGENCE_DESCRIPTION_SIMILARITY_THRESHOLD:
                 continue
 
+            amount_matches = round(bank.amount, 2) == round(sheet.amount, 2)
+            day_distance = abs((bank_date - sheet_date).days)
+            day_out_of_tolerance = day_distance > _DIVERGENCE_DATE_TOLERANCE_DAYS
+
+            if amount_matches and not day_out_of_tolerance:
+                continue
+
+            reason = "date_out_of_tolerance_window" if amount_matches else "amount_mismatch"
             if similarity > best_similarity:
                 best_similarity = similarity
                 best_sheet_idx = sheet_idx
+                best_reason = reason
 
-        if best_sheet_idx is not None:
+        if best_sheet_idx is not None and best_reason is not None:
             used_sheet_indexes.add(best_sheet_idx)
-            pairs.append((bank_idx, best_sheet_idx))
+            pairs.append((bank_idx, best_sheet_idx, best_reason))
 
     return pairs
 
