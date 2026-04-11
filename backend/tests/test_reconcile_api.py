@@ -55,6 +55,7 @@ def test_reconcile_happy_path_accepts_bank_and_sheet_files() -> None:
     assert payload["description_similarity_matches_preview"] == []
     assert len(payload["reconciliation_rows"]) == 2
     assert payload["reconciliation_rows"][0]["status"] == "divergente"
+    assert isinstance(payload["problems"], list)
     assert len(payload["normalization_preview"]) == 2
     assert payload["normalization_preview"][0]["source"] == "bank"
     assert payload["normalization_preview"][1]["source"] == "sheet"
@@ -197,6 +198,7 @@ def test_reconcile_normalization_preview_aligns_sign_with_same_semantic_descript
     assert payload["bank_unmatched_count"] == 0
     assert payload["sheet_unmatched_count"] == 0
     assert payload["exact_matches_preview"][0]["match_rule"] == "exact"
+    assert payload["problems"] == []
 
 
 def test_reconcile_matches_with_date_tolerance_plus_or_minus_two_days() -> None:
@@ -308,6 +310,7 @@ def test_reconcile_marks_amount_mismatch_as_divergent() -> None:
     assert payload["reconciliation_rows"][0]["reason"] == "amount_mismatch"
     assert payload["reconciliation_rows"][1]["status"] == "divergente"
     assert payload["reconciliation_rows"][1]["reason"] == "amount_mismatch"
+    assert payload["problems"][0]["type"] == "amount_mismatch"
 
 
 def test_reconcile_marks_date_out_of_tolerance_as_divergent() -> None:
@@ -339,3 +342,38 @@ def test_reconcile_marks_date_out_of_tolerance_as_divergent() -> None:
     assert payload["reconciliation_rows"][0]["reason"] == "date_out_of_tolerance_window"
     assert payload["reconciliation_rows"][1]["status"] == "divergente"
     assert payload["reconciliation_rows"][1]["reason"] == "date_out_of_tolerance_window"
+
+
+def test_reconcile_generates_operational_problem_insights() -> None:
+    client = TestClient(app)
+
+    response = client.post(
+        "/reconcile",
+        files={
+            "bank_file": (
+                "bank.csv",
+                (
+                    b"date,description,amount\n"
+                    b"2026-04-01,RECEBIMENTO CLIENTE BETA,300.00\n"
+                    b"2026-04-02,PAGAMENTO FORNECEDOR ALFA,-100.00"
+                ),
+                "text/csv",
+            ),
+            "sheet_file": (
+                "sheet.csv",
+                (
+                    b"data,valor,descricao\n"
+                    b"2026-04-03,-50.00,PAGAMENTO FRETE\n"
+                    b"2026-04-02,-120.00,PAGAMENTO FORNECEDOR ALFA"
+                ),
+                "text/csv",
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    problem_types = {item["type"] for item in payload["problems"]}
+    assert "missing_payment" in problem_types
+    assert "missing_receipt" in problem_types
+    assert "amount_mismatch" in problem_types
