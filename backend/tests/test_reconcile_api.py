@@ -235,7 +235,7 @@ def test_reconcile_matches_with_date_tolerance_plus_or_minus_two_days() -> None:
     assert payload["date_tolerance_matches_preview"][0]["reason"] == "matched_equal_amount_within_2_days"
 
 
-def test_reconcile_matches_with_description_similarity_when_amount_matches() -> None:
+def test_reconcile_matches_with_description_similarity_when_amount_matches_but_date_is_out_of_tolerance() -> None:
     client = TestClient(app)
 
     response = client.post(
@@ -260,9 +260,9 @@ def test_reconcile_matches_with_description_similarity_when_amount_matches() -> 
     assert payload["date_tolerance_matches_count"] == 0
     assert payload["description_similarity_matches_count"] == 1
     assert payload["total_matches_count"] == 1
-    assert payload["conciliated_count"] == 2
+    assert payload["conciliated_count"] == 0
     assert payload["pending_count"] == 0
-    assert payload["divergent_count"] == 0
+    assert payload["divergent_count"] == 2
     assert payload["bank_unmatched_count"] == 0
     assert payload["sheet_unmatched_count"] == 0
     assert payload["exact_matches_preview"] == []
@@ -273,6 +273,10 @@ def test_reconcile_matches_with_description_similarity_when_amount_matches() -> 
         payload["description_similarity_matches_preview"][0]["reason"]
         == "matched_equal_amount_with_similar_description"
     )
+    assert payload["reconciliation_rows"][0]["status"] == "divergente"
+    assert payload["reconciliation_rows"][0]["reason"] == "date_out_of_tolerance_window"
+    assert payload["reconciliation_rows"][1]["status"] == "divergente"
+    assert payload["reconciliation_rows"][1]["reason"] == "date_out_of_tolerance_window"
 
 
 def test_reconcile_marks_amount_mismatch_as_divergent() -> None:
@@ -304,3 +308,34 @@ def test_reconcile_marks_amount_mismatch_as_divergent() -> None:
     assert payload["reconciliation_rows"][0]["reason"] == "amount_mismatch"
     assert payload["reconciliation_rows"][1]["status"] == "divergente"
     assert payload["reconciliation_rows"][1]["reason"] == "amount_mismatch"
+
+
+def test_reconcile_marks_date_out_of_tolerance_as_divergent() -> None:
+    client = TestClient(app)
+
+    response = client.post(
+        "/reconcile",
+        files={
+            "bank_file": (
+                "bank.csv",
+                b"date,description,amount\n2026-04-01,PAGAMENTO FORNECEDOR ALFA,-100.00",
+                "text/csv",
+            ),
+            "sheet_file": (
+                "sheet.csv",
+                b"data,valor,descricao\n2026-04-10,-100.00,PAGAMENTO FORNECEDOR ALFA",
+                "text/csv",
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["conciliated_count"] == 0
+    assert payload["pending_count"] == 0
+    assert payload["divergent_count"] == 2
+    assert len(payload["reconciliation_rows"]) == 2
+    assert payload["reconciliation_rows"][0]["status"] == "divergente"
+    assert payload["reconciliation_rows"][0]["reason"] == "date_out_of_tolerance_window"
+    assert payload["reconciliation_rows"][1]["status"] == "divergente"
+    assert payload["reconciliation_rows"][1]["reason"] == "date_out_of_tolerance_window"
