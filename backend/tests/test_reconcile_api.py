@@ -55,6 +55,13 @@ def test_reconcile_happy_path_accepts_bank_and_sheet_files() -> None:
     assert payload["description_similarity_matches_preview"] == []
     assert len(payload["reconciliation_rows"]) == 2
     assert payload["reconciliation_rows"][0]["status"] == "divergente"
+    assert payload["summary"] == {
+        "total_bank_rows": 1,
+        "total_sheet_rows": 1,
+        "conciliated_count": 0,
+        "pending_count": 0,
+        "divergent_count": 2,
+    }
     assert isinstance(payload["problems"], list)
     assert len(payload["normalization_preview"]) == 2
     assert payload["normalization_preview"][0]["source"] == "bank"
@@ -199,6 +206,9 @@ def test_reconcile_normalization_preview_aligns_sign_with_same_semantic_descript
     assert payload["sheet_unmatched_count"] == 0
     assert payload["exact_matches_preview"][0]["match_rule"] == "exact"
     assert payload["problems"] == []
+    assert payload["summary"]["conciliated_count"] == 2
+    assert payload["summary"]["pending_count"] == 0
+    assert payload["summary"]["divergent_count"] == 0
 
 
 def test_reconcile_matches_with_date_tolerance_plus_or_minus_two_days() -> None:
@@ -377,3 +387,10 @@ def test_reconcile_generates_operational_problem_insights() -> None:
     assert "missing_payment" in problem_types
     assert "missing_receipt" in problem_types
     assert "amount_mismatch" in problem_types
+    assert payload["summary"] == {
+        "total_bank_rows": 2,
+        "total_sheet_rows": 2,
+        "conciliated_count": 0,
+        "pending_count": 2,
+        "divergent_count": 2,
+    }

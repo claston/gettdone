@@ -34,6 +34,14 @@ class Insight(BaseModel):
     description: str
 
 
+class ReconcileSummary(BaseModel):
+    total_bank_rows: int
+    total_sheet_rows: int
+    conciliated_count: int
+    pending_count: int
+    divergent_count: int
+
+
 class TransactionPreview(BaseModel):
     date: str
     description: str
@@ -91,3 +99,4 @@ class ReconcileIntakeResponse(BaseModel):
     description_similarity_matches_preview: list[dict[str, str | int | float]]
     reconciliation_rows: list[dict[str, str | float | None]]
     problems: list[Insight]
+    summary: ReconcileSummary

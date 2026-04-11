@@ -132,6 +132,13 @@ async def reconcile(
         }
         for problem in generate_reconciliation_problems(classification_result.rows)
     ]
+    summary = {
+        "total_bank_rows": len(normalized_bank_rows),
+        "total_sheet_rows": len(normalized_sheet_rows),
+        "conciliated_count": classification_result.conciliated_count,
+        "pending_count": classification_result.pending_count,
+        "divergent_count": classification_result.divergent_count,
+    }
 
     return ReconcileIntakeResponse(
         status="accepted",
@@ -157,6 +164,7 @@ async def reconcile(
         description_similarity_matches_preview=description_similarity_matches_preview,
         reconciliation_rows=reconciliation_rows,
         problems=problems,
+        summary=summary,
     )
 
 

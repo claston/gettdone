@@ -116,13 +116,16 @@ function renderAnalyzeStats(data) {
 }
 
 function renderReconcileStats(data) {
+  const summary = data.summary || {};
   renderStats([
     ["Status", String(data.status || "-")],
     ["Extrato", `${data.bank_filename || "-"} (${(data.bank_file_type || "-").toUpperCase()})`],
     ["Planilha", `${data.sheet_filename || "-"} (${(data.sheet_file_type || "-").toUpperCase()})`],
-    ["Conciliados", String(data.conciliated_count || 0)],
-    ["Pendentes", String(data.pending_count || 0)],
-    ["Divergentes", String(data.divergent_count || 0)],
+    ["Linhas extrato", String(summary.total_bank_rows || data.bank_rows_parsed || 0)],
+    ["Linhas planilha", String(summary.total_sheet_rows || data.sheet_rows_parsed || 0)],
+    ["Conciliados", String(summary.conciliated_count || data.conciliated_count || 0)],
+    ["Pendentes", String(summary.pending_count || data.pending_count || 0)],
+    ["Divergentes", String(summary.divergent_count || data.divergent_count || 0)],
     ["Pendentes na planilha", String(data.bank_unmatched_count || 0)],
     ["Pendentes no banco", String(data.sheet_unmatched_count || 0)]
   ]);
@@ -188,8 +191,9 @@ function renderReconcileRows(rows) {
 }
 
 function renderReconcilePreview(data) {
-  const pending = Number(data.pending_count || 0);
-  const divergent = Number(data.divergent_count || 0);
+  const summary = data.summary || {};
+  const pending = Number(summary.pending_count || data.pending_count || 0);
+  const divergent = Number(summary.divergent_count || data.divergent_count || 0);
   const bankPending = Number(data.bank_unmatched_count || 0);
   const sheetPending = Number(data.sheet_unmatched_count || 0);
   reconcileHeadlineNode.textContent =
