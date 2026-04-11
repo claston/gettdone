@@ -78,6 +78,8 @@ class ReconcileIntakeResponse(BaseModel):
     sheet_mapping_detected: dict[str, str]
     normalization_preview: list[dict[str, str | float]]
     exact_matches_count: int
+    date_tolerance_matches_count: int
     bank_unmatched_count: int
     sheet_unmatched_count: int
     exact_matches_preview: list[dict[str, str | int | float]]
+    date_tolerance_matches_preview: list[dict[str, str | int | float]]
