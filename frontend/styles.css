@@ -45,6 +45,11 @@ body {
 .sub, .muted { color: var(--muted); }
 
 .upload-form { display: grid; gap: 10px; }
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
 
 .trust-box {
   margin-bottom: 14px;
@@ -143,3 +148,9 @@ th, td {
 }
 
 .download:hover { text-decoration: underline; }
+
+@media (max-width: 720px) {
+  .actions {
+    grid-template-columns: 1fr;
+  }
+}
