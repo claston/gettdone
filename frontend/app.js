@@ -150,32 +150,44 @@ function reconcileStatusLabel(status) {
   return labels[status] || String(status || "-");
 }
 
+function reconcileMatchRuleLabel(rule) {
+  const labels = {
+    exact: "Exato",
+    date_tolerance: "Tolerancia de data",
+    description_similarity: "Similaridade de descricao",
+    none: "-"
+  };
+  return labels[rule] || String(rule || "-");
+}
+
 function reconcileSourceLabel(source) {
   return source === "bank" ? "Extrato" : "Planilha";
 }
 
 function renderReconcileRows(rows) {
   reconcileRowsBody.innerHTML = "";
-  const actionableRows = (rows || []).filter((row) => row.status !== "conciliado");
+  const detailRows = rows || [];
 
-  if (actionableRows.length === 0) {
+  if (detailRows.length === 0) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
-    td.colSpan = 7;
-    td.textContent = "Sem pendencias ou divergencias neste arquivo.";
+    td.colSpan = 9;
+    td.textContent = "Sem linhas de conciliacao para exibir.";
     tr.appendChild(td);
     reconcileRowsBody.appendChild(tr);
     return;
   }
 
-  for (const row of actionableRows) {
+  for (const row of detailRows) {
     const tr = document.createElement("tr");
     const values = [
+      row.row_id || "-",
       reconcileSourceLabel(row.source),
       row.date,
       row.description,
       formatCurrency(row.amount),
       reconcileStatusLabel(row.status),
+      reconcileMatchRuleLabel(row.match_rule),
       reconcileReasonLabel(row.reason),
       row.matched_row_id || "-"
     ];
@@ -192,12 +204,13 @@ function renderReconcileRows(rows) {
 
 function renderReconcilePreview(data) {
   const summary = data.summary || {};
+  const conciliated = Number(summary.conciliated_count || data.conciliated_count || 0);
   const pending = Number(summary.pending_count || data.pending_count || 0);
   const divergent = Number(summary.divergent_count || data.divergent_count || 0);
   const bankPending = Number(data.bank_unmatched_count || 0);
   const sheetPending = Number(data.sheet_unmatched_count || 0);
   reconcileHeadlineNode.textContent =
-    `${pending} pendentes e ${divergent} divergentes. ` +
+    `${conciliated} conciliados, ${pending} pendentes e ${divergent} divergentes. ` +
     `${bankPending} pendentes na planilha e ${sheetPending} pendentes no banco.`;
   renderReconcileRows(data.reconciliation_rows || []);
   reconcilePreviewNode.hidden = false;
