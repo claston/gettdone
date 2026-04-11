@@ -81,8 +81,12 @@ class ReconcileIntakeResponse(BaseModel):
     date_tolerance_matches_count: int
     description_similarity_matches_count: int
     total_matches_count: int
+    conciliated_count: int
+    pending_count: int
+    divergent_count: int
     bank_unmatched_count: int
     sheet_unmatched_count: int
     exact_matches_preview: list[dict[str, str | int | float]]
     date_tolerance_matches_preview: list[dict[str, str | int | float]]
     description_similarity_matches_preview: list[dict[str, str | int | float]]
+    reconciliation_rows: list[dict[str, str | float | None]]

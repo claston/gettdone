@@ -4,6 +4,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.application import (
     InvalidFileContentError,
+    classify_reconciliation_rows,
     match_exact_then_date_tolerance_then_description_similarity_1to1,
     parse_bank_statement_rows,
     parse_operational_sheet_rows,
@@ -61,6 +62,11 @@ async def reconcile(
         bank_rows=normalized_bank_rows,
         sheet_rows=normalized_sheet_rows,
     )
+    classification_result = classify_reconciliation_rows(
+        bank_rows=normalized_bank_rows,
+        sheet_rows=normalized_sheet_rows,
+        match_result=ledger_match_result,
+    )
 
     preview: list[dict[str, str | float]] = []
     for row in normalized_bank_rows[:3]:
@@ -103,6 +109,21 @@ async def reconcile(
         if match.match_rule == "description_similarity":
             description_similarity_matches_preview.append(match_payload)
 
+    reconciliation_rows = [
+        {
+            "row_id": row.row_id,
+            "source": row.source,
+            "date": row.date,
+            "description": row.description,
+            "amount": row.amount,
+            "status": row.status,
+            "match_rule": row.match_rule,
+            "matched_row_id": row.matched_row_id,
+            "reason": row.reason,
+        }
+        for row in classification_result.rows
+    ]
+
     return ReconcileIntakeResponse(
         status="accepted",
         bank_filename=bank_filename,
@@ -117,11 +138,15 @@ async def reconcile(
         date_tolerance_matches_count=ledger_match_result.date_tolerance_matches_count,
         description_similarity_matches_count=ledger_match_result.description_similarity_matches_count,
         total_matches_count=ledger_match_result.total_matches_count,
+        conciliated_count=classification_result.conciliated_count,
+        pending_count=classification_result.pending_count,
+        divergent_count=classification_result.divergent_count,
         bank_unmatched_count=ledger_match_result.bank_unmatched_count,
         sheet_unmatched_count=ledger_match_result.sheet_unmatched_count,
         exact_matches_preview=exact_matches_preview,
         date_tolerance_matches_preview=date_tolerance_matches_preview,
         description_similarity_matches_preview=description_similarity_matches_preview,
+        reconciliation_rows=reconciliation_rows,
     )
 
 
