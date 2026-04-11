@@ -35,11 +35,11 @@ async def reconcile(
 
     sheet_bytes = await sheet_file.read()
     try:
-        sheet_rows = parse_operational_sheet_rows(filename=sheet_filename, raw_bytes=sheet_bytes)
+        parsed_sheet = parse_operational_sheet_rows(filename=sheet_filename, raw_bytes=sheet_bytes)
     except InvalidFileContentError as exc:
         detail = str(exc)
-        if "missing required columns" in detail:
-            raise HTTPException(status_code=422, detail="Sheet is missing required columns: date, amount, description.")
+        if "missing required columns" in detail or "ambiguous column mapping" in detail:
+            raise HTTPException(status_code=422, detail=detail)
         raise HTTPException(status_code=400, detail=detail)
     return ReconcileIntakeResponse(
         status="accepted",
@@ -47,5 +47,6 @@ async def reconcile(
         bank_file_type=bank_extension,
         sheet_filename=sheet_filename,
         sheet_file_type=sheet_extension,
-        sheet_rows_parsed=len(sheet_rows),
+        sheet_rows_parsed=len(parsed_sheet.rows),
+        sheet_mapping_detected=parsed_sheet.mapping_detected,
     )

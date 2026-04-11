@@ -1,31 +1,32 @@
-﻿import csv
-import unicodedata
+import csv
+from collections.abc import Callable
 from datetime import datetime
 from io import StringIO
 
+from app.application.column_mapping import FIELD_ALIASES, REQUIRED_FIELDS, normalize_header
 from app.application.errors import InvalidFileContentError
 from app.application.models import NormalizedTransaction
-
-REQUIRED_FIELDS = {"date", "description", "amount"}
-
-FIELD_ALIASES = {
-    "date": {"date", "data", "dt", "dt_lancamento", "transaction_date", "posted_at"},
-    "description": {"description", "descricao", "historico", "memo"},
-    "amount": {"amount", "valor", "vlr", "valor_liquido", "value"},
-    "type": {"type", "tipo", "operation_type", "natureza"},
-}
 
 DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y")
 
 
 def parse_csv_transactions(raw_bytes: bytes) -> list[NormalizedTransaction]:
+    transactions, _field_map = parse_csv_transactions_with_mapping(raw_bytes=raw_bytes)
+    return transactions
+
+
+def parse_csv_transactions_with_mapping(
+    raw_bytes: bytes,
+    resolver: Callable[[list[str]], dict[str, str]] | None = None,
+) -> tuple[list[NormalizedTransaction], dict[str, str]]:
+    field_resolver = resolver or _resolve_field_map
     text = _decode_csv_bytes(raw_bytes)
     delimiter = _detect_delimiter(text)
     reader = csv.DictReader(StringIO(text), delimiter=delimiter)
     if not reader.fieldnames:
         raise InvalidFileContentError("CSV does not contain headers.")
 
-    field_map = _resolve_field_map(reader.fieldnames)
+    field_map = field_resolver(reader.fieldnames)
     missing = REQUIRED_FIELDS - set(field_map)
     if missing:
         raise InvalidFileContentError(f"CSV is missing required columns: {sorted(missing)}.")
@@ -50,7 +51,7 @@ def parse_csv_transactions(raw_bytes: bytes) -> list[NormalizedTransaction]:
 
     if not transactions:
         raise InvalidFileContentError("CSV does not contain transaction rows.")
-    return transactions
+    return transactions, field_map
 
 
 def _decode_csv_bytes(raw_bytes: bytes) -> str:
@@ -84,8 +85,7 @@ def _resolve_field_map(fieldnames: list[str]) -> dict[str, str]:
 
 
 def _normalize_header(header: str) -> str:
-    value = unicodedata.normalize("NFKD", header.strip().lower())
-    return "".join(ch for ch in value if not unicodedata.combining(ch))
+    return normalize_header(header)
 
 
 def _require_value(row: dict[str, str], key: str, field_name: str) -> str:

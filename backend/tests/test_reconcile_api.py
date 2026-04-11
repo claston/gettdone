@@ -35,6 +35,11 @@ def test_reconcile_happy_path_accepts_bank_and_sheet_files() -> None:
     assert payload["sheet_filename"] == "sheet.csv"
     assert payload["sheet_file_type"] == "csv"
     assert payload["sheet_rows_parsed"] == 1
+    assert payload["sheet_mapping_detected"] == {
+        "date": "data",
+        "amount": "valor",
+        "description": "descricao",
+    }
 
 
 def test_reconcile_rejects_unsupported_bank_file_type() -> None:
@@ -79,7 +84,7 @@ def test_reconcile_returns_422_when_sheet_is_missing_required_columns() -> None:
     )
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "Sheet is missing required columns: date, amount, description."
+    assert "missing required columns" in response.json()["detail"]
 
 
 def test_reconcile_accepts_sheet_xlsx_with_alias_columns() -> None:
@@ -108,3 +113,27 @@ def test_reconcile_accepts_sheet_xlsx_with_alias_columns() -> None:
     payload = response.json()
     assert payload["sheet_file_type"] == "xlsx"
     assert payload["sheet_rows_parsed"] == 2
+    assert payload["sheet_mapping_detected"] == {
+        "date": "dt_lancamento",
+        "amount": "vlr",
+        "description": "historico",
+    }
+
+
+def test_reconcile_returns_422_for_ambiguous_sheet_mapping() -> None:
+    client = TestClient(app)
+
+    response = client.post(
+        "/reconcile",
+        files={
+            "bank_file": ("bank.csv", b"date,description,amount\n2026-04-01,TEST,10", "text/csv"),
+            "sheet_file": (
+                "sheet.csv",
+                b"data,descricao,historico,valor\n2026-04-01,RECEBIMENTO,RECEBIMENTO,100",
+                "text/csv",
+            ),
+        },
+    )
+
+    assert response.status_code == 422
+    assert "ambiguous column mapping" in response.json()["detail"]

@@ -74,3 +74,4 @@ class ReconcileIntakeResponse(BaseModel):
     sheet_filename: str
     sheet_file_type: str
     sheet_rows_parsed: int
+    sheet_mapping_detected: dict[str, str]
