@@ -1,10 +1,10 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.application import (
     InvalidFileContentError,
-    match_exact_then_date_tolerance_1to1,
+    match_exact_then_date_tolerance_then_description_similarity_1to1,
     parse_bank_statement_rows,
     parse_operational_sheet_rows,
 )
@@ -57,7 +57,7 @@ async def reconcile(
 
     normalized_bank_rows = normalize_transactions(_clear_type_hints(bank_rows))
     normalized_sheet_rows = normalize_transactions(_clear_type_hints(parsed_sheet.rows))
-    ledger_match_result = match_exact_then_date_tolerance_1to1(
+    ledger_match_result = match_exact_then_date_tolerance_then_description_similarity_1to1(
         bank_rows=normalized_bank_rows,
         sheet_rows=normalized_sheet_rows,
     )
@@ -86,6 +86,7 @@ async def reconcile(
 
     exact_matches_preview: list[dict[str, str | int | float]] = []
     date_tolerance_matches_preview: list[dict[str, str | int | float]] = []
+    description_similarity_matches_preview: list[dict[str, str | int | float]] = []
     for match in ledger_match_result.matches[:10]:
         match_payload = {
             "bank_index": match.bank_index,
@@ -99,6 +100,8 @@ async def reconcile(
             exact_matches_preview.append(match_payload)
         if match.match_rule == "date_tolerance":
             date_tolerance_matches_preview.append(match_payload)
+        if match.match_rule == "description_similarity":
+            description_similarity_matches_preview.append(match_payload)
 
     return ReconcileIntakeResponse(
         status="accepted",
@@ -112,10 +115,13 @@ async def reconcile(
         normalization_preview=preview,
         exact_matches_count=ledger_match_result.exact_matches_count,
         date_tolerance_matches_count=ledger_match_result.date_tolerance_matches_count,
+        description_similarity_matches_count=ledger_match_result.description_similarity_matches_count,
+        total_matches_count=ledger_match_result.total_matches_count,
         bank_unmatched_count=ledger_match_result.bank_unmatched_count,
         sheet_unmatched_count=ledger_match_result.sheet_unmatched_count,
         exact_matches_preview=exact_matches_preview,
         date_tolerance_matches_preview=date_tolerance_matches_preview,
+        description_similarity_matches_preview=description_similarity_matches_preview,
     )
 
 

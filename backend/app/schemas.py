@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+﻿from pydantic import BaseModel
 
 
 class ReconciliationSummary(BaseModel):
@@ -79,7 +79,10 @@ class ReconcileIntakeResponse(BaseModel):
     normalization_preview: list[dict[str, str | float]]
     exact_matches_count: int
     date_tolerance_matches_count: int
+    description_similarity_matches_count: int
+    total_matches_count: int
     bank_unmatched_count: int
     sheet_unmatched_count: int
     exact_matches_preview: list[dict[str, str | int | float]]
     date_tolerance_matches_preview: list[dict[str, str | int | float]]
+    description_similarity_matches_preview: list[dict[str, str | int | float]]

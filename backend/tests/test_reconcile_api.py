@@ -1,4 +1,4 @@
-from io import BytesIO
+﻿from io import BytesIO
 
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
@@ -43,10 +43,13 @@ def test_reconcile_happy_path_accepts_bank_and_sheet_files() -> None:
     }
     assert payload["exact_matches_count"] == 0
     assert payload["date_tolerance_matches_count"] == 0
+    assert payload["description_similarity_matches_count"] == 0
+    assert payload["total_matches_count"] == 0
     assert payload["bank_unmatched_count"] == 1
     assert payload["sheet_unmatched_count"] == 1
     assert payload["exact_matches_preview"] == []
     assert payload["date_tolerance_matches_preview"] == []
+    assert payload["description_similarity_matches_preview"] == []
     assert len(payload["normalization_preview"]) == 2
     assert payload["normalization_preview"][0]["source"] == "bank"
     assert payload["normalization_preview"][1]["source"] == "sheet"
@@ -181,6 +184,8 @@ def test_reconcile_normalization_preview_aligns_sign_with_same_semantic_descript
     assert preview[1]["type"] == "outflow"
     assert payload["exact_matches_count"] == 1
     assert payload["date_tolerance_matches_count"] == 0
+    assert payload["description_similarity_matches_count"] == 0
+    assert payload["total_matches_count"] == 1
     assert payload["bank_unmatched_count"] == 0
     assert payload["sheet_unmatched_count"] == 0
     assert payload["exact_matches_preview"][0]["match_rule"] == "exact"
@@ -209,9 +214,48 @@ def test_reconcile_matches_with_date_tolerance_plus_or_minus_two_days() -> None:
     payload = response.json()
     assert payload["exact_matches_count"] == 0
     assert payload["date_tolerance_matches_count"] == 1
+    assert payload["description_similarity_matches_count"] == 0
+    assert payload["total_matches_count"] == 1
     assert payload["bank_unmatched_count"] == 0
     assert payload["sheet_unmatched_count"] == 0
     assert payload["exact_matches_preview"] == []
     assert len(payload["date_tolerance_matches_preview"]) == 1
     assert payload["date_tolerance_matches_preview"][0]["match_rule"] == "date_tolerance"
     assert payload["date_tolerance_matches_preview"][0]["reason"] == "matched_equal_amount_within_2_days"
+
+
+def test_reconcile_matches_with_description_similarity_when_amount_matches() -> None:
+    client = TestClient(app)
+
+    response = client.post(
+        "/reconcile",
+        files={
+            "bank_file": (
+                "bank.csv",
+                b"date,description,amount\n2026-04-12,PAGAMENTO FORNECEDOR ALFA LTDA,-980.00",
+                "text/csv",
+            ),
+            "sheet_file": (
+                "sheet.csv",
+                b"data,valor,descricao\n2026-04-01,-980.00,FORNECEDOR ALFA",
+                "text/csv",
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["exact_matches_count"] == 0
+    assert payload["date_tolerance_matches_count"] == 0
+    assert payload["description_similarity_matches_count"] == 1
+    assert payload["total_matches_count"] == 1
+    assert payload["bank_unmatched_count"] == 0
+    assert payload["sheet_unmatched_count"] == 0
+    assert payload["exact_matches_preview"] == []
+    assert payload["date_tolerance_matches_preview"] == []
+    assert len(payload["description_similarity_matches_preview"]) == 1
+    assert payload["description_similarity_matches_preview"][0]["match_rule"] == "description_similarity"
+    assert (
+        payload["description_similarity_matches_preview"][0]["reason"]
+        == "matched_equal_amount_with_similar_description"
+    )
