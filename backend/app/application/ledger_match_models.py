@@ -41,3 +41,10 @@ class LedgerClassificationResult:
     conciliated_count: int
     pending_count: int
     divergent_count: int
+
+
+@dataclass
+class LedgerProblemInsight:
+    type: str
+    title: str
+    description: str

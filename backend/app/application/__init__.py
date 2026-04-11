@@ -4,6 +4,7 @@ from app.application.errors import AnalysisNotFoundError, InvalidFileContentErro
 from app.application.ledger_match_engine import (
     match_exact_then_date_tolerance_then_description_similarity_1to1,
 )
+from app.application.reconcile_problem_engine import generate_reconciliation_problems
 from app.application.reconcile_status_engine import classify_reconciliation_rows
 from app.application.report_service import ReportService
 from app.application.sheet_parser import parse_operational_sheet_rows
@@ -14,6 +15,7 @@ __all__ = [
     "AnalysisNotFoundError",
     "InvalidFileContentError",
     "match_exact_then_date_tolerance_then_description_similarity_1to1",
+    "generate_reconciliation_problems",
     "classify_reconciliation_rows",
     "parse_bank_statement_rows",
     "ReportService",

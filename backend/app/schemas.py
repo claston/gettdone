@@ -90,3 +90,4 @@ class ReconcileIntakeResponse(BaseModel):
     date_tolerance_matches_preview: list[dict[str, str | int | float]]
     description_similarity_matches_preview: list[dict[str, str | int | float]]
     reconciliation_rows: list[dict[str, str | float | None]]
+    problems: list[Insight]

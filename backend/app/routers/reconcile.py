@@ -5,6 +5,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from app.application import (
     InvalidFileContentError,
     classify_reconciliation_rows,
+    generate_reconciliation_problems,
     match_exact_then_date_tolerance_then_description_similarity_1to1,
     parse_bank_statement_rows,
     parse_operational_sheet_rows,
@@ -123,6 +124,14 @@ async def reconcile(
         }
         for row in classification_result.rows
     ]
+    problems = [
+        {
+            "type": problem.type,
+            "title": problem.title,
+            "description": problem.description,
+        }
+        for problem in generate_reconciliation_problems(classification_result.rows)
+    ]
 
     return ReconcileIntakeResponse(
         status="accepted",
@@ -147,6 +156,7 @@ async def reconcile(
         date_tolerance_matches_preview=date_tolerance_matches_preview,
         description_similarity_matches_preview=description_similarity_matches_preview,
         reconciliation_rows=reconciliation_rows,
+        problems=problems,
     )
 
 
