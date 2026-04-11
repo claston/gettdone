@@ -1,20 +1,25 @@
+from collections.abc import Callable
 from datetime import datetime
 from io import BytesIO
 
 from openpyxl import load_workbook
 
-from app.application.csv_parser import (
-    DATE_FORMATS,
-    REQUIRED_FIELDS,
-    _normalize_header,
-    _parse_amount,
-    _resolve_field_map,
-)
+from app.application.column_mapping import REQUIRED_FIELDS, normalize_header
+from app.application.csv_parser import DATE_FORMATS, _parse_amount, _resolve_field_map
 from app.application.errors import InvalidFileContentError
 from app.application.models import NormalizedTransaction
 
 
 def parse_xlsx_transactions(raw_bytes: bytes) -> list[NormalizedTransaction]:
+    transactions, _field_map = parse_xlsx_transactions_with_mapping(raw_bytes=raw_bytes)
+    return transactions
+
+
+def parse_xlsx_transactions_with_mapping(
+    raw_bytes: bytes,
+    resolver: Callable[[list[str]], dict[str, str]] | None = None,
+) -> tuple[list[NormalizedTransaction], dict[str, str]]:
+    field_resolver = resolver or _resolve_field_map
     try:
         workbook = load_workbook(filename=BytesIO(raw_bytes), data_only=True, read_only=True)
     except Exception as exc:  # pragma: no cover - openpyxl exception details are not stable.
@@ -33,7 +38,7 @@ def parse_xlsx_transactions(raw_bytes: bytes) -> list[NormalizedTransaction]:
     if not any(fieldnames):
         raise InvalidFileContentError("XLSX does not contain headers.")
 
-    field_map = _resolve_field_map(fieldnames)
+    field_map = field_resolver(fieldnames)
     missing = REQUIRED_FIELDS - set(field_map)
     if missing:
         raise InvalidFileContentError(f"XLSX is missing required columns: {sorted(missing)}.")
@@ -63,7 +68,7 @@ def parse_xlsx_transactions(raw_bytes: bytes) -> list[NormalizedTransaction]:
 
     if not transactions:
         raise InvalidFileContentError("XLSX does not contain transaction rows.")
-    return transactions
+    return transactions, field_map
 
 
 def _require_value(row_values: list[object], headers: list[str], mapped_header: str, field_name: str) -> object:
@@ -110,7 +115,7 @@ def _parse_date(raw: object) -> str:
 
 
 def _normalize_type(raw_type: str, amount: float) -> str:
-    value = _normalize_header(raw_type)
+    value = normalize_header(raw_type)
     if value in {"inflow", "credit", "entrada", "credito"}:
         return "inflow"
     if value in {"outflow", "debit", "saida", "debito"}:

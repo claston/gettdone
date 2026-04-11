@@ -73,4 +73,7 @@ class ReconcileIntakeResponse(BaseModel):
     bank_file_type: str
     sheet_filename: str
     sheet_file_type: str
+    bank_rows_parsed: int
     sheet_rows_parsed: int
+    sheet_mapping_detected: dict[str, str]
+    normalization_preview: list[dict[str, str | float]]

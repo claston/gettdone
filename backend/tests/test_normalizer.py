@@ -82,3 +82,28 @@ def test_normalizer_enforces_sign_using_description_when_type_missing() -> None:
     assert normalized[1].amount == -420.0
     assert normalized[1].type == "outflow"
 
+
+def test_normalizer_makes_bank_and_sheet_semantically_comparable() -> None:
+    rows = [
+        NormalizedTransaction(
+            date="01/04/2026",
+            description="  pagamento fornecedor alfa ",
+            amount=980.0,
+            type="debito",
+        ),
+        NormalizedTransaction(
+            date="2026-04-01",
+            description="PAGAMENTO   FORNECEDOR  ALFA",
+            amount=-980.0,
+            type="",
+        ),
+    ]
+
+    normalized = normalize_transactions(rows)
+
+    assert normalized[0].date == "2026-04-01"
+    assert normalized[1].date == "2026-04-01"
+    assert normalized[0].description == normalized[1].description
+    assert normalized[0].amount == normalized[1].amount
+    assert normalized[0].type == normalized[1].type
+
