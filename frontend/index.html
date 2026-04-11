@@ -48,6 +48,27 @@
       <p id="result-expires-info" class="trust-expiry">Processamento temporário: suas análises expiram automaticamente.</p>
       <div id="stats" class="stats"></div>
 
+      <div id="reconcile-preview" hidden>
+        <h3>Pendências e divergências</h3>
+        <p id="reconcile-headline" class="muted"></p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Fonte</th>
+                <th>Data</th>
+                <th>Descrição</th>
+                <th>Valor</th>
+                <th>Status</th>
+                <th>Motivo</th>
+                <th>Linha pareada</th>
+              </tr>
+            </thead>
+            <tbody id="reconcile-rows-body"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div id="analyze-preview" hidden>
         <h3>Antes vs Depois</h3>
         <div id="before-after-wrap" class="table-wrap" hidden>

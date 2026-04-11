@@ -139,6 +139,14 @@ th, td {
   white-space: nowrap;
 }
 
+#reconcile-preview tbody tr:nth-child(odd) {
+  background: #fbfdff;
+}
+
+#reconcile-preview td:nth-child(5) {
+  font-weight: 600;
+}
+
 .download {
   margin-top: 12px;
   display: inline-block;

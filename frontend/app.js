@@ -12,6 +12,9 @@ const resultNode = document.getElementById("result");
 const resultTitle = document.getElementById("result-title");
 const statsNode = document.getElementById("stats");
 const analyzePreviewNode = document.getElementById("analyze-preview");
+const reconcilePreviewNode = document.getElementById("reconcile-preview");
+const reconcileHeadlineNode = document.getElementById("reconcile-headline");
+const reconcileRowsBody = document.getElementById("reconcile-rows-body");
 const beforeAfterWrap = document.getElementById("before-after-wrap");
 const beforeAfterBody = document.getElementById("before-after-body");
 const previewBody = document.getElementById("preview-body");
@@ -116,8 +119,84 @@ function renderReconcileStats(data) {
   renderStats([
     ["Status", String(data.status || "-")],
     ["Extrato", `${data.bank_filename || "-"} (${(data.bank_file_type || "-").toUpperCase()})`],
-    ["Planilha", `${data.sheet_filename || "-"} (${(data.sheet_file_type || "-").toUpperCase()})`]
+    ["Planilha", `${data.sheet_filename || "-"} (${(data.sheet_file_type || "-").toUpperCase()})`],
+    ["Conciliados", String(data.conciliated_count || 0)],
+    ["Pendentes", String(data.pending_count || 0)],
+    ["Divergentes", String(data.divergent_count || 0)],
+    ["Pendentes na planilha", String(data.bank_unmatched_count || 0)],
+    ["Pendentes no banco", String(data.sheet_unmatched_count || 0)]
   ]);
+}
+
+function reconcileReasonLabel(reason) {
+  const labels = {
+    missing_in_sheet: "Pendente na planilha",
+    missing_in_bank: "Pendente no banco",
+    amount_mismatch: "Valor divergente",
+    date_out_of_tolerance_window: "Data fora da tolerancia"
+  };
+  return labels[reason] || String(reason || "-");
+}
+
+function reconcileStatusLabel(status) {
+  const labels = {
+    conciliado: "Conciliado",
+    pendente: "Pendente",
+    divergente: "Divergente"
+  };
+  return labels[status] || String(status || "-");
+}
+
+function reconcileSourceLabel(source) {
+  return source === "bank" ? "Extrato" : "Planilha";
+}
+
+function renderReconcileRows(rows) {
+  reconcileRowsBody.innerHTML = "";
+  const actionableRows = (rows || []).filter((row) => row.status !== "conciliado");
+
+  if (actionableRows.length === 0) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 7;
+    td.textContent = "Sem pendencias ou divergencias neste arquivo.";
+    tr.appendChild(td);
+    reconcileRowsBody.appendChild(tr);
+    return;
+  }
+
+  for (const row of actionableRows) {
+    const tr = document.createElement("tr");
+    const values = [
+      reconcileSourceLabel(row.source),
+      row.date,
+      row.description,
+      formatCurrency(row.amount),
+      reconcileStatusLabel(row.status),
+      reconcileReasonLabel(row.reason),
+      row.matched_row_id || "-"
+    ];
+
+    for (const value of values) {
+      const td = document.createElement("td");
+      td.textContent = String(value || "");
+      tr.appendChild(td);
+    }
+
+    reconcileRowsBody.appendChild(tr);
+  }
+}
+
+function renderReconcilePreview(data) {
+  const pending = Number(data.pending_count || 0);
+  const divergent = Number(data.divergent_count || 0);
+  const bankPending = Number(data.bank_unmatched_count || 0);
+  const sheetPending = Number(data.sheet_unmatched_count || 0);
+  reconcileHeadlineNode.textContent =
+    `${pending} pendentes e ${divergent} divergentes. ` +
+    `${bankPending} pendentes na planilha e ${sheetPending} pendentes no banco.`;
+  renderReconcileRows(data.reconciliation_rows || []);
+  reconcilePreviewNode.hidden = false;
 }
 
 function renderPreviewRows(rows) {
@@ -223,6 +302,7 @@ async function runAnalyze() {
     renderPreviewRows(payload.preview_transactions || []);
     renderBeforeAfterRows(payload.preview_before_after || []);
     analyzePreviewNode.hidden = false;
+    reconcilePreviewNode.hidden = true;
     updateTrustMessage(payload.expires_at);
     downloadLink.href = `${baseUrl}/report/${payload.analysis_id}`;
     resultNode.hidden = false;
@@ -270,8 +350,9 @@ async function runReconcile() {
     resultTitle.textContent = "Upload recebido";
     renderReconcileStats(payload);
     analyzePreviewNode.hidden = true;
+    renderReconcilePreview(payload);
     updateTrustMessage("");
-    setSuccess("Upload aceito com sucesso. Proxima etapa: parsing e matching.");
+    setSuccess("Conciliacao concluida. Revise as pendencias e divergencias destacadas.");
     resultNode.hidden = false;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro inesperado.";
