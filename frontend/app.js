@@ -24,6 +24,7 @@ const downloadLink = document.getElementById("download-link");
 const expiresInfoNode = document.getElementById("expires-info");
 const resultExpiresInfoNode = document.getElementById("result-expires-info");
 const apiStatus = document.getElementById("api-status");
+const resultPlaceholderNode = document.getElementById("result-placeholder");
 
 function normalizeApiBase(value) {
   return (value || DEFAULT_API_BASE).replace(/\/+$/, "");
@@ -89,6 +90,16 @@ function setLoading(isLoading, submitText, analyzeText) {
   if (analyzeBtn) {
     analyzeBtn.disabled = isLoading;
     analyzeBtn.textContent = analyzeText;
+  }
+}
+
+function setResultVisibility(show) {
+  resultNode.hidden = !show;
+  if (resultPlaceholderNode) {
+    resultPlaceholderNode.hidden = show;
+  }
+  if (show) {
+    resultNode.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 }
 
@@ -289,14 +300,14 @@ async function checkApi() {
     }
     apiStatus.textContent = "API online";
   } catch (_error) {
-    apiStatus.textContent = "API offline. Inicie o backend em http://127.0.0.1:8000";
+    apiStatus.textContent = "API offline";
   }
 }
 
 async function runAnalyze() {
   setError("");
   setSuccess("");
-  resultNode.hidden = true;
+  setResultVisibility(false);
 
   if (!bankFileInput.files || !bankFileInput.files[0]) {
     setError("Selecione um arquivo de extrato (CSV, XLSX ou OFX).");
@@ -328,7 +339,7 @@ async function runAnalyze() {
     reconcilePreviewNode.hidden = true;
     updateTrustMessage(payload.expires_at);
     downloadLink.href = `${baseUrl}/report/${payload.analysis_id}`;
-    resultNode.hidden = false;
+    setResultVisibility(true);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro inesperado.";
     setError(message);
@@ -340,7 +351,7 @@ async function runAnalyze() {
 async function runReconcile() {
   setError("");
   setSuccess("");
-  resultNode.hidden = true;
+  setResultVisibility(false);
 
   if (!bankFileInput.files || !bankFileInput.files[0]) {
     setError("Selecione um arquivo de extrato (CSV, XLSX ou OFX).");
@@ -378,7 +389,7 @@ async function runReconcile() {
     reconcileDownloadCsv.href = `${baseUrl}/reconcile-report/${payload.analysis_id}?format=csv`;
     updateTrustMessage("");
     setSuccess("Conciliacao concluida. Revise os problemas destacados e baixe o relatorio.");
-    resultNode.hidden = false;
+    setResultVisibility(true);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro inesperado.";
     setError(message);
@@ -409,5 +420,6 @@ form.addEventListener("submit", async (event) => {
   const savedBase = localStorage.getItem("gettdone_api_base");
   apiBaseInput.value = normalizeApiBase(savedBase || DEFAULT_API_BASE);
   updateTrustMessage("");
+  setResultVisibility(false);
   checkApi();
 })();
