@@ -300,7 +300,30 @@
 </div>
 </div>
 </section>
+<section id="problem-highlights" class="mb-6">
+<div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
+<div>
+<h3 class="text-lg font-bold text-on-surface">Problemas em destaque</h3>
+<p class="text-sm text-on-surface-variant">Os pontos que merecem atencao antes de baixar o relatorio.</p>
+</div>
+<button id="problem-highlights-jump" type="button" class="self-start md:self-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container-high text-sm font-semibold text-on-surface-variant hover:bg-surface-container-highest transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="visibility">visibility</span>
+Ver na tabela
+</button>
+</div>
+<div id="problem-highlights-empty" class="hidden rounded-2xl border border-secondary-container/40 bg-secondary-container/15 p-5 mb-4">
+<div class="flex items-start gap-3">
+<span class="material-symbols-outlined text-2xl text-secondary" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<div>
+<p class="font-bold text-on-secondary-container">Nenhum problema critico encontrado</p>
+<p class="text-sm text-on-secondary-container/80">Tudo conciliado dentro da tolerancia e pronto para revisao.</p>
+</div>
+</div>
+</div>
+<div id="problem-highlights-grid" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+</section>
 <section class="bg-surface-container-lowest rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden">
+<div id="reconcile-details"></div>
 <div class="px-8 py-6 border-b border-surface-container flex justify-between items-center bg-white/50 backdrop-blur-sm">
 <h3 class="text-lg font-bold">Detalhamento da Concilia&ccedil;&atilde;o</h3>
 <div class="flex items-center gap-4">

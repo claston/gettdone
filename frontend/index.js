@@ -100,6 +100,11 @@ function bindDropzone(config) {
     const reconcilePageNumbers = document.getElementById("reconcile-page-numbers");
     const reconcileDownloadXlsx = document.getElementById("reconcile-download-xlsx");
     const reconcileDownloadCsv = document.getElementById("reconcile-download-csv");
+    const problemHighlightsSection = document.getElementById("problem-highlights");
+    const problemHighlightsGrid = document.getElementById("problem-highlights-grid");
+    const problemHighlightsEmpty = document.getElementById("problem-highlights-empty");
+    const problemHighlightsJump = document.getElementById("problem-highlights-jump");
+    const reconcileDetailsSection = document.getElementById("reconcile-details");
     const metricConciliated = document.getElementById("metric-conciliated");
     const metricConciliatedRate = document.getElementById("metric-conciliated-rate");
     const metricPending = document.getElementById("metric-pending");
@@ -198,6 +203,117 @@ function bindDropzone(config) {
         }
 
         sheetDropzone.classList.toggle("is-invalid", Boolean(isInvalid));
+    }
+
+    function problemTypeMeta(type) {
+        const meta = {
+            missing_payment: {
+                title: "Pagamento nao encontrado",
+                badge: "Critico",
+                accent: "border-red-200 bg-red-50/90",
+                badgeClass: "bg-red-100 text-red-700",
+                icon: "error",
+                iconClass: "text-red-600",
+                label: "Maior impacto"
+            },
+            missing_receipt: {
+                title: "Recebimento nao registrado",
+                badge: "Atencao",
+                accent: "border-orange-200 bg-orange-50/90",
+                badgeClass: "bg-orange-100 text-orange-700",
+                icon: "warning",
+                iconClass: "text-orange-600",
+                label: "Revisar agora"
+            },
+            amount_mismatch: {
+                title: "Valor divergente",
+                badge: "Divergente",
+                accent: "border-amber-200 bg-amber-50/90",
+                badgeClass: "bg-amber-100 text-amber-800",
+                icon: "swap_horiz",
+                iconClass: "text-amber-700",
+                label: "Revisar pares"
+            },
+            possible_duplicate: {
+                title: "Possivel duplicidade",
+                badge: "Observacao",
+                accent: "border-slate-200 bg-slate-50/90",
+                badgeClass: "bg-slate-100 text-slate-700",
+                icon: "content_copy",
+                iconClass: "text-slate-600",
+                label: "Checagem rapida"
+            }
+        };
+
+        return meta[type] || {
+            title: "Problema encontrado",
+            badge: "Atenção",
+            accent: "border-slate-200 bg-white",
+            badgeClass: "bg-slate-100 text-slate-700",
+            icon: "priority_high",
+            iconClass: "text-slate-600",
+            label: "Revisar"
+        };
+    }
+
+    function problemSortWeight(type) {
+        const weights = {
+            missing_payment: 0,
+            missing_receipt: 1,
+            amount_mismatch: 2,
+            possible_duplicate: 3
+        };
+        return weights[type] ?? 99;
+    }
+
+    function scrollToReconcileDetails() {
+        if (reconcileDetailsSection) {
+            reconcileDetailsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+    }
+
+    function renderProblemHighlights(payload) {
+        if (!problemHighlightsSection || !problemHighlightsGrid || !problemHighlightsEmpty) {
+            return;
+        }
+
+        const problems = Array.isArray(payload.problems) ? payload.problems.slice() : [];
+        problems.sort(function (left, right) {
+            return problemSortWeight(left.type) - problemSortWeight(right.type);
+        });
+
+        if (problems.length === 0) {
+            problemHighlightsEmpty.hidden = false;
+            problemHighlightsGrid.innerHTML = "";
+            return;
+        }
+
+        problemHighlightsEmpty.hidden = true;
+        const visibleProblems = problems.slice(0, 3);
+
+        problemHighlightsGrid.innerHTML = visibleProblems.map(function (problem, index) {
+            const meta = problemTypeMeta(problem.type);
+            const isPrimary = index === 0 && visibleProblems.length > 1;
+            const columnSpanClass = isPrimary ? "md:col-span-2" : "";
+
+            return `
+<article class="rounded-2xl border ${meta.accent} p-5 shadow-[0_8px_24px_rgba(0,0,0,0.04)] ${columnSpanClass}">
+<div class="flex items-start justify-between gap-4 mb-4">
+<div class="flex items-center gap-3">
+<span class="flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-sm">
+<span class="material-symbols-outlined text-xl ${meta.iconClass}" data-icon="${meta.icon}" style="font-variation-settings: 'FILL' 1;">${meta.icon}</span>
+</span>
+<div>
+<p class="text-xs font-bold uppercase tracking-widest text-on-surface-variant">${escapeHtml(meta.label)}</p>
+<h4 class="text-base font-bold text-on-surface">${escapeHtml(problem.title || meta.title)}</h4>
+</div>
+</div>
+<span class="inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest ${meta.badgeClass}">${escapeHtml(meta.badge)}</span>
+</div>
+<p class="text-sm leading-relaxed text-on-surface-variant">${escapeHtml(problem.description || "-")}</p>
+<div class="mt-4 text-xs font-semibold uppercase tracking-widest text-on-surface-variant/80">${isPrimary ? "Destaque principal" : "Ponto de atencao"}</div>
+</article>`;
+        }).join("");
     }
 
     function hasSelectedFile(input) {
@@ -560,6 +676,7 @@ ${meta.percent}
 
             setSheetValidationErrorState(false);
             renderReconcileTotals(payload);
+            renderProblemHighlights(payload);
             setReconcileRows(payload.reconciliation_rows || []);
             setDownloadActions(apiBase, payload.analysis_id);
             reconcileReportPreview.classList.remove("hidden");
@@ -650,6 +767,12 @@ ${meta.percent}
     if (topCtaStart) {
         topCtaStart.addEventListener("click", function () {
             focusUploadSection();
+        });
+    }
+
+    if (problemHighlightsJump) {
+        problemHighlightsJump.addEventListener("click", function () {
+            scrollToReconcileDetails();
         });
     }
 
