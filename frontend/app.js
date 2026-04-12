@@ -82,10 +82,14 @@ function setSuccess(message) {
 }
 
 function setLoading(isLoading, submitText, analyzeText) {
-  submitBtn.disabled = isLoading;
-  analyzeBtn.disabled = isLoading;
-  submitBtn.textContent = submitText;
-  analyzeBtn.textContent = analyzeText;
+  if (submitBtn) {
+    submitBtn.disabled = isLoading;
+    submitBtn.textContent = submitText;
+  }
+  if (analyzeBtn) {
+    analyzeBtn.disabled = isLoading;
+    analyzeBtn.textContent = analyzeText;
+  }
 }
 
 function renderStats(metrics) {
@@ -213,7 +217,7 @@ function renderReconcilePreview(data) {
   const sheetPending = Number(data.sheet_unmatched_count || 0);
   reconcileHeadlineNode.textContent =
     `${conciliated} conciliados, ${pending} pendentes e ${divergent} divergentes. ` +
-    `${bankPending} pendentes na planilha e ${sheetPending} pendentes no banco.`;
+    `${bankPending} pendentes na planilha e ${sheetPending} pendentes no banco para revisao.`;
   renderReconcileRows(data.reconciliation_rows || []);
   reconcilePreviewNode.hidden = false;
 }
@@ -303,7 +307,7 @@ async function runAnalyze() {
   const formData = new FormData();
   formData.append("file", bankFileInput.files[0]);
 
-  setLoading(true, "Enviar para conciliacao", "Analisando...");
+  setLoading(true, "Processando conciliacao...", "Analisando...");
 
   try {
     const response = await fetch(`${baseUrl}/analyze`, {
@@ -329,7 +333,7 @@ async function runAnalyze() {
     const message = error instanceof Error ? error.message : "Erro inesperado.";
     setError(message);
   } finally {
-    setLoading(false, "Enviar para conciliacao", "Analisar extrato (preview)");
+    setLoading(false, "Processar conciliacao", "Analisar extrato (preview)");
   }
 }
 
@@ -353,7 +357,7 @@ async function runReconcile() {
   formData.append("bank_file", bankFileInput.files[0]);
   formData.append("sheet_file", sheetFileInput.files[0]);
 
-  setLoading(true, "Enviando...", "Analisar extrato (preview)");
+  setLoading(true, "Processando conciliacao...", "Analisar extrato (preview)");
 
   try {
     const response = await fetch(`${baseUrl}/reconcile`, {
@@ -366,20 +370,20 @@ async function runReconcile() {
       throw new Error(payload.detail || "Falha ao enviar os arquivos.");
     }
 
-    resultTitle.textContent = "Upload recebido";
+    resultTitle.textContent = "Conciliacao processada";
     renderReconcileStats(payload);
     analyzePreviewNode.hidden = true;
     renderReconcilePreview(payload);
     reconcileDownloadXlsx.href = `${baseUrl}/reconcile-report/${payload.analysis_id}?format=xlsx`;
     reconcileDownloadCsv.href = `${baseUrl}/reconcile-report/${payload.analysis_id}?format=csv`;
     updateTrustMessage("");
-    setSuccess("Conciliacao concluida. Revise as pendencias e divergencias destacadas.");
+    setSuccess("Conciliacao concluida. Revise os problemas destacados e baixe o relatorio.");
     resultNode.hidden = false;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro inesperado.";
     setError(message);
   } finally {
-    setLoading(false, "Enviar para conciliacao", "Analisar extrato (preview)");
+    setLoading(false, "Processar conciliacao", "Analisar extrato (preview)");
   }
 }
 
@@ -390,9 +394,11 @@ apiBaseInput.addEventListener("change", () => {
   checkApi();
 });
 
-analyzeBtn.addEventListener("click", () => {
-  runAnalyze();
-});
+if (analyzeBtn) {
+  analyzeBtn.addEventListener("click", () => {
+    runAnalyze();
+  });
+}
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();

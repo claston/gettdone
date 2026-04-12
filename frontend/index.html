@@ -4,58 +4,110 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>gettdone | MVP</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap"
+    rel="stylesheet"
+  />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
   <main class="page">
-    <header class="hero card">
-      <p class="eyebrow">gettdone</p>
-      <h1>Conciliação financeira sem complicação</h1>
-      <p class="sub">Upload, processamento, preview e download de relatório.</p>
+    <header class="hero">
+      <p class="eyebrow">Servico de conciliacao leve</p>
+      <h1>Concilie extrato e planilha com clareza operacional</h1>
+      <p class="sub">
+        Fluxo assistido para validar rapidamente o que bate, o que diverge e o que falta.
+      </p>
+      <div class="hero-meta">
+        <p class="pill">Sem login nesta fase</p>
+        <p class="pill">Sem cobranca na validacao</p>
+      </div>
       <p id="api-status" class="muted">Validando API...</p>
     </header>
 
-    <section class="card">
-      <div class="trust-box">
-        <h2>Privacidade e confiança</h2>
-        <p>Seus dados são processados de forma temporária.</p>
-        <p>Não mantemos histórico pessoal nesta versão inicial.</p>
-        <p id="expires-info" class="trust-expiry">Processamento temporário: suas análises expiram automaticamente.</p>
+    <section class="flow-map">
+      <div class="flow-step is-active">
+        <span>1</span>
+        <p>Upload dos arquivos</p>
+      </div>
+      <div class="flow-step">
+        <span>2</span>
+        <p>Processamento da conciliacao</p>
+      </div>
+      <div class="flow-step">
+        <span>3</span>
+        <p>Revisao de problemas e download</p>
+      </div>
+    </section>
+
+    <section class="panel panel-intake">
+      <div class="panel-head">
+        <h2>Enviar arquivos para conciliacao</h2>
+        <p>Use um extrato e uma planilha operacional para gerar o relatorio de conciliacao.</p>
       </div>
 
       <form id="analyze-form" class="upload-form">
-        <label for="bank-file-input">Arquivo do extrato</label>
-        <input id="bank-file-input" name="bank_file" type="file" accept=".csv,.xlsx,.ofx" required />
+        <div class="upload-grid">
+          <div class="field">
+            <label for="bank-file-input">Arquivo do extrato</label>
+            <input id="bank-file-input" name="bank_file" type="file" accept=".csv,.xlsx,.ofx" required />
+            <p class="field-help">Formatos aceitos: CSV, XLSX ou OFX.</p>
+          </div>
 
-        <label for="sheet-file-input">Arquivo da planilha operacional</label>
-        <input id="sheet-file-input" name="sheet_file" type="file" accept=".csv,.xlsx" />
+          <div class="field">
+            <label for="sheet-file-input">Arquivo da planilha operacional</label>
+            <input id="sheet-file-input" name="sheet_file" type="file" accept=".csv,.xlsx" />
+            <p class="field-help">Formatos aceitos: CSV ou XLSX.</p>
+          </div>
+        </div>
 
-        <label for="api-base">URL da API</label>
-        <input id="api-base" name="apiBase" type="url" value="http://127.0.0.1:8000" />
+        <details class="advanced">
+          <summary>Configuracao avancada (tecnica)</summary>
+          <div class="field">
+            <label for="api-base">URL da API</label>
+            <input id="api-base" name="apiBase" type="url" value="http://127.0.0.1:8000" />
+          </div>
+        </details>
 
         <div class="actions">
           <button id="analyze-btn" type="button" hidden>Analisar extrato (preview)</button>
-          <button id="submit-btn" type="submit">Enviar para conciliação</button>
+          <button id="submit-btn" type="submit">Processar conciliacao</button>
         </div>
       </form>
-      <p class="muted">Sem login e sem dashboard no MVP.</p>
-      <p id="error" class="error" hidden></p>
-      <p id="upload-success" class="success" hidden></p>
+
+      <div class="trust-box">
+        <h3>Privacidade e confianca</h3>
+        <p>Seus dados sao processados de forma temporaria para gerar o relatorio.</p>
+        <p>Sem login e sem dashboard nesta fase de validacao.</p>
+        <p id="expires-info" class="trust-expiry">Processamento temporario: suas analises expiram automaticamente.</p>
+      </div>
+
+      <p id="error" class="feedback feedback-error" hidden></p>
+      <p id="upload-success" class="feedback feedback-success" hidden></p>
     </section>
 
-    <section id="result" class="card" hidden>
-      <h2 id="result-title">Resultado</h2>
+    <section id="result" class="panel panel-result" hidden>
+      <div class="panel-head result-head">
+        <h2 id="result-title">Resultado</h2>
+        <p class="result-sub">Resumo rapido para orientar sua revisao.</p>
+      </div>
       <p id="result-expires-info" class="trust-expiry">Processamento temporário: suas análises expiram automaticamente.</p>
       <div id="stats" class="stats"></div>
 
       <div id="reconcile-preview" hidden>
-        <h3>Conciliação detalhada</h3>
-        <p id="reconcile-headline" class="muted"></p>
-        <div class="actions actions-inline">
-          <a id="reconcile-download-xlsx" class="download" href="#" target="_blank" rel="noopener">Baixar XLSX</a>
-          <a id="reconcile-download-csv" class="download" href="#" target="_blank" rel="noopener">Baixar CSV</a>
+        <div class="reconcile-head">
+          <div>
+            <h3>Consolidado da conciliacao</h3>
+            <p id="reconcile-headline" class="muted"></p>
+          </div>
+          <div class="actions actions-inline">
+            <a id="reconcile-download-xlsx" class="download" href="#" target="_blank" rel="noopener">Baixar XLSX</a>
+            <a id="reconcile-download-csv" class="download" href="#" target="_blank" rel="noopener">Baixar CSV</a>
+          </div>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap table-shell">
           <table>
             <thead>
               <tr>
@@ -93,7 +145,7 @@
         </div>
 
         <h3>Preview normalizado</h3>
-        <div class="table-wrap">
+        <div class="table-wrap table-shell">
           <table>
             <thead>
               <tr>
@@ -108,7 +160,7 @@
           </table>
         </div>
 
-        <a id="download-link" class="download" href="#" target="_blank" rel="noopener">Baixar relatório</a>
+        <a id="download-link" class="download" href="#" target="_blank" rel="noopener">Baixar relatorio</a>
       </div>
     </section>
   </main>
