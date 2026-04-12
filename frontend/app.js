@@ -24,6 +24,7 @@ const downloadLink = document.getElementById("download-link");
 const expiresInfoNode = document.getElementById("expires-info");
 const resultExpiresInfoNode = document.getElementById("result-expires-info");
 const apiStatus = document.getElementById("api-status");
+const resultPlaceholderNode = document.getElementById("result-placeholder");
 
 function normalizeApiBase(value) {
   return (value || DEFAULT_API_BASE).replace(/\/+$/, "");
@@ -82,10 +83,24 @@ function setSuccess(message) {
 }
 
 function setLoading(isLoading, submitText, analyzeText) {
-  submitBtn.disabled = isLoading;
-  analyzeBtn.disabled = isLoading;
-  submitBtn.textContent = submitText;
-  analyzeBtn.textContent = analyzeText;
+  if (submitBtn) {
+    submitBtn.disabled = isLoading;
+    submitBtn.textContent = submitText;
+  }
+  if (analyzeBtn) {
+    analyzeBtn.disabled = isLoading;
+    analyzeBtn.textContent = analyzeText;
+  }
+}
+
+function setResultVisibility(show) {
+  resultNode.hidden = !show;
+  if (resultPlaceholderNode) {
+    resultPlaceholderNode.hidden = show;
+  }
+  if (show) {
+    resultNode.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 }
 
 function renderStats(metrics) {
@@ -213,7 +228,7 @@ function renderReconcilePreview(data) {
   const sheetPending = Number(data.sheet_unmatched_count || 0);
   reconcileHeadlineNode.textContent =
     `${conciliated} conciliados, ${pending} pendentes e ${divergent} divergentes. ` +
-    `${bankPending} pendentes na planilha e ${sheetPending} pendentes no banco.`;
+    `${bankPending} pendentes na planilha e ${sheetPending} pendentes no banco para revisao.`;
   renderReconcileRows(data.reconciliation_rows || []);
   reconcilePreviewNode.hidden = false;
 }
@@ -285,14 +300,14 @@ async function checkApi() {
     }
     apiStatus.textContent = "API online";
   } catch (_error) {
-    apiStatus.textContent = "API offline. Inicie o backend em http://127.0.0.1:8000";
+    apiStatus.textContent = "API offline";
   }
 }
 
 async function runAnalyze() {
   setError("");
   setSuccess("");
-  resultNode.hidden = true;
+  setResultVisibility(false);
 
   if (!bankFileInput.files || !bankFileInput.files[0]) {
     setError("Selecione um arquivo de extrato (CSV, XLSX ou OFX).");
@@ -303,7 +318,7 @@ async function runAnalyze() {
   const formData = new FormData();
   formData.append("file", bankFileInput.files[0]);
 
-  setLoading(true, "Enviar para conciliacao", "Analisando...");
+  setLoading(true, "Processando conciliacao...", "Analisando...");
 
   try {
     const response = await fetch(`${baseUrl}/analyze`, {
@@ -324,19 +339,19 @@ async function runAnalyze() {
     reconcilePreviewNode.hidden = true;
     updateTrustMessage(payload.expires_at);
     downloadLink.href = `${baseUrl}/report/${payload.analysis_id}`;
-    resultNode.hidden = false;
+    setResultVisibility(true);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro inesperado.";
     setError(message);
   } finally {
-    setLoading(false, "Enviar para conciliacao", "Analisar extrato (preview)");
+    setLoading(false, "Processar conciliacao", "Analisar extrato (preview)");
   }
 }
 
 async function runReconcile() {
   setError("");
   setSuccess("");
-  resultNode.hidden = true;
+  setResultVisibility(false);
 
   if (!bankFileInput.files || !bankFileInput.files[0]) {
     setError("Selecione um arquivo de extrato (CSV, XLSX ou OFX).");
@@ -353,7 +368,7 @@ async function runReconcile() {
   formData.append("bank_file", bankFileInput.files[0]);
   formData.append("sheet_file", sheetFileInput.files[0]);
 
-  setLoading(true, "Enviando...", "Analisar extrato (preview)");
+  setLoading(true, "Processando conciliacao...", "Analisar extrato (preview)");
 
   try {
     const response = await fetch(`${baseUrl}/reconcile`, {
@@ -366,20 +381,20 @@ async function runReconcile() {
       throw new Error(payload.detail || "Falha ao enviar os arquivos.");
     }
 
-    resultTitle.textContent = "Upload recebido";
+    resultTitle.textContent = "Conciliacao processada";
     renderReconcileStats(payload);
     analyzePreviewNode.hidden = true;
     renderReconcilePreview(payload);
     reconcileDownloadXlsx.href = `${baseUrl}/reconcile-report/${payload.analysis_id}?format=xlsx`;
     reconcileDownloadCsv.href = `${baseUrl}/reconcile-report/${payload.analysis_id}?format=csv`;
     updateTrustMessage("");
-    setSuccess("Conciliacao concluida. Revise as pendencias e divergencias destacadas.");
-    resultNode.hidden = false;
+    setSuccess("Conciliacao concluida. Revise os problemas destacados e baixe o relatorio.");
+    setResultVisibility(true);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro inesperado.";
     setError(message);
   } finally {
-    setLoading(false, "Enviar para conciliacao", "Analisar extrato (preview)");
+    setLoading(false, "Processar conciliacao", "Analisar extrato (preview)");
   }
 }
 
@@ -390,9 +405,11 @@ apiBaseInput.addEventListener("change", () => {
   checkApi();
 });
 
-analyzeBtn.addEventListener("click", () => {
-  runAnalyze();
-});
+if (analyzeBtn) {
+  analyzeBtn.addEventListener("click", () => {
+    runAnalyze();
+  });
+}
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -403,5 +420,6 @@ form.addEventListener("submit", async (event) => {
   const savedBase = localStorage.getItem("gettdone_api_base");
   apiBaseInput.value = normalizeApiBase(savedBase || DEFAULT_API_BASE);
   updateTrustMessage("");
+  setResultVisibility(false);
   checkApi();
 })();

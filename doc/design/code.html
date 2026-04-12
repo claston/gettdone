@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+
+<html lang="pt-BR"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>VaultReconcile | Conciliação Bancária de Alta Precisão</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Inter:wght@300;400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-surface-variant": "#434656",
+                    "inverse-surface": "#2e3132",
+                    "on-tertiary-container": "#ffddd5",
+                    "background": "#f8f9fa",
+                    "surface-dim": "#d9dadb",
+                    "on-primary": "#ffffff",
+                    "surface-variant": "#e1e3e4",
+                    "tertiary-fixed-dim": "#ffb4a1",
+                    "on-tertiary-fixed": "#3c0800",
+                    "on-secondary-fixed": "#002113",
+                    "tertiary-fixed": "#ffdbd2",
+                    "on-secondary": "#ffffff",
+                    "on-tertiary": "#ffffff",
+                    "inverse-on-surface": "#f0f1f2",
+                    "primary": "#003ec7",
+                    "on-background": "#191c1d",
+                    "surface-container-low": "#f3f4f5",
+                    "secondary": "#006c49",
+                    "error": "#ba1a1a",
+                    "surface": "#f8f9fa",
+                    "on-secondary-container": "#00714d",
+                    "secondary-fixed-dim": "#4edea3",
+                    "inverse-primary": "#b7c4ff",
+                    "primary-fixed-dim": "#b7c4ff",
+                    "surface-bright": "#f8f9fa",
+                    "surface-container-highest": "#e1e3e4",
+                    "secondary-fixed": "#6ffbbe",
+                    "outline-variant": "#c3c5d9",
+                    "on-primary-fixed-variant": "#0038b6",
+                    "on-secondary-fixed-variant": "#005236",
+                    "on-surface": "#191c1d",
+                    "tertiary": "#952200",
+                    "tertiary-container": "#bf3003",
+                    "surface-container-high": "#e7e8e9",
+                    "on-error": "#ffffff",
+                    "surface-container": "#edeeef",
+                    "on-error-container": "#93000a",
+                    "primary-fixed": "#dde1ff",
+                    "on-primary-fixed": "#001452",
+                    "on-tertiary-fixed-variant": "#891e00",
+                    "secondary-container": "#6cf8bb",
+                    "on-primary-container": "#dfe3ff",
+                    "surface-tint": "#004ced",
+                    "error-container": "#ffdad6",
+                    "surface-container-lowest": "#ffffff",
+                    "outline": "#737688",
+                    "primary-container": "#0052ff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Manrope"],
+                    "body": ["Inter"],
+                    "label": ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-header {
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+        .primary-gradient-cta {
+            background: linear-gradient(135deg, #003ec7 0%, #0052ff 100%);
+            box-shadow: 0 4px 14px 0 rgba(0, 62, 199, 0.39);
+        }
+        .blur-lock-overlay {
+            background: linear-gradient(to bottom, transparent 0%, rgba(255,255,255,0.95) 70%, #ffffff 100%);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body selection:bg-primary-fixed selection:text-on-primary-fixed">
+<!-- Top Navigation -->
+<nav class="fixed top-0 w-full z-50 bg-white/70 backdrop-blur-xl border-b border-slate-100">
+<div class="flex justify-between items-center max-w-7xl mx-auto px-8 h-20">
+<div class="text-2xl font-bold tracking-tighter text-slate-900">VaultReconcile</div>
+<div class="hidden md:flex items-center gap-8">
+<a class="text-blue-700 font-semibold border-b-2 border-blue-700 pb-1 font-headline text-sm tracking-tight transition-colors duration-200" href="#">Product</a>
+<a class="text-slate-600 hover:text-slate-900 font-headline text-sm font-medium tracking-tight transition-colors duration-200" href="#">Features</a>
+<a class="text-slate-600 hover:text-slate-900 font-headline text-sm font-medium tracking-tight transition-colors duration-200" href="#">Security</a>
+<a class="text-slate-600 hover:text-slate-900 font-headline text-sm font-medium tracking-tight transition-colors duration-200" href="#">Pricing</a>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-slate-600 hover:text-slate-900 font-headline text-sm font-medium px-4 py-2 transition-all active:scale-95">Log In</button>
+<button class="primary-gradient-cta text-on-primary font-headline text-sm font-medium px-6 py-2.5 rounded-xl transition-all hover:opacity-90 active:scale-95">Get Started</button>
+</div>
+</div>
+</nav>
+<main class="pt-32 pb-32 overflow-x-hidden">
+<!-- Hero Section -->
+<section class="max-w-7xl mx-auto px-8 mb-32 text-center">
+<div class="inline-flex items-center gap-2 bg-secondary-container text-on-secondary-fixed-variant px-4 py-1.5 rounded-full mb-8 text-xs font-semibold tracking-wide uppercase">
+<span class="material-symbols-outlined text-[14px]" data-icon="lock" style="font-variation-settings: 'FILL' 1;">lock</span>
+                Segurança Nível Bancário
+            </div>
+<h1 class="font-headline text-5xl md:text-7xl font-extrabold tracking-tight text-on-background mb-8 leading-[1.1]">
+                Concilie seu extrato bancário <br class="hidden md:block"/>
+                com sua planilha em <span class="text-primary">segundos</span>
+</h1>
+<p class="text-on-surface-variant text-xl md:text-2xl max-w-4xl mx-auto mb-4 font-light leading-relaxed">
+                Descubra o que bate, o que falta e onde estão os erros — antes que eles virem prejuízo
+            </p>
+<p class="text-error font-medium text-sm flex items-center justify-center gap-2 opacity-90">
+<span class="material-symbols-outlined text-[18px]">warning</span>
+                Erros de conciliação podem passar despercebidos por meses e custar dinheiro
+            </p>
+</section>
+<!-- Main Action Card (The Upload Core) -->
+<section class="max-w-5xl mx-auto px-8 mb-32">
+<div class="bg-surface-container-lowest rounded-[2.5rem] p-8 md:p-14 shadow-[0_20px_50px_-12px_rgba(0,62,199,0.08)] relative overflow-hidden">
+<div class="absolute top-0 right-0 p-10 opacity-5">
+<span class="material-symbols-outlined text-[140px]" data-icon="account_balance">account_balance</span>
+</div>
+<h2 class="font-headline text-3xl font-bold mb-12 text-on-background">Envie seus arquivos</h2>
+<div class="grid md:grid-cols-2 gap-10 mb-12">
+<!-- Step 1 -->
+<div class="group">
+<div class="flex items-center gap-3 mb-5">
+<span class="flex items-center justify-center w-8 h-8 rounded-full bg-primary-fixed text-primary text-sm font-bold">1</span>
+<h3 class="font-headline text-lg font-semibold">Extrato bancário (OFX)</h3>
+</div>
+<div class="border-2 border-dashed border-outline-variant/40 rounded-2xl p-12 flex flex-col items-center justify-center text-center transition-all hover:bg-primary-container/5 group-hover:border-primary/60 cursor-pointer bg-surface-container-lowest">
+<span class="material-symbols-outlined text-4xl text-outline mb-4 group-hover:text-primary transition-colors" data-icon="upload_file">upload_file</span>
+<p class="text-sm text-on-surface-variant mb-1 font-semibold">Arraste e solte o arquivo</p>
+<p class="text-xs text-outline">ou clique para selecionar</p>
+</div>
+</div>
+<!-- Step 2 -->
+<div class="group">
+<div class="flex items-center gap-3 mb-5">
+<span class="flex items-center justify-center w-8 h-8 rounded-full bg-primary-fixed text-primary text-sm font-bold">2</span>
+<div>
+<h3 class="font-headline text-lg font-semibold">Planilha (Excel)</h3>
+<p class="text-[11px] text-outline font-medium">Usada para comparação automática</p>
+</div>
+</div>
+<div class="border-2 border-dashed border-outline-variant/40 rounded-2xl p-12 flex flex-col items-center justify-center text-center transition-all hover:bg-primary-container/5 group-hover:border-primary/60 cursor-pointer bg-surface-container-lowest">
+<span class="material-symbols-outlined text-4xl text-outline mb-4 group-hover:text-primary transition-colors" data-icon="table_chart">table_chart</span>
+<p class="text-sm text-on-surface-variant mb-1 font-semibold">Arraste e solte o arquivo</p>
+<p class="text-xs text-outline">ou clique para selecionar</p>
+</div>
+</div>
+</div>
+<div class="flex flex-col items-center">
+<button class="primary-gradient-cta text-on-primary font-headline text-xl font-extrabold px-16 py-6 rounded-2xl transition-all hover:scale-[1.03] active:scale-95 flex items-center gap-4 mb-4">
+                        Encontrar erros agora
+                        <span class="material-symbols-outlined text-2xl" data-icon="analytics">analytics</span>
+</button>
+<p class="text-sm font-bold text-primary mb-8 flex items-center gap-1.5">
+<span class="material-symbols-outlined text-sm">bolt</span>
+                        ⚡ Leva menos de 10 segundos
+                    </p>
+<div class="flex items-center gap-8 text-xs text-outline font-medium">
+<span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-sm" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span> Processamento Imediato</span>
+<span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-sm" data-icon="shield" style="font-variation-settings: 'FILL' 1;">shield</span> Criptografia SSL</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Flow Indicator -->
+<section class="max-w-4xl mx-auto px-8 mb-40">
+<div class="flex items-center justify-between relative px-4">
+<!-- Line -->
+<div class="absolute top-1/2 left-0 w-full h-0.5 bg-surface-container-high -translate-y-1/2 z-0"></div>
+<div class="relative z-10 flex flex-col items-center gap-3">
+<div class="w-12 h-12 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-lg">
+<span class="material-symbols-outlined text-xl" data-icon="file_upload">file_upload</span>
+</div>
+<span class="text-sm font-semibold text-on-background">Upload arquivos</span>
+</div>
+<div class="relative z-10 flex flex-col items-center gap-3">
+<div class="w-12 h-12 rounded-full bg-surface-container-lowest border-2 border-primary text-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-xl" data-icon="psychology">psychology</span>
+</div>
+<span class="text-sm font-semibold text-on-surface-variant">Análise automática</span>
+</div>
+<div class="relative z-10 flex flex-col items-center gap-3">
+<div class="w-12 h-12 rounded-full bg-surface-container-lowest border-2 border-outline-variant text-outline flex items-center justify-center">
+<span class="material-symbols-outlined text-xl" data-icon="task_alt">task_alt</span>
+</div>
+<span class="text-sm font-semibold text-on-surface-variant">Resultado detalhado</span>
+</div>
+</div>
+</section>
+<!-- Result Preview Section -->
+<section class="max-w-7xl mx-auto px-8 mb-40 grid md:grid-cols-2 gap-20 items-center">
+<div>
+<h2 class="font-headline text-4xl font-extrabold mb-6 leading-tight">Visualize o resultado <br/>em tempo real</h2>
+<p class="text-on-surface-variant text-lg mb-8 leading-relaxed">
+                    Nossa IA financeira mapeia cada centavo. Identificamos automaticamente divergências de datas, valores aproximados e transações duplicadas.
+                </p>
+<div class="space-y-4 mb-8">
+<div class="flex items-center gap-4 bg-white p-4 rounded-xl shadow-sm border-l-4 border-secondary">
+<span class="material-symbols-outlined text-secondary" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="font-semibold text-on-background">Transações conciliadas</span>
+</div>
+<div class="flex items-center gap-4 bg-white p-4 rounded-xl shadow-sm border-l-4 border-tertiary-container">
+<span class="material-symbols-outlined text-tertiary-container" data-icon="warning" style="font-variation-settings: 'FILL' 1;">warning</span>
+<span class="font-semibold text-on-background">Divergências encontradas</span>
+</div>
+<div class="flex items-center gap-4 bg-white p-4 rounded-xl shadow-sm border-l-4 border-error">
+<span class="material-symbols-outlined text-error" data-icon="cancel" style="font-variation-settings: 'FILL' 1;">cancel</span>
+<span class="font-semibold text-on-background">Possíveis erros críticos</span>
+</div>
+</div>
+<p class="text-error font-bold text-lg leading-relaxed bg-error-container/10 p-4 rounded-xl border border-error/10">
+                    "Essas diferenças podem representar dinheiro perdido ou erros contábeis"
+                </p>
+</div>
+<div class="relative">
+<!-- Summary Block -->
+<div class="bg-surface-container-highest/50 backdrop-blur-md rounded-2xl p-5 mb-6 border border-outline-variant/30 flex flex-wrap gap-4 justify-between items-center">
+<div class="flex flex-col">
+<span class="text-[10px] text-outline uppercase font-bold tracking-widest mb-1">Status da Análise</span>
+<div class="flex flex-wrap gap-3 text-xs font-bold">
+<span class="text-secondary">✔ <span class="text-lg">152</span> conciliadas</span>
+<span class="text-tertiary-container">⚠ <span class="text-lg">8</span> divergências</span>
+<span class="text-error">❌ <span class="text-lg">2</span> críticos</span>
+</div>
+</div>
+<div class="bg-error/10 px-4 py-2 rounded-lg border border-error/20">
+<span class="text-[10px] text-error uppercase font-bold block mb-0.5">Pendência Total</span>
+<span class="text-xl font-black text-error">R$ 1.842,00</span>
+</div>
+</div>
+<div class="bg-white rounded-2xl shadow-2xl overflow-hidden border border-outline-variant/20 relative">
+<div class="bg-surface-container px-6 py-4 flex justify-between items-center">
+<div class="flex gap-1.5">
+<div class="w-3 h-3 rounded-full bg-error/40"></div>
+<div class="w-3 h-3 rounded-full bg-tertiary-container/40"></div>
+<div class="w-3 h-3 rounded-full bg-secondary/40"></div>
+</div>
+<span class="text-[10px] font-bold text-outline uppercase tracking-[0.2em]">Valores aproximados • Exemplo de resultado</span>
+</div>
+<div class="p-6 pb-20">
+<div class="space-y-4">
+<!-- Row 1: Match -->
+<div class="flex items-center justify-between p-4 rounded-xl bg-secondary/5 border border-secondary/10">
+<div class="flex items-center gap-3">
+<div class="p-2 bg-secondary/10 rounded-lg">
+<span class="material-symbols-outlined text-secondary text-sm" data-icon="done_all">done_all</span>
+</div>
+<div>
+<p class="text-sm font-bold">AWS Service Usage</p>
+<p class="text-[10px] text-outline">ID: 9823-X</p>
+</div>
+</div>
+<div class="text-right">
+<p class="text-sm font-black text-secondary">R$ 450,00</p>
+<p class="text-[10px] text-outline">12 Out 2024</p>
+</div>
+</div>
+<!-- Row 2: Diff -->
+<div class="flex items-center justify-between p-4 rounded-xl bg-tertiary-container/5 border border-tertiary-container/20">
+<div class="flex items-center gap-3">
+<div class="p-2 bg-tertiary-container/10 rounded-lg">
+<span class="material-symbols-outlined text-tertiary-container text-sm" data-icon="rule">rule</span>
+</div>
+<div>
+<p class="text-sm font-bold">Pagamento Fornecedor A</p>
+<p class="text-[10px] text-tertiary-container font-bold uppercase tracking-tighter">Divergência de 0,5%</p>
+</div>
+</div>
+<div class="text-right">
+<p class="text-sm font-black text-tertiary-container">R$ 1.250,50</p>
+<p class="text-[10px] text-outline">14 Out 2024</p>
+</div>
+</div>
+<!-- Row 3: Missing (Blurred Area) -->
+<div class="flex items-center justify-between p-4 rounded-xl border border-outline-variant/10 opacity-40 blur-[2px]">
+<div class="flex items-center gap-3">
+<div class="p-2 bg-error/10 rounded-lg">
+<span class="material-symbols-outlined text-error text-sm" data-icon="close">close</span>
+</div>
+<div>
+<p class="text-sm font-bold">Unknown Entry (Bco)</p>
+<p class="text-[10px] text-error font-medium">Não consta na planilha</p>
+</div>
+</div>
+<div class="text-right">
+<p class="text-sm font-bold text-error">R$ 89,90</p>
+<p class="text-[10px] text-outline">15 Out 2024</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Lock Overlay -->
+<div class="absolute inset-x-0 bottom-0 h-48 blur-lock-overlay flex flex-col items-center justify-center px-8 text-center z-20">
+<p class="text-on-background font-bold mb-4">Desbloqueie o relatório completo para ver todos os detalhes</p>
+<button class="bg-primary text-on-primary font-headline text-sm font-bold px-8 py-3 rounded-xl transition-all hover:scale-105 active:scale-95 shadow-lg shadow-primary/20 mb-3">
+                            Liberar resultado completo
+                        </button>
+<p class="text-[11px] text-outline font-medium">Pagamento único por análise. Sem assinatura.</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Trust and Pricing -->
+<section class="max-w-4xl mx-auto px-8 text-center bg-white border border-slate-100 rounded-[3rem] py-20 shadow-sm">
+<div class="grid md:grid-cols-2 gap-16 items-center">
+<div class="flex flex-col items-center border-r-0 md:border-r border-outline-variant/30 px-4">
+<span class="material-symbols-outlined text-primary text-5xl mb-6" data-icon="lock_reset" style="font-variation-settings: 'FILL' 1;">lock_reset</span>
+<h3 class="font-headline text-xl font-bold mb-3">Seguro e privado</h3>
+<p class="text-sm text-on-surface-variant max-w-[260px] leading-relaxed">
+                        Seus dados não são armazenados. Processamento seguro e temporário. Apagamos tudo após a sessão.
+                    </p>
+</div>
+<div class="flex flex-col items-center px-4">
+<span class="material-symbols-outlined text-secondary text-5xl mb-6" data-icon="payments" style="font-variation-settings: 'FILL' 1;">payments</span>
+<h3 class="font-headline text-xl font-bold mb-3">Pague pelo uso</h3>
+<p class="text-sm text-on-surface-variant max-w-[260px] leading-relaxed">
+                        Sem mensalidade. Sem fidelidade. Pague apenas pelo relatório que precisar desbloquear.
+                    </p>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer -->
+<footer class="bg-slate-50 border-t border-slate-100">
+<div class="w-full py-16 px-8">
+<div class="flex flex-col md:flex-row justify-between items-center max-w-7xl mx-auto gap-8">
+<div class="flex flex-col gap-2">
+<div class="text-lg font-black text-slate-800">VaultReconcile</div>
+<p class="font-inter text-xs tracking-wide text-slate-500">© 2024 VaultReconcile. Precision Vault Architecture.</p>
+</div>
+<div class="flex gap-8">
+<a class="font-inter text-xs tracking-wide text-slate-500 hover:text-slate-800 transition-opacity" href="#">Privacy Policy</a>
+<a class="font-inter text-xs tracking-wide text-slate-500 hover:text-slate-800 transition-opacity" href="#">Terms of Service</a>
+<a class="font-inter text-xs tracking-wide text-slate-500 hover:text-slate-800 transition-opacity" href="#">Security Whitepaper</a>
+<a class="font-inter text-xs tracking-wide text-slate-500 hover:text-slate-800 transition-opacity" href="#">API Docs</a>
+</div>
+<div class="flex gap-4">
+<span class="material-symbols-outlined text-slate-400 cursor-pointer hover:text-primary transition-colors" data-icon="language">language</span>
+<span class="material-symbols-outlined text-slate-400 cursor-pointer hover:text-primary transition-colors" data-icon="help_center">help_center</span>
+</div>
+</div>
+</div>
+</footer>
+</body></html>
