@@ -243,26 +243,26 @@
 <div class="bg-secondary-container/20 p-6 rounded-xl border border-secondary-container/30 flex flex-col justify-between group hover:bg-secondary-container/30 transition-all duration-500">
 <span class="text-on-secondary-container font-bold text-xs tracking-widest uppercase">Conciliados</span>
 <div class="mt-4 flex items-baseline gap-2">
-<span class="text-4xl font-extrabold text-on-secondary-container">152</span>
-<span class="text-secondary font-semibold text-sm">+4%</span>
+<span id="metric-conciliated" class="text-4xl font-extrabold text-on-secondary-container">152</span>
+<span id="metric-conciliated-rate" class="text-secondary font-semibold text-sm">+4%</span>
 </div>
 </div>
 <div class="bg-orange-50 dark:bg-orange-900/10 p-6 rounded-xl border border-orange-100 flex flex-col justify-between hover:bg-orange-100/50 transition-all duration-500">
 <span class="text-orange-700 dark:text-orange-400 font-bold text-xs tracking-widest uppercase">Pendentes</span>
 <div class="mt-4">
-<span class="text-4xl font-extrabold text-orange-800 dark:text-orange-300">12</span>
+<span id="metric-pending" class="text-4xl font-extrabold text-orange-800 dark:text-orange-300">12</span>
 </div>
 </div>
 <div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/20 flex flex-col justify-between hover:bg-surface-container transition-all duration-500">
 <span class="text-on-surface-variant font-bold text-xs tracking-widest uppercase">Divergentes</span>
 <div class="mt-4">
-<span class="text-4xl font-extrabold text-on-surface">08</span>
+<span id="metric-divergent" class="text-4xl font-extrabold text-on-surface">08</span>
 </div>
 </div>
 <div class="bg-primary/5 p-6 rounded-xl border border-primary/10 flex flex-col justify-between hover:bg-primary/10 transition-all duration-500">
 <span class="text-primary font-bold text-xs tracking-widest uppercase">Pend&ecirc;ncia Total</span>
 <div class="mt-4">
-<span class="text-3xl font-extrabold text-primary">R$ 1.842,00</span>
+<span id="metric-pending-total" class="text-3xl font-extrabold text-primary">R$ 1.842,00</span>
 </div>
 </div>
 </section>
@@ -273,7 +273,7 @@
 </div>
 <div>
 <p class="text-[10px] uppercase font-bold text-on-surface-variant tracking-wider">Linhas do Extrato</p>
-<p class="text-xl font-bold">162</p>
+<p id="metric-bank-rows" class="text-xl font-bold">162</p>
 </div>
 </div>
 <div class="bg-surface-container-lowest p-5 rounded-xl flex items-center gap-4 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
@@ -282,17 +282,17 @@
 </div>
 <div>
 <p class="text-[10px] uppercase font-bold text-on-surface-variant tracking-wider">Linhas da Planilha</p>
-<p class="text-xl font-bold">159</p>
+<p id="metric-sheet-rows" class="text-xl font-bold">159</p>
 </div>
 </div>
 <div class="bg-surface-container-lowest p-5 rounded-xl grid grid-cols-2 gap-4 shadow-[0_2px_4px_rgba(0,0,0,0.02)] items-center">
 <div class="border-r border-outline-variant/30 pr-4">
 <p class="text-[10px] uppercase font-bold text-on-surface-variant tracking-wider">Na Planilha</p>
-<p class="text-xl font-bold text-error">07</p>
+<p id="metric-missing-in-sheet" class="text-xl font-bold text-error">07</p>
 </div>
 <div class="pl-2">
 <p class="text-[10px] uppercase font-bold text-on-surface-variant tracking-wider">No Banco</p>
-<p class="text-xl font-bold text-tertiary">05</p>
+<p id="metric-missing-in-bank" class="text-xl font-bold text-tertiary">05</p>
 </div>
 </div>
 </section>
@@ -694,6 +694,7 @@
         emptyLabel: "Nenhum arquivo selecionado"
     });
 
+    const DEFAULT_API_BASE = "http://127.0.0.1:8000";
     const showReportBtn = document.getElementById("show-report-btn");
     const uploadValidation = document.getElementById("upload-validation");
     const bankFileInput = document.getElementById("bank-file-input");
@@ -702,11 +703,80 @@
     const sheetDropzone = document.getElementById("sheet-dropzone");
     const topNav = document.getElementById("top-nav");
     const reconcileReportPreview = document.getElementById("reconcile-report-preview");
+    const reconcileRowsBody = document.getElementById("reconcile-rows-body");
+    const reconcileDownloadXlsx = document.getElementById("reconcile-download-xlsx");
+    const reconcileDownloadCsv = document.getElementById("reconcile-download-csv");
+    const metricConciliated = document.getElementById("metric-conciliated");
+    const metricConciliatedRate = document.getElementById("metric-conciliated-rate");
+    const metricPending = document.getElementById("metric-pending");
+    const metricDivergent = document.getElementById("metric-divergent");
+    const metricPendingTotal = document.getElementById("metric-pending-total");
+    const metricBankRows = document.getElementById("metric-bank-rows");
+    const metricSheetRows = document.getElementById("metric-sheet-rows");
+    const metricMissingInSheet = document.getElementById("metric-missing-in-sheet");
+    const metricMissingInBank = document.getElementById("metric-missing-in-bank");
     let reportFocusMode = false;
     let hideNavTimer = null;
+    let isSubmitting = false;
+
+    function normalizeApiBase(value) {
+        return (value || DEFAULT_API_BASE).replace(/\/+$/, "");
+    }
+
+    function getApiBase() {
+        return normalizeApiBase(localStorage.getItem("gettdone_api_base") || DEFAULT_API_BASE);
+    }
+
+    function formatCurrency(value) {
+        return new Intl.NumberFormat("pt-BR", {
+            style: "currency",
+            currency: "BRL"
+        }).format(Number(value || 0));
+    }
+
+    function formatDate(value) {
+        if (!value) {
+            return "-";
+        }
+        const dt = new Date(value);
+        if (Number.isNaN(dt.getTime())) {
+            return String(value);
+        }
+        return new Intl.DateTimeFormat("pt-BR").format(dt);
+    }
+
+    function escapeHtml(value) {
+        return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/\"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
+    async function parseJsonSafe(response) {
+        try {
+            return await response.json();
+        } catch (_error) {
+            return {};
+        }
+    }
 
     function hasSelectedFile(input) {
         return Boolean(input && input.files && input.files.length > 0);
+    }
+
+    function setValidationMessage(message) {
+        if (!uploadValidation) {
+            return;
+        }
+        if (!message) {
+            uploadValidation.hidden = true;
+            uploadValidation.textContent = "";
+            return;
+        }
+        uploadValidation.textContent = message;
+        uploadValidation.hidden = false;
     }
 
     function updateReportGateState() {
@@ -715,14 +785,13 @@
         }
 
         const ready = hasSelectedFile(bankFileInput) && hasSelectedFile(sheetFileInput);
-        showReportBtn.disabled = !ready;
-        showReportBtn.classList.toggle("opacity-70", !ready);
-        showReportBtn.classList.toggle("cursor-not-allowed", !ready);
-        showReportBtn.classList.toggle("pointer-events-none", !ready);
+        showReportBtn.disabled = isSubmitting || !ready;
+        showReportBtn.classList.toggle("opacity-70", !ready || isSubmitting);
+        showReportBtn.classList.toggle("cursor-not-allowed", !ready || isSubmitting);
+        showReportBtn.classList.toggle("pointer-events-none", !ready || isSubmitting);
 
-        if (ready && uploadValidation) {
-            uploadValidation.hidden = true;
-            uploadValidation.textContent = "";
+        if (ready) {
+            setValidationMessage("");
         }
 
         return ready;
@@ -749,18 +818,7 @@
             sheetDropzone.classList.remove("is-invalid");
         }
 
-        if (uploadValidation) {
-            uploadValidation.textContent = `Selecione ${missing.join(" e ")} para gerar o relatorio.`;
-            uploadValidation.hidden = false;
-        }
-    }
-
-    if (bankFileInput) {
-        bankFileInput.addEventListener("change", updateReportGateState);
-    }
-
-    if (sheetFileInput) {
-        sheetFileInput.addEventListener("change", updateReportGateState);
+        setValidationMessage(`Selecione ${missing.join(" e ")} para gerar o relatorio.`);
     }
 
     function clearHideNavTimer() {
@@ -812,23 +870,218 @@
         scheduleTopNavHide();
     }
 
-    window.addEventListener("scroll", handleScrollNavFocus, { passive: true });
+    function reasonLabel(reason) {
+        const labels = {
+            missing_in_sheet: "Pendente na planilha",
+            missing_in_bank: "Pendente no banco",
+            amount_mismatch: "Diferenca de valor",
+            date_out_of_tolerance_window: "Data fora da tolerancia"
+        };
+        return labels[reason] || "-";
+    }
 
-    updateReportGateState();
+    function sourceBadgeHtml(source) {
+        if (source === "bank") {
+            return '<span class="flex items-center gap-2 text-xs font-semibold text-on-surface-variant px-2 py-1 bg-surface-container rounded-md"><span class="material-symbols-outlined text-[14px]" data-icon="account_balance">account_balance</span> BANCO</span>';
+        }
+        return '<span class="flex items-center gap-2 text-xs font-semibold text-on-surface-variant px-2 py-1 bg-surface-container rounded-md"><span class="material-symbols-outlined text-[14px]" data-icon="description">description</span> PLANILHA</span>';
+    }
 
-    if (showReportBtn && reconcileReportPreview) {
-        showReportBtn.addEventListener("click", function () {
-            if (!updateReportGateState()) {
-                showMissingFilesFeedback();
-                return;
+    function statusBadgeHtml(status) {
+        if (status === "conciliado") {
+            return '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-secondary-container text-on-secondary-container">Matched</span>';
+        }
+        if (status === "pendente") {
+            return '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-orange-100 text-orange-700">Pendente</span>';
+        }
+        return '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-error-container text-on-error-container">Divergente</span>';
+    }
+
+    function matchMeta(rule) {
+        if (rule === "exact") {
+            return { icon: "check_circle", percent: "100%", colorClass: "text-secondary", fill: "1" };
+        }
+        if (rule === "date_tolerance") {
+            return { icon: "schedule", percent: "95%", colorClass: "text-on-surface-variant", fill: "0" };
+        }
+        if (rule === "description_similarity") {
+            return { icon: "info", percent: "85%", colorClass: "text-on-surface-variant", fill: "0" };
+        }
+        return { icon: "warning", percent: "0%", colorClass: "text-error", fill: "1" };
+    }
+
+    function renderReconcileRows(rows) {
+        if (!reconcileRowsBody) {
+            return;
+        }
+
+        const items = Array.isArray(rows) ? rows : [];
+        if (items.length === 0) {
+            reconcileRowsBody.innerHTML = '<tr><td class="px-6 py-4 text-sm text-on-surface-variant" colspan="9">Sem linhas de conciliacao para exibir.</td></tr>';
+            return;
+        }
+
+        reconcileRowsBody.innerHTML = items.map(function (row) {
+            const meta = matchMeta(row.match_rule);
+            const reason = reasonLabel(row.reason);
+            const paired = row.matched_row_id || "-";
+            return `
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="px-6 py-4 text-sm font-medium">${escapeHtml(row.row_id || "-")}</td>
+<td class="px-6 py-4">${sourceBadgeHtml(row.source)}</td>
+<td class="px-6 py-4 text-sm text-on-surface-variant">${escapeHtml(formatDate(row.date))}</td>
+<td class="px-6 py-4 text-sm font-semibold">${escapeHtml(row.description || "-")}</td>
+<td class="px-6 py-4 text-sm font-bold">${escapeHtml(formatCurrency(row.amount))}</td>
+<td class="px-6 py-4">${statusBadgeHtml(row.status)}</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-1.5 ${meta.colorClass} font-bold text-sm">
+<span class="material-symbols-outlined text-[16px]" data-icon="${meta.icon}" style="font-variation-settings: 'FILL' ${meta.fill};">${meta.icon}</span>
+${meta.percent}
+</div>
+</td>
+<td class="px-6 py-4 text-xs text-on-surface-variant">${escapeHtml(reason)}</td>
+<td class="px-6 py-4 text-xs font-mono text-primary font-medium">${escapeHtml(paired)}</td>
+</tr>`;
+        }).join("");
+    }
+
+    function renderReconcileTotals(payload) {
+        const summary = payload.summary || {};
+        const rows = Array.isArray(payload.reconciliation_rows) ? payload.reconciliation_rows : [];
+        const totalBankRows = Number(summary.total_bank_rows || payload.bank_rows_parsed || 0);
+        const totalSheetRows = Number(summary.total_sheet_rows || payload.sheet_rows_parsed || 0);
+        const conciliated = Number(summary.conciliated_count || payload.conciliated_count || 0);
+        const pending = Number(summary.pending_count || payload.pending_count || 0);
+        const divergent = Number(summary.divergent_count || payload.divergent_count || 0);
+        const pendingTotal = rows
+            .filter(function (row) { return row.status !== "conciliado"; })
+            .reduce(function (sum, row) { return sum + Math.abs(Number(row.amount || 0)); }, 0);
+        const conciliatedRate = totalBankRows > 0 ? Math.round((conciliated / totalBankRows) * 100) : 0;
+
+        if (metricConciliated) metricConciliated.textContent = String(conciliated);
+        if (metricConciliatedRate) metricConciliatedRate.textContent = `${conciliatedRate}%`;
+        if (metricPending) metricPending.textContent = String(pending);
+        if (metricDivergent) metricDivergent.textContent = String(divergent).padStart(2, "0");
+        if (metricPendingTotal) metricPendingTotal.textContent = formatCurrency(pendingTotal);
+        if (metricBankRows) metricBankRows.textContent = String(totalBankRows);
+        if (metricSheetRows) metricSheetRows.textContent = String(totalSheetRows);
+        if (metricMissingInSheet) metricMissingInSheet.textContent = String(Number(payload.bank_unmatched_count || 0)).padStart(2, "0");
+        if (metricMissingInBank) metricMissingInBank.textContent = String(Number(payload.sheet_unmatched_count || 0)).padStart(2, "0");
+    }
+
+    function setDownloadActions(apiBase, analysisId) {
+        if (!analysisId) {
+            return;
+        }
+
+        const xlsxUrl = `${apiBase}/reconcile-report/${analysisId}?format=xlsx`;
+        const csvUrl = `${apiBase}/reconcile-report/${analysisId}?format=csv`;
+
+        if (reconcileDownloadXlsx) {
+            reconcileDownloadXlsx.dataset.url = xlsxUrl;
+            if (!reconcileDownloadXlsx.dataset.bound) {
+                reconcileDownloadXlsx.addEventListener("click", function () {
+                    const url = reconcileDownloadXlsx.dataset.url;
+                    if (url) {
+                        window.open(url, "_blank", "noopener");
+                    }
+                });
+                reconcileDownloadXlsx.dataset.bound = "1";
+            }
+        }
+
+        if (reconcileDownloadCsv) {
+            reconcileDownloadCsv.dataset.url = csvUrl;
+            if (!reconcileDownloadCsv.dataset.bound) {
+                reconcileDownloadCsv.addEventListener("click", function () {
+                    const url = reconcileDownloadCsv.dataset.url;
+                    if (url) {
+                        window.open(url, "_blank", "noopener");
+                    }
+                });
+                reconcileDownloadCsv.dataset.bound = "1";
+            }
+        }
+    }
+
+    async function runReconcileAndRender() {
+        if (!updateReportGateState()) {
+            showMissingFilesFeedback();
+            return;
+        }
+
+        const apiBase = getApiBase();
+        const formData = new FormData();
+        formData.append("bank_file", bankFileInput.files[0]);
+        formData.append("sheet_file", sheetFileInput.files[0]);
+
+        const originalLabel = showReportBtn.innerHTML;
+        isSubmitting = true;
+        showReportBtn.innerHTML = '<span class="material-symbols-outlined text-2xl" data-icon="progress_activity">progress_activity</span> Processando...';
+        updateReportGateState();
+        setValidationMessage("");
+
+        try {
+            const response = await fetch(`${apiBase}/reconcile`, {
+                method: "POST",
+                body: formData
+            });
+            const payload = await parseJsonSafe(response);
+
+            if (!response.ok) {
+                throw new Error(payload.detail || "Falha ao processar conciliacao.");
             }
 
+            renderReconcileTotals(payload);
+            renderReconcileRows(payload.reconciliation_rows || []);
+            setDownloadActions(apiBase, payload.analysis_id);
             reconcileReportPreview.classList.remove("hidden");
             reportFocusMode = true;
             clearHideNavTimer();
             setTopNavHidden(true);
             reconcileReportPreview.scrollIntoView({ behavior: "smooth", block: "start" });
             scheduleTopNavHide();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "Erro inesperado.";
+            setValidationMessage(message);
+        } finally {
+            isSubmitting = false;
+            showReportBtn.innerHTML = originalLabel;
+            updateReportGateState();
+        }
+    }
+
+    if (bankFileInput) {
+        bankFileInput.addEventListener("change", function () {
+            updateReportGateState();
+            if (reconcileReportPreview && !reconcileReportPreview.classList.contains("hidden")) {
+                reconcileReportPreview.classList.add("hidden");
+                reportFocusMode = false;
+                clearHideNavTimer();
+                setTopNavHidden(false);
+            }
+        });
+    }
+
+    if (sheetFileInput) {
+        sheetFileInput.addEventListener("change", function () {
+            updateReportGateState();
+            if (reconcileReportPreview && !reconcileReportPreview.classList.contains("hidden")) {
+                reconcileReportPreview.classList.add("hidden");
+                reportFocusMode = false;
+                clearHideNavTimer();
+                setTopNavHidden(false);
+            }
+        });
+    }
+
+    window.addEventListener("scroll", handleScrollNavFocus, { passive: true });
+
+    updateReportGateState();
+
+    if (showReportBtn && reconcileReportPreview) {
+        showReportBtn.addEventListener("click", function () {
+            runReconcileAndRender();
         });
     }
 </script></body></html>
