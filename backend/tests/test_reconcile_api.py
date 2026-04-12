@@ -1,7 +1,7 @@
 ﻿from io import BytesIO
 
 from fastapi.testclient import TestClient
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 from app.main import app
 
@@ -404,7 +404,7 @@ def test_reconcile_report_happy_path_csv_and_not_found() -> None:
         "/reconcile",
         files={
             "bank_file": ("bank.csv", b"date,description,amount\n2026-04-01,TEST,-100", "text/csv"),
-            "sheet_file": ("sheet.csv", b"data,valor,descricao\n2026-04-01,-100,TEST", "text/csv"),
+            "sheet_file": ("sheet.csv", b"data,valor,descricao\n2026-04-01,-120,TEST", "text/csv"),
         },
     )
     assert intake.status_code == 200
@@ -416,6 +416,23 @@ def test_reconcile_report_happy_path_csv_and_not_found() -> None:
         xlsx_report.headers["content-type"]
         == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+    workbook = load_workbook(filename=BytesIO(xlsx_report.content))
+    assert "Problemas" in workbook.sheetnames
+    problems_sheet = workbook["Problemas"]
+    assert [cell.value for cell in problems_sheet[1]] == [
+        "row_id",
+        "source",
+        "date",
+        "description",
+        "amount",
+        "status",
+        "reason",
+        "matched_row_id",
+    ]
+    assert problems_sheet.max_row == 3
+    assert problems_sheet["F2"].value == "divergente"
+    assert problems_sheet["F3"].value == "divergente"
+    assert problems_sheet.max_row >= 2
 
     csv_report = client.get(f"/reconcile-report/{analysis_id}?format=csv")
     assert csv_report.status_code == 200
@@ -425,3 +442,42 @@ def test_reconcile_report_happy_path_csv_and_not_found() -> None:
     missing = client.get("/reconcile-report/rc_missing_id")
     assert missing.status_code == 404
     assert missing.json()["detail"] == "Analysis not found"
+
+
+def test_reconcile_report_includes_fallback_problem_row_when_no_issues() -> None:
+    client = TestClient(app)
+    intake = client.post(
+        "/reconcile",
+        files={
+            "bank_file": ("bank.csv", b"date,description,amount\n2026-04-01,TEST,-100", "text/csv"),
+            "sheet_file": ("sheet.csv", b"data,valor,descricao\n2026-04-01,-100,TEST", "text/csv"),
+        },
+    )
+    assert intake.status_code == 200
+    analysis_id = intake.json()["analysis_id"]
+
+    xlsx_report = client.get(f"/reconcile-report/{analysis_id}")
+    assert xlsx_report.status_code == 200
+    workbook = load_workbook(filename=BytesIO(xlsx_report.content))
+    problems_sheet = workbook["Problemas"]
+
+    assert [cell.value for cell in problems_sheet[1]] == [
+        "row_id",
+        "source",
+        "date",
+        "description",
+        "amount",
+        "status",
+        "reason",
+        "matched_row_id",
+    ]
+    assert [cell.value for cell in problems_sheet[2]] == [
+        "none",
+        "system",
+        None,
+        "No pending/divergent issues were detected.",
+        None,
+        "none",
+        "none",
+        None,
+    ]

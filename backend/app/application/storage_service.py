@@ -126,11 +126,35 @@ class TempAnalysisStorage:
         self._format_transacoes_sheet(detail_sheet)
 
         problems_sheet = workbook.create_sheet(title="Problemas")
-        problems_sheet.append(["type", "title", "description"])
-        for problem in problems:
-            problems_sheet.append([problem.get("type"), problem.get("title"), problem.get("description")])
-        if len(problems) == 0:
-            problems_sheet.append(["none", "No problems detected", "No pending/divergent issues were detected."])
+        problem_row_headers = [
+            "row_id",
+            "source",
+            "date",
+            "description",
+            "amount",
+            "status",
+            "reason",
+            "matched_row_id",
+        ]
+        problems_sheet.append(problem_row_headers)
+        problematic_rows = [
+            row for row in reconciliation_rows if row.get("status") in {"pendente", "divergente"}
+        ]
+        for row in problematic_rows:
+            problems_sheet.append([row.get(header) for header in problem_row_headers])
+        if len(problematic_rows) == 0:
+            problems_sheet.append(
+                [
+                    "none",
+                    "system",
+                    "",
+                    "No pending/divergent issues were detected.",
+                    "",
+                    "none",
+                    "none",
+                    "",
+                ]
+            )
         self._format_transacoes_sheet(problems_sheet)
 
         workbook.save(analysis_dir / "reconcile_report.xlsx")
