@@ -146,7 +146,6 @@
 <a class="text-slate-600 hover:text-slate-900 font-headline text-sm font-medium tracking-tight transition-colors duration-200" href="#">Pricing</a>
 </div>
 <div class="flex items-center gap-4">
-<button class="text-slate-600 hover:text-slate-900 font-headline text-sm font-medium px-4 py-2 transition-all active:scale-95">Log In</button>
 <button class="primary-gradient-cta text-on-primary font-headline text-sm font-medium px-6 py-2.5 rounded-xl transition-all hover:opacity-90 active:scale-95">Get Started</button>
 </div>
 </div>
@@ -631,7 +630,6 @@
     const metricMissingInSheet = document.getElementById("metric-missing-in-sheet");
     const metricMissingInBank = document.getElementById("metric-missing-in-bank");
     let reportFocusMode = false;
-    let hideNavTimer = null;
     let isSubmitting = false;
     const ROWS_PER_PAGE = 10;
     let allReconcileRows = [];
@@ -740,13 +738,6 @@
         setValidationMessage(`Selecione ${missing.join(" e ")} para gerar o relatorio.`);
     }
 
-    function clearHideNavTimer() {
-        if (hideNavTimer) {
-            clearTimeout(hideNavTimer);
-            hideNavTimer = null;
-        }
-    }
-
     function setTopNavHidden(hidden) {
         if (!topNav) {
             return;
@@ -754,39 +745,21 @@
         topNav.classList.toggle("is-hidden", hidden);
     }
 
-    function isReportInFocusArea() {
+    function isReportInViewport() {
         if (!reconcileReportPreview || reconcileReportPreview.classList.contains("hidden")) {
             return false;
         }
 
         const rect = reconcileReportPreview.getBoundingClientRect();
         const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-        return rect.top < viewportHeight * 0.66 && rect.bottom > 120;
-    }
-
-    function scheduleTopNavHide() {
-        clearHideNavTimer();
-        if (!reportFocusMode || !isReportInFocusArea()) {
-            return;
-        }
-        hideNavTimer = setTimeout(function () {
-            setTopNavHidden(true);
-        }, 900);
+        return rect.top < viewportHeight && rect.bottom > 0;
     }
 
     function handleScrollNavFocus() {
         if (!reportFocusMode) {
             return;
         }
-
-        if (!isReportInFocusArea()) {
-            clearHideNavTimer();
-            setTopNavHidden(false);
-            return;
-        }
-
-        setTopNavHidden(false);
-        scheduleTopNavHide();
+        setTopNavHidden(isReportInViewport());
     }
 
     function reasonLabel(reason) {
@@ -1064,10 +1037,11 @@ ${meta.percent}
             setDownloadActions(apiBase, payload.analysis_id);
             reconcileReportPreview.classList.remove("hidden");
             reportFocusMode = true;
-            clearHideNavTimer();
-            setTopNavHidden(true);
+            setTopNavHidden(isReportInViewport());
             reconcileReportPreview.scrollIntoView({ behavior: "smooth", block: "start" });
-            scheduleTopNavHide();
+            requestAnimationFrame(function () {
+                setTopNavHidden(isReportInViewport());
+            });
         } catch (error) {
             const message = error instanceof Error ? error.message : "Erro inesperado.";
             setValidationMessage(message);
@@ -1084,7 +1058,6 @@ ${meta.percent}
             if (reconcileReportPreview && !reconcileReportPreview.classList.contains("hidden")) {
                 reconcileReportPreview.classList.add("hidden");
                 reportFocusMode = false;
-                clearHideNavTimer();
                 setTopNavHidden(false);
             }
         });
@@ -1096,13 +1069,13 @@ ${meta.percent}
             if (reconcileReportPreview && !reconcileReportPreview.classList.contains("hidden")) {
                 reconcileReportPreview.classList.add("hidden");
                 reportFocusMode = false;
-                clearHideNavTimer();
                 setTopNavHidden(false);
             }
         });
     }
 
     window.addEventListener("scroll", handleScrollNavFocus, { passive: true });
+    window.addEventListener("resize", handleScrollNavFocus);
 
     if (reconcileSearchInput) {
         reconcileSearchInput.addEventListener("input", function () {
