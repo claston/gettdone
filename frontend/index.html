@@ -132,21 +132,26 @@
             opacity: 0;
             pointer-events: none;
         }
+        #upload-section {
+            scroll-margin-top: 7rem;
+        }
     </style>
 </head>
 <body class="bg-background text-on-background font-body selection:bg-primary-fixed selection:text-on-primary-fixed">
 <!-- Top Navigation -->
 <nav id="top-nav" class="top-nav-shell fixed top-0 w-full z-50 bg-white/70 backdrop-blur-xl border-b border-slate-100">
 <div class="flex justify-between items-center max-w-7xl mx-auto px-8 h-20">
-<div class="text-2xl font-bold tracking-tighter text-slate-900">GettDone</div>
+<div class="text-2xl font-bold tracking-tighter text-slate-900">Versão Beta</div>
+<!--
 <div class="hidden md:flex items-center gap-8">
 <a class="text-blue-700 font-semibold border-b-2 border-blue-700 pb-1 font-headline text-sm tracking-tight transition-colors duration-200" href="#">Product</a>
 <a class="text-slate-600 hover:text-slate-900 font-headline text-sm font-medium tracking-tight transition-colors duration-200" href="#">Features</a>
 <a class="text-slate-600 hover:text-slate-900 font-headline text-sm font-medium tracking-tight transition-colors duration-200" href="#">Security</a>
 <a class="text-slate-600 hover:text-slate-900 font-headline text-sm font-medium tracking-tight transition-colors duration-200" href="#">Pricing</a>
 </div>
+-->
 <div class="flex items-center gap-4">
-<button class="primary-gradient-cta text-on-primary font-headline text-sm font-medium px-6 py-2.5 rounded-xl transition-all hover:opacity-90 active:scale-95">Get Started</button>
+<button id="top-cta-start" type="button" class="primary-gradient-cta text-on-primary font-headline text-sm font-medium px-6 py-2.5 rounded-xl transition-all hover:opacity-90 active:scale-95">Comece Agora</button>
 </div>
 </div>
 </nav>
@@ -166,7 +171,7 @@
             </p>
 </section>
 <!-- Main Action Card (The Upload Core) -->
-<section class="max-w-5xl mx-auto px-8 mb-32">
+<section id="upload-section" class="max-w-5xl mx-auto px-8 mb-32">
 <div class="bg-surface-container-lowest rounded-[2.5rem] p-8 md:p-14 shadow-[0_20px_50px_-12px_rgba(0,62,199,0.08)] relative overflow-hidden">
 <div class="absolute top-0 right-0 p-10 opacity-5">
 <span class="material-symbols-outlined text-[140px]" data-icon="account_balance">account_balance</span>
@@ -503,8 +508,8 @@
 <div class="w-full py-16 px-8">
 <div class="flex flex-col md:flex-row justify-between items-center max-w-7xl mx-auto gap-8">
 <div class="flex flex-col gap-2">
-<div class="text-lg font-black text-slate-800">GettDone</div>
-<p class="font-inter text-xs tracking-wide text-slate-500">© 2024 GettDone. Precision Vault Architecture.</p>
+<div class="text-lg font-black text-slate-800">Versão Beta</div>
+<p class="font-inter text-xs tracking-wide text-slate-500">© 2026 Versão Beta.</p>
 </div>
 <div class="flex gap-8">
 <a class="font-inter text-xs tracking-wide text-slate-500 hover:text-slate-800 transition-opacity" href="#">Privacy Policy</a>
@@ -604,11 +609,13 @@
 
     const DEFAULT_API_BASE = "http://127.0.0.1:8000";
     const showReportBtn = document.getElementById("show-report-btn");
+    const topCtaStart = document.getElementById("top-cta-start");
     const uploadValidation = document.getElementById("upload-validation");
     const bankFileInput = document.getElementById("bank-file-input");
     const sheetFileInput = document.getElementById("sheet-file-input");
     const bankDropzone = document.getElementById("bank-dropzone");
     const sheetDropzone = document.getElementById("sheet-dropzone");
+    const uploadSection = document.getElementById("upload-section");
     const topNav = document.getElementById("top-nav");
     const reconcileReportPreview = document.getElementById("reconcile-report-preview");
     const reconcileRowsBody = document.getElementById("reconcile-rows-body");
@@ -635,6 +642,19 @@
     let allReconcileRows = [];
     let filteredReconcileRows = [];
     let reconcileCurrentPage = 1;
+
+    function focusUploadSection() {
+        if (!uploadSection) {
+            return;
+        }
+
+        uploadSection.scrollIntoView({ behavior: "smooth", block: "start" });
+        window.setTimeout(function () {
+            if (bankDropzone) {
+                bankDropzone.focus({ preventScroll: true });
+            }
+        }, 350);
+    }
 
     function normalizeApiBase(value) {
         return (value || DEFAULT_API_BASE).replace(/\/+$/, "");
@@ -1119,8 +1139,12 @@ ${meta.percent}
             runReconcileAndRender();
         });
     }
+
+    if (topCtaStart) {
+        topCtaStart.addEventListener("click", function () {
+            focusUploadSection();
+        });
+    }
 </script></body></html>
-
-
 
 
