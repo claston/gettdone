@@ -1,0 +1,17 @@
+.git
+.github
+.pytest_cache
+.ruff_cache
+backend/.pytest_cache
+backend/.ruff_cache
+backend/.pytest_tmp*
+backend/venv
+tmp
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.DS_Store
+**/.env
+**/.env.*
+**/node_modules

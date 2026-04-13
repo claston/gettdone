@@ -100,6 +100,37 @@ Workflows configurados:
 
 - `CI | Lint and Tests`: roda `ruff` e `pytest` do `backend` em push/PR.
 - `Security | CodeQL Scan`: roda analise de seguranca para Python em push/PR para `main` e agenda semanal.
+- `CD | Publish Container (GHCR)`: publica imagem Docker no GHCR em push para `main`.
+- `CD | Deploy to Render (Staging)`: dispara deploy no Render apos publish da imagem.
+
+## Deploy no Render (Web Service)
+
+Este repositorio agora suporta deploy no Render via imagem Docker.
+
+Arquivos de deploy:
+
+- `Dockerfile` (na raiz): sobe API FastAPI e frontend estatico no mesmo servico.
+- `.dockerignore`: reduz contexto de build.
+- `.github/workflows/publish-ghcr.yml`: publica imagem em `ghcr.io/<owner>/gettdone`.
+- `.github/workflows/deploy-render-staging.yml`: faz trigger de deploy pela API do Render.
+
+Passo a passo no Render:
+
+1. Crie um `Web Service` no Render e aponte para a imagem `ghcr.io/<owner>/gettdone:staging`.
+2. Configure `Health Check Path` como `/health`.
+3. Defina `PORT` (Render injeta automaticamente; o container ja respeita esse valor).
+4. (Opcional) Defina `CORS_ALLOW_ORIGINS` com dominios permitidos separados por virgula.
+
+Secrets/vars recomendados no GitHub (environment `staging`):
+
+- `RENDER_API_KEY` (secret)
+- `RENDER_STAGING_SERVICE_ID` (secret)
+- `RENDER_DEPLOY_ENABLED=true` (variable, opcional)
+
+Comportamento de frontend em deploy:
+
+- Em producao, o frontend chama a API no mesmo dominio do servico.
+- Em desenvolvimento local em `localhost:3000`, continua usando `http://127.0.0.1:8000`.
 
 ## Endpoints fundacao
 

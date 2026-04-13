@@ -602,7 +602,20 @@
         emptyLabel: "Nenhum arquivo selecionado"
     });
 
-    const DEFAULT_API_BASE = "http://127.0.0.1:8000";
+    function resolveDefaultApiBase() {
+        const origin = window.location.origin || "";
+        const hostname = window.location.hostname || "";
+        const port = window.location.port || "";
+        const isFrontendDevServer = (hostname === "localhost" || hostname === "127.0.0.1") && port === "3000";
+
+        if (isFrontendDevServer) {
+            return "http://127.0.0.1:8000";
+        }
+
+        return origin || "http://127.0.0.1:8000";
+    }
+
+    const DEFAULT_API_BASE = resolveDefaultApiBase();
     const showReportBtn = document.getElementById("show-report-btn");
     const uploadValidation = document.getElementById("upload-validation");
     const bankFileInput = document.getElementById("bank-file-input");
@@ -677,6 +690,21 @@
         } catch (_error) {
             return {};
         }
+    }
+
+    function getFriendlyValidationMessage(detail) {
+        const message = String(detail || "");
+        const normalized = message.toLowerCase();
+
+        if (normalized.includes("missing required columns")) {
+            return "A planilha precisa ter as colunas de data, descricao e valor.";
+        }
+
+        if (normalized.includes("ambiguous column mapping")) {
+            return "Nao consegui identificar com seguranca as colunas da planilha. Use nomes mais claros como Data, Descricao e Valor.";
+        }
+
+        return message || "Falha ao processar conciliacao.";
     }
 
     function hasSelectedFile(input) {
@@ -1029,7 +1057,8 @@ ${meta.percent}
             const payload = await parseJsonSafe(response);
 
             if (!response.ok) {
-                throw new Error(payload.detail || "Falha ao processar conciliacao.");
+                const detail = payload.detail || "Falha ao processar conciliacao.";
+                throw new Error(response.status === 422 ? getFriendlyValidationMessage(detail) : detail);
             }
 
             renderReconcileTotals(payload);

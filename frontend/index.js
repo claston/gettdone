@@ -80,7 +80,20 @@ function bindDropzone(config) {
         emptyLabel: "Nenhum arquivo selecionado"
     });
 
-    const DEFAULT_API_BASE = "http://127.0.0.1:8000";
+    function resolveDefaultApiBase() {
+        const origin = window.location.origin || "";
+        const hostname = window.location.hostname || "";
+        const port = window.location.port || "";
+        const isFrontendDevServer = (hostname === "localhost" || hostname === "127.0.0.1") && port === "3000";
+
+        if (isFrontendDevServer) {
+            return "http://127.0.0.1:8000";
+        }
+
+        return origin || "http://127.0.0.1:8000";
+    }
+
+    const DEFAULT_API_BASE = resolveDefaultApiBase();
     const showReportBtn = document.getElementById("show-report-btn");
     const topCtaStart = document.getElementById("top-cta-start");
     const uploadValidation = document.getElementById("upload-validation");
@@ -100,11 +113,13 @@ function bindDropzone(config) {
     const reconcilePageNumbers = document.getElementById("reconcile-page-numbers");
     const reconcileDownloadXlsx = document.getElementById("reconcile-download-xlsx");
     const reconcileDownloadCsv = document.getElementById("reconcile-download-csv");
+    const beforeAfterNarrative = document.getElementById("before-after-narrative");
+    const beforeAfterGrid = document.getElementById("before-after-grid");
     const problemHighlightsSection = document.getElementById("problem-highlights");
     const problemHighlightsGrid = document.getElementById("problem-highlights-grid");
     const problemHighlightsEmpty = document.getElementById("problem-highlights-empty");
     const problemHighlightsJump = document.getElementById("problem-highlights-jump");
-    const reconcileDetailsSection = document.getElementById("reconcile-details");
+    const reconcileDetailsPanel = document.getElementById("reconcile-details-panel");
     const metricConciliated = document.getElementById("metric-conciliated");
     const metricConciliatedRate = document.getElementById("metric-conciliated-rate");
     const metricPending = document.getElementById("metric-pending");
@@ -266,12 +281,109 @@ function bindDropzone(config) {
         return weights[type] ?? 99;
     }
 
-    function scrollToReconcileDetails() {
-        if (reconcileDetailsSection) {
-            reconcileDetailsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    function renderBeforeAfterNarrative(payload) {
+        if (!beforeAfterNarrative || !beforeAfterGrid) {
+            return;
+        }
+
+        try {
+            const summary = payload.summary || {};
+            const rows = Array.isArray(payload.reconciliation_rows) ? payload.reconciliation_rows : [];
+            const problems = Array.isArray(payload.problems) ? payload.problems : [];
+            const totalBankRows = Number(summary.total_bank_rows || payload.bank_rows_parsed || 0);
+            const totalSheetRows = Number(summary.total_sheet_rows || payload.sheet_rows_parsed || 0);
+            const conciliated = Number(summary.conciliated_count || payload.conciliated_count || 0);
+            const pending = Number(summary.pending_count || payload.pending_count || 0);
+            const divergent = Number(summary.divergent_count || payload.divergent_count || 0);
+            const pendingTotal = rows
+                .filter(function (row) { return row.status !== "conciliado"; })
+                .reduce(function (sum, row) { return sum + Math.abs(Number(row.amount || 0)); }, 0);
+            const problemCount = problems.length;
+            const unresolvedRows = Number(payload.bank_unmatched_count || 0) + Number(payload.sheet_unmatched_count || 0);
+            const ratio = totalBankRows > 0 ? `${Math.min(100, Math.round((conciliated / totalBankRows) * 100))}%` : "0%";
+
+            beforeAfterGrid.innerHTML = `
+<div class="lg:col-span-2 rounded-2xl border border-outline-variant/30 bg-white p-4 shadow-[0_4px_14px_rgba(0,0,0,0.03)]">
+<div class="flex flex-wrap items-center gap-3">
+<span class="inline-flex items-center rounded-full bg-secondary-container/60 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-on-secondary-container">Antes</span>
+<span class="text-sm font-semibold text-on-surface-variant">Extrato: ${escapeHtml(String(totalBankRows || 0))} linhas</span>
+<span class="text-sm font-semibold text-on-surface-variant">Planilha: ${escapeHtml(String(totalSheetRows || 0))} linhas</span>
+<span class="text-sm font-semibold text-on-surface-variant">Problemas: ${escapeHtml(String(problemCount || 0))}</span>
+<span class="text-sm font-semibold text-on-surface-variant">Sem pareamento: ${escapeHtml(String(unresolvedRows || 0))}</span>
+<span class="ml-auto inline-flex items-center rounded-full bg-secondary-container/15 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-secondary">Conciliacao: ${escapeHtml(ratio)}</span>
+</div>
+</div>
+<article class="rounded-2xl border border-slate-200 bg-slate-50/80 p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
+<div class="flex items-start justify-between gap-4 mb-6">
+<div>
+<p class="text-xs font-bold uppercase tracking-[0.2em] text-on-surface-variant">Antes</p>
+<h4 class="text-2xl font-extrabold text-on-surface mt-1">Leitura bruta</h4>
+</div>
+<span class="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-700">Entrada</span>
+</div>
+<p class="text-sm text-on-surface-variant mb-5">Os arquivos entram ainda sem priorização, prontos para o motor organizar os dados.</p>
+<div class="grid grid-cols-2 gap-3">
+<div class="rounded-xl bg-white p-4 border border-slate-200">
+<p class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Extrato</p>
+<p class="mt-1 text-2xl font-extrabold text-on-surface">${escapeHtml(String(totalBankRows || 0))}</p>
+</div>
+<div class="rounded-xl bg-white p-4 border border-slate-200">
+<p class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Planilha</p>
+<p class="mt-1 text-2xl font-extrabold text-on-surface">${escapeHtml(String(totalSheetRows || 0))}</p>
+</div>
+<div class="rounded-xl bg-white p-4 border border-slate-200">
+<p class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Problemas</p>
+<p class="mt-1 text-2xl font-extrabold text-on-surface">${escapeHtml(String(problemCount || 0))}</p>
+</div>
+<div class="rounded-xl bg-white p-4 border border-slate-200">
+<p class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Linhas sem pareamento</p>
+<p class="mt-1 text-2xl font-extrabold text-on-surface">${escapeHtml(String(unresolvedRows || 0))}</p>
+</div>
+</div>
+</article>
+<article class="rounded-2xl border border-secondary-container/40 bg-secondary-container/12 p-6 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
+<div class="flex items-start justify-between gap-4 mb-6">
+<div>
+<p class="text-xs font-bold uppercase tracking-[0.2em] text-on-secondary-container">Depois</p>
+<h4 class="text-2xl font-extrabold text-on-secondary-container mt-1">Resumo acionável</h4>
+</div>
+<span class="inline-flex items-center rounded-full bg-secondary-container/70 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-on-secondary-container">Saida</span>
+</div>
+<p class="text-sm text-on-secondary-container/80 mb-5">Agora a leitura fica clara: o que bateu, o que falta e o que merece revisão.</p>
+<div class="grid grid-cols-2 gap-3">
+<div class="rounded-xl bg-white/80 p-4 border border-secondary-container/50">
+<p class="text-[10px] font-bold uppercase tracking-widest text-on-secondary-container/80">Conciliados</p>
+<p class="mt-1 text-2xl font-extrabold text-secondary">${escapeHtml(String(conciliated || 0))}</p>
+</div>
+<div class="rounded-xl bg-white/80 p-4 border border-secondary-container/50">
+<p class="text-[10px] font-bold uppercase tracking-widest text-on-secondary-container/80">Pendentes</p>
+<p class="mt-1 text-2xl font-extrabold text-orange-700">${escapeHtml(String(pending || 0))}</p>
+</div>
+<div class="rounded-xl bg-white/80 p-4 border border-secondary-container/50">
+<p class="text-[10px] font-bold uppercase tracking-widest text-on-secondary-container/80">Divergentes</p>
+<p class="mt-1 text-2xl font-extrabold text-error">${escapeHtml(String(divergent || 0))}</p>
+</div>
+<div class="rounded-xl bg-white/80 p-4 border border-secondary-container/50">
+<p class="text-[10px] font-bold uppercase tracking-widest text-on-secondary-container/80">Pendência total</p>
+<p class="mt-1 text-2xl font-extrabold text-primary">${escapeHtml(formatCurrency(pendingTotal))}</p>
+</div>
+</div>
+</article>`;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "Não foi possível montar a narrativa.";
+            beforeAfterGrid.innerHTML = `
+<div class="lg:col-span-2 rounded-2xl border border-error/30 bg-error-container/20 p-5">
+<p class="text-sm font-bold text-error">Narrativa antes/depois indisponível</p>
+<p class="mt-1 text-sm text-on-surface-variant">${escapeHtml(message)}</p>
+</div>`;
         }
     }
 
+    function scrollToReconcileDetails() {
+        if (reconcileDetailsPanel) {
+            reconcileDetailsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+    }
     function renderProblemHighlights(payload) {
         if (!problemHighlightsSection || !problemHighlightsGrid || !problemHighlightsEmpty) {
             return;
@@ -594,7 +706,7 @@ ${meta.percent}
         const pendingTotal = rows
             .filter(function (row) { return row.status !== "conciliado"; })
             .reduce(function (sum, row) { return sum + Math.abs(Number(row.amount || 0)); }, 0);
-        const conciliatedRate = totalBankRows > 0 ? Math.round((conciliated / totalBankRows) * 100) : 0;
+        const conciliatedRate = totalBankRows > 0 ? Math.min(100, Math.round((conciliated / totalBankRows) * 100)) : 0;
 
         if (metricConciliated) metricConciliated.textContent = String(conciliated);
         if (metricConciliatedRate) metricConciliatedRate.textContent = `${conciliatedRate}%`;
@@ -675,6 +787,7 @@ ${meta.percent}
             }
 
             setSheetValidationErrorState(false);
+            renderBeforeAfterNarrative(payload);
             renderReconcileTotals(payload);
             renderProblemHighlights(payload);
             setReconcileRows(payload.reconciliation_rows || []);
@@ -775,4 +888,3 @@ ${meta.percent}
             scrollToReconcileDetails();
         });
     }
-
