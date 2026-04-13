@@ -96,6 +96,7 @@ function bindDropzone(config) {
     const DEFAULT_API_BASE = resolveDefaultApiBase();
     const showReportBtn = document.getElementById("show-report-btn");
     const topCtaStart = document.getElementById("top-cta-start");
+    const loadDemoFilesBtn = document.getElementById("load-demo-files-btn");
     const uploadValidation = document.getElementById("upload-validation");
     const bankFileInput = document.getElementById("bank-file-input");
     const sheetFileInput = document.getElementById("sheet-file-input");
@@ -430,6 +431,66 @@ function bindDropzone(config) {
 
     function hasSelectedFile(input) {
         return Boolean(input && input.files && input.files.length > 0);
+    }
+
+    function setInputFile(input, file) {
+        if (!input || !file) {
+            return;
+        }
+
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        input.files = transfer.files;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    async function fetchDemoFileAsFile(url, filename) {
+        const response = await fetch(url, { cache: "no-store" });
+        if (!response.ok) {
+            throw new Error(`Nao foi possivel carregar o arquivo de demo (${filename}).`);
+        }
+
+        const blob = await response.blob();
+        return new File([blob], filename, { type: blob.type || "text/csv" });
+    }
+
+    async function loadDemoFiles() {
+        if (!bankFileInput || !sheetFileInput) {
+            return;
+        }
+
+        const buttonLabel = loadDemoFilesBtn ? loadDemoFilesBtn.innerHTML : "";
+        if (loadDemoFilesBtn) {
+            loadDemoFilesBtn.disabled = true;
+            loadDemoFilesBtn.classList.add("opacity-70", "cursor-not-allowed", "pointer-events-none");
+            loadDemoFilesBtn.innerHTML = '<span class="material-symbols-outlined text-sm">progress_activity</span> Carregando...';
+        }
+
+        try {
+            const bankFile = await fetchDemoFileAsFile(
+                "./demo-samples/before_narrative_bank.csv",
+                "before_narrative_bank.csv"
+            );
+            const sheetFile = await fetchDemoFileAsFile(
+                "./demo-samples/before_narrative_sheet.csv",
+                "before_narrative_sheet.csv"
+            );
+
+            setInputFile(bankFileInput, bankFile);
+            setInputFile(sheetFileInput, sheetFile);
+            setValidationMessage("Arquivos de demonstracao carregados. Clique em Encontrar erros agora.");
+            focusUploadSection();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "Falha ao carregar arquivos de demonstracao.";
+            setValidationMessage(message);
+        } finally {
+            updateReportGateState({ clearMessage: false });
+            if (loadDemoFilesBtn) {
+                loadDemoFilesBtn.disabled = false;
+                loadDemoFilesBtn.classList.remove("opacity-70", "cursor-not-allowed", "pointer-events-none");
+                loadDemoFilesBtn.innerHTML = buttonLabel;
+            }
+        }
     }
 
     function setValidationMessage(message) {
@@ -886,5 +947,11 @@ ${meta.percent}
     if (problemHighlightsJump) {
         problemHighlightsJump.addEventListener("click", function () {
             scrollToReconcileDetails();
+        });
+    }
+
+    if (loadDemoFilesBtn) {
+        loadDemoFilesBtn.addEventListener("click", function () {
+            loadDemoFiles();
         });
     }
