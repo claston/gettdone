@@ -18,7 +18,7 @@ from app.schemas import ReconcileIntakeResponse
 
 router = APIRouter()
 
-_BANK_ALLOWED_EXTENSIONS = {"csv", "xlsx", "ofx"}
+_BANK_ALLOWED_EXTENSIONS = {"csv", "xlsx", "ofx", "pdf"}
 _SHEET_ALLOWED_EXTENSIONS = {"csv", "xlsx"}
 
 
@@ -40,7 +40,7 @@ async def reconcile(
     sheet_extension = _file_extension(sheet_filename)
 
     if bank_extension not in _BANK_ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Unsupported bank file type. Use CSV, XLSX, or OFX.")
+        raise HTTPException(status_code=400, detail="Unsupported bank file type. Use CSV, XLSX, OFX, or PDF.")
 
     if sheet_extension not in _SHEET_ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Unsupported sheet file type. Use CSV or XLSX.")

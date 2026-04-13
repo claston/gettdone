@@ -310,7 +310,7 @@ async function runAnalyze() {
   setResultVisibility(false);
 
   if (!bankFileInput.files || !bankFileInput.files[0]) {
-    setError("Selecione um arquivo de extrato (CSV, XLSX ou OFX).");
+    setError("Selecione um arquivo de extrato (CSV, XLSX, OFX ou PDF).");
     return;
   }
 
@@ -354,7 +354,7 @@ async function runReconcile() {
   setResultVisibility(false);
 
   if (!bankFileInput.files || !bankFileInput.files[0]) {
-    setError("Selecione um arquivo de extrato (CSV, XLSX ou OFX).");
+    setError("Selecione um arquivo de extrato (CSV, XLSX, OFX ou PDF).");
     return;
   }
 

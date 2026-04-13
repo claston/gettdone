@@ -6,6 +6,7 @@ from app.application.errors import UnsupportedFileTypeError
 from app.application.models import AnalysisData, BeforeAfterRow, NormalizedTransaction, TransactionRow
 from app.application.normalizer import normalize_transactions
 from app.application.ofx_parser import parse_ofx_transactions
+from app.application.pdf_parser import parse_pdf_transactions
 from app.application.reconciliation import reconcile_transactions
 from app.application.storage_service import TempAnalysisStorage
 from app.application.xlsx_parser import parse_xlsx_transactions
@@ -20,7 +21,7 @@ from app.schemas import (
     TransactionPreview,
 )
 
-SUPPORTED_EXTENSIONS = {"csv", "xlsx", "ofx"}
+SUPPORTED_EXTENSIONS = {"csv", "xlsx", "ofx", "pdf"}
 
 
 class AnalyzeService:
@@ -33,7 +34,10 @@ class AnalyzeService:
             raise UnsupportedFileTypeError
 
         analysis_id = f"an_{uuid4().hex[:12]}"
-        parsed_transactions = self._build_transactions_for_extension(extension, raw_bytes)
+        parsed_transactions, layout_inference_name, layout_inference_confidence = self._build_transactions_for_extension(
+            extension,
+            raw_bytes,
+        )
         transactions = normalize_transactions(parsed_transactions)
         reconciliation_result = reconcile_transactions(transactions)
         preview_before_after = [
@@ -150,11 +154,20 @@ class AnalyzeService:
                 for row in preview_before_after
             ],
             expires_at=expires_at,
+            layout_inference_name=layout_inference_name,
+            layout_inference_confidence=layout_inference_confidence,
         )
 
-    def _build_transactions_for_extension(self, extension: str, raw_bytes: bytes) -> list[NormalizedTransaction]:
+    def _build_transactions_for_extension(
+        self,
+        extension: str,
+        raw_bytes: bytes,
+    ) -> tuple[list[NormalizedTransaction], str | None, float | None]:
         if extension == "csv":
-            return parse_csv_transactions(raw_bytes)
+            return parse_csv_transactions(raw_bytes), None, None
         if extension == "xlsx":
-            return parse_xlsx_transactions(raw_bytes)
-        return parse_ofx_transactions(raw_bytes)
+            return parse_xlsx_transactions(raw_bytes), None, None
+        if extension == "ofx":
+            return parse_ofx_transactions(raw_bytes), None, None
+        result = parse_pdf_transactions(raw_bytes)
+        return result.transactions, result.layout.layout_name, result.layout.confidence

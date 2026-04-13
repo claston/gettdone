@@ -19,7 +19,7 @@ from app.schemas import (
 
 class FakeAnalyzeService:
     def analyze(self, filename: str, raw_bytes: bytes) -> AnalyzeResponse:
-        if not filename.endswith((".csv", ".xlsx", ".ofx")):
+        if not filename.endswith((".csv", ".xlsx", ".ofx", ".pdf")):
             from app.application import UnsupportedFileTypeError
 
             raise UnsupportedFileTypeError
@@ -118,7 +118,7 @@ def test_analyze_unsupported_file_type() -> None:
     client = build_client()
     response = client.post(
         "/analyze",
-        files={"file": ("sample.pdf", b"%PDF", "application/pdf")},
+        files={"file": ("sample.txt", b"unsupported", "text/plain")},
     )
 
     assert response.status_code == 400

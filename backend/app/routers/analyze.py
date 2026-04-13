@@ -16,6 +16,6 @@ async def analyze(
         data = await file.read()
         return service.analyze(filename=file.filename or "", raw_bytes=data)
     except UnsupportedFileTypeError:
-        raise HTTPException(status_code=400, detail="Unsupported file type. Use CSV, XLSX, or OFX.")
+        raise HTTPException(status_code=400, detail="Unsupported file type. Use CSV, XLSX, OFX, or PDF.")
     except InvalidFileContentError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

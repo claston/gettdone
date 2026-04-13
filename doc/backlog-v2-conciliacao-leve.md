@@ -240,6 +240,67 @@ Fora de escopo nesta fase:
   - testes unitarios cobrem casos `ok`, `atencao`, `inconsistente`
   - teste de integracao cobre caminho feliz e caminho sem saldo disponivel
 
+## EPIC 9 - Importacao de extrato em PDF sem selecao de banco (NOVO)
+
+Plano detalhado: `doc/plan-pdf-ofx-inferencia.md`
+
+34. `P0` Spike tecnico com PDF real e contrato minimo de qualidade
+- Estimativa: 4h
+- Dependencias: item 4
+- Referencia de execucao: `doc/spike-pdf-nubank-2023-11.md`
+- Pronto quando:
+  - `backend/samples/NU_150702837_01NOV2023_30NOV2023.pdf` e processado ponta-a-ponta em ambiente local
+  - taxa minima de extraicao de linhas de transacao e definida para aceite tecnico
+  - riscos de OCR vs texto nativo ficam documentados
+
+35. `P0` Parser PDF de extrato bancario (texto nativo)
+- Estimativa: 8h
+- Dependencias: item 34
+- Pronto quando:
+  - `PDF` entra no mesmo schema normalizado usado por `CSV`/`XLSX`/`OFX`
+  - parser cobre data, descricao, valor e sinal
+  - erros de conteudo invalido retornam mensagem clara
+
+36. `P0` Inferencia automatica de layout sem combobox de banco
+- Estimativa: 8h
+- Dependencias: item 35
+- Pronto quando:
+  - mecanismo de score escolhe layout com confianca minima configuravel
+  - fallback generico funciona sem exigir selecao manual do banco
+  - resposta expone `layout_inference_confidence` para observabilidade
+
+37. `P1` Gerador OFX a partir das transacoes extraidas do PDF
+- Estimativa: 6h
+- Dependencias: item 35
+- Pronto quando:
+  - sistema gera OFX valido com `STMTTRN` para todas as transacoes parseadas
+  - datas e valores ficam consistentes com preview da analise
+  - arquivo OFX pode ser baixado como bonus da analise
+
+38. `P1` Endpoint de download do OFX bonus por `analysis_id`
+- Estimativa: 4h
+- Dependencias: itens 3 e 37
+- Pronto quando:
+  - existe rota dedicada para baixar `gettdone_bonus_{analysis_id}.ofx`
+  - expiracao segue o mesmo TTL de `report`
+  - `analysis_id` inexistente/expirado retorna `404`
+
+39. `P0` Cobertura de testes (unitario + integracao) para fluxo PDF
+- Estimativa: 6h
+- Dependencias: itens 35, 36, 37 e 38
+- Pronto quando:
+  - existe teste feliz de `POST /analyze` com `PDF`
+  - existe teste feliz de download do OFX bonus
+  - existe pelo menos 1 teste negativo de PDF invalido/nao suportado
+
+40. `P1` Observabilidade de layouts e estrategia de expansao
+- Estimativa: 3h
+- Dependencias: itens 36 e 39
+- Pronto quando:
+  - logs/metricas registram banco inferido, confianca e falhas de parsing
+  - existe fila de novos layouts para cobertura incremental sem quebrar existentes
+  - backlog de melhoria continua e atualizado com base em dados reais
+
 ---
 
 ## Corte recomendado para demo V2-MVP (contador)
@@ -262,6 +323,13 @@ Itens:
 - `31` `balance_check` na API (futuro)
 - `32` Exibicao de saldo no preview/export (futuro)
 - `33` Testes de validacao de saldo (futuro)
+- `34` Spike tecnico de PDF real (futuro imediato)
+- `35` Parser PDF bancario (futuro imediato)
+- `36` Inferencia automatica de layout sem combobox (futuro imediato)
+- `37` Gerador OFX bonus (futuro imediato)
+- `38` Endpoint de download do OFX bonus (futuro imediato)
+- `39` Testes do fluxo PDF (futuro imediato)
+- `40` Observabilidade e expansao de layouts (futuro imediato)
 
 ---
 

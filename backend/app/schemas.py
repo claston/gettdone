@@ -73,6 +73,8 @@ class AnalyzeResponse(BaseModel):
     preview_transactions: list[TransactionPreview]
     preview_before_after: list[BeforeAfterPreview]
     expires_at: str | None
+    layout_inference_name: str | None = None
+    layout_inference_confidence: float | None = None
 
 
 class ReconcileIntakeResponse(BaseModel):
