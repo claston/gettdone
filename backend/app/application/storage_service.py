@@ -100,58 +100,81 @@ class TempAnalysisStorage:
         workbook = Workbook()
         summary_sheet = workbook.active
         summary_sheet.title = "Resumo"
-        summary_sheet.append(["metric", "value"])
-        summary_sheet.append(["total_bank_rows", summary.get("total_bank_rows", 0)])
-        summary_sheet.append(["total_sheet_rows", summary.get("total_sheet_rows", 0)])
-        summary_sheet.append(["conciliated_count", summary.get("conciliated_count", 0)])
-        summary_sheet.append(["pending_count", summary.get("pending_count", 0)])
-        summary_sheet.append(["divergent_count", summary.get("divergent_count", 0)])
+        summary_sheet.append(["Metrica", "Valor"])
+        summary_sheet.append(["Total linhas extrato", summary.get("total_bank_rows", 0)])
+        summary_sheet.append(["Total linhas planilha", summary.get("total_sheet_rows", 0)])
+        summary_sheet.append(["Conciliados", summary.get("conciliated_count", 0)])
+        summary_sheet.append(["Pendentes", summary.get("pending_count", 0)])
+        summary_sheet.append(["Divergentes", summary.get("divergent_count", 0)])
         self._format_transacoes_sheet(summary_sheet)
 
         detail_sheet = workbook.create_sheet(title="Conciliacao_Detalhada")
         detail_headers = [
-            "row_id",
-            "source",
-            "date",
-            "description",
-            "amount",
-            "status",
-            "match_rule",
-            "matched_row_id",
-            "reason",
+            "Linha",
+            "Fonte",
+            "Data",
+            "Descricao",
+            "Valor",
+            "Status",
+            "Regra de match",
+            "Motivo",
+            "Linha pareada",
         ]
         detail_sheet.append(detail_headers)
         for row in reconciliation_rows:
-            detail_sheet.append([row.get(header) for header in detail_headers])
+            detail_sheet.append(
+                [
+                    row.get("row_id"),
+                    self._translate_source_label(row.get("source")),
+                    row.get("date"),
+                    row.get("description"),
+                    row.get("amount"),
+                    self._translate_status_label(row.get("status")),
+                    self._translate_match_rule_label(row.get("match_rule")),
+                    self._translate_reason_label(row.get("reason")),
+                    row.get("matched_row_id"),
+                ]
+            )
         self._format_transacoes_sheet(detail_sheet)
 
         problems_sheet = workbook.create_sheet(title="Problemas")
         problem_row_headers = [
-            "row_id",
-            "source",
-            "date",
-            "description",
-            "amount",
-            "status",
-            "reason",
-            "matched_row_id",
+            "Linha",
+            "Fonte",
+            "Data",
+            "Descricao",
+            "Valor",
+            "Status",
+            "Motivo",
+            "Linha pareada",
         ]
         problems_sheet.append(problem_row_headers)
         problematic_rows = [
             row for row in reconciliation_rows if row.get("status") in {"pendente", "divergente"}
         ]
         for row in problematic_rows:
-            problems_sheet.append([row.get(header) for header in problem_row_headers])
+            problems_sheet.append(
+                [
+                    row.get("row_id"),
+                    self._translate_source_label(row.get("source")),
+                    row.get("date"),
+                    row.get("description"),
+                    row.get("amount"),
+                    self._translate_status_label(row.get("status")),
+                    self._translate_reason_label(row.get("reason")),
+                    row.get("matched_row_id"),
+                ]
+            )
         if len(problematic_rows) == 0:
             problems_sheet.append(
                 [
-                    "none",
-                    "system",
+                    "nenhum",
+                    "Sistema",
                     "",
-                    "No pending/divergent issues were detected.",
+                    "Nenhuma pendencia ou divergencia foi identificada.",
                     "",
-                    "none",
-                    "none",
+                    "-",
+                    "-",
                     "",
                 ]
             )
@@ -162,7 +185,20 @@ class TempAnalysisStorage:
         csv_headers = detail_headers
         csv_lines = [",".join(csv_headers)]
         for row in reconciliation_rows:
-            values = [self._escape_csv_value(row.get(header)) for header in csv_headers]
+            values = [
+                self._escape_csv_value(value)
+                for value in [
+                    row.get("row_id"),
+                    self._translate_source_label(row.get("source")),
+                    row.get("date"),
+                    row.get("description"),
+                    row.get("amount"),
+                    self._translate_status_label(row.get("status")),
+                    self._translate_match_rule_label(row.get("match_rule")),
+                    self._translate_reason_label(row.get("reason")),
+                    row.get("matched_row_id"),
+                ]
+            ]
             csv_lines.append(",".join(values))
         (analysis_dir / "reconcile_report.csv").write_text("\n".join(csv_lines), encoding="utf-8")
 
@@ -240,3 +276,46 @@ class TempAnalysisStorage:
         if any(char in text for char in [",", "\"", "\n", "\r"]):
             return f"\"{text.replace('\"', '\"\"')}\""
         return text
+
+    def _translate_source_label(self, source: object) -> str:
+        text = "" if source is None else str(source)
+        labels = {
+            "bank": "Banco",
+            "sheet": "Planilha",
+            "system": "Sistema",
+        }
+        return labels.get(text, text or "-")
+
+    def _translate_status_label(self, status: object) -> str:
+        text = "" if status is None else str(status)
+        labels = {
+            "conciliado": "Conciliado",
+            "pendente": "Pendente",
+            "divergente": "Divergente",
+            "none": "-",
+        }
+        return labels.get(text, text or "-")
+
+    def _translate_match_rule_label(self, match_rule: object) -> str:
+        text = "" if match_rule is None else str(match_rule)
+        labels = {
+            "exact": "Exato",
+            "date_tolerance": "Tolerancia de data",
+            "description_similarity": "Similaridade de descricao",
+            "none": "-",
+        }
+        return labels.get(text, text or "-")
+
+    def _translate_reason_label(self, reason: object) -> str:
+        text = "" if reason is None else str(reason)
+        labels = {
+            "missing_in_sheet": "Pendente na planilha",
+            "missing_in_bank": "Pendente no banco",
+            "amount_mismatch": "Diferenca de valor",
+            "date_out_of_tolerance_window": "Data fora da tolerancia",
+            "matched_equal_amount_same_day": "Valor igual na mesma data",
+            "matched_equal_amount_within_2_days": "Valor igual dentro de 2 dias",
+            "matched_equal_amount_with_similar_description": "Valor igual com descricao similar",
+            "none": "-",
+        }
+        return labels.get(text, text or "-")

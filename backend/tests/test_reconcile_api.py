@@ -452,24 +452,24 @@ def test_reconcile_report_happy_path_csv_and_not_found() -> None:
     assert "Problemas" in workbook.sheetnames
     problems_sheet = workbook["Problemas"]
     assert [cell.value for cell in problems_sheet[1]] == [
-        "row_id",
-        "source",
-        "date",
-        "description",
-        "amount",
-        "status",
-        "reason",
-        "matched_row_id",
+        "Linha",
+        "Fonte",
+        "Data",
+        "Descricao",
+        "Valor",
+        "Status",
+        "Motivo",
+        "Linha pareada",
     ]
     assert problems_sheet.max_row == 3
-    assert problems_sheet["F2"].value == "divergente"
-    assert problems_sheet["F3"].value == "divergente"
+    assert problems_sheet["F2"].value == "Divergente"
+    assert problems_sheet["F3"].value == "Divergente"
     assert problems_sheet.max_row >= 2
 
     csv_report = client.get(f"/reconcile-report/{analysis_id}?format=csv")
     assert csv_report.status_code == 200
     assert csv_report.headers["content-type"].startswith("text/csv")
-    assert "row_id,source,date,description,amount,status,match_rule,matched_row_id,reason" in csv_report.text
+    assert "Linha,Fonte,Data,Descricao,Valor,Status,Regra de match,Motivo,Linha pareada" in csv_report.text
 
     missing = client.get("/reconcile-report/rc_missing_id")
     assert missing.status_code == 404
@@ -494,23 +494,23 @@ def test_reconcile_report_includes_fallback_problem_row_when_no_issues() -> None
     problems_sheet = workbook["Problemas"]
 
     assert [cell.value for cell in problems_sheet[1]] == [
-        "row_id",
-        "source",
-        "date",
-        "description",
-        "amount",
-        "status",
-        "reason",
-        "matched_row_id",
+        "Linha",
+        "Fonte",
+        "Data",
+        "Descricao",
+        "Valor",
+        "Status",
+        "Motivo",
+        "Linha pareada",
     ]
     assert [cell.value for cell in problems_sheet[2]] == [
-        "none",
-        "system",
+        "nenhum",
+        "Sistema",
         None,
-        "No pending/divergent issues were detected.",
+        "Nenhuma pendencia ou divergencia foi identificada.",
         None,
-        "none",
-        "none",
+        "-",
+        "-",
         None,
     ]
 
