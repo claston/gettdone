@@ -108,6 +108,7 @@ function bindDropzone(config) {
     const reconcileRowsBody = document.getElementById("reconcile-rows-body");
     const reconcileSearchInput = document.getElementById("reconcile-search-input");
     const reconcileSearchClear = document.getElementById("reconcile-search-clear");
+    const reconcileStatusFilters = document.getElementById("reconcile-status-filters");
     const reconcilePageInfo = document.getElementById("reconcile-page-info");
     const reconcilePrevPage = document.getElementById("reconcile-prev-page");
     const reconcileNextPage = document.getElementById("reconcile-next-page");
@@ -136,6 +137,10 @@ function bindDropzone(config) {
     let allReconcileRows = [];
     let filteredReconcileRows = [];
     let reconcileCurrentPage = 1;
+    let reconcileStatusFilter = "all";
+    const reconcileStatusButtons = reconcileStatusFilters
+        ? Array.from(reconcileStatusFilters.querySelectorAll("button[data-status]"))
+        : [];
 
     function focusUploadSection() {
         if (!uploadSection) {
@@ -634,6 +639,71 @@ function bindDropzone(config) {
         return labels[status] || "";
     }
 
+    function normalizeStatusFilter(status) {
+        const allowed = ["all", "conciliado", "pendente", "divergente"];
+        return allowed.includes(status) ? status : "all";
+    }
+
+    function rowMatchesStatusFilter(row, status) {
+        if (status === "all") {
+            return true;
+        }
+        return String(row.status || "").toLowerCase() === status;
+    }
+
+    function reconcileStatusTotals(rows) {
+        const totals = {
+            all: rows.length,
+            conciliado: 0,
+            pendente: 0,
+            divergente: 0
+        };
+
+        rows.forEach(function (row) {
+            const status = String(row.status || "").toLowerCase();
+            if (Object.prototype.hasOwnProperty.call(totals, status)) {
+                totals[status] += 1;
+            }
+        });
+
+        return totals;
+    }
+
+    function reconcileStatusButtonLabel(status, count) {
+        const labels = {
+            all: "Todos",
+            conciliado: "Conciliado",
+            pendente: "Pendente",
+            divergente: "Divergente"
+        };
+        const baseLabel = labels[status] || "Todos";
+        return `${baseLabel} (${count})`;
+    }
+
+    function renderReconcileStatusFilters() {
+        if (reconcileStatusButtons.length === 0) {
+            return;
+        }
+
+        const totals = reconcileStatusTotals(allReconcileRows);
+        const activeStatus = normalizeStatusFilter(reconcileStatusFilter);
+        reconcileStatusFilter = activeStatus;
+
+        reconcileStatusButtons.forEach(function (button) {
+            const status = normalizeStatusFilter(button.dataset.status || "all");
+            const isActive = status === activeStatus;
+            const count = Number(totals[status] || 0);
+
+            button.textContent = reconcileStatusButtonLabel(status, count);
+            button.setAttribute("aria-pressed", isActive ? "true" : "false");
+            button.classList.toggle("bg-primary", isActive);
+            button.classList.toggle("text-on-primary", isActive);
+            button.classList.toggle("bg-surface-container-high", !isActive);
+            button.classList.toggle("text-on-surface-variant", !isActive);
+            button.classList.toggle("hover:bg-surface-container-highest", !isActive);
+        });
+    }
+
     function rowMatchesQuery(row, query) {
         if (!query) {
             return true;
@@ -662,6 +732,17 @@ function bindDropzone(config) {
     function getPageRows(rows, page) {
         const start = (page - 1) * ROWS_PER_PAGE;
         return rows.slice(start, start + ROWS_PER_PAGE);
+    }
+
+    function buildFillerRowsHtml(count) {
+        if (count <= 0) {
+            return "";
+        }
+
+        const fillerCell = '<td class="px-6 py-4 text-sm text-transparent select-none" aria-hidden="true">&nbsp;</td>';
+        return Array.from({ length: count }, function (_, index) {
+            return `<tr class="pointer-events-none" data-filler-row="${index + 1}" aria-hidden="true">${fillerCell.repeat(9)}</tr>`;
+        }).join("");
     }
 
     function renderPaginationControls() {
@@ -710,12 +791,14 @@ function bindDropzone(config) {
 
         const items = getPageRows(filteredReconcileRows, reconcileCurrentPage);
         if (items.length === 0) {
-            reconcileRowsBody.innerHTML = '<tr><td class="px-6 py-4 text-sm text-on-surface-variant" colspan="9">Sem linhas de conciliacao para exibir.</td></tr>';
+            const emptyStateRow = '<tr><td class="px-6 py-4 text-sm text-on-surface-variant" colspan="9">Sem linhas de conciliacao para exibir.</td></tr>';
+            const fillerRows = buildFillerRowsHtml(Math.max(0, ROWS_PER_PAGE - 1));
+            reconcileRowsBody.innerHTML = `${emptyStateRow}${fillerRows}`;
             renderPaginationControls();
             return;
         }
 
-        reconcileRowsBody.innerHTML = items.map(function (row) {
+        const renderedRows = items.map(function (row) {
             const meta = matchMeta(row.match_rule);
             const reason = reasonLabel(row.reason);
             const paired = row.matched_row_id || "-";
@@ -737,13 +820,16 @@ ${meta.percent}
 <td class="px-6 py-4 text-xs font-mono text-primary font-medium">${escapeHtml(paired)}</td>
 </tr>`;
         }).join("");
+        const fillerRows = buildFillerRowsHtml(Math.max(0, ROWS_PER_PAGE - items.length));
+        reconcileRowsBody.innerHTML = `${renderedRows}${fillerRows}`;
         renderPaginationControls();
     }
 
     function applyReconcileFilter() {
         const query = normalizeText(reconcileSearchInput ? reconcileSearchInput.value : "");
+        const status = normalizeStatusFilter(reconcileStatusFilter);
         filteredReconcileRows = allReconcileRows.filter(function (row) {
-            return rowMatchesQuery(row, query);
+            return rowMatchesStatusFilter(row, status) && rowMatchesQuery(row, query);
         });
         const pages = totalPages(filteredReconcileRows.length);
         reconcileCurrentPage = Math.min(reconcileCurrentPage, pages);
@@ -753,6 +839,7 @@ ${meta.percent}
     function setReconcileRows(rows) {
         allReconcileRows = Array.isArray(rows) ? rows : [];
         reconcileCurrentPage = 1;
+        renderReconcileStatusFilters();
         applyReconcileFilter();
     }
 
@@ -914,6 +1001,17 @@ ${meta.percent}
         });
     }
 
+    if (reconcileStatusButtons.length > 0) {
+        reconcileStatusButtons.forEach(function (button) {
+            button.addEventListener("click", function () {
+                reconcileStatusFilter = normalizeStatusFilter(button.dataset.status || "all");
+                reconcileCurrentPage = 1;
+                renderReconcileStatusFilters();
+                applyReconcileFilter();
+            });
+        });
+    }
+
     if (reconcilePrevPage) {
         reconcilePrevPage.addEventListener("click", function () {
             reconcileCurrentPage = Math.max(1, reconcileCurrentPage - 1);
@@ -930,6 +1028,7 @@ ${meta.percent}
     }
 
     updateReportGateState();
+    renderReconcileStatusFilters();
     setReconcileRows([]);
 
     if (showReportBtn && reconcileReportPreview) {
