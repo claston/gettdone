@@ -7,9 +7,9 @@ from openpyxl import load_workbook
 from app.application.column_mapping import (
     FIELD_ALIASES,
     REQUIRED_FIELDS,
+    _score_header_for_field,
     normalize_header,
     resolve_sheet_field_map,
-    _score_header_for_field,
 )
 from app.application.csv_parser import DATE_FORMATS, _parse_amount
 from app.application.errors import InvalidFileContentError
