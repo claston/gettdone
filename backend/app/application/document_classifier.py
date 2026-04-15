@@ -3,7 +3,6 @@ from __future__ import annotations
 import csv
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import datetime
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any
