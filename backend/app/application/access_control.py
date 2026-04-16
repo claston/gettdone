@@ -38,10 +38,14 @@ class AccessControlService:
         self,
         state_file: Path,
         token_secret: str,
+        anonymous_quota_limit: int = ANONYMOUS_QUOTA_LIMIT,
+        registered_quota_limit: int = REGISTERED_QUOTA_LIMIT,
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         self.state_file = state_file
         self.token_secret = token_secret.encode("utf-8")
+        self.anonymous_quota_limit = anonymous_quota_limit
+        self.registered_quota_limit = registered_quota_limit
         self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
         self._lock = RLock()
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
@@ -56,13 +60,21 @@ class AccessControlService:
             user_id = self._decode_token(user_token)
             if user_id not in self._state["users"]:
                 raise InvalidUserTokenError
-            return IdentityContext(identity_type="user", identity_id=user_id, quota_limit=REGISTERED_QUOTA_LIMIT)
+            return IdentityContext(
+                identity_type="user",
+                identity_id=user_id,
+                quota_limit=self.registered_quota_limit,
+            )
 
         fingerprint = (anonymous_fingerprint or "").strip()
         if not fingerprint:
             raise InvalidUserTokenError
         anon_id = self._ensure_anonymous_identity(fingerprint)
-        return IdentityContext(identity_type="anonymous", identity_id=anon_id, quota_limit=ANONYMOUS_QUOTA_LIMIT)
+        return IdentityContext(
+            identity_type="anonymous",
+            identity_id=anon_id,
+            quota_limit=self.anonymous_quota_limit,
+        )
 
     def register_user(self, name: str, email: str, password: str) -> RegisteredUser:
         normalized_email = email.strip().lower()

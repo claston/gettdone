@@ -31,6 +31,7 @@ class BeforeAfterRow:
 class AnalysisData:
     analysis_id: str
     file_type: str
+    upload_filename: str | None
     transactions_total: int
     total_inflows: float
     total_outflows: float

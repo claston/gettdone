@@ -30,11 +30,15 @@
   function resolveApiBase() {
     const host = window.location.hostname;
     const port = window.location.port;
-    const isDevFrontend = (host === "localhost" || host === "127.0.0.1") && port === "3000";
+    const isLocalHost = host === "localhost" || host === "127.0.0.1";
+    const isDevFrontend = isLocalHost && port !== "8000";
     if (isDevFrontend) {
       return "http://127.0.0.1:8000";
     }
-    return window.location.origin || "http://127.0.0.1:8000";
+    if (window.location.origin && window.location.origin !== "null") {
+      return window.location.origin;
+    }
+    return "http://127.0.0.1:8000";
   }
 
   const apiBase = resolveApiBase();
@@ -265,19 +269,19 @@
   }
 
   function runDownloadOfx() {
-    if (!state.analysisId) {
+    if (!state.processingId) {
       setStatus("Converta um arquivo antes de baixar.", "error");
       return;
     }
-    setStatus("Download OFX ainda não está disponível neste fluxo.", null);
+    window.open(`${apiBase}/convert-report/${state.processingId}?format=ofx`, "_blank", "noopener");
   }
 
   function runDownloadCsv() {
-    if (!state.analysisId) {
+    if (!state.processingId) {
       setStatus("Converta um arquivo antes de baixar.", "error");
       return;
     }
-    setStatus("Download CSV ainda não está disponível neste fluxo.", null);
+    window.open(`${apiBase}/convert-report/${state.processingId}?format=csv`, "_blank", "noopener");
   }
 
   function bindDropzone() {

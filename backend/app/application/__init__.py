@@ -13,6 +13,7 @@ from app.application.errors import (
 from app.application.ledger_match_engine import (
     match_exact_then_date_tolerance_then_description_similarity_1to1,
 )
+from app.application.ofx_writer import build_ofx_statement
 from app.application.reconcile_problem_engine import generate_reconciliation_problems
 from app.application.reconcile_status_engine import classify_reconciliation_rows
 from app.application.report_service import ReportService
@@ -26,6 +27,7 @@ __all__ = [
     "FileTooLargeError",
     "InvalidFileContentError",
     "InvalidUserTokenError",
+    "build_ofx_statement",
     "match_exact_then_date_tolerance_then_description_similarity_1to1",
     "generate_reconciliation_problems",
     "classify_reconciliation_rows",

@@ -5,12 +5,14 @@ from openpyxl import load_workbook
 
 from app.application import AnalysisNotFoundError, TempAnalysisStorage
 from app.application.models import AnalysisData, TransactionRow
+from app.application.ofx_parser import parse_ofx_transactions
 
 
 def _build_analysis_data(analysis_id: str = "an_testttl") -> AnalysisData:
     return AnalysisData(
         analysis_id=analysis_id,
         file_type="csv",
+        upload_filename="sample.csv",
         transactions_total=1,
         total_inflows=100.0,
         total_outflows=-20.0,
@@ -94,6 +96,7 @@ def test_save_analysis_writes_full_transaction_set_to_report(tmp_path) -> None:
     data = AnalysisData(
         analysis_id="an_full_report",
         file_type="csv",
+        upload_filename="full.csv",
         transactions_total=len(full_rows),
         total_inflows=0.0,
         total_outflows=-325.0,
@@ -108,3 +111,24 @@ def test_save_analysis_writes_full_transaction_set_to_report(tmp_path) -> None:
     workbook = load_workbook(report_path)
     sheet = workbook["Transacoes"]
     assert sheet.max_row == 26
+
+
+def test_save_analysis_writes_convert_ofx_artifact(tmp_path) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    storage.save_analysis(_build_analysis_data())
+
+    ofx_path = tmp_path / "an_testttl" / "converted.ofx"
+    assert ofx_path.exists()
+
+    parsed = parse_ofx_transactions(ofx_path.read_bytes())
+    assert len(parsed) == 1
+    assert parsed[0].description == "TEST"
+
+
+def test_save_analysis_writes_convert_csv_artifact(tmp_path) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    storage.save_analysis(_build_analysis_data())
+
+    csv_path = tmp_path / "an_testttl" / "converted.csv"
+    assert csv_path.exists()
+    assert "date,description,amount,category,reconciliation_status" in csv_path.read_text(encoding="utf-8")

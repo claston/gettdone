@@ -65,3 +65,16 @@ def test_invalid_token_is_rejected(tmp_path) -> None:
         assert False, "Expected InvalidUserTokenError"
     except InvalidUserTokenError:
         assert True
+
+
+def test_custom_anonymous_quota_limit_is_applied(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+        anonymous_quota_limit=99,
+    )
+
+    identity = service.resolve_identity(anonymous_fingerprint="anon-device-b", user_token=None)
+    assert identity.identity_type == "anonymous"
+    assert identity.quota_limit == 99
+    assert service.get_remaining_quota(identity) == 99

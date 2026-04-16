@@ -10,6 +10,12 @@ class ReportService:
     def get_report_path(self, analysis_id: str) -> Path:
         return self.storage.get_report_path(analysis_id)
 
+    def get_convert_report_path(self, analysis_id: str, file_format: str) -> Path:
+        return self.storage.get_convert_report_path(analysis_id, file_format=file_format)
+
+    def get_upload_filename(self, analysis_id: str) -> str | None:
+        return self.storage.get_upload_filename(analysis_id)
+
     def save_reconcile_report(
         self,
         summary: dict[str, int],

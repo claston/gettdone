@@ -91,6 +91,7 @@ class AnalyzeService:
         analysis_data = AnalysisData(
             analysis_id=analysis_id,
             file_type=extension,
+            upload_filename=filename or None,
             transactions_total=len(transactions),
             total_inflows=total_inflows,
             total_outflows=total_outflows,
