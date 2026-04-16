@@ -20,7 +20,7 @@ body {
 }
 
 .page {
-  width: min(1100px, calc(100% - 2rem));
+  width: min(1320px, calc(100% - 2rem));
   margin: 2rem auto 4rem;
   display: grid;
   gap: 1rem;
@@ -190,11 +190,15 @@ body {
 .kpi-label { margin: 0 0 0.25rem; font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .kpi-value { margin: 0; font-size: 1.2rem; font-weight: 800; }
 
-.table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: 0.7rem; }
+.table-wrap { overflow-x: auto; overflow-y: hidden; border: 1px solid var(--border); border-radius: 0.7rem; }
 
-table { width: 100%; border-collapse: collapse; min-width: 680px; }
-th, td { padding: 0.65rem; border-bottom: 1px solid #eef2f8; text-align: left; font-size: 0.9rem; }
+table { width: 100%; border-collapse: collapse; min-width: 980px; }
+th, td { padding: 0.65rem; border-bottom: 1px solid #eef2f8; text-align: left; font-size: 0.9rem; white-space: nowrap; }
 th { background: #f4f7fc; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: #3a4a65; }
+
+th:nth-child(2), td:nth-child(2) {
+  min-width: 520px;
+}
 
 .download-row {
   display: flex;

@@ -20,11 +20,14 @@
   const downloadOfxBtn = document.getElementById("download-ofx-btn");
   const downloadExcelBtn = document.getElementById("download-excel-btn");
   const downloadCsvBtn = document.getElementById("download-csv-btn");
+  const VIEW_STATE_KEY = "gettdone_ofx_convert_view_state_v1";
+  const VIEW_STATE_TTL_MS = 24 * 60 * 60 * 1000;
 
   const state = {
     analysisId: null,
     processingId: null,
     isLoading: false,
+    restoredFileMeta: null,
   };
 
   function resolveApiBase() {
@@ -58,6 +61,16 @@
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value || 0));
   }
 
+  function formatDate(value) {
+    const raw = String(value || "").trim();
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) {
+      return raw || "-";
+    }
+    const [, year, month, day] = match;
+    return `${day}-${month}-${year}`;
+  }
+
   function formatFileSize(bytes) {
     const value = Number(bytes || 0);
     if (value < 1024) {
@@ -86,6 +99,52 @@
     }
   }
 
+  function saveViewState(payload) {
+    try {
+      localStorage.setItem(
+        VIEW_STATE_KEY,
+        JSON.stringify({
+          saved_at: Date.now(),
+          processing_id: payload.processing_id || null,
+          analysis_id: payload.analysis_id || null,
+          analysis: payload.analysis || null,
+          quota_text: payload.quota_text || "-",
+          file_name: payload.file_name || null,
+          file_size: payload.file_size || null,
+        }),
+      );
+    } catch (_error) {
+      // Best-effort only: UI still works without persistence.
+    }
+  }
+
+  function loadViewState() {
+    try {
+      const raw = localStorage.getItem(VIEW_STATE_KEY);
+      if (!raw) {
+        return null;
+      }
+      const parsed = JSON.parse(raw);
+      const savedAt = Number(parsed.saved_at || 0);
+      if (!savedAt || Date.now() - savedAt > VIEW_STATE_TTL_MS) {
+        localStorage.removeItem(VIEW_STATE_KEY);
+        return null;
+      }
+      return parsed;
+    } catch (_error) {
+      localStorage.removeItem(VIEW_STATE_KEY);
+      return null;
+    }
+  }
+
+  function clearViewState() {
+    try {
+      localStorage.removeItem(VIEW_STATE_KEY);
+    } catch (_error) {
+      // Ignore storage failures.
+    }
+  }
+
   function setLoading(isLoading) {
     state.isLoading = isLoading;
     convertBtn.disabled = isLoading || !input.files || input.files.length === 0;
@@ -94,14 +153,26 @@
 
   function setSelectedFileLabel() {
     const file = input.files && input.files[0];
-    selectedFile.textContent = file ? `${file.name} (${formatFileSize(file.size)})` : "Nenhum arquivo selecionado";
+    const restoredMeta = state.restoredFileMeta;
+    const hasRestoredMeta = !file && restoredMeta && restoredMeta.name;
+    selectedFile.textContent = file
+      ? `${file.name} (${formatFileSize(file.size)})`
+      : hasRestoredMeta
+        ? `${restoredMeta.name} (${formatFileSize(restoredMeta.size)})`
+        : "Nenhum arquivo selecionado";
     convertBtn.disabled = !file || state.isLoading;
     if (dropzoneEmpty && dropzoneLoaded && dropzoneFileMeta) {
       if (file) {
+        state.restoredFileMeta = null;
         dropzone.classList.add("is-filled");
         dropzoneEmpty.classList.add("hidden");
         dropzoneLoaded.classList.remove("hidden");
         dropzoneFileMeta.textContent = `${file.name} • ${formatFileSize(file.size)}`;
+      } else if (hasRestoredMeta) {
+        dropzone.classList.add("is-filled");
+        dropzoneEmpty.classList.add("hidden");
+        dropzoneLoaded.classList.remove("hidden");
+        dropzoneFileMeta.textContent = `${restoredMeta.name} • ${formatFileSize(restoredMeta.size)}`;
       } else {
         dropzone.classList.remove("is-filled");
         dropzoneEmpty.classList.remove("hidden");
@@ -113,7 +184,9 @@
 
   function clearSelectedFile() {
     input.value = "";
+    state.restoredFileMeta = null;
     setSelectedFileLabel();
+    clearViewState();
     setStatus("Arquivo removido. Selecione outro PDF para continuar.", null);
   }
 
@@ -137,7 +210,7 @@
 
   function renderRows(rows) {
     if (!rows || rows.length === 0) {
-      reviewRows.innerHTML = '<tr><td colspan="5">Nenhuma transação para exibir.</td></tr>';
+      reviewRows.innerHTML = '<tr><td colspan="4">Nenhuma transação para exibir.</td></tr>';
       return;
     }
 
@@ -145,15 +218,46 @@
       .map(
         (row) => `
           <tr>
-            <td>${row.date || "-"}</td>
+            <td>${formatDate(row.date)}</td>
             <td>${row.description || "-"}</td>
-            <td>${formatCurrency(row.amount)}</td>
-            <td>${row.category || "-"}</td>
-            <td>${row.reconciliation_status || "-"}</td>
+            <td>${Number(row.amount || 0) > 0 ? formatCurrency(row.amount) : "-"}</td>
+            <td>${Number(row.amount || 0) < 0 ? formatCurrency(Math.abs(Number(row.amount || 0))) : "-"}</td>
           </tr>
         `,
       )
       .join("");
+  }
+
+  function restoreViewFromState(viewState) {
+    const analysis = viewState.analysis;
+    if (!analysis || !analysis.analysis_id) {
+      return;
+    }
+
+    state.analysisId = viewState.analysis_id || analysis.analysis_id;
+    state.processingId = viewState.processing_id || analysis.analysis_id;
+    state.restoredFileMeta = {
+      name: String(viewState.file_name || "").trim() || "arquivo_restaurado.pdf",
+      size: Number(viewState.file_size || 0),
+    };
+
+    renderKpis(analysis);
+    renderRows(analysis.preview_transactions || []);
+    setSelectedFileLabel();
+
+    analysisIdNode.textContent = state.analysisId || "-";
+    processingIdNode.textContent = state.processingId || "-";
+    quotaRemainingNode.textContent = viewState.quota_text || "-";
+
+    reviewSection.classList.remove("hidden");
+    downloadSection.classList.remove("hidden");
+
+    const canDownload = Boolean(state.analysisId || state.processingId);
+    if (downloadOfxBtn) downloadOfxBtn.disabled = !canDownload;
+    if (downloadExcelBtn) downloadExcelBtn.disabled = !canDownload;
+    if (downloadCsvBtn) downloadCsvBtn.disabled = !canDownload;
+
+    setStatus("Sessão restaurada. Você pode continuar o download.", "success");
   }
 
   async function postConvert(formData) {
@@ -246,6 +350,15 @@
       if (downloadOfxBtn) downloadOfxBtn.disabled = !canDownload;
       if (downloadExcelBtn) downloadExcelBtn.disabled = !canDownload;
       if (downloadCsvBtn) downloadCsvBtn.disabled = !canDownload;
+
+      saveViewState({
+        processing_id: state.processingId,
+        analysis_id: state.analysisId,
+        analysis,
+        quota_text: quotaRemainingNode.textContent || "-",
+        file_name: file.name || null,
+        file_size: Number(file.size || 0),
+      });
 
       if (payload.mode === "analyze") {
         setStatus("Conversão concluída via /analyze. Revise os dados e baixe o relatório.", "success");
@@ -343,4 +456,9 @@
 
   bindDropzone();
   setSelectedFileLabel();
+
+  const persistedState = loadViewState();
+  if (persistedState) {
+    restoreViewFromState(persistedState);
+  }
 })();
