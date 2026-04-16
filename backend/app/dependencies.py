@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from app.application import AnalyzeService, ReportService, TempAnalysisStorage
+from app.application import AccessControlService, AnalyzeService, ReportService, TempAnalysisStorage
 
 _backend_root = Path(__file__).resolve().parents[1]
 _storage = TempAnalysisStorage(
@@ -10,6 +10,10 @@ _storage = TempAnalysisStorage(
 )
 _analyze_service = AnalyzeService(storage=_storage)
 _report_service = ReportService(storage=_storage)
+_access_control_service = AccessControlService(
+    state_file=_backend_root / "tmp" / "access_control" / "state.json",
+    token_secret=os.getenv("ACCESS_CONTROL_TOKEN_SECRET", "dev-access-control-secret"),
+)
 
 
 def get_analyze_service() -> AnalyzeService:
@@ -18,3 +22,7 @@ def get_analyze_service() -> AnalyzeService:
 
 def get_report_service() -> ReportService:
     return _report_service
+
+
+def get_access_control_service() -> AccessControlService:
+    return _access_control_service

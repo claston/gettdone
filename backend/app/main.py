@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.dependencies import get_analyze_service, get_report_service
-from app.routers import analyze_router, health_router, reconcile_router, report_router
+from app.routers import analyze_router, auth_router, convert_router, health_router, reconcile_router, report_router
 
 app = FastAPI(title="gettdone API", version="0.1.0")
 
@@ -35,6 +35,8 @@ app.add_middleware(
 
 app.include_router(health_router)
 app.include_router(analyze_router)
+app.include_router(convert_router)
+app.include_router(auth_router)
 app.include_router(reconcile_router)
 app.include_router(report_router)
 
