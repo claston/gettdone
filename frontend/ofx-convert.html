@@ -1,0 +1,94 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GettDone | Conversor de Extrato</title>
+  <link rel="stylesheet" href="./ofx-convert.css" />
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <p class="eyebrow">Conversor V1</p>
+      <h1>Converta seu extrato em um fluxo único</h1>
+      <p class="lead">Envie o arquivo, revise os lançamentos e baixe o relatório em uma única tela.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="upload-title">
+      <div class="panel-head">
+        <h2 id="upload-title">1. Upload</h2>
+        <p>Somente PDF (até 2 MB)</p>
+      </div>
+
+      <label id="dropzone" class="dropzone" for="file-input" tabindex="0">
+        <input id="file-input" type="file" accept=".pdf,application/pdf" hidden />
+        <div id="dropzone-empty" class="dropzone-empty">
+          <strong>Arraste o arquivo aqui</strong>
+          <span>ou clique para selecionar</span>
+        </div>
+        <div id="dropzone-loaded" class="dropzone-loaded hidden">
+          <div class="loaded-icon" aria-hidden="true">✓</div>
+          <div class="loaded-text">
+            <strong>Arquivo PDF carregado</strong>
+            <span id="dropzone-file-meta">Pronto para conversão</span>
+          </div>
+          <button id="clear-file-btn" class="clear-file-btn" type="button">Remover arquivo</button>
+        </div>
+      </label>
+
+      <div class="upload-meta">
+        <span id="selected-file">Nenhum arquivo selecionado</span>
+        <button id="convert-btn" class="btn btn-primary" type="button" disabled>Converter</button>
+      </div>
+
+      <p id="status-msg" class="status" aria-live="polite"></p>
+    </section>
+
+    <section id="review-section" class="panel hidden" aria-labelledby="review-title">
+      <div class="panel-head">
+        <h2 id="review-title">2. Revisão</h2>
+        <p>Prévia das transações retornadas pela conversão.</p>
+      </div>
+
+      <div class="kpis" id="kpis"></div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Descrição</th>
+              <th>Valor</th>
+              <th>Categoria</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="review-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="download-section" class="panel hidden" aria-labelledby="download-title">
+      <div class="panel-head">
+        <h2 id="download-title">3. Download</h2>
+        <p>Baixe o relatório processado com um clique.</p>
+      </div>
+
+      <div class="download-row">
+        <div>
+          <p><strong>analysis_id:</strong> <span id="analysis-id">-</span></p>
+          <p><strong>processamento:</strong> <span id="processing-id">-</span></p>
+          <p><strong>quota restante:</strong> <span id="quota-remaining">-</span></p>
+        </div>
+        <div class="download-actions">
+          <button id="download-ofx-btn" class="btn btn-secondary" type="button" disabled>Baixar OFX</button>
+          <button id="download-excel-btn" class="btn btn-secondary" type="button" disabled>Baixar Excel</button>
+          <button id="download-csv-btn" class="btn btn-secondary" type="button" disabled>Baixar CSV</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="./ofx-convert.js"></script>
+</body>
+</html>
