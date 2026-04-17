@@ -110,6 +110,70 @@ def test_convert_edits_rejects_invalid_credit_debit_pair(tmp_path: Path) -> None
     app.dependency_overrides.clear()
 
 
+def test_convert_edits_deletes_row_and_updates_csv(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+
+    response = client.post(
+        "/convert-edits/an_convert123?anonymous_fingerprint=fp-owner",
+        json={
+            "edits": [
+                {
+                    "row_id": "row_1",
+                    "action": "delete",
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["transactions_total"] == 1
+    assert len(payload["preview_transactions"]) == 2
+    assert payload["preview_transactions"][0]["description"] == "DEBIT A"
+    assert payload["preview_transactions"][0]["is_deleted"] is True
+    assert payload["preview_transactions"][1]["description"] == "CREDIT B"
+    assert payload["preview_transactions"][1]["is_deleted"] is False
+
+    csv_report = client.get("/convert-report/an_convert123?format=csv&anonymous_fingerprint=fp-owner")
+    assert csv_report.status_code == 200
+    assert "DEBIT A" not in csv_report.text
+    assert "CREDIT B" in csv_report.text
+    app.dependency_overrides.clear()
+
+
+def test_convert_edits_inserts_row_and_updates_csv(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+
+    response = client.post(
+        "/convert-edits/an_convert123?anonymous_fingerprint=fp-owner",
+        json={
+            "edits": [
+                {
+                    "action": "insert",
+                    "insert_position": 2,
+                    "date": "2026-04-03",
+                    "description": "INSERTED C",
+                    "credit": 30.0,
+                    "debit": None,
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["transactions_total"] == 3
+    assert len(payload["preview_transactions"]) == 3
+    assert payload["preview_transactions"][2]["description"] == "INSERTED C"
+    assert payload["preview_transactions"][2]["amount"] == 30.0
+    assert payload["preview_transactions"][2]["is_deleted"] is False
+
+    csv_report = client.get("/convert-report/an_convert123?format=csv&anonymous_fingerprint=fp-owner")
+    assert csv_report.status_code == 200
+    assert "2026-04-03,INSERTED C,30.0" in csv_report.text
+    app.dependency_overrides.clear()
+
+
 def test_convert_edits_returns_not_found_for_missing_analysis(tmp_path: Path) -> None:
     client = build_client(tmp_path)
 

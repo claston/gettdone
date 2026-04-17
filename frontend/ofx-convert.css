@@ -51,6 +51,14 @@ body {
 .panel-head h2 { margin: 0; }
 .panel-head p { margin: 0.3rem 0 0.8rem; color: var(--muted); }
 
+.review-headline {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
 .dropzone {
   border: 2px dashed #9cb6e8;
   border-radius: 0.8rem;
@@ -192,16 +200,36 @@ body {
 
 .table-wrap { overflow-x: auto; overflow-y: hidden; border: 1px solid var(--border); border-radius: 0.7rem; }
 
-table { width: 100%; border-collapse: collapse; min-width: 980px; }
+table { width: 100%; border-collapse: collapse; min-width: 980px; table-layout: auto; }
 th, td { padding: 0.65rem; border-bottom: 1px solid #eef2f8; text-align: left; font-size: 0.9rem; white-space: nowrap; }
 th { background: #f4f7fc; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: #3a4a65; }
 
 th:nth-child(2), td:nth-child(2) {
   min-width: 520px;
+  max-width: 520px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 th:last-child, td:last-child {
-  width: 180px;
+  width: 250px;
+}
+
+tr.row-changed td {
+  background: #fff3d4;
+}
+
+tr.row-new td {
+  background: #dff7e6;
+}
+
+tr.row-deleted td {
+  background: #f7d8de;
+}
+
+tr.row-deleted td:not(.actions-cell) {
+  text-decoration: line-through;
+  color: #7a2b39;
 }
 
 .actions-cell {
@@ -211,10 +239,29 @@ th:last-child, td:last-child {
 }
 
 .btn-inline {
-  padding: 0.35rem 0.6rem;
+  padding: 0.3rem 0.52rem;
   border-radius: 0.5rem;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  line-height: 1;
+}
+
+.btn-icon {
+  font-size: 0.82rem;
+  line-height: 1;
+}
+
+#add-row-btn {
+  background: var(--primary);
+  color: #fff;
+  border: 1px solid var(--primary-dark);
+}
+
+#add-row-btn:hover {
+  background: var(--primary-dark);
 }
 
 .btn-ghost {
@@ -243,7 +290,9 @@ th:last-child, td:last-child {
 }
 
 .cell-input-description {
-  min-width: 320px;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
 }
 
 .cell-input-money {

@@ -46,8 +46,15 @@
 
     <section id="review-section" class="panel hidden" aria-labelledby="review-title">
       <div class="panel-head">
-        <h2 id="review-title">2. Revisão</h2>
-        <p>Prévia das transações retornadas pela conversão.</p>
+        <div class="review-headline">
+          <div>
+            <h2 id="review-title">2. Revisão</h2>
+            <p>Prévia das transações retornadas pela conversão.</p>
+          </div>
+          <button id="add-row-btn" class="btn btn-inline btn-ghost" type="button">
+            <span class="btn-icon" aria-hidden="true">＋</span><span>Novo Lançamento</span>
+          </button>
+        </div>
       </div>
 
       <div class="kpis" id="kpis"></div>
@@ -60,6 +67,7 @@
               <th>Histórico</th>
               <th>Crédito</th>
               <th>Débito</th>
+              <th>Ações</th>
             </tr>
           </thead>
           <tbody id="review-rows"></tbody>

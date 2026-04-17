@@ -40,8 +40,8 @@ def test_parse_pdf_transactions_with_itau_inline_layout(monkeypatch: pytest.Monk
     result = parse_pdf_transactions(b"%PDF synthetic inline")
 
     assert result.layout.layout_name in {"itau_statement_ptbr", "generic_statement_ptbr"}
-    assert len(result.transactions) == 2
-    assert any("SALDO DO DIA" not in item.description.upper() for item in result.transactions)
+    assert len(result.transactions) == 3
+    assert any("SALDO DO DIA" in item.description.upper() for item in result.transactions)
     assert any(item.amount > 0 for item in result.transactions)
     assert any(item.amount < 0 for item in result.transactions)
 

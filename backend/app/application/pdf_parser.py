@@ -51,7 +51,6 @@ OUTFLOW_HINTS = (
 IGNORED_LINE_PREFIXES = (
     "SALDO INICIAL",
     "SALDO FINAL",
-    "SALDO DO DIA",
     "MOVIMENTACOES",
     "EXTRATO GERADO DIA",
     "OUVIDORIA:",
@@ -178,7 +177,7 @@ def _parse_inline_statement_rows(lines: list[str]) -> tuple[list[NormalizedTrans
             continue
         candidates += 1
         raw_description = match.group("description").strip()
-        if not raw_description or _is_balance_line(raw_description):
+        if not raw_description:
             continue
 
         amount = _parse_amount(match.group("amount"))
@@ -220,11 +219,6 @@ def _should_ignore_line(normalized_line: str) -> bool:
     if any(token in normalized_line for token in IGNORED_LINE_TOKENS):
         return True
     return False
-
-
-def _is_balance_line(description: str) -> bool:
-    normalized = _normalize_text(description)
-    return "SALDO DO DIA" in normalized or normalized.startswith("SALDO ")
 
 
 def _apply_sign_hints(amount: float, description: str, section_hint: str | None) -> float:

@@ -8,6 +8,7 @@ class TransactionRow:
     amount: float
     category: str
     reconciliation_status: str
+    is_deleted: bool = False
 
 
 @dataclass

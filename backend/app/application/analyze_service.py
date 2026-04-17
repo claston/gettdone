@@ -66,7 +66,7 @@ class AnalyzeService:
                 category="Outros",
                 reconciliation_status=reconciliation_result.statuses[idx],
             )
-            for idx, item in enumerate(transactions[:20])
+            for idx, item in enumerate(transactions)
         ]
         report_rows = [
             TransactionRow(

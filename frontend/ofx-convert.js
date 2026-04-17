@@ -13,6 +13,7 @@
   const downloadSection = document.getElementById("download-section");
   const reviewRows = document.getElementById("review-rows");
   const kpis = document.getElementById("kpis");
+  const addRowBtn = document.getElementById("add-row-btn");
 
   const analysisIdNode = document.getElementById("analysis-id");
   const processingIdNode = document.getElementById("processing-id");
@@ -29,10 +30,18 @@
     isLoading: false,
     restoredFileMeta: null,
     previewRows: [],
+    originalRows: [],
     editingRowId: null,
     editDraft: null,
     analysisSnapshot: null,
+    lastChangedRowId: null,
+    lastChangedRowKind: null,
+    rowHighlightTimer: null,
   };
+
+  function isDraftRowId(rowId) {
+    return String(rowId || "").startsWith("row_draft_");
+  }
 
   function resolveApiBase() {
     const host = window.location.hostname;
@@ -143,6 +152,24 @@
     }
   }
 
+  function markChangedRow(rowId, kind) {
+    state.lastChangedRowId = rowId || null;
+    state.lastChangedRowKind = rowId ? (kind || "changed") : null;
+    if (state.rowHighlightTimer) {
+      window.clearTimeout(state.rowHighlightTimer);
+      state.rowHighlightTimer = null;
+    }
+    if (!rowId) {
+      return;
+    }
+    state.rowHighlightTimer = window.setTimeout(() => {
+      state.lastChangedRowId = null;
+      state.lastChangedRowKind = null;
+      state.rowHighlightTimer = null;
+      renderRows();
+    }, 1800);
+  }
+
   function saveViewState(payload) {
     try {
       localStorage.setItem(
@@ -156,6 +183,7 @@
           file_name: payload.file_name || null,
           file_size: payload.file_size || null,
           preview_rows: payload.preview_rows || null,
+          original_rows: payload.original_rows || null,
           editing_row_id: payload.editing_row_id || null,
           edit_draft: payload.edit_draft || null,
           updated_at: payload.updated_at || null,
@@ -218,6 +246,7 @@
       return;
     }
     const previewRowsNoRowId = state.previewRows.map(({ rowId, ...row }) => row);
+    const originalRowsNoRowId = state.originalRows.map(({ rowId, ...row }) => row);
     const { file_name, file_size } = getCurrentFileMeta();
     saveViewState({
       processing_id: state.processingId,
@@ -230,6 +259,7 @@
       file_name,
       file_size,
       preview_rows: previewRowsNoRowId,
+      original_rows: originalRowsNoRowId,
       editing_row_id: state.editingRowId,
       edit_draft: state.editDraft ? { ...state.editDraft } : null,
       updated_at: state.analysisSnapshot.updated_at || null,
@@ -277,9 +307,12 @@
     input.value = "";
     state.restoredFileMeta = null;
     state.previewRows = [];
+    state.originalRows = [];
     state.editingRowId = null;
     state.editDraft = null;
     state.analysisSnapshot = null;
+    markChangedRow(null);
+    if (addRowBtn) addRowBtn.disabled = true;
     setSelectedFileLabel();
     clearViewState();
     setStatus("Arquivo removido. Selecione outro PDF para continuar.", null);
@@ -346,6 +379,134 @@
     }));
   }
 
+  function setOriginalRows(rows) {
+    state.originalRows = (rows || []).map((row, idx) => ({
+      ...row,
+      rowId: row.rowId || `row_${idx + 1}`,
+    }));
+  }
+
+  function buildPatchFromHistoryRow(rowId, row, action) {
+    const amount = Number(row.amount || 0);
+    return {
+      row_id: rowId,
+      action: action || "update",
+      date: String(row.date || ""),
+      description: String(row.description || ""),
+      credit: amount > 0 ? Number(amount.toFixed(2)) : null,
+      debit: amount < 0 ? Number(Math.abs(amount).toFixed(2)) : null,
+    };
+  }
+
+  function getOriginalRow(rowId) {
+    return state.originalRows.find((item) => item.rowId === rowId) || null;
+  }
+
+  function isRowChanged(row) {
+    const original = getOriginalRow(row.rowId);
+    if (!original) {
+      return false;
+    }
+    return (
+      String(original.date || "") !== String(row.date || "") ||
+      String(original.description || "") !== String(row.description || "") ||
+      Number(original.amount || 0) !== Number(row.amount || 0) ||
+      Boolean(original.is_deleted) !== Boolean(row.is_deleted)
+    );
+  }
+
+  async function revertRowToOriginal(rowId) {
+    const original = getOriginalRow(rowId);
+    if (!original) {
+      setStatus("Não há versão original para esta linha.", "error");
+      return;
+    }
+    if (!state.processingId || !state.analysisSnapshot) {
+      setStatus("Converta um arquivo antes de voltar alterações.", "error");
+      return;
+    }
+    try {
+      setStatus("Voltando para versão original...", null);
+      const payload = await postConvertEdit(state.processingId, buildPatchFromHistoryRow(rowId, original, "restore"));
+      setPreviewRows(payload.preview_transactions || []);
+      state.analysisSnapshot.preview_transactions = state.previewRows.map(({ rowId: _rowId, ...row }) => row);
+      state.analysisSnapshot.transactions_total = Number(payload.transactions_total || state.analysisSnapshot.transactions_total || 0);
+      state.analysisSnapshot.total_inflows = Number(payload.total_inflows || state.analysisSnapshot.total_inflows || 0);
+      state.analysisSnapshot.total_outflows = Number(payload.total_outflows || state.analysisSnapshot.total_outflows || 0);
+      state.analysisSnapshot.net_total = Number(payload.net_total || state.analysisSnapshot.net_total || 0);
+      state.analysisSnapshot.updated_at = payload.updated_at || state.analysisSnapshot.updated_at || null;
+      renderKpis(state.analysisSnapshot);
+      markChangedRow(rowId);
+      renderRows();
+      persistCurrentViewState();
+      setStatus("Linha voltou ao valor original.", "success");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao voltar linha.", "error");
+    }
+  }
+
+  async function deleteRow(rowId) {
+    if (!state.processingId || !state.analysisSnapshot) {
+      setStatus("Converta um arquivo antes de apagar linhas.", "error");
+      return;
+    }
+    const row = state.previewRows.find((item) => item.rowId === rowId);
+    if (!row) {
+      setStatus("Linha não encontrada para exclusão.", "error");
+      return;
+    }
+    try {
+      const payload = await postConvertEdit(state.processingId, {
+        row_id: rowId,
+        action: "delete",
+      });
+      setPreviewRows(payload.preview_transactions || []);
+      state.analysisSnapshot.preview_transactions = state.previewRows.map(({ rowId: _rowId, ...item }) => item);
+      state.analysisSnapshot.transactions_total = Number(payload.transactions_total || state.analysisSnapshot.transactions_total || 0);
+      state.analysisSnapshot.total_inflows = Number(payload.total_inflows || state.analysisSnapshot.total_inflows || 0);
+      state.analysisSnapshot.total_outflows = Number(payload.total_outflows || state.analysisSnapshot.total_outflows || 0);
+      state.analysisSnapshot.net_total = Number(payload.net_total || state.analysisSnapshot.net_total || 0);
+      state.analysisSnapshot.updated_at = payload.updated_at || state.analysisSnapshot.updated_at || null;
+      renderKpis(state.analysisSnapshot);
+      markChangedRow(rowId);
+      renderRows();
+      persistCurrentViewState();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao apagar linha.", "error");
+    }
+  }
+
+  function startInsertRow() {
+    if (!state.processingId) {
+      setStatus("Converta um arquivo antes de adicionar linhas.", "error");
+      return;
+    }
+    if (state.editingRowId) {
+      setStatus("Salve ou cancele a edição atual antes de criar nova linha.", "error");
+      return;
+    }
+    const draftId = `row_draft_${Date.now()}`;
+    state.previewRows.unshift({
+      rowId: draftId,
+      date: "",
+      description: "",
+      amount: 0,
+      category: "Outros",
+      reconciliation_status: "unmatched",
+      is_deleted: false,
+    });
+    state.editingRowId = draftId;
+    state.editDraft = {
+      date: "",
+      description: "",
+      credit: "",
+      debit: "",
+    };
+    markChangedRow(draftId, "new");
+    renderRows();
+    persistCurrentViewState();
+  }
+
   function startEditingRow(rowId) {
     const row = state.previewRows.find((item) => item.rowId === rowId);
     if (!row) {
@@ -362,9 +523,13 @@
   }
 
   function cancelEditingRow() {
+    if (isDraftRowId(state.editingRowId)) {
+      state.previewRows = state.previewRows.filter((row) => row.rowId !== state.editingRowId);
+    }
     state.editingRowId = null;
     state.editDraft = null;
     renderRows();
+    persistCurrentViewState();
   }
 
   function updateEditDraft(field, value) {
@@ -404,19 +569,41 @@
       return;
     }
 
+    const rowBeforeSave = state.previewRows.find((item) => item.rowId === rowId);
+    if (!rowBeforeSave) {
+      setStatus("Linha não encontrada para edição.", "error");
+      return;
+    }
+
     try {
       setStatus("Salvando edição...", null);
-      const payload = await postConvertEdit(state.processingId, {
-        row_id: rowId,
-        date: normalizedDate,
-        description,
-        credit,
-        debit,
-      });
+      const isDraft = isDraftRowId(rowId);
+      const payload = await postConvertEdit(
+        state.processingId,
+        isDraft
+          ? {
+              action: "insert",
+              insert_position: 0,
+              date: normalizedDate,
+              description,
+              credit,
+              debit,
+            }
+          : {
+              row_id: rowId,
+              date: normalizedDate,
+              description,
+              credit,
+              debit,
+            },
+      );
 
       state.editingRowId = null;
       state.editDraft = null;
       setPreviewRows(payload.preview_transactions || []);
+      if (isDraft) {
+        setOriginalRows(payload.preview_transactions || []);
+      }
       if (state.analysisSnapshot) {
         state.analysisSnapshot.preview_transactions = state.previewRows.map(({ rowId: _rowId, ...row }) => row);
         state.analysisSnapshot.transactions_total = Number(payload.transactions_total || state.analysisSnapshot.transactions_total || 0);
@@ -426,6 +613,7 @@
         state.analysisSnapshot.updated_at = payload.updated_at || state.analysisSnapshot.updated_at || null;
         renderKpis(state.analysisSnapshot);
       }
+      markChangedRow(isDraft ? "row_1" : rowId, isDraft ? "new" : "changed");
       renderRows();
       persistCurrentViewState();
       setStatus("Linha atualizada na prévia.", "success");
@@ -443,29 +631,57 @@
 
     reviewRows.innerHTML = rows
       .map((row) => {
+        const rowClass =
+          row.rowId === state.lastChangedRowId
+            ? state.lastChangedRowKind === "new"
+              ? "row-new"
+              : "row-changed"
+            : "";
+        const rowDeleted = Boolean(row.is_deleted);
         const isEditing = row.rowId === state.editingRowId && state.editDraft;
         if (isEditing) {
           return `
-          <tr>
+          <tr class="${rowClass}">
             <td><input class="cell-input cell-input-date" data-edit-field="date" value="${escapeAttr(state.editDraft.date)}" /></td>
             <td><input class="cell-input cell-input-description" data-edit-field="description" value="${escapeAttr(state.editDraft.description)}" /></td>
             <td><input class="cell-input cell-input-money" data-edit-field="credit" inputmode="decimal" placeholder="0,00" value="${escapeAttr(state.editDraft.credit)}" /></td>
             <td><input class="cell-input cell-input-money" data-edit-field="debit" inputmode="decimal" placeholder="0,00" value="${escapeAttr(state.editDraft.debit)}" /></td>
             <td class="actions-cell">
-              <button class="btn btn-secondary btn-inline" type="button" data-action="save-row" data-row-id="${row.rowId}">Salvar</button>
-              <button class="btn btn-inline btn-ghost" type="button" data-action="cancel-row">Cancelar</button>
+              <button class="btn btn-secondary btn-inline" type="button" data-action="save-row" data-row-id="${row.rowId}" aria-label="Salvar edição">
+                <span class="btn-icon" aria-hidden="true">✓</span><span>Salvar</span>
+              </button>
+              <button class="btn btn-inline btn-ghost" type="button" data-action="cancel-row" aria-label="Cancelar edição">
+                <span class="btn-icon" aria-hidden="true">✕</span><span>Cancelar</span>
+              </button>
             </td>
           </tr>
         `;
         }
+        const rowChanged = isRowChanged(row);
         return `
-          <tr>
+          <tr class="${rowClass} ${rowDeleted ? "row-deleted" : ""}">
             <td>${formatDate(row.date)}</td>
             <td>${row.description || "-"}</td>
             <td>${getCreditAmount(row) !== null ? formatCurrency(getCreditAmount(row)) : "-"}</td>
             <td>${getDebitAmount(row) !== null ? formatCurrency(getDebitAmount(row)) : "-"}</td>
             <td class="actions-cell">
-              <button class="btn btn-inline btn-secondary" type="button" data-action="edit-row" data-row-id="${row.rowId}">Editar</button>
+              ${
+                !rowDeleted && !isDraftRowId(row.rowId)
+                  ? `<button class="btn btn-inline btn-secondary" type="button" data-action="edit-row" data-row-id="${row.rowId}" aria-label="Editar linha">
+                <span class="btn-icon" aria-hidden="true">✎</span><span>Editar</span>
+              </button>
+              <button class="btn btn-inline btn-ghost" type="button" data-action="delete-row" data-row-id="${row.rowId}" aria-label="Apagar linha">
+                <span class="btn-icon" aria-hidden="true">🗑</span><span>Apagar</span>
+              </button>`
+                  : ""
+              }
+              ${
+                rowChanged
+                  ? `<button class="btn btn-inline btn-ghost" type="button" data-action="revert-row" data-row-id="${row.rowId}" aria-label="Voltar para valor original">
+                <span class="btn-icon" aria-hidden="true">↩</span><span>Voltar</span>
+              </button>`
+                  : ""
+              }
             </td>
           </tr>
         `;
@@ -482,6 +698,9 @@
     state.analysisId = viewState.analysis_id || analysis.analysis_id;
     state.processingId = viewState.processing_id || analysis.analysis_id;
     state.analysisSnapshot = { ...analysis };
+    if (viewState.updated_at && !state.analysisSnapshot.updated_at) {
+      state.analysisSnapshot.updated_at = viewState.updated_at;
+    }
     state.restoredFileMeta = {
       name: String(viewState.file_name || "").trim() || "arquivo_restaurado.pdf",
       size: Number(viewState.file_size || 0),
@@ -490,8 +709,13 @@
     const restoredRows = Array.isArray(viewState.preview_rows)
       ? viewState.preview_rows
       : analysis.preview_transactions || [];
+    const restoredOriginalRows = Array.isArray(viewState.original_rows)
+      ? viewState.original_rows
+      : analysis.preview_transactions || [];
     renderKpis(analysis);
     setPreviewRows(restoredRows);
+    setOriginalRows(restoredOriginalRows);
+    markChangedRow(null);
     if (viewState.editing_row_id && viewState.edit_draft && state.previewRows.some((row) => row.rowId === viewState.editing_row_id)) {
       state.editingRowId = viewState.editing_row_id;
       state.editDraft = { ...viewState.edit_draft };
@@ -508,6 +732,7 @@
 
     reviewSection.classList.remove("hidden");
     downloadSection.classList.remove("hidden");
+    if (addRowBtn) addRowBtn.disabled = false;
 
     const canDownload = Boolean(state.analysisId || state.processingId);
     if (downloadOfxBtn) downloadOfxBtn.disabled = !canDownload;
@@ -610,9 +835,12 @@
       state.analysisId = analysis.analysis_id;
       state.processingId = payload.processing_id || analysis.analysis_id;
       state.analysisSnapshot = { ...analysis };
+      markChangedRow(null);
+      if (addRowBtn) addRowBtn.disabled = false;
 
       renderKpis(analysis);
       setPreviewRows(analysis.preview_transactions || []);
+      setOriginalRows(analysis.preview_transactions || []);
       renderRows();
 
       analysisIdNode.textContent = analysis.analysis_id || "-";
@@ -724,12 +952,21 @@
     if (!(target instanceof HTMLElement)) {
       return;
     }
-    const action = target.dataset.action;
+    const actionTarget = target.closest("[data-action]");
+    if (!(actionTarget instanceof HTMLElement)) {
+      return;
+    }
+    const action = actionTarget.dataset.action;
     if (!action) {
       return;
     }
     if (action === "edit-row") {
-      startEditingRow(target.dataset.rowId || "");
+      const rowId = actionTarget.dataset.rowId || "";
+      const row = state.previewRows.find((item) => item.rowId === rowId);
+      if (row && row.is_deleted) {
+        return;
+      }
+      startEditingRow(rowId);
       return;
     }
     if (action === "cancel-row") {
@@ -737,7 +974,15 @@
       return;
     }
     if (action === "save-row") {
-      void saveEditingRow(target.dataset.rowId || "");
+      void saveEditingRow(actionTarget.dataset.rowId || "");
+      return;
+    }
+    if (action === "delete-row") {
+      void deleteRow(actionTarget.dataset.rowId || "");
+      return;
+    }
+    if (action === "revert-row") {
+      void revertRowToOriginal(actionTarget.dataset.rowId || "");
     }
   });
 
@@ -753,6 +998,7 @@
     updateEditDraft(field, target.value);
   });
   convertBtn.addEventListener("click", runConvert);
+  if (addRowBtn) addRowBtn.addEventListener("click", startInsertRow);
   if (downloadOfxBtn) downloadOfxBtn.addEventListener("click", runDownloadOfx);
   if (downloadExcelBtn) downloadExcelBtn.addEventListener("click", runDownloadExcel);
   if (downloadCsvBtn) downloadCsvBtn.addEventListener("click", runDownloadCsv);
