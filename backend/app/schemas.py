@@ -48,6 +48,7 @@ class TransactionPreview(BaseModel):
     amount: float
     category: str
     reconciliation_status: str
+    is_deleted: bool = False
 
 
 class BeforeAfterPreview(BaseModel):
@@ -125,9 +126,11 @@ class ConvertResponse(BaseModel):
 
 
 class ConvertEditPatch(BaseModel):
-    row_id: str
-    date: str
-    description: str
+    row_id: str | None = None
+    action: str = "update"
+    insert_position: int | None = None
+    date: str | None = None
+    description: str | None = None
     credit: float | None = None
     debit: float | None = None
 

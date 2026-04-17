@@ -182,8 +182,39 @@ class TempAnalysisStorage:
             raise AnalysisEditConflictError
 
         for edit in edits:
+            action = str(edit.get("action") or "update").strip().lower()
+            if action not in {"update", "delete", "restore", "insert"}:
+                raise ValueError("Invalid edit action.")
+
+            if action == "insert":
+                amount = self._build_amount_from_credit_debit(edit.get("credit"), edit.get("debit"))
+                description = str(edit.get("description") or "").strip()
+                date = str(edit.get("date") or "").strip()
+                if not description or not date:
+                    raise ValueError("Date and description are required.")
+                insert_position = self._resolve_insert_position(edit.get("insert_position"), max_index=len(preview_rows))
+                new_row = TransactionRow(
+                    date=date,
+                    description=description,
+                    amount=amount,
+                    category="Outros",
+                    reconciliation_status="unmatched",
+                    is_deleted=False,
+                )
+                preview_rows.insert(insert_position, new_row)
+                report_rows.insert(insert_position, TransactionRow(**asdict(new_row)))
+                continue
+
             row_id_raw = edit.get("row_id")
             row_index = self._resolve_row_index(row_id_raw, max_index=len(preview_rows))
+
+            if action == "delete":
+                if row_index >= len(report_rows):
+                    raise ValueError("row_id out of bounds.")
+                preview_rows[row_index].is_deleted = True
+                report_rows[row_index].is_deleted = True
+                continue
+
             amount = self._build_amount_from_credit_debit(edit.get("credit"), edit.get("debit"))
             description = str(edit.get("description") or "").strip()
             date = str(edit.get("date") or "").strip()
@@ -194,17 +225,20 @@ class TempAnalysisStorage:
             report_target.date = date
             report_target.description = description
             report_target.amount = amount
+            report_target.is_deleted = False
 
             preview_target = preview_rows[row_index]
             preview_target.date = date
             preview_target.description = description
             preview_target.amount = amount
+            preview_target.is_deleted = False
 
-        total_inflows = round(sum(item.amount for item in report_rows if item.amount > 0), 2)
-        total_outflows = round(sum(item.amount for item in report_rows if item.amount < 0), 2)
+        active_rows = self._active_rows(report_rows)
+        total_inflows = round(sum(item.amount for item in active_rows if item.amount > 0), 2)
+        total_outflows = round(sum(item.amount for item in active_rows if item.amount < 0), 2)
         net_total = round(total_inflows + total_outflows, 2)
 
-        content["transactions_total"] = len(report_rows)
+        content["transactions_total"] = len(active_rows)
         content["total_inflows"] = total_inflows
         content["total_outflows"] = total_outflows
         content["net_total"] = net_total
@@ -219,7 +253,7 @@ class TempAnalysisStorage:
 
         return {
             "processing_id": analysis_id,
-            "transactions_total": len(report_rows),
+            "transactions_total": len(active_rows),
             "total_inflows": total_inflows,
             "total_outflows": total_outflows,
             "net_total": net_total,
@@ -376,6 +410,7 @@ class TempAnalysisStorage:
         return report_path
 
     def _write_convert_artifacts(self, analysis_dir: Path, report_rows: list[TransactionRow]) -> None:
+        active_rows = self._active_rows(report_rows)
         normalized_transactions = [
             NormalizedTransaction(
                 date=item.date,
@@ -383,7 +418,7 @@ class TempAnalysisStorage:
                 amount=item.amount,
                 type="inflow" if item.amount >= 0 else "outflow",
             )
-            for item in report_rows
+            for item in active_rows
         ]
 
         (analysis_dir / "converted.ofx").write_text(
@@ -394,7 +429,7 @@ class TempAnalysisStorage:
         csv_buffer = StringIO()
         writer = csv.writer(csv_buffer)
         writer.writerow(["date", "description", "amount", "category", "reconciliation_status"])
-        for item in report_rows:
+        for item in active_rows:
             writer.writerow([item.date, item.description, item.amount, item.category, item.reconciliation_status])
         (analysis_dir / "converted.csv").write_text(csv_buffer.getvalue(), encoding="utf-8")
 
@@ -409,7 +444,7 @@ class TempAnalysisStorage:
         sheet = workbook.active
         sheet.title = "Transacoes"
         sheet.append(["date", "description", "amount", "category", "reconciliation_status"])
-        for item in report_rows:
+        for item in self._active_rows(report_rows):
             sheet.append([item.date, item.description, item.amount, item.category, item.reconciliation_status])
         self._format_transacoes_sheet(sheet)
 
@@ -444,9 +479,13 @@ class TempAnalysisStorage:
                     amount=float(item.get("amount") or 0.0),
                     category=str(item.get("category") or "Outros"),
                     reconciliation_status=str(item.get("reconciliation_status") or "unmatched"),
+                    is_deleted=bool(item.get("is_deleted") or False),
                 )
             )
         return parsed
+
+    def _active_rows(self, rows: list[TransactionRow]) -> list[TransactionRow]:
+        return [item for item in rows if not item.is_deleted]
 
     def _resolve_row_index(self, row_id_raw: object, max_index: int) -> int:
         row_id = str(row_id_raw or "").strip()
@@ -459,6 +498,14 @@ class TempAnalysisStorage:
         if idx < 0 or idx >= max_index:
             raise ValueError("row_id out of bounds.")
         return idx
+
+    def _resolve_insert_position(self, position_raw: object, max_index: int) -> int:
+        if position_raw is None:
+            return max_index
+        position = int(position_raw)
+        if position < 0 or position > max_index:
+            raise ValueError("insert_position out of bounds.")
+        return position
 
     def _build_amount_from_credit_debit(self, credit_raw: object, debit_raw: object) -> float:
         credit = None if credit_raw is None else float(credit_raw)
