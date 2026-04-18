@@ -2,6 +2,7 @@
   const form = document.getElementById("signup-form");
   const statusMsg = document.getElementById("status-msg");
   const loginLink = document.getElementById("login-link");
+  const topLoginLink = document.getElementById("top-login-link");
 
   function resolveApiBase() {
     const host = window.location.hostname;
@@ -51,6 +52,10 @@
 
   if (loginLink) {
     loginLink.href = `./login.html?next=${encodeURIComponent(getNextPath())}`;
+  }
+
+  if (topLoginLink) {
+    topLoginLink.href = `./login.html?next=${encodeURIComponent(getNextPath())}`;
   }
 
   if (getReason() === "quota") {

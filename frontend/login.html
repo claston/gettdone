@@ -7,9 +7,23 @@
   <link rel="stylesheet" href="./auth.css" />
 </head>
 <body>
+  <nav class="top-nav-shell glass-header" aria-label="Navegacao principal">
+    <div class="top-nav-inner">
+      <a class="top-brand" href="./ofx-convert.html">OFX Simples</a>
+      <div class="top-nav-links">
+        <a href="./ofx-convert.html">Conversor</a>
+        <a href="./signup.html?next=%2Fofx-convert.html">Criar conta</a>
+      </div>
+      <div class="top-auth-actions">
+        <a id="top-signup-link" class="top-auth-link" href="./signup.html?next=%2Fofx-convert.html">Criar conta</a>
+        <a class="top-auth-btn primary-gradient-cta" href="./login.html?next=%2Fofx-convert.html" aria-current="page">Entrar</a>
+      </div>
+    </div>
+  </nav>
+
   <main class="auth-page">
     <section class="auth-shell">
-      <header class="brand">
+      <header class="brand hidden-on-nav">
         <div class="brand-icon">$</div>
         <h1>OFX Simples</h1>
       </header>

@@ -10,17 +10,21 @@
   <link rel="stylesheet" href="./client-area.css" />
 </head>
 <body class="client-area-page">
-  <header class="topbar-shell">
-    <div class="topbar">
-      <a href="./index.html" class="brand">OFX Simples</a>
-      <div class="topbar-actions">
+  <nav class="top-nav-shell glass-header" aria-label="Navegacao principal">
+    <div class="top-nav-inner">
+      <a href="./ofx-convert.html" class="top-brand">OFX Simples</a>
+      <div class="top-nav-links">
+        <a href="./ofx-convert.html">Nova conversao</a>
+        <a href="./client-area.html" aria-current="page">Historico</a>
+      </div>
+      <div class="top-auth-actions">
         <p class="user-email" id="profile-email">-</p>
-        <button id="logout-btn" class="logout-btn" type="button" aria-label="Sair da conta">
+        <button id="logout-btn" class="top-auth-btn logout-btn" type="button" aria-label="Sair da conta">
           <span aria-hidden="true">Sair</span>
         </button>
       </div>
-    </div>
-  </header>
+    </div>    
+  </nav>
 
   <main class="dashboard">
     <section class="hero-action">
