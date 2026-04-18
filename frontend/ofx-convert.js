@@ -25,7 +25,6 @@
   const downloadExcelBtn = document.getElementById("download-excel-btn");
   const downloadCsvBtn = document.getElementById("download-csv-btn");
   const VIEW_STATE_KEY = "gettdone_ofx_convert_view_state_v1";
-  const VIEW_STATE_TTL_MS = 24 * 60 * 60 * 1000;
 
   const state = {
     analysisId: null,
@@ -182,25 +181,9 @@
 
   function saveViewState(payload) {
     try {
-      localStorage.setItem(
-        VIEW_STATE_KEY,
-        JSON.stringify({
-          saved_at: Date.now(),
-          processing_id: payload.processing_id || null,
-          analysis_id: payload.analysis_id || null,
-          analysis: payload.analysis || null,
-          quota_text: payload.quota_text || "-",
-          file_name: payload.file_name || null,
-          file_size: payload.file_size || null,
-          preview_rows: payload.preview_rows || null,
-          original_rows: payload.original_rows || null,
-          editing_row_id: payload.editing_row_id || null,
-          edit_draft: payload.edit_draft || null,
-          updated_at: payload.updated_at || null,
-        }),
-      );
+      localStorage.setItem(VIEW_STATE_KEY, JSON.stringify(payload));
     } catch (_error) {
-      // Best-effort only: UI still works without persistence.
+      // Ignore storage failures.
     }
   }
 
@@ -211,14 +194,11 @@
         return null;
       }
       const parsed = JSON.parse(raw);
-      const savedAt = Number(parsed.saved_at || 0);
-      if (!savedAt || Date.now() - savedAt > VIEW_STATE_TTL_MS) {
-        localStorage.removeItem(VIEW_STATE_KEY);
+      if (!parsed || typeof parsed !== "object") {
         return null;
       }
       return parsed;
     } catch (_error) {
-      localStorage.removeItem(VIEW_STATE_KEY);
       return null;
     }
   }
@@ -229,6 +209,23 @@
     } catch (_error) {
       // Ignore storage failures.
     }
+  }
+
+  function getNavigationType() {
+    const entries = window.performance && typeof window.performance.getEntriesByType === "function"
+      ? window.performance.getEntriesByType("navigation")
+      : [];
+    const navigationEntry = entries && entries.length > 0 ? entries[0] : null;
+    if (navigationEntry && typeof navigationEntry.type === "string") {
+      return navigationEntry.type;
+    }
+    if (window.performance && window.performance.navigation) {
+      const legacyType = window.performance.navigation.type;
+      if (legacyType === 1) return "reload";
+      if (legacyType === 2) return "back_forward";
+      return "navigate";
+    }
+    return "navigate";
   }
 
   function getCurrentFileMeta() {
@@ -313,19 +310,47 @@
     }
   }
 
-  function clearSelectedFile() {
+  function resetConversionSession(options) {
+    const silent = Boolean(options && options.silent);
     input.value = "";
+    if (state.rowHighlightTimer) {
+      window.clearTimeout(state.rowHighlightTimer);
+      state.rowHighlightTimer = null;
+    }
+    state.analysisId = null;
+    state.processingId = null;
     state.restoredFileMeta = null;
     state.previewRows = [];
     state.originalRows = [];
     state.editingRowId = null;
     state.editDraft = null;
     state.analysisSnapshot = null;
+    state.lastChangedRowId = null;
+    state.lastChangedRowKind = null;
     markChangedRow(null);
     if (addRowBtn) addRowBtn.disabled = true;
+    if (downloadOfxBtn) downloadOfxBtn.disabled = true;
+    if (downloadExcelBtn) downloadExcelBtn.disabled = true;
+    if (downloadCsvBtn) downloadCsvBtn.disabled = true;
+    reviewRows.innerHTML = "";
+    kpis.innerHTML = "";
+    reviewSection.classList.add("hidden");
+    downloadSection.classList.add("hidden");
+    analysisIdNode.textContent = "-";
+    processingIdNode.textContent = "-";
+    quotaRemainingNode.textContent = "-";
+    setLoading(false);
     setSelectedFileLabel();
     clearViewState();
+    if (silent) {
+      setStatus("", null);
+      return;
+    }
     setStatus("Arquivo removido. Selecione outro PDF para continuar.", null);
+  }
+
+  function clearSelectedFile() {
+    resetConversionSession({ silent: false });
   }
 
   function renderKpis(analysis) {
@@ -668,12 +693,20 @@
         `;
         }
         const rowChanged = isRowChanged(row);
+        const creditAmount = getCreditAmount(row);
+        const debitAmount = getDebitAmount(row);
+        const creditMarkup = creditAmount !== null
+          ? `<span class="amount-credit">${formatCurrency(creditAmount)}</span>`
+          : '<span class="amount-empty">—</span>';
+        const debitMarkup = debitAmount !== null
+          ? `<span class="amount-debit">${formatCurrency(debitAmount)}</span>`
+          : '<span class="amount-empty">—</span>';
         return `
           <tr class="${rowClass} ${rowDeleted ? "row-deleted" : ""}">
             <td>${formatDate(row.date)}</td>
             <td>${row.description || "-"}</td>
-            <td>${getCreditAmount(row) !== null ? formatCurrency(getCreditAmount(row)) : "-"}</td>
-            <td>${getDebitAmount(row) !== null ? formatCurrency(getDebitAmount(row)) : "-"}</td>
+            <td>${creditMarkup}</td>
+            <td>${debitMarkup}</td>
             <td class="actions-cell">
               ${
                 !rowDeleted && !isDraftRowId(row.rowId)
@@ -1035,7 +1068,11 @@
   bindDropzone();
   setSelectedFileLabel();
   syncHeroAuthLinks();
-
+  const navigationType = getNavigationType();
+  const shouldRestoreState = navigationType === "reload";
+  if (!shouldRestoreState) {
+    clearViewState();
+  }
   const persistedState = loadViewState();
   if (persistedState) {
     restoreViewFromState(persistedState);
