@@ -194,6 +194,7 @@ class ClientConversionItem(BaseModel):
     model: str
     conversion_type: str
     status: str
+    transactions_count: int | None = None
 
 
 class ClientConversionsResponse(BaseModel):
