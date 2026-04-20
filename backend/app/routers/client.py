@@ -1,7 +1,7 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.application import AccessControlService, InvalidUserTokenError, ReportService
-from app.dependencies import get_access_control_service, get_report_service
+from app.application import AccessControlService, InvalidUserTokenError
+from app.dependencies import get_access_control_service
 from app.schemas import ClientConversionItem, ClientConversionsResponse
 
 router = APIRouter()
@@ -12,7 +12,6 @@ def get_client_conversions(
     user_token: str = Query(...),
     limit: int = Query(default=20, ge=1, le=100),
     access_control_service: AccessControlService = Depends(get_access_control_service),
-    report_service: ReportService = Depends(get_report_service),
 ) -> ClientConversionsResponse:
     try:
         identity = access_control_service.resolve_identity(anonymous_fingerprint=None, user_token=user_token)
@@ -22,9 +21,8 @@ def get_client_conversions(
     if identity.identity_type != "user":
         raise HTTPException(status_code=403, detail="Client area is only available for registered users.")
 
-    items = report_service.list_convert_history(
-        identity_type=identity.identity_type,
-        identity_id=identity.identity_id,
+    items = access_control_service.list_user_conversions(
+        user_id=identity.identity_id,
         limit=limit,
     )
     return ClientConversionsResponse(items=[ClientConversionItem(**item) for item in items])

@@ -42,6 +42,19 @@ async def convert(
             identity_id=identity.identity_id,
         )
         quota_remaining = access_control_service.consume_quota(identity)
+        if identity.identity_type == "user":
+            file_type = str(analysis.file_type or "").strip().lower()
+            conversion_type = f"{file_type}-ofx" if file_type else "pdf-ofx"
+            access_control_service.record_user_conversion(
+                user_id=identity.identity_id,
+                processing_id=analysis.analysis_id,
+                filename=(file.filename or "").strip() or f"{analysis.analysis_id}.pdf",
+                model=(analysis.layout_inference_name or "").strip() or "Nao identificado",
+                conversion_type=conversion_type,
+                status="Sucesso",
+                transactions_count=int(analysis.transactions_total),
+                expires_at=analysis.expires_at,
+            )
         return ConvertResponse(
             processing_id=analysis.analysis_id,
             quota_remaining=quota_remaining,
