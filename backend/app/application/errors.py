@@ -36,3 +36,11 @@ class AnalysisAccessDeniedError(Exception):
 
 class AnalysisEditConflictError(Exception):
     """Raised when edit request is based on an outdated analysis version."""
+
+
+class ContactProviderNotConfiguredError(Exception):
+    """Raised when contact provider credentials are not configured."""
+
+
+class ContactDeliveryError(Exception):
+    """Raised when contact message delivery fails at provider level."""

@@ -214,11 +214,24 @@ textarea:focus-visible {
   color: #0d6f4a;
 }
 
+.feedback.error {
+  color: #8d181e;
+}
+
+.feedback.success {
+  color: #0d6f4a;
+}
+
 .contact-submit-btn {
   width: 20%;
   min-height: 60px;
   justify-self: center;
   white-space: nowrap;
+}
+
+.contact-submit-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .file-help {
