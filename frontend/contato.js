@@ -11,12 +11,17 @@
     const email = String(document.getElementById("email").value || "").trim();
     const subject = String(document.getElementById("subject").value || "").trim();
     const message = String(document.getElementById("message").value || "").trim();
+    const attachmentInput = document.getElementById("attachment");
+    const attachmentName = attachmentInput && attachmentInput.files && attachmentInput.files[0]
+      ? String(attachmentInput.files[0].name || "").trim()
+      : "";
 
     const mailSubject = encodeURIComponent("Suporte OFX Simples | " + (subject || "Contato"));
     const mailBody = encodeURIComponent(
       "Nome: " + name + "\n" +
       "Email: " + email + "\n" +
       "Assunto: " + subject + "\n\n" +
+      (attachmentName ? "Arquivo informado: " + attachmentName + "\n\n" : "") +
       message
     );
 

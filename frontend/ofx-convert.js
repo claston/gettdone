@@ -11,6 +11,8 @@
   const authLoginLink = document.getElementById("auth-login-link");
   const authSignupLink = document.getElementById("auth-signup-link");
   const authClientLink = document.getElementById("auth-client-link");
+  const menuToggle = document.getElementById("menu-toggle");
+  const topLinks = document.getElementById("top-links");
 
   const reviewSection = document.getElementById("review-section");
   const downloadSection = document.getElementById("download-section");
@@ -1038,6 +1040,12 @@
   }
 
   bindDropzone();
+  if (menuToggle && topLinks) {
+    menuToggle.addEventListener("click", function () {
+      const open = topLinks.classList.toggle("is-open");
+      menuToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+  }
   setSelectedFileLabel();
   syncHeroAuthLinks();
   const navigationType = getNavigationType();

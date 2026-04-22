@@ -6,26 +6,29 @@
   <title>GettDone | Conversor de Extrato</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./ofx-convert.css?v=4" />
 </head>
 <body>
-  <nav class="top-nav-shell glass-header" aria-label="Navegação principal">
-    <div class="top-nav-inner">
-      <a class="top-brand" href="./index.html">OFX Simples</a>
-      <div class="top-nav-links">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="./index.html">OFX Simples</a>
+      <button id="menu-toggle" class="menu-toggle" type="button" aria-expanded="false" aria-controls="top-links">
+        Menu
+      </button>
+      <nav id="top-links" class="top-links" aria-label="Navegação principal">
         <a href="#upload-section">Como funciona</a>
         <a href="#review-section">Revisão</a>
         <a href="#download-section">Download</a>
         <a href="./contato.html">Contato</a>
-      </div>
-      <div class="top-auth-actions">
-        <a id="auth-signup-link" class="top-auth-link" href="./signup.html?next=%2Fofx-convert.html">Criar conta</a>
-        <a id="auth-login-link" class="top-auth-btn primary-gradient-cta" href="./login.html?next=%2Fofx-convert.html">Entrar</a>
-        <a id="auth-client-link" class="top-auth-btn top-auth-client hidden" href="./client-area.html">Minha Conta</a>
+      </nav>
+      <div class="top-actions">
+        <a id="auth-signup-link" class="link-plain" href="./signup.html?next=%2Fofx-convert.html">Criar conta</a>
+        <a id="auth-login-link" class="btn btn-primary topbar-btn" href="./login.html?next=%2Fofx-convert.html">Entrar</a>
+        <a id="auth-client-link" class="btn btn-primary topbar-btn hidden" href="./client-area.html">Minha Conta</a>
       </div>
     </div>
-  </nav>
+  </header>
 
   <main class="page">
     <section class="hero">
@@ -42,6 +45,7 @@
       <label id="dropzone" class="dropzone" for="file-input" tabindex="0">
         <input id="file-input" type="file" accept=".pdf,application/pdf" hidden />
         <div id="dropzone-empty" class="dropzone-empty">
+          <div class="pdf-placeholder-icon" aria-hidden="true">📄 PDF</div>
           <strong>Arraste o arquivo aqui</strong>
           <span>ou clique para selecionar</span>
         </div>
@@ -56,7 +60,7 @@
       </label>
 
       <div class="upload-meta">
-        <span id="selected-file">Nenhum arquivo selecionado</span>
+        <span id="selected-file" class="hidden-label">Nenhum arquivo selecionado</span>
         <button id="convert-btn" class="btn btn-primary" type="button" disabled>Converter</button>
       </div>
 

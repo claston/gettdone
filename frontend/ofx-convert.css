@@ -36,109 +36,91 @@ body {
 
 .page {
   width: min(1320px, calc(100% - 2rem));
-  margin: 6.9rem auto 4rem;
+  margin: 1.35rem auto 4rem;
   display: grid;
   gap: 1.1rem;
 }
 
-.glass-header {
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-}
-
-.top-nav-shell {
-  position: fixed;
+.topbar {
+  position: sticky;
   top: 0;
-  left: 0;
-  width: 100%;
   z-index: 50;
-  border-bottom: 1px solid rgba(67, 70, 86, 0.12);
-  background: rgba(255, 255, 255, 0.74);
+  backdrop-filter: blur(18px);
+  background: rgba(247, 248, 248, 0.85);
+  box-shadow: 0 10px 30px -26px rgba(0, 0, 0, 0.55);
 }
 
-.top-nav-inner {
-  width: min(1320px, calc(100% - 2rem));
+.topbar-inner {
+  max-width: 1200px;
   margin: 0 auto;
-  min-height: 80px;
-  display: flex;
-  justify-content: space-between;
+  min-height: 78px;
+  padding: 0 20px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 1rem;
+  gap: 18px;
 }
 
-.top-brand {
+.brand {
+  font-family: "Manrope", "Source Sans 3", sans-serif;
   text-decoration: none;
-  font-family: "Manrope", "Inter", "Segoe UI", sans-serif;
-  font-weight: 800;
-  font-size: 1.55rem;
-  letter-spacing: -0.03em;
   color: #1c1f22;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-size: 1.34rem;
 }
 
-.top-nav-links {
+.top-links {
   display: flex;
-  align-items: center;
-  gap: 1.4rem;
-}
-
-.top-nav-links a {
-  text-decoration: none;
-  color: #596174;
-  font-family: "Manrope", "Inter", "Segoe UI", sans-serif;
-  font-size: 0.86rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  transition: color 200ms ease;
-}
-
-.top-nav-links a:hover {
-  color: #13171f;
-}
-
-.top-auth-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-}
-
-.top-auth-link {
-  text-decoration: none;
-  color: var(--primary);
-  font-family: "Manrope", "Inter", "Segoe UI", sans-serif;
-  font-size: 0.86rem;
-  font-weight: 700;
-}
-
-.top-auth-btn {
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
-  min-height: 40px;
-  padding: 0.55rem 1.05rem;
-  border-radius: 0.7rem;
-  border: 0;
-  color: #fff;
-  font-family: "Manrope", "Inter", "Segoe UI", sans-serif;
-  font-size: 0.86rem;
+  gap: 18px;
+}
+
+.top-links a {
+  text-decoration: none;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.top-links a:hover {
+  color: var(--primary);
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.link-plain {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.menu-toggle {
+  display: none;
+}
+
+.topbar-btn {
+  border-radius: 999px;
+  padding: 11px 18px;
+  min-height: auto;
+  color: var(--primary);
+  font-size: 0.95rem;
   font-weight: 700;
+  box-shadow: none;
 }
 
-.top-auth-client {
-  background: #006c49;
+.top-actions .btn-primary {
+  color: #ffffff;
+  background: linear-gradient(130deg, var(--primary) 0%, #2a69f6 100%);
 }
 
-.top-auth-client:hover {
-  background: #00573b;
-}
-
-.primary-gradient-cta {
-  background: linear-gradient(135deg, #003ec7 0%, #0052ff 100%);
-  box-shadow: 0 4px 14px 0 rgba(0, 62, 199, 0.3);
-}
-
-.primary-gradient-cta:hover {
-  opacity: 0.92;
+.top-actions .btn-primary:hover:not(:disabled) {
+  background: linear-gradient(130deg, var(--primary-dark) 0%, #1f58d9 100%);
 }
 
 .hero {
@@ -201,6 +183,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: min(50vw, 640px);
+  max-width: 100%;
+  margin: 0 auto;
   min-height: 140px;
   cursor: pointer;
   padding: 1rem;
@@ -224,6 +209,17 @@ body {
   align-items: center;
   text-align: center;
   gap: 0.2rem;
+}
+
+.pdf-placeholder-icon {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--primary);
+  background: rgba(0, 62, 199, 0.1);
+  border: 1px solid rgba(0, 62, 199, 0.18);
+  border-radius: 999px;
+  padding: 0.22rem 0.72rem;
+  margin-bottom: 0.35rem;
 }
 
 .dropzone-loaded {
@@ -280,14 +276,16 @@ body {
 
 .upload-meta {
   margin-top: 0.9rem;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.8rem;
-  align-items: center;
+  display: grid;
+  gap: 0.45rem;
+  justify-items: center;
 }
 
 #selected-file { color: var(--muted); font-size: 0.9rem; }
+
+.hidden-label {
+  display: none;
+}
 
 .btn {
   border: 0;
@@ -496,6 +494,7 @@ tr.row-deleted td:not(.actions-cell) {
   padding: 0.8rem 1.25rem;
   font-size: 1rem;
   border-radius: 0.9rem;
+  justify-self: center;
 }
 
 .btn-ghost {
@@ -576,34 +575,83 @@ tr.row-deleted td:not(.actions-cell) {
 
 .hidden { display: none; }
 
+@media (max-width: 820px) {
+  :root {
+    --anchor-offset: 76px;
+  }
+
+  .topbar-inner {
+    grid-template-columns: auto auto;
+    grid-template-areas:
+      "brand menu"
+      "links links"
+      "actions actions";
+    gap: 10px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .brand {
+    grid-area: brand;
+  }
+
+  .menu-toggle {
+    grid-area: menu;
+    justify-self: end;
+    display: inline-flex;
+    border: 0;
+    border-radius: 999px;
+    background: var(--surface-low);
+    color: var(--text);
+    font-weight: 700;
+    padding: 9px 14px;
+  }
+
+  .top-links {
+    grid-area: links;
+    display: none;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 12px;
+  }
+
+  .top-links.is-open {
+    display: flex;
+  }
+
+  .top-actions {
+    grid-area: actions;
+    justify-content: flex-start;
+  }
+}
+
 @media (max-width: 640px) {
   :root {
     --anchor-offset: 76px;
   }
 
-  .top-nav-inner {
+  .top-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .top-actions .btn,
+  .top-actions .link-plain {
+    text-align: center;
+    justify-content: center;
+  }
+
+  .page {
     width: calc(100% - 1rem);
-    min-height: 70px;
   }
-  .top-brand {
-    font-size: 1.22rem;
+
+  .dropzone {
+    width: 100%;
   }
-  .top-nav-links {
-    display: none;
-  }
-  .top-auth-actions {
-    gap: 0.45rem;
-  }
-  .top-auth-link {
-    font-size: 0.78rem;
-  }
-  .top-auth-btn {
-    min-height: 36px;
-    padding: 0.45rem 0.78rem;
-    font-size: 0.78rem;
-  }
-  .page { width: calc(100% - 1rem); margin-top: 5.9rem; }
+
   .panel { padding: 0.8rem; }
+
   .download-row {
     grid-template-columns: 1fr;
     gap: 0.9rem;

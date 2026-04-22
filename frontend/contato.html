@@ -63,33 +63,14 @@
           <label for="message">Mensagem</label>
           <textarea id="message" name="message" rows="6" required placeholder="Descreva o que aconteceu e, se possível, qual banco e formato do arquivo."></textarea>
 
-          <button class="btn btn-primary" type="submit">Enviar para suporte</button>
+          <label for="attachment">Arquivo com problema (opcional)</label>
+          <input id="attachment" name="attachment" type="file" />
+          <p class="file-help">Você pode anexar um arquivo para referência no atendimento.</p>
+
+          <button class="btn btn-primary contact-submit-btn" type="submit">Enviar Mensagem</button>
           <p id="contact-feedback" class="feedback" aria-live="polite"></p>
         </form>
       </article>
-
-      <aside class="info-card">
-        <h2>Canais de suporte</h2>
-        <p class="muted">Escolha o canal mais rápido para você.</p>
-
-        <div class="channel-list">
-          <a class="channel" href="mailto:suporte@ofxsimples.com?subject=Suporte%20OFX%20Simples">
-            <strong>E-mail</strong>
-            <span>suporte@ofxsimples.com</span>
-          </a>
-          <a class="channel" href="https://wa.me/5500000000000" target="_blank" rel="noopener noreferrer">
-            <strong>WhatsApp</strong>
-            <span>Atendimento comercial e suporte</span>
-          </a>
-        </div>
-
-        <h3>Antes de enviar</h3>
-        <ul>
-          <li>Informe banco, formato e tamanho do arquivo.</li>
-          <li>Diga a mensagem de erro exibida, se houver.</li>
-          <li>Explique se o problema ocorre sempre ou em um caso específico.</li>
-        </ul>
-      </aside>
     </section>
   </main>
 
