@@ -344,6 +344,17 @@ body {
   color: #8d181e;
   font-weight: 700;
 }
+
+.status.error a {
+  color: #8d181e;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.status.error a:hover {
+  color: #6f1116;
+}
+
 .status.success {
   display: inline-flex;
   align-items: center;

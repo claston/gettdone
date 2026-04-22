@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from app.application import AccessControlService, AnalyzeService, ReportService, TempAnalysisStorage
+from app.application import AccessControlService, AnalyzeService, ContactService, ReportService, TempAnalysisStorage
 
 _backend_root = Path(__file__).resolve().parents[1]
 _storage = TempAnalysisStorage(
@@ -11,6 +11,7 @@ _storage = TempAnalysisStorage(
 _analyze_service = AnalyzeService(storage=_storage)
 _report_service = ReportService(storage=_storage)
 _access_control_service: AccessControlService | None = None
+_contact_service: ContactService | None = None
 
 
 def get_analyze_service() -> AnalyzeService:
@@ -32,3 +33,10 @@ def get_access_control_service() -> AccessControlService:
             anonymous_quota_limit=int(os.getenv("ANONYMOUS_QUOTA_LIMIT", default_anonymous_quota_limit)),
         )
     return _access_control_service
+
+
+def get_contact_service() -> ContactService:
+    global _contact_service
+    if _contact_service is None:
+        _contact_service = ContactService.from_env()
+    return _contact_service

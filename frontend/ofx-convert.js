@@ -154,6 +154,22 @@
     }
   }
 
+  function setStatusHtml(html, kind) {
+    statusMsg.innerHTML = html || "";
+    statusMsg.classList.remove("error", "success");
+    if (kind) {
+      statusMsg.classList.add(kind);
+    }
+  }
+
+  function isUnrecognizedPdfLayoutError(message) {
+    const normalized = String(message || "").toLowerCase();
+    return (
+      normalized.includes("pdf text was extracted, but no recognizable transaction row pattern was found") ||
+      normalized.includes("pdf text was extracted, but transactions are in an unsupported table layout")
+    );
+  }
+
   function syncHeroAuthLinks() {
     const hasSession = Boolean(getUserToken());
     if (authClientLink) authClientLink.classList.toggle("hidden", !hasSession);
@@ -910,6 +926,13 @@
       reviewSection.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Erro inesperado.";
+      if (isUnrecognizedPdfLayoutError(message)) {
+        setStatusHtml(
+          'Não conseguimos identificar as transações neste PDF. <a href="./contato.html">Falar com suporte</a> ou tente outro arquivo.',
+          "error",
+        );
+        return;
+      }
       setStatus(message, "error");
       if (message.toLowerCase().includes("quota exceeded")) {
         setStatus("Você atingiu o limite gratuito. Redirecionando para cadastro...", "error");

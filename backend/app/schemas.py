@@ -199,3 +199,9 @@ class ClientConversionItem(BaseModel):
 
 class ClientConversionsResponse(BaseModel):
     items: list[ClientConversionItem]
+
+
+class ContactResponse(BaseModel):
+    status: str
+    delivery_mode: str
+    provider_message_id: str | None = None
