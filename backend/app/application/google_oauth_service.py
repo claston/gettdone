@@ -148,5 +148,6 @@ class GoogleOAuthService:
         return raw
 
     def _build_code_challenge(self, code_verifier: str) -> str:
+        # codeql[py/weak-sensitive-data-hashing]: PKCE (RFC 7636) requires SHA-256 for code_challenge (S256), not password hashing.
         digest = hashlib.sha256(code_verifier.encode("utf-8")).digest()
         return base64.urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
