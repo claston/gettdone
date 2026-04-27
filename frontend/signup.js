@@ -3,6 +3,7 @@
   const statusMsg = document.getElementById("status-msg");
   const loginLink = document.getElementById("login-link");
   const topLoginLink = document.getElementById("top-login-link");
+  const googleSignupBtn = document.getElementById("google-signup-btn");
 
   function resolveApiBase() {
     const host = window.location.hostname;
@@ -104,6 +105,13 @@
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Falha no cadastro.", "error");
       }
+    });
+  }
+
+  if (googleSignupBtn) {
+    googleSignupBtn.addEventListener("click", () => {
+      const next = encodeURIComponent(getNextPath());
+      window.location.href = `${apiBase}/auth/google/start?next=${next}`;
     });
   }
 

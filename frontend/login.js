@@ -3,6 +3,7 @@
   const statusMsg = document.getElementById("status-msg");
   const signupLink = document.getElementById("signup-link");
   const topSignupLink = document.getElementById("top-signup-link");
+  const googleLoginBtn = document.getElementById("google-login-btn");
 
   function resolveApiBase() {
     const host = window.location.hostname;
@@ -84,6 +85,13 @@
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Falha no login.", "error");
       }
+    });
+  }
+
+  if (googleLoginBtn) {
+    googleLoginBtn.addEventListener("click", () => {
+      const next = encodeURIComponent(getNextPath());
+      window.location.href = `${apiBase}/auth/google/start?next=${next}`;
     });
   }
 

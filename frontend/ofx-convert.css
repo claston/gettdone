@@ -596,10 +596,16 @@ body.quota-locked {
   background: rgba(17, 24, 39, 0.52);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
-  display: grid;
+  display: none;
+  pointer-events: none;
   place-items: center;
   z-index: 140;
   padding: 1rem;
+}
+
+.quota-lock-overlay.is-open {
+  display: grid;
+  pointer-events: auto;
 }
 
 .quota-lock-modal {

@@ -1,7 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException
+from urllib.parse import urlencode
 
-from app.application import AccessControlService, InvalidCredentialsError, InvalidUserTokenError, UserAlreadyExistsError
-from app.dependencies import get_access_control_service
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import RedirectResponse
+
+from app.application import (
+    AccessControlService,
+    GoogleOAuthExchangeError,
+    GoogleOAuthNotConfiguredError,
+    GoogleOAuthService,
+    GoogleOAuthStateError,
+    InvalidCredentialsError,
+    InvalidUserTokenError,
+    UserAlreadyExistsError,
+)
+from app.dependencies import get_access_control_service, get_google_oauth_service
 from app.schemas import AuthMeResponse, LoginRequest, LoginResponse, RegisterRequest, RegisterResponse
 
 router = APIRouter()
@@ -67,3 +79,37 @@ def me(
         quota_remaining=service.get_remaining_quota(identity),
         quota_limit=identity.quota_limit,
     )
+
+
+@router.get("/auth/google/start")
+def google_start(
+    next_path: str = Query(default="/client-area.html", alias="next"),
+    oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
+) -> RedirectResponse:
+    try:
+        auth_url = oauth_service.build_authorization_url(next_path=next_path)
+    except GoogleOAuthNotConfiguredError:
+        raise HTTPException(status_code=503, detail="Google OAuth is not configured.")
+    return RedirectResponse(url=auth_url, status_code=307)
+
+
+@router.get("/auth/google/callback")
+def google_callback(
+    code: str = Query(...),
+    state: str = Query(...),
+    oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
+) -> RedirectResponse:
+    try:
+        redirect_url = oauth_service.build_callback_redirect_url(code=code, state=state)
+    except GoogleOAuthNotConfiguredError:
+        raise HTTPException(status_code=503, detail="Google OAuth is not configured.")
+    except (GoogleOAuthStateError, GoogleOAuthExchangeError):
+        params = urlencode(
+            {
+                "error": "google_oauth_failed",
+                "next": "/client-area.html",
+            }
+        )
+        fallback = f"{oauth_service.config.frontend_base_url}/auth-callback.html?{params}"
+        return RedirectResponse(url=fallback, status_code=307)
+    return RedirectResponse(url=redirect_url, status_code=307)

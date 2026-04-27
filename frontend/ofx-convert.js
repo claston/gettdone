@@ -236,6 +236,7 @@
     syncQuotaAuthLinks();
     document.body.classList.add("quota-locked");
     quotaLockOverlay.classList.remove("hidden");
+    quotaLockOverlay.classList.add("is-open");
     convertBtn.disabled = true;
   }
 
@@ -243,9 +244,18 @@
     if (!quotaLockOverlay) {
       return;
     }
+    quotaLockOverlay.classList.remove("is-open");
     quotaLockOverlay.classList.add("hidden");
     document.body.classList.remove("quota-locked");
     setSelectedFileLabel();
+  }
+
+  function forceUnlockUi() {
+    if (quotaLockOverlay) {
+      quotaLockOverlay.classList.remove("is-open");
+      quotaLockOverlay.classList.add("hidden");
+    }
+    document.body.classList.remove("quota-locked");
   }
 
   async function syncQuotaLockState() {
@@ -1198,6 +1208,7 @@
       menuToggle.setAttribute("aria-expanded", open ? "true" : "false");
     });
   }
+  forceUnlockUi();
   setSelectedFileLabel();
   const didForceLogout = consumeLogoutQueryFlag();
   syncHeroAuthLinks();

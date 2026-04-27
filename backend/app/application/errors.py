@@ -44,3 +44,15 @@ class ContactProviderNotConfiguredError(Exception):
 
 class ContactDeliveryError(Exception):
     """Raised when contact message delivery fails at provider level."""
+
+
+class GoogleOAuthNotConfiguredError(Exception):
+    """Raised when Google OAuth env/config is missing."""
+
+
+class GoogleOAuthStateError(Exception):
+    """Raised when OAuth state is invalid, missing, or expired."""
+
+
+class GoogleOAuthExchangeError(Exception):
+    """Raised when token exchange or profile fetch fails."""

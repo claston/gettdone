@@ -231,6 +231,43 @@ body {
   background: linear-gradient(135deg, var(--primary), var(--primary-strong));
 }
 
+.btn-social {
+  color: var(--text);
+  background: #ffffff;
+  border: 1px solid var(--border);
+}
+
+.btn-social:hover {
+  background: #f7f9fc;
+}
+
+.form-divider {
+  position: relative;
+  margin: 0.1rem 0 0.3rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.form-divider::before,
+.form-divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 38%;
+  height: 1px;
+  background: var(--border);
+}
+
+.form-divider::before {
+  left: 0;
+}
+
+.form-divider::after {
+  right: 0;
+}
+
 .footnote {
   margin: 1rem 0 0;
   text-align: center;

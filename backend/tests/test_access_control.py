@@ -103,3 +103,41 @@ def test_anonymous_quota_resets_after_week_window(tmp_path) -> None:
     now_box[0] = now_box[0] + timedelta(days=8)
     assert service.get_remaining_quota(identity) == 3
     assert service.consume_quota(identity) == 2
+
+
+def test_google_user_is_created_and_reused_by_provider_id(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+    )
+
+    first = service.register_or_authenticate_google_user(
+        provider_user_id="google-sub-1",
+        email="erica@example.com",
+        name="Erica",
+    )
+    second = service.register_or_authenticate_google_user(
+        provider_user_id="google-sub-1",
+        email="erica@example.com",
+        name="Erica Souza",
+    )
+
+    assert first.user_id == second.user_id
+    assert second.name == "Erica Souza"
+    assert second.token
+
+
+def test_google_oauth_state_can_be_consumed_once(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+    )
+    state, verifier = service.create_google_oauth_state(next_path="/client-area.html", ttl_seconds=600)
+    consumed = service.consume_google_oauth_state(state=state)
+    consumed_again = service.consume_google_oauth_state(state=state)
+
+    assert consumed is not None
+    assert consumed["state"] == state
+    assert consumed["code_verifier"] == verifier
+    assert consumed["next_path"] == "/client-area.html"
+    assert consumed_again is None

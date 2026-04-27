@@ -1,7 +1,15 @@
 import os
 from pathlib import Path
 
-from app.application import AccessControlService, AnalyzeService, ContactService, ReportService, TempAnalysisStorage
+from app.application import (
+    AccessControlService,
+    AnalyzeService,
+    ContactService,
+    GoogleOAuthConfig,
+    GoogleOAuthService,
+    ReportService,
+    TempAnalysisStorage,
+)
 
 _backend_root = Path(__file__).resolve().parents[1]
 _storage = TempAnalysisStorage(
@@ -12,6 +20,7 @@ _analyze_service = AnalyzeService(storage=_storage)
 _report_service = ReportService(storage=_storage)
 _access_control_service: AccessControlService | None = None
 _contact_service: ContactService | None = None
+_google_oauth_service: GoogleOAuthService | None = None
 
 
 def get_analyze_service() -> AnalyzeService:
@@ -49,3 +58,23 @@ def get_contact_service() -> ContactService:
     if _contact_service is None:
         _contact_service = ContactService.from_env()
     return _contact_service
+
+
+def get_google_oauth_service() -> GoogleOAuthService:
+    global _google_oauth_service
+    if _google_oauth_service is None:
+        frontend_base_url = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000").strip().rstrip("/")
+        if not frontend_base_url:
+            frontend_base_url = "http://localhost:3000"
+        config = GoogleOAuthConfig(
+            client_id=os.getenv("GOOGLE_CLIENT_ID", "").strip(),
+            client_secret=os.getenv("GOOGLE_CLIENT_SECRET", "").strip(),
+            redirect_uri=os.getenv("GOOGLE_REDIRECT_URI", "").strip(),
+            frontend_base_url=frontend_base_url,
+            state_ttl_seconds=int(os.getenv("GOOGLE_OAUTH_STATE_TTL_SECONDS", "600")),
+        )
+        _google_oauth_service = GoogleOAuthService(
+            config=config,
+            access_control_service=get_access_control_service(),
+        )
+    return _google_oauth_service

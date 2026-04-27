@@ -99,10 +99,30 @@ class AccessControlService:
                     raise UserAlreadyExistsError
                 conn.execute(
                     """
-                    INSERT INTO users (id, name, email, password_hash, password_salt, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO users (
+                        id,
+                        name,
+                        email,
+                        password_hash,
+                        password_salt,
+                        auth_provider,
+                        provider_user_id,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (user_id, name.strip(), normalized_email, password_hash, salt, now, now),
+                    (
+                        user_id,
+                        name.strip(),
+                        normalized_email,
+                        password_hash,
+                        salt,
+                        "local",
+                        None,
+                        now,
+                        now,
+                    ),
                 )
                 conn.commit()
         return RegisteredUser(
@@ -151,6 +171,173 @@ class AccessControlService:
                     name=str(user["name"] or ""),
                     token=user_token,
                 )
+
+    def register_or_authenticate_google_user(
+        self,
+        *,
+        provider_user_id: str,
+        email: str,
+        name: str,
+    ) -> RegisteredUser:
+        normalized_email = email.strip().lower()
+        provider_user_id = provider_user_id.strip()
+        display_name = name.strip() or normalized_email.split("@", 1)[0]
+        now = self.now_provider().isoformat()
+
+        with self._lock:
+            with self._connect() as conn:
+                row = conn.execute(
+                    """
+                    SELECT id, name, email
+                    FROM users
+                    WHERE auth_provider = 'google' AND provider_user_id = ?
+                    """,
+                    (provider_user_id,),
+                ).fetchone()
+                if row is not None:
+                    user_id = str(row["id"])
+                    conn.execute(
+                        """
+                        UPDATE users
+                        SET name = ?, email = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (display_name, normalized_email, now, user_id),
+                    )
+                    conn.commit()
+                    return RegisteredUser(
+                        user_id=user_id,
+                        email=normalized_email,
+                        name=display_name,
+                        token=self._encode_token(user_id),
+                    )
+
+                existing_by_email = conn.execute(
+                    "SELECT id, name, email FROM users WHERE email = ?",
+                    (normalized_email,),
+                ).fetchone()
+                if existing_by_email is not None:
+                    user_id = str(existing_by_email["id"])
+                    conn.execute(
+                        """
+                        UPDATE users
+                        SET name = ?, auth_provider = 'google', provider_user_id = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (display_name, provider_user_id, now, user_id),
+                    )
+                    conn.commit()
+                    return RegisteredUser(
+                        user_id=user_id,
+                        email=normalized_email,
+                        name=display_name,
+                        token=self._encode_token(user_id),
+                    )
+
+                user_id = f"usr_{uuid4().hex[:12]}"
+                conn.execute(
+                    """
+                    INSERT INTO users (
+                        id,
+                        name,
+                        email,
+                        password_hash,
+                        password_salt,
+                        auth_provider,
+                        provider_user_id,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        user_id,
+                        display_name,
+                        normalized_email,
+                        "",
+                        "",
+                        "google",
+                        provider_user_id,
+                        now,
+                        now,
+                    ),
+                )
+                conn.commit()
+                return RegisteredUser(
+                    user_id=user_id,
+                    email=normalized_email,
+                    name=display_name,
+                    token=self._encode_token(user_id),
+                )
+
+    def create_google_oauth_state(self, *, next_path: str, ttl_seconds: int = 600) -> tuple[str, str]:
+        state = f"gst_{secrets.token_urlsafe(24)}"
+        code_verifier = secrets.token_urlsafe(64)
+        now = self.now_provider()
+        expires_at = (now + timedelta(seconds=max(60, int(ttl_seconds)))).isoformat()
+        with self._lock:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO google_oauth_states (
+                        state,
+                        code_verifier,
+                        next_path,
+                        created_at,
+                        expires_at
+                    )
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        state,
+                        code_verifier,
+                        self._normalize_next_path(next_path),
+                        now.isoformat(),
+                        expires_at,
+                    ),
+                )
+                conn.commit()
+        return state, code_verifier
+
+    def consume_google_oauth_state(self, *, state: str) -> dict[str, str] | None:
+        normalized_state = state.strip()
+        if not normalized_state:
+            return None
+        now = self.now_provider()
+        with self._lock:
+            with self._connect() as conn:
+                row = conn.execute(
+                    """
+                    SELECT state, code_verifier, next_path, expires_at
+                    FROM google_oauth_states
+                    WHERE state = ?
+                    """,
+                    (normalized_state,),
+                ).fetchone()
+                conn.execute("DELETE FROM google_oauth_states WHERE state = ?", (normalized_state,))
+                conn.execute("DELETE FROM google_oauth_states WHERE expires_at < ?", (now.isoformat(),))
+                conn.commit()
+
+        if row is None:
+            return None
+
+        expires_at_raw = str(row["expires_at"] or "").strip()
+        if not expires_at_raw:
+            return None
+        try:
+            expires_at = datetime.fromisoformat(expires_at_raw)
+        except ValueError:
+            return None
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at < now:
+            return None
+
+        return {
+            "state": str(row["state"]),
+            "code_verifier": str(row["code_verifier"]),
+            "next_path": self._normalize_next_path(str(row["next_path"])),
+        }
 
     def assert_upload_size(self, raw_bytes: bytes) -> None:
         if len(raw_bytes) > MAX_UPLOAD_SIZE_BYTES:
@@ -447,6 +634,8 @@ class AccessControlService:
                         email TEXT NOT NULL UNIQUE,
                         password_hash TEXT NOT NULL,
                         password_salt TEXT NOT NULL,
+                        auth_provider TEXT NOT NULL DEFAULT 'local',
+                        provider_user_id TEXT,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
                     );
@@ -480,6 +669,37 @@ class AccessControlService:
                         transactions_count INTEGER NOT NULL DEFAULT 0,
                         FOREIGN KEY(user_id) REFERENCES users(id)
                     );
+
+                    CREATE TABLE IF NOT EXISTS google_oauth_states (
+                        state TEXT PRIMARY KEY,
+                        code_verifier TEXT NOT NULL,
+                        next_path TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        expires_at TEXT NOT NULL
+                    );
+                    """
+                )
+
+                user_columns = {
+                    str(row["name"])
+                    for row in conn.execute("PRAGMA table_info(users)").fetchall()
+                }
+                if "auth_provider" not in user_columns:
+                    conn.execute("ALTER TABLE users ADD COLUMN auth_provider TEXT NOT NULL DEFAULT 'local'")
+                if "provider_user_id" not in user_columns:
+                    conn.execute("ALTER TABLE users ADD COLUMN provider_user_id TEXT")
+                conn.execute(
+                    """
+                    UPDATE users
+                    SET auth_provider = 'local'
+                    WHERE auth_provider IS NULL OR auth_provider = ''
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_provider_user_id
+                    ON users(provider_user_id)
+                    WHERE auth_provider = 'google' AND provider_user_id IS NOT NULL
                     """
                 )
 
@@ -518,3 +738,9 @@ class AccessControlService:
         if parsed.tzinfo is None:
             return parsed.replace(tzinfo=timezone.utc)
         return parsed
+
+    def _normalize_next_path(self, next_path: str | None) -> str:
+        raw = str(next_path or "").strip()
+        if not raw.startswith("/"):
+            return "/client-area.html"
+        return raw
