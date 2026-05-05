@@ -95,9 +95,57 @@ def upgrade() -> None:
             is_active,
             created_at
         ) VALUES
-            ('plan_essencial_v1', 'essencial', 'Essencial', 1, 'BRL', 2990, 'monthly', 'pages', 150, 30, 10485760, 100, TRUE, TRUE, NOW()::text),
-            ('plan_profissional_v1', 'profissional', 'Profissional', 1, 'BRL', 3990, 'monthly', 'pages', 300, 30, 10485760, 100, TRUE, TRUE, NOW()::text),
-            ('plan_escritorio_v1', 'escritorio', 'Escritorio', 1, 'BRL', 4990, 'monthly', 'pages', 500, 30, 10485760, 100, TRUE, TRUE, NOW()::text)
+            (
+                'plan_essencial_v1',
+                'essencial',
+                'Essencial',
+                1,
+                'BRL',
+                2990,
+                'monthly',
+                'pages',
+                150,
+                30,
+                10485760,
+                100,
+                TRUE,
+                TRUE,
+                NOW()::text
+            ),
+            (
+                'plan_profissional_v1',
+                'profissional',
+                'Profissional',
+                1,
+                'BRL',
+                3990,
+                'monthly',
+                'pages',
+                300,
+                30,
+                10485760,
+                100,
+                TRUE,
+                TRUE,
+                NOW()::text
+            ),
+            (
+                'plan_escritorio_v1',
+                'escritorio',
+                'Escritorio',
+                1,
+                'BRL',
+                4990,
+                'monthly',
+                'pages',
+                500,
+                30,
+                10485760,
+                100,
+                TRUE,
+                TRUE,
+                NOW()::text
+            )
         ON CONFLICT (id) DO NOTHING
         """
     )

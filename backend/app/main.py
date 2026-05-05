@@ -10,8 +10,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.dependencies import get_analyze_service, get_report_service
 from app.routers import (
-    analyze_router,
     admin_auth_router,
+    analyze_router,
     auth_router,
     checkout_router,
     client_router,

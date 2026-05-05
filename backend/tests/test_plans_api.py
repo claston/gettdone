@@ -72,7 +72,7 @@ def test_admin_activate_plan_requires_valid_admin_token(tmp_path, monkeypatch) -
         token_secret="test-secret",
     )
     created = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
-    intent = service.create_checkout_intent(
+    service.create_checkout_intent(
         user_id=created.user_id,
         plan_code="profissional",
         customer_name="Erica",
@@ -101,7 +101,7 @@ def test_admin_activate_plan_accepts_bearer_token_and_legacy_path(tmp_path, monk
         token_secret="test-secret",
     )
     created = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
-    intent = service.create_checkout_intent(
+    service.create_checkout_intent(
         user_id=created.user_id,
         plan_code="profissional",
         customer_name="Erica",

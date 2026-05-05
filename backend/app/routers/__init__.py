@@ -1,5 +1,5 @@
-from app.routers.analyze import router as analyze_router
 from app.routers.admin_auth import router as admin_auth_router
+from app.routers.analyze import router as analyze_router
 from app.routers.auth import router as auth_router
 from app.routers.checkout import router as checkout_router
 from app.routers.client import router as client_router
