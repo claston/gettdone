@@ -2,8 +2,10 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
+backend/.pytest_tmp*
 venv/
 .venv/
+backend/venv_local/
 
 node_modules/
 .next/

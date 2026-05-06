@@ -2,6 +2,7 @@
   const yearNode = document.getElementById("footer-year");
   const topAuthLoginLink = document.getElementById("top-auth-login-link");
   const topAuthPrimaryLink = document.getElementById("top-auth-primary-link");
+  const pricingGrid = document.getElementById("pricing-grid");
   const menuToggle = document.getElementById("menu-toggle");
   const topLinks = document.getElementById("top-links");
   const USER_TOKEN_KEY = "ofxsimples_user_token";
@@ -60,6 +61,70 @@
     }
   }
 
+  function formatPriceBRL(priceCents) {
+    const amount = Number(priceCents || 0) / 100;
+    return amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  }
+
+  function renderPlans(items) {
+    if (!pricingGrid) return;
+    const plans = Array.isArray(items) ? items.slice() : [];
+    if (!plans.length) {
+      pricingGrid.innerHTML = [
+        '<article class="plan-card">',
+        "<h2>Planos indisponiveis</h2>",
+        '<p class="price">Consulte suporte</p>',
+        "<ul><li>Tente novamente em instantes</li></ul>",
+        '<a class="btn btn-outline" href="./checkout.html">Ir para checkout</a>',
+        "</article>",
+      ].join("");
+      return;
+    }
+
+    plans.sort(function (a, b) {
+      return Number(a.price_cents || 0) - Number(b.price_cents || 0);
+    });
+    const featuredCode = "profissional";
+
+    pricingGrid.innerHTML = plans
+      .map(function (plan) {
+        const code = String(plan.code || "").toLowerCase();
+        const isFeatured = code === featuredCode;
+        const cardClass = isFeatured ? "plan-card plan-card-featured" : "plan-card";
+        const ctaClass = isFeatured ? "btn btn-primary" : "btn btn-outline";
+        return [
+          `<article class="${cardClass}">`,
+          isFeatured ? '<p class="badge">Mais escolhido</p>' : "",
+          `<h2>${String(plan.name || "")}</h2>`,
+          `<p class="price">${formatPriceBRL(plan.price_cents)}<span>/mês</span></p>`,
+          "<ul>",
+          `<li>${Number(plan.quota_limit || 0)} páginas por mês</li>`,
+          `<li>Até ${Number(plan.max_pages_per_file || 0)} páginas por arquivo</li>`,
+          `<li>Tamanho máximo: ${Math.round(Number(plan.max_upload_size_bytes || 0) / (1024 * 1024))} MB por arquivo</li>`,
+          "<li>Suporte por contato</li>",
+          "</ul>",
+          `<a class="${ctaClass}" href="./checkout.html?plan=${encodeURIComponent(code)}">Quero este plano</a>`,
+          "</article>",
+        ].join("");
+      })
+      .join("");
+  }
+
+  async function loadPlansCatalog() {
+    if (!pricingGrid) return;
+    try {
+      const apiBase = resolveApiBase();
+      const response = await fetch(`${apiBase}/plans`);
+      if (!response.ok) throw new Error("catalog-unavailable");
+      const payload = await response.json().catch(function () {
+        return {};
+      });
+      renderPlans(payload.items || []);
+    } catch (_error) {
+      renderPlans([]);
+    }
+  }
+
   async function syncTopAuthBySession() {
     const token = getUserToken();
     if (!token) {
@@ -97,5 +162,6 @@
     });
   }
 
+  void loadPlansCatalog();
   void syncTopAuthBySession();
 })();

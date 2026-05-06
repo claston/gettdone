@@ -24,6 +24,18 @@ _contact_service: ContactService | None = None
 _google_oauth_service: GoogleOAuthService | None = None
 
 
+def _resolve_access_control_state_file() -> Path:
+    configured_dir = os.getenv("ACCESS_CONTROL_STATE_DIR", "").strip()
+    if configured_dir:
+        return Path(configured_dir) / "state.json"
+
+    local_app_data = os.getenv("LOCALAPPDATA", "").strip()
+    if local_app_data:
+        return Path(local_app_data) / "gettdone" / "access_control" / "state.json"
+
+    return _backend_root / "tmp" / "access_control" / "state.json"
+
+
 def get_analyze_service() -> AnalyzeService:
     return _analyze_service
 
@@ -44,11 +56,17 @@ def get_access_control_service() -> AccessControlService:
             raise RuntimeError("UNLIMITED_ANON_QUOTA must be false in production.")
         if unlimited_anon_quota:
             anonymous_quota_limit = 9999
+        configured_admin_emails = {
+            item.strip().lower()
+            for item in os.getenv("ADMIN_EMAILS", "").split(",")
+            if item.strip()
+        }
         _access_control_service = AccessControlService(
-            state_file=_backend_root / "tmp" / "access_control" / "state.json",
+            state_file=_resolve_access_control_state_file(),
             token_secret=token_secret,
             database_url=os.getenv("DATABASE_URL", "").strip() or None,
             database_schema=os.getenv("DATABASE_SCHEMA", "public").strip(),
+            admin_emails=configured_admin_emails,
             anonymous_quota_limit=anonymous_quota_limit,
             quota_window_days=int(os.getenv("QUOTA_WINDOW_DAYS", "7")),
         )

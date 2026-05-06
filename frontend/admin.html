@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OFX Simples | Admin</title>
+  <link rel="stylesheet" href="./admin.css?v=1" />
+</head>
+<body>
+  <main class="admin-page">
+    <header class="admin-header">
+      <div>
+        <p class="kicker">Painel</p>
+        <h1>Administracao de pedidos</h1>
+        <p class="subtitle">Versao inicial para acompanhar checkout e liberar planos.</p>
+      </div>
+      <a class="back-link" href="./index.html">Voltar ao site</a>
+    </header>
+
+    <section id="admin-login-card" class="card">
+      <h2>Login admin</h2>
+      <p class="muted">Use um usuario marcado como admin.</p>
+      <form id="admin-login-form" class="stack">
+        <label>
+          E-mail
+          <input id="admin-email" name="email" type="email" required autocomplete="username" />
+        </label>
+        <label>
+          Senha
+          <input id="admin-password" name="password" type="password" required autocomplete="current-password" />
+        </label>
+        <button id="admin-login-btn" type="submit">Entrar</button>
+      </form>
+      <p id="admin-login-status" class="status" aria-live="polite"></p>
+    </section>
+
+    <section id="admin-panel-card" class="card hidden">
+      <div class="panel-top">
+        <div>
+          <h2>Pedidos</h2>
+          <p class="muted">Visualize pedidos e execute os proximos passos.</p>
+        </div>
+        <div class="actions">
+          <label>
+            Busca
+            <input id="orders-query" type="text" placeholder="protocolo, nome, email, plano" />
+          </label>
+          <label>
+            Filtro
+            <select id="orders-filter">
+              <option value="open">Em aberto</option>
+              <option value="requested">Solicitado</option>
+              <option value="awaiting_payment">Aguardando pagamento</option>
+              <option value="released">Liberado</option>
+              <option value="all">Todos</option>
+            </select>
+          </label>
+          <button id="orders-refresh-btn" type="button">Atualizar</button>
+          <button id="admin-logout-btn" type="button" class="ghost">Sair</button>
+        </div>
+      </div>
+
+      <p id="admin-status" class="status" aria-live="polite"></p>
+      <div id="orders-empty" class="empty hidden">Nenhum pedido para este filtro.</div>
+      <div id="orders-list" class="orders-list"></div>
+      <div class="pager">
+        <button id="orders-prev-btn" class="ghost" type="button">Anterior</button>
+        <span id="orders-page-label">Pagina 1</span>
+        <button id="orders-next-btn" class="ghost" type="button">Proxima</button>
+      </div>
+    </section>
+
+    <section id="admin-users-card" class="card hidden">
+      <div class="panel-top">
+        <div>
+          <h2>Controle de acesso admin</h2>
+          <p class="muted">Promocao e revogacao de usuarios administradores.</p>
+        </div>
+        <div class="actions">
+          <label>
+            Busca usuario
+            <input id="users-query" type="text" placeholder="nome, email ou user id" />
+          </label>
+          <label>
+            Filtro
+            <select id="users-filter">
+              <option value="all">Todos</option>
+              <option value="admin">Apenas admins</option>
+              <option value="non_admin">Nao admins</option>
+            </select>
+          </label>
+          <button id="users-refresh-btn" type="button">Atualizar</button>
+        </div>
+      </div>
+      <p id="users-status" class="status" aria-live="polite"></p>
+      <div id="users-list" class="orders-list"></div>
+    </section>
+  </main>
+  <script src="./admin.js?v=2"></script>
+</body>
+</html>

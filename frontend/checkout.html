@@ -1,0 +1,123 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-KXD6TMPC');</script>
+<!-- End Google Tag Manager -->
+
+  <link rel="icon" type="image/png" href="/assets/favicon.png" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OFX Simples | Checkout</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./topbar-unified.css?v=1" />
+  <link rel="stylesheet" href="./checkout.css?v=1" />
+</head>
+<body>
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KXD6TMPC"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="./index.html">OFX Simples</a>
+      <button id="menu-toggle" class="menu-toggle" type="button" aria-expanded="false" aria-controls="top-links">
+        Menu
+      </button>
+      <nav id="top-links" class="top-links" aria-label="Navegação principal">
+        <a href="./index.html#como-funciona">Como funciona</a>
+        <a href="./index.html#faq">FAQ</a>
+        <a href="./planos.html">Planos</a>
+        <a href="./contato.html">Contato</a>
+      </nav>
+      <div class="top-actions">
+        <a id="top-auth-login-link" class="link-plain" href="./login.html?next=%2Fcheckout.html">Entrar</a>
+        <a id="top-auth-primary-link" class="btn btn-primary" href="./ofx-convert.html">Converter agora</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="checkout-page">
+    <section class="checkout-hero">
+      <p class="kicker">Checkout</p>
+      <h1>Finalize seu pedido de plano</h1>
+      <p>Recebemos seu pedido e enviamos os dados Pix por e-mail.</p>
+    </section>
+
+    <section class="checkout-grid">
+      <article class="checkout-card checkout-plan">
+        <h2>Resumo do plano</h2>
+        <p id="plan-name" class="plan-name">Carregando plano...</p>
+        <p id="plan-price" class="plan-price">R$ --,--/mes</p>
+        <ul id="plan-details">
+          <li>Carregando limites...</li>
+        </ul>
+        <section id="order-workflow" class="order-workflow hidden" aria-live="polite">
+          <h3>Status do pedido</h3>
+          <p><strong>Protocolo:</strong> <span id="order-intent-id">-</span></p>
+          <p><strong>Status:</strong> <span id="order-status-value">-</span></p>
+          <p><strong>Próximo passo:</strong> <span id="order-next-step">-</span></p>
+          <p id="order-payment-link-line" class="hidden">
+            <strong>Link de pagamento:</strong>
+            <a id="order-payment-link" href="#" target="_blank" rel="noopener noreferrer">Abrir link</a>
+          </p>
+          <button id="order-refresh-btn" class="btn btn-outline" type="button">Atualizar status</button>
+        </section>
+      </article>
+
+      <article class="checkout-card checkout-form-wrap">
+        <h2>Dados para contratação</h2>
+        <p class="helper">Vamos usar esses dados para retorno e ativação manual.</p>
+        <p id="checkout-status" class="status" aria-live="polite"></p>
+        <form id="checkout-form" class="checkout-form">
+          <label for="customer-name">Nome completo</label>
+          <input id="customer-name" name="name" type="text" required />
+
+          <label for="customer-email">E-mail</label>
+          <input id="customer-email" name="email" type="email" required />
+
+          <label for="customer-whatsapp">WhatsApp</label>
+          <input id="customer-whatsapp" name="whatsapp" type="text" placeholder="+55 11 99999-1111" required />
+
+          <label for="customer-document">CPF/CNPJ</label>
+          <input id="customer-document" name="document" type="text" required />
+
+          <label for="customer-notes">Observações (opcional)</label>
+          <textarea id="customer-notes" name="notes" rows="4" placeholder="Ex.: melhor horário para contato"></textarea>
+
+          <label class="checkbox-row">
+            <input id="accepted-terms" type="checkbox" required />
+            <span>Concordo com contato por e-mail para envio de dados Pix e ativação manual.</span>
+          </label>
+
+          <button id="checkout-submit" class="btn btn-primary" type="submit">Contratar plano</button>
+        </form>
+      </article>
+    </section>
+  </main>
+
+  <div id="checkout-success-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="checkout-success-title">
+    <div class="modal-backdrop" data-close-modal="true"></div>
+    <div class="modal-card">
+      <h3 id="checkout-success-title">Pedido recebido com sucesso</h3>
+      <p id="checkout-success-message"></p>
+      <button id="checkout-success-ok" class="btn btn-primary" type="button">Entendi</button>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <p>OFX Simples</p>
+    <p><a href="./politica-de-privacidade.html">Política de Privacidade</a></p>
+    <p id="footer-year"></p>
+  </footer>
+
+  <script src="./checkout.js?v=1"></script>
+</body>
+</html>

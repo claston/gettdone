@@ -141,3 +141,104 @@ def test_google_oauth_state_can_be_consumed_once(tmp_path) -> None:
     assert consumed["code_verifier"] == verifier
     assert consumed["next_path"] == "/client-area.html"
     assert consumed_again is None
+
+
+def test_public_plans_are_seeded_with_versions(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+    )
+
+    plans = service.list_public_plans()
+    codes = {str(item["code"]) for item in plans}
+    assert {"essencial", "profissional", "escritorio"}.issubset(codes)
+    assert all(int(item["version"]) >= 1 for item in plans)
+    prices = {str(item["code"]): int(item["price_cents"]) for item in plans}
+    assert prices["essencial"] == 2990
+    assert prices["profissional"] == 3990
+    assert prices["escritorio"] == 4990
+
+
+def test_public_plan_seed_recovers_missing_default_rows(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+    )
+    with service._connect() as conn:
+        service._execute(conn, "DELETE FROM plan_versions WHERE code = ?", ("escritorio",))
+        conn.commit()
+
+    restored_service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+    )
+    plans = restored_service.list_public_plans()
+    codes = {str(item["code"]) for item in plans}
+    assert {"essencial", "profissional", "escritorio"}.issubset(codes)
+
+
+def test_registered_user_can_use_pages_plan_quota(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+    )
+    user = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
+    service.activate_user_plan(user_id=user.user_id, plan_code="essencial")
+
+    identity = service.resolve_identity(anonymous_fingerprint=None, user_token=user.token)
+    assert identity.identity_type == "user"
+    assert identity.quota_mode == "pages"
+    assert identity.quota_limit == 150
+    assert identity.plan_code == "essencial"
+
+    service.ensure_quota_available(identity, required_units=10)
+    remaining = service.consume_quota(identity, consumed_units=10)
+    assert remaining == 140
+
+
+def test_list_user_conversions_marks_expired_items(tmp_path) -> None:
+    now_box = [datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc)]
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+        now_provider=lambda: now_box[0],
+    )
+    user = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
+    service.record_user_conversion(
+        user_id=user.user_id,
+        processing_id="an_old",
+        filename="old.pdf",
+        model="Nubank",
+        conversion_type="pdf-ofx",
+        status="Sucesso",
+        transactions_count=3,
+        pages_count=4,
+        expires_at=(now_box[0] - timedelta(minutes=1)).isoformat(),
+    )
+    items = service.list_user_conversions(user_id=user.user_id, limit=20)
+    assert len(items) == 1
+    assert items[0]["processing_id"] == "an_old"
+    assert items[0]["status"] == "Expirado"
+    assert items[0]["pages_count"] == 4
+
+
+def test_create_checkout_intent_persists_pending_order(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+    )
+    user = service.register_user(name="Erica Souza", email="erica@example.com", password="strong-pass")
+
+    intent = service.create_checkout_intent(
+        user_id=user.user_id,
+        plan_code="profissional",
+        customer_name="Erica Souza",
+        customer_email="erica@example.com",
+        customer_whatsapp="+55 11 99999-1111",
+        customer_document="123.456.789-00",
+        customer_notes="Contato preferencial por WhatsApp",
+    )
+    assert str(intent["id"]).startswith("chk_")
+    assert intent["status"] == "REQUESTED"
+    assert intent["plan_code"] == "profissional"
+    assert intent["price_cents"] == 3990

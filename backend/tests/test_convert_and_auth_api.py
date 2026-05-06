@@ -14,6 +14,7 @@ from app.schemas import (
     CategorySummary,
     Insight,
     OperationalSummary,
+    PdfProcessingMetrics,
     ReconciliationSummary,
     TopExpense,
     TransactionPreview,
@@ -91,6 +92,20 @@ class FakeAnalyzeService:
                 )
             ],
             expires_at=None,
+            pdf_processing_metrics=PdfProcessingMetrics(
+                total_ms=1.0,
+                parse_ms=1.0,
+                classify_ms=0.0,
+                normalize_ms=0.0,
+                reconcile_ms=0.0,
+                page_count=3,
+                extracted_char_count=10,
+                flattened_line_count=1,
+                grouped_transactions_count=1,
+                inline_candidates_count=0,
+                inline_transactions_count=0,
+                selected_parser="test",
+            ),
         )
 
 
@@ -99,7 +114,7 @@ class FakeReportService:
         _ = (analysis_id, identity_type, identity_id)
 
 
-def build_client(state_dir: Path) -> TestClient:
+def build_client(state_dir: Path) -> tuple[TestClient, AccessControlService]:
     access_control = _AccessControlServiceInMemory(
         state_file=state_dir / "access-control-state.json",
         token_secret="test-secret",
@@ -107,12 +122,12 @@ def build_client(state_dir: Path) -> TestClient:
     app.dependency_overrides[get_access_control_service] = lambda: access_control
     app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
-    return TestClient(app)
+    return TestClient(app), access_control
 
 
 def test_convert_anonymous_quota_and_block_4th_attempt() -> None:
     state_dir = Path(mkdtemp(prefix="convert-auth-api-"))
-    client = build_client(state_dir)
+    client, _service = build_client(state_dir)
 
     try:
         for expected_remaining in [2, 1, 0]:
@@ -143,7 +158,7 @@ def test_convert_anonymous_quota_and_block_4th_attempt() -> None:
 
 def test_register_then_convert_with_user_token() -> None:
     state_dir = Path(mkdtemp(prefix="convert-auth-api-"))
-    client = build_client(state_dir)
+    client, _service = build_client(state_dir)
 
     try:
         register = client.post(
@@ -169,7 +184,7 @@ def test_register_then_convert_with_user_token() -> None:
 
 def test_convert_rejects_file_bigger_than_2mb() -> None:
     state_dir = Path(mkdtemp(prefix="convert-auth-api-"))
-    client = build_client(state_dir)
+    client, _service = build_client(state_dir)
     oversized = b"a" * ((2 * 1024 * 1024) + 1)
 
     try:
@@ -180,6 +195,33 @@ def test_convert_rejects_file_bigger_than_2mb() -> None:
         )
         assert response.status_code == 413
         assert "maximum size of 2 MB" in response.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+        shutil.rmtree(state_dir, ignore_errors=True)
+
+
+def test_paid_pages_plan_consumes_quota_by_page_count() -> None:
+    state_dir = Path(mkdtemp(prefix="convert-auth-api-"))
+    client, service = build_client(state_dir)
+
+    try:
+        register = client.post(
+            "/auth/register",
+            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+        )
+        user_id = register.json()["user_id"]
+        token = register.json()["user_token"]
+        service.activate_user_plan(user_id=user_id, plan_code="essencial")
+
+        convert = client.post(
+            "/convert",
+            data={"user_token": token},
+            files={"file": ("sample.pdf", b"%PDF data", "application/pdf")},
+        )
+        assert convert.status_code == 200
+        payload = convert.json()
+        assert payload["quota_limit"] == 150
+        assert payload["quota_remaining"] == 147
     finally:
         app.dependency_overrides.clear()
         shutil.rmtree(state_dir, ignore_errors=True)

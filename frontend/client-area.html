@@ -31,6 +31,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       <div class="top-nav-links">
         <a href="./index.html#como-funciona">Como funciona</a>
         <a href="./index.html#faq">FAQ</a>
+        <a href="./planos.html">Planos</a>
         <a href="./contato.html">Contato</a>
       </div>
       <div class="top-auth-actions">
@@ -45,7 +46,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           >
             <span id="account-avatar" class="account-avatar" aria-hidden="true">U</span>
             <span id="account-email" class="account-email">conta</span>
-            <span class="account-caret" aria-hidden="true">▾</span>
+            <span class="account-caret" aria-hidden="true">&#9662;</span>
           </button>
           <div id="account-menu-panel" class="account-panel hidden" role="menu" aria-label="Menu da conta">
             <a href="#profile-plan" role="menuitem">Perfil e plano</a>
@@ -78,6 +79,19 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         <p><strong>E-mail:</strong> <span id="profile-email">-</span></p>
         <p><strong>Plano:</strong> <span id="plan-summary">-</span></p>
       </div>
+      <div id="order-status" class="account-info-card hidden">
+        <h2>Status do pedido</h2>
+        <p><strong>Protocolo:</strong> <span id="order-intent-id">-</span></p>
+        <p><strong>Plano:</strong> <span id="order-plan-name">-</span></p>
+        <p><strong>Valor:</strong> <span id="order-plan-price">-</span></p>
+        <p><strong>Páginas por mês:</strong> <span id="order-plan-pages">-</span></p>
+        <p><strong>Status:</strong> <span id="order-status-value">-</span></p>
+        <p><strong>Próximo passo:</strong> <span id="order-next-step">-</span></p>
+        <p id="order-payment-link-line" class="hidden">
+          <strong>Link de pagamento:</strong>
+          <a id="order-payment-link" href="#" target="_blank" rel="noopener noreferrer">Abrir link</a>
+        </p>
+      </div>
 
       <div class="table-card">
         <div class="table-wrap">
@@ -87,12 +101,13 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
                 <th>Nome do arquivo</th>
                 <th>Data</th>
                 <th>Transações</th>
+                <th>Páginas</th>
                 <th>Status</th>
               </tr>
             </thead>
             <tbody id="history-rows">
               <tr>
-                <td colspan="4">Carregando conversões...</td>
+                <td colspan="5">Carregando conversões...</td>
               </tr>
             </tbody>
           </table>
@@ -108,6 +123,6 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     </section>
   </main>
 
-  <script src="./client-area.js"></script>
+  <script src="./client-area.js?v=2"></script>
 </body>
 </html>

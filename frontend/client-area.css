@@ -307,6 +307,11 @@ body {
   font-size: 0.95rem;
 }
 
+.account-info-card a {
+  color: var(--primary);
+  word-break: break-all;
+}
+
 .status-msg {
   min-height: 1.2rem;
   margin: 0.45rem 0 0;

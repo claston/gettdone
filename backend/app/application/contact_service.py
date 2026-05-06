@@ -29,6 +29,18 @@ class ContactDeliveryResult:
     provider_message_id: str | None = None
 
 
+def _mask_email(value: str) -> str:
+    raw = value.strip()
+    if "@" not in raw:
+        return "***"
+    local, domain = raw.split("@", 1)
+    if not local:
+        return f"***@{domain}"
+    if len(local) == 1:
+        return f"{local}***@{domain}"
+    return f"{local[0]}***{local[-1]}@{domain}"
+
+
 class ContactService:
     def __init__(
         self,
@@ -49,6 +61,10 @@ class ContactService:
         self._resend_api_base = resend_api_base.rstrip("/")
         self._timeout_seconds = timeout_seconds
 
+    @property
+    def support_email(self) -> str:
+        return self._to_email
+
     async def deliver(self, contact: ContactMessage) -> ContactDeliveryResult:
         if contact.attachment and len(contact.attachment.raw_bytes) > self._max_attachment_bytes:
             raise FileTooLargeError
@@ -56,9 +72,9 @@ class ContactService:
         if self._dry_run:
             print(
                 "[contact-dry-run]",
-                f"name={contact.name}",
-                f"email={contact.email}",
-                f"subject={contact.subject}",
+                f"name_len={len(contact.name.strip())}",
+                f"email={_mask_email(contact.email)}",
+                f"subject_len={len(contact.subject.strip())}",
                 f"has_attachment={bool(contact.attachment)}",
             )
             return ContactDeliveryResult(delivery_mode="dry_run")
@@ -81,6 +97,44 @@ class ContactService:
                 }
             ]
 
+        return await self._send_payload(payload)
+
+    async def send_text_email(
+        self,
+        *,
+        to_email: str,
+        subject: str,
+        text: str,
+        reply_to: str | None = None,
+    ) -> ContactDeliveryResult:
+        clean_to = to_email.strip()
+        if not clean_to:
+            raise ContactDeliveryError("Missing recipient email.")
+
+        if self._dry_run:
+            print(
+                "[contact-dry-run]",
+                f"to={_mask_email(clean_to)}",
+                f"subject_len={len(subject.strip())}",
+            )
+            return ContactDeliveryResult(delivery_mode="dry_run")
+
+        if not self._api_key:
+            raise ContactProviderNotConfiguredError
+
+        payload: dict[str, object] = {
+            "from": self._from_email,
+            "to": [clean_to],
+            "subject": subject.strip() or "Mensagem",
+            "text": text.strip() or "Mensagem",
+        }
+        clean_reply_to = (reply_to or "").strip()
+        if clean_reply_to:
+            payload["reply_to"] = clean_reply_to
+
+        return await self._send_payload(payload)
+
+    async def _send_payload(self, payload: dict[str, object]) -> ContactDeliveryResult:
         try:
             async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
                 response = await client.post(

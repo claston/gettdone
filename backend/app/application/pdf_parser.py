@@ -29,9 +29,6 @@ MONTH_TO_NUMBER = {
 MONTH_PATTERN = "|".join(MONTH_TO_NUMBER)
 DATE_HEADER_PATTERN = re.compile(rf"^(?P<day>\d{{2}})\s+(?P<month>{MONTH_PATTERN})\s+(?P<year>\d{{4}})(?P<rest>.*)$")
 AMOUNT_PATTERN = re.compile(r"^[+-]?\d+(?:\.\d{3})*,\d{2}[+-]?$")
-INLINE_ROW_PATTERN = re.compile(r"^(?P<date>\d{2}/\d{2}(?:/\d{2,4})?)\s+(?P<rest>.+)$")
-TABULAR_DATE_PREFIX_PATTERN = re.compile(r"^(?P<date>\d{2}/\d{2}(?:/\d{2,4})?)\s+(?P<rest>.+)$")
-DATE_ONLY_PATTERN = re.compile(r"^\d{2}/\d{2}(?:/\d{2,4})?$")
 AMOUNT_TOKEN_PATTERN = re.compile(r"(?P<amount>(?:R\$\s*)?[+-]?\d+(?:\.\d{3})*,\d{2}[+-]?)")
 LOOSE_AMOUNT_PATTERN = re.compile(r"^[+-]?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:[.,]\d{2})[+-]?$")
 
@@ -84,6 +81,12 @@ COLUMNAR_HEADER_TOKENS = {
     "SALDO",
     "SALDO (R$)",
 }
+DATE_SLASH_TOKEN = r"\d{1,2}/\d{1,2}(?:/\d{2,4})?"
+DATE_MONTH_TOKEN = rf"\d{{1,2}}\s+(?:{MONTH_PATTERN})(?:\s+\d{{4}})?"
+DATE_TOKEN = rf"(?:{DATE_SLASH_TOKEN}|{DATE_MONTH_TOKEN})"
+INLINE_ROW_PATTERN = re.compile(rf"^(?P<date>{DATE_TOKEN})\s+(?P<rest>.+)$", re.IGNORECASE)
+TABULAR_DATE_PREFIX_PATTERN = re.compile(rf"^(?P<date>{DATE_TOKEN})\s+(?P<rest>.+)$", re.IGNORECASE)
+DATE_ONLY_PATTERN = re.compile(rf"^{DATE_TOKEN}$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -186,28 +189,69 @@ def _extract_pdf_page_texts_with_ocr(raw_bytes: bytes) -> list[str]:
             "OCR dependencies are not installed. Install optional packages for OCR support."
         ) from exc
 
+    document = None
     try:
         document = pdfium.PdfDocument(raw_bytes)
     except Exception as exc:
         raise InvalidFileContentError("Unable to render PDF pages for OCR.") from exc
 
-    texts: list[str] = []
-    for page_index in range(len(document)):
+    try:
+        max_pages = _get_pdf_ocr_max_pages()
+        if len(document) > max_pages:
+            raise InvalidFileContentError(
+                f"OCR fallback is limited to {max_pages} pages to protect memory usage. "
+                "Try a smaller PDF or disable OCR fallback."
+            )
+
+        texts: list[str] = []
+        for page_index in range(len(document)):
+            page = None
+            bitmap = None
+            image = None
+            try:
+                page = document[page_index]
+                bitmap = page.render(scale=200 / 72)
+                image = bitmap.to_pil()
+                text = (pytesseract.image_to_string(image, lang="por+eng") or "").strip()
+                if text:
+                    texts.append(text)
+            except Exception as exc:
+                raise InvalidFileContentError("OCR failed while processing PDF pages.") from exc
+            finally:
+                try:
+                    image.close()
+                except Exception:
+                    pass
+                try:
+                    bitmap.close()
+                except Exception:
+                    pass
+                try:
+                    page.close()
+                except Exception:
+                    pass
+        return texts
+    finally:
         try:
-            page = document[page_index]
-            bitmap = page.render(scale=300 / 72)
-            image = bitmap.to_pil()
-            text = (pytesseract.image_to_string(image, lang="por+eng") or "").strip()
-            if text:
-                texts.append(text)
-        except Exception as exc:
-            raise InvalidFileContentError("OCR failed while processing PDF pages.") from exc
-    return texts
+            document.close()
+        except Exception:
+            pass
 
 
 def _is_pdf_ocr_enabled() -> bool:
     raw = os.getenv("PDF_OCR_ENABLED", "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
+
+
+def _get_pdf_ocr_max_pages() -> int:
+    raw = os.getenv("PDF_OCR_MAX_PAGES", "").strip()
+    if not raw:
+        return 12
+    try:
+        value = int(raw)
+    except ValueError:
+        return 12
+    return max(1, value)
 
 
 def _flatten_statement_lines(page_texts: list[str]) -> list[str]:
@@ -225,6 +269,7 @@ def _parse_grouped_statement_lines(lines: list[str]) -> list[NormalizedTransacti
     current_date: str | None = None
     current_section_hint: str | None = None
     description_parts: list[str] = []
+    inferred_year = _infer_default_statement_year(lines)
 
     for line in lines:
         normalized_line = _normalize_text(line)
@@ -238,6 +283,26 @@ def _parse_grouped_statement_lines(lines: list[str]) -> list[NormalizedTransacti
             current_section_hint = None
             description_parts = []
             maybe_hint = _section_hint(date_match.group("rest"))
+            if maybe_hint:
+                current_section_hint = maybe_hint
+            continue
+
+        month_only_match = re.fullmatch(
+            rf"(?P<day>\d{{1,2}})\s+(?P<month>{MONTH_PATTERN})(?:\s+(?P<year>\d{{4}}))?(?P<rest>.*)",
+            normalized_line,
+        )
+        if month_only_match:
+            year_value = month_only_match.group("year")
+            if year_value is None:
+                year_value = str(inferred_year if inferred_year is not None else datetime.utcnow().year)
+            current_date = _build_iso_date(
+                year=year_value,
+                month_abbrev=month_only_match.group("month"),
+                day=month_only_match.group("day"),
+            )
+            current_section_hint = None
+            description_parts = []
+            maybe_hint = _section_hint(month_only_match.group("rest"))
             if maybe_hint:
                 current_section_hint = maybe_hint
             continue
@@ -474,6 +539,10 @@ def _infer_default_statement_year(lines: list[str]) -> int | None:
         for raw in re.findall(r"\b\d{2}/\d{2}/(\d{4})\b", line):
             year = int(raw)
             year_counts[year] = year_counts.get(year, 0) + 1
+        normalized_line = _normalize_text(line)
+        for raw in re.findall(rf"\b\d{{1,2}}\s+(?:{MONTH_PATTERN})\s+(\d{{4}})\b", normalized_line):
+            year = int(raw)
+            year_counts[year] = year_counts.get(year, 0) + 1
 
     if not year_counts:
         return None
@@ -482,17 +551,35 @@ def _infer_default_statement_year(lines: list[str]) -> int | None:
 
 def _parse_statement_date(raw: str, fallback_year: int | None) -> str:
     value = raw.strip()
-    if re.fullmatch(r"\d{2}/\d{2}/\d{4}", value):
+    upper_value = _normalize_text(value)
+    if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{4}", value):
         return _parse_slash_date(value)
 
-    if re.fullmatch(r"\d{2}/\d{2}/\d{2}", value):
+    if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{2}", value):
         day, month, year = value.split("/")
         return _parse_slash_date(f"{day}/{month}/20{year}")
 
-    if re.fullmatch(r"\d{2}/\d{2}", value):
+    if re.fullmatch(r"\d{1,2}/\d{1,2}", value):
         if fallback_year is None:
             fallback_year = datetime.utcnow().year
         return _parse_slash_date(f"{value}/{fallback_year}")
+
+    month_match = re.fullmatch(rf"(?P<day>\d{{1,2}})\s+(?P<month>{MONTH_PATTERN})(?:\s+(?P<year>\d{{4}}))?", upper_value)
+    if month_match:
+        day = int(month_match.group("day"))
+        month_abbrev = month_match.group("month")
+        month_value = MONTH_TO_NUMBER.get(month_abbrev)
+        if month_value is None:
+            raise InvalidFileContentError(f"Invalid month value in PDF statement: {month_abbrev!r}.")
+        year_raw = month_match.group("year")
+        if year_raw:
+            year_value = int(year_raw)
+        else:
+            year_value = fallback_year if fallback_year is not None else datetime.utcnow().year
+        try:
+            return datetime(year_value, month_value, day).strftime("%Y-%m-%d")
+        except ValueError as exc:
+            raise InvalidFileContentError(f"Invalid date value in PDF statement: {raw!r}.") from exc
 
     raise InvalidFileContentError(f"Invalid date value in PDF statement: {raw!r}.")
 

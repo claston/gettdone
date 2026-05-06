@@ -18,6 +18,21 @@ from app.schemas import ConvertResponse
 router = APIRouter()
 
 
+def _resolve_processed_pages(analysis) -> int | None:
+    metrics = getattr(analysis, "pdf_processing_metrics", None)
+    if metrics is None:
+        return None
+    page_count = int(getattr(metrics, "page_count", 0) or 0)
+    return max(1, page_count)
+
+
+def _resolve_consumed_units(identity, analysis) -> int:
+    if getattr(identity, "quota_mode", "conversion") != "pages":
+        return 1
+    pages_count = _resolve_processed_pages(analysis)
+    return pages_count if pages_count is not None else 1
+
+
 @router.post("/convert", response_model=ConvertResponse)
 async def convert(
     file: UploadFile = File(...),
@@ -30,19 +45,21 @@ async def convert(
     identity = None
     try:
         data = await file.read()
-        access_control_service.assert_upload_size(data)
         identity = access_control_service.resolve_identity(
             anonymous_fingerprint=anonymous_fingerprint,
             user_token=user_token,
         )
-        access_control_service.ensure_quota_available(identity)
+        access_control_service.assert_upload_size(data, max_upload_size_bytes=identity.max_upload_size_bytes)
+        access_control_service.ensure_quota_available(identity, required_units=1)
         analysis = analyze_service.analyze(filename=file.filename or "", raw_bytes=data)
         report_service.set_convert_owner(
             analysis_id=analysis.analysis_id,
             identity_type=identity.identity_type,
             identity_id=identity.identity_id,
         )
-        quota_remaining = access_control_service.consume_quota(identity)
+        pages_count = _resolve_processed_pages(analysis)
+        consumed_units = _resolve_consumed_units(identity, analysis)
+        quota_remaining = access_control_service.consume_quota(identity, consumed_units=consumed_units)
         if identity.identity_type == "user":
             file_type = str(analysis.file_type or "").strip().lower()
             conversion_type = f"{file_type}-ofx" if file_type else "pdf-ofx"
@@ -54,6 +71,7 @@ async def convert(
                 conversion_type=conversion_type,
                 status="Sucesso",
                 transactions_count=int(analysis.transactions_total),
+                pages_count=pages_count,
                 expires_at=analysis.expires_at,
             )
         return ConvertResponse(
@@ -64,7 +82,9 @@ async def convert(
             analysis=analysis,
         )
     except FileTooLargeError:
-        raise HTTPException(status_code=413, detail="File exceeds maximum size of 2 MB.")
+        max_bytes = int(identity.max_upload_size_bytes) if identity is not None else 2 * 1024 * 1024
+        max_mb = max(1, int(max_bytes // (1024 * 1024)))
+        raise HTTPException(status_code=413, detail=f"File exceeds maximum size of {max_mb} MB.")
     except InvalidUserTokenError:
         raise HTTPException(
             status_code=400,
@@ -75,11 +95,14 @@ async def convert(
         reset_at = access_control_service.get_quota_reset_at(identity) if identity is not None else None
         identity_type = str(identity.identity_type) if identity is not None else "anonymous"
         upgrade_url = "./signup.html?next=%2Fofx-convert.html&reason=quota" if identity_type == "anonymous" else None
+        is_pages_mode = bool(identity is not None and str(identity.quota_mode) == "pages")
         raise HTTPException(
             status_code=429,
             detail={
-                "code": "weekly_quota_exceeded",
-                "message": "Você atingiu o limite semanal de conversões.",
+                "code": "monthly_pages_quota_exceeded" if is_pages_mode else "weekly_quota_exceeded",
+                "message": "Voce atingiu o limite mensal de paginas."
+                if is_pages_mode
+                else "Voce atingiu o limite semanal de conversoes.",
                 "identity_type": identity_type,
                 "quota_limit": quota_limit,
                 "quota_remaining": 0,

@@ -27,6 +27,7 @@ def build_client(tmp_path: Path) -> tuple[TestClient, str, str]:
         conversion_type="pdf-ofx",
         status="Sucesso",
         transactions_count=7,
+        pages_count=5,
         created_at=current["now"].isoformat(),
     )
 
@@ -39,6 +40,7 @@ def build_client(tmp_path: Path) -> tuple[TestClient, str, str]:
         conversion_type="pdf-ofx",
         status="Sucesso",
         transactions_count=11,
+        pages_count=12,
         created_at=current["now"].isoformat(),
     )
 
@@ -51,6 +53,7 @@ def build_client(tmp_path: Path) -> tuple[TestClient, str, str]:
         conversion_type="pdf-ofx",
         status="Sucesso",
         transactions_count=3,
+        pages_count=2,
         created_at=current["now"].isoformat(),
     )
 
@@ -72,7 +75,9 @@ def test_client_conversions_returns_only_owner_items_in_desc_order(tmp_path: Pat
     assert payload["items"][0]["conversion_type"] == "pdf-ofx"
     assert payload["items"][0]["status"] == "Sucesso"
     assert payload["items"][0]["transactions_count"] == 11
+    assert payload["items"][0]["pages_count"] == 12
     assert payload["items"][1]["processing_id"] == "an_old"
+    assert payload["items"][1]["pages_count"] == 5
     app.dependency_overrides.clear()
 
 

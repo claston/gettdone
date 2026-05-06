@@ -8,6 +8,15 @@
   const planSummary = document.getElementById("plan-summary");
   const quotaText = document.getElementById("quota-text");
   const planText = document.getElementById("plan-text");
+  const orderIntentId = document.getElementById("order-intent-id");
+  const orderPlanName = document.getElementById("order-plan-name");
+  const orderPlanPrice = document.getElementById("order-plan-price");
+  const orderPlanPages = document.getElementById("order-plan-pages");
+  const orderStatusValue = document.getElementById("order-status-value");
+  const orderNextStep = document.getElementById("order-next-step");
+  const orderPaymentLinkLine = document.getElementById("order-payment-link-line");
+  const orderPaymentLink = document.getElementById("order-payment-link");
+  const orderStatusCard = document.getElementById("order-status");
   const historyRows = document.getElementById("history-rows");
   const statusMsg = document.getElementById("status-msg");
   const logoutBtn = document.getElementById("logout-btn");
@@ -181,9 +190,24 @@
     return null;
   }
 
+  function resolvePages(item) {
+    const possible = [item.pages_count, item.page_count, item.pages];
+
+    for (const value of possible) {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+      }
+      if (typeof value === "string" && value.trim() !== "" && !Number.isNaN(Number(value))) {
+        return Number(value);
+      }
+    }
+
+    return null;
+  }
+
   function renderRows(items) {
     if (!items || items.length === 0) {
-      historyRows.innerHTML = '<tr><td colspan="4">Nenhuma conversao encontrada.</td></tr>';
+      historyRows.innerHTML = '<tr><td colspan="5">Nenhuma conversao encontrada.</td></tr>';
       return;
     }
 
@@ -193,8 +217,11 @@
         const filename = escapeHtml(item.filename || "arquivo_sem_nome.ofx");
         const created = formatDate(item.created_at);
         const transactions = resolveTransactions(item);
+        const pages = resolvePages(item);
         const txClass = typeof transactions === "number" && transactions > 0 ? "transactions-strong" : "transactions-dim";
+        const pagesClass = typeof pages === "number" && pages > 0 ? "transactions-strong" : "transactions-dim";
         const txText = typeof transactions === "number" ? String(transactions) : "--";
+        const pagesText = typeof pages === "number" ? String(pages) : "--";
 
         return `
           <tr>
@@ -206,6 +233,7 @@
             </td>
             <td>${created}</td>
             <td class="${txClass}">${txText}</td>
+            <td class="${pagesClass}">${pagesText}</td>
             <td>
               <span class="status-chip ${normalizedStatus.className}">${normalizedStatus.label}</span>
             </td>
@@ -213,6 +241,73 @@
         `;
       })
       .join("");
+  }
+
+  function formatOrderStatus(status) {
+    const normalized = String(status || "").trim().toUpperCase();
+    if (normalized === "REQUESTED" || normalized === "PENDING") return "Solicitado";
+    if (normalized === "AWAITING_PAYMENT") return "Aguardando pagamento";
+    if (normalized === "RELEASED_FOR_USE") return "Liberado para uso";
+    return normalized || "-";
+  }
+
+  function formatOrderNextStep(nextStep) {
+    const normalized = String(nextStep || "").trim().toUpperCase();
+    if (normalized === "SEND_PAYMENT_LINK") return "Enviar link de pagamento";
+    if (normalized === "WAIT_FOR_PAYMENT") return "Aguardar pagamento";
+    if (normalized === "READY_TO_USE") return "Pronto para uso";
+    return normalized ? "Acompanhar pedido" : "-";
+  }
+
+  function formatPriceBRL(cents) {
+    const amount = Number(cents || 0) / 100;
+    return amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  }
+
+  function setOrderStatusVisible(visible) {
+    if (!orderStatusCard) return;
+    orderStatusCard.classList.toggle("hidden", !visible);
+  }
+
+  function clearOrderStatus() {
+    if (orderIntentId) orderIntentId.textContent = "-";
+    if (orderPlanName) orderPlanName.textContent = "-";
+    if (orderPlanPrice) orderPlanPrice.textContent = "-";
+    if (orderPlanPages) orderPlanPages.textContent = "-";
+    if (orderStatusValue) orderStatusValue.textContent = "-";
+    if (orderNextStep) orderNextStep.textContent = "-";
+    if (orderPaymentLinkLine) orderPaymentLinkLine.classList.add("hidden");
+    if (orderPaymentLink) orderPaymentLink.setAttribute("href", "#");
+    setOrderStatusVisible(false);
+  }
+
+  function renderOrderStatus(data, plansByCode) {
+    if (!data) {
+      clearOrderStatus();
+      return;
+    }
+    setOrderStatusVisible(true);
+    const orderPlanCode = String(data.plan_code || "").trim().toLowerCase();
+    const catalogPlan = plansByCode && orderPlanCode ? plansByCode.get(orderPlanCode) : null;
+    if (orderIntentId) orderIntentId.textContent = String(data.intent_id || "-");
+    if (orderPlanName) orderPlanName.textContent = String(data.plan_name || catalogPlan?.name || "-");
+    if (orderPlanPrice) orderPlanPrice.textContent = formatPriceBRL(data.price_cents);
+    if (orderPlanPages) {
+      orderPlanPages.textContent =
+        catalogPlan && Number.isFinite(Number(catalogPlan.quota_limit))
+          ? String(Number(catalogPlan.quota_limit))
+          : "-";
+    }
+    if (orderStatusValue) orderStatusValue.textContent = formatOrderStatus(data.status);
+    if (orderNextStep) orderNextStep.textContent = formatOrderNextStep(data.next_step);
+    const link = String(data.payment_link || "").trim();
+    if (link) {
+      if (orderPaymentLink) orderPaymentLink.setAttribute("href", link);
+      if (orderPaymentLinkLine) orderPaymentLinkLine.classList.remove("hidden");
+    } else {
+      if (orderPaymentLink) orderPaymentLink.setAttribute("href", "#");
+      if (orderPaymentLinkLine) orderPaymentLinkLine.classList.add("hidden");
+    }
   }
 
   async function fetchJson(url) {
@@ -234,6 +329,35 @@
     try {
       const me = await fetchJson(`${apiBase}/auth/me?user_token=${encodeURIComponent(token)}`);
       const history = await fetchJson(`${apiBase}/client/conversions?user_token=${encodeURIComponent(token)}&limit=20`);
+      let plansByCode = new Map();
+      try {
+        const plansCatalog = await fetchJson(`${apiBase}/plans`);
+        const items = Array.isArray(plansCatalog.items) ? plansCatalog.items : [];
+        plansByCode = new Map(
+          items.map((item) => [String(item.code || "").trim().toLowerCase(), item]),
+        );
+      } catch (_error) {
+        plansByCode = new Map();
+      }
+      const query = new URL(window.location.href).searchParams;
+      const requestedIntentId = String(query.get("checkout_intent") || "").trim();
+      let order = null;
+      if (requestedIntentId) {
+        try {
+          order = await fetchJson(
+            `${apiBase}/checkout/intents/${encodeURIComponent(requestedIntentId)}?user_token=${encodeURIComponent(token)}`,
+          );
+        } catch (_error) {
+          order = null;
+        }
+      }
+      if (!order) {
+        try {
+          order = await fetchJson(`${apiBase}/checkout/intents/latest?user_token=${encodeURIComponent(token)}`);
+        } catch (_error) {
+          order = null;
+        }
+      }
 
       if (profileEmail) {
         profileEmail.textContent = me.email || "-";
@@ -262,6 +386,7 @@
       if (planSummary) {
         planSummary.textContent = quotaMode === "pages" ? "Plano pago por paginas" : "Plano gratuito por conversoes";
       }
+      renderOrderStatus(order, plansByCode);
       renderRows(history.items || []);
       setStatus("Historico carregado com sucesso.", null);
 
@@ -276,7 +401,8 @@
         return;
       }
       setStatus(message, "error");
-      historyRows.innerHTML = '<tr><td colspan="4">Nao foi possivel carregar as conversoes.</td></tr>';
+      historyRows.innerHTML = '<tr><td colspan="5">Nao foi possivel carregar as conversoes.</td></tr>';
+      clearOrderStatus();
     }
   }
 

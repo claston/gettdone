@@ -179,6 +179,11 @@ class RegisterResponse(BaseModel):
     user_token: str
     quota_remaining: int
     quota_limit: int
+    quota_mode: str = "conversion"
+    plan_code: str | None = None
+    plan_name: str | None = None
+    max_upload_size_bytes: int
+    max_pages_per_file: int
 
 
 class LoginRequest(BaseModel):
@@ -193,6 +198,11 @@ class LoginResponse(BaseModel):
     user_token: str
     quota_remaining: int
     quota_limit: int
+    quota_mode: str = "conversion"
+    plan_code: str | None = None
+    plan_name: str | None = None
+    max_upload_size_bytes: int
+    max_pages_per_file: int
 
 
 class AuthMeResponse(BaseModel):
@@ -201,6 +211,197 @@ class AuthMeResponse(BaseModel):
     email: str
     quota_remaining: int
     quota_limit: int
+    quota_mode: str = "conversion"
+    plan_code: str | None = None
+    plan_name: str | None = None
+    max_upload_size_bytes: int
+    max_pages_per_file: int
+
+
+class AdminLoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class AdminLoginResponse(BaseModel):
+    user_id: str
+    name: str
+    email: str
+    admin_token: str
+    role: str = "admin"
+
+
+class AdminMeResponse(BaseModel):
+    user_id: str
+    name: str
+    email: str
+    role: str = "admin"
+
+
+class PlanCatalogItem(BaseModel):
+    id: str
+    code: str
+    name: str
+    version: int
+    currency: str
+    price_cents: int
+    billing_period: str
+    quota_mode: str
+    quota_limit: int
+    quota_window_days: int
+    max_upload_size_bytes: int
+    max_pages_per_file: int
+
+
+class PlanCatalogResponse(BaseModel):
+    items: list[PlanCatalogItem]
+
+
+class AdminActivatePlanRequest(BaseModel):
+    user_id: str
+    plan_code: str
+
+
+class AdminActivatePlanResponse(BaseModel):
+    user_id: str
+    plan_code: str
+    plan_name: str
+    plan_version: int
+    quota_mode: str
+    quota_limit: int
+
+
+class CheckoutIntentRequest(BaseModel):
+    user_token: str
+    plan_code: str
+    name: str
+    email: str
+    whatsapp: str
+    document: str | None = None
+    notes: str | None = None
+    accepted_terms: bool = False
+
+
+class CheckoutIntentResponse(BaseModel):
+    intent_id: str
+    status: str
+    created_at: str
+    updated_at: str
+    plan_code: str
+    plan_name: str
+    price_cents: int
+    currency: str
+    billing_period: str
+    payment_link: str | None = None
+    payment_link_sent_at: str | None = None
+    released_at: str | None = None
+    next_step: str
+    admin_delivery_mode: str
+    customer_delivery_mode: str
+    message: str
+
+
+class CheckoutIntentStatusResponse(BaseModel):
+    intent_id: str
+    status: str
+    created_at: str
+    updated_at: str
+    plan_code: str
+    plan_name: str
+    price_cents: int
+    currency: str
+    billing_period: str
+    payment_link: str | None = None
+    payment_link_sent_at: str | None = None
+    released_at: str | None = None
+    next_step: str
+
+
+class CheckoutIntentPaymentLinkRequest(BaseModel):
+    payment_link: str
+
+
+class AdminCheckoutIntentItem(BaseModel):
+    intent_id: str
+    status: str
+    next_step: str
+    created_at: str
+    updated_at: str
+    user_id: str
+    plan_code: str
+    plan_name: str
+    price_cents: int
+    currency: str
+    billing_period: str
+    customer_name: str
+    customer_email: str
+    customer_whatsapp: str
+    customer_document: str | None = None
+    customer_notes: str | None = None
+    payment_link: str | None = None
+    payment_link_sent_at: str | None = None
+    released_at: str | None = None
+
+
+class AdminCheckoutIntentListResponse(BaseModel):
+    items: list[AdminCheckoutIntentItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminCheckoutIntentEventItem(BaseModel):
+    event_id: str
+    intent_id: str
+    event_type: str
+    event_message: str
+    actor_kind: str
+    actor_user_id: str | None = None
+    payload_json: str | None = None
+    created_at: str
+
+
+class AdminCheckoutIntentHistoryResponse(BaseModel):
+    intent_id: str
+    items: list[AdminCheckoutIntentEventItem]
+
+
+class AdminUserItem(BaseModel):
+    user_id: str
+    name: str
+    email: str
+    is_admin: bool
+    created_at: str
+    updated_at: str
+
+
+class AdminUserListResponse(BaseModel):
+    items: list[AdminUserItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminSetUserRoleRequest(BaseModel):
+    user_id: str
+    is_admin: bool
+
+
+class AdminUserRoleEventItem(BaseModel):
+    event_id: str
+    target_user_id: str
+    target_email: str
+    event_type: str
+    actor_user_id: str | None = None
+    actor_email: str | None = None
+    previous_is_admin: bool
+    new_is_admin: bool
+    created_at: str
+
+
+class AdminUserRoleHistoryResponse(BaseModel):
+    user_id: str
+    items: list[AdminUserRoleEventItem]
 
 
 class ClientConversionItem(BaseModel):
@@ -211,6 +412,7 @@ class ClientConversionItem(BaseModel):
     conversion_type: str
     status: str
     transactions_count: int | None = None
+    pages_count: int | None = None
 
 
 class ClientConversionsResponse(BaseModel):

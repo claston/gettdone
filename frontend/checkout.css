@@ -1,0 +1,261 @@
+:root {
+  --bg: #f5f7fb;
+  --surface: #ffffff;
+  --text: #111827;
+  --muted: #4b5563;
+  --line: #d9e0eb;
+  --primary: #0f766e;
+  --primary-dark: #0b5f58;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Source Sans 3", system-ui, -apple-system, sans-serif;
+}
+
+.checkout-page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px 16px 40px;
+}
+
+.checkout-hero {
+  margin-bottom: 24px;
+}
+
+.checkout-hero .kicker {
+  margin: 0;
+  color: var(--primary);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+}
+
+.checkout-hero h1 {
+  margin: 8px 0 8px;
+  font-family: "Manrope", sans-serif;
+  font-size: 34px;
+}
+
+.checkout-hero p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.checkout-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr;
+  gap: 16px;
+}
+
+.checkout-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px;
+}
+
+.checkout-card h2 {
+  margin: 0 0 12px;
+  font-family: "Manrope", sans-serif;
+}
+
+.plan-name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.plan-price {
+  margin: 4px 0 14px;
+  font-size: 28px;
+  font-weight: 800;
+}
+
+#plan-details {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.order-workflow {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.order-workflow h3 {
+  margin: 0 0 10px;
+  font-family: "Manrope", sans-serif;
+  font-size: 18px;
+}
+
+.order-workflow p {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
+.order-workflow a {
+  color: var(--primary);
+  word-break: break-all;
+}
+
+.helper {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+
+.status {
+  min-height: 20px;
+  margin: 0 0 12px;
+  font-weight: 600;
+}
+
+.status.ok {
+  color: #0f766e;
+}
+
+.status.error {
+  color: #b91c1c;
+}
+
+.checkout-form {
+  display: grid;
+  gap: 10px;
+}
+
+.checkout-form label {
+  font-weight: 600;
+}
+
+.checkout-form input,
+.checkout-form textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+}
+
+.checkbox-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: var(--muted);
+}
+
+.checkbox-row input {
+  width: auto;
+  margin-top: 2px;
+}
+
+.btn {
+  display: inline-block;
+  border: 0;
+  border-radius: 10px;
+  padding: 11px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-primary {
+  color: #fff;
+  background: var(--primary);
+}
+
+.btn-primary:hover {
+  background: var(--primary-dark);
+}
+
+.btn-outline {
+  color: var(--primary);
+  background: #ecfeff;
+  border: 1px solid #99f6e4;
+}
+
+.checkout-form.is-read-only {
+  opacity: 0.7;
+}
+
+.menu-toggle {
+  display: none;
+}
+
+.footer {
+  padding: 20px 16px 32px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.footer p {
+  margin: 4px 0;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.modal-card {
+  position: relative;
+  width: min(520px, 100%);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 16px 44px rgba(2, 6, 23, 0.2);
+}
+
+.modal-card h3 {
+  margin: 0 0 8px;
+  font-family: "Manrope", sans-serif;
+}
+
+.modal-card p {
+  margin: 0 0 14px;
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--text);
+    font-weight: 700;
+    padding: 8px 12px;
+    cursor: pointer;
+  }
+
+  .checkout-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .checkout-hero h1 {
+    font-size: 28px;
+  }
+}

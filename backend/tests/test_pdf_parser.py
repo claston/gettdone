@@ -28,6 +28,35 @@ def test_parse_pdf_transactions_with_grouped_layout(monkeypatch: pytest.MonkeyPa
     assert result.parse_metrics["inline_transactions_count"] == 0
 
 
+def test_parse_pdf_transactions_grouped_day_month_without_year(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.application import pdf_parser
+
+    grouped_text = """
+    FATURA 15 OUT 2023
+    TRANSACOES
+    DE 08 SET A 08 OUT
+    14 SET
+    Pagamento em 14 SET
+    563,69
+    20 SET
+    IOF de "Voluum.Com"
+    21,47
+    20 SET
+    Voluum.Com
+    399,09
+    """
+    monkeypatch.setattr(pdf_parser, "_extract_pdf_page_texts", lambda raw_bytes: [grouped_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic grouped month-only date")
+
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert len(result.transactions) == 3
+    assert result.transactions[0].date == "2023-09-14"
+    assert result.transactions[0].amount == -563.69
+    assert result.transactions[1].date == "2023-09-20"
+    assert result.transactions[2].date == "2023-09-20"
+
+
 def test_parse_pdf_transactions_with_itau_inline_layout(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.application import pdf_parser
 
@@ -113,6 +142,27 @@ def test_parse_pdf_transactions_tabular_short_date_with_currency_symbol(monkeypa
     assert result.transactions[0].amount == -2835.0
     assert result.transactions[1].date == "2026-04-09"
     assert result.transactions[1].amount == 6000.0
+
+
+def test_parse_pdf_transactions_inline_month_abbrev_date(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.application import pdf_parser
+
+    inline_text = """
+    fatura cartao nubank
+    periodo 01/03/2026 ate 31/03/2026
+    13 MAR IFOOD *PEDIDO 57,90-
+    10 MAR ESTORNO AJUSTE 12,00
+    """
+    monkeypatch.setattr(pdf_parser, "_extract_pdf_page_texts", lambda raw_bytes: [inline_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic card month abbrev")
+
+    assert result.parse_metrics["selected_parser"] == "inline"
+    assert len(result.transactions) == 2
+    assert result.transactions[0].date == "2026-03-13"
+    assert result.transactions[0].amount == -57.9
+    assert result.transactions[1].date == "2026-03-10"
+    assert result.transactions[1].amount == 12.0
 
 
 def test_parse_pdf_transactions_raises_when_no_transaction_rows(monkeypatch: pytest.MonkeyPatch) -> None:
