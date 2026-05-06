@@ -56,6 +56,24 @@ def build_client(tmp_path: Path) -> TestClient:
     return TestClient(app)
 
 
+def build_client_with_user_owner(tmp_path: Path) -> tuple[TestClient, str]:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    storage.save_analysis(_build_analysis_data("an_user_owned"))
+    access_control = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    user = access_control.register_user(name="Erica", email="erica@example.com", password="strong-pass")
+    storage.set_convert_owner(
+        analysis_id="an_user_owned",
+        identity_type="user",
+        identity_id=user.user_id,
+    )
+    app.dependency_overrides[get_report_service] = lambda: ReportService(storage=storage)
+    app.dependency_overrides[get_access_control_service] = lambda: access_control
+    return TestClient(app), user.token
+
+
 def test_convert_edits_updates_preview_and_csv_artifact(tmp_path: Path) -> None:
     client = build_client(tmp_path)
 
@@ -274,4 +292,29 @@ def test_convert_edits_returns_conflict_for_stale_version(tmp_path: Path) -> Non
     )
     assert conflict.status_code == 409
     assert "changed since last load" in conflict.json()["detail"]
+    app.dependency_overrides.clear()
+
+
+def test_convert_edits_accepts_bearer_user_token(tmp_path: Path) -> None:
+    client, user_token = build_client_with_user_owner(tmp_path)
+
+    response = client.post(
+        "/convert-edits/an_user_owned",
+        headers={"authorization": f"Bearer {user_token}"},
+        json={
+            "edits": [
+                {
+                    "row_id": "row_1",
+                    "date": "2026-04-05",
+                    "description": "EDITED VIA HEADER",
+                    "credit": 45.75,
+                    "debit": None,
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["preview_transactions"][0]["description"] == "EDITED VIA HEADER"
     app.dependency_overrides.clear()

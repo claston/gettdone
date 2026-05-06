@@ -105,7 +105,9 @@
     renderLoggedInTop(getProfileHint());
     try {
       const apiBase = resolveApiBase();
-      const response = await fetch(`${apiBase}/auth/me?user_token=${encodeURIComponent(token)}`);
+      const response = await fetch(`${apiBase}/auth/me`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
       if (!response.ok) {
         if (response.status === 401) {
           clearAuthState();
@@ -254,9 +256,9 @@
     if (orderRefreshBtn) orderRefreshBtn.disabled = true;
     try {
       const apiBase = resolveApiBase();
-      const response = await fetch(
-        `${apiBase}/checkout/intents/${encodeURIComponent(currentIntentId)}?user_token=${encodeURIComponent(userToken)}`,
-      );
+      const response = await fetch(`${apiBase}/checkout/intents/${encodeURIComponent(currentIntentId)}`, {
+        headers: { authorization: `Bearer ${userToken}` },
+      });
       const body = await response.json().catch(function () {
         return {};
       });

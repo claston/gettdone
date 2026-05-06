@@ -116,6 +116,28 @@ def test_auth_me_returns_user_profile_for_valid_token() -> None:
         shutil.rmtree(state_dir, ignore_errors=True)
 
 
+def test_auth_me_accepts_bearer_token() -> None:
+    state_dir = Path(mkdtemp(prefix="auth-api-"))
+    client, _service = build_client(state_dir)
+
+    try:
+        register = client.post(
+            "/auth/register",
+            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+        )
+        token = register.json()["user_token"]
+
+        response = client.get("/auth/me", headers={"authorization": f"Bearer {token}"})
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["email"] == "erica@example.com"
+        assert payload["name"] == "Erica"
+    finally:
+        app.dependency_overrides.clear()
+        shutil.rmtree(state_dir, ignore_errors=True)
+
+
 def test_auth_me_rejects_invalid_token() -> None:
     state_dir = Path(mkdtemp(prefix="auth-api-"))
     client, _service = build_client(state_dir)

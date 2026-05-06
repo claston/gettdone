@@ -74,7 +74,9 @@
 
     try {
       const apiBase = resolveApiBase();
-      const response = await fetch(`${apiBase}/auth/me?user_token=${encodeURIComponent(token)}`);
+      const response = await fetch(`${apiBase}/auth/me`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
       if (!response.ok) {
         if (response.status === 401) {
           clearAuthState();

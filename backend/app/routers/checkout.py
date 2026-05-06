@@ -62,6 +62,19 @@ def _resolve_admin_token(
     return (admin_token_query or "").strip()
 
 
+def _resolve_user_token(
+    *,
+    authorization: str | None,
+    user_token_query: str | None,
+) -> str:
+    auth_header = (authorization or "").strip()
+    if auth_header.lower().startswith("bearer "):
+        bearer = auth_header[7:].strip()
+        if bearer:
+            return bearer
+    return (user_token_query or "").strip()
+
+
 def _build_checkout_intent_status_response(intent: dict[str, str | int | None]) -> CheckoutIntentStatusResponse:
     status = str(intent["status"])
     return CheckoutIntentStatusResponse(
@@ -245,10 +258,11 @@ async def create_checkout_intent(
 
 @router.get("/checkout/intents/latest", response_model=CheckoutIntentStatusResponse)
 def read_latest_checkout_intent(
-    user_token: str = Query(...),
+    authorization: str | None = Header(default=None),
+    user_token: str | None = Query(default=None),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> CheckoutIntentStatusResponse:
-    clean_user_token = user_token.strip()
+    clean_user_token = _resolve_user_token(authorization=authorization, user_token_query=user_token)
     if not clean_user_token:
         raise HTTPException(status_code=400, detail="user_token is required.")
 
@@ -269,11 +283,12 @@ def read_latest_checkout_intent(
 @router.get("/checkout/intents/{intent_id}", response_model=CheckoutIntentStatusResponse)
 def read_checkout_intent(
     intent_id: str,
-    user_token: str = Query(...),
+    authorization: str | None = Header(default=None),
+    user_token: str | None = Query(default=None),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> CheckoutIntentStatusResponse:
     clean_intent_id = intent_id.strip()
-    clean_user_token = user_token.strip()
+    clean_user_token = _resolve_user_token(authorization=authorization, user_token_query=user_token)
     if not clean_intent_id or not clean_user_token:
         raise HTTPException(status_code=400, detail="intent_id and user_token are required.")
 

@@ -46,7 +46,9 @@
   async function getSessionValidationState(token) {
     if (!token) return "missing";
     try {
-      const response = await fetch(`${apiBase}/auth/me?user_token=${encodeURIComponent(token)}`);
+      const response = await fetch(`${apiBase}/auth/me`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
       if (response.ok) {
         return "valid";
       }
