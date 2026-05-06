@@ -14,15 +14,12 @@ def get_client_conversions(
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> ClientConversionsResponse:
     try:
-        identity = access_control_service.resolve_identity(anonymous_fingerprint=None, user_token=user_token)
+        user = access_control_service.get_user_by_token(user_token=user_token)
     except InvalidUserTokenError:
         raise HTTPException(status_code=401, detail="Invalid user token.")
 
-    if identity.identity_type != "user":
-        raise HTTPException(status_code=403, detail="Client area is only available for registered users.")
-
     items = access_control_service.list_user_conversions(
-        user_id=identity.identity_id,
+        user_id=user.user_id,
         limit=limit,
     )
     return ClientConversionsResponse(items=[ClientConversionItem(**item) for item in items])
