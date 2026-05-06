@@ -319,6 +319,32 @@
     return payload;
   }
 
+  function mapPlansByCode(plansCatalog) {
+    const items = Array.isArray(plansCatalog?.items) ? plansCatalog.items : [];
+    return new Map(items.map((item) => [String(item.code || "").trim().toLowerCase(), item]));
+  }
+
+  async function loadOrderData(token, requestedIntentId) {
+    let order = null;
+    if (requestedIntentId) {
+      try {
+        order = await fetchJson(
+          `${apiBase}/checkout/intents/${encodeURIComponent(requestedIntentId)}?user_token=${encodeURIComponent(token)}`,
+        );
+      } catch (_error) {
+        order = null;
+      }
+    }
+    if (!order) {
+      try {
+        order = await fetchJson(`${apiBase}/checkout/intents/latest?user_token=${encodeURIComponent(token)}`);
+      } catch (_error) {
+        order = null;
+      }
+    }
+    return order;
+  }
+
   async function loadClientArea() {
     const token = getUserToken();
     if (!token) {
@@ -327,37 +353,20 @@
     }
 
     try {
-      const me = await fetchJson(`${apiBase}/auth/me?user_token=${encodeURIComponent(token)}`);
-      const history = await fetchJson(`${apiBase}/client/conversions?user_token=${encodeURIComponent(token)}&limit=20`);
-      let plansByCode = new Map();
-      try {
-        const plansCatalog = await fetchJson(`${apiBase}/plans`);
-        const items = Array.isArray(plansCatalog.items) ? plansCatalog.items : [];
-        plansByCode = new Map(
-          items.map((item) => [String(item.code || "").trim().toLowerCase(), item]),
-        );
-      } catch (_error) {
-        plansByCode = new Map();
-      }
       const query = new URL(window.location.href).searchParams;
       const requestedIntentId = String(query.get("checkout_intent") || "").trim();
-      let order = null;
-      if (requestedIntentId) {
-        try {
-          order = await fetchJson(
-            `${apiBase}/checkout/intents/${encodeURIComponent(requestedIntentId)}?user_token=${encodeURIComponent(token)}`,
-          );
-        } catch (_error) {
-          order = null;
-        }
+      const mePromise = fetchJson(`${apiBase}/auth/me?user_token=${encodeURIComponent(token)}`);
+      const historyPromise = fetchJson(`${apiBase}/client/conversions?user_token=${encodeURIComponent(token)}&limit=20`);
+      const plansPromise = fetchJson(`${apiBase}/plans`).catch(() => ({ items: [] }));
+
+      const history = await historyPromise;
+      renderRows(history.items || []);
+      if (viewAllLink && (!history.items || history.items.length < 20)) {
+        viewAllLink.style.visibility = "hidden";
       }
-      if (!order) {
-        try {
-          order = await fetchJson(`${apiBase}/checkout/intents/latest?user_token=${encodeURIComponent(token)}`);
-        } catch (_error) {
-          order = null;
-        }
-      }
+      setStatus("Historico carregado. Finalizando dados da conta...", null);
+
+      const me = await mePromise;
 
       if (profileEmail) {
         profileEmail.textContent = me.email || "-";
@@ -386,13 +395,14 @@
       if (planSummary) {
         planSummary.textContent = quotaMode === "pages" ? "Plano pago por paginas" : "Plano gratuito por conversoes";
       }
-      renderOrderStatus(order, plansByCode);
-      renderRows(history.items || []);
       setStatus("Historico carregado com sucesso.", null);
 
-      if (viewAllLink && (!history.items || history.items.length < 20)) {
-        viewAllLink.style.visibility = "hidden";
-      }
+      void Promise.all([
+        plansPromise.then((plansCatalog) => mapPlansByCode(plansCatalog)),
+        loadOrderData(token, requestedIntentId),
+      ]).then(([plansByCode, order]) => {
+        renderOrderStatus(order, plansByCode);
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao carregar area do cliente.";
       if (message.toLowerCase().includes("invalid user token")) {
