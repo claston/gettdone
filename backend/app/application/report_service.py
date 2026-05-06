@@ -10,6 +10,24 @@ class ReportService:
     def get_report_path(self, analysis_id: str) -> Path:
         return self.storage.get_report_path(analysis_id)
 
+    def set_report_owner(self, analysis_id: str, identity_type: str, identity_id: str) -> None:
+        self.storage.set_report_owner(analysis_id=analysis_id, identity_type=identity_type, identity_id=identity_id)
+
+    def assert_report_owner(
+        self,
+        analysis_id: str,
+        identity_type: str,
+        identity_id: str,
+        *,
+        allow_unowned: bool = False,
+    ) -> None:
+        self.storage.assert_report_owner(
+            analysis_id=analysis_id,
+            identity_type=identity_type,
+            identity_id=identity_id,
+            allow_unowned=allow_unowned,
+        )
+
     def get_convert_report_path(self, analysis_id: str, file_format: str) -> Path:
         return self.storage.get_convert_report_path(analysis_id, file_format=file_format)
 
@@ -55,3 +73,25 @@ class ReportService:
 
     def get_reconcile_report_path(self, analysis_id: str, file_format: str) -> Path:
         return self.storage.get_reconcile_report_path(analysis_id=analysis_id, file_format=file_format)
+
+    def set_reconcile_owner(self, analysis_id: str, identity_type: str, identity_id: str) -> None:
+        self.storage.set_reconcile_owner(
+            analysis_id=analysis_id,
+            identity_type=identity_type,
+            identity_id=identity_id,
+        )
+
+    def assert_reconcile_owner(
+        self,
+        analysis_id: str,
+        identity_type: str,
+        identity_id: str,
+        *,
+        allow_unowned: bool = False,
+    ) -> None:
+        self.storage.assert_reconcile_owner(
+            analysis_id=analysis_id,
+            identity_type=identity_type,
+            identity_id=identity_id,
+            allow_unowned=allow_unowned,
+        )

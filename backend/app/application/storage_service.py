@@ -105,51 +105,70 @@ class TempAnalysisStorage:
         name = raw_name.strip()
         return name or None
 
+    def set_report_owner(self, analysis_id: str, identity_type: str, identity_id: str) -> None:
+        self._set_analysis_owner(
+            analysis_id=analysis_id,
+            metadata_filename="analysis.json",
+            identity_type=identity_type,
+            identity_id=identity_id,
+        )
+
+    def assert_report_owner(
+        self,
+        analysis_id: str,
+        identity_type: str,
+        identity_id: str,
+        *,
+        allow_unowned: bool = False,
+    ) -> None:
+        self._assert_analysis_owner(
+            analysis_id=analysis_id,
+            metadata_filename="analysis.json",
+            identity_type=identity_type,
+            identity_id=identity_id,
+            allow_unowned=allow_unowned,
+        )
+
     def set_convert_owner(self, analysis_id: str, identity_type: str, identity_id: str) -> None:
-        analysis_dir = self.root_dir / analysis_id
-        if self._is_expired(analysis_dir):
-            self._cleanup_analysis(analysis_dir)
-            raise AnalysisNotFoundError
-
-        metadata_path = analysis_dir / "analysis.json"
-        if not metadata_path.exists():
-            raise AnalysisNotFoundError
-        try:
-            content = json.loads(metadata_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            raise AnalysisNotFoundError from None
-
-        owner_type = str(content.get("owner_identity_type") or "").strip()
-        owner_id = str(content.get("owner_identity_id") or "").strip()
-        if owner_type and owner_id:
-            if owner_type != identity_type or owner_id != identity_id:
-                raise AnalysisAccessDeniedError
-            return
-
-        content["owner_identity_type"] = identity_type
-        content["owner_identity_id"] = identity_id
-        metadata_path.write_text(json.dumps(content, ensure_ascii=True, indent=2), encoding="utf-8")
+        self._set_analysis_owner(
+            analysis_id=analysis_id,
+            metadata_filename="analysis.json",
+            identity_type=identity_type,
+            identity_id=identity_id,
+        )
 
     def assert_convert_owner(self, analysis_id: str, identity_type: str, identity_id: str) -> None:
-        analysis_dir = self.root_dir / analysis_id
-        if self._is_expired(analysis_dir):
-            self._cleanup_analysis(analysis_dir)
-            raise AnalysisNotFoundError
+        self._assert_analysis_owner(
+            analysis_id=analysis_id,
+            metadata_filename="analysis.json",
+            identity_type=identity_type,
+            identity_id=identity_id,
+            allow_unowned=True,
+        )
 
-        metadata_path = analysis_dir / "analysis.json"
-        if not metadata_path.exists():
-            raise AnalysisNotFoundError
-        try:
-            content = json.loads(metadata_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            raise AnalysisNotFoundError from None
+    def set_reconcile_owner(self, analysis_id: str, identity_type: str, identity_id: str) -> None:
+        self._set_analysis_owner(
+            analysis_id=analysis_id,
+            metadata_filename="reconcile.json",
+            identity_type=identity_type,
+            identity_id=identity_id,
+        )
 
-        owner_type = str(content.get("owner_identity_type") or "").strip()
-        owner_id = str(content.get("owner_identity_id") or "").strip()
-        if not owner_type and not owner_id:
-            return
-        if owner_type != identity_type or owner_id != identity_id:
-            raise AnalysisAccessDeniedError
+    def assert_reconcile_owner(
+        self,
+        analysis_id: str,
+        identity_type: str,
+        identity_id: str,
+        *,
+        allow_unowned: bool = False,
+    ) -> None:
+        self._assert_analysis_owner(
+            analysis_id=analysis_id,
+            metadata_filename="reconcile.json",
+            identity_type=identity_type,
+            identity_id=identity_id,
+            allow_unowned=allow_unowned,
+        )
 
     def list_convert_history(self, identity_type: str, identity_id: str, limit: int = 20) -> list[dict[str, str]]:
         items: list[dict[str, str]] = []
@@ -570,6 +589,68 @@ class TempAnalysisStorage:
         if has_credit:
             return round(float(credit), 2)
         return -round(abs(float(debit)), 2)
+
+    def _set_analysis_owner(
+        self,
+        *,
+        analysis_id: str,
+        metadata_filename: str,
+        identity_type: str,
+        identity_id: str,
+    ) -> None:
+        content, metadata_path = self._read_analysis_metadata(
+            analysis_id=analysis_id,
+            metadata_filename=metadata_filename,
+        )
+
+        owner_type = str(content.get("owner_identity_type") or "").strip()
+        owner_id = str(content.get("owner_identity_id") or "").strip()
+        if owner_type and owner_id:
+            if owner_type != identity_type or owner_id != identity_id:
+                raise AnalysisAccessDeniedError
+            return
+
+        content["owner_identity_type"] = identity_type
+        content["owner_identity_id"] = identity_id
+        metadata_path.write_text(json.dumps(content, ensure_ascii=True, indent=2), encoding="utf-8")
+
+    def _assert_analysis_owner(
+        self,
+        *,
+        analysis_id: str,
+        metadata_filename: str,
+        identity_type: str,
+        identity_id: str,
+        allow_unowned: bool,
+    ) -> None:
+        content, _metadata_path = self._read_analysis_metadata(
+            analysis_id=analysis_id,
+            metadata_filename=metadata_filename,
+        )
+
+        owner_type = str(content.get("owner_identity_type") or "").strip()
+        owner_id = str(content.get("owner_identity_id") or "").strip()
+        if not owner_type and not owner_id:
+            if allow_unowned:
+                return
+            raise AnalysisAccessDeniedError
+        if owner_type != identity_type or owner_id != identity_id:
+            raise AnalysisAccessDeniedError
+
+    def _read_analysis_metadata(self, *, analysis_id: str, metadata_filename: str) -> tuple[dict[str, object], Path]:
+        analysis_dir = self.root_dir / analysis_id
+        if self._is_expired(analysis_dir):
+            self._cleanup_analysis(analysis_dir)
+            raise AnalysisNotFoundError
+
+        metadata_path = analysis_dir / metadata_filename
+        if not metadata_path.exists():
+            raise AnalysisNotFoundError
+        try:
+            content = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            raise AnalysisNotFoundError from None
+        return content, metadata_path
 
     def _is_expired(self, analysis_dir: Path) -> bool:
         metadata_path = analysis_dir / "analysis.json"

@@ -31,12 +31,33 @@ def _resolve_user_token(*, authorization: str | None, user_token_query: str | No
 @router.get("/report/{analysis_id}")
 def get_report(
     analysis_id: str,
+    anonymous_fingerprint: str | None = Query(default=None),
+    authorization: str | None = Header(default=None),
+    user_token: str | None = Query(default=None),
     service: ReportService = Depends(get_report_service),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> FileResponse:
     try:
+        identity = access_control_service.resolve_identity(
+            anonymous_fingerprint=anonymous_fingerprint,
+            user_token=_resolve_user_token(authorization=authorization, user_token_query=user_token),
+        )
+        service.assert_report_owner(
+            analysis_id=analysis_id,
+            identity_type=identity.identity_type,
+            identity_id=identity.identity_id,
+            allow_unowned=True,
+        )
         report_path = service.get_report_path(analysis_id)
     except AnalysisNotFoundError:
         raise HTTPException(status_code=404, detail="Analysis not found")
+    except AnalysisAccessDeniedError:
+        raise HTTPException(status_code=403, detail="Access denied for this analysis.")
+    except InvalidUserTokenError:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing or invalid identity context. Send anonymous_fingerprint or a valid user_token.",
+        )
 
     return FileResponse(
         path=report_path,
@@ -49,12 +70,33 @@ def get_report(
 def get_reconcile_report(
     analysis_id: str,
     file_format: Literal["xlsx", "csv"] = Query(default="xlsx", alias="format"),
+    anonymous_fingerprint: str | None = Query(default=None),
+    authorization: str | None = Header(default=None),
+    user_token: str | None = Query(default=None),
     service: ReportService = Depends(get_report_service),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> FileResponse:
     try:
+        identity = access_control_service.resolve_identity(
+            anonymous_fingerprint=anonymous_fingerprint,
+            user_token=_resolve_user_token(authorization=authorization, user_token_query=user_token),
+        )
+        service.assert_reconcile_owner(
+            analysis_id=analysis_id,
+            identity_type=identity.identity_type,
+            identity_id=identity.identity_id,
+            allow_unowned=True,
+        )
         report_path = service.get_reconcile_report_path(analysis_id=analysis_id, file_format=file_format)
     except AnalysisNotFoundError:
         raise HTTPException(status_code=404, detail="Analysis not found")
+    except AnalysisAccessDeniedError:
+        raise HTTPException(status_code=403, detail="Access denied for this analysis.")
+    except InvalidUserTokenError:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing or invalid identity context. Send anonymous_fingerprint or a valid user_token.",
+        )
 
     media_type = (
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

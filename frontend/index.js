@@ -96,6 +96,7 @@ function bindDropzone(config) {
     const DEFAULT_API_BASE = resolveDefaultApiBase();
     const API_BASE_KEY = "ofxsimples_api_base";
     const USER_TOKEN_KEY = "ofxsimples_user_token";
+    const ANON_FINGERPRINT_KEY = "ofxsimples_anon_fingerprint";
     const showReportBtn = document.getElementById("show-report-btn");
     const topCtaStart = document.getElementById("top-cta-start");
     const topCtaSignup = document.getElementById("top-cta-signup");
@@ -172,6 +173,16 @@ function bindDropzone(config) {
         const raw = localStorage.getItem(USER_TOKEN_KEY);
         const token = String(raw || "").trim();
         return token || null;
+    }
+
+    function getAnonymousFingerprint() {
+        const existing = String(localStorage.getItem(ANON_FINGERPRINT_KEY) || "").trim();
+        if (existing) {
+            return existing;
+        }
+        const generated = `anon-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+        localStorage.setItem(ANON_FINGERPRINT_KEY, generated);
+        return generated;
     }
 
     function syncTopCtaBySession() {
@@ -941,13 +952,14 @@ ${meta.percent}
         if (metricMissingInBank) metricMissingInBank.textContent = String(Number(payload.sheet_unmatched_count || 0)).padStart(2, "0");
     }
 
-    function setDownloadActions(apiBase, analysisId) {
+    function setDownloadActions(apiBase, analysisId, anonymousFingerprint) {
         if (!analysisId) {
             return;
         }
 
-        const xlsxUrl = `${apiBase}/reconcile-report/${analysisId}?format=xlsx`;
-        const csvUrl = `${apiBase}/reconcile-report/${analysisId}?format=csv`;
+        const safeFingerprint = encodeURIComponent(String(anonymousFingerprint || "").trim());
+        const xlsxUrl = `${apiBase}/reconcile-report/${analysisId}?format=xlsx&anonymous_fingerprint=${safeFingerprint}`;
+        const csvUrl = `${apiBase}/reconcile-report/${analysisId}?format=csv&anonymous_fingerprint=${safeFingerprint}`;
 
         if (reconcileDownloadXlsx) {
             reconcileDownloadXlsx.dataset.url = xlsxUrl;
@@ -983,9 +995,11 @@ ${meta.percent}
         }
 
         const apiBase = getApiBase();
+        const anonymousFingerprint = getAnonymousFingerprint();
         const formData = new FormData();
         formData.append("bank_file", bankFileInput.files[0]);
         formData.append("sheet_file", sheetFileInput.files[0]);
+        formData.append("anonymous_fingerprint", anonymousFingerprint);
 
         const originalLabel = showReportBtn.innerHTML;
         isSubmitting = true;
@@ -1022,7 +1036,7 @@ ${meta.percent}
             renderReconcileTotals(payload);
             renderProblemHighlights(payload);
             setReconcileRows(payload.reconciliation_rows || []);
-            setDownloadActions(apiBase, payload.analysis_id);
+            setDownloadActions(apiBase, payload.analysis_id, anonymousFingerprint);
             reconcileReportPreview.classList.remove("hidden");
             reportFocusMode = true;
             setTopNavHidden(isReportInViewport());
