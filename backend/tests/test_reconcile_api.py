@@ -442,7 +442,7 @@ def test_reconcile_report_happy_path_csv_and_not_found() -> None:
     assert intake.status_code == 200
     analysis_id = intake.json()["analysis_id"]
 
-    xlsx_report = client.get(f"/reconcile-report/{analysis_id}")
+    xlsx_report = client.get(f"/reconcile-report/{analysis_id}?anonymous_fingerprint=fp-reconcile")
     assert xlsx_report.status_code == 200
     assert (
         xlsx_report.headers["content-type"]
@@ -466,12 +466,12 @@ def test_reconcile_report_happy_path_csv_and_not_found() -> None:
     assert problems_sheet["F3"].value == "Divergente"
     assert problems_sheet.max_row >= 2
 
-    csv_report = client.get(f"/reconcile-report/{analysis_id}?format=csv")
+    csv_report = client.get(f"/reconcile-report/{analysis_id}?format=csv&anonymous_fingerprint=fp-reconcile")
     assert csv_report.status_code == 200
     assert csv_report.headers["content-type"].startswith("text/csv")
     assert "Linha,Fonte,Data,Descricao,Valor,Status,Regra de match,Motivo,Linha pareada" in csv_report.text
 
-    missing = client.get("/reconcile-report/rc_missing_id")
+    missing = client.get("/reconcile-report/rc_missing_id?anonymous_fingerprint=fp-reconcile")
     assert missing.status_code == 404
     assert missing.json()["detail"] == "Analysis not found"
 
@@ -488,7 +488,7 @@ def test_reconcile_report_includes_fallback_problem_row_when_no_issues() -> None
     assert intake.status_code == 200
     analysis_id = intake.json()["analysis_id"]
 
-    xlsx_report = client.get(f"/reconcile-report/{analysis_id}")
+    xlsx_report = client.get(f"/reconcile-report/{analysis_id}?anonymous_fingerprint=fp-reconcile")
     assert xlsx_report.status_code == 200
     workbook = load_workbook(filename=BytesIO(xlsx_report.content))
     problems_sheet = workbook["Problemas"]
@@ -513,4 +513,25 @@ def test_reconcile_report_includes_fallback_problem_row_when_no_issues() -> None
         "-",
         None,
     ]
+
+
+def test_reconcile_report_enforces_owner_when_identity_is_bound() -> None:
+    client = TestClient(app)
+    intake = client.post(
+        "/reconcile",
+        data={"anonymous_fingerprint": "fp-owner"},
+        files={
+            "bank_file": ("bank.csv", b"date,description,amount\n2026-04-01,TEST,-100", "text/csv"),
+            "sheet_file": ("sheet.csv", b"data,valor,descricao\n2026-04-01,-100,TEST", "text/csv"),
+        },
+    )
+    assert intake.status_code == 200
+    analysis_id = intake.json()["analysis_id"]
+
+    owner = client.get(f"/reconcile-report/{analysis_id}?anonymous_fingerprint=fp-owner")
+    assert owner.status_code == 200
+
+    other = client.get(f"/reconcile-report/{analysis_id}?anonymous_fingerprint=fp-other")
+    assert other.status_code == 403
+    assert other.json()["detail"] == "Access denied for this analysis."
 

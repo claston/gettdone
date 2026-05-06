@@ -1,9 +1,11 @@
 ﻿from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 
 from app.application import (
+    AccessControlService,
     InvalidFileContentError,
+    InvalidUserTokenError,
     ReportService,
     classify_reconciliation_rows,
     generate_reconciliation_problems,
@@ -14,7 +16,7 @@ from app.application import (
 from app.application.document_classifier import classify_document
 from app.application.models import NormalizedTransaction
 from app.application.normalizer import normalize_transactions
-from app.dependencies import get_report_service
+from app.dependencies import get_access_control_service, get_report_service
 from app.schemas import ReconcileIntakeResponse
 
 router = APIRouter()
@@ -22,6 +24,16 @@ router = APIRouter()
 _BANK_ALLOWED_EXTENSIONS = {"csv", "xlsx", "ofx", "pdf"}
 _SHEET_ALLOWED_EXTENSIONS = {"csv", "xlsx"}
 _SHEET_BANK_STATEMENT_WARN_THRESHOLD = 0.55
+
+
+def _resolve_user_token(*, authorization: str | None, user_token_form: str | None) -> str | None:
+    auth_header = (authorization or "").strip()
+    if auth_header.lower().startswith("bearer "):
+        bearer = auth_header[7:].strip()
+        if bearer:
+            return bearer
+    clean_form = (user_token_form or "").strip()
+    return clean_form or None
 
 
 def _file_extension(filename: str | None) -> str:
@@ -34,7 +46,11 @@ def _file_extension(filename: str | None) -> str:
 async def reconcile(
     bank_file: UploadFile = File(...),
     sheet_file: UploadFile = File(...),
+    anonymous_fingerprint: str | None = Form(default=None),
+    user_token: str | None = Form(default=None),
+    authorization: str | None = Header(default=None),
     report_service: ReportService = Depends(get_report_service),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> ReconcileIntakeResponse:
     bank_filename = bank_file.filename or ""
     sheet_filename = sheet_file.filename or ""
@@ -166,6 +182,24 @@ async def reconcile(
         reconciliation_rows=reconciliation_rows,
         problems=problems,
     )
+    resolved_user_token = _resolve_user_token(authorization=authorization, user_token_form=user_token)
+    has_identity_hint = bool((anonymous_fingerprint or "").strip() or resolved_user_token)
+    if has_identity_hint:
+        try:
+            identity = access_control_service.resolve_identity(
+                anonymous_fingerprint=anonymous_fingerprint,
+                user_token=resolved_user_token,
+            )
+        except InvalidUserTokenError:
+            raise HTTPException(
+                status_code=400,
+                detail="Missing or invalid identity context. Send anonymous_fingerprint or a valid user_token.",
+            )
+        report_service.set_reconcile_owner(
+            analysis_id=analysis_id,
+            identity_type=identity.identity_type,
+            identity_id=identity.identity_id,
+        )
 
     return ReconcileIntakeResponse(
         analysis_id=analysis_id,
