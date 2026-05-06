@@ -222,6 +222,26 @@ def test_checkout_status_read_and_admin_payment_link_update(monkeypatch) -> None
         app.dependency_overrides.clear()
 
 
+def test_checkout_status_read_accepts_bearer_token() -> None:
+    fake_contact = FakeContactService()
+    client, service = build_client(fake_contact)
+    try:
+        user_token = _create_user_token(service)
+        created = _create_checkout_intent(client, user_token=user_token, plan_code="essencial")
+        intent_id = created["intent_id"]
+
+        headers = {"authorization": f"Bearer {user_token}"}
+        by_id = client.get("/checkout/intents/" + intent_id, headers=headers)
+        assert by_id.status_code == 200
+        assert by_id.json()["intent_id"] == intent_id
+
+        latest = client.get("/checkout/intents/latest", headers=headers)
+        assert latest.status_code == 200
+        assert latest.json()["intent_id"] == intent_id
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_admin_checkout_intents_list_filters_open_with_admin_user_token() -> None:
     fake_contact = FakeContactService()
     access_control = _AccessControlServiceInMemory(

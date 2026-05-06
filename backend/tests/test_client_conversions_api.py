@@ -81,6 +81,18 @@ def test_client_conversions_returns_only_owner_items_in_desc_order(tmp_path: Pat
     app.dependency_overrides.clear()
 
 
+def test_client_conversions_accepts_bearer_token(tmp_path: Path) -> None:
+    client, token_a, _token_b = build_client(tmp_path)
+
+    response = client.get("/client/conversions", headers={"authorization": f"Bearer {token_a}"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["items"]) == 2
+    assert payload["items"][0]["processing_id"] == "an_new"
+    app.dependency_overrides.clear()
+
+
 def test_client_conversions_respects_limit_parameter(tmp_path: Path) -> None:
     client, token_a, _token_b = build_client(tmp_path)
 

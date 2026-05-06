@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app.application import (
@@ -16,6 +16,16 @@ from app.dependencies import get_access_control_service, get_report_service
 from app.schemas import ConvertEditsRequest, ConvertEditsResponse
 
 router = APIRouter()
+
+
+def _resolve_user_token(*, authorization: str | None, user_token_query: str | None) -> str | None:
+    auth_header = (authorization or "").strip()
+    if auth_header.lower().startswith("bearer "):
+        bearer = auth_header[7:].strip()
+        if bearer:
+            return bearer
+    clean_query = (user_token_query or "").strip()
+    return clean_query or None
 
 
 @router.get("/report/{analysis_id}")
@@ -60,6 +70,7 @@ def get_convert_report(
     processing_id: str,
     file_format: Literal["ofx", "csv"] = Query(default="ofx", alias="format"),
     anonymous_fingerprint: str | None = Query(default=None),
+    authorization: str | None = Header(default=None),
     user_token: str | None = Query(default=None),
     service: ReportService = Depends(get_report_service),
     access_control_service: AccessControlService = Depends(get_access_control_service),
@@ -67,7 +78,7 @@ def get_convert_report(
     try:
         identity = access_control_service.resolve_identity(
             anonymous_fingerprint=anonymous_fingerprint,
-            user_token=user_token,
+            user_token=_resolve_user_token(authorization=authorization, user_token_query=user_token),
         )
         service.assert_convert_owner(
             analysis_id=processing_id,
@@ -105,13 +116,14 @@ def apply_convert_edits(
     payload: ConvertEditsRequest,
     service: ReportService = Depends(get_report_service),
     anonymous_fingerprint: str | None = Query(default=None),
+    authorization: str | None = Header(default=None),
     user_token: str | None = Query(default=None),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> ConvertEditsResponse:
     try:
         identity = access_control_service.resolve_identity(
             anonymous_fingerprint=anonymous_fingerprint,
-            user_token=user_token,
+            user_token=_resolve_user_token(authorization=authorization, user_token_query=user_token),
         )
         service.assert_convert_owner(
             analysis_id=processing_id,

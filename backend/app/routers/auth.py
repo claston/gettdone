@@ -1,6 +1,6 @@
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
 from app.application import (
@@ -17,6 +17,15 @@ from app.dependencies import get_access_control_service, get_google_oauth_servic
 from app.schemas import AuthMeResponse, LoginRequest, LoginResponse, RegisterRequest, RegisterResponse
 
 router = APIRouter()
+
+
+def _resolve_user_token(*, authorization: str | None, user_token_query: str | None) -> str:
+    auth_header = (authorization or "").strip()
+    if auth_header.lower().startswith("bearer "):
+        bearer = auth_header[7:].strip()
+        if bearer:
+            return bearer
+    return (user_token_query or "").strip()
 
 
 @router.post("/auth/register", response_model=RegisterResponse)
@@ -73,15 +82,19 @@ def login(
 
 @router.get("/auth/me", response_model=AuthMeResponse)
 def me(
-    user_token: str,
+    authorization: str | None = Header(default=None),
+    user_token: str | None = Query(default=None),
     service: AccessControlService = Depends(get_access_control_service),
 ) -> AuthMeResponse:
+    resolved_token = _resolve_user_token(authorization=authorization, user_token_query=user_token)
+    if not resolved_token:
+        raise HTTPException(status_code=401, detail="Invalid user token.")
     try:
-        user = service.get_user_by_token(user_token=user_token)
+        user = service.get_user_by_token(user_token=resolved_token)
     except InvalidUserTokenError:
         raise HTTPException(status_code=401, detail="Invalid user token.")
 
-    identity = service.resolve_identity(anonymous_fingerprint=None, user_token=user_token)
+    identity = service.resolve_identity(anonymous_fingerprint=None, user_token=resolved_token)
     return AuthMeResponse(
         user_id=user.user_id,
         name=user.name,

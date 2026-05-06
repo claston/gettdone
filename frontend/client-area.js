@@ -319,8 +319,8 @@
     }
   }
 
-  async function fetchJson(url) {
-    const response = await fetch(url);
+  async function fetchJson(url, init) {
+    const response = await fetch(url, init);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(payload.detail || "Falha ao carregar dados.");
@@ -338,7 +338,8 @@
     if (requestedIntentId) {
       try {
         order = await fetchJson(
-          `${apiBase}/checkout/intents/${encodeURIComponent(requestedIntentId)}?user_token=${encodeURIComponent(token)}`,
+          `${apiBase}/checkout/intents/${encodeURIComponent(requestedIntentId)}`,
+          { headers: { authorization: `Bearer ${token}` } },
         );
       } catch (_error) {
         order = null;
@@ -346,7 +347,9 @@
     }
     if (!order) {
       try {
-        order = await fetchJson(`${apiBase}/checkout/intents/latest?user_token=${encodeURIComponent(token)}`);
+        order = await fetchJson(`${apiBase}/checkout/intents/latest`, {
+          headers: { authorization: `Bearer ${token}` },
+        });
       } catch (_error) {
         order = null;
       }
@@ -364,8 +367,9 @@
     try {
       const query = new URL(window.location.href).searchParams;
       const requestedIntentId = String(query.get("checkout_intent") || "").trim();
-      const mePromise = fetchJson(`${apiBase}/auth/me?user_token=${encodeURIComponent(token)}`);
-      const historyPromise = fetchJson(`${apiBase}/client/conversions?user_token=${encodeURIComponent(token)}&limit=20`);
+      const authHeaders = { authorization: `Bearer ${token}` };
+      const mePromise = fetchJson(`${apiBase}/auth/me`, { headers: authHeaders });
+      const historyPromise = fetchJson(`${apiBase}/client/conversions?limit=20`, { headers: authHeaders });
       const plansPromise = fetchJson(`${apiBase}/plans`).catch(() => ({ items: [] }));
 
       const history = await historyPromise;
