@@ -1293,6 +1293,12 @@ class AccessControlService:
                     WHERE auth_provider = 'google' AND provider_user_id IS NOT NULL
                     """
                 )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_user_conversions_user_created_at
+                    ON user_conversions(user_id, created_at DESC)
+                    """
+                )
 
                 usage_columns = {
                     str(row["name"])
@@ -1511,6 +1517,12 @@ class AccessControlService:
                         CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_provider_user_id
                         ON users(provider_user_id)
                         WHERE auth_provider = 'google' AND provider_user_id IS NOT NULL
+                        """
+                    )
+                    cur.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_user_conversions_user_created_at
+                        ON user_conversions(user_id, created_at DESC)
                         """
                     )
                     cur.execute(
