@@ -279,8 +279,10 @@
     }
     const sessionState = await getSessionValidationState();
     if (sessionState === "invalid") {
+      hideQuotaLockOverlay();
       clearUserToken();
       syncHeroAuthLinks();
+      setStatus("Sua sessão expirou. Faça login novamente para continuar.", "error");
       return;
     }
     if (sessionState === "valid" || sessionState === "unknown") {
