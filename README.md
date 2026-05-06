@@ -179,6 +179,25 @@ Checklist rapido para Render:
 7. (Opcional para Neon/Postgres) Definir `DATABASE_URL` no formato `postgresql://...`.
 8. (Recomendado com banco compartilhado) Definir `DATABASE_SCHEMA` exclusivo para esta app (ex.: `gettdone`).
 
+Bootstrap de admin em producao:
+
+1. Crie o usuario normalmente (ex.: `admin@ofxsimples.com.br`).
+2. Execute o script para promover o usuario no banco:
+
+```powershell
+cd backend
+venv\Scripts\python.exe scripts\set_user_admin_role.py --email admin@ofxsimples.com.br
+```
+
+Para revogar admin:
+
+```powershell
+cd backend
+venv\Scripts\python.exe scripts\set_user_admin_role.py --email admin@ofxsimples.com.br --revoke
+```
+
+Opcional (sincronizacao automatica no startup): defina `ADMIN_EMAILS` com emails separados por virgula.
+
 Para desenvolvimento local, continue usando:
 
 - `APP_ENV=development` (ou sem definir `APP_ENV`)
