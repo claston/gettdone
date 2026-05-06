@@ -112,6 +112,15 @@
     }
   }
 
+  function showQuickStartFeedback() {
+    setStatus("Painel iniciado.", "quick");
+    window.setTimeout(() => {
+      if (statusMsg.classList.contains("quick")) {
+        setStatus("", null);
+      }
+    }, 850);
+  }
+
   function formatDate(value) {
     const raw = String(value || "").trim();
     if (!raw) {
@@ -446,5 +455,6 @@
   });
 
   bootstrapAccountPreview();
+  showQuickStartFeedback();
   void loadClientArea();
 })();
