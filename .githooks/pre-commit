@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$repo_root"
+
+if [ -x "backend/venv/Scripts/python.exe" ]; then
+  py_cmd="backend/venv/Scripts/python.exe"
+elif command -v python3 >/dev/null 2>&1; then
+  py_cmd="python3"
+elif command -v python >/dev/null 2>&1; then
+  py_cmd="python"
+else
+  echo "pre-commit: Python not found. Cannot run frontend text lint."
+  exit 1
+fi
+
+echo "pre-commit: running frontend text lint (UTF-8 + mojibake scan)..."
+"$py_cmd" scripts/lint_frontend_text.py
+echo "pre-commit: running frontend navigation lint (links + route-safe auth paths)..."
+"$py_cmd" scripts/lint_frontend_navigation.py

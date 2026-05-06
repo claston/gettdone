@@ -24,6 +24,13 @@ This document defines the default execution rules for the `gettdone` repository.
    - single-page flow
    - no login/dashboard in MVP
    - upload -> processing -> preview -> report download
+6. Frontend copy and responsiveness baseline:
+   - all user-facing PT-BR text must use proper Portuguese accents/casing (avoid unaccented fallbacks)
+   - mobile menu toggle (`Menu`) must be hidden on desktop and only visible on mobile breakpoints
+7. Text encoding baseline:
+   - all frontend text files (`.html`, `.css`, `.js`) must be saved as UTF-8
+   - before finalizing, run a mojibake scan for common broken sequences (for example: `Ã`, `Â`, `â€`, `�`)
+   - if mojibake is found, fix the source text in-file (never rely on browser/runtime workarounds)
 
 ## Production Compatibility Rules
 

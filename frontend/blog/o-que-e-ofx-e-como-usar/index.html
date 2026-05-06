@@ -1,0 +1,198 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-KXD6TMPC');</script>
+<!-- End Google Tag Manager -->
+
+  <link rel="icon" type="image/png" href="/assets/favicon.png" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>O que é OFX, para que serve e como usar no dia a dia financeiro</title>
+  <meta name="description" content="Entenda o que é OFX, por que esse formato existe e como usar para importar extratos com menos erro e menos retrabalho." />
+  <link rel="canonical" href="https://www.ofxsimples.com.br/blog/o-que-e-ofx-e-como-usar/" />
+  <meta property="og:title" content="O que é OFX, para que serve e como usar no dia a dia financeiro" />
+  <meta property="og:description" content="Guia completo para entender OFX, conversão de arquivos e boas práticas de conciliação." />
+  <meta property="og:url" content="https://www.ofxsimples.com.br/blog/o-que-e-ofx-e-como-usar/" />
+  <meta property="og:site_name" content="OFX Simples" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="O que é OFX, para que serve e como usar no dia a dia financeiro" />
+  <meta name="twitter:description" content="Aprenda quando usar OFX e como evitar erros de importação no seu fluxo financeiro." />
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "BlogPosting",
+      "headline": "O que é OFX, para que serve e como usar no dia a dia financeiro",
+      "description": "Guia completo para entender OFX, conversão de arquivos e boas práticas de conciliação.",
+      "datePublished": "2026-05-06",
+      "dateModified": "2026-05-06",
+      "author": {"@type": "Organization", "name": "OFX Simples"},
+      "publisher": {
+        "@type": "Organization",
+        "name": "OFX Simples",
+        "logo": {"@type": "ImageObject", "url": "https://www.ofxsimples.com.br/assets/favicon.png"}
+      },
+      "mainEntityOfPage": "https://www.ofxsimples.com.br/blog/o-que-e-ofx-e-como-usar/"
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../topbar-unified.css?v=1" />
+  <link rel="stylesheet" href="../blog.css?v=1" />
+</head>
+<body>
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KXD6TMPC"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="../../index.html">OFX Simples</a>
+      <button id="menu-toggle" class="menu-toggle" type="button" aria-expanded="false" aria-controls="top-links">Menu</button>
+      <nav id="top-links" class="top-links" aria-label="Navegação principal">
+        <a href="../../index.html#como-funciona">Como funciona</a>
+        <a href="../../index.html#faq">FAQ</a>
+        <a href="../" aria-current="page">Blog</a>
+        <a href="../../planos.html">Planos</a>
+        <a href="../../contato.html">Contato</a>
+      </nav>
+      <div class="top-actions">
+        <a id="top-auth-login-link" class="link-plain" href="../../login.html?next=%2Fofx-convert.html">Entrar</a>
+        <a id="top-auth-primary-link" class="btn btn-primary" href="../../ofx-convert.html">Converter agora</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="blog-layout">
+    <article class="article-card">
+      <p class="article-kicker">Blog OFX Simples</p>
+      <h1>O que é OFX, para que serve e como usar no dia a dia financeiro</h1>
+      <p class="article-meta">Publicado em 06 de maio de 2026 - Leitura de 8 minutos</p>
+      <p class="lead">
+        OFX é um formato feito para transporte de dados financeiros com estrutura previsível.
+        Em vez de ajustar planilhas linha por linha, você importa transações com campos já organizados
+        para conciliar mais rápido e com menos ruído operacional.
+      </p>
+
+      <nav class="toc" aria-label="Sumário do artigo">
+        <p>Neste artigo:</p>
+        <a href="#o-que-e-ofx">O que é OFX</a>
+        <a href="#por-que-ofx-existe">Por que o formato surgiu</a>
+        <a href="#quando-usar">Quando usar OFX no trabalho real</a>
+        <a href="#conversoes-comuns">Conversões mais comuns</a>
+        <a href="#boas-praticas">Boas práticas para evitar erro</a>
+      </nav>
+
+      <section id="o-que-e-ofx">
+        <h2>O que é OFX</h2>
+        <p>
+          OFX significa Open Financial Exchange. É um padrão de arquivo para intercâmbio de informações
+          financeiras entre bancos, ERPs, sistemas de gestão e ferramentas contábeis.
+        </p>
+        <p>
+          Em um OFX, cada lançamento costuma carregar data, valor, tipo de movimentação, identificador
+          e descrição. Isso permite importação mais confiável do que formatos livres, como PDF e planilhas
+          sem padronização de colunas.
+        </p>
+      </section>
+
+      <section id="por-que-ofx-existe">
+        <h2>Por que o formato surgiu</h2>
+        <p>
+          O problema antigo era simples: cada origem exportava dados de um jeito. O time financeiro perdia
+          horas convertendo formato, corrigindo sinal de débito/crédito e repetindo importações até "dar certo".
+          OFX apareceu justamente para padronizar esse caminho.
+        </p>
+        <p>
+          Na prática, ele reduz retrabalho, melhora rastreabilidade e diminui o risco de distorção de saldo
+          durante fechamento mensal.
+        </p>
+      </section>
+
+      <section id="quando-usar">
+        <h2>Quando usar OFX no trabalho real</h2>
+        <ol>
+          <li>Quando o ERP exige OFX para importação bancária.</li>
+          <li>Quando você precisa conciliar alto volume com previsibilidade.</li>
+          <li>Quando quer reduzir dependência de ajustes manuais em planilhas.</li>
+          <li>Quando precisa de trilha de auditoria mais limpa no processo.</li>
+        </ol>
+        <p>
+          Mesmo em equipes pequenas, esse ganho aparece rápido: menos tempo em tarefas operacionais
+          e mais foco na análise financeira.
+        </p>
+      </section>
+
+      <section id="conversoes-comuns">
+        <h2>Conversões mais comuns</h2>
+        <h3>PDF para OFX</h3>
+        <p>
+          Caso típico de quem recebe apenas extrato bancário em PDF. Converter para OFX permite importar
+          e conciliar com menos fricção.
+        </p>
+
+        <h3>CSV/XLSX para OFX</h3>
+        <p>
+          Útil para consolidar dados de diferentes fontes em um formato aceito pelo sistema principal.
+          Aqui, a atenção crítica é padronizar data, histórico e sinal de valor.
+        </p>
+
+        <h3>OFX para CSV/XLSX</h3>
+        <p>
+          Bom para análises específicas, auditorias internas e compartilhamento com áreas que trabalham
+          mais em planilha.
+        </p>
+      </section>
+
+      <section id="boas-praticas">
+        <h2>Boas práticas para evitar erro</h2>
+        <ul>
+          <li>Faça importações por período curto para facilitar conferência.</li>
+          <li>Valide saldo inicial e final contra o extrato original.</li>
+          <li>Revise transações de valor alto antes de consolidar.</li>
+          <li>Mantenha uma cópia do arquivo de origem para auditoria.</li>
+          <li>Padronize um checklist simples para todo fechamento.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Conclusão</h2>
+        <p>
+          OFX não é apenas um "tipo de arquivo". Ele é uma peça de padronização do processo financeiro.
+          Quando bem usado, reduz erro operacional e melhora previsibilidade de fechamento.
+        </p>
+        <p>
+          Se você quiser aprofundar o fluxo, vale ler também o guia de
+          <a href="../como-validar-ofx-antes-de-importar-no-erp/">validação de OFX antes da importação</a>.
+        </p>
+      </section>
+    </article>
+
+    <aside class="side-card" aria-label="Próximos conteúdos">
+      <h2>Próximos artigos</h2>
+      <ul>
+        <li><a href="../como-validar-ofx-antes-de-importar-no-erp/">Como validar OFX antes de importar no ERP</a></li>
+        <li><a href="../7-erros-comuns-na-conciliacao-bancaria/">7 erros comuns na conciliação bancária</a></li>
+        <li><a href="../checklist-fechamento-financeiro-com-ofx/">Checklist de fechamento financeiro com OFX</a></li>
+      </ul>
+      <a class="cta-link" href="../../ofx-convert.html">Converter um arquivo agora</a>
+      <a class="cta-link secondary" href="../">Ver todos os artigos</a>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <p>OFX Simples</p>
+    <p><a href="../../politica-de-privacidade.html">Política de Privacidade</a></p>
+    <p id="footer-year"></p>
+  </footer>
+
+  <script src="../../ofx-landing.js?v=1"></script>
+</body>
+</html>
