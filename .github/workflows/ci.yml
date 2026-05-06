@@ -36,6 +36,24 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
+      - name: Install Playwright
+        run: python -m pip install playwright
+
+      - name: Install Playwright browser (Chromium)
+        run: python -m playwright install chromium
+
+      - name: Frontend text lint (UTF-8 and mojibake)
+        working-directory: .
+        run: python scripts/lint_frontend_text.py
+
+      - name: Frontend navigation lint (links and route-safe auth paths)
+        working-directory: .
+        run: python scripts/lint_frontend_navigation.py
+
+      - name: Frontend navigation smoke (Playwright)
+        working-directory: .
+        run: python scripts/smoke_playwright_navigation.py
+
       - name: Lint (Ruff)
         run: python -m ruff check .
 

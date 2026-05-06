@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   const yearNode = document.getElementById("footer-year");
   const topAuthLoginLink = document.getElementById("top-auth-login-link");
   const topAuthPrimaryLink = document.getElementById("top-auth-primary-link");
@@ -45,21 +45,21 @@
     if (topAuthPrimaryLink) {
       const safe = String(email || "conta").trim() || "conta";
       const initial = safe.charAt(0).toUpperCase();
-      topAuthPrimaryLink.innerHTML = `<span class="top-account-avatar">${initial}</span><span class="top-account-email">${safe}</span><span class="top-account-caret">▾</span>`;
+      topAuthPrimaryLink.innerHTML = `<span class="top-account-avatar">${initial}</span><span class="top-account-email">${safe}</span><span class="top-account-caret">&#9662;</span>`;
       topAuthPrimaryLink.classList.add("top-account-trigger");
-      topAuthPrimaryLink.setAttribute("href", "./client-area.html");
+      topAuthPrimaryLink.setAttribute("href", "/client-area.html");
     }
   }
 
   function renderLoggedOutTop() {
     if (topAuthLoginLink) {
       topAuthLoginLink.classList.remove("hidden");
-      topAuthLoginLink.setAttribute("href", "./login.html?next=%2Fofx-convert.html");
+      topAuthLoginLink.setAttribute("href", "/login.html?next=%2Fofx-convert.html");
     }
     if (topAuthPrimaryLink) {
       topAuthPrimaryLink.textContent = "Converter agora";
       topAuthPrimaryLink.classList.remove("top-account-trigger");
-      topAuthPrimaryLink.setAttribute("href", "./ofx-convert.html");
+      topAuthPrimaryLink.setAttribute("href", "/ofx-convert.html");
     }
   }
 
@@ -102,3 +102,4 @@
 
   void syncTopAuthBySession();
 })();
+

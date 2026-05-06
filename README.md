@@ -106,6 +106,29 @@ Stop-Process -Id <BACKEND_PID>,<FRONTEND_PID> -Force
 .\scripts\fix-frontend.ps1
 ```
 
+## Hook local de qualidade de texto (UTF-8 + acentuacao)
+
+Para bloquear commit com mojibake/caracteres invalidos no frontend:
+
+```powershell
+.\scripts\install-git-hooks.ps1
+```
+
+Isso ativa o `pre-commit` versionado em `.githooks/pre-commit`, que executa:
+
+```powershell
+backend\venv\Scripts\python.exe scripts\lint_frontend_text.py
+backend\venv\Scripts\python.exe scripts\lint_frontend_navigation.py
+```
+
+Smoke test de navegacao com Playwright (opcional local):
+
+```powershell
+backend\venv\Scripts\python.exe -m pip install playwright
+backend\venv\Scripts\python.exe -m playwright install chromium
+backend\venv\Scripts\python.exe scripts\smoke_playwright_navigation.py
+```
+
 ## CI no GitHub
 
 Workflows configurados:

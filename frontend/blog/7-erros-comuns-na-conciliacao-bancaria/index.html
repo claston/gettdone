@@ -1,0 +1,181 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-KXD6TMPC');</script>
+<!-- End Google Tag Manager -->
+
+  <link rel="icon" type="image/png" href="/assets/favicon.png" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>7 erros comuns na conciliação bancária (e como corrigir)</title>
+  <meta name="description" content="Veja os erros mais comuns na conciliação bancária e um plano simples de correção para reduzir divergências e retrabalho." />
+  <link rel="canonical" href="https://www.ofxsimples.com.br/blog/7-erros-comuns-na-conciliacao-bancaria/" />
+  <meta property="og:title" content="7 erros comuns na conciliação bancária (e como corrigir)" />
+  <meta property="og:description" content="Guia prático para identificar causas de divergência e resolver a conciliação mais rápido." />
+  <meta property="og:url" content="https://www.ofxsimples.com.br/blog/7-erros-comuns-na-conciliacao-bancaria/" />
+  <meta property="og:type" content="article" />
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "BlogPosting",
+      "headline": "7 erros comuns na conciliação bancária (e como corrigir)",
+      "description": "Veja os erros mais comuns na conciliação bancária e um plano simples de correção para reduzir divergências e retrabalho.",
+      "datePublished": "2026-05-06",
+      "dateModified": "2026-05-06",
+      "author": {"@type": "Organization", "name": "OFX Simples"},
+      "publisher": {
+        "@type": "Organization",
+        "name": "OFX Simples",
+        "logo": {"@type": "ImageObject", "url": "https://www.ofxsimples.com.br/assets/favicon.png"}
+      },
+      "mainEntityOfPage": "https://www.ofxsimples.com.br/blog/7-erros-comuns-na-conciliacao-bancaria/"
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../topbar-unified.css?v=1" />
+  <link rel="stylesheet" href="../blog.css?v=1" />
+</head>
+<body>
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KXD6TMPC"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="../../index.html">OFX Simples</a>
+      <button id="menu-toggle" class="menu-toggle" type="button" aria-expanded="false" aria-controls="top-links">Menu</button>
+      <nav id="top-links" class="top-links" aria-label="Navegação principal">
+        <a href="../../index.html#como-funciona">Como funciona</a>
+        <a href="../../index.html#faq">FAQ</a>
+        <a href="../" aria-current="page">Blog</a>
+        <a href="../../planos.html">Planos</a>
+        <a href="../../contato.html">Contato</a>
+      </nav>
+      <div class="top-actions">
+        <a id="top-auth-login-link" class="link-plain" href="../../login.html?next=%2Fofx-convert.html">Entrar</a>
+        <a id="top-auth-primary-link" class="btn btn-primary" href="../../ofx-convert.html">Converter agora</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="blog-layout">
+    <article class="article-card">
+      <p class="article-kicker">Blog OFX Simples</p>
+      <h1>7 erros comuns na conciliação bancária (e como corrigir)</h1>
+      <p class="article-meta">Publicado em 06 de maio de 2026 - Leitura de 10 minutos</p>
+      <p class="lead">
+        A maioria dos atrasos no fechamento não vem de um problema grande, mas de vários pequenos erros repetidos.
+        Quando você conhece os padrões de falha, a conciliação deixa de ser apagador de incêndio e vira processo previsível.
+      </p>
+
+      <section>
+        <h2>1. Importar arquivo com período incorreto</h2>
+        <p>
+          Misturar períodos gera diferença artificial de saldo e compromete análise de competência.
+          <strong>Correção:</strong> padronize regra de nome de arquivo e valide período antes da importação.
+        </p>
+      </section>
+
+      <section>
+        <h2>2. Sinal de débito e crédito invertido</h2>
+        <p>
+          Esse erro altera resultado operacional e pode passar despercebido por dias.
+          <strong>Correção:</strong> mantenha validação automática de sinal por tipo de transação.
+        </p>
+      </section>
+
+      <section>
+        <h2>3. Duplicidade de lançamentos</h2>
+        <p>
+          Acontece ao reimportar o mesmo arquivo ou quando a origem já entrega linhas duplicadas.
+          <strong>Correção:</strong> deduplicação por chave composta (data + valor + histórico + id).
+        </p>
+      </section>
+
+      <section>
+        <h2>4. Histórico inconsistente</h2>
+        <p>
+          Descrições não padronizadas atrapalham classificação e leitura gerencial.
+          <strong>Correção:</strong> mantenha dicionário de normalização por banco e tipo de lançamento.
+        </p>
+      </section>
+
+      <section>
+        <h2>5. Ignorar lançamentos pendentes no fechamento</h2>
+        <p>
+          "Pendência pequena" acumulada vira distorção relevante no mês seguinte.
+          <strong>Correção:</strong> defina SLA para tratar pendências por criticidade.
+        </p>
+      </section>
+
+      <section>
+        <h2>6. Não registrar evidência de ajuste</h2>
+        <p>
+          Sem histórico, a equipe perde tempo rediscutindo o mesmo problema em cada fechamento.
+          <strong>Correção:</strong> registre causa, ajuste aplicado e responsável.
+        </p>
+      </section>
+
+      <section>
+        <h2>7. Conciliação só no fim do mês</h2>
+        <p>
+          Concentrar tudo no fechamento aumenta estresse e risco de erro.
+          <strong>Correção:</strong> faça conciliações parciais semanais com checklist fixo.
+        </p>
+      </section>
+
+      <section>
+        <h2>Plano rápido de melhoria em 30 dias</h2>
+        <ol>
+          <li>Semana 1: mapear onde cada erro acontece com mais frequência.</li>
+          <li>Semana 2: aplicar checklist de validação de OFX antes de importar.</li>
+          <li>Semana 3: padronizar tratamento de pendências e evidências.</li>
+          <li>Semana 4: revisar indicadores de retrabalho e tempo de fechamento.</li>
+        </ol>
+        <p>
+          Em geral, o primeiro ganho percebido é a redução de "volta para corrigir" no fechamento.
+        </p>
+      </section>
+
+      <section>
+        <h2>Conclusão</h2>
+        <p>
+          Melhorar conciliação não exige projeto gigante. Exige consistência operacional.
+          Se você elimina os erros repetidos, ganha velocidade e confiabilidade no financeiro.
+        </p>
+        <p>
+          Para colocar isso em prática com rotina diária, veja o
+          <a href="../checklist-fechamento-financeiro-com-ofx/">checklist de fechamento financeiro com OFX</a>.
+        </p>
+      </section>
+    </article>
+
+    <aside class="side-card" aria-label="Próximos conteúdos">
+      <h2>Próximos artigos</h2>
+      <ul>
+        <li><a href="../como-validar-ofx-antes-de-importar-no-erp/">Como validar OFX antes de importar no ERP</a></li>
+        <li><a href="../checklist-fechamento-financeiro-com-ofx/">Checklist de fechamento financeiro com OFX</a></li>
+        <li><a href="../o-que-e-ofx-e-como-usar/">O que é OFX e como usar</a></li>
+      </ul>
+      <a class="cta-link" href="../../ofx-convert.html">Converter um arquivo agora</a>
+      <a class="cta-link secondary" href="../">Ver todos os artigos</a>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <p>OFX Simples</p>
+    <p><a href="../../politica-de-privacidade.html">Política de Privacidade</a></p>
+    <p id="footer-year"></p>
+  </footer>
+
+  <script src="../../ofx-landing.js?v=1"></script>
+</body>
+</html>
