@@ -69,6 +69,8 @@ def get_access_control_service() -> AccessControlService:
             admin_emails=configured_admin_emails,
             anonymous_quota_limit=anonymous_quota_limit,
             quota_window_days=int(os.getenv("QUOTA_WINDOW_DAYS", "7")),
+            session_access_token_ttl_seconds=int(os.getenv("SESSION_ACCESS_TOKEN_TTL_SECONDS", "900")),
+            session_refresh_token_ttl_seconds=int(os.getenv("SESSION_REFRESH_TOKEN_TTL_SECONDS", "1209600")),
         )
     return _access_control_service
 

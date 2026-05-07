@@ -218,6 +218,25 @@ class AuthMeResponse(BaseModel):
     max_pages_per_file: int
 
 
+class SessionAuthResponse(BaseModel):
+    user_id: str
+    name: str
+    email: str
+    quota_remaining: int
+    quota_limit: int
+    quota_mode: str = "conversion"
+    plan_code: str | None = None
+    plan_name: str | None = None
+    max_upload_size_bytes: int
+    max_pages_per_file: int
+    access_expires_at: str
+    refresh_expires_at: str
+
+
+class SessionLogoutResponse(BaseModel):
+    status: str = "ok"
+
+
 class AdminLoginRequest(BaseModel):
     email: str
     password: str
