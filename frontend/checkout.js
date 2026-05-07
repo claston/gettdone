@@ -169,6 +169,12 @@
     clearUserTokenCookie();
   }
 
+  function buildOptionalAuthHeaders(userToken) {
+    const token = String(userToken || "").trim();
+    if (!token) return null;
+    return { authorization: `Bearer ${token}` };
+  }
+
   function renderLoggedInTop(email) {
     if (topAuthLoginLink) topAuthLoginLink.classList.add("hidden");
     if (topAuthPrimaryLink) {
@@ -205,19 +211,23 @@
 
   async function syncTopAuthBySession() {
     const token = getUserToken();
-    if (!token) {
+    if (token) {
+      renderLoggedInTop(getProfileHint());
+    } else {
       renderLoggedOutTop();
-      return;
     }
-    renderLoggedInTop(getProfileHint());
     try {
       const apiBase = resolveApiBase();
+      const headers = buildOptionalAuthHeaders(token);
       const response = await fetch(`${apiBase}/auth/me`, {
-        headers: { authorization: `Bearer ${token}` },
+        credentials: "include",
+        ...(headers ? { headers } : {}),
       });
       if (!response.ok) {
         if (response.status === 401) {
-          clearAuthState();
+          if (token) {
+            clearAuthState();
+          }
           renderLoggedOutTop();
         }
         return;
@@ -356,15 +366,13 @@
   async function refreshOrderStatus() {
     if (!currentIntentId) return;
     const userToken = getUserToken();
-    if (!userToken) {
-      setStatus("Faça login para acompanhar o status do pedido.", true);
-      return;
-    }
     if (orderRefreshBtn) orderRefreshBtn.disabled = true;
     try {
       const apiBase = resolveApiBase();
+      const headers = buildOptionalAuthHeaders(userToken);
       const response = await fetch(`${apiBase}/checkout/intents/${encodeURIComponent(currentIntentId)}`, {
-        headers: { authorization: `Bearer ${userToken}` },
+        credentials: "include",
+        ...(headers ? { headers } : {}),
       });
       const body = await response.json().catch(function () {
         return {};
@@ -411,14 +419,10 @@
     event.preventDefault();
     if (!formNode || !selectedPlan || !submitBtn) return;
     const userToken = getUserToken();
-    if (!userToken) {
-      setStatus("Faça login para contratar um plano.", true);
-      return;
-    }
 
     const formData = new FormData(formNode);
     const payload = {
-      user_token: userToken,
+      user_token: userToken || null,
       plan_code: String(selectedPlan.code || "").toLowerCase(),
       name: String(formData.get("name") || "").trim(),
       email: String(formData.get("email") || "").trim(),
@@ -443,6 +447,7 @@
       const apiBase = resolveApiBase();
       const response = await fetch(`${apiBase}/checkout/intents`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });

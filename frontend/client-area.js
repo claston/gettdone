@@ -427,7 +427,11 @@
   }
 
   async function fetchJson(url, init) {
-    const response = await fetch(url, init);
+    const requestInit = {
+      credentials: "include",
+      ...(init || {}),
+    };
+    const response = await fetch(url, requestInit);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(payload.detail || "Falha ao carregar dados.");
@@ -441,12 +445,13 @@
   }
 
   async function loadOrderData(token, requestedIntentId) {
+    const requestInit = token ? { headers: { authorization: `Bearer ${token}` } } : undefined;
     let order = null;
     if (requestedIntentId) {
       try {
         order = await fetchJson(
           `${apiBase}/checkout/intents/${encodeURIComponent(requestedIntentId)}`,
-          { headers: { authorization: `Bearer ${token}` } },
+          requestInit,
         );
       } catch (_error) {
         order = null;
@@ -454,9 +459,7 @@
     }
     if (!order) {
       try {
-        order = await fetchJson(`${apiBase}/checkout/intents/latest`, {
-          headers: { authorization: `Bearer ${token}` },
-        });
+        order = await fetchJson(`${apiBase}/checkout/intents/latest`, requestInit);
       } catch (_error) {
         order = null;
       }
@@ -466,17 +469,14 @@
 
   async function loadClientArea() {
     const token = getUserToken();
-    if (!token) {
-      window.location.href = "./login.html?next=%2Fclient-area.html";
-      return;
-    }
 
     try {
       const query = new URL(window.location.href).searchParams;
       const requestedIntentId = String(query.get("checkout_intent") || "").trim();
-      const authHeaders = { authorization: `Bearer ${token}` };
-      const mePromise = fetchJson(`${apiBase}/auth/me`, { headers: authHeaders });
-      const historyPromise = fetchJson(`${apiBase}/client/conversions?limit=20`, { headers: authHeaders });
+      const authHeaders = token ? { authorization: `Bearer ${token}` } : null;
+      const authInit = authHeaders ? { headers: authHeaders } : undefined;
+      const mePromise = fetchJson(`${apiBase}/auth/me`, authInit);
+      const historyPromise = fetchJson(`${apiBase}/client/conversions?limit=20`, authInit);
       const plansPromise = fetchJson(`${apiBase}/plans`).catch(() => ({ items: [] }));
 
       const history = await historyPromise;

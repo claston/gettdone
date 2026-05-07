@@ -237,18 +237,21 @@
 
   async function getSessionValidationState() {
     const token = getUserToken();
-    if (!token) {
-      return "missing";
-    }
     try {
+      const requestInit = {
+        credentials: "include",
+      };
+      if (token) {
+        requestInit.headers = { authorization: `Bearer ${token}` };
+      }
       const response = await fetch(`${apiBase}/auth/me`, {
-        headers: { authorization: `Bearer ${token}` },
+        ...requestInit,
       });
       if (response.ok) {
         return "valid";
       }
       if (response.status === 401) {
-        return "invalid";
+        return token ? "invalid" : "missing";
       }
       return "unknown";
     } catch (_error) {
@@ -428,12 +431,13 @@
     );
   }
 
-  function syncHeroAuthLinks() {
-    const hasSession = Boolean(getUserToken());
+  function syncHeroAuthLinks(profileEmail) {
+    const fallbackEmail = String(profileEmail || "").trim() || getProfileHint();
+    const hasSession = Boolean(String(profileEmail || "").trim() || getUserToken());
     if (topAuthLoginLink) topAuthLoginLink.classList.toggle("hidden", hasSession);
     if (topAuthPrimaryLink) {
       if (hasSession) {
-        const email = getProfileHint();
+        const email = fallbackEmail;
         const initial = email.charAt(0).toUpperCase();
         topAuthPrimaryLink.innerHTML = `<span class="top-account-avatar">${initial}</span><span class="top-account-email">${email}</span><span class="top-account-caret">&#9662;</span>`;
         topAuthPrimaryLink.classList.add("top-account-trigger");
@@ -447,20 +451,25 @@
 
   async function hydrateTopAccountEmail() {
     const token = getUserToken();
-    if (!token || !topAuthPrimaryLink) return;
+    if (!topAuthPrimaryLink) return;
     try {
+      const requestInit = {
+        credentials: "include",
+      };
+      if (token) {
+        requestInit.headers = { authorization: `Bearer ${token}` };
+      }
       const response = await fetch(`${apiBase}/auth/me`, {
-        headers: { authorization: `Bearer ${token}` },
+        ...requestInit,
       });
       if (!response.ok) {
-        if (response.status === 401) clearUserToken();
+        if (response.status === 401 && token) clearUserToken();
         return;
       }
       const payload = await response.json().catch(() => ({}));
       const email = String(payload.email || "conta").trim() || "conta";
       setProfileHint(email);
-      const initial = email.charAt(0).toUpperCase();
-      topAuthPrimaryLink.innerHTML = `<span class="top-account-avatar">${initial}</span><span class="top-account-email">${email}</span><span class="top-account-caret">&#9662;</span>`;
+      syncHeroAuthLinks(email);
     } catch (_error) {
       // Keep fallback.
     }
@@ -1100,6 +1109,7 @@
   async function postConvert(formData) {
     const response = await fetch(`${apiBase}/convert`, {
       method: "POST",
+      credentials: "include",
       body: formData,
     });
 
@@ -1123,13 +1133,15 @@
 
   async function syncUploadLimitsBySession() {
     const token = getUserToken();
-    if (!token) {
-      setUploadLimitsText(2 * 1024 * 1024, 5);
-      return;
-    }
     try {
+      const requestInit = {
+        credentials: "include",
+      };
+      if (token) {
+        requestInit.headers = { authorization: `Bearer ${token}` };
+      }
       const response = await fetch(`${apiBase}/auth/me`, {
-        headers: { authorization: `Bearer ${token}` },
+        ...requestInit,
       });
       if (!response.ok) {
         setUploadLimitsText(2 * 1024 * 1024, 5);
@@ -1146,6 +1158,7 @@
     const query = buildIdentityQueryParams().toString();
     const response = await fetch(`${apiBase}/convert-edits/${processingId}?${query}`, {
       method: "POST",
+      credentials: "include",
       headers: {
         "content-type": "application/json",
       },
