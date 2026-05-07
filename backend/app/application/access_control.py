@@ -62,7 +62,9 @@ from app.application.conversion_history import (
 from app.application.errors import (
     FileTooLargeError,
     InvalidCredentialsError,
+    InvalidSessionTokenError,
     InvalidUserTokenError,
+    ReusedSessionTokenError,
     UserAlreadyExistsError,
 )
 from app.application.plan_management import (
@@ -90,6 +92,8 @@ REGISTERED_QUOTA_LIMIT = 10
 MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024
 PASSWORD_HASH_ITERATIONS = 390_000
 QUOTA_WINDOW_DAYS = 7
+SESSION_ACCESS_TOKEN_TTL_SECONDS = 15 * 60
+SESSION_REFRESH_TOKEN_TTL_SECONDS = 14 * 24 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -114,6 +118,15 @@ class RegisteredUser:
     is_admin: bool = False
 
 
+@dataclass(frozen=True)
+class SessionTokenBundle:
+    user: RegisteredUser
+    access_token: str
+    refresh_token: str
+    access_expires_at: str
+    refresh_expires_at: str
+
+
 class AccessControlService:
     def __init__(
         self,
@@ -125,6 +138,8 @@ class AccessControlService:
         anonymous_quota_limit: int = ANONYMOUS_QUOTA_LIMIT,
         registered_quota_limit: int = REGISTERED_QUOTA_LIMIT,
         quota_window_days: int = QUOTA_WINDOW_DAYS,
+        session_access_token_ttl_seconds: int = SESSION_ACCESS_TOKEN_TTL_SECONDS,
+        session_refresh_token_ttl_seconds: int = SESSION_REFRESH_TOKEN_TTL_SECONDS,
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         self.state_file = state_file
@@ -139,6 +154,8 @@ class AccessControlService:
         self.anonymous_quota_limit = anonymous_quota_limit
         self.registered_quota_limit = registered_quota_limit
         self.quota_window_days = max(1, int(quota_window_days))
+        self.session_access_token_ttl_seconds = max(60, int(session_access_token_ttl_seconds))
+        self.session_refresh_token_ttl_seconds = max(300, int(session_refresh_token_ttl_seconds))
         self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
         self._lock = RLock()
         if not self._use_postgres:
@@ -283,6 +300,176 @@ class AccessControlService:
                     token=user_token,
                     is_admin=self._row_is_admin(user),
                 )
+
+    def create_user_session(
+        self,
+        *,
+        user_id: str,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> SessionTokenBundle:
+        user = self._get_registered_user_by_id(user_id=user_id)
+        return self._create_user_session_bundle(user=user, ip_address=ip_address, user_agent=user_agent)
+
+    def refresh_user_session(
+        self,
+        *,
+        refresh_token: str,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> SessionTokenBundle:
+        payload = self._decode_session_token(refresh_token, expected_type="refresh")
+        session_id = str(payload.get("sid") or "").strip()
+        user_id = str(payload.get("uid") or "").strip()
+        if not session_id or not user_id:
+            raise InvalidSessionTokenError
+        now = self.now_provider()
+        refresh_hash = self._hash_refresh_token(refresh_token)
+        with self._lock:
+            with self._connect() as conn:
+                row = self._fetchone(
+                    conn,
+                    """
+                    SELECT id, user_id, refresh_token_hash, refresh_token_family, expires_at, revoked_at, rotated_at
+                    FROM user_sessions
+                    WHERE id = ?
+                    """,
+                    (session_id,),
+                )
+                if row is None:
+                    raise InvalidSessionTokenError
+                if str(row["user_id"] or "").strip() != user_id:
+                    raise InvalidSessionTokenError
+                expected_hash = str(row["refresh_token_hash"] or "").strip()
+                if not hmac.compare_digest(expected_hash, refresh_hash):
+                    self._revoke_session_family_with_conn(
+                        conn,
+                        family_id=str(row["refresh_token_family"] or "").strip(),
+                        reason="refresh_hash_mismatch",
+                        now_iso=now.isoformat(),
+                    )
+                    conn.commit()
+                    raise ReusedSessionTokenError
+                if str(row["revoked_at"] or "").strip():
+                    raise InvalidSessionTokenError
+                if str(row["rotated_at"] or "").strip():
+                    self._revoke_session_family_with_conn(
+                        conn,
+                        family_id=str(row["refresh_token_family"] or "").strip(),
+                        reason="refresh_token_reuse",
+                        now_iso=now.isoformat(),
+                    )
+                    conn.commit()
+                    raise ReusedSessionTokenError
+
+                expires_at = self._parse_usage_datetime(str(row["expires_at"] or ""), fallback=now)
+                if expires_at <= now:
+                    self._execute(
+                        conn,
+                        "UPDATE user_sessions SET revoked_at = ?, revoke_reason = ? WHERE id = ?",
+                        (now.isoformat(), "refresh_expired", session_id),
+                    )
+                    conn.commit()
+                    raise InvalidSessionTokenError
+
+                user = self._get_registered_user_by_id_with_conn(conn=conn, user_id=user_id)
+                family_id = str(row["refresh_token_family"] or "").strip() or f"fam_{uuid4().hex}"
+                bundle = self._create_user_session_bundle_with_conn(
+                    conn=conn,
+                    user=user,
+                    family_id=family_id,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    now=now,
+                )
+                self._execute(
+                    conn,
+                    """
+                    UPDATE user_sessions
+                    SET rotated_at = ?, replaced_by_session_id = ?, last_ip = ?, last_user_agent = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        now.isoformat(),
+                        self._extract_session_id_from_token(bundle.refresh_token),
+                        (ip_address or "").strip() or None,
+                        (user_agent or "").strip()[:512] or None,
+                        session_id,
+                    ),
+                )
+                conn.commit()
+                return bundle
+
+    def revoke_user_session(self, *, refresh_token: str) -> None:
+        try:
+            payload = self._decode_session_token(refresh_token, expected_type="refresh")
+        except InvalidSessionTokenError:
+            return
+        session_id = str(payload.get("sid") or "").strip()
+        if not session_id:
+            return
+        now_iso = self.now_provider().isoformat()
+        refresh_hash = self._hash_refresh_token(refresh_token)
+        with self._lock:
+            with self._connect() as conn:
+                row = self._fetchone(
+                    conn,
+                    "SELECT refresh_token_hash FROM user_sessions WHERE id = ?",
+                    (session_id,),
+                )
+                if row is None:
+                    return
+                expected_hash = str(row["refresh_token_hash"] or "").strip()
+                if not hmac.compare_digest(expected_hash, refresh_hash):
+                    return
+                self._execute(
+                    conn,
+                    "UPDATE user_sessions SET revoked_at = ?, revoke_reason = ? WHERE id = ? AND revoked_at IS NULL",
+                    (now_iso, "logout", session_id),
+                )
+                conn.commit()
+
+    def revoke_all_user_sessions(self, *, user_id: str) -> None:
+        now_iso = self.now_provider().isoformat()
+        with self._lock:
+            with self._connect() as conn:
+                self._execute(
+                    conn,
+                    """
+                    UPDATE user_sessions
+                    SET revoked_at = ?, revoke_reason = ?
+                    WHERE user_id = ? AND revoked_at IS NULL
+                    """,
+                    (now_iso, "logout_all", user_id),
+                )
+                conn.commit()
+
+    def get_user_by_session_access_token(self, access_token: str) -> RegisteredUser:
+        payload = self._decode_session_token(access_token, expected_type="access")
+        session_id = str(payload.get("sid") or "").strip()
+        user_id = str(payload.get("uid") or "").strip()
+        if not session_id or not user_id:
+            raise InvalidSessionTokenError
+        now = self.now_provider()
+        with self._lock:
+            with self._connect() as conn:
+                row = self._fetchone(
+                    conn,
+                    """
+                    SELECT revoked_at, expires_at
+                    FROM user_sessions
+                    WHERE id = ? AND user_id = ?
+                    """,
+                    (session_id, user_id),
+                )
+                if row is None:
+                    raise InvalidSessionTokenError
+                if str(row["revoked_at"] or "").strip():
+                    raise InvalidSessionTokenError
+                refresh_expires_at = self._parse_usage_datetime(str(row["expires_at"] or ""), fallback=now)
+                if refresh_expires_at <= now:
+                    raise InvalidSessionTokenError
+                return self._get_registered_user_by_id_with_conn(conn=conn, user_id=user_id)
 
     def get_user_by_email(self, email: str) -> RegisteredUser:
         normalized_email = email.strip().lower()
@@ -1092,6 +1279,187 @@ class AccessControlService:
         expected_hash = self._hash_password(password=password, salt=stored_salt)
         return hmac.compare_digest(expected_hash, stored_hash)
 
+    def _create_user_session_bundle(
+        self,
+        *,
+        user: RegisteredUser,
+        ip_address: str | None,
+        user_agent: str | None,
+    ) -> SessionTokenBundle:
+        now = self.now_provider()
+        with self._lock:
+            with self._connect() as conn:
+                bundle = self._create_user_session_bundle_with_conn(
+                    conn=conn,
+                    user=user,
+                    family_id=f"fam_{uuid4().hex}",
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    now=now,
+                )
+                conn.commit()
+                return bundle
+
+    def _create_user_session_bundle_with_conn(
+        self,
+        *,
+        conn,
+        user: RegisteredUser,
+        family_id: str,
+        ip_address: str | None,
+        user_agent: str | None,
+        now: datetime,
+    ) -> SessionTokenBundle:
+        session_id = f"ses_{uuid4().hex}"
+        access_expires_at = now + timedelta(seconds=self.session_access_token_ttl_seconds)
+        refresh_expires_at = now + timedelta(seconds=self.session_refresh_token_ttl_seconds)
+        access_token = self._encode_session_token(
+            user_id=user.user_id,
+            session_id=session_id,
+            token_type="access",
+            expires_at=access_expires_at,
+        )
+        refresh_token = self._encode_session_token(
+            user_id=user.user_id,
+            session_id=session_id,
+            token_type="refresh",
+            expires_at=refresh_expires_at,
+        )
+        refresh_hash = self._hash_refresh_token(refresh_token)
+        self._execute(
+            conn,
+            """
+            INSERT INTO user_sessions (
+                id,
+                user_id,
+                refresh_token_hash,
+                refresh_token_family,
+                created_at,
+                expires_at,
+                rotated_at,
+                revoked_at,
+                replaced_by_session_id,
+                revoke_reason,
+                last_ip,
+                last_user_agent
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                user.user_id,
+                refresh_hash,
+                family_id,
+                now.isoformat(),
+                refresh_expires_at.isoformat(),
+                None,
+                None,
+                None,
+                None,
+                (ip_address or "").strip() or None,
+                (user_agent or "").strip()[:512] or None,
+            ),
+        )
+        return SessionTokenBundle(
+            user=user,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            access_expires_at=access_expires_at.isoformat(),
+            refresh_expires_at=refresh_expires_at.isoformat(),
+        )
+
+    def _revoke_session_family_with_conn(self, conn, *, family_id: str, reason: str, now_iso: str) -> None:
+        normalized_family = str(family_id or "").strip()
+        if not normalized_family:
+            return
+        self._execute(
+            conn,
+            """
+            UPDATE user_sessions
+            SET revoked_at = COALESCE(revoked_at, ?), revoke_reason = COALESCE(revoke_reason, ?)
+            WHERE refresh_token_family = ?
+            """,
+            (now_iso, reason, normalized_family),
+        )
+
+    def _get_registered_user_by_id(self, *, user_id: str) -> RegisteredUser:
+        with self._lock:
+            with self._connect() as conn:
+                return self._get_registered_user_by_id_with_conn(conn=conn, user_id=user_id)
+
+    def _get_registered_user_by_id_with_conn(self, *, conn, user_id: str) -> RegisteredUser:
+        row = self._fetchone(
+            conn,
+            "SELECT id, name, email, is_admin FROM users WHERE id = ?",
+            (user_id,),
+        )
+        if row is None:
+            raise InvalidSessionTokenError
+        return RegisteredUser(
+            user_id=str(row["id"]),
+            email=str(row["email"]),
+            name=str(row["name"] or ""),
+            token=self._encode_token(str(row["id"])),
+            is_admin=self._row_is_admin(row),
+        )
+
+    def _hash_refresh_token(self, refresh_token: str) -> str:
+        normalized = str(refresh_token or "").strip()
+        if not normalized:
+            return ""
+        return hmac.new(self.token_secret, normalized.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    def _encode_session_token(self, *, user_id: str, session_id: str, token_type: str, expires_at: datetime) -> str:
+        payload_obj = {
+            "uid": user_id,
+            "sid": session_id,
+            "typ": token_type,
+            "exp": int(expires_at.timestamp()),
+            "iat": int(self.now_provider().timestamp()),
+            "jti": uuid4().hex,
+        }
+        payload_json = json.dumps(payload_obj, separators=(",", ":"), sort_keys=True)
+        payload = base64.urlsafe_b64encode(payload_json.encode("utf-8")).decode("utf-8").rstrip("=")
+        signature = hmac.new(self.token_secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()[:40]
+        return f"{payload}.{signature}"
+
+    def _decode_session_token(self, token: str, *, expected_type: str) -> dict[str, str | int]:
+        raw = str(token or "").strip()
+        try:
+            payload, signature = raw.split(".", 1)
+        except ValueError:
+            raise InvalidSessionTokenError from None
+        expected_signature = hmac.new(self.token_secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()[:40]
+        if not hmac.compare_digest(expected_signature, signature):
+            raise InvalidSessionTokenError
+        try:
+            padded_payload = payload + "=" * (-len(payload) % 4)
+            decoded = base64.urlsafe_b64decode(padded_payload.encode("utf-8")).decode("utf-8")
+            payload_obj = json.loads(decoded)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            raise InvalidSessionTokenError from None
+        token_type = str(payload_obj.get("typ") or "").strip()
+        user_id = str(payload_obj.get("uid") or "").strip()
+        session_id = str(payload_obj.get("sid") or "").strip()
+        exp_raw = payload_obj.get("exp")
+        if token_type != expected_type or not user_id.startswith("usr_") or not session_id.startswith("ses_"):
+            raise InvalidSessionTokenError
+        try:
+            exp_unix = int(exp_raw)
+        except (TypeError, ValueError):
+            raise InvalidSessionTokenError from None
+        now_unix = int(self.now_provider().timestamp())
+        if exp_unix <= now_unix:
+            raise InvalidSessionTokenError
+        return payload_obj
+
+    def _extract_session_id_from_token(self, refresh_token: str) -> str:
+        payload = self._decode_session_token(refresh_token, expected_type="refresh")
+        session_id = str(payload.get("sid") or "").strip()
+        if not session_id:
+            raise InvalidSessionTokenError
+        return session_id
+
     def _encode_token(self, user_id: str) -> str:
         payload = base64.urlsafe_b64encode(user_id.encode("utf-8")).decode("utf-8").rstrip("=")
         signature = hmac.new(self.token_secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()[:24]
@@ -1187,6 +1555,22 @@ class AccessControlService:
                         next_path TEXT NOT NULL,
                         created_at TEXT NOT NULL,
                         expires_at TEXT NOT NULL
+                    );
+
+                    CREATE TABLE IF NOT EXISTS user_sessions (
+                        id TEXT PRIMARY KEY,
+                        user_id TEXT NOT NULL,
+                        refresh_token_hash TEXT NOT NULL UNIQUE,
+                        refresh_token_family TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        expires_at TEXT NOT NULL,
+                        rotated_at TEXT,
+                        revoked_at TEXT,
+                        replaced_by_session_id TEXT,
+                        revoke_reason TEXT,
+                        last_ip TEXT,
+                        last_user_agent TEXT,
+                        FOREIGN KEY(user_id) REFERENCES users(id)
                     );
 
                     CREATE TABLE IF NOT EXISTS plan_versions (
@@ -1297,6 +1681,24 @@ class AccessControlService:
                     """
                     CREATE INDEX IF NOT EXISTS idx_user_conversions_user_created_at
                     ON user_conversions(user_id, created_at DESC)
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_user_sessions_user_created_at
+                    ON user_sessions(user_id, created_at DESC)
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_user_sessions_family
+                    ON user_sessions(refresh_token_family)
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at
+                    ON user_sessions(expires_at)
                     """
                 )
 
@@ -1422,6 +1824,25 @@ class AccessControlService:
                     )
                     cur.execute(
                         """
+                        CREATE TABLE IF NOT EXISTS user_sessions (
+                            id TEXT PRIMARY KEY,
+                            user_id TEXT NOT NULL,
+                            refresh_token_hash TEXT NOT NULL UNIQUE,
+                            refresh_token_family TEXT NOT NULL,
+                            created_at TEXT NOT NULL,
+                            expires_at TEXT NOT NULL,
+                            rotated_at TEXT,
+                            revoked_at TEXT,
+                            replaced_by_session_id TEXT,
+                            revoke_reason TEXT,
+                            last_ip TEXT,
+                            last_user_agent TEXT,
+                            FOREIGN KEY(user_id) REFERENCES users(id)
+                        )
+                        """
+                    )
+                    cur.execute(
+                        """
                         CREATE TABLE IF NOT EXISTS plan_versions (
                             id TEXT PRIMARY KEY,
                             code TEXT NOT NULL,
@@ -1523,6 +1944,24 @@ class AccessControlService:
                         """
                         CREATE INDEX IF NOT EXISTS idx_user_conversions_user_created_at
                         ON user_conversions(user_id, created_at DESC)
+                        """
+                    )
+                    cur.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_user_sessions_user_created_at
+                        ON user_sessions(user_id, created_at DESC)
+                        """
+                    )
+                    cur.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_user_sessions_family
+                        ON user_sessions(refresh_token_family)
+                        """
+                    )
+                    cur.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at
+                        ON user_sessions(expires_at)
                         """
                     )
                     cur.execute(

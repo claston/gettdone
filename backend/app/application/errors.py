@@ -22,6 +22,14 @@ class InvalidUserTokenError(Exception):
     """Raised when a user token cannot be validated."""
 
 
+class InvalidSessionTokenError(Exception):
+    """Raised when a session access/refresh token cannot be validated."""
+
+
+class ReusedSessionTokenError(Exception):
+    """Raised when a rotated refresh token is reused (possible token theft)."""
+
+
 class UserAlreadyExistsError(Exception):
     """Raised when trying to register an already existing user."""
 
