@@ -1072,6 +1072,14 @@
       formData.append("file", file);
       const token = getUserToken();
       if (token) {
+        const sessionState = await getSessionValidationState();
+        if (sessionState === "invalid") {
+          hideQuotaLockOverlay();
+          clearUserToken();
+          syncHeroAuthLinks();
+          setStatus("Sua sessão expirou. Faça login novamente para continuar.", "error");
+          return;
+        }
         formData.append("user_token", token);
       } else {
         formData.append("anonymous_fingerprint", getAnonymousFingerprint());
@@ -1127,6 +1135,17 @@
       }
       if (status === 429 && code === "monthly_pages_quota_exceeded") {
         setStatus("Voce atingiu o limite mensal de paginas do seu plano.", "error");
+        return;
+      }
+      const normalizedMessage = String(message || "").toLowerCase();
+      if (
+        status === 400 &&
+        (normalizedMessage.includes("invalid identity context") || normalizedMessage.includes("invalid user token"))
+      ) {
+        hideQuotaLockOverlay();
+        clearUserToken();
+        syncHeroAuthLinks();
+        setStatus("Sua sessão expirou. Faça login novamente para continuar.", "error");
         return;
       }
       setStatus(message, "error");
