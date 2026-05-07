@@ -259,13 +259,16 @@
     }
   }
 
+  function buildOptionalAuthHeaders(userToken) {
+    const token = String(userToken || "").trim();
+    if (!token) {
+      return null;
+    }
+    return { authorization: `Bearer ${token}` };
+  }
+
   function buildIdentityQueryParams() {
     const params = new URLSearchParams();
-    const userToken = getUserToken();
-    if (userToken) {
-      params.set("user_token", userToken);
-      return params;
-    }
     params.set("anonymous_fingerprint", getAnonymousFingerprint());
     return params;
   }
@@ -1107,9 +1110,12 @@
   }
 
   async function postConvert(formData) {
+    const token = getUserToken();
+    const headers = buildOptionalAuthHeaders(token);
     const response = await fetch(`${apiBase}/convert`, {
       method: "POST",
       credentials: "include",
+      ...(headers ? { headers } : {}),
       body: formData,
     });
 
@@ -1156,10 +1162,13 @@
 
   async function postConvertEdit(processingId, editPatch) {
     const query = buildIdentityQueryParams().toString();
+    const token = getUserToken();
+    const optionalHeaders = buildOptionalAuthHeaders(token);
     const response = await fetch(`${apiBase}/convert-edits/${processingId}?${query}`, {
       method: "POST",
       credentials: "include",
       headers: {
+        ...(optionalHeaders || {}),
         "content-type": "application/json",
       },
       body: JSON.stringify({
@@ -1205,7 +1214,6 @@
           setStatus("Sua sessão expirou. Faça login novamente para continuar.", "error");
           return;
         }
-        formData.append("user_token", token);
       } else {
         formData.append("anonymous_fingerprint", getAnonymousFingerprint());
       }
@@ -1279,14 +1287,44 @@
     }
   }
 
-  function runDownloadOfx() {
+  async function runDownloadOfx() {
     if (!state.processingId) {
       setStatus("Converta um arquivo antes de baixar.", "error");
       return;
     }
     const query = buildIdentityQueryParams();
     query.set("format", "ofx");
-    window.open(`${apiBase}/convert-report/${state.processingId}?${query.toString()}`, "_blank", "noopener");
+    const token = getUserToken();
+    const headers = buildOptionalAuthHeaders(token);
+
+    try {
+      setStatus("Preparando download...", null);
+      const response = await fetch(`${apiBase}/convert-report/${state.processingId}?${query.toString()}`, {
+        method: "GET",
+        credentials: "include",
+        ...(headers ? { headers } : {}),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        const detail = payload && typeof payload === "object" ? payload.detail : null;
+        const message = String(detail || "Falha ao baixar OFX.");
+        setStatus(message, "error");
+        return;
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = `ofxsimples-${state.processingId}.ofx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+      setStatus("Download iniciado.", "success");
+    } catch (_error) {
+      setStatus("Falha de rede ao baixar OFX.", "error");
+    }
   }
 
   function bindDropzone() {

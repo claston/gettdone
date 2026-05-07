@@ -418,11 +418,9 @@
   async function handleCheckoutSubmit(event) {
     event.preventDefault();
     if (!formNode || !selectedPlan || !submitBtn) return;
-    const userToken = getUserToken();
 
     const formData = new FormData(formNode);
     const payload = {
-      user_token: userToken || null,
       plan_code: String(selectedPlan.code || "").toLowerCase(),
       name: String(formData.get("name") || "").trim(),
       email: String(formData.get("email") || "").trim(),
