@@ -61,7 +61,11 @@ class TempAnalysisStorage:
         self._format_transacoes_sheet(sheet)
         self._add_conciliacao_sheet(workbook, data)
         workbook.save(analysis_dir / "report.xlsx")
-        self._write_convert_artifacts(analysis_dir, report_rows)
+        self._write_convert_artifacts(
+            analysis_dir,
+            report_rows,
+            ofx_account_type=data.ofx_account_type,
+        )
         return expires_at.isoformat()
 
     def get_report_path(self, analysis_id: str) -> Path:
@@ -321,7 +325,11 @@ class TempAnalysisStorage:
 
         metadata_path.write_text(json.dumps(content, ensure_ascii=True, indent=2), encoding="utf-8")
         self._write_report_workbook(analysis_dir, content=content, report_rows=report_rows, preview_rows=preview_rows)
-        self._write_convert_artifacts(analysis_dir, report_rows)
+        self._write_convert_artifacts(
+            analysis_dir,
+            report_rows,
+            ofx_account_type=str(content.get("ofx_account_type") or "").strip() or None,
+        )
 
         return {
             "processing_id": analysis_id,
@@ -481,7 +489,13 @@ class TempAnalysisStorage:
             raise AnalysisNotFoundError
         return report_path
 
-    def _write_convert_artifacts(self, analysis_dir: Path, report_rows: list[TransactionRow]) -> None:
+    def _write_convert_artifacts(
+        self,
+        analysis_dir: Path,
+        report_rows: list[TransactionRow],
+        *,
+        ofx_account_type: str | None = None,
+    ) -> None:
         active_rows = self._active_rows(report_rows)
         normalized_transactions = [
             NormalizedTransaction(
@@ -494,7 +508,10 @@ class TempAnalysisStorage:
         ]
 
         (analysis_dir / "converted.ofx").write_text(
-            build_ofx_statement(normalized_transactions),
+            build_ofx_statement(
+                normalized_transactions,
+                account_type=ofx_account_type,
+            ),
             encoding="utf-8",
         )
 

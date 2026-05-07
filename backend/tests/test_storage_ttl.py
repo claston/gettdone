@@ -132,3 +132,19 @@ def test_save_analysis_writes_convert_csv_artifact(tmp_path) -> None:
     csv_path = tmp_path / "an_testttl" / "converted.csv"
     assert csv_path.exists()
     assert "date,description,amount,category,reconciliation_status" in csv_path.read_text(encoding="utf-8")
+
+
+def test_save_analysis_writes_credit_card_convert_ofx_when_profile_is_credit_card(tmp_path) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    data = _build_analysis_data()
+    data.ofx_account_type = "credit_card"
+
+    storage.save_analysis(data)
+
+    ofx_path = tmp_path / "an_testttl" / "converted.ofx"
+    content = ofx_path.read_text(encoding="utf-8")
+
+    assert "<CREDITCARDMSGSRSV1>" in content
+    assert "<CCSTMTRS>" in content
+    assert "<DTSTART>20260401000000[-3:BRT]" in content
+    assert "<DTEND>20260401000000[-3:BRT]" in content
