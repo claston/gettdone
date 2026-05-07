@@ -4,17 +4,83 @@
   const signupLink = document.getElementById("signup-link");
   const googleLoginBtn = document.getElementById("google-login-btn");
   const USER_TOKEN_KEY = "ofxsimples_user_token";
+  const USER_TOKEN_COOKIE = "ofxsimples_user_token";
+
+  function isIpv4Host(hostname) {
+    return /^\d{1,3}(\.\d{1,3}){3}$/.test(String(hostname || "").trim());
+  }
+
+  function resolveSharedCookieDomain() {
+    const host = String(window.location.hostname || "").trim().toLowerCase();
+    if (!host || host === "localhost" || isIpv4Host(host)) {
+      return null;
+    }
+    const labels = host.split(".").filter(Boolean);
+    if (labels.length < 2) {
+      return null;
+    }
+    if (labels.length >= 3 && labels[labels.length - 2] === "com" && labels[labels.length - 1] === "br") {
+      return `.${labels.slice(-3).join(".")}`;
+    }
+    return `.${labels.slice(-2).join(".")}`;
+  }
+
+  function readUserTokenCookie() {
+    const entries = String(document.cookie || "").split(";");
+    for (const entry of entries) {
+      const [namePart, ...valueParts] = entry.split("=");
+      const name = String(namePart || "").trim();
+      if (name !== USER_TOKEN_COOKIE) continue;
+      const rawValue = valueParts.join("=");
+      const decoded = decodeURIComponent(String(rawValue || "").trim());
+      if (decoded) return decoded;
+    }
+    return "";
+  }
+
+  function writeUserTokenCookie(token) {
+    const safeToken = encodeURIComponent(String(token || "").trim());
+    if (!safeToken) return;
+    const secureAttr = window.location.protocol === "https:" ? "; Secure" : "";
+    const sharedDomain = resolveSharedCookieDomain();
+    document.cookie = `${USER_TOKEN_COOKIE}=${safeToken}; Path=/; Max-Age=2592000; SameSite=Lax${secureAttr}`;
+    if (sharedDomain) {
+      document.cookie = `${USER_TOKEN_COOKIE}=${safeToken}; Path=/; Max-Age=2592000; Domain=${sharedDomain}; SameSite=Lax${secureAttr}`;
+    }
+  }
+
+  function clearUserTokenCookie() {
+    const secureAttr = window.location.protocol === "https:" ? "; Secure" : "";
+    const sharedDomain = resolveSharedCookieDomain();
+    document.cookie = `${USER_TOKEN_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax${secureAttr}`;
+    if (sharedDomain) {
+      document.cookie = `${USER_TOKEN_COOKIE}=; Path=/; Max-Age=0; Domain=${sharedDomain}; SameSite=Lax${secureAttr}`;
+    }
+  }
 
   function getStoredUserToken() {
-    return String(localStorage.getItem(USER_TOKEN_KEY) || "").trim();
+    const localToken = String(localStorage.getItem(USER_TOKEN_KEY) || "").trim();
+    if (localToken) {
+      writeUserTokenCookie(localToken);
+      return localToken;
+    }
+    const cookieToken = readUserTokenCookie();
+    if (cookieToken) {
+      localStorage.setItem(USER_TOKEN_KEY, cookieToken);
+      return cookieToken;
+    }
+    return "";
   }
 
   function storeUserToken(token) {
-    localStorage.setItem(USER_TOKEN_KEY, token);
+    const safeToken = String(token || "").trim();
+    localStorage.setItem(USER_TOKEN_KEY, safeToken);
+    writeUserTokenCookie(safeToken);
   }
 
   function clearUserToken() {
     localStorage.removeItem(USER_TOKEN_KEY);
+    clearUserTokenCookie();
   }
 
   function resolveApiBase() {
