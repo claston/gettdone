@@ -291,7 +291,7 @@ class AdminActivatePlanResponse(BaseModel):
 
 
 class CheckoutIntentRequest(BaseModel):
-    user_token: str
+    user_token: str | None = None
     plan_code: str
     name: str
     email: str

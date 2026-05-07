@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Cookie, Depends, File, Form, Header, HTTPException, UploadFile
 
 from app.application import (
     AccessControlService,
@@ -13,6 +13,7 @@ from app.application import (
     UnsupportedFileTypeError,
 )
 from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
+from app.routers.auth_session import SESSION_ACCESS_COOKIE_NAME, resolve_user_token_with_session
 from app.schemas import ConvertResponse
 
 router = APIRouter()
@@ -38,6 +39,8 @@ async def convert(
     file: UploadFile = File(...),
     anonymous_fingerprint: str | None = Form(default=None),
     user_token: str | None = Form(default=None),
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     analyze_service: AnalyzeService = Depends(get_analyze_service),
     report_service: ReportService = Depends(get_report_service),
     access_control_service: AccessControlService = Depends(get_access_control_service),
@@ -45,9 +48,15 @@ async def convert(
     identity = None
     try:
         data = await file.read()
+        resolved_user_token = resolve_user_token_with_session(
+            access_control_service=access_control_service,
+            authorization=authorization,
+            explicit_user_token=user_token,
+            access_cookie_token=access_cookie_token,
+        )
         identity = access_control_service.resolve_identity(
             anonymous_fingerprint=anonymous_fingerprint,
-            user_token=user_token,
+            user_token=resolved_user_token,
         )
         access_control_service.assert_upload_size(data, max_upload_size_bytes=identity.max_upload_size_bytes)
         access_control_service.ensure_quota_available(identity, required_units=1)

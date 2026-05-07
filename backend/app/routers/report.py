@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app.application import (
@@ -13,20 +13,10 @@ from app.application import (
     ReportService,
 )
 from app.dependencies import get_access_control_service, get_report_service
+from app.routers.auth_session import SESSION_ACCESS_COOKIE_NAME, resolve_user_token_with_session
 from app.schemas import ConvertEditsRequest, ConvertEditsResponse
 
 router = APIRouter()
-
-
-def _resolve_user_token(*, authorization: str | None, user_token_query: str | None) -> str | None:
-    auth_header = (authorization or "").strip()
-    if auth_header.lower().startswith("bearer "):
-        bearer = auth_header[7:].strip()
-        if bearer:
-            return bearer
-    clean_query = (user_token_query or "").strip()
-    return clean_query or None
-
 
 @router.get("/report/{analysis_id}")
 def get_report(
@@ -34,13 +24,20 @@ def get_report(
     anonymous_fingerprint: str | None = Query(default=None),
     authorization: str | None = Header(default=None),
     user_token: str | None = Query(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     service: ReportService = Depends(get_report_service),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> FileResponse:
     try:
+        resolved_user_token = resolve_user_token_with_session(
+            access_control_service=access_control_service,
+            authorization=authorization,
+            explicit_user_token=user_token,
+            access_cookie_token=access_cookie_token,
+        )
         identity = access_control_service.resolve_identity(
             anonymous_fingerprint=anonymous_fingerprint,
-            user_token=_resolve_user_token(authorization=authorization, user_token_query=user_token),
+            user_token=resolved_user_token or None,
         )
         service.assert_report_owner(
             analysis_id=analysis_id,
@@ -73,13 +70,20 @@ def get_reconcile_report(
     anonymous_fingerprint: str | None = Query(default=None),
     authorization: str | None = Header(default=None),
     user_token: str | None = Query(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     service: ReportService = Depends(get_report_service),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> FileResponse:
     try:
+        resolved_user_token = resolve_user_token_with_session(
+            access_control_service=access_control_service,
+            authorization=authorization,
+            explicit_user_token=user_token,
+            access_cookie_token=access_cookie_token,
+        )
         identity = access_control_service.resolve_identity(
             anonymous_fingerprint=anonymous_fingerprint,
-            user_token=_resolve_user_token(authorization=authorization, user_token_query=user_token),
+            user_token=resolved_user_token or None,
         )
         service.assert_reconcile_owner(
             analysis_id=analysis_id,
@@ -114,13 +118,20 @@ def get_convert_report(
     anonymous_fingerprint: str | None = Query(default=None),
     authorization: str | None = Header(default=None),
     user_token: str | None = Query(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     service: ReportService = Depends(get_report_service),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> FileResponse:
     try:
+        resolved_user_token = resolve_user_token_with_session(
+            access_control_service=access_control_service,
+            authorization=authorization,
+            explicit_user_token=user_token,
+            access_cookie_token=access_cookie_token,
+        )
         identity = access_control_service.resolve_identity(
             anonymous_fingerprint=anonymous_fingerprint,
-            user_token=_resolve_user_token(authorization=authorization, user_token_query=user_token),
+            user_token=resolved_user_token or None,
         )
         service.assert_convert_owner(
             analysis_id=processing_id,
@@ -160,12 +171,19 @@ def apply_convert_edits(
     anonymous_fingerprint: str | None = Query(default=None),
     authorization: str | None = Header(default=None),
     user_token: str | None = Query(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> ConvertEditsResponse:
     try:
+        resolved_user_token = resolve_user_token_with_session(
+            access_control_service=access_control_service,
+            authorization=authorization,
+            explicit_user_token=user_token,
+            access_cookie_token=access_cookie_token,
+        )
         identity = access_control_service.resolve_identity(
             anonymous_fingerprint=anonymous_fingerprint,
-            user_token=_resolve_user_token(authorization=authorization, user_token_query=user_token),
+            user_token=resolved_user_token or None,
         )
         service.assert_convert_owner(
             analysis_id=processing_id,
