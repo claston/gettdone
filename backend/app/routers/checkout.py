@@ -1,7 +1,7 @@
 import os
 import secrets
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query
 
 from app.application import (
     AccessControlService,
@@ -16,6 +16,7 @@ from app.application.checkout_management import (
     CHECKOUT_STATUS_REQUESTED,
 )
 from app.dependencies import get_access_control_service, get_contact_service
+from app.routers.auth_session import SESSION_ACCESS_COOKIE_NAME, resolve_user_token_with_session
 from app.schemas import (
     AdminCheckoutIntentHistoryResponse,
     AdminCheckoutIntentItem,
@@ -60,19 +61,6 @@ def _resolve_admin_token(
         if bearer:
             return bearer
     return (admin_token_query or "").strip()
-
-
-def _resolve_user_token(
-    *,
-    authorization: str | None,
-    user_token_query: str | None,
-) -> str:
-    auth_header = (authorization or "").strip()
-    if auth_header.lower().startswith("bearer "):
-        bearer = auth_header[7:].strip()
-        if bearer:
-            return bearer
-    return (user_token_query or "").strip()
 
 
 def _build_checkout_intent_status_response(intent: dict[str, str | int | None]) -> CheckoutIntentStatusResponse:
@@ -149,10 +137,17 @@ def _require_admin_access(
 @router.post("/checkout/intents", response_model=CheckoutIntentResponse, status_code=202)
 async def create_checkout_intent(
     payload: CheckoutIntentRequest,
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
     contact_service: ContactService = Depends(get_contact_service),
 ) -> CheckoutIntentResponse:
-    clean_user_token = payload.user_token.strip()
+    clean_user_token = resolve_user_token_with_session(
+        access_control_service=access_control_service,
+        authorization=authorization,
+        explicit_user_token=payload.user_token,
+        access_cookie_token=access_cookie_token,
+    )
     clean_name = payload.name.strip()
     clean_email = payload.email.strip().lower()
     clean_whatsapp = payload.whatsapp.strip()
@@ -260,9 +255,15 @@ async def create_checkout_intent(
 def read_latest_checkout_intent(
     authorization: str | None = Header(default=None),
     user_token: str | None = Query(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> CheckoutIntentStatusResponse:
-    clean_user_token = _resolve_user_token(authorization=authorization, user_token_query=user_token)
+    clean_user_token = resolve_user_token_with_session(
+        access_control_service=access_control_service,
+        authorization=authorization,
+        explicit_user_token=user_token,
+        access_cookie_token=access_cookie_token,
+    )
     if not clean_user_token:
         raise HTTPException(status_code=400, detail="user_token is required.")
 
@@ -285,10 +286,16 @@ def read_checkout_intent(
     intent_id: str,
     authorization: str | None = Header(default=None),
     user_token: str | None = Query(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> CheckoutIntentStatusResponse:
     clean_intent_id = intent_id.strip()
-    clean_user_token = _resolve_user_token(authorization=authorization, user_token_query=user_token)
+    clean_user_token = resolve_user_token_with_session(
+        access_control_service=access_control_service,
+        authorization=authorization,
+        explicit_user_token=user_token,
+        access_cookie_token=access_cookie_token,
+    )
     if not clean_intent_id or not clean_user_token:
         raise HTTPException(status_code=400, detail="intent_id and user_token are required.")
 

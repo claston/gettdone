@@ -1,6 +1,6 @@
 ﻿from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Cookie, Depends, File, Form, Header, HTTPException, UploadFile
 
 from app.application import (
     AccessControlService,
@@ -17,6 +17,7 @@ from app.application.document_classifier import classify_document
 from app.application.models import NormalizedTransaction
 from app.application.normalizer import normalize_transactions
 from app.dependencies import get_access_control_service, get_report_service
+from app.routers.auth_session import SESSION_ACCESS_COOKIE_NAME, resolve_user_token_with_session
 from app.schemas import ReconcileIntakeResponse
 
 router = APIRouter()
@@ -24,17 +25,6 @@ router = APIRouter()
 _BANK_ALLOWED_EXTENSIONS = {"csv", "xlsx", "ofx", "pdf"}
 _SHEET_ALLOWED_EXTENSIONS = {"csv", "xlsx"}
 _SHEET_BANK_STATEMENT_WARN_THRESHOLD = 0.55
-
-
-def _resolve_user_token(*, authorization: str | None, user_token_form: str | None) -> str | None:
-    auth_header = (authorization or "").strip()
-    if auth_header.lower().startswith("bearer "):
-        bearer = auth_header[7:].strip()
-        if bearer:
-            return bearer
-    clean_form = (user_token_form or "").strip()
-    return clean_form or None
-
 
 def _file_extension(filename: str | None) -> str:
     if not filename:
@@ -49,6 +39,7 @@ async def reconcile(
     anonymous_fingerprint: str | None = Form(default=None),
     user_token: str | None = Form(default=None),
     authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     report_service: ReportService = Depends(get_report_service),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> ReconcileIntakeResponse:
@@ -182,7 +173,12 @@ async def reconcile(
         reconciliation_rows=reconciliation_rows,
         problems=problems,
     )
-    resolved_user_token = _resolve_user_token(authorization=authorization, user_token_form=user_token)
+    resolved_user_token = resolve_user_token_with_session(
+        access_control_service=access_control_service,
+        authorization=authorization,
+        explicit_user_token=user_token,
+        access_cookie_token=access_cookie_token,
+    )
     has_identity_hint = bool((anonymous_fingerprint or "").strip() or resolved_user_token)
     if has_identity_hint:
         try:

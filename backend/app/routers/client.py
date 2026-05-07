@@ -1,29 +1,27 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query
 
 from app.application import AccessControlService, InvalidUserTokenError
 from app.dependencies import get_access_control_service
+from app.routers.auth_session import SESSION_ACCESS_COOKIE_NAME, resolve_user_token_with_session
 from app.schemas import ClientConversionItem, ClientConversionsResponse
 
 router = APIRouter()
-
-
-def _resolve_user_token(*, authorization: str | None, user_token_query: str | None) -> str:
-    auth_header = (authorization or "").strip()
-    if auth_header.lower().startswith("bearer "):
-        bearer = auth_header[7:].strip()
-        if bearer:
-            return bearer
-    return (user_token_query or "").strip()
 
 
 @router.get("/client/conversions", response_model=ClientConversionsResponse)
 def get_client_conversions(
     authorization: str | None = Header(default=None),
     user_token: str | None = Query(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     limit: int = Query(default=20, ge=1, le=100),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> ClientConversionsResponse:
-    resolved_token = _resolve_user_token(authorization=authorization, user_token_query=user_token)
+    resolved_token = resolve_user_token_with_session(
+        access_control_service=access_control_service,
+        authorization=authorization,
+        explicit_user_token=user_token,
+        access_cookie_token=access_cookie_token,
+    )
     if not resolved_token:
         raise HTTPException(status_code=401, detail="Invalid user token.")
 
