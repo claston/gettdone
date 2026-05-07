@@ -47,3 +47,4 @@ class AnalysisData:
     layout_inference_name: str | None = None
     layout_inference_confidence: float | None = None
     pdf_processing_metrics: dict[str, int | float | str] | None = None
+    ofx_account_type: str | None = None

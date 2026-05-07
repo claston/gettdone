@@ -165,6 +165,30 @@ def test_parse_pdf_transactions_inline_month_abbrev_date(monkeypatch: pytest.Mon
     assert result.transactions[1].amount == 12.0
 
 
+def test_parse_pdf_transactions_credit_card_multiline_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.application import pdf_parser
+
+    multiline_text = """
+    FATURA 15 ABR 2026
+    TRANSACOES DE 08 MAR A 08 ABR
+    16 MAR Pagamento em 16 MAR -R$ 240,24
+    25 MAR
+    AGIR CONTABILIDADE E ASSESSORIA LTDA
+    Total a pagar: R$ 241,04 (valor da transacao de R$ 225,00 + R$ 0,99 de IOF + R$ 15,06 de juros).
+    R$ 241,05
+    """
+    monkeypatch.setattr(pdf_parser, "_extract_pdf_page_texts", lambda raw_bytes: [multiline_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic nubank multiline card statement")
+
+    assert len(result.transactions) == 2
+    assert result.transactions[0].date == "2026-03-16"
+    assert result.transactions[0].amount == -240.24
+    assert result.transactions[1].date == "2026-03-25"
+    assert result.transactions[1].description == "AGIR CONTABILIDADE E ASSESSORIA LTDA"
+    assert result.transactions[1].amount == -241.05
+
+
 def test_parse_pdf_transactions_raises_when_no_transaction_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.application import pdf_parser
 
