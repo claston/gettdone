@@ -23,13 +23,36 @@
   const viewAllLink = document.getElementById("view-all-link");
   const USER_TOKEN_KEY = "ofxsimples_user_token";
   const USER_TOKEN_COOKIE = "ofxsimples_user_token";
+  const TOKEN_SHARED_COOKIE_ALLOWLIST = ["ofxsimples.com.br"];
   const PROFILE_HINT_KEY = "ofxsimples_profile_hint";
 
   function isIpv4Host(hostname) {
     return /^\d{1,3}(\.\d{1,3}){3}$/.test(String(hostname || "").trim());
   }
 
-  function resolveSharedCookieDomain() {
+  function normalizeDomainCandidate(value) {
+    return String(value || "").trim().toLowerCase().replace(/^\.+/, "");
+  }
+
+  function getConfiguredSharedCookieAllowlist() {
+    const configured = window.__OFX_TOKEN_SHARED_COOKIE_ALLOWLIST__;
+    if (!Array.isArray(configured)) {
+      return TOKEN_SHARED_COOKIE_ALLOWLIST;
+    }
+    const normalized = configured
+      .map(function (item) {
+        return normalizeDomainCandidate(item);
+      })
+      .filter(function (item) {
+        return /^[a-z0-9.-]+$/.test(item) && item.includes(".");
+      });
+    if (normalized.length) {
+      return normalized;
+    }
+    return TOKEN_SHARED_COOKIE_ALLOWLIST;
+  }
+
+  function resolveLegacySharedCookieDomain() {
     const host = String(window.location.hostname || "").trim().toLowerCase();
     if (!host || host === "localhost" || isIpv4Host(host)) {
       return null;
@@ -42,6 +65,23 @@
       return `.${labels.slice(-3).join(".")}`;
     }
     return `.${labels.slice(-2).join(".")}`;
+  }
+
+  function resolveSharedCookieDomain() {
+    if (window.location.protocol !== "https:") {
+      return null;
+    }
+    const host = String(window.location.hostname || "").trim().toLowerCase();
+    if (!host || host === "localhost" || isIpv4Host(host)) {
+      return null;
+    }
+    const allowedDomains = getConfiguredSharedCookieAllowlist();
+    for (const allowedDomain of allowedDomains) {
+      if (host === allowedDomain || host.endsWith(`.${allowedDomain}`)) {
+        return `.${allowedDomain}`;
+      }
+    }
+    return null;
   }
 
   function readUserTokenCookie() {
@@ -71,9 +111,13 @@
   function clearUserTokenCookie() {
     const secureAttr = window.location.protocol === "https:" ? "; Secure" : "";
     const sharedDomain = resolveSharedCookieDomain();
+    const legacySharedDomain = resolveLegacySharedCookieDomain();
     document.cookie = `${USER_TOKEN_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax${secureAttr}`;
     if (sharedDomain) {
       document.cookie = `${USER_TOKEN_COOKIE}=; Path=/; Max-Age=0; Domain=${sharedDomain}; SameSite=Lax${secureAttr}`;
+    }
+    if (legacySharedDomain && legacySharedDomain !== sharedDomain) {
+      document.cookie = `${USER_TOKEN_COOKIE}=; Path=/; Max-Age=0; Domain=${legacySharedDomain}; SameSite=Lax${secureAttr}`;
     }
   }
 
