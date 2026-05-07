@@ -58,68 +58,149 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   </nav>
 
   <main class="dashboard">
-    <section class="hero-action">
-      <a class="cta-new" href="./ofx-convert.html">
+    <aside class="dashboard-sidebar" aria-label="Navegação da área do cliente">
+      <h2 class="sidebar-title">Área do cliente</h2>
+      <nav class="sidebar-nav">
+        <a href="#overview">Início</a>
+        <a href="#history-section">Suas conversões</a>
+        <a href="#orders-section">Pedidos e faturamento</a>
+        <a href="#profile-plan">Perfil e plano</a>
+      </nav>
+      <a class="sidebar-cta" href="./ofx-convert.html">
         <span class="cta-icon" aria-hidden="true">+</span>
         <span>Nova conversão</span>
       </a>
-    </section>
+    </aside>
 
-    <section class="history-section" aria-labelledby="history-title">
-      <div class="history-header">
-        <h1 id="history-title">Suas conversões</h1>
-        <div class="history-divider" aria-hidden="true"></div>
-      </div>
-      <p id="quota-text" class="quota-text anchor-target">Cota restante: -</p>
-      <p id="plan-text" class="quota-text anchor-target">Plano: -</p>
-      <p id="status-msg" class="status-msg" role="status" aria-live="polite"></p>
-
-      <div id="profile-plan" class="account-info-card">
-        <h2>Perfil e plano</h2>
-        <p><strong>E-mail:</strong> <span id="profile-email">-</span></p>
-        <p><strong>Plano:</strong> <span id="plan-summary">-</span></p>
-      </div>
-      <div id="order-status" class="account-info-card hidden">
-        <h2>Status do pedido</h2>
-        <p><strong>Protocolo:</strong> <span id="order-intent-id">-</span></p>
-        <p><strong>Plano:</strong> <span id="order-plan-name">-</span></p>
-        <p><strong>Valor:</strong> <span id="order-plan-price">-</span></p>
-        <p><strong>Páginas por mês:</strong> <span id="order-plan-pages">-</span></p>
-        <p><strong>Status:</strong> <span id="order-status-value">-</span></p>
-        <p><strong>Próximo passo:</strong> <span id="order-next-step">-</span></p>
-        <p id="order-payment-link-line" class="hidden">
-          <strong>Link de pagamento:</strong>
-          <a id="order-payment-link" href="#" target="_blank" rel="noopener noreferrer">Abrir link</a>
-        </p>
-      </div>
-
-      <div class="table-card">
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Nome do arquivo</th>
-                <th>Data</th>
-                <th>Transações</th>
-                <th>Páginas</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="history-rows">
-              <tr>
-                <td colspan="5">Carregando conversões...</td>
-              </tr>
-            </tbody>
-          </table>
+    <section class="dashboard-content">
+      <section id="overview" class="content-card anchor-target" aria-labelledby="overview-title">
+        <div class="history-header">
+          <h1 id="overview-title">Painel da conta</h1>
+          <div class="history-divider" aria-hidden="true"></div>
         </div>
-      </div>
+        <p id="status-msg" class="status-msg" role="status" aria-live="polite"></p>
+        <div class="quick-metrics">
+          <article class="metric-card">
+            <h2>Páginas restantes no mês</h2>
+            <p id="quota-text">-</p>
+          </article>
+          <article class="metric-card">
+            <h2>Detalhes do plano</h2>
+            <p id="plan-text">-</p>
+          </article>
+        </div>
+        <div id="activation-hint" class="account-info-card">
+          <h2>Próximo passo sugerido</h2>
+          <p id="activation-hint-text">Carregando informações da sua conta...</p>
+        </div>
+      </section>
 
-      <div class="history-footer">
-        <a id="view-all-link" class="view-all-link" href="./client-area.html">
-          <span>Ver todas as conversões</span>
-          <span aria-hidden="true">-&gt;</span>
-        </a>
-      </div>
+      <section id="history-section" class="content-card anchor-target" aria-labelledby="history-title">
+        <div class="history-header">
+          <h1 id="history-title">Suas conversões</h1>
+          <div class="history-divider" aria-hidden="true"></div>
+        </div>
+        <div class="table-card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nome do arquivo</th>
+                  <th>Data</th>
+                  <th>Transações</th>
+                  <th>Páginas</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="history-rows">
+                <tr>
+                  <td colspan="5">Carregando conversões...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="history-footer">
+          <a id="view-all-link" class="view-all-link" href="./client-area.html">
+            <span>Ver todas as conversões</span>
+            <span aria-hidden="true">-&gt;</span>
+          </a>
+        </div>
+      </section>
+
+      <section id="orders-section" class="content-card anchor-target" aria-labelledby="orders-title">
+        <div class="history-header">
+          <h1 id="orders-title">Pedidos e faturamento</h1>
+          <div class="history-divider" aria-hidden="true"></div>
+        </div>
+        <div id="order-status" class="account-info-card hidden">
+          <h2>Pedido em andamento</h2>
+          <p><strong>Protocolo:</strong> <span id="order-intent-id">-</span></p>
+          <p><strong>Plano:</strong> <span id="order-plan-name">-</span></p>
+          <p><strong>Valor:</strong> <span id="order-plan-price">-</span></p>
+          <p><strong>Páginas por mês:</strong> <span id="order-plan-pages">-</span></p>
+          <p><strong>Status:</strong> <span id="order-status-value">-</span></p>
+          <p><strong>Próximo passo:</strong> <span id="order-next-step">-</span></p>
+          <p id="order-payment-link-line" class="hidden">
+            <strong>Link de pagamento:</strong>
+            <a id="order-payment-link" href="#" target="_blank" rel="noopener noreferrer">Abrir link</a>
+          </p>
+        </div>
+        <div class="table-card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pedido</th>
+                  <th>Data</th>
+                  <th>Plano</th>
+                  <th>Valor</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="orders-rows">
+                <tr>
+                  <td colspan="5">Nenhum pedido encontrado.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="profile-plan" class="content-card anchor-target" aria-labelledby="profile-title">
+        <div class="history-header">
+          <h1 id="profile-title">Perfil e plano</h1>
+          <div class="history-divider" aria-hidden="true"></div>
+        </div>
+        <div class="account-info-card">
+          <p><strong>E-mail:</strong> <span id="profile-email">-</span></p>
+          <p><strong>Plano:</strong> <span id="plan-summary">-</span></p>
+          <p><strong>Modalidade:</strong> <span id="plan-mode-summary">-</span></p>
+        </div>
+      </section>
+
+      <section id="integrations-section" class="content-card anchor-target hidden" aria-labelledby="integrations-title">
+        <div class="history-header">
+          <h1 id="integrations-title">Integrações</h1>
+          <div class="history-divider" aria-hidden="true"></div>
+        </div>
+        <div class="account-info-card">
+          <p>Em breve você poderá acessar outros sistemas parceiros por aqui.</p>
+        </div>
+      </section>
+
+      <section id="news-section" class="content-card anchor-target hidden" aria-labelledby="news-title">
+        <div class="history-header">
+          <h1 id="news-title">Novidades e e-mails</h1>
+          <div class="history-divider" aria-hidden="true"></div>
+        </div>
+        <div class="account-info-card">
+          <p>Receba notícias de produto e melhorias no seu e-mail.</p>
+          <p><a href="./contato.html">Quero entrar na lista de novidades</a></p>
+        </div>
+      </section>
     </section>
   </main>
 

@@ -6,8 +6,10 @@
   const accountMenuTrigger = document.getElementById("account-menu-trigger");
   const accountMenuPanel = document.getElementById("account-menu-panel");
   const planSummary = document.getElementById("plan-summary");
+  const planModeSummary = document.getElementById("plan-mode-summary");
   const quotaText = document.getElementById("quota-text");
   const planText = document.getElementById("plan-text");
+  const activationHintText = document.getElementById("activation-hint-text");
   const orderIntentId = document.getElementById("order-intent-id");
   const orderPlanName = document.getElementById("order-plan-name");
   const orderPlanPrice = document.getElementById("order-plan-price");
@@ -17,6 +19,7 @@
   const orderPaymentLinkLine = document.getElementById("order-payment-link-line");
   const orderPaymentLink = document.getElementById("order-payment-link");
   const orderStatusCard = document.getElementById("order-status");
+  const ordersRows = document.getElementById("orders-rows");
   const historyRows = document.getElementById("history-rows");
   const statusMsg = document.getElementById("status-msg");
   const logoutBtn = document.getElementById("logout-btn");
@@ -219,15 +222,6 @@
     }
   }
 
-  function showQuickStartFeedback() {
-    setStatus("Painel iniciado.", "quick");
-    window.setTimeout(() => {
-      if (statusMsg.classList.contains("quick")) {
-        setStatus("", null);
-      }
-    }, 850);
-  }
-
   function formatDate(value) {
     const raw = String(value || "").trim();
     if (!raw) {
@@ -239,7 +233,7 @@
       return escapeHtml(raw);
     }
 
-    const parts = new Intl.DateTimeFormat("en-GB", {
+    const parts = new Intl.DateTimeFormat("pt-BR", {
       day: "2-digit",
       month: "short",
       year: "numeric",
@@ -253,7 +247,7 @@
       return escapeHtml(raw);
     }
 
-    return `${day} ${month}, ${year}`;
+    return `${day} ${month} ${year}`;
   }
 
   function normalizeStatus(status) {
@@ -323,7 +317,7 @@
 
   function renderRows(items) {
     if (!items || items.length === 0) {
-      historyRows.innerHTML = '<tr><td colspan="5">Nenhuma conversao encontrada.</td></tr>';
+      historyRows.innerHTML = '<tr><td colspan="5">Nenhuma conversão encontrada.</td></tr>';
       return;
     }
 
@@ -367,6 +361,17 @@
     return normalized || "-";
   }
 
+  function normalizeOrderStatus(status) {
+    const normalized = String(status || "").trim().toUpperCase();
+    if (normalized === "RELEASED_FOR_USE") {
+      return { label: "LIBERADO", className: "status-ready" };
+    }
+    if (normalized === "REQUESTED" || normalized === "PENDING" || normalized === "AWAITING_PAYMENT") {
+      return { label: formatOrderStatus(normalized).toUpperCase(), className: "status-processing" };
+    }
+    return { label: formatOrderStatus(normalized).toUpperCase(), className: "status-error" };
+  }
+
   function formatOrderNextStep(nextStep) {
     const normalized = String(nextStep || "").trim().toUpperCase();
     if (normalized === "SEND_PAYMENT_LINK") return "Enviar link de pagamento";
@@ -397,8 +402,39 @@
     setOrderStatusVisible(false);
   }
 
+  function renderOrderRows(items) {
+    if (!ordersRows) return;
+    if (!Array.isArray(items) || items.length === 0) {
+      ordersRows.innerHTML = '<tr><td colspan="5">Nenhum pedido encontrado.</td></tr>';
+      return;
+    }
+    ordersRows.innerHTML = items
+      .map((item) => {
+        const statusData = normalizeOrderStatus(item.status);
+        const intentId = escapeHtml(String(item.intent_id || "-"));
+        const createdAt = formatDate(item.created_at);
+        const planName = escapeHtml(String(item.plan_name || "-"));
+        const value = formatPriceBRL(item.price_cents);
+        return `
+          <tr>
+            <td>${intentId}</td>
+            <td>${createdAt}</td>
+            <td>${planName}</td>
+            <td>${value}</td>
+            <td><span class="status-chip ${statusData.className}">${statusData.label}</span></td>
+          </tr>
+        `;
+      })
+      .join("");
+  }
+
   function renderOrderStatus(data, plansByCode) {
     if (!data) {
+      clearOrderStatus();
+      return;
+    }
+    const orderStatus = String(data.status || "").trim().toUpperCase();
+    if (orderStatus === "RELEASED_FOR_USE") {
       clearOrderStatus();
       return;
     }
@@ -446,25 +482,35 @@
 
   async function loadOrderData(token, requestedIntentId) {
     const requestInit = token ? { headers: { authorization: `Bearer ${token}` } } : undefined;
-    let order = null;
+    const orders = [];
+    const seenIntentIds = new Set();
+    function pushOrder(item) {
+      if (!item) return;
+      const intentId = String(item.intent_id || "").trim();
+      if (!intentId || seenIntentIds.has(intentId)) return;
+      seenIntentIds.add(intentId);
+      orders.push(item);
+    }
+
     if (requestedIntentId) {
       try {
-        order = await fetchJson(
+        const requestedOrder = await fetchJson(
           `${apiBase}/checkout/intents/${encodeURIComponent(requestedIntentId)}`,
           requestInit,
         );
+        pushOrder(requestedOrder);
       } catch (_error) {
-        order = null;
+        // Keep loading with fallback.
       }
     }
-    if (!order) {
-      try {
-        order = await fetchJson(`${apiBase}/checkout/intents/latest`, requestInit);
-      } catch (_error) {
-        order = null;
-      }
+
+    try {
+      const latestOrder = await fetchJson(`${apiBase}/checkout/intents/latest`, requestInit);
+      pushOrder(latestOrder);
+    } catch (_error) {
+      // Optional source for history.
     }
-    return order;
+    return orders;
   }
 
   async function loadClientArea() {
@@ -484,7 +530,7 @@
       if (viewAllLink && (!history.items || history.items.length < 20)) {
         viewAllLink.style.visibility = "hidden";
       }
-      setStatus("Historico carregado. Finalizando dados da conta...", null);
+      setStatus("", null);
 
       const me = await mePromise;
 
@@ -500,38 +546,51 @@
       setProfileHint(me.email || "");
       const quotaMode = String(me.quota_mode || "conversion").toLowerCase();
       if (quotaMode === "pages") {
-        quotaText.textContent = `Paginas restantes no mes: ${me.quota_remaining} / ${me.quota_limit}`;
+        quotaText.textContent = `${me.quota_remaining} / ${me.quota_limit}`;
       } else {
-        quotaText.textContent = `Conversoes restantes na semana: ${me.quota_remaining} / ${me.quota_limit}`;
+        quotaText.textContent = `${me.quota_remaining} / ${me.quota_limit}`;
       }
       const maxMb = Number(me.max_upload_size_bytes || 0) / (1024 * 1024);
       const maxPages = Number(me.max_pages_per_file || 0);
       if (planText) {
         planText.textContent =
-          quotaMode === "pages"
-            ? `Plano pago: limite por arquivo ${maxMb.toFixed(0)} MB e ${maxPages} paginas`
-            : `Plano gratuito: limite por arquivo ${maxMb.toFixed(0)} MB e ${maxPages} paginas`;
+          `Limite por arquivo: ${maxMb.toFixed(0)} MB e ${maxPages} páginas`;
       }
       if (planSummary) {
-        planSummary.textContent = quotaMode === "pages" ? "Plano pago por paginas" : "Plano gratuito por conversoes";
+        planSummary.textContent = String(me.plan_name || "").trim() || (quotaMode === "pages" ? "Plano pago" : "Plano gratuito");
       }
-      setStatus("Historico carregado com sucesso.", null);
+      if (planModeSummary) {
+        planModeSummary.textContent = quotaMode === "pages" ? "Pago por páginas" : "Gratuito por conversões";
+      }
+      if (activationHintText) {
+        activationHintText.textContent =
+          quotaMode === "pages"
+            ? "Seu plano está ativo. Você já pode usar todas as funcionalidades da conta."
+            : "Você ainda está no plano gratuito. Ative um plano para ampliar limites e liberar novos recursos.";
+      }
+      setStatus("", null);
 
       void Promise.all([
         plansPromise.then((plansCatalog) => mapPlansByCode(plansCatalog)),
         loadOrderData(token, requestedIntentId),
-      ]).then(([plansByCode, order]) => {
-        renderOrderStatus(order, plansByCode);
+      ]).then(([plansByCode, orders]) => {
+        renderOrderRows(orders);
+        const pendingOrder =
+          Array.isArray(orders)
+            ? orders.find((item) => String(item.status || "").trim().toUpperCase() !== "RELEASED_FOR_USE") || null
+            : null;
+        renderOrderStatus(pendingOrder, plansByCode);
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao carregar area do cliente.";
+      const message = error instanceof Error ? error.message : "Falha ao carregar área do cliente.";
       if (message.toLowerCase().includes("invalid user token")) {
         clearUserToken();
         window.location.href = "./login.html?next=%2Fclient-area.html";
         return;
       }
       setStatus(message, "error");
-      historyRows.innerHTML = '<tr><td colspan="5">Nao foi possivel carregar as conversoes.</td></tr>';
+      historyRows.innerHTML = '<tr><td colspan="5">Não foi possível carregar as conversões.</td></tr>';
+      renderOrderRows([]);
       clearOrderStatus();
     }
   }
@@ -566,6 +625,5 @@
   });
 
   bootstrapAccountPreview();
-  showQuickStartFeedback();
   void loadClientArea();
 })();
