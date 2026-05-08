@@ -7,10 +7,31 @@ def build_ofx_statement(
     transactions: list[NormalizedTransaction],
     *,
     account_type: str | None = None,
-    account_id: str | None = None,
 ) -> str:
-    normalized_account_type = _normalize_account_type(account_type)
-    range_start, range_end = _resolve_date_range(transactions)
+    normalized_account_type = str(account_type or "").strip().lower()
+    is_credit_card_statement = normalized_account_type in {"credit_card", "credit-card", "card", "cc"}
+    if is_credit_card_statement:
+        message_open_lines = [
+            "  <CREDITCARDMSGSRSV1>",
+            "    <CCSTMTTRNRS>",
+            "      <CCSTMTRS>",
+        ]
+        message_close_lines = [
+            "      </CCSTMTRS>",
+            "    </CCSTMTTRNRS>",
+            "  </CREDITCARDMSGSRSV1>",
+        ]
+    else:
+        message_open_lines = [
+            "  <BANKMSGSRSV1>",
+            "    <STMTTRNRS>",
+            "      <STMTRS>",
+        ]
+        message_close_lines = [
+            "      </STMTRS>",
+            "    </STMTTRNRS>",
+            "  </BANKMSGSRSV1>",
+        ]
 
     lines = [
         "OFXHEADER:100",
@@ -24,34 +45,9 @@ def build_ofx_statement(
         "NEWFILEUID:NONE",
         "",
         "<OFX>",
+        *message_open_lines,
+        "        <BANKTRANLIST>",
     ]
-
-    if normalized_account_type == "credit_card":
-        lines.extend(
-            [
-                "  <CREDITCARDMSGSRSV1>",
-                "    <CCSTMTTRNRS>",
-                "      <CCSTMTRS>",
-                "        <CURDEF>BRL",
-                "        <CCACCTFROM>",
-                f"          <ACCTID>{_escape_ofx_text(account_id or 'CREDITCARD')}",
-                "        </CCACCTFROM>",
-                "        <BANKTRANLIST>",
-                f"          <DTSTART>{range_start}",
-                f"          <DTEND>{range_end}",
-            ]
-        )
-    else:
-        lines.extend(
-            [
-                "  <BANKMSGSRSV1>",
-                "    <STMTTRNRS>",
-                "      <STMTRS>",
-                "        <BANKTRANLIST>",
-                f"          <DTSTART>{range_start}",
-                f"          <DTEND>{range_end}",
-            ]
-        )
 
     for index, transaction in enumerate(transactions, start=1):
         lines.extend(
@@ -67,26 +63,13 @@ def build_ofx_statement(
             ]
         )
 
-    if normalized_account_type == "credit_card":
-        lines.extend(
-            [
-                "        </BANKTRANLIST>",
-                "      </CCSTMTRS>",
-                "    </CCSTMTTRNRS>",
-                "  </CREDITCARDMSGSRSV1>",
-                "</OFX>",
-            ]
-        )
-    else:
-        lines.extend(
-            [
-                "        </BANKTRANLIST>",
-                "      </STMTRS>",
-                "    </STMTTRNRS>",
-                "  </BANKMSGSRSV1>",
-                "</OFX>",
-            ]
-        )
+    lines.extend(
+        [
+            "        </BANKTRANLIST>",
+            *message_close_lines,
+            "</OFX>",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 
@@ -110,21 +93,3 @@ def _escape_ofx_text(raw_text: str) -> str:
         .replace(">", "&gt;")
         .strip()
     )
-
-
-def _normalize_account_type(raw: str | None) -> str:
-    value = str(raw or "").strip().lower()
-    if value in {"credit_card", "creditcard", "card"}:
-        return "credit_card"
-    return "bank"
-
-
-def _resolve_date_range(transactions: list[NormalizedTransaction]) -> tuple[str, str]:
-    if not transactions:
-        today = datetime.utcnow().strftime("%Y%m%d000000[-3:BRT]")
-        return today, today
-
-    sorted_dates = sorted(item.date[:10] for item in transactions)
-    start = _format_ofx_date(sorted_dates[0])
-    end = _format_ofx_date(sorted_dates[-1])
-    return start, end
