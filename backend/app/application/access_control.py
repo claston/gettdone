@@ -1,15 +1,8 @@
-import base64
-import hashlib
-import hmac
-import json
-import re
-import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
 from typing import Callable
-from uuid import uuid4
 
 try:
     import psycopg
@@ -27,23 +20,12 @@ from app.application.access_control_admin import AccessControlAdminComponent
 from app.application.access_control_auth import AccessControlAuthComponent
 from app.application.access_control_checkout import AccessControlCheckoutComponent
 from app.application.access_control_db import AccessControlDbComponent
+from app.application.access_control_helpers import AccessControlHelpersComponent
 from app.application.access_control_identity import AccessControlIdentityComponent
 from app.application.access_control_quota import AccessControlQuotaComponent
 from app.application.access_control_schema import AccessControlSchemaComponent
 from app.application.access_control_session import AccessControlSessionComponent
 from app.application.access_control_session_core import AccessControlSessionCoreComponent
-from app.application.checkout_management import (
-    insert_checkout_intent_event as insert_checkout_intent_event_query,
-)
-from app.application.errors import (
-    InvalidUserTokenError,
-)
-from app.application.plan_management import (
-    read_active_user_plan as read_active_user_plan_query,
-)
-from app.application.quota_management import (
-    read_usage_snapshot,
-)
 
 ANONYMOUS_QUOTA_LIMIT = 3
 REGISTERED_QUOTA_LIMIT = 10
@@ -155,6 +137,7 @@ class AccessControlService:
                 open=True,
             )
         self.db = AccessControlDbComponent(self)
+        self.helpers = AccessControlHelpersComponent(self)
         self.auth = AccessControlAuthComponent(self)
         self.schema = AccessControlSchemaComponent(self)
         self.session_core = AccessControlSessionCoreComponent(self)
@@ -458,59 +441,19 @@ class AccessControlService:
         return self.identity.ensure_anonymous_identity(fingerprint)
 
     def _read_active_user_plan(self, *, user_id: str) -> dict[str, str | int] | None:
-        if self.active_plan_cache_ttl_seconds > 0:
-            cached = self._active_plan_cache.get(user_id)
-            now_monotonic = time.monotonic()
-            if cached is not None and cached[0] > now_monotonic:
-                return cached[1]
-
-        with self._lock:
-            with self._connect() as conn:
-                plan = read_active_user_plan_query(
-                    conn,
-                    fetchone=self._fetchone,
-                    user_id=user_id,
-                )
-                if self.active_plan_cache_ttl_seconds > 0:
-                    expires_at = time.monotonic() + float(self.active_plan_cache_ttl_seconds)
-                    self._active_plan_cache[user_id] = (expires_at, plan)
-                return plan
+        return self.helpers.read_active_user_plan(user_id=user_id)
 
     def _read_usage(self, identity: IdentityContext) -> dict[str, int | datetime]:
-        with self._lock:
-            with self._connect() as conn:
-                snapshot = read_usage_snapshot(
-                    conn,
-                    identity=identity,
-                    now_provider=self.now_provider,
-                    fetchone=self._fetchone,
-                    execute=self._execute,
-                    parse_usage_datetime=self._parse_usage_datetime,
-                    is_quota_window_expired=self._is_quota_window_expired,
-                )
-                conn.commit()
-                return {
-                    "used_count": int(snapshot.used_count),
-                    "window_started_at": snapshot.window_started_at,
-                }
+        return self.helpers.read_usage(identity)
 
     def _invalidate_active_plan_cache(self, user_id: str) -> None:
-        self._active_plan_cache.pop(user_id, None)
+        self.helpers.invalidate_active_plan_cache(user_id)
 
     def _hash_password(self, password: str, salt: str) -> str:
-        derived_key = hashlib.pbkdf2_hmac(
-            "sha256",
-            password.encode("utf-8"),
-            salt.encode("utf-8"),
-            PASSWORD_HASH_ITERATIONS,
-        )
-        return f"pbkdf2_sha256${PASSWORD_HASH_ITERATIONS}${salt}${base64.b64encode(derived_key).decode('ascii')}"
+        return self.helpers.hash_password(password=password, salt=salt)
 
     def _verify_password(self, password: str, stored_hash: str, stored_salt: str) -> bool:
-        if not stored_hash or not stored_salt:
-            return False
-        expected_hash = self._hash_password(password=password, salt=stored_salt)
-        return hmac.compare_digest(expected_hash, stored_hash)
+        return self.helpers.verify_password(password=password, stored_hash=stored_hash, stored_salt=stored_salt)
 
     def _create_user_session_bundle(
         self,
@@ -576,23 +519,10 @@ class AccessControlService:
         return self.session_core.extract_session_id_from_token(refresh_token)
 
     def _encode_token(self, user_id: str) -> str:
-        payload = base64.urlsafe_b64encode(user_id.encode("utf-8")).decode("utf-8").rstrip("=")
-        signature = hmac.new(self.token_secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()[:24]
-        return f"{payload}.{signature}"
+        return self.helpers.encode_token(user_id)
 
     def _decode_token(self, token: str) -> str:
-        try:
-            payload, signature = token.split(".", 1)
-            expected = hmac.new(self.token_secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()[:24]
-            if not hmac.compare_digest(expected, signature):
-                raise InvalidUserTokenError
-            padded_payload = payload + "=" * (-len(payload) % 4)
-            decoded = base64.urlsafe_b64decode(padded_payload.encode("utf-8")).decode("utf-8")
-            if not decoded.startswith("usr_"):
-                raise InvalidUserTokenError
-            return decoded
-        except (ValueError, UnicodeDecodeError):
-            raise InvalidUserTokenError from None
+        return self.helpers.decode_token(token)
 
     def _user_exists(self, user_id: str) -> bool:
         with self._lock:
@@ -613,16 +543,14 @@ class AccessControlService:
         self.schema.init_postgres_db()
 
     def _is_quota_window_expired(self, window_started_at: datetime, now: datetime, *, quota_window_days: int) -> bool:
-        return now >= (window_started_at + timedelta(days=max(1, int(quota_window_days))))
+        return self.helpers.is_quota_window_expired(
+            window_started_at=window_started_at,
+            now=now,
+            quota_window_days=quota_window_days,
+        )
 
     def _parse_usage_datetime(self, raw_value: str, fallback: datetime) -> datetime:
-        try:
-            parsed = datetime.fromisoformat(raw_value)
-        except ValueError:
-            return fallback
-        if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
-        return parsed
+        return self.helpers.parse_usage_datetime(raw_value, fallback)
 
     def _normalize_next_path(self, next_path: str | None) -> str:
         return self.identity.normalize_next_path(next_path)
@@ -657,24 +585,14 @@ class AccessControlService:
         payload: dict[str, str] | None,
         created_at: str,
     ) -> None:
-        normalized_intent_id = str(intent_id or "").strip()
-        normalized_event_type = str(event_type or "").strip().upper()
-        normalized_actor_kind = str(actor_kind or "system").strip().lower() or "system"
-        if not normalized_intent_id or not normalized_event_type:
-            return
-        payload_json: str | None = None
-        if payload:
-            payload_json = json.dumps(payload, ensure_ascii=True, sort_keys=True)
-        insert_checkout_intent_event_query(
+        self.helpers.append_checkout_intent_event_with_conn(
             conn,
-            execute=self._execute,
-            event_id=f"evt_{uuid4().hex[:16]}",
-            intent_id=normalized_intent_id,
-            event_type=normalized_event_type,
-            event_message=str(event_message or "").strip(),
-            actor_kind=normalized_actor_kind,
-            actor_user_id=(str(actor_user_id).strip() if actor_user_id else None),
-            payload_json=payload_json,
+            intent_id=intent_id,
+            event_type=event_type,
+            event_message=event_message,
+            actor_kind=actor_kind,
+            actor_user_id=actor_user_id,
+            payload=payload,
             created_at=created_at,
         )
 
@@ -691,9 +609,4 @@ class AccessControlService:
         return self.admin.row_bool_from_value(raw)
 
     def _normalize_database_schema(self, schema: str | None) -> str:
-        raw = (schema or "public").strip()
-        if not raw:
-            return "public"
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", raw):
-            raise RuntimeError("DATABASE_SCHEMA must be a valid PostgreSQL schema name.")
-        return raw
+        return AccessControlHelpersComponent.normalize_database_schema(schema)
