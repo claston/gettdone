@@ -176,7 +176,7 @@ Checklist rapido para Render:
 4. Definir `ENABLE_API_DOCS=false`.
 5. Definir `UNLIMITED_ANON_QUOTA=false`.
 6. Fazer deploy e validar `GET /health`.
-7. (Opcional para Neon/Postgres) Definir `DATABASE_URL` no formato `postgresql://...`.
+7. (Opcional para Neon/Postgres) Definir `DATABASE_URL` no formato `postgresql+psycopg://...`.
 8. (Recomendado com banco compartilhado) Definir `DATABASE_SCHEMA` exclusivo para esta app (ex.: `gettdone`).
 
 Para desenvolvimento local, continue usando:
@@ -203,8 +203,18 @@ Execucao local:
 
 ```powershell
 cd backend
-$env:DATABASE_URL = "postgresql://user:pass@host:5432/dbname"
+$env:DATABASE_URL = "postgresql+psycopg://user:pass@host:5432/dbname"
 $env:DATABASE_SCHEMA = "gettdone"
+venv\Scripts\python.exe -m alembic upgrade head
+```
+
+Fluxo legado (banco existente sem `alembic_version`):
+
+```powershell
+cd backend
+$env:DATABASE_URL = "postgresql+psycopg://user:pass@host:5432/dbname"
+$env:DATABASE_SCHEMA = "gettdone"
+venv\Scripts\python.exe -m alembic stamp 20260508_01
 venv\Scripts\python.exe -m alembic upgrade head
 ```
 
