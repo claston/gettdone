@@ -31,7 +31,6 @@ DATE_HEADER_PATTERN = re.compile(rf"^(?P<day>\d{{2}})\s+(?P<month>{MONTH_PATTERN
 AMOUNT_PATTERN = re.compile(r"^[+-]?\d+(?:\.\d{3})*,\d{2}[+-]?$")
 AMOUNT_TOKEN_PATTERN = re.compile(r"(?P<amount>(?:R\$\s*)?[+-]?\d+(?:\.\d{3})*,\d{2}[+-]?)")
 LOOSE_AMOUNT_PATTERN = re.compile(r"^[+-]?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:[.,]\d{2})[+-]?$")
-STATEMENT_AMOUNT_LINE_PATTERN = re.compile(r"^(?:R\$\s*)?[+-]?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}[+-]?$")
 
 INFLOW_HINTS = (
     "TRANSFERENCIA RECEBIDA",
@@ -59,7 +58,6 @@ IGNORED_LINE_PREFIXES = (
 IGNORED_LINE_TOKENS = (
     "VALORES EM R",
     "CNPJ AGENCIA CONTA",
-    "TOTAL A PAGAR",
 )
 IGNORED_TRANSACTION_HINTS = (
     "SALDO DO DIA",
@@ -115,27 +113,14 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
     transactions = grouped_transactions
     inline_candidates = 0
     inline_transactions_count = 0
-    multiline_candidates = 0
-    multiline_transactions_count = 0
     tabular_candidates = 0
     columnar_candidates = 0
     selected_parser = "grouped"
     if not transactions:
         inline_transactions, inline_candidates = _parse_inline_statement_rows(lines)
-        multiline_transactions, multiline_candidates = _parse_multiline_statement_rows(lines)
         inline_transactions_count = len(inline_transactions)
-        multiline_transactions_count = len(multiline_transactions)
-
-        if inline_transactions and multiline_transactions:
-            transactions = _merge_transactions(inline_transactions, multiline_transactions)
-            selected_parser = "inline"
-        elif inline_transactions:
-            transactions = inline_transactions
-            selected_parser = "inline"
-        else:
-            transactions = multiline_transactions
-            selected_parser = "multiline"
-
+        transactions = inline_transactions
+        selected_parser = "inline"
         if not transactions:
             transactions, tabular_candidates = _parse_tabular_statement_rows(lines)
             if transactions:
@@ -165,8 +150,6 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
             "grouped_transactions_count": len(grouped_transactions),
             "inline_candidates_count": inline_candidates,
             "inline_transactions_count": inline_transactions_count,
-            "multiline_candidates_count": multiline_candidates,
-            "multiline_transactions_count": multiline_transactions_count,
             "selected_parser": selected_parser,
         },
     )
@@ -401,72 +384,6 @@ def _parse_inline_statement_rows(lines: list[str]) -> tuple[list[NormalizedTrans
     return transactions, candidates
 
 
-def _parse_multiline_statement_rows(lines: list[str]) -> tuple[list[NormalizedTransaction], int]:
-    transactions: list[NormalizedTransaction] = []
-    candidates = 0
-    inferred_year = _infer_default_statement_year(lines)
-    default_section_hint = _infer_multiline_default_section_hint(lines)
-    index = 0
-
-    while index < len(lines):
-        raw_date = lines[index].strip()
-        if not DATE_ONLY_PATTERN.fullmatch(raw_date):
-            index += 1
-            continue
-
-        lookahead = index + 1
-        description_parts: list[str] = []
-        amount_raw: str | None = None
-
-        while lookahead < len(lines):
-            current = lines[lookahead].strip()
-            if not current:
-                lookahead += 1
-                continue
-            if DATE_ONLY_PATTERN.fullmatch(current):
-                break
-            if _is_statement_amount_line(current):
-                amount_raw = current
-                break
-
-            normalized_current = _normalize_text(current)
-            if _should_ignore_line(normalized_current) or _should_skip_transaction_description(current):
-                lookahead += 1
-                continue
-
-            if description_parts:
-                lookahead += 1
-                continue
-
-            description_parts.append(current)
-            lookahead += 1
-
-        if amount_raw and description_parts:
-            description = " ".join(description_parts).strip()
-            if description and not _should_skip_transaction_description(description):
-                candidates += 1
-                amount = _parse_pdf_amount(amount_raw)
-                signed_amount = _apply_sign_hints(
-                    amount=amount,
-                    description=description,
-                    section_hint=default_section_hint,
-                )
-                transactions.append(
-                    NormalizedTransaction(
-                        date=_parse_statement_date(raw_date, fallback_year=inferred_year),
-                        description=description,
-                        amount=signed_amount,
-                        type="inflow" if signed_amount >= 0 else "outflow",
-                    )
-                )
-                index = lookahead + 1
-                continue
-
-        index += 1
-
-    return transactions, candidates
-
-
 def _parse_tabular_statement_rows(lines: list[str]) -> tuple[list[NormalizedTransaction], int]:
     transactions: list[NormalizedTransaction] = []
     candidates = 0
@@ -519,23 +436,6 @@ def _select_tabular_amount_token(tokens: list[_AmountToken]) -> _AmountToken | N
         return tokens[0]
     # In statement-like tables with balance column, the rightmost amount is usually balance.
     return tokens[-2]
-
-
-def _merge_transactions(
-    primary_transactions: list[NormalizedTransaction],
-    supplemental_transactions: list[NormalizedTransaction],
-) -> list[NormalizedTransaction]:
-    merged: list[NormalizedTransaction] = []
-    seen: set[tuple[str, str, float, str]] = set()
-
-    for item in [*primary_transactions, *supplemental_transactions]:
-        key = (item.date, item.description, item.amount, item.type)
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append(item)
-
-    return merged
 
 
 def _find_amount_tokens(text: str) -> list[_AmountToken]:
@@ -608,11 +508,6 @@ def _is_amount_like(raw: str) -> bool:
     return bool(LOOSE_AMOUNT_PATTERN.fullmatch(value))
 
 
-def _is_statement_amount_line(raw: str) -> bool:
-    value = str(raw).strip()
-    return bool(STATEMENT_AMOUNT_LINE_PATTERN.fullmatch(value))
-
-
 def _is_transaction_type_hint(raw: str) -> bool:
     normalized = _normalize_text(raw)
     if not normalized:
@@ -652,15 +547,6 @@ def _infer_default_statement_year(lines: list[str]) -> int | None:
     if not year_counts:
         return None
     return max(year_counts.items(), key=lambda item: item[1])[0]
-
-
-def _infer_multiline_default_section_hint(lines: list[str]) -> str | None:
-    normalized_lines = [_normalize_text(line) for line in lines]
-    has_statement_hint = any("FATURA" in line for line in normalized_lines)
-    has_transactions_hint = any("TRANSACOES" in line for line in normalized_lines)
-    if has_statement_hint and has_transactions_hint:
-        return "outflow"
-    return None
 
 
 def _parse_statement_date(raw: str, fallback_year: int | None) -> str:

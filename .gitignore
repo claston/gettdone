@@ -21,3 +21,4 @@ backend/samples/
 # Local/private notes and drafts (do not version)
 local/
 doc/backlog-v1-conversor-pdf-multiformato.md
+.pr_body_*.md

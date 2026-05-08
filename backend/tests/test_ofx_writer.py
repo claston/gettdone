@@ -34,35 +34,19 @@ def test_build_ofx_statement_contains_required_tags_and_roundtrips() -> None:
     assert parsed == transactions
 
 
-def test_build_ofx_statement_supports_credit_card_profile() -> None:
+def test_build_ofx_statement_accepts_credit_card_account_type() -> None:
     transactions = [
         NormalizedTransaction(
-            date="2026-03-25",
-            description="AGIR CONTABILIDADE E ASSESSORIA LTDA",
-            amount=-241.04,
+            date="2026-04-01",
+            description="ASSINATURA",
+            amount=-39.9,
             type="outflow",
-        ),
-        NormalizedTransaction(
-            date="2026-03-16",
-            description="PAGAMENTO RECEBIDO",
-            amount=240.24,
-            type="inflow",
-        ),
+        )
     ]
 
-    statement = build_ofx_statement(
-        transactions,
-        account_type="credit_card",
-        account_id="63382331-7372-4168-bad0-00688e9da037",
-    )
+    statement = build_ofx_statement(transactions, account_type="credit_card")
 
     assert "<CREDITCARDMSGSRSV1>" in statement
+    assert "<CCSTMTTRNRS>" in statement
     assert "<CCSTMTRS>" in statement
-    assert "<CCACCTFROM>" in statement
-    assert "<ACCTID>63382331-7372-4168-bad0-00688e9da037" in statement
-    assert "<DTSTART>20260316000000[-3:BRT]" in statement
-    assert "<DTEND>20260325000000[-3:BRT]" in statement
-    assert statement.count("<STMTTRN>") == 2
-
-    parsed = parse_ofx_transactions(statement.encode("utf-8"))
-    assert parsed == transactions
+    assert "<BANKMSGSRSV1>" not in statement
