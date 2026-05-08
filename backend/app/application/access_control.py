@@ -3,7 +3,6 @@ import hashlib
 import hmac
 import json
 import re
-import secrets
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -27,6 +26,7 @@ except Exception:  # pragma: no cover - optional dependency for postgres deploym
     ConnectionPool = None
 
 from app.application.access_control_admin import AccessControlAdminComponent
+from app.application.access_control_auth import AccessControlAuthComponent
 from app.application.access_control_checkout import AccessControlCheckoutComponent
 from app.application.access_control_db import AccessControlDbComponent
 from app.application.access_control_identity import AccessControlIdentityComponent
@@ -40,10 +40,8 @@ from app.application.checkout_management import (
     insert_checkout_intent_event as insert_checkout_intent_event_query,
 )
 from app.application.errors import (
-    InvalidCredentialsError,
     InvalidSessionTokenError,
     InvalidUserTokenError,
-    UserAlreadyExistsError,
 )
 from app.application.plan_management import (
     read_active_user_plan as read_active_user_plan_query,
@@ -145,6 +143,7 @@ class AccessControlService:
         self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
         self._lock = RLock()
         self._identity_context_factory = IdentityContext
+        self._registered_user_factory = RegisteredUser
         self._active_plan_cache: dict[str, tuple[float, dict[str, str | int] | None]] = {}
         self._postgres_pool = None
         if not self._use_postgres:
@@ -161,6 +160,7 @@ class AccessControlService:
                 open=True,
             )
         self.db = AccessControlDbComponent(self)
+        self.auth = AccessControlAuthComponent(self)
         self.identity = AccessControlIdentityComponent(self)
         self.session = AccessControlSessionComponent(self)
         self.quota = AccessControlQuotaComponent(self)
@@ -185,99 +185,13 @@ class AccessControlService:
         )
 
     def register_user(self, name: str, email: str, password: str) -> RegisteredUser:
-        normalized_email = email.strip().lower()
-        is_admin = normalized_email in self.admin_emails
-        now = self.now_provider().isoformat()
-        user_id = f"usr_{uuid4().hex[:12]}"
-        salt = secrets.token_hex(8)
-        password_hash = self._hash_password(password=password, salt=salt)
-        with self._lock:
-            with self._connect() as conn:
-                existing = self._fetchone(conn, "SELECT id FROM users WHERE email = ?", (normalized_email,))
-                if existing is not None:
-                    raise UserAlreadyExistsError
-                self._execute(
-                    conn,
-                    """
-                    INSERT INTO users (
-                        id,
-                        name,
-                        email,
-                        is_admin,
-                        password_hash,
-                        password_salt,
-                        auth_provider,
-                        provider_user_id,
-                        created_at,
-                        updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        user_id,
-                        name.strip(),
-                        normalized_email,
-                        is_admin,
-                        password_hash,
-                        salt,
-                        "local",
-                        None,
-                        now,
-                        now,
-                    ),
-                )
-                conn.commit()
-        return RegisteredUser(
-            user_id=user_id,
-            email=normalized_email,
-            name=name.strip(),
-            token=self._encode_token(user_id),
-            is_admin=is_admin,
-        )
+        return self.auth.register_user(name=name, email=email, password=password)
 
     def authenticate_user(self, email: str, password: str) -> RegisteredUser:
-        normalized_email = email.strip().lower()
-        with self._lock:
-            with self._connect() as conn:
-                user = self._fetchone(
-                    conn,
-                    "SELECT id, name, email, is_admin, password_hash, password_salt FROM users WHERE email = ?",
-                    (normalized_email,),
-                )
-                if user is None:
-                    raise InvalidCredentialsError
-                if not self._verify_password(
-                    password=password,
-                    stored_hash=str(user["password_hash"] or ""),
-                    stored_salt=str(user["password_salt"] or ""),
-                ):
-                    raise InvalidCredentialsError
-                return RegisteredUser(
-                    user_id=str(user["id"]),
-                    email=str(user["email"]),
-                    name=str(user["name"] or ""),
-                    token=self._encode_token(str(user["id"])),
-                    is_admin=self._row_is_admin(user),
-                )
+        return self.auth.authenticate_user(email=email, password=password)
 
     def get_user_by_token(self, user_token: str) -> RegisteredUser:
-        user_id = self._decode_token(user_token)
-        with self._lock:
-            with self._connect() as conn:
-                user = self._fetchone(
-                    conn,
-                    "SELECT id, name, email, is_admin FROM users WHERE id = ?",
-                    (user_id,),
-                )
-                if user is None:
-                    raise InvalidUserTokenError
-                return RegisteredUser(
-                    user_id=str(user["id"]),
-                    email=str(user["email"]),
-                    name=str(user["name"] or ""),
-                    token=user_token,
-                    is_admin=self._row_is_admin(user),
-                )
+        return self.auth.get_user_by_token(user_token)
 
     def create_user_session(
         self,
@@ -315,24 +229,7 @@ class AccessControlService:
         return self.session.get_user_by_session_access_token(access_token)
 
     def get_user_by_email(self, email: str) -> RegisteredUser:
-        normalized_email = email.strip().lower()
-        with self._lock:
-            with self._connect() as conn:
-                user = self._fetchone(
-                    conn,
-                    "SELECT id, name, email, is_admin FROM users WHERE lower(email) = ?",
-                    (normalized_email,),
-                )
-                if user is None:
-                    raise InvalidUserTokenError
-                user_id = str(user["id"])
-                return RegisteredUser(
-                    user_id=user_id,
-                    email=str(user["email"]),
-                    name=str(user["name"] or ""),
-                    token=self._encode_token(user_id),
-                    is_admin=self._row_is_admin(user),
-                )
+        return self.auth.get_user_by_email(email)
 
     def is_user_admin(self, *, user_id: str) -> bool:
         return self.admin.is_user_admin(user_id=user_id)
@@ -344,107 +241,11 @@ class AccessControlService:
         email: str,
         name: str,
     ) -> RegisteredUser:
-        normalized_email = email.strip().lower()
-        provider_user_id = provider_user_id.strip()
-        display_name = name.strip() or normalized_email.split("@", 1)[0]
-        now = self.now_provider().isoformat()
-
-        with self._lock:
-            with self._connect() as conn:
-                row = self._fetchone(
-                    conn,
-                    """
-                    SELECT id, name, email, is_admin
-                    FROM users
-                    WHERE auth_provider = 'google' AND provider_user_id = ?
-                    """,
-                    (provider_user_id,),
-                )
-                if row is not None:
-                    user_id = str(row["id"])
-                    self._execute(
-                        conn,
-                        """
-                        UPDATE users
-                        SET name = ?, email = ?, updated_at = ?
-                        WHERE id = ?
-                        """,
-                        (display_name, normalized_email, now, user_id),
-                    )
-                    conn.commit()
-                    return RegisteredUser(
-                        user_id=user_id,
-                        email=normalized_email,
-                        name=display_name,
-                        token=self._encode_token(user_id),
-                        is_admin=self._row_is_admin(row),
-                    )
-
-                existing_by_email = self._fetchone(
-                    conn,
-                    "SELECT id, name, email, is_admin FROM users WHERE email = ?",
-                    (normalized_email,),
-                )
-                if existing_by_email is not None:
-                    user_id = str(existing_by_email["id"])
-                    self._execute(
-                        conn,
-                        """
-                        UPDATE users
-                        SET name = ?, auth_provider = 'google', provider_user_id = ?, updated_at = ?
-                        WHERE id = ?
-                        """,
-                        (display_name, provider_user_id, now, user_id),
-                    )
-                    conn.commit()
-                    return RegisteredUser(
-                        user_id=user_id,
-                        email=normalized_email,
-                        name=display_name,
-                        token=self._encode_token(user_id),
-                        is_admin=self._row_is_admin(existing_by_email),
-                    )
-
-                user_id = f"usr_{uuid4().hex[:12]}"
-                is_admin = normalized_email in self.admin_emails
-                self._execute(
-                    conn,
-                    """
-                    INSERT INTO users (
-                        id,
-                        name,
-                        email,
-                        is_admin,
-                        password_hash,
-                        password_salt,
-                        auth_provider,
-                        provider_user_id,
-                        created_at,
-                        updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        user_id,
-                        display_name,
-                        normalized_email,
-                        is_admin,
-                        "",
-                        "",
-                        "google",
-                        provider_user_id,
-                        now,
-                        now,
-                    ),
-                )
-                conn.commit()
-                return RegisteredUser(
-                    user_id=user_id,
-                    email=normalized_email,
-                    name=display_name,
-                    token=self._encode_token(user_id),
-                    is_admin=is_admin,
-                )
+        return self.auth.register_or_authenticate_google_user(
+            provider_user_id=provider_user_id,
+            email=email,
+            name=name,
+        )
 
     def create_google_oauth_state(self, *, next_path: str, ttl_seconds: int = 600) -> tuple[str, str]:
         return self.identity.create_google_oauth_state(next_path=next_path, ttl_seconds=ttl_seconds)
