@@ -71,8 +71,21 @@ def get_access_control_service() -> AccessControlService:
             quota_window_days=int(os.getenv("QUOTA_WINDOW_DAYS", "7")),
             session_access_token_ttl_seconds=int(os.getenv("SESSION_ACCESS_TOKEN_TTL_SECONDS", "900")),
             session_refresh_token_ttl_seconds=int(os.getenv("SESSION_REFRESH_TOKEN_TTL_SECONDS", "1209600")),
+            active_plan_cache_ttl_seconds=int(os.getenv("ACTIVE_PLAN_CACHE_TTL_SECONDS", "20")),
+            db_connect_retry_attempts=int(os.getenv("DB_CONNECT_RETRY_ATTEMPTS", "3")),
+            db_connect_retry_base_ms=int(os.getenv("DB_CONNECT_RETRY_BASE_MS", "200")),
+            db_pool_min_size=int(os.getenv("DB_POOL_MIN_SIZE", "1")),
+            db_pool_max_size=int(os.getenv("DB_POOL_MAX_SIZE", "3")),
+            db_pool_timeout_seconds=float(os.getenv("DB_POOL_TIMEOUT_SECONDS", "5")),
         )
     return _access_control_service
+
+
+def close_access_control_service() -> None:
+    global _access_control_service
+    if _access_control_service is not None:
+        _access_control_service.close()
+        _access_control_service = None
 
 
 def get_contact_service() -> ContactService:
