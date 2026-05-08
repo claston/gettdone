@@ -1,3 +1,5 @@
+import re
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
@@ -114,6 +116,13 @@ class AnalyzeService:
             reconcile_ms=reconcile_ms,
             total_ms=round((perf_counter() - total_start) * 1000, 3),
         )
+        ofx_account_type = self._resolve_ofx_account_type(
+            extension=extension,
+            filename=filename,
+            raw_bytes=raw_bytes,
+            extracted_text=extracted_text,
+            layout_inference_name=layout_inference_name,
+        )
 
         analysis_data = AnalysisData(
             analysis_id=analysis_id,
@@ -133,6 +142,7 @@ class AnalyzeService:
             layout_inference_name=layout_inference_name,
             layout_inference_confidence=layout_inference_confidence,
             pdf_processing_metrics=pdf_processing_metrics,
+            ofx_account_type=ofx_account_type,
         )
         expires_at = self.storage.save_analysis(analysis_data)
 
@@ -256,3 +266,67 @@ class AnalyzeService:
             "inline_transactions_count": int(parse_metrics.get("inline_transactions_count", 0)),
             "selected_parser": str(parse_metrics.get("selected_parser", "unknown")),
         }
+
+    def _resolve_ofx_account_type(
+        self,
+        *,
+        extension: str,
+        filename: str,
+        raw_bytes: bytes,
+        extracted_text: str | None,
+        layout_inference_name: str | None,
+    ) -> str | None:
+        if extension == "ofx":
+            decoded = self._decode_optional_text(raw_bytes)
+            normalized = decoded.upper()
+            if "CREDITCARDMSGSRSV1" in normalized or "<CCSTMTRS>" in normalized:
+                return "credit_card"
+            if "BANKMSGSRSV1" in normalized or "<STMTRS>" in normalized:
+                return "bank"
+            return None
+
+        if extension == "pdf":
+            normalized = self._normalize_text_for_profile((extracted_text or "") + " " + filename)
+            layout_name = str(layout_inference_name or "").strip().lower()
+
+            bank_indicators = (
+                "TRANSFERENCIA RECEBIDA",
+                "TRANSFERENCIA ENVIADA",
+                "TOTAL DE ENTRADAS",
+                "TOTAL DE SAIDAS",
+                "SALDO DO DIA",
+                "EXTRATO CONTA",
+            )
+            has_bank_indicators = any(token in normalized for token in bank_indicators)
+            if layout_name == "nubank_statement_ptbr" and has_bank_indicators:
+                return "bank"
+
+            card_indicators = (
+                "FATURA",
+                "TOTAL A PAGAR",
+                "TOTAL DE COMPRAS DE TODOS OS CARTOES",
+                "PAGAMENTOS E FINANCIAMENTOS",
+                "CARTAO DE CREDITO",
+                "DATA DE VENCIMENTO",
+            )
+            card_matches = sum(1 for token in card_indicators if token in normalized)
+            has_card_window = "TRANSACOES DE" in normalized and " A " in normalized
+
+            if card_matches >= 2 and (has_card_window or "TOTAL A PAGAR" in normalized) and not has_bank_indicators:
+                return "credit_card"
+            return None
+
+        return None
+
+    def _decode_optional_text(self, raw_bytes: bytes) -> str:
+        for encoding in ("utf-8-sig", "utf-8", "latin-1"):
+            try:
+                return raw_bytes.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        return ""
+
+    def _normalize_text_for_profile(self, value: str) -> str:
+        upper = unicodedata.normalize("NFKD", value.upper())
+        without_accents = "".join(ch for ch in upper if not unicodedata.combining(ch))
+        return re.sub(r"\s+", " ", without_accents).strip()
