@@ -26,6 +26,7 @@
 
   const analysisIdNode = document.getElementById("analysis-id");
   const processingIdNode = document.getElementById("processing-id");
+  const quotaRemainingLabelNode = document.getElementById("quota-remaining-label");
   const quotaRemainingNode = document.getElementById("quota-remaining");
   const downloadOfxBtn = document.getElementById("download-ofx-btn");
   const VIEW_STATE_KEY = "ofxsimples_ofx_convert_view_state_v1";
@@ -44,7 +45,54 @@
     lastChangedRowKind: null,
     rowHighlightTimer: null,
     quotaMode: "conversion",
+    quotaRemaining: null,
+    quotaLimit: null,
   };
+
+  function isPagesQuotaMode(mode) {
+    return String(mode || "").toLowerCase() === "pages";
+  }
+
+  function normalizeQuotaMode(mode) {
+    return isPagesQuotaMode(mode) ? "pages" : "conversion";
+  }
+
+  function inferQuotaModeFromText(value) {
+    return /p[áa]ginas/i.test(String(value || "")) ? "pages" : "conversion";
+  }
+
+  function updateQuotaRemainingLabel() {
+    if (!quotaRemainingLabelNode) {
+      return;
+    }
+    quotaRemainingLabelNode.textContent = isPagesQuotaMode(state.quotaMode)
+      ? "páginas restantes:"
+      : "conversões restantes:";
+  }
+
+  function updateQuotaRemainingValue(remaining, limit) {
+    const parsedRemaining = Number(remaining);
+    const parsedLimit = Number(limit);
+    const hasNumbers = Number.isFinite(parsedRemaining) && Number.isFinite(parsedLimit);
+    const quotaLabel = isPagesQuotaMode(state.quotaMode) ? "páginas" : "conversões";
+    if (quotaRemainingNode) {
+      quotaRemainingNode.textContent = hasNumbers ? `${parsedRemaining} / ${parsedLimit} (${quotaLabel})` : "-";
+    }
+    updateQuotaRemainingLabel();
+  }
+
+  function parseQuotaNumbersFromText(value) {
+    const match = String(value || "").match(/(\d+)\s*\/\s*(\d+)/);
+    if (!match) {
+      return null;
+    }
+    const remaining = Number(match[1]);
+    const limit = Number(match[2]);
+    if (!Number.isFinite(remaining) || !Number.isFinite(limit)) {
+      return null;
+    }
+    return { remaining, limit };
+  }
 
   function isDraftRowId(rowId) {
     return String(rowId || "").startsWith("row_draft_");
@@ -299,6 +347,33 @@
       return `${year}-${month}-${day}`;
     }
     return null;
+  }
+
+  function toIsoDateInputValue(value) {
+    const raw = String(value || "").trim();
+    if (!raw) {
+      return "";
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      return raw;
+    }
+    const brMatch = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (brMatch) {
+      const [, day, month, year] = brMatch;
+      return `${year}-${month}-${day}`;
+    }
+    return "";
+  }
+
+  function applyDateInputMask(value) {
+    const digits = String(value || "").replace(/\D/g, "").slice(0, 8);
+    if (digits.length <= 2) {
+      return digits;
+    }
+    if (digits.length <= 4) {
+      return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+    }
+    return `${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4)}`;
   }
 
   function formatFileSize(bytes) {
@@ -580,6 +655,9 @@
         preview_transactions: previewRowsNoRowId,
       },
       quota_text: quotaRemainingNode.textContent || "-",
+      quota_mode: state.quotaMode,
+      quota_remaining: state.quotaRemaining,
+      quota_limit: state.quotaLimit,
       file_name,
       file_size,
       preview_rows: previewRowsNoRowId,
@@ -644,6 +722,8 @@
     state.analysisSnapshot = null;
     state.lastChangedRowId = null;
     state.lastChangedRowKind = null;
+    state.quotaRemaining = null;
+    state.quotaLimit = null;
     markChangedRow(null);
     if (addRowBtn) addRowBtn.disabled = true;
     if (downloadOfxBtn) downloadOfxBtn.disabled = true;
@@ -653,7 +733,7 @@
     downloadSection.classList.add("hidden");
     if (analysisIdNode) analysisIdNode.textContent = "-";
     if (processingIdNode) processingIdNode.textContent = "-";
-    quotaRemainingNode.textContent = "-";
+    updateQuotaRemainingValue(null, null);
     setLoading(false);
     setSelectedFileLabel();
     clearViewState();
@@ -865,7 +945,20 @@
     };
     markChangedRow(draftId, "new");
     renderRows();
+    focusEditingDateInput();
     persistCurrentViewState();
+  }
+
+  function focusEditingDateInput() {
+    window.requestAnimationFrame(() => {
+      const dateInput = reviewRows.querySelector('input[data-edit-field="date"]');
+      if (!(dateInput instanceof HTMLInputElement)) {
+        return;
+      }
+      dateInput.focus();
+      const valueLength = dateInput.value.length;
+      dateInput.setSelectionRange(valueLength, valueLength);
+    });
   }
 
   function startEditingRow(rowId) {
@@ -875,7 +968,7 @@
     }
     state.editingRowId = rowId;
     state.editDraft = {
-      date: formatDate(row.date),
+      date: toIsoDateInputValue(row.date),
       description: row.description || "",
       credit: toPositiveMoneyString(getCreditAmount(row)),
       debit: toPositiveMoneyString(getDebitAmount(row)),
@@ -907,7 +1000,7 @@
     }
     const normalizedDate = normalizeDateInput(state.editDraft.date);
     if (!normalizedDate) {
-      setStatus("Data inválida. Use dd-mm-yyyy.", "error");
+      setStatus("Data inválida. Use o calendário ou o formato dd-mm-aaaa.", "error");
       return;
     }
 
@@ -1001,9 +1094,10 @@
         const rowDeleted = Boolean(row.is_deleted);
         const isEditing = row.rowId === state.editingRowId && state.editDraft;
         if (isEditing) {
+          const editDateValue = toIsoDateInputValue(state.editDraft.date);
           return `
           <tr class="${rowClass}">
-            <td><input class="cell-input cell-input-date" data-edit-field="date" value="${escapeAttr(state.editDraft.date)}" /></td>
+            <td><input class="cell-input cell-input-date" type="date" data-edit-field="date" autocomplete="off" value="${escapeAttr(editDateValue)}" /></td>
             <td><input class="cell-input cell-input-description" data-edit-field="description" value="${escapeAttr(state.editDraft.description)}" /></td>
             <td><input class="cell-input cell-input-money" data-edit-field="credit" inputmode="decimal" placeholder="0,00" value="${escapeAttr(state.editDraft.credit)}" /></td>
             <td><input class="cell-input cell-input-money" data-edit-field="debit" inputmode="decimal" placeholder="0,00" value="${escapeAttr(state.editDraft.debit)}" /></td>
@@ -1027,10 +1121,13 @@
         const debitMarkup = debitAmount !== null
           ? `<span class="amount-debit">${formatCurrency(debitAmount)}</span>`
           : '<span class="amount-empty">—</span>';
+        const descriptionText = String(row.description || "").trim();
+        const descriptionCellText = descriptionText || "-";
+        const descriptionTitleAttr = descriptionText ? ` title="${escapeAttr(descriptionText)}"` : "";
         return `
           <tr class="${rowClass} ${rowDeleted ? "row-deleted" : ""}">
             <td>${formatDate(row.date)}</td>
-            <td>${row.description || "-"}</td>
+            <td${descriptionTitleAttr}>${escapeAttr(descriptionCellText)}</td>
             <td>${creditMarkup}</td>
             <td>${debitMarkup}</td>
             <td class="actions-cell">
@@ -1097,7 +1194,17 @@
 
     if (analysisIdNode) analysisIdNode.textContent = state.analysisId || "-";
     if (processingIdNode) processingIdNode.textContent = state.processingId || "-";
-    quotaRemainingNode.textContent = viewState.quota_text || "-";
+    state.quotaMode = normalizeQuotaMode(viewState.quota_mode || inferQuotaModeFromText(viewState.quota_text));
+    const restoredQuotaRemaining = Number(viewState.quota_remaining);
+    const restoredQuotaLimit = Number(viewState.quota_limit);
+    state.quotaRemaining = Number.isFinite(restoredQuotaRemaining) ? restoredQuotaRemaining : null;
+    state.quotaLimit = Number.isFinite(restoredQuotaLimit) ? restoredQuotaLimit : null;
+    if (state.quotaRemaining !== null && state.quotaLimit !== null) {
+      updateQuotaRemainingValue(state.quotaRemaining, state.quotaLimit);
+    } else {
+      updateQuotaRemainingLabel();
+      quotaRemainingNode.textContent = viewState.quota_text || "-";
+    }
 
     reviewSection.classList.remove("hidden");
     downloadSection.classList.remove("hidden");
@@ -1150,12 +1257,29 @@
         ...requestInit,
       });
       if (!response.ok) {
+        state.quotaMode = "conversion";
+        updateQuotaRemainingLabel();
         setUploadLimitsText(2 * 1024 * 1024, 5);
         return;
       }
       const me = await response.json().catch(() => ({}));
+      state.quotaMode = normalizeQuotaMode(me.quota_mode);
+      if (state.quotaRemaining !== null && state.quotaLimit !== null) {
+        updateQuotaRemainingValue(state.quotaRemaining, state.quotaLimit);
+      } else {
+        const parsedQuota = parseQuotaNumbersFromText(quotaRemainingNode ? quotaRemainingNode.textContent : "");
+        if (parsedQuota) {
+          state.quotaRemaining = parsedQuota.remaining;
+          state.quotaLimit = parsedQuota.limit;
+          updateQuotaRemainingValue(state.quotaRemaining, state.quotaLimit);
+        } else {
+          updateQuotaRemainingLabel();
+        }
+      }
       setUploadLimitsText(Number(me.max_upload_size_bytes || 2 * 1024 * 1024), Number(me.max_pages_per_file || 5));
     } catch (_error) {
+      state.quotaMode = "conversion";
+      updateQuotaRemainingLabel();
       setUploadLimitsText(2 * 1024 * 1024, 5);
     }
   }
@@ -1219,7 +1343,7 @@
       }
 
       const payload = await postConvert(formData);
-      state.quotaMode = String(payload.quota_mode || "conversion").toLowerCase();
+      state.quotaMode = normalizeQuotaMode(payload.quota_mode);
 
       const analysis = payload.analysis;
       state.analysisId = analysis.analysis_id;
@@ -1235,8 +1359,9 @@
 
       if (analysisIdNode) analysisIdNode.textContent = analysis.analysis_id || "-";
       if (processingIdNode) processingIdNode.textContent = state.processingId || "-";
-      const quotaLabel = state.quotaMode === "pages" ? "páginas" : "conversões";
-      quotaRemainingNode.textContent = `${payload.quota_remaining} / ${payload.quota_limit} (${quotaLabel})`;
+      state.quotaRemaining = Number(payload.quota_remaining);
+      state.quotaLimit = Number(payload.quota_limit);
+      updateQuotaRemainingValue(state.quotaRemaining, state.quotaLimit);
 
       reviewSection.classList.remove("hidden");
       downloadSection.classList.remove("hidden");
@@ -1421,6 +1546,18 @@
     if (!field || !state.editDraft) {
       return;
     }
+    if (field === "date") {
+      if (target.type === "date") {
+        updateEditDraft(field, target.value);
+        return;
+      }
+      const masked = applyDateInputMask(target.value);
+      if (masked !== target.value) {
+        target.value = masked;
+      }
+      updateEditDraft(field, masked);
+      return;
+    }
     updateEditDraft(field, target.value);
   });
   convertBtn.addEventListener("click", runConvert);
@@ -1452,6 +1589,7 @@
       menuToggle.setAttribute("aria-expanded", open ? "true" : "false");
     });
   }
+  updateQuotaRemainingLabel();
   forceUnlockUi();
   setSelectedFileLabel();
   const didForceLogout = consumeLogoutQueryFlag();

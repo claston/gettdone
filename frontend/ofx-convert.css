@@ -530,7 +530,11 @@ tr.row-deleted td:not(.actions-cell) {
 }
 
 .cell-input-date {
-  min-width: 110px;
+  min-width: 150px;
+}
+
+.cell-input-date::-webkit-calendar-picker-indicator {
+  cursor: pointer;
 }
 
 .cell-input-description {
