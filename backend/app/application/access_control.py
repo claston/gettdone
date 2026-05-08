@@ -3,14 +3,12 @@ import hashlib
 import hmac
 import json
 import re
-import sqlite3
 import time
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import RLock
-from typing import Callable, Iterator
+from typing import Callable
 from uuid import uuid4
 
 try:
@@ -141,6 +139,8 @@ class AccessControlService:
         self._session_token_bundle_factory = SessionTokenBundle
         self._active_plan_cache: dict[str, tuple[float, dict[str, str | int] | None]] = {}
         self._postgres_pool = None
+        self._postgres_module = psycopg
+        self._postgres_dict_row = dict_row
         if not self._use_postgres:
             self.db_file.parent.mkdir(parents=True, exist_ok=True)
         elif psycopg is None:
@@ -627,56 +627,11 @@ class AccessControlService:
                 row = self._fetchone(conn, "SELECT id FROM users WHERE id = ?", (user_id,))
                 return row is not None
 
-    @contextmanager
-    def _connect(self) -> Iterator:
-        if self._use_postgres:
-            assert psycopg is not None and dict_row is not None
-            last_exc: Exception | None = None
-            for attempt in range(1, self.db_connect_retry_attempts + 1):
-                try:
-                    if self._postgres_pool is not None:
-                        with self._postgres_pool.connection(timeout=self.db_pool_timeout_seconds) as conn:
-                            with conn.cursor() as cur:
-                                cur.execute(f'SET search_path TO "{self.database_schema}", public')
-                            yield conn
-                            return
-
-                    with psycopg.connect(self.database_url, row_factory=dict_row) as conn:
-                        with conn.cursor() as cur:
-                            cur.execute(f'SET search_path TO "{self.database_schema}", public')
-                        yield conn
-                        return
-                except Exception as exc:  # pragma: no cover - exercised in postgres environments
-                    last_exc = exc
-                    if attempt >= self.db_connect_retry_attempts or not self._is_retryable_db_exception(exc):
-                        raise
-                    sleep_seconds = (self.db_connect_retry_base_ms / 1000.0) * (2 ** (attempt - 1))
-                    time.sleep(min(sleep_seconds, 2.0))
-
-            if last_exc is not None:  # pragma: no cover - safety fallback
-                raise last_exc
-            raise RuntimeError("Failed to establish database connection.")
-
-        conn = sqlite3.connect(self.db_file)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-        finally:
-            conn.close()
+    def _connect(self):
+        return self.db.connect()
 
     def _is_retryable_db_exception(self, exc: Exception) -> bool:
-        message = str(exc).lower()
-        retryable_hints = (
-            "failed to acquire permit to connect",
-            "too many database connection attempts",
-            "connection timeout",
-            "network is unreachable",
-            "control plane request failed",
-            "timeout expired",
-            "could not connect",
-            "connection refused",
-        )
-        return any(token in message for token in retryable_hints)
+        return self.db.is_retryable_db_exception(exc)
 
     def _init_db(self) -> None:
         self.schema.init_db()
@@ -703,45 +658,22 @@ class AccessControlService:
         return raw
 
     def _adapt_query(self, query: str) -> str:
-        if self._use_postgres:
-            return query.replace("?", "%s")
-        return query
+        return self.db.adapt_query(query)
 
     def _true_value(self):
-        if self._use_postgres:
-            return True
-        return 1
+        return self.db.true_value()
 
     def _false_value(self):
-        if self._use_postgres:
-            return False
-        return 0
+        return self.db.false_value()
 
     def _execute(self, conn, query: str, params: tuple = ()):
-        adapted = self._adapt_query(query)
-        if self._use_postgres:
-            cur = conn.cursor()
-            cur.execute(adapted, params)
-            return cur
-        return conn.execute(adapted, params)
+        return self.db.execute(conn, query, params)
 
     def _fetchone(self, conn, query: str, params: tuple = ()):
-        cur = self._execute(conn, query, params)
-        if self._use_postgres:
-            try:
-                return cur.fetchone()
-            finally:
-                cur.close()
-        return cur.fetchone()
+        return self.db.fetchone(conn, query, params)
 
     def _fetchall(self, conn, query: str, params: tuple = ()):
-        cur = self._execute(conn, query, params)
-        if self._use_postgres:
-            try:
-                return cur.fetchall()
-            finally:
-                cur.close()
-        return cur.fetchall()
+        return self.db.fetchall(conn, query, params)
 
     def _append_checkout_intent_event_with_conn(
         self,
