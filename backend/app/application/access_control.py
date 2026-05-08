@@ -33,11 +33,11 @@ from app.application.access_control_identity import AccessControlIdentityCompone
 from app.application.access_control_quota import AccessControlQuotaComponent
 from app.application.access_control_schema import AccessControlSchemaComponent
 from app.application.access_control_session import AccessControlSessionComponent
+from app.application.access_control_session_core import AccessControlSessionCoreComponent
 from app.application.checkout_management import (
     insert_checkout_intent_event as insert_checkout_intent_event_query,
 )
 from app.application.errors import (
-    InvalidSessionTokenError,
     InvalidUserTokenError,
 )
 from app.application.plan_management import (
@@ -138,6 +138,7 @@ class AccessControlService:
         self._lock = RLock()
         self._identity_context_factory = IdentityContext
         self._registered_user_factory = RegisteredUser
+        self._session_token_bundle_factory = SessionTokenBundle
         self._active_plan_cache: dict[str, tuple[float, dict[str, str | int] | None]] = {}
         self._postgres_pool = None
         if not self._use_postgres:
@@ -156,6 +157,7 @@ class AccessControlService:
         self.db = AccessControlDbComponent(self)
         self.auth = AccessControlAuthComponent(self)
         self.schema = AccessControlSchemaComponent(self)
+        self.session_core = AccessControlSessionCoreComponent(self)
         self.identity = AccessControlIdentityComponent(self)
         self.session = AccessControlSessionComponent(self)
         self.quota = AccessControlQuotaComponent(self)
@@ -544,19 +546,11 @@ class AccessControlService:
         ip_address: str | None,
         user_agent: str | None,
     ) -> SessionTokenBundle:
-        now = self.now_provider()
-        with self._lock:
-            with self._connect() as conn:
-                bundle = self._create_user_session_bundle_with_conn(
-                    conn=conn,
-                    user=user,
-                    family_id=f"fam_{uuid4().hex}",
-                    ip_address=ip_address,
-                    user_agent=user_agent,
-                    now=now,
-                )
-                conn.commit()
-                return bundle
+        return self.session_core.create_user_session_bundle(
+            user=user,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
 
     def _create_user_session_bundle_with_conn(
         self,
@@ -568,155 +562,45 @@ class AccessControlService:
         user_agent: str | None,
         now: datetime,
     ) -> SessionTokenBundle:
-        session_id = f"ses_{uuid4().hex}"
-        access_expires_at = now + timedelta(seconds=self.session_access_token_ttl_seconds)
-        refresh_expires_at = now + timedelta(seconds=self.session_refresh_token_ttl_seconds)
-        access_token = self._encode_session_token(
-            user_id=user.user_id,
-            session_id=session_id,
-            token_type="access",
-            expires_at=access_expires_at,
-        )
-        refresh_token = self._encode_session_token(
-            user_id=user.user_id,
-            session_id=session_id,
-            token_type="refresh",
-            expires_at=refresh_expires_at,
-        )
-        refresh_hash = self._hash_refresh_token(refresh_token)
-        self._execute(
-            conn,
-            """
-            INSERT INTO user_sessions (
-                id,
-                user_id,
-                refresh_token_hash,
-                refresh_token_family,
-                created_at,
-                expires_at,
-                rotated_at,
-                revoked_at,
-                replaced_by_session_id,
-                revoke_reason,
-                last_ip,
-                last_user_agent
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                session_id,
-                user.user_id,
-                refresh_hash,
-                family_id,
-                now.isoformat(),
-                refresh_expires_at.isoformat(),
-                None,
-                None,
-                None,
-                None,
-                (ip_address or "").strip() or None,
-                (user_agent or "").strip()[:512] or None,
-            ),
-        )
-        return SessionTokenBundle(
+        return self.session_core.create_user_session_bundle_with_conn(
+            conn=conn,
             user=user,
-            access_token=access_token,
-            refresh_token=refresh_token,
-            access_expires_at=access_expires_at.isoformat(),
-            refresh_expires_at=refresh_expires_at.isoformat(),
+            family_id=family_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            now=now,
         )
 
     def _revoke_session_family_with_conn(self, conn, *, family_id: str, reason: str, now_iso: str) -> None:
-        normalized_family = str(family_id or "").strip()
-        if not normalized_family:
-            return
-        self._execute(
+        self.session_core.revoke_session_family_with_conn(
             conn,
-            """
-            UPDATE user_sessions
-            SET revoked_at = COALESCE(revoked_at, ?), revoke_reason = COALESCE(revoke_reason, ?)
-            WHERE refresh_token_family = ?
-            """,
-            (now_iso, reason, normalized_family),
+            family_id=family_id,
+            reason=reason,
+            now_iso=now_iso,
         )
 
     def _get_registered_user_by_id(self, *, user_id: str) -> RegisteredUser:
-        with self._lock:
-            with self._connect() as conn:
-                return self._get_registered_user_by_id_with_conn(conn=conn, user_id=user_id)
+        return self.session_core.get_registered_user_by_id(user_id=user_id)
 
     def _get_registered_user_by_id_with_conn(self, *, conn, user_id: str) -> RegisteredUser:
-        row = self._fetchone(
-            conn,
-            "SELECT id, name, email, is_admin FROM users WHERE id = ?",
-            (user_id,),
-        )
-        if row is None:
-            raise InvalidSessionTokenError
-        return RegisteredUser(
-            user_id=str(row["id"]),
-            email=str(row["email"]),
-            name=str(row["name"] or ""),
-            token=self._encode_token(str(row["id"])),
-            is_admin=self._row_is_admin(row),
-        )
+        return self.session_core.get_registered_user_by_id_with_conn(conn=conn, user_id=user_id)
 
     def _hash_refresh_token(self, refresh_token: str) -> str:
-        normalized = str(refresh_token or "").strip()
-        if not normalized:
-            return ""
-        return hmac.new(self.token_secret, normalized.encode("utf-8"), hashlib.sha256).hexdigest()
+        return self.session_core.hash_refresh_token(refresh_token)
 
     def _encode_session_token(self, *, user_id: str, session_id: str, token_type: str, expires_at: datetime) -> str:
-        payload_obj = {
-            "uid": user_id,
-            "sid": session_id,
-            "typ": token_type,
-            "exp": int(expires_at.timestamp()),
-            "iat": int(self.now_provider().timestamp()),
-            "jti": uuid4().hex,
-        }
-        payload_json = json.dumps(payload_obj, separators=(",", ":"), sort_keys=True)
-        payload = base64.urlsafe_b64encode(payload_json.encode("utf-8")).decode("utf-8").rstrip("=")
-        signature = hmac.new(self.token_secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()[:40]
-        return f"{payload}.{signature}"
+        return self.session_core.encode_session_token(
+            user_id=user_id,
+            session_id=session_id,
+            token_type=token_type,
+            expires_at=expires_at,
+        )
 
     def _decode_session_token(self, token: str, *, expected_type: str) -> dict[str, str | int]:
-        raw = str(token or "").strip()
-        try:
-            payload, signature = raw.split(".", 1)
-        except ValueError:
-            raise InvalidSessionTokenError from None
-        expected_signature = hmac.new(self.token_secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()[:40]
-        if not hmac.compare_digest(expected_signature, signature):
-            raise InvalidSessionTokenError
-        try:
-            padded_payload = payload + "=" * (-len(payload) % 4)
-            decoded = base64.urlsafe_b64decode(padded_payload.encode("utf-8")).decode("utf-8")
-            payload_obj = json.loads(decoded)
-        except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
-            raise InvalidSessionTokenError from None
-        token_type = str(payload_obj.get("typ") or "").strip()
-        user_id = str(payload_obj.get("uid") or "").strip()
-        session_id = str(payload_obj.get("sid") or "").strip()
-        exp_raw = payload_obj.get("exp")
-        if token_type != expected_type or not user_id.startswith("usr_") or not session_id.startswith("ses_"):
-            raise InvalidSessionTokenError
-        try:
-            exp_unix = int(exp_raw)
-        except (TypeError, ValueError):
-            raise InvalidSessionTokenError from None
-        now_unix = int(self.now_provider().timestamp())
-        if exp_unix <= now_unix:
-            raise InvalidSessionTokenError
-        return payload_obj
+        return self.session_core.decode_session_token(token, expected_type=expected_type)
 
     def _extract_session_id_from_token(self, refresh_token: str) -> str:
-        payload = self._decode_session_token(refresh_token, expected_type="refresh")
-        session_id = str(payload.get("sid") or "").strip()
-        if not session_id:
-            raise InvalidSessionTokenError
-        return session_id
+        return self.session_core.extract_session_id_from_token(refresh_token)
 
     def _encode_token(self, user_id: str) -> str:
         payload = base64.urlsafe_b64encode(user_id.encode("utf-8")).decode("utf-8").rstrip("=")
