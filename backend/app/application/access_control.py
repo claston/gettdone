@@ -455,34 +455,7 @@ class AccessControlService:
         return self.admin.list_user_role_events_for_admin(user_id=user_id, limit=limit)
 
     def _ensure_anonymous_identity(self, fingerprint: str) -> str:
-        now = self.now_provider().isoformat()
-        with self._lock:
-            with self._connect() as conn:
-                existing = self._fetchone(
-                    conn,
-                    "SELECT id FROM anonymous_identities WHERE fingerprint = ?",
-                    (fingerprint,),
-                )
-                if existing is not None:
-                    anon_id = str(existing["id"])
-                    self._execute(
-                        conn,
-                        "UPDATE anonymous_identities SET last_seen_at = ? WHERE id = ?",
-                        (now, anon_id),
-                    )
-                    conn.commit()
-                    return anon_id
-                anon_id = f"anon_{uuid4().hex[:12]}"
-                self._execute(
-                    conn,
-                    """
-                    INSERT INTO anonymous_identities (id, fingerprint, created_at, last_seen_at)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (anon_id, fingerprint, now, now),
-                )
-                conn.commit()
-                return anon_id
+        return self.identity.ensure_anonymous_identity(fingerprint)
 
     def _read_active_user_plan(self, *, user_id: str) -> dict[str, str | int] | None:
         if self.active_plan_cache_ttl_seconds > 0:
@@ -652,10 +625,7 @@ class AccessControlService:
         return parsed
 
     def _normalize_next_path(self, next_path: str | None) -> str:
-        raw = str(next_path or "").strip()
-        if not raw.startswith("/"):
-            return "/client-area.html"
-        return raw
+        return self.identity.normalize_next_path(next_path)
 
     def _adapt_query(self, query: str) -> str:
         return self.db.adapt_query(query)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from app.application.errors import InvalidUserTokenError
 
@@ -127,3 +128,40 @@ class AccessControlIdentityComponent:
             "code_verifier": str(row["code_verifier"]),
             "next_path": self._service._normalize_next_path(str(row["next_path"])),
         }
+
+    def ensure_anonymous_identity(self, fingerprint: str) -> str:
+        service = self._service
+        now = service.now_provider().isoformat()
+        with service._lock:
+            with service._connect() as conn:
+                existing = service._fetchone(
+                    conn,
+                    "SELECT id FROM anonymous_identities WHERE fingerprint = ?",
+                    (fingerprint,),
+                )
+                if existing is not None:
+                    anon_id = str(existing["id"])
+                    service._execute(
+                        conn,
+                        "UPDATE anonymous_identities SET last_seen_at = ? WHERE id = ?",
+                        (now, anon_id),
+                    )
+                    conn.commit()
+                    return anon_id
+                anon_id = f"anon_{uuid4().hex[:12]}"
+                service._execute(
+                    conn,
+                    """
+                    INSERT INTO anonymous_identities (id, fingerprint, created_at, last_seen_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (anon_id, fingerprint, now, now),
+                )
+                conn.commit()
+                return anon_id
+
+    def normalize_next_path(self, next_path: str | None) -> str:
+        raw = str(next_path or "").strip()
+        if not raw.startswith("/"):
+            return "/client-area.html"
+        return raw
