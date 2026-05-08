@@ -28,9 +28,12 @@ MONTH_TO_NUMBER = {
 }
 MONTH_PATTERN = "|".join(MONTH_TO_NUMBER)
 DATE_HEADER_PATTERN = re.compile(rf"^(?P<day>\d{{2}})\s+(?P<month>{MONTH_PATTERN})\s+(?P<year>\d{{4}})(?P<rest>.*)$")
-AMOUNT_PATTERN = re.compile(r"^[+-]?\d+(?:\.\d{3})*,\d{2}[+-]?$")
-AMOUNT_TOKEN_PATTERN = re.compile(r"(?P<amount>(?:R\$\s*)?[+-]?\d+(?:\.\d{3})*,\d{2}[+-]?)")
-LOOSE_AMOUNT_PATTERN = re.compile(r"^[+-]?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:[.,]\d{2})[+-]?$")
+SIGN_TOKEN = r"[+\-\u2212]"
+AMOUNT_PATTERN = re.compile(rf"^(?:{SIGN_TOKEN}\s*)?(?:R\$\s*)?\d+(?:\.\d{{3}})*,\d{{2}}(?:{SIGN_TOKEN})?$")
+AMOUNT_TOKEN_PATTERN = re.compile(
+    rf"(?P<amount>(?:{SIGN_TOKEN}\s*)?(?:R\$\s*)?\d+(?:\.\d{{3}})*,\d{{2}}(?:{SIGN_TOKEN})?)"
+)
+LOOSE_AMOUNT_PATTERN = re.compile(rf"^(?:{SIGN_TOKEN})?(?:\d{{1,3}}(?:\.\d{{3}})+|\d+)(?:[.,]\d{{2}})(?:{SIGN_TOKEN})?$")
 
 INFLOW_HINTS = (
     "TRANSFERENCIA RECEBIDA",
@@ -282,9 +285,18 @@ def _parse_grouped_statement_lines(lines: list[str]) -> list[NormalizedTransacti
             )
             current_section_hint = None
             description_parts = []
-            maybe_hint = _section_hint(date_match.group("rest"))
+            rest = date_match.group("rest")
+            maybe_hint = _section_hint(rest)
             if maybe_hint:
                 current_section_hint = maybe_hint
+            inline_transaction = _build_inline_transaction_from_date_rest(
+                date=current_date,
+                rest=rest,
+                section_hint=current_section_hint,
+            )
+            if inline_transaction is not None:
+                transactions.append(inline_transaction)
+                description_parts = []
             continue
 
         month_only_match = re.fullmatch(
@@ -302,9 +314,18 @@ def _parse_grouped_statement_lines(lines: list[str]) -> list[NormalizedTransacti
             )
             current_section_hint = None
             description_parts = []
-            maybe_hint = _section_hint(month_only_match.group("rest"))
+            rest = month_only_match.group("rest")
+            maybe_hint = _section_hint(rest)
             if maybe_hint:
                 current_section_hint = maybe_hint
+            inline_transaction = _build_inline_transaction_from_date_rest(
+                date=current_date,
+                rest=rest,
+                section_hint=current_section_hint,
+            )
+            if inline_transaction is not None:
+                transactions.append(inline_transaction)
+                description_parts = []
             continue
 
         if current_date is None:
@@ -446,11 +467,13 @@ def _find_amount_tokens(text: str) -> list[_AmountToken]:
 
 
 def _parse_pdf_amount(raw: str) -> float:
-    cleaned = re.sub(r"(?i)R\$", "", raw).strip()
+    cleaned = raw.replace("\u2212", "-")
+    cleaned = re.sub(r"(?i)R\$", "", cleaned).strip()
     if cleaned.endswith("-"):
         cleaned = "-" + cleaned[:-1].strip()
     elif cleaned.endswith("+"):
         cleaned = cleaned[:-1].strip()
+    cleaned = cleaned.replace(" ", "")
     return _parse_amount(cleaned)
 
 
@@ -504,8 +527,41 @@ def _parse_columnar_statement_blocks(lines: list[str]) -> tuple[list[NormalizedT
 
 
 def _is_amount_like(raw: str) -> bool:
-    value = re.sub(r"(?i)R\$", "", raw).strip()
+    value = raw.replace("\u2212", "-")
+    value = re.sub(r"(?i)R\$", "", value).strip()
     return bool(LOOSE_AMOUNT_PATTERN.fullmatch(value))
+
+
+def _build_inline_transaction_from_date_rest(
+    *,
+    date: str,
+    rest: str,
+    section_hint: str | None,
+) -> NormalizedTransaction | None:
+    text = rest.strip()
+    if not text:
+        return None
+    amount_tokens = _find_amount_tokens(text)
+    if len(amount_tokens) != 1:
+        return None
+    amount_token = amount_tokens[0]
+    if text[amount_token.end :].strip():
+        return None
+    raw_description = text[: amount_token.start].strip()
+    if not raw_description or _should_skip_transaction_description(raw_description):
+        return None
+    amount = _parse_pdf_amount(amount_token.value)
+    signed_amount = _apply_sign_hints(
+        amount=amount,
+        description=raw_description,
+        section_hint=section_hint,
+    )
+    return NormalizedTransaction(
+        date=date,
+        description=raw_description,
+        amount=signed_amount,
+        type="inflow" if signed_amount >= 0 else "outflow",
+    )
 
 
 def _is_transaction_type_hint(raw: str) -> bool:
