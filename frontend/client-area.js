@@ -28,6 +28,13 @@
   const USER_TOKEN_COOKIE = "ofxsimples_user_token";
   const TOKEN_SHARED_COOKIE_ALLOWLIST = ["ofxsimples.com.br"];
   const PROFILE_HINT_KEY = "ofxsimples_profile_hint";
+  const TRANSIENT_OVERLAY_SELECTORS = [
+    "#quota-lock-overlay",
+    ".quota-lock-overlay",
+    ".modal-backdrop",
+    ".modal",
+  ];
+  const TRANSIENT_BODY_LOCK_CLASSES = ["quota-locked"];
 
   function isIpv4Host(hostname) {
     return /^\d{1,3}(\.\d{1,3}){3}$/.test(String(hostname || "").trim());
@@ -168,6 +175,35 @@
     const value = String(email || "").trim();
     if (value) {
       localStorage.setItem(PROFILE_HINT_KEY, value);
+    }
+  }
+
+  function forceUnlockTransientUi() {
+    if (document.body) {
+      for (const className of TRANSIENT_BODY_LOCK_CLASSES) {
+        document.body.classList.remove(className);
+      }
+      document.body.style.pointerEvents = "";
+      document.body.style.overflow = "";
+    }
+
+    if (document.documentElement) {
+      for (const className of TRANSIENT_BODY_LOCK_CLASSES) {
+        document.documentElement.classList.remove(className);
+      }
+      document.documentElement.style.pointerEvents = "";
+      document.documentElement.style.overflow = "";
+    }
+
+    for (const selector of TRANSIENT_OVERLAY_SELECTORS) {
+      const nodes = document.querySelectorAll(selector);
+      for (const node of nodes) {
+        if (!(node instanceof HTMLElement)) continue;
+        node.classList.remove("is-open");
+        node.classList.add("hidden");
+        node.style.display = "none";
+        node.style.pointerEvents = "none";
+      }
     }
   }
 
@@ -599,7 +635,7 @@
     logoutBtn.addEventListener("click", () => {
       closeAccountMenu();
       clearUserToken();
-      window.location.href = "./ofx-convert.html?logout=1";
+      window.location.replace("./ofx-convert.html?logout=1");
     });
   }
 
@@ -624,6 +660,21 @@
     }
   });
 
+  window.addEventListener("pageshow", () => {
+    forceUnlockTransientUi();
+  });
+
+  window.addEventListener("focus", () => {
+    forceUnlockTransientUi();
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      forceUnlockTransientUi();
+    }
+  });
+
+  forceUnlockTransientUi();
   bootstrapAccountPreview();
   void loadClientArea();
 })();
