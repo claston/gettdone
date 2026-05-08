@@ -30,7 +30,6 @@ from app.application.access_control_session_core import AccessControlSessionCore
 ANONYMOUS_QUOTA_LIMIT = 3
 REGISTERED_QUOTA_LIMIT = 10
 MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024
-PASSWORD_HASH_ITERATIONS = 390_000
 QUOTA_WINDOW_DAYS = 7
 SESSION_ACCESS_TOKEN_TTL_SECONDS = 15 * 60
 SESSION_REFRESH_TOKEN_TTL_SECONDS = 14 * 24 * 60 * 60
@@ -533,14 +532,8 @@ class AccessControlService:
     def _connect(self):
         return self.db.connect()
 
-    def _is_retryable_db_exception(self, exc: Exception) -> bool:
-        return self.db.is_retryable_db_exception(exc)
-
     def _init_db(self) -> None:
         self.schema.init_db()
-
-    def _init_postgres_db(self) -> None:
-        self.schema.init_postgres_db()
 
     def _is_quota_window_expired(self, window_started_at: datetime, now: datetime, *, quota_window_days: int) -> bool:
         return self.helpers.is_quota_window_expired(
@@ -595,9 +588,6 @@ class AccessControlService:
             payload=payload,
             created_at=created_at,
         )
-
-    def _normalize_admin_emails(self, emails: set[str] | None) -> set[str]:
-        return AccessControlAdminComponent.normalize_admin_emails(emails)
 
     def _sync_admin_emails(self, conn) -> None:
         self.admin.sync_admin_emails(conn)
