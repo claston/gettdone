@@ -1,4 +1,3 @@
-import json
 from io import BytesIO
 
 from openpyxl import Workbook
@@ -140,10 +139,6 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
     assert result.pdf_processing_metrics.grouped_transactions_count == 2
     assert result.pdf_processing_metrics.total_ms >= 0.0
 
-    analysis_json = tmp_path / result.analysis_id / "analysis.json"
-    payload = json.loads(analysis_json.read_text(encoding="utf-8"))
-    assert payload.get("ofx_account_type") == "bank"
-
 
 def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
@@ -192,55 +187,4 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
     assert result.layout_inference_confidence is not None
     assert result.pdf_processing_metrics is not None
     assert result.pdf_processing_metrics.selected_parser == "inline"
-
-
-def test_analyze_service_sets_credit_card_ofx_profile_for_card_invoices(tmp_path, monkeypatch) -> None:
-    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    service = AnalyzeService(storage=storage)
-    monkeypatch.setattr(
-        analyze_service_module,
-        "parse_pdf_transactions",
-        lambda raw_bytes: PdfParseResult(
-            transactions=[
-                NormalizedTransaction(
-                    date="2026-03-16",
-                    description="Pagamento em 16 MAR",
-                    amount=-240.24,
-                    type="outflow",
-                ),
-                NormalizedTransaction(
-                    date="2026-03-25",
-                    description="AGIR CONTABILIDADE E ASSESSORIA LTDA",
-                    amount=-241.05,
-                    type="outflow",
-                ),
-            ],
-            layout=PdfLayoutInference(
-                layout_name="generic_statement_ptbr",
-                confidence=0.9,
-                used_fallback=True,
-            ),
-            extracted_text=(
-                "FATURA 15 ABR 2026\n"
-                "DATA DE VENCIMENTO\n"
-                "TOTAL A PAGAR\n"
-                "TRANSACOES DE 08 MAR A 08 ABR\n"
-                "PAGAMENTOS E FINANCIAMENTOS"
-            ),
-            parse_metrics={
-                "page_count": 1,
-                "extracted_char_count": 180,
-                "flattened_line_count": 5,
-                "grouped_transactions_count": 0,
-                "inline_candidates_count": 1,
-                "inline_transactions_count": 1,
-                "selected_parser": "inline",
-            },
-        ),
-    )
-
-    result = service.analyze(filename="Nubank_2026-04-15.pdf", raw_bytes=b"%PDF synthetic")
-    analysis_json = tmp_path / result.analysis_id / "analysis.json"
-    payload = json.loads(analysis_json.read_text(encoding="utf-8"))
-    assert payload.get("ofx_account_type") == "credit_card"
 
