@@ -13,6 +13,43 @@ class AccessControlAdminComponent:
     def __init__(self, service: AccessControlService) -> None:
         self._service = service
 
+    @staticmethod
+    def normalize_admin_emails(emails: set[str] | None) -> set[str]:
+        if not emails:
+            return set()
+        normalized: set[str] = set()
+        for email in emails:
+            value = str(email or "").strip().lower()
+            if value:
+                normalized.add(value)
+        return normalized
+
+    @staticmethod
+    def row_bool_from_value(raw) -> bool:
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, (int, float)):
+            return raw != 0
+        return str(raw or "").strip().lower() in {"1", "true", "t", "yes"}
+
+    def row_is_admin(self, row) -> bool:
+        if row is None:
+            return False
+        keys = row.keys() if hasattr(row, "keys") else ()
+        if "is_admin" not in keys:
+            return False
+        return self.row_bool_from_value(row["is_admin"])
+
+    def sync_admin_emails(self, conn) -> None:
+        if not self._service.admin_emails:
+            return
+        for email in self._service.admin_emails:
+            self._service._execute(
+                conn,
+                "UPDATE users SET is_admin = ? WHERE lower(email) = ?",
+                (self._service._true_value(), email),
+            )
+
     def is_user_admin(self, *, user_id: str) -> bool:
         with self._service._lock:
             with self._service._connect() as conn:
@@ -23,7 +60,7 @@ class AccessControlAdminComponent:
                 )
                 if row is None:
                     raise InvalidUserTokenError
-                return self._service._row_is_admin(row)
+                return self.row_is_admin(row)
 
     def list_users_for_admin(
         self,
@@ -70,7 +107,7 @@ class AccessControlAdminComponent:
                             "user_id": str(row["id"]),
                             "name": str(row["name"] or ""),
                             "email": str(row["email"] or ""),
-                            "is_admin": self._service._row_is_admin(row),
+                            "is_admin": self.row_is_admin(row),
                             "created_at": str(row["created_at"] or ""),
                             "updated_at": str(row["updated_at"] or ""),
                         }
@@ -105,7 +142,7 @@ class AccessControlAdminComponent:
                 )
                 if row is None:
                     raise InvalidUserTokenError
-                previous_is_admin = self._service._row_is_admin(row)
+                previous_is_admin = self.row_is_admin(row)
                 self._service._execute(
                     conn,
                     "UPDATE users SET is_admin = ?, updated_at = ? WHERE id = ?",
@@ -202,8 +239,8 @@ class AccessControlAdminComponent:
                             "event_type": str(row["event_type"]),
                             "actor_user_id": str(row["actor_user_id"] or "") or None,
                             "actor_email": str(row["actor_email"] or "") or None,
-                            "previous_is_admin": self._service._row_bool_from_value(row["previous_is_admin"]),
-                            "new_is_admin": self._service._row_bool_from_value(row["new_is_admin"]),
+                            "previous_is_admin": self.row_bool_from_value(row["previous_is_admin"]),
+                            "new_is_admin": self.row_bool_from_value(row["new_is_admin"]),
                             "created_at": str(row["created_at"]),
                         }
                     )

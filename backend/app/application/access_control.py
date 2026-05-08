@@ -116,7 +116,7 @@ class AccessControlService:
         self.db_file = state_file.with_suffix(".db")
         self.database_url = (database_url or "").strip()
         self.database_schema = self._normalize_database_schema(database_schema)
-        self.admin_emails = self._normalize_admin_emails(admin_emails)
+        self.admin_emails = AccessControlAdminComponent.normalize_admin_emails(admin_emails)
         self._use_postgres = self.database_url.startswith("postgres://") or self.database_url.startswith(
             "postgresql://"
         )
@@ -679,39 +679,16 @@ class AccessControlService:
         )
 
     def _normalize_admin_emails(self, emails: set[str] | None) -> set[str]:
-        if not emails:
-            return set()
-        normalized: set[str] = set()
-        for email in emails:
-            value = str(email or "").strip().lower()
-            if value:
-                normalized.add(value)
-        return normalized
+        return AccessControlAdminComponent.normalize_admin_emails(emails)
 
     def _sync_admin_emails(self, conn) -> None:
-        if not self.admin_emails:
-            return
-        for email in self.admin_emails:
-            self._execute(
-                conn,
-                "UPDATE users SET is_admin = ? WHERE lower(email) = ?",
-                (self._true_value(), email),
-            )
+        self.admin.sync_admin_emails(conn)
 
     def _row_is_admin(self, row) -> bool:
-        if row is None:
-            return False
-        keys = row.keys() if hasattr(row, "keys") else ()
-        if "is_admin" not in keys:
-            return False
-        return self._row_bool_from_value(row["is_admin"])
+        return self.admin.row_is_admin(row)
 
     def _row_bool_from_value(self, raw) -> bool:
-        if isinstance(raw, bool):
-            return raw
-        if isinstance(raw, (int, float)):
-            return raw != 0
-        return str(raw or "").strip().lower() in {"1", "true", "t", "yes"}
+        return self.admin.row_bool_from_value(raw)
 
     def _normalize_database_schema(self, schema: str | None) -> str:
         raw = (schema or "public").strip()
