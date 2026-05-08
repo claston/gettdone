@@ -26,59 +26,24 @@ try:
 except Exception:  # pragma: no cover - optional dependency for postgres deployments
     ConnectionPool = None
 
+from app.application.access_control_admin import AccessControlAdminComponent
+from app.application.access_control_checkout import AccessControlCheckoutComponent
+from app.application.access_control_db import AccessControlDbComponent
+from app.application.access_control_identity import AccessControlIdentityComponent
+from app.application.access_control_quota import AccessControlQuotaComponent
+from app.application.access_control_session import AccessControlSessionComponent
 from app.application.checkout_management import (
     CHECKOUT_STATUS_PENDING_LEGACY,
     CHECKOUT_STATUS_REQUESTED,
 )
 from app.application.checkout_management import (
-    create_checkout_intent as create_checkout_intent_query,
-)
-from app.application.checkout_management import (
     insert_checkout_intent_event as insert_checkout_intent_event_query,
 )
-from app.application.checkout_management import (
-    list_checkout_intent_events_for_admin as list_checkout_intent_events_for_admin_query,
-)
-from app.application.checkout_management import (
-    list_checkout_intents_for_admin as list_checkout_intents_for_admin_query,
-)
-from app.application.checkout_management import (
-    mark_checkout_intent_awaiting_payment as mark_checkout_intent_awaiting_payment_query,
-)
-from app.application.checkout_management import (
-    mark_checkout_intent_released_by_id as mark_checkout_intent_released_by_id_query,
-)
-from app.application.checkout_management import (
-    mark_latest_checkout_intent_released_for_user_plan as mark_latest_checkout_intent_released_for_user_plan_query,
-)
-from app.application.checkout_management import (
-    read_checkout_intent_by_id as read_checkout_intent_by_id_query,
-)
-from app.application.checkout_management import (
-    read_checkout_intent_for_user as read_checkout_intent_for_user_query,
-)
-from app.application.checkout_management import (
-    read_latest_checkout_intent_for_user as read_latest_checkout_intent_for_user_query,
-)
-from app.application.conversion_history import (
-    list_user_conversions as list_user_conversions_query,
-)
-from app.application.conversion_history import (
-    record_user_conversion as record_user_conversion_query,
-)
 from app.application.errors import (
-    FileTooLargeError,
     InvalidCredentialsError,
     InvalidSessionTokenError,
     InvalidUserTokenError,
-    ReusedSessionTokenError,
     UserAlreadyExistsError,
-)
-from app.application.plan_management import (
-    activate_user_plan as activate_user_plan_query,
-)
-from app.application.plan_management import (
-    list_public_plans as list_public_plans_query,
 )
 from app.application.plan_management import (
     read_active_user_plan as read_active_user_plan_query,
@@ -87,11 +52,7 @@ from app.application.plan_management import (
     seed_default_public_plans,
 )
 from app.application.quota_management import (
-    compute_quota_reset_at,
-    compute_remaining_quota,
-    persist_consumed_usage,
     read_usage_snapshot,
-    require_quota_available,
 )
 
 ANONYMOUS_QUOTA_LIMIT = 3
@@ -183,6 +144,7 @@ class AccessControlService:
         self.db_pool_timeout_seconds = max(1.0, float(db_pool_timeout_seconds))
         self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
         self._lock = RLock()
+        self._identity_context_factory = IdentityContext
         self._active_plan_cache: dict[str, tuple[float, dict[str, str | int] | None]] = {}
         self._postgres_pool = None
         if not self._use_postgres:
@@ -198,6 +160,12 @@ class AccessControlService:
                 timeout=self.db_pool_timeout_seconds,
                 open=True,
             )
+        self.db = AccessControlDbComponent(self)
+        self.identity = AccessControlIdentityComponent(self)
+        self.session = AccessControlSessionComponent(self)
+        self.quota = AccessControlQuotaComponent(self)
+        self.admin = AccessControlAdminComponent(self)
+        self.checkout = AccessControlCheckoutComponent(self)
         self._init_db()
 
     def close(self) -> None:
@@ -211,41 +179,9 @@ class AccessControlService:
         anonymous_fingerprint: str | None,
         user_token: str | None,
     ) -> IdentityContext:
-        if user_token:
-            user_id = self._decode_token(user_token)
-            if not self._user_exists(user_id):
-                raise InvalidUserTokenError
-            active_plan = self._read_active_user_plan(user_id=user_id)
-            if active_plan is not None:
-                return IdentityContext(
-                    identity_type="user",
-                    identity_id=user_id,
-                    quota_limit=int(active_plan["quota_limit"]),
-                    quota_mode=str(active_plan["quota_mode"]),
-                    quota_window_days=int(active_plan["quota_window_days"]),
-                    max_upload_size_bytes=int(active_plan["max_upload_size_bytes"]),
-                    max_pages_per_file=int(active_plan["max_pages_per_file"]),
-                    plan_code=str(active_plan["code"]),
-                    plan_name=str(active_plan["name"]),
-                )
-            return IdentityContext(
-                identity_type="user",
-                identity_id=user_id,
-                quota_limit=self.registered_quota_limit,
-                quota_mode="conversion",
-                quota_window_days=self.quota_window_days,
-            )
-
-        fingerprint = (anonymous_fingerprint or "").strip()
-        if not fingerprint:
-            raise InvalidUserTokenError
-        anon_id = self._ensure_anonymous_identity(fingerprint)
-        return IdentityContext(
-            identity_type="anonymous",
-            identity_id=anon_id,
-            quota_limit=self.anonymous_quota_limit,
-            quota_mode="conversion",
-            quota_window_days=self.quota_window_days,
+        return self.identity.resolve_identity(
+            anonymous_fingerprint=anonymous_fingerprint,
+            user_token=user_token,
         )
 
     def register_user(self, name: str, email: str, password: str) -> RegisteredUser:
@@ -350,8 +286,11 @@ class AccessControlService:
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> SessionTokenBundle:
-        user = self._get_registered_user_by_id(user_id=user_id)
-        return self._create_user_session_bundle(user=user, ip_address=ip_address, user_agent=user_agent)
+        return self.session.create_user_session(
+            user_id=user_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
 
     def refresh_user_session(
         self,
@@ -360,158 +299,20 @@ class AccessControlService:
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> SessionTokenBundle:
-        payload = self._decode_session_token(refresh_token, expected_type="refresh")
-        session_id = str(payload.get("sid") or "").strip()
-        user_id = str(payload.get("uid") or "").strip()
-        if not session_id or not user_id:
-            raise InvalidSessionTokenError
-        now = self.now_provider()
-        refresh_hash = self._hash_refresh_token(refresh_token)
-        with self._lock:
-            with self._connect() as conn:
-                row = self._fetchone(
-                    conn,
-                    """
-                    SELECT id, user_id, refresh_token_hash, refresh_token_family, expires_at, revoked_at, rotated_at
-                    FROM user_sessions
-                    WHERE id = ?
-                    """,
-                    (session_id,),
-                )
-                if row is None:
-                    raise InvalidSessionTokenError
-                if str(row["user_id"] or "").strip() != user_id:
-                    raise InvalidSessionTokenError
-                expected_hash = str(row["refresh_token_hash"] or "").strip()
-                if not hmac.compare_digest(expected_hash, refresh_hash):
-                    self._revoke_session_family_with_conn(
-                        conn,
-                        family_id=str(row["refresh_token_family"] or "").strip(),
-                        reason="refresh_hash_mismatch",
-                        now_iso=now.isoformat(),
-                    )
-                    conn.commit()
-                    raise ReusedSessionTokenError
-                if str(row["revoked_at"] or "").strip():
-                    raise InvalidSessionTokenError
-                if str(row["rotated_at"] or "").strip():
-                    self._revoke_session_family_with_conn(
-                        conn,
-                        family_id=str(row["refresh_token_family"] or "").strip(),
-                        reason="refresh_token_reuse",
-                        now_iso=now.isoformat(),
-                    )
-                    conn.commit()
-                    raise ReusedSessionTokenError
-
-                expires_at = self._parse_usage_datetime(str(row["expires_at"] or ""), fallback=now)
-                if expires_at <= now:
-                    self._execute(
-                        conn,
-                        "UPDATE user_sessions SET revoked_at = ?, revoke_reason = ? WHERE id = ?",
-                        (now.isoformat(), "refresh_expired", session_id),
-                    )
-                    conn.commit()
-                    raise InvalidSessionTokenError
-
-                user = self._get_registered_user_by_id_with_conn(conn=conn, user_id=user_id)
-                family_id = str(row["refresh_token_family"] or "").strip() or f"fam_{uuid4().hex}"
-                bundle = self._create_user_session_bundle_with_conn(
-                    conn=conn,
-                    user=user,
-                    family_id=family_id,
-                    ip_address=ip_address,
-                    user_agent=user_agent,
-                    now=now,
-                )
-                self._execute(
-                    conn,
-                    """
-                    UPDATE user_sessions
-                    SET rotated_at = ?, replaced_by_session_id = ?, last_ip = ?, last_user_agent = ?
-                    WHERE id = ?
-                    """,
-                    (
-                        now.isoformat(),
-                        self._extract_session_id_from_token(bundle.refresh_token),
-                        (ip_address or "").strip() or None,
-                        (user_agent or "").strip()[:512] or None,
-                        session_id,
-                    ),
-                )
-                conn.commit()
-                return bundle
+        return self.session.refresh_user_session(
+            refresh_token=refresh_token,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
 
     def revoke_user_session(self, *, refresh_token: str) -> None:
-        try:
-            payload = self._decode_session_token(refresh_token, expected_type="refresh")
-        except InvalidSessionTokenError:
-            return
-        session_id = str(payload.get("sid") or "").strip()
-        if not session_id:
-            return
-        now_iso = self.now_provider().isoformat()
-        refresh_hash = self._hash_refresh_token(refresh_token)
-        with self._lock:
-            with self._connect() as conn:
-                row = self._fetchone(
-                    conn,
-                    "SELECT refresh_token_hash FROM user_sessions WHERE id = ?",
-                    (session_id,),
-                )
-                if row is None:
-                    return
-                expected_hash = str(row["refresh_token_hash"] or "").strip()
-                if not hmac.compare_digest(expected_hash, refresh_hash):
-                    return
-                self._execute(
-                    conn,
-                    "UPDATE user_sessions SET revoked_at = ?, revoke_reason = ? WHERE id = ? AND revoked_at IS NULL",
-                    (now_iso, "logout", session_id),
-                )
-                conn.commit()
+        self.session.revoke_user_session(refresh_token=refresh_token)
 
     def revoke_all_user_sessions(self, *, user_id: str) -> None:
-        now_iso = self.now_provider().isoformat()
-        with self._lock:
-            with self._connect() as conn:
-                self._execute(
-                    conn,
-                    """
-                    UPDATE user_sessions
-                    SET revoked_at = ?, revoke_reason = ?
-                    WHERE user_id = ? AND revoked_at IS NULL
-                    """,
-                    (now_iso, "logout_all", user_id),
-                )
-                conn.commit()
+        self.session.revoke_all_user_sessions(user_id=user_id)
 
     def get_user_by_session_access_token(self, access_token: str) -> RegisteredUser:
-        payload = self._decode_session_token(access_token, expected_type="access")
-        session_id = str(payload.get("sid") or "").strip()
-        user_id = str(payload.get("uid") or "").strip()
-        if not session_id or not user_id:
-            raise InvalidSessionTokenError
-        now = self.now_provider()
-        with self._lock:
-            with self._connect() as conn:
-                row = self._fetchone(
-                    conn,
-                    """
-                    SELECT revoked_at, expires_at
-                    FROM user_sessions
-                    WHERE id = ? AND user_id = ?
-                    """,
-                    (session_id, user_id),
-                )
-                if row is None:
-                    raise InvalidSessionTokenError
-                if str(row["revoked_at"] or "").strip():
-                    raise InvalidSessionTokenError
-                refresh_expires_at = self._parse_usage_datetime(str(row["expires_at"] or ""), fallback=now)
-                if refresh_expires_at <= now:
-                    raise InvalidSessionTokenError
-                return self._get_registered_user_by_id_with_conn(conn=conn, user_id=user_id)
+        return self.session.get_user_by_session_access_token(access_token)
 
     def get_user_by_email(self, email: str) -> RegisteredUser:
         normalized_email = email.strip().lower()
@@ -534,16 +335,7 @@ class AccessControlService:
                 )
 
     def is_user_admin(self, *, user_id: str) -> bool:
-        with self._lock:
-            with self._connect() as conn:
-                row = self._fetchone(
-                    conn,
-                    "SELECT is_admin FROM users WHERE id = ?",
-                    (user_id,),
-                )
-                if row is None:
-                    raise InvalidUserTokenError
-                return self._row_is_admin(row)
+        return self.admin.is_user_admin(user_id=user_id)
 
     def register_or_authenticate_google_user(
         self,
@@ -655,127 +447,25 @@ class AccessControlService:
                 )
 
     def create_google_oauth_state(self, *, next_path: str, ttl_seconds: int = 600) -> tuple[str, str]:
-        state = f"gst_{secrets.token_urlsafe(24)}"
-        code_verifier = secrets.token_urlsafe(64)
-        now = self.now_provider()
-        expires_at = (now + timedelta(seconds=max(60, int(ttl_seconds)))).isoformat()
-        with self._lock:
-            with self._connect() as conn:
-                self._execute(
-                    conn,
-                    """
-                    INSERT INTO google_oauth_states (
-                        state,
-                        code_verifier,
-                        next_path,
-                        created_at,
-                        expires_at
-                    )
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (
-                        state,
-                        code_verifier,
-                        self._normalize_next_path(next_path),
-                        now.isoformat(),
-                        expires_at,
-                    ),
-                )
-                conn.commit()
-        return state, code_verifier
+        return self.identity.create_google_oauth_state(next_path=next_path, ttl_seconds=ttl_seconds)
 
     def consume_google_oauth_state(self, *, state: str) -> dict[str, str] | None:
-        normalized_state = state.strip()
-        if not normalized_state:
-            return None
-        now = self.now_provider()
-        with self._lock:
-            with self._connect() as conn:
-                row = self._fetchone(
-                    conn,
-                    """
-                    SELECT state, code_verifier, next_path, expires_at
-                    FROM google_oauth_states
-                    WHERE state = ?
-                    """,
-                    (normalized_state,),
-                )
-                self._execute(conn, "DELETE FROM google_oauth_states WHERE state = ?", (normalized_state,))
-                self._execute(conn, "DELETE FROM google_oauth_states WHERE expires_at < ?", (now.isoformat(),))
-                conn.commit()
-
-        if row is None:
-            return None
-
-        expires_at_raw = str(row["expires_at"] or "").strip()
-        if not expires_at_raw:
-            return None
-        try:
-            expires_at = datetime.fromisoformat(expires_at_raw)
-        except ValueError:
-            return None
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        if expires_at < now:
-            return None
-
-        return {
-            "state": str(row["state"]),
-            "code_verifier": str(row["code_verifier"]),
-            "next_path": self._normalize_next_path(str(row["next_path"])),
-        }
+        return self.identity.consume_google_oauth_state(state=state)
 
     def assert_upload_size(self, raw_bytes: bytes, max_upload_size_bytes: int = MAX_UPLOAD_SIZE_BYTES) -> None:
-        if len(raw_bytes) > max(1, int(max_upload_size_bytes)):
-            raise FileTooLargeError
+        self.quota.assert_upload_size(raw_bytes, max_upload_size_bytes)
 
     def ensure_quota_available(self, identity: IdentityContext, *, required_units: int = 1) -> None:
-        usage = self._read_usage(identity)
-        require_quota_available(
-            used_count=int(usage["used_count"]),
-            quota_limit=identity.quota_limit,
-            required_units=required_units,
-        )
+        self.quota.ensure_quota_available(identity, required_units=required_units)
 
     def consume_quota(self, identity: IdentityContext, *, consumed_units: int = 1) -> int:
-        with self._lock:
-            with self._connect() as conn:
-                snapshot = read_usage_snapshot(
-                    conn,
-                    identity=identity,
-                    now_provider=self.now_provider,
-                    fetchone=self._fetchone,
-                    execute=self._execute,
-                    parse_usage_datetime=self._parse_usage_datetime,
-                    is_quota_window_expired=self._is_quota_window_expired,
-                )
-                next_snapshot = persist_consumed_usage(
-                    conn,
-                    identity=identity,
-                    snapshot=snapshot,
-                    consumed_units=consumed_units,
-                    now_provider=self.now_provider,
-                    execute=self._execute,
-                )
-                conn.commit()
-            return compute_remaining_quota(
-                used_count=next_snapshot.used_count,
-                quota_limit=identity.quota_limit,
-            )
+        return self.quota.consume_quota(identity, consumed_units=consumed_units)
 
     def get_remaining_quota(self, identity: IdentityContext) -> int:
-        usage = self._read_usage(identity)
-        return compute_remaining_quota(
-            used_count=int(usage["used_count"]),
-            quota_limit=identity.quota_limit,
-        )
+        return self.quota.get_remaining_quota(identity)
 
     def get_quota_reset_at(self, identity: IdentityContext) -> str:
-        usage = self._read_usage(identity)
-        return compute_quota_reset_at(
-            window_started_at=usage["window_started_at"],
-            quota_window_days=identity.quota_window_days,
-        )
+        return self.quota.get_quota_reset_at(identity)
 
     def record_user_conversion(
         self,
@@ -791,44 +481,24 @@ class AccessControlService:
         created_at: str | None = None,
         expires_at: str | None = None,
     ) -> None:
-        with self._lock:
-            with self._connect() as conn:
-                record_user_conversion_query(
-                    conn,
-                    execute=self._execute,
-                    now_iso=self.now_provider().isoformat(),
-                    user_id=user_id,
-                    processing_id=processing_id,
-                    filename=filename,
-                    model=model,
-                    conversion_type=conversion_type,
-                    status=status,
-                    transactions_count=transactions_count,
-                    pages_count=pages_count,
-                    created_at=created_at,
-                    expires_at=expires_at,
-                )
-                conn.commit()
+        self.checkout.record_user_conversion(
+            user_id=user_id,
+            processing_id=processing_id,
+            filename=filename,
+            model=model,
+            conversion_type=conversion_type,
+            status=status,
+            transactions_count=transactions_count,
+            pages_count=pages_count,
+            created_at=created_at,
+            expires_at=expires_at,
+        )
 
     def list_user_conversions(self, *, user_id: str, limit: int = 20) -> list[dict[str, str | int]]:
-        with self._lock:
-            with self._connect() as conn:
-                return list_user_conversions_query(
-                    conn,
-                    fetchall=self._fetchall,
-                    now_provider=self.now_provider,
-                    user_id=user_id,
-                    limit=limit,
-                )
+        return self.checkout.list_user_conversions(user_id=user_id, limit=limit)
 
     def list_public_plans(self) -> list[dict[str, str | int]]:
-        with self._lock:
-            with self._connect() as conn:
-                return list_public_plans_query(
-                    conn,
-                    fetchall=self._fetchall,
-                    true_value=self._true_value(),
-                )
+        return self.checkout.list_public_plans()
 
     def activate_user_plan(
         self,
@@ -838,45 +508,12 @@ class AccessControlService:
         actor_kind: str = "system",
         actor_user_id: str | None = None,
     ) -> dict[str, str | int]:
-        now_iso = self.now_provider().isoformat()
-
-        with self._lock:
-            with self._connect() as conn:
-                activated = activate_user_plan_query(
-                    conn,
-                    fetchone=self._fetchone,
-                    execute=self._execute,
-                    true_value=self._true_value(),
-                    user_id=user_id,
-                    plan_code=plan_code,
-                    now_iso=now_iso,
-                    subscription_id=f"sub_{uuid4().hex[:16]}",
-                )
-                released_intent_id = mark_latest_checkout_intent_released_for_user_plan_query(
-                    conn,
-                    fetchone=self._fetchone,
-                    execute=self._execute,
-                    now_iso=now_iso,
-                    user_id=user_id,
-                    plan_code=plan_code,
-                )
-                if released_intent_id:
-                    self._append_checkout_intent_event_with_conn(
-                        conn,
-                        intent_id=released_intent_id,
-                        event_type="PLAN_RELEASED",
-                        event_message="Plan released for user.",
-                        actor_kind=actor_kind,
-                        actor_user_id=actor_user_id,
-                        payload={
-                            "user_id": user_id,
-                            "plan_code": plan_code,
-                        },
-                        created_at=now_iso,
-                    )
-                conn.commit()
-                self._invalidate_active_plan_cache(user_id)
-        return activated
+        return self.checkout.activate_user_plan(
+            user_id=user_id,
+            plan_code=plan_code,
+            actor_kind=actor_kind,
+            actor_user_id=actor_user_id,
+        )
 
     def create_checkout_intent(
         self,
@@ -889,40 +526,15 @@ class AccessControlService:
         customer_document: str | None = None,
         customer_notes: str | None = None,
     ) -> dict[str, str | int]:
-        now_iso = self.now_provider().isoformat()
-        intent_id = f"chk_{uuid4().hex[:16]}"
-        with self._lock:
-            with self._connect() as conn:
-                intent = create_checkout_intent_query(
-                    conn,
-                    fetchone=self._fetchone,
-                    execute=self._execute,
-                    true_value=self._true_value(),
-                    now_iso=now_iso,
-                    intent_id=intent_id,
-                    user_id=user_id,
-                    plan_code=plan_code,
-                    customer_name=customer_name,
-                    customer_email=customer_email,
-                    customer_whatsapp=customer_whatsapp,
-                    customer_document=customer_document,
-                    customer_notes=customer_notes,
-                )
-                self._append_checkout_intent_event_with_conn(
-                    conn,
-                    intent_id=str(intent["id"]),
-                    event_type="ORDER_REQUESTED",
-                    event_message="Checkout order requested.",
-                    actor_kind="customer",
-                    actor_user_id=user_id,
-                    payload={
-                        "plan_code": str(intent["plan_code"]),
-                        "customer_email": customer_email,
-                    },
-                    created_at=now_iso,
-                )
-                conn.commit()
-        return intent
+        return self.checkout.create_checkout_intent(
+            user_id=user_id,
+            plan_code=plan_code,
+            customer_name=customer_name,
+            customer_email=customer_email,
+            customer_whatsapp=customer_whatsapp,
+            customer_document=customer_document,
+            customer_notes=customer_notes,
+        )
 
     def read_checkout_intent_for_user(
         self,
@@ -931,15 +543,11 @@ class AccessControlService:
         user_id: str,
         customer_email: str | None = None,
     ) -> dict[str, str | int | None] | None:
-        with self._lock:
-            with self._connect() as conn:
-                return read_checkout_intent_for_user_query(
-                    conn,
-                    fetchone=self._fetchone,
-                    intent_id=intent_id,
-                    user_id=user_id,
-                    customer_email=customer_email,
-                )
+        return self.checkout.read_checkout_intent_for_user(
+            intent_id=intent_id,
+            user_id=user_id,
+            customer_email=customer_email,
+        )
 
     def read_latest_checkout_intent_for_user(
         self,
@@ -947,14 +555,10 @@ class AccessControlService:
         user_id: str,
         customer_email: str | None = None,
     ) -> dict[str, str | int | None] | None:
-        with self._lock:
-            with self._connect() as conn:
-                return read_latest_checkout_intent_for_user_query(
-                    conn,
-                    fetchone=self._fetchone,
-                    user_id=user_id,
-                    customer_email=customer_email,
-                )
+        return self.checkout.read_latest_checkout_intent_for_user(
+            user_id=user_id,
+            customer_email=customer_email,
+        )
 
     def mark_checkout_intent_awaiting_payment(
         self,
@@ -964,40 +568,15 @@ class AccessControlService:
         actor_kind: str = "system",
         actor_user_id: str | None = None,
     ) -> dict[str, str | int | None]:
-        now_iso = self.now_provider().isoformat()
-        with self._lock:
-            with self._connect() as conn:
-                intent = mark_checkout_intent_awaiting_payment_query(
-                    conn,
-                    fetchone=self._fetchone,
-                    execute=self._execute,
-                    now_iso=now_iso,
-                    intent_id=intent_id,
-                    payment_link=payment_link,
-                )
-                self._append_checkout_intent_event_with_conn(
-                    conn,
-                    intent_id=str(intent["id"]),
-                    event_type="PAYMENT_LINK_SENT",
-                    event_message="Payment link sent to customer.",
-                    actor_kind=actor_kind,
-                    actor_user_id=actor_user_id,
-                    payload={
-                        "payment_link": payment_link,
-                    },
-                    created_at=now_iso,
-                )
-                conn.commit()
-                return intent
+        return self.checkout.mark_checkout_intent_awaiting_payment(
+            intent_id=intent_id,
+            payment_link=payment_link,
+            actor_kind=actor_kind,
+            actor_user_id=actor_user_id,
+        )
 
     def read_checkout_intent_by_id(self, *, intent_id: str) -> dict[str, str | int | None] | None:
-        with self._lock:
-            with self._connect() as conn:
-                return read_checkout_intent_by_id_query(
-                    conn,
-                    fetchone=self._fetchone,
-                    intent_id=intent_id,
-                )
+        return self.checkout.read_checkout_intent_by_id(intent_id=intent_id)
 
     def mark_checkout_intent_released_by_id(
         self,
@@ -1006,30 +585,11 @@ class AccessControlService:
         actor_kind: str = "system",
         actor_user_id: str | None = None,
     ) -> dict[str, str | int | None]:
-        now_iso = self.now_provider().isoformat()
-        with self._lock:
-            with self._connect() as conn:
-                intent = mark_checkout_intent_released_by_id_query(
-                    conn,
-                    fetchone=self._fetchone,
-                    execute=self._execute,
-                    now_iso=now_iso,
-                    intent_id=intent_id,
-                )
-                self._append_checkout_intent_event_with_conn(
-                    conn,
-                    intent_id=str(intent["id"]),
-                    event_type="PLAN_RELEASED",
-                    event_message="Plan released for user.",
-                    actor_kind=actor_kind,
-                    actor_user_id=actor_user_id,
-                    payload={
-                        "plan_code": str(intent["plan_code"]),
-                    },
-                    created_at=now_iso,
-                )
-                conn.commit()
-                return intent
+        return self.checkout.mark_checkout_intent_released_by_id(
+            intent_id=intent_id,
+            actor_kind=actor_kind,
+            actor_user_id=actor_user_id,
+        )
 
     def list_checkout_intents_for_admin(
         self,
@@ -1039,17 +599,12 @@ class AccessControlService:
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[dict[str, str | int | None]], int]:
-        with self._lock:
-            with self._connect() as conn:
-                return list_checkout_intents_for_admin_query(
-                    conn,
-                    fetchall=self._fetchall,
-                    fetchone=self._fetchone,
-                    statuses=statuses,
-                    query=query,
-                    limit=limit,
-                    offset=offset,
-                )
+        return self.checkout.list_checkout_intents_for_admin(
+            statuses=statuses,
+            query=query,
+            limit=limit,
+            offset=offset,
+        )
 
     def list_checkout_intent_events_for_admin(
         self,
@@ -1057,14 +612,10 @@ class AccessControlService:
         intent_id: str,
         limit: int = 100,
     ) -> list[dict[str, str | None]]:
-        with self._lock:
-            with self._connect() as conn:
-                return list_checkout_intent_events_for_admin_query(
-                    conn,
-                    fetchall=self._fetchall,
-                    intent_id=intent_id,
-                    limit=limit,
-                )
+        return self.checkout.list_checkout_intent_events_for_admin(
+            intent_id=intent_id,
+            limit=limit,
+        )
 
     def list_users_for_admin(
         self,
@@ -1074,56 +625,15 @@ class AccessControlService:
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[dict[str, str | bool]], int]:
-        normalized_limit = max(1, min(int(limit), 200))
-        normalized_offset = max(0, int(offset))
-        normalized_query = str(query or "").strip().lower()
-
-        with self._lock:
-            with self._connect() as conn:
-                where: list[str] = []
-                params: list[str | int] = []
-                if only_admin is True:
-                    where.append("is_admin = ?")
-                    params.append(self._true_value())
-                elif only_admin is False:
-                    where.append("is_admin = ?")
-                    params.append(self._false_value())
-                if normalized_query:
-                    where.append("(lower(name) LIKE ? OR lower(email) LIKE ? OR lower(id) LIKE ?)")
-                    like = f"%{normalized_query}%"
-                    params.extend([like, like, like])
-
-                base = "FROM users"
-                if where:
-                    base += " WHERE " + " AND ".join(where)
-
-                total_row = self._fetchone(conn, f"SELECT COUNT(1) AS total {base}", tuple(params))
-                total = int(total_row["total"]) if total_row is not None else 0
-                rows = self._fetchall(
-                    conn,
-                    f"SELECT id, name, email, is_admin, created_at, updated_at {base} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                    tuple(params + [normalized_limit, normalized_offset]),
-                )
-                items: list[dict[str, str | bool]] = []
-                for row in rows:
-                    items.append(
-                        {
-                            "user_id": str(row["id"]),
-                            "name": str(row["name"] or ""),
-                            "email": str(row["email"] or ""),
-                            "is_admin": self._row_is_admin(row),
-                            "created_at": str(row["created_at"] or ""),
-                            "updated_at": str(row["updated_at"] or ""),
-                        }
-                    )
-                return items, total
+        return self.admin.list_users_for_admin(
+            query=query,
+            only_admin=only_admin,
+            limit=limit,
+            offset=offset,
+        )
 
     def set_user_admin_role(self, *, user_id: str, is_admin: bool) -> dict[str, str | bool]:
-        return self.set_user_admin_role_with_actor(
-            user_id=user_id,
-            is_admin=is_admin,
-            actor_user_id=None,
-        )
+        return self.admin.set_user_admin_role(user_id=user_id, is_admin=is_admin)
 
     def set_user_admin_role_with_actor(
         self,
@@ -1132,74 +642,11 @@ class AccessControlService:
         is_admin: bool,
         actor_user_id: str | None,
     ) -> dict[str, str | bool]:
-        normalized_user_id = str(user_id or "").strip()
-        if not normalized_user_id:
-            raise InvalidUserTokenError
-        now_iso = self.now_provider().isoformat()
-
-        with self._lock:
-            with self._connect() as conn:
-                row = self._fetchone(
-                    conn,
-                    "SELECT id, name, email, is_admin, created_at, updated_at FROM users WHERE id = ?",
-                    (normalized_user_id,),
-                )
-                if row is None:
-                    raise InvalidUserTokenError
-                previous_is_admin = self._row_is_admin(row)
-                self._execute(
-                    conn,
-                    "UPDATE users SET is_admin = ?, updated_at = ? WHERE id = ?",
-                    (self._true_value() if is_admin else self._false_value(), now_iso, normalized_user_id),
-                )
-                actor_email: str | None = None
-                if actor_user_id:
-                    actor_row = self._fetchone(
-                        conn,
-                        "SELECT email FROM users WHERE id = ?",
-                        (str(actor_user_id).strip(),),
-                    )
-                    if actor_row is not None:
-                        actor_email = str(actor_row["email"] or "") or None
-
-                event_type = "ADMIN_ROLE_GRANTED" if is_admin else "ADMIN_ROLE_REVOKED"
-                self._execute(
-                    conn,
-                    """
-                    INSERT INTO admin_user_role_events (
-                      id,
-                      target_user_id,
-                      target_email,
-                      event_type,
-                      actor_user_id,
-                      actor_email,
-                      previous_is_admin,
-                      new_is_admin,
-                      created_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        f"aur_{uuid4().hex[:16]}",
-                        normalized_user_id,
-                        str(row["email"] or ""),
-                        event_type,
-                        (str(actor_user_id).strip() if actor_user_id else None),
-                        actor_email,
-                        self._true_value() if previous_is_admin else self._false_value(),
-                        self._true_value() if is_admin else self._false_value(),
-                        now_iso,
-                    ),
-                )
-                conn.commit()
-                return {
-                    "user_id": str(row["id"]),
-                    "name": str(row["name"] or ""),
-                    "email": str(row["email"] or ""),
-                    "is_admin": bool(is_admin),
-                    "created_at": str(row["created_at"] or ""),
-                    "updated_at": now_iso,
-                }
+        return self.admin.set_user_admin_role_with_actor(
+            user_id=user_id,
+            is_admin=is_admin,
+            actor_user_id=actor_user_id,
+        )
 
     def list_user_role_events_for_admin(
         self,
@@ -1207,48 +654,7 @@ class AccessControlService:
         user_id: str,
         limit: int = 100,
     ) -> list[dict[str, str | bool | None]]:
-        normalized_user_id = str(user_id or "").strip()
-        normalized_limit = max(1, min(int(limit), 500))
-        if not normalized_user_id:
-            return []
-        with self._lock:
-            with self._connect() as conn:
-                rows = self._fetchall(
-                    conn,
-                    """
-                    SELECT
-                      id,
-                      target_user_id,
-                      target_email,
-                      event_type,
-                      actor_user_id,
-                      actor_email,
-                      previous_is_admin,
-                      new_is_admin,
-                      created_at
-                    FROM admin_user_role_events
-                    WHERE target_user_id = ?
-                    ORDER BY created_at DESC
-                    LIMIT ?
-                    """,
-                    (normalized_user_id, normalized_limit),
-                )
-                items: list[dict[str, str | bool | None]] = []
-                for row in rows:
-                    items.append(
-                        {
-                            "event_id": str(row["id"]),
-                            "target_user_id": str(row["target_user_id"]),
-                            "target_email": str(row["target_email"] or ""),
-                            "event_type": str(row["event_type"]),
-                            "actor_user_id": str(row["actor_user_id"] or "") or None,
-                            "actor_email": str(row["actor_email"] or "") or None,
-                            "previous_is_admin": self._row_bool_from_value(row["previous_is_admin"]),
-                            "new_is_admin": self._row_bool_from_value(row["new_is_admin"]),
-                            "created_at": str(row["created_at"]),
-                        }
-                    )
-                return items
+        return self.admin.list_user_role_events_for_admin(user_id=user_id, limit=limit)
 
     def _ensure_anonymous_identity(self, fingerprint: str) -> str:
         now = self.now_provider().isoformat()
