@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.dependencies import get_analyze_service, get_report_service
+from app.dependencies import close_access_control_service, get_analyze_service, get_report_service
 from app.routers import (
     admin_auth_router,
     analyze_router,
@@ -45,6 +45,11 @@ app = FastAPI(
     redoc_url="/redoc" if is_api_docs_enabled() else None,
     openapi_url="/openapi.json" if is_api_docs_enabled() else None,
 )
+
+
+@app.on_event("shutdown")
+def _shutdown_services() -> None:
+    close_access_control_service()
 
 
 def get_cors_allow_origins() -> list[str]:

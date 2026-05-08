@@ -5,11 +5,13 @@ import json
 import re
 import secrets
 import sqlite3
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import RLock
-from typing import Callable
+from typing import Callable, Iterator
 from uuid import uuid4
 
 try:
@@ -18,6 +20,11 @@ try:
 except Exception:  # pragma: no cover - optional dependency for postgres deployments
     psycopg = None
     dict_row = None
+
+try:
+    from psycopg_pool import ConnectionPool
+except Exception:  # pragma: no cover - optional dependency for postgres deployments
+    ConnectionPool = None
 
 from app.application.checkout_management import (
     CHECKOUT_STATUS_PENDING_LEGACY,
@@ -94,6 +101,12 @@ PASSWORD_HASH_ITERATIONS = 390_000
 QUOTA_WINDOW_DAYS = 7
 SESSION_ACCESS_TOKEN_TTL_SECONDS = 15 * 60
 SESSION_REFRESH_TOKEN_TTL_SECONDS = 14 * 24 * 60 * 60
+DEFAULT_ACTIVE_PLAN_CACHE_TTL_SECONDS = 20
+DEFAULT_DB_CONNECT_RETRY_ATTEMPTS = 3
+DEFAULT_DB_CONNECT_RETRY_BASE_MS = 200
+DEFAULT_DB_POOL_MIN_SIZE = 1
+DEFAULT_DB_POOL_MAX_SIZE = 3
+DEFAULT_DB_POOL_TIMEOUT_SECONDS = 5.0
 
 
 @dataclass(frozen=True)
@@ -140,6 +153,12 @@ class AccessControlService:
         quota_window_days: int = QUOTA_WINDOW_DAYS,
         session_access_token_ttl_seconds: int = SESSION_ACCESS_TOKEN_TTL_SECONDS,
         session_refresh_token_ttl_seconds: int = SESSION_REFRESH_TOKEN_TTL_SECONDS,
+        active_plan_cache_ttl_seconds: int = DEFAULT_ACTIVE_PLAN_CACHE_TTL_SECONDS,
+        db_connect_retry_attempts: int = DEFAULT_DB_CONNECT_RETRY_ATTEMPTS,
+        db_connect_retry_base_ms: int = DEFAULT_DB_CONNECT_RETRY_BASE_MS,
+        db_pool_min_size: int = DEFAULT_DB_POOL_MIN_SIZE,
+        db_pool_max_size: int = DEFAULT_DB_POOL_MAX_SIZE,
+        db_pool_timeout_seconds: float = DEFAULT_DB_POOL_TIMEOUT_SECONDS,
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         self.state_file = state_file
@@ -156,13 +175,36 @@ class AccessControlService:
         self.quota_window_days = max(1, int(quota_window_days))
         self.session_access_token_ttl_seconds = max(60, int(session_access_token_ttl_seconds))
         self.session_refresh_token_ttl_seconds = max(300, int(session_refresh_token_ttl_seconds))
+        self.active_plan_cache_ttl_seconds = max(0, int(active_plan_cache_ttl_seconds))
+        self.db_connect_retry_attempts = max(1, int(db_connect_retry_attempts))
+        self.db_connect_retry_base_ms = max(50, int(db_connect_retry_base_ms))
+        self.db_pool_min_size = max(1, int(db_pool_min_size))
+        self.db_pool_max_size = max(self.db_pool_min_size, int(db_pool_max_size))
+        self.db_pool_timeout_seconds = max(1.0, float(db_pool_timeout_seconds))
         self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
         self._lock = RLock()
+        self._active_plan_cache: dict[str, tuple[float, dict[str, str | int] | None]] = {}
+        self._postgres_pool = None
         if not self._use_postgres:
             self.db_file.parent.mkdir(parents=True, exist_ok=True)
         elif psycopg is None:
             raise RuntimeError("PostgreSQL support requires psycopg. Install backend requirements.")
+        elif ConnectionPool is not None:
+            self._postgres_pool = ConnectionPool(
+                conninfo=self.database_url,
+                kwargs={"row_factory": dict_row},
+                min_size=self.db_pool_min_size,
+                max_size=self.db_pool_max_size,
+                timeout=self.db_pool_timeout_seconds,
+                open=True,
+            )
         self._init_db()
+
+    def close(self) -> None:
+        pool = self._postgres_pool
+        if pool is not None:
+            pool.close()
+            self._postgres_pool = None
 
     def resolve_identity(
         self,
@@ -833,6 +875,7 @@ class AccessControlService:
                         created_at=now_iso,
                     )
                 conn.commit()
+                self._invalidate_active_plan_cache(user_id)
         return activated
 
     def create_checkout_intent(
@@ -1238,13 +1281,23 @@ class AccessControlService:
                 return anon_id
 
     def _read_active_user_plan(self, *, user_id: str) -> dict[str, str | int] | None:
+        if self.active_plan_cache_ttl_seconds > 0:
+            cached = self._active_plan_cache.get(user_id)
+            now_monotonic = time.monotonic()
+            if cached is not None and cached[0] > now_monotonic:
+                return cached[1]
+
         with self._lock:
             with self._connect() as conn:
-                return read_active_user_plan_query(
+                plan = read_active_user_plan_query(
                     conn,
                     fetchone=self._fetchone,
                     user_id=user_id,
                 )
+                if self.active_plan_cache_ttl_seconds > 0:
+                    expires_at = time.monotonic() + float(self.active_plan_cache_ttl_seconds)
+                    self._active_plan_cache[user_id] = (expires_at, plan)
+                return plan
 
     def _read_usage(self, identity: IdentityContext) -> dict[str, int | datetime]:
         with self._lock:
@@ -1263,6 +1316,9 @@ class AccessControlService:
                     "used_count": int(snapshot.used_count),
                     "window_started_at": snapshot.window_started_at,
                 }
+
+    def _invalidate_active_plan_cache(self, user_id: str) -> None:
+        self._active_plan_cache.pop(user_id, None)
 
     def _hash_password(self, password: str, salt: str) -> str:
         derived_key = hashlib.pbkdf2_hmac(
@@ -1485,16 +1541,56 @@ class AccessControlService:
                 row = self._fetchone(conn, "SELECT id FROM users WHERE id = ?", (user_id,))
                 return row is not None
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator:
         if self._use_postgres:
             assert psycopg is not None and dict_row is not None
-            conn = psycopg.connect(self.database_url, row_factory=dict_row)
-            with conn.cursor() as cur:
-                cur.execute(f'SET search_path TO "{self.database_schema}", public')
-            return conn
+            last_exc: Exception | None = None
+            for attempt in range(1, self.db_connect_retry_attempts + 1):
+                try:
+                    if self._postgres_pool is not None:
+                        with self._postgres_pool.connection(timeout=self.db_pool_timeout_seconds) as conn:
+                            with conn.cursor() as cur:
+                                cur.execute(f'SET search_path TO "{self.database_schema}", public')
+                            yield conn
+                            return
+
+                    with psycopg.connect(self.database_url, row_factory=dict_row) as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(f'SET search_path TO "{self.database_schema}", public')
+                        yield conn
+                        return
+                except Exception as exc:  # pragma: no cover - exercised in postgres environments
+                    last_exc = exc
+                    if attempt >= self.db_connect_retry_attempts or not self._is_retryable_db_exception(exc):
+                        raise
+                    sleep_seconds = (self.db_connect_retry_base_ms / 1000.0) * (2 ** (attempt - 1))
+                    time.sleep(min(sleep_seconds, 2.0))
+
+            if last_exc is not None:  # pragma: no cover - safety fallback
+                raise last_exc
+            raise RuntimeError("Failed to establish database connection.")
+
         conn = sqlite3.connect(self.db_file)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def _is_retryable_db_exception(self, exc: Exception) -> bool:
+        message = str(exc).lower()
+        retryable_hints = (
+            "failed to acquire permit to connect",
+            "too many database connection attempts",
+            "connection timeout",
+            "network is unreachable",
+            "control plane request failed",
+            "timeout expired",
+            "could not connect",
+            "connection refused",
+        )
+        return any(token in message for token in retryable_hints)
 
     def _init_db(self) -> None:
         if self._use_postgres:
@@ -1962,6 +2058,46 @@ class AccessControlService:
                         """
                         CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at
                         ON user_sessions(expires_at)
+                        """
+                    )
+                    cur.execute(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_plan_versions_code_version
+                        ON plan_versions(code, version)
+                        """
+                    )
+                    cur.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_user_plan_subscriptions_user_active
+                        ON user_plan_subscriptions(user_id, status)
+                        """
+                    )
+                    # Ensure a single active subscription per user before enforcing uniqueness.
+                    cur.execute(
+                        """
+                        WITH ranked AS (
+                            SELECT
+                                id,
+                                ROW_NUMBER() OVER (
+                                    PARTITION BY user_id
+                                    ORDER BY started_at DESC, id DESC
+                                ) AS rn
+                            FROM user_plan_subscriptions
+                            WHERE status = 'active'
+                        )
+                        UPDATE user_plan_subscriptions ups
+                        SET
+                            status = 'ended',
+                            ended_at = COALESCE(ups.ended_at, NOW()::text)
+                        FROM ranked
+                        WHERE ups.id = ranked.id AND ranked.rn > 1
+                        """
+                    )
+                    cur.execute(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_user_plan_subscriptions_one_active_per_user
+                        ON user_plan_subscriptions(user_id)
+                        WHERE status = 'active'
                         """
                     )
                     cur.execute(
