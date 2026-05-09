@@ -574,7 +574,9 @@ tr.row-deleted td:not(.actions-cell) {
   align-self: center;
 }
 
-#download-ofx-btn {
+#download-ofx-btn,
+#download-excel-btn,
+#download-report-btn {
   background: linear-gradient(135deg, #003ec7 0%, #0052ff 100%);
   color: #fff;
   border: 0;
@@ -584,7 +586,9 @@ tr.row-deleted td:not(.actions-cell) {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 14px 22px -16px rgba(0, 62, 199, 0.8);
 }
 
-#download-ofx-btn:hover:not(:disabled) {
+#download-ofx-btn:hover:not(:disabled),
+#download-excel-btn:hover:not(:disabled),
+#download-report-btn:hover:not(:disabled) {
   background: linear-gradient(135deg, #0035ad 0%, #0047e2 100%);
 }
 

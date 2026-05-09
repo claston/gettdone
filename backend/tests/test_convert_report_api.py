@@ -1,6 +1,8 @@
+from io import BytesIO
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 
 from app.application import AccessControlService, ReportService, TempAnalysisStorage
 from app.application.models import AnalysisData, TransactionRow
@@ -95,6 +97,26 @@ def test_convert_report_download_csv_happy_path(tmp_path: Path) -> None:
     assert response.headers["content-type"].startswith("text/csv")
     assert "extrato_nubank_convertido.csv" in response.headers["content-disposition"]
     assert "date,description,amount" in response.text
+    app.dependency_overrides.clear()
+
+
+def test_convert_report_download_xlsx_matches_conversion_review_layout(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+
+    response = client.get("/convert-report/an_convert123?format=xlsx&anonymous_fingerprint=fp-owner")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    assert "extrato_nubank_convertido.xlsx" in response.headers["content-disposition"]
+
+    workbook = load_workbook(filename=BytesIO(response.content), data_only=True)
+    sheet = workbook.active
+    headers = [sheet.cell(row=1, column=idx).value for idx in range(1, 5)]
+    assert headers == ["Data", "Historico", "Credito", "Debito"]
+    assert sheet.cell(row=2, column=1).value == "01-04-2026"
+    assert sheet.cell(row=2, column=2).value == "TEST"
+    assert sheet.cell(row=2, column=3).value is None
+    assert sheet.cell(row=2, column=4).value == 20
     app.dependency_overrides.clear()
 
 
