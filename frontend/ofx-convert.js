@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   const input = document.getElementById("file-input");
   const dropzone = document.getElementById("dropzone");
   const dropzoneEmpty = document.getElementById("dropzone-empty");
@@ -28,8 +28,22 @@
   const processingIdNode = document.getElementById("processing-id");
   const quotaRemainingLabelNode = document.getElementById("quota-remaining-label");
   const quotaRemainingNode = document.getElementById("quota-remaining");
+  const downloadSingleBtn = document.getElementById("download-report-btn");
   const downloadOfxBtn = document.getElementById("download-ofx-btn");
-  const VIEW_STATE_KEY = "ofxsimples_ofx_convert_view_state_v1";
+  const downloadExcelBtn = document.getElementById("download-excel-btn");
+  const hasDualDownloadButtons = Boolean(downloadOfxBtn && downloadExcelBtn);
+  const defaultDownloadBtn = downloadSingleBtn || downloadOfxBtn;
+  const outputFormat = hasDualDownloadButtons
+    ? "ofx"
+    : String(document.body.getAttribute("data-output-format") || "ofx")
+      .trim()
+      .toLowerCase() === "excel"
+      ? "excel"
+      : "ofx";
+  const requireAuthAccess = String(document.body.getAttribute("data-require-auth") || "").trim().toLowerCase() === "true";
+  const PUBLIC_CONVERT_PATH = "./convert.html";
+  const INTERNAL_LOGIN_URL = "./login.html?next=%2Fofx-convert.html&force_auth=1";
+  const VIEW_STATE_KEY = `ofxsimples_ofx_convert_view_state_${outputFormat}_v1`;
 
   const state = {
     analysisId: null,
@@ -92,6 +106,18 @@
       return null;
     }
     return { remaining, limit };
+  }
+
+  function setDownloadButtonsDisabled(isDisabled) {
+    if (defaultDownloadBtn) {
+      defaultDownloadBtn.disabled = isDisabled;
+    }
+    if (downloadOfxBtn) {
+      downloadOfxBtn.disabled = isDisabled;
+    }
+    if (downloadExcelBtn) {
+      downloadExcelBtn.disabled = isDisabled;
+    }
   }
 
   function isDraftRowId(rowId) {
@@ -305,6 +331,28 @@
     } catch (_error) {
       return "unknown";
     }
+  }
+
+  function redirectToInternalLogin() {
+    window.location.replace(INTERNAL_LOGIN_URL);
+  }
+
+  async function enforceAuthenticatedAccess() {
+    if (!requireAuthAccess) {
+      return true;
+    }
+    const token = getUserToken();
+    if (!token) {
+      redirectToInternalLogin();
+      return false;
+    }
+    const sessionState = await getSessionValidationState();
+    if (sessionState !== "valid") {
+      clearUserToken();
+      redirectToInternalLogin();
+      return false;
+    }
+    return true;
   }
 
   function buildOptionalAuthHeaders(userToken) {
@@ -523,7 +571,7 @@
         topAuthPrimaryLink.textContent = "Converter agora";
         topAuthPrimaryLink.classList.remove("top-account-trigger");
       }
-      topAuthPrimaryLink.setAttribute("href", hasSession ? "./client-area.html" : "./ofx-convert.html");
+      topAuthPrimaryLink.setAttribute("href", hasSession ? "./client-area.html" : PUBLIC_CONVERT_PATH);
     }
   }
 
@@ -726,7 +774,7 @@
     state.quotaLimit = null;
     markChangedRow(null);
     if (addRowBtn) addRowBtn.disabled = true;
-    if (downloadOfxBtn) downloadOfxBtn.disabled = true;
+    setDownloadButtonsDisabled(true);
     reviewRows.innerHTML = "";
     kpis.innerHTML = "";
     reviewSection.classList.add("hidden");
@@ -1211,7 +1259,7 @@
     if (addRowBtn) addRowBtn.disabled = false;
 
     const canDownload = Boolean(state.analysisId || state.processingId);
-    if (downloadOfxBtn) downloadOfxBtn.disabled = !canDownload;
+    setDownloadButtonsDisabled(!canDownload);
 
     setStatus("Sessão restaurada. Você pode continuar o download.", "success");
   }
@@ -1366,7 +1414,7 @@
       reviewSection.classList.remove("hidden");
       downloadSection.classList.remove("hidden");
       const canDownload = Boolean(state.analysisId);
-      if (downloadOfxBtn) downloadOfxBtn.disabled = !canDownload;
+      setDownloadButtonsDisabled(!canDownload);
 
       persistCurrentViewState();
 
@@ -1412,19 +1460,49 @@
     }
   }
 
-  async function runDownloadOfx() {
-    if (!state.processingId) {
+  function resolveDownloadConfig(fileFormat) {
+    if (fileFormat === "excel") {
+      const processingId = state.processingId || state.analysisId;
+      return {
+        format: "excel",
+        reportFormat: "xlsx",
+        targetId: processingId,
+        endpoint: processingId ? `${apiBase}/convert-report/${processingId}` : "",
+        fileName: processingId ? `ofxsimples-${processingId}.xlsx` : "ofxsimples-convert.xlsx",
+        errorMessage: "Falha ao baixar Excel.",
+        networkErrorMessage: "Falha de rede ao baixar Excel.",
+      };
+    }
+    const processingId = state.processingId || state.analysisId;
+    return {
+      format: "ofx",
+      reportFormat: "ofx",
+      targetId: processingId,
+      endpoint: processingId ? `${apiBase}/convert-report/${processingId}` : "",
+      fileName: processingId ? `ofxsimples-${processingId}.ofx` : "ofxsimples-convert.ofx",
+      errorMessage: "Falha ao baixar OFX.",
+      networkErrorMessage: "Falha de rede ao baixar OFX.",
+    };
+  }
+
+  async function runDownloadReport(formatOverride) {
+    const requestedFormat = String(formatOverride || outputFormat).trim().toLowerCase() === "excel" ? "excel" : "ofx";
+    const downloadConfig = resolveDownloadConfig(requestedFormat);
+    if (!downloadConfig.targetId) {
       setStatus("Converta um arquivo antes de baixar.", "error");
       return;
     }
     const query = buildIdentityQueryParams();
-    query.set("format", "ofx");
     const token = getUserToken();
     const headers = buildOptionalAuthHeaders(token);
 
     try {
       setStatus("Preparando download...", null);
-      const response = await fetch(`${apiBase}/convert-report/${state.processingId}?${query.toString()}`, {
+      if (downloadConfig.reportFormat) {
+        query.set("format", downloadConfig.reportFormat);
+      }
+      const url = `${downloadConfig.endpoint}?${query.toString()}`;
+      const response = await fetch(url, {
         method: "GET",
         credentials: "include",
         ...(headers ? { headers } : {}),
@@ -1432,7 +1510,7 @@
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
         const detail = payload && typeof payload === "object" ? payload.detail : null;
-        const message = String(detail || "Falha ao baixar OFX.");
+        const message = String(detail || downloadConfig.errorMessage);
         setStatus(message, "error");
         return;
       }
@@ -1441,14 +1519,14 @@
       const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
-      anchor.download = `ofxsimples-${state.processingId}.ofx`;
+      anchor.download = downloadConfig.fileName;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(objectUrl);
       setStatus("Download iniciado.", "success");
     } catch (_error) {
-      setStatus("Falha de rede ao baixar OFX.", "error");
+      setStatus(downloadConfig.networkErrorMessage, "error");
     }
   }
 
@@ -1562,7 +1640,18 @@
   });
   convertBtn.addEventListener("click", runConvert);
   if (addRowBtn) addRowBtn.addEventListener("click", startInsertRow);
-  if (downloadOfxBtn) downloadOfxBtn.addEventListener("click", runDownloadOfx);
+  if (hasDualDownloadButtons) {
+    downloadOfxBtn.addEventListener("click", function () {
+      void runDownloadReport("ofx");
+    });
+    downloadExcelBtn.addEventListener("click", function () {
+      void runDownloadReport("excel");
+    });
+  } else if (defaultDownloadBtn) {
+    defaultDownloadBtn.addEventListener("click", function () {
+      void runDownloadReport(outputFormat);
+    });
+  }
   if (clearFileBtn) {
     clearFileBtn.addEventListener("click", (event) => {
       event.preventDefault();
@@ -1589,25 +1678,32 @@
       menuToggle.setAttribute("aria-expanded", open ? "true" : "false");
     });
   }
-  updateQuotaRemainingLabel();
-  forceUnlockUi();
-  setSelectedFileLabel();
-  const didForceLogout = consumeLogoutQueryFlag();
-  syncHeroAuthLinks();
-  void hydrateTopAccountEmail();
-  void syncUploadLimitsBySession();
-  syncQuotaAuthLinks();
-  const navigationType = getNavigationType();
-  const shouldRestoreState = navigationType === "reload";
-  if (!shouldRestoreState) {
-    clearViewState();
+  async function initializePage() {
+    updateQuotaRemainingLabel();
+    forceUnlockUi();
+    setSelectedFileLabel();
+    const didForceLogout = consumeLogoutQueryFlag();
+    if (!(await enforceAuthenticatedAccess())) {
+      return;
+    }
+    syncHeroAuthLinks();
+    void hydrateTopAccountEmail();
+    void syncUploadLimitsBySession();
+    syncQuotaAuthLinks();
+    const navigationType = getNavigationType();
+    const shouldRestoreState = navigationType === "reload";
+    if (!shouldRestoreState) {
+      clearViewState();
+    }
+    const persistedState = loadViewState();
+    if (persistedState) {
+      restoreViewFromState(persistedState);
+    }
+    void syncQuotaLockState();
+    if (didForceLogout && !requireAuthAccess) {
+      setStatus("Sessão encerrada. Você está no modo gratuito (anônimo).", "success");
+    }
   }
-  const persistedState = loadViewState();
-  if (persistedState) {
-    restoreViewFromState(persistedState);
-  }
-  void syncQuotaLockState();
-  if (didForceLogout) {
-    setStatus("Sessão encerrada. Você está no modo gratuito (anônimo).", "success");
-  }
+
+  void initializePage();
 })();

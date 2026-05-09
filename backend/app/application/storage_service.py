@@ -80,7 +80,12 @@ class TempAnalysisStorage:
 
     def get_convert_report_path(self, analysis_id: str, file_format: str) -> Path:
         analysis_dir = self.root_dir / analysis_id
-        suffix = "ofx" if file_format == "ofx" else "csv"
+        if file_format == "ofx":
+            suffix = "ofx"
+        elif file_format == "xlsx":
+            suffix = "xlsx"
+        else:
+            suffix = "csv"
         report_path = analysis_dir / f"converted.{suffix}"
         if not report_path.exists():
             raise AnalysisNotFoundError
@@ -522,6 +527,19 @@ class TempAnalysisStorage:
             writer.writerow([item.date, item.description, item.amount, item.category, item.reconciliation_status])
         (analysis_dir / "converted.csv").write_text(csv_buffer.getvalue(), encoding="utf-8")
 
+        # Converted XLSX mirrors the conversion review table (Data, Historico, Credito, Debito).
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Conversao"
+        sheet.append(["Data", "Historico", "Credito", "Debito"])
+        for item in active_rows:
+            amount = float(item.amount)
+            credit = round(amount, 2) if amount > 0 else None
+            debit = round(abs(amount), 2) if amount < 0 else None
+            sheet.append([self._format_convert_date(item.date), item.description, credit, debit])
+        self._format_transacoes_sheet(sheet)
+        workbook.save(analysis_dir / "converted.xlsx")
+
     def _write_report_workbook(
         self,
         analysis_dir: Path,
@@ -729,6 +747,14 @@ class TempAnalysisStorage:
         if any(char in text for char in [",", "\"", "\n", "\r"]):
             return f"\"{text.replace('\"', '\"\"')}\""
         return text
+
+    def _format_convert_date(self, value: str) -> str:
+        raw = str(value or "").strip()
+        if len(raw) == 10 and raw[4] == "-" and raw[7] == "-":
+            year, month, day = raw.split("-")
+            if year.isdigit() and month.isdigit() and day.isdigit():
+                return f"{day}-{month}-{year}"
+        return raw
 
     def _translate_source_label(self, source: object) -> str:
         text = "" if source is None else str(source)

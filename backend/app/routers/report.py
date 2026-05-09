@@ -114,7 +114,7 @@ def get_reconcile_report(
 @router.get("/convert-report/{processing_id}")
 def get_convert_report(
     processing_id: str,
-    file_format: Literal["ofx", "csv"] = Query(default="ofx", alias="format"),
+    file_format: Literal["ofx", "csv", "xlsx"] = Query(default="ofx", alias="format"),
     anonymous_fingerprint: str | None = Query(default=None),
     authorization: str | None = Header(default=None),
     user_token: str | None = Query(default=None),
@@ -150,7 +150,12 @@ def get_convert_report(
             detail="Missing or invalid identity context. Send anonymous_fingerprint or a valid user_token.",
         )
 
-    media_type = "application/x-ofx" if file_format == "ofx" else "text/csv; charset=utf-8"
+    if file_format == "ofx":
+        media_type = "application/x-ofx"
+    elif file_format == "xlsx":
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        media_type = "text/csv; charset=utf-8"
     download_filename = _build_convert_download_filename(
         analysis_id=processing_id,
         upload_filename=upload_filename,
