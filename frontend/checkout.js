@@ -27,6 +27,8 @@
   const orderPaymentLinkLineNode = document.getElementById("order-payment-link-line");
   const orderPaymentLinkNode = document.getElementById("order-payment-link");
   const orderRefreshBtn = document.getElementById("order-refresh-btn");
+  const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+  const COLD_START_TIMEOUT_MS = 5500;
 
   let selectedPlan = null;
   let currentIntentId = String(new URL(window.location.href).searchParams.get("intent") || "").trim();
@@ -140,6 +142,63 @@
     return "http://127.0.0.1:8000";
   }
 
+  function sleep(ms) {
+    return new Promise(function (resolve) {
+      window.setTimeout(resolve, ms);
+    });
+  }
+
+  function isRetryableStatus(statusCode) {
+    return RETRYABLE_STATUS.has(Number(statusCode || 0));
+  }
+
+  async function fetchJsonWithRetry(url, init, options) {
+    const settings = options || {};
+    const maxAttempts = Math.max(1, Number(settings.attempts || 1));
+    const timeoutMs = Math.max(1000, Number(settings.timeoutMs || COLD_START_TIMEOUT_MS));
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const controller = typeof AbortController === "function" ? new AbortController() : null;
+      const timeoutHandle = controller
+        ? window.setTimeout(function () {
+            controller.abort();
+          }, timeoutMs)
+        : null;
+
+      try {
+        const response = await fetch(url, {
+          ...(init || {}),
+          ...(controller ? { signal: controller.signal } : {}),
+        });
+        const payload = await response.json().catch(function () {
+          return {};
+        });
+
+        if (response.ok) {
+          return { ok: true, payload: payload, status: response.status };
+        }
+        if (attempt < maxAttempts && isRetryableStatus(response.status)) {
+          await sleep(500 * attempt);
+          continue;
+        }
+        return { ok: false, payload: payload, status: response.status };
+      } catch (error) {
+        lastError = error;
+        if (attempt < maxAttempts) {
+          await sleep(500 * attempt);
+          continue;
+        }
+      } finally {
+        if (timeoutHandle !== null) {
+          window.clearTimeout(timeoutHandle);
+        }
+      }
+    }
+
+    throw lastError || new Error("network-failure");
+  }
+
   function getUserToken() {
     const localToken = String(localStorage.getItem(USER_TOKEN_KEY) || "").trim();
     if (localToken) {
@@ -219,12 +278,16 @@
     try {
       const apiBase = resolveApiBase();
       const headers = buildOptionalAuthHeaders(token);
-      const response = await fetch(`${apiBase}/auth/me`, {
-        credentials: "include",
-        ...(headers ? { headers } : {}),
-      });
-      if (!response.ok) {
-        if (response.status === 401) {
+      const result = await fetchJsonWithRetry(
+        `${apiBase}/auth/me`,
+        {
+          credentials: "include",
+          ...(headers ? { headers } : {}),
+        },
+        { attempts: 2 },
+      );
+      if (!result.ok) {
+        if (result.status === 401) {
           if (token) {
             clearAuthState();
           }
@@ -232,9 +295,7 @@
         }
         return;
       }
-      const payload = await response.json().catch(function () {
-        return {};
-      });
+      const payload = result.payload || {};
       const name = String(payload.name || "").trim();
       const email = String(payload.email || "").trim();
       prefillCheckoutIdentity(name, email);
@@ -339,16 +400,16 @@
   async function loadPlanCatalog() {
     const url = new URL(window.location.href);
     const requestedCode = String(url.searchParams.get("plan") || "").trim().toLowerCase();
+    setStatus("Carregando dados do plano...", false);
     try {
       const apiBase = resolveApiBase();
-      const response = await fetch(`${apiBase}/plans`);
-      if (!response.ok) throw new Error("plan-catalog-unavailable");
-      const payload = await response.json().catch(function () {
-        return {};
-      });
+      const result = await fetchJsonWithRetry(`${apiBase}/plans`, undefined, { attempts: 3 });
+      if (!result.ok) throw new Error("plan-catalog-unavailable");
+      const payload = result.payload || {};
       const items = Array.isArray(payload.items) ? payload.items : [];
       if (!items.length) {
         renderPlan(null);
+        setStatus("Não encontramos planos disponíveis neste momento.", true);
         return;
       }
       items.sort(function (a, b) {
@@ -358,8 +419,10 @@
         return String(item.code || "").toLowerCase() === requestedCode;
       });
       renderPlan(matched || items[0]);
+      setStatus("", false);
     } catch (_error) {
       renderPlan(null);
+      setStatus("O servidor está iniciando. Recarregue em alguns segundos.", true);
     }
   }
 
