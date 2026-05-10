@@ -33,8 +33,13 @@
     ".quota-lock-overlay",
     ".modal-backdrop",
     ".modal",
+    ".modal-overlay",
+    "[data-close-modal='true']",
   ];
-  const TRANSIENT_BODY_LOCK_CLASSES = ["quota-locked"];
+  const TRANSIENT_BODY_LOCK_CLASSES = ["quota-locked", "modal-open"];
+  const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+  const COLD_START_TIMEOUT_MS = 5500;
+  let unlockRetryTimer = null;
 
   function isIpv4Host(hostname) {
     return /^\d{1,3}(\.\d{1,3}){3}$/.test(String(hostname || "").trim());
@@ -205,6 +210,16 @@
         node.style.pointerEvents = "none";
       }
     }
+  }
+
+  function scheduleForceUnlockTransientUi() {
+    if (unlockRetryTimer !== null) {
+      window.clearTimeout(unlockRetryTimer);
+    }
+    unlockRetryTimer = window.setTimeout(function () {
+      forceUnlockTransientUi();
+      unlockRetryTimer = null;
+    }, 220);
   }
 
   function getInitialLabel(text) {
@@ -498,17 +513,62 @@
     }
   }
 
-  async function fetchJson(url, init) {
+  function sleep(ms) {
+    return new Promise(function (resolve) {
+      window.setTimeout(resolve, ms);
+    });
+  }
+
+  function isRetryableStatus(statusCode) {
+    return RETRYABLE_STATUS.has(Number(statusCode || 0));
+  }
+
+  async function fetchJson(url, init, options) {
+    const settings = options || {};
+    const maxAttempts = Math.max(1, Number(settings.attempts || 1));
+    const timeoutMs = Math.max(1000, Number(settings.timeoutMs || COLD_START_TIMEOUT_MS));
     const requestInit = {
       credentials: "include",
       ...(init || {}),
     };
-    const response = await fetch(url, requestInit);
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(payload.detail || "Falha ao carregar dados.");
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const controller = typeof AbortController === "function" ? new AbortController() : null;
+      const timeoutHandle = controller
+        ? window.setTimeout(function () {
+            controller.abort();
+          }, timeoutMs)
+        : null;
+
+      try {
+        const response = await fetch(url, {
+          ...requestInit,
+          ...(controller ? { signal: controller.signal } : {}),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (response.ok) {
+          return payload;
+        }
+        if (attempt < maxAttempts && isRetryableStatus(response.status)) {
+          await sleep(500 * attempt);
+          continue;
+        }
+        throw new Error(payload.detail || "Falha ao carregar dados.");
+      } catch (error) {
+        lastError = error;
+        if (attempt < maxAttempts) {
+          await sleep(500 * attempt);
+          continue;
+        }
+      } finally {
+        if (timeoutHandle !== null) {
+          window.clearTimeout(timeoutHandle);
+        }
+      }
     }
-    return payload;
+
+    throw (lastError instanceof Error ? lastError : new Error("Falha ao carregar dados."));
   }
 
   function mapPlansByCode(plansCatalog) {
@@ -533,6 +593,7 @@
         const requestedOrder = await fetchJson(
           `${apiBase}/checkout/intents/${encodeURIComponent(requestedIntentId)}`,
           requestInit,
+          { attempts: 2 },
         );
         pushOrder(requestedOrder);
       } catch (_error) {
@@ -541,7 +602,7 @@
     }
 
     try {
-      const latestOrder = await fetchJson(`${apiBase}/checkout/intents/latest`, requestInit);
+      const latestOrder = await fetchJson(`${apiBase}/checkout/intents/latest`, requestInit, { attempts: 2 });
       pushOrder(latestOrder);
     } catch (_error) {
       // Optional source for history.
@@ -551,15 +612,17 @@
 
   async function loadClientArea() {
     const token = getUserToken();
+    forceUnlockTransientUi();
+    scheduleForceUnlockTransientUi();
 
     try {
       const query = new URL(window.location.href).searchParams;
       const requestedIntentId = String(query.get("checkout_intent") || "").trim();
       const authHeaders = token ? { authorization: `Bearer ${token}` } : null;
       const authInit = authHeaders ? { headers: authHeaders } : undefined;
-      const mePromise = fetchJson(`${apiBase}/auth/me`, authInit);
-      const historyPromise = fetchJson(`${apiBase}/client/conversions?limit=20`, authInit);
-      const plansPromise = fetchJson(`${apiBase}/plans`).catch(() => ({ items: [] }));
+      const mePromise = fetchJson(`${apiBase}/auth/me`, authInit, { attempts: 3 });
+      const historyPromise = fetchJson(`${apiBase}/client/conversions?limit=20`, authInit, { attempts: 3 });
+      const plansPromise = fetchJson(`${apiBase}/plans`, undefined, { attempts: 3 }).catch(() => ({ items: [] }));
 
       const history = await historyPromise;
       renderRows(history.items || []);
@@ -628,6 +691,9 @@
       historyRows.innerHTML = '<tr><td colspan="5">Não foi possível carregar as conversões.</td></tr>';
       renderOrderRows([]);
       clearOrderStatus();
+    } finally {
+      forceUnlockTransientUi();
+      scheduleForceUnlockTransientUi();
     }
   }
 
@@ -662,19 +728,28 @@
 
   window.addEventListener("pageshow", () => {
     forceUnlockTransientUi();
+    scheduleForceUnlockTransientUi();
   });
 
   window.addEventListener("focus", () => {
     forceUnlockTransientUi();
+    scheduleForceUnlockTransientUi();
   });
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       forceUnlockTransientUi();
+      scheduleForceUnlockTransientUi();
     }
   });
 
+  document.addEventListener("DOMContentLoaded", () => {
+    forceUnlockTransientUi();
+    scheduleForceUnlockTransientUi();
+  });
+
   forceUnlockTransientUi();
+  scheduleForceUnlockTransientUi();
   bootstrapAccountPreview();
   void loadClientArea();
 })();
