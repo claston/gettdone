@@ -16,6 +16,21 @@ def test_infer_pdf_layout_prefers_nubank_profile_when_tokens_match() -> None:
     assert result.confidence >= 0.6
 
 
+def test_infer_pdf_layout_prefers_nubank_profile_when_brand_token_matches() -> None:
+    text = """
+    Nubank
+    Conta
+    15/04/2026 PIX RECEBIDO CLIENTE 100,00 1.100,00
+    16/04/2026 PAGAMENTO BOLETO -50,00 1.050,00
+    Saldo disponivel
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "nubank_statement_ptbr"
+    assert result.confidence >= 0.7
+
+
 def test_infer_pdf_layout_prefers_itau_profile_when_tokens_match() -> None:
     text = """
     saldo em conta Limite da Conta utilizado Limite da Conta disponível
