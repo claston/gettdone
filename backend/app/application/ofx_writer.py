@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from app.application.models import NormalizedTransaction
+from app.application.ofx_identity import build_fit_id_sequence
 
 
 def build_ofx_statement(
@@ -49,14 +50,15 @@ def build_ofx_statement(
         "        <BANKTRANLIST>",
     ]
 
-    for index, transaction in enumerate(transactions, start=1):
+    fit_ids = build_fit_id_sequence(transactions)
+    for transaction, fit_id in zip(transactions, fit_ids, strict=True):
         lines.extend(
             [
                 "          <STMTTRN>",
                 f"            <TRNTYPE>{_transaction_type_tag(transaction.type)}",
                 f"            <DTPOSTED>{_format_ofx_date(transaction.date)}",
                 f"            <TRNAMT>{transaction.amount:.2f}",
-                f"            <FITID>{index}",
+                f"            <FITID>{fit_id}",
                 f"            <NAME>{_escape_ofx_text(transaction.description)}",
                 f"            <MEMO>{_escape_ofx_text(transaction.description)}",
                 "          </STMTTRN>",

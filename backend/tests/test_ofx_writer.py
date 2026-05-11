@@ -29,6 +29,7 @@ def test_build_ofx_statement_contains_required_tags_and_roundtrips() -> None:
     assert "<DTPOSTED>20260402000000[-3:BRT]" in statement
     assert "<TRNAMT>-58.90" in statement
     assert "<TRNAMT>2500.00" in statement
+    assert "<FITID>OFXS-" in statement
 
     parsed = parse_ofx_transactions(statement.encode("utf-8"))
     assert parsed == transactions
@@ -50,3 +51,28 @@ def test_build_ofx_statement_accepts_credit_card_account_type() -> None:
     assert "<CCSTMTTRNRS>" in statement
     assert "<CCSTMTRS>" in statement
     assert "<BANKMSGSRSV1>" not in statement
+
+
+def test_build_ofx_statement_generates_stable_fitids() -> None:
+    transactions = [
+        NormalizedTransaction(
+            date="2026-04-01",
+            description="PIX RECEBIDO CLIENTE",
+            amount=100.0,
+            type="inflow",
+        ),
+        NormalizedTransaction(
+            date="2026-04-01",
+            description="PIX RECEBIDO CLIENTE",
+            amount=100.0,
+            type="inflow",
+        ),
+    ]
+
+    first_statement = build_ofx_statement(transactions)
+    second_statement = build_ofx_statement(transactions)
+
+    assert first_statement == second_statement
+    fitid_lines = [line.strip() for line in first_statement.splitlines() if "<FITID>" in line]
+    assert len(fitid_lines) == 2
+    assert fitid_lines[0] != fitid_lines[1]

@@ -1,6 +1,5 @@
 import os
 import re
-import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
@@ -10,6 +9,7 @@ from pypdf import PdfReader
 from app.application.csv_parser import _parse_amount
 from app.application.errors import InvalidFileContentError
 from app.application.models import NormalizedTransaction
+from app.application.normalization.text import normalize_upper_text
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
 
 MONTH_TO_NUMBER = {
@@ -705,6 +705,4 @@ def _build_iso_date(year: str, month_abbrev: str, day: str) -> str:
 
 
 def _normalize_text(value: str) -> str:
-    upper = unicodedata.normalize("NFKD", value.upper())
-    without_accents = "".join(ch for ch in upper if not unicodedata.combining(ch))
-    return re.sub(r"\s+", " ", without_accents).strip()
+    return normalize_upper_text(value)
