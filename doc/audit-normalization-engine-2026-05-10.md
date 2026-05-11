@@ -16,7 +16,7 @@ Ainda nao considero o motor pronto para prometer "grande maioria dos PDFs de ext
 
 ## Evidencias observadas
 
-- `backend/app/application/pdf_parser.py` concentra extracao, flattening de linhas, selecao de parser, parsing grouped/inline/tabular/columnar, inferencia de sinal, datas, filtros e OCR fallback.
+- `backend/app/application/pdf_parser.py` concentra extracao, flattening de linhas, selecao de parser, parsing grouped/inline/tabular/columnar, inferencia de sinal, datas e filtros. OCR fica isolado e desativado nesta fase.
 - `backend/app/application/normalizer.py` normaliza campos finais, mas o modelo `NormalizedTransaction` so carrega `date`, `description`, `amount` e `type`.
 - `backend/app/application/ofx_writer.py` gerava `FITID` sequencial, o que criava risco de duplicidade quando o mesmo PDF fosse convertido novamente com ordenacao diferente ou linhas inseridas.
 - `backend/app/application/pdf_layout_inference.py` tinha perfis para Nubank, Itau, Santander, Bradesco, Banco do Brasil, Caixa, Inter e Sicredi, mas dependia de termos de layout especificos.
@@ -36,7 +36,7 @@ Ainda nao considero o motor pronto para prometer "grande maioria dos PDFs de ext
 ### P1
 
 - A deteccao de layout ainda e baseada em tokens estaticos e nao possui explicabilidade suficiente por perfil.
-- O OCR e opcional, mas ainda nao ha contrato de qualidade para PDF escaneado.
+- O OCR esta desativado nesta fase; ainda nao ha contrato de qualidade para PDF escaneado.
 - A normalizacao semantica de descricoes e simples; nao separa contraparte, canal, tipo de operacao, documento e ruido.
 - A geracao de Excel ainda e mais uma tabela de conversao do que um relatorio tecnico/auditavel.
 
@@ -105,4 +105,3 @@ Nao recomendo vender a cobertura atual como "grande maioria dos PDFs de bancos b
 - relatorio de baixa confianca/inconsistencias.
 
 Com os primeiros ajustes desta branch, o projeto comeca a sair de arquivos soltos para modulos de dominio, mas ainda precisamos fazer a modularizacao grande em etapas pequenas e testadas.
-

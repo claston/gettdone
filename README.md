@@ -40,17 +40,11 @@ TTL de analises (opcional):
 $env:ANALYSIS_TTL_SECONDS = "86400" # 24 horas
 ```
 
-OCR opcional para PDF sem camada de texto:
+OCR para PDF sem camada de texto:
 
-```powershell
-$env:PDF_OCR_ENABLED = "true"
-```
-
-Observacoes do OCR:
-
-- O fluxo padrao continua sem OCR (mais rapido) e tenta extracao nativa primeiro.
-- Quando `PDF_OCR_ENABLED=true`, PDFs sem texto extraivel tentam fallback via OCR.
-- Dependencias opcionais para OCR (alem do `requirements.txt`): `pypdfium2`, `pytesseract` e binario Tesseract OCR instalado no host.
+- OCR esta desativado nesta fase para evitar risco de consumo excessivo de memoria/CPU em ambientes de usuario.
+- O fluxo atual aceita PDFs com texto extraivel e retorna erro orientativo para PDFs escaneados/imagem.
+- O codigo experimental de OCR fica isolado para hardening futuro, mas nao e chamado pelo parser em runtime.
 
 ## Rodar frontend
 

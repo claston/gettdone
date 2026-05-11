@@ -1,4 +1,3 @@
-import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -11,6 +10,7 @@ from app.application.errors import InvalidFileContentError
 from app.application.models import NormalizedTransaction
 from app.application.normalization.text import normalize_upper_text
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
+from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE
 
 MONTH_TO_NUMBER = {
     "JAN": 1,
@@ -163,13 +163,7 @@ def _extract_pdf_page_texts(raw_bytes: bytes) -> list[str]:
     if pages:
         return pages
 
-    if _is_pdf_ocr_enabled():
-        ocr_pages = _extract_pdf_page_texts_with_ocr(raw_bytes)
-        if ocr_pages:
-            return ocr_pages
-        raise InvalidFileContentError("OCR is enabled, but no text could be extracted from PDF pages.")
-
-    raise InvalidFileContentError("PDF does not contain extractable text.")
+    raise InvalidFileContentError(PDF_OCR_DISABLED_MESSAGE)
 
 
 def _read_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
@@ -181,80 +175,6 @@ def _read_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
     pages = [(page.extract_text() or "").strip() for page in reader.pages]
     pages = [item for item in pages if item]
     return pages
-
-
-def _extract_pdf_page_texts_with_ocr(raw_bytes: bytes) -> list[str]:
-    try:
-        import pypdfium2 as pdfium
-        import pytesseract
-    except Exception as exc:
-        raise InvalidFileContentError(
-            "OCR dependencies are not installed. Install optional packages for OCR support."
-        ) from exc
-
-    document = None
-    try:
-        document = pdfium.PdfDocument(raw_bytes)
-    except Exception as exc:
-        raise InvalidFileContentError("Unable to render PDF pages for OCR.") from exc
-
-    try:
-        max_pages = _get_pdf_ocr_max_pages()
-        if len(document) > max_pages:
-            raise InvalidFileContentError(
-                f"OCR fallback is limited to {max_pages} pages to protect memory usage. "
-                "Try a smaller PDF or disable OCR fallback."
-            )
-
-        texts: list[str] = []
-        for page_index in range(len(document)):
-            page = None
-            bitmap = None
-            image = None
-            try:
-                page = document[page_index]
-                bitmap = page.render(scale=200 / 72)
-                image = bitmap.to_pil()
-                text = (pytesseract.image_to_string(image, lang="por+eng") or "").strip()
-                if text:
-                    texts.append(text)
-            except Exception as exc:
-                raise InvalidFileContentError("OCR failed while processing PDF pages.") from exc
-            finally:
-                try:
-                    image.close()
-                except Exception:
-                    pass
-                try:
-                    bitmap.close()
-                except Exception:
-                    pass
-                try:
-                    page.close()
-                except Exception:
-                    pass
-        return texts
-    finally:
-        try:
-            document.close()
-        except Exception:
-            pass
-
-
-def _is_pdf_ocr_enabled() -> bool:
-    raw = os.getenv("PDF_OCR_ENABLED", "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
-
-
-def _get_pdf_ocr_max_pages() -> int:
-    raw = os.getenv("PDF_OCR_MAX_PAGES", "").strip()
-    if not raw:
-        return 12
-    try:
-        value = int(raw)
-    except ValueError:
-        return 12
-    return max(1, value)
 
 
 def _flatten_statement_lines(page_texts: list[str]) -> list[str]:

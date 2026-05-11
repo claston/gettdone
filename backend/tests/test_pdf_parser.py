@@ -1,4 +1,7 @@
+import pytest
+
 from app.application import pdf_parser as pdf_parser_module
+from app.application.errors import InvalidFileContentError
 from app.application.pdf_parser import parse_pdf_transactions
 
 
@@ -33,3 +36,11 @@ def test_parse_pdf_transactions_parses_unicode_minus_with_currency_prefix(monkey
     assert len(result.transactions) == 1
     assert result.transactions[0].date == "2026-04-10"
     assert result.transactions[0].amount == -10.0
+
+
+def test_parse_pdf_transactions_does_not_run_ocr_fallback(monkeypatch) -> None:
+    monkeypatch.setenv("PDF_OCR_ENABLED", "true")
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [])
+
+    with pytest.raises(InvalidFileContentError, match="OCR fallback is disabled"):
+        parse_pdf_transactions(b"%PDF synthetic")
