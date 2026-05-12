@@ -117,30 +117,46 @@ class _SelectedTabularAmount:
     description_end: int
 
 
+@dataclass(frozen=True)
+class _PdfLine:
+    text: str
+    page_number: int
+    line_number: int
+
+
+@dataclass(frozen=True)
+class _ParsedTransaction:
+    transaction: NormalizedTransaction
+    source_page: int | None = None
+    source_line: int | None = None
+
+
 def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
     page_texts = _extract_pdf_page_texts(raw_bytes)
     joined_text = "\n".join(page_texts)
     layout = infer_pdf_layout(joined_text)
     layout_profile = get_layout_profile(layout.layout_name)
     lines = _flatten_statement_lines(page_texts)
-    grouped_transactions = _parse_grouped_statement_lines(lines)
-    transactions = grouped_transactions
+    grouped_rows = _parse_grouped_statement_lines(lines)
+    transactions = [item.transaction for item in grouped_rows]
     inline_candidates = 0
     inline_transactions_count = 0
     tabular_candidates = 0
     columnar_candidates = 0
     selected_parser = "grouped"
     if not transactions:
-        inline_transactions, inline_candidates = _parse_inline_statement_rows(lines)
-        inline_transactions_count = len(inline_transactions)
-        transactions = inline_transactions
+        inline_rows, inline_candidates = _parse_inline_statement_rows(lines)
+        inline_transactions_count = len(inline_rows)
+        transactions = [item.transaction for item in inline_rows]
         selected_parser = "inline"
         if not transactions:
-            transactions, tabular_candidates = _parse_tabular_statement_rows(lines, layout_profile=layout_profile)
+            tabular_rows, tabular_candidates = _parse_tabular_statement_rows(lines, layout_profile=layout_profile)
+            transactions = [item.transaction for item in tabular_rows]
             if transactions:
                 selected_parser = "tabular"
         if not transactions:
-            transactions, columnar_candidates = _parse_columnar_statement_blocks(lines)
+            columnar_rows, columnar_candidates = _parse_columnar_statement_blocks(lines)
+            transactions = [item.transaction for item in columnar_rows]
             if transactions:
                 selected_parser = "columnar"
         if not transactions:
@@ -153,15 +169,23 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
                 "PDF text was extracted, but no recognizable transaction row pattern was found."
             )
 
+    parsed_rows = {
+        "grouped": grouped_rows,
+        "inline": inline_rows if "inline_rows" in locals() else [],
+        "tabular": tabular_rows if "tabular_rows" in locals() else [],
+        "columnar": columnar_rows if "columnar_rows" in locals() else [],
+    }.get(selected_parser, [])
     canonical_transactions = [
         from_normalized_transaction(
-            transaction,
+            row.transaction,
             bank_name=layout_profile.bank if layout_profile is not None else None,
             layout_name=layout.layout_name,
+            source_page=row.source_page,
+            source_line=row.source_line,
             warnings=["layout_fallback"] if layout.used_fallback else None,
             confidence=layout.confidence,
         )
-        for transaction in transactions
+        for row in parsed_rows
     ]
 
     return PdfParseResult(
@@ -173,7 +197,7 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
             "page_count": len(page_texts),
             "extracted_char_count": len(joined_text),
             "flattened_line_count": len(lines),
-            "grouped_transactions_count": len(grouped_transactions),
+            "grouped_transactions_count": len(grouped_rows),
             "inline_candidates_count": inline_candidates,
             "inline_transactions_count": inline_transactions_count,
             "selected_parser": selected_parser,
@@ -200,25 +224,25 @@ def _read_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
     return pages
 
 
-def _flatten_statement_lines(page_texts: list[str]) -> list[str]:
-    lines: list[str] = []
-    for page_text in page_texts:
-        for line in page_text.splitlines():
+def _flatten_statement_lines(page_texts: list[str]) -> list[_PdfLine]:
+    lines: list[_PdfLine] = []
+    for page_index, page_text in enumerate(page_texts):
+        for line_index, line in enumerate(page_text.splitlines()):
             cleaned = " ".join(line.split())
             if cleaned:
-                lines.append(cleaned)
+                lines.append(_PdfLine(text=cleaned, page_number=page_index + 1, line_number=line_index + 1))
     return lines
 
 
-def _parse_grouped_statement_lines(lines: list[str]) -> list[NormalizedTransaction]:
-    transactions: list[NormalizedTransaction] = []
+def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransaction]:
+    transactions: list[_ParsedTransaction] = []
     current_date: str | None = None
     current_section_hint: str | None = None
     description_parts: list[str] = []
-    inferred_year = _infer_default_statement_year(lines)
+    inferred_year = _infer_default_statement_year([line.text for line in lines])
 
     for line in lines:
-        normalized_line = _normalize_text(line)
+        normalized_line = _normalize_text(line.text)
         date_match = DATE_HEADER_PATTERN.match(normalized_line)
         if date_match:
             current_date = _build_iso_date(
@@ -236,6 +260,8 @@ def _parse_grouped_statement_lines(lines: list[str]) -> list[NormalizedTransacti
                 date=current_date,
                 rest=rest,
                 section_hint=current_section_hint,
+                source_page=line.page_number,
+                source_line=line.line_number,
             )
             if inline_transaction is not None:
                 transactions.append(inline_transaction)
@@ -265,6 +291,8 @@ def _parse_grouped_statement_lines(lines: list[str]) -> list[NormalizedTransacti
                 date=current_date,
                 rest=rest,
                 section_hint=current_section_hint,
+                source_page=line.page_number,
+                source_line=line.line_number,
             )
             if inline_transaction is not None:
                 transactions.append(inline_transaction)
@@ -284,35 +312,39 @@ def _parse_grouped_statement_lines(lines: list[str]) -> list[NormalizedTransacti
             description_parts = []
             continue
 
-        if AMOUNT_PATTERN.fullmatch(line):
+        if AMOUNT_PATTERN.fullmatch(line.text):
             if not description_parts:
                 continue
-            amount = _parse_pdf_amount(line)
+            amount = _parse_pdf_amount(line.text)
             description = " ".join(description_parts).strip()
             signed_amount = _apply_sign_hints(amount=amount, description=description, section_hint=current_section_hint)
             transactions.append(
-                NormalizedTransaction(
-                    date=current_date,
-                    description=description,
-                    amount=signed_amount,
-                    type="inflow" if signed_amount >= 0 else "outflow",
+                _ParsedTransaction(
+                    transaction=NormalizedTransaction(
+                        date=current_date,
+                        description=description,
+                        amount=signed_amount,
+                        type="inflow" if signed_amount >= 0 else "outflow",
+                    ),
+                    source_page=line.page_number,
+                    source_line=line.line_number,
                 )
             )
             description_parts = []
             continue
 
-        description_parts.append(line.strip())
+        description_parts.append(line.text.strip())
 
     return transactions
 
 
-def _parse_inline_statement_rows(lines: list[str]) -> tuple[list[NormalizedTransaction], int]:
-    transactions: list[NormalizedTransaction] = []
+def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTransaction], int]:
+    transactions: list[_ParsedTransaction] = []
     candidates = 0
-    inferred_year = _infer_default_statement_year(lines)
+    inferred_year = _infer_default_statement_year([line.text for line in lines])
 
     for line in lines:
-        match = INLINE_ROW_PATTERN.match(line)
+        match = INLINE_ROW_PATTERN.match(line.text)
         if not match:
             continue
 
@@ -337,11 +369,15 @@ def _parse_inline_statement_rows(lines: list[str]) -> tuple[list[NormalizedTrans
             section_hint=None,
         )
         transactions.append(
-            NormalizedTransaction(
-                date=_parse_statement_date(match.group("date"), fallback_year=inferred_year),
-                description=raw_description,
-                amount=signed_amount,
-                type="inflow" if signed_amount >= 0 else "outflow",
+            _ParsedTransaction(
+                transaction=NormalizedTransaction(
+                    date=_parse_statement_date(match.group("date"), fallback_year=inferred_year),
+                    description=raw_description,
+                    amount=signed_amount,
+                    type="inflow" if signed_amount >= 0 else "outflow",
+                ),
+                source_page=line.page_number,
+                source_line=line.line_number,
             )
         )
 
@@ -349,15 +385,15 @@ def _parse_inline_statement_rows(lines: list[str]) -> tuple[list[NormalizedTrans
 
 
 def _parse_tabular_statement_rows(
-    lines: list[str], *, layout_profile: DeclarativeLayoutProfile | None = None
-) -> tuple[list[NormalizedTransaction], int]:
-    transactions: list[NormalizedTransaction] = []
+    lines: list[_PdfLine], *, layout_profile: DeclarativeLayoutProfile | None = None
+) -> tuple[list[_ParsedTransaction], int]:
+    transactions: list[_ParsedTransaction] = []
     candidates = 0
-    inferred_year = _infer_default_statement_year(lines)
+    inferred_year = _infer_default_statement_year([line.text for line in lines])
     tabular_profile = layout_profile if _has_declarative_table_header(lines, layout_profile) else None
 
     for line in lines:
-        match = TABULAR_DATE_PREFIX_PATTERN.match(line)
+        match = TABULAR_DATE_PREFIX_PATTERN.match(line.text)
         if not match:
             continue
 
@@ -388,11 +424,15 @@ def _parse_tabular_statement_rows(
                 section_hint=None,
             )
         transactions.append(
-            NormalizedTransaction(
-                date=_parse_statement_date(match.group("date"), fallback_year=inferred_year),
-                description=raw_description,
-                amount=signed_amount,
-                type="inflow" if signed_amount >= 0 else "outflow",
+            _ParsedTransaction(
+                transaction=NormalizedTransaction(
+                    date=_parse_statement_date(match.group("date"), fallback_year=inferred_year),
+                    description=raw_description,
+                    amount=signed_amount,
+                    type="inflow" if signed_amount >= 0 else "outflow",
+                ),
+                source_page=line.page_number,
+                source_line=line.line_number,
             )
         )
 
@@ -444,7 +484,7 @@ def _select_declarative_tabular_amount(
     return _SelectedTabularAmount(token=token, role=role, description_end=description_end)
 
 
-def _has_declarative_table_header(lines: list[str], layout_profile: DeclarativeLayoutProfile | None) -> bool:
+def _has_declarative_table_header(lines: list[_PdfLine], layout_profile: DeclarativeLayoutProfile | None) -> bool:
     if layout_profile is None or not layout_profile.expected_column_order or not layout_profile.column_aliases:
         return False
 
@@ -454,7 +494,7 @@ def _has_declarative_table_header(lines: list[str], layout_profile: DeclarativeL
 
     minimum_matches = min(3, len(required_roles))
     for line in lines:
-        normalized_line = _normalize_text(line)
+        normalized_line = _normalize_text(line.text)
         matches = 0
         for role in required_roles:
             aliases = layout_profile.column_aliases.get(role, ())
@@ -477,14 +517,14 @@ def _parse_pdf_amount(raw: str) -> float:
     return parse_amount(raw)
 
 
-def _parse_columnar_statement_blocks(lines: list[str]) -> tuple[list[NormalizedTransaction], int]:
-    transactions: list[NormalizedTransaction] = []
+def _parse_columnar_statement_blocks(lines: list[_PdfLine]) -> tuple[list[_ParsedTransaction], int]:
+    transactions: list[_ParsedTransaction] = []
     candidates = 0
-    inferred_year = _infer_default_statement_year(lines)
+    inferred_year = _infer_default_statement_year([line.text for line in lines])
     index = 0
 
     while index < len(lines):
-        raw_date = lines[index].strip()
+        raw_date = lines[index].text.strip()
         if not DATE_ONLY_PATTERN.fullmatch(raw_date):
             index += 1
             continue
@@ -493,9 +533,9 @@ def _parse_columnar_statement_blocks(lines: list[str]) -> tuple[list[NormalizedT
             index += 1
             continue
 
-        description = lines[index + 1].strip()
-        type_raw = lines[index + 2].strip()
-        amount_raw = lines[index + 3].strip()
+        description = lines[index + 1].text.strip()
+        type_raw = lines[index + 2].text.strip()
+        amount_raw = lines[index + 3].text.strip()
         if not description or _is_columnar_header_line(description):
             index += 1
             continue
@@ -510,16 +550,20 @@ def _parse_columnar_statement_blocks(lines: list[str]) -> tuple[list[NormalizedT
         amount = _apply_type_sign_hint(_parse_pdf_amount(amount_raw), type_raw)
         signed_amount = _apply_sign_hints(amount=amount, description=description, section_hint=None)
         transactions.append(
-            NormalizedTransaction(
-                date=_parse_statement_date(raw_date, fallback_year=inferred_year),
-                description=description,
-                amount=signed_amount,
-                type="inflow" if signed_amount >= 0 else "outflow",
+            _ParsedTransaction(
+                transaction=NormalizedTransaction(
+                    date=_parse_statement_date(raw_date, fallback_year=inferred_year),
+                    description=description,
+                    amount=signed_amount,
+                    type="inflow" if signed_amount >= 0 else "outflow",
+                ),
+                source_page=lines[index].page_number,
+                source_line=lines[index].line_number,
             )
         )
 
         next_index = index + 4
-        if next_index < len(lines) and _is_amount_like(lines[next_index].strip()):
+        if next_index < len(lines) and _is_amount_like(lines[next_index].text.strip()):
             next_index += 1
         index = next_index
 
@@ -537,7 +581,9 @@ def _build_inline_transaction_from_date_rest(
     date: str,
     rest: str,
     section_hint: str | None,
-) -> NormalizedTransaction | None:
+    source_page: int | None = None,
+    source_line: int | None = None,
+) -> _ParsedTransaction | None:
     text = rest.strip()
     if not text:
         return None
@@ -556,11 +602,15 @@ def _build_inline_transaction_from_date_rest(
         description=raw_description,
         section_hint=section_hint,
     )
-    return NormalizedTransaction(
-        date=date,
-        description=raw_description,
-        amount=signed_amount,
-        type="inflow" if signed_amount >= 0 else "outflow",
+    return _ParsedTransaction(
+        transaction=NormalizedTransaction(
+            date=date,
+            description=raw_description,
+            amount=signed_amount,
+            type="inflow" if signed_amount >= 0 else "outflow",
+        ),
+        source_page=source_page,
+        source_line=source_line,
     )
 
 
