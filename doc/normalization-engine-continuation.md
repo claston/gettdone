@@ -135,3 +135,32 @@ Resultados:
 - `32 passed`
 - `9 passed`
 - `All checks passed!`
+
+## Fatia seguinte: CanonicalTransaction em paralelo
+
+Branch: `feat/canonical-transaction-parallel`
+
+- Criado `CanonicalTransaction` em paralelo ao `NormalizedTransaction`:
+  - banco/layout: `bank_name`, `layout_name`
+  - pagina/linha: `source_page`, `source_line`
+  - saldo: `running_balance`
+  - documento/id: `document_id`, `external_reference_id`
+  - warnings: `warnings`
+  - confianca: `confidence`
+- Criado adaptador `from_normalized_transaction(...)` em:
+  - `backend/app/application/normalization/canonical.py`
+- Nesta fatia, o contrato atual dos parsers e servicos foi mantido para evitar regressao:
+  - o pipeline continua retornando `NormalizedTransaction`
+  - `CanonicalTransaction` entra como modelo paralelo pronto para adocao incremental
+
+Validacao da fatia CanonicalTransaction:
+
+```powershell
+..\..\backend\venv\Scripts\python.exe -m pytest backend\tests\test_canonical_transaction.py backend\tests\test_normalizer.py -q -p no:cacheprovider
+..\..\backend\venv\Scripts\python.exe -m ruff check backend\app\application\models.py backend\app\application\normalization\canonical.py backend\tests\test_canonical_transaction.py
+```
+
+Resultados:
+
+- `7 passed`
+- `All checks passed!`
