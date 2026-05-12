@@ -271,3 +271,30 @@ Resultados:
 
 - `9 passed`
 - `All checks passed!`
+
+## Fatia seguinte: pacote maior de métricas de qualidade canônica
+
+Branch: `feat/pdf-canonical-quality-metrics-pack1`
+
+- Consolida métricas de qualidade canônica no `parse_metrics` do parser PDF:
+  - `canonical_transactions_count`
+  - `canonical_with_running_balance_count`
+  - `canonical_with_external_reference_count`
+  - `canonical_warning_count`
+  - `canonical_balance_warning_count`
+- Mantém métricas anteriores de consistência de saldo:
+  - `balance_consistency_checked`
+  - `balance_consistency_failed`
+- Objetivo: melhorar observabilidade para rollout incremental sem alterar contrato legado.
+
+Validação da fatia de métricas canônicas:
+
+```powershell
+..\..\backend\venv\Scripts\python.exe -m pytest backend\tests\test_pdf_parser.py backend\tests\test_analyze_service_multiformat.py -q -p no:cacheprovider
+..\..\backend\venv\Scripts\python.exe -m ruff check backend\app\application\pdf_parser.py backend\tests\test_pdf_parser.py
+```
+
+Resultados:
+
+- `9 passed`
+- `All checks passed!`
