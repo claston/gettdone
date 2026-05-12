@@ -72,6 +72,13 @@ class PdfProcessingMetrics(BaseModel):
     inline_candidates_count: int
     inline_transactions_count: int
     selected_parser: str
+    balance_consistency_checked: int = 0
+    balance_consistency_failed: int = 0
+    canonical_transactions_count: int = 0
+    canonical_with_running_balance_count: int = 0
+    canonical_with_external_reference_count: int = 0
+    canonical_warning_count: int = 0
+    canonical_balance_warning_count: int = 0
 
 
 class AnalyzeResponse(BaseModel):

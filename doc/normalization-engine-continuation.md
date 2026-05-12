@@ -298,3 +298,30 @@ Resultados:
 
 - `9 passed`
 - `All checks passed!`
+
+## Fatia seguinte: pacote maior de propagação no AnalyzeService
+
+Branch: `feat/analyze-service-canonical-metrics-pack1`
+
+- Faz a propagação explícita das métricas canônicas de PDF em `AnalyzeService`:
+  - `balance_consistency_checked`
+  - `balance_consistency_failed`
+  - `canonical_transactions_count`
+  - `canonical_with_running_balance_count`
+  - `canonical_with_external_reference_count`
+  - `canonical_warning_count`
+  - `canonical_balance_warning_count`
+- Atualiza o schema `PdfProcessingMetrics` para suportar os novos campos de forma tipada.
+- Adiciona/atualiza testes para validar que as métricas chegam no `AnalyzeResponse.pdf_processing_metrics`.
+
+Validação da fatia de propagação:
+
+```powershell
+..\..\backend\venv\Scripts\python.exe -m pytest backend\tests\test_analyze_service_multiformat.py backend\tests\test_pdf_parser.py -q -p no:cacheprovider
+..\..\backend\venv\Scripts\python.exe -m ruff check backend\app\application\analyze_service.py backend\app\schemas.py backend\tests\test_analyze_service_multiformat.py
+```
+
+Resultados:
+
+- `9 passed`
+- `All checks passed!`

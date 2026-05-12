@@ -265,6 +265,15 @@ class AnalyzeService:
             "inline_candidates_count": int(parse_metrics.get("inline_candidates_count", 0)),
             "inline_transactions_count": int(parse_metrics.get("inline_transactions_count", 0)),
             "selected_parser": str(parse_metrics.get("selected_parser", "unknown")),
+            "balance_consistency_checked": int(parse_metrics.get("balance_consistency_checked", 0)),
+            "balance_consistency_failed": int(parse_metrics.get("balance_consistency_failed", 0)),
+            "canonical_transactions_count": int(parse_metrics.get("canonical_transactions_count", 0)),
+            "canonical_with_running_balance_count": int(parse_metrics.get("canonical_with_running_balance_count", 0)),
+            "canonical_with_external_reference_count": int(
+                parse_metrics.get("canonical_with_external_reference_count", 0)
+            ),
+            "canonical_warning_count": int(parse_metrics.get("canonical_warning_count", 0)),
+            "canonical_balance_warning_count": int(parse_metrics.get("canonical_balance_warning_count", 0)),
         }
 
     def _resolve_ofx_account_type(
