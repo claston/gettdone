@@ -3,6 +3,7 @@ import pytest
 from app.application import pdf_parser as pdf_parser_module
 from app.application.errors import InvalidFileContentError
 from app.application.pdf_parser import parse_pdf_transactions
+from tests.fixtures.pdf_golden_samples import VIACREDI_TABULAR_BALANCE_FAIL, VIACREDI_TABULAR_BALANCE_OK
 
 
 def test_parse_pdf_transactions_handles_inline_and_multiline_amount_rows(monkeypatch) -> None:
@@ -55,15 +56,7 @@ def test_parse_pdf_transactions_does_not_run_ocr_fallback(monkeypatch) -> None:
 
 
 def test_parse_pdf_transactions_uses_declarative_credit_debit_columns(monkeypatch) -> None:
-    page_text = "\n".join(
-        [
-            "VIACREDI COOPERATIVA AILOS",
-            "DATA DESCRICAO DOCUMENTO CREDITO (R$) DEBITO (R$) SALDO (R$)",
-            "01/10/2024 PIX RECEBIDO CLIENTE 123 1.000,00 0,00 1.500,00",
-            "02/10/2024 TARIFA PACOTE SERVICOS 456 0,00 12,34 1.487,66",
-        ]
-    )
-    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [page_text])
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [VIACREDI_TABULAR_BALANCE_OK])
     monkeypatch.setattr(
         pdf_parser_module,
         "infer_pdf_layout",
@@ -108,15 +101,9 @@ def test_parse_pdf_transactions_uses_declarative_credit_debit_columns(monkeypatc
 
 
 def test_parse_pdf_transactions_marks_balance_consistency_warning(monkeypatch) -> None:
-    page_text = "\n".join(
-        [
-            "VIACREDI COOPERATIVA AILOS",
-            "DATA DESCRICAO DOCUMENTO CREDITO (R$) DEBITO (R$) SALDO (R$)",
-            "01/10/2024 PIX RECEBIDO CLIENTE 123 1.000,00 0,00 1.500,00",
-            "02/10/2024 TARIFA PACOTE SERVICOS 456 0,00 12,34 1.400,00",
-        ]
+    monkeypatch.setattr(
+        pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [VIACREDI_TABULAR_BALANCE_FAIL]
     )
-    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [page_text])
     monkeypatch.setattr(
         pdf_parser_module,
         "infer_pdf_layout",
