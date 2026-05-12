@@ -8,6 +8,10 @@ from app.application.models import NormalizedTransaction
 from app.application.pdf_layout_inference import PdfLayoutInference
 from app.application.pdf_parser import PdfParseResult
 from app.application.storage_service import TempAnalysisStorage
+from tests.fixtures.pdf_golden_samples import (
+    PDF_PARSE_METRICS_GROUPED_CANONICAL_OK,
+    PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+)
 
 
 def _build_xlsx_bytes(rows: list[list[object]]) -> bytes:
@@ -113,29 +117,7 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
                 used_fallback=False,
             ),
             extracted_text="TOTAL DE ENTRADAS\nTOTAL DE SAIDAS\nTRANSFERENCIA RECEBIDA PELO PIX",
-            parse_metrics={
-                "page_count": 1,
-                "extracted_char_count": 72,
-                "flattened_line_count": 3,
-                "grouped_transactions_count": 2,
-                "inline_candidates_count": 0,
-                "inline_transactions_count": 0,
-                "selected_parser": "grouped",
-                "balance_consistency_checked": 1,
-                "balance_consistency_failed": 0,
-                "canonical_transactions_count": 2,
-                "canonical_with_running_balance_count": 2,
-                "canonical_with_external_reference_count": 2,
-                "canonical_warning_count": 0,
-                "canonical_balance_warning_count": 0,
-                "canonical_warning_transactions_count": 0,
-                "canonical_warning_types_count": 0,
-                "canonical_warning_types": "",
-                "canonical_warning_types_list": "",
-                "canonical_running_balance_coverage_rate": 1.0,
-                "canonical_external_reference_coverage_rate": 1.0,
-                "canonical_warning_transaction_rate": 0.0,
-            },
+            parse_metrics=PDF_PARSE_METRICS_GROUPED_CANONICAL_OK,
         ),
     )
 
@@ -195,29 +177,7 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
                 used_fallback=False,
             ),
             extracted_text="EXTRATO CONTA / LANCAMENTOS\nDATA LANCAMENTOS VALOR",
-            parse_metrics={
-                "page_count": 1,
-                "extracted_char_count": 47,
-                "flattened_line_count": 2,
-                "grouped_transactions_count": 0,
-                "inline_candidates_count": 2,
-                "inline_transactions_count": 2,
-                "selected_parser": "inline",
-                "balance_consistency_checked": 0,
-                "balance_consistency_failed": 0,
-                "canonical_transactions_count": 2,
-                "canonical_with_running_balance_count": 0,
-                "canonical_with_external_reference_count": 0,
-                "canonical_warning_count": 0,
-                "canonical_balance_warning_count": 0,
-                "canonical_warning_transactions_count": 0,
-                "canonical_warning_types_count": 0,
-                "canonical_warning_types": "",
-                "canonical_warning_types_list": "",
-                "canonical_running_balance_coverage_rate": 0.0,
-                "canonical_external_reference_coverage_rate": 0.0,
-                "canonical_warning_transaction_rate": 0.0,
-            },
+            parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
         ),
     )
 
