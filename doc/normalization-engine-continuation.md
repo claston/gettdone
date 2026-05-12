@@ -59,20 +59,15 @@ Nesta etapa, os modelos entram no motor como classificadores declarativos de lay
 
 ## Proximas PRs recomendadas
 
-1. Extrair normalizacao de valores para `normalization/amount.py`, incluindo:
-   - `-R$`
-   - sinal no fim
-   - colunas separadas credito/debito
-   - sufixos `C`/`D`
-2. Criar `CanonicalTransaction` paralelo ao `NormalizedTransaction`, com:
+1. Criar `CanonicalTransaction` paralelo ao `NormalizedTransaction`, com:
    - banco/layout
    - pagina/linha
    - saldo
    - documento/id
    - warnings
    - confianca
-3. Implementar validacao por saldo a partir de `balance_consistency_check`.
-4. Transformar `examples_from_image.sample_rows` em fixtures golden sinteticas.
+2. Implementar validacao por saldo a partir de `balance_consistency_check`.
+3. Transformar `examples_from_image.sample_rows` em fixtures golden sinteticas.
 
 ## Fatia seguinte: colunas tabulares declarativas
 
@@ -110,3 +105,33 @@ Validacao da fatia de colunas tabulares:
 ```
 
 Resultado: `27 passed`; `All checks passed!`.
+
+## Fatia seguinte: normalizacao de valores
+
+Branch: `feat/normalization-amount-module`
+
+- Criado `backend/app/application/normalization/amount.py`.
+- `parse_amount` centraliza o parsing monetario antes espalhado em `csv_parser.py`.
+- CSV mantem `_parse_amount` como wrapper de compatibilidade para reduzir o impacto da mudanca.
+- OFX, XLSX, planilhas operacionais e PDF passam a usar o modulo compartilhado diretamente.
+- O parser passa a aceitar formatos com sinal e moeda em posicoes variadas:
+  - `-R$ 10,00`
+  - `R$ -10,00`
+  - `10,00-`
+  - `10.00-`
+  - sinal unicode de menos
+- `apply_amount_role_sign` centraliza a regra de sinal para colunas `credit` e `debit`.
+
+Validacao da fatia de normalizacao de valores:
+
+```powershell
+..\..\backend\venv\Scripts\python.exe -m pytest backend\tests\test_amount_normalization.py backend\tests\test_csv_parser.py backend\tests\test_xlsx_parser.py backend\tests\test_sheet_parser.py backend\tests\test_ofx_parser.py backend\tests\test_pdf_parser.py -q -p no:cacheprovider
+..\..\backend\venv\Scripts\python.exe -m pytest backend\tests\test_analyze_service_csv.py backend\tests\test_analyze_service_multiformat.py -q -p no:cacheprovider
+..\..\backend\venv\Scripts\python.exe -m ruff check backend\app\application\normalization\amount.py backend\app\application\csv_parser.py backend\app\application\xlsx_parser.py backend\app\application\sheet_parser.py backend\app\application\ofx_parser.py backend\app\application\pdf_parser.py backend\tests\test_amount_normalization.py
+```
+
+Resultados:
+
+- `32 passed`
+- `9 passed`
+- `All checks passed!`
