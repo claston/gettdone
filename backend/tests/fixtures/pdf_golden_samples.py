@@ -1,4 +1,8 @@
-﻿VIACREDI_TABULAR_BALANCE_OK = "\n".join(
+from app.application.models import NormalizedTransaction
+from app.application.pdf_layout_inference import PdfLayoutInference
+from app.application.pdf_parser import PdfParseResult
+
+VIACREDI_TABULAR_BALANCE_OK = "\n".join(
     [
         "VIACREDI COOPERATIVA AILOS",
         "DATA DESCRICAO DOCUMENTO CREDITO (R$) DEBITO (R$) SALDO (R$)",
@@ -80,3 +84,23 @@ PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY = {
     "canonical_external_reference_coverage_rate": 0.0,
     "canonical_warning_transaction_rate": 0.0,
 }
+
+
+def build_pdf_parse_result(
+    *,
+    transactions: list[NormalizedTransaction],
+    layout_name: str,
+    confidence: float,
+    extracted_text: str,
+    parse_metrics: dict[str, int | float | str],
+) -> PdfParseResult:
+    return PdfParseResult(
+        transactions=transactions,
+        layout=PdfLayoutInference(
+            layout_name=layout_name,
+            confidence=confidence,
+            used_fallback=False,
+        ),
+        extracted_text=extracted_text,
+        parse_metrics=parse_metrics,
+    )
