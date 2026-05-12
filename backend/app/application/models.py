@@ -20,6 +20,23 @@ class NormalizedTransaction:
 
 
 @dataclass
+class CanonicalTransaction:
+    date: str
+    description: str
+    amount: float
+    type: str
+    bank_name: str | None = None
+    layout_name: str | None = None
+    source_page: int | None = None
+    source_line: int | None = None
+    running_balance: float | None = None
+    document_id: str | None = None
+    external_reference_id: str | None = None
+    warnings: list[str] = field(default_factory=list)
+    confidence: float | None = None
+
+
+@dataclass
 class BeforeAfterRow:
     date: str
     description_before: str
