@@ -21,6 +21,8 @@ class DeclarativeLayoutProfile:
     optional_keywords: tuple[str, ...]
     negative_keywords: tuple[str, ...]
     header_keywords: tuple[str, ...]
+    expected_column_order: tuple[str, ...]
+    column_aliases: dict[str, tuple[str, ...]]
     source_path: str
 
 
@@ -38,6 +40,15 @@ def load_layout_profiles() -> tuple[DeclarativeLayoutProfile, ...]:
             profiles.append(profile)
 
     return tuple(profiles)
+
+
+def get_layout_profile(profile_name: str | None) -> DeclarativeLayoutProfile | None:
+    if not profile_name:
+        return None
+    for profile in load_layout_profiles():
+        if profile.profile_name == profile_name:
+            return profile
+    return None
 
 
 def score_layout_profile(profile: DeclarativeLayoutProfile, normalized_text: str, *, structure_score: float = 0.0) -> float:
@@ -84,6 +95,8 @@ def _load_profile(path: Path) -> DeclarativeLayoutProfile | None:
         optional_keywords=tuple(_nested_list_values(layout_lines, "classifier", "optional_keywords")),
         negative_keywords=tuple(_nested_list_values(layout_lines, "classifier", "negative_keywords")),
         header_keywords=tuple(_nested_list_values(layout_lines, "table_detection", "header_keywords")),
+        expected_column_order=tuple(_nested_list_values(layout_lines, "table_detection", "expected_column_order")),
+        column_aliases=_nested_mapping_list_values(layout_lines, "table_detection", "column_aliases"),
         source_path=path.name,
     )
 
@@ -135,6 +148,34 @@ def _nested_list_values(lines: list[str], parent_key: str, child_key: str) -> li
         if item:
             values.append(item)
     return values
+
+
+def _nested_mapping_list_values(lines: list[str], parent_key: str, child_key: str) -> dict[str, tuple[str, ...]]:
+    parent_range = _section_range(lines, indent=2, key=parent_key)
+    if parent_range is None:
+        return {}
+
+    start, end = parent_range
+    child_range = _section_range(lines[start:end], indent=4, key=child_key)
+    if child_range is None:
+        return {}
+
+    child_start, child_end = child_range
+    values: dict[str, list[str]] = {}
+    current_key = ""
+    key_pattern = re.compile(r"^      (?P<key>[A-Za-z0-9_]+):\s*$")
+    for line in lines[start + child_start : start + child_end]:
+        key_match = key_pattern.match(line)
+        if key_match:
+            current_key = key_match.group("key")
+            values.setdefault(current_key, [])
+            continue
+
+        item = _list_item_value(line)
+        if item and current_key:
+            values.setdefault(current_key, []).append(item)
+
+    return {key: tuple(items) for key, items in values.items()}
 
 
 def _section_range(lines: list[str], *, indent: int, key: str) -> tuple[int, int] | None:

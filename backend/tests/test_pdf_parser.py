@@ -44,3 +44,34 @@ def test_parse_pdf_transactions_does_not_run_ocr_fallback(monkeypatch) -> None:
 
     with pytest.raises(InvalidFileContentError, match="OCR fallback is disabled"):
         parse_pdf_transactions(b"%PDF synthetic")
+
+
+def test_parse_pdf_transactions_uses_declarative_credit_debit_columns(monkeypatch) -> None:
+    page_text = "\n".join(
+        [
+            "VIACREDI COOPERATIVA AILOS",
+            "DATA DESCRICAO DOCUMENTO CREDITO (R$) DEBITO (R$) SALDO (R$)",
+            "01/10/2024 PIX RECEBIDO CLIENTE 123 1.000,00 0,00 1.500,00",
+            "02/10/2024 TARIFA PACOTE SERVICOS 456 0,00 12,34 1.487,66",
+        ]
+    )
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [page_text])
+    monkeypatch.setattr(
+        pdf_parser_module,
+        "infer_pdf_layout",
+        lambda text: pdf_parser_module.PdfLayoutInference(
+            layout_name="viacredi_ailos_extrato_conta_corrente_v1",
+            confidence=0.9,
+            used_fallback=False,
+        ),
+    )
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert len(result.transactions) == 2
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert result.layout.layout_name == "viacredi_ailos_extrato_conta_corrente_v1"
+    assert result.transactions[0].amount == 1000.0
+    assert result.transactions[0].description == "PIX RECEBIDO CLIENTE 123"
+    assert result.transactions[1].amount == -12.34
+    assert result.transactions[1].description == "TARIFA PACOTE SERVICOS 456"
