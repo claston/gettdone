@@ -417,3 +417,25 @@ Resultados:
 
 - `9 passed`
 - `All checks passed!`
+
+## Fatia seguinte: pacote maior de golden fixtures sintéticas (fase 2)
+
+Branch: `feat/golden-fixtures-synthetic-pack2`
+
+- Expande o módulo de fixtures sintéticas com cenários adicionais:
+  - grouped inline/multiline
+  - unicode minus em linha única
+- Migra os testes correspondentes de `test_pdf_parser.py` para usar as fixtures compartilhadas.
+- Mantém cobertura funcional inalterada e reduz duplicação de texto de cenário nos testes.
+
+Validação da fatia de golden fixtures (fase 2):
+
+```powershell
+..\..\backend\venv\Scripts\python.exe -m pytest backend\tests\test_pdf_parser.py backend\tests\test_analyze_service_multiformat.py -q -p no:cacheprovider
+..\..\backend\venv\Scripts\python.exe -m ruff check backend\tests\fixtures\pdf_golden_samples.py backend\tests\test_pdf_parser.py
+```
+
+Resultados:
+
+- `9 passed`
+- `All checks passed!`

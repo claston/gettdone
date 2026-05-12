@@ -16,3 +16,17 @@ VIACREDI_TABULAR_BALANCE_FAIL = "\n".join(
         "02/10/2024 TARIFA PACOTE SERVICOS 456 0,00 12,34 1.400,00",
     ]
 )
+
+
+GROUPED_INLINE_MULTILINE_SAMPLE = "\n".join(
+    [
+        "TRANSAÃ‡Ã•ES DE 08 MAR A 08 ABR",
+        "16 MAR 2026 Pagamento em 16 MAR âˆ’R$ 240,24",
+        "25 MAR 2026",
+        "Compra AGIR CONTABILIDADE E ASSESSORIA LTDA",
+        "R$ 241,05",
+    ]
+)
+
+
+UNICODE_MINUS_SINGLE_ROW_SAMPLE = "10 ABR 2026 Ajuste manual −R$ 10,00"

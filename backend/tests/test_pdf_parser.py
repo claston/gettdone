@@ -1,22 +1,20 @@
-import pytest
+﻿import pytest
 
 from app.application import pdf_parser as pdf_parser_module
 from app.application.errors import InvalidFileContentError
 from app.application.pdf_parser import parse_pdf_transactions
-from tests.fixtures.pdf_golden_samples import VIACREDI_TABULAR_BALANCE_FAIL, VIACREDI_TABULAR_BALANCE_OK
+from tests.fixtures.pdf_golden_samples import (
+    GROUPED_INLINE_MULTILINE_SAMPLE,
+    UNICODE_MINUS_SINGLE_ROW_SAMPLE,
+    VIACREDI_TABULAR_BALANCE_FAIL,
+    VIACREDI_TABULAR_BALANCE_OK,
+)
 
 
 def test_parse_pdf_transactions_handles_inline_and_multiline_amount_rows(monkeypatch) -> None:
-    page_text = "\n".join(
-        [
-            "TRANSAÇÕES DE 08 MAR A 08 ABR",
-            "16 MAR 2026 Pagamento em 16 MAR −R$ 240,24",
-            "25 MAR 2026",
-            "Compra AGIR CONTABILIDADE E ASSESSORIA LTDA",
-            "R$ 241,05",
-        ]
+    monkeypatch.setattr(
+        pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [GROUPED_INLINE_MULTILINE_SAMPLE]
     )
-    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [page_text])
 
     result = parse_pdf_transactions(b"%PDF synthetic")
 
@@ -34,8 +32,7 @@ def test_parse_pdf_transactions_handles_inline_and_multiline_amount_rows(monkeyp
 
 
 def test_parse_pdf_transactions_parses_unicode_minus_with_currency_prefix(monkeypatch) -> None:
-    page_text = "10 ABR 2026 Ajuste manual −R$ 10,00"
-    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [page_text])
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [UNICODE_MINUS_SINGLE_ROW_SAMPLE])
 
     result = parse_pdf_transactions(b"%PDF synthetic")
 
