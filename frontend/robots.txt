@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+
+Disallow: /admin.html
+Disallow: /auth-callback.html
+Disallow: /checkout.html
+Disallow: /client-area.html
+Disallow: /login.html
+Disallow: /signup.html
+Disallow: /ofx-convert.html
+Disallow: /report/
+Disallow: /convert/report/
+
+Sitemap: https://www.ofxsimples.com.br/sitemap.xml
