@@ -6,6 +6,7 @@ from io import StringIO
 from app.application.column_mapping import FIELD_ALIASES, REQUIRED_FIELDS, normalize_header
 from app.application.errors import InvalidFileContentError
 from app.application.models import NormalizedTransaction
+from app.application.normalization.amount import parse_amount
 
 DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y")
 
@@ -114,26 +115,7 @@ def _parse_date(raw: str) -> str:
 
 
 def _parse_amount(raw: str) -> float:
-    value = raw.strip().replace("R$", "").replace(" ", "")
-    negative = value.startswith("(") and value.endswith(")")
-    value = value.replace("(", "").replace(")", "")
-
-    if "," in value and "." in value:
-        if value.rfind(",") > value.rfind("."):
-            value = value.replace(".", "").replace(",", ".")
-        else:
-            value = value.replace(",", "")
-    elif "," in value:
-        value = value.replace(",", ".")
-
-    try:
-        parsed = float(value)
-    except ValueError as exc:
-        raise InvalidFileContentError(f"Invalid amount value: {raw!r}.") from exc
-
-    if negative and parsed > 0:
-        return -parsed
-    return parsed
+    return parse_amount(raw)
 
 
 def _normalize_type(raw_type: str, amount: float) -> str:

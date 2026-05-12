@@ -11,9 +11,10 @@ from app.application.column_mapping import (
     normalize_header,
     resolve_sheet_field_map,
 )
-from app.application.csv_parser import DATE_FORMATS, _parse_amount
+from app.application.csv_parser import DATE_FORMATS
 from app.application.errors import InvalidFileContentError
 from app.application.models import NormalizedTransaction
+from app.application.normalization.amount import parse_amount
 
 _HEADER_SCAN_LIMIT = 20
 
@@ -135,7 +136,7 @@ def _resolve_amount_from_amount_column(
     field_map: dict[str, str],
 ) -> float:
     amount_raw = _require_value(row_values, headers, field_map["amount"], "amount")
-    return _parse_amount(str(amount_raw))
+    return parse_amount(str(amount_raw))
 
 
 def _extract_value(row_values: list[object], headers: list[str], mapped_header: str) -> object | None:

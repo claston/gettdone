@@ -5,10 +5,10 @@ from io import BytesIO
 
 from pypdf import PdfReader
 
-from app.application.csv_parser import _parse_amount
 from app.application.errors import InvalidFileContentError
 from app.application.layout_profiles.registry import DeclarativeLayoutProfile, get_layout_profile
 from app.application.models import NormalizedTransaction
+from app.application.normalization.amount import apply_amount_role_sign, parse_amount
 from app.application.normalization.text import normalize_upper_text
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
 from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE
@@ -364,7 +364,7 @@ def _parse_tabular_statement_rows(
         if not raw_description or _should_skip_transaction_description(raw_description):
             continue
 
-        amount = _apply_tabular_column_sign(_parse_pdf_amount(selected_amount.token.value), selected_amount.role)
+        amount = apply_amount_role_sign(_parse_pdf_amount(selected_amount.token.value), selected_amount.role)
         if selected_amount.role in {"credit", "debit"}:
             signed_amount = amount
         else:
@@ -452,14 +452,6 @@ def _has_declarative_table_header(lines: list[str], layout_profile: DeclarativeL
     return False
 
 
-def _apply_tabular_column_sign(amount: float, role: str | None) -> float:
-    if role == "credit":
-        return abs(amount)
-    if role == "debit":
-        return -abs(amount)
-    return amount
-
-
 def _find_amount_tokens(text: str) -> list[_AmountToken]:
     return [
         _AmountToken(value=match.group("amount"), start=match.start("amount"), end=match.end("amount"))
@@ -468,14 +460,7 @@ def _find_amount_tokens(text: str) -> list[_AmountToken]:
 
 
 def _parse_pdf_amount(raw: str) -> float:
-    cleaned = raw.replace("\u2212", "-")
-    cleaned = re.sub(r"(?i)R\$", "", cleaned).strip()
-    if cleaned.endswith("-"):
-        cleaned = "-" + cleaned[:-1].strip()
-    elif cleaned.endswith("+"):
-        cleaned = cleaned[:-1].strip()
-    cleaned = cleaned.replace(" ", "")
-    return _parse_amount(cleaned)
+    return parse_amount(raw)
 
 
 def _parse_columnar_statement_blocks(lines: list[str]) -> tuple[list[NormalizedTransaction], int]:
