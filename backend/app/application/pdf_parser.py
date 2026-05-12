@@ -192,6 +192,7 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
         )
         for row in parsed_rows
     ]
+    balance_checked_count, balance_failed_count = _annotate_balance_consistency(canonical_transactions)
 
     return PdfParseResult(
         transactions=transactions,
@@ -206,6 +207,8 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
             "inline_candidates_count": inline_candidates,
             "inline_transactions_count": inline_transactions_count,
             "selected_parser": selected_parser,
+            "balance_consistency_checked": balance_checked_count,
+            "balance_consistency_failed": balance_failed_count,
         },
     )
 
@@ -516,6 +519,31 @@ def _extract_document_reference(raw_description: str, *, layout_profile: Declara
     if re.fullmatch(r"[A-Za-z0-9./_-]{3,}", candidate):
         return candidate
     return None
+
+
+def _annotate_balance_consistency(canonical_transactions: list[CanonicalTransaction]) -> tuple[int, int]:
+    checked_count = 0
+    failed_count = 0
+    previous: CanonicalTransaction | None = None
+    tolerance = 0.01
+
+    for current in canonical_transactions:
+        if current.running_balance is None:
+            previous = current
+            continue
+        if previous is None or previous.running_balance is None:
+            previous = current
+            continue
+
+        expected_current_balance = previous.running_balance + current.amount
+        checked_count += 1
+        if abs(current.running_balance - expected_current_balance) > tolerance:
+            failed_count += 1
+            if "balance_consistency_failed" not in current.warnings:
+                current.warnings.append("balance_consistency_failed")
+        previous = current
+
+    return checked_count, failed_count
 
 
 def _has_declarative_table_header(lines: list[_PdfLine], layout_profile: DeclarativeLayoutProfile | None) -> bool:

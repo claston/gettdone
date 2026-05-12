@@ -243,3 +243,31 @@ Resultados:
 
 - `8 passed`
 - `All checks passed!`
+
+## Fatia seguinte: pacote maior de consistência de saldo canônica
+
+Branch: `feat/pdf-canonical-balance-consistency-pack1`
+
+- Adiciona checagem não-bloqueante de consistência de saldo no fluxo canônico PDF:
+  - compara `running_balance` sequencial com `previous_balance + current.amount`
+  - aplica tolerância de arredondamento
+- Em caso de divergência, adiciona warning estruturado em `canonical_transactions`:
+  - `balance_consistency_failed`
+- Expõe métricas no `parse_metrics` para observabilidade:
+  - `balance_consistency_checked`
+  - `balance_consistency_failed`
+- Compatibilidade preservada:
+  - não altera o contrato legado de `transactions`
+  - não transforma inconsistência de saldo em erro de parsing nesta etapa
+
+Validação da fatia de consistência de saldo:
+
+```powershell
+..\..\backend\venv\Scripts\python.exe -m pytest backend\tests\test_pdf_parser.py backend\tests\test_analyze_service_multiformat.py -q -p no:cacheprovider
+..\..\backend\venv\Scripts\python.exe -m ruff check backend\app\application\pdf_parser.py backend\tests\test_pdf_parser.py
+```
+
+Resultados:
+
+- `9 passed`
+- `All checks passed!`
