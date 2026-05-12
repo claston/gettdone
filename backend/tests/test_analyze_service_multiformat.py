@@ -131,6 +131,9 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
                 "canonical_warning_transactions_count": 0,
                 "canonical_warning_types_count": 0,
                 "canonical_warning_types": "",
+                "canonical_running_balance_coverage_rate": 1.0,
+                "canonical_external_reference_coverage_rate": 1.0,
+                "canonical_warning_transaction_rate": 0.0,
             },
         ),
     )
@@ -157,6 +160,9 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
     assert result.pdf_processing_metrics.canonical_warning_transactions_count == 0
     assert result.pdf_processing_metrics.canonical_warning_types_count == 0
     assert result.pdf_processing_metrics.canonical_warning_types == ""
+    assert result.pdf_processing_metrics.canonical_running_balance_coverage_rate == 1.0
+    assert result.pdf_processing_metrics.canonical_external_reference_coverage_rate == 1.0
+    assert result.pdf_processing_metrics.canonical_warning_transaction_rate == 0.0
     assert result.pdf_processing_metrics.total_ms >= 0.0
 
 
@@ -205,6 +211,9 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
                 "canonical_warning_transactions_count": 0,
                 "canonical_warning_types_count": 0,
                 "canonical_warning_types": "",
+                "canonical_running_balance_coverage_rate": 0.0,
+                "canonical_external_reference_coverage_rate": 0.0,
+                "canonical_warning_transaction_rate": 0.0,
             },
         ),
     )

@@ -221,7 +221,7 @@ class AnalyzeService:
         str | None,
         float | None,
         str | None,
-        dict[str, int | str] | None,
+        dict[str, int | float | str] | None,
     ]:
         if extension == "csv":
             return parse_csv_transactions(raw_bytes), None, None, None, None
@@ -242,7 +242,7 @@ class AnalyzeService:
         self,
         *,
         extension: str,
-        parse_metrics: dict[str, int | str] | None,
+        parse_metrics: dict[str, int | float | str] | None,
         parse_ms: float,
         classify_ms: float,
         normalize_ms: float,
@@ -277,6 +277,13 @@ class AnalyzeService:
             "canonical_warning_transactions_count": int(parse_metrics.get("canonical_warning_transactions_count", 0)),
             "canonical_warning_types_count": int(parse_metrics.get("canonical_warning_types_count", 0)),
             "canonical_warning_types": str(parse_metrics.get("canonical_warning_types", "")),
+            "canonical_running_balance_coverage_rate": float(
+                parse_metrics.get("canonical_running_balance_coverage_rate", 0.0)
+            ),
+            "canonical_external_reference_coverage_rate": float(
+                parse_metrics.get("canonical_external_reference_coverage_rate", 0.0)
+            ),
+            "canonical_warning_transaction_rate": float(parse_metrics.get("canonical_warning_transaction_rate", 0.0)),
         }
 
     def _resolve_ofx_account_type(
