@@ -121,6 +121,13 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
                 "inline_candidates_count": 0,
                 "inline_transactions_count": 0,
                 "selected_parser": "grouped",
+                "balance_consistency_checked": 1,
+                "balance_consistency_failed": 0,
+                "canonical_transactions_count": 2,
+                "canonical_with_running_balance_count": 2,
+                "canonical_with_external_reference_count": 2,
+                "canonical_warning_count": 0,
+                "canonical_balance_warning_count": 0,
             },
         ),
     )
@@ -137,6 +144,13 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
     assert result.pdf_processing_metrics is not None
     assert result.pdf_processing_metrics.selected_parser == "grouped"
     assert result.pdf_processing_metrics.grouped_transactions_count == 2
+    assert result.pdf_processing_metrics.balance_consistency_checked == 1
+    assert result.pdf_processing_metrics.balance_consistency_failed == 0
+    assert result.pdf_processing_metrics.canonical_transactions_count == 2
+    assert result.pdf_processing_metrics.canonical_with_running_balance_count == 2
+    assert result.pdf_processing_metrics.canonical_with_external_reference_count == 2
+    assert result.pdf_processing_metrics.canonical_warning_count == 0
+    assert result.pdf_processing_metrics.canonical_balance_warning_count == 0
     assert result.pdf_processing_metrics.total_ms >= 0.0
 
 
@@ -175,6 +189,13 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
                 "inline_candidates_count": 2,
                 "inline_transactions_count": 2,
                 "selected_parser": "inline",
+                "balance_consistency_checked": 0,
+                "balance_consistency_failed": 0,
+                "canonical_transactions_count": 2,
+                "canonical_with_running_balance_count": 0,
+                "canonical_with_external_reference_count": 0,
+                "canonical_warning_count": 0,
+                "canonical_balance_warning_count": 0,
             },
         ),
     )
@@ -187,4 +208,5 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
     assert result.layout_inference_confidence is not None
     assert result.pdf_processing_metrics is not None
     assert result.pdf_processing_metrics.selected_parser == "inline"
+    assert result.pdf_processing_metrics.canonical_transactions_count == 2
 
