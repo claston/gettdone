@@ -99,7 +99,7 @@ class PdfParseResult:
     transactions: list[NormalizedTransaction]
     layout: PdfLayoutInference
     extracted_text: str
-    parse_metrics: dict[str, int | str]
+    parse_metrics: dict[str, int | float | str]
     canonical_transactions: list[CanonicalTransaction] | None = None
 
 
@@ -220,6 +220,13 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
             "canonical_warning_transactions_count": canonical_quality_metrics["canonical_warning_transactions_count"],
             "canonical_warning_types_count": canonical_quality_metrics["canonical_warning_types_count"],
             "canonical_warning_types": canonical_quality_metrics["canonical_warning_types"],
+            "canonical_running_balance_coverage_rate": canonical_quality_metrics[
+                "canonical_running_balance_coverage_rate"
+            ],
+            "canonical_external_reference_coverage_rate": canonical_quality_metrics[
+                "canonical_external_reference_coverage_rate"
+            ],
+            "canonical_warning_transaction_rate": canonical_quality_metrics["canonical_warning_transaction_rate"],
         },
     )
 
@@ -562,8 +569,18 @@ def _build_canonical_quality_metrics(canonical_transactions: list[CanonicalTrans
     balance_warning_count = sum(1 for item in canonical_transactions if "balance_consistency_failed" in item.warnings)
     with_running_balance_count = sum(1 for item in canonical_transactions if item.running_balance is not None)
     with_external_reference_count = sum(1 for item in canonical_transactions if item.external_reference_id)
+    total_count = len(canonical_transactions)
+    running_balance_coverage_rate = (
+        round(with_running_balance_count / total_count, 4) if total_count > 0 else 0.0
+    )
+    external_reference_coverage_rate = (
+        round(with_external_reference_count / total_count, 4) if total_count > 0 else 0.0
+    )
+    warning_transaction_rate = (
+        round(sum(1 for item in canonical_transactions if item.warnings) / total_count, 4) if total_count > 0 else 0.0
+    )
     return {
-        "canonical_transactions_count": len(canonical_transactions),
+        "canonical_transactions_count": total_count,
         "canonical_with_running_balance_count": with_running_balance_count,
         "canonical_with_external_reference_count": with_external_reference_count,
         "canonical_warning_count": warning_count,
@@ -585,6 +602,9 @@ def _build_canonical_quality_metrics(canonical_transactions: list[CanonicalTrans
                 }
             )
         ),
+        "canonical_running_balance_coverage_rate": running_balance_coverage_rate,
+        "canonical_external_reference_coverage_rate": external_reference_coverage_rate,
+        "canonical_warning_transaction_rate": warning_transaction_rate,
     }
 
 

@@ -349,3 +349,27 @@ Resultados:
 
 - `9 passed`
 - `All checks passed!`
+
+## Fatia seguinte: pacote maior de taxas de cobertura canônica
+
+Branch: `feat/pdf-canonical-coverage-rates-pack1`
+
+- Adiciona métricas derivadas de taxa (0..1) no `parse_metrics` do parser PDF:
+  - `canonical_running_balance_coverage_rate`
+  - `canonical_external_reference_coverage_rate`
+  - `canonical_warning_transaction_rate`
+- Propaga as taxas no `AnalyzeService` para `pdf_processing_metrics`.
+- Atualiza `PdfProcessingMetrics` no schema com os novos campos tipados.
+- Atualiza testes para validar taxas em cenários com e sem warnings.
+
+Validação da fatia de taxas:
+
+```powershell
+..\..\backend\venv\Scripts\python.exe -m pytest backend\tests\test_pdf_parser.py backend\tests\test_analyze_service_multiformat.py -q -p no:cacheprovider
+..\..\backend\venv\Scripts\python.exe -m ruff check backend\app\application\pdf_parser.py backend\app\application\analyze_service.py backend\app\schemas.py backend\tests\test_pdf_parser.py backend\tests\test_analyze_service_multiformat.py
+```
+
+Resultados:
+
+- `9 passed`
+- `All checks passed!`
