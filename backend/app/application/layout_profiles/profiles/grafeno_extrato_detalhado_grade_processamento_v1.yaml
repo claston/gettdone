@@ -1,0 +1,504 @@
+meta_model:
+  layout_id: grafeno_extrato_detalhado_grade_processamento_v1
+  bank: Grafeno
+  channel: unknown
+  statement_type: extrato_detalhado
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'GRAFENO' visível no topo esquerdo"
+      - "Título 'Extrato Detalhado' no topo direito"
+      - "Texto 'Gerado em:' no cabeçalho"
+      - "Bloco superior com campos 'Banco', 'Agência' e 'Conta'"
+      - "Campo 'Período:' visível"
+      - "Bloco 'Valores em processamento (R$)' com valor 'R$ 0,00'"
+      - "Tabela com colunas 'Data', 'Lançamento', 'Nome', 'Banco', 'Agência', 'Conta', 'Valor (R$)' e 'Saldo (R$)'"
+      - "Linhas com 'SALDO FINAL', 'Tarifas de conta' e 'PIX Enviado'"
+      - "Valores negativos aparecem com prefixo '-R$' na coluna Valor"
+    weak:
+      - "Período, data de geração, dados bancários e valores monetários estão parcialmente ocultos ou ilegíveis"
+      - "A coluna Valor mostra apenas '-R$' sem o número no recorte"
+      - "A coluna Saldo mostra apenas 'R$' sem o número no recorte"
+      - "Não há exemplo de crédito visível"
+      - "Algumas linhas têm altura maior, sugerindo possíveis campos ocultos, quebras ou detalhes adicionais"
+    table_headers:
+      - "Data"
+      - "Lançamento"
+      - "Nome"
+      - "Banco"
+      - "Agência"
+      - "Conta"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+  page_structure:
+    header:
+      bank_logo: "GRAFENO"
+      title: "Extrato Detalhado"
+      generated_at: unknown
+      account_identifiers:
+        bank: unknown
+        agency: unknown
+        account: unknown
+    metadata:
+      period: unknown
+      processing_values:
+        label: "Valores em processamento (R$)"
+        value: "R$ 0,00"
+    transactions_table:
+      header_background: "white"
+      banded_rows: true
+      grid_lines: true
+      columns:
+        - "Data"
+        - "Lançamento"
+        - "Nome"
+        - "Banco"
+        - "Agência"
+        - "Conta"
+        - "Valor (R$)"
+        - "Saldo (R$)"
+      visible_rows:
+        - type: closing_balance
+          date: "31/10/2024"
+          description: "SALDO FINAL"
+          name: unknown
+          bank_code: unknown
+          agency: unknown
+          account: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "31/10/2024 23:20"
+          description: "Tarifas de conta"
+          name: unknown
+          bank_code: unknown
+          agency: unknown
+          account: unknown
+          amount: "-R$"
+          balance: "R$"
+        - type: normal_transaction
+          date: "04/10/2024 23:07"
+          description: "Tarifas de conta"
+          name: unknown
+          bank_code: unknown
+          agency: unknown
+          account: unknown
+          amount: "-R$"
+          balance: "R$"
+        - type: normal_transaction
+          date: "04/10/2024 10:55"
+          description: "PIX Enviado"
+          name: unknown
+          bank_code: unknown
+          agency: unknown
+          account: unknown
+          amount: "-R$"
+          balance: "R$"
+        - type: normal_transaction
+          date: "04/10/2024 10:53"
+          description: "PIX Enviado"
+          name: unknown
+          bank_code: unknown
+          agency: unknown
+          account: unknown
+          amount: "-R$"
+          balance: "R$"
+        - type: normal_transaction
+          date: "04/10/2024 10:51"
+          description: "PIX Enviado"
+          name: unknown
+          bank_code: unknown
+          agency: unknown
+          account: unknown
+          amount: "-R$"
+          balance: "R$"
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO FINAL"
+        - "SALDO ANTERIOR"
+        - "SALDO INICIAL"
+        - "SALDO DO DIA"
+      should_import_as_transaction: false
+      balance_source: "Saldo (R$)"
+      inferred: false
+    normal_transaction:
+      row_has_datetime: true
+      row_has_description: true
+      row_may_have_name: true
+      row_may_have_bank_code: true
+      row_may_have_agency: true
+      row_may_have_account: true
+      row_has_amount_prefix: true
+      row_may_have_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece com prefixo 'R$' sem sinal negativo"
+        - "Valor aparece com '+R$' ou '+ R$', se presente no PDF real"
+      negative_when:
+        - "Valor aparece com prefixo '-R$'"
+        - "Lançamento indica tarifa ou PIX enviado e valor possui '-R$'"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "Saldo (R$)"
+      may_be_blank_or_masked_in_visible_rows: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "*"
+        reason: "Não há créditos visíveis; validar como entradas aparecem no PDF real"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "Tarifas de conta"
+        reason: "Linhas visíveis possuem prefixo '-R$'"
+        inferred: false
+      - pattern: "PIX Enviado"
+        reason: "Linhas visíveis possuem prefixo '-R$'"
+        inferred: false
+    caution:
+      - "Não importar 'SALDO FINAL' como transação."
+      - "A coluna Valor mostra o prefixo de sinal, mas o número está oculto; validar com PDF real."
+      - "A coluna Saldo mostra prefixo 'R$', mas o número está oculto; validar com PDF real."
+      - "Não inferir saída apenas por PIX; neste recorte a saída é confirmada pelo prefixo '-R$'."
+      - "Preservar banco, agência e conta como strings quando aparecerem, pois podem ter zeros à esquerda."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Data Lançamento Nome Banco Agência Conta Valor (R$) Saldo (R$)"
+      header_keywords:
+        - "Data"
+        - "Lançamento"
+        - "Nome"
+        - "Banco"
+        - "Agência"
+        - "Conta"
+        - "Valor (R$)"
+        - "Saldo (R$)"
+    column_order:
+      - date
+      - description
+      - name
+      - bank_code
+      - agency
+      - account
+      - amount
+      - balance
+    row_behavior:
+      separator: "grid table with vertical and horizontal lines"
+      alternating_row_background: true
+      date_includes_time_for_transactions: true
+      balance_row_without_time: true
+      amount_prefix_may_be_visible_without_number_when_masked: true
+      balance_prefix_may_be_visible_without_number_when_masked: true
+  parser_risks:
+    ambiguities:
+      - "Valores monetários estão mascarados ou cortados, restando apenas '-R$' ou 'R$'."
+      - "Saldo final tem data e pode ser confundido com transação."
+      - "Não há exemplo de crédito para confirmar sinal positivo."
+      - "Campos Nome/Banco/Agência/Conta podem estar vazios ou ocultos por mascaramento."
+      - "Linhas de PIX podem conter informações adicionais ocultas no espaço da linha."
+    fields_that_may_be_missing:
+      - "amount"
+      - "balance"
+      - "name"
+      - "bank_code"
+      - "agency"
+      - "account"
+      - "generated_at"
+      - "period"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual traz valores completos nas colunas Valor e Saldo."
+      - "Se créditos aparecem como R$, +R$ ou outra convenção."
+      - "Se valores negativos sempre usam '-R$'."
+      - "Se linhas de PIX possuem detalhes adicionais, IDs ou contraparte."
+      - "Se lançamentos em processamento aparecem no corpo da tabela."
+      - "Se cabeçalho repete em páginas seguintes."
+
+layout_profile:
+  profile_name: grafeno_extrato_detalhado_grade_processamento_v1
+  bank: Grafeno
+  layout_family: grafeno_extrato_detalhado_grade_banco_agencia_conta
+  statement_type: extrato_detalhado
+  confidence: high
+  classifier:
+    required_keywords:
+      - "GRAFENO"
+      - "Extrato Detalhado"
+      - "Gerado em"
+      - "Período"
+      - "Valores em processamento (R$)"
+      - "Data"
+      - "Lançamento"
+      - "Nome"
+      - "Banco"
+      - "Agência"
+      - "Conta"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    optional_keywords:
+      - "SALDO FINAL"
+      - "Tarifas de conta"
+      - "PIX Enviado"
+      - "-R$"
+      - "R$ 0,00"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "contasimples"
+      - "CRESOL"
+      - "infinitepay"
+      - "inter"
+      - "ISOAN"
+      - "IOX"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Lançamento"
+      - "Nome"
+      - "Banco"
+      - "Agência"
+      - "Conta"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - description
+      - name
+      - bank_code
+      - agency
+      - account
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Lançamento"
+        - "Lancamento"
+        - "Descrição"
+        - "Histórico"
+      document:
+        - "Documento"
+        - "Doc."
+        - "ID"
+      amount:
+        - "Valor (R$)"
+        - "Valor"
+      balance:
+        - "Saldo (R$)"
+        - "Saldo"
+      name:
+        - "Nome"
+      bank_code:
+        - "Banco"
+      agency:
+        - "Agência"
+        - "Agencia"
+      account:
+        - "Conta"
+    table_starts_after:
+      - "Valores em processamento (R$)"
+      - "Data Lançamento Nome Banco Agência Conta Valor (R$) Saldo (R$)"
+    row_separator_hint: "grid row starts with dd/MM/yyyy optionally followed by HH:mm; balance rows can have date without time and SALDO FINAL"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    datetime_format: "dd/MM/yyyy HH:mm"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-R$ {amount}"
+      - "-R${amount}"
+      - "R$ -{amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+      - "R${amount_without_minus}"
+      - "+R$ {amount}"
+      - "+ R$ {amount}"
+    ignore_rows:
+      - "GRAFENO"
+      - "Extrato Detalhado"
+      - "Gerado em"
+      - "Período"
+      - "Banco"
+      - "Agência"
+      - "Conta"
+      - "Valores em processamento (R$)"
+      - "Data"
+      - "Lançamento"
+      - "Nome"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+      - "SALDO FINAL"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO DO DIA"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - datetime
+      - name
+      - bank_code
+      - agency
+      - account
+      - balance
+      - status
+  sign_rules:
+    priority_order:
+      - "explicit_negative_currency_prefix"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "description_based_hint"
+      - "balance_consistency"
+    description_based_overrides:
+      - pattern: "Tarifas de conta"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem prefixo '-R$'"
+      - pattern: "PIX Enviado"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem prefixo '-R$'"
+    cautions:
+      - "Não importar SALDO FINAL como transação."
+      - "Se apenas o prefixo '-R$' for extraído sem número, marcar como transação incompleta/revisão."
+      - "Se valor assinado conflitar com descrição, sinal explícito deve prevalecer."
+      - "Não usar PIX isoladamente para sinal."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_case_optional"
+      - "extract_status_if_present"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Tarifas de conta"
+        category: "tarifa_conta"
+        inferred: true
+      - pattern: "PIX Enviado"
+        category: "pix_enviado"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX Enviado"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "PIX Recebido"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia_ted"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifas de conta"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "Tarifa"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 8
+    reject_if_missing_headers:
+      - "Data"
+      - "Lançamento"
+      - "Valor"
+      - "Saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "when amount and saldo values are available, validate previous_balance_plus_signed_amount_equals_current_balance; exclude SALDO FINAL row from transaction import"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "amount_prefix_without_numeric_value"
+      - "balance_prefix_without_numeric_value"
+      - "saldo_final_detected_as_transaction"
+      - "credit_representation_unknown"
+      - "bank_agency_account_columns_shifted"
+      - "ocr_confidence_low_on_grid_columns"
+      - "balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "31/10/2024"
+        raw_description: "SALDO FINAL"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "R$"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo final; não importar como transação"
+      - raw_date: "31/10/2024 23:20"
+        raw_description: "Tarifas de conta"
+        raw_document: unknown
+        raw_amount: "-R$"
+        raw_balance: "R$"
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Débito indicado por '-R$', mas número está oculto/ilegível"
+      - raw_date: "04/10/2024 23:07"
+        raw_description: "Tarifas de conta"
+        raw_document: unknown
+        raw_amount: "-R$"
+        raw_balance: "R$"
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Débito indicado por '-R$', mas número está oculto/ilegível"
+      - raw_date: "04/10/2024 10:55"
+        raw_description: "PIX Enviado"
+        raw_document: unknown
+        raw_amount: "-R$"
+        raw_balance: "R$"
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "PIX enviado com sinal negativo; número oculto/ilegível"
+      - raw_date: "04/10/2024 10:53"
+        raw_description: "PIX Enviado"
+        raw_document: unknown
+        raw_amount: "-R$"
+        raw_balance: "R$"
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "PIX enviado com sinal negativo; número oculto/ilegível"
+  implementation_notes:
+    - "Classificar pelo logo GRAFENO e pela tabela de oito colunas do Extrato Detalhado."
+    - "Aceitar Data com ou sem horário."
+    - "Filtrar SALDO FINAL e demais linhas de saldo antes de importar transações."
+    - "Usar '-R$' como regra primária para débitos."
+    - "Se apenas o prefixo monetário for extraído sem valor numérico, manter a linha como incompleta e exigir revisão/PDF real."
+    - "Preservar Banco, Agência e Conta como strings quando preenchidos."
+    - "Validar com PDF real os valores completos, saldos e padrões de crédito."

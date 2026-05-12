@@ -1,0 +1,400 @@
+meta_model:
+  layout_id: banco_sorisa_extrato_por_periodo_entradas_saidas_v1
+  bank: Banco Sorisa
+  channel: unknown
+  statement_type: conta_corrente_extrato_por_periodo
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo/texto 'Banco Sorisa' visível no topo"
+      - "Campos 'Cliente', 'Agência' e 'Conta' no cabeçalho"
+      - "Bloco de saldo em conta"
+      - "Resumo com 'Cheque Fácil', 'Valor Bloqueado' e 'Saldo Bloqueado'"
+      - "Título 'Extrato por período'"
+      - "Ordenação indicada: 'Mais recente para o mais antigo'"
+      - "Seção 'Entradas/saídas'"
+      - "Cabeçalho de tabela com colunas 'Data', 'Lançamentos', 'Número Documento' e 'Valor (R$)'"
+      - "Valores negativos aparecem em vermelho com sinal '-'"
+      - "Linha de saldo disponível no rodapé do trecho: 'Saldo disponível em 31/1/24'"
+    weak:
+      - "Dados de cliente, agência, conta e saldo em conta estão ocultos ou ilegíveis"
+      - "Não há coluna de saldo por transação"
+      - "Não há exemplo de valor positivo visível no recorte"
+      - "Número Documento aparece como coluna, mas valores não estão visíveis nas linhas exibidas"
+      - "Datas aparecem em formato curto '31/1/24'"
+    table_headers:
+      - "Data"
+      - "Lançamentos"
+      - "Número Documento"
+      - "Valor (R$)"
+  page_structure:
+    header:
+      bank_logo: "Banco Sorisa"
+      account_identifiers:
+        client: unknown
+        agency: unknown
+        account: unknown
+    metadata:
+      account_balance_label: "Saldo em conta"
+      account_balance_value: unknown
+      credit_facility:
+        label: "Cheque Fácil"
+        value: "R$ 0,00"
+      blocked_amount:
+        label: "Valor Bloqueado"
+        value: "R$ 0,00"
+      blocked_balance:
+        label: "Saldo Bloqueado"
+        value: "R$ 0,00"
+      title: "Extrato por período"
+      sort_order: "Mais recente para o mais antigo"
+    transactions_table:
+      section_title: "Entradas/saídas"
+      columns:
+        - "Data"
+        - "Lançamentos"
+        - "Número Documento"
+        - "Valor (R$)"
+      visible_rows:
+        - type: normal_transaction
+          date: "31/01/2024"
+          description: "TRANSF"
+          document: unknown
+          amount: "1.000,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "31/01/2024"
+          description: "PIX ENVIADO"
+          document: unknown
+          amount: "-21,00"
+          balance: unknown
+        - type: balance_row
+          date: "31/01/2024"
+          description: "Saldo disponível em 31/1/24"
+          document: unknown
+          amount: unknown
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo em conta"
+        - "Saldo disponível"
+        - "SALDO ANTERIOR"
+        - "SALDO INICIAL"
+      should_import_as_transaction: false
+      balance_source: "summary_block_or_balance_row"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_document: true
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece sem sinal negativo"
+        - "Valor aparece com cor positiva ou indicador de entrada, se presente no PDF real"
+      negative_when:
+        - "Valor aparece com sinal '-'"
+        - "Valor aparece em vermelho com sinal negativo"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      balance_rows_exist: true
+      summary_balances_exist: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "TRANSF"
+        reason: "Linha visível aparece sem sinal negativo"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "PIX ENVIADO"
+        reason: "Linha visível aparece com valor negativo em vermelho"
+        inferred: false
+    caution:
+      - "Não importar 'Saldo disponível em ...' como transação."
+      - "Não há saldo por transação; validação aritmética detalhada não é possível no recorte."
+      - "Datas em formato curto devem ser normalizadas para dd/MM/yyyy."
+      - "Não inferir sinal por PIX isoladamente; usar sinal explícito do valor."
+      - "A coluna Número Documento pode estar vazia; parser não deve exigir documento."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Entradas/saídas"
+      header_keywords:
+        - "Data"
+        - "Lançamentos"
+        - "Número Documento"
+        - "Valor (R$)"
+    column_order:
+      - date
+      - description
+      - document
+      - amount
+    row_behavior:
+      separator: "light horizontal lines"
+      date_repeated_per_transaction: true
+      date_format_short: true
+      description_uppercase_mixed: true
+      document_column_may_be_blank: true
+      amount_right_aligned: true
+      negative_amount_color: "red"
+      no_balance_column: true
+      balance_row_after_transactions: true
+  parser_risks:
+    ambiguities:
+      - "O valor da linha 'TRANSF' aparece em vermelho, mas sem sinal negativo; não é possível confirmar se a cor indica saída ou se é apenas estilo/OCR."
+      - "Não há exemplo claro de entrada com sinal positivo."
+      - "Não há saldo por transação."
+      - "Coluna Número Documento não tem valores visíveis."
+      - "O nome do banco/canal deve ser validado em amostras reais, pois Banco Sorisa pode ser layout de sistema/white-label."
+    fields_that_may_be_missing:
+      - "document"
+      - "balance"
+      - "client"
+      - "agency"
+      - "account"
+      - "account_balance"
+      - "period"
+      - "channel"
+    cases_that_need_real_pdf_validation:
+      - "Se valores positivos aparecem em preto, verde ou vermelho sem sinal."
+      - "Se o valor '1.000,00' da linha TRANSF é crédito ou débito no PDF real."
+      - "Se débitos sempre usam sinal '-' antes do valor."
+      - "Se documentos aparecem em outras linhas."
+      - "Se saldo disponível tem valor associado em linha separada."
+      - "Se há paginação e repetição do cabeçalho."
+
+layout_profile:
+  profile_name: banco_sorisa_extrato_por_periodo_entradas_saidas_v1
+  bank: Banco Sorisa
+  layout_family: sorisa_extrato_periodo_entradas_saidas
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Banco Sorisa"
+      - "Cliente"
+      - "Agência"
+      - "Conta"
+      - "Saldo em conta"
+      - "Extrato por período"
+      - "Entradas/saídas"
+      - "Data"
+      - "Lançamentos"
+      - "Número Documento"
+      - "Valor (R$)"
+    optional_keywords:
+      - "Cheque Fácil"
+      - "Valor Bloqueado"
+      - "Saldo Bloqueado"
+      - "Mais recente para o mais antigo"
+      - "PIX ENVIADO"
+      - "TRANSF"
+      - "Saldo disponível em"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Lançamentos"
+      - "Número Documento"
+      - "Valor (R$)"
+    expected_column_order:
+      - date
+      - description
+      - document
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Lançamentos"
+        - "Lancamentos"
+        - "Descrição"
+        - "Histórico"
+      document:
+        - "Número Documento"
+        - "Numero Documento"
+        - "Documento"
+        - "Doc."
+      amount:
+        - "Valor (R$)"
+        - "Valor"
+      balance:
+        - "Saldo disponível"
+        - "Saldo em conta"
+        - "Saldo"
+    table_starts_after:
+      - "Entradas/saídas"
+      - "Data Lançamentos Número Documento Valor (R$)"
+    row_separator_hint: "transaction row starts when first column contains date in d/M/yy or dd/MM/yy format"
+  parsing:
+    date_format: "dd/MM/yy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+      - "- R$ {amount}"
+      - "R$ -{amount}"
+    positive_patterns:
+      - "{amount_without_minus}"
+      - "R$ {amount_without_minus}"
+    ignore_rows:
+      - "Banco Sorisa"
+      - "Cliente"
+      - "Agência"
+      - "Conta"
+      - "Saldo em conta"
+      - "Cheque Fácil"
+      - "Valor Bloqueado"
+      - "Saldo Bloqueado"
+      - "Extrato por período"
+      - "Mais recente para o mais antigo"
+      - "Entradas/saídas"
+      - "Data"
+      - "Lançamentos"
+      - "Número Documento"
+      - "Valor (R$)"
+      - "Saldo disponível"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "Saldo em conta"
+      - "Saldo disponível"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "provider_transaction_type_if_available"
+      - "description_based_hint"
+      - "period_balance_consistency"
+    description_based_overrides:
+      - pattern: "PIX ENVIADO"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sinal negativo"
+      - pattern: "TRANSF"
+        sign: unknown
+        confidence: low
+        inferred: true
+        reason: "Linha visível não possui sinal negativo, mas cor/semântica não são suficientes para confirmar"
+    cautions:
+      - "Não usar cor como única regra de sinal."
+      - "Não inferir sinal por TRANSF sem sinal/metadado."
+      - "Não importar saldo disponível como transação."
+      - "Se valor estiver sem sinal e não houver saldo/metadado, aplicar regra geral de positivo, mas marcar cautela."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "PIX ENVIADO"
+        category: "pix_enviado"
+        inferred: true
+      - pattern: "TRANSF"
+        category: "transferencia"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX ENVIADO"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "PIX RECEBIDO"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "TRANSF"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 4
+    reject_if_missing_headers:
+      - "Data"
+      - "Lançamentos"
+      - "Valor"
+    balance_consistency_check:
+      enabled: true
+      method: "when summary/daily balances are available, validate aggregate movement; no per-row balance visible"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "amount_without_sign_and_description_ambiguous"
+      - "amount_color_conflicts_with_sign"
+      - "document_missing"
+      - "balance_row_without_value"
+      - "date_format_ambiguous"
+      - "ocr_confidence_low_on_amount_or_sign"
+      - "aggregate_balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "31/1/24"
+        raw_description: "TRANSF"
+        raw_document: unknown
+        raw_amount: "1.000,00"
+        raw_balance: unknown
+        normalized_amount: "1000.00"
+        should_import_as_transaction: true
+        notes: "Valor sem sinal negativo; pela regra geral seria positivo, mas validar com PDF real porque aparece em vermelho"
+      - raw_date: "31/1/24"
+        raw_description: "PIX ENVIADO"
+        raw_document: unknown
+        raw_amount: "-21,00"
+        raw_balance: unknown
+        normalized_amount: "-21.00"
+        should_import_as_transaction: true
+        notes: "Débito explícito por sinal negativo"
+      - raw_date: "31/1/24"
+        raw_description: "Saldo disponível em 31/1/24"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo; não importar como transação"
+  implementation_notes:
+    - "Classificar pelo logo Banco Sorisa e pelo bloco 'Extrato por período - Mais recente para o mais antigo'."
+    - "Normalizar datas curtas como dd/MM/yy para dd/MM/yyyy."
+    - "Usar sinal explícito do valor como regra primária."
+    - "Não importar linhas de saldo disponível."
+    - "Não exigir Número Documento ou Saldo por transação."
+    - "Validar com PDF real a cor/sinal dos valores positivos, especialmente linhas sem sinal negativo."

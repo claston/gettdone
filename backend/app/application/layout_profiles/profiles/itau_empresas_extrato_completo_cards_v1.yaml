@@ -1,0 +1,370 @@
+meta_model:
+  layout_id: itau_empresas_extrato_completo_cards_v1
+  bank: Itaú
+  channel: Itaú Empresas
+  statement_type: conta_corrente_extrato_completo
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Texto/logo 'Itaú Empresas' visível no topo"
+      - "Logo Itaú visível no topo direito"
+      - "Seção 'dados gerais'"
+      - "Campos 'nome', 'agência/conta', 'data' e 'horário'"
+      - "Título de seção 'extrato completo'"
+      - "Agrupamento por data em formato de botão/pílula, exemplo '02/05/2024'"
+      - "Lançamentos apresentados como lista/card com ícone à esquerda, descrição e valor à direita"
+      - "Linha de saldo destacada com ícone verde e texto 'saldo do dia'"
+    weak:
+      - "Não há cabeçalho tabular tradicional com nomes de colunas"
+      - "Dados de nome e agência/conta aparecem ocultos ou ilegíveis"
+      - "Valores positivos aparecem em verde"
+      - "O layout parece ser visual/HTML/PDF moderno, com agrupamento por dia"
+      - "Não há documento/agência de origem visíveis nas linhas exibidas"
+    table_headers: []
+  page_structure:
+    header:
+      bank_logo: "Itaú"
+      channel_title: "Itaú Empresas"
+      account_identifiers:
+        name: unknown
+        agency_account: unknown
+    metadata:
+      section_title: "dados gerais"
+      generated_date: "02/05/2024"
+      generated_time: "10:13"
+    transactions_table:
+      representation: "grouped_cards_or_list"
+      section_title: "extrato completo"
+      group_by: "date"
+      visible_group:
+        date: "02/05/2024"
+        rows:
+          - type: normal_transaction
+            description: "REDE ELO"
+            document: unknown
+            amount: "R$ 81,60"
+            balance: unknown
+          - type: normal_transaction
+            description: "REDE VISA"
+            document: unknown
+            amount: "R$ 491,58"
+            balance: unknown
+          - type: normal_transaction
+            description: "REDE MAST"
+            document: unknown
+            amount: "R$ 938,07"
+            balance: unknown
+          - type: balance_row
+            description: "saldo do dia"
+            document: unknown
+            amount: unknown
+            balance: "R$ 18.856,74"
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "saldo anterior"
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "balance row or saldo do dia"
+      inferred: true
+    normal_transaction:
+      row_has_date_context: true
+      row_has_description: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece sem sinal negativo e em verde"
+        - "Valor aparece com prefixo R$ e sem sinal '-'"
+      negative_when:
+        - "Valor aparece com sinal '-'"
+        - "Valor aparece com indicação visual de débito, se presente em outras amostras"
+      inferred: true
+    balance_column:
+      exists: false
+      column_name: unknown
+      daily_balance_rows_exist: true
+      balance_label: "saldo do dia"
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "REDE ELO"
+        reason: "Valor visível em verde e sem sinal negativo"
+        inferred: false
+      - pattern: "REDE VISA"
+        reason: "Valor visível em verde e sem sinal negativo"
+        inferred: false
+      - pattern: "REDE MAST"
+        reason: "Valor visível em verde e sem sinal negativo"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "*"
+        reason: "Débitos não aparecem na imagem; confirmar em PDFs reais se usam sinal '-' ou outra cor"
+        inferred: true
+    caution:
+      - "Este layout não usa tabela clássica; a data é um agrupador visual e deve ser aplicada às linhas abaixo."
+      - "Não importar 'saldo do dia' como transação."
+      - "Valores sem sinal negativo devem ser positivos conforme regra do prompt, mas validar como débitos são exibidos neste layout."
+      - "Não há documento visível; parser não deve exigir documento."
+      - "O valor do saldo do dia aparece na mesma região visual dos valores, mas deve ser tratado como saldo."
+  visual_model:
+    table_anchor:
+      starts_after_text: "extrato completo"
+      group_anchor: "date pill/button"
+      header_keywords: []
+    column_order:
+      - icon
+      - description
+      - amount_or_balance
+    row_behavior:
+      separator: "card/list spacing; no grid lines"
+      date_group_applies_to_following_rows: true
+      transaction_icon_left: true
+      amount_right_aligned: true
+      positive_amount_color: "green"
+      balance_row_highlighted_background: "light gray"
+      balance_row_has_green_money_icon: true
+      balance_row_label: "saldo do dia"
+  parser_risks:
+    ambiguities:
+      - "Não há cabeçalho de colunas; parser deve usar estrutura visual/posicional."
+      - "A data fica em um agrupador separado e precisa ser propagada para as transações abaixo."
+      - "Não é possível confirmar como débitos aparecem neste modelo."
+      - "Não há documentos ou códigos de origem visíveis nas linhas exibidas."
+      - "A linha de saldo do dia tem aparência semelhante às transações e pode ser importada por engano."
+      - "Parte de uma descrição parece ocultada/ilegível após 'REDE ELO'."
+    fields_that_may_be_missing:
+      - "document"
+      - "origin_agency"
+      - "balance_per_transaction"
+      - "account_identifiers"
+      - "explicit_sign"
+    cases_that_need_real_pdf_validation:
+      - "Como a camada textual representa agrupadores de data e linhas de lançamento."
+      - "Se os valores positivos/negativos possuem sinal explícito no texto ou apenas cor."
+      - "Como aparecem débitos, tarifas, PIX, TED, boletos, aplicações e estornos."
+      - "Se descrições longas aparecem ocultas, truncadas ou quebradas em múltiplas linhas."
+      - "Como ocorre paginação e repetição de data em páginas seguintes."
+      - "Se 'saldo do dia' sempre aparece com ícone/linha destacada e deve ser ignorado como transação."
+
+layout_profile:
+  profile_name: itau_empresas_extrato_completo_cards_v1
+  bank: Itaú
+  layout_family: itau_empresas_extrato_completo_cards
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Itaú Empresas"
+      - "Itaú"
+      - "dados gerais"
+      - "nome"
+      - "agência/conta"
+      - "data"
+      - "horário"
+      - "extrato completo"
+      - "saldo do dia"
+    optional_keywords:
+      - "REDE ELO"
+      - "REDE VISA"
+      - "REDE MAST"
+      - "R$"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "lançamentos período"
+      - "data lançamentos ag/origem valor"
+      - "Cartão de Crédito"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.8
+  table_detection:
+    header_keywords: []
+    expected_column_order:
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "date_group"
+        - "data"
+      description:
+        - "description_card_text"
+        - "lançamento"
+        - "histórico"
+      document:
+        - "unknown"
+      amount:
+        - "amount_right_aligned"
+        - "R$"
+      balance:
+        - "saldo do dia"
+    table_starts_after:
+      - "extrato completo"
+    row_separator_hint: "date appears as centered pill; each transaction line below has icon at left, description near left/middle and amount at right"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "- R$ {amount}"
+      - "-R$ {amount}"
+      - "R$ -{amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+      - "{amount_without_minus}"
+      - "green_amount_without_minus"
+    ignore_rows:
+      - "Itaú Empresas"
+      - "Itaú"
+      - "dados gerais"
+      - "nome"
+      - "agência/conta"
+      - "data"
+      - "horário"
+      - "extrato completo"
+      - "saldo do dia"
+      - "saldo anterior"
+      - "saldo final"
+      - "total"
+    opening_balance_rows:
+      - "saldo anterior"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+      - origin_agency
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "visual_color_when_available"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "REDE ELO"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Valor visível em verde e sem sinal negativo"
+      - pattern: "REDE VISA"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Valor visível em verde e sem sinal negativo"
+      - pattern: "REDE MAST"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Valor visível em verde e sem sinal negativo"
+    cautions:
+      - "Não importar a linha 'saldo do dia' como transação."
+      - "Não depender somente de cor, pois PDFs extraídos como texto podem perder essa informação."
+      - "Se valor não tiver sinal explícito e não houver saldo para validar, tratar como positivo pela regra do prompt, mas marcar cautela para layouts que usam cor."
+      - "Propagar a data do agrupador para as transações abaixo até o próximo agrupador de data."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "remove_icon_artifacts_if_ocr_detects_them"
+      - "normalize_uppercase_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "REDE ELO"
+        category: "recebimento_cartao"
+        inferred: true
+      - pattern: "REDE VISA"
+        category: "recebimento_cartao"
+        inferred: true
+      - pattern: "REDE MAST"
+        category: "recebimento_cartao"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "DOC"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+  validation:
+    expected_min_columns: 2
+    reject_if_missing_headers:
+      - "extrato completo"
+      - "saldo do dia"
+    balance_consistency_check:
+      enabled: true
+      method: "when daily balance is available, sum grouped transactions by date and compare with saldo do dia using previous balance if known"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "date_group_missing_for_transaction"
+      - "amount_without_explicit_sign_and_color_unavailable"
+      - "daily_balance_missing"
+      - "description_truncated_or_partially_hidden"
+      - "ocr_detects_icon_as_text"
+      - "multiple_date_groups_overlap"
+      - "balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "02/05/2024"
+        raw_description: "REDE ELO"
+        raw_document: unknown
+        raw_amount: "R$ 81,60"
+        raw_balance: unknown
+        normalized_amount: "81.60"
+        should_import_as_transaction: true
+        notes: "Valor positivo em verde; documento não visível"
+      - raw_date: "02/05/2024"
+        raw_description: "REDE VISA"
+        raw_document: unknown
+        raw_amount: "R$ 491,58"
+        raw_balance: unknown
+        normalized_amount: "491.58"
+        should_import_as_transaction: true
+        notes: "Valor positivo em verde"
+      - raw_date: "02/05/2024"
+        raw_description: "REDE MAST"
+        raw_document: unknown
+        raw_amount: "R$ 938,07"
+        raw_balance: unknown
+        normalized_amount: "938.07"
+        should_import_as_transaction: true
+        notes: "Valor positivo em verde"
+      - raw_date: "02/05/2024"
+        raw_description: "saldo do dia"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "R$ 18.856,74"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo diário; não importar como transação"
+  implementation_notes:
+    - "Classificar pelo conjunto 'Itaú Empresas', 'dados gerais' e 'extrato completo'."
+    - "Este é um layout de lista/cards, não uma tabela tradicional."
+    - "Detectar agrupadores de data e aplicar a data às linhas de lançamento subsequentes."
+    - "Filtrar 'saldo do dia' como linha de saldo, não transação."
+    - "Não exigir documento/agência de origem para importar transações."
+    - "Usar sinal explícito quando existir; caso contrário, valor sem sinal negativo é positivo conforme regra do prompt."
+    - "Validar com PDF real como débitos são representados e se valores mantêm cor/sinal na camada textual."

@@ -1,0 +1,381 @@
+meta_model:
+  layout_id: banco_do_brasil_extrato_conta_corrente_lancamentos_v1
+  bank: Banco do Brasil
+  channel: unknown
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logomarca amarela/azul do Banco do Brasil visível no topo esquerdo"
+      - "Título 'Extrato de Conta Corrente' no cabeçalho"
+      - "Seção 'Lançamentos' antes da tabela"
+      - "Cabeçalho da tabela com colunas 'Dia', 'Histórico' e 'Valor'"
+      - "Valores exibidos com indicador explícito '(+)' ou '(-)' ao lado do valor"
+    weak:
+      - "Campos 'Cliente', 'Agência' e 'Conta' aparecem no cabeçalho, mas dados não estão visíveis/foram omitidos"
+      - "Linhas têm separadores horizontais finos"
+      - "Não há coluna de saldo por transação visível; saldo aparece como lançamento/linha específica"
+    table_headers:
+      - "Dia"
+      - "Histórico"
+      - "Valor"
+  page_structure:
+    header:
+      bank_logo: "Banco do Brasil"
+      title: "Extrato de Conta Corrente"
+      account_identifiers:
+        client: unknown
+        agency: unknown
+        account: unknown
+    metadata:
+      section_title: "Lançamentos"
+      period: unknown
+      generated_at: unknown
+    transactions_table:
+      header_background: "light gray"
+      columns:
+        - "Dia"
+        - "Histórico"
+        - "Valor"
+      visible_rows:
+        - type: opening_balance
+          date: "21/09/2023"
+          description: "Saldo Anterior"
+          document: unknown
+          amount: "0,00 (+)"
+          balance: unknown
+        - type: normal_transaction
+          date: "02/10/2023"
+          description: "Movimento do Dia"
+          document: unknown
+          amount: "216,13 (-)"
+          balance: unknown
+        - type: normal_transaction
+          date: "02/10/2023"
+          description: "Estorno de Débito"
+          document: unknown
+          amount: "216,13 (+)"
+          balance: unknown
+        - type: normal_transaction
+          date: "03/10/2023"
+          description: "Movimento do Dia"
+          document: unknown
+          amount: "220,55 (-)"
+          balance: unknown
+        - type: normal_transaction
+          date: "03/10/2023"
+          description: "Estorno de Débito"
+          document: unknown
+          amount: "220,55 (+)"
+          balance: unknown
+        - type: normal_transaction
+          date: "04/10/2023"
+          description: "Movimento do Dia"
+          document: unknown
+          amount: "220,67 (-)"
+          balance: unknown
+        - type: normal_transaction
+          date: "04/10/2023"
+          description: "Estorno de Débito"
+          document: unknown
+          amount: "220,67 (+)"
+          balance: unknown
+        - type: normal_transaction
+          date: "05/10/2023"
+          description: "Movimento do Dia"
+          document: unknown
+          amount: "220,78 (-)"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo Anterior"
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "Valor column when paired with Saldo Anterior"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor termina com '(+)'"
+      negative_when:
+        - "Valor termina com '(-)'"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      may_be_blank_on_intermediate_rows: true
+      inferred: false
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "Estorno de Débito"
+        reason: "Na imagem, aparece com indicador '(+)'"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "Movimento do Dia"
+        reason: "Na imagem, aparece com indicador '(-)' nas linhas visíveis"
+        inferred: false
+    caution:
+      - "Não inferir sinal apenas pela descrição; usar o indicador explícito '(+)' ou '(-)' no valor"
+      - "'Saldo Anterior' deve ser tratado como saldo inicial, não como transação"
+      - "A descrição 'Movimento do Dia' é genérica e pode agregar ou representar lançamentos consolidados; validar com PDF real"
+      - "Não há coluna Documento visível neste layout; não exigir documento para importação"
+  visual_model:
+    table_anchor:
+      starts_after_text: "Lançamentos"
+      header_keywords:
+        - "Dia"
+        - "Histórico"
+        - "Valor"
+      header_background: "light gray"
+    column_order:
+      - date
+      - description
+      - amount
+    row_behavior:
+      separator: "horizontal light gray lines"
+      date_repeated_per_row: true
+      description_single_line_in_visible_rows: true
+      amount_right_aligned: true
+      sign_marker_inside_amount_cell: true
+      amount_sign_position: "after amount, inside parentheses"
+  parser_risks:
+    ambiguities:
+      - "Canal de origem não aparece claramente na imagem"
+      - "Não é possível confirmar se a tabela sempre possui apenas três colunas"
+      - "Descrição 'Movimento do Dia' pode ser lançamento consolidado, não uma transação final de negócio"
+      - "Não há saldo acumulado por linha para validar consistência aritmética"
+      - "Não é possível confirmar se existem linhas com documento em páginas completas"
+    fields_that_may_be_missing:
+      - "document"
+      - "balance"
+      - "generated_at"
+      - "period"
+      - "agency"
+      - "account"
+      - "client"
+    cases_that_need_real_pdf_validation:
+      - "Se a extração textual mantém o '(+)' e '(-)' junto ao valor"
+      - "Se linhas longas de histórico podem quebrar em múltiplas linhas"
+      - "Se existem páginas com cabeçalho repetido"
+      - "Se há rodapé, mensagens ou totalizadores que podem ser confundidos com transações"
+      - "Se 'Movimento do Dia' representa lançamento importável ou apenas resumo diário"
+
+layout_profile:
+  profile_name: banco_do_brasil_extrato_conta_corrente_lancamentos_v1
+  bank: Banco do Brasil
+  layout_family: extrato_conta_corrente_lancamentos_simples
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Extrato de Conta Corrente"
+      - "Lançamentos"
+      - "Dia"
+      - "Histórico"
+      - "Valor"
+    optional_keywords:
+      - "Cliente"
+      - "Agência"
+      - "Conta"
+      - "Saldo Anterior"
+      - "Movimento do Dia"
+      - "Estorno de Débito"
+    negative_keywords:
+      - "Santander"
+      - "Itaú"
+      - "Bradesco"
+      - "Fatura"
+      - "Cartão de Crédito"
+      - "Comprovante"
+    min_score_hint: 0.8
+  table_detection:
+    header_keywords:
+      - "Dia"
+      - "Histórico"
+      - "Valor"
+    expected_column_order:
+      - date
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "Dia"
+        - "Data"
+      description:
+        - "Histórico"
+        - "Descrição"
+      document:
+        - "Documento"
+        - "Nº Documento"
+        - "Nº Doc"
+      amount:
+        - "Valor"
+      balance:
+        - "Saldo"
+        - "Saldo (R$)"
+    table_starts_after:
+      - "Lançamentos"
+      - "Dia Histórico Valor"
+    row_separator_hint: "horizontal lines between rows"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount} (-)"
+      - "{amount}(-)"
+      - "{amount} ( - )"
+    positive_patterns:
+      - "{amount} (+)"
+      - "{amount}(+)"
+      - "{amount} ( + )"
+    ignore_rows:
+      - "Cliente"
+      - "Agência"
+      - "Conta"
+      - "Lançamentos"
+      - "Extrato de Conta Corrente"
+      - "Saldo Final"
+      - "Saldo do Dia"
+      - "Total"
+    opening_balance_rows:
+      - "Saldo Anterior"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_parenthesized_sign_after_amount"
+      - "explicit_negative_sign_before_amount"
+      - "explicit_positive_sign_before_amount"
+      - "section_or_column_semantics"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "Estorno de Débito"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis aparecem com '(+)'"
+      - pattern: "Movimento do Dia"
+        sign: negative
+        confidence: medium
+        inferred: false
+        reason: "Linhas visíveis aparecem com '(-)', mas descrição é genérica"
+    cautions:
+      - "O indicador '(+)' ou '(-)' deve ter prioridade absoluta sobre a descrição"
+      - "Não classificar 'Estorno de Débito' por palavra-chave sem verificar o sinal explícito"
+      - "Sem coluna de saldo, não há validação aritmética robusta do sinal"
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_accents"
+      - "normalize_case_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Estorno de Débito"
+        category: "estorno"
+        inferred: true
+      - pattern: "Movimento do Dia"
+        category: "movimento_do_dia"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "DOC"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "CESTA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_taxa"
+        inferred: true
+  validation:
+    expected_min_columns: 3
+    reject_if_missing_headers:
+      - "Dia"
+      - "Histórico"
+      - "Valor"
+    balance_consistency_check:
+      enabled: false
+      method: "not_applicable_no_balance_column_visible"
+      tolerance: unknown
+    needs_manual_review_when:
+      - "amount_missing_parenthesized_sign"
+      - "description_is_movimento_do_dia_and_business_semantics_required"
+      - "row_has_date_but_amount_not_detected"
+      - "multi_line_description_detected"
+      - "ocr_confidence_low_on_parenthesized_sign"
+      - "saldo_rows_mixed_with_transaction_rows"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "21/09/2023"
+        raw_description: "Saldo Anterior"
+        raw_document: unknown
+        raw_amount: "0,00 (+)"
+        raw_balance: unknown
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo inicial; não importar como transação"
+      - raw_date: "02/10/2023"
+        raw_description: "Movimento do Dia"
+        raw_document: unknown
+        raw_amount: "216,13 (-)"
+        raw_balance: unknown
+        normalized_amount: "-216.13"
+        should_import_as_transaction: true
+        notes: "Sinal negativo explícito por '(-)'"
+      - raw_date: "02/10/2023"
+        raw_description: "Estorno de Débito"
+        raw_document: unknown
+        raw_amount: "216,13 (+)"
+        raw_balance: unknown
+        normalized_amount: "216.13"
+        should_import_as_transaction: true
+        notes: "Sinal positivo explícito por '(+)'"
+      - raw_date: "03/10/2023"
+        raw_description: "Movimento do Dia"
+        raw_document: unknown
+        raw_amount: "220,55 (-)"
+        raw_balance: unknown
+        normalized_amount: "-220.55"
+        should_import_as_transaction: true
+        notes: "Descrição genérica; validar se representa transação consolidada"
+      - raw_date: "03/10/2023"
+        raw_description: "Estorno de Débito"
+        raw_document: unknown
+        raw_amount: "220,55 (+)"
+        raw_balance: unknown
+        normalized_amount: "220.55"
+        should_import_as_transaction: true
+        notes: "Estorno com sinal positivo explícito"
+  implementation_notes:
+    - "Classificar o layout pela combinação de logomarca Banco do Brasil, título 'Extrato de Conta Corrente' e seção 'Lançamentos'."
+    - "Neste modelo, a coluna Valor carrega o sinal em marcador separado '(+)' ou '(-)' depois do valor."
+    - "O parser deve capturar o sinal entre parênteses como parte do campo de valor antes de normalizar para decimal."
+    - "Não exigir coluna Documento nem Saldo neste perfil, pois não aparecem na imagem."
+    - "Tratar 'Saldo Anterior' como contexto de saldo inicial, não como transação importável."
+    - "Validar com PDF real se 'Movimento do Dia' deve ser importado ou se representa resumo/agregação diária."

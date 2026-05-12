@@ -1,0 +1,451 @@
+meta_model:
+  layout_id: stone_extrato_conta_corrente_transferencia_conta_v1
+  bank: Stone
+  channel: Stone
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'stone' visível no topo direito"
+      - "Título 'Extrato de conta corrente'"
+      - "Texto de emissão: 'Emitido no dia 21 de Maio de 2024 às 13:09:10'"
+      - "Instituição visível: 'Stone Instituição de Pagamento S.A.'"
+      - "Campos 'Titular', 'Documento', 'Período', 'Agência' e 'Conta'"
+      - "Período explícito: '01/01/2024 até 21/05/2024'"
+      - "Tabela com colunas 'DATA', 'TIPO', 'LANÇAMENTO', 'VALOR (R$)', 'SALDO (R$)' e 'CONTRAPARTE'"
+      - "Tipo da movimentação aparece como 'Crédito'"
+      - "Lançamento com pagador/descrição principal e subtipo em linhas abaixo, exemplo 'PAGAR.ME PAGAMENTOS S.A.' e 'Transferência | Conta Stone'"
+      - "Coluna 'Contraparte' contém nome da contraparte e campos 'Agência'/'Conta'"
+      - "Coluna de saldo por transação visível"
+    weak:
+      - "Dados de titular, documento, agência, conta e parte da contraparte estão ocultos ou ilegíveis"
+      - "Não há exemplo de débito visível no recorte"
+      - "Valores positivos aparecem sem sinal '+' explícito"
+      - "Histórico é multi-linha e precisa ser concatenado"
+      - "Contraparte também é multi-linha e pode ter agência/conta ocultas"
+    table_headers:
+      - "DATA"
+      - "TIPO"
+      - "LANÇAMENTO"
+      - "VALOR (R$)"
+      - "SALDO (R$)"
+      - "CONTRAPARTE"
+  page_structure:
+    header:
+      bank_logo: "stone"
+      title: "Extrato de conta corrente"
+      emitted_at: "21 de Maio de 2024 às 13:09:10"
+      institution: "Stone Instituição de Pagamento S.A."
+      account_identifiers:
+        holder: unknown
+        document: unknown
+        agency: unknown
+        account: unknown
+    metadata:
+      period: "01/01/2024 até 21/05/2024"
+      start_date: "01/01/2024"
+      end_date: "21/05/2024"
+    transactions_table:
+      header_background: "light gray"
+      banded_rows: true
+      columns:
+        - "DATA"
+        - "TIPO"
+        - "LANÇAMENTO"
+        - "VALOR (R$)"
+        - "SALDO (R$)"
+        - "CONTRAPARTE"
+      visible_rows:
+        - type: normal_transaction
+          date: "21/05/2024"
+          transaction_type: "Crédito"
+          description: "PAGAR.ME PAGAMENTOS S.A. | Transferência | Conta Stone"
+          document: unknown
+          amount: "226,49"
+          balance: "562,44"
+          counterparty: "STONE INSTITUIÇÃO DE PAGAMENTO S.A. | Agência | Conta"
+        - type: normal_transaction
+          date: "20/05/2024"
+          transaction_type: "Crédito"
+          description: "PAGAR.ME PAGAMENTOS S.A. | Transferência | Conta Stone"
+          document: unknown
+          amount: "335,02"
+          balance: "335,95"
+          counterparty: "STONE INSTITUIÇÃO DE PAGAMENTO S.A. | Agência | Conta"
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo anterior"
+        - "SALDO ANTERIOR"
+        - "Saldo inicial"
+        - "SALDO INICIAL"
+        - "Saldo final"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: "SALDO (R$)"
+      inferred: true
+    normal_transaction:
+      row_has_date: true
+      row_has_type: true
+      row_has_description: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_has_balance: true
+      row_may_have_counterparty: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Coluna TIPO contém 'Crédito'"
+      negative_when:
+        - "Coluna TIPO contém 'Débito', se presente no PDF real"
+        - "Valor aparece com sinal negativo, se presente no PDF real"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "SALDO (R$)"
+      balance_after_transaction: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "Crédito"
+        reason: "Tipo da linha visível é Crédito"
+        inferred: false
+      - pattern: "Transferência | Conta Stone"
+        reason: "Linhas visíveis com este subtipo têm tipo Crédito"
+        inferred: false
+      - pattern: "PAGAR.ME PAGAMENTOS S.A."
+        reason: "Linhas visíveis associadas a crédito de recebimento/transferência"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "*"
+        reason: "Não há débitos visíveis no recorte; validar como saídas aparecem no PDF real"
+        inferred: true
+    caution:
+      - "Usar a coluna TIPO como fonte primária de sinal, não apenas o texto do lançamento."
+      - "Valores de crédito aparecem sem sinal '+'."
+      - "Histórico e contraparte são multi-linha; concatenar linhas da mesma célula."
+      - "Não confundir a coluna CONTRAPARTE com o lançamento principal."
+      - "Se houver tipo diferente de Crédito/Débito, marcar para revisão."
+  visual_model:
+    table_anchor:
+      starts_after_text: "DATA TIPO LANÇAMENTO VALOR (R$) SALDO (R$) CONTRAPARTE"
+      header_keywords:
+        - "DATA"
+        - "TIPO"
+        - "LANÇAMENTO"
+        - "VALOR (R$)"
+        - "SALDO (R$)"
+        - "CONTRAPARTE"
+    column_order:
+      - date
+      - type
+      - description
+      - amount
+      - balance
+      - counterparty
+    row_behavior:
+      separator: "alternating light gray and white row blocks"
+      row_height_large_due_to_multiline_cells: true
+      date_repeated_per_transaction: true
+      type_column_contains_credit_debit: true
+      description_multiline: true
+      counterparty_multiline: true
+      amount_right_aligned: true
+      balance_right_aligned: true
+  parser_risks:
+    ambiguities:
+      - "Não há exemplo de débito para confirmar se a coluna TIPO usa 'Débito' e se o valor aparece positivo ou negativo."
+      - "A descrição principal e detalhes de transferência aparecem em linhas separadas dentro da mesma célula."
+      - "A contraparte tem nome, agência e conta em múltiplas linhas; dados podem estar mascarados."
+      - "Não há coluna documento/ID da operação visível."
+      - "O saldo parece ser após a transação, mas deve ser validado com sequência completa."
+    fields_that_may_be_missing:
+      - "document"
+      - "transaction_id"
+      - "holder"
+      - "holder_document"
+      - "agency"
+      - "account"
+      - "counterparty_agency"
+      - "counterparty_account"
+      - "full_description"
+    cases_that_need_real_pdf_validation:
+      - "Como débitos aparecem na coluna TIPO e no valor."
+      - "Se a camada textual preserva células multi-linha de lançamento e contraparte corretamente."
+      - "Se existem linhas de saldo anterior/final no corpo do extrato."
+      - "Se o saldo após cada transação permite validação sequencial."
+      - "Se há paginação e repetição do cabeçalho da tabela."
+      - "Se há IDs de transação invisíveis no recorte ou em outras páginas."
+
+layout_profile:
+  profile_name: stone_extrato_conta_corrente_transferencia_conta_v1
+  bank: Stone
+  layout_family: stone_extrato_conta_corrente_tipo_valor_saldo_contraparte
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "stone"
+      - "Extrato de conta corrente"
+      - "Emitido no dia"
+      - "Stone Instituição de Pagamento S.A."
+      - "Titular"
+      - "Documento"
+      - "Período"
+      - "Agência"
+      - "Conta"
+      - "DATA"
+      - "TIPO"
+      - "LANÇAMENTO"
+      - "VALOR (R$)"
+      - "SALDO (R$)"
+      - "CONTRAPARTE"
+    optional_keywords:
+      - "Crédito"
+      - "Débito"
+      - "PAGAR.ME PAGAMENTOS S.A."
+      - "Transferência | Conta Stone"
+      - "STONE INSTITUIÇÃO DE PAGAMENTO S.A."
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "SICOOB"
+      - "Sicredi"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "contasimples"
+      - "CRESOL"
+      - "infinitepay"
+      - "inter"
+      - "GRAFENO"
+      - "mercado pago"
+      - "PagBank"
+      - "PicPay"
+      - "SISPRIME"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.9
+  table_detection:
+    header_keywords:
+      - "DATA"
+      - "TIPO"
+      - "LANÇAMENTO"
+      - "VALOR (R$)"
+      - "SALDO (R$)"
+      - "CONTRAPARTE"
+    expected_column_order:
+      - date
+      - type
+      - description
+      - amount
+      - balance
+      - counterparty
+    column_aliases:
+      date:
+        - "DATA"
+        - "Data"
+      description:
+        - "LANÇAMENTO"
+        - "Lançamento"
+        - "Descricao"
+        - "Descrição"
+        - "Histórico"
+      document:
+        - "Documento"
+        - "ID"
+        - "Doc."
+      amount:
+        - "VALOR (R$)"
+        - "Valor"
+      balance:
+        - "SALDO (R$)"
+        - "Saldo"
+      type:
+        - "TIPO"
+        - "Tipo"
+      counterparty:
+        - "CONTRAPARTE"
+        - "Contraparte"
+    table_starts_after:
+      - "DATA TIPO LANÇAMENTO VALOR (R$) SALDO (R$) CONTRAPARTE"
+      - "Período"
+    row_separator_hint: "transaction row starts with dd/MM/yyyy; cells in Lançamento and Contraparte can span multiple lines"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "type_column_equals_debito"
+      - "-{amount}"
+      - "-R$ {amount}"
+      - "R$ -{amount}"
+    positive_patterns:
+      - "type_column_equals_credito"
+      - "{amount_without_minus}"
+      - "R$ {amount_without_minus}"
+      - "+{amount}"
+    ignore_rows:
+      - "stone"
+      - "Extrato de conta corrente"
+      - "Emitido no dia"
+      - "Titular"
+      - "Documento"
+      - "Período"
+      - "Instituição"
+      - "Stone Instituição de Pagamento S.A."
+      - "Agência"
+      - "Conta"
+      - "DATA"
+      - "TIPO"
+      - "LANÇAMENTO"
+      - "VALOR (R$)"
+      - "SALDO (R$)"
+      - "CONTRAPARTE"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "Saldo anterior"
+      - "SALDO INICIAL"
+      - "Saldo inicial"
+    required_transaction_fields:
+      - date
+      - type
+      - description
+      - amount
+    optional_transaction_fields:
+      - balance
+      - counterparty
+      - document
+      - transaction_id
+  sign_rules:
+    priority_order:
+      - "type_column_credito_debito"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "Crédito"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Tipo da linha visível é Crédito"
+      - pattern: "Débito"
+        sign: negative
+        confidence: medium
+        inferred: true
+        reason: "Provável tipo de saída; validar com PDF real"
+      - pattern: "Transferência | Conta Stone"
+        sign: unknown
+        confidence: low
+        inferred: true
+        reason: "Pode ser entrada ou saída; usar coluna TIPO"
+    cautions:
+      - "Coluna TIPO deve prevalecer sobre descrição."
+      - "Não assumir que Transferência é sempre entrada ou saída."
+      - "Se tipo estiver vazio/desconhecido, usar sinal explícito ou validação por saldo."
+      - "Se tipo e saldo conflitam, marcar para revisão."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "merge_multiline_description_cells"
+      - "preserve_original_description"
+      - "normalize_case_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "PAGAR.ME PAGAMENTOS S.A."
+        category: "recebimento_pagarme"
+        inferred: true
+      - pattern: "Transferência | Conta Stone"
+        category: "transferencia_conta_stone"
+        inferred: true
+      - pattern: "Crédito"
+        category: "credito"
+        inferred: true
+    transfer_hints:
+      - pattern: "Transferência | Conta Stone"
+        category: "transferencia_interna_conta_stone"
+        inferred: true
+      - pattern: "Pix"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia_ted"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa"
+        category: "tarifa"
+        inferred: true
+      - pattern: "Taxa"
+        category: "taxa_servico"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 6
+    reject_if_missing_headers:
+      - "DATA"
+      - "TIPO"
+      - "LANÇAMENTO"
+      - "VALOR"
+      - "SALDO"
+      - "CONTRAPARTE"
+    balance_consistency_check:
+      enabled: true
+      method: "validate previous_balance_plus_signed_amount_equals_current_balance; signed amount determined primarily by TIPO"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "type_column_missing_or_unknown"
+      - "amount_missing_or_masked"
+      - "balance_consistency_fails"
+      - "multiline_description_not_merged"
+      - "counterparty_required_but_masked"
+      - "transaction_id_required_but_missing"
+      - "debit_representation_not_validated"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "21/05/2024"
+        raw_description: "PAGAR.ME PAGAMENTOS S.A. | Transferência | Conta Stone"
+        raw_document: unknown
+        raw_amount: "226,49"
+        raw_balance: "562,44"
+        normalized_amount: "226.49"
+        should_import_as_transaction: true
+        notes: "Tipo Crédito; contraparte Stone Instituição de Pagamento S.A."
+      - raw_date: "20/05/2024"
+        raw_description: "PAGAR.ME PAGAMENTOS S.A. | Transferência | Conta Stone"
+        raw_document: unknown
+        raw_amount: "335,02"
+        raw_balance: "335,95"
+        normalized_amount: "335.02"
+        should_import_as_transaction: true
+        notes: "Tipo Crédito; descrição e contraparte são multi-linha"
+  implementation_notes:
+    - "Classificar pelo logo Stone e pela instituição 'Stone Instituição de Pagamento S.A.'."
+    - "Usar coluna TIPO para definir sinal financeiro."
+    - "Concatenar células multi-linha de LANÇAMENTO e CONTRAPARTE."
+    - "Preservar contraparte como campo separado da descrição."
+    - "Usar SALDO (R$) para validação sequencial quando disponível."
+    - "Validar com PDF real como débitos aparecem e se existe ID de operação em outras páginas."

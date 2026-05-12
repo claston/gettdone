@@ -1,0 +1,480 @@
+meta_model:
+  layout_id: c6_bank_extrato_mensal_tabela_tipo_descricao_valor_v1
+  bank: C6 Bank
+  channel: unknown
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'C6 BANK' visível no topo direito"
+      - "Campo 'Agência' e 'Conta' no topo esquerdo"
+      - "Título grande 'Extrato'"
+      - "Período explícito: '1 de abril de 2024 até 30 de abril de 2024'"
+      - "Agrupamento mensal 'Abril 2024 (01/04/2024 - 30/04/2024)'"
+      - "Resumo com indicadores de 'Entradas' e 'Saídas'"
+      - "Tabela com colunas 'Data', 'Tipo', 'Descrição' e 'Valor'"
+      - "Linhas de lançamento com tipos como 'Outros gastos', 'Saída PIX' e 'Pagamento'"
+      - "Valores monetários com prefixo 'R$'"
+    weak:
+      - "Valores de resumo e saldo do dia estão ocultos ou parcialmente ilegíveis"
+      - "O saldo exibido no topo parece ter data fora do período do extrato, exigindo validação com PDF real"
+      - "Valores das saídas aparecem sem sinal negativo visível no recorte"
+      - "Não há coluna de saldo por linha"
+      - "Não há documento, ID ou contraparte visível"
+    table_headers:
+      - "Data"
+      - "Tipo"
+      - "Descrição"
+      - "Valor"
+  page_structure:
+    header:
+      bank_logo: "C6 Bank"
+      title: "Extrato"
+      account_identifiers:
+        agency: "1"
+        account: unknown
+    metadata:
+      period: "1 de abril de 2024 até 30 de abril de 2024"
+      start_date: "01/04/2024"
+      end_date: "30/04/2024"
+      month_group: "Abril 2024"
+      daily_balance_label: "Saldo do dia"
+      daily_balance_date: "7 de janeiro de 2025"
+      daily_balance_value: unknown
+      summary:
+        inflows_label: "Entradas"
+        inflows_value: unknown
+        outflows_label: "Saídas"
+        outflows_value: unknown
+    transactions_table:
+      header_background: "white/light"
+      columns:
+        - "Data"
+        - "Tipo"
+        - "Descrição"
+        - "Valor"
+      visible_rows:
+        - type: normal_transaction
+          date: "01/04/2024"
+          transaction_type: "Outros gastos"
+          description: "Debito De Cartao"
+          document: unknown
+          amount: "R$ 81,67"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/04/2024"
+          transaction_type: "Outros gastos"
+          description: "Debito De Cartao"
+          document: unknown
+          amount: "R$ 6,99"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/04/2024"
+          transaction_type: "Saída PIX"
+          description: "Pix enviado"
+          document: unknown
+          amount: "R$ 225,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/04/2024"
+          transaction_type: "Saída PIX"
+          description: "Pix enviado"
+          document: unknown
+          amount: "R$ 1.000,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/04/2024"
+          transaction_type: "Outros gastos"
+          description: "Debito De Cartao"
+          document: unknown
+          amount: "R$ 59,60"
+          balance: unknown
+        - type: normal_transaction
+          date: "02/04/2024"
+          transaction_type: "Pagamento"
+          description: "PGTO DE BOLETO"
+          document: unknown
+          amount: "R$ 928,90"
+          balance: unknown
+        - type: normal_transaction
+          date: "02/04/2024"
+          transaction_type: "Outros gastos"
+          description: "Debito De Cartao"
+          document: unknown
+          amount: "R$ 180,00"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo do dia"
+        - "SALDO ANTERIOR"
+        - "SALDO INICIAL"
+        - "Saldo anterior"
+      should_import_as_transaction: false
+      balance_source: "summary_or_daily_balance"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_type: true
+      row_has_description: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Tipo/descrição indica entrada e valor aparece sem sinal negativo"
+        - "Valor aparece com sinal positivo explícito, se presente no PDF real"
+      negative_when:
+        - "Tipo indica saída, pagamento, outros gastos ou débito, mesmo se o valor vier sem '-' na camada visual"
+        - "Valor aparece com sinal '-' explícito"
+      inferred: true
+    balance_column:
+      exists: false
+      column_name: unknown
+      summary_and_daily_balance_exist: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "Entrada*"
+        reason: "Padrão de tipo esperado para entradas; não visível no recorte"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "Outros gastos"
+        reason: "Tipo visível representa gasto/saída; valores não exibem '-' no recorte"
+        inferred: true
+      - pattern: "Saída PIX"
+        reason: "Tipo visível indica saída Pix"
+        inferred: false
+      - pattern: "Pagamento"
+        reason: "Tipo visível indica pagamento"
+        inferred: true
+      - pattern: "Debito De Cartao"
+        reason: "Descrição indica débito de cartão"
+        inferred: true
+      - pattern: "PGTO DE BOLETO"
+        reason: "Descrição indica pagamento de boleto"
+        inferred: true
+    caution:
+      - "Este layout parece exibir saídas com valor positivo visualmente; o sinal pode depender da coluna 'Tipo'."
+      - "Não aplicar regra geral de positivo para todo valor sem '-' sem antes considerar o tipo da transação."
+      - "Não há saldo por linha; validar com totais de entradas/saídas quando disponíveis."
+      - "Não importar saldos/resumos como transações."
+      - "Validar no PDF real se há metadado textual de sinal, pois a imagem mostra valores de saída sem '-' explícito."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Abril 2024"
+      header_keywords:
+        - "Data"
+        - "Tipo"
+        - "Descrição"
+        - "Valor"
+    column_order:
+      - date
+      - transaction_type
+      - description
+      - amount
+    row_behavior:
+      separator: "subtle row spacing; vertical column separators"
+      date_format_day_month: true
+      date_repeated_per_transaction: true
+      transaction_type_column_present: true
+      description_left_aligned: true
+      amount_right_aligned: true
+      amount_without_visible_negative_for_debits: true
+      no_document_column: true
+      no_balance_column: true
+  parser_risks:
+    ambiguities:
+      - "Saídas visíveis aparecem com valores sem sinal negativo, então o sinal depende provavelmente do tipo da linha."
+      - "Não há exemplos de entradas para confirmar tipo e representação de crédito."
+      - "Não há saldo por transação."
+      - "O 'Saldo do dia' no topo mostra data aparentemente fora do período, podendo ser erro de layout/exportação ou recorte."
+      - "Não há documento, ID ou contraparte visível."
+    fields_that_may_be_missing:
+      - "document"
+      - "balance"
+      - "counterparty"
+      - "transaction_id"
+      - "account"
+      - "channel"
+      - "explicit_amount_sign"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual/API do PDF indica valor assinado ou apenas valor absoluto."
+      - "Se tipos de saída sempre devem ser normalizados como negativos."
+      - "Como entradas são exibidas e quais tipos indicam crédito."
+      - "Se há saldos diários/finais em outras partes do documento."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Se o cabeçalho e resumo repetem em páginas seguintes."
+
+layout_profile:
+  profile_name: c6_bank_extrato_mensal_tabela_tipo_descricao_valor_v1
+  bank: C6 Bank
+  layout_family: c6_bank_extrato_mensal_tipo_descricao_valor
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "C6 BANK"
+      - "Extrato"
+      - "Agência"
+      - "Conta"
+      - "Período"
+      - "Entradas"
+      - "Saídas"
+      - "Data"
+      - "Tipo"
+      - "Descrição"
+      - "Valor"
+    optional_keywords:
+      - "Abril 2024"
+      - "Saldo do dia"
+      - "Outros gastos"
+      - "Saída PIX"
+      - "Pagamento"
+      - "Debito De Cartao"
+      - "Pix enviado"
+      - "PGTO DE BOLETO"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Tipo"
+      - "Descrição"
+      - "Valor"
+    expected_column_order:
+      - date
+      - transaction_type
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Descrição"
+        - "Descricao"
+        - "Histórico"
+      document:
+        - "Documento"
+        - "Doc."
+        - "ID"
+      amount:
+        - "Valor"
+        - "R$"
+      balance:
+        - "Saldo"
+        - "Saldo do dia"
+      transaction_type:
+        - "Tipo"
+    table_starts_after:
+      - "Abril 2024"
+      - "Data Tipo Descrição Valor"
+    row_separator_hint: "transaction row starts with dd/MM; type column defines movement class"
+  parsing:
+    date_format: "dd/MM"
+    date_year_source: "month_group_or_period"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-R$ {amount}"
+      - "R$ -{amount}"
+      - "-{amount}"
+      - "negative_by_transaction_type"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "C6 BANK"
+      - "Extrato"
+      - "Agência"
+      - "Conta"
+      - "Período"
+      - "Saldo do dia"
+      - "Entradas"
+      - "Saídas"
+      - "Data"
+      - "Tipo"
+      - "Descrição"
+      - "Valor"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "Saldo do dia"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - transaction_type
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "transaction_type_based_sign"
+      - "summary_inflow_outflow_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "Saída PIX"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Tipo da linha indica saída"
+      - pattern: "Outros gastos"
+        sign: negative
+        confidence: medium
+        inferred: true
+        reason: "Tipo da linha indica gasto"
+      - pattern: "Pagamento"
+        sign: negative
+        confidence: medium
+        inferred: true
+        reason: "Tipo da linha indica pagamento"
+      - pattern: "Debito De Cartao"
+        sign: negative
+        confidence: medium
+        inferred: true
+        reason: "Descrição indica débito de cartão"
+      - pattern: "PGTO DE BOLETO"
+        sign: negative
+        confidence: medium
+        inferred: true
+        reason: "Descrição indica pagamento de boleto"
+    cautions:
+      - "Não tratar valor sem '-' como positivo antes de avaliar a coluna Tipo."
+      - "Se o PDF real trouxer valor assinado, o sinal explícito deve ter prioridade."
+      - "Se tipo for desconhecido e valor sem sinal, marcar para revisão."
+      - "Não inferir sinal apenas por Pix; neste layout o tipo 'Saída PIX' confirma saída."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_case_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Debito De Cartao"
+        category: "debito_cartao"
+        inferred: true
+      - pattern: "Pix enviado"
+        category: "pix_enviado"
+        inferred: true
+      - pattern: "PGTO DE BOLETO"
+        category: "pagamento_boleto"
+        inferred: true
+    transfer_hints:
+      - pattern: "Saída PIX"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "Pix enviado"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa"
+        category: "tarifa"
+        inferred: true
+      - pattern: "Taxa"
+        category: "taxa_servico"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 4
+    reject_if_missing_headers:
+      - "Data"
+      - "Tipo"
+      - "Descrição"
+      - "Valor"
+    balance_consistency_check:
+      enabled: true
+      method: "when totals of entradas/saídas are available, validate credits and debits by transaction type; no per-row balance visible"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "transaction_type_unknown"
+      - "amount_without_sign_and_type_not_mapped"
+      - "explicit_sign_conflicts_with_transaction_type"
+      - "summary_totals_missing_or_masked"
+      - "date_year_context_missing"
+      - "ocr_confidence_low_on_type_or_amount"
+      - "summary_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "01/04"
+        raw_description: "Debito De Cartao"
+        raw_document: unknown
+        raw_amount: "R$ 81,67"
+        raw_balance: unknown
+        normalized_amount: "-81.67"
+        should_import_as_transaction: true
+        notes: "Tipo 'Outros gastos' indica saída; valor visual sem '-' deve ser normalizado como negativo após validação do layout"
+      - raw_date: "01/04"
+        raw_description: "Debito De Cartao"
+        raw_document: unknown
+        raw_amount: "R$ 6,99"
+        raw_balance: unknown
+        normalized_amount: "-6.99"
+        should_import_as_transaction: true
+        notes: "Tipo 'Outros gastos' indica saída"
+      - raw_date: "01/04"
+        raw_description: "Pix enviado"
+        raw_document: unknown
+        raw_amount: "R$ 225,00"
+        raw_balance: unknown
+        normalized_amount: "-225.00"
+        should_import_as_transaction: true
+        notes: "Tipo 'Saída PIX' indica saída, mesmo sem '-' visual"
+      - raw_date: "01/04"
+        raw_description: "Pix enviado"
+        raw_document: unknown
+        raw_amount: "R$ 1.000,00"
+        raw_balance: unknown
+        normalized_amount: "-1000.00"
+        should_import_as_transaction: true
+        notes: "Tipo 'Saída PIX' indica saída"
+      - raw_date: "02/04"
+        raw_description: "PGTO DE BOLETO"
+        raw_document: unknown
+        raw_amount: "R$ 928,90"
+        raw_balance: unknown
+        normalized_amount: "-928.90"
+        should_import_as_transaction: true
+        notes: "Tipo 'Pagamento' indica saída"
+  implementation_notes:
+    - "Classificar pelo logo C6 BANK e pela tabela Data/Tipo/Descrição/Valor."
+    - "Neste layout, tratar a coluna Tipo como essencial para definir sinal quando o valor não tem '-' explícito."
+    - "Mapear tipos de saída como 'Outros gastos', 'Saída PIX' e 'Pagamento' para valores negativos."
+    - "Não exigir documento ou saldo por transação."
+    - "Validar com PDF real se a camada textual traz valores já assinados ou absolutos."
+    - "Usar totais de Entradas/Saídas para validação agregada quando disponíveis."

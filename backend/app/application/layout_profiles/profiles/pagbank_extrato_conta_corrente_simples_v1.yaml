@@ -1,0 +1,421 @@
+meta_model:
+  layout_id: pagbank_extrato_conta_corrente_simples_v1
+  bank: PagBank / PagSeguro Internet S/A
+  channel: PagBank
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'PagBank' visível no topo"
+      - "Texto institucional '290 - PagSeguro Internet S/A'"
+      - "Campos 'CNPJ', 'Agência' e 'Conta Corrente'"
+      - "Título 'Extrato da conta corrente'"
+      - "Texto 'Emitido em: 25/03/2024 às 19:05'"
+      - "Período explícito: '01/01/2024 a 31/01/2024'"
+      - "Tabela com colunas 'Data', 'Descrição' e 'Valor'"
+      - "Valores negativos aparecem com prefixo '-R$'"
+      - "Valores positivos aparecem com prefixo 'R$'"
+      - "Linhas com 'Pix enviado', 'Pagamento de conta' e 'Vendas - Plano de Recebimento'"
+    weak:
+      - "CNPJ, agência, conta e parte das descrições estão ocultos ou ilegíveis"
+      - "Não há coluna de saldo por transação"
+      - "Não há documento, ID de operação ou contraparte visível no recorte"
+      - "Algumas descrições parecem ter complemento oculto ou mascarado após hífen"
+      - "A tabela é simples e depende fortemente do sinal explícito no valor"
+    table_headers:
+      - "Data"
+      - "Descrição"
+      - "Valor"
+  page_structure:
+    header:
+      bank_logo: "PagBank"
+      institution: "290 - PagSeguro Internet S/A"
+      title: "Extrato da conta corrente"
+      emitted_at: "25/03/2024 às 19:05"
+      account_identifiers:
+        cnpj: unknown
+        agency: unknown
+        account: unknown
+        account_type: "Conta Corrente"
+    metadata:
+      period: "01/01/2024 a 31/01/2024"
+      start_date: "01/01/2024"
+      end_date: "31/01/2024"
+    transactions_table:
+      header_background: "white"
+      columns:
+        - "Data"
+        - "Descrição"
+        - "Valor"
+      visible_rows:
+        - type: normal_transaction
+          date: "02/01/2024"
+          description: "Pix enviado -"
+          document: unknown
+          amount: "-R$ 189,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "02/01/2024"
+          description: "Pagamento de conta"
+          document: unknown
+          amount: "-R$ 395,78"
+          balance: unknown
+        - type: normal_transaction
+          date: "02/01/2024"
+          description: "Pagamento de conta"
+          document: unknown
+          amount: "-R$ 1.104,89"
+          balance: unknown
+        - type: normal_transaction
+          date: "02/01/2024"
+          description: "Vendas - Plano de Recebimento"
+          document: unknown
+          amount: "R$ 25,65"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo anterior"
+        - "SALDO ANTERIOR"
+        - "Saldo inicial"
+        - "SALDO INICIAL"
+        - "Saldo final"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: unknown
+      inferred: true
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece com prefixo 'R$' sem sinal negativo"
+        - "Valor aparece com '+R$' ou '+ R$', se presente no PDF real"
+      negative_when:
+        - "Valor aparece com prefixo '-R$'"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      no_balance_visible_in_image: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "Vendas - Plano de Recebimento"
+        reason: "Linha visível possui valor positivo com prefixo 'R$'"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "Pix enviado*"
+        reason: "Linha visível possui prefixo '-R$'"
+        inferred: false
+      - pattern: "Pagamento de conta*"
+        reason: "Linhas visíveis possuem prefixo '-R$'"
+        inferred: false
+    caution:
+      - "Não inferir sinal apenas por Pix; usar prefixo '-R$' ou 'R$'."
+      - "Não há saldo por transação, então validação aritmética detalhada não é possível no recorte."
+      - "Descrições podem conter complemento oculto após hífen; preservar descrição original quando possível."
+      - "Não exigir documento/ID por transação."
+      - "Se aparecerem linhas de saldo em páginas completas, devem ser filtradas como saldo, não transação."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Data Descrição Valor"
+      header_keywords:
+        - "Data"
+        - "Descrição"
+        - "Valor"
+    column_order:
+      - date
+      - description
+      - amount
+    row_behavior:
+      separator: "horizontal light gray row dividers"
+      date_repeated_per_transaction: true
+      description_left_aligned: true
+      amount_right_aligned: true
+      negative_amount_prefix: "-R$"
+      positive_amount_prefix: "R$"
+      no_document_column: true
+      no_balance_column: true
+  parser_risks:
+    ambiguities:
+      - "Parte das descrições está ocultada ou ilegível, especialmente após hífen."
+      - "Não há coluna de saldo ou totais visíveis para validar sequência."
+      - "Não há ID de operação ou documento visível."
+      - "Não há exemplos de estorno, tarifa, Pix recebido ou outros tipos."
+      - "A tabela pode continuar abaixo do recorte com linhas de saldo ou paginação."
+    fields_that_may_be_missing:
+      - "document"
+      - "operation_id"
+      - "counterparty"
+      - "balance"
+      - "cnpj"
+      - "agency"
+      - "account"
+      - "full_description"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual preserva o prefixo '-R$' em débitos."
+      - "Se créditos sempre aparecem sem sinal positivo explícito."
+      - "Se há coluna/linhas de saldo em outras páginas ou no final do extrato."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Se há identificadores de transação ocultos na camada textual."
+      - "Se o cabeçalho da tabela se repete em páginas seguintes."
+
+layout_profile:
+  profile_name: pagbank_extrato_conta_corrente_simples_v1
+  bank: PagBank / PagSeguro Internet S/A
+  layout_family: pagbank_extrato_conta_corrente_tabela_simples
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "PagBank"
+      - "PagSeguro Internet S/A"
+      - "Extrato da conta corrente"
+      - "Emitido em"
+      - "Período"
+      - "CNPJ"
+      - "Agência"
+      - "Conta Corrente"
+      - "Data"
+      - "Descrição"
+      - "Valor"
+    optional_keywords:
+      - "Pix enviado"
+      - "Pagamento de conta"
+      - "Vendas - Plano de Recebimento"
+      - "-R$"
+      - "R$"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "contasimples"
+      - "CRESOL"
+      - "infinitepay"
+      - "inter"
+      - "GRAFENO"
+      - "mercado pago"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Descrição"
+      - "Valor"
+    expected_column_order:
+      - date
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Descrição"
+        - "Descricao"
+        - "Histórico"
+        - "Movimentação"
+      document:
+        - "Documento"
+        - "Doc."
+        - "ID"
+      amount:
+        - "Valor"
+      balance:
+        - "Saldo"
+    table_starts_after:
+      - "Data Descrição Valor"
+      - "Período"
+    row_separator_hint: "transaction row starts when first column contains dd/MM/yyyy; amount is right aligned"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-R$ {amount}"
+      - "-R${amount}"
+      - "R$ -{amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+      - "R${amount_without_minus}"
+      - "+R$ {amount}"
+      - "+ R$ {amount}"
+    ignore_rows:
+      - "PagBank"
+      - "PagSeguro Internet S/A"
+      - "CNPJ"
+      - "Agência"
+      - "Conta Corrente"
+      - "Extrato da conta corrente"
+      - "Emitido em"
+      - "Período"
+      - "Data"
+      - "Descrição"
+      - "Valor"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "Saldo anterior"
+      - "Saldo inicial"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+      - operation_id
+      - counterparty
+  sign_rules:
+    priority_order:
+      - "explicit_negative_currency_prefix"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "description_based_hint"
+      - "aggregate_balance_consistency"
+    description_based_overrides:
+      - pattern: "Pix enviado*"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui prefixo '-R$'"
+      - pattern: "Pagamento de conta*"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem prefixo '-R$'"
+      - pattern: "Vendas - Plano de Recebimento"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui valor positivo com prefixo 'R$'"
+    cautions:
+      - "Sinal explícito do valor deve prevalecer sobre descrição."
+      - "Não usar Pix isoladamente para definir sinal."
+      - "Se valor vier sem sinal negativo, aplicar regra geral de positivo, salvo se o PDF real trouxer outro indicador."
+      - "Se descrição e sinal conflitarem, marcar para revisão manual."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "merge_wrapped_description_lines"
+      - "normalize_case_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Pix enviado*"
+        category: "pix_enviado"
+        inferred: true
+      - pattern: "Pagamento de conta*"
+        category: "pagamento_conta"
+        inferred: true
+      - pattern: "Vendas - Plano de Recebimento"
+        category: "recebimento_vendas"
+        inferred: true
+    transfer_hints:
+      - pattern: "Pix enviado"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "Pix recebido"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "Pix"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa"
+        category: "tarifa"
+        inferred: true
+      - pattern: "Taxa"
+        category: "taxa_servico"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 3
+    reject_if_missing_headers:
+      - "Data"
+      - "Descrição"
+      - "Valor"
+    balance_consistency_check:
+      enabled: false
+      method: "not_available_without_balance_column_or_visible_totals"
+      tolerance: unknown
+    needs_manual_review_when:
+      - "description_truncated_or_masked"
+      - "amount_without_currency_prefix"
+      - "document_or_operation_id_required_by_downstream"
+      - "no_balance_available_for_validation"
+      - "ocr_confidence_low_on_negative_prefix"
+      - "description_sign_conflict"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "02/01/2024"
+        raw_description: "Pix enviado -"
+        raw_document: unknown
+        raw_amount: "-R$ 189,00"
+        raw_balance: unknown
+        normalized_amount: "-189.00"
+        should_import_as_transaction: true
+        notes: "Débito explícito por prefixo '-R$'; complemento após hífen está oculto/ilegível"
+      - raw_date: "02/01/2024"
+        raw_description: "Pagamento de conta"
+        raw_document: unknown
+        raw_amount: "-R$ 395,78"
+        raw_balance: unknown
+        normalized_amount: "-395.78"
+        should_import_as_transaction: true
+        notes: "Débito explícito por prefixo '-R$'"
+      - raw_date: "02/01/2024"
+        raw_description: "Pagamento de conta"
+        raw_document: unknown
+        raw_amount: "-R$ 1.104,89"
+        raw_balance: unknown
+        normalized_amount: "-1104.89"
+        should_import_as_transaction: true
+        notes: "Débito explícito por prefixo '-R$'"
+      - raw_date: "02/01/2024"
+        raw_description: "Vendas - Plano de Recebimento"
+        raw_document: unknown
+        raw_amount: "R$ 25,65"
+        raw_balance: unknown
+        normalized_amount: "25.65"
+        should_import_as_transaction: true
+        notes: "Crédito explícito por ausência de sinal negativo"
+  implementation_notes:
+    - "Classificar pelo logo PagBank e pelo texto '290 - PagSeguro Internet S/A'."
+    - "Usar a tabela Data/Descrição/Valor como estrutura principal."
+    - "Usar '-R$' como regra primária para débitos."
+    - "Não exigir documento, ID, contraparte ou saldo por transação."
+    - "Preservar descrições truncadas/mascaradas e concatenar complemento quando disponível no PDF real."
+    - "Validar com PDF real se existem saldos, totais ou IDs em outras páginas."

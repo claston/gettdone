@@ -1,0 +1,431 @@
+meta_model:
+  layout_id: banco_do_nordeste_extrato_conta_corrente_v1
+  bank: Banco do Nordeste
+  channel: unknown
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo/texto 'Banco do Nordeste' visível no topo"
+      - "Título 'Extrato de Conta Corrente'"
+      - "Campos 'TITULAR', 'AGÊNCIA' e 'Período'"
+      - "Período explícito: '01/05/2024 até 31/05/2024'"
+      - "Linha de contexto 'Saldo anterior'"
+      - "Agrupamento mensal em faixa preta: 'maio/2024'"
+      - "Cabeçalho de tabela com colunas 'Data', 'Histórico', 'Documento', 'Valor R$'"
+      - "Valores usam sufixo 'C' para crédito e 'D' para débito"
+    weak:
+      - "Dados de titular, agência e documentos estão ocultos ou ilegíveis"
+      - "Não há coluna de saldo por transação visível no recorte"
+      - "A tabela possui faixas alternadas cinza/branco"
+      - "Algumas descrições parecem truncadas, como 'TAR PIX PAGTO TRANSFERENC'"
+      - "O canal de origem não aparece no recorte"
+    table_headers:
+      - "Data"
+      - "Histórico"
+      - "Documento"
+      - "Valor R$"
+  page_structure:
+    header:
+      bank_logo: "Banco do Nordeste"
+      title: "Extrato de Conta Corrente"
+      account_identifiers:
+        holder: unknown
+        agency: unknown
+        account: unknown
+    metadata:
+      period: "01/05/2024 até 31/05/2024"
+      start_date: "01/05/2024"
+      end_date: "31/05/2024"
+      opening_balance_label: "Saldo anterior"
+      opening_balance_value: unknown
+    transactions_table:
+      header_background: "black month band"
+      banded_rows: true
+      month_group: "maio/2024"
+      columns:
+        - "Data"
+        - "Histórico"
+        - "Documento"
+        - "Valor R$"
+      visible_rows:
+        - type: normal_transaction
+          date: "03/05/2024"
+          description: "TRANSF RECURSOS VIA TED"
+          document: unknown
+          amount: "1.600,00 C"
+          balance: unknown
+        - type: normal_transaction
+          date: "03/05/2024"
+          description: "TAR PIX PAGTO TRANSFERENC"
+          document: unknown
+          amount: "18,00 D"
+          balance: unknown
+        - type: normal_transaction
+          date: "03/05/2024"
+          description: "TARIFA MANUTENCAO CONTA"
+          document: unknown
+          amount: "60,00 D"
+          balance: unknown
+        - type: normal_transaction
+          date: "06/05/2024"
+          description: "PAGAMENTO VIA PIX"
+          document: unknown
+          amount: "800,00 D"
+          balance: unknown
+        - type: normal_transaction
+          date: "07/05/2024"
+          description: "TAR PIX PAGTO TRANSFERENC"
+          document: unknown
+          amount: "20,00 D"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo anterior"
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "opening balance context"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_document: true
+      row_has_amount_with_credit_debit_suffix: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor R$ termina com sufixo 'C'"
+      negative_when:
+        - "Valor R$ termina com sufixo 'D'"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      opening_balance_context_exists: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "TRANSF RECURSOS VIA TED"
+        reason: "Linha visível possui sufixo 'C'"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "TAR PIX PAGTO TRANSFERENC*"
+        reason: "Linhas visíveis possuem sufixo 'D'"
+        inferred: false
+      - pattern: "TARIFA MANUTENCAO CONTA"
+        reason: "Linha visível possui sufixo 'D'"
+        inferred: false
+      - pattern: "PAGAMENTO VIA PIX"
+        reason: "Linha visível possui sufixo 'D'"
+        inferred: false
+    caution:
+      - "Neste layout, o sufixo C/D no valor deve ser a regra primária de sinal."
+      - "Não inferir sinal apenas pela palavra PIX; há transferências e pagamentos que podem variar conforme o sufixo."
+      - "Não importar 'Saldo anterior' como transação."
+      - "Não há saldo por linha; validação aritmética detalhada não é possível no recorte."
+      - "Descrições podem ser truncadas; preservar descrição original capturada."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Saldo anterior"
+      month_band_text: "maio/2024"
+      header_keywords:
+        - "Data"
+        - "Histórico"
+        - "Documento"
+        - "Valor R$"
+    column_order:
+      - date
+      - description
+      - document
+      - amount
+    row_behavior:
+      separator: "grid/table with alternating gray and white row bands"
+      month_group_black_bar: true
+      date_repeated_per_transaction: true
+      description_uppercase: true
+      amount_right_aligned: true
+      amount_suffix_C_D: true
+      no_balance_column: true
+  parser_risks:
+    ambiguities:
+      - "Não há coluna de saldo por transação."
+      - "Documentos estão ocultos/ilegíveis, mas a coluna existe."
+      - "Canal de origem não aparece na imagem."
+      - "Descrição 'TAR PIX PAGTO TRANSFERENC' pode estar truncada."
+      - "O saldo anterior aparece como label, mas o valor não está visível no recorte."
+    fields_that_may_be_missing:
+      - "document"
+      - "balance"
+      - "holder"
+      - "agency"
+      - "account"
+      - "channel"
+      - "opening_balance_value"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual preserva o sufixo C/D junto ao valor."
+      - "Se documentos podem estar vazios ou foram apenas mascarados na imagem."
+      - "Se há saldo final, totais ou linhas de saldo do dia em páginas completas."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Se a faixa mensal se repete quando há mais de um mês ou paginação."
+      - "Como créditos e débitos com PIX/TED/tarifas são representados em outros casos."
+
+layout_profile:
+  profile_name: banco_do_nordeste_extrato_conta_corrente_v1
+  bank: Banco do Nordeste
+  layout_family: banco_do_nordeste_extrato_conta_corrente_tabela
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Banco do Nordeste"
+      - "Extrato de Conta Corrente"
+      - "TITULAR"
+      - "AGÊNCIA"
+      - "Período"
+      - "Saldo anterior"
+      - "Data"
+      - "Histórico"
+      - "Documento"
+      - "Valor R$"
+    optional_keywords:
+      - "maio/2024"
+      - "TRANSF RECURSOS VIA TED"
+      - "TAR PIX PAGTO TRANSFERENC"
+      - "TARIFA MANUTENCAO CONTA"
+      - "PAGAMENTO VIA PIX"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "banco bmg"
+      - "banco BRB"
+      - "Banco da Amazônia"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Histórico"
+      - "Documento"
+      - "Valor R$"
+    expected_column_order:
+      - date
+      - description
+      - document
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Histórico"
+        - "Historico"
+        - "Descrição"
+      document:
+        - "Documento"
+        - "Doc."
+      amount:
+        - "Valor R$"
+        - "Valor"
+      balance:
+        - "Saldo"
+    table_starts_after:
+      - "Saldo anterior"
+      - "maio/2024"
+      - "Data Histórico Documento Valor R$"
+    row_separator_hint: "transaction row starts when first column contains dd/MM/yyyy; month band provides month/year context"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount} D"
+      - "{amount}D"
+    positive_patterns:
+      - "{amount} C"
+      - "{amount}C"
+    ignore_rows:
+      - "Banco do Nordeste"
+      - "Extrato de Conta Corrente"
+      - "TITULAR"
+      - "AGÊNCIA"
+      - "Período"
+      - "Saldo anterior"
+      - "Data"
+      - "Histórico"
+      - "Documento"
+      - "Valor R$"
+      - "SALDO ANTERIOR"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+      - "janeiro"
+      - "fevereiro"
+      - "março"
+      - "abril"
+      - "maio"
+      - "junho"
+      - "julho"
+      - "agosto"
+      - "setembro"
+      - "outubro"
+      - "novembro"
+      - "dezembro"
+    opening_balance_rows:
+      - "Saldo anterior"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "credit_debit_suffix_C_D"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "TRANSF RECURSOS VIA TED"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sufixo C"
+      - pattern: "TAR PIX PAGTO TRANSFERENC*"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem sufixo D"
+      - pattern: "TARIFA MANUTENCAO CONTA"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sufixo D"
+      - pattern: "PAGAMENTO VIA PIX"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sufixo D"
+    cautions:
+      - "Não remover C/D antes de determinar o sinal."
+      - "Não usar apenas a palavra PIX para definir débito."
+      - "Se valor vier sem C/D, marcar para revisão ou usar saldo/contexto, se disponível."
+      - "Sem coluna de saldo, a validação deve ser baseada em campos obrigatórios e sufixo."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+      - "keep_truncated_bank_description_as_seen"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "TRANSF RECURSOS VIA TED"
+        category: "transferencia_ted_entrada"
+        inferred: true
+      - pattern: "TAR PIX PAGTO TRANSFERENC*"
+        category: "tarifa_pix"
+        inferred: true
+      - pattern: "TARIFA MANUTENCAO CONTA"
+        category: "tarifa_manutencao_conta"
+        inferred: true
+      - pattern: "PAGAMENTO VIA PIX"
+        category: "pix_enviado"
+        inferred: true
+    transfer_hints:
+      - pattern: "TED"
+        category: "transferencia_ted"
+        inferred: true
+      - pattern: "PAGAMENTO VIA PIX"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "TAR PIX"
+        category: "tarifa_pix"
+        inferred: true
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "MANUTENCAO CONTA"
+        category: "tarifa_manutencao"
+        inferred: true
+  validation:
+    expected_min_columns: 4
+    reject_if_missing_headers:
+      - "Data"
+      - "Histórico"
+      - "Valor"
+    balance_consistency_check:
+      enabled: false
+      method: "not_available_without_balance_column"
+      tolerance: unknown
+    needs_manual_review_when:
+      - "amount_has_no_C_or_D_suffix"
+      - "document_column_masked_or_missing"
+      - "description_truncated_or_ocr_low_confidence"
+      - "opening_balance_value_missing"
+      - "row_has_date_and_description_but_no_amount"
+      - "month_band_missing_for_context"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "03/05/2024"
+        raw_description: "TRANSF RECURSOS VIA TED"
+        raw_document: unknown
+        raw_amount: "1.600,00 C"
+        raw_balance: unknown
+        normalized_amount: "1600.00"
+        should_import_as_transaction: true
+        notes: "Sufixo C indica crédito"
+      - raw_date: "03/05/2024"
+        raw_description: "TAR PIX PAGTO TRANSFERENC"
+        raw_document: unknown
+        raw_amount: "18,00 D"
+        raw_balance: unknown
+        normalized_amount: "-18.00"
+        should_import_as_transaction: true
+        notes: "Sufixo D indica débito"
+      - raw_date: "03/05/2024"
+        raw_description: "TARIFA MANUTENCAO CONTA"
+        raw_document: unknown
+        raw_amount: "60,00 D"
+        raw_balance: unknown
+        normalized_amount: "-60.00"
+        should_import_as_transaction: true
+        notes: "Sufixo D indica débito"
+      - raw_date: "06/05/2024"
+        raw_description: "PAGAMENTO VIA PIX"
+        raw_document: unknown
+        raw_amount: "800,00 D"
+        raw_balance: unknown
+        normalized_amount: "-800.00"
+        should_import_as_transaction: true
+        notes: "Sufixo D indica débito"
+      - raw_date: "07/05/2024"
+        raw_description: "TAR PIX PAGTO TRANSFERENC"
+        raw_document: unknown
+        raw_amount: "20,00 D"
+        raw_balance: unknown
+        normalized_amount: "-20.00"
+        should_import_as_transaction: true
+        notes: "Sufixo D indica débito"
+  implementation_notes:
+    - "Classificar pelo logo Banco do Nordeste e pelo título 'Extrato de Conta Corrente'."
+    - "Detectar a tabela após o label 'Saldo anterior' e a faixa mensal preta."
+    - "Usar sufixo C/D no valor como regra primária de sinal."
+    - "Não exigir documento nem saldo por transação."
+    - "Não importar saldo anterior como transação."
+    - "Preservar descrições truncadas exatamente como capturadas."
+    - "Validar com PDF real se o sufixo C/D vem junto ao valor e se há linhas de saldo final."

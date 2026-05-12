@@ -1,0 +1,370 @@
+meta_model:
+  layout_id: santander_aplicativo_empresas_conta_corrente_extrato_v1
+  bank: Santander
+  channel: Aplicativo Santander Empresas
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo Santander visível no topo"
+      - "Texto 'Aplicativo Santander Empresas' no cabeçalho"
+      - "Campos 'Agência' e 'Conta' no cabeçalho"
+      - "Campo 'Períodos' antes da tabela"
+      - "Campo 'Data/Hora' de emissão/consulta"
+      - "Campo 'Saldo disponível para uso'"
+      - "Cabeçalho de tabela com colunas 'Data', 'Histórico', 'Documento', 'Valor (R$)', 'Saldo (R$)'"
+    weak:
+      - "Layout visual semelhante ao Santander Empresarial, porém identificado como aplicativo"
+      - "Valores de agência e conta não estão visíveis/foram omitidos"
+      - "A coluna Saldo (R$) existe, mas não há saldo visível nas linhas exibidas"
+    table_headers:
+      - "Data"
+      - "Histórico"
+      - "Documento"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+  page_structure:
+    header:
+      bank_logo: "Santander"
+      channel_title: "Aplicativo Santander Empresas"
+      account_identifiers:
+        agency: unknown
+        account: unknown
+    metadata:
+      period: "01/01/2024 a 31/01/2024"
+      generated_at: "05/02/2024 às 16h52"
+      available_balance_label: "Saldo disponível para uso"
+      available_balance_value: "R$ 62.976,00"
+    transactions_table:
+      header_background: "gray"
+      columns:
+        - "Data"
+        - "Histórico"
+        - "Documento"
+        - "Valor (R$)"
+        - "Saldo (R$)"
+      visible_rows:
+        - type: normal_transaction
+          date: "31/01/2024"
+          description: "Resgate contamax automatico"
+          document: "000000"
+          amount: "1.315,08"
+          balance: unknown
+        - type: normal_transaction
+          date: "31/01/2024"
+          description: "Pagamento de boleto outros bancos"
+          document: "000000"
+          amount: "-92,40"
+          balance: unknown
+        - type: normal_transaction
+          date: "31/01/2024"
+          description: "Pagamento de boleto outros bancos"
+          document: "000000"
+          amount: "-717,60"
+          balance: unknown
+        - type: normal_transaction
+          date: "31/01/2024"
+          description: "Pagamento de boleto outros bancos"
+          document: "000000"
+          amount: "-37,40"
+          balance: unknown
+        - type: normal_transaction
+          date: "31/01/2024"
+          description: "Pagamento de boleto outros bancos"
+          document: "000000"
+          amount: "-1.115,54"
+          balance: unknown
+        - type: normal_transaction
+          date: "31/01/2024"
+          description: "Pagamento de boleto outros bancos"
+          document: "000000"
+          amount: "-193,70"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+        - "Saldo anterior"
+      should_import_as_transaction: false
+      balance_source: "Saldo (R$)"
+      inferred: true
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_document: true
+      row_may_have_amount: true
+      row_may_have_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor (R$) aparece sem sinal negativo"
+      negative_when:
+        - "Valor (R$) aparece com sinal '-'"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "Saldo (R$)"
+      may_be_blank_on_intermediate_rows: true
+      appears_blank_in_visible_transaction_rows: true
+      inferred: false
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "Resgate contamax automatico"
+        reason: "Valor visível sem sinal negativo; provavelmente entrada/resgate de aplicação"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "Pagamento de boleto outros bancos"
+        reason: "Linhas visíveis aparecem com sinal negativo"
+        inferred: false
+    caution:
+      - "Não assumir que todo 'Pagamento' é débito em todos os layouts; neste exemplo o sinal negativo confirma saída"
+      - "A coluna Saldo existe, mas não está preenchida nas linhas visíveis; parser não deve exigir saldo por linha"
+      - "A imagem parece capturada/renderizada com fonte grande; validar extração em PDF real"
+      - "Valores com milhares usam ponto e decimais usam vírgula"
+  visual_model:
+    table_anchor:
+      starts_after_text: "Saldo disponível para uso"
+      header_row_color: "gray"
+      header_keywords:
+        - "Data"
+        - "Histórico"
+        - "Documento"
+        - "Valor (R$)"
+        - "Saldo (R$)"
+    column_order:
+      - date
+      - description
+      - document
+      - amount
+      - balance
+    row_behavior:
+      separator: "horizontal light gray lines"
+      date_repeated_per_row: true
+      description_single_line_in_visible_rows: true
+      document_zero_padded: true
+      amount_right_aligned: true
+      balance_right_aligned: true
+      negative_amount_uses_minus_sign: true
+      negative_amount_color: "black"
+  parser_risks:
+    ambiguities:
+      - "Não é possível confirmar se há linha de saldo anterior acima do trecho visível"
+      - "Não é possível confirmar se a coluna Saldo (R$) aparece preenchida em outras páginas ou apenas em linhas específicas"
+      - "Descrições longas podem quebrar linha no PDF real"
+      - "O valor '1.315,08' pode ser mal lido por OCR como '1.315,0 8' ou similar se a imagem tiver baixa qualidade"
+    fields_that_may_be_missing:
+      - "balance"
+      - "agency"
+      - "account"
+    cases_that_need_real_pdf_validation:
+      - "Extração textual preserva a separação entre Documento, Valor e Saldo"
+      - "Cabeçalho da tabela se repete em páginas seguintes"
+      - "Existência e posição de SALDO ANTERIOR, SALDO DO DIA e SALDO FINAL"
+      - "Tratamento de descrições com acentos e cedilha"
+      - "Valores negativos sempre aparecem com '-' ou podem depender de cor/coluna"
+
+layout_profile:
+  profile_name: santander_aplicativo_empresas_conta_corrente_extrato_v1
+  bank: Santander
+  layout_family: aplicativo_santander_empresas
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Santander"
+      - "Aplicativo Santander Empresas"
+      - "Agência"
+      - "Conta"
+      - "Data"
+      - "Histórico"
+      - "Documento"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    optional_keywords:
+      - "Períodos"
+      - "Data/Hora"
+      - "Saldo disponível para uso"
+    negative_keywords:
+      - "Internet Banking Empresarial"
+      - "Cartão de Crédito"
+      - "Fatura"
+      - "Comprovante"
+      - "Boleto"
+    min_score_hint: 0.8
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Histórico"
+      - "Documento"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - description
+      - document
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Histórico"
+      document:
+        - "Documento"
+      amount:
+        - "Valor (R$)"
+        - "Valor"
+      balance:
+        - "Saldo (R$)"
+        - "Saldo"
+    table_starts_after:
+      - "Saldo disponível para uso"
+      - "Data Histórico Documento Valor (R$) Saldo (R$)"
+    row_separator_hint: "horizontal lines between rows"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+    positive_patterns:
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+      - "Saldo disponível para uso"
+      - "Períodos"
+      - "Data/Hora"
+      - "Agência"
+      - "Conta"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "Saldo anterior"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "section_or_column_semantics"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "Resgate contamax automatico"
+        sign: positive
+        confidence: medium
+        inferred: true
+        reason: "Linha visível aparece sem sinal negativo e sugere resgate de aplicação"
+      - pattern: "Pagamento de boleto outros bancos"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis aparecem com sinal negativo"
+    cautions:
+      - "Priorizar o sinal numérico do campo Valor"
+      - "Não importar linhas de saldo como transações"
+      - "Quando saldo estiver disponível, validar sinal por consistência aritmética"
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "normalize_unicode_accents_optional"
+      - "preserve_original_case_or_store_original_description"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Resgate contamax automatico"
+        category: "resgate_aplicacao"
+        inferred: true
+      - pattern: "Pagamento de boleto outros bancos"
+        category: "pagamento_boleto"
+        inferred: true
+    transfer_hints:
+      - pattern: "Transferência"
+        category: "transferencia"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_taxa"
+        inferred: true
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "Data"
+      - "Histórico"
+      - "Valor"
+    balance_consistency_check:
+      enabled: true
+      method: "when_previous_and_current_balance_are_available_validate_current_balance_equals_previous_balance_plus_amount"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "amount_without_sign_and_balance_missing"
+      - "row_has_date_and_description_but_no_amount"
+      - "multi_line_description_detected"
+      - "ocr_confidence_low_on_amount_or_date"
+      - "document_amount_balance_columns_overlap"
+      - "balance_column_is_present_but_all_rows_blank"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "31/01/2024"
+        raw_description: "Resgate contamax automatico"
+        raw_document: "000000"
+        raw_amount: "1.315,08"
+        raw_balance: unknown
+        normalized_amount: "1315.08"
+        should_import_as_transaction: true
+        notes: "Valor sem sinal negativo; tratar como entrada"
+      - raw_date: "31/01/2024"
+        raw_description: "Pagamento de boleto outros bancos"
+        raw_document: "000000"
+        raw_amount: "-92,40"
+        raw_balance: unknown
+        normalized_amount: "-92.40"
+        should_import_as_transaction: true
+        notes: "Valor com sinal negativo; tratar como saída"
+      - raw_date: "31/01/2024"
+        raw_description: "Pagamento de boleto outros bancos"
+        raw_document: "000000"
+        raw_amount: "-717,60"
+        raw_balance: unknown
+        normalized_amount: "-717.60"
+        should_import_as_transaction: true
+        notes: "Valor com sinal negativo; tratar como saída"
+      - raw_date: "31/01/2024"
+        raw_description: "Pagamento de boleto outros bancos"
+        raw_document: "000000"
+        raw_amount: "-37,40"
+        raw_balance: unknown
+        normalized_amount: "-37.40"
+        should_import_as_transaction: true
+        notes: "Valor com sinal negativo; tratar como saída"
+      - raw_date: "31/01/2024"
+        raw_description: "Pagamento de boleto outros bancos"
+        raw_document: "000000"
+        raw_amount: "-1.115,54"
+        raw_balance: unknown
+        normalized_amount: "-1115.54"
+        should_import_as_transaction: true
+        notes: "Valor com milhar e sinal negativo; tratar como saída"
+  implementation_notes:
+    - "Usar 'Aplicativo Santander Empresas' como forte diferencial em relação ao layout de Internet Banking Empresarial."
+    - "Detectar tabela pelo cabeçalho cinza com Data, Histórico, Documento, Valor (R$), Saldo (R$)."
+    - "Não exigir saldo preenchido em todas as linhas; no trecho visível a coluna existe, mas aparece vazia."
+    - "Converter valores pt-BR removendo ponto de milhar e convertendo vírgula decimal para ponto."
+    - "Linhas de saldo anterior/final devem ser usadas para contexto e validação, não como transações."
+    - "Validar em PDF real se os campos de valor e saldo não se sobrepõem no OCR por causa do alinhamento à direita."

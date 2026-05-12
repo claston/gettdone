@@ -1,0 +1,419 @@
+meta_model:
+  layout_id: caixa_gerenciador_extrato_por_periodo_via_internet_v1
+  bank: Caixa Econômica Federal
+  channel: Gerenciador Caixa via internet
+  statement_type: conta_corrente_extrato_por_periodo
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Título 'Extrato por período'"
+      - "Subtítulo 'Via internet'"
+      - "Logo 'GERENCIADOR CAIXA' visível no topo direito"
+      - "Bloco 'Emitido em' com data/hora"
+      - "Campos 'Cliente', 'Agência', 'Produto' e 'Conta'"
+      - "Faixa com texto 'Lançamentos de 01/05/2024 à 31/05/2024'"
+      - "Tabela gradeada com colunas 'DATA DE LANÇAMENTO', 'DATA DE MOVIMENTO', 'DOCUMENTO', 'HISTÓRICO', 'VALOR (R$)', 'SALDO (R$)'"
+    weak:
+      - "Dados de cliente/agência/produto/conta aparecem ocultos ou ilegíveis"
+      - "Os valores aparecem sem separador decimal brasileiro na imagem, usando ponto como decimal"
+      - "Não há sufixo C/D visível nas linhas exibidas"
+      - "Linhas 'SALDO DIA' têm valor e saldo iguais e não devem ser importadas como transações"
+    table_headers:
+      - "DATA DE LANÇAMENTO"
+      - "DATA DE MOVIMENTO"
+      - "DOCUMENTO"
+      - "HISTÓRICO"
+      - "VALOR (R$)"
+      - "SALDO (R$)"
+  page_structure:
+    header:
+      bank_logo: "GERENCIADOR CAIXA"
+      title: "Extrato por período"
+      channel_text: "Via internet"
+      emitted_at: "20/06/2024 - 08:33:56"
+      account_identifiers:
+        client: unknown
+        agency: unknown
+        product: unknown
+        account: unknown
+    metadata:
+      movement_period_text: "Lançamentos de 01/05/2024 à 31/05/2024"
+      start_date: "01/05/2024"
+      end_date: "31/05/2024"
+    transactions_table:
+      header_background: "white"
+      grid_lines: true
+      columns:
+        - "DATA DE LANÇAMENTO"
+        - "DATA DE MOVIMENTO"
+        - "DOCUMENTO"
+        - "HISTÓRICO"
+        - "VALOR (R$)"
+        - "SALDO (R$)"
+      visible_rows:
+        - type: balance_row
+          posting_date: "02/05/2024"
+          movement_date: "02/05/2024"
+          document: "000000"
+          description: "SALDO DIA"
+          amount: "56.89"
+          balance: "56.89"
+        - type: balance_row
+          posting_date: "03/05/2024"
+          movement_date: "03/05/2024"
+          document: "000000"
+          description: "SALDO DIA"
+          amount: "56.89"
+          balance: "56.89"
+        - type: balance_row
+          posting_date: "06/05/2024"
+          movement_date: "06/05/2024"
+          document: "000000"
+          description: "SALDO DIA"
+          amount: "56.89"
+          balance: "56.89"
+        - type: normal_transaction
+          posting_date: "07/05/2024"
+          movement_date: "07/05/2024"
+          document: "418859"
+          description: "AZCX MC CD"
+          amount: "85.53"
+          balance: "142.42"
+        - type: balance_row
+          posting_date: "07/05/2024"
+          movement_date: "07/05/2024"
+          document: "000000"
+          description: "SALDO DIA"
+          amount: "142.42"
+          balance: "142.42"
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "SALDO (R$)"
+      inferred: true
+    normal_transaction:
+      row_has_posting_date: true
+      row_has_movement_date: true
+      row_has_document: true
+      row_has_description: true
+      row_has_amount: true
+      row_has_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aumenta o saldo em relação ao saldo anterior disponível"
+        - "Descrição representa crédito e saldo confirma aumento"
+      negative_when:
+        - "Valor reduz o saldo em relação ao saldo anterior disponível"
+        - "Sinal negativo explícito quando presente"
+      inferred: true
+    balance_column:
+      exists: true
+      column_name: "SALDO (R$)"
+      balance_values_without_C_D_suffix_in_visible_rows: true
+      saldo_dia_rows_present: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "AZCX MC CD"
+        reason: "Linha visível aumenta saldo de 56.89 para 142.42; inferência baseada em saldo"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "*"
+        reason: "Débitos devem ser confirmados por sinal negativo, descrição, ou redução de saldo"
+        inferred: true
+    caution:
+      - "Este layout não mostra C/D nas linhas visíveis; o sinal deve ser validado pelo saldo quando possível."
+      - "Linhas 'SALDO DIA' devem ser tratadas como saldo diário, não como transações."
+      - "A imagem usa ponto como separador decimal, diferente do padrão pt-BR com vírgula; validar no PDF real."
+      - "Não inferir transação apenas por valor preenchido: linhas de saldo também têm valor."
+      - "Quando não houver saldo anterior confiável, transações sem sinal explícito devem ir para revisão manual."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Lançamentos de"
+      header_keywords:
+        - "DATA DE LANÇAMENTO"
+        - "DATA DE MOVIMENTO"
+        - "DOCUMENTO"
+        - "HISTÓRICO"
+        - "VALOR (R$)"
+        - "SALDO (R$)"
+    column_order:
+      - posting_date
+      - movement_date
+      - document
+      - description
+      - amount
+      - balance
+    row_behavior:
+      separator: "strong grid lines with cell borders"
+      date_repeated_per_row: true
+      posting_date_and_movement_date_both_present: true
+      document_fixed_width_numeric: true
+      description_uppercase: true
+      amount_right_aligned: true
+      balance_right_aligned: true
+      saldo_dia_rows_have_amount_equal_to_balance: true
+  parser_risks:
+    ambiguities:
+      - "Não há sinal C/D ou sinal negativo visível nos valores apresentados."
+      - "Valores de SALDO DIA aparecem na coluna VALOR e podem ser confundidos com transações."
+      - "O separador decimal aparece como ponto; pode ser efeito do layout ou OCR, exigindo validação."
+      - "O histórico 'AZCX MC CD' é abreviado e o significado exato precisa ser validado com amostras reais."
+      - "Sem sinal explícito, o sinal da transação depende da consistência do saldo."
+    fields_that_may_be_missing:
+      - "client"
+      - "agency"
+      - "product"
+      - "account"
+      - "explicit_amount_sign"
+      - "opening_balance"
+    cases_that_need_real_pdf_validation:
+      - "Se valores no PDF real usam ponto ou vírgula como separador decimal."
+      - "Se débitos aparecem com sinal negativo, sufixo D, parênteses ou apenas por redução de saldo."
+      - "Se créditos aparecem com sinal positivo, sufixo C ou apenas por aumento de saldo."
+      - "Se 'SALDO DIA' sempre possui documento 000000 e valor igual ao saldo."
+      - "Como aparecem saldo anterior, saldo final, tarifas, PIX, TED e descrições longas."
+      - "Se a extração textual preserva a grade e a ordem das colunas."
+
+layout_profile:
+  profile_name: caixa_gerenciador_extrato_por_periodo_via_internet_v1
+  bank: Caixa Econômica Federal
+  layout_family: gerenciador_caixa_extrato_por_periodo_via_internet
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Extrato por período"
+      - "Via internet"
+      - "GERENCIADOR CAIXA"
+      - "Emitido em"
+      - "Cliente"
+      - "Agência"
+      - "Produto"
+      - "Conta"
+      - "Lançamentos de"
+      - "DATA DE LANÇAMENTO"
+      - "DATA DE MOVIMENTO"
+      - "DOCUMENTO"
+      - "HISTÓRICO"
+      - "VALOR (R$)"
+      - "SALDO (R$)"
+    optional_keywords:
+      - "SALDO DIA"
+      - "SALDO ANTERIOR"
+      - "AZCX"
+      - "MC CD"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "Itaú"
+      - "Grau de sigilo"
+      - "#PESSOAL"
+      - "Cartão de Crédito"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "DATA DE LANÇAMENTO"
+      - "DATA DE MOVIMENTO"
+      - "DOCUMENTO"
+      - "HISTÓRICO"
+      - "VALOR (R$)"
+      - "SALDO (R$)"
+    expected_column_order:
+      - posting_date
+      - movement_date
+      - document
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "DATA DE LANÇAMENTO"
+        - "DATA DE MOVIMENTO"
+        - "Data de Lançamento"
+        - "Data de Movimento"
+        - "Data"
+      description:
+        - "HISTÓRICO"
+        - "Histórico"
+        - "Historico"
+      document:
+        - "DOCUMENTO"
+        - "Documento"
+        - "Doc."
+        - "Nr. Doc."
+      amount:
+        - "VALOR (R$)"
+        - "Valor (R$)"
+        - "VALOR"
+        - "Valor"
+      balance:
+        - "SALDO (R$)"
+        - "Saldo (R$)"
+        - "SALDO"
+        - "Saldo"
+    table_starts_after:
+      - "Lançamentos de"
+      - "DATA DE LANÇAMENTO DATA DE MOVIMENTO DOCUMENTO HISTÓRICO VALOR (R$) SALDO (R$)"
+    row_separator_hint: "grid table; each row has bordered cells and starts with posting date"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "unknown"
+    decimal_separator: "."
+    thousands_separator: ","
+    negative_patterns:
+      - "-{amount}"
+      - "{amount} D"
+      - "{amount}D"
+      - "balance_decrease_inferred"
+    positive_patterns:
+      - "{amount_without_minus}"
+      - "{amount} C"
+      - "{amount}C"
+      - "balance_increase_inferred"
+    ignore_rows:
+      - "Extrato por período"
+      - "Via internet"
+      - "GERENCIADOR CAIXA"
+      - "Emitido em"
+      - "Cliente"
+      - "Agência"
+      - "Produto"
+      - "Conta"
+      - "Lançamentos de"
+      - "DATA DE LANÇAMENTO"
+      - "DATA DE MOVIMENTO"
+      - "DOCUMENTO"
+      - "HISTÓRICO"
+      - "VALOR (R$)"
+      - "SALDO (R$)"
+      - "SALDO DIA"
+      - "SALDO ANTERIOR"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - posting_date
+      - movement_date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+      - inferred_sign
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "credit_debit_suffix_C_D"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "AZCX MC CD"
+        sign: positive
+        confidence: medium
+        inferred: true
+        reason: "Na imagem, a linha aumenta o saldo de 56.89 para 142.42"
+    cautions:
+      - "Não assumir positivo apenas porque o valor não tem sinal; usar saldo quando disponível."
+      - "Não importar SALDO DIA como transação."
+      - "Se não houver saldo anterior e o valor não tiver sinal, marcar para revisão."
+      - "Validar separador decimal antes de converter valores."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_abbreviated_history_codes"
+      - "normalize_uppercase_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "AZCX * CD"
+        category: "cartao_credito_debito_recebimento"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "DOC"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+  validation:
+    expected_min_columns: 6
+    reject_if_missing_headers:
+      - "DATA DE LANÇAMENTO"
+      - "DATA DE MOVIMENTO"
+      - "HISTÓRICO"
+      - "VALOR"
+      - "SALDO"
+    balance_consistency_check:
+      enabled: true
+      method: "if explicit sign is absent, infer sign by comparing previous balance and current balance; validate current_balance_equals_previous_balance_plus_signed_amount"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "amount_has_no_explicit_sign_and_previous_balance_missing"
+      - "decimal_separator_uncertain"
+      - "row_description_is_saldo_dia"
+      - "amount_equals_balance_and_description_is_saldo_like"
+      - "ocr_confidence_low_on_amount_or_balance"
+      - "multiline_description_detected"
+      - "balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "02/05/2024"
+        raw_description: "SALDO DIA"
+        raw_document: "000000"
+        raw_amount: "56.89"
+        raw_balance: "56.89"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo diário; não importar como transação"
+      - raw_date: "03/05/2024"
+        raw_description: "SALDO DIA"
+        raw_document: "000000"
+        raw_amount: "56.89"
+        raw_balance: "56.89"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo diário; não importar como transação"
+      - raw_date: "07/05/2024"
+        raw_description: "AZCX MC CD"
+        raw_document: "418859"
+        raw_amount: "85.53"
+        raw_balance: "142.42"
+        normalized_amount: "85.53"
+        should_import_as_transaction: true
+        notes: "Sinal inferido como positivo pela variação de saldo; validar com PDF real"
+      - raw_date: "07/05/2024"
+        raw_description: "SALDO DIA"
+        raw_document: "000000"
+        raw_amount: "142.42"
+        raw_balance: "142.42"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo diário após movimentação; não importar como transação"
+  implementation_notes:
+    - "Classificar pelo conjunto 'Extrato por período', 'Via internet', 'GERENCIADOR CAIXA' e cabeçalho gradeado com datas de lançamento/movimento."
+    - "Filtrar linhas 'SALDO DIA', 'SALDO ANTERIOR' e 'SALDO FINAL' antes da importação de transações."
+    - "Como os valores visíveis não têm C/D, inferir sinal por consistência de saldo quando possível."
+    - "Marcar para revisão manual transações sem sinal explícito quando não houver saldo anterior confiável."
+    - "Validar o separador decimal em PDFs reais, pois a imagem mostra ponto como separador decimal."
+    - "Preservar histórico original, especialmente códigos abreviados como 'AZCX MC CD'."
