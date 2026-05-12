@@ -217,6 +217,9 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
             ],
             "canonical_warning_count": canonical_quality_metrics["canonical_warning_count"],
             "canonical_balance_warning_count": canonical_quality_metrics["canonical_balance_warning_count"],
+            "canonical_warning_transactions_count": canonical_quality_metrics["canonical_warning_transactions_count"],
+            "canonical_warning_types_count": canonical_quality_metrics["canonical_warning_types_count"],
+            "canonical_warning_types": canonical_quality_metrics["canonical_warning_types"],
         },
     )
 
@@ -565,6 +568,23 @@ def _build_canonical_quality_metrics(canonical_transactions: list[CanonicalTrans
         "canonical_with_external_reference_count": with_external_reference_count,
         "canonical_warning_count": warning_count,
         "canonical_balance_warning_count": balance_warning_count,
+        "canonical_warning_transactions_count": sum(1 for item in canonical_transactions if item.warnings),
+        "canonical_warning_types_count": len(
+            {
+                warning
+                for item in canonical_transactions
+                for warning in item.warnings
+            }
+        ),
+        "canonical_warning_types": ",".join(
+            sorted(
+                {
+                    warning
+                    for item in canonical_transactions
+                    for warning in item.warnings
+                }
+            )
+        ),
     }
 
 

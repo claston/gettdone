@@ -325,3 +325,27 @@ Resultados:
 
 - `9 passed`
 - `All checks passed!`
+
+## Fatia seguinte: pacote maior de resumo de warnings canônicos
+
+Branch: `feat/pdf-canonical-warning-summary-pack1`
+
+- Adiciona resumo estruturado de warnings canônicos no `parse_metrics` do PDF parser:
+  - `canonical_warning_transactions_count`
+  - `canonical_warning_types_count`
+  - `canonical_warning_types` (lista em string separada por vírgula)
+- Propaga os novos campos no `AnalyzeService` para `pdf_processing_metrics`.
+- Atualiza `PdfProcessingMetrics` no schema com os novos campos tipados.
+- Inclui cobertura de testes para cenários sem warning e com `balance_consistency_failed`.
+
+Validação da fatia de resumo de warnings:
+
+```powershell
+..\..\backend\venv\Scripts\python.exe -m pytest backend\tests\test_pdf_parser.py backend\tests\test_analyze_service_multiformat.py -q -p no:cacheprovider
+..\..\backend\venv\Scripts\python.exe -m ruff check backend\app\application\pdf_parser.py backend\app\application\analyze_service.py backend\app\schemas.py backend\tests\test_pdf_parser.py backend\tests\test_analyze_service_multiformat.py
+```
+
+Resultados:
+
+- `9 passed`
+- `All checks passed!`

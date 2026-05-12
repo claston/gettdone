@@ -79,6 +79,9 @@ class PdfProcessingMetrics(BaseModel):
     canonical_with_external_reference_count: int = 0
     canonical_warning_count: int = 0
     canonical_balance_warning_count: int = 0
+    canonical_warning_transactions_count: int = 0
+    canonical_warning_types_count: int = 0
+    canonical_warning_types: str = ""
 
 
 class AnalyzeResponse(BaseModel):
