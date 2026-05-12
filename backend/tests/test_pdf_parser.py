@@ -91,3 +91,33 @@ def test_parse_pdf_transactions_uses_declarative_credit_debit_columns(monkeypatc
     assert result.canonical_transactions[0].running_balance == 1500.0
     assert result.canonical_transactions[1].external_reference_id == "456"
     assert result.canonical_transactions[1].running_balance == 1487.66
+    assert result.parse_metrics["balance_consistency_checked"] == 1
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
+def test_parse_pdf_transactions_marks_balance_consistency_warning(monkeypatch) -> None:
+    page_text = "\n".join(
+        [
+            "VIACREDI COOPERATIVA AILOS",
+            "DATA DESCRICAO DOCUMENTO CREDITO (R$) DEBITO (R$) SALDO (R$)",
+            "01/10/2024 PIX RECEBIDO CLIENTE 123 1.000,00 0,00 1.500,00",
+            "02/10/2024 TARIFA PACOTE SERVICOS 456 0,00 12,34 1.400,00",
+        ]
+    )
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [page_text])
+    monkeypatch.setattr(
+        pdf_parser_module,
+        "infer_pdf_layout",
+        lambda text: pdf_parser_module.PdfLayoutInference(
+            layout_name="viacredi_ailos_extrato_conta_corrente_v1",
+            confidence=0.9,
+            used_fallback=False,
+        ),
+    )
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert len(result.canonical_transactions) == 2
+    assert result.parse_metrics["balance_consistency_checked"] == 1
+    assert result.parse_metrics["balance_consistency_failed"] == 1
+    assert "balance_consistency_failed" in result.canonical_transactions[1].warnings
