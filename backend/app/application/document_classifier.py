@@ -226,7 +226,8 @@ def classify_document(
 
     if layout_inference_name:
         layout_name = normalize_header(layout_inference_name)
-        if "statement" in layout_name:
+        known_statement_layout = layout_name and layout_name != "generic statement ptbr"
+        if "statement" in layout_name or "extrato" in layout_name or known_statement_layout:
             _add_score(
                 scores,
                 evidence,

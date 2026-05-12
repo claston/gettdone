@@ -1,0 +1,490 @@
+meta_model:
+  layout_id: banco_safra_extrato_movimentacao_lancamentos_realizados_v1
+  bank: Banco Safra
+  channel: unknown
+  statement_type: extrato_movimentacao
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo/nome 'Safra' visível no topo esquerdo"
+      - "Texto 'Banco Safra S/A'"
+      - "Indicação de página 'Página 1 de 2'"
+      - "Título 'Extrato de Movimentação'"
+      - "Período explícito: 'Período de 02/01/2025 a 31/01/2025'"
+      - "Campos de identificação 'CNPJ', 'AG' e 'CONTA'"
+      - "Bloco de saldos/limites com 'Saldo + Limite Disponível', 'Saldo', 'Saldo Bloqueado', 'Limite Cheque Empresarial', 'Cobrança D0' e 'Cobrança D1'"
+      - "Seção 'LANÇAMENTOS REALIZADOS'"
+      - "Cabeçalho de tabela com colunas 'Data', 'Lançamento', 'Complemento', 'Nº Documento' e 'Valor (R$)'"
+    weak:
+      - "Dados de CNPJ, agência, conta e alguns valores de resumo estão ocultos ou ilegíveis"
+      - "Valores transacionais não estão visíveis no recorte, apesar da coluna 'Valor (R$)' existir"
+      - "Não há coluna de saldo por transação no cabeçalho"
+      - "As datas aparecem em formato dd/MM sem ano, dependentes do período do extrato"
+      - "Não há exemplo visível de sinal de débito/crédito na coluna Valor"
+    table_headers:
+      - "Data"
+      - "Lançamento"
+      - "Complemento"
+      - "Nº Documento"
+      - "Valor (R$)"
+  page_structure:
+    header:
+      bank_logo: "Safra"
+      bank_name: "Banco Safra S/A"
+      page_indicator: "Página 1 de 2"
+      title: "Extrato de Movimentação"
+      account_identifiers:
+        cnpj: unknown
+        agency: unknown
+        account: unknown
+    metadata:
+      period: "02/01/2025 a 31/01/2025"
+      start_date: "02/01/2025"
+      end_date: "31/01/2025"
+      balance_summary:
+        - label: "Saldo + Limite Disponível"
+          value: unknown
+        - label: "Saldo"
+          value: unknown
+        - label: "Saldo Bloqueado"
+          value: "R$ 0,00"
+        - label: "Limite Cheque Empresarial"
+          value: unknown
+        - label: "Cobrança D0"
+          value: "R$ 0,00"
+        - label: "Cobrança D1"
+          value: "R$ 0,00"
+    transactions_table:
+      section_title: "LANÇAMENTOS REALIZADOS"
+      columns:
+        - "Data"
+        - "Lançamento"
+        - "Complemento"
+        - "Nº Documento"
+        - "Valor (R$)"
+      visible_rows:
+        - type: normal_transaction
+          date: "02/01/2025"
+          description: "JUROS"
+          complement: unknown
+          document: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "02/01/2025"
+          description: "IOF"
+          complement: unknown
+          document: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "02/01/2025"
+          description: "CONTA CORRENTE"
+          complement: unknown
+          document: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "03/01/2025"
+          description: "RESGATE CDB AUTOMATICO"
+          complement: unknown
+          document: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "03/01/2025"
+          description: "PIX ENVIADO"
+          complement: unknown
+          document: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "03/01/2025"
+          description: "PIX ENVIADO"
+          complement: unknown
+          document: unknown
+          amount: unknown
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo"
+        - "Saldo + Limite Disponível"
+        - "SALDO ANTERIOR"
+        - "SALDO INICIAL"
+      should_import_as_transaction: false
+      balance_source: "summary_block"
+      inferred: true
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_complement: true
+      row_may_have_document: true
+      row_may_have_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece sem sinal negativo, conforme regra geral, se não houver coluna/seção separada"
+        - "Valor aparece com sinal positivo explícito, se presente no PDF real"
+      negative_when:
+        - "Valor aparece com sinal '-'"
+        - "Descrição/metadado indica débito somente quando o valor/sinal confirmar"
+      inferred: true
+    balance_column:
+      exists: false
+      column_name: unknown
+      summary_balances_exist: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "RESGATE CDB AUTOMATICO"
+        reason: "Descrição sugere entrada/resgate de investimento, mas valor/sinal não está visível no recorte"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "JUROS"
+        reason: "Descrição sugere encargo, mas valor/sinal não está visível no recorte"
+        inferred: true
+      - pattern: "IOF"
+        reason: "Descrição sugere imposto, mas valor/sinal não está visível no recorte"
+        inferred: true
+      - pattern: "PIX ENVIADO"
+        reason: "Descrição sugere saída Pix, mas valor/sinal não está visível no recorte"
+        inferred: true
+    caution:
+      - "Não é possível confirmar o sinal das linhas visíveis porque a coluna Valor está cortada/sem valores."
+      - "Não inferir sinal final apenas pela descrição quando o valor/sinal estiver disponível no PDF real."
+      - "Datas aparecem sem ano; usar o período do extrato para completar a data."
+      - "Não há saldo por transação; validação aritmética detalhada não é possível neste recorte."
+      - "Campos Complemento e Nº Documento podem estar vazios em várias linhas."
+  visual_model:
+    table_anchor:
+      starts_after_text: "LANÇAMENTOS REALIZADOS"
+      header_keywords:
+        - "Data"
+        - "Lançamento"
+        - "Complemento"
+        - "Nº Documento"
+        - "Valor (R$)"
+    column_order:
+      - date
+      - description
+      - complement
+      - document
+      - amount
+    row_behavior:
+      separator: "light horizontal section lines; table with whitespace alignment"
+      date_format_day_month: true
+      date_repeated_per_transaction: true
+      description_uppercase: true
+      complement_column_may_be_blank: true
+      document_column_may_be_blank: true
+      amount_right_aligned: true
+      no_balance_column: true
+  parser_risks:
+    ambiguities:
+      - "Valores das transações não estão visíveis no recorte, então o formato de sinal não pode ser confirmado."
+      - "Não há exemplo de crédito/débito com valor monetário completo."
+      - "A descrição 'CONTA CORRENTE' pode ser linha de contexto, transferência interna ou movimentação; validar com valor/complemento no PDF real."
+      - "Datas precisam ser enriquecidas com o ano do período."
+      - "Canal de origem não está visível."
+    fields_that_may_be_missing:
+      - "amount"
+      - "balance"
+      - "document"
+      - "complement"
+      - "cnpj"
+      - "agency"
+      - "account"
+      - "channel"
+    cases_that_need_real_pdf_validation:
+      - "Se a coluna Valor usa sinal negativo antes do número, depois do número, D/C ou cor."
+      - "Se valores positivos aparecem sem sinal ou com sinal '+'."
+      - "Se Complemento e Nº Documento são preenchidos em outras linhas."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Se há linhas de saldo inicial/final dentro da seção de lançamentos."
+      - "Se o cabeçalho repete nas páginas seguintes."
+
+layout_profile:
+  profile_name: banco_safra_extrato_movimentacao_lancamentos_realizados_v1
+  bank: Banco Safra
+  layout_family: safra_extrato_movimentacao_lancamentos_realizados
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Safra"
+      - "Banco Safra S/A"
+      - "Extrato de Movimentação"
+      - "Período de"
+      - "CNPJ"
+      - "AG"
+      - "CONTA"
+      - "LANÇAMENTOS REALIZADOS"
+      - "Data"
+      - "Lançamento"
+      - "Complemento"
+      - "Nº Documento"
+      - "Valor (R$)"
+    optional_keywords:
+      - "Página"
+      - "Saldo + Limite Disponível"
+      - "Saldo Bloqueado"
+      - "Limite Cheque Empresarial"
+      - "Cobrança D0"
+      - "Cobrança D1"
+      - "JUROS"
+      - "IOF"
+      - "RESGATE CDB AUTOMATICO"
+      - "PIX ENVIADO"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "banco BRB"
+      - "banco bmg"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Lançamento"
+      - "Complemento"
+      - "Nº Documento"
+      - "Valor (R$)"
+    expected_column_order:
+      - date
+      - description
+      - complement
+      - document
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Lançamento"
+        - "Lancamento"
+        - "Histórico"
+        - "Descrição"
+      document:
+        - "Nº Documento"
+        - "No Documento"
+        - "Documento"
+        - "Doc."
+      amount:
+        - "Valor (R$)"
+        - "Valor"
+      balance:
+        - "Saldo"
+      complement:
+        - "Complemento"
+    table_starts_after:
+      - "LANÇAMENTOS REALIZADOS"
+      - "Data Lançamento Complemento Nº Documento Valor (R$)"
+    row_separator_hint: "transaction row starts when first column contains dd/MM; year comes from statement period"
+  parsing:
+    date_format: "dd/MM"
+    date_year_source: "statement_period"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+      - "{amount}-"
+      - "D {amount}"
+      - "{amount} D"
+    positive_patterns:
+      - "{amount_without_minus}"
+      - "+{amount}"
+      - "C {amount}"
+      - "{amount} C"
+    ignore_rows:
+      - "Safra"
+      - "Banco Safra S/A"
+      - "CNPJ"
+      - "AG"
+      - "CONTA"
+      - "Extrato de Movimentação"
+      - "Período de"
+      - "Página"
+      - "Saldo + Limite Disponível"
+      - "Saldo"
+      - "Saldo Bloqueado"
+      - "Limite Cheque Empresarial"
+      - "Cobrança D0"
+      - "Cobrança D1"
+      - "LANÇAMENTOS REALIZADOS"
+      - "Data"
+      - "Lançamento"
+      - "Complemento"
+      - "Nº Documento"
+      - "Valor (R$)"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - complement
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "trailing_negative_sign"
+      - "credit_debit_marker"
+      - "description_based_hint"
+      - "period_balance_consistency"
+    description_based_overrides:
+      - pattern: "JUROS"
+        sign: negative
+        confidence: low
+        inferred: true
+        reason: "Encargo provável, mas valor/sinal não está visível"
+      - pattern: "IOF"
+        sign: negative
+        confidence: low
+        inferred: true
+        reason: "Imposto provável, mas valor/sinal não está visível"
+      - pattern: "RESGATE CDB AUTOMATICO"
+        sign: positive
+        confidence: low
+        inferred: true
+        reason: "Resgate de investimento provavelmente entrada, mas valor/sinal não está visível"
+      - pattern: "PIX ENVIADO"
+        sign: negative
+        confidence: low
+        inferred: true
+        reason: "Pix enviado sugere saída, mas confirmar com valor/sinal no PDF real"
+    cautions:
+      - "Não usar descrição como fonte final de sinal quando o valor estiver disponível."
+      - "Se valor vier sem sinal, aplicar regra geral de positivo somente se o layout real não usar outra indicação."
+      - "Se a coluna Valor estiver ausente/ilegível, marcar para revisão manual."
+      - "Sem saldo por linha, validar apenas com saldos agregados se disponíveis."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+      - "merge_complement_when_same_transaction"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "RESGATE CDB AUTOMATICO"
+        category: "resgate_investimento"
+        inferred: true
+      - pattern: "PIX ENVIADO"
+        category: "pix_enviado"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX ENVIADO"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "PIX RECEBIDO"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "Data"
+      - "Lançamento"
+      - "Valor"
+    balance_consistency_check:
+      enabled: true
+      method: "when summary balances and all signed values are available, validate aggregate movement; no per-row balance visible"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "amount_missing_or_not_visible"
+      - "amount_without_sign_and_description_ambiguous"
+      - "date_year_context_missing"
+      - "complement_or_document_shifts_columns"
+      - "description_line_wrap_detected"
+      - "ocr_confidence_low_on_amount_region"
+      - "aggregate_balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "02/01/2025"
+        raw_description: "JUROS"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Valor/sinal não visível no recorte; provável encargo, mas confirmar no PDF real"
+      - raw_date: "02/01/2025"
+        raw_description: "IOF"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Valor/sinal não visível no recorte; provável imposto"
+      - raw_date: "02/01/2025"
+        raw_description: "CONTA CORRENTE"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Linha ambígua; pode ser contexto ou movimentação dependendo do valor/complemento"
+      - raw_date: "03/01/2025"
+        raw_description: "RESGATE CDB AUTOMATICO"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Provável crédito/resgate, mas valor/sinal deve confirmar"
+      - raw_date: "03/01/2025"
+        raw_description: "PIX ENVIADO"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Provável débito, mas valor/sinal deve confirmar"
+  implementation_notes:
+    - "Classificar pelo conjunto 'Safra', 'Extrato de Movimentação' e 'LANÇAMENTOS REALIZADOS'."
+    - "Completar datas dd/MM usando o período do extrato."
+    - "Não exigir complemento, documento ou saldo por transação."
+    - "Como os valores não aparecem no recorte, validar obrigatoriamente com PDF real antes de fixar regras de sinal."
+    - "Preservar a descrição original e complementar com o campo Complemento quando houver texto."
+    - "Usar saldos/resumos apenas para validação agregada, não como transações."

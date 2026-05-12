@@ -1,0 +1,383 @@
+meta_model:
+  layout_id: santander_internet_banking_empresarial_365_dias_conta_corrente_extrato_v1
+  bank: Santander
+  channel: Internet Banking Empresarial
+  statement_type: conta_corrente_extrato_365_dias
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo Santander visível no topo"
+      - "Texto 'Internet Banking Empresarial' no cabeçalho"
+      - "Breadcrumb 'Conta corrente > Extrato'"
+      - "Título 'Ver extrato 365 dias'"
+      - "Identificação 'Banco Santander Pessoa Jurídica'"
+      - "Filtros de período com datas inicial e final"
+      - "Abas de filtro 'Todos', 'Créditos', 'Débitos'"
+      - "Linhas agrupadas por data com descrição, tipo de movimento e valor"
+    weak:
+      - "Campos 'Agência' e 'Conta' aparecem no cabeçalho, mas os valores não estão visíveis/foram omitidos"
+      - "Não há tabela clássica com cabeçalho 'Data / Histórico / Documento / Valor / Saldo'"
+      - "O saldo por transação não aparece nas linhas visíveis"
+      - "Valores positivos aparecem em verde e acompanhados do rótulo 'CREDITO'"
+    table_headers:
+      - "Todos"
+      - "Créditos"
+      - "Débitos"
+      - "Data agrupadora"
+      - "Histórico/descrição"
+      - "Tipo: CREDITO/DEBITO"
+      - "Valor"
+  page_structure:
+    header:
+      bank_logo: "Santander"
+      channel_title: "Internet Banking Empresarial"
+      account_identifiers:
+        agency: unknown
+        account: unknown
+      account_type_label: "Banco Santander Pessoa Jurídica"
+    metadata:
+      breadcrumb: "Conta corrente > Extrato"
+      screen_title: "Ver extrato 365 dias"
+      search_section: "Busque por um período"
+      period_start: "01/12/2023"
+      period_end: "31/12/2023"
+      result_period_text: "Exibindo resultados para 01/12/2023 à 31/12/2023"
+      alternative_query_link: "Para consultas abaixo de 90 dias clique aqui"
+      available_balance_label: unknown
+      available_balance_value: unknown
+    transactions_table:
+      table_style: "grouped_list"
+      group_header_background: "light_gray"
+      visible_columns:
+        - "date_group"
+        - "description"
+        - "movement_type"
+        - "amount"
+      missing_columns:
+        - "document"
+        - "balance"
+      visible_rows:
+        - type: normal_transaction
+          group_date_text: "Sexta, 29 de dezembro de 2023"
+          date: "29/12/2023"
+          description: "PIX RECEBIDO"
+          document: unknown
+          movement_type: "CREDITO"
+          amount: "R$ 24,00"
+          balance: unknown
+        - type: normal_transaction
+          group_date_text: "Terça, 26 de dezembro de 2023"
+          date: "26/12/2023"
+          description: "RESGATE CONTAMAX AUTOMATICO"
+          document: unknown
+          movement_type: "CREDITO"
+          amount: "R$ 44,99"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+        - "SALDO DO DIA"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: unknown
+      inferred: true
+    normal_transaction:
+      row_has_group_date: true
+      row_has_description: true
+      row_has_movement_type: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Linha possui rótulo 'CREDITO'"
+        - "Valor aparece em verde"
+      negative_when:
+        - "Linha possui rótulo 'DEBITO'"
+        - "Valor aparece com sinal '-'"
+        - "Valor aparece em vermelho, se confirmado em PDFs reais"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      may_be_available_elsewhere: unknown
+      appears_in_visible_rows: false
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "PIX RECEBIDO"
+        reason: "Linha visível marcada como CREDITO e valor em verde"
+        inferred: false
+      - pattern: "RESGATE CONTAMAX AUTOMATICO"
+        reason: "Linha visível marcada como CREDITO e valor em verde"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "PAGAMENTO"
+        reason: "Pode aparecer na aba Débitos ou com rótulo DEBITO, mas não está visível nesta imagem"
+        inferred: true
+      - pattern: "TRANSFERENCIA ENVIADA"
+        reason: "Possível padrão de saída, precisa validação em PDF real"
+        inferred: true
+    caution:
+      - "Este layout usa lista agrupada por data, não uma tabela tradicional com colunas fixas visíveis"
+      - "A data da transação vem do cabeçalho do grupo, não necessariamente da própria linha"
+      - "O sinal deve priorizar o rótulo CREDITO/DEBITO e o sinal explícito, não apenas a descrição"
+      - "Não assumir que 'RESGATE' é débito; na imagem está marcado como CREDITO"
+      - "Documento e saldo não aparecem nas linhas visíveis"
+  visual_model:
+    table_anchor:
+      starts_after_text: "Todos Créditos Débitos"
+      group_header_has_calendar_icon: true
+      group_header_background: "light_gray"
+      group_header_contains_weekday_and_full_date: true
+    column_order:
+      - date_group
+      - description
+      - movement_type
+      - amount
+    row_behavior:
+      separator: "horizontal light gray lines"
+      date_repeated_per_row: false
+      date_provided_by_group_header: true
+      description_left_aligned: true
+      movement_type_center_or_right_aligned: true
+      amount_right_aligned: true
+      positive_amount_color: "green"
+      negative_amount_color: unknown
+      multiple_transactions_can_share_same_group_date: true
+  parser_risks:
+    ambiguities:
+      - "Não é possível confirmar como débitos aparecem visualmente nesta imagem"
+      - "Não é possível confirmar se existe detalhamento expandível com documento/saldo ao clicar na transação"
+      - "Não é possível confirmar se o PDF real mantém a estrutura de lista ou se esta imagem veio de captura HTML"
+      - "O valor 'R$ 44,99' está parcialmente próximo da borda inferior da imagem; validar OCR"
+      - "Datas estão em formato textual nos agrupadores e precisam conversão para dd/MM/yyyy"
+    fields_that_may_be_missing:
+      - "document"
+      - "balance"
+      - "agency"
+      - "account"
+      - "opening_balance"
+      - "closing_balance"
+    cases_that_need_real_pdf_validation:
+      - "Extração textual dos agrupadores de data com dia da semana"
+      - "Associação correta entre cada transação e o agrupador de data anterior"
+      - "Como aparecem valores de débito: sinal negativo, cor, rótulo DEBITO ou combinação"
+      - "Paginação e repetição de filtros/cabeçalho"
+      - "Existência de saldos intermediários ou totais fora da área capturada"
+      - "Comportamento quando há várias transações no mesmo dia"
+
+layout_profile:
+  profile_name: santander_internet_banking_empresarial_365_dias_conta_corrente_extrato_v1
+  bank: Santander
+  layout_family: internet_banking_empresarial_365_dias_grouped_list
+  statement_type: conta_corrente_extrato_365_dias
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Santander"
+      - "Internet Banking Empresarial"
+      - "Ver extrato 365 dias"
+      - "Conta corrente"
+      - "Extrato"
+      - "Busque por um período"
+      - "Todos"
+      - "Créditos"
+      - "Débitos"
+    optional_keywords:
+      - "Banco Santander Pessoa Jurídica"
+      - "Agência"
+      - "Conta"
+      - "Exibindo resultados para"
+      - "Para consultas abaixo de 90 dias clique aqui"
+      - "CREDITO"
+      - "DEBITO"
+    negative_keywords:
+      - "Aplicativo Santander Empresas"
+      - "Data Histórico Documento Valor (R$) Saldo (R$)"
+      - "Cartão de Crédito"
+      - "Fatura"
+      - "Comprovante"
+      - "Boleto"
+    min_score_hint: 0.82
+  table_detection:
+    header_keywords:
+      - "Todos"
+      - "Créditos"
+      - "Débitos"
+    expected_column_order:
+      - date_group
+      - description
+      - movement_type
+      - amount
+    column_aliases:
+      date:
+        - "Sexta, 29 de dezembro de 2023"
+        - "Terça, 26 de dezembro de 2023"
+        - "date_group"
+      description:
+        - "Histórico"
+        - "Descrição"
+        - "PIX RECEBIDO"
+        - "RESGATE CONTAMAX AUTOMATICO"
+      document:
+        - "Documento"
+      amount:
+        - "Valor"
+        - "R$"
+      balance:
+        - "Saldo"
+    table_starts_after:
+      - "Todos"
+      - "Créditos"
+      - "Débitos"
+    row_separator_hint: "light gray horizontal lines; gray date group blocks with calendar icon"
+  parsing:
+    date_format: "textual_pt_BR_group_date"
+    date_format_normalized: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "DEBITO"
+      - "-R$ {amount}"
+      - "R$ -{amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "CREDITO"
+      - "green_amount"
+      - "R$ {amount_without_minus}"
+    ignore_rows:
+      - "Conta corrente"
+      - "Extrato"
+      - "Ver extrato 365 dias"
+      - "Busque por um período"
+      - "Período"
+      - "Exibindo resultados para"
+      - "Para consultas abaixo de 90 dias clique aqui"
+      - "Todos"
+      - "Créditos"
+      - "Débitos"
+      - "Agência"
+      - "Conta"
+      - "Banco Santander Pessoa Jurídica"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+      - movement_type
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "movement_type_debito_credito"
+      - "amount_color"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "PIX RECEBIDO"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível marcada como CREDITO"
+      - pattern: "RESGATE CONTAMAX AUTOMATICO"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível marcada como CREDITO"
+      - pattern: "PAGAMENTO"
+        sign: unknown
+        confidence: low
+        inferred: true
+        reason: "A palavra pagamento isolada não é suficiente para definir sinal"
+    cautions:
+      - "Não inferir saída apenas por palavras como PAGAMENTO"
+      - "Neste layout, o rótulo CREDITO/DEBITO parece ser a principal fonte semântica de sinal"
+      - "Cor verde reforça crédito, mas parsers textuais de PDF podem não capturar cor"
+      - "Se o movimento_type não for extraído, validar sinal por valor explícito e consistência de saldo quando disponível"
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_case_optional"
+      - "normalize_uppercase_for_matching"
+      - "remove_ui_artifacts_from_rows"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "PIX RECEBIDO"
+        category: "pix_recebido"
+        inferred: false
+      - pattern: "RESGATE CONTAMAX AUTOMATICO"
+        category: "resgate_aplicacao"
+        inferred: false
+    transfer_hints:
+      - pattern: "PIX RECEBIDO"
+        category: "transferencia_pix_entrada"
+        inferred: false
+      - pattern: "PIX ENVIADO"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "DOC"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_taxa"
+        inferred: true
+  validation:
+    expected_min_columns: 4
+    reject_if_missing_headers:
+      - "Ver extrato 365 dias"
+      - "Todos"
+      - "Créditos"
+      - "Débitos"
+    balance_consistency_check:
+      enabled: false
+      method: "not_available_in_visible_layout"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "movement_type_missing"
+      - "amount_without_sign_and_without_credit_debit_label"
+      - "date_group_not_detected_before_transaction"
+      - "description_detected_but_amount_missing"
+      - "ocr_confidence_low_on_textual_date_or_amount"
+      - "multiple_rows_merged_under_same_date_group"
+      - "real_pdf_text_order_differs_from_visual_order"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "Sexta, 29 de dezembro de 2023"
+        raw_description: "PIX RECEBIDO"
+        raw_document: unknown
+        raw_amount: "R$ 24,00"
+        raw_balance: unknown
+        normalized_amount: "24.00"
+        should_import_as_transaction: true
+        notes: "Data deve ser normalizada para 29/12/2023; linha marcada como CREDITO"
+      - raw_date: "Terça, 26 de dezembro de 2023"
+        raw_description: "RESGATE CONTAMAX AUTOMATICO"
+        raw_document: unknown
+        raw_amount: "R$ 44,99"
+        raw_balance: unknown
+        normalized_amount: "44.99"
+        should_import_as_transaction: true
+        notes: "Data deve ser normalizada para 26/12/2023; linha marcada como CREDITO"
+  implementation_notes:
+    - "Este layout deve ser tratado como lista agrupada por data, não como tabela tabular tradicional."
+    - "Manter o último agrupador de data encontrado e aplicá-lo às transações subsequentes até o próximo agrupador."
+    - "Usar o rótulo CREDITO/DEBITO como fonte principal de sinal quando não houver sinal explícito no valor."
+    - "Normalizar datas textuais em português, incluindo dia da semana e mês por extenso."
+    - "Não exigir documento nem saldo para importar uma transação neste layout."
+    - "Criar validação específica para garantir que cada transação recebeu uma data de agrupador."
+    - "Validar com PDF real se a ordem textual extraída mantém descrição, tipo e valor na mesma linha lógica."

@@ -1,0 +1,423 @@
+meta_model:
+  layout_id: santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1
+  bank: Santander
+  channel: Negócios & Empresas
+  statement_type: extrato_consolidado_inteligente_conta_corrente
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo Santander visível no topo esquerdo"
+      - "Marca/contexto 'Negócios & Empresas' visível no cabeçalho"
+      - "Título 'EXTRATO CONSOLIDADO INTELIGENTE' no topo direito"
+      - "Seção 'Resumo' antes da movimentação"
+      - "Seção 'Conta Corrente'"
+      - "Seção 'Movimentação'"
+      - "Cabeçalho de tabela com 'Data', 'Descrição', 'Nº Documento', 'Movimentos (R$)', 'Créditos', 'Débitos', 'Saldo (R$)'"
+    weak:
+      - "Layout parece exportação/impressão consolidada, não tela interativa"
+      - "Dados de nome, agência e conta aparecem como labels, mas valores não estão visíveis/foram omitidos"
+      - "Tabela usa colunas separadas para crédito e débito em vez de uma única coluna Valor"
+      - "Linha de saldo inicial aparece misturada com a tabela de movimentação"
+    table_headers:
+      - "Data"
+      - "Descrição"
+      - "Nº Documento"
+      - "Movimentos (R$)"
+      - "Créditos"
+      - "Débitos"
+      - "Saldo (R$)"
+  page_structure:
+    header:
+      bank_logo: "Santander"
+      channel_title: "Negócios & Empresas"
+      document_title: "EXTRATO CONSOLIDADO INTELIGENTE"
+      account_identifiers:
+        name: unknown
+        agency: unknown
+        account: unknown
+    metadata:
+      visible_sections:
+        - "Resumo"
+        - "Conta Corrente"
+        - "Movimentação"
+      period: unknown
+      generated_at: unknown
+      available_balance: unknown
+    summary_section:
+      labels:
+        - "Saldo de Conta Corrente em"
+        - "Total de Créditos"
+        - "Depósitos / Transferências"
+        - "Outros Créditos"
+        - "Total de Débitos"
+        - "Pagamentos / Transferências"
+        - "Outros Débitos"
+        - "Saldo de Conta Corrente em"
+        - "Saldo de Investimentos com Resgate Automático"
+        - "Saldo Disponível"
+      visible_amounts:
+        - "0,00"
+    transactions_table:
+      header_background: "white/light gray"
+      columns:
+        - "Data"
+        - "Descrição"
+        - "Nº Documento"
+        - "Créditos"
+        - "Débitos"
+        - "Saldo (R$)"
+      visible_rows:
+        - type: opening_balance
+          date: unknown
+          description: "SALDO EM 31/07"
+          document: unknown
+          credit: unknown
+          debit: unknown
+          balance: "0,00"
+        - type: normal_transaction
+          date: "01/08"
+          description: "PIX RECEBIDO"
+          document: unknown
+          credit: "50,00"
+          debit: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: unknown
+          description: "PIX RECEBIDO"
+          document: unknown
+          credit: "12,00"
+          debit: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: unknown
+          description: "PIX RECEBIDO"
+          document: unknown
+          credit: "2,00"
+          debit: unknown
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO EM"
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "Saldo (R$)"
+      inferred: false
+    normal_transaction:
+      row_has_date: optional
+      row_has_description: true
+      row_may_have_document: true
+      row_may_have_credit: true
+      row_may_have_debit: true
+      row_may_have_balance: true
+      should_import_as_transaction: true
+      notes:
+        - "Data pode aparecer somente na primeira linha de um agrupamento visual; linhas subsequentes podem herdar a data anterior"
+    amount_sign:
+      positive_when:
+        - "Valor preenchido na subcoluna 'Créditos'"
+      negative_when:
+        - "Valor preenchido na subcoluna 'Débitos'"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "Saldo (R$)"
+      may_be_blank_on_intermediate_rows: true
+      appears_on_opening_balance_rows: true
+      appears_on_some_transaction_rows: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "PIX RECEBIDO"
+        reason: "Aparece na subcoluna de Créditos"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "PAGAMENTOS / TRANSFERÊNCIAS"
+        reason: "Aparece no resumo sob Total de Débitos"
+        inferred: true
+      - pattern: "OUTROS DÉBITOS"
+        reason: "Aparece no resumo sob Total de Débitos"
+        inferred: true
+    caution:
+      - "Este layout usa colunas separadas de crédito e débito; não depender de sinal negativo no valor."
+      - "Linhas sem data visível podem ser continuação/herança da data anterior."
+      - "Linhas de resumo não devem ser importadas como transações."
+      - "Linha 'SALDO EM 31/07' deve ser tratada como saldo inicial, não como transação."
+      - "Não inferir documento quando a coluna estiver vazia."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Movimentação"
+      header_keywords:
+        - "Data"
+        - "Descrição"
+        - "Nº Documento"
+        - "Movimentos (R$)"
+        - "Créditos"
+        - "Débitos"
+        - "Saldo (R$)"
+    column_order:
+      - date
+      - description
+      - document
+      - credit
+      - debit
+      - balance
+    row_behavior:
+      separator: "horizontal thin gray lines"
+      date_may_be_blank_after_first_row_of_day: true
+      description_left_aligned: true
+      credit_right_aligned: true
+      debit_right_aligned: true
+      balance_right_aligned: true
+      opening_balance_row_has_gray_background: true
+  parser_risks:
+    ambiguities:
+      - "A imagem mostra apenas parte do extrato; não confirma paginação nem repetição do cabeçalho."
+      - "Não é possível confirmar se datas em branco devem sempre herdar a data anterior."
+      - "Não é possível confirmar se a coluna Nº Documento pode aparecer preenchida em outros tipos de transação."
+      - "O resumo possui labels de crédito/débito que podem ser confundidas com movimentações se o parser não detectar a seção correta."
+      - "A linha de saldo inicial aparece dentro da área da tabela e pode ser confundida com transação."
+    fields_that_may_be_missing:
+      - "document"
+      - "date"
+      - "balance"
+      - "period"
+      - "generated_at"
+      - "account_identifiers"
+    cases_that_need_real_pdf_validation:
+      - "Extração textual preserva subcolunas Créditos e Débitos sob o agrupador Movimentos (R$)."
+      - "Como o PDF representa linhas com data em branco."
+      - "Se descrições longas quebram linha e como associá-las ao valor."
+      - "Se há páginas seguintes com cabeçalho repetido."
+      - "Se linhas de totais/saldos intermediários aparecem no meio da movimentação."
+      - "Se valores de débito aparecem sem sinal, apenas em coluna separada."
+
+layout_profile:
+  profile_name: santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1
+  bank: Santander
+  layout_family: negocios_empresas_extrato_consolidado_inteligente
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Santander"
+      - "Negócios & Empresas"
+      - "EXTRATO CONSOLIDADO INTELIGENTE"
+      - "Resumo"
+      - "Conta Corrente"
+      - "Movimentação"
+      - "Data"
+      - "Descrição"
+      - "Nº Documento"
+      - "Movimentos (R$)"
+      - "Créditos"
+      - "Débitos"
+      - "Saldo (R$)"
+    optional_keywords:
+      - "Saldo de Conta Corrente"
+      - "Total de Créditos"
+      - "Total de Débitos"
+      - "Depósitos / Transferências"
+      - "Pagamentos / Transferências"
+      - "Saldo Disponível"
+      - "Saldo de Investimentos com Resgate Automático"
+    negative_keywords:
+      - "Internet Banking Empresarial"
+      - "Aplicativo Santander Empresas"
+      - "Fatura"
+      - "Cartão de Crédito"
+      - "Comprovante"
+      - "Boleto"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Descrição"
+      - "Nº Documento"
+      - "Movimentos (R$)"
+      - "Créditos"
+      - "Débitos"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - description
+      - document
+      - credit
+      - debit
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Descrição"
+        - "Descricao"
+      document:
+        - "Nº Documento"
+        - "No Documento"
+        - "N Documento"
+        - "Documento"
+      amount:
+        - "Movimentos (R$)"
+      balance:
+        - "Saldo (R$)"
+        - "Saldo"
+      credit:
+        - "Créditos"
+        - "Creditos"
+      debit:
+        - "Débitos"
+        - "Debitos"
+    table_starts_after:
+      - "Movimentação"
+      - "Movimentacao"
+      - "Data Descrição Nº Documento Movimentos (R$) Créditos Débitos Saldo (R$)"
+    row_separator_hint: "thin horizontal lines; opening balance row may have gray background"
+  parsing:
+    date_format: "dd/MM inferred_or_dd/MM_without_year"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "value_in_debit_column"
+    positive_patterns:
+      - "value_in_credit_column"
+    ignore_rows:
+      - "Resumo"
+      - "Conta Corrente"
+      - "Movimentação"
+      - "Saldo de Conta Corrente"
+      - "Total de Créditos"
+      - "Depósitos / Transferências"
+      - "Outros Créditos"
+      - "Total de Débitos"
+      - "Pagamentos / Transferências"
+      - "Outros Débitos"
+      - "Saldo de Investimentos com Resgate Automático"
+      - "Saldo Disponível"
+    opening_balance_rows:
+      - "SALDO EM"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - description
+      - amount
+    optional_transaction_fields:
+      - date
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "credit_or_debit_column"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "PIX RECEBIDO"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Exemplo visível aparece na coluna Créditos"
+    cautions:
+      - "Não usar sinal ausente como positivo automaticamente quando houver colunas separadas."
+      - "Débitos podem aparecer como número sem sinal negativo, mas posicionados na coluna Débitos."
+      - "Se OCR perder a posição da coluna, exigir revisão manual ou validar por saldo."
+      - "Linhas de saldo e resumo não devem ser importadas como transações."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "normalize_accents_optional"
+      - "preserve_original_case_optional"
+      - "remove_leading_section_artifacts"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "PIX RECEBIDO"
+        category: "pix_recebido"
+        inferred: false
+      - pattern: "DEPÓSITOS / TRANSFERÊNCIAS"
+        category: "deposito_transferencia"
+        inferred: true
+      - pattern: "PAGAMENTOS / TRANSFERÊNCIAS"
+        category: "pagamento_transferencia"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "DOC"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "CESTA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_taxa"
+        inferred: true
+  validation:
+    expected_min_columns: 6
+    reject_if_missing_headers:
+      - "Data"
+      - "Descrição"
+      - "Créditos"
+      - "Débitos"
+      - "Saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "when_previous_and_current_balance_are_available_validate_current_balance_equals_previous_balance_plus_credit_minus_debit"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "credit_and_debit_both_filled_on_same_row"
+      - "amount_position_unclear_between_credit_and_debit_columns"
+      - "row_has_description_but_no_credit_or_debit"
+      - "row_has_no_date_and_no_previous_date_context"
+      - "description_wraps_to_next_line"
+      - "ocr_confidence_low_on_amount_or_column_position"
+      - "summary_rows_detected_inside_transaction_area"
+  examples_from_image:
+    sample_rows:
+      - raw_date: unknown
+        raw_description: "SALDO EM 31/07"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "0,00"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo inicial; não importar como transação."
+      - raw_date: "01/08"
+        raw_description: "PIX RECEBIDO"
+        raw_document: unknown
+        raw_amount: "50,00"
+        raw_balance: unknown
+        normalized_amount: "50.00"
+        should_import_as_transaction: true
+        notes: "Valor aparece na coluna Créditos; importar como entrada."
+      - raw_date: unknown
+        raw_description: "PIX RECEBIDO"
+        raw_document: unknown
+        raw_amount: "12,00"
+        raw_balance: unknown
+        normalized_amount: "12.00"
+        should_import_as_transaction: true
+        notes: "Data não visível na linha; provavelmente herda 01/08 da linha anterior, mas marcar como inferred se aplicado."
+      - raw_date: unknown
+        raw_description: "PIX RECEBIDO"
+        raw_document: unknown
+        raw_amount: "2,00"
+        raw_balance: unknown
+        normalized_amount: "2.00"
+        should_import_as_transaction: true
+        notes: "Valor na coluna Créditos; data deve ser validada por contexto no PDF real."
+  implementation_notes:
+    - "Classificar este layout por 'EXTRATO CONSOLIDADO INTELIGENTE' combinado com 'Negócios & Empresas'."
+    - "Ignorar a seção 'Resumo' para importação de transações; usá-la apenas como metadado/validação opcional."
+    - "A tabela de movimentação usa colunas separadas de Créditos e Débitos; o sinal deve ser definido pela coluna, não pelo texto do valor."
+    - "Implementar herança de data para linhas sem data somente quando houver linha anterior válida no mesmo bloco de movimentação."
+    - "Tratar 'SALDO EM dd/MM' como saldo inicial/linha de controle."
+    - "Validar com PDF real se os cabeçalhos agrupados 'Movimentos (R$)' e subcolunas 'Créditos/Débitos' são extraídos de forma estável."

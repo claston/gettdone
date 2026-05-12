@@ -1,6 +1,7 @@
 import re
 from dataclasses import dataclass
 
+from app.application.layout_profiles.registry import DeclarativeLayoutProfile, load_layout_profiles, score_layout_profile
 from app.application.normalization.text import normalize_upper_text
 
 MONTH_PATTERN = r"(?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)"
@@ -102,6 +103,12 @@ def infer_pdf_layout(text: str) -> PdfLayoutInference:
         layout_name: _score_layout_profile(layout_name, normalized, terms)
         for layout_name, terms in BR_PROFILE_TERMS.items()
     }
+    structure_score = _score_statement_structure(normalized)
+    declarative_scores = {
+        profile.profile_name: _score_declarative_layout_profile(profile, normalized, structure_score)
+        for profile in load_layout_profiles()
+    }
+    specific_scores.update(declarative_scores)
     generic_score = _score_generic_statement(normalized)
     specific_best_name, specific_best_score = max(specific_scores.items(), key=lambda item: item[1])
 
@@ -131,6 +138,15 @@ def _score_layout_profile(layout_name: str, normalized_text: str, terms: tuple[t
         score *= ANCHOR_MISS_MULTIPLIER
 
     return min(score, 1.0)
+
+
+def _score_declarative_layout_profile(
+    profile: DeclarativeLayoutProfile, normalized_text: str, structure_score: float
+) -> float:
+    score = score_layout_profile(profile, normalized_text, structure_score=structure_score)
+    if score < profile.min_score_hint:
+        return 0.0
+    return score
 
 
 def _score_generic_statement(normalized_text: str) -> float:

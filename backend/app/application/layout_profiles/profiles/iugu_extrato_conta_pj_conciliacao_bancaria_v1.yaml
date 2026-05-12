@@ -1,0 +1,434 @@
+meta_model:
+  layout_id: iugu_extrato_conta_pj_conciliacao_bancaria_v1
+  bank: IUGU Instituição de Pagamento
+  channel: unknown
+  statement_type: conta_pj_extrato_bancario
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Título 'Extrato Conta PJ'"
+      - "Período explícito: '01/08/2024 a 31/08/2024'"
+      - "Identificação 'IUGU Instituição de pagamento'"
+      - "Campos 'Ag.' e 'C/C.'"
+      - "Bloco de resumo no topo direito com 'Saldo anterior', 'Total de entradas', 'Total de saídas' e 'Saldo final'"
+      - "Tabela com cabeçalhos 'Data', 'Descrição do lançamento bancário', 'Conciliação bancária', 'Valor' e 'Saldo'"
+      - "Linhas de transação com status 'Conciliado'"
+      - "Valores negativos aparecem em vermelho com formato '- R$ valor'"
+      - "Linhas de saldo/contexto como 'Saldo anterior' e 'Saldo'"
+    weak:
+      - "Valores do resumo e saldos estão ocultos ou ilegíveis"
+      - "Dados de agência/conta aparecem ocultos ou ilegíveis"
+      - "Não há documento ou ID de transação visível"
+      - "A coluna 'Saldo' existe, mas os valores estão ocultos no recorte"
+      - "Todas as transações visíveis são 'Pagamento de PIX' negativas"
+    table_headers:
+      - "Data"
+      - "Descrição do lançamento bancário"
+      - "Conciliação bancária"
+      - "Valor"
+      - "Saldo"
+  page_structure:
+    header:
+      title: "Extrato Conta PJ"
+      institution: "IUGU Instituição de pagamento"
+      account_identifiers:
+        agency: unknown
+        account: unknown
+    metadata:
+      period: "01/08/2024 a 31/08/2024"
+      start_date: "01/08/2024"
+      end_date: "31/08/2024"
+      summary:
+        previous_balance_label: "Saldo anterior"
+        previous_balance_value: unknown
+        total_inflows_label: "Total de entradas"
+        total_inflows_value: unknown
+        total_outflows_label: "Total de saídas"
+        total_outflows_value: unknown
+        final_balance_label: "Saldo final"
+        final_balance_value: unknown
+    transactions_table:
+      header_background: "light gray"
+      columns:
+        - "Data"
+        - "Descrição do lançamento bancário"
+        - "Conciliação bancária"
+        - "Valor"
+        - "Saldo"
+      visible_rows:
+        - type: opening_balance
+          date: "01/08/2024"
+          description: "Saldo anterior"
+          reconciliation_status: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "01/08/2024"
+          description: "Pagamento de PIX"
+          reconciliation_status: "Conciliado"
+          document: unknown
+          amount: "- R$ 70,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/08/2024"
+          description: "Pagamento de PIX"
+          reconciliation_status: "Conciliado"
+          document: unknown
+          amount: "- R$ 211,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/08/2024"
+          description: "Pagamento de PIX"
+          reconciliation_status: "Conciliado"
+          document: unknown
+          amount: "- R$ 453,25"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/08/2024"
+          description: "Pagamento de PIX"
+          reconciliation_status: "Conciliado"
+          document: unknown
+          amount: "- R$ 71,20"
+          balance: unknown
+        - type: balance_row
+          date: "02/08/2024"
+          description: "Saldo"
+          reconciliation_status: unknown
+          amount: unknown
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo anterior"
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "summary_block_or_saldo_column"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_has_reconciliation_status: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece sem sinal negativo"
+        - "Valor aparece com '+ R$' se presente no PDF real"
+      negative_when:
+        - "Valor aparece com prefixo '- R$'"
+        - "Valor aparece em vermelho com sinal negativo"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "Saldo"
+      may_be_blank_or_masked_in_visible_rows: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "*"
+        reason: "Não há créditos visíveis; usar sinal explícito e/ou total de entradas em PDFs reais"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "Pagamento de PIX"
+        reason: "Linhas visíveis possuem prefixo '- R$'"
+        inferred: false
+    caution:
+      - "Não importar 'Saldo anterior' nem linhas com descrição 'Saldo' como transações."
+      - "A coluna 'Conciliação bancária' é status operacional, não descrição nem categoria."
+      - "Não inferir sinal por PIX isoladamente; usar prefixo '- R$' ou '+ R$'."
+      - "A coluna Saldo existe, mas está ilegível/oculta no recorte; validar com PDF real."
+      - "Valores de resumo do topo não são transações."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Data Descrição do lançamento bancário Conciliação bancária Valor Saldo"
+      header_keywords:
+        - "Data"
+        - "Descrição do lançamento bancário"
+        - "Conciliação bancária"
+        - "Valor"
+        - "Saldo"
+    column_order:
+      - date
+      - description
+      - reconciliation_status
+      - amount
+      - balance
+    row_behavior:
+      separator: "horizontal light gray row dividers"
+      date_repeated_per_transaction: true
+      balance_group_rows_present: true
+      left_red_vertical_marker_for_day_group: true
+      reconciliation_status_centered: true
+      amount_right_aligned: true
+      negative_amount_color: "red"
+      negative_amount_prefix: "- R$"
+      balance_right_aligned_when_visible: true
+  parser_risks:
+    ambiguities:
+      - "A linha com descrição 'Saldo' e data pode ser confundida com transação se o parser só olhar data."
+      - "A coluna Saldo está presente, mas valores estão ocultos/ilegíveis no recorte."
+      - "Não há exemplo de entrada/crédito para confirmar formato positivo."
+      - "Não há documento ou ID de transação visível."
+      - "A barra vertical vermelha à esquerda pode ser artefato visual de agrupamento, não indicador de débito."
+    fields_that_may_be_missing:
+      - "document"
+      - "transaction_id"
+      - "balance"
+      - "agency"
+      - "account"
+      - "counterparty"
+      - "channel"
+    cases_that_need_real_pdf_validation:
+      - "Se a coluna Saldo aparece preenchida por linha no PDF real."
+      - "Se créditos aparecem com '+ R$', cor verde, ou apenas sem sinal negativo."
+      - "Se o status de conciliação pode ser diferente de 'Conciliado'."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Se há paginação e repetição do cabeçalho."
+      - "Se linhas 'Saldo' aparecem diariamente e como devem ser usadas para validação."
+
+layout_profile:
+  profile_name: iugu_extrato_conta_pj_conciliacao_bancaria_v1
+  bank: IUGU Instituição de Pagamento
+  layout_family: iugu_conta_pj_extrato_conciliacao
+  statement_type: conta_pj_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Extrato Conta PJ"
+      - "IUGU Instituição de pagamento"
+      - "Ag."
+      - "C/C."
+      - "Saldo anterior"
+      - "Total de entradas"
+      - "Total de saídas"
+      - "Saldo final"
+      - "Data"
+      - "Descrição do lançamento bancário"
+      - "Conciliação bancária"
+      - "Valor"
+      - "Saldo"
+    optional_keywords:
+      - "Pagamento de PIX"
+      - "Conciliado"
+      - "- R$"
+      - "01/08/2024"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Descrição do lançamento bancário"
+      - "Conciliação bancária"
+      - "Valor"
+      - "Saldo"
+    expected_column_order:
+      - date
+      - description
+      - reconciliation_status
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Descrição do lançamento bancário"
+        - "Descricao do lancamento bancario"
+        - "Descrição"
+        - "Lançamento"
+      document:
+        - "Documento"
+        - "Doc."
+        - "ID"
+      amount:
+        - "Valor"
+      balance:
+        - "Saldo"
+      reconciliation_status:
+        - "Conciliação bancária"
+        - "Conciliacao bancaria"
+        - "Status"
+    table_starts_after:
+      - "Data Descrição do lançamento bancário Conciliação bancária Valor Saldo"
+    row_separator_hint: "transaction row starts when first column contains dd/MM/yyyy; balance rows have description 'Saldo'"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "- R$ {amount}"
+      - "-R$ {amount}"
+      - "R$ -{amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+      - "+ R$ {amount}"
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "Extrato Conta PJ"
+      - "IUGU Instituição de pagamento"
+      - "Ag."
+      - "C/C."
+      - "Saldo anterior"
+      - "Total de entradas"
+      - "Total de saídas"
+      - "Saldo final"
+      - "Data"
+      - "Descrição do lançamento bancário"
+      - "Conciliação bancária"
+      - "Valor"
+      - "Saldo"
+      - "SALDO ANTERIOR"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "Saldo anterior"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - reconciliation_status
+      - balance
+      - document
+      - transaction_id
+  sign_rules:
+    priority_order:
+      - "explicit_negative_currency_prefix"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "Pagamento de PIX"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem prefixo '- R$'"
+    cautions:
+      - "Não usar a palavra PIX isoladamente para sinal."
+      - "Não importar linhas de saldo como transações."
+      - "Status 'Conciliado' não determina entrada/saída."
+      - "Se valor vier sem sinal, aplicar regra geral de positivo somente se não houver outro indicador no layout real."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_case_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Pagamento de PIX"
+        category: "pix_enviado"
+        inferred: true
+    transfer_hints:
+      - pattern: "Pagamento de PIX"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "Recebimento de PIX"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa"
+        category: "tarifa"
+        inferred: true
+      - pattern: "Taxa"
+        category: "taxa_servico"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "Data"
+      - "Descrição do lançamento bancário"
+      - "Valor"
+      - "Saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "when saldo rows and balance column values are available, validate transactions between saldo rows; otherwise validate aggregate using summary totals"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "row_description_is_saldo_like"
+      - "amount_without_sign_and_description_ambiguous"
+      - "balance_column_masked_or_missing"
+      - "reconciliation_status_missing_or_unrecognized"
+      - "ocr_confidence_low_on_negative_prefix"
+      - "summary_total_conflicts_with_transaction_sum"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "01/08/2024"
+        raw_description: "Saldo anterior"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo anterior; não importar como transação"
+      - raw_date: "01/08/2024"
+        raw_description: "Pagamento de PIX"
+        raw_document: unknown
+        raw_amount: "- R$ 70,00"
+        raw_balance: unknown
+        normalized_amount: "-70.00"
+        should_import_as_transaction: true
+        notes: "Débito explícito pelo prefixo '- R$'; status Conciliado"
+      - raw_date: "01/08/2024"
+        raw_description: "Pagamento de PIX"
+        raw_document: unknown
+        raw_amount: "- R$ 211,00"
+        raw_balance: unknown
+        normalized_amount: "-211.00"
+        should_import_as_transaction: true
+        notes: "Débito explícito pelo prefixo '- R$'; status Conciliado"
+      - raw_date: "01/08/2024"
+        raw_description: "Pagamento de PIX"
+        raw_document: unknown
+        raw_amount: "- R$ 453,25"
+        raw_balance: unknown
+        normalized_amount: "-453.25"
+        should_import_as_transaction: true
+        notes: "Débito explícito pelo prefixo '- R$'; status Conciliado"
+      - raw_date: "02/08/2024"
+        raw_description: "Saldo"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo diário; não importar como transação"
+  implementation_notes:
+    - "Classificar pelo título 'Extrato Conta PJ' e pela instituição IUGU."
+    - "Usar a tabela Data/Descrição/Conciliação/Valor/Saldo como estrutura principal."
+    - "Filtrar linhas 'Saldo anterior' e 'Saldo' antes de importar transações."
+    - "Usar '- R$' como regra primária para débito."
+    - "Preservar o status de conciliação como metadado opcional."
+    - "Não exigir documento por transação."
+    - "Validar com PDF real se a coluna Saldo vem preenchida e como créditos aparecem."

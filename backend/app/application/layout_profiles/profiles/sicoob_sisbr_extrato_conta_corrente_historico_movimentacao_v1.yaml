@@ -1,0 +1,425 @@
+meta_model:
+  layout_id: sicoob_sisbr_extrato_conta_corrente_historico_movimentacao_v1
+  bank: Sicoob
+  channel: SISBR
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Cabeçalho central 'SICOOB'"
+      - "Texto 'SISTEMA DE COOPERATIVAS DE CRÉDITO DO BRASIL'"
+      - "Texto 'PLATAFORMA DE SERVIÇOS FINANCEIROS DO SICOOB - SISBR'"
+      - "Título 'EXTRATO CONTA CORRENTE'"
+      - "Data de emissão visível: '27/05/2024'"
+      - "Hora de emissão visível: '16:12:12'"
+      - "Campos 'COOP.', 'CONTA:' e 'PERÍODO: 01/04/2024 - 30/04/2024'"
+      - "Subtítulo da tabela 'HISTÓRICO DE MOVIMENTAÇÃO'"
+      - "Tabela simplificada com colunas 'DATA', 'HISTÓRICO' e 'VALOR'"
+      - "Valores usam sufixo 'C' para crédito e 'D' para débito"
+      - "Débitos aparecem visualmente em vermelho com sufixo D"
+      - "Créditos aparecem visualmente em azul com sufixo C"
+      - "Linhas de saldo como 'SALDO ANTERIOR' e 'SALDO BLOQ ANTERIOR'"
+      - "Linhas com Pix: 'PIX EMIT.OUTRA IF' e 'TRANSF. PIX SICOOB'"
+      - "Linhas complementares como 'DOC.: Pix' e 'DOC.: 8472838'"
+    weak:
+      - "Dados de cooperativa e conta estão ocultos ou ilegíveis"
+      - "Não há coluna Documento formal; documentos aparecem em linhas complementares"
+      - "Não há coluna de saldo separada"
+      - "Descrições podem ser multi-linha e ter detalhes ocultos"
+      - "As datas aparecem no formato dd/MM sem ano, exigindo inferência do período"
+    table_headers:
+      - "DATA"
+      - "HISTÓRICO"
+      - "VALOR"
+  page_structure:
+    header:
+      bank_logo: "SICOOB"
+      institution: "Sistema de Cooperativas de Crédito do Brasil"
+      platform: "Plataforma de Serviços Financeiros do Sicoob - SISBR"
+      title: "EXTRATO CONTA CORRENTE"
+      generated_date: "27/05/2024"
+      generated_time: "16:12:12"
+      account_identifiers:
+        cooperative: unknown
+        account: unknown
+    metadata:
+      period: "01/04/2024 - 30/04/2024"
+      start_date: "01/04/2024"
+      end_date: "30/04/2024"
+    transactions_table:
+      representation: "simplified_history_table_with_document_continuation_lines"
+      section_title: "HISTÓRICO DE MOVIMENTAÇÃO"
+      columns:
+        - "DATA"
+        - "HISTÓRICO"
+        - "VALOR"
+      visible_rows:
+        - type: opening_balance
+          date: "28/03/2024"
+          description: "SALDO ANTERIOR"
+          document: unknown
+          amount: "3.963,57 C"
+          balance: "3.963,57 C"
+        - type: balance_row
+          date: "28/03/2024"
+          description: "SALDO BLOQ ANTERIOR"
+          document: unknown
+          amount: "0,00*"
+          balance: "0,00*"
+        - type: normal_transaction
+          date: "01/04/2024"
+          description: "PIX EMIT.OUTRA IF"
+          complement: "DOC.: Pix"
+          document: "Pix"
+          amount: "503,58 D"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/04/2024"
+          description: "TRANSF. PIX SICOOB"
+          complement: "DOC.: 8472838"
+          document: "8472838"
+          amount: "310,00 D"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+        - "SALDO BLOQ ANTERIOR"
+        - "SALDO BLOQUEADO ANTERIOR"
+        - "SALDO DO DIA"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: "VALOR column on saldo rows"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_document_continuation_line: true
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor termina com sufixo 'C'"
+      negative_when:
+        - "Valor termina com sufixo 'D'"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      saldo_rows_use_value_column: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "*"
+        reason: "Não há créditos normais visíveis no recorte; apenas saldo anterior com sufixo C"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "PIX EMIT.OUTRA IF"
+        reason: "Linha visível possui sufixo D"
+        inferred: false
+      - pattern: "TRANSF. PIX SICOOB"
+        reason: "Linha visível possui sufixo D"
+        inferred: false
+    caution:
+      - "Não importar 'SALDO ANTERIOR' nem 'SALDO BLOQ ANTERIOR' como transações."
+      - "O sinal deve ser definido pelo sufixo C/D na coluna VALOR."
+      - "Não usar Pix isoladamente para sinal; neste recorte Pix é débito por sufixo D."
+      - "Linhas 'DOC.:' devem ser associadas à transação anterior, não importadas como nova transação."
+      - "Datas dd/MM devem receber o ano a partir do período do extrato."
+      - "O valor '0,00*' deve ser tratado como anotação de saldo bloqueado, não como transação."
+  visual_model:
+    table_anchor:
+      starts_after_text: "HISTÓRICO DE MOVIMENTAÇÃO"
+      header_keywords:
+        - "DATA"
+        - "HISTÓRICO"
+        - "VALOR"
+    column_order:
+      - date
+      - description
+      - amount
+    row_behavior:
+      separator: "alternating light gray bands"
+      date_format_without_year: true
+      continuation_lines_without_date: true
+      document_continuation_prefix: "DOC.:"
+      amount_right_aligned: true
+      credit_debit_suffix: true
+      credit_color_hint: "blue"
+      debit_color_hint: "red"
+      no_document_column: true
+      no_balance_column: true
+  parser_risks:
+    ambiguities:
+      - "Não há coluna DOCUMENTO; documentos aparecem como linhas complementares 'DOC.:'."
+      - "Linhas complementares podem ser confundidas com novas transações se o parser exigir data."
+      - "Datas aparecem sem ano no corpo; o ano precisa ser derivado do período."
+      - "Não há saldo por transação."
+      - "Algumas descrições ou dados intermediários podem estar ocultos/ilegíveis."
+    fields_that_may_be_missing:
+      - "balance"
+      - "cooperative"
+      - "account"
+      - "document"
+      - "full_description"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual mantém as linhas 'DOC.:' imediatamente após o lançamento correto."
+      - "Se todos os valores transacionais usam sufixo C/D."
+      - "Se há lançamentos positivos normais neste layout e como aparecem."
+      - "Se existem saldos do dia/final no documento completo."
+      - "Se o cabeçalho se repete em páginas seguintes."
+      - "Como descrições longas e dados de contraparte são quebrados em múltiplas linhas."
+
+layout_profile:
+  profile_name: sicoob_sisbr_extrato_conta_corrente_historico_movimentacao_v1
+  bank: Sicoob
+  layout_family: sicoob_sisbr_extrato_historico_movimentacao_dc_suffix
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "SICOOB"
+      - "SISTEMA DE COOPERATIVAS DE CRÉDITO DO BRASIL"
+      - "PLATAFORMA DE SERVIÇOS FINANCEIROS DO SICOOB - SISBR"
+      - "EXTRATO CONTA CORRENTE"
+      - "COOP."
+      - "CONTA"
+      - "PERÍODO"
+      - "HISTÓRICO DE MOVIMENTAÇÃO"
+      - "DATA"
+      - "HISTÓRICO"
+      - "VALOR"
+    optional_keywords:
+      - "SALDO ANTERIOR"
+      - "SALDO BLOQ ANTERIOR"
+      - "PIX EMIT.OUTRA IF"
+      - "TRANSF. PIX SICOOB"
+      - "DOC.: Pix"
+      - "DOC.:"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "contasimples"
+      - "CRESOL"
+      - "infinitepay"
+      - "inter"
+      - "GRAFENO"
+      - "mercado pago"
+      - "PagBank"
+      - "PicPay"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.9
+  table_detection:
+    header_keywords:
+      - "DATA"
+      - "HISTÓRICO"
+      - "VALOR"
+    expected_column_order:
+      - date
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "DATA"
+        - "Data"
+      description:
+        - "HISTÓRICO"
+        - "Histórico"
+        - "Historico"
+      document:
+        - "DOC.:"
+        - "Documento"
+        - "Doc."
+      amount:
+        - "VALOR"
+        - "Valor"
+      balance:
+        - "SALDO"
+        - "Saldo"
+    table_starts_after:
+      - "HISTÓRICO DE MOVIMENTAÇÃO"
+      - "DATA HISTÓRICO VALOR"
+    row_separator_hint: "main row starts with dd/MM; continuation row starts with DOC.: and should be merged into previous transaction"
+  parsing:
+    date_format: "dd/MM"
+    date_year_source: "statement_period"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount}D"
+      - "{amount} D"
+      - "D {amount}"
+    positive_patterns:
+      - "{amount}C"
+      - "{amount} C"
+      - "C {amount}"
+    ignore_rows:
+      - "SICOOB"
+      - "SISTEMA DE COOPERATIVAS DE CRÉDITO DO BRASIL"
+      - "PLATAFORMA DE SERVIÇOS FINANCEIROS DO SICOOB - SISBR"
+      - "EXTRATO CONTA CORRENTE"
+      - "COOP."
+      - "CONTA"
+      - "PERÍODO"
+      - "HISTÓRICO DE MOVIMENTAÇÃO"
+      - "DATA"
+      - "HISTÓRICO"
+      - "VALOR"
+      - "SALDO ANTERIOR"
+      - "SALDO BLOQ ANTERIOR"
+      - "SALDO BLOQUEADO ANTERIOR"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO BLOQ ANTERIOR"
+      - "SALDO BLOQUEADO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - complement
+      - balance
+  sign_rules:
+    priority_order:
+      - "credit_debit_suffix_C_D"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "description_based_hint"
+      - "color_hint_if_available"
+    description_based_overrides:
+      - pattern: "PIX EMIT.OUTRA IF"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sufixo D"
+      - pattern: "TRANSF. PIX SICOOB"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sufixo D"
+    cautions:
+      - "Sufixo C/D deve prevalecer sobre descrição e cor."
+      - "Não usar Pix isoladamente para definir sinal."
+      - "Não interpretar asterisco como sinal."
+      - "Se valor não tiver sufixo C/D, marcar para revisão."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "merge_doc_continuation_lines"
+      - "normalize_uppercase_optional"
+      - "preserve_bank_abbreviations"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "PIX EMIT.OUTRA IF"
+        category: "pix_enviado_outra_if"
+        inferred: true
+      - pattern: "TRANSF. PIX SICOOB"
+        category: "pix_enviado_sicoob"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX EMIT.OUTRA IF"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "TRANSF. PIX SICOOB"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+  validation:
+    expected_min_columns: 3
+    reject_if_missing_headers:
+      - "DATA"
+      - "HISTÓRICO"
+      - "VALOR"
+    balance_consistency_check:
+      enabled: false
+      method: "not_available_without_per_row_balance; can validate using saldo anterior and saldo final when full statement is available"
+      tolerance: unknown
+    needs_manual_review_when:
+      - "amount_without_C_or_D_suffix"
+      - "doc_continuation_line_not_merged"
+      - "saldo_row_detected_as_transaction"
+      - "asterisk_amount_detected"
+      - "date_year_context_missing"
+      - "ocr_confidence_low_on_C_D_suffix"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "28/03"
+        raw_description: "SALDO ANTERIOR"
+        raw_document: unknown
+        raw_amount: "3.963,57 C"
+        raw_balance: "3.963,57 C"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo anterior; não importar"
+      - raw_date: "28/03"
+        raw_description: "SALDO BLOQ ANTERIOR"
+        raw_document: unknown
+        raw_amount: "0,00*"
+        raw_balance: "0,00*"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo bloqueado; asterisco é anotação"
+      - raw_date: "01/04"
+        raw_description: "PIX EMIT.OUTRA IF | DOC.: Pix"
+        raw_document: "Pix"
+        raw_amount: "503,58D"
+        raw_balance: unknown
+        normalized_amount: "-503.58"
+        should_import_as_transaction: true
+        notes: "Débito Pix explícito pelo sufixo D; documento vem em linha complementar"
+      - raw_date: "01/04"
+        raw_description: "TRANSF. PIX SICOOB | DOC.: 8472838"
+        raw_document: "8472838"
+        raw_amount: "310,00D"
+        raw_balance: unknown
+        normalized_amount: "-310.00"
+        should_import_as_transaction: true
+        notes: "Débito Pix explícito pelo sufixo D; documento vem em linha complementar"
+  implementation_notes:
+    - "Classificar por SICOOB/SISBR e subtítulo 'HISTÓRICO DE MOVIMENTAÇÃO'."
+    - "Este layout é diferente dos modelos Sicoob com coluna DOCUMENTO formal; aqui o documento vem em linhas 'DOC.:'."
+    - "Usar o período para completar o ano das datas dd/MM."
+    - "Usar sufixo C/D como regra primária de sinal."
+    - "Filtrar linhas de saldo antes de importar."
+    - "Associar linhas 'DOC.:' à transação anterior."
+    - "Validar com PDF real se todas as transações possuem linhas complementares e como créditos aparecem."

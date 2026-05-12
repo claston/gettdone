@@ -1,0 +1,380 @@
+meta_model:
+  layout_id: tribanco_extrato_lista_pix_recebidos_v1
+  bank: Tribanco
+  channel: unknown
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'tribanco' visível no topo direito"
+      - "Cabeçalho com 'Extrato - CNPJ:'"
+      - "Cabeçalho com 'Gerado em 04/02/2025 09:12:10'"
+      - "Layout em lista, sem tabela tradicional"
+      - "Agrupamento de data à esquerda, exemplo '04' e 'fev/25'"
+      - "Valores monetários em verde com prefixo 'R$'"
+      - "Descrição repetida 'CRED CTA CLIENTE RECEB PIX QR'"
+      - "Linhas separadas por divisórias horizontais cinza"
+    weak:
+      - "CNPJ está oculto ou ilegível"
+      - "Não há agência, conta, documento, saldo ou contraparte visíveis no recorte"
+      - "Não há exemplo de débito visível"
+      - "Não há cabeçalho de colunas"
+      - "A data completa precisa ser montada a partir do dia e do mês/ano do agrupador"
+    table_headers: []
+  page_structure:
+    header:
+      bank_logo: "tribanco"
+      title: "Extrato"
+      account_identifiers:
+        cnpj: unknown
+        agency: unknown
+        account: unknown
+      generated_at: "04/02/2025 09:12:10"
+    metadata:
+      period: unknown
+      visible_date_group:
+        day: "04"
+        month_year: "fev/25"
+        normalized_date: "04/02/2025"
+    transactions_table:
+      representation: "grouped_list_without_header"
+      columns_inferred:
+        - "date_group"
+        - "amount"
+        - "description"
+      visible_rows:
+        - type: normal_transaction
+          date: "04/02/2025"
+          description: "CRED CTA CLIENTE RECEB PIX QR"
+          document: unknown
+          amount: "R$ 8,99"
+          balance: unknown
+        - type: normal_transaction
+          date: "04/02/2025"
+          description: "CRED CTA CLIENTE RECEB PIX QR"
+          document: unknown
+          amount: "R$ 7,99"
+          balance: unknown
+        - type: normal_transaction
+          date: "04/02/2025"
+          description: "CRED CTA CLIENTE RECEB PIX QR"
+          document: unknown
+          amount: "R$ 6,99"
+          balance: unknown
+        - type: normal_transaction
+          date: "04/02/2025"
+          description: "CRED CTA CLIENTE RECEB PIX QR"
+          document: unknown
+          amount: "R$ 5,99"
+          balance: unknown
+        - type: normal_transaction
+          date: "04/02/2025"
+          description: "CRED CTA CLIENTE RECEB PIX QR"
+          document: unknown
+          amount: "R$ 17,18"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+        - "SALDO INICIAL"
+        - "SALDO DO DIA"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: unknown
+      inferred: true
+    normal_transaction:
+      row_has_date_context: true
+      row_has_description: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece sem sinal negativo"
+        - "Valor aparece em verde"
+        - "Descrição contém 'CRED' e valor não possui sinal negativo"
+      negative_when:
+        - "Valor aparece com sinal '-'"
+        - "Valor aparece com indicador textual de débito, se presente no PDF real"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      no_balance_visible_in_image: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "CRED CTA CLIENTE RECEB PIX QR"
+        reason: "Linhas visíveis possuem valor positivo em verde e descrição com 'CRED'/'RECEB PIX'"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "*"
+        reason: "Não há exemplos de débito visíveis; validar como débitos são exibidos no PDF real"
+        inferred: true
+    caution:
+      - "Este layout não possui tabela com colunas; é uma lista agrupada por data."
+      - "A data deve ser propagada do agrupador para todas as linhas abaixo até o próximo agrupador."
+      - "Não inferir sinal apenas por Pix em outros casos; aqui o padrão 'CRED' e a ausência de sinal negativo indicam entrada."
+      - "Não há saldo por transação, documento ou contraparte no recorte."
+      - "Validar com PDF real como débitos, saldos e outros tipos de lançamento aparecem."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Extrato - CNPJ"
+      header_keywords: []
+      group_by_date: true
+    column_order:
+      - date_group
+      - amount
+      - description
+    row_behavior:
+      separator: "horizontal light gray lines between transaction cards"
+      date_group_left_column: true
+      amount_above_description: true
+      amount_left_aligned_with_description: true
+      positive_amount_color: "green"
+      description_uppercase_spaced: true
+      no_document_column: true
+      no_balance_column: true
+  parser_risks:
+    ambiguities:
+      - "Não há cabeçalho de colunas; a segmentação depende de estrutura visual e divisórias."
+      - "A data aparece apenas uma vez como agrupador lateral; precisa ser propagada para as transações subsequentes."
+      - "Não há exemplo de débito para confirmar sinal/cor em saídas."
+      - "Não há saldo por linha ou saldo do dia visível."
+      - "Não há documento, ID ou contraparte visíveis."
+    fields_that_may_be_missing:
+      - "document"
+      - "balance"
+      - "counterparty"
+      - "transaction_id"
+      - "agency"
+      - "account"
+      - "period"
+      - "cnpj"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual preserva a relação entre agrupador de data e linhas."
+      - "Como débitos são exibidos: sinal negativo, cor, descrição ou outro marcador."
+      - "Se há linhas de saldo inicial/final ou saldo do dia em outros trechos."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Se há paginação e repetição do cabeçalho."
+      - "Se valores positivos sempre aparecem sem sinal e em verde."
+
+layout_profile:
+  profile_name: tribanco_extrato_lista_pix_recebidos_v1
+  bank: Tribanco
+  layout_family: tribanco_extrato_lista_grouped_transactions
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "tribanco"
+      - "Extrato"
+      - "CNPJ"
+      - "Gerado em"
+      - "R$"
+    optional_keywords:
+      - "CRED CTA CLIENTE RECEB PIX QR"
+      - "RECEB PIX"
+      - "PIX QR"
+      - "fev/25"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.8
+  table_detection:
+    header_keywords: []
+    expected_column_order:
+      - date_group
+      - amount
+      - description
+    column_aliases:
+      date:
+        - "date_group"
+        - "Data"
+      description:
+        - "description"
+        - "Descrição"
+        - "Histórico"
+        - "Lançamento"
+      document:
+        - "Documento"
+        - "Doc."
+      amount:
+        - "R$"
+        - "Valor"
+      balance:
+        - "Saldo"
+    table_starts_after:
+      - "Gerado em"
+      - "Extrato - CNPJ"
+    row_separator_hint: "date group at far left with day and month/year; each transaction has amount in green above description"
+  parsing:
+    date_format: "dd/MMM/yy"
+    month_language: "pt-BR"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-R$ {amount}"
+      - "R$ -{amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+      - "{amount_without_minus}"
+      - "green_amount_without_minus"
+    ignore_rows:
+      - "tribanco"
+      - "Extrato"
+      - "CNPJ"
+      - "Gerado em"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+      - counterparty
+      - transaction_id
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "visual_color_when_available"
+      - "description_based_hint"
+      - "aggregate_balance_consistency"
+    description_based_overrides:
+      - pattern: "CRED CTA CLIENTE RECEB PIX QR"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Descrição contém CRED/RECEB PIX e valores visíveis estão positivos em verde"
+    cautions:
+      - "Não usar apenas a palavra PIX para definir sinal em outros lançamentos."
+      - "Se valor vier sem sinal e sem cor/metadado, aplicar regra geral de positivo, mas validar com descrição e saldo agregado quando possível."
+      - "Se data group não for detectado, marcar para revisão manual."
+      - "Sem saldo por linha, validação por saldo é limitada."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+      - "preserve_bank_abbreviations"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "CRED CTA CLIENTE RECEB PIX QR"
+        category: "pix_recebido_qr_code"
+        inferred: true
+    transfer_hints:
+      - pattern: "RECEB PIX"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "PIX QR"
+        category: "pix_qr_code"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 2
+    reject_if_missing_headers:
+      - "tribanco"
+      - "Extrato"
+      - "R$"
+    balance_consistency_check:
+      enabled: false
+      method: "not_available_without_balance_or_period_totals_in_visible_layout"
+      tolerance: unknown
+    needs_manual_review_when:
+      - "date_group_missing"
+      - "amount_without_sign_and_description_not_credit_like"
+      - "debit_representation_unknown"
+      - "description_line_wrap_detected"
+      - "ocr_confidence_low_on_date_group"
+      - "document_or_counterparty_required_by_downstream"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "04/fev/25"
+        raw_description: "CRED CTA CLIENTE RECEB PIX QR"
+        raw_document: unknown
+        raw_amount: "R$ 8,99"
+        raw_balance: unknown
+        normalized_amount: "8.99"
+        should_import_as_transaction: true
+        notes: "Crédito Pix por QR; data normalizada para 04/02/2025"
+      - raw_date: "04/fev/25"
+        raw_description: "CRED CTA CLIENTE RECEB PIX QR"
+        raw_document: unknown
+        raw_amount: "R$ 7,99"
+        raw_balance: unknown
+        normalized_amount: "7.99"
+        should_import_as_transaction: true
+        notes: "Crédito Pix por QR"
+      - raw_date: "04/fev/25"
+        raw_description: "CRED CTA CLIENTE RECEB PIX QR"
+        raw_document: unknown
+        raw_amount: "R$ 6,99"
+        raw_balance: unknown
+        normalized_amount: "6.99"
+        should_import_as_transaction: true
+        notes: "Crédito Pix por QR"
+      - raw_date: "04/fev/25"
+        raw_description: "CRED CTA CLIENTE RECEB PIX QR"
+        raw_document: unknown
+        raw_amount: "R$ 5,99"
+        raw_balance: unknown
+        normalized_amount: "5.99"
+        should_import_as_transaction: true
+        notes: "Crédito Pix por QR"
+      - raw_date: "04/fev/25"
+        raw_description: "CRED CTA CLIENTE RECEB PIX QR"
+        raw_document: unknown
+        raw_amount: "R$ 17,18"
+        raw_balance: unknown
+        normalized_amount: "17.18"
+        should_import_as_transaction: true
+        notes: "Crédito Pix por QR"
+  implementation_notes:
+    - "Classificar pelo logo Tribanco e cabeçalho 'Extrato - CNPJ - Gerado em'."
+    - "Este layout é lista agrupada por data, não tabela."
+    - "Propagar data do grupo lateral para os lançamentos abaixo."
+    - "Converter mês textual pt-BR, como 'fev', para número do mês."
+    - "Não exigir documento, contraparte ou saldo por transação."
+    - "Usar sinal explícito quando existir; valores sem negativo e com CRED/RECEB PIX são positivos neste layout."
+    - "Validar com PDF real como débitos e saldos são apresentados."

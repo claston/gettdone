@@ -1,0 +1,432 @@
+meta_model:
+  layout_id: conta_simples_extrato_credito_debito_saldo_v1
+  bank: Conta Simples
+  channel: Conta Simples
+  statement_type: conta_digital_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'contasimples' visível no topo"
+      - "Título 'Extrato de'"
+      - "Período explícito: 'Período entre 01/04/2024 e 30/04/2024'"
+      - "Data/hora de extração: 'Extraído em 20/05/2024 às 15:50'"
+      - "Campo 'conta número'"
+      - "Tabela com colunas 'Data', 'Histórico', 'Crédito', 'Débito', 'Saldo' e 'Situação'"
+      - "Crédito e débito aparecem em colunas separadas"
+      - "Linhas de PIX enviado possuem crédito zerado e débito preenchido"
+      - "Linhas de rentabilidade possuem crédito preenchido e débito zerado"
+      - "Saldo por linha visível na coluna 'Saldo'"
+    weak:
+      - "Número da conta e parte de algumas descrições estão ocultos ou ilegíveis"
+      - "Coluna 'Situação' existe, mas não há valores visíveis no recorte"
+      - "Históricos de PIX podem ter continuação em segunda linha, parcialmente ocultada"
+      - "Valores usam prefixo 'R$' e padrão brasileiro, mas alguns centavos parecem com um dígito no recorte"
+      - "Não há sinal negativo explícito; sinal é definido pelas colunas Crédito/Débito"
+    table_headers:
+      - "Data"
+      - "Histórico"
+      - "Crédito"
+      - "Débito"
+      - "Saldo"
+      - "Situação"
+  page_structure:
+    header:
+      bank_logo: "contasimples"
+      title: "Extrato de"
+      account_identifiers:
+        account_number: unknown
+    metadata:
+      period: "01/04/2024 e 30/04/2024"
+      start_date: "01/04/2024"
+      end_date: "30/04/2024"
+      extracted_at: "20/05/2024 às 15:50"
+    transactions_table:
+      header_background: "white"
+      banded_rows: true
+      columns:
+        - "Data"
+        - "Histórico"
+        - "Crédito"
+        - "Débito"
+        - "Saldo"
+        - "Situação"
+      visible_rows:
+        - type: normal_transaction
+          date: "30/04/2024"
+          description: "PIX Enviado para"
+          document: unknown
+          credit: "R$ 0,00"
+          debit: "R$ 650,00"
+          balance: "R$ 24.128,61"
+          status: unknown
+        - type: normal_transaction
+          date: "30/04/2024"
+          description: "Rentabilidade CDI"
+          document: unknown
+          credit: "R$ 9,06"
+          debit: "R$ 0,00"
+          balance: "R$ 24.778,61"
+          status: unknown
+        - type: normal_transaction
+          date: "29/04/2024"
+          description: "Rentabilidade CDI"
+          document: unknown
+          credit: "R$ 2,34"
+          debit: "R$ 0,00"
+          balance: "R$ 24.769,55"
+          status: unknown
+        - type: normal_transaction
+          date: "28/04/2024"
+          description: "PIX Enviado para"
+          document: unknown
+          credit: "R$ 0,00"
+          debit: "R$ 100,00"
+          balance: "R$ 24.767,21"
+          status: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo anterior"
+        - "SALDO ANTERIOR"
+        - "Saldo inicial"
+        - "SALDO INICIAL"
+      should_import_as_transaction: false
+      balance_source: "Saldo"
+      inferred: true
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_has_credit_column: true
+      row_has_debit_column: true
+      row_has_balance: true
+      row_may_have_status: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Coluna Crédito possui valor maior que zero"
+      negative_when:
+        - "Coluna Débito possui valor maior que zero"
+      zero_when:
+        - "Crédito e Débito são R$ 0,00"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "Saldo"
+      balance_after_transaction: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "Rentabilidade CDI"
+        reason: "Linhas visíveis possuem valor na coluna Crédito e débito R$ 0,00"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "PIX Enviado para"
+        reason: "Linhas visíveis possuem valor na coluna Débito e crédito R$ 0,00"
+        inferred: false
+    caution:
+      - "Este layout usa colunas separadas para Crédito e Débito; não aplicar sinal apenas pelo texto do histórico."
+      - "Não importar linhas de saldo, se aparecerem, como transações."
+      - "Débitos aparecem sem sinal negativo explícito; devem ser normalizados como negativos pela coluna Débito."
+      - "Crédito e Débito podem ter R$ 0,00 em lados opostos; não usar o zero como valor da transação."
+      - "Históricos podem quebrar em segunda linha e conter contraparte/identificador oculto."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Data Histórico Crédito Débito Saldo Situação"
+      header_keywords:
+        - "Data"
+        - "Histórico"
+        - "Crédito"
+        - "Débito"
+        - "Saldo"
+        - "Situação"
+    column_order:
+      - date
+      - description
+      - credit
+      - debit
+      - balance
+      - status
+    row_behavior:
+      separator: "alternating light gray and white bands"
+      date_repeated_per_transaction: true
+      description_left_aligned: true
+      credit_right_aligned: true
+      debit_right_aligned: true
+      balance_right_aligned: true
+      status_column_may_be_blank: true
+      description_may_wrap_to_second_line: true
+  parser_risks:
+    ambiguities:
+      - "A coluna Situação está presente, mas sem valores visíveis no recorte."
+      - "Históricos de PIX parecem ter uma segunda linha com informações ocultas; parser deve preservar ou concatenar quando disponível."
+      - "Não há exemplo de linha de saldo anterior/final na parte visível da tabela."
+      - "Alguns valores no recorte parecem ter formatação visual com centavos de um dígito; validar OCR com PDF real."
+      - "O campo 'conta número' está oculto."
+    fields_that_may_be_missing:
+      - "account_number"
+      - "status"
+      - "document"
+      - "counterparty"
+      - "transaction_id"
+      - "full_description"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual preserva separação entre Crédito, Débito, Saldo e Situação."
+      - "Se há transações com crédito e débito ambos preenchidos."
+      - "Se a descrição de PIX sempre quebra em múltiplas linhas."
+      - "Se existem linhas de saldo inicial/final e totais."
+      - "Se a coluna Situação traz status útil, como efetivado, agendado ou cancelado."
+      - "Se saldos são após cada transação e permitem validação sequencial."
+
+layout_profile:
+  profile_name: conta_simples_extrato_credito_debito_saldo_v1
+  bank: Conta Simples
+  layout_family: conta_simples_extrato_credito_debito_saldo
+  statement_type: conta_digital_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "contasimples"
+      - "Extrato de"
+      - "Período entre"
+      - "Extraído em"
+      - "conta número"
+      - "Data"
+      - "Histórico"
+      - "Crédito"
+      - "Débito"
+      - "Saldo"
+      - "Situação"
+    optional_keywords:
+      - "PIX Enviado para"
+      - "Rentabilidade CDI"
+      - "R$ 0,00"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Histórico"
+      - "Crédito"
+      - "Débito"
+      - "Saldo"
+      - "Situação"
+    expected_column_order:
+      - date
+      - description
+      - credit
+      - debit
+      - balance
+      - status
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Histórico"
+        - "Historico"
+        - "Descrição"
+        - "Lançamento"
+      document:
+        - "Documento"
+        - "Doc."
+        - "ID"
+      amount:
+        - "Crédito"
+        - "Débito"
+        - "Valor"
+      credit:
+        - "Crédito"
+        - "Credito"
+      debit:
+        - "Débito"
+        - "Debito"
+      balance:
+        - "Saldo"
+      status:
+        - "Situação"
+        - "Situacao"
+        - "Status"
+    table_starts_after:
+      - "Data Histórico Crédito Débito Saldo Situação"
+      - "conta número"
+    row_separator_hint: "transaction row starts when first column contains dd/MM/yyyy; description may wrap inside the same row"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "value_in_debit_column"
+    positive_patterns:
+      - "value_in_credit_column"
+    ignore_rows:
+      - "contasimples"
+      - "Extrato de"
+      - "Período entre"
+      - "Extraído em"
+      - "conta número"
+      - "Data"
+      - "Histórico"
+      - "Crédito"
+      - "Débito"
+      - "Saldo"
+      - "Situação"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "Saldo anterior"
+      - "Saldo inicial"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - credit
+      - debit
+      - balance
+      - status
+      - document
+      - counterparty
+  sign_rules:
+    priority_order:
+      - "credit_or_debit_column"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "PIX Enviado para"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem débito preenchido e crédito zerado"
+      - pattern: "Rentabilidade CDI"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem crédito preenchido e débito zerado"
+    cautions:
+      - "Não aplicar negativo duas vezes se o valor da coluna Débito já vier com sinal em PDF real."
+      - "Não usar histórico como fonte primária quando as colunas Crédito/Débito estiverem presentes."
+      - "Se crédito e débito estiverem ambos preenchidos com valor maior que zero, marcar para revisão."
+      - "Se crédito e débito forem R$ 0,00, não importar como transação monetária sem outra evidência."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "merge_wrapped_description_lines"
+      - "normalize_case_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "PIX Enviado para"
+        category: "pix_enviado"
+        inferred: true
+      - pattern: "Rentabilidade CDI"
+        category: "rendimento_investimento"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX Enviado"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "PIX Recebido"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa"
+        category: "tarifa"
+        inferred: true
+      - pattern: "Taxa"
+        category: "taxa_servico"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 6
+    reject_if_missing_headers:
+      - "Data"
+      - "Histórico"
+      - "Crédito"
+      - "Débito"
+      - "Saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "current_balance_equals_previous_balance_plus_credit_minus_debit; ignore zero side of credit/debit pair"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "both_credit_and_debit_positive"
+      - "credit_and_debit_both_zero"
+      - "balance_consistency_fails"
+      - "description_wrap_not_merged"
+      - "status_column_has_unrecognized_value"
+      - "ocr_confidence_low_on_credit_debit_columns"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "30/04/2024"
+        raw_description: "PIX Enviado para"
+        raw_document: unknown
+        raw_amount: "Débito R$ 650,00"
+        raw_balance: "R$ 24.128,61"
+        normalized_amount: "-650.00"
+        should_import_as_transaction: true
+        notes: "Débito preenchido e crédito R$ 0,00; segunda linha da descrição pode conter favorecido"
+      - raw_date: "30/04/2024"
+        raw_description: "Rentabilidade CDI"
+        raw_document: unknown
+        raw_amount: "Crédito R$ 9,06"
+        raw_balance: "R$ 24.778,61"
+        normalized_amount: "9.06"
+        should_import_as_transaction: true
+        notes: "Crédito preenchido e débito R$ 0,00"
+      - raw_date: "29/04/2024"
+        raw_description: "Rentabilidade CDI"
+        raw_document: unknown
+        raw_amount: "Crédito R$ 2,34"
+        raw_balance: "R$ 24.769,55"
+        normalized_amount: "2.34"
+        should_import_as_transaction: true
+        notes: "Crédito preenchido e débito R$ 0,00"
+      - raw_date: "28/04/2024"
+        raw_description: "PIX Enviado para"
+        raw_document: unknown
+        raw_amount: "Débito R$ 100,00"
+        raw_balance: "R$ 24.767,21"
+        normalized_amount: "-100.00"
+        should_import_as_transaction: true
+        notes: "Débito preenchido e crédito R$ 0,00"
+  implementation_notes:
+    - "Classificar pelo logo Conta Simples e pelas colunas Crédito/Débito/Saldo/Situação."
+    - "Usar colunas Crédito e Débito como regra primária de sinal."
+    - "Calcular normalized_amount como crédito - débito."
+    - "Não exigir documento por transação."
+    - "Concatenar linhas de descrição quebradas quando pertencerem à mesma transação."
+    - "Validar com saldo sequencial quando os saldos estiverem disponíveis."

@@ -1,0 +1,342 @@
+meta_model:
+  layout_id: cora_extrato_periodo_transacoes_v1
+  bank: Cora
+  channel: Cora
+  statement_type: conta_digital_extrato_periodo
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'cora' visível no topo direito"
+      - "Campos 'CNPJ', 'Agência' e 'Conta' no cabeçalho"
+      - "Título 'Extrato do período'"
+      - "Resumo com 'Saldo inicial do período', 'Total de entradas', 'Total de saídas' e 'Saldo final do período'"
+      - "Seção 'Transações'"
+      - "Transações agrupadas por data, exemplo '24/01/2023'"
+      - "Linha de saldo diário: 'Saldo do dia R$ 940,28'"
+      - "Valor de saída visível com prefixo '- R$'"
+      - "Descrição de transação visível: 'Transf Pix enviada'"
+    weak:
+      - "Valores do resumo estão parcialmente ocultos ou ilegíveis"
+      - "Não há tabela clássica com cabeçalho de colunas"
+      - "Não há documento, ID de transação, contraparte ou saldo por transação visível no recorte"
+      - "Apenas um exemplo de transação de saída é visível"
+      - "O layout parece extrato PDF/web da conta digital Cora"
+    table_headers: []
+  page_structure:
+    header:
+      bank_logo: "cora"
+      account_identifiers:
+        cnpj: unknown
+        agency: unknown
+        account: unknown
+    metadata:
+      title: "Extrato do período"
+      summary:
+        initial_balance_label: "Saldo inicial do período"
+        initial_balance_value: unknown
+        total_inflows_label: "Total de entradas"
+        total_inflows_value: unknown
+        total_outflows_label: "Total de saídas"
+        total_outflows_value: unknown
+        final_balance_label: "Saldo final do período"
+        final_balance_value: unknown
+      period: unknown
+    transactions_table:
+      representation: "grouped_transaction_list"
+      section_title: "Transações"
+      group_by: "date"
+      visible_group:
+        date: "24/01/2023"
+        daily_balance: "R$ 940,28"
+        rows:
+          - type: normal_transaction
+            date: "24/01/2023"
+            description: "Transf Pix enviada"
+            document: unknown
+            amount: "- R$ 69,80"
+            balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo inicial do período"
+      should_import_as_transaction: false
+      balance_source: "summary_block"
+      inferred: false
+    normal_transaction:
+      row_has_date_context: true
+      row_has_description: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece com '+ R$'"
+        - "Valor aparece na área de entradas, se presente no PDF real"
+        - "Valor aparece sem sinal negativo em transação de entrada confirmada"
+      negative_when:
+        - "Valor aparece com '- R$'"
+        - "Descrição e sinal confirmam saída, como 'Transf Pix enviada' com '- R$'"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      daily_balance_rows_exist: true
+      summary_balances_exist: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "*"
+        reason: "Não há exemplo claro de transação de entrada visível; confirmar por sinal '+ R$' ou metadado no PDF real"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "Transf Pix enviada"
+        reason: "Linha visível possui valor com '- R$'"
+        inferred: false
+    caution:
+      - "Este layout não é tabular; transações são agrupadas por data."
+      - "A data do grupo deve ser propagada para as transações abaixo."
+      - "Não importar 'Saldo do dia' como transação."
+      - "Não usar a palavra Pix isoladamente para definir sinal; usar o sinal explícito '- R$' ou '+ R$'."
+      - "Sem saldo por transação, a validação aritmética detalhada é limitada."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Transações"
+      group_anchor: "date_group"
+      header_keywords: []
+    column_order:
+      - date_group
+      - description
+      - amount
+      - daily_balance
+    row_behavior:
+      separator: "section separators with whitespace; no grid lines"
+      date_group_left_aligned: true
+      daily_balance_right_aligned_on_date_group_line: true
+      transaction_description_indented: true
+      amount_right_aligned: true
+      negative_amount_prefix: "- R$"
+      positive_summary_prefix: "+ R$"
+  parser_risks:
+    ambiguities:
+      - "Não há cabeçalho de tabela; parsing depende de agrupadores de data e alinhamento visual."
+      - "Não há exemplo de crédito transacional no recorte."
+      - "Resumo de entradas/saídas tem valores ocultos ou ilegíveis."
+      - "Não há documento, ID ou contraparte visíveis por transação."
+      - "O saldo do dia pode ser confundido com transação se o parser não filtrar pelo label."
+    fields_that_may_be_missing:
+      - "document"
+      - "transaction_id"
+      - "counterparty"
+      - "balance"
+      - "period"
+      - "cnpj"
+      - "agency"
+      - "account"
+    cases_that_need_real_pdf_validation:
+      - "Se valores positivos de transações aparecem com '+ R$' ou apenas 'R$'."
+      - "Se o saldo do dia sempre aparece na mesma linha do agrupador de data."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Se há detalhes adicionais por transação em páginas completas."
+      - "Se há paginação e repetição de cabeçalho."
+      - "Se saldos inicial/final permitem validar a soma agregada do período."
+
+layout_profile:
+  profile_name: cora_extrato_periodo_transacoes_v1
+  bank: Cora
+  layout_family: cora_extrato_periodo_grouped_transactions
+  statement_type: conta_digital_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "cora"
+      - "CNPJ"
+      - "Agência"
+      - "Conta"
+      - "Extrato do período"
+      - "Saldo inicial do período"
+      - "Total de entradas"
+      - "Total de saídas"
+      - "Saldo final do período"
+      - "Transações"
+      - "Saldo do dia"
+    optional_keywords:
+      - "Transf Pix enviada"
+      - "+ R$"
+      - "- R$"
+      - "R$"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "banco bmg"
+      - "banco BRB"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords: []
+    expected_column_order:
+      - date_group
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "date_group"
+        - "Data"
+      description:
+        - "Transações"
+        - "Descrição"
+        - "Movimentação"
+      document:
+        - "ID"
+        - "Documento"
+      amount:
+        - "R$"
+        - "+ R$"
+        - "- R$"
+        - "Valor"
+      balance:
+        - "Saldo do dia"
+        - "Saldo inicial do período"
+        - "Saldo final do período"
+    table_starts_after:
+      - "Transações"
+    row_separator_hint: "date group line contains dd/MM/yyyy and 'Saldo do dia'; transaction lines below are indented descriptions with amount right-aligned"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "- R$ {amount}"
+      - "-R$ {amount}"
+      - "R$ -{amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "+ R$ {amount}"
+      - "+R$ {amount}"
+      - "R$ {amount_without_minus}"
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "cora"
+      - "CNPJ"
+      - "Agência"
+      - "Conta"
+      - "Extrato do período"
+      - "Saldo inicial do período"
+      - "Total de entradas"
+      - "Total de saídas"
+      - "Saldo final do período"
+      - "Transações"
+      - "Saldo do dia"
+      - "TOTAL"
+    opening_balance_rows:
+      - "Saldo inicial do período"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+      - transaction_id
+      - counterparty
+  sign_rules:
+    priority_order:
+      - "explicit_negative_prefix"
+      - "explicit_positive_prefix"
+      - "provider_transaction_type_if_available"
+      - "description_based_hint"
+      - "period_balance_consistency"
+    description_based_overrides:
+      - pattern: "Transf Pix enviada"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui valor com '- R$'"
+    cautions:
+      - "Não inferir sinal apenas por Pix."
+      - "Não importar 'Saldo do dia' como transação."
+      - "Se valor não tiver + ou -, usar metadado/tipo do PDF real ou marcar para revisão."
+      - "Sem saldo por transação, usar somente validação agregada quando saldos do período estiverem disponíveis."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_case_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Transf Pix enviada"
+        category: "pix_enviado"
+        inferred: true
+    transfer_hints:
+      - pattern: "Transf Pix enviada"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "Pix recebida"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "Pix"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa"
+        category: "tarifa"
+        inferred: true
+      - pattern: "Taxa"
+        category: "taxa_servico"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 2
+    reject_if_missing_headers:
+      - "Extrato do período"
+      - "Transações"
+      - "Saldo do dia"
+    balance_consistency_check:
+      enabled: true
+      method: "when initial/final balances and all signed transactions are available, validate final_balance_equals_initial_balance_plus_sum_signed_transactions; optionally validate daily balance by date groups"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "amount_without_explicit_plus_or_minus"
+      - "date_group_missing"
+      - "daily_balance_missing"
+      - "transaction_description_ambiguous"
+      - "ocr_confidence_low_on_currency_or_sign"
+      - "period_balances_missing"
+      - "period_balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "24/01/2023"
+        raw_description: "Saldo do dia"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "R$ 940,28"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha/label de saldo diário; não importar como transação"
+      - raw_date: "24/01/2023"
+        raw_description: "Transf Pix enviada"
+        raw_document: unknown
+        raw_amount: "- R$ 69,80"
+        raw_balance: unknown
+        normalized_amount: "-69.80"
+        should_import_as_transaction: true
+        notes: "Débito explícito pelo prefixo '- R$'"
+  implementation_notes:
+    - "Classificar pelo logo 'cora' e pela estrutura 'Extrato do período' + 'Transações'."
+    - "Este layout é uma lista agrupada por data, não uma tabela com colunas."
+    - "Propagar a data do agrupador para as transações abaixo."
+    - "Filtrar 'Saldo do dia' e saldos do resumo antes da importação."
+    - "Usar prefixos '- R$' e '+ R$' como regra principal de sinal."
+    - "Não exigir documento, contraparte ou saldo por transação."
+    - "Validar com PDFs reais como transações de entrada são representadas."

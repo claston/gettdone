@@ -1,0 +1,369 @@
+meta_model:
+  layout_id: santander_internet_banking_empresarial_conta_corrente_extrato_v1
+  bank: Santander
+  channel: Internet Banking Empresarial
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo Santander visível no topo"
+      - "Texto 'Internet Banking Empresarial' no cabeçalho"
+      - "Breadcrumb 'Conta Corrente > Extratos >'"
+      - "Título/ação 'Consultar'"
+      - "Cabeçalho de tabela com colunas 'Data', 'Histórico', 'Documento', 'Valor (R$)', 'Saldo (R$)'"
+      - "Campo 'Saldo disponível para uso'"
+    weak:
+      - "Campos 'Agência' e 'Conta' aparecem no cabeçalho, mas os valores não estão visíveis/foram omitidos"
+      - "Campos 'Opção de Pesquisa' e 'Período' antes da tabela"
+      - "Campo 'Data/Hora' de consulta"
+    table_headers:
+      - "Data"
+      - "Histórico"
+      - "Documento"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+  page_structure:
+    header:
+      bank_logo: "Santander"
+      channel_title: "Internet Banking Empresarial"
+      account_identifiers:
+        agency: unknown
+        account: unknown
+    metadata:
+      breadcrumb: "Conta Corrente > Extratos >"
+      screen_title: "Consultar"
+      search_option: "Todos"
+      period: "01/10/2021 a 31/10/2021"
+      generated_at: "08/11/2021 às 08h29"
+      available_balance_label: "Saldo disponível para uso"
+      available_balance_value: "R$770,97"
+    transactions_table:
+      header_background: "gray"
+      columns:
+        - "Data"
+        - "Histórico"
+        - "Documento"
+        - "Valor (R$)"
+        - "Saldo (R$)"
+      visible_rows:
+        - type: opening_balance
+          date: "01/10/2021"
+          description: "SALDO ANTERIOR"
+          document: unknown
+          amount: unknown
+          balance: "0,00"
+        - type: normal_transaction
+          date: "01/10/2021"
+          description: "PAGAMENTO CARTAO DE DEBITO GETNET-MAESTRO"
+          document: "247258"
+          amount: "23,79"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/10/2021"
+          description: "PAGAMENTO CARTAO DE DEBITO GETNET-ELO DEBITO"
+          document: "247258"
+          amount: "127,46"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/10/2021"
+          description: "PAGAMENTO CARTAO DE DEBITO GETNET-VISA ELECTR"
+          document: "247258"
+          amount: "109,02"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/10/2021"
+          description: "APLICACAO AUT CONTAMAX EMPRESARIAL"
+          document: "000000"
+          amount: "-260,27"
+          balance: "0,00"
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "Saldo (R$)"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_document: true
+      row_may_have_amount: true
+      row_may_have_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor (R$) aparece sem sinal negativo"
+      negative_when:
+        - "Valor (R$) aparece com sinal '-'"
+        - "Valor aparece em vermelho com sinal negativo"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "Saldo (R$)"
+      may_be_blank_on_intermediate_rows: true
+      appears_on_opening_balance_rows: true
+      appears_on_some_transaction_rows: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "PAGAMENTO CARTAO DE DEBITO GETNET-*"
+        reason: "No contexto de conta empresarial/adquirência, 'pagamento cartão de débito' provavelmente representa recebimento de vendas por cartão"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "APLICACAO AUT CONTAMAX EMPRESARIAL"
+        reason: "Valor visível com sinal negativo e em vermelho"
+        inferred: false
+    caution:
+      - "Não classificar automaticamente 'PAGAMENTO' como débito; neste layout pode representar entrada de adquirência"
+      - "O sinal do campo Valor deve ter prioridade sobre palavras da descrição"
+      - "Algumas linhas podem não apresentar saldo preenchido"
+      - "A imagem mostra apenas parte da página; validar o comportamento em páginas completas e PDFs reais"
+  visual_model:
+    table_anchor:
+      starts_after_text: "Saldo disponível para uso"
+      header_row_color: "gray"
+      header_keywords:
+        - "Data"
+        - "Histórico"
+        - "Documento"
+        - "Valor (R$)"
+        - "Saldo (R$)"
+    column_order:
+      - date
+      - description
+      - document
+      - amount
+      - balance
+    row_behavior:
+      separator: "horizontal light gray lines"
+      date_repeated_per_row: true
+      description_single_line_in_visible_rows: true
+      amount_right_aligned: true
+      balance_right_aligned: true
+      negative_amount_color: "red"
+      positive_amount_color: "dark/gray"
+  parser_risks:
+    ambiguities:
+      - "Não é possível confirmar se todas as descrições permanecem em uma única linha em PDFs reais"
+      - "Não é possível confirmar se documentos podem vir vazios em transações normais"
+      - "Não é possível confirmar se saldo aparece apenas em linhas de fechamento/saldo ou em todas as linhas dependendo do período"
+      - "O campo 'PAGAMENTO CARTAO DE DEBITO' pode ser interpretado erroneamente como saída se o parser usar apenas palavras-chave"
+    fields_that_may_be_missing:
+      - "document"
+      - "balance"
+      - "agency"
+      - "account"
+    cases_that_need_real_pdf_validation:
+      - "Extração textual preserva as colunas corretamente"
+      - "Linhas com descrição longa podem quebrar em múltiplas linhas"
+      - "Valores negativos podem depender de sinal '-' e/ou cor vermelha"
+      - "Paginação e repetição do cabeçalho da tabela"
+      - "Tratamento de linhas de saldo do dia, saldo final e totais"
+      - "Presença de rodapé ou mensagens que possam ser confundidas com transações"
+
+layout_profile:
+  profile_name: santander_empresarial_conta_corrente_extrato_v1
+  bank: Santander
+  layout_family: internet_banking_empresarial
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Santander"
+      - "Internet Banking Empresarial"
+      - "Conta Corrente"
+      - "Extratos"
+      - "Data"
+      - "Histórico"
+      - "Documento"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    optional_keywords:
+      - "Consultar"
+      - "Opção de Pesquisa"
+      - "Período"
+      - "Data/Hora"
+      - "Saldo disponível para uso"
+      - "Agência"
+      - "Conta"
+    negative_keywords:
+      - "Cartão de Crédito"
+      - "Fatura"
+      - "Comprovante"
+      - "Boleto"
+    min_score_hint: 0.8
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Histórico"
+      - "Documento"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - description
+      - document
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Histórico"
+      document:
+        - "Documento"
+      amount:
+        - "Valor (R$)"
+        - "Valor"
+      balance:
+        - "Saldo (R$)"
+        - "Saldo"
+    table_starts_after:
+      - "Saldo disponível para uso"
+      - "Data Histórico Documento Valor (R$) Saldo (R$)"
+    row_separator_hint: "horizontal lines between rows"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+      - "red_text_with_minus"
+    positive_patterns:
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+      - "Saldo disponível para uso"
+      - "Opção de Pesquisa"
+      - "Período"
+      - "Data/Hora"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "section_or_column_semantics"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "PAGAMENTO CARTAO DE DEBITO GETNET"
+        sign: positive
+        confidence: medium
+        inferred: true
+        reason: "Em extrato de conta corrente empresarial, pode representar crédito de adquirência; confirmar com PDF real e saldo"
+      - pattern: "APLICACAO AUT"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível mostra valor negativo"
+    cautions:
+      - "Não usar a palavra 'PAGAMENTO' isoladamente para definir débito"
+      - "Priorizar o sinal numérico do campo Valor"
+      - "Quando saldo estiver disponível, validar o sinal por consistência aritmética"
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_hyphenated_acquirer_suffixes"
+      - "normalize_uppercase_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "PAGAMENTO CARTAO DE DEBITO GETNET-*"
+        category: "recebimento_cartao_debito"
+        inferred: true
+      - pattern: "APLICACAO AUT CONTAMAX EMPRESARIAL"
+        category: "aplicacao_financeira"
+        inferred: true
+    transfer_hints:
+      - pattern: "TRANSFERENCIA"
+        category: "transferencia"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_taxa"
+        inferred: true
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "Data"
+      - "Histórico"
+      - "Valor"
+    balance_consistency_check:
+      enabled: true
+      method: "when_previous_and_current_balance_are_available_validate_current_balance_equals_previous_balance_plus_amount"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "amount_without_sign_and_balance_missing"
+      - "description_indicates_payment_but_context_unclear"
+      - "row_has_date_and_description_but_no_amount"
+      - "multi_line_description_detected"
+      - "ocr_confidence_low_on_amount_or_date"
+      - "negative_amount_detected_by_color_only_without_minus"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "01/10/2021"
+        raw_description: "SALDO ANTERIOR"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "0,00"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo inicial, não transação"
+      - raw_date: "01/10/2021"
+        raw_description: "PAGAMENTO CARTAO DE DEBITO GETNET-MAESTRO"
+        raw_document: "247258"
+        raw_amount: "23,79"
+        raw_balance: unknown
+        normalized_amount: "23.79"
+        should_import_as_transaction: true
+        notes: "Valor sem sinal negativo; tratar como positivo neste layout"
+      - raw_date: "01/10/2021"
+        raw_description: "PAGAMENTO CARTAO DE DEBITO GETNET-ELO DEBITO"
+        raw_document: "247258"
+        raw_amount: "127,46"
+        raw_balance: unknown
+        normalized_amount: "127.46"
+        should_import_as_transaction: true
+        notes: "Possível crédito de adquirência; não classificar como débito apenas por conter 'PAGAMENTO'"
+      - raw_date: "01/10/2021"
+        raw_description: "PAGAMENTO CARTAO DE DEBITO GETNET-VISA ELECTR"
+        raw_document: "247258"
+        raw_amount: "109,02"
+        raw_balance: unknown
+        normalized_amount: "109.02"
+        should_import_as_transaction: true
+        notes: "Valor sem sinal negativo; tratar como positivo"
+      - raw_date: "01/10/2021"
+        raw_description: "APLICACAO AUT CONTAMAX EMPRESARIAL"
+        raw_document: "000000"
+        raw_amount: "-260,27"
+        raw_balance: "0,00"
+        normalized_amount: "-260.27"
+        should_import_as_transaction: true
+        notes: "Valor negativo visível em vermelho; tratar como saída"
+  implementation_notes:
+    - "Usar combinação de logo/texto Santander, canal 'Internet Banking Empresarial' e cabeçalho de tabela para classificar o layout."
+    - "Detectar tabela pelo cabeçalho cinza com as colunas Data, Histórico, Documento, Valor (R$), Saldo (R$)."
+    - "Converter valores pt-BR para decimal normalizado usando vírgula como separador decimal."
+    - "Linhas de saldo devem alimentar contexto de saldo, mas não devem ser importadas como transações."
+    - "Quando a coluna Saldo estiver preenchida em linhas consecutivas, validar o sinal pelo cálculo do saldo."
+    - "Validar com PDFs reais se a extração mantém alinhamento de colunas e se descrições longas quebram linha."

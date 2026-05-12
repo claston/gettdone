@@ -1,0 +1,490 @@
+meta_model:
+  layout_id: itau_empresas_extrato_30_horas_tabela_v1
+  bank: Itaú
+  channel: Itaú Empresas 30 horas
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo Itaú no topo esquerdo"
+      - "Título 'ItaúEmpresas' no cabeçalho"
+      - "Marca '30 horas' no topo direito"
+      - "Campos 'Nome', 'Agência/ Conta', 'Data' e 'Horário'"
+      - "Título de seção 'Extrato de'"
+      - "Tabela com colunas 'Data', 'Lançamento', 'Ag./Origem', 'Valor (R$)', 'Saldo (R$)'"
+      - "Valores negativos aparecem com sinal '-' na coluna Valor"
+      - "Linhas de saldo como 'SALDO INICIAL' e 'SALDO APLIC AUT MAIS'"
+    weak:
+      - "Dados pessoais/conta estão ocultos ou ilegíveis"
+      - "Datas aparecem em formato curto com mês possivelmente sem ano completo, exemplo '02/1' e '03/1'"
+      - "Algumas descrições parecem espaçadas por OCR, exemplo 'SISPAG FORNECEDORES'"
+      - "A coluna Saldo (R$) está visível no cabeçalho, mas os saldos das linhas exibidas não estão legíveis"
+    table_headers:
+      - "Data"
+      - "Lançamento"
+      - "Ag./Origem"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+  page_structure:
+    header:
+      bank_logo: "Itaú"
+      channel_title: "ItaúEmpresas"
+      channel_variant: "30 horas"
+      account_identifiers:
+        name: unknown
+        agency_account: unknown
+    metadata:
+      generated_date: unknown
+      generated_time: unknown
+      section_title: "Extrato de"
+      period: unknown
+    transactions_table:
+      header_background: "white"
+      banded_rows: true
+      columns:
+        - "Data"
+        - "Lançamento"
+        - "Ag./Origem"
+        - "Valor (R$)"
+        - "Saldo (R$)"
+      visible_rows:
+        - type: opening_balance
+          date: "02/1"
+          description: "SALDO INICIAL"
+          origin_agency: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "02/1"
+          description: "SISPAG FORNECEDORES"
+          origin_agency: unknown
+          amount: "-1.200,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "02/1"
+          description: "SISPAG"
+          origin_agency: unknown
+          amount: "1.227,76"
+          balance: unknown
+        - type: normal_transaction
+          date: "02/1"
+          description: "APLIC AUT MAIS"
+          origin_agency: unknown
+          amount: "-4.310,23"
+          balance: unknown
+        - type: balance_row
+          date: "02/1"
+          description: "SALDO APLIC AUT MAIS"
+          origin_agency: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "03/1"
+          description: "SISPAG PAG TIT"
+          origin_agency: unknown
+          amount: "-1.000,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "03/1"
+          description: "SISPAG FORNECEDORES"
+          origin_agency: unknown
+          amount: "-1.740,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "03/1"
+          description: "SISPAG FORNECEDORES"
+          origin_agency: unknown
+          amount: "-1.400,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "03/1"
+          description: "SISPAG FORNECEDORES"
+          origin_agency: unknown
+          amount: "-1.300,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "03/1"
+          description: "SISPAG FORNECEDORES"
+          origin_agency: unknown
+          amount: "-250,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "03/1"
+          description: "TAR/CUSTAS COBRANCA"
+          origin_agency: unknown
+          amount: "-7,60"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO INICIAL"
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "Saldo (R$)"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_origin_agency: true
+      row_has_amount: true
+      row_may_have_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor (R$) aparece sem sinal negativo"
+      negative_when:
+        - "Valor (R$) aparece com sinal '-'"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "Saldo (R$)"
+      may_be_blank_or_illegible_in_visible_rows: true
+      appears_in_header: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "SISPAG"
+        reason: "Linha visível específica possui valor positivo sem sinal negativo"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "SISPAG FORNECEDORES"
+        reason: "Linhas visíveis possuem valores negativos explícitos"
+        inferred: false
+      - pattern: "SISPAG PAG TIT"
+        reason: "Linha visível possui valor negativo explícito"
+        inferred: false
+      - pattern: "APLIC AUT MAIS"
+        reason: "Linha visível possui valor negativo explícito"
+        inferred: false
+      - pattern: "TAR/CUSTAS COBRANCA"
+        reason: "Linha visível possui valor negativo explícito"
+        inferred: false
+    caution:
+      - "Não importar linhas 'SALDO INICIAL' ou 'SALDO APLIC AUT MAIS' como transações."
+      - "O sinal explícito do valor deve ter prioridade sobre a descrição."
+      - "Datas curtas precisam de reconstrução do ano e possivelmente do mês a partir do período do extrato."
+      - "A coluna Saldo existe, mas os valores não estão legíveis no recorte; validar com PDF real."
+      - "SISPAG pode aparecer tanto com crédito quanto débito; não usar apenas a descrição para definir sinal."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Extrato de"
+      header_keywords:
+        - "Data"
+        - "Lançamento"
+        - "Ag./Origem"
+        - "Valor (R$)"
+        - "Saldo (R$)"
+    column_order:
+      - date
+      - description
+      - origin_agency
+      - amount
+      - balance
+    row_behavior:
+      separator: "alternating light gray bands"
+      date_format_short_numeric: true
+      date_repeated_per_row: true
+      description_uppercase: true
+      amount_right_aligned: true
+      balance_right_aligned: true
+      transaction_rows_may_have_blank_origin_agency: true
+      balance_rows_present: true
+  parser_risks:
+    ambiguities:
+      - "O formato de data visível está incompleto ou truncado, exemplo '02/1' e '03/1'."
+      - "Não é possível confirmar o ano do extrato pela imagem."
+      - "Algumas linhas de saldo possuem data e descrição, podendo ser confundidas com transações."
+      - "A coluna Saldo (R$) está presente, mas sem valores legíveis nas linhas visíveis."
+      - "A palavra SISPAG aparece em descrições com sinais diferentes, então descrição sozinha não define crédito/débito."
+      - "Campos de nome, agência/conta, data e horário foram ocultados ou não estão legíveis."
+    fields_that_may_be_missing:
+      - "origin_agency"
+      - "balance"
+      - "full_date"
+      - "year"
+      - "agency_account"
+      - "generated_datetime"
+    cases_that_need_real_pdf_validation:
+      - "Se a data extraída vem completa ou truncada no PDF real."
+      - "Se o cabeçalho inclui período do extrato em alguma área fora do recorte."
+      - "Se saldos por linha existem e são extraíveis."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Como aparecem saldo final, saldo do dia, aplicações automáticas e totais."
+      - "Se valores positivos sempre aparecem sem '+' e débitos sempre com '-'."
+
+layout_profile:
+  profile_name: itau_empresas_extrato_30_horas_tabela_v1
+  bank: Itaú
+  layout_family: itau_empresas_30_horas_tabela
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "ItaúEmpresas"
+      - "30 horas"
+      - "Nome"
+      - "Agência/ Conta"
+      - "Data"
+      - "Horário"
+      - "Extrato de"
+      - "Lançamento"
+      - "Ag./Origem"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    optional_keywords:
+      - "SALDO INICIAL"
+      - "SISPAG"
+      - "SISPAG FORNECEDORES"
+      - "APLIC AUT MAIS"
+      - "TAR/CUSTAS COBRANCA"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú Empresas dados gerais"
+      - "extrato completo"
+      - "Cartão de Crédito"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Lançamento"
+      - "Ag./Origem"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - description
+      - origin_agency
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Lançamento"
+        - "lançamento"
+        - "Histórico"
+        - "histórico"
+      document:
+        - "Documento"
+        - "Doc."
+      amount:
+        - "Valor (R$)"
+        - "valor (R$)"
+        - "Valor"
+      balance:
+        - "Saldo (R$)"
+        - "saldo (R$)"
+        - "Saldo"
+      origin_agency:
+        - "Ag./Origem"
+        - "Ag. Origem"
+        - "ag/origem"
+    table_starts_after:
+      - "Extrato de"
+      - "Data Lançamento Ag./Origem Valor (R$) Saldo (R$)"
+    row_separator_hint: "transaction row starts when first column has short date; alternating bands separate rows"
+  parsing:
+    date_format: "dd/MM"
+    date_year_source: "statement_period_or_header"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+    positive_patterns:
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "ItaúEmpresas"
+      - "30 horas"
+      - "Nome"
+      - "Agência/ Conta"
+      - "Data"
+      - "Horário"
+      - "Extrato de"
+      - "Lançamento"
+      - "Ag./Origem"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+      - "SALDO INICIAL"
+      - "SALDO ANTERIOR"
+      - "SALDO DO DIA"
+      - "SALDO APLIC AUT MAIS"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO INICIAL"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - origin_agency
+      - balance
+      - document
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "SISPAG FORNECEDORES"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem sinal negativo explícito"
+      - pattern: "SISPAG PAG TIT"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sinal negativo explícito"
+      - pattern: "APLIC AUT MAIS"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sinal negativo explícito"
+      - pattern: "TAR/CUSTAS COBRANCA"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sinal negativo explícito"
+    cautions:
+      - "Não usar descrição SISPAG isoladamente para definir sinal, pois há exemplo positivo e negativo."
+      - "Não importar linhas de saldo como transações."
+      - "Datas incompletas devem ser enriquecidas com ano/período antes da normalização."
+      - "Ausência de sinal negativo indica positivo conforme regra do prompt, salvo se layout real tiver outra seção de débito/crédito."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+      - "fix_ocr_spacing_inside_known_terms_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "SISPAG FORNECEDORES"
+        category: "pagamento_fornecedores"
+        inferred: true
+      - pattern: "SISPAG PAG TIT"
+        category: "pagamento_titulo"
+        inferred: true
+      - pattern: "APLIC AUT MAIS"
+        category: "aplicacao_automatica"
+        inferred: true
+      - pattern: "TAR/CUSTAS COBRANCA"
+        category: "tarifa_cobranca"
+        inferred: true
+    transfer_hints:
+      - pattern: "SISPAG"
+        category: "pagamento_transferencia_empresarial"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "DOC"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "TAR/CUSTAS"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "CUSTAS"
+        category: "custas"
+        inferred: true
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "Data"
+      - "Lançamento"
+      - "Valor"
+      - "Saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "when balance values are available, validate previous_balance_plus_signed_amount_equals_current_balance; otherwise validate only sign and required fields"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "date_is_truncated_or_year_missing"
+      - "statement_period_missing"
+      - "amount_without_sign_and_description_ambiguous"
+      - "row_description_matches_saldo_pattern"
+      - "balance_column_unreadable"
+      - "ocr_spacing_breaks_known_description"
+      - "balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "02/1"
+        raw_description: "SALDO INICIAL"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo inicial; não importar como transação"
+      - raw_date: "02/1"
+        raw_description: "SISPAG FORNECEDORES"
+        raw_document: unknown
+        raw_amount: "-1.200,00"
+        raw_balance: unknown
+        normalized_amount: "-1200.00"
+        should_import_as_transaction: true
+        notes: "Débito explícito por sinal negativo"
+      - raw_date: "02/1"
+        raw_description: "SISPAG"
+        raw_document: unknown
+        raw_amount: "1.227,76"
+        raw_balance: unknown
+        normalized_amount: "1227.76"
+        should_import_as_transaction: true
+        notes: "Valor sem sinal negativo; tratar como positivo"
+      - raw_date: "02/1"
+        raw_description: "APLIC AUT MAIS"
+        raw_document: unknown
+        raw_amount: "-4.310,23"
+        raw_balance: unknown
+        normalized_amount: "-4310.23"
+        should_import_as_transaction: true
+        notes: "Débito explícito por sinal negativo"
+      - raw_date: "02/1"
+        raw_description: "SALDO APLIC AUT MAIS"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo/aplicação; não importar como transação sem valor"
+      - raw_date: "03/1"
+        raw_description: "SISPAG PAG TIT"
+        raw_document: unknown
+        raw_amount: "-1.000,00"
+        raw_balance: unknown
+        normalized_amount: "-1000.00"
+        should_import_as_transaction: true
+        notes: "Débito explícito por sinal negativo"
+      - raw_date: "03/1"
+        raw_description: "TAR/CUSTAS COBRANCA"
+        raw_document: unknown
+        raw_amount: "-7,60"
+        raw_balance: unknown
+        normalized_amount: "-7.60"
+        should_import_as_transaction: true
+        notes: "Tarifa/custas com débito explícito"
+  implementation_notes:
+    - "Classificar pelo conjunto 'ItaúEmpresas', '30 horas' e tabela com 'Ag./Origem'."
+    - "Extrair e normalizar datas curtas usando o período do extrato ou cabeçalho."
+    - "Filtrar linhas de saldo como 'SALDO INICIAL' e 'SALDO APLIC AUT MAIS'."
+    - "Usar sinal '-' como principal regra de débito."
+    - "Não usar SISPAG isoladamente para sinal, pois pode aparecer em crédito e débito."
+    - "Não exigir Ag./Origem ou Saldo para importar uma transação."
+    - "Validar com PDF real se saldos aparecem em linhas completas e se a data vem truncada ou completa na camada textual."

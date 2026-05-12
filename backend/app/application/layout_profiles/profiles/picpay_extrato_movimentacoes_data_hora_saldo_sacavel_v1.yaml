@@ -1,0 +1,426 @@
+meta_model:
+  layout_id: picpay_extrato_movimentacoes_data_hora_saldo_sacavel_v1
+  bank: PicPay
+  channel: PicPay
+  statement_type: extrato_movimentacoes
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'PicPay' visível no topo"
+      - "Campos 'CPF', 'Agência', 'Conta' e 'Cliente desde'"
+      - "Título/section 'MOVIMENTAÇÕES'"
+      - "Período explícito: '1 DE JULHO DE 2024 A 31 DE JULHO DE 2024'"
+      - "Tabela com colunas 'Data/Hora', 'Descrição das Movimentações', 'Valor', 'Saldo' e 'Saldo Sacável'"
+      - "Linhas com data e hora em duas linhas, exemplo '31/07/2024 23:40:09'"
+      - "Descrição 'Pix Enviado' e 'Pix recebido'"
+      - "Valores negativos aparecem com prefixo '- R$' ou '- R$' separado"
+      - "Valores positivos aparecem com prefixo 'R$'"
+    weak:
+      - "Dados de CPF, agência, conta e cliente desde estão ocultos ou ilegíveis"
+      - "Colunas 'Saldo' e 'Saldo Sacável' aparecem com '-' ou vazias no recorte"
+      - "Não há documento, ID de transação ou contraparte visível"
+      - "A grafia de Pix varia entre 'Pix Enviado' e 'Pix recebido'"
+      - "Valores podem aparecer com espaço entre sinal negativo e R$"
+    table_headers:
+      - "Data/Hora"
+      - "Descrição das Movimentações"
+      - "Valor"
+      - "Saldo"
+      - "Saldo Sacável"
+  page_structure:
+    header:
+      bank_logo: "PicPay"
+      account_identifiers:
+        cpf: unknown
+        agency: unknown
+        account: unknown
+        customer_since: unknown
+    metadata:
+      section_title: "MOVIMENTAÇÕES"
+      period: "1 DE JULHO DE 2024 A 31 DE JULHO DE 2024"
+      start_date: "01/07/2024"
+      end_date: "31/07/2024"
+    transactions_table:
+      header_background: "white/light"
+      grid_lines: true
+      columns:
+        - "Data/Hora"
+        - "Descrição das Movimentações"
+        - "Valor"
+        - "Saldo"
+        - "Saldo Sacável"
+      visible_rows:
+        - type: normal_transaction
+          datetime: "31/07/2024 23:40:09"
+          description: "Pix Enviado"
+          document: unknown
+          amount: "- R$ 1.169,10"
+          balance: unknown
+          withdrawable_balance: unknown
+        - type: normal_transaction
+          datetime: "31/07/2024 22:22:12"
+          description: "Pix Enviado"
+          document: unknown
+          amount: "- R$ 15,00"
+          balance: "-"
+          withdrawable_balance: "-"
+        - type: normal_transaction
+          datetime: "31/07/2024 15:32:17"
+          description: "Pix recebido"
+          document: unknown
+          amount: "R$ 1.500,00"
+          balance: "-"
+          withdrawable_balance: "-"
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo"
+        - "Saldo Sacável"
+        - "SALDO ANTERIOR"
+        - "SALDO INICIAL"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: "Saldo or Saldo Sacável columns"
+      inferred: true
+    normal_transaction:
+      row_has_datetime: true
+      row_has_description: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: true
+      row_may_have_withdrawable_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece com prefixo 'R$' sem sinal negativo"
+        - "Descrição indica recebido e valor não possui sinal negativo"
+      negative_when:
+        - "Valor aparece com prefixo '- R$' ou '-R$'"
+        - "Descrição indica enviado e valor possui sinal negativo"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "Saldo"
+      withdrawable_balance_column_exists: true
+      withdrawable_balance_column_name: "Saldo Sacável"
+      may_show_dash_when_not_available: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "Pix recebido"
+        reason: "Linha visível possui valor positivo com prefixo 'R$'"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "Pix Enviado"
+        reason: "Linhas visíveis possuem prefixo '- R$'"
+        inferred: false
+    caution:
+      - "Não usar apenas a palavra Pix para sinal; usar prefixo monetário e/ou recebido/enviado."
+      - "Colunas Saldo e Saldo Sacável podem conter '-' e não devem ser interpretadas como zero."
+      - "Não há documento/ID/contraparte visível; parser não deve exigir esses campos."
+      - "Data e hora aparecem em uma mesma célula quebrada em duas linhas."
+      - "Valores negativos podem conter espaço entre '-' e 'R$'."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Data/Hora Descrição das Movimentações Valor Saldo Saldo Sacável"
+      header_keywords:
+        - "Data/Hora"
+        - "Descrição das Movimentações"
+        - "Valor"
+        - "Saldo"
+        - "Saldo Sacável"
+    column_order:
+      - datetime
+      - description
+      - amount
+      - balance
+      - withdrawable_balance
+    row_behavior:
+      separator: "strong grid lines"
+      datetime_cell_two_lines: true
+      description_left_aligned: true
+      amount_right_aligned: true
+      negative_amount_prefix_variants:
+        - "- R$"
+        - "-R$"
+      balance_dash_means_missing: true
+      no_document_column: true
+  parser_risks:
+    ambiguities:
+      - "Colunas Saldo e Saldo Sacável podem vir como '-' e não devem virar 0,00."
+      - "Não há exemplo de saldo numérico preenchido para validar sequência."
+      - "Não há documento, ID ou contraparte visível."
+      - "A célula Data/Hora pode ser quebrada em duas linhas na extração textual."
+      - "Descrições podem variar em caixa: 'Pix Enviado' vs 'Pix recebido'."
+    fields_that_may_be_missing:
+      - "document"
+      - "transaction_id"
+      - "counterparty"
+      - "balance"
+      - "withdrawable_balance"
+      - "cpf"
+      - "agency"
+      - "account"
+      - "customer_since"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual preserva Data/Hora como uma célula ou duas linhas."
+      - "Se valores negativos sempre usam '- R$' ou podem usar '-R$'."
+      - "Se saldos e saldos sacáveis aparecem preenchidos em outras linhas."
+      - "Se há linhas de saldo inicial/final no documento completo."
+      - "Se descrições longas de Pix incluem contraparte/ID em linhas ocultas."
+      - "Se cabeçalho repete em páginas seguintes."
+
+layout_profile:
+  profile_name: picpay_extrato_movimentacoes_data_hora_saldo_sacavel_v1
+  bank: PicPay
+  layout_family: picpay_extrato_movimentacoes_grid
+  statement_type: extrato_movimentacoes
+  confidence: high
+  classifier:
+    required_keywords:
+      - "PicPay"
+      - "CPF"
+      - "Agência"
+      - "Conta"
+      - "Cliente desde"
+      - "MOVIMENTAÇÕES"
+      - "Data/Hora"
+      - "Descrição das Movimentações"
+      - "Valor"
+      - "Saldo"
+      - "Saldo Sacável"
+    optional_keywords:
+      - "Pix Enviado"
+      - "Pix recebido"
+      - "- R$"
+      - "R$"
+      - "1 DE JULHO DE 2024 A 31 DE JULHO DE 2024"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "contasimples"
+      - "CRESOL"
+      - "infinitepay"
+      - "inter"
+      - "GRAFENO"
+      - "mercado pago"
+      - "PagBank"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data/Hora"
+      - "Descrição das Movimentações"
+      - "Valor"
+      - "Saldo"
+      - "Saldo Sacável"
+    expected_column_order:
+      - datetime
+      - description
+      - amount
+      - balance
+      - withdrawable_balance
+    column_aliases:
+      date:
+        - "Data/Hora"
+        - "Data"
+      description:
+        - "Descrição das Movimentações"
+        - "Descricao das Movimentacoes"
+        - "Descrição"
+        - "Histórico"
+      document:
+        - "Documento"
+        - "Doc."
+        - "ID"
+      amount:
+        - "Valor"
+      balance:
+        - "Saldo"
+      withdrawable_balance:
+        - "Saldo Sacável"
+        - "Saldo Sacavel"
+    table_starts_after:
+      - "Data/Hora Descrição das Movimentações Valor Saldo Saldo Sacável"
+      - "MOVIMENTAÇÕES"
+    row_separator_hint: "grid row starts with dd/MM/yyyy followed by time HH:mm:ss in same/next line"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    time_format: "HH:mm:ss"
+    datetime_format: "dd/MM/yyyy HH:mm:ss"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "- R$ {amount}"
+      - "-R$ {amount}"
+      - "-R${amount}"
+      - "R$ -{amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+      - "R${amount_without_minus}"
+      - "+R$ {amount}"
+      - "+ R$ {amount}"
+    ignore_rows:
+      - "PicPay"
+      - "CPF"
+      - "Agência"
+      - "Conta"
+      - "Cliente desde"
+      - "MOVIMENTAÇÕES"
+      - "Data/Hora"
+      - "Descrição das Movimentações"
+      - "Valor"
+      - "Saldo"
+      - "Saldo Sacável"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "Saldo"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - time
+      - datetime
+      - balance
+      - withdrawable_balance
+      - document
+      - transaction_id
+  sign_rules:
+    priority_order:
+      - "explicit_negative_currency_prefix"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "description_received_sent_hint"
+      - "balance_consistency"
+    description_based_overrides:
+      - pattern: "Pix Enviado"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem prefixo '- R$'"
+      - pattern: "Pix recebido"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui valor positivo com prefixo 'R$'"
+    cautions:
+      - "Sinal explícito do valor deve prevalecer."
+      - "Não usar Pix isoladamente para sinal."
+      - "Dash '-' nas colunas Saldo/Saldo Sacável significa ausente, não valor negativo."
+      - "Se valor estiver sem sinal e descrição for ambígua, aplicar regra geral de positivo com revisão."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_case_optional"
+      - "merge_wrapped_datetime"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Pix Enviado"
+        category: "pix_enviado"
+        inferred: true
+      - pattern: "Pix recebido"
+        category: "pix_recebido"
+        inferred: true
+    transfer_hints:
+      - pattern: "Pix Enviado"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "Pix recebido"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "Pix"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa"
+        category: "tarifa"
+        inferred: true
+      - pattern: "Taxa"
+        category: "taxa_servico"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "Data/Hora"
+      - "Descrição das Movimentações"
+      - "Valor"
+      - "Saldo"
+      - "Saldo Sacável"
+    balance_consistency_check:
+      enabled: true
+      method: "when Saldo is numeric, validate previous_balance_plus_signed_amount_equals_current_balance; ignore '-' as missing"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "datetime_split_not_merged"
+      - "amount_without_currency_prefix"
+      - "balance_dash_instead_of_numeric"
+      - "withdrawable_balance_dash_instead_of_numeric"
+      - "document_or_transaction_id_required_by_downstream"
+      - "ocr_confidence_low_on_negative_prefix"
+      - "balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "31/07/2024 23:40:09"
+        raw_description: "Pix Enviado"
+        raw_document: unknown
+        raw_amount: "- R$ 1.169,10"
+        raw_balance: unknown
+        normalized_amount: "-1169.10"
+        should_import_as_transaction: true
+        notes: "Débito explícito por prefixo '- R$'"
+      - raw_date: "31/07/2024 22:22:12"
+        raw_description: "Pix Enviado"
+        raw_document: unknown
+        raw_amount: "- R$ 15,00"
+        raw_balance: "-"
+        normalized_amount: "-15.00"
+        should_import_as_transaction: true
+        notes: "Débito explícito; '-' no saldo significa ausente"
+      - raw_date: "31/07/2024 15:32:17"
+        raw_description: "Pix recebido"
+        raw_document: unknown
+        raw_amount: "R$ 1.500,00"
+        raw_balance: "-"
+        normalized_amount: "1500.00"
+        should_import_as_transaction: true
+        notes: "Crédito explícito por ausência de sinal negativo"
+  implementation_notes:
+    - "Classificar pelo logo PicPay e pela seção 'MOVIMENTAÇÕES'."
+    - "Extrair Data/Hora como datetime; tratar quebra de linha entre data e hora."
+    - "Usar '- R$'/'-R$' como regra primária de débito."
+    - "Tratar '-' nas colunas Saldo e Saldo Sacável como missing/null."
+    - "Não exigir documento, ID ou contraparte por transação."
+    - "Validar com PDF real se saldos numéricos aparecem em outras linhas e como devem ser usados."

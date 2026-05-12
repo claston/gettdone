@@ -1,0 +1,465 @@
+meta_model:
+  layout_id: sicredi_extrato_tabela_pix_cred_saldo_v1
+  bank: Sicredi
+  channel: unknown
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'Sicredi' visível no topo esquerdo"
+      - "Bloco de identificação com campos 'Associado', 'Cooperativa' e 'Conta'"
+      - "Título 'Extrato'"
+      - "Período explícito: 'Período de 01/04/2024 a 30/04/2024'"
+      - "Tabela com colunas 'Data', 'Descrição', 'Documento', 'Valor (R$)' e 'Saldo (R$)'"
+      - "Linha inicial 'SALDO ANTERIOR'"
+      - "Linhas de transação com descrição 'Recebimento pix'"
+      - "Documento/código de operação visível como 'PIX_CRED'"
+      - "Coluna de saldo por linha visível"
+      - "Valores monetários em pt-BR sem prefixo R$ no corpo da tabela"
+    weak:
+      - "Dados de associado, cooperativa, conta e parte da descrição estão ocultos ou ilegíveis"
+      - "Não há exemplo de débito/valor negativo no recorte"
+      - "Não há exemplo de documento diferente de PIX_CRED"
+      - "Saldo anterior aparece na coluna Saldo, sem data visível na mesma linha"
+      - "Valores positivos aparecem sem sinal '+' explícito"
+    table_headers:
+      - "Data"
+      - "Descrição"
+      - "Documento"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+  page_structure:
+    header:
+      bank_logo: "Sicredi"
+      account_identifiers:
+        associado: unknown
+        cooperativa: unknown
+        conta: unknown
+    metadata:
+      title: "Extrato"
+      period: "01/04/2024 a 30/04/2024"
+      start_date: "01/04/2024"
+      end_date: "30/04/2024"
+    transactions_table:
+      header_background: "white"
+      header_color: "green"
+      banded_rows: true
+      columns:
+        - "Data"
+        - "Descrição"
+        - "Documento"
+        - "Valor (R$)"
+        - "Saldo (R$)"
+      visible_rows:
+        - type: opening_balance
+          date: unknown
+          description: "SALDO ANTERIOR"
+          document: unknown
+          amount: unknown
+          balance: "56.018,21"
+        - type: normal_transaction
+          date: "01/04/2024"
+          description: "Recebimento pix"
+          document: "PIX_CRED"
+          amount: "41,00"
+          balance: "56.059,21"
+        - type: normal_transaction
+          date: "01/04/2024"
+          description: "Recebimento pix"
+          document: "PIX_CRED"
+          amount: "12,00"
+          balance: "56.071,21"
+        - type: normal_transaction
+          date: "01/04/2024"
+          description: "Recebimento pix"
+          document: "PIX_CRED"
+          amount: "45,00"
+          balance: "56.116,21"
+        - type: normal_transaction
+          date: "01/04/2024"
+          description: "Recebimento pix"
+          document: "PIX_CRED"
+          amount: "25,00"
+          balance: "56.141,21"
+        - type: normal_transaction
+          date: "01/04/2024"
+          description: "Recebimento pix"
+          document: "PIX_CRED"
+          amount: "125,00"
+          balance: "56.266,21"
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+        - "SALDO INICIAL"
+        - "SALDO DO DIA"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: "Saldo (R$)"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_document: true
+      row_has_amount: true
+      row_has_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece sem sinal negativo e saldo aumenta em relação ao saldo anterior"
+        - "Documento indica crédito, como 'PIX_CRED'"
+        - "Descrição indica recebimento e valor não possui sinal negativo"
+      negative_when:
+        - "Valor aparece com sinal '-'"
+        - "Documento indica débito, se presente no PDF real"
+        - "Saldo diminui em relação ao saldo anterior quando valor estiver sem sinal explícito"
+      inferred: true
+    balance_column:
+      exists: true
+      column_name: "Saldo (R$)"
+      balance_after_transaction: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "Recebimento pix"
+        reason: "Linhas visíveis possuem documento PIX_CRED e saldo aumenta"
+        inferred: false
+      - pattern: "PIX_CRED"
+        reason: "Código do documento indica crédito Pix"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "*"
+        reason: "Não há débito visível no recorte; validar códigos de débito no PDF real"
+        inferred: true
+    caution:
+      - "Não importar 'SALDO ANTERIOR' como transação."
+      - "Valores positivos aparecem sem sinal '+', então usar consistência de saldo e código do documento."
+      - "Não inferir entrada apenas pela palavra Pix; neste recorte a entrada é confirmada por PIX_CRED e pelo saldo crescente."
+      - "A descrição pode ter complemento oculto ou dados de contraparte; preservar descrição original quando disponível."
+      - "Se saldo e sinal/código divergirem, marcar para revisão."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Data Descrição Documento Valor (R$) Saldo (R$)"
+      header_keywords:
+        - "Data"
+        - "Descrição"
+        - "Documento"
+        - "Valor (R$)"
+        - "Saldo (R$)"
+    column_order:
+      - date
+      - description
+      - document
+      - amount
+      - balance
+    row_behavior:
+      separator: "alternating light gray and white rows"
+      green_header_line: true
+      date_repeated_per_transaction: true
+      description_left_aligned: true
+      document_uppercase_code: true
+      amount_right_aligned: true
+      balance_right_aligned: true
+      opening_balance_row_without_date_possible: true
+  parser_risks:
+    ambiguities:
+      - "Não há exemplo de débito para confirmar se usa sinal negativo, código de documento ou apenas redução de saldo."
+      - "Valores positivos não têm sinal explícito."
+      - "Parte das descrições está mascarada ou muito clara, podendo conter contraparte."
+      - "Saldo anterior aparece em linha de tabela e pode ser confundido com transação."
+      - "A coluna Documento pode ter códigos internos, não documentos bancários tradicionais."
+    fields_that_may_be_missing:
+      - "associado"
+      - "cooperativa"
+      - "conta"
+      - "full_description"
+      - "counterparty"
+      - "transaction_id"
+    cases_that_need_real_pdf_validation:
+      - "Como débitos aparecem: sinal '-', código PIX_DEB, texto de saída ou redução de saldo."
+      - "Se a camada textual preserva corretamente as cinco colunas."
+      - "Se a descrição de Pix inclui contraparte/detalhes em texto oculto ou linha adicional."
+      - "Se há linhas de saldo do dia/final no documento completo."
+      - "Se o cabeçalho repete em páginas seguintes."
+      - "Se o saldo após cada transação é sempre preenchido."
+
+layout_profile:
+  profile_name: sicredi_extrato_tabela_pix_cred_saldo_v1
+  bank: Sicredi
+  layout_family: sicredi_extrato_tabela_valor_saldo_documento
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Sicredi"
+      - "Associado"
+      - "Cooperativa"
+      - "Conta"
+      - "Extrato"
+      - "Período de"
+      - "Data"
+      - "Descrição"
+      - "Documento"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    optional_keywords:
+      - "SALDO ANTERIOR"
+      - "Recebimento pix"
+      - "PIX_CRED"
+      - "PIX_DEB"
+      - "Saldo"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "SICOOB"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "contasimples"
+      - "CRESOL"
+      - "infinitepay"
+      - "inter"
+      - "GRAFENO"
+      - "mercado pago"
+      - "PagBank"
+      - "PicPay"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.9
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Descrição"
+      - "Documento"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - description
+      - document
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Descrição"
+        - "Descricao"
+        - "Histórico"
+        - "Historico"
+      document:
+        - "Documento"
+        - "Doc."
+        - "Código"
+        - "Codigo"
+      amount:
+        - "Valor (R$)"
+        - "Valor"
+      balance:
+        - "Saldo (R$)"
+        - "Saldo"
+    table_starts_after:
+      - "Data Descrição Documento Valor (R$) Saldo (R$)"
+      - "Extrato"
+    row_separator_hint: "transaction row starts with dd/MM/yyyy; opening balance row may contain SALDO ANTERIOR without date"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+      - "-R$ {amount}"
+      - "R$ -{amount}"
+      - "{amount} D"
+      - "{amount}D"
+    positive_patterns:
+      - "{amount_without_minus}"
+      - "R$ {amount_without_minus}"
+      - "+{amount}"
+      - "{amount} C"
+      - "{amount}C"
+    ignore_rows:
+      - "Sicredi"
+      - "Associado"
+      - "Cooperativa"
+      - "Conta"
+      - "Extrato"
+      - "Período de"
+      - "Data"
+      - "Descrição"
+      - "Documento"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+      - counterparty
+      - transaction_id
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "document_code_credit_debit"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "Recebimento pix"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis têm documento PIX_CRED e saldo crescente"
+      - pattern: "PIX_CRED"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Código de documento indica crédito Pix"
+      - pattern: "PIX_DEB"
+        sign: negative
+        confidence: medium
+        inferred: true
+        reason: "Código provável de débito Pix, precisa validação em PDF real"
+    cautions:
+      - "Não usar Pix isoladamente para sinal."
+      - "Se valor vier sem sinal, usar código do documento e consistência de saldo."
+      - "Se saldo contradizer o código do documento, marcar para revisão."
+      - "Não importar linhas de saldo como transações."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "merge_wrapped_description_lines"
+      - "normalize_case_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Recebimento pix"
+        category: "pix_recebido"
+        inferred: true
+      - pattern: "PIX_CRED"
+        category: "pix_recebido"
+        inferred: true
+      - pattern: "PIX_DEB"
+        category: "pix_enviado"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX_CRED"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "Recebimento pix"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "PIX_DEB"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "Taxa"
+        category: "taxa_servico"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "Juros"
+        category: "juros"
+        inferred: true
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "Data"
+      - "Descrição"
+      - "Documento"
+      - "Valor"
+      - "Saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "validate previous_balance_plus_signed_amount_equals_current_balance; when amount has no explicit sign, infer sign from document code and balance delta"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "amount_without_sign_and_document_code_unknown"
+      - "balance_consistency_fails"
+      - "saldo_row_detected_as_transaction"
+      - "document_code_unknown"
+      - "description_truncated_or_masked"
+      - "ocr_confidence_low_on_amount_or_balance"
+  examples_from_image:
+    sample_rows:
+      - raw_date: unknown
+        raw_description: "SALDO ANTERIOR"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "56.018,21"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo anterior; não importar"
+      - raw_date: "01/04/2024"
+        raw_description: "Recebimento pix"
+        raw_document: "PIX_CRED"
+        raw_amount: "41,00"
+        raw_balance: "56.059,21"
+        normalized_amount: "41.00"
+        should_import_as_transaction: true
+        notes: "Crédito confirmado por PIX_CRED e aumento de saldo"
+      - raw_date: "01/04/2024"
+        raw_description: "Recebimento pix"
+        raw_document: "PIX_CRED"
+        raw_amount: "12,00"
+        raw_balance: "56.071,21"
+        normalized_amount: "12.00"
+        should_import_as_transaction: true
+        notes: "Crédito confirmado por PIX_CRED e aumento de saldo"
+      - raw_date: "01/04/2024"
+        raw_description: "Recebimento pix"
+        raw_document: "PIX_CRED"
+        raw_amount: "45,00"
+        raw_balance: "56.116,21"
+        normalized_amount: "45.00"
+        should_import_as_transaction: true
+        notes: "Crédito confirmado por PIX_CRED e aumento de saldo"
+      - raw_date: "01/04/2024"
+        raw_description: "Recebimento pix"
+        raw_document: "PIX_CRED"
+        raw_amount: "125,00"
+        raw_balance: "56.266,21"
+        normalized_amount: "125.00"
+        should_import_as_transaction: true
+        notes: "Crédito confirmado por PIX_CRED e aumento de saldo"
+  implementation_notes:
+    - "Classificar pelo logo Sicredi e pela tabela Data/Descrição/Documento/Valor/Saldo."
+    - "Usar a coluna Saldo para validar e, quando necessário, inferir o sinal."
+    - "Usar códigos de documento como PIX_CRED como forte evidência de crédito."
+    - "Não importar SALDO ANTERIOR como transação."
+    - "Não exigir contraparte ou ID de transação além do documento/código."
+    - "Validar com PDFs reais como débitos aparecem e se usam PIX_DEB, sinal negativo ou apenas saldo decrescente."

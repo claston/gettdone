@@ -1,0 +1,443 @@
+meta_model:
+  layout_id: banco_banpara_extrato_lancamentos_v1
+  bank: Banpará
+  channel: unknown
+  statement_type: conta_corrente_extrato_lancamentos
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo Banpará visível no topo em faixa azul"
+      - "Campos de identificação 'Emitido em', 'Nome', 'Empresa', 'Agência', 'Conta', 'Período' e 'Saldo Anterior'"
+      - "Campos laterais 'CPF' e 'CNPJ'"
+      - "Período explícito: '01/12/2024 A 31/12/2024'"
+      - "Seção 'LANÇAMENTOS'"
+      - "Cabeçalho de tabela com colunas 'Data', 'Descrição', 'Documento' e 'Valor'"
+      - "Linhas de movimentação com descrições bancárias em caixa alta"
+    weak:
+      - "Valores monetários não estão visíveis no recorte, apesar da coluna Valor existir"
+      - "Documentos não estão visíveis nas linhas exibidas"
+      - "Datas aparecem parcialmente/possivelmente com OCR truncado, exemplo '12//2024'"
+      - "Não há coluna de saldo por transação visível"
+      - "Canal de origem não está explicitamente visível"
+    table_headers:
+      - "Data"
+      - "Descrição"
+      - "Documento"
+      - "Valor"
+  page_structure:
+    header:
+      bank_logo: "Banpará"
+      account_identifiers:
+        name: unknown
+        company: unknown
+        cpf: unknown
+        cnpj: unknown
+        agency: unknown
+        account: unknown
+    metadata:
+      emitted_at: unknown
+      period: "01/12/2024 A 31/12/2024"
+      start_date: "01/12/2024"
+      end_date: "31/12/2024"
+      previous_balance_label: "Saldo Anterior"
+      previous_balance_value: unknown
+    transactions_table:
+      section_title: "LANÇAMENTOS"
+      columns:
+        - "Data"
+        - "Descrição"
+        - "Documento"
+        - "Valor"
+      visible_rows:
+        - type: normal_transaction
+          date: "12/12/2024"
+          description: "DEP DIN CX AG"
+          document: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "12/12/2024"
+          description: "CH PG ESP E DIV"
+          document: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "12/12/2024"
+          description: "RECEB PIX EXTERNO"
+          document: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "12/12/2024"
+          description: "PGTO.TITULO IB"
+          document: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "12/12/2024"
+          description: "JRS CH EQ ESPECIAL"
+          document: unknown
+          amount: unknown
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo Anterior"
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "Saldo Anterior"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_document: true
+      row_may_have_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece sem sinal negativo, conforme regra geral, se não houver indicador de débito/crédito separado"
+        - "Descrição e/ou metadado do PDF indicam crédito, se disponível"
+      negative_when:
+        - "Valor aparece com sinal '-'"
+        - "Descrição e/ou metadado do PDF indicam débito, se disponível"
+      inferred: true
+    balance_column:
+      exists: false
+      column_name: unknown
+      previous_balance_context_exists: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "DEP DIN CX AG"
+        reason: "Descrição sugere depósito em dinheiro no caixa/agência, mas valor/sinal não está visível"
+        inferred: true
+      - pattern: "RECEB PIX EXTERNO"
+        reason: "Descrição sugere recebimento Pix externo, mas valor/sinal não está visível"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "CH PG ESP E DIV"
+        reason: "Descrição sugere cheque/pagamento, mas valor/sinal não está visível"
+        inferred: true
+      - pattern: "PGTO.TITULO IB"
+        reason: "Descrição sugere pagamento de título via internet banking, mas valor/sinal não está visível"
+        inferred: true
+      - pattern: "JRS CH EQ ESPECIAL"
+        reason: "Descrição sugere juros de cheque especial, mas valor/sinal não está visível"
+        inferred: true
+    caution:
+      - "Não é possível confirmar o sinal das transações visíveis porque a coluna Valor está cortada/sem valores."
+      - "Não inferir sinal final apenas pela descrição quando o valor/sinal estiver disponível no PDF real."
+      - "Não importar 'Saldo Anterior' como transação."
+      - "Datas visíveis parecem parcialmente truncadas/OCRizadas; validar formato real no PDF."
+      - "Não há coluna de saldo por linha, então a validação aritmética detalhada é limitada."
+  visual_model:
+    table_anchor:
+      starts_after_text: "LANÇAMENTOS"
+      header_keywords:
+        - "Data"
+        - "Descrição"
+        - "Documento"
+        - "Valor"
+    column_order:
+      - date
+      - description
+      - document
+      - amount
+    row_behavior:
+      separator: "thick horizontal lines above and below header"
+      date_repeated_per_transaction: true
+      description_uppercase: true
+      document_column_present_but_values_not_visible: true
+      amount_column_present_but_values_not_visible: true
+      no_balance_column: true
+  parser_risks:
+    ambiguities:
+      - "Valores e documentos não estão visíveis no recorte, embora as colunas existam."
+      - "Datas aparecem como '12//2024' na imagem; pode ser corte/OCR, exigindo validação com PDF real."
+      - "Não há exemplo claro de sinal positivo ou negativo."
+      - "Descrição abreviada pode exigir dicionário específico do Banpará."
+      - "Canal de origem não está visível."
+    fields_that_may_be_missing:
+      - "document"
+      - "amount"
+      - "balance"
+      - "emitted_at"
+      - "name"
+      - "company"
+      - "cpf"
+      - "cnpj"
+      - "agency"
+      - "account"
+    cases_that_need_real_pdf_validation:
+      - "Se a coluna Valor aparece completa no PDF real e qual formato de sinal usa."
+      - "Se a data está completa como dd/MM/yyyy ou se a imagem recortou o dia/mês."
+      - "Se a coluna Documento é preenchida nas linhas reais."
+      - "Como créditos/débitos são representados: sinal, D/C, coluna separada ou descrição."
+      - "Se há saldo final, saldo do dia, totais e paginação."
+      - "Se descrições longas quebram em múltiplas linhas."
+
+layout_profile:
+  profile_name: banco_banpara_extrato_lancamentos_v1
+  bank: Banpará
+  layout_family: banpara_extrato_lancamentos_simples
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Banpará"
+      - "Emitido em"
+      - "Nome"
+      - "Empresa"
+      - "Agência"
+      - "Conta"
+      - "Período"
+      - "Saldo Anterior"
+      - "LANÇAMENTOS"
+      - "Data"
+      - "Descrição"
+      - "Documento"
+      - "Valor"
+    optional_keywords:
+      - "CPF"
+      - "CNPJ"
+      - "DEP DIN CX AG"
+      - "CH PG ESP E DIV"
+      - "RECEB PIX EXTERNO"
+      - "PGTO.TITULO IB"
+      - "JRS CH EQ ESPECIAL"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "banco BRB"
+      - "banco bmg"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Descrição"
+      - "Documento"
+      - "Valor"
+    expected_column_order:
+      - date
+      - description
+      - document
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Descrição"
+        - "Descricao"
+        - "Histórico"
+        - "Historico"
+      document:
+        - "Documento"
+        - "Doc."
+      amount:
+        - "Valor"
+        - "Valor R$"
+      balance:
+        - "Saldo"
+    table_starts_after:
+      - "LANÇAMENTOS"
+      - "Data Descrição Documento Valor"
+    row_separator_hint: "transaction row starts when first column contains date-like value; header delimited by thick horizontal lines"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+      - "{amount}-"
+      - "{amount} D"
+      - "D {amount}"
+    positive_patterns:
+      - "{amount_without_minus}"
+      - "{amount} C"
+      - "C {amount}"
+    ignore_rows:
+      - "Banpará"
+      - "Emitido em"
+      - "Nome"
+      - "Empresa"
+      - "CPF"
+      - "CNPJ"
+      - "Agência"
+      - "Conta"
+      - "Período"
+      - "Saldo Anterior"
+      - "LANÇAMENTOS"
+      - "Data"
+      - "Descrição"
+      - "Documento"
+      - "Valor"
+      - "SALDO ANTERIOR"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "Saldo Anterior"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "trailing_negative_sign"
+      - "credit_debit_marker"
+      - "description_based_hint"
+      - "period_balance_consistency"
+    description_based_overrides:
+      - pattern: "DEP DIN CX AG"
+        sign: positive
+        confidence: low
+        inferred: true
+        reason: "Descrição sugere depósito, mas valor/sinal não está visível"
+      - pattern: "RECEB PIX EXTERNO"
+        sign: positive
+        confidence: low
+        inferred: true
+        reason: "Descrição sugere recebimento, mas valor/sinal não está visível"
+      - pattern: "PGTO.TITULO IB"
+        sign: negative
+        confidence: low
+        inferred: true
+        reason: "Descrição sugere pagamento, mas valor/sinal não está visível"
+      - pattern: "JRS CH EQ ESPECIAL"
+        sign: negative
+        confidence: low
+        inferred: true
+        reason: "Descrição sugere juros, mas valor/sinal não está visível"
+    cautions:
+      - "Não definir sinal apenas pela descrição quando o campo Valor estiver disponível."
+      - "Transações PIX podem ser entrada ou saída; usar sinal/valor quando possível."
+      - "Se valor e sinal não forem extraídos, marcar para revisão manual."
+      - "Sem saldo por linha, não há validação aritmética forte."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+      - "keep_bank_abbreviations"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "DEP DIN CX AG"
+        category: "deposito_dinheiro_caixa_agencia"
+        inferred: true
+      - pattern: "CH PG ESP E DIV"
+        category: "cheque_pagamento"
+        inferred: true
+      - pattern: "RECEB PIX EXTERNO"
+        category: "pix_recebido"
+        inferred: true
+      - pattern: "PGTO.TITULO IB"
+        category: "pagamento_titulo"
+        inferred: true
+      - pattern: "JRS CH EQ ESPECIAL"
+        category: "juros_cheque_especial"
+        inferred: true
+    transfer_hints:
+      - pattern: "RECEB PIX"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "JRS"
+        category: "juros"
+        inferred: true
+      - pattern: "TAR"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+  validation:
+    expected_min_columns: 4
+    reject_if_missing_headers:
+      - "Data"
+      - "Descrição"
+      - "Valor"
+    balance_consistency_check:
+      enabled: true
+      method: "when previous balance and all signed transactions are available, validate aggregate final balance if present"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "amount_missing_or_not_visible"
+      - "date_appears_truncated_or_invalid"
+      - "document_column_missing"
+      - "amount_without_sign_and_description_ambiguous"
+      - "description_abbreviation_unknown"
+      - "ocr_confidence_low_on_table_region"
+      - "period_balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "12/12/2024"
+        raw_description: "DEP DIN CX AG"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Valor não visível; provável depósito, mas sinal deve ser confirmado no PDF real"
+      - raw_date: "12/12/2024"
+        raw_description: "CH PG ESP E DIV"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Valor não visível; descrição abreviada exige validação"
+      - raw_date: "12/12/2024"
+        raw_description: "RECEB PIX EXTERNO"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Provável entrada Pix, mas sinal/valor não está visível"
+      - raw_date: "12/12/2024"
+        raw_description: "PGTO.TITULO IB"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Provável pagamento via internet banking, mas sinal/valor precisa ser confirmado"
+      - raw_date: "12/12/2024"
+        raw_description: "JRS CH EQ ESPECIAL"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Prováveis juros de cheque especial; valor/sinal não visível"
+  implementation_notes:
+    - "Classificar pelo logo Banpará e pela seção 'LANÇAMENTOS'."
+    - "Extrair período do cabeçalho para validar o ano das datas."
+    - "Não importar 'Saldo Anterior' como transação."
+    - "Não exigir documento nem saldo por transação."
+    - "Como os valores não aparecem no recorte, validar obrigatoriamente com PDF real antes de fixar regras de sinal."
+    - "Preservar abreviações bancárias nas descrições."

@@ -1,0 +1,467 @@
+meta_model:
+  layout_id: sicoob_sisbr_extrato_conta_corrente_historico_movimentacao_stone_v1
+  bank: Sicoob
+  channel: SISBR
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Cabeçalho central 'SICOOB'"
+      - "Texto 'SISTEMA DE COOPERATIVAS DE CRÉDITO DO BRASIL'"
+      - "Texto 'PLATAFORMA DE SERVIÇOS FINANCEIROS DO SICOOB - SISBR'"
+      - "Título 'EXTRATO CONTA CORRENTE'"
+      - "Data de emissão visível: '07/02/2024'"
+      - "Hora de emissão visível: '14:41:21'"
+      - "Campos 'COOP.', 'CONTA:' e 'PERÍODO: 01/01/2024 - 31/01/2024'"
+      - "Subtítulo 'HISTÓRICO DE MOVIMENTAÇÃO'"
+      - "Tabela simplificada com colunas 'DATA', 'HISTÓRICO' e 'VALOR'"
+      - "Valores usam sufixo 'C' para crédito e 'D' para débito"
+      - "Débitos aparecem visualmente em vermelho com sufixo D"
+      - "Créditos aparecem visualmente em azul com sufixo C"
+      - "Linhas de saldo como 'SALDO ANTERIOR' e 'SALDO BLOQ.ANTERIOR'"
+      - "Históricos de recebimento/adquirência como 'CR CMP MST', 'CR CPS VS ELECTRON' e 'OUTROS CRÉDITOS'"
+      - "Linhas complementares associadas ao lançamento, como 'Stone Pagament_Deb._Maestro' e 'Stone Pagament_Deb._Visa Electron'"
+    weak:
+      - "Dados de cooperativa e conta estão ocultos ou ilegíveis"
+      - "Não há coluna Documento formal"
+      - "Não há coluna de saldo separada"
+      - "As datas aparecem no formato dd/MM sem ano, exigindo inferência pelo período"
+      - "Há linhas complementares sem data que precisam ser vinculadas à transação anterior"
+      - "Não há exemplo de documento explícito no recorte"
+    table_headers:
+      - "DATA"
+      - "HISTÓRICO"
+      - "VALOR"
+  page_structure:
+    header:
+      bank_logo: "SICOOB"
+      institution: "Sistema de Cooperativas de Crédito do Brasil"
+      platform: "Plataforma de Serviços Financeiros do Sicoob - SISBR"
+      title: "EXTRATO CONTA CORRENTE"
+      generated_date: "07/02/2024"
+      generated_time: "14:41:21"
+      account_identifiers:
+        cooperative: unknown
+        account: unknown
+    metadata:
+      period: "01/01/2024 - 31/01/2024"
+      start_date: "01/01/2024"
+      end_date: "31/01/2024"
+    transactions_table:
+      representation: "simplified_history_table_with_continuation_lines"
+      section_title: "HISTÓRICO DE MOVIMENTAÇÃO"
+      columns:
+        - "DATA"
+        - "HISTÓRICO"
+        - "VALOR"
+      visible_rows:
+        - type: opening_balance
+          date: "29/12/2023"
+          description: "SALDO ANTERIOR"
+          document: unknown
+          amount: "45.322,24 D"
+          balance: "45.322,24 D"
+        - type: balance_row
+          date: "29/12/2023"
+          description: "SALDO BLOQ.ANTERIOR"
+          document: unknown
+          amount: "393,80*"
+          balance: "393,80*"
+        - type: normal_transaction
+          date: "02/01/2024"
+          description: "CR CMP MST | Stone Pagament_Deb._Maestro"
+          document: unknown
+          amount: "263,25 C"
+          balance: unknown
+        - type: normal_transaction
+          date: "02/01/2024"
+          description: "CR CPS VS ELECTRON | Stone Pagament_Deb._Visa Electron"
+          document: unknown
+          amount: "77,56 C"
+          balance: unknown
+        - type: normal_transaction
+          date: "02/01/2024"
+          description: "OUTROS CRÉDITOS"
+          document: unknown
+          amount: "183,92 C"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+        - "SALDO BLOQ.ANTERIOR"
+        - "SALDO BLOQ ANTERIOR"
+        - "SALDO BLOQUEADO ANTERIOR"
+        - "SALDO DO DIA"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: "VALOR column on saldo rows"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_continuation_line: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor termina com sufixo 'C'"
+      negative_when:
+        - "Valor termina com sufixo 'D'"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      saldo_rows_use_value_column: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "CR CMP MST"
+        reason: "Linha visível possui sufixo C"
+        inferred: false
+      - pattern: "CR CPS VS ELECTRON"
+        reason: "Linha visível possui sufixo C"
+        inferred: false
+      - pattern: "OUTROS CRÉDITOS"
+        reason: "Linha visível possui sufixo C"
+        inferred: false
+      - pattern: "Stone Pagament_Deb._Maestro"
+        reason: "Complemento de adquirência; sinal financeiro confirmado pelo sufixo C da linha principal"
+        inferred: true
+      - pattern: "Stone Pagament_Deb._Visa Electron"
+        reason: "Complemento de adquirência; sinal financeiro confirmado pelo sufixo C da linha principal"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "*"
+        reason: "Não há débitos normais visíveis no recorte além de saldo anterior D; validar com PDF real"
+        inferred: true
+    caution:
+      - "Não importar 'SALDO ANTERIOR' nem 'SALDO BLOQ.ANTERIOR' como transações."
+      - "O sufixo C/D da coluna VALOR deve ser a regra primária de sinal."
+      - "Não interpretar termos como 'Deb.' em 'Stone Pagament_Deb._Maestro' como débito da conta; o valor visível tem sufixo C."
+      - "Linhas complementares sem data devem ser concatenadas à transação anterior."
+      - "Datas dd/MM devem receber o ano a partir do período do extrato."
+      - "Valores com asterisco, como '393,80*', devem ser tratados como saldos/anotações, não transações."
+  visual_model:
+    table_anchor:
+      starts_after_text: "HISTÓRICO DE MOVIMENTAÇÃO"
+      header_keywords:
+        - "DATA"
+        - "HISTÓRICO"
+        - "VALOR"
+    column_order:
+      - date
+      - description
+      - amount
+    row_behavior:
+      separator: "alternating light gray row bands"
+      date_format_without_year: true
+      continuation_lines_without_date: true
+      amount_right_aligned: true
+      credit_debit_suffix: true
+      credit_color_hint: "blue"
+      debit_color_hint: "red"
+      no_document_column: true
+      no_balance_column: true
+  parser_risks:
+    ambiguities:
+      - "Não há coluna DOCUMENTO; eventuais documentos podem estar ocultos ou ausentes."
+      - "Linhas complementares de adquirência podem ser confundidas com novas transações."
+      - "Datas aparecem sem ano e dependem do período."
+      - "Não há saldo por transação."
+      - "O texto complementar contém 'Deb.' mas o lançamento é crédito pelo sufixo C."
+      - "Há saldos com valor e data que podem ser importados por engano."
+    fields_that_may_be_missing:
+      - "balance"
+      - "cooperative"
+      - "account"
+      - "document"
+      - "counterparty"
+      - "full_description"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual mantém as linhas complementares logo após a transação correta."
+      - "Se todos os valores de transação usam sufixo C/D."
+      - "Como aparecem débitos normais neste layout."
+      - "Se há documentos ou IDs em linhas ocultas no PDF real."
+      - "Se saldos do dia/final aparecem no documento completo."
+      - "Se o cabeçalho se repete em páginas seguintes."
+
+layout_profile:
+  profile_name: sicoob_sisbr_extrato_conta_corrente_historico_movimentacao_stone_v1
+  bank: Sicoob
+  layout_family: sicoob_sisbr_extrato_historico_movimentacao_adquirencia_dc_suffix
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "SICOOB"
+      - "SISTEMA DE COOPERATIVAS DE CRÉDITO DO BRASIL"
+      - "PLATAFORMA DE SERVIÇOS FINANCEIROS DO SICOOB - SISBR"
+      - "EXTRATO CONTA CORRENTE"
+      - "COOP."
+      - "CONTA"
+      - "PERÍODO"
+      - "HISTÓRICO DE MOVIMENTAÇÃO"
+      - "DATA"
+      - "HISTÓRICO"
+      - "VALOR"
+    optional_keywords:
+      - "SALDO ANTERIOR"
+      - "SALDO BLOQ.ANTERIOR"
+      - "CR CMP MST"
+      - "CR CPS VS ELECTRON"
+      - "OUTROS CRÉDITOS"
+      - "Stone Pagament_Deb._Maestro"
+      - "Stone Pagament_Deb._Visa Electron"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "contasimples"
+      - "CRESOL"
+      - "infinitepay"
+      - "inter"
+      - "GRAFENO"
+      - "mercado pago"
+      - "PagBank"
+      - "PicPay"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.9
+  table_detection:
+    header_keywords:
+      - "DATA"
+      - "HISTÓRICO"
+      - "VALOR"
+    expected_column_order:
+      - date
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "DATA"
+        - "Data"
+      description:
+        - "HISTÓRICO"
+        - "Histórico"
+        - "Historico"
+      document:
+        - "DOC.:"
+        - "Documento"
+        - "Doc."
+      amount:
+        - "VALOR"
+        - "Valor"
+      balance:
+        - "SALDO"
+        - "Saldo"
+    table_starts_after:
+      - "HISTÓRICO DE MOVIMENTAÇÃO"
+      - "DATA HISTÓRICO VALOR"
+    row_separator_hint: "main row starts with dd/MM; continuation line without date should be merged into previous transaction"
+  parsing:
+    date_format: "dd/MM"
+    date_year_source: "statement_period"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount}D"
+      - "{amount} D"
+      - "D {amount}"
+    positive_patterns:
+      - "{amount}C"
+      - "{amount} C"
+      - "C {amount}"
+    ignore_rows:
+      - "SICOOB"
+      - "SISTEMA DE COOPERATIVAS DE CRÉDITO DO BRASIL"
+      - "PLATAFORMA DE SERVIÇOS FINANCEIROS DO SICOOB - SISBR"
+      - "EXTRATO CONTA CORRENTE"
+      - "COOP."
+      - "CONTA"
+      - "PERÍODO"
+      - "HISTÓRICO DE MOVIMENTAÇÃO"
+      - "DATA"
+      - "HISTÓRICO"
+      - "VALOR"
+      - "SALDO ANTERIOR"
+      - "SALDO BLOQ.ANTERIOR"
+      - "SALDO BLOQ ANTERIOR"
+      - "SALDO BLOQUEADO ANTERIOR"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO BLOQ.ANTERIOR"
+      - "SALDO BLOQUEADO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - complement
+      - balance
+  sign_rules:
+    priority_order:
+      - "credit_debit_suffix_C_D"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "description_based_hint"
+      - "color_hint_if_available"
+    description_based_overrides:
+      - pattern: "CR CMP MST"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sufixo C"
+      - pattern: "CR CPS VS ELECTRON"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sufixo C"
+      - pattern: "OUTROS CRÉDITOS"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sufixo C"
+      - pattern: "Stone Pagament_Deb.*"
+        sign: unknown
+        confidence: low
+        inferred: true
+        reason: "Complemento indica modalidade/produto da adquirência; sinal financeiro deve vir do sufixo C/D"
+    cautions:
+      - "Sufixo C/D deve prevalecer sobre descrição e complemento Stone."
+      - "Não importar saldos como transações."
+      - "Não interpretar asterisco como sinal."
+      - "Se valor não tiver sufixo C/D, marcar para revisão."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "merge_continuation_lines_without_date"
+      - "normalize_uppercase_optional"
+      - "preserve_bank_abbreviations"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "CR CMP MST"
+        category: "recebimento_cartao_mastercard_maestro"
+        inferred: true
+      - pattern: "CR CPS VS ELECTRON"
+        category: "recebimento_cartao_visa_electron"
+        inferred: true
+      - pattern: "OUTROS CRÉDITOS"
+        category: "outros_creditos"
+        inferred: true
+      - pattern: "Stone Pagament"
+        category: "recebimento_adquirencia_stone"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia_ted"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+  validation:
+    expected_min_columns: 3
+    reject_if_missing_headers:
+      - "DATA"
+      - "HISTÓRICO"
+      - "VALOR"
+    balance_consistency_check:
+      enabled: false
+      method: "not_available_without_per_row_balance; can validate using saldo anterior and saldo final when full statement is available"
+      tolerance: unknown
+    needs_manual_review_when:
+      - "amount_without_C_or_D_suffix"
+      - "continuation_line_not_merged"
+      - "saldo_row_detected_as_transaction"
+      - "asterisk_amount_detected"
+      - "date_year_context_missing"
+      - "ocr_confidence_low_on_C_D_suffix"
+      - "stone_deb_text_misclassified_as_debit"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "29/12"
+        raw_description: "SALDO ANTERIOR"
+        raw_document: unknown
+        raw_amount: "45.322,24D"
+        raw_balance: "45.322,24D"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo anterior; não importar, mesmo com sufixo D"
+      - raw_date: "29/12"
+        raw_description: "SALDO BLOQ.ANTERIOR"
+        raw_document: unknown
+        raw_amount: "393,80*"
+        raw_balance: "393,80*"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo bloqueado; asterisco é anotação"
+      - raw_date: "02/01"
+        raw_description: "CR CMP MST | Stone Pagament_Deb._Maestro"
+        raw_document: unknown
+        raw_amount: "263,25C"
+        raw_balance: unknown
+        normalized_amount: "263.25"
+        should_import_as_transaction: true
+        notes: "Crédito explícito pelo sufixo C; complemento Stone deve ser concatenado"
+      - raw_date: "02/01"
+        raw_description: "CR CPS VS ELECTRON | Stone Pagament_Deb._Visa Electron"
+        raw_document: unknown
+        raw_amount: "77,56C"
+        raw_balance: unknown
+        normalized_amount: "77.56"
+        should_import_as_transaction: true
+        notes: "Crédito explícito pelo sufixo C; não interpretar Deb. no complemento como débito"
+      - raw_date: "02/01"
+        raw_description: "OUTROS CRÉDITOS"
+        raw_document: unknown
+        raw_amount: "183,92C"
+        raw_balance: unknown
+        normalized_amount: "183.92"
+        should_import_as_transaction: true
+        notes: "Crédito explícito pelo sufixo C"
+  implementation_notes:
+    - "Classificar por SICOOB/SISBR e subtítulo 'HISTÓRICO DE MOVIMENTAÇÃO'."
+    - "Este layout é simplificado e não tem coluna Documento formal."
+    - "Usar o período para completar o ano das datas dd/MM."
+    - "Usar sufixo C/D como regra primária de sinal."
+    - "Filtrar linhas de saldo antes de importar."
+    - "Concatenar linhas complementares Stone sem data ao histórico anterior."
+    - "Não usar 'Deb.' em complemento Stone como sinal financeiro."
+    - "Validar com PDF real como débitos, documentos e saldos finais aparecem."

@@ -1,0 +1,387 @@
+meta_model:
+  layout_id: banco_brb_extrato_conta_corrente_mensal_v1
+  bank: Banco BRB
+  channel: unknown
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'banco BRB' visível no topo"
+      - "Título central 'Extrato'"
+      - "Campos 'Agência' e 'Conta Corrente'"
+      - "Data/hora de geração visível abaixo dos dados da conta"
+      - "Agrupamento mensal 'JUNHO/2024'"
+      - "Cabeçalho de tabela com colunas 'Dia', 'Histórico' e 'Valor'"
+      - "Valores negativos aparecem em vermelho e com sinal '-' após 'R$'"
+      - "Descrições de débito aparecem em caixa alta, como 'DEBITO PAGAMENTO PREFEITURA' e 'DEBITO COBRANCA OUTRO BANCO'"
+    weak:
+      - "Dados de agência, conta e parte das descrições estão ocultos ou ilegíveis"
+      - "Não há coluna de saldo visível no recorte"
+      - "Não há documento visível como coluna separada"
+      - "A data da linha aparece no formato dia/mês sem ano, exemplo '28/06'"
+      - "Todas as linhas visíveis são débitos; não há exemplo de crédito no recorte"
+    table_headers:
+      - "Dia"
+      - "Histórico"
+      - "Valor"
+  page_structure:
+    header:
+      bank_logo: "banco BRB"
+      title: "Extrato"
+      account_identifiers:
+        agency: unknown
+        account: unknown
+      generated_at: "01/08/2024 10:43"
+    metadata:
+      month_group: "JUNHO/2024"
+      period: "JUNHO/2024"
+    transactions_table:
+      header_background: "dark blue"
+      banded_rows: true
+      columns:
+        - "Dia"
+        - "Histórico"
+        - "Valor"
+      visible_rows:
+        - type: normal_transaction
+          date: "28/06/2024"
+          description: "DEBITO PAGAMENTO PREFEITURA -"
+          document: unknown
+          amount: "R$ -94,80"
+          balance: unknown
+        - type: normal_transaction
+          date: "28/06/2024"
+          description: "DEBITO PAGAMENTO PREFEITURA -"
+          document: unknown
+          amount: "R$ -94,78"
+          balance: unknown
+        - type: normal_transaction
+          date: "28/06/2024"
+          description: "DEBITO COBRANCA OUTRO BANCO -"
+          document: unknown
+          amount: "R$ -372,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "28/06/2024"
+          description: "DEBITO COBRANCA OUTRO BANCO -"
+          document: unknown
+          amount: "R$ -1.141,45"
+          balance: unknown
+        - type: normal_transaction
+          date: "28/06/2024"
+          description: "DEBITO COBRANCA OUTRO BANCO -"
+          document: unknown
+          amount: "R$ -213,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "28/06/2024"
+          description: "DEBITO COBRANCA OUTRO BANCO -"
+          document: unknown
+          amount: "R$ -130,11"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+        - "SALDO INICIAL"
+        - "SALDO DO DIA"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: unknown
+      inferred: true
+    normal_transaction:
+      row_has_day_month: true
+      row_has_description: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece sem sinal negativo"
+        - "Valor aparece com sinal positivo explícito, se presente"
+      negative_when:
+        - "Valor aparece com sinal '-' após 'R$'"
+        - "Valor aparece em vermelho com sinal negativo"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      no_balance_visible_in_image: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "*"
+        reason: "Não há crédito visível na imagem; usar sinal explícito do valor em PDFs reais"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "DEBITO PAGAMENTO PREFEITURA*"
+        reason: "Linhas visíveis possuem sinal negativo explícito"
+        inferred: false
+      - pattern: "DEBITO COBRANCA OUTRO BANCO*"
+        reason: "Linhas visíveis possuem sinal negativo explícito"
+        inferred: false
+    caution:
+      - "Não há coluna de saldo; validação aritmética por saldo não é possível nesta imagem."
+      - "Não há documento visível; parser não deve exigir documento."
+      - "Datas usam dia/mês e dependem do agrupador 'JUNHO/2024' para determinar o ano."
+      - "Valores negativos aparecem com 'R$ -valor'; preservar o sinal antes de converter."
+      - "Como só há débitos visíveis, validar em PDFs reais como créditos são exibidos."
+  visual_model:
+    table_anchor:
+      starts_after_text: "JUNHO/2024"
+      header_row_color: "dark blue"
+      header_keywords:
+        - "Dia"
+        - "Histórico"
+        - "Valor"
+    column_order:
+      - date
+      - description
+      - amount
+    row_behavior:
+      separator: "alternating light gray and white bands"
+      date_format_day_month: true
+      date_repeated_per_transaction: true
+      description_uppercase_bold: true
+      amount_right_aligned: true
+      negative_amount_color: "red"
+      no_document_column: true
+      no_balance_column: true
+  parser_risks:
+    ambiguities:
+      - "O canal de origem não está visível; pode ser internet banking, app ou exportação PDF."
+      - "Não é possível confirmar como créditos aparecem neste layout."
+      - "Não há saldo nem documento por linha."
+      - "As descrições têm partes ocultas/ilegíveis após o hífen."
+      - "O agrupador mensal deve ser usado para completar o ano da data."
+    fields_that_may_be_missing:
+      - "document"
+      - "balance"
+      - "agency"
+      - "account"
+      - "channel"
+      - "full_description"
+    cases_that_need_real_pdf_validation:
+      - "Se créditos aparecem sem sinal negativo, com cor diferente, ou com texto 'CREDITO'."
+      - "Se linhas de saldo anterior/final aparecem em outras partes do extrato."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Se o PDF preserva cor vermelha ou somente o sinal negativo."
+      - "Se há paginação e repetição do cabeçalho."
+      - "Se o agrupador de mês sempre aparece antes dos lançamentos."
+
+layout_profile:
+  profile_name: banco_brb_extrato_conta_corrente_mensal_v1
+  bank: Banco BRB
+  layout_family: brb_extrato_mensal_tabela_simples
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "banco BRB"
+      - "Extrato"
+      - "Agência"
+      - "Conta Corrente"
+      - "Dia"
+      - "Histórico"
+      - "Valor"
+    optional_keywords:
+      - "JUNHO/2024"
+      - "DEBITO PAGAMENTO PREFEITURA"
+      - "DEBITO COBRANCA OUTRO BANCO"
+      - "R$"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "banco bmg"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.8
+  table_detection:
+    header_keywords:
+      - "Dia"
+      - "Histórico"
+      - "Valor"
+    expected_column_order:
+      - date
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "Dia"
+        - "Data"
+      description:
+        - "Histórico"
+        - "Historico"
+        - "Lançamento"
+        - "Descrição"
+      document:
+        - "Documento"
+        - "Doc."
+      amount:
+        - "Valor"
+        - "R$"
+      balance:
+        - "Saldo"
+    table_starts_after:
+      - "JUNHO/2024"
+      - "Dia Histórico Valor"
+    row_separator_hint: "transaction starts when first column contains dd/MM; month/year group appears above table"
+  parsing:
+    date_format: "dd/MM"
+    date_year_source: "month_group_or_statement_header"
+    month_language: "pt-BR"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "R$ -{amount}"
+      - "-{amount}"
+      - "red_amount_with_minus"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "banco BRB"
+      - "Extrato"
+      - "Agência"
+      - "Conta Corrente"
+      - "Dia"
+      - "Histórico"
+      - "Valor"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "visual_color_when_available"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "DEBITO PAGAMENTO PREFEITURA*"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem sinal negativo explícito"
+      - pattern: "DEBITO COBRANCA OUTRO BANCO*"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem sinal negativo explícito"
+    cautions:
+      - "Não depender apenas da palavra DEBITO se o valor/sinal estiver disponível."
+      - "Valores sem sinal negativo devem ser tratados como positivos conforme regra geral, mas créditos precisam ser validados em PDFs reais."
+      - "Sem saldo por linha, não há validação aritmética forte."
+      - "Completar ano a partir do agrupador mensal antes de normalizar a data."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+      - "remove_masking_artifacts_only_if_confirmed"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "DEBITO PAGAMENTO PREFEITURA*"
+        category: "pagamento_prefeitura"
+        inferred: true
+      - pattern: "DEBITO COBRANCA OUTRO BANCO*"
+        category: "pagamento_cobranca_outro_banco"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "DOC"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+  validation:
+    expected_min_columns: 3
+    reject_if_missing_headers:
+      - "Dia"
+      - "Histórico"
+      - "Valor"
+    balance_consistency_check:
+      enabled: false
+      method: "not_available_without_balance_column"
+      tolerance: unknown
+    needs_manual_review_when:
+      - "date_year_context_missing"
+      - "amount_without_sign_and_description_ambiguous"
+      - "credit_pattern_unknown"
+      - "description_partially_masked_or_truncated"
+      - "ocr_confidence_low_on_minus_sign_or_amount"
+      - "row_spans_multiple_lines"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "28/06"
+        raw_description: "DEBITO PAGAMENTO PREFEITURA -"
+        raw_document: unknown
+        raw_amount: "R$ -94,80"
+        raw_balance: unknown
+        normalized_amount: "-94.80"
+        should_import_as_transaction: true
+        notes: "Débito explícito por sinal negativo; ano inferido de JUNHO/2024"
+      - raw_date: "28/06"
+        raw_description: "DEBITO PAGAMENTO PREFEITURA -"
+        raw_document: unknown
+        raw_amount: "R$ -94,78"
+        raw_balance: unknown
+        normalized_amount: "-94.78"
+        should_import_as_transaction: true
+        notes: "Débito explícito por sinal negativo"
+      - raw_date: "28/06"
+        raw_description: "DEBITO COBRANCA OUTRO BANCO -"
+        raw_document: unknown
+        raw_amount: "R$ -372,00"
+        raw_balance: unknown
+        normalized_amount: "-372.00"
+        should_import_as_transaction: true
+        notes: "Débito explícito por sinal negativo"
+      - raw_date: "28/06"
+        raw_description: "DEBITO COBRANCA OUTRO BANCO -"
+        raw_document: unknown
+        raw_amount: "R$ -1.141,45"
+        raw_balance: unknown
+        normalized_amount: "-1141.45"
+        should_import_as_transaction: true
+        notes: "Débito explícito por sinal negativo"
+  implementation_notes:
+    - "Classificar pelo logo BRB, título 'Extrato' e cabeçalho de tabela 'Dia/Histórico/Valor'."
+    - "Usar agrupador mensal, como 'JUNHO/2024', para completar datas dd/MM."
+    - "Não exigir documento ou saldo por transação."
+    - "Normalizar valores 'R$ -x' como negativos."
+    - "Preservar descrições originais, mesmo com partes ocultas após hífen."
+    - "Validar com PDF real como créditos e linhas de saldo são representados."
