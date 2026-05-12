@@ -218,3 +218,28 @@ Resultados:
 
 - `All checks passed!`
 - `8 passed`
+
+## Fatia seguinte: pacote maior de metadados canônicos tabulares
+
+Branch: `feat/pdf-canonical-balance-document-pack1`
+
+- Extende metadados canônicos no caminho tabular declarativo de PDF:
+  - preenche `running_balance` quando coluna de saldo estiver disponível
+  - preenche `external_reference_id` via heurística de coluna `document` declarada no profile
+- Mantém compatibilidade com o fluxo legado:
+  - `transactions` e `description` permanecem sem alteração funcional
+  - enriquecimento ocorre apenas em `canonical_transactions`
+- Mantém metadados já existentes do canônico:
+  - `layout_name`, `bank_name`, `source_page`, `source_line`, `confidence`, `warnings`
+
+Validação da fatia de metadados tabulares:
+
+```powershell
+..\..\backend\venv\Scripts\python.exe -m pytest backend\tests\test_pdf_parser.py backend\tests\test_analyze_service_multiformat.py -q -p no:cacheprovider
+..\..\backend\venv\Scripts\python.exe -m ruff check backend\app\application\pdf_parser.py backend\tests\test_pdf_parser.py
+```
+
+Resultados:
+
+- `8 passed`
+- `All checks passed!`
