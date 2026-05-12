@@ -87,3 +87,7 @@ def test_parse_pdf_transactions_uses_declarative_credit_debit_columns(monkeypatc
     assert result.canonical_transactions[0].layout_name == "viacredi_ailos_extrato_conta_corrente_v1"
     assert result.canonical_transactions[0].source_page == 1
     assert result.canonical_transactions[0].source_line == 3
+    assert result.canonical_transactions[0].external_reference_id == "123"
+    assert result.canonical_transactions[0].running_balance == 1500.0
+    assert result.canonical_transactions[1].external_reference_id == "456"
+    assert result.canonical_transactions[1].running_balance == 1487.66

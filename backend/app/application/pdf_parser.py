@@ -115,6 +115,7 @@ class _SelectedTabularAmount:
     token: _AmountToken
     role: str | None
     description_end: int
+    balance_token: _AmountToken | None = None
 
 
 @dataclass(frozen=True)
@@ -129,6 +130,8 @@ class _ParsedTransaction:
     transaction: NormalizedTransaction
     source_page: int | None = None
     source_line: int | None = None
+    running_balance: float | None = None
+    external_reference_id: str | None = None
 
 
 def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
@@ -182,6 +185,8 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
             layout_name=layout.layout_name,
             source_page=row.source_page,
             source_line=row.source_line,
+            running_balance=row.running_balance,
+            external_reference_id=row.external_reference_id,
             warnings=["layout_fallback"] if layout.used_fallback else None,
             confidence=layout.confidence,
         )
@@ -414,6 +419,12 @@ def _parse_tabular_statement_rows(
         if not raw_description or _should_skip_transaction_description(raw_description):
             continue
 
+        external_reference_id = _extract_document_reference(raw_description, layout_profile=tabular_profile)
+
+        running_balance: float | None = None
+        if selected_amount.balance_token is not None:
+            running_balance = _parse_pdf_amount(selected_amount.balance_token.value)
+
         amount = apply_amount_role_sign(_parse_pdf_amount(selected_amount.token.value), selected_amount.role)
         if selected_amount.role in {"credit", "debit"}:
             signed_amount = amount
@@ -433,6 +444,8 @@ def _parse_tabular_statement_rows(
                 ),
                 source_page=line.page_number,
                 source_line=line.line_number,
+                running_balance=running_balance,
+                external_reference_id=external_reference_id,
             )
         )
 
@@ -448,9 +461,9 @@ def _select_tabular_amount_token(
     if declarative_selection is not None:
         return declarative_selection
     if len(tokens) == 1:
-        return _SelectedTabularAmount(token=tokens[0], role=None, description_end=tokens[0].start)
+        return _SelectedTabularAmount(token=tokens[0], role=None, description_end=tokens[0].start, balance_token=None)
     # In statement-like tables with balance column, the rightmost amount is usually balance.
-    return _SelectedTabularAmount(token=tokens[-2], role=None, description_end=tokens[-2].start)
+    return _SelectedTabularAmount(token=tokens[-2], role=None, description_end=tokens[-2].start, balance_token=tokens[-1])
 
 
 def _select_declarative_tabular_amount(
@@ -466,11 +479,13 @@ def _select_declarative_tabular_amount(
     aligned_tokens = tokens[-len(amount_roles) :]
     aligned_roles = amount_roles[-len(aligned_tokens) :]
     role_tokens = list(zip(aligned_roles, aligned_tokens, strict=False))
+    role_token_map = {role: token for role, token in role_tokens}
     transaction_role_tokens = [(role, token) for role, token in role_tokens if role != "balance"]
     if not transaction_role_tokens:
         return None
 
     description_end = tokens[0].start if {"credit", "debit"} & set(amount_roles) else transaction_role_tokens[0][1].start
+    balance_token = role_token_map.get("balance")
     for preferred_role in ("debit", "credit", "amount"):
         for role, token in transaction_role_tokens:
             if role != preferred_role:
@@ -478,10 +493,29 @@ def _select_declarative_tabular_amount(
             amount = _parse_pdf_amount(token.value)
             if preferred_role in {"credit", "debit"} and abs(amount) < 0.000001:
                 continue
-            return _SelectedTabularAmount(token=token, role=role, description_end=description_end)
+            return _SelectedTabularAmount(
+                token=token,
+                role=role,
+                description_end=description_end,
+                balance_token=balance_token,
+            )
 
     role, token = transaction_role_tokens[0]
-    return _SelectedTabularAmount(token=token, role=role, description_end=description_end)
+    return _SelectedTabularAmount(token=token, role=role, description_end=description_end, balance_token=balance_token)
+
+
+def _extract_document_reference(raw_description: str, *, layout_profile: DeclarativeLayoutProfile | None) -> str | None:
+    if layout_profile is None:
+        return None
+    if "document" not in set(layout_profile.expected_column_order):
+        return None
+    parts = raw_description.split()
+    if not parts:
+        return None
+    candidate = parts[-1].strip()
+    if re.fullmatch(r"[A-Za-z0-9./_-]{3,}", candidate):
+        return candidate
+    return None
 
 
 def _has_declarative_table_header(lines: list[_PdfLine], layout_profile: DeclarativeLayoutProfile | None) -> bool:
