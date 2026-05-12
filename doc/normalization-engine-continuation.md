@@ -164,3 +164,30 @@ Resultados:
 
 - `7 passed`
 - `All checks passed!`
+
+## Fatia seguinte: CanonicalTransaction no parser PDF (paralelo)
+
+Branch: `feat/pdf-canonical-transaction-metadata`
+
+- `PdfParseResult` passa a expor `canonical_transactions` em paralelo a `transactions`.
+- O parser PDF preenche os canônicos via `from_normalized_transaction(...)` sem alterar o contrato legado.
+- Metadados preenchidos nesta fatia:
+  - `layout_name`
+  - `bank_name` (quando perfil declarativo existe)
+  - `confidence`
+  - `warnings=["layout_fallback"]` quando a inferência usar fallback
+- Compatibilidade preservada:
+  - `transactions` (NormalizedTransaction) continua sendo o caminho principal atual
+  - `canonical_transactions` é opcional no dataclass para manter fixtures antigas de teste
+
+Validacao da fatia CanonicalTransaction no PDF:
+
+```powershell
+..\..\backend\venv\Scripts\python.exe -m pytest backend\tests\test_pdf_parser.py backend\tests\test_analyze_service_multiformat.py -q -p no:cacheprovider
+..\..\backend\venv\Scripts\python.exe -m ruff check backend\app\application\pdf_parser.py backend\tests\test_pdf_parser.py --fix
+```
+
+Resultados:
+
+- `8 passed`
+- `Found 1 error (1 fixed, 0 remaining).`

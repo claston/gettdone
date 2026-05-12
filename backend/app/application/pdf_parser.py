@@ -7,8 +7,9 @@ from pypdf import PdfReader
 
 from app.application.errors import InvalidFileContentError
 from app.application.layout_profiles.registry import DeclarativeLayoutProfile, get_layout_profile
-from app.application.models import NormalizedTransaction
+from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.normalization.amount import apply_amount_role_sign, parse_amount
+from app.application.normalization.canonical import from_normalized_transaction
 from app.application.normalization.text import normalize_upper_text
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
 from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE
@@ -99,6 +100,7 @@ class PdfParseResult:
     layout: PdfLayoutInference
     extracted_text: str
     parse_metrics: dict[str, int | str]
+    canonical_transactions: list[CanonicalTransaction] | None = None
 
 
 @dataclass(frozen=True)
@@ -151,8 +153,20 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
                 "PDF text was extracted, but no recognizable transaction row pattern was found."
             )
 
+    canonical_transactions = [
+        from_normalized_transaction(
+            transaction,
+            bank_name=layout_profile.bank if layout_profile is not None else None,
+            layout_name=layout.layout_name,
+            warnings=["layout_fallback"] if layout.used_fallback else None,
+            confidence=layout.confidence,
+        )
+        for transaction in transactions
+    ]
+
     return PdfParseResult(
         transactions=transactions,
+        canonical_transactions=canonical_transactions,
         layout=layout,
         extracted_text=joined_text,
         parse_metrics={
