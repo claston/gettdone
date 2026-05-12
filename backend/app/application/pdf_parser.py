@@ -7,6 +7,7 @@ from pypdf import PdfReader
 
 from app.application.csv_parser import _parse_amount
 from app.application.errors import InvalidFileContentError
+from app.application.layout_profiles.registry import DeclarativeLayoutProfile, get_layout_profile
 from app.application.models import NormalizedTransaction
 from app.application.normalization.text import normalize_upper_text
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
@@ -107,10 +108,18 @@ class _AmountToken:
     end: int
 
 
+@dataclass(frozen=True)
+class _SelectedTabularAmount:
+    token: _AmountToken
+    role: str | None
+    description_end: int
+
+
 def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
     page_texts = _extract_pdf_page_texts(raw_bytes)
     joined_text = "\n".join(page_texts)
     layout = infer_pdf_layout(joined_text)
+    layout_profile = get_layout_profile(layout.layout_name)
     lines = _flatten_statement_lines(page_texts)
     grouped_transactions = _parse_grouped_statement_lines(lines)
     transactions = grouped_transactions
@@ -125,7 +134,7 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
         transactions = inline_transactions
         selected_parser = "inline"
         if not transactions:
-            transactions, tabular_candidates = _parse_tabular_statement_rows(lines)
+            transactions, tabular_candidates = _parse_tabular_statement_rows(lines, layout_profile=layout_profile)
             if transactions:
                 selected_parser = "tabular"
         if not transactions:
@@ -325,10 +334,13 @@ def _parse_inline_statement_rows(lines: list[str]) -> tuple[list[NormalizedTrans
     return transactions, candidates
 
 
-def _parse_tabular_statement_rows(lines: list[str]) -> tuple[list[NormalizedTransaction], int]:
+def _parse_tabular_statement_rows(
+    lines: list[str], *, layout_profile: DeclarativeLayoutProfile | None = None
+) -> tuple[list[NormalizedTransaction], int]:
     transactions: list[NormalizedTransaction] = []
     candidates = 0
     inferred_year = _infer_default_statement_year(lines)
+    tabular_profile = layout_profile if _has_declarative_table_header(lines, layout_profile) else None
 
     for line in lines:
         match = TABULAR_DATE_PREFIX_PATTERN.match(line)
@@ -344,20 +356,23 @@ def _parse_tabular_statement_rows(lines: list[str]) -> tuple[list[NormalizedTran
             continue
         candidates += 1
 
-        amount_token = _select_tabular_amount_token(amount_tokens)
-        if amount_token is None:
+        selected_amount = _select_tabular_amount_token(amount_tokens, layout_profile=tabular_profile)
+        if selected_amount is None:
             continue
 
-        raw_description = rest[: amount_token.start].strip()
+        raw_description = rest[: selected_amount.description_end].strip()
         if not raw_description or _should_skip_transaction_description(raw_description):
             continue
 
-        amount = _parse_pdf_amount(amount_token.value)
-        signed_amount = _apply_sign_hints(
-            amount=amount,
-            description=raw_description,
-            section_hint=None,
-        )
+        amount = _apply_tabular_column_sign(_parse_pdf_amount(selected_amount.token.value), selected_amount.role)
+        if selected_amount.role in {"credit", "debit"}:
+            signed_amount = amount
+        else:
+            signed_amount = _apply_sign_hints(
+                amount=amount,
+                description=raw_description,
+                section_hint=None,
+            )
         transactions.append(
             NormalizedTransaction(
                 date=_parse_statement_date(match.group("date"), fallback_year=inferred_year),
@@ -370,13 +385,79 @@ def _parse_tabular_statement_rows(lines: list[str]) -> tuple[list[NormalizedTran
     return transactions, candidates
 
 
-def _select_tabular_amount_token(tokens: list[_AmountToken]) -> _AmountToken | None:
+def _select_tabular_amount_token(
+    tokens: list[_AmountToken], *, layout_profile: DeclarativeLayoutProfile | None = None
+) -> _SelectedTabularAmount | None:
     if not tokens:
         return None
+    declarative_selection = _select_declarative_tabular_amount(tokens, layout_profile)
+    if declarative_selection is not None:
+        return declarative_selection
     if len(tokens) == 1:
-        return tokens[0]
+        return _SelectedTabularAmount(token=tokens[0], role=None, description_end=tokens[0].start)
     # In statement-like tables with balance column, the rightmost amount is usually balance.
-    return tokens[-2]
+    return _SelectedTabularAmount(token=tokens[-2], role=None, description_end=tokens[-2].start)
+
+
+def _select_declarative_tabular_amount(
+    tokens: list[_AmountToken], layout_profile: DeclarativeLayoutProfile | None
+) -> _SelectedTabularAmount | None:
+    if layout_profile is None:
+        return None
+
+    amount_roles = tuple(role for role in layout_profile.expected_column_order if role in {"amount", "credit", "debit", "balance"})
+    if not amount_roles:
+        return None
+
+    aligned_tokens = tokens[-len(amount_roles) :]
+    aligned_roles = amount_roles[-len(aligned_tokens) :]
+    role_tokens = list(zip(aligned_roles, aligned_tokens, strict=False))
+    transaction_role_tokens = [(role, token) for role, token in role_tokens if role != "balance"]
+    if not transaction_role_tokens:
+        return None
+
+    description_end = tokens[0].start if {"credit", "debit"} & set(amount_roles) else transaction_role_tokens[0][1].start
+    for preferred_role in ("debit", "credit", "amount"):
+        for role, token in transaction_role_tokens:
+            if role != preferred_role:
+                continue
+            amount = _parse_pdf_amount(token.value)
+            if preferred_role in {"credit", "debit"} and abs(amount) < 0.000001:
+                continue
+            return _SelectedTabularAmount(token=token, role=role, description_end=description_end)
+
+    role, token = transaction_role_tokens[0]
+    return _SelectedTabularAmount(token=token, role=role, description_end=description_end)
+
+
+def _has_declarative_table_header(lines: list[str], layout_profile: DeclarativeLayoutProfile | None) -> bool:
+    if layout_profile is None or not layout_profile.expected_column_order or not layout_profile.column_aliases:
+        return False
+
+    required_roles = tuple(role for role in layout_profile.expected_column_order if role not in {"document", "balance"})
+    if not required_roles:
+        return False
+
+    minimum_matches = min(3, len(required_roles))
+    for line in lines:
+        normalized_line = _normalize_text(line)
+        matches = 0
+        for role in required_roles:
+            aliases = layout_profile.column_aliases.get(role, ())
+            if any(_normalize_text(alias) in normalized_line for alias in aliases):
+                matches += 1
+        if matches >= minimum_matches:
+            return True
+
+    return False
+
+
+def _apply_tabular_column_sign(amount: float, role: str | None) -> float:
+    if role == "credit":
+        return abs(amount)
+    if role == "debit":
+        return -abs(amount)
+    return amount
 
 
 def _find_amount_tokens(text: str) -> list[_AmountToken]:
