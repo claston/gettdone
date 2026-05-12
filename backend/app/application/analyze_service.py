@@ -274,6 +274,9 @@ class AnalyzeService:
             ),
             "canonical_warning_count": int(parse_metrics.get("canonical_warning_count", 0)),
             "canonical_balance_warning_count": int(parse_metrics.get("canonical_balance_warning_count", 0)),
+            "canonical_warning_transactions_count": int(parse_metrics.get("canonical_warning_transactions_count", 0)),
+            "canonical_warning_types_count": int(parse_metrics.get("canonical_warning_types_count", 0)),
+            "canonical_warning_types": str(parse_metrics.get("canonical_warning_types", "")),
         }
 
     def _resolve_ofx_account_type(
