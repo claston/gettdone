@@ -30,3 +30,53 @@ GROUPED_INLINE_MULTILINE_SAMPLE = "\n".join(
 
 
 UNICODE_MINUS_SINGLE_ROW_SAMPLE = "10 ABR 2026 Ajuste manual −R$ 10,00"
+
+
+PDF_PARSE_METRICS_GROUPED_CANONICAL_OK = {
+    "page_count": 1,
+    "extracted_char_count": 72,
+    "flattened_line_count": 3,
+    "grouped_transactions_count": 2,
+    "inline_candidates_count": 0,
+    "inline_transactions_count": 0,
+    "selected_parser": "grouped",
+    "balance_consistency_checked": 1,
+    "balance_consistency_failed": 0,
+    "canonical_transactions_count": 2,
+    "canonical_with_running_balance_count": 2,
+    "canonical_with_external_reference_count": 2,
+    "canonical_warning_count": 0,
+    "canonical_balance_warning_count": 0,
+    "canonical_warning_transactions_count": 0,
+    "canonical_warning_types_count": 0,
+    "canonical_warning_types": "",
+    "canonical_warning_types_list": "",
+    "canonical_running_balance_coverage_rate": 1.0,
+    "canonical_external_reference_coverage_rate": 1.0,
+    "canonical_warning_transaction_rate": 0.0,
+}
+
+
+PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY = {
+    "page_count": 1,
+    "extracted_char_count": 47,
+    "flattened_line_count": 2,
+    "grouped_transactions_count": 0,
+    "inline_candidates_count": 2,
+    "inline_transactions_count": 2,
+    "selected_parser": "inline",
+    "balance_consistency_checked": 0,
+    "balance_consistency_failed": 0,
+    "canonical_transactions_count": 2,
+    "canonical_with_running_balance_count": 0,
+    "canonical_with_external_reference_count": 0,
+    "canonical_warning_count": 0,
+    "canonical_balance_warning_count": 0,
+    "canonical_warning_transactions_count": 0,
+    "canonical_warning_types_count": 0,
+    "canonical_warning_types": "",
+    "canonical_warning_types_list": "",
+    "canonical_running_balance_coverage_rate": 0.0,
+    "canonical_external_reference_coverage_rate": 0.0,
+    "canonical_warning_transaction_rate": 0.0,
+}
