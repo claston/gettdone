@@ -394,3 +394,26 @@ Resultados:
 
 - `9 passed`
 - `All checks passed!`
+
+## Fatia seguinte: pacote maior de golden fixtures sintéticas (fase 1)
+
+Branch: `feat/golden-fixtures-synthetic-pack1`
+
+- Cria módulo dedicado de fixtures sintéticas para cenários tabulares do PDF:
+  - `backend/tests/fixtures/pdf_golden_samples.py`
+- Migra os cenários principais do `test_pdf_parser.py` para reutilizar fixtures:
+  - caso com consistência de saldo
+  - caso com warning de inconsistência
+- Objetivo: reduzir duplicação e criar base estável para ampliar regressão por perfil/layout sem depender de PDFs reais.
+
+Validação da fatia de golden fixtures (fase 1):
+
+```powershell
+..\..\backend\venv\Scripts\python.exe -m pytest backend\tests\test_pdf_parser.py backend\tests\test_analyze_service_multiformat.py -q -p no:cacheprovider
+..\..\backend\venv\Scripts\python.exe -m ruff check backend\tests\test_pdf_parser.py backend\tests\fixtures\pdf_golden_samples.py
+```
+
+Resultados:
+
+- `9 passed`
+- `All checks passed!`
