@@ -191,3 +191,30 @@ Resultados:
 
 - `8 passed`
 - `Found 1 error (1 fixed, 0 remaining).`
+
+## Fatia seguinte: pacote maior de rastreabilidade canônica no PDF
+
+Branch: `feat/pdf-canonical-traceability-pack1`
+
+- Refactor único no parser PDF para carregar contexto de origem por linha:
+  - nova estrutura interna com `page_number` e `line_number`
+  - parsers `grouped`/`inline`/`tabular`/`columnar` propagam essa origem por transação
+- `canonical_transactions` passa a refletir origem real por transação:
+  - `source_page`
+  - `source_line`
+  - mantendo `layout_name`, `bank_name`, `confidence` e warning de fallback
+- Compatibilidade preservada:
+  - `transactions` legado continua inalterado para o fluxo principal
+  - `canonical_transactions` permanece opcional em `PdfParseResult` para manter fixtures antigas
+
+Validacao da fatia de rastreabilidade canônica:
+
+```powershell
+..\..\backend\venv\Scripts\python.exe -m ruff check backend\app\application\pdf_parser.py backend\tests\test_pdf_parser.py
+..\..\backend\venv\Scripts\python.exe -m pytest backend\tests\test_pdf_parser.py backend\tests\test_analyze_service_multiformat.py -q -p no:cacheprovider
+```
+
+Resultados:
+
+- `All checks passed!`
+- `8 passed`

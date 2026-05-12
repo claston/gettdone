@@ -28,6 +28,8 @@ def test_parse_pdf_transactions_handles_inline_and_multiline_amount_rows(monkeyp
     assert result.transactions[1].amount == -241.05
     assert result.canonical_transactions[0].layout_name == result.layout.layout_name
     assert result.canonical_transactions[0].confidence == result.layout.confidence
+    assert result.canonical_transactions[0].source_page == 1
+    assert result.canonical_transactions[0].source_line == 2
 
 
 def test_parse_pdf_transactions_parses_unicode_minus_with_currency_prefix(monkeypatch) -> None:
@@ -40,6 +42,8 @@ def test_parse_pdf_transactions_parses_unicode_minus_with_currency_prefix(monkey
     assert len(result.canonical_transactions) == 1
     assert result.transactions[0].date == "2026-04-10"
     assert result.transactions[0].amount == -10.0
+    assert result.canonical_transactions[0].source_page == 1
+    assert result.canonical_transactions[0].source_line == 1
 
 
 def test_parse_pdf_transactions_does_not_run_ocr_fallback(monkeypatch) -> None:
@@ -81,3 +85,5 @@ def test_parse_pdf_transactions_uses_declarative_credit_debit_columns(monkeypatc
     assert result.transactions[1].description == "TARIFA PACOTE SERVICOS 456"
     assert result.canonical_transactions[0].bank_name == "Viacredi"
     assert result.canonical_transactions[0].layout_name == "viacredi_ailos_extrato_conta_corrente_v1"
+    assert result.canonical_transactions[0].source_page == 1
+    assert result.canonical_transactions[0].source_line == 3
