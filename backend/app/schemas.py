@@ -82,6 +82,7 @@ class PdfProcessingMetrics(BaseModel):
     canonical_warning_transactions_count: int = 0
     canonical_warning_types_count: int = 0
     canonical_warning_types: str = ""
+    canonical_warning_types_list: list[str] = []
     canonical_running_balance_coverage_rate: float = 0.0
     canonical_external_reference_coverage_rate: float = 0.0
     canonical_warning_transaction_rate: float = 0.0

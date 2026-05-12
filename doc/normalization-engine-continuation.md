@@ -373,3 +373,24 @@ Resultados:
 
 - `9 passed`
 - `All checks passed!`
+
+## Fatia seguinte: pacote maior de lista de warnings canônicos
+
+Branch: `feat/pdf-canonical-warning-list-pack1`
+
+- Mantém `canonical_warning_types` (string) por compatibilidade.
+- Adiciona campo estruturado `canonical_warning_types_list` para consumo mais simples.
+- Propaga no `AnalyzeService` e tipa no schema `PdfProcessingMetrics`.
+- Ajusta testes do parser e do analyze service para validar formato em lista.
+
+Validação da fatia de lista de warnings:
+
+```powershell
+..\..\backend\venv\Scripts\python.exe -m pytest backend\tests\test_pdf_parser.py backend\tests\test_analyze_service_multiformat.py -q -p no:cacheprovider
+..\..\backend\venv\Scripts\python.exe -m ruff check backend\app\application\pdf_parser.py backend\app\application\analyze_service.py backend\app\schemas.py backend\tests\test_pdf_parser.py backend\tests\test_analyze_service_multiformat.py
+```
+
+Resultados:
+
+- `9 passed`
+- `All checks passed!`

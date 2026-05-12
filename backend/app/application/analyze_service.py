@@ -277,6 +277,11 @@ class AnalyzeService:
             "canonical_warning_transactions_count": int(parse_metrics.get("canonical_warning_transactions_count", 0)),
             "canonical_warning_types_count": int(parse_metrics.get("canonical_warning_types_count", 0)),
             "canonical_warning_types": str(parse_metrics.get("canonical_warning_types", "")),
+            "canonical_warning_types_list": [
+                item
+                for item in str(parse_metrics.get("canonical_warning_types_list", "")).split("|")
+                if item.strip()
+            ],
             "canonical_running_balance_coverage_rate": float(
                 parse_metrics.get("canonical_running_balance_coverage_rate", 0.0)
             ),
