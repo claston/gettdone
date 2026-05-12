@@ -41,3 +41,23 @@ Resultados:
 
 - `9 passed`
 - `All checks passed!`
+
+## Fatia seguinte: pacote maior de golden fixtures sinteticas (fase 5)
+
+Branch: `feat/golden-fixtures-synthetic-pack5`
+
+- Adiciona helper `build_pdf_parse_result(...)` em `pdf_golden_samples.py` para montar respostas sinteticas de parser PDF.
+- Migra mocks de `PdfParseResult` em `test_analyze_service_multiformat.py` para usar o helper/factory compartilhado.
+- Mantem comportamento funcional inalterado e reduz boilerplate de mocks de teste.
+
+Validacao da fatia de golden fixtures (fase 5):
+
+```powershell
+..\..\backend\venv\Scripts\python.exe -m pytest backend\tests\test_analyze_service_multiformat.py backend\tests\test_pdf_parser.py -q -p no:cacheprovider
+..\..\backend\venv\Scripts\python.exe -m ruff check backend\tests\fixtures\pdf_golden_samples.py backend\tests\test_analyze_service_multiformat.py
+```
+
+Resultados:
+
+- `9 passed`
+- `All checks passed!`

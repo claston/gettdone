@@ -5,12 +5,11 @@ from openpyxl import Workbook
 from app.application import analyze_service as analyze_service_module
 from app.application.analyze_service import AnalyzeService
 from app.application.models import NormalizedTransaction
-from app.application.pdf_layout_inference import PdfLayoutInference
-from app.application.pdf_parser import PdfParseResult
 from app.application.storage_service import TempAnalysisStorage
 from tests.fixtures.pdf_golden_samples import (
     PDF_PARSE_METRICS_GROUPED_CANONICAL_OK,
     PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+    build_pdf_parse_result,
 )
 
 
@@ -96,7 +95,7 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
     monkeypatch.setattr(
         analyze_service_module,
         "parse_pdf_transactions",
-        lambda raw_bytes: PdfParseResult(
+        lambda raw_bytes: build_pdf_parse_result(
             transactions=[
                 NormalizedTransaction(
                     date="2023-11-06",
@@ -111,11 +110,8 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
                     type="outflow",
                 ),
             ],
-            layout=PdfLayoutInference(
-                layout_name="nubank_statement_ptbr",
-                confidence=0.94,
-                used_fallback=False,
-            ),
+            layout_name="nubank_statement_ptbr",
+            confidence=0.94,
             extracted_text="TOTAL DE ENTRADAS\nTOTAL DE SAIDAS\nTRANSFERENCIA RECEBIDA PELO PIX",
             parse_metrics=PDF_PARSE_METRICS_GROUPED_CANONICAL_OK,
         ),
@@ -156,7 +152,7 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
     monkeypatch.setattr(
         analyze_service_module,
         "parse_pdf_transactions",
-        lambda raw_bytes: PdfParseResult(
+        lambda raw_bytes: build_pdf_parse_result(
             transactions=[
                 NormalizedTransaction(
                     date="2026-04-13",
@@ -171,11 +167,8 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
                     type="inflow",
                 ),
             ],
-            layout=PdfLayoutInference(
-                layout_name="itau_statement_ptbr",
-                confidence=1.0,
-                used_fallback=False,
-            ),
+            layout_name="itau_statement_ptbr",
+            confidence=1.0,
             extracted_text="EXTRATO CONTA / LANCAMENTOS\nDATA LANCAMENTOS VALOR",
             parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
         ),
