@@ -193,6 +193,7 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
         for row in parsed_rows
     ]
     balance_checked_count, balance_failed_count = _annotate_balance_consistency(canonical_transactions)
+    canonical_quality_metrics = _build_canonical_quality_metrics(canonical_transactions)
 
     return PdfParseResult(
         transactions=transactions,
@@ -209,6 +210,13 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
             "selected_parser": selected_parser,
             "balance_consistency_checked": balance_checked_count,
             "balance_consistency_failed": balance_failed_count,
+            "canonical_transactions_count": canonical_quality_metrics["canonical_transactions_count"],
+            "canonical_with_running_balance_count": canonical_quality_metrics["canonical_with_running_balance_count"],
+            "canonical_with_external_reference_count": canonical_quality_metrics[
+                "canonical_with_external_reference_count"
+            ],
+            "canonical_warning_count": canonical_quality_metrics["canonical_warning_count"],
+            "canonical_balance_warning_count": canonical_quality_metrics["canonical_balance_warning_count"],
         },
     )
 
@@ -544,6 +552,20 @@ def _annotate_balance_consistency(canonical_transactions: list[CanonicalTransact
         previous = current
 
     return checked_count, failed_count
+
+
+def _build_canonical_quality_metrics(canonical_transactions: list[CanonicalTransaction]) -> dict[str, int]:
+    warning_count = sum(len(item.warnings) for item in canonical_transactions)
+    balance_warning_count = sum(1 for item in canonical_transactions if "balance_consistency_failed" in item.warnings)
+    with_running_balance_count = sum(1 for item in canonical_transactions if item.running_balance is not None)
+    with_external_reference_count = sum(1 for item in canonical_transactions if item.external_reference_id)
+    return {
+        "canonical_transactions_count": len(canonical_transactions),
+        "canonical_with_running_balance_count": with_running_balance_count,
+        "canonical_with_external_reference_count": with_external_reference_count,
+        "canonical_warning_count": warning_count,
+        "canonical_balance_warning_count": balance_warning_count,
+    }
 
 
 def _has_declarative_table_header(lines: list[_PdfLine], layout_profile: DeclarativeLayoutProfile | None) -> bool:

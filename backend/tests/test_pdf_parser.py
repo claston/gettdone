@@ -93,6 +93,11 @@ def test_parse_pdf_transactions_uses_declarative_credit_debit_columns(monkeypatc
     assert result.canonical_transactions[1].running_balance == 1487.66
     assert result.parse_metrics["balance_consistency_checked"] == 1
     assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert result.parse_metrics["canonical_transactions_count"] == 2
+    assert result.parse_metrics["canonical_with_running_balance_count"] == 2
+    assert result.parse_metrics["canonical_with_external_reference_count"] == 2
+    assert result.parse_metrics["canonical_warning_count"] == 0
+    assert result.parse_metrics["canonical_balance_warning_count"] == 0
 
 
 def test_parse_pdf_transactions_marks_balance_consistency_warning(monkeypatch) -> None:
@@ -121,3 +126,5 @@ def test_parse_pdf_transactions_marks_balance_consistency_warning(monkeypatch) -
     assert result.parse_metrics["balance_consistency_checked"] == 1
     assert result.parse_metrics["balance_consistency_failed"] == 1
     assert "balance_consistency_failed" in result.canonical_transactions[1].warnings
+    assert result.parse_metrics["canonical_warning_count"] == 1
+    assert result.parse_metrics["canonical_balance_warning_count"] == 1
