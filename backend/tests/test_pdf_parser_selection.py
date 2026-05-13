@@ -20,6 +20,12 @@ def test_select_parsed_rows_prioritizes_grouped_when_available() -> None:
     assert result.inline_transactions_count == 0
     assert result.tabular_candidates == 0
     assert result.columnar_candidates == 0
+    assert result.tabular_transactions_count == 0
+    assert result.columnar_transactions_count == 0
+    assert result.selection_reason == "grouped_rows_available"
+    assert result.inline_decision == "skipped_due_to_grouped"
+    assert result.tabular_decision == "skipped_due_to_grouped"
+    assert result.columnar_decision == "skipped_due_to_grouped"
 
 
 def test_select_parsed_rows_falls_back_to_tabular_and_preserves_inline_counters() -> None:
@@ -38,6 +44,76 @@ def test_select_parsed_rows_falls_back_to_tabular_and_preserves_inline_counters(
     assert result.inline_transactions_count == 0
     assert result.tabular_candidates == 3
     assert result.columnar_candidates == 0
+    assert result.tabular_transactions_count == 1
+    assert result.columnar_transactions_count == 0
+    assert result.selection_reason == "tabular_rows_available_after_inline_empty"
+    assert result.inline_decision == "no_rows"
+    assert result.tabular_decision == "selected"
+    assert result.columnar_decision == "no_rows"
+
+
+def test_select_parsed_rows_selects_inline_and_exposes_decision_counters() -> None:
+    result = select_parsed_rows(
+        lines=["line"],
+        grouped_rows=[],
+        layout_profile=None,
+        parse_inline_rows=lambda _: (["inline-row-a", "inline-row-b"], 3),
+        parse_tabular_rows=lambda _lines, _profile: (["tabular-row"], 1),
+        parse_columnar_rows=lambda _: (["columnar-row"], 1),
+    )
+
+    assert result.selected_parser == "inline"
+    assert result.rows == ["inline-row-a", "inline-row-b"]
+    assert result.inline_candidates == 3
+    assert result.inline_transactions_count == 2
+    assert result.tabular_candidates == 1
+    assert result.columnar_candidates == 1
+    assert result.tabular_transactions_count == 1
+    assert result.columnar_transactions_count == 1
+    assert result.selection_reason == "inline_rows_available_after_grouped_empty"
+    assert result.inline_decision == "selected"
+    assert result.tabular_decision == "not_selected_inline_priority"
+    assert result.columnar_decision == "not_selected_inline_priority"
+
+
+def test_select_parsed_rows_prefers_tabular_on_conflict_when_layout_profile_present() -> None:
+    result = select_parsed_rows(
+        lines=["line"],
+        grouped_rows=[],
+        layout_profile=object(),
+        parse_inline_rows=lambda _: (["inline-row"], 2),
+        parse_tabular_rows=lambda _lines, _profile: (["tabular-row-a", "tabular-row-b"], 2),
+        parse_columnar_rows=lambda _: ([], 0),
+    )
+
+    assert result.selected_parser == "tabular"
+    assert result.rows == ["tabular-row-a", "tabular-row-b"]
+    assert result.selection_reason == "tabular_preferred_on_conflict_with_layout_profile"
+    assert result.inline_transactions_count == 1
+    assert result.tabular_transactions_count == 2
+    assert result.inline_decision == "not_selected_conflict_lost_to_tabular"
+    assert result.tabular_decision == "selected_on_conflict"
+    assert result.columnar_decision == "no_rows"
+
+
+def test_select_parsed_rows_keeps_inline_on_conflict_without_layout_profile() -> None:
+    result = select_parsed_rows(
+        lines=["line"],
+        grouped_rows=[],
+        layout_profile=None,
+        parse_inline_rows=lambda _: (["inline-row-a", "inline-row-b"], 2),
+        parse_tabular_rows=lambda _lines, _profile: (["tabular-row"], 1),
+        parse_columnar_rows=lambda _: ([], 0),
+    )
+
+    assert result.selected_parser == "inline"
+    assert result.rows == ["inline-row-a", "inline-row-b"]
+    assert result.selection_reason == "inline_rows_available_after_grouped_empty"
+    assert result.inline_transactions_count == 2
+    assert result.tabular_transactions_count == 1
+    assert result.inline_decision == "selected"
+    assert result.tabular_decision == "not_selected_inline_priority"
+    assert result.columnar_decision == "no_rows"
 
 
 def test_select_parsed_rows_raises_unsupported_layout_when_candidates_exist_without_rows() -> None:
