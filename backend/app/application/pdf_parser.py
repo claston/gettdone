@@ -222,7 +222,10 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
             description_parts = []
             continue
 
-        description_parts.append(line.text.strip())
+        description_parts = _append_grouped_description_part(
+            description_parts=description_parts,
+            raw_text=line.text,
+        )
 
     return transactions
 
@@ -415,6 +418,13 @@ def _handle_grouped_ignored_line(*, normalized_line: str, description_parts: lis
     if should_ignore_grouped_line(normalized_line):
         return [], True
     return description_parts, False
+
+
+def _append_grouped_description_part(*, description_parts: list[str], raw_text: str) -> list[str]:
+    cleaned_text = raw_text.strip()
+    if not cleaned_text:
+        return description_parts
+    return [*description_parts, cleaned_text]
 
 
 def _build_grouped_amount_only_transaction(

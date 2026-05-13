@@ -314,3 +314,25 @@ def test_handle_grouped_ignored_line_keeps_description_when_not_ignored() -> Non
 
     assert next_parts == ["compra mercado"]
     assert should_continue is False
+
+
+def test_append_grouped_description_part_ignores_blank_text() -> None:
+    parts = ["compra mercado"]
+
+    next_parts = pdf_parser_module._append_grouped_description_part(
+        description_parts=parts,
+        raw_text="   ",
+    )
+
+    assert next_parts == ["compra mercado"]
+
+
+def test_append_grouped_description_part_appends_cleaned_text() -> None:
+    parts = ["compra mercado"]
+
+    next_parts = pdf_parser_module._append_grouped_description_part(
+        description_parts=parts,
+        raw_text="  pagamento pix  ",
+    )
+
+    assert next_parts == ["compra mercado", "pagamento pix"]
