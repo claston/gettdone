@@ -8,77 +8,28 @@ from pypdf import PdfReader
 from app.application.errors import InvalidFileContentError
 from app.application.layout_profiles.registry import DeclarativeLayoutProfile, get_layout_profile
 from app.application.models import CanonicalTransaction, NormalizedTransaction
-from app.application.normalization.amount import apply_amount_role_sign, parse_amount
+from app.application.normalization.amount import apply_amount_role_sign
 from app.application.normalization.balance import annotate_balance_consistency
 from app.application.normalization.canonical import build_canonical_transactions
 from app.application.normalization.canonical_metrics import build_canonical_quality_metrics
+from app.application.normalization.date import MONTH_PATTERN, build_iso_date, infer_default_statement_year, parse_statement_date
+from app.application.normalization.pdf_amount_tokens import AmountToken, find_amount_tokens, is_amount_like, parse_pdf_amount
 from app.application.normalization.pdf_parse_metrics import build_pdf_parse_metrics
 from app.application.normalization.pdf_parser_selection import select_parsed_rows
+from app.application.normalization.pdf_text_rules import (
+    apply_sign_hints,
+    section_hint,
+    should_ignore_line,
+    should_skip_transaction_description,
+)
 from app.application.normalization.text import normalize_upper_text
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
 from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE
 
-MONTH_TO_NUMBER = {
-    "JAN": 1,
-    "FEV": 2,
-    "MAR": 3,
-    "ABR": 4,
-    "MAI": 5,
-    "JUN": 6,
-    "JUL": 7,
-    "AGO": 8,
-    "SET": 9,
-    "OUT": 10,
-    "NOV": 11,
-    "DEZ": 12,
-}
-MONTH_PATTERN = "|".join(MONTH_TO_NUMBER)
 DATE_HEADER_PATTERN = re.compile(rf"^(?P<day>\d{{2}})\s+(?P<month>{MONTH_PATTERN})\s+(?P<year>\d{{4}})(?P<rest>.*)$")
 SIGN_TOKEN = r"[+\-\u2212]"
 AMOUNT_PATTERN = re.compile(rf"^(?:{SIGN_TOKEN}\s*)?(?:R\$\s*)?\d+(?:\.\d{{3}})*,\d{{2}}(?:{SIGN_TOKEN})?$")
-AMOUNT_TOKEN_PATTERN = re.compile(
-    rf"(?P<amount>(?:{SIGN_TOKEN}\s*)?(?:R\$\s*)?\d+(?:\.\d{{3}})*,\d{{2}}(?:{SIGN_TOKEN})?)"
-)
-LOOSE_AMOUNT_PATTERN = re.compile(rf"^(?:{SIGN_TOKEN})?(?:\d{{1,3}}(?:\.\d{{3}})+|\d+)(?:[.,]\d{{2}})(?:{SIGN_TOKEN})?$")
 
-INFLOW_HINTS = (
-    "TRANSFERENCIA RECEBIDA",
-    "RECEBIMENTO",
-    "ESTORNO",
-    "CREDITO",
-    "SALARIO",
-)
-OUTFLOW_HINTS = (
-    "TRANSFERENCIA ENVIADA",
-    "PAGAMENTO",
-    "COMPRA",
-    "DEBITO",
-    "SAIDA",
-    "TARIFA",
-    "SAQUE",
-)
-IGNORED_LINE_PREFIXES = (
-    "SALDO INICIAL",
-    "SALDO FINAL",
-    "MOVIMENTACOES",
-    "EXTRATO GERADO DIA",
-    "OUVIDORIA:",
-)
-IGNORED_LINE_TOKENS = (
-    "VALORES EM R",
-    "CNPJ AGENCIA CONTA",
-)
-IGNORED_TRANSACTION_HINTS = (
-    "SALDO DO DIA",
-    "SALDO FINAL",
-    "SALDO INICIAL",
-    "LIMITE DA CONTA",
-    "TOTAL DE ENTRADAS",
-    "TOTAL DE SAIDAS",
-    "RESUMO DA FATURA",
-    "FATURA ANTERIOR",
-    "PAGAMENTO RECEBIDO",
-)
 DEBIT_TYPE_HINTS = ("DEBITO", "DEBIT", "DEB")
 CREDIT_TYPE_HINTS = ("CREDITO", "CREDIT", "CRED")
 COLUMNAR_HEADER_TOKENS = {
@@ -108,18 +59,11 @@ class PdfParseResult:
 
 
 @dataclass(frozen=True)
-class _AmountToken:
-    value: str
-    start: int
-    end: int
-
-
-@dataclass(frozen=True)
 class _SelectedTabularAmount:
-    token: _AmountToken
+    token: AmountToken
     role: str | None
     description_end: int
-    balance_token: _AmountToken | None = None
+    balance_token: AmountToken | None = None
 
 
 @dataclass(frozen=True)
@@ -223,13 +167,13 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
     current_date: str | None = None
     current_section_hint: str | None = None
     description_parts: list[str] = []
-    inferred_year = _infer_default_statement_year([line.text for line in lines])
+    inferred_year = infer_default_statement_year([line.text for line in lines])
 
     for line in lines:
         normalized_line = _normalize_text(line.text)
         date_match = DATE_HEADER_PATTERN.match(normalized_line)
         if date_match:
-            current_date = _build_iso_date(
+            current_date = build_iso_date(
                 year=date_match.group("year"),
                 month_abbrev=date_match.group("month"),
                 day=date_match.group("day"),
@@ -237,7 +181,7 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
             current_section_hint = None
             description_parts = []
             rest = date_match.group("rest")
-            maybe_hint = _section_hint(rest)
+            maybe_hint = section_hint(rest)
             if maybe_hint:
                 current_section_hint = maybe_hint
             inline_transaction = _build_inline_transaction_from_date_rest(
@@ -260,7 +204,7 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
             year_value = month_only_match.group("year")
             if year_value is None:
                 year_value = str(inferred_year if inferred_year is not None else datetime.utcnow().year)
-            current_date = _build_iso_date(
+            current_date = build_iso_date(
                 year=year_value,
                 month_abbrev=month_only_match.group("month"),
                 day=month_only_match.group("day"),
@@ -268,7 +212,7 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
             current_section_hint = None
             description_parts = []
             rest = month_only_match.group("rest")
-            maybe_hint = _section_hint(rest)
+            maybe_hint = section_hint(rest)
             if maybe_hint:
                 current_section_hint = maybe_hint
             inline_transaction = _build_inline_transaction_from_date_rest(
@@ -286,22 +230,26 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
         if current_date is None:
             continue
 
-        maybe_hint = _section_hint(normalized_line)
+        maybe_hint = section_hint(normalized_line)
         if maybe_hint:
             current_section_hint = maybe_hint
             description_parts = []
             continue
 
-        if _should_ignore_line(normalized_line):
+        if should_ignore_line(normalized_line) or re.fullmatch(r"\d+\s+DE\s+\d+", normalized_line):
             description_parts = []
             continue
 
         if AMOUNT_PATTERN.fullmatch(line.text):
             if not description_parts:
                 continue
-            amount = _parse_pdf_amount(line.text)
+            amount = parse_pdf_amount(line.text)
             description = " ".join(description_parts).strip()
-            signed_amount = _apply_sign_hints(amount=amount, description=description, section_hint=current_section_hint)
+            signed_amount = apply_sign_hints(
+                amount=amount,
+                description=description,
+                section_hint_value=current_section_hint,
+            )
             transactions.append(
                 _ParsedTransaction(
                     transaction=NormalizedTransaction(
@@ -325,7 +273,7 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
 def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTransaction], int]:
     transactions: list[_ParsedTransaction] = []
     candidates = 0
-    inferred_year = _infer_default_statement_year([line.text for line in lines])
+    inferred_year = infer_default_statement_year([line.text for line in lines])
 
     for line in lines:
         match = INLINE_ROW_PATTERN.match(line.text)
@@ -333,7 +281,7 @@ def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTra
             continue
 
         rest = match.group("rest").strip()
-        amount_tokens = _find_amount_tokens(rest)
+        amount_tokens = find_amount_tokens(rest)
         if len(amount_tokens) != 1:
             continue
         amount_token = amount_tokens[0]
@@ -341,21 +289,21 @@ def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTra
             continue
 
         raw_description = rest[: amount_token.start].strip()
-        if not raw_description or _should_skip_transaction_description(raw_description):
+        if not raw_description or should_skip_transaction_description(raw_description):
             continue
 
         candidates += 1
 
-        amount = _parse_pdf_amount(amount_token.value)
-        signed_amount = _apply_sign_hints(
+        amount = parse_pdf_amount(amount_token.value)
+        signed_amount = apply_sign_hints(
             amount=amount,
             description=raw_description,
-            section_hint=None,
+            section_hint_value=None,
         )
         transactions.append(
             _ParsedTransaction(
                 transaction=NormalizedTransaction(
-                    date=_parse_statement_date(match.group("date"), fallback_year=inferred_year),
+                    date=parse_statement_date(match.group("date"), fallback_year=inferred_year),
                     description=raw_description,
                     amount=signed_amount,
                     type="inflow" if signed_amount >= 0 else "outflow",
@@ -373,7 +321,7 @@ def _parse_tabular_statement_rows(
 ) -> tuple[list[_ParsedTransaction], int]:
     transactions: list[_ParsedTransaction] = []
     candidates = 0
-    inferred_year = _infer_default_statement_year([line.text for line in lines])
+    inferred_year = infer_default_statement_year([line.text for line in lines])
     tabular_profile = layout_profile if _has_declarative_table_header(lines, layout_profile) else None
 
     for line in lines:
@@ -385,7 +333,7 @@ def _parse_tabular_statement_rows(
         if not rest:
             continue
 
-        amount_tokens = _find_amount_tokens(rest)
+        amount_tokens = find_amount_tokens(rest)
         if not amount_tokens:
             continue
         candidates += 1
@@ -395,28 +343,28 @@ def _parse_tabular_statement_rows(
             continue
 
         raw_description = rest[: selected_amount.description_end].strip()
-        if not raw_description or _should_skip_transaction_description(raw_description):
+        if not raw_description or should_skip_transaction_description(raw_description):
             continue
 
         external_reference_id = _extract_document_reference(raw_description, layout_profile=tabular_profile)
 
         running_balance: float | None = None
         if selected_amount.balance_token is not None:
-            running_balance = _parse_pdf_amount(selected_amount.balance_token.value)
+            running_balance = parse_pdf_amount(selected_amount.balance_token.value)
 
-        amount = apply_amount_role_sign(_parse_pdf_amount(selected_amount.token.value), selected_amount.role)
+        amount = apply_amount_role_sign(parse_pdf_amount(selected_amount.token.value), selected_amount.role)
         if selected_amount.role in {"credit", "debit"}:
             signed_amount = amount
         else:
-            signed_amount = _apply_sign_hints(
+            signed_amount = apply_sign_hints(
                 amount=amount,
                 description=raw_description,
-                section_hint=None,
+                section_hint_value=None,
             )
         transactions.append(
             _ParsedTransaction(
                 transaction=NormalizedTransaction(
-                    date=_parse_statement_date(match.group("date"), fallback_year=inferred_year),
+                    date=parse_statement_date(match.group("date"), fallback_year=inferred_year),
                     description=raw_description,
                     amount=signed_amount,
                     type="inflow" if signed_amount >= 0 else "outflow",
@@ -432,7 +380,7 @@ def _parse_tabular_statement_rows(
 
 
 def _select_tabular_amount_token(
-    tokens: list[_AmountToken], *, layout_profile: DeclarativeLayoutProfile | None = None
+    tokens: list[AmountToken], *, layout_profile: DeclarativeLayoutProfile | None = None
 ) -> _SelectedTabularAmount | None:
     if not tokens:
         return None
@@ -446,7 +394,7 @@ def _select_tabular_amount_token(
 
 
 def _select_declarative_tabular_amount(
-    tokens: list[_AmountToken], layout_profile: DeclarativeLayoutProfile | None
+    tokens: list[AmountToken], layout_profile: DeclarativeLayoutProfile | None
 ) -> _SelectedTabularAmount | None:
     if layout_profile is None:
         return None
@@ -469,7 +417,7 @@ def _select_declarative_tabular_amount(
         for role, token in transaction_role_tokens:
             if role != preferred_role:
                 continue
-            amount = _parse_pdf_amount(token.value)
+            amount = parse_pdf_amount(token.value)
             if preferred_role in {"credit", "debit"} and abs(amount) < 0.000001:
                 continue
             return _SelectedTabularAmount(
@@ -519,21 +467,10 @@ def _has_declarative_table_header(lines: list[_PdfLine], layout_profile: Declara
     return False
 
 
-def _find_amount_tokens(text: str) -> list[_AmountToken]:
-    return [
-        _AmountToken(value=match.group("amount"), start=match.start("amount"), end=match.end("amount"))
-        for match in AMOUNT_TOKEN_PATTERN.finditer(text)
-    ]
-
-
-def _parse_pdf_amount(raw: str) -> float:
-    return parse_amount(raw)
-
-
 def _parse_columnar_statement_blocks(lines: list[_PdfLine]) -> tuple[list[_ParsedTransaction], int]:
     transactions: list[_ParsedTransaction] = []
     candidates = 0
-    inferred_year = _infer_default_statement_year([line.text for line in lines])
+    inferred_year = infer_default_statement_year([line.text for line in lines])
     index = 0
 
     while index < len(lines):
@@ -555,17 +492,17 @@ def _parse_columnar_statement_blocks(lines: list[_PdfLine]) -> tuple[list[_Parse
         if not _is_transaction_type_hint(type_raw):
             index += 1
             continue
-        if not _is_amount_like(amount_raw):
+        if not is_amount_like(amount_raw):
             index += 1
             continue
 
         candidates += 1
-        amount = _apply_type_sign_hint(_parse_pdf_amount(amount_raw), type_raw)
-        signed_amount = _apply_sign_hints(amount=amount, description=description, section_hint=None)
+        amount = _apply_type_sign_hint(parse_pdf_amount(amount_raw), type_raw)
+        signed_amount = apply_sign_hints(amount=amount, description=description, section_hint_value=None)
         transactions.append(
             _ParsedTransaction(
                 transaction=NormalizedTransaction(
-                    date=_parse_statement_date(raw_date, fallback_year=inferred_year),
+                    date=parse_statement_date(raw_date, fallback_year=inferred_year),
                     description=description,
                     amount=signed_amount,
                     type="inflow" if signed_amount >= 0 else "outflow",
@@ -576,17 +513,11 @@ def _parse_columnar_statement_blocks(lines: list[_PdfLine]) -> tuple[list[_Parse
         )
 
         next_index = index + 4
-        if next_index < len(lines) and _is_amount_like(lines[next_index].text.strip()):
+        if next_index < len(lines) and is_amount_like(lines[next_index].text.strip()):
             next_index += 1
         index = next_index
 
     return transactions, candidates
-
-
-def _is_amount_like(raw: str) -> bool:
-    value = raw.replace("\u2212", "-")
-    value = re.sub(r"(?i)R\$", "", value).strip()
-    return bool(LOOSE_AMOUNT_PATTERN.fullmatch(value))
 
 
 def _build_inline_transaction_from_date_rest(
@@ -600,20 +531,20 @@ def _build_inline_transaction_from_date_rest(
     text = rest.strip()
     if not text:
         return None
-    amount_tokens = _find_amount_tokens(text)
+    amount_tokens = find_amount_tokens(text)
     if len(amount_tokens) != 1:
         return None
     amount_token = amount_tokens[0]
     if text[amount_token.end :].strip():
         return None
     raw_description = text[: amount_token.start].strip()
-    if not raw_description or _should_skip_transaction_description(raw_description):
+    if not raw_description or should_skip_transaction_description(raw_description):
         return None
-    amount = _parse_pdf_amount(amount_token.value)
-    signed_amount = _apply_sign_hints(
+    amount = parse_pdf_amount(amount_token.value)
+    signed_amount = apply_sign_hints(
         amount=amount,
         description=raw_description,
-        section_hint=section_hint,
+        section_hint_value=section_hint,
     )
     return _ParsedTransaction(
         transaction=NormalizedTransaction(
@@ -649,122 +580,6 @@ def _apply_type_sign_hint(amount: float, type_raw: str) -> float:
 
 def _is_columnar_header_line(raw: str) -> bool:
     return _normalize_text(raw) in COLUMNAR_HEADER_TOKENS
-
-
-def _infer_default_statement_year(lines: list[str]) -> int | None:
-    year_counts: dict[int, int] = {}
-
-    for line in lines:
-        for raw in re.findall(r"\b\d{2}/\d{2}/(\d{4})\b", line):
-            year = int(raw)
-            year_counts[year] = year_counts.get(year, 0) + 1
-        normalized_line = _normalize_text(line)
-        for raw in re.findall(rf"\b\d{{1,2}}\s+(?:{MONTH_PATTERN})\s+(\d{{4}})\b", normalized_line):
-            year = int(raw)
-            year_counts[year] = year_counts.get(year, 0) + 1
-
-    if not year_counts:
-        return None
-    return max(year_counts.items(), key=lambda item: item[1])[0]
-
-
-def _parse_statement_date(raw: str, fallback_year: int | None) -> str:
-    value = raw.strip()
-    upper_value = _normalize_text(value)
-    if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{4}", value):
-        return _parse_slash_date(value)
-
-    if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{2}", value):
-        day, month, year = value.split("/")
-        return _parse_slash_date(f"{day}/{month}/20{year}")
-
-    if re.fullmatch(r"\d{1,2}/\d{1,2}", value):
-        if fallback_year is None:
-            fallback_year = datetime.utcnow().year
-        return _parse_slash_date(f"{value}/{fallback_year}")
-
-    month_match = re.fullmatch(rf"(?P<day>\d{{1,2}})\s+(?P<month>{MONTH_PATTERN})(?:\s+(?P<year>\d{{4}}))?", upper_value)
-    if month_match:
-        day = int(month_match.group("day"))
-        month_abbrev = month_match.group("month")
-        month_value = MONTH_TO_NUMBER.get(month_abbrev)
-        if month_value is None:
-            raise InvalidFileContentError(f"Invalid month value in PDF statement: {month_abbrev!r}.")
-        year_raw = month_match.group("year")
-        if year_raw:
-            year_value = int(year_raw)
-        else:
-            year_value = fallback_year if fallback_year is not None else datetime.utcnow().year
-        try:
-            return datetime(year_value, month_value, day).strftime("%Y-%m-%d")
-        except ValueError as exc:
-            raise InvalidFileContentError(f"Invalid date value in PDF statement: {raw!r}.") from exc
-
-    raise InvalidFileContentError(f"Invalid date value in PDF statement: {raw!r}.")
-
-
-def _section_hint(text: str) -> str | None:
-    normalized = _normalize_text(text)
-    if "TOTAL DE ENTRADAS" in normalized:
-        return "inflow"
-    if "TOTAL DE SAIDAS" in normalized:
-        return "outflow"
-    return None
-
-
-def _should_ignore_line(normalized_line: str) -> bool:
-    if not normalized_line:
-        return True
-    if normalized_line in {"-", "--"}:
-        return True
-    if re.fullmatch(r"\d+\s+DE\s+\d+", normalized_line):
-        return True
-    if any(normalized_line.startswith(prefix) for prefix in IGNORED_LINE_PREFIXES):
-        return True
-    if any(token in normalized_line for token in IGNORED_LINE_TOKENS):
-        return True
-    return False
-
-
-def _should_skip_transaction_description(description: str) -> bool:
-    normalized_description = _normalize_text(description)
-    if not normalized_description:
-        return True
-    if any(hint in normalized_description for hint in IGNORED_TRANSACTION_HINTS):
-        return True
-    if normalized_description.startswith("SALDO "):
-        return True
-    return False
-
-
-def _apply_sign_hints(amount: float, description: str, section_hint: str | None) -> float:
-    normalized_description = _normalize_text(description)
-    if any(token in normalized_description for token in INFLOW_HINTS):
-        return abs(amount)
-    if any(token in normalized_description for token in OUTFLOW_HINTS):
-        return -abs(amount)
-    if section_hint == "inflow":
-        return abs(amount)
-    if section_hint == "outflow":
-        return -abs(amount)
-    return amount
-
-
-def _parse_slash_date(raw: str) -> str:
-    try:
-        return datetime.strptime(raw, "%d/%m/%Y").strftime("%Y-%m-%d")
-    except ValueError as exc:
-        raise InvalidFileContentError(f"Invalid date value in PDF statement: {raw!r}.") from exc
-
-
-def _build_iso_date(year: str, month_abbrev: str, day: str) -> str:
-    month_value = MONTH_TO_NUMBER.get(month_abbrev)
-    if month_value is None:
-        raise InvalidFileContentError(f"Invalid month value in PDF statement: {month_abbrev!r}.")
-    try:
-        return datetime(int(year), month_value, int(day)).strftime("%Y-%m-%d")
-    except ValueError as exc:
-        raise InvalidFileContentError(f"Invalid date value in PDF statement: {day}/{month_abbrev}/{year}.") from exc
 
 
 def _normalize_text(value: str) -> str:
