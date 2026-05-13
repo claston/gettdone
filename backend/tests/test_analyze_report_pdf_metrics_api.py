@@ -58,7 +58,15 @@ class FakeAnalyzeService:
                     type="test",
                     title="Test insight",
                     description=f"Bytes: {len(raw_bytes)}",
-                )
+                ),
+                Insight(
+                    type="pdf_export_review_recommended",
+                    title="Revisao manual recomendada",
+                    description=(
+                        "A exportacao permanece disponivel, mas recomendamos revisar as transacoes "
+                        "antes de concluir (low_confidence_band)."
+                    ),
+                ),
             ],
             preview_transactions=[
                 TransactionPreview(
@@ -204,6 +212,10 @@ def test_analyze_happy_path_includes_pdf_processing_metrics_compat_fields() -> N
     assert payload["analysis_id"] == "an_metrics123"
     assert payload["file_type"] == "pdf"
     assert payload["pdf_processing_metrics"]["selected_parser"] == "grouped"
+    assert payload["pdf_processing_metrics"]["parser_selection_reason"] == "grouped_rows_available"
+    assert payload["pdf_processing_metrics"]["inline_decision"] == "skipped_due_to_grouped"
+    assert payload["pdf_processing_metrics"]["tabular_decision"] == "skipped_due_to_grouped"
+    assert payload["pdf_processing_metrics"]["columnar_decision"] == "skipped_due_to_grouped"
     assert payload["pdf_processing_metrics"]["canonical_transactions_count"] == 2
     assert payload["pdf_processing_metrics"]["canonical_with_running_balance_count"] == 2
     assert payload["pdf_processing_metrics"]["canonical_with_external_reference_count"] == 2
@@ -214,6 +226,7 @@ def test_analyze_happy_path_includes_pdf_processing_metrics_compat_fields() -> N
     assert payload["pdf_processing_metrics"]["canonical_warning_types_list"] == [
         "balance_consistency_failed"
     ]
+    assert any(item["type"] == "pdf_export_review_recommended" for item in payload["insights"])
     app.dependency_overrides.clear()
 
 
