@@ -11,6 +11,8 @@ from tests.fixtures.pdf_golden_samples import (
 
 pytestmark = pytest.mark.pdf_golden
 
+_MOJIBAKE_TOKENS = ("Ã", "Â", "â€", "�")
+
 
 def test_pdf_golden_minimal_catalog_matches_expectations_keys() -> None:
     assert set(PDF_GOLDEN_MINIMAL_SCENARIOS.keys()) == set(PDF_GOLDEN_MINIMAL_EXPECTATIONS.keys())
@@ -22,6 +24,7 @@ def test_pdf_golden_minimal_catalog_matches_expectations_keys() -> None:
             assert isinstance(sample_text, str), scenario_name
             assert sample_text.strip(), scenario_name
             assert any(char.isdigit() for char in sample_text), scenario_name
+            assert not any(token in sample_text for token in _MOJIBAKE_TOKENS), scenario_name
         if sample_pages is not None:
             assert isinstance(sample_pages, list), scenario_name
             assert sample_pages, scenario_name
@@ -29,6 +32,7 @@ def test_pdf_golden_minimal_catalog_matches_expectations_keys() -> None:
                 assert isinstance(page_text, str), scenario_name
                 assert page_text.strip(), scenario_name
                 assert any(char.isdigit() for char in page_text), scenario_name
+                assert not any(token in page_text for token in _MOJIBAKE_TOKENS), scenario_name
     for scenario_name, expected in PDF_GOLDEN_MINIMAL_EXPECTATIONS.items():
         first_transaction = expected["first_transaction"]
         last_transaction = expected["last_transaction"]

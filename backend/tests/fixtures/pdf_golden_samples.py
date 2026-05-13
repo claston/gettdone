@@ -24,8 +24,8 @@ VIACREDI_TABULAR_BALANCE_FAIL = "\n".join(
 
 GROUPED_INLINE_MULTILINE_SAMPLE = "\n".join(
     [
-        "TRANSAÃ‡Ã•ES DE 08 MAR A 08 ABR",
-        "16 MAR 2026 Pagamento em 16 MAR âˆ’R$ 240,24",
+        "TRANSAÇÕES DE 08 MAR A 08 ABR",
+        "16 MAR 2026 Pagamento em 16 MAR −R$ 240,24",
         "25 MAR 2026",
         "Compra AGIR CONTABILIDADE E ASSESSORIA LTDA",
         "R$ 241,05",
