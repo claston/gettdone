@@ -1,4 +1,6 @@
+import re
 from dataclasses import dataclass
+from datetime import datetime
 from io import BytesIO
 
 from pypdf import PdfReader
@@ -78,6 +80,7 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
         parse_columnar_rows=_parse_columnar_statement_blocks,
     )
     parsed_rows = selection.rows
+    parsed_rows = _adjust_forward_year_rollover_rows(parsed_rows, line_texts=_extract_line_texts(lines))
     selected_parser = selection.selected_parser
     inline_candidates = selection.inline_candidates
     inline_transactions_count = selection.inline_transactions_count
@@ -93,6 +96,63 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
         inline_candidates_count=inline_candidates,
         inline_transactions_count=inline_transactions_count,
     )
+
+
+def _adjust_forward_year_rollover_rows(
+    parsed_rows: list[_ParsedTransaction], *, line_texts: list[str]
+) -> list[_ParsedTransaction]:
+    if len(parsed_rows) < 2:
+        return parsed_rows
+    if not _has_explicit_adjacent_year_hints(line_texts):
+        return parsed_rows
+
+    adjusted_rows: list[_ParsedTransaction] = [parsed_rows[0]]
+    previous_date = datetime.strptime(parsed_rows[0].transaction.date, "%Y-%m-%d")
+
+    for row in parsed_rows[1:]:
+        current_date = datetime.strptime(row.transaction.date, "%Y-%m-%d")
+        should_roll_forward = (
+            current_date.year == previous_date.year
+            and previous_date.month == 12
+            and current_date.month == 1
+            and current_date < previous_date
+        )
+        if should_roll_forward:
+            rolled_date = current_date.replace(year=current_date.year + 1)
+            rolled_transaction = NormalizedTransaction(
+                date=rolled_date.strftime("%Y-%m-%d"),
+                description=row.transaction.description,
+                amount=row.transaction.amount,
+                type=row.transaction.type,
+            )
+            adjusted_row = _ParsedTransaction(
+                transaction=rolled_transaction,
+                source_page=row.source_page,
+                source_line=row.source_line,
+                running_balance=row.running_balance,
+                external_reference_id=row.external_reference_id,
+            )
+            adjusted_rows.append(adjusted_row)
+            previous_date = rolled_date
+            continue
+
+        adjusted_rows.append(row)
+        previous_date = current_date
+
+    return adjusted_rows
+
+
+def _has_explicit_adjacent_year_hints(line_texts: list[str]) -> bool:
+    years: set[int] = set()
+    for line in line_texts:
+        for raw in re.findall(r"\b\d{4}\b", line):
+            year = int(raw)
+            if 1900 <= year <= 2100:
+                years.add(year)
+    if len(years) < 2:
+        return False
+    sorted_years = sorted(years)
+    return any(current - previous == 1 for previous, current in zip(sorted_years, sorted_years[1:]))
 
 
 def _build_pdf_parse_result(

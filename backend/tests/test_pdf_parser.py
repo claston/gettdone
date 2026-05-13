@@ -147,6 +147,26 @@ def test_parse_pdf_transactions_marks_balance_consistency_warning(monkeypatch) -
     assert result.parse_metrics["canonical_source_parser_types_list"] == "tabular"
 
 
+def test_parse_pdf_transactions_adjusts_year_rollover_from_december_to_january(monkeypatch) -> None:
+    sample_text = "\n".join(
+        [
+            "EXTRATO PERIODO 20/12/2025 A 10/01/2026",
+            "31/12 Compra mercado 10,00",
+            "02/01 PIX recebido 20,00",
+        ]
+    )
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [sample_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.parse_metrics["selected_parser"] == "inline"
+    assert len(result.transactions) == 2
+    assert result.transactions[0].date == "2025-12-31"
+    assert result.transactions[0].amount == -10.0
+    assert result.transactions[1].date == "2026-01-02"
+    assert result.transactions[1].amount == 20.0
+
+
 def test_parse_columnar_statement_blocks_skips_incomplete_rows_and_parses_valid_block(monkeypatch) -> None:
     lines = [
         pdf_parser_module._PdfLine(text="15/04", page_number=1, line_number=1),
