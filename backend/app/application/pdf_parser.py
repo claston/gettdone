@@ -202,8 +202,11 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
         if should_continue:
             continue
 
-        if should_ignore_grouped_line(normalized_line):
-            description_parts = []
+        description_parts, should_continue = _handle_grouped_ignored_line(
+            normalized_line=normalized_line,
+            description_parts=description_parts,
+        )
+        if should_continue:
             continue
 
         if is_amount_only_row(line.text):
@@ -406,6 +409,12 @@ def _update_grouped_section_state(
     if next_hint != current_section_hint:
         return next_hint, [], True
     return next_hint, description_parts, False
+
+
+def _handle_grouped_ignored_line(*, normalized_line: str, description_parts: list[str]) -> tuple[list[str], bool]:
+    if should_ignore_grouped_line(normalized_line):
+        return [], True
+    return description_parts, False
 
 
 def _build_grouped_amount_only_transaction(

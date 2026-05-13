@@ -294,3 +294,23 @@ def test_update_grouped_section_state_resets_description_when_hint_changes() -> 
     assert next_hint == "inflow"
     assert next_parts == []
     assert should_continue is True
+
+
+def test_handle_grouped_ignored_line_resets_description_parts() -> None:
+    next_parts, should_continue = pdf_parser_module._handle_grouped_ignored_line(
+        normalized_line="SALDO INICIAL DO DIA",
+        description_parts=["compra mercado"],
+    )
+
+    assert next_parts == []
+    assert should_continue is True
+
+
+def test_handle_grouped_ignored_line_keeps_description_when_not_ignored() -> None:
+    next_parts, should_continue = pdf_parser_module._handle_grouped_ignored_line(
+        normalized_line="COMPRA MERCADO",
+        description_parts=["compra mercado"],
+    )
+
+    assert next_parts == ["compra mercado"]
+    assert should_continue is False
