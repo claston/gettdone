@@ -279,6 +279,162 @@ def test_parse_inline_statement_line_builds_transaction_for_valid_line() -> None
     assert parsed_row.source_line == 7
 
 
+def test_parse_inline_statement_line_accepts_trailing_ocr_noise_after_amount() -> None:
+    line = pdf_parser_module._PdfLine(text="10/04 PIX RECEBIDO 25,00 |", page_number=2, line_number=8)
+
+    parsed_row = pdf_parser_module._parse_inline_statement_line(line=line, inferred_year=2026)
+
+    assert parsed_row is not None
+    assert parsed_row.transaction.date == "2026-04-10"
+    assert parsed_row.transaction.description == "PIX RECEBIDO"
+    assert parsed_row.transaction.amount == 25.0
+    assert parsed_row.source_page == 2
+    assert parsed_row.source_line == 8
+
+
+def test_parse_inline_statement_line_accepts_trailing_ocr_noise_glyph_after_amount() -> None:
+    line = pdf_parser_module._PdfLine(text="10/04 PIX RECEBIDO 25,00 I", page_number=2, line_number=9)
+
+    parsed_row = pdf_parser_module._parse_inline_statement_line(line=line, inferred_year=2026)
+
+    assert parsed_row is not None
+    assert parsed_row.transaction.date == "2026-04-10"
+    assert parsed_row.transaction.description == "PIX RECEBIDO"
+    assert parsed_row.transaction.amount == 25.0
+    assert parsed_row.source_page == 2
+    assert parsed_row.source_line == 9
+
+
+def test_parse_inline_statement_line_rejects_trailing_non_noise_text_after_amount() -> None:
+    line = pdf_parser_module._PdfLine(text="10/04 PIX RECEBIDO 25,00 DOC", page_number=2, line_number=10)
+
+    parsed_row = pdf_parser_module._parse_inline_statement_line(line=line, inferred_year=2026)
+
+    assert parsed_row is None
+
+
+def test_parse_inline_statement_rows_parses_split_amount_on_next_line() -> None:
+    lines = [
+        pdf_parser_module._PdfLine(text="03/04 PIX RECEBIDO CLIENTE ACME", page_number=1, line_number=4),
+        pdf_parser_module._PdfLine(text="250,00", page_number=1, line_number=5),
+    ]
+
+    parsed_rows, candidates = pdf_parser_module._parse_inline_statement_rows(lines)
+
+    assert candidates == 1
+    assert len(parsed_rows) == 1
+    assert parsed_rows[0].transaction.date == "2026-04-03"
+    assert parsed_rows[0].transaction.description == "PIX RECEBIDO CLIENTE ACME"
+    assert parsed_rows[0].transaction.amount == 250.0
+    assert parsed_rows[0].source_page == 1
+    assert parsed_rows[0].source_line == 4
+
+
+def test_parse_inline_statement_rows_parses_multiline_description_then_amount() -> None:
+    lines = [
+        pdf_parser_module._PdfLine(text="03/04 PAGAMENTO FORNECEDOR ALFA", page_number=1, line_number=10),
+        pdf_parser_module._PdfLine(text="INDUSTRIA E COMERCIO LTDA", page_number=1, line_number=11),
+        pdf_parser_module._PdfLine(text="150,25", page_number=1, line_number=12),
+    ]
+
+    parsed_rows, candidates = pdf_parser_module._parse_inline_statement_rows(lines)
+
+    assert candidates == 1
+    assert len(parsed_rows) == 1
+    assert parsed_rows[0].transaction.date == "2026-04-03"
+    assert parsed_rows[0].transaction.description == "PAGAMENTO FORNECEDOR ALFA INDUSTRIA E COMERCIO LTDA"
+    assert parsed_rows[0].transaction.amount == -150.25
+    assert parsed_rows[0].source_page == 1
+    assert parsed_rows[0].source_line == 10
+
+
+def test_parse_inline_statement_rows_ignores_ocr_noise_line_in_pending_multiline() -> None:
+    lines = [
+        pdf_parser_module._PdfLine(text="03/04 PAGAMENTO FORNECEDOR ALFA", page_number=1, line_number=60),
+        pdf_parser_module._PdfLine(text="||", page_number=1, line_number=61),
+        pdf_parser_module._PdfLine(text="INDUSTRIA E COMERCIO LTDA", page_number=1, line_number=62),
+        pdf_parser_module._PdfLine(text="150,25", page_number=1, line_number=63),
+    ]
+
+    parsed_rows, candidates = pdf_parser_module._parse_inline_statement_rows(lines)
+
+    assert candidates == 1
+    assert len(parsed_rows) == 1
+    assert parsed_rows[0].transaction.date == "2026-04-03"
+    assert parsed_rows[0].transaction.description == "PAGAMENTO FORNECEDOR ALFA INDUSTRIA E COMERCIO LTDA"
+    assert parsed_rows[0].transaction.amount == -150.25
+    assert parsed_rows[0].source_page == 1
+    assert parsed_rows[0].source_line == 60
+
+
+def test_parse_inline_statement_rows_cancels_pending_on_balance_line() -> None:
+    lines = [
+        pdf_parser_module._PdfLine(text="03/04 PAGAMENTO FORNECEDOR ALFA", page_number=1, line_number=20),
+        pdf_parser_module._PdfLine(text="SALDO DO DIA 1.274,16", page_number=1, line_number=21),
+        pdf_parser_module._PdfLine(text="150,25", page_number=1, line_number=22),
+    ]
+
+    parsed_rows, candidates = pdf_parser_module._parse_inline_statement_rows(lines)
+
+    assert candidates == 0
+    assert parsed_rows == []
+
+
+def test_parse_inline_statement_rows_cancels_pending_on_header_line() -> None:
+    lines = [
+        pdf_parser_module._PdfLine(text="03/04 PAGAMENTO FORNECEDOR ALFA", page_number=1, line_number=30),
+        pdf_parser_module._PdfLine(text="EXTRATO CONTA CORRENTE - CONTINUACAO", page_number=1, line_number=31),
+        pdf_parser_module._PdfLine(text="150,25", page_number=1, line_number=32),
+    ]
+
+    parsed_rows, candidates = pdf_parser_module._parse_inline_statement_rows(lines)
+
+    assert candidates == 0
+    assert parsed_rows == []
+
+
+def test_parse_inline_statement_rows_cancels_pending_on_page_change_before_amount() -> None:
+    lines = [
+        pdf_parser_module._PdfLine(text="03/04 PAGAMENTO FORNECEDOR ALFA", page_number=1, line_number=40),
+        pdf_parser_module._PdfLine(text="150,25", page_number=2, line_number=1),
+    ]
+
+    parsed_rows, candidates = pdf_parser_module._parse_inline_statement_rows(lines)
+
+    assert candidates == 0
+    assert parsed_rows == []
+
+
+def test_parse_inline_statement_rows_cancels_pending_on_tabular_header_before_amount() -> None:
+    lines = [
+        pdf_parser_module._PdfLine(text="03/04 PAGAMENTO FORNECEDOR ALFA", page_number=1, line_number=50),
+        pdf_parser_module._PdfLine(
+            text="DATA DESCRICAO DOCUMENTO CREDITO (R$) DEBITO (R$) SALDO (R$)",
+            page_number=1,
+            line_number=51,
+        ),
+        pdf_parser_module._PdfLine(text="150,25", page_number=1, line_number=52),
+    ]
+
+    parsed_rows, candidates = pdf_parser_module._parse_inline_statement_rows(lines)
+
+    assert candidates == 0
+    assert parsed_rows == []
+
+
+def test_parse_inline_statement_line_accepts_trailing_mixed_ocr_noise_after_amount() -> None:
+    line = pdf_parser_module._PdfLine(text="10/04 PIX RECEBIDO 25,00 ||I", page_number=2, line_number=11)
+
+    parsed_row = pdf_parser_module._parse_inline_statement_line(line=line, inferred_year=2026)
+
+    assert parsed_row is not None
+    assert parsed_row.transaction.date == "2026-04-10"
+    assert parsed_row.transaction.description == "PIX RECEBIDO"
+    assert parsed_row.transaction.amount == 25.0
+    assert parsed_row.source_page == 2
+    assert parsed_row.source_line == 11
+
+
 def test_parse_tabular_statement_line_returns_none_when_no_date_prefix() -> None:
     line = pdf_parser_module._PdfLine(text="SALDO ANTERIOR 1.000,00", page_number=1, line_number=1)
 

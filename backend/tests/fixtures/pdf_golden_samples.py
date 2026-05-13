@@ -81,6 +81,42 @@ QUASI_REAL_SIGNED_AMBIGUOUS_SAMPLE = "\n".join(
         "SALDO DO DIA 3.210,00",
     ]
 )
+QUASI_REAL_INLINE_PENDING_HEADER_BLOCK_SAMPLE = "\n".join(
+    [
+        "BANCO EXEMPLO S.A.",
+        "EXTRATO CONTA CORRENTE - PERIODO 01/04/2026 A 30/04/2026",
+        "02/04 PIX RECEBIDO CLIENTE SIGMA 100,00",
+        "03/04 PAGAMENTO FORNECEDOR ALFA",
+        "DATA DESCRICAO DOCUMENTO CREDITO (R$) DEBITO (R$) SALDO (R$)",
+        "150,25",
+        "SALDO DO DIA 1.184,31",
+    ]
+)
+QUASI_REAL_INLINE_PENDING_PAGE_BREAK_PAGE_ONE_SAMPLE = "\n".join(
+    [
+        "BANCO EXEMPLO S.A.",
+        "EXTRATO CONTA CORRENTE - PERIODO 01/05/2026 A 31/05/2026",
+        "09/05 PAGAMENTO FORNECEDOR ALFA INDUSTRIA",
+    ]
+)
+QUASI_REAL_INLINE_PENDING_PAGE_BREAK_PAGE_TWO_SAMPLE = "\n".join(
+    [
+        "150,25",
+        "10/05 PIX RECEBIDO CLIENTE BETA 500,00",
+        "SALDO DO DIA 2.845,42",
+    ]
+)
+QUASI_REAL_INLINE_PENDING_OCR_NOISE_MULTILINE_SAMPLE = "\n".join(
+    [
+        "BANCO EXEMPLO S.A.",
+        "EXTRATO CONTA CORRENTE - PERIODO 01/04/2026 A 30/04/2026",
+        "03/04 PAGAMENTO FORNECEDOR ALFA",
+        "||",
+        "INDUSTRIA E COMERCIO LTDA",
+        "150,25",
+        "SALDO DO DIA 1.184,31",
+    ]
+)
 YEAR_ROLLOVER_PAGE_ONE_SAMPLE = "EXTRATO PERIODO 20/12/2025 A 10/01/2026"
 YEAR_ROLLOVER_PAGE_TWO_SAMPLE = "\n".join(
     [
@@ -425,6 +461,75 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
             "source_line": 5,
         },
     },
+    "quasi_real_inline_pending_header_block": {
+        "selected_parser": "inline",
+        "transactions_count": 1,
+        "inline_candidates_count": 1,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {
+            "date": "2026-04-02",
+            "amount": 100.0,
+            "type": "inflow",
+            "description": "PIX RECEBIDO CLIENTE SIGMA",
+            "source_page": 1,
+            "source_line": 3,
+        },
+        "last_transaction": {
+            "date": "2026-04-02",
+            "amount": 100.0,
+            "type": "inflow",
+            "description": "PIX RECEBIDO CLIENTE SIGMA",
+            "source_page": 1,
+            "source_line": 3,
+        },
+    },
+    "quasi_real_inline_pending_page_break": {
+        "selected_parser": "inline",
+        "transactions_count": 1,
+        "inline_candidates_count": 1,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {
+            "date": "2026-05-10",
+            "amount": 500.0,
+            "type": "inflow",
+            "description": "PIX RECEBIDO CLIENTE BETA",
+            "source_page": 2,
+            "source_line": 2,
+        },
+        "last_transaction": {
+            "date": "2026-05-10",
+            "amount": 500.0,
+            "type": "inflow",
+            "description": "PIX RECEBIDO CLIENTE BETA",
+            "source_page": 2,
+            "source_line": 2,
+        },
+    },
+    "quasi_real_inline_pending_ocr_noise_multiline": {
+        "selected_parser": "inline",
+        "transactions_count": 1,
+        "inline_candidates_count": 1,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {
+            "date": "2026-04-03",
+            "amount": -150.25,
+            "type": "outflow",
+            "description": "PAGAMENTO FORNECEDOR ALFA INDUSTRIA E COMERCIO LTDA",
+            "source_page": 1,
+            "source_line": 3,
+        },
+        "last_transaction": {
+            "date": "2026-04-03",
+            "amount": -150.25,
+            "type": "outflow",
+            "description": "PAGAMENTO FORNECEDOR ALFA INDUSTRIA E COMERCIO LTDA",
+            "source_page": 1,
+            "source_line": 3,
+        },
+    },
     "year_rollover_inline": {
         "selected_parser": "inline",
         "transactions_count": 2,
@@ -510,6 +615,21 @@ PDF_GOLDEN_MINIMAL_SCENARIOS = {
     },
     "quasi_real_signed_ambiguous": {
         "sample_text": QUASI_REAL_SIGNED_AMBIGUOUS_SAMPLE,
+        "layout_name": None,
+    },
+    "quasi_real_inline_pending_header_block": {
+        "sample_text": QUASI_REAL_INLINE_PENDING_HEADER_BLOCK_SAMPLE,
+        "layout_name": None,
+    },
+    "quasi_real_inline_pending_page_break": {
+        "sample_pages": [
+            QUASI_REAL_INLINE_PENDING_PAGE_BREAK_PAGE_ONE_SAMPLE,
+            QUASI_REAL_INLINE_PENDING_PAGE_BREAK_PAGE_TWO_SAMPLE,
+        ],
+        "layout_name": None,
+    },
+    "quasi_real_inline_pending_ocr_noise_multiline": {
+        "sample_text": QUASI_REAL_INLINE_PENDING_OCR_NOISE_MULTILINE_SAMPLE,
         "layout_name": None,
     },
     "year_rollover_inline": {
