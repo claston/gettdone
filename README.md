@@ -147,6 +147,17 @@ Arquivos principais desse pacote:
 - `backend/tests/test_pdf_parser_golden_minimal_dataset.py`
 - `backend/tests/fixtures/pdf_golden_samples.py`
 
+Cobertura atual do starter pack (sintetico):
+
+- `Nubank`
+- `Itau`
+- `Santander`
+- `Bradesco`
+- `Banco do Brasil`
+- `Caixa`
+- `Inter`
+- `Sicredi`
+
 ## Deploy no Render (Web Service)
 
 Este repositorio agora suporta deploy no Render via imagem Docker.

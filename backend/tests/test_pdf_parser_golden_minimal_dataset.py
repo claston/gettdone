@@ -2,6 +2,7 @@ import pytest
 
 from app.application import pdf_parser as pdf_parser_module
 from app.application.errors import InvalidFileContentError
+from app.application.normalization.text import normalize_upper_text
 from app.application.pdf_parser import parse_pdf_transactions
 from tests.fixtures.pdf_golden_samples import (
     PDF_GOLDEN_MINIMAL_EXPECTATIONS,
@@ -13,6 +14,18 @@ pytestmark = pytest.mark.pdf_golden
 
 def test_pdf_golden_minimal_catalog_matches_expectations_keys() -> None:
     assert set(PDF_GOLDEN_MINIMAL_SCENARIOS.keys()) == set(PDF_GOLDEN_MINIMAL_EXPECTATIONS.keys())
+    for scenario_name, scenario in PDF_GOLDEN_MINIMAL_SCENARIOS.items():
+        sample_text = scenario["sample_text"]
+        assert isinstance(sample_text, str), scenario_name
+        assert sample_text.strip(), scenario_name
+        assert any(char.isdigit() for char in sample_text), scenario_name
+    for scenario_name, expected in PDF_GOLDEN_MINIMAL_EXPECTATIONS.items():
+        first_transaction = expected["first_transaction"]
+        assert first_transaction["date"], scenario_name
+        assert first_transaction["type"] in {"inflow", "outflow"}, scenario_name
+        assert isinstance(first_transaction["amount"], float), scenario_name
+        if "description" in first_transaction:
+            assert first_transaction["description"].strip(), scenario_name
 
 
 @pytest.mark.parametrize("scenario_name", sorted(PDF_GOLDEN_MINIMAL_SCENARIOS.keys()))
@@ -41,6 +54,15 @@ def test_pdf_parser_golden_minimal_dataset_stability(monkeypatch, scenario_name:
     assert result.parse_metrics["canonical_source_parser_types_list"] == expected["selected_parser"], scenario_name
     assert result.parse_metrics["canonical_warning_types_count"] >= 0, scenario_name
     assert result.parse_metrics["canonical_warning_count"] >= 0, scenario_name
+
+    first_expected = expected["first_transaction"]
+    first_transaction = result.transactions[0]
+    assert first_transaction.date == first_expected["date"], scenario_name
+    assert first_transaction.amount == first_expected["amount"], scenario_name
+    assert first_transaction.type == first_expected["type"], scenario_name
+    expected_description = first_expected.get("description")
+    if expected_description is not None:
+        assert normalize_upper_text(first_transaction.description) == normalize_upper_text(expected_description), scenario_name
 
 
 def test_pdf_parser_golden_negative_unsupported_layout_message(monkeypatch) -> None:
