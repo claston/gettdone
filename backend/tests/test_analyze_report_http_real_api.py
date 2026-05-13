@@ -318,6 +318,10 @@ def test_http_post_analyze_happy_path_exposes_pdf_metrics_compatibility() -> Non
     payload = response.json()
     assert payload["analysis_id"] == "an_http123"
     assert payload["pdf_processing_metrics"]["selected_parser"] == "grouped"
+    assert payload["pdf_processing_metrics"]["parser_selection_reason"] == "grouped_rows_available"
+    assert payload["pdf_processing_metrics"]["inline_decision"] == "skipped_due_to_grouped"
+    assert payload["pdf_processing_metrics"]["tabular_decision"] == "skipped_due_to_grouped"
+    assert payload["pdf_processing_metrics"]["columnar_decision"] == "skipped_due_to_grouped"
     assert payload["pdf_processing_metrics"]["canonical_transactions_count"] == 2
     assert payload["pdf_processing_metrics"]["confidence_band"] == "low"
     assert payload["pdf_processing_metrics"]["export_recommendation"] == "review_recommended"
