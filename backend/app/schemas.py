@@ -71,7 +71,18 @@ class PdfProcessingMetrics(BaseModel):
     grouped_transactions_count: int
     inline_candidates_count: int
     inline_transactions_count: int
+    tabular_candidates_count: int = 0
+    tabular_transactions_count: int = 0
+    columnar_candidates_count: int = 0
+    columnar_transactions_count: int = 0
     selected_parser: str
+    parser_selection_reason: str = ""
+    inline_decision: str = ""
+    tabular_decision: str = ""
+    columnar_decision: str = ""
+    confidence_band: str = ""
+    export_recommendation: str = ""
+    export_recommendation_reason: str = ""
     balance_consistency_checked: int = 0
     balance_consistency_failed: int = 0
     canonical_transactions_count: int = 0

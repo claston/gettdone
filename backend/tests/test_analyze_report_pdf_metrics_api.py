@@ -91,7 +91,18 @@ class FakeAnalyzeService:
                 grouped_transactions_count=2,
                 inline_candidates_count=2,
                 inline_transactions_count=2,
+                tabular_candidates_count=0,
+                tabular_transactions_count=0,
+                columnar_candidates_count=0,
+                columnar_transactions_count=0,
                 selected_parser="grouped",
+                parser_selection_reason="grouped_rows_available",
+                inline_decision="skipped_due_to_grouped",
+                tabular_decision="skipped_due_to_grouped",
+                columnar_decision="skipped_due_to_grouped",
+                confidence_band="low",
+                export_recommendation="review_recommended",
+                export_recommendation_reason="low_confidence_band",
                 balance_consistency_checked=1,
                 balance_consistency_failed=0,
                 canonical_transactions_count=2,
@@ -197,6 +208,9 @@ def test_analyze_happy_path_includes_pdf_processing_metrics_compat_fields() -> N
     assert payload["pdf_processing_metrics"]["canonical_with_running_balance_count"] == 2
     assert payload["pdf_processing_metrics"]["canonical_with_external_reference_count"] == 2
     assert payload["pdf_processing_metrics"]["canonical_warning_types"] == "balance_consistency_failed"
+    assert payload["pdf_processing_metrics"]["confidence_band"] == "low"
+    assert payload["pdf_processing_metrics"]["export_recommendation"] == "review_recommended"
+    assert payload["pdf_processing_metrics"]["export_recommendation_reason"] == "low_confidence_band"
     assert payload["pdf_processing_metrics"]["canonical_warning_types_list"] == [
         "balance_consistency_failed"
     ]
