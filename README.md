@@ -142,6 +142,12 @@ cd backend
 venv\Scripts\python.exe -m pytest -m pdf_golden -q --basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-pdf-golden
 ```
 
+Opcao equivalente executando da raiz do repositorio (sem warning de marker):
+
+```powershell
+backend\venv\Scripts\python.exe -m pytest -c backend\pyproject.toml -m pdf_golden -q --basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-pdf-golden
+```
+
 Arquivos principais desse pacote:
 
 - `backend/tests/test_pdf_parser_golden_minimal_dataset.py`
