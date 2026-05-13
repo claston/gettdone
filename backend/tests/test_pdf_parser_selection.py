@@ -60,11 +60,45 @@ def test_select_parsed_rows_selects_inline_and_exposes_decision_counters() -> No
     assert result.rows == ["inline-row-a", "inline-row-b"]
     assert result.inline_candidates == 3
     assert result.inline_transactions_count == 2
-    assert result.tabular_candidates == 0
-    assert result.columnar_candidates == 0
-    assert result.tabular_transactions_count == 0
-    assert result.columnar_transactions_count == 0
+    assert result.tabular_candidates == 1
+    assert result.columnar_candidates == 1
+    assert result.tabular_transactions_count == 1
+    assert result.columnar_transactions_count == 1
     assert result.selection_reason == "inline_rows_available_after_grouped_empty"
+
+
+def test_select_parsed_rows_prefers_tabular_on_conflict_when_layout_profile_present() -> None:
+    result = select_parsed_rows(
+        lines=["line"],
+        grouped_rows=[],
+        layout_profile=object(),
+        parse_inline_rows=lambda _: (["inline-row"], 2),
+        parse_tabular_rows=lambda _lines, _profile: (["tabular-row-a", "tabular-row-b"], 2),
+        parse_columnar_rows=lambda _: ([], 0),
+    )
+
+    assert result.selected_parser == "tabular"
+    assert result.rows == ["tabular-row-a", "tabular-row-b"]
+    assert result.selection_reason == "tabular_preferred_on_conflict_with_layout_profile"
+    assert result.inline_transactions_count == 1
+    assert result.tabular_transactions_count == 2
+
+
+def test_select_parsed_rows_keeps_inline_on_conflict_without_layout_profile() -> None:
+    result = select_parsed_rows(
+        lines=["line"],
+        grouped_rows=[],
+        layout_profile=None,
+        parse_inline_rows=lambda _: (["inline-row-a", "inline-row-b"], 2),
+        parse_tabular_rows=lambda _lines, _profile: (["tabular-row"], 1),
+        parse_columnar_rows=lambda _: ([], 0),
+    )
+
+    assert result.selected_parser == "inline"
+    assert result.rows == ["inline-row-a", "inline-row-b"]
+    assert result.selection_reason == "inline_rows_available_after_grouped_empty"
+    assert result.inline_transactions_count == 2
+    assert result.tabular_transactions_count == 1
 
 
 def test_select_parsed_rows_raises_unsupported_layout_when_candidates_exist_without_rows() -> None:
