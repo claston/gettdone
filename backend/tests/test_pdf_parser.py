@@ -393,3 +393,71 @@ def test_build_tabular_amount_details_handles_missing_balance() -> None:
 
     assert details["signed_amount"] == -10.0
     assert details["running_balance"] is None
+
+
+def test_classify_tabular_statement_line_marks_candidate_without_description() -> None:
+    line = pdf_parser_module._PdfLine(text="10/04 1,00", page_number=1, line_number=1)
+
+    parsed_row, is_candidate = pdf_parser_module._classify_tabular_statement_line(
+        line=line,
+        inferred_year=2026,
+        tabular_profile=None,
+    )
+
+    assert is_candidate is True
+    assert parsed_row is None
+
+
+def test_handle_grouped_amount_only_line_resets_parts_when_parsed() -> None:
+    line = pdf_parser_module._PdfLine(text="10,00", page_number=1, line_number=5)
+
+    parsed_row, next_parts, should_continue = pdf_parser_module._handle_grouped_amount_only_line(
+        current_date="2026-04-16",
+        description_parts=["Pagamento PIX"],
+        line=line,
+        section_hint="debit",
+    )
+
+    assert should_continue is True
+    assert parsed_row is not None
+    assert parsed_row.transaction.amount == -10.0
+    assert next_parts == []
+
+
+def test_accumulate_tabular_row_increments_candidates_without_transaction() -> None:
+    transactions: list[pdf_parser_module._ParsedTransaction] = []
+
+    next_candidates = pdf_parser_module._accumulate_tabular_row(
+        transactions=transactions,
+        parsed_row=None,
+        is_candidate=True,
+        candidates=2,
+    )
+
+    assert next_candidates == 3
+    assert transactions == []
+
+
+def test_accumulate_tabular_row_adds_transaction_when_present() -> None:
+    transactions: list[pdf_parser_module._ParsedTransaction] = []
+    parsed_row = pdf_parser_module._ParsedTransaction(
+        transaction=pdf_parser_module.NormalizedTransaction(
+            date="2026-04-10",
+            description="Pagamento",
+            amount=-10.0,
+            type="outflow",
+        ),
+        source_page=1,
+        source_line=1,
+    )
+
+    next_candidates = pdf_parser_module._accumulate_tabular_row(
+        transactions=transactions,
+        parsed_row=parsed_row,
+        is_candidate=True,
+        candidates=0,
+    )
+
+    assert next_candidates == 1
+    assert len(transactions) == 1
+    assert transactions[0].transaction.description == "Pagamento"

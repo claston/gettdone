@@ -208,17 +208,15 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
         if should_continue:
             continue
 
-        if is_amount_only_row(line.text):
-            parsed_row = _build_grouped_amount_only_transaction(
-                date=current_date,
-                description_parts=description_parts,
-                line=line,
-                section_hint=current_section_hint,
-            )
-            if parsed_row is None:
-                continue
-            transactions.append(parsed_row)
-            description_parts = []
+        parsed_row, description_parts, should_continue = _handle_grouped_amount_only_line(
+            current_date=current_date,
+            description_parts=description_parts,
+            line=line,
+            section_hint=current_section_hint,
+        )
+        if should_continue:
+            if parsed_row is not None:
+                transactions.append(parsed_row)
             continue
 
         description_parts = _append_grouped_description_part(
@@ -254,15 +252,17 @@ def _parse_tabular_statement_rows(
     tabular_profile = resolve_tabular_profile(line_texts, layout_profile=layout_profile)
 
     for line in lines:
-        parsed_row = _parse_tabular_statement_line(
+        parsed_row, is_candidate = _classify_tabular_statement_line(
             line=line,
             inferred_year=inferred_year,
             tabular_profile=tabular_profile,
         )
-        if parsed_row is None:
-            continue
-        candidates += 1
-        transactions.append(parsed_row)
+        candidates = _accumulate_tabular_row(
+            transactions=transactions,
+            parsed_row=parsed_row,
+            is_candidate=is_candidate,
+            candidates=candidates,
+        )
 
     return transactions, candidates
 
@@ -368,25 +368,39 @@ def _parse_tabular_statement_line(
     inferred_year: int | None,
     tabular_profile: DeclarativeLayoutProfile | None,
 ) -> _ParsedTransaction | None:
+    parsed_row, _ = _classify_tabular_statement_line(
+        line=line,
+        inferred_year=inferred_year,
+        tabular_profile=tabular_profile,
+    )
+    return parsed_row
+
+
+def _classify_tabular_statement_line(
+    *,
+    line: _PdfLine,
+    inferred_year: int | None,
+    tabular_profile: DeclarativeLayoutProfile | None,
+) -> tuple[_ParsedTransaction | None, bool]:
     match = match_tabular_date_prefix(line.text)
     if not match:
-        return None
+        return None, False
 
     rest = match.group("rest").strip()
     if not rest:
-        return None
+        return None, False
 
     amount_tokens = find_amount_tokens(rest)
     if not amount_tokens:
-        return None
+        return None, False
 
     selected_amount = select_tabular_amount_token(amount_tokens, layout_profile=tabular_profile)
     if selected_amount is None:
-        return None
+        return None, True
 
     raw_description = rest[: selected_amount.description_end].strip()
     if not raw_description or should_skip_transaction_description(raw_description):
-        return None
+        return None, True
 
     external_reference_id = extract_document_reference(raw_description, layout_profile=tabular_profile)
     amount_details = _build_tabular_amount_details(
@@ -395,15 +409,31 @@ def _parse_tabular_statement_line(
         raw_description=raw_description,
         balance_token_value=selected_amount.balance_token.value if selected_amount.balance_token else None,
     )
-    return _build_parsed_transaction(
-        date=parse_row_date(match.group("date"), fallback_year=inferred_year),
-        description=raw_description,
-        amount=amount_details["signed_amount"],
-        source_page=line.page_number,
-        source_line=line.line_number,
-        running_balance=amount_details["running_balance"],
-        external_reference_id=external_reference_id,
+    return (
+        _build_parsed_transaction(
+            date=parse_row_date(match.group("date"), fallback_year=inferred_year),
+            description=raw_description,
+            amount=amount_details["signed_amount"],
+            source_page=line.page_number,
+            source_line=line.line_number,
+            running_balance=amount_details["running_balance"],
+            external_reference_id=external_reference_id,
+        ),
+        True,
     )
+
+
+def _accumulate_tabular_row(
+    *,
+    transactions: list[_ParsedTransaction],
+    parsed_row: _ParsedTransaction | None,
+    is_candidate: bool,
+    candidates: int,
+) -> int:
+    next_candidates = candidates + 1 if is_candidate else candidates
+    if parsed_row is not None:
+        transactions.append(parsed_row)
+    return next_candidates
 
 
 def _build_tabular_amount_details(
@@ -438,6 +468,27 @@ def _handle_grouped_ignored_line(*, normalized_line: str, description_parts: lis
     if should_ignore_grouped_line(normalized_line):
         return [], True
     return description_parts, False
+
+
+def _handle_grouped_amount_only_line(
+    *,
+    current_date: str,
+    description_parts: list[str],
+    line: _PdfLine,
+    section_hint: str | None,
+) -> tuple[_ParsedTransaction | None, list[str], bool]:
+    if not is_amount_only_row(line.text):
+        return None, description_parts, False
+
+    parsed_row = _build_grouped_amount_only_transaction(
+        date=current_date,
+        description_parts=description_parts,
+        line=line,
+        section_hint=section_hint,
+    )
+    if parsed_row is None:
+        return None, description_parts, True
+    return parsed_row, [], True
 
 
 def _append_grouped_description_part(*, description_parts: list[str], raw_text: str) -> list[str]:
