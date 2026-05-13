@@ -81,6 +81,17 @@ QUASI_REAL_SIGNED_AMBIGUOUS_SAMPLE = "\n".join(
         "SALDO DO DIA 3.210,00",
     ]
 )
+QUASI_REAL_INLINE_PENDING_HEADER_BLOCK_SAMPLE = "\n".join(
+    [
+        "BANCO EXEMPLO S.A.",
+        "EXTRATO CONTA CORRENTE - PERIODO 01/04/2026 A 30/04/2026",
+        "02/04 PIX RECEBIDO CLIENTE SIGMA 100,00",
+        "03/04 PAGAMENTO FORNECEDOR ALFA",
+        "DATA DESCRICAO DOCUMENTO CREDITO (R$) DEBITO (R$) SALDO (R$)",
+        "150,25",
+        "SALDO DO DIA 1.184,31",
+    ]
+)
 YEAR_ROLLOVER_PAGE_ONE_SAMPLE = "EXTRATO PERIODO 20/12/2025 A 10/01/2026"
 YEAR_ROLLOVER_PAGE_TWO_SAMPLE = "\n".join(
     [
@@ -425,6 +436,29 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
             "source_line": 5,
         },
     },
+    "quasi_real_inline_pending_header_block": {
+        "selected_parser": "inline",
+        "transactions_count": 1,
+        "inline_candidates_count": 1,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {
+            "date": "2026-04-02",
+            "amount": 100.0,
+            "type": "inflow",
+            "description": "PIX RECEBIDO CLIENTE SIGMA",
+            "source_page": 1,
+            "source_line": 3,
+        },
+        "last_transaction": {
+            "date": "2026-04-02",
+            "amount": 100.0,
+            "type": "inflow",
+            "description": "PIX RECEBIDO CLIENTE SIGMA",
+            "source_page": 1,
+            "source_line": 3,
+        },
+    },
     "year_rollover_inline": {
         "selected_parser": "inline",
         "transactions_count": 2,
@@ -510,6 +544,10 @@ PDF_GOLDEN_MINIMAL_SCENARIOS = {
     },
     "quasi_real_signed_ambiguous": {
         "sample_text": QUASI_REAL_SIGNED_AMBIGUOUS_SAMPLE,
+        "layout_name": None,
+    },
+    "quasi_real_inline_pending_header_block": {
+        "sample_text": QUASI_REAL_INLINE_PENDING_HEADER_BLOCK_SAMPLE,
         "layout_name": None,
     },
     "year_rollover_inline": {
