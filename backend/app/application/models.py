@@ -29,6 +29,7 @@ class CanonicalTransaction:
     layout_name: str | None = None
     source_page: int | None = None
     source_line: int | None = None
+    source_parser: str | None = None
     running_balance: float | None = None
     document_id: str | None = None
     external_reference_id: str | None = None

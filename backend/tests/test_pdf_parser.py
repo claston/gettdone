@@ -29,6 +29,9 @@ def test_parse_pdf_transactions_handles_inline_and_multiline_amount_rows(monkeyp
     assert result.canonical_transactions[0].confidence == result.layout.confidence
     assert result.canonical_transactions[0].source_page == 1
     assert result.canonical_transactions[0].source_line == 2
+    assert result.canonical_transactions[0].source_parser == "grouped"
+    assert result.parse_metrics["canonical_source_parser_grouped_count"] == 2
+    assert result.parse_metrics["canonical_source_parser_types"] == "grouped"
 
 
 def test_parse_pdf_transactions_parses_unicode_minus_with_currency_prefix(monkeypatch) -> None:
@@ -42,6 +45,7 @@ def test_parse_pdf_transactions_parses_unicode_minus_with_currency_prefix(monkey
     assert result.transactions[0].amount == -10.0
     assert result.canonical_transactions[0].source_page == 1
     assert result.canonical_transactions[0].source_line == 1
+    assert result.canonical_transactions[0].source_parser == "grouped"
 
 
 def test_parse_pdf_transactions_does_not_run_ocr_fallback(monkeypatch) -> None:
@@ -77,6 +81,7 @@ def test_parse_pdf_transactions_uses_declarative_credit_debit_columns(monkeypatc
     assert result.canonical_transactions[0].layout_name == "viacredi_ailos_extrato_conta_corrente_v1"
     assert result.canonical_transactions[0].source_page == 1
     assert result.canonical_transactions[0].source_line == 3
+    assert result.canonical_transactions[0].source_parser == "tabular"
     assert result.canonical_transactions[0].external_reference_id == "123"
     assert result.canonical_transactions[0].running_balance == 1500.0
     assert result.canonical_transactions[1].external_reference_id == "456"
@@ -95,6 +100,13 @@ def test_parse_pdf_transactions_uses_declarative_credit_debit_columns(monkeypatc
     assert result.parse_metrics["canonical_running_balance_coverage_rate"] == 1.0
     assert result.parse_metrics["canonical_external_reference_coverage_rate"] == 1.0
     assert result.parse_metrics["canonical_warning_transaction_rate"] == 0.0
+    assert result.parse_metrics["canonical_source_parser_grouped_count"] == 0
+    assert result.parse_metrics["canonical_source_parser_inline_count"] == 0
+    assert result.parse_metrics["canonical_source_parser_tabular_count"] == 2
+    assert result.parse_metrics["canonical_source_parser_columnar_count"] == 0
+    assert result.parse_metrics["canonical_source_parser_types_count"] == 1
+    assert result.parse_metrics["canonical_source_parser_types"] == "tabular"
+    assert result.parse_metrics["canonical_source_parser_types_list"] == "tabular"
 
 
 def test_parse_pdf_transactions_marks_balance_consistency_warning(monkeypatch) -> None:
@@ -126,3 +138,10 @@ def test_parse_pdf_transactions_marks_balance_consistency_warning(monkeypatch) -
     assert result.parse_metrics["canonical_running_balance_coverage_rate"] == 1.0
     assert result.parse_metrics["canonical_external_reference_coverage_rate"] == 1.0
     assert result.parse_metrics["canonical_warning_transaction_rate"] == 0.5
+    assert result.parse_metrics["canonical_source_parser_grouped_count"] == 0
+    assert result.parse_metrics["canonical_source_parser_inline_count"] == 0
+    assert result.parse_metrics["canonical_source_parser_tabular_count"] == 2
+    assert result.parse_metrics["canonical_source_parser_columnar_count"] == 0
+    assert result.parse_metrics["canonical_source_parser_types_count"] == 1
+    assert result.parse_metrics["canonical_source_parser_types"] == "tabular"
+    assert result.parse_metrics["canonical_source_parser_types_list"] == "tabular"

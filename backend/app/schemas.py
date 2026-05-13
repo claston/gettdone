@@ -86,6 +86,13 @@ class PdfProcessingMetrics(BaseModel):
     canonical_running_balance_coverage_rate: float = 0.0
     canonical_external_reference_coverage_rate: float = 0.0
     canonical_warning_transaction_rate: float = 0.0
+    canonical_source_parser_grouped_count: int = 0
+    canonical_source_parser_inline_count: int = 0
+    canonical_source_parser_tabular_count: int = 0
+    canonical_source_parser_columnar_count: int = 0
+    canonical_source_parser_types_count: int = 0
+    canonical_source_parser_types: str = ""
+    canonical_source_parser_types_list: list[str] = []
 
 
 class AnalyzeResponse(BaseModel):
