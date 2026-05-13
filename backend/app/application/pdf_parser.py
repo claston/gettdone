@@ -9,7 +9,11 @@ from app.application.errors import InvalidFileContentError
 from app.application.layout_profiles.registry import DeclarativeLayoutProfile, get_layout_profile
 from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.normalization.amount import apply_amount_role_sign, parse_amount
+from app.application.normalization.balance import annotate_balance_consistency
 from app.application.normalization.canonical import build_canonical_transactions
+from app.application.normalization.canonical_metrics import build_canonical_quality_metrics
+from app.application.normalization.pdf_parse_metrics import build_pdf_parse_metrics
+from app.application.normalization.pdf_parser_selection import select_parsed_rows
 from app.application.normalization.text import normalize_upper_text
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
 from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE
@@ -141,43 +145,19 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
     layout_profile = get_layout_profile(layout.layout_name)
     lines = _flatten_statement_lines(page_texts)
     grouped_rows = _parse_grouped_statement_lines(lines)
-    transactions = [item.transaction for item in grouped_rows]
-    inline_candidates = 0
-    inline_transactions_count = 0
-    tabular_candidates = 0
-    columnar_candidates = 0
-    selected_parser = "grouped"
-    if not transactions:
-        inline_rows, inline_candidates = _parse_inline_statement_rows(lines)
-        inline_transactions_count = len(inline_rows)
-        transactions = [item.transaction for item in inline_rows]
-        selected_parser = "inline"
-        if not transactions:
-            tabular_rows, tabular_candidates = _parse_tabular_statement_rows(lines, layout_profile=layout_profile)
-            transactions = [item.transaction for item in tabular_rows]
-            if transactions:
-                selected_parser = "tabular"
-        if not transactions:
-            columnar_rows, columnar_candidates = _parse_columnar_statement_blocks(lines)
-            transactions = [item.transaction for item in columnar_rows]
-            if transactions:
-                selected_parser = "columnar"
-        if not transactions:
-            selected_parser = "none"
-            if inline_candidates > 0 or tabular_candidates > 0 or columnar_candidates > 0:
-                raise InvalidFileContentError(
-                    "PDF text was extracted, but transactions are in an unsupported table layout."
-                )
-            raise InvalidFileContentError(
-                "PDF text was extracted, but no recognizable transaction row pattern was found."
-            )
-
-    parsed_rows = {
-        "grouped": grouped_rows,
-        "inline": inline_rows if "inline_rows" in locals() else [],
-        "tabular": tabular_rows if "tabular_rows" in locals() else [],
-        "columnar": columnar_rows if "columnar_rows" in locals() else [],
-    }.get(selected_parser, [])
+    selection = select_parsed_rows(
+        lines=lines,
+        grouped_rows=grouped_rows,
+        layout_profile=layout_profile,
+        parse_inline_rows=_parse_inline_statement_rows,
+        parse_tabular_rows=lambda all_lines, profile: _parse_tabular_statement_rows(all_lines, layout_profile=profile),
+        parse_columnar_rows=_parse_columnar_statement_blocks,
+    )
+    parsed_rows = selection.rows
+    selected_parser = selection.selected_parser
+    transactions = [item.transaction for item in parsed_rows]
+    inline_candidates = selection.inline_candidates
+    inline_transactions_count = selection.inline_transactions_count
     canonical_transactions = build_canonical_transactions(
         parsed_rows,
         bank_name=layout_profile.bank if layout_profile is not None else None,
@@ -186,60 +166,26 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
         layout_confidence=layout.confidence,
         source_parser=selected_parser,
     )
-    balance_checked_count, balance_failed_count = _annotate_balance_consistency(canonical_transactions)
-    canonical_quality_metrics = _build_canonical_quality_metrics(canonical_transactions)
+    balance_checked_count, balance_failed_count = annotate_balance_consistency(canonical_transactions)
+    canonical_quality_metrics = build_canonical_quality_metrics(canonical_transactions)
 
     return PdfParseResult(
         transactions=transactions,
         canonical_transactions=canonical_transactions,
         layout=layout,
         extracted_text=joined_text,
-        parse_metrics={
-            "page_count": len(page_texts),
-            "extracted_char_count": len(joined_text),
-            "flattened_line_count": len(lines),
-            "grouped_transactions_count": len(grouped_rows),
-            "inline_candidates_count": inline_candidates,
-            "inline_transactions_count": inline_transactions_count,
-            "selected_parser": selected_parser,
-            "balance_consistency_checked": balance_checked_count,
-            "balance_consistency_failed": balance_failed_count,
-            "canonical_transactions_count": canonical_quality_metrics["canonical_transactions_count"],
-            "canonical_with_running_balance_count": canonical_quality_metrics["canonical_with_running_balance_count"],
-            "canonical_with_external_reference_count": canonical_quality_metrics[
-                "canonical_with_external_reference_count"
-            ],
-            "canonical_warning_count": canonical_quality_metrics["canonical_warning_count"],
-            "canonical_balance_warning_count": canonical_quality_metrics["canonical_balance_warning_count"],
-            "canonical_warning_transactions_count": canonical_quality_metrics["canonical_warning_transactions_count"],
-            "canonical_warning_types_count": canonical_quality_metrics["canonical_warning_types_count"],
-            "canonical_warning_types": canonical_quality_metrics["canonical_warning_types"],
-            "canonical_warning_types_list": canonical_quality_metrics["canonical_warning_types_list"],
-            "canonical_running_balance_coverage_rate": canonical_quality_metrics[
-                "canonical_running_balance_coverage_rate"
-            ],
-            "canonical_external_reference_coverage_rate": canonical_quality_metrics[
-                "canonical_external_reference_coverage_rate"
-            ],
-            "canonical_warning_transaction_rate": canonical_quality_metrics["canonical_warning_transaction_rate"],
-            "canonical_source_parser_grouped_count": canonical_quality_metrics[
-                "canonical_source_parser_grouped_count"
-            ],
-            "canonical_source_parser_inline_count": canonical_quality_metrics["canonical_source_parser_inline_count"],
-            "canonical_source_parser_tabular_count": canonical_quality_metrics[
-                "canonical_source_parser_tabular_count"
-            ],
-            "canonical_source_parser_columnar_count": canonical_quality_metrics[
-                "canonical_source_parser_columnar_count"
-            ],
-            "canonical_source_parser_types_count": canonical_quality_metrics[
-                "canonical_source_parser_types_count"
-            ],
-            "canonical_source_parser_types": canonical_quality_metrics["canonical_source_parser_types"],
-            "canonical_source_parser_types_list": canonical_quality_metrics[
-                "canonical_source_parser_types_list"
-            ],
-        },
+        parse_metrics=build_pdf_parse_metrics(
+            page_count=len(page_texts),
+            extracted_char_count=len(joined_text),
+            flattened_line_count=len(lines),
+            grouped_transactions_count=len(grouped_rows),
+            inline_candidates_count=inline_candidates,
+            inline_transactions_count=inline_transactions_count,
+            selected_parser=selected_parser,
+            balance_consistency_checked=balance_checked_count,
+            balance_consistency_failed=balance_failed_count,
+            canonical_quality_metrics=canonical_quality_metrics,
+        ),
     )
 
 
@@ -549,89 +495,6 @@ def _extract_document_reference(raw_description: str, *, layout_profile: Declara
     if re.fullmatch(r"[A-Za-z0-9./_-]{3,}", candidate):
         return candidate
     return None
-
-
-def _annotate_balance_consistency(canonical_transactions: list[CanonicalTransaction]) -> tuple[int, int]:
-    checked_count = 0
-    failed_count = 0
-    previous: CanonicalTransaction | None = None
-    tolerance = 0.01
-
-    for current in canonical_transactions:
-        if current.running_balance is None:
-            previous = current
-            continue
-        if previous is None or previous.running_balance is None:
-            previous = current
-            continue
-
-        expected_current_balance = previous.running_balance + current.amount
-        checked_count += 1
-        if abs(current.running_balance - expected_current_balance) > tolerance:
-            failed_count += 1
-            if "balance_consistency_failed" not in current.warnings:
-                current.warnings.append("balance_consistency_failed")
-        previous = current
-
-    return checked_count, failed_count
-
-
-def _build_canonical_quality_metrics(canonical_transactions: list[CanonicalTransaction]) -> dict[str, int | float | str]:
-    warning_count = sum(len(item.warnings) for item in canonical_transactions)
-    balance_warning_count = sum(1 for item in canonical_transactions if "balance_consistency_failed" in item.warnings)
-    with_running_balance_count = sum(1 for item in canonical_transactions if item.running_balance is not None)
-    with_external_reference_count = sum(1 for item in canonical_transactions if item.external_reference_id)
-    total_count = len(canonical_transactions)
-    running_balance_coverage_rate = (
-        round(with_running_balance_count / total_count, 4) if total_count > 0 else 0.0
-    )
-    external_reference_coverage_rate = (
-        round(with_external_reference_count / total_count, 4) if total_count > 0 else 0.0
-    )
-    warning_transaction_rate = (
-        round(sum(1 for item in canonical_transactions if item.warnings) / total_count, 4) if total_count > 0 else 0.0
-    )
-    warning_types = sorted(
-        {
-            warning
-            for item in canonical_transactions
-            for warning in item.warnings
-        }
-    )
-    parser_counts = {
-        "grouped": sum(1 for item in canonical_transactions if item.source_parser == "grouped"),
-        "inline": sum(1 for item in canonical_transactions if item.source_parser == "inline"),
-        "tabular": sum(1 for item in canonical_transactions if item.source_parser == "tabular"),
-        "columnar": sum(1 for item in canonical_transactions if item.source_parser == "columnar"),
-    }
-    parser_types = [name for name, count in parser_counts.items() if count > 0]
-    return {
-        "canonical_transactions_count": total_count,
-        "canonical_with_running_balance_count": with_running_balance_count,
-        "canonical_with_external_reference_count": with_external_reference_count,
-        "canonical_warning_count": warning_count,
-        "canonical_balance_warning_count": balance_warning_count,
-        "canonical_warning_transactions_count": sum(1 for item in canonical_transactions if item.warnings),
-        "canonical_warning_types_count": len(
-            {
-                warning
-                for item in canonical_transactions
-                for warning in item.warnings
-            }
-        ),
-        "canonical_warning_types": ",".join(warning_types),
-        "canonical_warning_types_list": "|".join(warning_types),
-        "canonical_running_balance_coverage_rate": running_balance_coverage_rate,
-        "canonical_external_reference_coverage_rate": external_reference_coverage_rate,
-        "canonical_warning_transaction_rate": warning_transaction_rate,
-        "canonical_source_parser_grouped_count": parser_counts["grouped"],
-        "canonical_source_parser_inline_count": parser_counts["inline"],
-        "canonical_source_parser_tabular_count": parser_counts["tabular"],
-        "canonical_source_parser_columnar_count": parser_counts["columnar"],
-        "canonical_source_parser_types_count": len(parser_types),
-        "canonical_source_parser_types": ",".join(parser_types),
-        "canonical_source_parser_types_list": "|".join(parser_types),
-    }
 
 
 def _has_declarative_table_header(lines: list[_PdfLine], layout_profile: DeclarativeLayoutProfile | None) -> bool:
