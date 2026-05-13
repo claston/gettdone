@@ -336,3 +336,36 @@ def test_append_grouped_description_part_appends_cleaned_text() -> None:
     )
 
     assert next_parts == ["compra mercado", "pagamento pix"]
+
+
+def test_resolve_next_columnar_index_increments_when_row_is_none() -> None:
+    next_index = pdf_parser_module._resolve_next_columnar_index(
+        line_texts=["10/04", "Pagamento", "DEBITO", "10,00"],
+        current_index=2,
+        parsed_row=None,
+    )
+
+    assert next_index == 3
+
+
+def test_resolve_next_columnar_index_uses_block_rule_when_row_exists(monkeypatch) -> None:
+    line_texts = ["10/04", "Pagamento", "DEBITO", "10,00"]
+    parsed_row = pdf_parser_module._ParsedTransaction(
+        transaction=pdf_parser_module.NormalizedTransaction(
+            date="2026-04-10",
+            description="Pagamento",
+            amount=-10.0,
+            type="outflow",
+        ),
+        source_page=1,
+        source_line=1,
+    )
+    monkeypatch.setattr(pdf_parser_module, "next_columnar_block_index", lambda lines, current_index: 99)
+
+    next_index = pdf_parser_module._resolve_next_columnar_index(
+        line_texts=line_texts,
+        current_index=0,
+        parsed_row=parsed_row,
+    )
+
+    assert next_index == 99

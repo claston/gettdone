@@ -276,13 +276,10 @@ def _parse_columnar_statement_blocks(lines: list[_PdfLine]) -> tuple[list[_Parse
 
     while index < len(lines):
         parsed_row = _parse_columnar_block_at_index(lines=lines, index=index, inferred_year=inferred_year)
-        if parsed_row is None:
-            index += 1
-            continue
-
-        candidates += 1
-        transactions.append(parsed_row)
-        index = next_columnar_block_index(line_texts, current_index=index)
+        if parsed_row is not None:
+            candidates += 1
+            transactions.append(parsed_row)
+        index = _resolve_next_columnar_index(line_texts=line_texts, current_index=index, parsed_row=parsed_row)
 
     return transactions, candidates
 
@@ -331,6 +328,14 @@ def _parse_grouped_date_line_state(
         source_line=line.line_number,
     )
     return next_date, next_section_hint, next_description_parts, inline_transaction
+
+
+def _resolve_next_columnar_index(
+    *, line_texts: list[str], current_index: int, parsed_row: _ParsedTransaction | None
+) -> int:
+    if parsed_row is None:
+        return current_index + 1
+    return next_columnar_block_index(line_texts, current_index=current_index)
 
 
 def _parse_inline_statement_line(*, line: _PdfLine, inferred_year: int | None) -> _ParsedTransaction | None:
