@@ -70,7 +70,7 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         "inline_candidates_count": 0,
         "balance_consistency_checked": 0,
         "balance_consistency_failed": 0,
-        "first_transaction": {"date": "2026-03-16", "amount": -240.24, "type": "outflow"},
+        "first_transaction": {"date": "2026-03-16", "amount": -240.24, "type": "outflow", "source_page": 1, "source_line": 2},
     },
     "inline": {
         "selected_parser": "inline",
@@ -78,7 +78,14 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         "inline_candidates_count": 1,
         "balance_consistency_checked": 0,
         "balance_consistency_failed": 0,
-        "first_transaction": {"date": "2026-04-10", "amount": 10.0, "type": "inflow", "description": "AJUSTE MANUAL"},
+        "first_transaction": {
+            "date": "2026-04-10",
+            "amount": 10.0,
+            "type": "inflow",
+            "description": "AJUSTE MANUAL",
+            "source_page": 1,
+            "source_line": 1,
+        },
     },
     "tabular": {
         "selected_parser": "tabular",
@@ -86,7 +93,7 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         "inline_candidates_count": 0,
         "balance_consistency_checked": 1,
         "balance_consistency_failed": 0,
-        "first_transaction": {"date": "2024-10-01", "amount": 1000.0, "type": "inflow"},
+        "first_transaction": {"date": "2024-10-01", "amount": 1000.0, "type": "inflow", "source_page": 1, "source_line": 3},
     },
     "columnar": {
         "selected_parser": "columnar",
@@ -94,7 +101,14 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         "inline_candidates_count": 0,
         "balance_consistency_checked": 0,
         "balance_consistency_failed": 0,
-        "first_transaction": {"date": "2026-04-10", "amount": -10.0, "type": "outflow", "description": "Pagamento Cartao"},
+        "first_transaction": {
+            "date": "2026-04-10",
+            "amount": -10.0,
+            "type": "outflow",
+            "description": "Pagamento Cartao",
+            "source_page": 1,
+            "source_line": 1,
+        },
     },
     "itau_inline": {
         "selected_parser": "inline",
@@ -107,6 +121,8 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
             "amount": 100.0,
             "type": "inflow",
             "description": "TRANSFERENCIA RECEBIDA",
+            "source_page": 1,
+            "source_line": 2,
         },
     },
     "santander_inline": {
@@ -120,6 +136,8 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
             "amount": -25.0,
             "type": "outflow",
             "description": "PAGAMENTO FORNECEDOR",
+            "source_page": 1,
+            "source_line": 2,
         },
     },
     "nubank_inline": {
@@ -128,7 +146,14 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         "inline_candidates_count": 1,
         "balance_consistency_checked": 0,
         "balance_consistency_failed": 0,
-        "first_transaction": {"date": "2026-04-12", "amount": -18.9, "type": "outflow", "description": "COMPRA CARTAO"},
+        "first_transaction": {
+            "date": "2026-04-12",
+            "amount": -18.9,
+            "type": "outflow",
+            "description": "COMPRA CARTAO",
+            "source_page": 1,
+            "source_line": 2,
+        },
     },
     "bradesco_inline": {
         "selected_parser": "inline",
@@ -141,6 +166,8 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
             "amount": 77.0,
             "type": "inflow",
             "description": "TRANSFERENCIA RECEBIDA",
+            "source_page": 1,
+            "source_line": 2,
         },
     },
     "banco_do_brasil_inline": {
@@ -154,6 +181,8 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
             "amount": -35.4,
             "type": "outflow",
             "description": "PAGAMENTO BOLETO",
+            "source_page": 1,
+            "source_line": 2,
         },
     },
     "caixa_inline": {
@@ -162,7 +191,14 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         "inline_candidates_count": 1,
         "balance_consistency_checked": 0,
         "balance_consistency_failed": 0,
-        "first_transaction": {"date": "2026-04-15", "amount": 52.1, "type": "inflow", "description": "PIX RECEBIDO"},
+        "first_transaction": {
+            "date": "2026-04-15",
+            "amount": 52.1,
+            "type": "inflow",
+            "description": "PIX RECEBIDO",
+            "source_page": 1,
+            "source_line": 2,
+        },
     },
     "inter_inline": {
         "selected_parser": "inline",
@@ -170,7 +206,14 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         "inline_candidates_count": 1,
         "balance_consistency_checked": 0,
         "balance_consistency_failed": 0,
-        "first_transaction": {"date": "2026-04-16", "amount": 90.0, "type": "inflow", "description": "TED RECEBIDA"},
+        "first_transaction": {
+            "date": "2026-04-16",
+            "amount": 90.0,
+            "type": "inflow",
+            "description": "TED RECEBIDA",
+            "source_page": 1,
+            "source_line": 2,
+        },
     },
     "sicredi_inline": {
         "selected_parser": "inline",
@@ -178,7 +221,14 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         "inline_candidates_count": 1,
         "balance_consistency_checked": 0,
         "balance_consistency_failed": 0,
-        "first_transaction": {"date": "2026-04-17", "amount": -12.0, "type": "outflow", "description": "TARIFA PACOTE"},
+        "first_transaction": {
+            "date": "2026-04-17",
+            "amount": -12.0,
+            "type": "outflow",
+            "description": "TARIFA PACOTE",
+            "source_page": 1,
+            "source_line": 2,
+        },
     },
     "year_rollover_inline": {
         "selected_parser": "inline",
@@ -186,7 +236,14 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         "inline_candidates_count": 2,
         "balance_consistency_checked": 0,
         "balance_consistency_failed": 0,
-        "first_transaction": {"date": "2025-12-31", "amount": -10.0, "type": "outflow", "description": "COMPRA MERCADO"},
+        "first_transaction": {
+            "date": "2025-12-31",
+            "amount": -10.0,
+            "type": "outflow",
+            "description": "COMPRA MERCADO",
+            "source_page": 2,
+            "source_line": 1,
+        },
     },
 }
 

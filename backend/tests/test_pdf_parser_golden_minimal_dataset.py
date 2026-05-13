@@ -34,6 +34,10 @@ def test_pdf_golden_minimal_catalog_matches_expectations_keys() -> None:
         assert first_transaction["date"], scenario_name
         assert first_transaction["type"] in {"inflow", "outflow"}, scenario_name
         assert isinstance(first_transaction["amount"], float), scenario_name
+        assert isinstance(first_transaction["source_page"], int), scenario_name
+        assert first_transaction["source_page"] >= 1, scenario_name
+        assert isinstance(first_transaction["source_line"], int), scenario_name
+        assert first_transaction["source_line"] >= 1, scenario_name
         if "description" in first_transaction:
             assert first_transaction["description"].strip(), scenario_name
 
@@ -68,9 +72,12 @@ def test_pdf_parser_golden_minimal_dataset_stability(monkeypatch, scenario_name:
 
     first_expected = expected["first_transaction"]
     first_transaction = result.transactions[0]
+    first_canonical = result.canonical_transactions[0]
     assert first_transaction.date == first_expected["date"], scenario_name
     assert first_transaction.amount == first_expected["amount"], scenario_name
     assert first_transaction.type == first_expected["type"], scenario_name
+    assert first_canonical.source_page == first_expected["source_page"], scenario_name
+    assert first_canonical.source_line == first_expected["source_line"], scenario_name
     expected_description = first_expected.get("description")
     if expected_description is not None:
         assert normalize_upper_text(first_transaction.description) == normalize_upper_text(expected_description), scenario_name
