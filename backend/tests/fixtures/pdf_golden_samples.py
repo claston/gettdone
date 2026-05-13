@@ -92,6 +92,20 @@ QUASI_REAL_INLINE_PENDING_HEADER_BLOCK_SAMPLE = "\n".join(
         "SALDO DO DIA 1.184,31",
     ]
 )
+QUASI_REAL_INLINE_PENDING_PAGE_BREAK_PAGE_ONE_SAMPLE = "\n".join(
+    [
+        "BANCO EXEMPLO S.A.",
+        "EXTRATO CONTA CORRENTE - PERIODO 01/05/2026 A 31/05/2026",
+        "09/05 PAGAMENTO FORNECEDOR ALFA INDUSTRIA",
+    ]
+)
+QUASI_REAL_INLINE_PENDING_PAGE_BREAK_PAGE_TWO_SAMPLE = "\n".join(
+    [
+        "150,25",
+        "10/05 PIX RECEBIDO CLIENTE BETA 500,00",
+        "SALDO DO DIA 2.845,42",
+    ]
+)
 YEAR_ROLLOVER_PAGE_ONE_SAMPLE = "EXTRATO PERIODO 20/12/2025 A 10/01/2026"
 YEAR_ROLLOVER_PAGE_TWO_SAMPLE = "\n".join(
     [
@@ -459,6 +473,29 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
             "source_line": 3,
         },
     },
+    "quasi_real_inline_pending_page_break": {
+        "selected_parser": "inline",
+        "transactions_count": 1,
+        "inline_candidates_count": 1,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {
+            "date": "2026-05-10",
+            "amount": 500.0,
+            "type": "inflow",
+            "description": "PIX RECEBIDO CLIENTE BETA",
+            "source_page": 2,
+            "source_line": 2,
+        },
+        "last_transaction": {
+            "date": "2026-05-10",
+            "amount": 500.0,
+            "type": "inflow",
+            "description": "PIX RECEBIDO CLIENTE BETA",
+            "source_page": 2,
+            "source_line": 2,
+        },
+    },
     "year_rollover_inline": {
         "selected_parser": "inline",
         "transactions_count": 2,
@@ -548,6 +585,13 @@ PDF_GOLDEN_MINIMAL_SCENARIOS = {
     },
     "quasi_real_inline_pending_header_block": {
         "sample_text": QUASI_REAL_INLINE_PENDING_HEADER_BLOCK_SAMPLE,
+        "layout_name": None,
+    },
+    "quasi_real_inline_pending_page_break": {
+        "sample_pages": [
+            QUASI_REAL_INLINE_PENDING_PAGE_BREAK_PAGE_ONE_SAMPLE,
+            QUASI_REAL_INLINE_PENDING_PAGE_BREAK_PAGE_TWO_SAMPLE,
+        ],
         "layout_name": None,
     },
     "year_rollover_inline": {
