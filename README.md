@@ -128,6 +128,7 @@ backend\venv\Scripts\python.exe scripts\smoke_playwright_navigation.py
 Workflows configurados:
 
 - `CI | Lint and Tests`: roda `ruff` e `pytest` do `backend` em push/PR.
+- `CI | Lint and Tests` (`pdf-golden` job): roda `pytest -m pdf_golden` como guarda de regressao dedicada para parser PDF.
 - `Security | CodeQL Scan`: roda analise de seguranca para Python em push/PR para `main` e agenda semanal.
 - `CD | Publish Container (GHCR)`: publica imagem Docker no GHCR em push para `main`.
 - `CD | Deploy to Render (Staging)`: dispara deploy no Render apos publish da imagem.
