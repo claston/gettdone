@@ -165,6 +165,13 @@ Cobertura atual do starter pack (sintetico):
 - `Sicredi`
 - `Year rollover (dez/jan)` multi-page
 
+Cobertura quasi-real adicionada (anonimizada):
+
+- `inline_noise`: cabecalho, periodo, linhas de saldo e descricoes longas
+- `multipage_inline`: transacoes distribuidas entre paginas com rastreabilidade de origem
+- `signed_ambiguous`: sinal explicito no valor com descricao ambigua (`CREDITO`/`ESTORNO`)
+- negativo `no_pattern`: extrato realista sem linhas transacionais reconheciveis
+
 Contrato atual validado no pacote:
 
 - parser selecionado por cenario
@@ -173,6 +180,13 @@ Contrato atual validado no pacote:
 - rastreabilidade de origem canônica (`source_page`, `source_line`)
 - cenarios multi-page sinteticos
 - gate de qualidade textual para evitar mojibake nos samples
+
+Checklist rapido de validacao local (fase atual):
+
+1. `cd backend`
+2. `venv\Scripts\python.exe -m pytest -m pdf_golden -q --basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-pdf-golden`
+3. `venv\Scripts\python.exe -m pytest tests/test_pdf_parser.py tests/test_pdf_parser_golden_minimal_dataset.py -q --basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-parser-golden`
+4. `venv\Scripts\python.exe -m pytest tests/test_analyze_report_http_real_api.py -q --basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-api-e2e-minimum`
 
 ## Deploy no Render (Web Service)
 

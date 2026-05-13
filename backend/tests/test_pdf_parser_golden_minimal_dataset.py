@@ -124,6 +124,24 @@ def test_pdf_parser_golden_negative_unsupported_layout_message(monkeypatch) -> N
         )
 
 
+def test_pdf_parser_golden_negative_no_pattern_quasi_real_message(monkeypatch) -> None:
+    sample_text = "\n".join(
+        [
+            "BANCO EXEMPLO S.A.",
+            "EXTRATO CONTA CORRENTE - PERIODO 01/07/2026 A 31/07/2026",
+            "CENTRAL DE ATENDIMENTO 0800 000 000",
+            "SEM MOVIMENTACOES NO PERIODO",
+            "SALDO FINAL DISPONIVEL",
+        ]
+    )
+    with pytest.raises(InvalidFileContentError, match="no recognizable transaction row pattern"):
+        _run_pdf_parser_scenario(
+            monkeypatch=monkeypatch,
+            sample_text=sample_text,
+            layout_override=None,
+        )
+
+
 def test_pdf_parser_golden_negative_no_pattern_message(monkeypatch) -> None:
     sample_text = "\n".join(
         [
