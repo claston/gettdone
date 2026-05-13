@@ -71,6 +71,16 @@ QUASI_REAL_MULTIPAGE_PAGE_TWO_SAMPLE = "\n".join(
         "SALDO DO DIA 2.659,92",
     ]
 )
+QUASI_REAL_SIGNED_AMBIGUOUS_SAMPLE = "\n".join(
+    [
+        "BANCO EXEMPLO S.A.",
+        "EXTRATO CONTA CORRENTE - PERIODO 01/06/2026 A 30/06/2026",
+        "12/06 AJUSTE CONTABIL CREDITO MANUAL -R$ 45,00",
+        "13/06 ESTORNO TARIFA PACOTE R$ 45,00",
+        "14/06 TRANSFERENCIA RECEBIDA CLIENTE GAMA 120,00",
+        "SALDO DO DIA 3.210,00",
+    ]
+)
 YEAR_ROLLOVER_PAGE_ONE_SAMPLE = "EXTRATO PERIODO 20/12/2025 A 10/01/2026"
 YEAR_ROLLOVER_PAGE_TWO_SAMPLE = "\n".join(
     [
@@ -392,6 +402,29 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
             "source_line": 2,
         },
     },
+    "quasi_real_signed_ambiguous": {
+        "selected_parser": "inline",
+        "transactions_count": 3,
+        "inline_candidates_count": 3,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {
+            "date": "2026-06-12",
+            "amount": -45.0,
+            "type": "outflow",
+            "description": "AJUSTE CONTABIL CREDITO MANUAL",
+            "source_page": 1,
+            "source_line": 3,
+        },
+        "last_transaction": {
+            "date": "2026-06-14",
+            "amount": 120.0,
+            "type": "inflow",
+            "description": "TRANSFERENCIA RECEBIDA CLIENTE GAMA",
+            "source_page": 1,
+            "source_line": 5,
+        },
+    },
     "year_rollover_inline": {
         "selected_parser": "inline",
         "transactions_count": 2,
@@ -473,6 +506,10 @@ PDF_GOLDEN_MINIMAL_SCENARIOS = {
     },
     "quasi_real_multipage_inline": {
         "sample_pages": [QUASI_REAL_MULTIPAGE_PAGE_ONE_SAMPLE, QUASI_REAL_MULTIPAGE_PAGE_TWO_SAMPLE],
+        "layout_name": None,
+    },
+    "quasi_real_signed_ambiguous": {
+        "sample_text": QUASI_REAL_SIGNED_AMBIGUOUS_SAMPLE,
         "layout_name": None,
     },
     "year_rollover_inline": {

@@ -167,6 +167,27 @@ def test_parse_pdf_transactions_adjusts_year_rollover_from_december_to_january(m
     assert result.transactions[1].amount == 20.0
 
 
+def test_parse_pdf_transactions_preserves_explicit_negative_amount_despite_credit_hint(monkeypatch) -> None:
+    sample_text = "\n".join(
+        [
+            "12/06 AJUSTE CONTABIL CREDITO MANUAL -R$ 45,00",
+            "13/06 ESTORNO TARIFA PACOTE R$ 45,00",
+        ]
+    )
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [sample_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.parse_metrics["selected_parser"] == "inline"
+    assert len(result.transactions) == 2
+    assert result.transactions[0].date == "2026-06-12"
+    assert result.transactions[0].amount == -45.0
+    assert result.transactions[0].type == "outflow"
+    assert result.transactions[1].date == "2026-06-13"
+    assert result.transactions[1].amount == 45.0
+    assert result.transactions[1].type == "inflow"
+
+
 def test_parse_columnar_statement_blocks_skips_incomplete_rows_and_parses_valid_block(monkeypatch) -> None:
     lines = [
         pdf_parser_module._PdfLine(text="15/04", page_number=1, line_number=1),

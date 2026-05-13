@@ -6,6 +6,8 @@ def compute_tabular_signed_amount(*, raw_amount: float, role: str | None, descri
     amount = apply_amount_role_sign(raw_amount, role)
     if role in {"credit", "debit"}:
         return amount
+    if amount < 0:
+        return amount
     return apply_sign_hints(
         amount=amount,
         description=description,
@@ -14,6 +16,8 @@ def compute_tabular_signed_amount(*, raw_amount: float, role: str | None, descri
 
 
 def compute_hint_signed_amount(*, raw_amount: float, description: str, section_hint: str | None = None) -> float:
+    if raw_amount < 0:
+        return raw_amount
     return apply_sign_hints(
         amount=raw_amount,
         description=description,
