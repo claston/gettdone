@@ -38,6 +38,12 @@ UNICODE_MINUS_SINGLE_ROW_SAMPLE = "10 ABR 2026 Ajuste manual −R$ 10,00"
 INLINE_MINIMAL_SAMPLE = "10/04 Ajuste manual 10,00"
 ITAU_INLINE_MINIMAL_SAMPLE = "ITAU EMPRESAS\n10/04 Transferencia recebida 100,00"
 SANTANDER_INLINE_MINIMAL_SAMPLE = "SANTANDER EMPRESARIAL\n11/04 Pagamento fornecedor 25,00"
+NUBANK_INLINE_MINIMAL_SAMPLE = "NUBANK\n12/04 Compra cartao 18,90"
+BRADESCO_INLINE_MINIMAL_SAMPLE = "BRADESCO EMPRESAS\n13/04 Transferencia recebida 77,00"
+BANCO_DO_BRASIL_INLINE_MINIMAL_SAMPLE = "BANCO DO BRASIL\n14/04 Pagamento boleto 35,40"
+CAIXA_INLINE_MINIMAL_SAMPLE = "CAIXA ECONOMICA FEDERAL\n15/04 PIX recebido 52,10"
+INTER_INLINE_MINIMAL_SAMPLE = "BANCO INTER\n16/04 TED recebida 90,00"
+SICREDI_INLINE_MINIMAL_SAMPLE = "SICREDI\n17/04 Tarifa pacote 12,00"
 
 
 COLUMNAR_MINIMAL_SAMPLE = "\n".join(
@@ -57,6 +63,7 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         "inline_candidates_count": 0,
         "balance_consistency_checked": 0,
         "balance_consistency_failed": 0,
+        "first_transaction": {"date": "2026-03-16", "amount": -240.24, "type": "outflow"},
     },
     "inline": {
         "selected_parser": "inline",
@@ -64,6 +71,7 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         "inline_candidates_count": 1,
         "balance_consistency_checked": 0,
         "balance_consistency_failed": 0,
+        "first_transaction": {"date": "2026-04-10", "amount": 10.0, "type": "inflow", "description": "AJUSTE MANUAL"},
     },
     "tabular": {
         "selected_parser": "tabular",
@@ -71,6 +79,7 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         "inline_candidates_count": 0,
         "balance_consistency_checked": 1,
         "balance_consistency_failed": 0,
+        "first_transaction": {"date": "2024-10-01", "amount": 1000.0, "type": "inflow"},
     },
     "columnar": {
         "selected_parser": "columnar",
@@ -78,6 +87,7 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         "inline_candidates_count": 0,
         "balance_consistency_checked": 0,
         "balance_consistency_failed": 0,
+        "first_transaction": {"date": "2026-04-10", "amount": -10.0, "type": "outflow", "description": "Pagamento Cartao"},
     },
     "itau_inline": {
         "selected_parser": "inline",
@@ -85,6 +95,12 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         "inline_candidates_count": 1,
         "balance_consistency_checked": 0,
         "balance_consistency_failed": 0,
+        "first_transaction": {
+            "date": "2026-04-10",
+            "amount": 100.0,
+            "type": "inflow",
+            "description": "TRANSFERENCIA RECEBIDA",
+        },
     },
     "santander_inline": {
         "selected_parser": "inline",
@@ -92,6 +108,70 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         "inline_candidates_count": 1,
         "balance_consistency_checked": 0,
         "balance_consistency_failed": 0,
+        "first_transaction": {
+            "date": "2026-04-11",
+            "amount": -25.0,
+            "type": "outflow",
+            "description": "PAGAMENTO FORNECEDOR",
+        },
+    },
+    "nubank_inline": {
+        "selected_parser": "inline",
+        "transactions_count": 1,
+        "inline_candidates_count": 1,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {"date": "2026-04-12", "amount": -18.9, "type": "outflow", "description": "COMPRA CARTAO"},
+    },
+    "bradesco_inline": {
+        "selected_parser": "inline",
+        "transactions_count": 1,
+        "inline_candidates_count": 1,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {
+            "date": "2026-04-13",
+            "amount": 77.0,
+            "type": "inflow",
+            "description": "TRANSFERENCIA RECEBIDA",
+        },
+    },
+    "banco_do_brasil_inline": {
+        "selected_parser": "inline",
+        "transactions_count": 1,
+        "inline_candidates_count": 1,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {
+            "date": "2026-04-14",
+            "amount": -35.4,
+            "type": "outflow",
+            "description": "PAGAMENTO BOLETO",
+        },
+    },
+    "caixa_inline": {
+        "selected_parser": "inline",
+        "transactions_count": 1,
+        "inline_candidates_count": 1,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {"date": "2026-04-15", "amount": 52.1, "type": "inflow", "description": "PIX RECEBIDO"},
+    },
+    "inter_inline": {
+        "selected_parser": "inline",
+        "transactions_count": 1,
+        "inline_candidates_count": 1,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {"date": "2026-04-16", "amount": 90.0, "type": "inflow", "description": "TED RECEBIDA"},
+    },
+    "sicredi_inline": {
+        "selected_parser": "inline",
+        "transactions_count": 1,
+        "inline_candidates_count": 1,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {"date": "2026-04-17", "amount": -12.0, "type": "outflow", "description": "TARIFA PACOTE"},
     },
 }
 
@@ -119,6 +199,30 @@ PDF_GOLDEN_MINIMAL_SCENARIOS = {
     },
     "santander_inline": {
         "sample_text": SANTANDER_INLINE_MINIMAL_SAMPLE,
+        "layout_name": None,
+    },
+    "nubank_inline": {
+        "sample_text": NUBANK_INLINE_MINIMAL_SAMPLE,
+        "layout_name": None,
+    },
+    "bradesco_inline": {
+        "sample_text": BRADESCO_INLINE_MINIMAL_SAMPLE,
+        "layout_name": None,
+    },
+    "banco_do_brasil_inline": {
+        "sample_text": BANCO_DO_BRASIL_INLINE_MINIMAL_SAMPLE,
+        "layout_name": None,
+    },
+    "caixa_inline": {
+        "sample_text": CAIXA_INLINE_MINIMAL_SAMPLE,
+        "layout_name": None,
+    },
+    "inter_inline": {
+        "sample_text": INTER_INLINE_MINIMAL_SAMPLE,
+        "layout_name": None,
+    },
+    "sicredi_inline": {
+        "sample_text": SICREDI_INLINE_MINIMAL_SAMPLE,
         "layout_name": None,
     },
 }
