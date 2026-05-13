@@ -271,3 +271,16 @@ def test_http_get_report_negative_path_for_unknown_analysis_id() -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Analysis not found"
+
+
+def test_http_post_analyze_negative_path_for_unsupported_file_type() -> None:
+    with _run_http_server() as base_url:
+        response = httpx.post(
+            f"{base_url}/analyze",
+            data={"anonymous_fingerprint": "fp-http"},
+            files={"file": ("sample.txt", b"unsupported", "text/plain")},
+            timeout=5.0,
+        )
+
+    assert response.status_code == 400
+    assert "Unsupported file type" in response.json()["detail"]
