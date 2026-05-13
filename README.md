@@ -163,6 +163,16 @@ Cobertura atual do starter pack (sintetico):
 - `Caixa`
 - `Inter`
 - `Sicredi`
+- `Year rollover (dez/jan)` multi-page
+
+Contrato atual validado no pacote:
+
+- parser selecionado por cenario
+- contagens/campos canônicos de parse metrics
+- `first_transaction` e `last_transaction` (data, valor, tipo e descricao quando aplicavel)
+- rastreabilidade de origem canônica (`source_page`, `source_line`)
+- cenarios multi-page sinteticos
+- gate de qualidade textual para evitar mojibake nos samples
 
 ## Deploy no Render (Web Service)
 
