@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from app.application.normalization.pdf_amount_tokens import AmountToken, find_amount_tokens
@@ -21,7 +22,8 @@ def extract_single_trailing_amount_match(raw_text: str) -> InlineAmountMatch | N
         return None
 
     amount_token = amount_tokens[0]
-    if text[amount_token.end :].strip():
+    trailing = text[amount_token.end :].strip()
+    if trailing and not _is_ignorable_trailing_noise(trailing):
         return None
 
     description = text[: amount_token.start].strip()
@@ -29,3 +31,7 @@ def extract_single_trailing_amount_match(raw_text: str) -> InlineAmountMatch | N
         return None
 
     return InlineAmountMatch(description=description, amount_token=amount_token)
+
+
+def _is_ignorable_trailing_noise(value: str) -> bool:
+    return bool(re.fullmatch(r"[|¦:;,\.\-_/\\]+", value))
