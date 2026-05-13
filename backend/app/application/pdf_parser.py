@@ -194,10 +194,12 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
         if current_date is None:
             continue
 
-        updated_hint = resolve_grouped_section_hint(normalized_line, current_hint=current_section_hint)
-        if updated_hint != current_section_hint:
-            current_section_hint = updated_hint
-            description_parts = []
+        current_section_hint, description_parts, should_continue = _update_grouped_section_state(
+            normalized_line=normalized_line,
+            current_section_hint=current_section_hint,
+            description_parts=description_parts,
+        )
+        if should_continue:
             continue
 
         if should_ignore_grouped_line(normalized_line):
@@ -392,6 +394,18 @@ def _parse_tabular_statement_line(
         running_balance=running_balance,
         external_reference_id=external_reference_id,
     )
+
+
+def _update_grouped_section_state(
+    *,
+    normalized_line: str,
+    current_section_hint: str | None,
+    description_parts: list[str],
+) -> tuple[str | None, list[str], bool]:
+    next_hint = resolve_grouped_section_hint(normalized_line, current_hint=current_section_hint)
+    if next_hint != current_section_hint:
+        return next_hint, [], True
+    return next_hint, description_parts, False
 
 
 def _build_grouped_amount_only_transaction(

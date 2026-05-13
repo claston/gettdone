@@ -270,3 +270,27 @@ def test_parse_tabular_statement_line_builds_transaction_with_metadata() -> None
     assert parsed_row.running_balance == 1500.0
     assert parsed_row.source_page == 3
     assert parsed_row.source_line == 12
+
+
+def test_update_grouped_section_state_keeps_description_when_hint_is_unchanged() -> None:
+    next_hint, next_parts, should_continue = pdf_parser_module._update_grouped_section_state(
+        normalized_line="COMPRA CARTAO",
+        current_section_hint="debit",
+        description_parts=["compra mercado"],
+    )
+
+    assert next_hint == "debit"
+    assert next_parts == ["compra mercado"]
+    assert should_continue is False
+
+
+def test_update_grouped_section_state_resets_description_when_hint_changes() -> None:
+    next_hint, next_parts, should_continue = pdf_parser_module._update_grouped_section_state(
+        normalized_line="TOTAL DE ENTRADAS",
+        current_section_hint="outflow",
+        description_parts=["compra mercado"],
+    )
+
+    assert next_hint == "inflow"
+    assert next_parts == []
+    assert should_continue is True
