@@ -31,6 +31,7 @@ def test_pdf_golden_minimal_catalog_matches_expectations_keys() -> None:
                 assert any(char.isdigit() for char in page_text), scenario_name
     for scenario_name, expected in PDF_GOLDEN_MINIMAL_EXPECTATIONS.items():
         first_transaction = expected["first_transaction"]
+        last_transaction = expected["last_transaction"]
         assert first_transaction["date"], scenario_name
         assert first_transaction["type"] in {"inflow", "outflow"}, scenario_name
         assert isinstance(first_transaction["amount"], float), scenario_name
@@ -38,8 +39,17 @@ def test_pdf_golden_minimal_catalog_matches_expectations_keys() -> None:
         assert first_transaction["source_page"] >= 1, scenario_name
         assert isinstance(first_transaction["source_line"], int), scenario_name
         assert first_transaction["source_line"] >= 1, scenario_name
+        assert last_transaction["date"], scenario_name
+        assert last_transaction["type"] in {"inflow", "outflow"}, scenario_name
+        assert isinstance(last_transaction["amount"], float), scenario_name
+        assert isinstance(last_transaction["source_page"], int), scenario_name
+        assert last_transaction["source_page"] >= 1, scenario_name
+        assert isinstance(last_transaction["source_line"], int), scenario_name
+        assert last_transaction["source_line"] >= 1, scenario_name
         if "description" in first_transaction:
             assert first_transaction["description"].strip(), scenario_name
+        if "description" in last_transaction:
+            assert last_transaction["description"].strip(), scenario_name
 
 
 @pytest.mark.parametrize("scenario_name", sorted(PDF_GOLDEN_MINIMAL_SCENARIOS.keys()))
@@ -81,6 +91,18 @@ def test_pdf_parser_golden_minimal_dataset_stability(monkeypatch, scenario_name:
     expected_description = first_expected.get("description")
     if expected_description is not None:
         assert normalize_upper_text(first_transaction.description) == normalize_upper_text(expected_description), scenario_name
+
+    last_expected = expected["last_transaction"]
+    last_transaction = result.transactions[-1]
+    last_canonical = result.canonical_transactions[-1]
+    assert last_transaction.date == last_expected["date"], scenario_name
+    assert last_transaction.amount == last_expected["amount"], scenario_name
+    assert last_transaction.type == last_expected["type"], scenario_name
+    assert last_canonical.source_page == last_expected["source_page"], scenario_name
+    assert last_canonical.source_line == last_expected["source_line"], scenario_name
+    last_expected_description = last_expected.get("description")
+    if last_expected_description is not None:
+        assert normalize_upper_text(last_transaction.description) == normalize_upper_text(last_expected_description), scenario_name
 
 
 def test_pdf_parser_golden_negative_unsupported_layout_message(monkeypatch) -> None:
