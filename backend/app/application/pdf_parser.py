@@ -212,23 +212,15 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
             continue
 
         if is_amount_only_row(line.text):
-            if not description_parts:
-                continue
-            description = " ".join(description_parts).strip()
-            signed_amount = parse_grouped_amount_line(
-                raw_amount_text=line.text,
-                description=description,
+            parsed_row = _build_grouped_amount_only_transaction(
+                date=current_date,
+                description_parts=description_parts,
+                line=line,
                 section_hint=current_section_hint,
             )
-            transactions.append(
-                _build_parsed_transaction(
-                    date=current_date,
-                    description=description,
-                    amount=signed_amount,
-                    source_page=line.page_number,
-                    source_line=line.line_number,
-                )
-            )
+            if parsed_row is None:
+                continue
+            transactions.append(parsed_row)
             description_parts = []
             continue
 
@@ -371,6 +363,31 @@ def _parse_columnar_block_at_index(
         amount=signed_amount,
         source_page=lines[index].page_number,
         source_line=lines[index].line_number,
+    )
+
+
+def _build_grouped_amount_only_transaction(
+    *,
+    date: str,
+    description_parts: list[str],
+    line: _PdfLine,
+    section_hint: str | None,
+) -> _ParsedTransaction | None:
+    if not description_parts:
+        return None
+
+    description = " ".join(description_parts).strip()
+    signed_amount = parse_grouped_amount_line(
+        raw_amount_text=line.text,
+        description=description,
+        section_hint=section_hint,
+    )
+    return _build_parsed_transaction(
+        date=date,
+        description=description,
+        amount=signed_amount,
+        source_page=line.page_number,
+        source_line=line.line_number,
     )
 
 

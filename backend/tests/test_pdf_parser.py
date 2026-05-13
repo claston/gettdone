@@ -167,3 +167,34 @@ def test_parse_columnar_statement_blocks_skips_incomplete_rows_and_parses_valid_
     assert parsed_rows[0].transaction.amount == -10.0
     assert parsed_rows[0].source_page == 1
     assert parsed_rows[0].source_line == 2
+
+
+def test_build_grouped_amount_only_transaction_returns_none_without_description_parts() -> None:
+    line = pdf_parser_module._PdfLine(text="10,00", page_number=1, line_number=5)
+
+    parsed_row = pdf_parser_module._build_grouped_amount_only_transaction(
+        date="2026-04-16",
+        description_parts=[],
+        line=line,
+        section_hint="debit",
+    )
+
+    assert parsed_row is None
+
+
+def test_build_grouped_amount_only_transaction_builds_transaction_with_description() -> None:
+    line = pdf_parser_module._PdfLine(text="10,00", page_number=1, line_number=5)
+
+    parsed_row = pdf_parser_module._build_grouped_amount_only_transaction(
+        date="2026-04-16",
+        description_parts=["Pagamento PIX"],
+        line=line,
+        section_hint="debit",
+    )
+
+    assert parsed_row is not None
+    assert parsed_row.transaction.date == "2026-04-16"
+    assert parsed_row.transaction.description == "Pagamento PIX"
+    assert parsed_row.transaction.amount == -10.0
+    assert parsed_row.source_page == 1
+    assert parsed_row.source_line == 5
