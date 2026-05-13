@@ -65,6 +65,8 @@ def test_build_pdf_parse_metrics_preserves_contract_keys_and_values() -> None:
     assert metrics["canonical_source_parser_tabular_count"] == 2
     assert metrics["canonical_source_parser_types"] == "tabular"
     assert metrics["confidence_band"] == "low"
+    assert metrics["export_recommendation"] == "review_recommended"
+    assert metrics["export_recommendation_reason"] == "low_confidence_band"
 
 
 def test_build_pdf_parse_metrics_sets_confidence_band_high_for_clean_inline_flow() -> None:
@@ -112,6 +114,8 @@ def test_build_pdf_parse_metrics_sets_confidence_band_high_for_clean_inline_flow
     )
 
     assert metrics["confidence_band"] == "high"
+    assert metrics["export_recommendation"] == "safe_to_export"
+    assert metrics["export_recommendation_reason"] == "high_confidence_band"
 
 
 def test_build_pdf_parse_metrics_sets_confidence_band_medium_for_conflict_selection() -> None:
@@ -159,3 +163,5 @@ def test_build_pdf_parse_metrics_sets_confidence_band_medium_for_conflict_select
     )
 
     assert metrics["confidence_band"] == "medium"
+    assert metrics["export_recommendation"] == "review_recommended"
+    assert metrics["export_recommendation_reason"] == "medium_confidence_band"
