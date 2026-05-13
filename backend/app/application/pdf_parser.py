@@ -28,7 +28,6 @@ from app.application.normalization.pdf_row_match_rules import (
     match_inline_row,
     match_tabular_date_prefix,
 )
-from app.application.normalization.pdf_running_balance_rules import parse_running_balance
 from app.application.normalization.pdf_signed_amount_rules import compute_hint_signed_amount, compute_tabular_signed_amount
 from app.application.normalization.pdf_tabular_profile_rules import resolve_tabular_profile
 from app.application.normalization.pdf_tabular_rules import extract_document_reference, select_tabular_amount_token
@@ -390,21 +389,37 @@ def _parse_tabular_statement_line(
         return None
 
     external_reference_id = extract_document_reference(raw_description, layout_profile=tabular_profile)
-    running_balance = parse_running_balance(selected_amount.balance_token)
-    signed_amount = compute_tabular_signed_amount(
-        raw_amount=parse_pdf_amount(selected_amount.token.value),
-        role=selected_amount.role,
-        description=raw_description,
+    amount_details = _build_tabular_amount_details(
+        amount_token_value=selected_amount.token.value,
+        selected_role=selected_amount.role,
+        raw_description=raw_description,
+        balance_token_value=selected_amount.balance_token.value if selected_amount.balance_token else None,
     )
     return _build_parsed_transaction(
         date=parse_row_date(match.group("date"), fallback_year=inferred_year),
         description=raw_description,
-        amount=signed_amount,
+        amount=amount_details["signed_amount"],
         source_page=line.page_number,
         source_line=line.line_number,
-        running_balance=running_balance,
+        running_balance=amount_details["running_balance"],
         external_reference_id=external_reference_id,
     )
+
+
+def _build_tabular_amount_details(
+    *,
+    amount_token_value: str,
+    selected_role: str,
+    raw_description: str,
+    balance_token_value: str | None,
+) -> dict[str, float | None]:
+    signed_amount = compute_tabular_signed_amount(
+        raw_amount=parse_pdf_amount(amount_token_value),
+        role=selected_role,
+        description=raw_description,
+    )
+    running_balance = parse_pdf_amount(balance_token_value) if balance_token_value is not None else None
+    return {"signed_amount": signed_amount, "running_balance": running_balance}
 
 
 def _update_grouped_section_state(

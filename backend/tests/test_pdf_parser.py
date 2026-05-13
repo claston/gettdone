@@ -369,3 +369,27 @@ def test_resolve_next_columnar_index_uses_block_rule_when_row_exists(monkeypatch
     )
 
     assert next_index == 99
+
+
+def test_build_tabular_amount_details_returns_signed_amount_and_balance() -> None:
+    details = pdf_parser_module._build_tabular_amount_details(
+        amount_token_value="1.000,00",
+        selected_role="credit",
+        raw_description="PIX RECEBIDO CLIENTE",
+        balance_token_value="1.500,00",
+    )
+
+    assert details["signed_amount"] == 1000.0
+    assert details["running_balance"] == 1500.0
+
+
+def test_build_tabular_amount_details_handles_missing_balance() -> None:
+    details = pdf_parser_module._build_tabular_amount_details(
+        amount_token_value="10,00",
+        selected_role="debit",
+        raw_description="TARIFA PACOTE",
+        balance_token_value=None,
+    )
+
+    assert details["signed_amount"] == -10.0
+    assert details["running_balance"] is None
