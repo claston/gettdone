@@ -145,3 +145,25 @@ def test_parse_pdf_transactions_marks_balance_consistency_warning(monkeypatch) -
     assert result.parse_metrics["canonical_source_parser_types_count"] == 1
     assert result.parse_metrics["canonical_source_parser_types"] == "tabular"
     assert result.parse_metrics["canonical_source_parser_types_list"] == "tabular"
+
+
+def test_parse_columnar_statement_blocks_skips_incomplete_rows_and_parses_valid_block(monkeypatch) -> None:
+    lines = [
+        pdf_parser_module._PdfLine(text="15/04", page_number=1, line_number=1),
+        pdf_parser_module._PdfLine(text="16/04", page_number=1, line_number=2),
+        pdf_parser_module._PdfLine(text="Pagamento", page_number=1, line_number=3),
+        pdf_parser_module._PdfLine(text="DEBITO", page_number=1, line_number=4),
+        pdf_parser_module._PdfLine(text="10,00", page_number=1, line_number=5),
+    ]
+
+    monkeypatch.setattr(pdf_parser_module, "next_columnar_block_index", lambda all_texts, current_index: 5)
+
+    parsed_rows, candidates = pdf_parser_module._parse_columnar_statement_blocks(lines)
+
+    assert candidates == 1
+    assert len(parsed_rows) == 1
+    assert parsed_rows[0].transaction.date == "2026-04-16"
+    assert parsed_rows[0].transaction.description == "Pagamento"
+    assert parsed_rows[0].transaction.amount == -10.0
+    assert parsed_rows[0].source_page == 1
+    assert parsed_rows[0].source_line == 2
