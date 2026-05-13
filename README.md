@@ -142,6 +142,12 @@ cd backend
 venv\Scripts\python.exe -m pytest -m pdf_golden -q --basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-pdf-golden
 ```
 
+Opcao equivalente executando da raiz do repositorio (sem warning de marker):
+
+```powershell
+backend\venv\Scripts\python.exe -m pytest -c backend\pyproject.toml -m pdf_golden -q --basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-pdf-golden
+```
+
 Arquivos principais desse pacote:
 
 - `backend/tests/test_pdf_parser_golden_minimal_dataset.py`
@@ -157,6 +163,16 @@ Cobertura atual do starter pack (sintetico):
 - `Caixa`
 - `Inter`
 - `Sicredi`
+- `Year rollover (dez/jan)` multi-page
+
+Contrato atual validado no pacote:
+
+- parser selecionado por cenario
+- contagens/campos canônicos de parse metrics
+- `first_transaction` e `last_transaction` (data, valor, tipo e descricao quando aplicavel)
+- rastreabilidade de origem canônica (`source_page`, `source_line`)
+- cenarios multi-page sinteticos
+- gate de qualidade textual para evitar mojibake nos samples
 
 ## Deploy no Render (Web Service)
 
