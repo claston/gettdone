@@ -310,6 +310,18 @@ def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTra
             candidates += 1
             pending_inline = None
             continue
+        if pending_inline is not None:
+            pending_date, pending_description, source_page, source_line = pending_inline
+            continuation = line.text.strip()
+            if continuation and not match_inline_row(continuation) and not should_skip_transaction_description(continuation):
+                pending_inline = (
+                    pending_date,
+                    f"{pending_description} {continuation}".strip(),
+                    source_page,
+                    source_line,
+                )
+                continue
+            pending_inline = None
 
         parsed_row = _parse_inline_statement_line(line=line, inferred_year=inferred_year)
         if parsed_row is None:

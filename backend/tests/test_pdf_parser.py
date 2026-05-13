@@ -330,6 +330,24 @@ def test_parse_inline_statement_rows_parses_split_amount_on_next_line() -> None:
     assert parsed_rows[0].source_line == 4
 
 
+def test_parse_inline_statement_rows_parses_multiline_description_then_amount() -> None:
+    lines = [
+        pdf_parser_module._PdfLine(text="03/04 PAGAMENTO FORNECEDOR ALFA", page_number=1, line_number=10),
+        pdf_parser_module._PdfLine(text="INDUSTRIA E COMERCIO LTDA", page_number=1, line_number=11),
+        pdf_parser_module._PdfLine(text="150,25", page_number=1, line_number=12),
+    ]
+
+    parsed_rows, candidates = pdf_parser_module._parse_inline_statement_rows(lines)
+
+    assert candidates == 1
+    assert len(parsed_rows) == 1
+    assert parsed_rows[0].transaction.date == "2026-04-03"
+    assert parsed_rows[0].transaction.description == "PAGAMENTO FORNECEDOR ALFA INDUSTRIA E COMERCIO LTDA"
+    assert parsed_rows[0].transaction.amount == -150.25
+    assert parsed_rows[0].source_page == 1
+    assert parsed_rows[0].source_line == 10
+
+
 def test_parse_inline_statement_line_accepts_trailing_mixed_ocr_noise_after_amount() -> None:
     line = pdf_parser_module._PdfLine(text="10/04 PIX RECEBIDO 25,00 ||I", page_number=2, line_number=11)
 
