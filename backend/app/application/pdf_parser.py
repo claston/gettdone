@@ -228,32 +228,11 @@ def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTra
     inferred_year = _infer_default_statement_year_from_lines(lines)
 
     for line in lines:
-        match = match_inline_row(line.text)
-        if not match:
+        parsed_row = _parse_inline_statement_line(line=line, inferred_year=inferred_year)
+        if parsed_row is None:
             continue
-
-        rest = match.group("rest").strip()
-        amount_match = extract_single_trailing_amount_match(rest)
-        if amount_match is None:
-            continue
-
-        raw_description = amount_match.description
-        if not raw_description or should_skip_transaction_description(raw_description):
-            continue
-
         candidates += 1
-
-        amount = parse_pdf_amount(amount_match.amount_token.value)
-        signed_amount = compute_hint_signed_amount(raw_amount=amount, description=raw_description)
-        transactions.append(
-            _build_parsed_transaction(
-                date=parse_row_date(match.group("date"), fallback_year=inferred_year),
-                description=raw_description,
-                amount=signed_amount,
-                source_page=line.page_number,
-                source_line=line.line_number,
-            )
-        )
+        transactions.append(parsed_row)
 
     return transactions, candidates
 
@@ -376,6 +355,31 @@ def _parse_grouped_date_line_state(
         source_line=line.line_number,
     )
     return next_date, next_section_hint, next_description_parts, inline_transaction
+
+
+def _parse_inline_statement_line(*, line: _PdfLine, inferred_year: int | None) -> _ParsedTransaction | None:
+    match = match_inline_row(line.text)
+    if not match:
+        return None
+
+    rest = match.group("rest").strip()
+    amount_match = extract_single_trailing_amount_match(rest)
+    if amount_match is None:
+        return None
+
+    raw_description = amount_match.description
+    if not raw_description or should_skip_transaction_description(raw_description):
+        return None
+
+    amount = parse_pdf_amount(amount_match.amount_token.value)
+    signed_amount = compute_hint_signed_amount(raw_amount=amount, description=raw_description)
+    return _build_parsed_transaction(
+        date=parse_row_date(match.group("date"), fallback_year=inferred_year),
+        description=raw_description,
+        amount=signed_amount,
+        source_page=line.page_number,
+        source_line=line.line_number,
+    )
 
 
 def _build_grouped_amount_only_transaction(
