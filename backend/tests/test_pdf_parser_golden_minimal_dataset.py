@@ -96,13 +96,50 @@ def test_pdf_parser_golden_negative_no_pattern_message(monkeypatch) -> None:
         )
 
 
+def test_pdf_parser_golden_multi_page_traceability_keeps_source_coordinates(monkeypatch) -> None:
+    page_one = "\n".join(
+        [
+            "BANCO INTER",
+            "RESUMO",
+        ]
+    )
+    page_two = "\n".join(
+        [
+            "16/04 TED recebida 90,00",
+            "17/04 Tarifa pacote 12,00",
+        ]
+    )
+    result = _run_pdf_parser_scenario(
+        monkeypatch=monkeypatch,
+        sample_pages=[page_one, page_two],
+        layout_override=None,
+    )
+
+    assert result.parse_metrics["page_count"] == 2
+    assert result.parse_metrics["selected_parser"] == "inline"
+    assert len(result.transactions) == 2
+    assert result.transactions[0].amount == 90.0
+    assert result.transactions[1].amount == -12.0
+    assert result.canonical_transactions[0].source_page == 2
+    assert result.canonical_transactions[0].source_line == 1
+    assert result.canonical_transactions[1].source_page == 2
+    assert result.canonical_transactions[1].source_line == 2
+
+
 def _run_pdf_parser_scenario(
     *,
     monkeypatch,
-    sample_text: str,
+    sample_text: str | None = None,
+    sample_pages: list[str] | None = None,
     layout_override: pdf_parser_module.PdfLayoutInference | None,
 ):
-    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [sample_text])
+    if sample_pages is not None:
+        pages = sample_pages
+    elif sample_text is not None:
+        pages = [sample_text]
+    else:
+        raise ValueError("sample_text or sample_pages must be provided")
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: pages)
     if layout_override is not None:
         monkeypatch.setattr(pdf_parser_module, "infer_pdf_layout", lambda text: layout_override)
     return parse_pdf_transactions(b"%PDF synthetic")
