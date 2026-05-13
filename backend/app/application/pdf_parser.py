@@ -321,6 +321,8 @@ def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTra
             if _is_inline_pending_continuation_blocker(continuation):
                 pending_inline = None
                 continue
+            if _is_inline_pending_noise_line(continuation):
+                continue
             if continuation and not match_inline_row(continuation) and not should_skip_transaction_description(continuation):
                 pending_inline = (
                     pending_date,
@@ -703,4 +705,11 @@ def _is_inline_pending_continuation_blocker(raw_text: str) -> bool:
     if "DATA" in normalized and "CREDITO" in normalized and "DEBITO" in normalized and "SALDO" in normalized:
         return True
     return "EXTRATO" in normalized and "CONTA" in normalized
+
+
+def _is_inline_pending_noise_line(raw_text: str) -> bool:
+    value = raw_text.strip()
+    if not value:
+        return True
+    return bool(re.fullmatch(r"[|:;,\.\-_/\\Il!]+", value))
 
