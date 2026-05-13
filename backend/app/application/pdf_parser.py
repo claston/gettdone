@@ -247,47 +247,15 @@ def _parse_tabular_statement_rows(
     tabular_profile = resolve_tabular_profile(line_texts, layout_profile=layout_profile)
 
     for line in lines:
-        match = match_tabular_date_prefix(line.text)
-        if not match:
-            continue
-
-        rest = match.group("rest").strip()
-        if not rest:
-            continue
-
-        amount_tokens = find_amount_tokens(rest)
-        if not amount_tokens:
+        parsed_row = _parse_tabular_statement_line(
+            line=line,
+            inferred_year=inferred_year,
+            tabular_profile=tabular_profile,
+        )
+        if parsed_row is None:
             continue
         candidates += 1
-
-        selected_amount = select_tabular_amount_token(amount_tokens, layout_profile=tabular_profile)
-        if selected_amount is None:
-            continue
-
-        raw_description = rest[: selected_amount.description_end].strip()
-        if not raw_description or should_skip_transaction_description(raw_description):
-            continue
-
-        external_reference_id = extract_document_reference(raw_description, layout_profile=tabular_profile)
-
-        running_balance = parse_running_balance(selected_amount.balance_token)
-
-        signed_amount = compute_tabular_signed_amount(
-            raw_amount=parse_pdf_amount(selected_amount.token.value),
-            role=selected_amount.role,
-            description=raw_description,
-        )
-        transactions.append(
-            _build_parsed_transaction(
-                date=parse_row_date(match.group("date"), fallback_year=inferred_year),
-                description=raw_description,
-                amount=signed_amount,
-                source_page=line.page_number,
-                source_line=line.line_number,
-                running_balance=running_balance,
-                external_reference_id=external_reference_id,
-            )
-        )
+        transactions.append(parsed_row)
 
     return transactions, candidates
 
@@ -379,6 +347,50 @@ def _parse_inline_statement_line(*, line: _PdfLine, inferred_year: int | None) -
         amount=signed_amount,
         source_page=line.page_number,
         source_line=line.line_number,
+    )
+
+
+def _parse_tabular_statement_line(
+    *,
+    line: _PdfLine,
+    inferred_year: int | None,
+    tabular_profile: DeclarativeLayoutProfile | None,
+) -> _ParsedTransaction | None:
+    match = match_tabular_date_prefix(line.text)
+    if not match:
+        return None
+
+    rest = match.group("rest").strip()
+    if not rest:
+        return None
+
+    amount_tokens = find_amount_tokens(rest)
+    if not amount_tokens:
+        return None
+
+    selected_amount = select_tabular_amount_token(amount_tokens, layout_profile=tabular_profile)
+    if selected_amount is None:
+        return None
+
+    raw_description = rest[: selected_amount.description_end].strip()
+    if not raw_description or should_skip_transaction_description(raw_description):
+        return None
+
+    external_reference_id = extract_document_reference(raw_description, layout_profile=tabular_profile)
+    running_balance = parse_running_balance(selected_amount.balance_token)
+    signed_amount = compute_tabular_signed_amount(
+        raw_amount=parse_pdf_amount(selected_amount.token.value),
+        role=selected_amount.role,
+        description=raw_description,
+    )
+    return _build_parsed_transaction(
+        date=parse_row_date(match.group("date"), fallback_year=inferred_year),
+        description=raw_description,
+        amount=signed_amount,
+        source_page=line.page_number,
+        source_line=line.line_number,
+        running_balance=running_balance,
+        external_reference_id=external_reference_id,
     )
 
 
