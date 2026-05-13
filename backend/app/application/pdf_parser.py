@@ -181,17 +181,10 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
         normalized_line = _normalize_text(line.text)
         grouped_date_match = parse_grouped_date_line(normalized_line, inferred_year=inferred_year)
         if grouped_date_match is not None:
-            current_date = grouped_date_match.date
-            current_section_hint = None
-            description_parts = []
-            rest = grouped_date_match.rest
-            current_section_hint = resolve_grouped_section_hint(rest, current_hint=current_section_hint)
-            inline_transaction = _build_inline_transaction_from_date_rest(
-                date=current_date,
-                rest=rest,
-                section_hint=current_section_hint,
-                source_page=line.page_number,
-                source_line=line.line_number,
+            current_date, current_section_hint, description_parts, inline_transaction = _parse_grouped_date_line_state(
+                line=line,
+                grouped_date=grouped_date_match.date,
+                grouped_rest=grouped_date_match.rest,
             )
             if inline_transaction is not None:
                 transactions.append(inline_transaction)
@@ -364,6 +357,25 @@ def _parse_columnar_block_at_index(
         source_page=lines[index].page_number,
         source_line=lines[index].line_number,
     )
+
+
+def _parse_grouped_date_line_state(
+    *,
+    line: _PdfLine,
+    grouped_date: str,
+    grouped_rest: str,
+) -> tuple[str, str | None, list[str], _ParsedTransaction | None]:
+    next_date = grouped_date
+    next_description_parts: list[str] = []
+    next_section_hint = resolve_grouped_section_hint(grouped_rest, current_hint=None)
+    inline_transaction = _build_inline_transaction_from_date_rest(
+        date=next_date,
+        rest=grouped_rest,
+        section_hint=next_section_hint,
+        source_page=line.page_number,
+        source_line=line.line_number,
+    )
+    return next_date, next_section_hint, next_description_parts, inline_transaction
 
 
 def _build_grouped_amount_only_transaction(

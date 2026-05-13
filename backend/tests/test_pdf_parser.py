@@ -198,3 +198,20 @@ def test_build_grouped_amount_only_transaction_builds_transaction_with_descripti
     assert parsed_row.transaction.amount == -10.0
     assert parsed_row.source_page == 1
     assert parsed_row.source_line == 5
+
+
+def test_parse_grouped_date_line_state_resets_parts_and_updates_hint() -> None:
+    line = pdf_parser_module._PdfLine(text="16/04 PIX RECEBIDO 10,00", page_number=1, line_number=2)
+
+    next_date, next_section_hint, next_description_parts, inline_transaction = pdf_parser_module._parse_grouped_date_line_state(
+        line=line,
+        grouped_date="2026-04-16",
+        grouped_rest="PIX RECEBIDO 10,00",
+    )
+
+    assert next_date == "2026-04-16"
+    assert next_section_hint is None
+    assert next_description_parts == []
+    assert inline_transaction is not None
+    assert inline_transaction.transaction.description == "PIX RECEBIDO"
+    assert inline_transaction.transaction.amount == 10.0
