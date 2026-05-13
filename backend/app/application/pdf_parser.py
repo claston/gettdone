@@ -294,6 +294,11 @@ def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTra
     pending_inline: tuple[str, str, int, int] | None = None
 
     for line in lines:
+        if pending_inline is not None:
+            _, _, source_page, _ = pending_inline
+            if line.page_number != source_page:
+                pending_inline = None
+
         if pending_inline is not None and is_amount_only_row(line.text.strip()):
             pending_date, pending_description, source_page, source_line = pending_inline
             amount = parse_pdf_amount(line.text.strip())
