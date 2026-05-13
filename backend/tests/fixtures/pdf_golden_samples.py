@@ -1,4 +1,4 @@
-from app.application.models import NormalizedTransaction
+﻿from app.application.models import NormalizedTransaction
 from app.application.pdf_layout_inference import PdfLayoutInference
 from app.application.pdf_parser import PdfParseResult
 
@@ -24,8 +24,8 @@ VIACREDI_TABULAR_BALANCE_FAIL = "\n".join(
 
 GROUPED_INLINE_MULTILINE_SAMPLE = "\n".join(
     [
-        "TRANSAÇÕES DE 08 MAR A 08 ABR",
-        "16 MAR 2026 Pagamento em 16 MAR −R$ 240,24",
+        "TRANSAÃ‡Ã•ES DE 08 MAR A 08 ABR",
+        "16 MAR 2026 Pagamento em 16 MAR âˆ’R$ 240,24",
         "25 MAR 2026",
         "Compra AGIR CONTABILIDADE E ASSESSORIA LTDA",
         "R$ 241,05",
@@ -34,6 +34,71 @@ GROUPED_INLINE_MULTILINE_SAMPLE = "\n".join(
 
 
 UNICODE_MINUS_SINGLE_ROW_SAMPLE = "10 ABR 2026 Ajuste manual −R$ 10,00"
+
+INLINE_MINIMAL_SAMPLE = "10/04 Ajuste manual 10,00"
+
+
+COLUMNAR_MINIMAL_SAMPLE = "\n".join(
+    [
+        "10/04",
+        "Pagamento Cartao",
+        "DEBITO",
+        "10,00",
+    ]
+)
+
+
+PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
+    "grouped": {
+        "selected_parser": "grouped",
+        "transactions_count": 2,
+        "inline_candidates_count": 0,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+    },
+    "inline": {
+        "selected_parser": "inline",
+        "transactions_count": 1,
+        "inline_candidates_count": 1,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+    },
+    "tabular": {
+        "selected_parser": "tabular",
+        "transactions_count": 2,
+        "inline_candidates_count": 0,
+        "balance_consistency_checked": 1,
+        "balance_consistency_failed": 0,
+    },
+    "columnar": {
+        "selected_parser": "columnar",
+        "transactions_count": 1,
+        "inline_candidates_count": 0,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+    },
+}
+
+
+PDF_GOLDEN_MINIMAL_SCENARIOS = {
+    "grouped": {
+        "sample_text": GROUPED_INLINE_MULTILINE_SAMPLE,
+        "layout_name": None,
+    },
+    "inline": {
+        "sample_text": INLINE_MINIMAL_SAMPLE,
+        "layout_name": None,
+    },
+    "tabular": {
+        "sample_text": VIACREDI_TABULAR_BALANCE_OK,
+        "layout_name": "viacredi_ailos_extrato_conta_corrente_v1",
+    },
+    "columnar": {
+        "sample_text": COLUMNAR_MINIMAL_SAMPLE,
+        "layout_name": None,
+    },
+}
+
 
 
 PDF_PARSE_METRICS_GROUPED_CANONICAL_OK = {
