@@ -44,6 +44,13 @@ BANCO_DO_BRASIL_INLINE_MINIMAL_SAMPLE = "BANCO DO BRASIL\n14/04 Pagamento boleto
 CAIXA_INLINE_MINIMAL_SAMPLE = "CAIXA ECONOMICA FEDERAL\n15/04 PIX recebido 52,10"
 INTER_INLINE_MINIMAL_SAMPLE = "BANCO INTER\n16/04 TED recebida 90,00"
 SICREDI_INLINE_MINIMAL_SAMPLE = "SICREDI\n17/04 Tarifa pacote 12,00"
+YEAR_ROLLOVER_PAGE_ONE_SAMPLE = "EXTRATO PERIODO 20/12/2025 A 10/01/2026"
+YEAR_ROLLOVER_PAGE_TWO_SAMPLE = "\n".join(
+    [
+        "31/12 Compra mercado 10,00",
+        "02/01 PIX recebido 20,00",
+    ]
+)
 
 
 COLUMNAR_MINIMAL_SAMPLE = "\n".join(
@@ -173,6 +180,14 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         "balance_consistency_failed": 0,
         "first_transaction": {"date": "2026-04-17", "amount": -12.0, "type": "outflow", "description": "TARIFA PACOTE"},
     },
+    "year_rollover_inline": {
+        "selected_parser": "inline",
+        "transactions_count": 2,
+        "inline_candidates_count": 2,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {"date": "2025-12-31", "amount": -10.0, "type": "outflow", "description": "COMPRA MERCADO"},
+    },
 }
 
 
@@ -223,6 +238,10 @@ PDF_GOLDEN_MINIMAL_SCENARIOS = {
     },
     "sicredi_inline": {
         "sample_text": SICREDI_INLINE_MINIMAL_SAMPLE,
+        "layout_name": None,
+    },
+    "year_rollover_inline": {
+        "sample_pages": [YEAR_ROLLOVER_PAGE_ONE_SAMPLE, YEAR_ROLLOVER_PAGE_TWO_SAMPLE],
         "layout_name": None,
     },
 }

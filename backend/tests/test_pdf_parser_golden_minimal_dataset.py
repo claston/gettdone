@@ -15,10 +15,20 @@ pytestmark = pytest.mark.pdf_golden
 def test_pdf_golden_minimal_catalog_matches_expectations_keys() -> None:
     assert set(PDF_GOLDEN_MINIMAL_SCENARIOS.keys()) == set(PDF_GOLDEN_MINIMAL_EXPECTATIONS.keys())
     for scenario_name, scenario in PDF_GOLDEN_MINIMAL_SCENARIOS.items():
-        sample_text = scenario["sample_text"]
-        assert isinstance(sample_text, str), scenario_name
-        assert sample_text.strip(), scenario_name
-        assert any(char.isdigit() for char in sample_text), scenario_name
+        sample_text = scenario.get("sample_text")
+        sample_pages = scenario.get("sample_pages")
+        assert sample_text is not None or sample_pages is not None, scenario_name
+        if sample_text is not None:
+            assert isinstance(sample_text, str), scenario_name
+            assert sample_text.strip(), scenario_name
+            assert any(char.isdigit() for char in sample_text), scenario_name
+        if sample_pages is not None:
+            assert isinstance(sample_pages, list), scenario_name
+            assert sample_pages, scenario_name
+            for page_text in sample_pages:
+                assert isinstance(page_text, str), scenario_name
+                assert page_text.strip(), scenario_name
+                assert any(char.isdigit() for char in page_text), scenario_name
     for scenario_name, expected in PDF_GOLDEN_MINIMAL_EXPECTATIONS.items():
         first_transaction = expected["first_transaction"]
         assert first_transaction["date"], scenario_name
@@ -34,7 +44,8 @@ def test_pdf_parser_golden_minimal_dataset_stability(monkeypatch, scenario_name:
     expected = PDF_GOLDEN_MINIMAL_EXPECTATIONS[scenario_name]
     result = _run_pdf_parser_scenario(
         monkeypatch=monkeypatch,
-        sample_text=scenario["sample_text"],
+        sample_text=scenario.get("sample_text"),
+        sample_pages=scenario.get("sample_pages"),
         layout_override=_build_layout_override(layout_name=scenario["layout_name"]),
     )
 
