@@ -92,6 +92,9 @@ VERSION:102
 def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkeypatch) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     service = AnalyzeService(storage=storage)
+    parse_metrics = dict(PDF_PARSE_METRICS_GROUPED_CANONICAL_OK)
+    parse_metrics["export_recommendation"] = "review_recommended"
+    parse_metrics["export_recommendation_reason"] = "medium_confidence_band"
     monkeypatch.setattr(
         analyze_service_module,
         "parse_pdf_transactions",
@@ -113,7 +116,7 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
             layout_name="nubank_statement_ptbr",
             confidence=0.94,
             extracted_text="TOTAL DE ENTRADAS\nTOTAL DE SAIDAS\nTRANSFERENCIA RECEBIDA PELO PIX",
-            parse_metrics=PDF_PARSE_METRICS_GROUPED_CANONICAL_OK,
+            parse_metrics=parse_metrics,
         ),
     )
 
@@ -147,11 +150,18 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
     assert result.pdf_processing_metrics.canonical_source_parser_types == "grouped"
     assert result.pdf_processing_metrics.canonical_source_parser_types_list == ["grouped"]
     assert result.pdf_processing_metrics.total_ms >= 0.0
+    assert any(
+        insight.type == "pdf_export_review_recommended"
+        for insight in result.insights
+    )
 
 
 def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     service = AnalyzeService(storage=storage)
+    parse_metrics = dict(PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY)
+    parse_metrics["export_recommendation"] = "safe_to_export"
+    parse_metrics["export_recommendation_reason"] = "high_confidence_band"
     monkeypatch.setattr(
         analyze_service_module,
         "parse_pdf_transactions",
@@ -173,7 +183,7 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
             layout_name="itau_statement_ptbr",
             confidence=1.0,
             extracted_text="EXTRATO CONTA / LANCAMENTOS\nDATA LANCAMENTOS VALOR",
-            parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+            parse_metrics=parse_metrics,
         ),
     )
 
@@ -189,4 +199,8 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
     assert result.pdf_processing_metrics.canonical_source_parser_inline_count == 2
     assert result.pdf_processing_metrics.canonical_source_parser_types == "inline"
     assert result.pdf_processing_metrics.canonical_source_parser_types_list == ["inline"]
+    assert all(
+        insight.type != "pdf_export_review_recommended"
+        for insight in result.insights
+    )
 

@@ -60,7 +60,17 @@ class FakeAnalyzeService:
                     category="Outros",
                 )
             ],
-            insights=[Insight(type="test", title="Test insight", description=f"Bytes: {len(raw_bytes)}")],
+            insights=[
+                Insight(type="test", title="Test insight", description=f"Bytes: {len(raw_bytes)}"),
+                Insight(
+                    type="pdf_export_review_recommended",
+                    title="Revisao manual recomendada",
+                    description=(
+                        "A exportacao permanece disponivel, mas recomendamos revisar as transacoes "
+                        "antes de concluir (low_confidence_band)."
+                    ),
+                ),
+            ],
             preview_transactions=[
                 TransactionPreview(
                     date="2026-04-01",
@@ -119,6 +129,23 @@ class FakeAnalyzeService:
                 canonical_external_reference_coverage_rate=1.0,
                 canonical_warning_transaction_rate=0.5,
             ),
+        )
+
+
+class FakeAnalyzeServiceSafeToExport(FakeAnalyzeService):
+    def analyze(self, filename: str, raw_bytes: bytes) -> AnalyzeResponse:
+        base = super().analyze(filename, raw_bytes)
+        return base.model_copy(
+            update={
+                "insights": [Insight(type="test", title="Test insight", description=f"Bytes: {len(raw_bytes)}")],
+                "pdf_processing_metrics": base.pdf_processing_metrics.model_copy(
+                    update={
+                        "confidence_band": "high",
+                        "export_recommendation": "safe_to_export",
+                        "export_recommendation_reason": "high_confidence_band",
+                    }
+                ),
+            }
         )
 
 
@@ -234,6 +261,50 @@ def _run_http_server():
         app.dependency_overrides.clear()
 
 
+@contextmanager
+def _run_http_server_with_analyze_service(analyze_service):
+    app.dependency_overrides[get_analyze_service] = lambda: analyze_service
+    app.dependency_overrides[get_report_service] = lambda: FakeReportService()
+    app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
+
+    host = "127.0.0.1"
+    port = _find_free_port()
+    server = uvicorn.Server(
+        uvicorn.Config(
+            app,
+            host=host,
+            port=port,
+            log_level="error",
+        )
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+
+    base_url = f"http://{host}:{port}"
+    with httpx.Client(timeout=2.0) as client:
+        deadline = time.time() + 15.0
+        while time.time() < deadline:
+            try:
+                response = client.get(f"{base_url}/health")
+                if response.status_code == 200:
+                    break
+            except httpx.HTTPError:
+                pass
+            time.sleep(0.1)
+        else:
+            server.should_exit = True
+            thread.join(timeout=5.0)
+            app.dependency_overrides.clear()
+            raise RuntimeError("HTTP test server did not start in time")
+
+    try:
+        yield base_url
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5.0)
+        app.dependency_overrides.clear()
+
+
 def test_http_post_analyze_happy_path_exposes_pdf_metrics_compatibility() -> None:
     with _run_http_server() as base_url:
         response = httpx.post(
@@ -254,6 +325,22 @@ def test_http_post_analyze_happy_path_exposes_pdf_metrics_compatibility() -> Non
     assert payload["pdf_processing_metrics"]["canonical_warning_types_list"] == [
         "balance_consistency_failed"
     ]
+    assert any(item["type"] == "pdf_export_review_recommended" for item in payload["insights"])
+
+
+def test_http_post_analyze_does_not_include_review_insight_for_safe_to_export() -> None:
+    with _run_http_server_with_analyze_service(FakeAnalyzeServiceSafeToExport()) as base_url:
+        response = httpx.post(
+            f"{base_url}/analyze",
+            data={"anonymous_fingerprint": "fp-http"},
+            files={"file": ("sample.pdf", b"%PDF data", "application/pdf")},
+            timeout=5.0,
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["pdf_processing_metrics"]["export_recommendation"] == "safe_to_export"
+    assert all(item["type"] != "pdf_export_review_recommended" for item in payload["insights"])
 
 
 def test_http_get_report_happy_path_after_analyze_owner_binding() -> None:
