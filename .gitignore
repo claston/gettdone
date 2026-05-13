@@ -11,6 +11,7 @@ node_modules/
 .next/
 
 tmp/
+.worktrees/
 backend/tmp/
 backend/.tmp_sqlite_test/
 backend/samples/
