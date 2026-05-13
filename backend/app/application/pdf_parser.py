@@ -291,11 +291,42 @@ def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTra
     transactions: list[_ParsedTransaction] = []
     candidates = 0
     inferred_year = _infer_default_statement_year_from_lines(lines)
+    pending_inline: tuple[str, str, int, int] | None = None
 
     for line in lines:
+        if pending_inline is not None and is_amount_only_row(line.text.strip()):
+            pending_date, pending_description, source_page, source_line = pending_inline
+            amount = parse_pdf_amount(line.text.strip())
+            signed_amount = compute_hint_signed_amount(raw_amount=amount, description=pending_description)
+            transactions.append(
+                _build_parsed_transaction(
+                    date=pending_date,
+                    description=pending_description,
+                    amount=signed_amount,
+                    source_page=source_page,
+                    source_line=source_line,
+                )
+            )
+            candidates += 1
+            pending_inline = None
+            continue
+
         parsed_row = _parse_inline_statement_line(line=line, inferred_year=inferred_year)
         if parsed_row is None:
+            match = match_inline_row(line.text)
+            if match:
+                rest = match.group("rest").strip()
+                if rest and extract_single_trailing_amount_match(rest) is None and not should_skip_transaction_description(rest):
+                    pending_inline = (
+                        parse_row_date(match.group("date"), fallback_year=inferred_year),
+                        rest,
+                        line.page_number,
+                        line.line_number,
+                    )
+                    continue
+            pending_inline = None
             continue
+        pending_inline = None
         candidates += 1
         transactions.append(parsed_row)
 
