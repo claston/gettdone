@@ -386,6 +386,23 @@ def test_parse_inline_statement_rows_cancels_pending_on_page_change_before_amoun
     assert parsed_rows == []
 
 
+def test_parse_inline_statement_rows_cancels_pending_on_tabular_header_before_amount() -> None:
+    lines = [
+        pdf_parser_module._PdfLine(text="03/04 PAGAMENTO FORNECEDOR ALFA", page_number=1, line_number=50),
+        pdf_parser_module._PdfLine(
+            text="DATA DESCRICAO DOCUMENTO CREDITO (R$) DEBITO (R$) SALDO (R$)",
+            page_number=1,
+            line_number=51,
+        ),
+        pdf_parser_module._PdfLine(text="150,25", page_number=1, line_number=52),
+    ]
+
+    parsed_rows, candidates = pdf_parser_module._parse_inline_statement_rows(lines)
+
+    assert candidates == 0
+    assert parsed_rows == []
+
+
 def test_parse_inline_statement_line_accepts_trailing_mixed_ocr_noise_after_amount() -> None:
     line = pdf_parser_module._PdfLine(text="10/04 PIX RECEBIDO 25,00 ||I", page_number=2, line_number=11)
 

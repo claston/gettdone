@@ -700,5 +700,7 @@ def _is_inline_pending_continuation_blocker(raw_text: str) -> bool:
     normalized = _normalize_text(raw_text)
     if should_ignore_line(normalized):
         return True
+    if "DATA" in normalized and "CREDITO" in normalized and "DEBITO" in normalized and "SALDO" in normalized:
+        return True
     return "EXTRATO" in normalized and "CONTA" in normalized
 
