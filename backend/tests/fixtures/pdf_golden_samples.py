@@ -44,6 +44,17 @@ BANCO_DO_BRASIL_INLINE_MINIMAL_SAMPLE = "BANCO DO BRASIL\n14/04 Pagamento boleto
 CAIXA_INLINE_MINIMAL_SAMPLE = "CAIXA ECONOMICA FEDERAL\n15/04 PIX recebido 52,10"
 INTER_INLINE_MINIMAL_SAMPLE = "BANCO INTER\n16/04 TED recebida 90,00"
 SICREDI_INLINE_MINIMAL_SAMPLE = "SICREDI\n17/04 Tarifa pacote 12,00"
+QUASI_REAL_INLINE_NOISE_SAMPLE = "\n".join(
+    [
+        "BANCO EXEMPLO S.A.",
+        "EXTRATO CONTA CORRENTE - PERIODO 01/04/2026 A 30/04/2026",
+        "SALDO ANTERIOR 1.234,56",
+        "03/04 PIX RECEBIDO CLIENTE ACME LTDA 250,00",
+        "05/04 PAGAMENTO BOLETO ENERGIA ELETRICA 120,40",
+        "07/04 TARIFA MANUTENCAO MENSAL PACOTE EMPRESARIAL 90,00",
+        "SALDO DO DIA 1.274,16",
+    ]
+)
 YEAR_ROLLOVER_PAGE_ONE_SAMPLE = "EXTRATO PERIODO 20/12/2025 A 10/01/2026"
 YEAR_ROLLOVER_PAGE_TWO_SAMPLE = "\n".join(
     [
@@ -319,6 +330,29 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
             "source_line": 2,
         },
     },
+    "quasi_real_inline_noise": {
+        "selected_parser": "inline",
+        "transactions_count": 3,
+        "inline_candidates_count": 3,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {
+            "date": "2026-04-03",
+            "amount": 250.0,
+            "type": "inflow",
+            "description": "PIX RECEBIDO CLIENTE ACME LTDA",
+            "source_page": 1,
+            "source_line": 4,
+        },
+        "last_transaction": {
+            "date": "2026-04-07",
+            "amount": -90.0,
+            "type": "outflow",
+            "description": "TARIFA MANUTENCAO MENSAL PACOTE EMPRESARIAL",
+            "source_page": 1,
+            "source_line": 6,
+        },
+    },
     "year_rollover_inline": {
         "selected_parser": "inline",
         "transactions_count": 2,
@@ -392,6 +426,10 @@ PDF_GOLDEN_MINIMAL_SCENARIOS = {
     },
     "sicredi_inline": {
         "sample_text": SICREDI_INLINE_MINIMAL_SAMPLE,
+        "layout_name": None,
+    },
+    "quasi_real_inline_noise": {
+        "sample_text": QUASI_REAL_INLINE_NOISE_SAMPLE,
         "layout_name": None,
     },
     "year_rollover_inline": {
