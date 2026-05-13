@@ -33,7 +33,7 @@ from app.application.normalization.pdf_row_match_rules import (
 from app.application.normalization.pdf_signed_amount_rules import compute_hint_signed_amount, compute_tabular_signed_amount
 from app.application.normalization.pdf_tabular_profile_rules import resolve_tabular_profile
 from app.application.normalization.pdf_tabular_rules import extract_document_reference, select_tabular_amount_token
-from app.application.normalization.pdf_text_rules import should_skip_transaction_description
+from app.application.normalization.pdf_text_rules import should_ignore_line, should_skip_transaction_description
 from app.application.normalization.text import normalize_upper_text
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
 from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE
@@ -313,6 +313,9 @@ def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTra
         if pending_inline is not None:
             pending_date, pending_description, source_page, source_line = pending_inline
             continuation = line.text.strip()
+            if _is_inline_pending_continuation_blocker(continuation):
+                pending_inline = None
+                continue
             if continuation and not match_inline_row(continuation) and not should_skip_transaction_description(continuation):
                 pending_inline = (
                     pending_date,
@@ -686,4 +689,11 @@ def _infer_default_statement_year_from_lines(lines: list[_PdfLine]) -> int | Non
 
 def _extract_line_texts(lines: list[_PdfLine]) -> list[str]:
     return [line.text for line in lines]
+
+
+def _is_inline_pending_continuation_blocker(raw_text: str) -> bool:
+    normalized = _normalize_text(raw_text)
+    if should_ignore_line(normalized):
+        return True
+    return "EXTRATO" in normalized and "CONTA" in normalized
 
