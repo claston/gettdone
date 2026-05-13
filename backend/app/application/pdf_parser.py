@@ -335,38 +335,43 @@ def _parse_columnar_statement_blocks(lines: list[_PdfLine]) -> tuple[list[_Parse
     index = 0
 
     while index < len(lines):
-        raw_date = lines[index].text.strip()
-        if not is_date_only_row(raw_date):
-            index += 1
-            continue
-
-        if index + 3 >= len(lines):
-            index += 1
-            continue
-
-        description = lines[index + 1].text.strip()
-        type_raw = lines[index + 2].text.strip()
-        amount_raw = lines[index + 3].text.strip()
-        if not is_valid_columnar_transaction_row(description=description, type_raw=type_raw, amount_raw=amount_raw):
+        parsed_row = _parse_columnar_block_at_index(lines=lines, index=index, inferred_year=inferred_year)
+        if parsed_row is None:
             index += 1
             continue
 
         candidates += 1
-        amount = apply_type_sign_hint(parse_pdf_amount(amount_raw), type_raw)
-        signed_amount = compute_hint_signed_amount(raw_amount=amount, description=description)
-        transactions.append(
-            _build_parsed_transaction(
-                date=parse_row_date(raw_date, fallback_year=inferred_year),
-                description=description,
-                amount=signed_amount,
-                source_page=lines[index].page_number,
-                source_line=lines[index].line_number,
-            )
-        )
-
+        transactions.append(parsed_row)
         index = next_columnar_block_index(line_texts, current_index=index)
 
     return transactions, candidates
+
+
+def _parse_columnar_block_at_index(
+    *, lines: list[_PdfLine], index: int, inferred_year: int | None
+) -> _ParsedTransaction | None:
+    raw_date = lines[index].text.strip()
+    if not is_date_only_row(raw_date):
+        return None
+
+    if index + 3 >= len(lines):
+        return None
+
+    description = lines[index + 1].text.strip()
+    type_raw = lines[index + 2].text.strip()
+    amount_raw = lines[index + 3].text.strip()
+    if not is_valid_columnar_transaction_row(description=description, type_raw=type_raw, amount_raw=amount_raw):
+        return None
+
+    amount = apply_type_sign_hint(parse_pdf_amount(amount_raw), type_raw)
+    signed_amount = compute_hint_signed_amount(raw_amount=amount, description=description)
+    return _build_parsed_transaction(
+        date=parse_row_date(raw_date, fallback_year=inferred_year),
+        description=description,
+        amount=signed_amount,
+        source_page=lines[index].page_number,
+        source_line=lines[index].line_number,
+    )
 
 
 def _build_inline_transaction_from_date_rest(
