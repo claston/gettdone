@@ -18,6 +18,9 @@ class SelectedParserRows:
     tabular_transactions_count: int
     columnar_transactions_count: int
     selection_reason: str
+    inline_decision: str
+    tabular_decision: str
+    columnar_decision: str
 
 
 def select_parsed_rows(
@@ -40,6 +43,9 @@ def select_parsed_rows(
             tabular_transactions_count=0,
             columnar_transactions_count=0,
             selection_reason="grouped_rows_available",
+            inline_decision="skipped_due_to_grouped",
+            tabular_decision="skipped_due_to_grouped",
+            columnar_decision="skipped_due_to_grouped",
         )
 
     inline_rows, inline_candidates = parse_inline_rows(lines)
@@ -62,6 +68,9 @@ def select_parsed_rows(
             tabular_transactions_count=tabular_transactions_count,
             columnar_transactions_count=columnar_transactions_count,
             selection_reason="inline_rows_available_after_grouped_empty",
+            inline_decision="selected",
+            tabular_decision="not_selected_inline_priority" if tabular_rows else "no_rows",
+            columnar_decision="not_selected_inline_priority" if columnar_rows else "no_rows",
         )
 
     if inline_rows and layout_profile is not None and tabular_transactions_count >= inline_transactions_count and tabular_rows:
@@ -75,6 +84,9 @@ def select_parsed_rows(
             tabular_transactions_count=tabular_transactions_count,
             columnar_transactions_count=columnar_transactions_count,
             selection_reason="tabular_preferred_on_conflict_with_layout_profile",
+            inline_decision="not_selected_conflict_lost_to_tabular",
+            tabular_decision="selected_on_conflict",
+            columnar_decision="no_rows" if not columnar_rows else "not_selected_tabular_priority",
         )
 
     if tabular_rows:
@@ -88,6 +100,9 @@ def select_parsed_rows(
             tabular_transactions_count=tabular_transactions_count,
             columnar_transactions_count=columnar_transactions_count,
             selection_reason="tabular_rows_available_after_inline_empty",
+            inline_decision="no_rows",
+            tabular_decision="selected",
+            columnar_decision="no_rows" if not columnar_rows else "not_selected_tabular_priority",
         )
 
     if columnar_rows:
@@ -101,6 +116,9 @@ def select_parsed_rows(
             tabular_transactions_count=tabular_transactions_count,
             columnar_transactions_count=columnar_transactions_count,
             selection_reason="columnar_rows_available_after_tabular_empty",
+            inline_decision="no_rows",
+            tabular_decision="no_rows",
+            columnar_decision="selected",
         )
 
     if inline_candidates > 0 or tabular_candidates > 0 or columnar_candidates > 0:

@@ -89,12 +89,18 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
     columnar_candidates_count = selection.columnar_candidates
     columnar_transactions_count = selection.columnar_transactions_count
     parser_selection_reason = selection.selection_reason
+    inline_decision = selection.inline_decision
+    tabular_decision = selection.tabular_decision
+    columnar_decision = selection.columnar_decision
     return _build_pdf_parse_result(
         parsed_rows=parsed_rows,
         layout=layout,
         layout_profile=layout_profile,
         selected_parser=selected_parser,
         parser_selection_reason=parser_selection_reason,
+        inline_decision=inline_decision,
+        tabular_decision=tabular_decision,
+        columnar_decision=columnar_decision,
         joined_text=joined_text,
         page_count=len(page_texts),
         flattened_line_count=len(lines),
@@ -172,6 +178,9 @@ def _build_pdf_parse_result(
     layout_profile: DeclarativeLayoutProfile | None,
     selected_parser: str,
     parser_selection_reason: str,
+    inline_decision: str,
+    tabular_decision: str,
+    columnar_decision: str,
     joined_text: str,
     page_count: int,
     flattened_line_count: int,
@@ -213,6 +222,9 @@ def _build_pdf_parse_result(
               columnar_transactions_count=columnar_transactions_count,
               selected_parser=selected_parser,
               parser_selection_reason=parser_selection_reason,
+              inline_decision=inline_decision,
+              tabular_decision=tabular_decision,
+              columnar_decision=columnar_decision,
               balance_consistency_checked=balance_checked_count,
               balance_consistency_failed=balance_failed_count,
               canonical_quality_metrics=canonical_quality_metrics,

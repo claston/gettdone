@@ -37,6 +37,9 @@ def test_build_pdf_parse_metrics_preserves_contract_keys_and_values() -> None:
         columnar_transactions_count=0,
         selected_parser="tabular",
         parser_selection_reason="tabular_rows_available_after_inline_empty",
+        inline_decision="no_rows",
+        tabular_decision="selected",
+        columnar_decision="no_rows",
         balance_consistency_checked=1,
         balance_consistency_failed=1,
         canonical_quality_metrics=canonical_quality_metrics,
@@ -52,6 +55,9 @@ def test_build_pdf_parse_metrics_preserves_contract_keys_and_values() -> None:
     assert metrics["tabular_transactions_count"] == 2
     assert metrics["columnar_candidates_count"] == 0
     assert metrics["columnar_transactions_count"] == 0
+    assert metrics["inline_decision"] == "no_rows"
+    assert metrics["tabular_decision"] == "selected"
+    assert metrics["columnar_decision"] == "no_rows"
     assert metrics["balance_consistency_checked"] == 1
     assert metrics["balance_consistency_failed"] == 1
     assert metrics["canonical_transactions_count"] == 2
