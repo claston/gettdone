@@ -55,6 +55,22 @@ QUASI_REAL_INLINE_NOISE_SAMPLE = "\n".join(
         "SALDO DO DIA 1.274,16",
     ]
 )
+QUASI_REAL_MULTIPAGE_PAGE_ONE_SAMPLE = "\n".join(
+    [
+        "BANCO EXEMPLO S.A.",
+        "EXTRATO CONTA CORRENTE - PERIODO 01/05/2026 A 31/05/2026",
+        "SALDO ANTERIOR 2.345,67",
+        "09/05 PAGAMENTO FORNECEDOR ALFA INDUSTRIA E COMERCIO LTDA 150,25",
+        "10/05 PIX RECEBIDO CLIENTE BETA SERVICOS DIGITAIS LTDA 500,00",
+    ]
+)
+QUASI_REAL_MULTIPAGE_PAGE_TWO_SAMPLE = "\n".join(
+    [
+        "CONTINUACAO EXTRATO MAIO/2026",
+        "11/05 TARIFA PROCESSAMENTO COBRANCA AVANCADA 35,50",
+        "SALDO DO DIA 2.659,92",
+    ]
+)
 YEAR_ROLLOVER_PAGE_ONE_SAMPLE = "EXTRATO PERIODO 20/12/2025 A 10/01/2026"
 YEAR_ROLLOVER_PAGE_TWO_SAMPLE = "\n".join(
     [
@@ -353,6 +369,29 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
             "source_line": 6,
         },
     },
+    "quasi_real_multipage_inline": {
+        "selected_parser": "inline",
+        "transactions_count": 3,
+        "inline_candidates_count": 3,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {
+            "date": "2026-05-09",
+            "amount": -150.25,
+            "type": "outflow",
+            "description": "PAGAMENTO FORNECEDOR ALFA INDUSTRIA E COMERCIO LTDA",
+            "source_page": 1,
+            "source_line": 4,
+        },
+        "last_transaction": {
+            "date": "2026-05-11",
+            "amount": -35.5,
+            "type": "outflow",
+            "description": "TARIFA PROCESSAMENTO COBRANCA AVANCADA",
+            "source_page": 2,
+            "source_line": 2,
+        },
+    },
     "year_rollover_inline": {
         "selected_parser": "inline",
         "transactions_count": 2,
@@ -430,6 +469,10 @@ PDF_GOLDEN_MINIMAL_SCENARIOS = {
     },
     "quasi_real_inline_noise": {
         "sample_text": QUASI_REAL_INLINE_NOISE_SAMPLE,
+        "layout_name": None,
+    },
+    "quasi_real_multipage_inline": {
+        "sample_pages": [QUASI_REAL_MULTIPAGE_PAGE_ONE_SAMPLE, QUASI_REAL_MULTIPAGE_PAGE_TWO_SAMPLE],
         "layout_name": None,
     },
     "year_rollover_inline": {
