@@ -289,6 +289,19 @@ class AnalyzeService:
                 parse_metrics.get("canonical_external_reference_coverage_rate", 0.0)
             ),
             "canonical_warning_transaction_rate": float(parse_metrics.get("canonical_warning_transaction_rate", 0.0)),
+            "canonical_source_parser_grouped_count": int(parse_metrics.get("canonical_source_parser_grouped_count", 0)),
+            "canonical_source_parser_inline_count": int(parse_metrics.get("canonical_source_parser_inline_count", 0)),
+            "canonical_source_parser_tabular_count": int(parse_metrics.get("canonical_source_parser_tabular_count", 0)),
+            "canonical_source_parser_columnar_count": int(
+                parse_metrics.get("canonical_source_parser_columnar_count", 0)
+            ),
+            "canonical_source_parser_types_count": int(parse_metrics.get("canonical_source_parser_types_count", 0)),
+            "canonical_source_parser_types": str(parse_metrics.get("canonical_source_parser_types", "")),
+            "canonical_source_parser_types_list": [
+                item
+                for item in str(parse_metrics.get("canonical_source_parser_types_list", "")).split("|")
+                if item.strip()
+            ],
         }
 
     def _resolve_ofx_account_type(

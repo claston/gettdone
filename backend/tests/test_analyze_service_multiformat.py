@@ -143,6 +143,9 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
     assert result.pdf_processing_metrics.canonical_running_balance_coverage_rate == 1.0
     assert result.pdf_processing_metrics.canonical_external_reference_coverage_rate == 1.0
     assert result.pdf_processing_metrics.canonical_warning_transaction_rate == 0.0
+    assert result.pdf_processing_metrics.canonical_source_parser_grouped_count == 2
+    assert result.pdf_processing_metrics.canonical_source_parser_types == "grouped"
+    assert result.pdf_processing_metrics.canonical_source_parser_types_list == ["grouped"]
     assert result.pdf_processing_metrics.total_ms >= 0.0
 
 
@@ -183,4 +186,7 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
     assert result.pdf_processing_metrics is not None
     assert result.pdf_processing_metrics.selected_parser == "inline"
     assert result.pdf_processing_metrics.canonical_transactions_count == 2
+    assert result.pdf_processing_metrics.canonical_source_parser_inline_count == 2
+    assert result.pdf_processing_metrics.canonical_source_parser_types == "inline"
+    assert result.pdf_processing_metrics.canonical_source_parser_types_list == ["inline"]
 

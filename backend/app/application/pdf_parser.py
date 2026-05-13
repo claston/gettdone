@@ -9,7 +9,7 @@ from app.application.errors import InvalidFileContentError
 from app.application.layout_profiles.registry import DeclarativeLayoutProfile, get_layout_profile
 from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.normalization.amount import apply_amount_role_sign, parse_amount
-from app.application.normalization.canonical import from_normalized_transaction
+from app.application.normalization.canonical import build_canonical_transactions
 from app.application.normalization.text import normalize_upper_text
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
 from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE
@@ -178,20 +178,14 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
         "tabular": tabular_rows if "tabular_rows" in locals() else [],
         "columnar": columnar_rows if "columnar_rows" in locals() else [],
     }.get(selected_parser, [])
-    canonical_transactions = [
-        from_normalized_transaction(
-            row.transaction,
-            bank_name=layout_profile.bank if layout_profile is not None else None,
-            layout_name=layout.layout_name,
-            source_page=row.source_page,
-            source_line=row.source_line,
-            running_balance=row.running_balance,
-            external_reference_id=row.external_reference_id,
-            warnings=["layout_fallback"] if layout.used_fallback else None,
-            confidence=layout.confidence,
-        )
-        for row in parsed_rows
-    ]
+    canonical_transactions = build_canonical_transactions(
+        parsed_rows,
+        bank_name=layout_profile.bank if layout_profile is not None else None,
+        layout_name=layout.layout_name,
+        layout_used_fallback=layout.used_fallback,
+        layout_confidence=layout.confidence,
+        source_parser=selected_parser,
+    )
     balance_checked_count, balance_failed_count = _annotate_balance_consistency(canonical_transactions)
     canonical_quality_metrics = _build_canonical_quality_metrics(canonical_transactions)
 
@@ -228,6 +222,23 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
                 "canonical_external_reference_coverage_rate"
             ],
             "canonical_warning_transaction_rate": canonical_quality_metrics["canonical_warning_transaction_rate"],
+            "canonical_source_parser_grouped_count": canonical_quality_metrics[
+                "canonical_source_parser_grouped_count"
+            ],
+            "canonical_source_parser_inline_count": canonical_quality_metrics["canonical_source_parser_inline_count"],
+            "canonical_source_parser_tabular_count": canonical_quality_metrics[
+                "canonical_source_parser_tabular_count"
+            ],
+            "canonical_source_parser_columnar_count": canonical_quality_metrics[
+                "canonical_source_parser_columnar_count"
+            ],
+            "canonical_source_parser_types_count": canonical_quality_metrics[
+                "canonical_source_parser_types_count"
+            ],
+            "canonical_source_parser_types": canonical_quality_metrics["canonical_source_parser_types"],
+            "canonical_source_parser_types_list": canonical_quality_metrics[
+                "canonical_source_parser_types_list"
+            ],
         },
     )
 
@@ -565,7 +576,7 @@ def _annotate_balance_consistency(canonical_transactions: list[CanonicalTransact
     return checked_count, failed_count
 
 
-def _build_canonical_quality_metrics(canonical_transactions: list[CanonicalTransaction]) -> dict[str, int]:
+def _build_canonical_quality_metrics(canonical_transactions: list[CanonicalTransaction]) -> dict[str, int | float | str]:
     warning_count = sum(len(item.warnings) for item in canonical_transactions)
     balance_warning_count = sum(1 for item in canonical_transactions if "balance_consistency_failed" in item.warnings)
     with_running_balance_count = sum(1 for item in canonical_transactions if item.running_balance is not None)
@@ -587,6 +598,13 @@ def _build_canonical_quality_metrics(canonical_transactions: list[CanonicalTrans
             for warning in item.warnings
         }
     )
+    parser_counts = {
+        "grouped": sum(1 for item in canonical_transactions if item.source_parser == "grouped"),
+        "inline": sum(1 for item in canonical_transactions if item.source_parser == "inline"),
+        "tabular": sum(1 for item in canonical_transactions if item.source_parser == "tabular"),
+        "columnar": sum(1 for item in canonical_transactions if item.source_parser == "columnar"),
+    }
+    parser_types = [name for name, count in parser_counts.items() if count > 0]
     return {
         "canonical_transactions_count": total_count,
         "canonical_with_running_balance_count": with_running_balance_count,
@@ -606,6 +624,13 @@ def _build_canonical_quality_metrics(canonical_transactions: list[CanonicalTrans
         "canonical_running_balance_coverage_rate": running_balance_coverage_rate,
         "canonical_external_reference_coverage_rate": external_reference_coverage_rate,
         "canonical_warning_transaction_rate": warning_transaction_rate,
+        "canonical_source_parser_grouped_count": parser_counts["grouped"],
+        "canonical_source_parser_inline_count": parser_counts["inline"],
+        "canonical_source_parser_tabular_count": parser_counts["tabular"],
+        "canonical_source_parser_columnar_count": parser_counts["columnar"],
+        "canonical_source_parser_types_count": len(parser_types),
+        "canonical_source_parser_types": ",".join(parser_types),
+        "canonical_source_parser_types_list": "|".join(parser_types),
     }
 
 

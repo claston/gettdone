@@ -58,6 +58,13 @@ PDF_PARSE_METRICS_GROUPED_CANONICAL_OK = {
     "canonical_running_balance_coverage_rate": 1.0,
     "canonical_external_reference_coverage_rate": 1.0,
     "canonical_warning_transaction_rate": 0.0,
+    "canonical_source_parser_grouped_count": 2,
+    "canonical_source_parser_inline_count": 0,
+    "canonical_source_parser_tabular_count": 0,
+    "canonical_source_parser_columnar_count": 0,
+    "canonical_source_parser_types_count": 1,
+    "canonical_source_parser_types": "grouped",
+    "canonical_source_parser_types_list": "grouped",
 }
 
 
@@ -83,6 +90,13 @@ PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY = {
     "canonical_running_balance_coverage_rate": 0.0,
     "canonical_external_reference_coverage_rate": 0.0,
     "canonical_warning_transaction_rate": 0.0,
+    "canonical_source_parser_grouped_count": 0,
+    "canonical_source_parser_inline_count": 2,
+    "canonical_source_parser_tabular_count": 0,
+    "canonical_source_parser_columnar_count": 0,
+    "canonical_source_parser_types_count": 1,
+    "canonical_source_parser_types": "inline",
+    "canonical_source_parser_types_list": "inline",
 }
 
 
