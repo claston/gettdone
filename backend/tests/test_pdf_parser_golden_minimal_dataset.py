@@ -11,7 +11,11 @@ from tests.fixtures.pdf_golden_samples import (
 pytestmark = pytest.mark.pdf_golden
 
 
-@pytest.mark.parametrize("scenario_name", ["grouped", "inline", "tabular", "columnar"])
+def test_pdf_golden_minimal_catalog_matches_expectations_keys() -> None:
+    assert set(PDF_GOLDEN_MINIMAL_SCENARIOS.keys()) == set(PDF_GOLDEN_MINIMAL_EXPECTATIONS.keys())
+
+
+@pytest.mark.parametrize("scenario_name", sorted(PDF_GOLDEN_MINIMAL_SCENARIOS.keys()))
 def test_pdf_parser_golden_minimal_dataset_stability(monkeypatch, scenario_name: str) -> None:
     scenario = PDF_GOLDEN_MINIMAL_SCENARIOS[scenario_name]
     expected = PDF_GOLDEN_MINIMAL_EXPECTATIONS[scenario_name]

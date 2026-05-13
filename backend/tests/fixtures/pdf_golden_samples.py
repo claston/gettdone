@@ -36,6 +36,8 @@ GROUPED_INLINE_MULTILINE_SAMPLE = "\n".join(
 UNICODE_MINUS_SINGLE_ROW_SAMPLE = "10 ABR 2026 Ajuste manual −R$ 10,00"
 
 INLINE_MINIMAL_SAMPLE = "10/04 Ajuste manual 10,00"
+ITAU_INLINE_MINIMAL_SAMPLE = "ITAU EMPRESAS\n10/04 Transferencia recebida 100,00"
+SANTANDER_INLINE_MINIMAL_SAMPLE = "SANTANDER EMPRESARIAL\n11/04 Pagamento fornecedor 25,00"
 
 
 COLUMNAR_MINIMAL_SAMPLE = "\n".join(
@@ -77,6 +79,20 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         "balance_consistency_checked": 0,
         "balance_consistency_failed": 0,
     },
+    "itau_inline": {
+        "selected_parser": "inline",
+        "transactions_count": 1,
+        "inline_candidates_count": 1,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+    },
+    "santander_inline": {
+        "selected_parser": "inline",
+        "transactions_count": 1,
+        "inline_candidates_count": 1,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+    },
 }
 
 
@@ -95,6 +111,14 @@ PDF_GOLDEN_MINIMAL_SCENARIOS = {
     },
     "columnar": {
         "sample_text": COLUMNAR_MINIMAL_SAMPLE,
+        "layout_name": None,
+    },
+    "itau_inline": {
+        "sample_text": ITAU_INLINE_MINIMAL_SAMPLE,
+        "layout_name": None,
+    },
+    "santander_inline": {
+        "sample_text": SANTANDER_INLINE_MINIMAL_SAMPLE,
         "layout_name": None,
     },
 }
