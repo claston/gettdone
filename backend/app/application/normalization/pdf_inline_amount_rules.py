@@ -34,4 +34,4 @@ def extract_single_trailing_amount_match(raw_text: str) -> InlineAmountMatch | N
 
 
 def _is_ignorable_trailing_noise(value: str) -> bool:
-    return bool(re.fullmatch(r"[|¦:;,\.\-_/\\]+", value))
+    return bool(re.fullmatch(r"(?:[|¦:;,\.\-_/\\]+|[Il!])", value))
