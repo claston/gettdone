@@ -313,6 +313,19 @@ def test_parse_inline_statement_line_rejects_trailing_non_noise_text_after_amoun
     assert parsed_row is None
 
 
+def test_parse_inline_statement_line_accepts_trailing_mixed_ocr_noise_after_amount() -> None:
+    line = pdf_parser_module._PdfLine(text="10/04 PIX RECEBIDO 25,00 ||I", page_number=2, line_number=11)
+
+    parsed_row = pdf_parser_module._parse_inline_statement_line(line=line, inferred_year=2026)
+
+    assert parsed_row is not None
+    assert parsed_row.transaction.date == "2026-04-10"
+    assert parsed_row.transaction.description == "PIX RECEBIDO"
+    assert parsed_row.transaction.amount == 25.0
+    assert parsed_row.source_page == 2
+    assert parsed_row.source_line == 11
+
+
 def test_parse_tabular_statement_line_returns_none_when_no_date_prefix() -> None:
     line = pdf_parser_module._PdfLine(text="SALDO ANTERIOR 1.000,00", page_number=1, line_number=1)
 
