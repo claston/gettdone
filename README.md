@@ -132,6 +132,20 @@ Workflows configurados:
 - `CD | Publish Container (GHCR)`: publica imagem Docker no GHCR em push para `main`.
 - `CD | Deploy to Render (Staging)`: dispara deploy no Render apos publish da imagem.
 
+## Regressao PDF Golden (parser)
+
+Para rodar apenas o pacote minimo de regressao do parser PDF:
+
+```powershell
+cd backend
+venv\Scripts\python.exe -m pytest -m pdf_golden -q --basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-pdf-golden
+```
+
+Arquivos principais desse pacote:
+
+- `backend/tests/test_pdf_parser_golden_minimal_dataset.py`
+- `backend/tests/fixtures/pdf_golden_samples.py`
+
 ## Deploy no Render (Web Service)
 
 Este repositorio agora suporta deploy no Render via imagem Docker.

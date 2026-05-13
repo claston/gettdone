@@ -7,3 +7,6 @@ select = ["E", "F", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "pdf_golden: regression tests for the minimal PDF golden dataset",
+]
