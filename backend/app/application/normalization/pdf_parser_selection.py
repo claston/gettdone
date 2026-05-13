@@ -15,6 +15,9 @@ class SelectedParserRows:
     inline_transactions_count: int
     tabular_candidates: int
     columnar_candidates: int
+    tabular_transactions_count: int
+    columnar_transactions_count: int
+    selection_reason: str
 
 
 def select_parsed_rows(
@@ -34,6 +37,9 @@ def select_parsed_rows(
             inline_transactions_count=0,
             tabular_candidates=0,
             columnar_candidates=0,
+            tabular_transactions_count=0,
+            columnar_transactions_count=0,
+            selection_reason="grouped_rows_available",
         )
 
     inline_rows, inline_candidates = parse_inline_rows(lines)
@@ -46,9 +52,13 @@ def select_parsed_rows(
             inline_transactions_count=inline_transactions_count,
             tabular_candidates=0,
             columnar_candidates=0,
+            tabular_transactions_count=0,
+            columnar_transactions_count=0,
+            selection_reason="inline_rows_available_after_grouped_empty",
         )
 
     tabular_rows, tabular_candidates = parse_tabular_rows(lines, layout_profile)
+    tabular_transactions_count = len(tabular_rows)
     if tabular_rows:
         return SelectedParserRows(
             selected_parser="tabular",
@@ -57,9 +67,13 @@ def select_parsed_rows(
             inline_transactions_count=inline_transactions_count,
             tabular_candidates=tabular_candidates,
             columnar_candidates=0,
+            tabular_transactions_count=tabular_transactions_count,
+            columnar_transactions_count=0,
+            selection_reason="tabular_rows_available_after_inline_empty",
         )
 
     columnar_rows, columnar_candidates = parse_columnar_rows(lines)
+    columnar_transactions_count = len(columnar_rows)
     if columnar_rows:
         return SelectedParserRows(
             selected_parser="columnar",
@@ -68,6 +82,9 @@ def select_parsed_rows(
             inline_transactions_count=inline_transactions_count,
             tabular_candidates=tabular_candidates,
             columnar_candidates=columnar_candidates,
+            tabular_transactions_count=tabular_transactions_count,
+            columnar_transactions_count=columnar_transactions_count,
+            selection_reason="columnar_rows_available_after_tabular_empty",
         )
 
     if inline_candidates > 0 or tabular_candidates > 0 or columnar_candidates > 0:

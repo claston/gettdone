@@ -84,17 +84,27 @@ def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
     selected_parser = selection.selected_parser
     inline_candidates = selection.inline_candidates
     inline_transactions_count = selection.inline_transactions_count
+    tabular_candidates_count = selection.tabular_candidates
+    tabular_transactions_count = selection.tabular_transactions_count
+    columnar_candidates_count = selection.columnar_candidates
+    columnar_transactions_count = selection.columnar_transactions_count
+    parser_selection_reason = selection.selection_reason
     return _build_pdf_parse_result(
         parsed_rows=parsed_rows,
         layout=layout,
         layout_profile=layout_profile,
         selected_parser=selected_parser,
+        parser_selection_reason=parser_selection_reason,
         joined_text=joined_text,
         page_count=len(page_texts),
         flattened_line_count=len(lines),
         grouped_transactions_count=len(grouped_rows),
         inline_candidates_count=inline_candidates,
         inline_transactions_count=inline_transactions_count,
+        tabular_candidates_count=tabular_candidates_count,
+        tabular_transactions_count=tabular_transactions_count,
+        columnar_candidates_count=columnar_candidates_count,
+        columnar_transactions_count=columnar_transactions_count,
     )
 
 
@@ -161,12 +171,17 @@ def _build_pdf_parse_result(
     layout: PdfLayoutInference,
     layout_profile: DeclarativeLayoutProfile | None,
     selected_parser: str,
+    parser_selection_reason: str,
     joined_text: str,
     page_count: int,
     flattened_line_count: int,
     grouped_transactions_count: int,
     inline_candidates_count: int,
     inline_transactions_count: int,
+    tabular_candidates_count: int,
+    tabular_transactions_count: int,
+    columnar_candidates_count: int,
+    columnar_transactions_count: int,
 ) -> PdfParseResult:
     transactions = [item.transaction for item in parsed_rows]
     canonical_transactions = build_canonical_transactions(
@@ -188,14 +203,19 @@ def _build_pdf_parse_result(
         parse_metrics=build_pdf_parse_metrics(
             page_count=page_count,
             extracted_char_count=len(joined_text),
-            flattened_line_count=flattened_line_count,
-            grouped_transactions_count=grouped_transactions_count,
-            inline_candidates_count=inline_candidates_count,
-            inline_transactions_count=inline_transactions_count,
-            selected_parser=selected_parser,
-            balance_consistency_checked=balance_checked_count,
-            balance_consistency_failed=balance_failed_count,
-            canonical_quality_metrics=canonical_quality_metrics,
+              flattened_line_count=flattened_line_count,
+              grouped_transactions_count=grouped_transactions_count,
+              inline_candidates_count=inline_candidates_count,
+              inline_transactions_count=inline_transactions_count,
+              tabular_candidates_count=tabular_candidates_count,
+              tabular_transactions_count=tabular_transactions_count,
+              columnar_candidates_count=columnar_candidates_count,
+              columnar_transactions_count=columnar_transactions_count,
+              selected_parser=selected_parser,
+              parser_selection_reason=parser_selection_reason,
+              balance_consistency_checked=balance_checked_count,
+              balance_consistency_failed=balance_failed_count,
+              canonical_quality_metrics=canonical_quality_metrics,
         ),
     )
 
