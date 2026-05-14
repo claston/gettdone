@@ -37,6 +37,11 @@ IGNORED_TRANSACTION_HINTS = (
     "RESUMO DA FATURA",
     "FATURA ANTERIOR",
     "PAGAMENTO RECEBIDO",
+    "DADOS DA CONTA ORIGEM",
+    "NOME DO TITULAR",
+    "NUMERO DA CONTA",
+    "TIPO DE CONTA",
+    "TIPO DE EXTRATO",
 )
 
 
@@ -65,7 +70,11 @@ def should_skip_transaction_description(description: str) -> bool:
     normalized_description = normalize_upper_text(description)
     if not normalized_description:
         return True
+    if normalized_description.startswith("SALDO ANTERIOR") or normalized_description.startswith("SALDO INICIAL"):
+        return False
     if any(hint in normalized_description for hint in IGNORED_TRANSACTION_HINTS):
+        return True
+    if normalized_description == "SALDO":
         return True
     if normalized_description.startswith("SALDO "):
         return True

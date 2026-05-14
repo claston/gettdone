@@ -12,7 +12,7 @@ from app.application.normalization.balance import annotate_balance_consistency
 from app.application.normalization.canonical import build_canonical_transactions
 from app.application.normalization.canonical_metrics import build_canonical_quality_metrics
 from app.application.normalization.date import infer_default_statement_year
-from app.application.normalization.pdf_amount_tokens import find_amount_tokens, parse_pdf_amount
+from app.application.normalization.pdf_amount_tokens import find_amount_tokens, has_explicit_amount_sign, parse_pdf_amount
 from app.application.normalization.pdf_columnar_block_rules import next_columnar_block_index
 from app.application.normalization.pdf_columnar_row_rules import is_valid_columnar_transaction_row
 from app.application.normalization.pdf_columnar_rules import apply_type_sign_hint
@@ -62,6 +62,7 @@ class _ParsedTransaction:
     source_line: int | None = None
     running_balance: float | None = None
     external_reference_id: str | None = None
+    has_explicit_amount_sign: bool = False
 
 
 def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
@@ -267,9 +268,32 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
     current_section_hint: str | None = None
     description_parts: list[str] = []
     inferred_year = _infer_default_statement_year_from_lines(lines)
+    last_transaction_index: int | None = None
+    last_known_running_balance: float | None = None
+    pending_opening_balance_label: str | None = None
+    pending_opening_balance_line: _PdfLine | None = None
+    opening_balance_amount: float | None = None
+    opening_balance_amount_line: _PdfLine | None = None
+    opening_balance_inserted = False
 
     for line in lines:
         normalized_line = _normalize_text(line.text)
+        if normalized_line.startswith("SALDO ANTERIOR") or normalized_line.startswith("SALDO INICIAL"):
+            pending_opening_balance_label = "SALDO ANTERIOR" if "ANTERIOR" in normalized_line else "SALDO INICIAL"
+            pending_opening_balance_line = line
+            current_date = None
+            description_parts = []
+            continue
+        if (
+            pending_opening_balance_label is not None
+            and opening_balance_amount is None
+            and current_date is None
+            and is_amount_only_row(line.text)
+        ):
+            opening_balance_amount = parse_pdf_amount(line.text)
+            opening_balance_amount_line = line
+            continue
+
         grouped_date_match = parse_grouped_date_line(normalized_line, inferred_year=inferred_year)
         if grouped_date_match is not None:
             current_date, current_section_hint, description_parts, inline_transaction = _parse_grouped_date_line_state(
@@ -278,7 +302,27 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
                 grouped_rest=grouped_date_match.rest,
             )
             if inline_transaction is not None:
+                if (
+                    not opening_balance_inserted
+                    and opening_balance_amount is not None
+                    and pending_opening_balance_label is not None
+                ):
+                    opening_row = _build_parsed_transaction(
+                        date=grouped_date_match.date,
+                        description=pending_opening_balance_label,
+                        amount=opening_balance_amount,
+                        source_page=(opening_balance_amount_line or pending_opening_balance_line or line).page_number,
+                        source_line=(opening_balance_amount_line or pending_opening_balance_line or line).line_number,
+                        has_explicit_amount_sign=has_explicit_amount_sign(
+                            (opening_balance_amount_line or line).text
+                        ),
+                    )
+                    transactions.append(opening_row)
+                    last_transaction_index = len(transactions) - 1
+                    last_known_running_balance = opening_balance_amount
+                    opening_balance_inserted = True
                 transactions.append(inline_transaction)
+                last_transaction_index = len(transactions) - 1
                 description_parts = []
             continue
 
@@ -300,6 +344,7 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
         if should_continue:
             continue
 
+        pre_amount_description_parts = description_parts
         parsed_row, description_parts, should_continue = _handle_grouped_amount_only_line(
             current_date=current_date,
             description_parts=description_parts,
@@ -308,7 +353,41 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
         )
         if should_continue:
             if parsed_row is not None:
+                if (
+                    not opening_balance_inserted
+                    and opening_balance_amount is not None
+                    and pending_opening_balance_label is not None
+                ):
+                    opening_row = _build_parsed_transaction(
+                        date=parsed_row.transaction.date,
+                        description=pending_opening_balance_label,
+                        amount=opening_balance_amount,
+                        source_page=(opening_balance_amount_line or pending_opening_balance_line or line).page_number,
+                        source_line=(opening_balance_amount_line or pending_opening_balance_line or line).line_number,
+                        has_explicit_amount_sign=has_explicit_amount_sign(
+                            (opening_balance_amount_line or line).text
+                        ),
+                    )
+                    transactions.append(opening_row)
+                    last_transaction_index = len(transactions) - 1
+                    last_known_running_balance = opening_balance_amount
+                    opening_balance_inserted = True
                 transactions.append(parsed_row)
+                last_transaction_index = len(transactions) - 1
+                if parsed_row.running_balance is not None:
+                    last_known_running_balance = parsed_row.running_balance
+            elif _is_balance_snapshot_description(pre_amount_description_parts):
+                last_known_running_balance = parse_pdf_amount(line.text)
+            elif _can_attach_grouped_running_balance(description_parts=description_parts, last_transaction_index=last_transaction_index):
+                previous_balance = _resolve_previous_running_balance(transactions, last_transaction_index)
+                if previous_balance is None:
+                    previous_balance = last_known_running_balance
+                transactions[last_transaction_index] = _attach_running_balance_and_reconcile_sign(
+                    transaction=transactions[last_transaction_index],
+                    running_balance=parse_pdf_amount(line.text),
+                    previous_running_balance=previous_balance,
+                )
+                last_known_running_balance = transactions[last_transaction_index].running_balance
             continue
 
         description_parts = _append_grouped_description_part(
@@ -632,7 +711,7 @@ def _handle_grouped_amount_only_line(
         section_hint=section_hint,
     )
     if parsed_row is None:
-        return None, description_parts, True
+        return None, [], True
     return parsed_row, [], True
 
 
@@ -653,7 +732,13 @@ def _build_grouped_amount_only_transaction(
     if not description_parts:
         return None
 
+    last_part_normalized = _normalize_text(description_parts[-1].strip()) if description_parts else ""
+    if last_part_normalized in {"DEBITO", "DÉBITO", "CREDITO", "CRÉDITO"} and len(description_parts) >= 2:
+        return None
+
     description = " ".join(description_parts).strip()
+    if should_skip_transaction_description(description):
+        return None
     signed_amount = parse_grouped_amount_line(
         raw_amount_text=line.text,
         description=description,
@@ -665,6 +750,7 @@ def _build_grouped_amount_only_transaction(
         amount=signed_amount,
         source_page=line.page_number,
         source_line=line.line_number,
+        has_explicit_amount_sign=has_explicit_amount_sign(line.text),
     )
 
 
@@ -691,6 +777,7 @@ def _build_inline_transaction_from_date_rest(
         amount=signed_amount,
         source_page=source_page,
         source_line=source_line,
+        has_explicit_amount_sign=has_explicit_amount_sign(amount_match.amount_token.value),
     )
 
 
@@ -703,6 +790,7 @@ def _build_parsed_transaction(
     source_line: int | None = None,
     running_balance: float | None = None,
     external_reference_id: str | None = None,
+    has_explicit_amount_sign: bool = False,
 ) -> _ParsedTransaction:
     return _ParsedTransaction(
         transaction=NormalizedTransaction(
@@ -715,6 +803,69 @@ def _build_parsed_transaction(
         source_line=source_line,
         running_balance=running_balance,
         external_reference_id=external_reference_id,
+        has_explicit_amount_sign=has_explicit_amount_sign,
+    )
+
+
+def _can_attach_grouped_running_balance(*, description_parts: list[str], last_transaction_index: int | None) -> bool:
+    return bool(not description_parts and last_transaction_index is not None)
+
+
+def _is_balance_snapshot_description(description_parts: list[str]) -> bool:
+    description = " ".join(description_parts).strip()
+    if not description:
+        return False
+    normalized = _normalize_text(description)
+    return normalized == "SALDO" or normalized.startswith("SALDO ")
+
+
+def _resolve_previous_running_balance(transactions: list[_ParsedTransaction], current_index: int) -> float | None:
+    for index in range(current_index - 1, -1, -1):
+        balance = transactions[index].running_balance
+        if balance is not None:
+            return balance
+
+    current = transactions[current_index]
+    normalized_description = _normalize_text(current.transaction.description)
+    if normalized_description.startswith("SALDO ANTERIOR") or normalized_description.startswith("SALDO INICIAL"):
+        return current.transaction.amount
+    if current_index > 0:
+        previous_description = _normalize_text(transactions[current_index - 1].transaction.description)
+        if previous_description.startswith("SALDO ANTERIOR") or previous_description.startswith("SALDO INICIAL"):
+            return transactions[current_index - 1].transaction.amount
+    return None
+
+
+def _attach_running_balance_and_reconcile_sign(
+    *,
+    transaction: _ParsedTransaction,
+    running_balance: float,
+    previous_running_balance: float | None,
+) -> _ParsedTransaction:
+    signed_amount = transaction.transaction.amount
+    if (not transaction.has_explicit_amount_sign) and previous_running_balance is not None:
+        delta = running_balance - previous_running_balance
+        amount_abs = abs(signed_amount)
+        positive_error = abs(delta - amount_abs)
+        negative_error = abs(delta + amount_abs)
+        if positive_error + 0.005 < negative_error:
+            signed_amount = amount_abs
+        elif negative_error + 0.005 < positive_error:
+            signed_amount = -amount_abs
+
+    normalized_transaction = NormalizedTransaction(
+        date=transaction.transaction.date,
+        description=transaction.transaction.description,
+        amount=signed_amount,
+        type="inflow" if signed_amount >= 0 else "outflow",
+    )
+    return _ParsedTransaction(
+        transaction=normalized_transaction,
+        source_page=transaction.source_page,
+        source_line=transaction.source_line,
+        running_balance=running_balance,
+        external_reference_id=transaction.external_reference_id,
+        has_explicit_amount_sign=transaction.has_explicit_amount_sign,
     )
 
 
