@@ -104,7 +104,18 @@ class FakeAnalyzeService:
                 grouped_transactions_count=1,
                 inline_candidates_count=0,
                 inline_transactions_count=0,
-                selected_parser="test",
+                tabular_candidates_count=0,
+                tabular_transactions_count=0,
+                columnar_candidates_count=0,
+                columnar_transactions_count=0,
+                selected_parser="grouped",
+                parser_selection_reason="grouped_rows_available",
+                inline_decision="skipped_due_to_grouped",
+                tabular_decision="skipped_due_to_grouped",
+                columnar_decision="skipped_due_to_grouped",
+                confidence_band="low",
+                export_recommendation="review_recommended",
+                export_recommendation_reason="low_confidence_band",
             ),
         )
 
@@ -177,6 +188,14 @@ def test_register_then_convert_with_user_token() -> None:
         assert convert.status_code == 200
         assert convert.json()["identity_type"] == "user"
         assert convert.json()["quota_remaining"] == 9
+        metrics = convert.json()["analysis"]["pdf_processing_metrics"]
+        assert metrics["confidence_band"] == "low"
+        assert metrics["export_recommendation"] == "review_recommended"
+        assert metrics["selected_parser"] == "grouped"
+        assert metrics["parser_selection_reason"] == "grouped_rows_available"
+        assert metrics["inline_decision"] == "skipped_due_to_grouped"
+        assert metrics["tabular_decision"] == "skipped_due_to_grouped"
+        assert metrics["columnar_decision"] == "skipped_due_to_grouped"
     finally:
         app.dependency_overrides.clear()
         shutil.rmtree(state_dir, ignore_errors=True)

@@ -253,6 +253,10 @@ def test_http_convert_happy_path_exposes_canonical_pdf_metrics_compatibility() -
     payload = response.json()
     assert payload["processing_id"] == "an_convert_http123"
     assert payload["analysis"]["pdf_processing_metrics"]["selected_parser"] == "grouped"
+    assert payload["analysis"]["pdf_processing_metrics"]["parser_selection_reason"] == "grouped_rows_available"
+    assert payload["analysis"]["pdf_processing_metrics"]["inline_decision"] == "skipped_due_to_grouped"
+    assert payload["analysis"]["pdf_processing_metrics"]["tabular_decision"] == "skipped_due_to_grouped"
+    assert payload["analysis"]["pdf_processing_metrics"]["columnar_decision"] == "skipped_due_to_grouped"
     assert payload["analysis"]["pdf_processing_metrics"]["canonical_transactions_count"] == 2
     assert payload["analysis"]["pdf_processing_metrics"]["confidence_band"] == "low"
     assert payload["analysis"]["pdf_processing_metrics"]["export_recommendation"] == "review_recommended"

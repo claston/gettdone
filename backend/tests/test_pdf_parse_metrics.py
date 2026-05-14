@@ -165,3 +165,101 @@ def test_build_pdf_parse_metrics_sets_confidence_band_medium_for_conflict_select
     assert metrics["confidence_band"] == "medium"
     assert metrics["export_recommendation"] == "review_recommended"
     assert metrics["export_recommendation_reason"] == "medium_confidence_band"
+
+
+def test_build_pdf_parse_metrics_sets_confidence_band_medium_for_partial_inline_coverage() -> None:
+    canonical_quality_metrics = {
+        "canonical_transactions_count": 2,
+        "canonical_with_running_balance_count": 0,
+        "canonical_with_external_reference_count": 0,
+        "canonical_warning_count": 0,
+        "canonical_balance_warning_count": 0,
+        "canonical_warning_transactions_count": 0,
+        "canonical_warning_types_count": 0,
+        "canonical_warning_types": "",
+        "canonical_warning_types_list": "",
+        "canonical_running_balance_coverage_rate": 0.0,
+        "canonical_external_reference_coverage_rate": 0.0,
+        "canonical_warning_transaction_rate": 0.0,
+        "canonical_source_parser_grouped_count": 0,
+        "canonical_source_parser_inline_count": 2,
+        "canonical_source_parser_tabular_count": 0,
+        "canonical_source_parser_columnar_count": 0,
+        "canonical_source_parser_types_count": 1,
+        "canonical_source_parser_types": "inline",
+        "canonical_source_parser_types_list": "inline",
+    }
+
+    metrics = build_pdf_parse_metrics(
+        page_count=1,
+        extracted_char_count=250,
+        flattened_line_count=9,
+        grouped_transactions_count=0,
+        inline_candidates_count=3,
+        inline_transactions_count=2,
+        tabular_candidates_count=0,
+        tabular_transactions_count=0,
+        columnar_candidates_count=0,
+        columnar_transactions_count=0,
+        selected_parser="inline",
+        parser_selection_reason="inline_rows_available_after_grouped_empty",
+        inline_decision="selected",
+        tabular_decision="no_rows",
+        columnar_decision="no_rows",
+        balance_consistency_checked=0,
+        balance_consistency_failed=0,
+        canonical_quality_metrics=canonical_quality_metrics,
+    )
+
+    assert metrics["confidence_band"] == "medium"
+    assert metrics["export_recommendation"] == "review_recommended"
+    assert metrics["export_recommendation_reason"] == "medium_confidence_band"
+
+
+def test_build_pdf_parse_metrics_sets_confidence_band_low_for_poor_inline_coverage() -> None:
+    canonical_quality_metrics = {
+        "canonical_transactions_count": 2,
+        "canonical_with_running_balance_count": 0,
+        "canonical_with_external_reference_count": 0,
+        "canonical_warning_count": 0,
+        "canonical_balance_warning_count": 0,
+        "canonical_warning_transactions_count": 0,
+        "canonical_warning_types_count": 0,
+        "canonical_warning_types": "",
+        "canonical_warning_types_list": "",
+        "canonical_running_balance_coverage_rate": 0.0,
+        "canonical_external_reference_coverage_rate": 0.0,
+        "canonical_warning_transaction_rate": 0.0,
+        "canonical_source_parser_grouped_count": 0,
+        "canonical_source_parser_inline_count": 2,
+        "canonical_source_parser_tabular_count": 0,
+        "canonical_source_parser_columnar_count": 0,
+        "canonical_source_parser_types_count": 1,
+        "canonical_source_parser_types": "inline",
+        "canonical_source_parser_types_list": "inline",
+    }
+
+    metrics = build_pdf_parse_metrics(
+        page_count=1,
+        extracted_char_count=250,
+        flattened_line_count=9,
+        grouped_transactions_count=0,
+        inline_candidates_count=5,
+        inline_transactions_count=2,
+        tabular_candidates_count=0,
+        tabular_transactions_count=0,
+        columnar_candidates_count=0,
+        columnar_transactions_count=0,
+        selected_parser="inline",
+        parser_selection_reason="inline_rows_available_after_grouped_empty",
+        inline_decision="selected",
+        tabular_decision="no_rows",
+        columnar_decision="no_rows",
+        balance_consistency_checked=0,
+        balance_consistency_failed=0,
+        canonical_quality_metrics=canonical_quality_metrics,
+    )
+
+    assert metrics["confidence_band"] == "low"
+    assert metrics["export_recommendation"] == "review_recommended"
+    assert metrics["export_recommendation_reason"] == "low_confidence_band"

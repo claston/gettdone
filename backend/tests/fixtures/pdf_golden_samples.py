@@ -117,6 +117,33 @@ QUASI_REAL_INLINE_PENDING_OCR_NOISE_MULTILINE_SAMPLE = "\n".join(
         "SALDO DO DIA 1.184,31",
     ]
 )
+QUASI_REAL_MIXED_INLINE_TABULAR_SAMPLE = "\n".join(
+    [
+        "BANCO EXEMPLO S.A.",
+        "EXTRATO CONTA CORRENTE - PERIODO 01/08/2026 A 31/08/2026",
+        "03/08 PIX RECEBIDO CLIENTE OMEGA 300,00",
+        "DATA DESCRICAO DOC CRED DEB SALD",
+        "04/08 TARIFA SERVICO 0,00 15,90 1.284,10",
+        "SALDO DO DIA 1.284,10",
+    ]
+)
+QUASI_REAL_TRUNCATED_HEADER_INLINE_SAMPLE = "\n".join(
+    [
+        "BANCO EXEMPLO S.A.",
+        "EXTRATO C/C PERIODO 01/09/2026 A 30/09/2026",
+        "DATA DESCRICAO DOCUM CREDI DEBI SAL",
+        "07/09 RECEBIMENTO PIX CLIENTE DELTA 420,00",
+        "08/09 PAGAMENTO FORNECEDOR ZETA 210,50",
+    ]
+)
+QUASI_REAL_INLINE_OCR_TRAILING_NOISE_SAMPLE = "\n".join(
+    [
+        "BANCO EXEMPLO S.A.",
+        "EXTRATO CONTA CORRENTE - PERIODO 01/10/2026 A 31/10/2026",
+        "10/10 PAGAMENTO ASSINATURA SISTEMA 89,90 ||I",
+        "11/10 PIX RECEBIDO CLIENTE THETA 150,00",
+    ]
+)
 YEAR_ROLLOVER_PAGE_ONE_SAMPLE = "EXTRATO PERIODO 20/12/2025 A 10/01/2026"
 YEAR_ROLLOVER_PAGE_TWO_SAMPLE = "\n".join(
     [
@@ -553,6 +580,75 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
             "source_line": 2,
         },
     },
+    "quasi_real_mixed_inline_tabular": {
+        "selected_parser": "inline",
+        "transactions_count": 1,
+        "inline_candidates_count": 1,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {
+            "date": "2026-08-03",
+            "amount": 300.0,
+            "type": "inflow",
+            "description": "PIX RECEBIDO CLIENTE OMEGA",
+            "source_page": 1,
+            "source_line": 3,
+        },
+        "last_transaction": {
+            "date": "2026-08-03",
+            "amount": 300.0,
+            "type": "inflow",
+            "description": "PIX RECEBIDO CLIENTE OMEGA",
+            "source_page": 1,
+            "source_line": 3,
+        },
+    },
+    "quasi_real_truncated_header_inline": {
+        "selected_parser": "inline",
+        "transactions_count": 2,
+        "inline_candidates_count": 2,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {
+            "date": "2026-09-07",
+            "amount": 420.0,
+            "type": "inflow",
+            "description": "RECEBIMENTO PIX CLIENTE DELTA",
+            "source_page": 1,
+            "source_line": 4,
+        },
+        "last_transaction": {
+            "date": "2026-09-08",
+            "amount": -210.5,
+            "type": "outflow",
+            "description": "PAGAMENTO FORNECEDOR ZETA",
+            "source_page": 1,
+            "source_line": 5,
+        },
+    },
+    "quasi_real_inline_ocr_trailing_noise": {
+        "selected_parser": "inline",
+        "transactions_count": 2,
+        "inline_candidates_count": 2,
+        "balance_consistency_checked": 0,
+        "balance_consistency_failed": 0,
+        "first_transaction": {
+            "date": "2026-10-10",
+            "amount": -89.9,
+            "type": "outflow",
+            "description": "PAGAMENTO ASSINATURA SISTEMA",
+            "source_page": 1,
+            "source_line": 3,
+        },
+        "last_transaction": {
+            "date": "2026-10-11",
+            "amount": 150.0,
+            "type": "inflow",
+            "description": "PIX RECEBIDO CLIENTE THETA",
+            "source_page": 1,
+            "source_line": 4,
+        },
+    },
 }
 
 
@@ -634,6 +730,18 @@ PDF_GOLDEN_MINIMAL_SCENARIOS = {
     },
     "year_rollover_inline": {
         "sample_pages": [YEAR_ROLLOVER_PAGE_ONE_SAMPLE, YEAR_ROLLOVER_PAGE_TWO_SAMPLE],
+        "layout_name": None,
+    },
+    "quasi_real_mixed_inline_tabular": {
+        "sample_text": QUASI_REAL_MIXED_INLINE_TABULAR_SAMPLE,
+        "layout_name": None,
+    },
+    "quasi_real_truncated_header_inline": {
+        "sample_text": QUASI_REAL_TRUNCATED_HEADER_INLINE_SAMPLE,
+        "layout_name": None,
+    },
+    "quasi_real_inline_ocr_trailing_noise": {
+        "sample_text": QUASI_REAL_INLINE_OCR_TRAILING_NOISE_SAMPLE,
         "layout_name": None,
     },
 }
