@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   const input = document.getElementById("file-input");
   const dropzone = document.getElementById("dropzone");
   const dropzoneEmpty = document.getElementById("dropzone-empty");
@@ -61,6 +61,9 @@
     quotaMode: "conversion",
     quotaRemaining: null,
     quotaLimit: null,
+    closingBalanceOverride: null,
+    bankBranchOverride: "",
+    accountNumberOverride: "",
   };
 
   function isPagesQuotaMode(mode) {
@@ -706,6 +709,9 @@
       quota_mode: state.quotaMode,
       quota_remaining: state.quotaRemaining,
       quota_limit: state.quotaLimit,
+      closing_balance_override: state.closingBalanceOverride,
+      bank_branch_override: state.bankBranchOverride,
+      account_number_override: state.accountNumberOverride,
       file_name,
       file_size,
       preview_rows: previewRowsNoRowId,
@@ -772,6 +778,9 @@
     state.lastChangedRowKind = null;
     state.quotaRemaining = null;
     state.quotaLimit = null;
+    state.closingBalanceOverride = null;
+    state.bankBranchOverride = "";
+    state.accountNumberOverride = "";
     markChangedRow(null);
     if (addRowBtn) addRowBtn.disabled = true;
     setDownloadButtonsDisabled(true);
@@ -805,24 +814,127 @@
     return "1";
   }
 
+  function toMoneyInputValue(value) {
+    const numeric = Number(value || 0);
+    if (!Number.isFinite(numeric)) {
+      return "0,00";
+    }
+    return numeric.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  function parsePtBrMoney(value) {
+    const raw = String(value || "").trim();
+    if (!raw) {
+      return null;
+    }
+
+    let normalized = raw.replace(/\s+/g, "");
+    let negative = false;
+
+    if (normalized.startsWith("(") && normalized.endsWith(")")) {
+      negative = true;
+      normalized = normalized.slice(1, -1);
+    }
+    if (/[dD]$/.test(normalized)) {
+      negative = true;
+      normalized = normalized.slice(0, -1);
+    }
+    if (normalized.startsWith("-")) {
+      negative = true;
+      normalized = normalized.slice(1);
+    }
+    if (normalized.startsWith("+")) {
+      normalized = normalized.slice(1);
+    }
+
+    normalized = normalized.replace(/\./g, "").replace(",", ".");
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed)) {
+      return null;
+    }
+    return negative ? -parsed : parsed;
+  }
+
+  function normalizeDigits(value) {
+    return String(value || "").replace(/\D+/g, "");
+  }
+
+  function formatBankBranchDisplay(value) {
+    const sanitized = String(value || "").replace(/[^\d-]/g, "");
+    const parts = sanitized.split("-");
+    const left = normalizeDigits(parts[0] || "").slice(0, 4);
+    const right = normalizeDigits(parts.slice(1).join("") || "").slice(0, 1);
+    if (!right) {
+      return left;
+    }
+    return `${left}-${right}`;
+  }
+
+  function formatAccountDisplay(value) {
+    const sanitized = String(value || "").replace(/[^\d-]/g, "");
+    const parts = sanitized.split("-");
+    const left = normalizeDigits(parts[0] || "").slice(0, 6);
+    const right = normalizeDigits(parts.slice(1).join("") || "").slice(0, 1);
+    if (!right) {
+      return left;
+    }
+    return `${left}-${right}`;
+  }
+
   function renderKpis(analysis) {
     const pagesConverted = resolveConvertedPages(analysis);
-    const entries = [
-      ["Transações", analysis.transactions_total],
-      ["Páginas convertidas", pagesConverted],
-      ["Entradas", formatCurrency(analysis.total_inflows)],
-      ["Saídas", formatCurrency(analysis.total_outflows)],
-      ["Saldo", formatCurrency(analysis.net_total)],
-    ];
+    const closingBalance = Number.isFinite(Number(state.closingBalanceOverride))
+      ? Number(state.closingBalanceOverride)
+      : Number((analysis && analysis.net_total) || 0);
 
-    kpis.innerHTML = entries
-      .map(([label, value]) => `
-        <article class="kpi">
-          <p class="kpi-label">${label}</p>
-          <p class="kpi-value">${value}</p>
-        </article>
-      `)
-      .join("");
+    const inflows = formatCurrency(analysis.total_inflows);
+    const outflows = formatCurrency(analysis.total_outflows);
+    const closingBalanceValue = toMoneyInputValue(closingBalance);
+    const isOfxFlow = outputFormat === "ofx";
+    const bankBranchValue = formatBankBranchDisplay(state.bankBranchOverride);
+    const accountNumberValue = formatAccountDisplay(state.accountNumberOverride);
+    const ofxMetaRow = isOfxFlow
+      ? `
+      <div class="ofx-meta-row">
+        <p class="kpi-hint">Agência e Conta</p>
+        <div class="ofx-meta-fields">
+          <input id="bank-branch-input" class="kpi-edit-input" type="text" inputmode="numeric" placeholder="Agência (ex: 1234-5)" value="${bankBranchValue}" />
+          <input id="account-number-input" class="kpi-edit-input" type="text" inputmode="numeric" placeholder="Conta (ex: 123456-7)" value="${accountNumberValue}" />
+        </div>
+      </div>
+      `
+      : "";
+
+    kpis.innerHTML = `
+      ${ofxMetaRow}
+      <article class="kpi">
+        <p class="kpi-label">Transações</p>
+        <p class="kpi-value">${analysis.transactions_total}</p>
+      </article>
+      <article class="kpi">
+        <p class="kpi-label">Páginas convertidas</p>
+        <p class="kpi-value">${pagesConverted}</p>
+      </article>
+      <article class="kpi">
+        <p class="kpi-label">Entradas</p>
+        <p class="kpi-value">${inflows}</p>
+      </article>
+      <article class="kpi">
+        <p class="kpi-label">Saídas</p>
+        <p class="kpi-value">${outflows}</p>
+      </article>
+      <article class="kpi">
+        <p class="kpi-label">Saldo final</p>
+        ${
+          isOfxFlow
+            ? `<p class="kpi-value-editable"><input id="closing-balance-input" class="kpi-edit-input" type="text" inputmode="decimal" value="${closingBalanceValue}" /></p>`
+            : `<p class="kpi-value">${formatCurrency(closingBalance)}</p>`
+        }
+      </article>
+    `;
   }
 
   function toPositiveMoneyString(value) {
@@ -1215,6 +1327,10 @@
     if (viewState.updated_at && !state.analysisSnapshot.updated_at) {
       state.analysisSnapshot.updated_at = viewState.updated_at;
     }
+    const restoredClosingBalance = Number(viewState.closing_balance_override);
+    state.closingBalanceOverride = Number.isFinite(restoredClosingBalance) ? restoredClosingBalance : null;
+    state.bankBranchOverride = normalizeDigits(viewState.bank_branch_override || "");
+    state.accountNumberOverride = normalizeDigits(viewState.account_number_override || "");
     state.restoredFileMeta = {
       name: String(viewState.file_name || "").trim() || "arquivo_restaurado.pdf",
       size: Number(viewState.file_size || 0),
@@ -1397,6 +1513,9 @@
       state.analysisId = analysis.analysis_id;
       state.processingId = payload.processing_id || analysis.analysis_id;
       state.analysisSnapshot = { ...analysis };
+      state.closingBalanceOverride = Number(analysis.net_total || 0);
+      state.bankBranchOverride = "";
+      state.accountNumberOverride = "";
       markChangedRow(null);
       if (addRowBtn) addRowBtn.disabled = false;
 
@@ -1500,6 +1619,20 @@
       setStatus("Preparando download...", null);
       if (downloadConfig.reportFormat) {
         query.set("format", downloadConfig.reportFormat);
+      }
+      if (requestedFormat === "ofx") {
+        const closingBalance = Number(state.closingBalanceOverride);
+        if (Number.isFinite(closingBalance)) {
+          query.set("closing_balance", closingBalance.toFixed(2));
+        }
+        const bankBranch = normalizeDigits(state.bankBranchOverride);
+        const accountNumber = normalizeDigits(state.accountNumberOverride);
+        if (bankBranch) {
+          query.set("bank_branch", bankBranch);
+        }
+        if (accountNumber) {
+          query.set("account_number", accountNumber);
+        }
       }
       const url = `${downloadConfig.endpoint}?${query.toString()}`;
       const response = await fetch(url, {
@@ -1638,6 +1771,56 @@
     }
     updateEditDraft(field, target.value);
   });
+  kpis.addEventListener("input", function (event) {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) {
+      return;
+    }
+    if (target.id === "bank-branch-input") {
+      target.value = formatBankBranchDisplay(target.value);
+      return;
+    }
+    if (target.id === "account-number-input") {
+      target.value = formatAccountDisplay(target.value);
+    }
+  });
+  kpis.addEventListener("change", function (event) {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) {
+      return;
+    }
+    if (target.id === "bank-branch-input") {
+      state.bankBranchOverride = normalizeDigits(target.value);
+      target.value = formatBankBranchDisplay(state.bankBranchOverride);
+      persistCurrentViewState();
+      setStatus("Agência atualizada para o próximo download OFX.", "success");
+      return;
+    }
+    if (target.id === "account-number-input") {
+      state.accountNumberOverride = normalizeDigits(target.value);
+      target.value = formatAccountDisplay(state.accountNumberOverride);
+      persistCurrentViewState();
+      setStatus("Conta atualizada para o próximo download OFX.", "success");
+      return;
+    }
+    if (target.id !== "closing-balance-input") {
+      return;
+    }
+    const parsed = parsePtBrMoney(target.value);
+    if (parsed === null) {
+      setStatus("Saldo final inválido. Use formato como 56.276,06", "error");
+      target.value = toMoneyInputValue(
+        Number.isFinite(Number(state.closingBalanceOverride))
+          ? Number(state.closingBalanceOverride)
+          : Number((state.analysisSnapshot && state.analysisSnapshot.net_total) || 0),
+      );
+      return;
+    }
+    state.closingBalanceOverride = parsed;
+    target.value = toMoneyInputValue(parsed);
+    persistCurrentViewState();
+    setStatus("Saldo final atualizado para o próximo download OFX.", "success");
+  });
   convertBtn.addEventListener("click", runConvert);
   if (addRowBtn) addRowBtn.addEventListener("click", startInsertRow);
   if (hasDualDownloadButtons) {
@@ -1707,3 +1890,6 @@
 
   void initializePage();
 })();
+
+
+

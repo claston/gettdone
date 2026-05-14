@@ -28,8 +28,22 @@ class ReportService:
             allow_unowned=allow_unowned,
         )
 
-    def get_convert_report_path(self, analysis_id: str, file_format: str) -> Path:
-        return self.storage.get_convert_report_path(analysis_id, file_format=file_format)
+    def get_convert_report_path(
+        self,
+        analysis_id: str,
+        file_format: str,
+        *,
+        closing_balance: float | None = None,
+        bank_branch: str | None = None,
+        account_number: str | None = None,
+    ) -> Path:
+        return self.storage.get_convert_report_path(
+            analysis_id,
+            file_format=file_format,
+            closing_balance=closing_balance,
+            bank_branch=bank_branch,
+            account_number=account_number,
+        )
 
     def get_upload_filename(self, analysis_id: str) -> str | None:
         return self.storage.get_upload_filename(analysis_id)
