@@ -159,7 +159,7 @@ def test_parse_pdf_transactions_adjusts_year_rollover_from_december_to_january(m
 
     result = parse_pdf_transactions(b"%PDF synthetic")
 
-    assert result.parse_metrics["selected_parser"] == "inline"
+    assert result.parse_metrics["selected_parser"] == "grouped"
     assert len(result.transactions) == 2
     assert result.transactions[0].date == "2025-12-31"
     assert result.transactions[0].amount == -10.0
@@ -178,7 +178,7 @@ def test_parse_pdf_transactions_preserves_explicit_negative_amount_despite_credi
 
     result = parse_pdf_transactions(b"%PDF synthetic")
 
-    assert result.parse_metrics["selected_parser"] == "inline"
+    assert result.parse_metrics["selected_parser"] == "grouped"
     assert len(result.transactions) == 2
     assert result.transactions[0].date == "2026-06-12"
     assert result.transactions[0].amount == -45.0
@@ -186,6 +186,150 @@ def test_parse_pdf_transactions_preserves_explicit_negative_amount_despite_credi
     assert result.transactions[1].date == "2026-06-13"
     assert result.transactions[1].amount == 45.0
     assert result.transactions[1].type == "inflow"
+
+
+def test_parse_pdf_transactions_supports_grouped_slash_dates_and_credit_debit_suffix(monkeypatch) -> None:
+    sample_text = "\n".join(
+        [
+            "Lançamentos",
+            "01/04/2024",
+            "PIX RECEBIDO",
+            "212,05 C",
+            "02/04/2024",
+            "PAGAMENTO BOLETO",
+            "2.150,00 D",
+        ]
+    )
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [sample_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert len(result.transactions) == 2
+    assert result.transactions[0].date == "2024-04-01"
+    assert result.transactions[0].amount == 212.05
+    assert result.transactions[1].date == "2024-04-02"
+    assert result.transactions[1].amount == -2150.0
+
+
+def test_parse_pdf_transactions_uses_running_balance_to_override_heuristic_when_amount_has_no_explicit_sign(
+    monkeypatch,
+) -> None:
+    sample_text = "\n".join(
+        [
+            "Data",
+            "Historico",
+            "Documento",
+            "Valor",
+            "Saldo",
+            "01/04/2024",
+            "SALDO ANTERIOR",
+            "1.000,00",
+            "02/04/2024",
+            "PAGAMENTO CARTAO",
+            "999999",
+            "125,45",
+            "1.125,45",
+        ]
+    )
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [sample_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert len(result.transactions) == 2
+    assert result.transactions[0].description == "SALDO ANTERIOR"
+    assert result.transactions[0].amount == 1000.0
+    assert result.transactions[1].description == "PAGAMENTO CARTAO 999999"
+    assert result.transactions[1].amount == 125.45
+
+
+def test_parse_pdf_transactions_keeps_explicit_negative_sign_even_if_running_balance_suggests_positive(monkeypatch) -> None:
+    sample_text = "\n".join(
+        [
+            "Data",
+            "Historico",
+            "Documento",
+            "Valor",
+            "Saldo",
+            "01/04/2024",
+            "SALDO ANTERIOR",
+            "1.000,00",
+            "02/04/2024",
+            "PAGAMENTO CARTAO",
+            "999999",
+            "-125,45",
+            "1.125,45",
+        ]
+    )
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [sample_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert len(result.transactions) == 2
+    assert result.transactions[0].description == "SALDO ANTERIOR"
+    assert result.transactions[1].amount == -125.45
+
+
+def test_parse_pdf_transactions_ignores_grouped_saldo_rows_from_transaction_totals(monkeypatch) -> None:
+    sample_text = "\n".join(
+        [
+            "01/04/2024",
+            "SALDO ANTERIOR",
+            "1.000,00",
+            "02/04/2024",
+            "PIX RECEBIDO",
+            "200,00 C",
+            "02/04/2024",
+            "SALDO",
+            "1.200,00",
+            "03/04/2024",
+            "PAGAMENTO BOLETO",
+            "50,00 D",
+            "03/04/2024",
+            "SALDO FINAL",
+            "1.150,00",
+        ]
+    )
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [sample_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert len(result.transactions) == 3
+    assert result.transactions[0].description == "SALDO ANTERIOR"
+    assert result.transactions[0].amount == 1000.0
+    assert result.transactions[1].description == "PIX RECEBIDO"
+    assert result.transactions[1].amount == 200.0
+    assert result.transactions[2].description == "PAGAMENTO BOLETO"
+    assert result.transactions[2].amount == -50.0
+
+
+def test_parse_pdf_transactions_includes_opening_balance_without_date_on_first_transaction_date(monkeypatch) -> None:
+    sample_text = "\n".join(
+        [
+            "Lançamentos",
+            "Saldo Anterior",
+            "25.430,25 +",
+            "02/01/2025",
+            "CRÉDITO PIX",
+            "000123",
+            "8.450,00",
+            "33.880,25 +",
+        ]
+    )
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [sample_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert len(result.transactions) == 2
+    assert result.transactions[0].date == "2025-01-02"
+    assert result.transactions[0].description == "SALDO ANTERIOR"
+    assert result.transactions[0].amount == 25430.25
+    assert result.transactions[1].description == "CRÉDITO PIX 000123"
+    assert result.transactions[1].amount == 8450.0
 
 
 def test_parse_columnar_statement_blocks_skips_incomplete_rows_and_parses_valid_block(monkeypatch) -> None:

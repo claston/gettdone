@@ -5,7 +5,9 @@ import re
 from app.application.normalization.date import MONTH_PATTERN
 
 SIGN_TOKEN = r"[+\-\u2212]"
-AMOUNT_PATTERN = re.compile(rf"^(?:{SIGN_TOKEN}\s*)?(?:R\$\s*)?\d+(?:\.\d{{3}})*,\d{{2}}(?:{SIGN_TOKEN})?$")
+AMOUNT_PATTERN = re.compile(
+    rf"^(?:{SIGN_TOKEN}\s*)?(?:R\$\s*)?\d+(?:\.\d{{3}})*,\d{{2}}(?:\s*{SIGN_TOKEN})?(?:\s*[CD])?$"
+)
 
 DATE_SLASH_TOKEN = r"\d{1,2}/\d{1,2}(?:/\d{2,4})?"
 DATE_MONTH_TOKEN = rf"\d{{1,2}}\s+(?:{MONTH_PATTERN})(?:\s+\d{{4}})?"
