@@ -118,6 +118,7 @@ def get_convert_report(
     closing_balance: float | None = Query(default=None),
     bank_branch: str | None = Query(default=None),
     account_number: str | None = Query(default=None),
+    bank_code: str | None = Query(default=None),
     anonymous_fingerprint: str | None = Query(default=None),
     authorization: str | None = Header(default=None),
     user_token: str | None = Query(default=None),
@@ -147,6 +148,7 @@ def get_convert_report(
             closing_balance=closing_balance if file_format == "ofx" else None,
             bank_branch=bank_branch if file_format == "ofx" else None,
             account_number=account_number if file_format == "ofx" else None,
+            bank_code=bank_code if file_format == "ofx" else None,
         )
         upload_filename = service.get_upload_filename(processing_id)
     except AnalysisNotFoundError:

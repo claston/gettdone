@@ -1,0 +1,476 @@
+{
+  "metadata": {
+    "description": "Lista local de principais bancos/instituições financeiras do Brasil para normalização em conversores PDF -> OFX.",
+    "source": "Banco Central do Brasil - Participantes do STR / Tabela de códigos de compensação",
+    "source_url": "https://www.bcb.gov.br/content/estabilidadefinanceira/str1/ParticipantesSTR.csv",
+    "generated_at": "2026-05-14T17:57:34.476116+00:00",
+    "notes": [
+      "compe: código de compensação / número-código, geralmente usado como BANKID em OFX no Brasil.",
+      "ispb: Identificador do Sistema de Pagamentos Brasileiro.",
+      "aliases: nomes úteis para inferência a partir de texto extraído de extratos.",
+      "Lista reduzida com bancos mais comuns; para produção, manter rotina de atualização a partir da fonte oficial do BCB."
+    ]
+  },
+  "banks": [
+    {
+      "compe": "001",
+      "ispb": "00000000",
+      "name": "Banco do Brasil S.A.",
+      "short_name": "Banco do Brasil",
+      "aliases": [
+        "BB",
+        "Banco do Brasil",
+        "BCO DO BRASIL",
+        "Banco Brasil"
+      ],
+      "active": true
+    },
+    {
+      "compe": "003",
+      "ispb": "04902979",
+      "name": "Banco da Amazônia S.A.",
+      "short_name": "Banco da Amazônia",
+      "aliases": [
+        "Banco da Amazônia",
+        "BASA",
+        "BCO DA AMAZONIA"
+      ],
+      "active": true
+    },
+    {
+      "compe": "004",
+      "ispb": "07237373",
+      "name": "Banco do Nordeste do Brasil S.A.",
+      "short_name": "Banco do Nordeste",
+      "aliases": [
+        "Banco do Nordeste",
+        "BNB",
+        "BCO DO NORDESTE"
+      ],
+      "active": true
+    },
+    {
+      "compe": "007",
+      "ispb": "33657248",
+      "name": "Banco Nacional de Desenvolvimento Econômico e Social",
+      "short_name": "BNDES",
+      "aliases": [
+        "BNDES",
+        "Banco Nacional de Desenvolvimento"
+      ],
+      "active": true
+    },
+    {
+      "compe": "021",
+      "ispb": "28127603",
+      "name": "Banco do Estado do Espírito Santo S.A.",
+      "short_name": "Banestes",
+      "aliases": [
+        "Banestes",
+        "Banco Banestes",
+        "BCO ESTADO ESPIRITO SANTO"
+      ],
+      "active": true
+    },
+    {
+      "compe": "025",
+      "ispb": "33264668",
+      "name": "Banco Alfa S.A.",
+      "short_name": "Banco Alfa",
+      "aliases": [
+        "Banco Alfa",
+        "Alfa"
+      ],
+      "active": true
+    },
+    {
+      "compe": "033",
+      "ispb": "90400888",
+      "name": "Banco Santander (Brasil) S.A.",
+      "short_name": "Santander",
+      "aliases": [
+        "Santander",
+        "Banco Santander",
+        "Santander Brasil",
+        "BCO SANTANDER"
+      ],
+      "active": true
+    },
+    {
+      "compe": "037",
+      "ispb": "04902979",
+      "name": "Banco do Estado do Pará S.A.",
+      "short_name": "Banpará",
+      "aliases": [
+        "Banpará",
+        "Banpara",
+        "Banco do Estado do Pará",
+        "Banco do Estado do Para"
+      ],
+      "active": true
+    },
+    {
+      "compe": "041",
+      "ispb": "92702067",
+      "name": "Banco do Estado do Rio Grande do Sul S.A.",
+      "short_name": "Banrisul",
+      "aliases": [
+        "Banrisul",
+        "Banco Banrisul",
+        "BCO ESTADO RS"
+      ],
+      "active": true
+    },
+    {
+      "compe": "047",
+      "ispb": "13009717",
+      "name": "Banco do Estado de Sergipe S.A.",
+      "short_name": "Banese",
+      "aliases": [
+        "Banese",
+        "Banco do Estado de Sergipe"
+      ],
+      "active": true
+    },
+    {
+      "compe": "070",
+      "ispb": "00000208",
+      "name": "BRB - Banco de Brasília S.A.",
+      "short_name": "BRB",
+      "aliases": [
+        "BRB",
+        "Banco BRB",
+        "Banco de Brasília",
+        "Banco de Brasilia"
+      ],
+      "active": true
+    },
+    {
+      "compe": "077",
+      "ispb": "00416968",
+      "name": "Banco Inter S.A.",
+      "short_name": "Banco Inter",
+      "aliases": [
+        "Inter",
+        "Banco Inter",
+        "Intermedium"
+      ],
+      "active": true
+    },
+    {
+      "compe": "104",
+      "ispb": "00360305",
+      "name": "Caixa Econômica Federal",
+      "short_name": "Caixa",
+      "aliases": [
+        "Caixa",
+        "Caixa Econômica",
+        "Caixa Economica",
+        "CEF",
+        "CAIXA ECONOMICA FEDERAL"
+      ],
+      "active": true
+    },
+    {
+      "compe": "121",
+      "ispb": "10664513",
+      "name": "Banco Agibank S.A.",
+      "short_name": "Agibank",
+      "aliases": [
+        "Agibank",
+        "Banco Agibank"
+      ],
+      "active": true
+    },
+    {
+      "compe": "208",
+      "ispb": "30306294",
+      "name": "Banco BTG Pactual S.A.",
+      "short_name": "BTG Pactual",
+      "aliases": [
+        "BTG",
+        "BTG Pactual",
+        "Banco BTG",
+        "Banco BTG Pactual"
+      ],
+      "active": true
+    },
+    {
+      "compe": "212",
+      "ispb": "92874270",
+      "name": "Banco Original S.A.",
+      "short_name": "Banco Original",
+      "aliases": [
+        "Original",
+        "Banco Original"
+      ],
+      "active": true
+    },
+    {
+      "compe": "218",
+      "ispb": "71027866",
+      "name": "Banco BS2 S.A.",
+      "short_name": "BS2",
+      "aliases": [
+        "BS2",
+        "Banco BS2",
+        "Banco Bonsucesso"
+      ],
+      "active": true
+    },
+    {
+      "compe": "237",
+      "ispb": "60746948",
+      "name": "Banco Bradesco S.A.",
+      "short_name": "Bradesco",
+      "aliases": [
+        "Bradesco",
+        "Banco Bradesco",
+        "BCO BRADESCO"
+      ],
+      "active": true
+    },
+    {
+      "compe": "260",
+      "ispb": "18236120",
+      "name": "Nu Pagamentos S.A. - Instituição de Pagamento",
+      "short_name": "Nubank",
+      "aliases": [
+        "Nubank",
+        "Nu Pagamentos",
+        "NuConta",
+        "Nu Conta",
+        "Banco Nubank"
+      ],
+      "active": true
+    },
+    {
+      "compe": "290",
+      "ispb": "08561701",
+      "name": "Pagseguro Internet Instituição de Pagamento S.A.",
+      "short_name": "PagBank",
+      "aliases": [
+        "PagBank",
+        "PagSeguro",
+        "Pagseguro Internet"
+      ],
+      "active": true
+    },
+    {
+      "compe": "318",
+      "ispb": "61186680",
+      "name": "Banco BMG S.A.",
+      "short_name": "BMG",
+      "aliases": [
+        "BMG",
+        "Banco BMG"
+      ],
+      "active": true
+    },
+    {
+      "compe": "323",
+      "ispb": "10573521",
+      "name": "Mercado Pago Instituição de Pagamento Ltda.",
+      "short_name": "Mercado Pago",
+      "aliases": [
+        "Mercado Pago",
+        "MercadoPago",
+        "MP",
+        "Conta Mercado Pago"
+      ],
+      "active": true
+    },
+    {
+      "compe": "336",
+      "ispb": "31872495",
+      "name": "Banco C6 S.A.",
+      "short_name": "C6 Bank",
+      "aliases": [
+        "C6",
+        "C6 Bank",
+        "Banco C6"
+      ],
+      "active": true
+    },
+    {
+      "compe": "341",
+      "ispb": "60701190",
+      "name": "Itaú Unibanco S.A.",
+      "short_name": "Itaú",
+      "aliases": [
+        "Itaú",
+        "Itau",
+        "Itaú Unibanco",
+        "Itau Unibanco",
+        "Banco Itaú",
+        "Banco Itau"
+      ],
+      "active": true
+    },
+    {
+      "compe": "380",
+      "ispb": "22896431",
+      "name": "PicPay Serviços S.A.",
+      "short_name": "PicPay",
+      "aliases": [
+        "PicPay",
+        "Pic Pay"
+      ],
+      "active": true
+    },
+    {
+      "compe": "389",
+      "ispb": "17184037",
+      "name": "Banco Mercantil do Brasil S.A.",
+      "short_name": "Banco Mercantil",
+      "aliases": [
+        "Mercantil",
+        "Banco Mercantil",
+        "Mercantil do Brasil"
+      ],
+      "active": true
+    },
+    {
+      "compe": "422",
+      "ispb": "58160789",
+      "name": "Banco Safra S.A.",
+      "short_name": "Safra",
+      "aliases": [
+        "Safra",
+        "Banco Safra"
+      ],
+      "active": true
+    },
+    {
+      "compe": "536",
+      "ispb": "20855875",
+      "name": "Neon Pagamentos S.A.",
+      "short_name": "Neon",
+      "aliases": [
+        "Neon",
+        "Banco Neon",
+        "Neon Pagamentos"
+      ],
+      "active": true
+    },
+    {
+      "compe": "623",
+      "ispb": "59285411",
+      "name": "Banco Pan S.A.",
+      "short_name": "Banco Pan",
+      "aliases": [
+        "Pan",
+        "Banco Pan",
+        "PAN"
+      ],
+      "active": true
+    },
+    {
+      "compe": "633",
+      "ispb": "68900810",
+      "name": "Banco Rendimento S.A.",
+      "short_name": "Banco Rendimento",
+      "aliases": [
+        "Rendimento",
+        "Banco Rendimento"
+      ],
+      "active": true
+    },
+    {
+      "compe": "637",
+      "ispb": "60889128",
+      "name": "Banco Sofisa S.A.",
+      "short_name": "Sofisa",
+      "aliases": [
+        "Sofisa",
+        "Banco Sofisa",
+        "Sofisa Direto"
+      ],
+      "active": true
+    },
+    {
+      "compe": "655",
+      "ispb": "59588111",
+      "name": "Banco Votorantim S.A.",
+      "short_name": "Banco BV",
+      "aliases": [
+        "BV",
+        "Banco BV",
+        "Banco Votorantim"
+      ],
+      "active": true
+    },
+    {
+      "compe": "707",
+      "ispb": "62232889",
+      "name": "Banco Daycoval S.A.",
+      "short_name": "Daycoval",
+      "aliases": [
+        "Daycoval",
+        "Banco Daycoval"
+      ],
+      "active": true
+    },
+    {
+      "compe": "745",
+      "ispb": "33479023",
+      "name": "Banco Citibank S.A.",
+      "short_name": "Citibank",
+      "aliases": [
+        "Citibank",
+        "Citi",
+        "Banco Citibank"
+      ],
+      "active": true
+    },
+    {
+      "compe": "746",
+      "ispb": "30723886",
+      "name": "Banco Modal S.A.",
+      "short_name": "Modal",
+      "aliases": [
+        "Modal",
+        "Banco Modal",
+        "Modalmais",
+        "Modal Mais"
+      ],
+      "active": true
+    },
+    {
+      "compe": "748",
+      "ispb": "01181521",
+      "name": "Banco Cooperativo Sicredi S.A.",
+      "short_name": "Sicredi",
+      "aliases": [
+        "Sicredi",
+        "Banco Sicredi",
+        "Cooperativo Sicredi"
+      ],
+      "active": true
+    },
+    {
+      "compe": "752",
+      "ispb": "01522368",
+      "name": "Banco BNP Paribas Brasil S.A.",
+      "short_name": "BNP Paribas",
+      "aliases": [
+        "BNP",
+        "BNP Paribas",
+        "Banco BNP Paribas"
+      ],
+      "active": true
+    },
+    {
+      "compe": "756",
+      "ispb": "02038232",
+      "name": "Banco Cooperativo Sicoob S.A.",
+      "short_name": "Sicoob",
+      "aliases": [
+        "Sicoob",
+        "Banco Sicoob",
+        "Banco Cooperativo Sicoob"
+      ],
+      "active": true
+    }
+  ]
+}

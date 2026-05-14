@@ -110,3 +110,18 @@ def test_build_ofx_statement_accepts_bank_branch_and_account_number() -> None:
     assert "<BANKACCTFROM>" in statement
     assert "<BRANCHID>12345" in statement
     assert "<ACCTID>678901" in statement
+
+
+def test_build_ofx_statement_accepts_bank_id_override() -> None:
+    transactions = [
+        NormalizedTransaction(
+            date="2026-04-10",
+            description="PIX RECEBIDO",
+            amount=150.0,
+            type="inflow",
+        )
+    ]
+
+    statement = build_ofx_statement(transactions, bank_id="237")
+
+    assert "<BANKID>237" in statement

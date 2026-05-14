@@ -175,8 +175,9 @@ class FakeReportService:
         closing_balance: float | None = None,
         bank_branch: str | None = None,
         account_number: str | None = None,
+        bank_code: str | None = None,
     ) -> Path:
-        _ = (closing_balance, bank_branch, account_number)
+        _ = (closing_balance, bank_branch, account_number, bank_code)
         _ = file_format
         if processing_id not in self._owners:
             from app.application import AnalysisNotFoundError

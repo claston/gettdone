@@ -64,7 +64,9 @@
     closingBalanceOverride: null,
     bankBranchOverride: "",
     accountNumberOverride: "",
+    bankCodeOverride: "",
   };
+  let bankCodeOptions = [{ code: "", label: "Selecione o banco", name: "", short_name: "", aliases: [] }];
 
   function isPagesQuotaMode(mode) {
     return String(mode || "").toLowerCase() === "pages";
@@ -712,6 +714,7 @@
       closing_balance_override: state.closingBalanceOverride,
       bank_branch_override: state.bankBranchOverride,
       account_number_override: state.accountNumberOverride,
+      bank_code_override: state.bankCodeOverride,
       file_name,
       file_size,
       preview_rows: previewRowsNoRowId,
@@ -781,6 +784,7 @@
     state.closingBalanceOverride = null;
     state.bankBranchOverride = "";
     state.accountNumberOverride = "";
+    state.bankCodeOverride = "";
     markChangedRow(null);
     if (addRowBtn) addRowBtn.disabled = true;
     setDownloadButtonsDisabled(true);
@@ -862,26 +866,59 @@
     return String(value || "").replace(/\D+/g, "");
   }
 
-  function formatBankBranchDisplay(value) {
+  function normalizeDashedNumeric(value, maxLeft, maxRight) {
     const sanitized = String(value || "").replace(/[^\d-]/g, "");
-    const parts = sanitized.split("-");
-    const left = normalizeDigits(parts[0] || "").slice(0, 4);
-    const right = normalizeDigits(parts.slice(1).join("") || "").slice(0, 1);
+    const firstHyphen = sanitized.indexOf("-");
+    if (firstHyphen < 0) {
+      return normalizeDigits(sanitized).slice(0, maxLeft);
+    }
+    const left = normalizeDigits(sanitized.slice(0, firstHyphen)).slice(0, maxLeft);
+    const right = normalizeDigits(sanitized.slice(firstHyphen + 1)).slice(0, maxRight);
     if (!right) {
-      return left;
+      return `${left}-`;
     }
     return `${left}-${right}`;
   }
 
-  function formatAccountDisplay(value) {
-    const sanitized = String(value || "").replace(/[^\d-]/g, "");
-    const parts = sanitized.split("-");
-    const left = normalizeDigits(parts[0] || "").slice(0, 6);
-    const right = normalizeDigits(parts.slice(1).join("") || "").slice(0, 1);
-    if (!right) {
-      return left;
+  function normalizeBankBranchDisplay(value) {
+    return normalizeDashedNumeric(value, 4, 1);
+  }
+
+  function normalizeAccountDisplay(value) {
+    return normalizeDashedNumeric(value, 6, 1);
+  }
+
+  function normalizeTextToken(value) {
+    const raw = String(value || "").trim().toLowerCase();
+    if (!raw) {
+      return "";
     }
-    return `${left}-${right}`;
+    const folded = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return folded.replace(/[^a-z0-9]+/g, " ").trim();
+  }
+
+  function inferBankCodeFromLayout(layoutName) {
+    const normalized = normalizeTextToken(String(layoutName || "").replace(/[_-]+/g, " "));
+    if (!normalized) {
+      return "";
+    }
+    const compact = normalized.replace(/\s+/g, "");
+    for (const option of bankCodeOptions) {
+      const candidates = [
+        option.name,
+        option.short_name,
+        ...(Array.isArray(option.aliases) ? option.aliases : []),
+      ];
+      for (const candidate of candidates) {
+        const token = normalizeTextToken(candidate);
+        if (!token) continue;
+        const tokenCompact = token.replace(/\s+/g, "");
+        if (normalized.includes(token) || compact.includes(tokenCompact)) {
+          return String(option.code || "");
+        }
+      }
+    }
+    return "";
   }
 
   function renderKpis(analysis) {
@@ -894,13 +931,19 @@
     const outflows = formatCurrency(analysis.total_outflows);
     const closingBalanceValue = toMoneyInputValue(closingBalance);
     const isOfxFlow = outputFormat === "ofx";
-    const bankBranchValue = formatBankBranchDisplay(state.bankBranchOverride);
-    const accountNumberValue = formatAccountDisplay(state.accountNumberOverride);
+    const bankBranchValue = normalizeBankBranchDisplay(state.bankBranchOverride);
+    const accountNumberValue = normalizeAccountDisplay(state.accountNumberOverride);
+    const bankCodeValue = String(state.bankCodeOverride || "").trim();
+    const bankOptionsMarkup = bankCodeOptions.map((item) => {
+      const selected = item.code === bankCodeValue ? " selected" : "";
+      return `<option value="${item.code}"${selected}>${item.label}</option>`;
+    }).join("");
     const ofxMetaRow = isOfxFlow
       ? `
       <div class="ofx-meta-row">
-        <p class="kpi-hint">Agência e Conta</p>
+        <p class="kpi-hint">Banco, Agência e Conta</p>
         <div class="ofx-meta-fields">
+          <select id="bank-code-select" class="kpi-edit-input">${bankOptionsMarkup}</select>
           <input id="bank-branch-input" class="kpi-edit-input" type="text" inputmode="numeric" placeholder="Agência (ex: 1234-5)" value="${bankBranchValue}" />
           <input id="account-number-input" class="kpi-edit-input" type="text" inputmode="numeric" placeholder="Conta (ex: 123456-7)" value="${accountNumberValue}" />
         </div>
@@ -1329,8 +1372,9 @@
     }
     const restoredClosingBalance = Number(viewState.closing_balance_override);
     state.closingBalanceOverride = Number.isFinite(restoredClosingBalance) ? restoredClosingBalance : null;
-    state.bankBranchOverride = normalizeDigits(viewState.bank_branch_override || "");
-    state.accountNumberOverride = normalizeDigits(viewState.account_number_override || "");
+    state.bankBranchOverride = normalizeBankBranchDisplay(viewState.bank_branch_override || "");
+    state.accountNumberOverride = normalizeAccountDisplay(viewState.account_number_override || "");
+    state.bankCodeOverride = normalizeDigits(viewState.bank_code_override || "").slice(0, 3);
     state.restoredFileMeta = {
       name: String(viewState.file_name || "").trim() || "arquivo_restaurado.pdf",
       size: Number(viewState.file_size || 0),
@@ -1448,6 +1492,41 @@
     }
   }
 
+  async function loadBankOptions() {
+    try {
+      const response = await fetch(`${apiBase}/banks`, {
+        method: "GET",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        return;
+      }
+      const payload = await response.json();
+      const rows = payload && Array.isArray(payload.banks) ? payload.banks : [];
+      const options = rows
+        .map((item) => ({
+          code: normalizeDigits(item.code || "").slice(0, 3),
+          label: String(item.label || "").trim(),
+          name: String(item.name || "").trim(),
+          short_name: String(item.short_name || "").trim(),
+          aliases: Array.isArray(item.aliases) ? item.aliases.map((value) => String(value || "").trim()).filter(Boolean) : [],
+        }))
+        .filter((item) => item.code && item.label);
+      if (!options.length) {
+        return;
+      }
+      bankCodeOptions = [{ code: "", label: "Selecione o banco", name: "", short_name: "", aliases: [] }, ...options];
+      if ((!state.bankCodeOverride || !String(state.bankCodeOverride).trim()) && state.analysisSnapshot) {
+        state.bankCodeOverride = inferBankCodeFromLayout(state.analysisSnapshot.layout_inference_name || "");
+      }
+      if (state.analysisSnapshot) {
+        renderKpis(state.analysisSnapshot);
+      }
+    } catch (_error) {
+      // Keep fallback option when the catalog endpoint is unavailable.
+    }
+  }
+
   async function postConvertEdit(processingId, editPatch) {
     const query = buildIdentityQueryParams().toString();
     const token = getUserToken();
@@ -1516,6 +1595,7 @@
       state.closingBalanceOverride = Number(analysis.net_total || 0);
       state.bankBranchOverride = "";
       state.accountNumberOverride = "";
+      state.bankCodeOverride = inferBankCodeFromLayout(analysis.layout_inference_name || "");
       markChangedRow(null);
       if (addRowBtn) addRowBtn.disabled = false;
 
@@ -1632,6 +1712,10 @@
         }
         if (accountNumber) {
           query.set("account_number", accountNumber);
+        }
+        const bankCode = normalizeDigits(state.bankCodeOverride || "").slice(0, 3);
+        if (bankCode) {
+          query.set("bank_code", bankCode);
         }
       }
       const url = `${downloadConfig.endpoint}?${query.toString()}`;
@@ -1773,34 +1857,45 @@
   });
   kpis.addEventListener("input", function (event) {
     const target = event.target;
-    if (!(target instanceof HTMLInputElement)) {
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) {
       return;
     }
     if (target.id === "bank-branch-input") {
-      target.value = formatBankBranchDisplay(target.value);
+      target.value = normalizeBankBranchDisplay(target.value);
       return;
     }
     if (target.id === "account-number-input") {
-      target.value = formatAccountDisplay(target.value);
+      target.value = normalizeAccountDisplay(target.value);
     }
   });
   kpis.addEventListener("change", function (event) {
     const target = event.target;
-    if (!(target instanceof HTMLInputElement)) {
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) {
       return;
     }
     if (target.id === "bank-branch-input") {
-      state.bankBranchOverride = normalizeDigits(target.value);
-      target.value = formatBankBranchDisplay(state.bankBranchOverride);
+      state.bankBranchOverride = normalizeBankBranchDisplay(target.value);
+      target.value = state.bankBranchOverride;
       persistCurrentViewState();
       setStatus("Agência atualizada para o próximo download OFX.", "success");
       return;
     }
     if (target.id === "account-number-input") {
-      state.accountNumberOverride = normalizeDigits(target.value);
-      target.value = formatAccountDisplay(state.accountNumberOverride);
+      state.accountNumberOverride = normalizeAccountDisplay(target.value);
+      target.value = state.accountNumberOverride;
       persistCurrentViewState();
       setStatus("Conta atualizada para o próximo download OFX.", "success");
+      return;
+    }
+    if (target.id === "bank-code-select") {
+      state.bankCodeOverride = normalizeDigits(target.value).slice(0, 3);
+      persistCurrentViewState();
+      setStatus(
+        state.bankCodeOverride
+          ? "Banco atualizado para o próximo download OFX."
+          : "Banco automático ativado para o próximo download OFX.",
+        "success",
+      );
       return;
     }
     if (target.id !== "closing-balance-input") {
@@ -1871,6 +1966,7 @@
     }
     syncHeroAuthLinks();
     void hydrateTopAccountEmail();
+    void loadBankOptions();
     void syncUploadLimitsBySession();
     syncQuotaAuthLinks();
     const navigationType = getNavigationType();
