@@ -11,6 +11,7 @@ def build_ofx_statement(
     closing_balance: float | None = None,
     bank_branch: str | None = None,
     account_number: str | None = None,
+    bank_id: str | None = None,
 ) -> str:
     normalized_account_type = str(account_type or "").strip().lower()
     is_credit_card_statement = normalized_account_type in {"credit_card", "credit-card", "card", "cc"}
@@ -39,6 +40,7 @@ def build_ofx_statement(
 
     normalized_branch = _normalize_numeric_identifier(bank_branch, fallback="0001")
     normalized_account = _normalize_numeric_identifier(account_number, fallback="000000")
+    normalized_bank_id = _normalize_numeric_identifier(bank_id, fallback="000")
 
     lines = [
         "OFXHEADER:100",
@@ -62,7 +64,7 @@ def build_ofx_statement(
             if is_credit_card_statement
             else [
                 "        <BANKACCTFROM>",
-                "          <BANKID>000",
+                f"          <BANKID>{normalized_bank_id}",
                 f"          <BRANCHID>{normalized_branch}",
                 f"          <ACCTID>{normalized_account}",
                 "          <ACCTTYPE>CHECKING",

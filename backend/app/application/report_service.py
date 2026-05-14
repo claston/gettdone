@@ -36,6 +36,7 @@ class ReportService:
         closing_balance: float | None = None,
         bank_branch: str | None = None,
         account_number: str | None = None,
+        bank_code: str | None = None,
     ) -> Path:
         return self.storage.get_convert_report_path(
             analysis_id,
@@ -43,6 +44,7 @@ class ReportService:
             closing_balance=closing_balance,
             bank_branch=bank_branch,
             account_number=account_number,
+            bank_code=bank_code,
         )
 
     def get_upload_filename(self, analysis_id: str) -> str | None:

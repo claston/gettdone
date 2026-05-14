@@ -13,6 +13,7 @@ from app.routers import (
     admin_auth_router,
     analyze_router,
     auth_router,
+    banks_router,
     checkout_router,
     client_router,
     contact_router,
@@ -75,6 +76,7 @@ app.add_middleware(
 )
 
 app.include_router(health_router)
+app.include_router(banks_router)
 app.include_router(plans_router)
 app.include_router(admin_auth_router)
 app.include_router(analyze_router)
