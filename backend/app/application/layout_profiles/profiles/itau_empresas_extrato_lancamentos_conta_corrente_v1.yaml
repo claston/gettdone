@@ -1,0 +1,438 @@
+meta_model:
+  layout_id: itau_empresas_extrato_lancamentos_conta_corrente_v1
+  bank: Itaú
+  channel: Itaú Empresas
+  statement_type: conta_corrente_extrato_lancamentos
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo/texto 'Itaú Empresas' visível no topo esquerdo"
+      - "Logo Itaú visível no topo direito"
+      - "Campos 'agência' e 'conta corrente' no cabeçalho"
+      - "Bloco 'saldo disponível em conta'"
+      - "Seção 'lançamentos' com período"
+      - "Cabeçalho de tabela com colunas 'data', 'lançamentos', 'ag/origem', 'valor (R$)', 'saldo (R$)'"
+      - "Linhas de saldo: 'SALDO ANTERIOR' e 'SALDO DO DIA'"
+      - "Valores negativos aparecem com sinal '-' na coluna valor"
+    weak:
+      - "Dados de agência e conta estão omitidos ou ilegíveis"
+      - "Existe separador de mês 'abril 2024' dentro da tabela"
+      - "Algumas descrições de PIX parecem truncadas ou com OCR imperfeito, como 'SISPAG PIX TRANSFERENCI'"
+      - "Saldos aparecem somente em linhas de saldo, não necessariamente em todas as transações"
+    table_headers:
+      - "data"
+      - "lançamentos"
+      - "ag/origem"
+      - "valor (R$)"
+      - "saldo (R$)"
+  page_structure:
+    header:
+      bank_logo: "Itaú"
+      channel_title: "Itaú Empresas"
+      account_identifiers:
+        agency: unknown
+        account: unknown
+    metadata:
+      available_balance_label: "saldo disponível em conta"
+      available_balance_value: "R$ 1.290,04"
+      section_title: "lançamentos"
+      period: "01/04/2024 até 30/04/2024"
+    transactions_table:
+      columns:
+        - "data"
+        - "lançamentos"
+        - "ag/origem"
+        - "valor (R$)"
+        - "saldo (R$)"
+      visible_rows:
+        - type: opening_balance
+          date: "28/mar"
+          description: "SALDO ANTERIOR"
+          origin_agency: unknown
+          amount: unknown
+          balance: "879,07"
+        - type: period_separator
+          date: unknown
+          description: "abril 2024"
+          origin_agency: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "01/abr"
+          description: "SISPAG PIX TRANSFERENCI"
+          origin_agency: "9120"
+          amount: "-879,07"
+          balance: unknown
+        - type: balance_row
+          date: "01/abr"
+          description: "SALDO DO DIA"
+          origin_agency: unknown
+          amount: unknown
+          balance: "0,00"
+        - type: normal_transaction
+          date: "02/abr"
+          description: "SISPAG PIX TRANSFERENCI"
+          origin_agency: "9123"
+          amount: "-1.982,60"
+          balance: unknown
+        - type: normal_transaction
+          date: "02/abr"
+          description: "REDE VISA"
+          origin_agency: "9935"
+          amount: "1.982,60"
+          balance: unknown
+        - type: balance_row
+          date: "02/abr"
+          description: "SALDO DO DIA"
+          origin_agency: unknown
+          amount: unknown
+          balance: "0,00"
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "saldo (R$)"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_origin_agency: true
+      row_has_amount: true
+      row_may_have_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "valor (R$) aparece sem sinal negativo"
+      negative_when:
+        - "valor (R$) aparece com sinal '-'"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "saldo (R$)"
+      appears_on_opening_balance_rows: true
+      appears_on_daily_balance_rows: true
+      may_be_blank_on_transaction_rows: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "REDE VISA"
+        reason: "Linha visível possui valor positivo sem sinal negativo"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "SISPAG PIX TRANSFERENCI*"
+        reason: "Linhas visíveis possuem valor negativo explícito"
+        inferred: false
+    caution:
+      - "Não importar 'SALDO ANTERIOR' nem 'SALDO DO DIA' como transações."
+      - "O separador de mês 'abril 2024' deve ser ignorado como linha de contexto."
+      - "Neste layout, o sinal explícito no valor deve ter prioridade sobre palavras da descrição."
+      - "Saldos podem aparecer apenas em linhas de saldo, dificultando validação linha a linha."
+      - "Descrições podem vir truncadas por OCR ou pela própria exportação; preservar descrição original."
+  visual_model:
+    table_anchor:
+      starts_after_text: "lançamentos período:"
+      header_keywords:
+        - "data"
+        - "lançamentos"
+        - "ag/origem"
+        - "valor (R$)"
+        - "saldo (R$)"
+    column_order:
+      - date
+      - description
+      - origin_agency
+      - amount
+      - balance
+    row_behavior:
+      separator: "horizontal light gray lines"
+      date_format_short_month_pt: true
+      month_separator_rows_present: true
+      daily_balance_rows_present: true
+      amount_right_aligned: true
+      balance_right_aligned: true
+      transaction_rows_may_have_blank_balance: true
+      saldo_rows_have_blank_amount: true
+  parser_risks:
+    ambiguities:
+      - "Datas usam mês abreviado em português, como '01/abr', e dependem do ano informado no período."
+      - "Descrição 'SISPAG PIX TRANSFERENCI' parece truncada; o texto completo pode variar no PDF real."
+      - "A coluna saldo existe, mas aparece nas linhas de saldo do dia, não em todas as transações."
+      - "Linha 'abril 2024' é separador de período e pode ser confundida com descrição."
+      - "Dados de agência e conta não são confirmáveis na imagem."
+    fields_that_may_be_missing:
+      - "origin_agency"
+      - "balance"
+      - "agency"
+      - "account"
+      - "full_year_per_row"
+    cases_that_need_real_pdf_validation:
+      - "Se a extração textual preserva mês abreviado nas datas e o período com ano."
+      - "Se descrições longas de PIX aparecem completas ou truncadas."
+      - "Se saldos do dia aparecem após cada dia com movimentação e também em dias sem movimentação."
+      - "Se valores positivos sempre aparecem sem sinal '+' explícito."
+      - "Se há paginação e repetição do cabeçalho da tabela."
+      - "Como são exibidos estornos, tarifas, TED, DOC, boletos, rendimentos e aplicações."
+
+layout_profile:
+  profile_name: itau_empresas_extrato_lancamentos_conta_corrente_v1
+  bank: Itaú
+  layout_family: itau_empresas_lancamentos_conta_corrente
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Itaú Empresas"
+      - "Itaú"
+      - "saldo disponível em conta"
+      - "lançamentos"
+      - "período"
+      - "data"
+      - "lançamentos"
+      - "ag/origem"
+      - "valor (R$)"
+      - "saldo (R$)"
+    optional_keywords:
+      - "agência"
+      - "conta corrente"
+      - "SALDO ANTERIOR"
+      - "SALDO DO DIA"
+      - "SISPAG PIX"
+      - "REDE VISA"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Cartão de Crédito"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "data"
+      - "lançamentos"
+      - "ag/origem"
+      - "valor (R$)"
+      - "saldo (R$)"
+    expected_column_order:
+      - date
+      - description
+      - origin_agency
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "data"
+        - "Data"
+      description:
+        - "lançamentos"
+        - "Lançamentos"
+        - "histórico"
+        - "Histórico"
+      document:
+        - "documento"
+        - "Documento"
+        - "doc."
+      amount:
+        - "valor (R$)"
+        - "Valor (R$)"
+        - "valor"
+        - "Valor"
+      balance:
+        - "saldo (R$)"
+        - "Saldo (R$)"
+        - "saldo"
+        - "Saldo"
+      origin_agency:
+        - "ag/origem"
+        - "Ag/origem"
+        - "ag. origem"
+        - "Ag. origem"
+    table_starts_after:
+      - "lançamentos período:"
+      - "data lançamentos ag/origem valor (R$) saldo (R$)"
+    row_separator_hint: "transaction starts when first column has date in dd/mmm format; month separator rows contain month and year"
+  parsing:
+    date_format: "dd/MMM"
+    date_year_source: "period"
+    month_language: "pt-BR"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+    positive_patterns:
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "Itaú Empresas"
+      - "Itaú"
+      - "agência"
+      - "conta corrente"
+      - "saldo disponível em conta"
+      - "lançamentos"
+      - "período"
+      - "data"
+      - "ag/origem"
+      - "valor (R$)"
+      - "saldo (R$)"
+      - "SALDO ANTERIOR"
+      - "SALDO DO DIA"
+      - "janeiro"
+      - "fevereiro"
+      - "março"
+      - "abril"
+      - "maio"
+      - "junho"
+      - "julho"
+      - "agosto"
+      - "setembro"
+      - "outubro"
+      - "novembro"
+      - "dezembro"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - origin_agency
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "SISPAG PIX TRANSFERENCI*"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem sinal negativo explícito"
+      - pattern: "REDE VISA"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui valor positivo sem sinal negativo"
+    cautions:
+      - "Não importar linhas 'SALDO DO DIA' como transações."
+      - "Não usar apenas a palavra PIX para definir sinal; usar sinal explícito do valor."
+      - "Não classificar 'REDE VISA' por descrição somente em outros layouts; aqui o valor positivo confirma entrada."
+      - "Quando valor estiver sem sinal e sem saldo para validar, tratar como positivo conforme regra do prompt, mas marcar incerteza se o layout real tiver colunas separadas."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+      - "keep_truncated_bank_description_as_seen"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "SISPAG PIX TRANSFERENCI*"
+        category: "pix_enviado"
+        inferred: true
+      - pattern: "REDE VISA"
+        category: "recebimento_cartao"
+        inferred: true
+    transfer_hints:
+      - pattern: "SISPAG PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "DOC"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "data"
+      - "lançamentos"
+      - "valor"
+      - "saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "use opening balance and daily balance rows; sum transactions within each day and compare with SALDO DO DIA"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "date_month_abbreviation_unrecognized"
+      - "period_year_missing"
+      - "transaction_amount_without_sign_and_balance_unavailable"
+      - "saldo_do_dia_row_has_amount_filled"
+      - "month_separator_detected_inside_table"
+      - "description_truncated_or_ocr_low_confidence"
+      - "balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "28/mar"
+        raw_description: "SALDO ANTERIOR"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "879,07"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo anterior; usar como contexto de saldo"
+      - raw_date: "01/abr"
+        raw_description: "SISPAG PIX TRANSFERENCI"
+        raw_document: "9120"
+        raw_amount: "-879,07"
+        raw_balance: unknown
+        normalized_amount: "-879.07"
+        should_import_as_transaction: true
+        notes: "Débito explícito por sinal negativo"
+      - raw_date: "01/abr"
+        raw_description: "SALDO DO DIA"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "0,00"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Saldo diário; não importar como transação"
+      - raw_date: "02/abr"
+        raw_description: "SISPAG PIX TRANSFERENCI"
+        raw_document: "9123"
+        raw_amount: "-1.982,60"
+        raw_balance: unknown
+        normalized_amount: "-1982.60"
+        should_import_as_transaction: true
+        notes: "Débito explícito por sinal negativo"
+      - raw_date: "02/abr"
+        raw_description: "REDE VISA"
+        raw_document: "9935"
+        raw_amount: "1.982,60"
+        raw_balance: unknown
+        normalized_amount: "1982.60"
+        should_import_as_transaction: true
+        notes: "Valor sem sinal negativo; entrada conforme regra do layout"
+      - raw_date: "02/abr"
+        raw_description: "SALDO DO DIA"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "0,00"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Saldo diário; pode ser usado para validar soma das transações do dia"
+  implementation_notes:
+    - "Classificar pelo cabeçalho 'Itaú Empresas' e pela seção 'saldo disponível em conta'."
+    - "Extrair o ano a partir do período, pois as datas da tabela usam formato curto com mês abreviado."
+    - "Ignorar linhas de separador de mês como 'abril 2024'."
+    - "Filtrar 'SALDO ANTERIOR' e 'SALDO DO DIA' antes de importar transações."
+    - "Usar sinal '-' como principal regra de débito; ausência de sinal negativo indica crédito neste layout."
+    - "Validar consistência acumulando transações do dia e comparando com 'SALDO DO DIA'."
+    - "Preservar descrições truncadas/abreviadas exatamente como aparecem."

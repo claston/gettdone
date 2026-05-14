@@ -1,0 +1,409 @@
+meta_model:
+  layout_id: banrisul_extrato_texto_movimentos_conta_corrente_v1
+  bank: Banrisul
+  channel: unknown
+  statement_type: conta_corrente_extrato_texto
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Texto 'BANRISUL' no topo"
+      - "Campos 'AGENCIA', 'CONTA' e 'NOME'"
+      - "Mensagem 'PARA SIMPLES CONFERENCIA'"
+      - "Blocos de saldo: 'SALDO DISPONIVEL (A+B)', 'INVEST RESGATE AUT', '(A) SALDO LIVRE', 'SALDO INICIAL E MOVIMENTOS DO DIA', '(B) TOTAL'"
+      - "Tabela em formato texto/monoespaçado com separadores ASCII"
+      - "Cabeçalho de tabela 'DIA HISTORICO DOCUMENTO VALOR'"
+      - "Seção 'MOVIMENTOS DA CONTA CORRENTE'"
+      - "Valores negativos indicados por hífen ao final, exemplo '6,99-' e '253,17-'"
+    weak:
+      - "Dados de agência, conta, nome e valores de saldo estão ocultos ou ilegíveis"
+      - "Layout parece extrato textual/terminal/impresso, não tabela moderna"
+      - "Não há coluna de saldo por transação no cabeçalho visível"
+      - "A coluna documento existe no cabeçalho, mas os documentos das linhas visíveis não estão claros"
+      - "Algumas linhas de contexto começam com '+' e não são transações"
+    table_headers:
+      - "DIA"
+      - "HISTORICO"
+      - "DOCUMENTO"
+      - "VALOR"
+  page_structure:
+    header:
+      bank_logo: "BANRISUL"
+      account_identifiers:
+        agency: unknown
+        account: unknown
+        name: unknown
+      notice: "PARA SIMPLES CONFERENCIA"
+    metadata:
+      available_balance_label: "SALDO DISPONIVEL (A+B)"
+      available_balance_value: unknown
+      automatic_investment_section: "INVEST RESGATE AUT"
+      free_balance_label: "(A) SALDO LIVRE"
+      free_balance_value: unknown
+      day_initial_balance_section: "SALDO INICIAL E MOVIMENTOS DO DIA"
+      day_total_label: "(B) TOTAL"
+      day_total_value: unknown
+    transactions_table:
+      representation: "fixed_width_text"
+      section_title: "MOVIMENTOS DA CONTA CORRENTE"
+      columns:
+        - "DIA"
+        - "HISTORICO"
+        - "DOCUMENTO"
+        - "VALOR"
+      visible_rows:
+        - type: opening_balance
+          day: unknown
+          description: "SALDO ANT EM 28/06/2024"
+          document: unknown
+          amount: "25,32"
+          balance: unknown
+        - type: period_marker
+          day: unknown
+          description: "MOVIMENTOS JUL/2024"
+          document: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          day: "01"
+          description: "RESGATE AUTOM"
+          document: unknown
+          amount: "2.250,00"
+          balance: unknown
+        - type: normal_transaction
+          day: "01"
+          description: "COMPRAS A VISTA"
+          document: unknown
+          amount: "6,99-"
+          balance: unknown
+        - type: normal_transaction
+          day: "01"
+          description: "PIX ENVIADO"
+          document: unknown
+          amount: "253,17-"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANT"
+        - "SALDO ANTERIOR"
+        - "SALDO INICIAL"
+      should_import_as_transaction: false
+      balance_source: "VALOR or saldo section"
+      inferred: false
+    normal_transaction:
+      row_has_day: true
+      row_has_description: true
+      row_may_have_document: true
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece sem hífen ao final"
+      negative_when:
+        - "Valor termina com hífen '-'"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      balance_context_in_header_sections: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "RESGATE AUTOM"
+        reason: "Linha visível apresenta valor positivo sem hífen ao final"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "COMPRAS A VISTA"
+        reason: "Linha visível apresenta valor com hífen ao final"
+        inferred: false
+      - pattern: "PIX ENVIADO"
+        reason: "Linha visível apresenta valor com hífen ao final"
+        inferred: false
+    caution:
+      - "Este layout usa negativo com hífen ao final do número; parser deve suportar trailing minus."
+      - "Não importar 'SALDO ANT', 'MOVIMENTOS JUL/2024' ou linhas de contexto iniciadas com '+' como transações."
+      - "Não há saldo por linha, então a validação aritmética detalhada é limitada."
+      - "Datas aparecem apenas como dia do mês; mês/ano devem ser inferidos do cabeçalho/seção, quando disponíveis."
+      - "Layout monoespaçado exige parsing por posição ou regex robusta."
+  visual_model:
+    table_anchor:
+      starts_after_text: "MOVIMENTOS DA CONTA CORRENTE"
+      header_keywords:
+        - "DIA"
+        - "HISTORICO"
+        - "DOCUMENTO"
+        - "VALOR"
+      ascii_separator: true
+    column_order:
+      - day
+      - description
+      - document
+      - amount
+    row_behavior:
+      font: "monospace"
+      separator: "ASCII dashed lines"
+      fixed_width_columns: true
+      day_may_be_blank_for_context_rows: true
+      amount_right_aligned: true
+      negative_amount_trailing_minus: true
+      section_marker_lines_present: true
+  parser_risks:
+    ambiguities:
+      - "O mês/ano da data da transação precisa vir de outro trecho do extrato; imagem mostra 'MOVIMENTOS JUL/2024'."
+      - "A coluna DOCUMENTO está presente, mas os documentos não são claramente visíveis nas linhas exibidas."
+      - "Linhas de saldo/contexto podem ter valores e serem confundidas com transações."
+      - "O hífen ao final também aparece em separadores ASCII e descrições; precisa ser interpretado apenas no campo VALOR."
+      - "Não é possível confirmar o canal de origem do extrato."
+    fields_that_may_be_missing:
+      - "full_date"
+      - "document"
+      - "balance"
+      - "agency"
+      - "account"
+      - "name"
+      - "channel"
+    cases_that_need_real_pdf_validation:
+      - "Se o PDF possui camada textual monoespaçada preservando colunas."
+      - "Se valores negativos sempre usam hífen ao final."
+      - "Se mês/ano aparece sempre em linhas como 'MOVIMENTOS JUL/2024'."
+      - "Se descrições longas quebram em linha adicional."
+      - "Como aparecem saldo final, total do dia, tarifas, PIX recebidos e estornos."
+      - "Se há paginação e repetição de cabeçalho."
+
+layout_profile:
+  profile_name: banrisul_extrato_texto_movimentos_conta_corrente_v1
+  bank: Banrisul
+  layout_family: banrisul_extrato_texto_monospace
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "BANRISUL"
+      - "AGENCIA"
+      - "CONTA"
+      - "NOME"
+      - "PARA SIMPLES CONFERENCIA"
+      - "SALDO DISPONIVEL"
+      - "DIA"
+      - "HISTORICO"
+      - "DOCUMENTO"
+      - "VALOR"
+      - "MOVIMENTOS DA CONTA CORRENTE"
+    optional_keywords:
+      - "INVEST RESGATE AUT"
+      - "SALDO LIVRE"
+      - "SALDO INICIAL E MOVIMENTOS DO DIA"
+      - "MOVIMENTOS JUL/2024"
+      - "SALDO ANT"
+      - "RESGATE AUTOM"
+      - "COMPRAS A VISTA"
+      - "PIX ENVIADO"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "Cartão de Crédito"
+      - "Fatura"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "DIA"
+      - "HISTORICO"
+      - "DOCUMENTO"
+      - "VALOR"
+    expected_column_order:
+      - day
+      - description
+      - document
+      - amount
+    column_aliases:
+      date:
+        - "DIA"
+        - "Dia"
+      description:
+        - "HISTORICO"
+        - "Histórico"
+        - "Historico"
+      document:
+        - "DOCUMENTO"
+        - "Documento"
+      amount:
+        - "VALOR"
+        - "Valor"
+      balance:
+        - "SALDO"
+        - "Saldo"
+    table_starts_after:
+      - "MOVIMENTOS DA CONTA CORRENTE"
+      - "DIA HISTORICO DOCUMENTO VALOR"
+    row_separator_hint: "fixed-width monospace rows; transaction starts when first token is day number dd"
+  parsing:
+    date_format: "dd"
+    date_month_year_source: "section_marker_or_statement_header"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount}-"
+    positive_patterns:
+      - "{amount_without_trailing_minus}"
+    ignore_rows:
+      - "BANRISUL"
+      - "AGENCIA"
+      - "CONTA"
+      - "NOME"
+      - "PARA SIMPLES CONFERENCIA"
+      - "SALDO DISPONIVEL"
+      - "INVEST RESGATE AUT"
+      - "SALDO LIVRE"
+      - "SALDO INICIAL E MOVIMENTOS DO DIA"
+      - "TOTAL"
+      - "DIA HISTORICO DOCUMENTO VALOR"
+      - "MOVIMENTOS DA CONTA CORRENTE"
+      - "MOVIMENTOS"
+      - "SALDO ANT"
+      - "SALDO ANTERIOR"
+      - "SALDO FINAL"
+    opening_balance_rows:
+      - "SALDO ANT"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "trailing_negative_sign"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "RESGATE AUTOM"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui valor sem hífen final"
+      - pattern: "COMPRAS A VISTA"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui valor com hífen final"
+      - pattern: "PIX ENVIADO"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui valor com hífen final"
+    cautions:
+      - "Não aplicar negativo duas vezes em valores com hífen final."
+      - "Não confundir hífen de separador ASCII com sinal de valor."
+      - "Não importar linhas de saldo/contexto como transações."
+      - "Se data completa não puder ser montada, marcar para revisão."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+      - "remove_ascii_separator_lines"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "RESGATE AUTOM"
+        category: "resgate_automatico"
+        inferred: true
+      - pattern: "COMPRAS A VISTA"
+        category: "compra_cartao_debito"
+        inferred: true
+      - pattern: "PIX ENVIADO"
+        category: "pix_enviado"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX ENVIADO"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "PIX RECEBIDO"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "DOC"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 4
+    reject_if_missing_headers:
+      - "DIA"
+      - "HISTORICO"
+      - "VALOR"
+    balance_consistency_check:
+      enabled: false
+      method: "not_available_without_transaction_balance_column"
+      tolerance: unknown
+    needs_manual_review_when:
+      - "month_year_context_missing"
+      - "amount_has_trailing_minus_but_column_detection_uncertain"
+      - "line_has_value_but_matches_saldo_or_context_pattern"
+      - "document_field_missing_or_merged_with_description"
+      - "description_line_wrap_detected"
+      - "ocr_confidence_low_on_monospace_text"
+      - "ascii_separator_interferes_with_parsing"
+  examples_from_image:
+    sample_rows:
+      - raw_date: unknown
+        raw_description: "SALDO ANT EM 28/06/2024"
+        raw_document: unknown
+        raw_amount: "25,32"
+        raw_balance: unknown
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Saldo anterior/contexto; não importar como transação"
+      - raw_date: "01/07/2024"
+        raw_description: "RESGATE AUTOM"
+        raw_document: unknown
+        raw_amount: "2.250,00"
+        raw_balance: unknown
+        normalized_amount: "2250.00"
+        should_import_as_transaction: true
+        notes: "Valor sem hífen final; crédito/entrada"
+      - raw_date: "01/07/2024"
+        raw_description: "COMPRAS A VISTA"
+        raw_document: unknown
+        raw_amount: "6,99-"
+        raw_balance: unknown
+        normalized_amount: "-6.99"
+        should_import_as_transaction: true
+        notes: "Hífen final indica débito"
+      - raw_date: "01/07/2024"
+        raw_description: "PIX ENVIADO"
+        raw_document: unknown
+        raw_amount: "253,17-"
+        raw_balance: unknown
+        normalized_amount: "-253.17"
+        should_import_as_transaction: true
+        notes: "Hífen final indica débito; mês/ano inferido de 'MOVIMENTOS JUL/2024'"
+  implementation_notes:
+    - "Classificar como layout Banrisul textual por 'BANRISUL', separadores ASCII e cabeçalho 'DIA HISTORICO DOCUMENTO VALOR'."
+    - "Usar parser fixed-width quando possível; fallback por regex para dia, descrição e valor."
+    - "Implementar suporte a negativo com hífen no final do valor."
+    - "Montar data completa combinando DIA com mês/ano da seção 'MOVIMENTOS MMM/YYYY'."
+    - "Ignorar linhas de saldo, totais, aviso e separadores ASCII."
+    - "Não exigir documento nem saldo por transação."
+    - "Validar com PDF real a preservação de colunas monoespaçadas."

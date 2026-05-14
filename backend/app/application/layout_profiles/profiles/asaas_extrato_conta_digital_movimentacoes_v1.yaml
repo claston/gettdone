@@ -1,0 +1,384 @@
+meta_model:
+  layout_id: asaas_extrato_conta_digital_movimentacoes_v1
+  bank: Asaas
+  channel: Asaas
+  statement_type: conta_digital_extrato_movimentacoes
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo ASAAS visível no topo direito"
+      - "Campos 'CNPJ', 'Agência' e 'Conta' no cabeçalho"
+      - "Campo 'Período' com intervalo de datas"
+      - "Campo 'Extrato gerado em' com data e hora"
+      - "Bloco azul de resumo com 'Saldo inicial do período' e 'Saldo final do período'"
+      - "Tabela/lista com cabeçalho 'Data', 'Movimentações' e 'Valor'"
+      - "Movimentações como 'Pagamento de conta -', 'Transação via Pix' e 'Cobrança recebida'"
+    weak:
+      - "Valores monetários estão ocultos ou ilegíveis, restando apenas prefixo 'R$'"
+      - "Não há coluna de saldo por linha"
+      - "Não há documento, identificador da transação ou contraparte visíveis no recorte"
+      - "Sinais positivos/negativos dos valores não podem ser confirmados na imagem"
+      - "Layout parece extrato web/PDF do Asaas, com tabela simplificada"
+    table_headers:
+      - "Data"
+      - "Movimentações"
+      - "Valor"
+  page_structure:
+    header:
+      bank_logo: "ASAAS"
+      account_identifiers:
+        cnpj: unknown
+        agency: unknown
+        account: unknown
+    metadata:
+      period: "01 de julho de 2024 a 31 de julho de 2024"
+      start_date: "01/07/2024"
+      end_date: "31/07/2024"
+      generated_at: "09/10/2024 às 10:29:33"
+      summary:
+        initial_balance_label: "Saldo inicial do período"
+        initial_balance_value: unknown
+        final_balance_label: "Saldo final do período"
+        final_balance_value: unknown
+    transactions_table:
+      header_background: "light gray"
+      columns:
+        - "Data"
+        - "Movimentações"
+        - "Valor"
+      visible_rows:
+        - type: normal_transaction
+          date: "05/07/2024"
+          description: "Pagamento de conta -"
+          document: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "05/07/2024"
+          description: "Transação via Pix"
+          document: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "10/07/2024"
+          description: "Transação via Pix"
+          document: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "10/07/2024"
+          description: "Cobrança recebida"
+          document: unknown
+          amount: unknown
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo inicial do período"
+      should_import_as_transaction: false
+      balance_source: "summary_block"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece com sinal positivo explícito, se presente no PDF real"
+        - "Valor aparece sem sinal negativo em movimentações de entrada confirmadas, como cobrança recebida"
+      negative_when:
+        - "Valor aparece com sinal '-' explícito, se presente no PDF real"
+        - "Valor aparece em movimentações de saída confirmadas, como pagamento de conta"
+      inferred: true
+    balance_column:
+      exists: false
+      column_name: unknown
+      only_period_summary_balances: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "Cobrança recebida"
+        reason: "Descrição sugere entrada/recebimento, mas valor não está visível; confirmar com sinal/valor no PDF real"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "Pagamento de conta -"
+        reason: "Descrição sugere saída/pagamento, mas valor não está visível; confirmar com sinal/valor no PDF real"
+        inferred: true
+    caution:
+      - "Não é possível confirmar o sinal dos valores na imagem porque os valores estão ocultos/ilegíveis."
+      - "Não inferir sinal apenas por 'Transação via Pix', pois Pix pode ser entrada ou saída."
+      - "Usar sinal explícito ou metadado do PDF real antes de classificar crédito/débito."
+      - "Não importar saldos inicial/final do período como transações."
+      - "Como não há saldo por linha, validação aritmética detalhada fica limitada."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Saldo final do período"
+      header_row_color: "light gray"
+      header_keywords:
+        - "Data"
+        - "Movimentações"
+        - "Valor"
+    column_order:
+      - date
+      - description
+      - amount
+    row_behavior:
+      separator: "horizontal light gray lines"
+      date_repeated_per_transaction: true
+      description_left_aligned: true
+      amount_right_aligned: true
+      amount_prefix_currency: "R$"
+      no_balance_per_transaction: true
+      summary_balance_block_above_table: true
+  parser_risks:
+    ambiguities:
+      - "Valores monetários não estão legíveis no recorte; só aparece o prefixo R$."
+      - "A descrição 'Transação via Pix' é ambígua e pode representar entrada ou saída."
+      - "Não há coluna de saldo nem documento por transação."
+      - "Não é possível confirmar se débitos aparecem com sinal negativo, cor vermelha ou outro indicador."
+      - "Não é possível confirmar se créditos aparecem com sinal positivo, cor verde ou apenas valor sem sinal."
+    fields_that_may_be_missing:
+      - "document"
+      - "balance"
+      - "counterparty"
+      - "transaction_id"
+      - "amount_sign"
+      - "agency"
+      - "account"
+      - "cnpj"
+    cases_that_need_real_pdf_validation:
+      - "Se valores aparecem com sinal positivo/negativo na camada textual."
+      - "Se o PDF possui detalhes extras ocultos/fora do recorte para cada movimentação."
+      - "Como diferenciar Pix recebido de Pix enviado."
+      - "Se há paginação e repetição do cabeçalho."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Se saldos inicial e final podem ser usados para validar a soma total do período."
+
+layout_profile:
+  profile_name: asaas_extrato_conta_digital_movimentacoes_v1
+  bank: Asaas
+  layout_family: asaas_extrato_movimentacoes
+  statement_type: conta_digital_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "ASAAS"
+      - "CNPJ"
+      - "Agência"
+      - "Conta"
+      - "Período"
+      - "Extrato gerado em"
+      - "Saldo inicial do período"
+      - "Saldo final do período"
+      - "Data"
+      - "Movimentações"
+      - "Valor"
+    optional_keywords:
+      - "Pagamento de conta"
+      - "Transação via Pix"
+      - "Cobrança recebida"
+      - "R$"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "VIACREDI"
+      - "Cartão de Crédito"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Movimentações"
+      - "Valor"
+    expected_column_order:
+      - date
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Movimentações"
+        - "Movimentacao"
+        - "Descrição"
+        - "Histórico"
+      document:
+        - "Documento"
+        - "Id"
+        - "ID"
+      amount:
+        - "Valor"
+        - "R$"
+      balance:
+        - "Saldo"
+        - "Saldo inicial do período"
+        - "Saldo final do período"
+    table_starts_after:
+      - "Saldo final do período"
+      - "Data Movimentações Valor"
+    row_separator_hint: "transaction row starts when first column has dd/MM/yyyy"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-R$ {amount}"
+      - "R$ -{amount}"
+      - "-{amount}"
+      - "red_amount_if_available"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+      - "{amount_without_minus}"
+      - "green_amount_if_available"
+    ignore_rows:
+      - "ASAAS"
+      - "CNPJ"
+      - "Agência"
+      - "Conta"
+      - "Período"
+      - "Extrato gerado em"
+      - "Saldo inicial do período"
+      - "Saldo final do período"
+      - "Data"
+      - "Movimentações"
+      - "Valor"
+      - "TOTAL"
+    opening_balance_rows:
+      - "Saldo inicial do período"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+      - transaction_id
+      - counterparty
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "provider_transaction_type_if_available"
+      - "description_based_hint"
+      - "period_balance_consistency"
+    description_based_overrides:
+      - pattern: "Cobrança recebida"
+        sign: positive
+        confidence: medium
+        inferred: true
+        reason: "Descrição sugere recebimento, mas confirmar pelo valor/sinal no PDF real"
+      - pattern: "Pagamento de conta*"
+        sign: negative
+        confidence: medium
+        inferred: true
+        reason: "Descrição sugere pagamento/saída, mas confirmar pelo valor/sinal no PDF real"
+      - pattern: "Transação via Pix"
+        sign: unknown
+        confidence: low
+        inferred: true
+        reason: "Pix pode ser entrada ou saída; não inferir sem sinal/metadado"
+    cautions:
+      - "Não inferir saída apenas por Pix."
+      - "Não inferir entrada/saída se o valor não tiver sinal e a descrição for genérica."
+      - "Usar metadados de tipo de movimentação do PDF/API se disponíveis."
+      - "Sem saldo por linha, validação aritmética deve ser feita apenas no total do período."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "remove_trailing_dash_only_if_confirmed_as_artifact"
+      - "normalize_case_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Pagamento de conta*"
+        category: "pagamento_conta"
+        inferred: true
+      - pattern: "Transação via Pix"
+        category: "pix"
+        inferred: true
+      - pattern: "Cobrança recebida"
+        category: "cobranca_recebida"
+        inferred: true
+    transfer_hints:
+      - pattern: "Transação via Pix"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "Taxa"
+        category: "taxa_servico"
+        inferred: true
+      - pattern: "Tarifa"
+        category: "tarifa"
+        inferred: true
+  validation:
+    expected_min_columns: 3
+    reject_if_missing_headers:
+      - "Data"
+      - "Movimentações"
+      - "Valor"
+    balance_consistency_check:
+      enabled: true
+      method: "when initial and final balances are available, validate final_balance_equals_initial_balance_plus_sum_signed_transactions"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "amount_missing_or_only_currency_symbol_visible"
+      - "pix_transaction_without_explicit_sign"
+      - "amount_without_sign_and_description_ambiguous"
+      - "period_balances_missing"
+      - "description_has_trailing_dash"
+      - "ocr_confidence_low_on_amount"
+      - "period_balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "05/07/2024"
+        raw_description: "Pagamento de conta -"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Provável saída por descrição, mas valor/sinal não está visível; exige validação com PDF real"
+      - raw_date: "05/07/2024"
+        raw_description: "Transação via Pix"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Pix ambíguo; não definir sinal sem valor/metadado"
+      - raw_date: "10/07/2024"
+        raw_description: "Transação via Pix"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Pix ambíguo; não definir sinal sem valor/metadado"
+      - raw_date: "10/07/2024"
+        raw_description: "Cobrança recebida"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Provável entrada por descrição, mas valor/sinal não está visível; exige validação"
+  implementation_notes:
+    - "Classificar pelo logo ASAAS e pelos blocos 'Período', 'Extrato gerado em' e saldos inicial/final."
+    - "Detectar tabela simplificada por 'Data', 'Movimentações' e 'Valor'."
+    - "Não exigir documento ou saldo por transação."
+    - "Não inferir sinal de 'Transação via Pix' sem sinal explícito ou metadado."
+    - "Usar saldos inicial e final do período para validação agregada quando os valores estiverem disponíveis."
+    - "Marcar para revisão manual linhas em que o OCR capture apenas 'R$' sem valor."
+    - "Validar com PDF real como o Asaas representa débitos e créditos visualmente/textualmente."

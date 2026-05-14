@@ -5,9 +5,12 @@ from openpyxl import Workbook
 from app.application import analyze_service as analyze_service_module
 from app.application.analyze_service import AnalyzeService
 from app.application.models import NormalizedTransaction
-from app.application.pdf_layout_inference import PdfLayoutInference
-from app.application.pdf_parser import PdfParseResult
 from app.application.storage_service import TempAnalysisStorage
+from tests.fixtures.pdf_golden_samples import (
+    PDF_PARSE_METRICS_GROUPED_CANONICAL_OK,
+    PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+    build_pdf_parse_result,
+)
 
 
 def _build_xlsx_bytes(rows: list[list[object]]) -> bytes:
@@ -89,10 +92,13 @@ VERSION:102
 def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkeypatch) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     service = AnalyzeService(storage=storage)
+    parse_metrics = dict(PDF_PARSE_METRICS_GROUPED_CANONICAL_OK)
+    parse_metrics["export_recommendation"] = "review_recommended"
+    parse_metrics["export_recommendation_reason"] = "medium_confidence_band"
     monkeypatch.setattr(
         analyze_service_module,
         "parse_pdf_transactions",
-        lambda raw_bytes: PdfParseResult(
+        lambda raw_bytes: build_pdf_parse_result(
             transactions=[
                 NormalizedTransaction(
                     date="2023-11-06",
@@ -107,21 +113,10 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
                     type="outflow",
                 ),
             ],
-            layout=PdfLayoutInference(
-                layout_name="nubank_statement_ptbr",
-                confidence=0.94,
-                used_fallback=False,
-            ),
+            layout_name="nubank_statement_ptbr",
+            confidence=0.94,
             extracted_text="TOTAL DE ENTRADAS\nTOTAL DE SAIDAS\nTRANSFERENCIA RECEBIDA PELO PIX",
-            parse_metrics={
-                "page_count": 1,
-                "extracted_char_count": 72,
-                "flattened_line_count": 3,
-                "grouped_transactions_count": 2,
-                "inline_candidates_count": 0,
-                "inline_transactions_count": 0,
-                "selected_parser": "grouped",
-            },
+            parse_metrics=parse_metrics,
         ),
     )
 
@@ -137,16 +132,40 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
     assert result.pdf_processing_metrics is not None
     assert result.pdf_processing_metrics.selected_parser == "grouped"
     assert result.pdf_processing_metrics.grouped_transactions_count == 2
+    assert result.pdf_processing_metrics.balance_consistency_checked == 1
+    assert result.pdf_processing_metrics.balance_consistency_failed == 0
+    assert result.pdf_processing_metrics.canonical_transactions_count == 2
+    assert result.pdf_processing_metrics.canonical_with_running_balance_count == 2
+    assert result.pdf_processing_metrics.canonical_with_external_reference_count == 2
+    assert result.pdf_processing_metrics.canonical_warning_count == 0
+    assert result.pdf_processing_metrics.canonical_balance_warning_count == 0
+    assert result.pdf_processing_metrics.canonical_warning_transactions_count == 0
+    assert result.pdf_processing_metrics.canonical_warning_types_count == 0
+    assert result.pdf_processing_metrics.canonical_warning_types == ""
+    assert result.pdf_processing_metrics.canonical_warning_types_list == []
+    assert result.pdf_processing_metrics.canonical_running_balance_coverage_rate == 1.0
+    assert result.pdf_processing_metrics.canonical_external_reference_coverage_rate == 1.0
+    assert result.pdf_processing_metrics.canonical_warning_transaction_rate == 0.0
+    assert result.pdf_processing_metrics.canonical_source_parser_grouped_count == 2
+    assert result.pdf_processing_metrics.canonical_source_parser_types == "grouped"
+    assert result.pdf_processing_metrics.canonical_source_parser_types_list == ["grouped"]
     assert result.pdf_processing_metrics.total_ms >= 0.0
+    assert any(
+        insight.type == "pdf_export_review_recommended"
+        for insight in result.insights
+    )
 
 
 def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     service = AnalyzeService(storage=storage)
+    parse_metrics = dict(PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY)
+    parse_metrics["export_recommendation"] = "safe_to_export"
+    parse_metrics["export_recommendation_reason"] = "high_confidence_band"
     monkeypatch.setattr(
         analyze_service_module,
         "parse_pdf_transactions",
-        lambda raw_bytes: PdfParseResult(
+        lambda raw_bytes: build_pdf_parse_result(
             transactions=[
                 NormalizedTransaction(
                     date="2026-04-13",
@@ -161,21 +180,10 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
                     type="inflow",
                 ),
             ],
-            layout=PdfLayoutInference(
-                layout_name="itau_statement_ptbr",
-                confidence=1.0,
-                used_fallback=False,
-            ),
+            layout_name="itau_statement_ptbr",
+            confidence=1.0,
             extracted_text="EXTRATO CONTA / LANCAMENTOS\nDATA LANCAMENTOS VALOR",
-            parse_metrics={
-                "page_count": 1,
-                "extracted_char_count": 47,
-                "flattened_line_count": 2,
-                "grouped_transactions_count": 0,
-                "inline_candidates_count": 2,
-                "inline_transactions_count": 2,
-                "selected_parser": "inline",
-            },
+            parse_metrics=parse_metrics,
         ),
     )
 
@@ -187,4 +195,12 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
     assert result.layout_inference_confidence is not None
     assert result.pdf_processing_metrics is not None
     assert result.pdf_processing_metrics.selected_parser == "inline"
+    assert result.pdf_processing_metrics.canonical_transactions_count == 2
+    assert result.pdf_processing_metrics.canonical_source_parser_inline_count == 2
+    assert result.pdf_processing_metrics.canonical_source_parser_types == "inline"
+    assert result.pdf_processing_metrics.canonical_source_parser_types_list == ["inline"]
+    assert all(
+        insight.type != "pdf_export_review_recommended"
+        for insight in result.insights
+    )
 

@@ -71,7 +71,39 @@ class PdfProcessingMetrics(BaseModel):
     grouped_transactions_count: int
     inline_candidates_count: int
     inline_transactions_count: int
+    tabular_candidates_count: int = 0
+    tabular_transactions_count: int = 0
+    columnar_candidates_count: int = 0
+    columnar_transactions_count: int = 0
     selected_parser: str
+    parser_selection_reason: str = ""
+    inline_decision: str = ""
+    tabular_decision: str = ""
+    columnar_decision: str = ""
+    confidence_band: str = ""
+    export_recommendation: str = ""
+    export_recommendation_reason: str = ""
+    balance_consistency_checked: int = 0
+    balance_consistency_failed: int = 0
+    canonical_transactions_count: int = 0
+    canonical_with_running_balance_count: int = 0
+    canonical_with_external_reference_count: int = 0
+    canonical_warning_count: int = 0
+    canonical_balance_warning_count: int = 0
+    canonical_warning_transactions_count: int = 0
+    canonical_warning_types_count: int = 0
+    canonical_warning_types: str = ""
+    canonical_warning_types_list: list[str] = []
+    canonical_running_balance_coverage_rate: float = 0.0
+    canonical_external_reference_coverage_rate: float = 0.0
+    canonical_warning_transaction_rate: float = 0.0
+    canonical_source_parser_grouped_count: int = 0
+    canonical_source_parser_inline_count: int = 0
+    canonical_source_parser_tabular_count: int = 0
+    canonical_source_parser_columnar_count: int = 0
+    canonical_source_parser_types_count: int = 0
+    canonical_source_parser_types: str = ""
+    canonical_source_parser_types_list: list[str] = []
 
 
 class AnalyzeResponse(BaseModel):

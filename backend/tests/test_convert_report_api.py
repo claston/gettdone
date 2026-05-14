@@ -15,6 +15,7 @@ def _build_analysis_data(analysis_id: str = "an_convert123") -> AnalysisData:
         analysis_id=analysis_id,
         file_type="pdf",
         upload_filename="extrato_nubank.pdf",
+        layout_inference_name="bradesco_net_empresa_extrato_mensal_por_periodo_v1",
         transactions_total=1,
         total_inflows=100.0,
         total_outflows=-20.0,
@@ -151,4 +152,52 @@ def test_convert_report_accepts_bearer_user_token(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/x-ofx")
     assert "<STMTTRN>" in response.text
+    app.dependency_overrides.clear()
+
+
+def test_convert_report_ofx_accepts_closing_balance_override(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+
+    response = client.get(
+        "/convert-report/an_convert123?format=ofx&closing_balance=56276.06&anonymous_fingerprint=fp-owner"
+    )
+
+    assert response.status_code == 200
+    assert "<LEDGERBAL>" in response.text
+    assert "<BALAMT>56276.06" in response.text
+    assert "<BRANCHID>0001" in response.text
+    assert "<ACCTID>000000" in response.text
+    app.dependency_overrides.clear()
+
+
+def test_convert_report_ofx_accepts_bank_branch_and_account_number_override(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+
+    response = client.get(
+        "/convert-report/an_convert123?format=ofx&bank_branch=3456-7&account_number=12345-6&anonymous_fingerprint=fp-owner"
+    )
+
+    assert response.status_code == 200
+    assert "<BRANCHID>34567" in response.text
+    assert "<ACCTID>123456" in response.text
+    app.dependency_overrides.clear()
+
+
+def test_convert_report_ofx_infers_bank_code_from_layout(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+
+    response = client.get("/convert-report/an_convert123?format=ofx&anonymous_fingerprint=fp-owner")
+
+    assert response.status_code == 200
+    assert "<BANKID>237" in response.text
+    app.dependency_overrides.clear()
+
+
+def test_convert_report_ofx_accepts_bank_code_override(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+
+    response = client.get("/convert-report/an_convert123?format=ofx&bank_code=001&anonymous_fingerprint=fp-owner")
+
+    assert response.status_code == 200
+    assert "<BANKID>001" in response.text
     app.dependency_overrides.clear()

@@ -1,0 +1,363 @@
+meta_model:
+  layout_id: banco_bmg_extrato_da_conta_por_periodo_v1
+  bank: Banco Bmg
+  channel: unknown
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'banco bmg' visível no topo esquerdo"
+      - "Título 'Extrato da Conta' no topo direito"
+      - "Texto 'Período de 01/01/2024 a 31/07/2024'"
+      - "Bloco de identificação com 'Agência' e 'Conta'"
+      - "Bloco de resumo com 'Saldo Disponível' e 'Saldo Total'"
+      - "Agrupamento por dia em texto grande, exemplo '29 DE JULHO DE 2024'"
+      - "Coluna/área de valor indicada por 'R$'"
+      - "Linhas de movimentação com data, descrição, tipo textual 'Crédito' e valor em R$"
+    weak:
+      - "Dados de agência, conta e partes das descrições estão ocultos ou ilegíveis"
+      - "Não há cabeçalho tabular clássico com nomes de colunas"
+      - "Não há saldo por transação visível no recorte"
+      - "Tipo 'Crédito' aparece como coluna/label intermediário, mas não há exemplo de 'Débito' visível"
+      - "Descrições podem conter informações mascaradas ao final"
+    table_headers:
+      - "R$"
+      - "Crédito"
+  page_structure:
+    header:
+      bank_logo: "banco bmg"
+      title: "Extrato da Conta"
+      account_identifiers:
+        agency: unknown
+        account: unknown
+    metadata:
+      period: "01/01/2024 a 31/07/2024"
+      start_date: "01/01/2024"
+      end_date: "31/07/2024"
+      balance_summary:
+        available_balance_label: "Saldo Disponível"
+        available_balance_value: unknown
+        total_balance_label: "Saldo Total"
+        total_balance_value: "R$0,00"
+        composition_text: "Disponível + Vinculado + Bloqueado"
+    transactions_table:
+      representation: "grouped_by_date_text_list"
+      group_header:
+        visible: "29 DE JULHO DE 2024"
+        normalized_date: "29/07/2024"
+      columns_inferred:
+        - "date"
+        - "description"
+        - "type"
+        - "amount"
+      visible_rows:
+        - type: normal_transaction
+          date: "29/07/2024"
+          description: "CRED LOJISTA - CARTAO DEBITO -"
+          transaction_type: "Crédito"
+          amount: "R$441,58"
+          balance: unknown
+        - type: normal_transaction
+          date: "29/07/2024"
+          description: "ANTEC CRED - LOJISTA -"
+          transaction_type: "Crédito"
+          amount: "R$56,94"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo Disponível"
+        - "Saldo Total"
+        - "SALDO ANTERIOR"
+        - "SALDO INICIAL"
+      should_import_as_transaction: false
+      balance_source: "summary_block"
+      inferred: true
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_has_transaction_type: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Linha possui tipo textual 'Crédito'"
+        - "Valor aparece sem sinal negativo em linha de crédito"
+      negative_when:
+        - "Linha possui tipo textual 'Débito', se presente em PDFs reais"
+        - "Valor aparece com sinal '-' explícito, se presente"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      summary_balances_exist: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "CRED LOJISTA - CARTAO DEBITO -"
+        reason: "Linha visível possui tipo textual 'Crédito'"
+        inferred: false
+      - pattern: "ANTEC CRED - LOJISTA -"
+        reason: "Linha visível possui tipo textual 'Crédito'"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "*"
+        reason: "Não há exemplo de débito visível; confirmar em PDF real se usa texto 'Débito' ou sinal negativo"
+        inferred: true
+    caution:
+      - "Não há cabeçalho tabular completo; usar posição, agrupador de data e tipo textual para parsing."
+      - "Tipo textual 'Crédito' deve ser a fonte principal de sinal nas linhas visíveis."
+      - "Não importar saldos do bloco superior como transações."
+      - "Não há saldo por linha, então a validação aritmética detalhada é limitada."
+      - "Descrições podem ter trechos mascarados no final; preservar descrição original disponível."
+  visual_model:
+    table_anchor:
+      starts_after_text: "29 DE JULHO DE 2024"
+      header_keywords:
+        - "R$"
+      group_by_date: true
+    column_order:
+      - date
+      - description
+      - transaction_type
+      - amount
+    row_behavior:
+      separator: "dashed horizontal line below day header"
+      group_header_large_uppercase_date: true
+      date_repeated_per_transaction: true
+      description_left_aligned: true
+      transaction_type_center_right: true
+      amount_right_aligned: true
+      no_grid_lines: true
+  parser_risks:
+    ambiguities:
+      - "Não é possível confirmar como lançamentos de débito são exibidos neste layout."
+      - "Não há cabeçalhos explícitos para descrição, tipo e valor; a segmentação depende de posição."
+      - "Não há saldo por transação."
+      - "Partes das descrições e dados de conta estão ocultos/ilegíveis."
+      - "O agrupador de data em português precisa ser convertido para data completa."
+    fields_that_may_be_missing:
+      - "document"
+      - "balance"
+      - "agency"
+      - "account"
+      - "counterparty"
+      - "transaction_id"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual preserva a coluna de tipo 'Crédito'/'Débito'."
+      - "Como débitos são representados: texto 'Débito', sinal negativo, cor ou outro marcador."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Se há agrupadores de data em páginas seguintes e como ocorre paginação."
+      - "Se saldos inicial/final do período aparecem com valores completos."
+      - "Se existem linhas de tarifa, PIX, TED, cartão, antecipação e estorno com padrões diferentes."
+
+layout_profile:
+  profile_name: banco_bmg_extrato_da_conta_por_periodo_v1
+  bank: Banco Bmg
+  layout_family: bmg_extrato_da_conta_grouped_list
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "banco bmg"
+      - "Extrato da Conta"
+      - "Período de"
+      - "Agência"
+      - "Conta"
+      - "Saldo Disponível"
+      - "Saldo Total"
+      - "R$"
+    optional_keywords:
+      - "Crédito"
+      - "Débito"
+      - "CRED LOJISTA"
+      - "CARTAO DEBITO"
+      - "ANTEC CRED"
+      - "LOJISTA"
+      - "Disponível + Vinculado + Bloqueado"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.8
+  table_detection:
+    header_keywords:
+      - "R$"
+      - "Crédito"
+    expected_column_order:
+      - date
+      - description
+      - transaction_type
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+        - "date_group"
+      description:
+        - "Descrição"
+        - "Histórico"
+        - "Lançamento"
+      document:
+        - "Documento"
+        - "Doc."
+      amount:
+        - "R$"
+        - "Valor"
+      balance:
+        - "Saldo"
+      transaction_type:
+        - "Crédito"
+        - "Débito"
+    table_starts_after:
+      - "Saldo Total"
+      - "29 DE JULHO DE 2024"
+    row_separator_hint: "date group in uppercase Portuguese month; transaction row starts with dd/MM/yyyy"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    date_group_format: "dd 'DE' MMMM 'DE' yyyy"
+    month_language: "pt-BR"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "Débito R${amount}"
+      - "-R${amount}"
+      - "R$-{amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "Crédito R${amount}"
+      - "R${amount_without_minus}"
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "banco bmg"
+      - "Extrato da Conta"
+      - "Período de"
+      - "Agência"
+      - "Conta"
+      - "Saldo Disponível"
+      - "Saldo Total"
+      - "Disponível + Vinculado + Bloqueado"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - transaction_type
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_transaction_type_credit_debit"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "description_based_hint"
+      - "period_balance_consistency"
+    description_based_overrides:
+      - pattern: "CRED LOJISTA*"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui tipo textual 'Crédito'"
+      - pattern: "ANTEC CRED*"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui tipo textual 'Crédito'"
+    cautions:
+      - "Não inferir débito por 'CARTAO DEBITO' na descrição; a linha visível é crédito."
+      - "Tipo textual Crédito/Débito deve ter prioridade sobre palavras da descrição."
+      - "Se o tipo textual estiver ausente e o valor não tiver sinal, marcar para revisão manual."
+      - "Sem saldo por linha, validação por saldo é apenas agregada."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "remove_masking_artifacts_only_if_confirmed"
+      - "normalize_uppercase_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "CRED LOJISTA*"
+        category: "recebimento_cartao_debito"
+        inferred: true
+      - pattern: "ANTEC CRED*"
+        category: "antecipacao_recebiveis"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "DOC"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+  validation:
+    expected_min_columns: 4
+    reject_if_missing_headers:
+      - "Extrato da Conta"
+      - "R$"
+    balance_consistency_check:
+      enabled: true
+      method: "when period initial/final balances are available, validate final_balance_equals_initial_balance_plus_sum_signed_transactions"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "transaction_type_missing"
+      - "amount_without_sign_and_type_missing"
+      - "date_group_unrecognized"
+      - "description_partially_masked_or_truncated"
+      - "only_period_balances_available"
+      - "ocr_confidence_low_on_currency_or_amount"
+      - "period_balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "29/07/2024"
+        raw_description: "CRED LOJISTA - CARTAO DEBITO -"
+        raw_document: unknown
+        raw_amount: "R$441,58"
+        raw_balance: unknown
+        normalized_amount: "441.58"
+        should_import_as_transaction: true
+        notes: "Tipo textual 'Crédito' visível; não tratar como débito apesar de conter 'CARTAO DEBITO'"
+      - raw_date: "29/07/2024"
+        raw_description: "ANTEC CRED - LOJISTA -"
+        raw_document: unknown
+        raw_amount: "R$56,94"
+        raw_balance: unknown
+        normalized_amount: "56.94"
+        should_import_as_transaction: true
+        notes: "Tipo textual 'Crédito' visível; provável antecipação/recebível"
+  implementation_notes:
+    - "Classificar pelo logo 'banco bmg', título 'Extrato da Conta' e bloco de saldos."
+    - "Detectar agrupadores de data em português e aplicar aos lançamentos abaixo."
+    - "Usar o tipo textual 'Crédito'/'Débito' como regra primária de sinal."
+    - "Não inferir sinal pela palavra 'CARTAO DEBITO' quando o tipo da linha for Crédito."
+    - "Não exigir documento ou saldo por transação."
+    - "Validar com PDF real como débitos aparecem e se o tipo textual é preservado na extração."

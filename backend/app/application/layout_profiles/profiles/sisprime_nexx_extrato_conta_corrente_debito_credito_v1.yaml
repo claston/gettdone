@@ -1,0 +1,572 @@
+meta_model:
+  layout_id: sisprime_nexx_extrato_conta_corrente_debito_credito_v1
+  bank: Sisprime do Brasil
+  channel: NEXX
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Texto 'SISPRIME O BRASIL' visível no topo esquerdo"
+      - "Texto 'NEXX' visível no topo central"
+      - "Paginação '1 de 4' no topo direito"
+      - "Título 'EXTRATO DE CONTA CORRENTE'"
+      - "Campos 'Fone Contato', 'Instituição Financeira', 'Conta' e 'Posto da Conta'"
+      - "Período explícito: '01/11/2024 a 30/11/2024'"
+      - "Tabela com colunas 'Data', 'Nr.Docum.', 'Histórico', 'Débito', 'Crédito' e 'Saldo Util. Cheq. Esp.'"
+      - "Débitos e créditos aparecem em colunas separadas"
+      - "Linhas de débito com valores preenchidos na coluna 'Débito'"
+      - "Linhas de crédito com valores preenchidos na coluna 'Crédito'"
+      - "Linha de saldo inicial 'Saldo Anterior'"
+    weak:
+      - "Alguns dados cadastrais e valores de saldo estão ocultos ou ilegíveis"
+      - "A coluna Nr.Docum. aparece vazia nas linhas visíveis"
+      - "Não há valores visíveis na coluna 'Saldo Util. Cheq. Esp.' no recorte"
+      - "Não há sinal negativo explícito nos débitos; o sinal é definido pela coluna Débito"
+      - "O texto do banco parece recortado como 'SISPRIME O BRASIL', provável 'SISPRIME DO BRASIL'"
+    table_headers:
+      - "Data"
+      - "Nr.Docum."
+      - "Histórico"
+      - "Débito"
+      - "Crédito"
+      - "Saldo Util. Cheq. Esp."
+  page_structure:
+    header:
+      bank_logo: "SISPRIME DO BRASIL"
+      system_or_channel: "NEXX"
+      page: "1 de 4"
+      title: "EXTRATO DE CONTA CORRENTE"
+      account_identifiers:
+        phone_contact: unknown
+        financial_institution: unknown
+        account: unknown
+        account_branch_or_post: unknown
+    metadata:
+      period: "01/11/2024 a 30/11/2024"
+      start_date: "01/11/2024"
+      end_date: "30/11/2024"
+    transactions_table:
+      representation: "fixed_table_with_debit_credit_columns"
+      columns:
+        - "Data"
+        - "Nr.Docum."
+        - "Histórico"
+        - "Débito"
+        - "Crédito"
+        - "Saldo Util. Cheq. Esp."
+      visible_rows:
+        - type: opening_balance
+          date: unknown
+          document: unknown
+          description: "Saldo Anterior"
+          debit: unknown
+          credit: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "01/11/2024"
+          document: unknown
+          description: "Débito IOF"
+          debit: "543,49"
+          credit: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "01/11/2024"
+          document: unknown
+          description: "Débito IOF"
+          debit: "127,10"
+          credit: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "04/11/2024"
+          document: unknown
+          description: "Amor Titulo price -"
+          debit: "1.921,15"
+          credit: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "04/11/2024"
+          document: unknown
+          description: "Crédito Pix - INSTITUTO DO VER VIT"
+          debit: unknown
+          credit: "5.200,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "05/11/2024"
+          document: unknown
+          description: "Déb. de Prestamista"
+          debit: "230,00"
+          credit: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "05/11/2024"
+          document: unknown
+          description: "Déb. de Prestamista"
+          debit: "184,00"
+          credit: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "05/11/2024"
+          document: unknown
+          description: "Déb. de Prestamista"
+          debit: "23,00"
+          credit: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "05/11/2024"
+          document: unknown
+          description: "Déb. de Prestamista"
+          debit: "9,20"
+          credit: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "06/11/2024"
+          document: unknown
+          description: "Resgate RDC"
+          debit: unknown
+          credit: "500,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "06/11/2024"
+          document: unknown
+          description: "ADIANT.DEPOSITANTE"
+          debit: "100,00"
+          credit: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "14/11/2024"
+          document: unknown
+          description: "Ted - FMS"
+          debit: unknown
+          credit: "35.204,93"
+          balance: unknown
+        - type: normal_transaction
+          date: "14/11/2024"
+          document: unknown
+          description: "Ted - FMS"
+          debit: unknown
+          credit: "15.490,72"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo Anterior"
+        - "SALDO ANTERIOR"
+        - "Saldo Inicial"
+        - "SALDO INICIAL"
+        - "Saldo Final"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: "Saldo Util. Cheq. Esp."
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_may_have_document: true
+      row_has_description: true
+      row_may_have_debit: true
+      row_may_have_credit: true
+      row_may_have_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor preenchido na coluna Crédito"
+      negative_when:
+        - "Valor preenchido na coluna Débito"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "Saldo Util. Cheq. Esp."
+      may_be_blank_or_masked_in_visible_rows: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "Crédito Pix*"
+        reason: "Linha visível tem valor na coluna Crédito"
+        inferred: false
+      - pattern: "Resgate RDC"
+        reason: "Linha visível tem valor na coluna Crédito"
+        inferred: false
+      - pattern: "Ted - FMS"
+        reason: "Linhas visíveis têm valor na coluna Crédito"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "Débito IOF"
+        reason: "Linhas visíveis têm valor na coluna Débito"
+        inferred: false
+      - pattern: "Amor Titulo price -"
+        reason: "Linha visível tem valor na coluna Débito"
+        inferred: false
+      - pattern: "Déb. de Prestamista"
+        reason: "Linhas visíveis têm valor na coluna Débito"
+        inferred: false
+      - pattern: "ADIANT.DEPOSITANTE"
+        reason: "Linha visível tem valor na coluna Débito"
+        inferred: false
+    caution:
+      - "Este layout usa colunas separadas de Débito e Crédito; não depender de sinal textual no valor."
+      - "Não importar 'Saldo Anterior' como transação."
+      - "A coluna de saldo está presente, mas os valores estão ocultos/ilegíveis no recorte."
+      - "Nr.Docum. pode estar vazio; parser não deve exigir documento."
+      - "Se uma linha tiver débito e crédito preenchidos ao mesmo tempo, marcar para revisão."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Data Nr.Docum. Histórico Débito Crédito Saldo Util. Cheq. Esp."
+      header_keywords:
+        - "Data"
+        - "Nr.Docum."
+        - "Histórico"
+        - "Débito"
+        - "Crédito"
+        - "Saldo Util. Cheq. Esp."
+    column_order:
+      - date
+      - document
+      - description
+      - debit
+      - credit
+      - balance
+    row_behavior:
+      separator: "minimal horizontal rules; whitespace aligned columns"
+      date_repeated_per_transaction: true
+      document_column_may_be_blank: true
+      description_left_aligned: true
+      debit_right_aligned: true
+      credit_right_aligned: true
+      balance_right_aligned_when_visible: true
+      no_currency_symbol_in_table_values: true
+  parser_risks:
+    ambiguities:
+      - "Valores de saldo não estão visíveis, reduzindo validação por saldo."
+      - "A coluna Nr.Docum. está vazia nas linhas visíveis, mas pode aparecer em outras páginas."
+      - "Descrições podem ser truncadas, como 'Amor Titulo price -'."
+      - "O nome do banco no topo parece parcialmente recortado; usar Sisprime do Brasil com confiança alta, mas validar no PDF real."
+      - "A coluna 'Saldo Util. Cheq. Esp.' pode representar saldo disponível com cheque especial, não necessariamente saldo contábil puro."
+    fields_that_may_be_missing:
+      - "document"
+      - "balance"
+      - "financial_institution"
+      - "account"
+      - "account_branch_or_post"
+      - "full_description"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual preserva corretamente colunas Débito e Crédito."
+      - "Se saldos aparecem preenchidos em todas as linhas ou apenas em algumas."
+      - "Se a coluna Nr.Docum. possui valores em outras páginas."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Se a paginação repete cabeçalho e tabela."
+      - "Se o saldo 'Util. Cheq. Esp.' deve ser usado como saldo da conta ou apenas saldo disponível."
+
+layout_profile:
+  profile_name: sisprime_nexx_extrato_conta_corrente_debito_credito_v1
+  bank: Sisprime do Brasil
+  layout_family: sisprime_nexx_extrato_debito_credito_columns
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "SISPRIME"
+      - "NEXX"
+      - "EXTRATO DE CONTA CORRENTE"
+      - "Instituição Financeira"
+      - "Conta"
+      - "Posto da Conta"
+      - "Período de"
+      - "Data"
+      - "Nr.Docum."
+      - "Histórico"
+      - "Débito"
+      - "Crédito"
+      - "Saldo Util. Cheq. Esp."
+    optional_keywords:
+      - "Saldo Anterior"
+      - "Débito IOF"
+      - "Crédito Pix"
+      - "Resgate RDC"
+      - "ADIANT.DEPOSITANTE"
+      - "Ted - FMS"
+      - "Déb. de Prestamista"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "SICOOB"
+      - "Sicredi"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "contasimples"
+      - "CRESOL"
+      - "infinitepay"
+      - "inter"
+      - "GRAFENO"
+      - "mercado pago"
+      - "PagBank"
+      - "PicPay"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Nr.Docum."
+      - "Histórico"
+      - "Débito"
+      - "Crédito"
+      - "Saldo Util. Cheq. Esp."
+    expected_column_order:
+      - date
+      - document
+      - description
+      - debit
+      - credit
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Histórico"
+        - "Historico"
+        - "Descrição"
+      document:
+        - "Nr.Docum."
+        - "Nr. Docum."
+        - "Documento"
+        - "Doc."
+      amount:
+        - "Débito"
+        - "Crédito"
+        - "Valor"
+      debit:
+        - "Débito"
+        - "Debito"
+      credit:
+        - "Crédito"
+        - "Credito"
+      balance:
+        - "Saldo Util. Cheq. Esp."
+        - "Saldo"
+    table_starts_after:
+      - "Data Nr.Docum. Histórico Débito Crédito Saldo Util. Cheq. Esp."
+      - "Posto da Conta"
+    row_separator_hint: "transaction row starts with dd/MM/yyyy; debit and credit are separate numeric columns"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "value_in_debit_column"
+    positive_patterns:
+      - "value_in_credit_column"
+    ignore_rows:
+      - "SISPRIME"
+      - "NEXX"
+      - "Fone Contato"
+      - "Instituição Financeira"
+      - "EXTRATO DE CONTA CORRENTE"
+      - "Conta"
+      - "Posto da Conta"
+      - "Período de"
+      - "Data"
+      - "Nr.Docum."
+      - "Histórico"
+      - "Débito"
+      - "Crédito"
+      - "Saldo Util. Cheq. Esp."
+      - "Saldo Anterior"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "Saldo Anterior"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - debit
+      - credit
+      - balance
+  sign_rules:
+    priority_order:
+      - "debit_or_credit_column"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "Débito IOF"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Valor está na coluna Débito"
+      - pattern: "Déb. de Prestamista"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Valor está na coluna Débito"
+      - pattern: "ADIANT.DEPOSITANTE"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Valor está na coluna Débito"
+      - pattern: "Crédito Pix*"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Valor está na coluna Crédito"
+      - pattern: "Resgate RDC"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Valor está na coluna Crédito"
+      - pattern: "Ted - FMS"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Valor está na coluna Crédito"
+    cautions:
+      - "Coluna Débito/Crédito deve prevalecer sobre o texto do histórico."
+      - "Não importar Saldo Anterior como transação."
+      - "Se ambas as colunas Débito e Crédito estiverem preenchidas, marcar para revisão."
+      - "Se ambas estiverem vazias em linha não-saldo, marcar como incompleta."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "merge_wrapped_description_lines"
+      - "normalize_case_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Débito IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "Crédito Pix*"
+        category: "pix_recebido"
+        inferred: true
+      - pattern: "Déb. de Prestamista"
+        category: "seguro_prestamista"
+        inferred: true
+      - pattern: "Resgate RDC"
+        category: "resgate_investimento"
+        inferred: true
+      - pattern: "ADIANT.DEPOSITANTE"
+        category: "adiantamento_depositante"
+        inferred: true
+      - pattern: "Ted - FMS"
+        category: "ted_recebida"
+        inferred: true
+    transfer_hints:
+      - pattern: "Crédito Pix"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "Pix"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "Ted"
+        category: "transferencia_ted"
+        inferred: true
+    fee_hints:
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "Tarifa"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "Juros"
+        category: "juros"
+        inferred: true
+  validation:
+    expected_min_columns: 6
+    reject_if_missing_headers:
+      - "Data"
+      - "Histórico"
+      - "Débito"
+      - "Crédito"
+    balance_consistency_check:
+      enabled: true
+      method: "when balance is available, validate previous_balance - debit + credit equals current_balance; otherwise validate debit/credit mutual exclusivity"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "both_debit_and_credit_positive"
+      - "debit_and_credit_both_empty"
+      - "balance_column_masked_or_missing"
+      - "description_truncated"
+      - "document_required_but_missing"
+      - "ocr_confidence_low_on_column_alignment"
+      - "balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: unknown
+        raw_description: "Saldo Anterior"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo anterior; não importar"
+      - raw_date: "01/11/2024"
+        raw_description: "Débito IOF"
+        raw_document: unknown
+        raw_amount: "Débito 543,49"
+        raw_balance: unknown
+        normalized_amount: "-543.49"
+        should_import_as_transaction: true
+        notes: "Débito pela coluna Débito"
+      - raw_date: "04/11/2024"
+        raw_description: "Crédito Pix - INSTITUTO DO VER VIT"
+        raw_document: unknown
+        raw_amount: "Crédito 5.200,00"
+        raw_balance: unknown
+        normalized_amount: "5200.00"
+        should_import_as_transaction: true
+        notes: "Crédito pela coluna Crédito"
+      - raw_date: "06/11/2024"
+        raw_description: "Resgate RDC"
+        raw_document: unknown
+        raw_amount: "Crédito 500,00"
+        raw_balance: unknown
+        normalized_amount: "500.00"
+        should_import_as_transaction: true
+        notes: "Crédito pela coluna Crédito"
+      - raw_date: "06/11/2024"
+        raw_description: "ADIANT.DEPOSITANTE"
+        raw_document: unknown
+        raw_amount: "Débito 100,00"
+        raw_balance: unknown
+        normalized_amount: "-100.00"
+        should_import_as_transaction: true
+        notes: "Débito pela coluna Débito"
+      - raw_date: "14/11/2024"
+        raw_description: "Ted - FMS"
+        raw_document: unknown
+        raw_amount: "Crédito 35.204,93"
+        raw_balance: unknown
+        normalized_amount: "35204.93"
+        should_import_as_transaction: true
+        notes: "Crédito pela coluna Crédito"
+  implementation_notes:
+    - "Classificar por SISPRIME/NEXX e tabela com colunas Débito e Crédito separadas."
+    - "Calcular normalized_amount como crédito - débito."
+    - "Não exigir Nr.Docum.; aparece vazio no recorte."
+    - "Filtrar Saldo Anterior antes da importação."
+    - "Usar saldo apenas quando estiver legível; neste recorte está ausente/oculto."
+    - "Validar com PDF real se as linhas mantêm alinhamento de colunas e se há descrições multi-linha."

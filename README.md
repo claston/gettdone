@@ -40,17 +40,11 @@ TTL de analises (opcional):
 $env:ANALYSIS_TTL_SECONDS = "86400" # 24 horas
 ```
 
-OCR opcional para PDF sem camada de texto:
+OCR para PDF sem camada de texto:
 
-```powershell
-$env:PDF_OCR_ENABLED = "true"
-```
-
-Observacoes do OCR:
-
-- O fluxo padrao continua sem OCR (mais rapido) e tenta extracao nativa primeiro.
-- Quando `PDF_OCR_ENABLED=true`, PDFs sem texto extraivel tentam fallback via OCR.
-- Dependencias opcionais para OCR (alem do `requirements.txt`): `pypdfium2`, `pytesseract` e binario Tesseract OCR instalado no host.
+- OCR esta desativado nesta fase para evitar risco de consumo excessivo de memoria/CPU em ambientes de usuario.
+- O fluxo atual aceita PDFs com texto extraivel e retorna erro orientativo para PDFs escaneados/imagem.
+- O codigo experimental de OCR fica isolado para hardening futuro, mas nao e chamado pelo parser em runtime.
 
 ## Rodar frontend
 
@@ -134,9 +128,65 @@ backend\venv\Scripts\python.exe scripts\smoke_playwright_navigation.py
 Workflows configurados:
 
 - `CI | Lint and Tests`: roda `ruff` e `pytest` do `backend` em push/PR.
+- `CI | Lint and Tests` (`pdf-golden` job): roda `pytest -m pdf_golden` como guarda de regressao dedicada para parser PDF.
 - `Security | CodeQL Scan`: roda analise de seguranca para Python em push/PR para `main` e agenda semanal.
 - `CD | Publish Container (GHCR)`: publica imagem Docker no GHCR em push para `main`.
 - `CD | Deploy to Render (Staging)`: dispara deploy no Render apos publish da imagem.
+
+## Regressao PDF Golden (parser)
+
+Para rodar apenas o pacote minimo de regressao do parser PDF:
+
+```powershell
+cd backend
+venv\Scripts\python.exe -m pytest -m pdf_golden -q --basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-pdf-golden
+```
+
+Opcao equivalente executando da raiz do repositorio (sem warning de marker):
+
+```powershell
+backend\venv\Scripts\python.exe -m pytest -c backend\pyproject.toml -m pdf_golden -q --basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-pdf-golden
+```
+
+Arquivos principais desse pacote:
+
+- `backend/tests/test_pdf_parser_golden_minimal_dataset.py`
+- `backend/tests/fixtures/pdf_golden_samples.py`
+
+Cobertura atual do starter pack (sintetico):
+
+- `Nubank`
+- `Itau`
+- `Santander`
+- `Bradesco`
+- `Banco do Brasil`
+- `Caixa`
+- `Inter`
+- `Sicredi`
+- `Year rollover (dez/jan)` multi-page
+
+Cobertura quasi-real adicionada (anonimizada):
+
+- `inline_noise`: cabecalho, periodo, linhas de saldo e descricoes longas
+- `multipage_inline`: transacoes distribuidas entre paginas com rastreabilidade de origem
+- `signed_ambiguous`: sinal explicito no valor com descricao ambigua (`CREDITO`/`ESTORNO`)
+- negativo `no_pattern`: extrato realista sem linhas transacionais reconheciveis
+
+Contrato atual validado no pacote:
+
+- parser selecionado por cenario
+- contagens/campos canônicos de parse metrics
+- `first_transaction` e `last_transaction` (data, valor, tipo e descricao quando aplicavel)
+- rastreabilidade de origem canônica (`source_page`, `source_line`)
+- cenarios multi-page sinteticos
+- gate de qualidade textual para evitar mojibake nos samples
+
+Checklist rapido de validacao local (fase atual):
+
+1. `cd backend`
+2. `venv\Scripts\python.exe -m pytest -m pdf_golden -q --basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-pdf-golden`
+3. `venv\Scripts\python.exe -m pytest tests/test_pdf_parser.py tests/test_pdf_parser_golden_minimal_dataset.py -q --basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-parser-golden`
+4. `venv\Scripts\python.exe -m pytest tests/test_analyze_report_http_real_api.py -q --basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-api-e2e-minimum`
 
 ## Deploy no Render (Web Service)
 

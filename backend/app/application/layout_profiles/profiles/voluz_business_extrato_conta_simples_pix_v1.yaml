@@ -1,0 +1,438 @@
+meta_model:
+  layout_id: voluz_business_extrato_conta_simples_pix_v1
+  bank: Voluz Business
+  channel: Voluz Business
+  statement_type: extrato_da_conta
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Cabeçalho roxo/azul com marca 'voluz Business'"
+      - "Título 'Extrato da Conta'"
+      - "Texto 'Data de emissão do extrato: 02/10/2024'"
+      - "Seção 'Detalhes sobre a conta'"
+      - "Campos 'Nome', 'Agência', 'CNPJ' e 'Conta'"
+      - "Período explícito: '01 de Setembro de 2024 à 30 de Setembro de 2024'"
+      - "Tabela com colunas 'Data', 'Descrição', 'Detalhes' e 'Valor (R$)'"
+      - "Linhas com 'Pix enviado', 'Pix recebido' e 'Desbloqueio judicial'"
+      - "Valores negativos aparecem com prefixo '-R$'"
+      - "Valores positivos aparecem com prefixo 'R$'"
+    weak:
+      - "Dados de nome, agência, CNPJ, conta e detalhes estão ocultos ou ilegíveis"
+      - "Não há coluna de saldo por transação"
+      - "Não há documento/ID de operação visível no recorte"
+      - "A coluna 'Detalhes' existe, mas está vazia/oculta nas linhas visíveis"
+      - "Não há linhas de saldo anterior/final visíveis no recorte"
+    table_headers:
+      - "Data"
+      - "Descrição"
+      - "Detalhes"
+      - "Valor (R$)"
+  page_structure:
+    header:
+      bank_logo: "voluz Business"
+      title: "Extrato da Conta"
+      emitted_at: "02/10/2024"
+      account_identifiers:
+        name: unknown
+        agency: unknown
+        cnpj: unknown
+        account: unknown
+    metadata:
+      period: "01 de Setembro de 2024 à 30 de Setembro de 2024"
+      start_date: "01/09/2024"
+      end_date: "30/09/2024"
+    transactions_table:
+      header_background: "light purple"
+      section_header_background: "dark blue"
+      columns:
+        - "Data"
+        - "Descrição"
+        - "Detalhes"
+        - "Valor (R$)"
+      visible_rows:
+        - type: normal_transaction
+          date: "30/09/2024"
+          description: "Pix enviado"
+          details: unknown
+          document: unknown
+          amount: "-R$ 25.247,18"
+          balance: unknown
+        - type: normal_transaction
+          date: "30/09/2024"
+          description: "Pix recebido"
+          details: unknown
+          document: unknown
+          amount: "R$ 17.329,96"
+          balance: unknown
+        - type: normal_transaction
+          date: "25/09/2024"
+          description: "Desbloqueio judicial"
+          details: unknown
+          document: unknown
+          amount: "R$ 3.250,00"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo anterior"
+        - "SALDO ANTERIOR"
+        - "Saldo inicial"
+        - "SALDO INICIAL"
+        - "Saldo final"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: unknown
+      inferred: true
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_details: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece com prefixo 'R$' sem sinal negativo"
+        - "Valor aparece com '+R$' ou '+ R$', se presente no PDF real"
+      negative_when:
+        - "Valor aparece com prefixo '-R$'"
+        - "Valor aparece com prefixo '- R$', se presente no PDF real"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      no_balance_visible_in_image: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "Pix recebido"
+        reason: "Linha visível possui valor positivo com prefixo 'R$'"
+        inferred: false
+      - pattern: "Desbloqueio judicial"
+        reason: "Linha visível possui valor positivo com prefixo 'R$'"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "Pix enviado"
+        reason: "Linha visível possui valor negativo com prefixo '-R$'"
+        inferred: false
+    caution:
+      - "Não usar Pix isoladamente para sinal; usar prefixo monetário."
+      - "Não há coluna de saldo, então validação aritmética por linha não é possível no recorte."
+      - "A coluna Detalhes pode conter informações úteis em PDFs reais; preservar quando disponível."
+      - "Não exigir documento ou ID de operação."
+      - "Se aparecerem linhas de saldo em documento completo, devem ser filtradas."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Data Descrição Detalhes Valor (R$)"
+      header_keywords:
+        - "Data"
+        - "Descrição"
+        - "Detalhes"
+        - "Valor (R$)"
+    column_order:
+      - date
+      - description
+      - details
+      - amount
+    row_behavior:
+      separator: "horizontal light gray row dividers"
+      date_repeated_per_transaction: true
+      description_left_aligned: true
+      details_column_may_be_blank_or_masked: true
+      amount_right_aligned: true
+      negative_amount_prefix: "-R$"
+      positive_amount_prefix: "R$"
+      no_balance_column: true
+  parser_risks:
+    ambiguities:
+      - "A coluna Detalhes está vazia/mascarada no recorte, mas pode ter conteúdo relevante."
+      - "Não há saldo por transação nem saldo inicial/final visível para validação."
+      - "Não há ID/documento de operação visível."
+      - "Não há exemplos de tarifas, estornos ou transações com detalhes multi-linha."
+      - "O nome exato da marca pode ser extraído com variações de OCR, como Voluz/Voltz."
+    fields_that_may_be_missing:
+      - "document"
+      - "operation_id"
+      - "counterparty"
+      - "balance"
+      - "name"
+      - "agency"
+      - "cnpj"
+      - "account"
+      - "details"
+    cases_that_need_real_pdf_validation:
+      - "Se o texto da marca é extraído como Voluz, Voltz ou outra variação."
+      - "Se valores negativos sempre usam '-R$' sem espaço."
+      - "Se a coluna Detalhes é preenchida em outras linhas."
+      - "Se há saldos, totais ou resumo no início/fim do extrato completo."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Se cabeçalho e tabela repetem em páginas seguintes."
+
+layout_profile:
+  profile_name: voluz_business_extrato_conta_simples_pix_v1
+  bank: Voluz Business
+  layout_family: voluz_business_extrato_conta_tabela_simples
+  statement_type: extrato_da_conta
+  confidence: high
+  classifier:
+    required_keywords:
+      - "voluz"
+      - "Business"
+      - "Extrato da Conta"
+      - "Data de emissão do extrato"
+      - "Detalhes sobre a conta"
+      - "Nome"
+      - "Agência"
+      - "CNPJ"
+      - "Conta"
+      - "Período"
+      - "Data"
+      - "Descrição"
+      - "Detalhes"
+      - "Valor (R$)"
+    optional_keywords:
+      - "Pix enviado"
+      - "Pix recebido"
+      - "Desbloqueio judicial"
+      - "-R$"
+      - "R$"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "SICOOB"
+      - "Sicredi"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "contasimples"
+      - "CRESOL"
+      - "infinitepay"
+      - "inter"
+      - "GRAFENO"
+      - "mercado pago"
+      - "PagBank"
+      - "PicPay"
+      - "SISPRIME"
+      - "stone"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Descrição"
+      - "Detalhes"
+      - "Valor (R$)"
+    expected_column_order:
+      - date
+      - description
+      - details
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Descrição"
+        - "Descricao"
+        - "Histórico"
+        - "Lancamento"
+      document:
+        - "Documento"
+        - "ID"
+        - "Doc."
+      amount:
+        - "Valor (R$)"
+        - "Valor"
+      balance:
+        - "Saldo"
+      details:
+        - "Detalhes"
+        - "Detalhe"
+    table_starts_after:
+      - "Data Descrição Detalhes Valor (R$)"
+      - "Período"
+    row_separator_hint: "transaction row starts with dd/MM/yyyy; amount is right aligned in last column"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    period_date_format: "dd 'de' MMMM 'de' yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-R$ {amount}"
+      - "-R${amount}"
+      - "- R$ {amount}"
+      - "R$ -{amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+      - "R${amount_without_minus}"
+      - "+R$ {amount}"
+      - "+ R$ {amount}"
+    ignore_rows:
+      - "voluz"
+      - "Business"
+      - "Extrato da Conta"
+      - "Data de emissão do extrato"
+      - "Detalhes sobre a conta"
+      - "Nome"
+      - "Agência"
+      - "CNPJ"
+      - "Conta"
+      - "Período"
+      - "Data"
+      - "Descrição"
+      - "Detalhes"
+      - "Valor (R$)"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "Saldo anterior"
+      - "SALDO INICIAL"
+      - "Saldo inicial"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - details
+      - document
+      - balance
+      - operation_id
+      - counterparty
+  sign_rules:
+    priority_order:
+      - "explicit_negative_currency_prefix"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "description_based_hint"
+      - "aggregate_balance_consistency"
+    description_based_overrides:
+      - pattern: "Pix enviado"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui prefixo '-R$'"
+      - pattern: "Pix recebido"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui prefixo 'R$' sem negativo"
+      - pattern: "Desbloqueio judicial"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui prefixo 'R$' sem negativo"
+    cautions:
+      - "Sinal explícito do valor deve prevalecer sobre descrição."
+      - "Não usar Pix isoladamente para sinal."
+      - "Se valor vier sem sinal negativo, aplicar regra geral de positivo, salvo evidência contrária no PDF real."
+      - "Sem saldo por linha, validação aritmética fica limitada."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "merge_description_and_details_when_useful"
+      - "normalize_case_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Pix enviado"
+        category: "pix_enviado"
+        inferred: true
+      - pattern: "Pix recebido"
+        category: "pix_recebido"
+        inferred: true
+      - pattern: "Desbloqueio judicial"
+        category: "desbloqueio_judicial"
+        inferred: true
+    transfer_hints:
+      - pattern: "Pix enviado"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "Pix recebido"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "Pix"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "Taxa"
+        category: "taxa_servico"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 4
+    reject_if_missing_headers:
+      - "Data"
+      - "Descrição"
+      - "Valor"
+    balance_consistency_check:
+      enabled: false
+      method: "not_available_without_balance_column_or_visible_totals"
+      tolerance: unknown
+    needs_manual_review_when:
+      - "amount_without_currency_prefix"
+      - "details_column_missing_but_expected"
+      - "document_or_operation_id_required_by_downstream"
+      - "no_balance_available_for_validation"
+      - "ocr_confidence_low_on_negative_prefix"
+      - "brand_ocr_ambiguous"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "30/09/2024"
+        raw_description: "Pix enviado"
+        raw_document: unknown
+        raw_amount: "-R$ 25.247,18"
+        raw_balance: unknown
+        normalized_amount: "-25247.18"
+        should_import_as_transaction: true
+        notes: "Débito explícito por prefixo '-R$'"
+      - raw_date: "30/09/2024"
+        raw_description: "Pix recebido"
+        raw_document: unknown
+        raw_amount: "R$ 17.329,96"
+        raw_balance: unknown
+        normalized_amount: "17329.96"
+        should_import_as_transaction: true
+        notes: "Crédito explícito por ausência de sinal negativo"
+      - raw_date: "25/09/2024"
+        raw_description: "Desbloqueio judicial"
+        raw_document: unknown
+        raw_amount: "R$ 3.250,00"
+        raw_balance: unknown
+        normalized_amount: "3250.00"
+        should_import_as_transaction: true
+        notes: "Crédito explícito por ausência de sinal negativo"
+  implementation_notes:
+    - "Classificar pela marca Voluz Business e pelo título 'Extrato da Conta'."
+    - "Usar prefixo monetário '-R$' como regra primária para débitos."
+    - "Usar a tabela Data/Descrição/Detalhes/Valor como estrutura principal."
+    - "Tratar Detalhes como campo opcional e concatenável à descrição quando preenchido."
+    - "Não exigir saldo, documento ou ID por transação."
+    - "Validar com PDF real se há resumo de saldos/totais e como as demais categorias aparecem."

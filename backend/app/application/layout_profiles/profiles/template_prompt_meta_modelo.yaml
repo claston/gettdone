@@ -1,0 +1,123 @@
+prompt_name: gerar_meta_modelo_extrato_por_imagem
+purpose: Criar meta_model e layout_profile a partir de imagem de extrato bancario brasileiro.
+instructions: |
+  Analise esta imagem de extrato bancario brasileiro e gere um meta-modelo tecnico
+  para um motor de conversao PDF/imagem -> transacoes normalizadas.
+
+  Nao extraia dados pessoais. Nao invente informacoes que nao aparecem na imagem.
+  Quando algo for inferencia, marque como inferred. Quando algo nao puder ser
+  confirmado, marque como unknown.
+
+  Quero a resposta em YAML com duas secoes principais:
+
+  1. meta_model
+  2. layout_profile
+
+  A secao meta_model deve conter:
+
+  meta_model:
+    layout_id:
+    bank:
+    channel:
+    statement_type:
+    source_quality: image_inferred
+    confidence: low/medium/high
+    detection_signals:
+      strong:
+      weak:
+      table_headers:
+    page_structure:
+      header:
+      metadata:
+      transactions_table:
+    transaction_rules:
+      opening_balance:
+      normal_transaction:
+      amount_sign:
+      balance_column:
+    normalization_hints:
+      likely_credit_patterns:
+      likely_debit_patterns:
+      caution:
+    visual_model:
+      table_anchor:
+      column_order:
+      row_behavior:
+    parser_risks:
+      ambiguities:
+      fields_that_may_be_missing:
+      cases_that_need_real_pdf_validation:
+
+  A secao layout_profile deve ser mais objetiva e implementavel, neste formato:
+
+  layout_profile:
+    profile_name:
+    bank:
+    layout_family:
+    statement_type:
+    confidence:
+    classifier:
+      required_keywords:
+      optional_keywords:
+      negative_keywords:
+      min_score_hint:
+    table_detection:
+      header_keywords:
+      expected_column_order:
+      column_aliases:
+        date:
+        description:
+        document:
+        amount:
+        balance:
+      table_starts_after:
+      row_separator_hint:
+    parsing:
+      date_format:
+      amount_locale:
+      decimal_separator:
+      thousands_separator:
+      negative_patterns:
+      positive_patterns:
+      ignore_rows:
+      opening_balance_rows:
+      required_transaction_fields:
+      optional_transaction_fields:
+    sign_rules:
+      priority_order:
+      description_based_overrides:
+      cautions:
+    normalization:
+      description_cleanup:
+      preserve_original_description:
+      category_hints:
+      transfer_hints:
+      fee_hints:
+    validation:
+      expected_min_columns:
+      reject_if_missing_headers:
+      balance_consistency_check:
+      needs_manual_review_when:
+    examples_from_image:
+      sample_rows:
+        - raw_date:
+          raw_description:
+          raw_document:
+          raw_amount:
+          raw_balance:
+          normalized_amount:
+          should_import_as_transaction:
+          notes:
+    implementation_notes:
+      -
+
+  Regras importantes:
+  - Se a coluna Valor tiver numero sem sinal de menos, considere positivo, a menos
+    que o layout indique secao de debito/credito separada.
+  - Se houver valor em vermelho e sinal negativo, trate como saida.
+  - Nao inferir saida apenas por palavras como PAGAMENTO, porque em extratos de
+    adquirencia/cartao pode ser entrada.
+  - Linhas como SALDO ANTERIOR, SALDO DO DIA, SALDO FINAL ou similares devem ser
+    avaliadas como saldo, nao como transacao, salvo se a imagem mostrar
+    claramente o contrario.
+  - Sempre liste riscos e pontos que exigem validacao com PDF real.

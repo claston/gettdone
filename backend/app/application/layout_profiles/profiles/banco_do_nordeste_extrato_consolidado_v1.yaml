@@ -1,0 +1,401 @@
+meta_model:
+  layout_id: banco_do_nordeste_extrato_consolidado_v1
+  bank: Banco do Nordeste
+  channel: unknown
+  statement_type: extrato_consolidado
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo/texto 'Banco do Nordeste' visível no topo"
+      - "Título 'Extrato Consolidado'"
+      - "Campo 'Titular'"
+      - "Bloco 'Informações Gerais'"
+      - "Campo 'Mês' com seletor"
+      - "Campo 'Data de Emissão'"
+      - "Seção 'Detalhamento do Extrato'"
+      - "Texto '< RESUMO DAS MOVIMENTACOES NO PERIODO >'"
+      - "Seção '> CONTA CORRENTE'"
+      - "Resumo de saldos como 'SALDO CONTA CORRENTE', 'SALDO POUPANCA CORRENTE', 'SALDO BLOQUEADO', 'SALDO ATUAL'"
+      - "Seção '> DEMONSTRATIVO DA MOVIMENTACAO DE CONTA CORRENTE'"
+      - "Cabeçalho de tabela com colunas 'DIA', 'HISTORICO', 'DOCUMENTO', 'VALOR', 'SALDO'"
+    weak:
+      - "Imagem mostra parte superior/central do extrato; linhas da tabela aparecem apenas parcialmente"
+      - "Dados do titular, mês, agência, conta, valores e data de emissão estão ocultos ou ilegíveis"
+      - "Layout é monoespaçado/legado dentro de uma área delimitada"
+      - "Não há exemplos completos de valores de crédito/débito visíveis no recorte"
+      - "Sinais de valor não podem ser confirmados na imagem"
+    table_headers:
+      - "DIA"
+      - "HISTORICO"
+      - "DOCUMENTO"
+      - "VALOR"
+      - "SALDO"
+  page_structure:
+    header:
+      bank_logo: "Banco do Nordeste"
+      title: "Extrato Consolidado"
+      account_identifiers:
+        holder: unknown
+        agency: unknown
+        account: unknown
+    metadata:
+      general_information_title: "Informações Gerais"
+      month: unknown
+      emission_date: unknown
+      detail_title: "Detalhamento do Extrato"
+      reference: unknown
+      summary_title: "RESUMO DAS MOVIMENTACOES NO PERIODO"
+      account_section: "CONTA CORRENTE"
+      balance_summary:
+        - "SALDO CONTA CORRENTE"
+        - "SALDO POUPANCA CORRENTE ATE"
+        - "SALDO POUPANCA CORRENTE A PARTIR DE"
+        - "SALDO BLOQUEADO"
+        - "SALDO ATUAL"
+        - "SALDO MEDIO DE CONTA CORRENTE"
+        - "SALDO MEDIO DE POUPANCA CORRENTE"
+    transactions_table:
+      representation: "legacy_fixed_width_table"
+      section_title: "DEMONSTRATIVO DA MOVIMENTACAO DE CONTA CORRENTE"
+      columns:
+        - "DIA"
+        - "HISTORICO"
+        - "DOCUMENTO"
+        - "VALOR"
+        - "SALDO"
+      visible_rows:
+        - type: opening_balance
+          day: unknown
+          description: "SALDO ANTERIOR"
+          document: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          day: "2"
+          description: "TARIFA MANUTENCAO CONTA"
+          document: unknown
+          amount: unknown
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+        - "SALDO CONTA CORRENTE"
+        - "SALDO ATUAL"
+        - "SALDO BLOQUEADO"
+        - "SALDO MEDIO"
+      should_import_as_transaction: false
+      balance_source: "summary_block_or_saldo_column"
+      inferred: false
+    normal_transaction:
+      row_has_day: true
+      row_has_description: true
+      row_may_have_document: true
+      row_may_have_amount: true
+      row_may_have_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece sem sinal negativo, conforme regra geral, se não houver coluna/seção específica"
+        - "Valor aparece com marcador explícito de crédito, se presente no PDF real"
+      negative_when:
+        - "Valor aparece com sinal '-'"
+        - "Valor aparece com marcador explícito de débito, se presente no PDF real"
+      inferred: true
+    balance_column:
+      exists: true
+      column_name: "SALDO"
+      may_be_blank_or_not_visible_in_image: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "*"
+        reason: "Não há exemplos completos de crédito visíveis; usar sinal/posição no PDF real"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "TARIFA MANUTENCAO CONTA"
+        reason: "Descrição sugere tarifa bancária, mas valor/sinal não está visível; confirmar no PDF real"
+        inferred: true
+    caution:
+      - "Não importar linhas de resumo de saldo como transações."
+      - "O demonstrativo usa apenas dia do mês; mês/ano devem ser inferidos do campo 'Mês' ou referência."
+      - "Não há valores completos visíveis no recorte; sinal e formato monetário precisam de validação com PDF real."
+      - "Layout monoespaçado/legado pode exigir parser por posição fixa."
+      - "A tabela começa após uma grande seção de resumo que deve ser ignorada."
+  visual_model:
+    table_anchor:
+      starts_after_text: "DEMONSTRATIVO DA MOVIMENTACAO DE CONTA CORRENTE"
+      header_keywords:
+        - "DIA"
+        - "HISTORICO"
+        - "DOCUMENTO"
+        - "VALOR"
+        - "SALDO"
+      fixed_width: true
+    column_order:
+      - day
+      - description
+      - document
+      - amount
+      - balance
+    row_behavior:
+      font: "monospace"
+      separator: "horizontal line before table header"
+      section_markers_with_greater_than: true
+      day_may_be_single_or_double_digit: true
+      description_uppercase: true
+      amount_right_aligned: true
+      balance_right_aligned: true
+  parser_risks:
+    ambiguities:
+      - "Não é possível confirmar o formato exato de valores e sinais a partir da imagem."
+      - "A tabela está parcialmente cortada; poucas linhas de exemplo aparecem."
+      - "Mês e data de emissão estão ocultos/ilegíveis."
+      - "Linhas de resumo usam pontilhado e podem ser confundidas com linhas transacionais se a segmentação for ruim."
+      - "A coluna documento pode estar vazia em algumas transações."
+    fields_that_may_be_missing:
+      - "amount"
+      - "balance"
+      - "document"
+      - "month"
+      - "year"
+      - "holder"
+      - "agency"
+      - "account"
+      - "emission_date"
+    cases_that_need_real_pdf_validation:
+      - "Se a extração textual preserva colunas fixas DIA/HISTORICO/DOCUMENTO/VALOR/SALDO."
+      - "Como valores negativos são representados: sinal antes, sinal depois, D/C ou coluna específica."
+      - "Como valores positivos são representados."
+      - "Como aparecem saldo anterior, saldo final, totais e saldos médios."
+      - "Se históricos longos quebram linha."
+      - "Se o cabeçalho e resumo aparecem em todas as páginas ou só na primeira."
+
+layout_profile:
+  profile_name: banco_do_nordeste_extrato_consolidado_v1
+  bank: Banco do Nordeste
+  layout_family: banco_do_nordeste_extrato_consolidado_legacy
+  statement_type: extrato_consolidado
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Banco do Nordeste"
+      - "Extrato Consolidado"
+      - "Titular"
+      - "Informações Gerais"
+      - "Mês"
+      - "Data de Emissão"
+      - "Detalhamento do Extrato"
+      - "RESUMO DAS MOVIMENTACOES NO PERIODO"
+      - "CONTA CORRENTE"
+      - "DEMONSTRATIVO DA MOVIMENTACAO DE CONTA CORRENTE"
+      - "DIA"
+      - "HISTORICO"
+      - "DOCUMENTO"
+      - "VALOR"
+      - "SALDO"
+    optional_keywords:
+      - "SALDO CONTA CORRENTE"
+      - "SALDO POUPANCA CORRENTE"
+      - "SALDO BLOQUEADO"
+      - "SALDO ATUAL"
+      - "SALDO MEDIO DE CONTA CORRENTE"
+      - "SALDO ANTERIOR"
+      - "TARIFA MANUTENCAO CONTA"
+      - "REFERENCIA"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "banco bmg"
+      - "banco BRB"
+      - "Banco da Amazônia"
+      - "Extrato de Conta Corrente"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "DIA"
+      - "HISTORICO"
+      - "DOCUMENTO"
+      - "VALOR"
+      - "SALDO"
+    expected_column_order:
+      - day
+      - description
+      - document
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "DIA"
+        - "Dia"
+      description:
+        - "HISTORICO"
+        - "Histórico"
+        - "Historico"
+      document:
+        - "DOCUMENTO"
+        - "Documento"
+        - "Doc."
+      amount:
+        - "VALOR"
+        - "Valor"
+      balance:
+        - "SALDO"
+        - "Saldo"
+    table_starts_after:
+      - "DEMONSTRATIVO DA MOVIMENTACAO DE CONTA CORRENTE"
+      - "DIA HISTORICO DOCUMENTO VALOR SALDO"
+    row_separator_hint: "fixed-width row; transaction starts when first column contains a day number"
+  parsing:
+    date_format: "dd"
+    date_month_year_source: "month_field_or_reference"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+      - "{amount}-"
+      - "{amount} D"
+      - "D {amount}"
+    positive_patterns:
+      - "{amount_without_minus}"
+      - "{amount} C"
+      - "C {amount}"
+    ignore_rows:
+      - "Banco do Nordeste"
+      - "Extrato Consolidado"
+      - "Titular"
+      - "Informações Gerais"
+      - "Mês"
+      - "Data de Emissão"
+      - "Detalhamento do Extrato"
+      - "REFERENCIA"
+      - "RESUMO DAS MOVIMENTACOES NO PERIODO"
+      - "CONTA CORRENTE"
+      - "AGENCIA"
+      - "CONTA"
+      - "SALDO CONTA CORRENTE"
+      - "SALDO POUPANCA CORRENTE"
+      - "SALDO BLOQUEADO"
+      - "SALDO ATUAL"
+      - "SALDO MEDIO"
+      - "DEMONSTRATIVO DA MOVIMENTACAO DE CONTA CORRENTE"
+      - "DIA"
+      - "HISTORICO"
+      - "DOCUMENTO"
+      - "VALOR"
+      - "SALDO"
+      - "SALDO ANTERIOR"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "trailing_negative_sign"
+      - "credit_debit_marker"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "TARIFA MANUTENCAO CONTA"
+        sign: negative
+        confidence: low
+        inferred: true
+        reason: "Tarifa normalmente é saída, mas o valor/sinal não está visível na imagem"
+    cautions:
+      - "Não definir sinal por descrição quando sinal/coluna existir."
+      - "Se o valor estiver sem sinal e sem saldo para validar, aplicar a regra geral de positivo, mas marcar revisão se a descrição indicar tarifa/débito."
+      - "Não importar linhas de saldo/resumo como transações."
+      - "Montar data completa antes de importar."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "remove_dot_leader_artifacts_from_summary"
+      - "normalize_uppercase_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "TARIFA MANUTENCAO CONTA"
+        category: "tarifa_manutencao_conta"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "DOC"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "MANUTENCAO"
+        category: "tarifa_manutencao"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "DIA"
+      - "HISTORICO"
+      - "VALOR"
+      - "SALDO"
+    balance_consistency_check:
+      enabled: true
+      method: "when balance is available, validate previous_balance_plus_signed_amount_equals_current_balance"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "month_or_year_missing"
+      - "amount_not_visible_or_ocr_low_confidence"
+      - "sign_format_unknown"
+      - "summary_line_detected_inside_transaction_region"
+      - "document_missing_or_merged_with_description"
+      - "description_line_wrap_detected"
+      - "balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: unknown
+        raw_description: "SALDO ANTERIOR"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo anterior; não importar como transação"
+      - raw_date: "2"
+        raw_description: "TARIFA MANUTENCAO CONTA"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Linha transacional parcial; valor/sinal não visível no recorte, requer validação com PDF real"
+  implementation_notes:
+    - "Classificar pelo título 'Extrato Consolidado' e pelas seções de resumo/demonstrativo."
+    - "Ignorar todo o bloco de resumo de saldos antes do demonstrativo de movimentação."
+    - "Usar parser fixed-width para DIA/HISTORICO/DOCUMENTO/VALOR/SALDO."
+    - "Montar data completa a partir do dia e do campo Mês/Referência."
+    - "Não importar saldos e linhas de resumo como transações."
+    - "Validar com PDF real o formato de sinal dos valores."
