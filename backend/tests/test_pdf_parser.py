@@ -159,7 +159,7 @@ def test_parse_pdf_transactions_adjusts_year_rollover_from_december_to_january(m
 
     result = parse_pdf_transactions(b"%PDF synthetic")
 
-    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert result.parse_metrics["selected_parser"] == "inline"
     assert len(result.transactions) == 2
     assert result.transactions[0].date == "2025-12-31"
     assert result.transactions[0].amount == -10.0
@@ -178,7 +178,7 @@ def test_parse_pdf_transactions_preserves_explicit_negative_amount_despite_credi
 
     result = parse_pdf_transactions(b"%PDF synthetic")
 
-    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert result.parse_metrics["selected_parser"] == "inline"
     assert len(result.transactions) == 2
     assert result.transactions[0].date == "2026-06-12"
     assert result.transactions[0].amount == -45.0

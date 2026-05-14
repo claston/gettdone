@@ -732,6 +732,10 @@ def _build_grouped_amount_only_transaction(
     if not description_parts:
         return None
 
+    last_part_normalized = _normalize_text(description_parts[-1].strip()) if description_parts else ""
+    if last_part_normalized in {"DEBITO", "DÉBITO", "CREDITO", "CRÉDITO"} and len(description_parts) >= 2:
+        return None
+
     description = " ".join(description_parts).strip()
     if should_skip_transaction_description(description):
         return None

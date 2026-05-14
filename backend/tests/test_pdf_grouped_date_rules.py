@@ -22,8 +22,8 @@ def test_parse_grouped_date_line_returns_none_for_non_date_lines() -> None:
 
 
 def test_parse_grouped_date_line_supports_slash_date_prefix() -> None:
-    result = parse_grouped_date_line("01/04/2024 PIX RECEBIDO", inferred_year=2026)
+    result = parse_grouped_date_line("01/04/2024", inferred_year=2026)
 
     assert result is not None
     assert result.date == "2024-04-01"
-    assert result.rest.strip() == "PIX RECEBIDO"
+    assert result.rest.strip() == ""

@@ -27,6 +27,9 @@ def parse_grouped_date_line(raw_line: str, *, inferred_year: int | None) -> Grou
 
     slash_match = SLASH_DATE_PATTERN.match(normalized_line)
     if slash_match:
+        rest_value = (slash_match.group("rest") or "").strip()
+        if rest_value:
+            return None
         year_value = slash_match.group("year")
         if year_value is None:
             year_value = str(inferred_year if inferred_year is not None else datetime.now(timezone.utc).year)
@@ -36,7 +39,7 @@ def parse_grouped_date_line(raw_line: str, *, inferred_year: int | None) -> Grou
             date=datetime(int(year_value), int(slash_match.group("month")), int(slash_match.group("day"))).strftime(
                 "%Y-%m-%d"
             ),
-            rest=slash_match.group("rest"),
+            rest=rest_value,
         )
 
     date_match = DATE_HEADER_PATTERN.match(normalized_line)
