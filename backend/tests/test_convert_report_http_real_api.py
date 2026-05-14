@@ -167,7 +167,16 @@ class FakeReportService:
 
             raise AnalysisAccessDeniedError
 
-    def get_convert_report_path(self, processing_id: str, file_format: str = "ofx") -> Path:
+    def get_convert_report_path(
+        self,
+        processing_id: str,
+        file_format: str = "ofx",
+        *,
+        closing_balance: float | None = None,
+        bank_branch: str | None = None,
+        account_number: str | None = None,
+    ) -> Path:
+        _ = (closing_balance, bank_branch, account_number)
         _ = file_format
         if processing_id not in self._owners:
             from app.application import AnalysisNotFoundError
