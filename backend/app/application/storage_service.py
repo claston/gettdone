@@ -78,8 +78,27 @@ class TempAnalysisStorage:
             raise AnalysisNotFoundError
         return report_path
 
-    def get_convert_report_path(self, analysis_id: str, file_format: str) -> Path:
+    def get_convert_report_path(
+        self,
+        analysis_id: str,
+        file_format: str,
+        *,
+        closing_balance: float | None = None,
+        bank_branch: str | None = None,
+        account_number: str | None = None,
+    ) -> Path:
         analysis_dir = self.root_dir / analysis_id
+        if file_format == "ofx" and (
+            closing_balance is not None
+            or (str(bank_branch or "").strip() != "")
+            or (str(account_number or "").strip() != "")
+        ):
+            self._regenerate_ofx_with_overrides(
+                analysis_dir,
+                closing_balance=closing_balance,
+                bank_branch=bank_branch,
+                account_number=account_number,
+            )
         if file_format == "ofx":
             suffix = "ofx"
         elif file_format == "xlsx":
@@ -500,6 +519,9 @@ class TempAnalysisStorage:
         report_rows: list[TransactionRow],
         *,
         ofx_account_type: str | None = None,
+        closing_balance: float | None = None,
+        bank_branch: str | None = None,
+        account_number: str | None = None,
     ) -> None:
         active_rows = self._active_rows(report_rows)
         normalized_transactions = [
@@ -516,6 +538,9 @@ class TempAnalysisStorage:
             build_ofx_statement(
                 normalized_transactions,
                 account_type=ofx_account_type,
+                closing_balance=closing_balance,
+                bank_branch=bank_branch,
+                account_number=account_number,
             ),
             encoding="utf-8",
         )
@@ -539,6 +564,36 @@ class TempAnalysisStorage:
             sheet.append([self._format_convert_date(item.date), item.description, credit, debit])
         self._format_transacoes_sheet(sheet)
         workbook.save(analysis_dir / "converted.xlsx")
+
+    def _regenerate_ofx_with_overrides(
+        self,
+        analysis_dir: Path,
+        *,
+        closing_balance: float | None = None,
+        bank_branch: str | None = None,
+        account_number: str | None = None,
+    ) -> None:
+        metadata_path = analysis_dir / "analysis.json"
+        if not metadata_path.exists():
+            raise AnalysisNotFoundError
+        try:
+            content = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            raise AnalysisNotFoundError from None
+
+        report_rows_raw = content.get("report_transactions") or content.get("preview_transactions", [])
+        report_rows = self._parse_transaction_rows(report_rows_raw)
+        if not report_rows:
+            raise AnalysisNotFoundError
+
+        self._write_convert_artifacts(
+            analysis_dir,
+            report_rows,
+            ofx_account_type=str(content.get("ofx_account_type") or "").strip() or None,
+            closing_balance=float(closing_balance) if closing_balance is not None else None,
+            bank_branch=bank_branch,
+            account_number=account_number,
+        )
 
     def _write_report_workbook(
         self,

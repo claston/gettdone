@@ -76,3 +76,37 @@ def test_build_ofx_statement_generates_stable_fitids() -> None:
     fitid_lines = [line.strip() for line in first_statement.splitlines() if "<FITID>" in line]
     assert len(fitid_lines) == 2
     assert fitid_lines[0] != fitid_lines[1]
+
+
+def test_build_ofx_statement_includes_ledgerbal_when_closing_balance_is_provided() -> None:
+    transactions = [
+        NormalizedTransaction(
+            date="2026-04-10",
+            description="PIX RECEBIDO",
+            amount=150.0,
+            type="inflow",
+        )
+    ]
+
+    statement = build_ofx_statement(transactions, closing_balance=56276.06)
+
+    assert "<LEDGERBAL>" in statement
+    assert "<BALAMT>56276.06" in statement
+    assert "<DTASOF>20260410000000[-3:BRT]" in statement
+
+
+def test_build_ofx_statement_accepts_bank_branch_and_account_number() -> None:
+    transactions = [
+        NormalizedTransaction(
+            date="2026-04-10",
+            description="PIX RECEBIDO",
+            amount=150.0,
+            type="inflow",
+        )
+    ]
+
+    statement = build_ofx_statement(transactions, bank_branch="1234-5", account_number="67890-1")
+
+    assert "<BANKACCTFROM>" in statement
+    assert "<BRANCHID>12345" in statement
+    assert "<ACCTID>678901" in statement
