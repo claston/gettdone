@@ -532,6 +532,9 @@ class AccessControlService:
     def _connect(self):
         return self.db.connect()
 
+    def _is_retryable_db_exception(self, exc: Exception) -> bool:
+        return self.db.is_retryable_db_exception(exc)
+
     def _init_db(self) -> None:
         self.schema.init_db()
 
