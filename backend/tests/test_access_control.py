@@ -242,3 +242,12 @@ def test_create_checkout_intent_persists_pending_order(tmp_path) -> None:
     assert intent["status"] == "REQUESTED"
     assert intent["plan_code"] == "profissional"
     assert intent["price_cents"] == 3990
+
+
+def test_retryable_db_exception_includes_unexpected_ssl_close(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+    )
+    exc = Exception("consuming input failed: SSL connection has been closed unexpectedly")
+    assert service._is_retryable_db_exception(exc) is True

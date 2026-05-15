@@ -1589,6 +1589,10 @@ class AccessControlService:
             "timeout expired",
             "could not connect",
             "connection refused",
+            "consuming input failed",
+            "ssl connection has been closed unexpectedly",
+            "server closed the connection unexpectedly",
+            "connection is closed",
         )
         return any(token in message for token in retryable_hints)
 
