@@ -19,6 +19,12 @@ def test_match_tabular_date_prefix_returns_date_and_rest() -> None:
     assert match.group("date") == "2 out"
 
 
+def test_match_tabular_date_prefix_accepts_leading_ocr_symbol() -> None:
+    match = match_tabular_date_prefix("(24/04/2024 TRANSFERENCIA 6.250,00C 6.428,50 C")
+    assert match is not None
+    assert match.group("date") == "24/04/2024"
+
+
 def test_is_date_only_row_and_amount_only_row() -> None:
     assert is_date_only_row("2 out") is True
     assert is_date_only_row("2 out COMPRA") is False

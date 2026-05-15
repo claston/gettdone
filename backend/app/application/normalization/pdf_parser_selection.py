@@ -54,6 +54,23 @@ def select_parsed_rows(
     tabular_transactions_count = len(tabular_rows)
     columnar_rows, columnar_candidates = parse_columnar_rows(lines)
     columnar_transactions_count = len(columnar_rows)
+    tabular_is_clearly_better_than_inline = tabular_transactions_count >= inline_transactions_count + 3
+
+    if inline_rows and tabular_rows and tabular_is_clearly_better_than_inline:
+        return SelectedParserRows(
+            selected_parser="tabular",
+            rows=tabular_rows,
+            inline_candidates=inline_candidates,
+            inline_transactions_count=inline_transactions_count,
+            tabular_candidates=tabular_candidates,
+            columnar_candidates=columnar_candidates,
+            tabular_transactions_count=tabular_transactions_count,
+            columnar_transactions_count=columnar_transactions_count,
+            selection_reason="tabular_preferred_on_row_count_gap",
+            inline_decision="not_selected_row_count_gap",
+            tabular_decision="selected_on_row_count_gap",
+            columnar_decision="no_rows" if not columnar_rows else "not_selected_tabular_priority",
+        )
 
     if inline_rows and not (
         layout_profile is not None and tabular_transactions_count >= inline_transactions_count and tabular_rows

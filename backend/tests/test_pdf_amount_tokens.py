@@ -17,6 +17,15 @@ def test_find_amount_tokens_extracts_positions_and_values() -> None:
     assert text[tokens[1].start : tokens[1].end] == "12,34"
 
 
+def test_find_amount_tokens_does_not_consume_next_balance_negative_sign() -> None:
+    text = "TARIFA 310301 -7,00 -448,66"
+    tokens = find_amount_tokens(text)
+
+    assert len(tokens) == 2
+    assert tokens[0].value == "-7,00"
+    assert tokens[1].value == "-448,66"
+
+
 def test_parse_pdf_amount_handles_currency_and_unicode_minus() -> None:
     assert parse_pdf_amount("R$ 1.234,56") == 1234.56
     assert parse_pdf_amount("-10,00") == -10.0

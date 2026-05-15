@@ -1,7 +1,4 @@
-﻿import pytest
-
 from app.application import pdf_parser as pdf_parser_module
-from app.application.errors import InvalidFileContentError
 from app.application.pdf_parser import parse_pdf_transactions
 from tests.fixtures.pdf_golden_samples import (
     GROUPED_INLINE_MULTILINE_SAMPLE,
@@ -48,12 +45,15 @@ def test_parse_pdf_transactions_parses_unicode_minus_with_currency_prefix(monkey
     assert result.canonical_transactions[0].source_parser == "grouped"
 
 
-def test_parse_pdf_transactions_does_not_run_ocr_fallback(monkeypatch) -> None:
+def test_parse_pdf_transactions_uses_ocr_fallback_when_enabled(monkeypatch) -> None:
     monkeypatch.setenv("PDF_OCR_ENABLED", "true")
     monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [])
+    monkeypatch.setattr(pdf_parser_module, "extract_pdf_page_texts_with_ocr", lambda raw_bytes: ["10/04 PIX 10,00"])
 
-    with pytest.raises(InvalidFileContentError, match="OCR fallback is disabled"):
-        parse_pdf_transactions(b"%PDF synthetic")
+    result = parse_pdf_transactions(b"%PDF synthetic")
+    assert len(result.transactions) == 1
+    assert result.transactions[0].date == "2026-04-10"
+    assert result.transactions[0].amount == 10.0
 
 
 def test_parse_pdf_transactions_uses_declarative_credit_debit_columns(monkeypatch) -> None:
@@ -566,6 +566,53 @@ def test_parse_inline_statement_rows_cancels_pending_on_tabular_header_before_am
     assert parsed_rows == []
 
 
+def test_parse_inline_statement_rows_maps_ocr_columnar_dates_to_later_amount_block() -> None:
+    lines = [
+        pdf_parser_module._PdfLine(text="02/01/2025 CRÉDITO PIX - CLIENTE BETA", page_number=1, line_number=1),
+        pdf_parser_module._PdfLine(text="03/01/2025 DÉBITO PIX - FORNECEDOR GAMMA", page_number=1, line_number=2),
+        pdf_parser_module._PdfLine(text="DOC", page_number=1, line_number=3),
+        pdf_parser_module._PdfLine(text="000123", page_number=1, line_number=4),
+        pdf_parser_module._PdfLine(text="Valor", page_number=1, line_number=5),
+        pdf_parser_module._PdfLine(text="8.450,00", page_number=1, line_number=6),
+        pdf_parser_module._PdfLine(text="2.600,00", page_number=1, line_number=7),
+    ]
+
+    parsed_rows, candidates = pdf_parser_module._parse_inline_statement_rows(lines)
+
+    assert candidates == 2
+    assert len(parsed_rows) == 2
+    assert parsed_rows[0].transaction.date == "2025-01-02"
+    assert parsed_rows[0].transaction.amount == 8450.0
+    assert parsed_rows[0].transaction.description == "CRÉDITO PIX - CLIENTE BETA"
+    assert parsed_rows[1].transaction.date == "2025-01-03"
+    assert parsed_rows[1].transaction.amount == -2600.0
+    assert parsed_rows[1].transaction.description == "DÉBITO PIX - FORNECEDOR GAMMA"
+
+
+def test_parse_inline_statement_rows_infers_opening_balance_from_columnar_balance_block() -> None:
+    lines = [
+        pdf_parser_module._PdfLine(text="Saldo Anterior", page_number=1, line_number=1),
+        pdf_parser_module._PdfLine(text="02/01/2025 CRÉDITO PIX - CLIENTE BETA", page_number=1, line_number=2),
+        pdf_parser_module._PdfLine(text="03/01/2025 DÉBITO PIX - FORNECEDOR GAMMA", page_number=1, line_number=3),
+        pdf_parser_module._PdfLine(text="DOC", page_number=1, line_number=4),
+        pdf_parser_module._PdfLine(text="Valor", page_number=1, line_number=5),
+        pdf_parser_module._PdfLine(text="8.450,00", page_number=1, line_number=6),
+        pdf_parser_module._PdfLine(text="2.600,00", page_number=1, line_number=7),
+        pdf_parser_module._PdfLine(text="Saldo", page_number=1, line_number=8),
+        pdf_parser_module._PdfLine(text="33.880,25", page_number=1, line_number=9),
+        pdf_parser_module._PdfLine(text="31.280,25", page_number=1, line_number=10),
+    ]
+
+    parsed_rows, candidates = pdf_parser_module._parse_inline_statement_rows(lines)
+
+    assert candidates == 2
+    assert len(parsed_rows) == 3
+    assert parsed_rows[0].transaction.description == "SALDO ANTERIOR"
+    assert parsed_rows[0].transaction.amount == 25430.25
+    assert parsed_rows[1].transaction.date == "2025-01-02"
+    assert parsed_rows[2].transaction.date == "2025-01-03"
+
+
 def test_parse_inline_statement_line_accepts_trailing_mixed_ocr_noise_after_amount() -> None:
     line = pdf_parser_module._PdfLine(text="10/04 PIX RECEBIDO 25,00 ||I", page_number=2, line_number=11)
 
@@ -802,3 +849,42 @@ def test_accumulate_tabular_row_adds_transaction_when_present() -> None:
     assert next_candidates == 1
     assert len(transactions) == 1
     assert transactions[0].transaction.description == "Pagamento"
+
+
+def test_accumulate_tabular_row_reconciles_amount_when_value_matches_balance_by_ocr_noise() -> None:
+    transactions: list[pdf_parser_module._ParsedTransaction] = [
+        pdf_parser_module._ParsedTransaction(
+            transaction=pdf_parser_module.NormalizedTransaction(
+                date="2024-03-01",
+                description="Linha anterior",
+                amount=-150.0,
+                type="outflow",
+            ),
+            source_page=1,
+            source_line=1,
+            running_balance=-598.66,
+        )
+    ]
+    parsed_row = pdf_parser_module._ParsedTransaction(
+        transaction=pdf_parser_module.NormalizedTransaction(
+            date="2024-03-01",
+            description="ENCARGOS LIMITE DE CRED 310301",
+            amount=-600.91,
+            type="outflow",
+        ),
+        source_page=1,
+        source_line=2,
+        running_balance=-600.91,
+    )
+
+    next_candidates = pdf_parser_module._accumulate_tabular_row(
+        transactions=transactions,
+        parsed_row=parsed_row,
+        is_candidate=True,
+        candidates=1,
+    )
+
+    assert next_candidates == 2
+    assert len(transactions) == 2
+    assert transactions[1].transaction.amount == -2.25
+    assert transactions[1].transaction.type == "outflow"

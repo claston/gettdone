@@ -22,7 +22,11 @@ def match_inline_row(raw_line: str) -> re.Match[str] | None:
 
 
 def match_tabular_date_prefix(raw_line: str) -> re.Match[str] | None:
-    return TABULAR_DATE_PREFIX_PATTERN.match(raw_line)
+    match = TABULAR_DATE_PREFIX_PATTERN.match(raw_line)
+    if match is not None:
+        return match
+    cleaned = raw_line.lstrip(" ([{")
+    return TABULAR_DATE_PREFIX_PATTERN.match(cleaned)
 
 
 def is_date_only_row(raw_line: str) -> bool:
