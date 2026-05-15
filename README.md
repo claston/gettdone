@@ -42,9 +42,14 @@ $env:ANALYSIS_TTL_SECONDS = "86400" # 24 horas
 
 OCR para PDF sem camada de texto:
 
-- OCR esta desativado nesta fase para evitar risco de consumo excessivo de memoria/CPU em ambientes de usuario.
-- O fluxo atual aceita PDFs com texto extraivel e retorna erro orientativo para PDFs escaneados/imagem.
-- O codigo experimental de OCR fica isolado para hardening futuro, mas nao e chamado pelo parser em runtime.
+- Em `development`, o OCR pode ser autoativado quando houver Tesseract instalado e `backend/tmp/tessdata` com idiomas disponiveis.
+- Em `production`, o OCR continua desligado por padrao; use `PDF_OCR_ENABLED=true` para habilitar explicitamente.
+- Idioma padrao: `por+eng` (configuravel por `PDF_OCR_LANG`).
+- Limite padrao de paginas no fallback: `12` (configuravel por `PDF_OCR_MAX_PAGES`).
+- DPI padrao de renderizacao OCR: `250` (configuravel por `PDF_OCR_DPI`; faixa recomendada `150` a `400`).
+- Limite padrao de tamanho para OCR: `5 MB` (configuravel por `PDF_OCR_MAX_FILE_MB`).
+- Timeout padrao de OCR por pagina: `12s` (configuravel por `PDF_OCR_PAGE_TIMEOUT_SECONDS`).
+- Concorrencia padrao de OCR por processo: `1` (configuravel por `PDF_OCR_CONCURRENCY_LIMIT`).
 
 ## Rodar frontend
 

@@ -116,6 +116,25 @@ def test_select_parsed_rows_keeps_inline_on_conflict_without_layout_profile() ->
     assert result.columnar_decision == "no_rows"
 
 
+def test_select_parsed_rows_prefers_tabular_on_large_row_count_gap_without_layout_profile() -> None:
+    result = select_parsed_rows(
+        lines=["line"],
+        grouped_rows=[],
+        layout_profile=None,
+        parse_inline_rows=lambda _: (["inline-a", "inline-b", "inline-c"], 3),
+        parse_tabular_rows=lambda _lines, _profile: (
+            ["tabular-1", "tabular-2", "tabular-3", "tabular-4", "tabular-5", "tabular-6", "tabular-7"],
+            7,
+        ),
+        parse_columnar_rows=lambda _: ([], 0),
+    )
+
+    assert result.selected_parser == "tabular"
+    assert result.selection_reason == "tabular_preferred_on_row_count_gap"
+    assert result.inline_decision == "not_selected_row_count_gap"
+    assert result.tabular_decision == "selected_on_row_count_gap"
+
+
 def test_select_parsed_rows_raises_unsupported_layout_when_candidates_exist_without_rows() -> None:
     with pytest.raises(InvalidFileContentError, match="unsupported table layout"):
         select_parsed_rows(

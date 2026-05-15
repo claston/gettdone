@@ -26,6 +26,9 @@ def select_tabular_amount_token(
         return declarative_selection
     if len(tokens) == 1:
         return SelectedTabularAmount(token=tokens[0], role=None, description_end=tokens[0].start, balance_token=None)
+    if len(tokens) >= 3:
+        # OCR can split the running balance into two partial tokens; keep the first token as amount.
+        return SelectedTabularAmount(token=tokens[0], role=None, description_end=tokens[0].start, balance_token=tokens[-1])
     # In statement-like tables with balance column, the rightmost amount is usually balance.
     return SelectedTabularAmount(token=tokens[-2], role=None, description_end=tokens[-2].start, balance_token=tokens[-1])
 

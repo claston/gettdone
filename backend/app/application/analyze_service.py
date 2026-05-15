@@ -1,5 +1,6 @@
 import re
 import unicodedata
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
@@ -27,6 +28,7 @@ from app.schemas import (
 )
 
 SUPPORTED_EXTENSIONS = {"csv", "xlsx", "ofx", "pdf"}
+logger = logging.getLogger(__name__)
 
 
 class AnalyzeService:
@@ -38,6 +40,12 @@ class AnalyzeService:
         extension = Path(filename).suffix.replace(".", "").lower()
         if extension not in SUPPORTED_EXTENSIONS:
             raise UnsupportedFileTypeError
+        logger.info(
+            "analyze_start extension=%s size_bytes=%d filename=%s",
+            extension,
+            len(raw_bytes),
+            (filename or "")[:120],
+        )
 
         analysis_id = f"an_{uuid4().hex[:12]}"
         parse_start = perf_counter()
@@ -145,6 +153,16 @@ class AnalyzeService:
             ofx_account_type=ofx_account_type,
         )
         expires_at = self.storage.save_analysis(analysis_data)
+        logger.info(
+            "analyze_done analysis_id=%s extension=%s total_ms=%.3f parse_ms=%.3f tx_count=%d layout=%s parser=%s",
+            analysis_id,
+            extension,
+            round((perf_counter() - total_start) * 1000, 3),
+            parse_ms,
+            len(transactions),
+            layout_inference_name or "",
+            (pdf_processing_metrics or {}).get("selected_parser", ""),
+        )
 
         insights = [
             Insight(

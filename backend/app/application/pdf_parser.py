@@ -36,7 +36,7 @@ from app.application.normalization.pdf_tabular_rules import extract_document_ref
 from app.application.normalization.pdf_text_rules import should_ignore_line, should_skip_transaction_description
 from app.application.normalization.text import normalize_upper_text
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
-from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE
+from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE, extract_pdf_page_texts_with_ocr, is_pdf_ocr_enabled
 
 
 @dataclass(frozen=True)
@@ -237,6 +237,10 @@ def _extract_pdf_page_texts(raw_bytes: bytes) -> list[str]:
     pages = _read_native_pdf_page_texts(raw_bytes)
     if pages:
         return pages
+    if is_pdf_ocr_enabled():
+        ocr_pages = extract_pdf_page_texts_with_ocr(raw_bytes)
+        if ocr_pages:
+            return ocr_pages
 
     raise InvalidFileContentError(PDF_OCR_DISABLED_MESSAGE)
 
@@ -403,12 +407,56 @@ def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTra
     candidates = 0
     inferred_year = _infer_default_statement_year_from_lines(lines)
     pending_inline: tuple[str, str, int, int] | None = None
+    pending_columnar_inline: list[tuple[str, str, int, int]] = []
+    columnar_amount_mode = False
+    columnar_balance_mode = False
+    saw_opening_balance_label = False
+    opening_balance_label = "SALDO ANTERIOR"
+    columnar_running_balances: list[float] = []
 
     for line in lines:
         if pending_inline is not None:
             _, _, source_page, _ = pending_inline
             if line.page_number != source_page:
                 pending_inline = None
+
+        normalized_line = _normalize_text(line.text)
+        if normalized_line.startswith("SALDO ANTERIOR"):
+            saw_opening_balance_label = True
+            opening_balance_label = "SALDO ANTERIOR"
+        elif normalized_line.startswith("SALDO INICIAL"):
+            saw_opening_balance_label = True
+            opening_balance_label = "SALDO INICIAL"
+        if pending_columnar_inline and _is_inline_columnar_amount_header(normalized_line):
+            columnar_amount_mode = True
+        if _is_inline_columnar_balance_header(normalized_line) and (transactions or pending_columnar_inline):
+            columnar_balance_mode = True
+
+        stripped_line = line.text.strip()
+        if columnar_balance_mode and is_amount_only_row(stripped_line):
+            columnar_running_balances.append(parse_pdf_amount(stripped_line))
+            continue
+        if columnar_balance_mode and stripped_line and not _is_inline_columnar_balance_header(normalized_line):
+            columnar_balance_mode = False
+
+        if columnar_amount_mode and pending_columnar_inline and is_amount_only_row(stripped_line):
+            pending_date, pending_description, source_page, source_line = pending_columnar_inline.pop(0)
+            amount = parse_pdf_amount(stripped_line)
+            signed_amount = compute_hint_signed_amount(raw_amount=amount, description=pending_description)
+            transactions.append(
+                _build_parsed_transaction(
+                    date=pending_date,
+                    description=pending_description,
+                    amount=signed_amount,
+                    source_page=source_page,
+                    source_line=source_line,
+                )
+            )
+            candidates += 1
+            pending_inline = None
+            if not pending_columnar_inline:
+                columnar_amount_mode = False
+            continue
 
         if pending_inline is not None and is_amount_only_row(line.text.strip()):
             pending_date, pending_description, source_page, source_line = pending_inline
@@ -431,6 +479,8 @@ def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTra
             continuation = line.text.strip()
             if _is_inline_pending_continuation_blocker(continuation):
                 pending_inline = None
+                pending_columnar_inline = []
+                columnar_amount_mode = False
                 continue
             if _is_inline_pending_noise_line(continuation):
                 continue
@@ -450,6 +500,14 @@ def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTra
             if match:
                 rest = match.group("rest").strip()
                 if rest and extract_single_trailing_amount_match(rest) is None and not should_skip_transaction_description(rest):
+                    pending_columnar_inline.append(
+                        (
+                            parse_row_date(match.group("date"), fallback_year=inferred_year),
+                            rest,
+                            line.page_number,
+                            line.line_number,
+                        )
+                    )
                     pending_inline = (
                         parse_row_date(match.group("date"), fallback_year=inferred_year),
                         rest,
@@ -458,10 +516,35 @@ def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTra
                     )
                     continue
             pending_inline = None
+            pending_columnar_inline = []
+            columnar_amount_mode = False
             continue
         pending_inline = None
+        pending_columnar_inline = []
+        columnar_amount_mode = False
         candidates += 1
         transactions.append(parsed_row)
+
+    if saw_opening_balance_label and columnar_running_balances and transactions:
+        first_transaction = transactions[0]
+        inferred_opening_balance = round(columnar_running_balances[0] - first_transaction.transaction.amount, 2)
+        if len(columnar_running_balances) >= 2:
+            first_balance = columnar_running_balances[0]
+            second_balance = columnar_running_balances[1]
+            delta = round(second_balance - first_balance, 2)
+            first_amount = round(first_transaction.transaction.amount, 2)
+            if abs(delta - first_amount) <= 0.02:
+                inferred_opening_balance = round(first_balance, 2)
+        opening_transaction = _build_parsed_transaction(
+            date=first_transaction.transaction.date,
+            description=opening_balance_label,
+            amount=inferred_opening_balance,
+            source_page=first_transaction.source_page,
+            source_line=first_transaction.source_line,
+        )
+        transactions = [opening_transaction, *transactions]
+
+    return transactions, candidates
 
     return transactions, candidates
 
@@ -625,6 +708,9 @@ def _classify_tabular_statement_line(
     raw_description = rest[: selected_amount.description_end].strip()
     if not raw_description or should_skip_transaction_description(raw_description):
         return None, True
+    normalized_description = _normalize_text(raw_description)
+    if normalized_description.endswith(" SALDO"):
+        return None, True
 
     external_reference_id = extract_document_reference(raw_description, layout_profile=tabular_profile)
     amount_details = _build_tabular_amount_details(
@@ -633,6 +719,14 @@ def _classify_tabular_statement_line(
         raw_description=raw_description,
         balance_token_value=selected_amount.balance_token.value if selected_amount.balance_token else None,
     )
+    compact_amount = _extract_compact_cd_amount(raw_description)
+    if (
+        compact_amount is not None
+        and amount_details["running_balance"] is None
+        and abs(amount_details["signed_amount"]) > 100
+        and abs(compact_amount) <= 50
+    ):
+        amount_details["signed_amount"] = compact_amount
     return (
         _build_parsed_transaction(
             date=parse_row_date(match.group("date"), fallback_year=inferred_year),
@@ -656,8 +750,55 @@ def _accumulate_tabular_row(
 ) -> int:
     next_candidates = candidates + 1 if is_candidate else candidates
     if parsed_row is not None:
-        transactions.append(parsed_row)
+        transactions.append(_reconcile_tabular_amount_from_running_balance(parsed_row=parsed_row, transactions=transactions))
     return next_candidates
+
+
+def _reconcile_tabular_amount_from_running_balance(
+    *, parsed_row: _ParsedTransaction, transactions: list[_ParsedTransaction]
+) -> _ParsedTransaction:
+    if parsed_row.running_balance is None:
+        return parsed_row
+
+    previous_running_balance = _resolve_latest_running_balance(transactions)
+    if previous_running_balance is None:
+        return parsed_row
+
+    delta = round(parsed_row.running_balance - previous_running_balance, 2)
+    if abs(delta) < 0.005:
+        return parsed_row
+
+    current_amount = parsed_row.transaction.amount
+    projected_balance = previous_running_balance + current_amount
+    current_error = abs(projected_balance - parsed_row.running_balance)
+    if current_error <= 0.02:
+        return parsed_row
+
+    amount_looks_like_balance = abs(abs(current_amount) - abs(parsed_row.running_balance)) <= 0.05
+    if not amount_looks_like_balance:
+        return parsed_row
+
+    normalized_transaction = NormalizedTransaction(
+        date=parsed_row.transaction.date,
+        description=parsed_row.transaction.description,
+        amount=delta,
+        type="inflow" if delta >= 0 else "outflow",
+    )
+    return _ParsedTransaction(
+        transaction=normalized_transaction,
+        source_page=parsed_row.source_page,
+        source_line=parsed_row.source_line,
+        running_balance=parsed_row.running_balance,
+        external_reference_id=parsed_row.external_reference_id,
+        has_explicit_amount_sign=parsed_row.has_explicit_amount_sign,
+    )
+
+
+def _resolve_latest_running_balance(transactions: list[_ParsedTransaction]) -> float | None:
+    for item in reversed(transactions):
+        if item.running_balance is not None:
+            return item.running_balance
+    return None
 
 
 def _build_tabular_amount_details(
@@ -674,6 +815,21 @@ def _build_tabular_amount_details(
     )
     running_balance = parse_pdf_amount(balance_token_value) if balance_token_value is not None else None
     return {"signed_amount": signed_amount, "running_balance": running_balance}
+
+
+def _extract_compact_cd_amount(description: str) -> float | None:
+    match = re.search(r"([+\-\u2212]?)\s*(\d{3,5})\s*([CD])\b", description.upper())
+    if not match:
+        return None
+    sign_prefix = match.group(1)
+    digits = int(match.group(2))
+    suffix = match.group(3)
+    value = digits / 100.0
+    if sign_prefix in {"-", "\u2212"} or suffix == "D":
+        return -abs(value)
+    if sign_prefix == "+" or suffix == "C":
+        return abs(value)
+    return None
 
 
 def _update_grouped_section_state(
@@ -895,4 +1051,14 @@ def _is_inline_pending_noise_line(raw_text: str) -> bool:
     if not value:
         return True
     return bool(re.fullmatch(r"[|:;,\.\-_/\\Il!]+", value))
+
+
+def _is_inline_columnar_amount_header(normalized_line: str) -> bool:
+    if normalized_line in {"DOC", "VALOR", "SALDO"}:
+        return True
+    return normalized_line.startswith("DATA:") or normalized_line.startswith("HORA:")
+
+
+def _is_inline_columnar_balance_header(normalized_line: str) -> bool:
+    return normalized_line == "SALDO"
 
