@@ -1,0 +1,458 @@
+meta_model:
+  layout_id: caixa_gerenciador_extrato_lancamentos_data_movimento_v1
+  bank: Caixa Econômica Federal
+  channel: Gerenciador CAIXA
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'GERENCIADOR CAIXA' visível no topo"
+      - "Campos 'CNPJ', 'Agência', 'Produto' e 'Conta'"
+      - "Texto 'Emitido em'"
+      - "Título 'Extrato'"
+      - "Período explícito: 'Lançamentos de 01/09/2024 à 30/09/2024'"
+      - "Cabeçalho de tabela com colunas 'Data de lançamento', 'Data de movimento', 'Documento', 'Histórico', 'Valor(R$)' e 'Saldo(R$)'"
+      - "Históricos como 'SALDO DIA', 'CRED PAG INST PIX', 'STON MC CD' e 'STON VS CD'"
+      - "Valores sem sinal negativo na coluna Valor(R$)"
+      - "Coluna Saldo(R$) presente à direita"
+    weak:
+      - "Dados de CNPJ, agência, produto, conta e emissão estão ocultos ou ilegíveis"
+      - "Documento aparece como coluna, mas valores não estão visíveis nas linhas mostradas"
+      - "Saldo aparece parcialmente oculto/ilegível, com apenas prefixo 'R$' visível"
+      - "Não há exemplo de valor negativo visível no recorte"
+      - "Linha 'SALDO DIA' usa valor 0,00 e deve ser tratada como saldo/contexto"
+    table_headers:
+      - "Data de lançamento"
+      - "Data de movimento"
+      - "Documento"
+      - "Histórico"
+      - "Valor(R$)"
+      - "Saldo(R$)"
+  page_structure:
+    header:
+      bank_logo: "GERENCIADOR CAIXA"
+      title: "Extrato"
+      account_identifiers:
+        cnpj: unknown
+        agency: unknown
+        product: unknown
+        account: unknown
+      emitted_at: unknown
+    metadata:
+      period: "01/09/2024 à 30/09/2024"
+      start_date: "01/09/2024"
+      end_date: "30/09/2024"
+    transactions_table:
+      columns:
+        - "Data de lançamento"
+        - "Data de movimento"
+        - "Documento"
+        - "Histórico"
+        - "Valor(R$)"
+        - "Saldo(R$)"
+      visible_rows:
+        - type: balance_row
+          posting_date: "20/09/2024"
+          movement_date: "20/09/2024"
+          document: unknown
+          description: "SALDO DIA"
+          amount: "0,00"
+          balance: unknown
+        - type: normal_transaction
+          posting_date: "23/09/2024"
+          movement_date: "23/09/2024"
+          document: unknown
+          description: "CRED PAG INST PIX"
+          amount: "88,02"
+          balance: unknown
+        - type: normal_transaction
+          posting_date: "23/09/2024"
+          movement_date: "23/09/2024"
+          document: unknown
+          description: "CRED PAG INST PIX"
+          amount: "47,43"
+          balance: unknown
+        - type: normal_transaction
+          posting_date: "23/09/2024"
+          movement_date: "23/09/2024"
+          document: unknown
+          description: "STON MC CD"
+          amount: "356,89"
+          balance: unknown
+        - type: normal_transaction
+          posting_date: "23/09/2024"
+          movement_date: "23/09/2024"
+          document: unknown
+          description: "STON VS CD"
+          amount: "311,76"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO DIA"
+        - "SALDO ANTERIOR"
+        - "SALDO INICIAL"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: "Saldo(R$)"
+      inferred: false
+    normal_transaction:
+      row_has_posting_date: true
+      row_has_movement_date: true
+      row_may_have_document: true
+      row_has_description: true
+      row_has_amount: true
+      row_may_have_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece sem sinal negativo"
+        - "Histórico indica crédito/recebimento, como 'CRED PAG INST PIX'"
+      negative_when:
+        - "Valor aparece com sinal '-'"
+        - "Histórico indica débito/saída e valor/saldo confirmam, se presente no PDF real"
+      inferred: true
+    balance_column:
+      exists: true
+      column_name: "Saldo(R$)"
+      may_be_blank_or_masked_in_visible_rows: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "CRED PAG INST PIX"
+        reason: "Histórico contém CRED e valor visível sem sinal negativo"
+        inferred: false
+      - pattern: "STON MC CD"
+        reason: "Valor sem sinal negativo; possivelmente recebimento de adquirência/cartão, confirmar com saldo real"
+        inferred: true
+      - pattern: "STON VS CD"
+        reason: "Valor sem sinal negativo; possivelmente recebimento de adquirência/cartão, confirmar com saldo real"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "*"
+        reason: "Não há débitos visíveis; validar como o layout representa saídas no PDF real"
+        inferred: true
+    caution:
+      - "Não importar linhas 'SALDO DIA' como transação, mesmo que tenham valor 0,00."
+      - "Não inferir sinal somente por adquirente/cartão; usar sinal explícito ou consistência de saldo quando possível."
+      - "A coluna Saldo(R$) existe, mas está ocultada/ilegível no recorte."
+      - "Documento pode estar vazio; parser não deve exigir documento."
+      - "Validar com PDF real se valores negativos usam '-' antes do número, sufixo D ou outra convenção."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Lançamentos de"
+      header_keywords:
+        - "Data de lançamento"
+        - "Data de movimento"
+        - "Documento"
+        - "Histórico"
+        - "Valor(R$)"
+        - "Saldo(R$)"
+    column_order:
+      - posting_date
+      - movement_date
+      - document
+      - description
+      - amount
+      - balance
+    row_behavior:
+      separator: "whitespace rows with aligned columns"
+      posting_date_repeated_per_row: true
+      movement_date_repeated_per_row: true
+      document_column_may_be_blank: true
+      description_uppercase: true
+      amount_right_aligned: true
+      balance_right_aligned_when_visible: true
+      no_color_signal_visible: true
+  parser_risks:
+    ambiguities:
+      - "Não há exemplo de débito para confirmar padrão de sinal."
+      - "A coluna Documento existe, mas os valores não aparecem no recorte."
+      - "A coluna Saldo existe, mas valores estão ocultos/ilegíveis."
+      - "Linhas de saldo têm a mesma estrutura de linha e podem ser importadas por engano."
+      - "Históricos de adquirência/cartão como STON podem ser crédito ou ajuste; validar com sinal/saldo."
+    fields_that_may_be_missing:
+      - "document"
+      - "balance"
+      - "cnpj"
+      - "agency"
+      - "product"
+      - "account"
+      - "emitted_at"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual preserva corretamente as seis colunas."
+      - "Como débitos e estornos aparecem neste modelo."
+      - "Se valores negativos têm sinal explícito ou dependem de histórico."
+      - "Se saldos são preenchidos por linha ou apenas em linhas de saldo."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Se cabeçalho repete em páginas seguintes."
+
+layout_profile:
+  profile_name: caixa_gerenciador_extrato_lancamentos_data_movimento_v1
+  bank: Caixa Econômica Federal
+  layout_family: caixa_gerenciador_extrato_data_lancamento_movimento
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "GERENCIADOR CAIXA"
+      - "CNPJ"
+      - "Agência"
+      - "Produto"
+      - "Conta"
+      - "Emitido em"
+      - "Extrato"
+      - "Lançamentos de"
+      - "Data de lançamento"
+      - "Data de movimento"
+      - "Documento"
+      - "Histórico"
+      - "Valor(R$)"
+      - "Saldo(R$)"
+    optional_keywords:
+      - "SALDO DIA"
+      - "CRED PAG INST PIX"
+      - "STON MC CD"
+      - "STON VS CD"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data de lançamento"
+      - "Data de movimento"
+      - "Documento"
+      - "Histórico"
+      - "Valor(R$)"
+      - "Saldo(R$)"
+    expected_column_order:
+      - posting_date
+      - movement_date
+      - document
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data de lançamento"
+        - "Data de movimento"
+        - "Data"
+      description:
+        - "Histórico"
+        - "Historico"
+        - "Descrição"
+      document:
+        - "Documento"
+        - "Doc."
+      amount:
+        - "Valor(R$)"
+        - "Valor"
+      balance:
+        - "Saldo(R$)"
+        - "Saldo"
+    table_starts_after:
+      - "Lançamentos de"
+      - "Data de lançamento Data de movimento Documento Histórico Valor(R$) Saldo(R$)"
+    row_separator_hint: "transaction row starts when first two columns contain dd/MM/yyyy dates"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+      - "{amount}-"
+      - "{amount} D"
+      - "D {amount}"
+    positive_patterns:
+      - "{amount_without_minus}"
+      - "{amount} C"
+      - "C {amount}"
+    ignore_rows:
+      - "GERENCIADOR CAIXA"
+      - "CNPJ"
+      - "Agência"
+      - "Produto"
+      - "Conta"
+      - "Emitido em"
+      - "Extrato"
+      - "Lançamentos de"
+      - "Data de lançamento"
+      - "Data de movimento"
+      - "Documento"
+      - "Histórico"
+      - "Valor(R$)"
+      - "Saldo(R$)"
+      - "SALDO DIA"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO DIA"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - posting_date
+      - movement_date
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "credit_debit_marker_if_present"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "CRED PAG INST PIX"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Histórico contém CRED e valor visível não possui sinal negativo"
+      - pattern: "STON MC CD"
+        sign: positive
+        confidence: medium
+        inferred: true
+        reason: "Provável recebimento de cartão/adquirência, mas confirmar com saldo real"
+      - pattern: "STON VS CD"
+        sign: positive
+        confidence: medium
+        inferred: true
+        reason: "Provável recebimento de cartão/adquirência, mas confirmar com saldo real"
+    cautions:
+      - "Não importar 'SALDO DIA' como transação."
+      - "Se valor vier sem sinal e descrição não indicar crédito, marcar para revisão ou validar pelo saldo."
+      - "Não inferir débito/crédito por Pix isoladamente; usar CRED/DEB ou sinal."
+      - "Se saldo estiver disponível, ele deve prevalecer para detectar sinal conflitante."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+      - "preserve_bank_abbreviations"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "CRED PAG INST PIX"
+        category: "pix_recebido"
+        inferred: true
+      - pattern: "STON MC CD"
+        category: "recebimento_cartao_mastercard"
+        inferred: true
+      - pattern: "STON VS CD"
+        category: "recebimento_cartao_visa"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "CRED PAG INST PIX"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 6
+    reject_if_missing_headers:
+      - "Data de lançamento"
+      - "Data de movimento"
+      - "Histórico"
+      - "Valor"
+      - "Saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "when Saldo(R$) is available, validate previous_balance_plus_signed_amount_equals_current_balance; skip balance rows"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "row_description_is_saldo_dia"
+      - "amount_without_sign_and_description_ambiguous"
+      - "balance_column_masked_or_missing"
+      - "document_column_missing"
+      - "debit_representation_unknown"
+      - "ocr_confidence_low_on_amount_or_columns"
+      - "balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "20/09/2024"
+        raw_description: "SALDO DIA"
+        raw_document: unknown
+        raw_amount: "0,00"
+        raw_balance: unknown
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo diário; não importar como transação"
+      - raw_date: "23/09/2024"
+        raw_description: "CRED PAG INST PIX"
+        raw_document: unknown
+        raw_amount: "88,02"
+        raw_balance: unknown
+        normalized_amount: "88.02"
+        should_import_as_transaction: true
+        notes: "Crédito Pix por histórico CRED; saldo oculto no recorte"
+      - raw_date: "23/09/2024"
+        raw_description: "CRED PAG INST PIX"
+        raw_document: unknown
+        raw_amount: "47,43"
+        raw_balance: unknown
+        normalized_amount: "47.43"
+        should_import_as_transaction: true
+        notes: "Crédito Pix por histórico CRED"
+      - raw_date: "23/09/2024"
+        raw_description: "STON MC CD"
+        raw_document: unknown
+        raw_amount: "356,89"
+        raw_balance: unknown
+        normalized_amount: "356.89"
+        should_import_as_transaction: true
+        notes: "Provável recebimento de adquirência/cartão; validar com saldo real"
+      - raw_date: "23/09/2024"
+        raw_description: "STON VS CD"
+        raw_document: unknown
+        raw_amount: "311,76"
+        raw_balance: unknown
+        normalized_amount: "311.76"
+        should_import_as_transaction: true
+        notes: "Provável recebimento de adquirência/cartão; validar com saldo real"
+  implementation_notes:
+    - "Classificar pelo logo GERENCIADOR CAIXA e pelo cabeçalho de seis colunas."
+    - "Usar Data de lançamento como data principal e Data de movimento como campo auxiliar."
+    - "Filtrar 'SALDO DIA' antes de importar transações."
+    - "Não exigir documento nem saldo por transação, embora as colunas existam."
+    - "Usar sinal explícito quando disponível; em sua ausência, usar CRED/DEB e consistência de saldo."
+    - "Validar com PDF real como saídas e valores negativos são representados."

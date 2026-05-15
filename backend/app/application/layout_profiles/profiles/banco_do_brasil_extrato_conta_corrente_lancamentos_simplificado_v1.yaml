@@ -1,0 +1,410 @@
+meta_model:
+  layout_id: banco_do_brasil_extrato_conta_corrente_lancamentos_simplificado_v1
+  bank: Banco do Brasil
+  channel: unknown
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Cabeçalho azul e amarelo característico do Banco do Brasil"
+      - "Título 'Extrato de Conta Corrente'"
+      - "Campo 'Cliente'"
+      - "Campos 'Agência' e 'Conta'"
+      - "Seção 'Lançamentos'"
+      - "Cabeçalho de tabela com colunas 'Dia', 'Lote', 'Documento', 'Histórico', 'Valor'"
+      - "Valores/sinais indicados por sufixo '(+)' ou '(-)' na coluna Valor"
+    weak:
+      - "Não há texto visível indicando Internet Banking, App ou BB Empresa"
+      - "Colunas 'Lote' e 'Documento' aparecem, mas estão vazias nas linhas visíveis"
+      - "Algumas linhas parecem ter apenas sinal '(+)' sem valor monetário visível"
+      - "Uma descrição aparece quebrada em duas linhas: 'BB Rende Fácil' e 'Rende Facil'"
+    table_headers:
+      - "Dia"
+      - "Lote"
+      - "Documento"
+      - "Histórico"
+      - "Valor"
+  page_structure:
+    header:
+      bank_logo: "Banco do Brasil"
+      title: "Extrato de Conta Corrente"
+      account_identifiers:
+        client: unknown
+        agency: unknown
+        account: unknown
+    metadata:
+      section_title: "Lançamentos"
+      period: unknown
+    transactions_table:
+      section_title: "Lançamentos"
+      header_background: "light gray"
+      columns:
+        - "Dia"
+        - "Lote"
+        - "Documento"
+        - "Histórico"
+        - "Valor"
+      visible_rows:
+        - type: opening_balance
+          date: "31/10/2024"
+          lot: unknown
+          document: unknown
+          description: "Saldo Anterior"
+          amount: "0,00 (+)"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/11/2024"
+          lot: unknown
+          document: unknown
+          description: "Recebimento Fornecedor"
+          amount: "(+)"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/11/2024"
+          lot: unknown
+          document: unknown
+          description: "TED-Crédito em Conta"
+          amount: "(+)"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/11/2024"
+          lot: unknown
+          document: unknown
+          description: "TED-Crédito em Conta"
+          amount: "(+)"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/11/2024"
+          lot: unknown
+          document: unknown
+          description: "TED-Crédito em Conta"
+          amount: "(+)"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/11/2024"
+          lot: unknown
+          document: unknown
+          description: "Recebimento Fornecedor"
+          amount: "(+)"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/11/2024"
+          lot: unknown
+          document: unknown
+          description: "BB Rende Fácil Rende Facil"
+          amount: "(-)"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo Anterior"
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "Valor"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_lot: true
+      row_may_have_document: true
+      row_may_have_amount_value: true
+      row_has_sign_suffix: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor contém sufixo '(+)'"
+      negative_when:
+        - "Valor contém sufixo '(-)'"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      inferred: false
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "Recebimento Fornecedor"
+        reason: "Linhas visíveis aparecem com sufixo '(+)'"
+        inferred: false
+      - pattern: "TED-Crédito em Conta"
+        reason: "Linhas visíveis aparecem com sufixo '(+)'"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "BB Rende Fácil"
+        reason: "Linha visível aparece com sufixo '(-)'"
+        inferred: false
+    caution:
+      - "Neste layout, o sinal aparece como '(+)' ou '(-)' na coluna Valor"
+      - "Algumas linhas visíveis têm sinal, mas o valor monetário não está legível/foi omitido"
+      - "Não importar 'Saldo Anterior' como transação, mesmo com valor 0,00 (+)"
+      - "A ausência de coluna Saldo reduz a possibilidade de validação aritmética por saldo"
+      - "Descrições podem quebrar em múltiplas linhas e precisam ser unidas"
+  visual_model:
+    table_anchor:
+      starts_after_text: "Lançamentos"
+      header_row_color: "light gray"
+      header_keywords:
+        - "Dia"
+        - "Lote"
+        - "Documento"
+        - "Histórico"
+        - "Valor"
+    column_order:
+      - date
+      - lot
+      - document
+      - description
+      - amount
+    row_behavior:
+      separator: "thin horizontal lines"
+      date_repeated_per_transaction: true
+      lot_may_be_blank: true
+      document_may_be_blank: true
+      description_left_aligned: true
+      amount_right_aligned: true
+      sign_suffix_right_aligned: true
+      multiline_description_possible: true
+  parser_risks:
+    ambiguities:
+      - "Não é possível confirmar se o canal é internet banking, aplicativo ou outro ambiente BB"
+      - "Valores monetários de várias linhas não estão visíveis, apenas o sinal '(+)' ou '(-)'"
+      - "Colunas 'Lote' e 'Documento' podem estar vazias ou ocultas na imagem"
+      - "Descrição 'BB Rende Fácil Rende Facil' pode representar uma única descrição quebrada em duas linhas"
+      - "Sem coluna de saldo, a validação por consistência aritmética fica limitada"
+    fields_that_may_be_missing:
+      - "lot"
+      - "document"
+      - "amount_value"
+      - "balance"
+      - "channel"
+      - "account_identifiers"
+    cases_that_need_real_pdf_validation:
+      - "Se os valores monetários aparecem no PDF real e foram apenas ocultos/cortados na imagem"
+      - "Se o sufixo '(+)'/'(-)' é extraído junto ao valor ou como token separado"
+      - "Se descrições longas quebram em linhas adicionais"
+      - "Se há páginas seguintes com cabeçalho repetido"
+      - "Se existem linhas de saldo do dia, saldo final ou total"
+      - "Se Lote e Documento são realmente opcionais ou foram mascarados"
+
+layout_profile:
+  profile_name: banco_do_brasil_extrato_conta_corrente_lancamentos_simplificado_v1
+  bank: Banco do Brasil
+  layout_family: bb_extrato_conta_corrente_lancamentos_simplificado
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Extrato de Conta Corrente"
+      - "Cliente"
+      - "Agência"
+      - "Conta"
+      - "Lançamentos"
+      - "Dia"
+      - "Lote"
+      - "Documento"
+      - "Histórico"
+      - "Valor"
+    optional_keywords:
+      - "Saldo Anterior"
+      - "Recebimento Fornecedor"
+      - "TED-Crédito em Conta"
+      - "BB Rende Fácil"
+    negative_keywords:
+      - "Santander"
+      - "Itaú"
+      - "Bradesco"
+      - "Extrato de conta corrente - Autorizável"
+      - "Consultas - Extrato de conta corrente"
+      - "Fatura"
+      - "Cartão de Crédito"
+      - "Comprovante"
+    min_score_hint: 0.8
+  table_detection:
+    header_keywords:
+      - "Dia"
+      - "Lote"
+      - "Documento"
+      - "Histórico"
+      - "Valor"
+    expected_column_order:
+      - date
+      - lot
+      - document
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "Dia"
+        - "Data"
+      description:
+        - "Histórico"
+      document:
+        - "Documento"
+      amount:
+        - "Valor"
+        - "Valor R$"
+      balance:
+        - "Saldo"
+      lot:
+        - "Lote"
+    table_starts_after:
+      - "Lançamentos"
+      - "Dia Lote Documento Histórico Valor"
+    row_separator_hint: "transaction starts when a dd/MM/yyyy date appears in the first column"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount} (-)"
+      - "{amount}(-)"
+      - "(-)"
+    positive_patterns:
+      - "{amount} (+)"
+      - "{amount}(+)"
+      - "(+)"
+    ignore_rows:
+      - "Extrato de Conta Corrente"
+      - "Cliente"
+      - "Agência"
+      - "Conta"
+      - "Lançamentos"
+      - "Dia"
+      - "Lote"
+      - "Documento"
+      - "Histórico"
+      - "Valor"
+      - "Saldo do dia"
+      - "Saldo Final"
+      - "Total"
+    opening_balance_rows:
+      - "Saldo Anterior"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+    optional_transaction_fields:
+      - lot
+      - document
+      - amount
+      - sign
+      - continuation_description
+  sign_rules:
+    priority_order:
+      - "explicit_parenthesized_sign_plus_minus"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "Recebimento Fornecedor"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis usam '(+)'"
+      - pattern: "TED-Crédito em Conta"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis usam '(+)'"
+      - pattern: "BB Rende Fácil"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível usa '(-)'"
+    cautions:
+      - "Não definir sinal apenas pela descrição quando '(+)' ou '(-)' existir"
+      - "O OCR pode extrair o sinal separado do valor monetário"
+      - "Quando houver somente sinal sem valor, marcar para revisão manual ou aguardar valor de extração textual"
+      - "Sem saldo, não há validação aritmética forte"
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "join_multiline_description_until_next_date"
+      - "preserve_original_description"
+      - "normalize_case_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Recebimento Fornecedor"
+        category: "recebimento_fornecedor"
+        inferred: true
+      - pattern: "TED-Crédito em Conta"
+        category: "transferencia_ted_credito"
+        inferred: true
+      - pattern: "BB Rende Fácil"
+        category: "aplicacao_resgate_automatico"
+        inferred: true
+    transfer_hints:
+      - pattern: "TED-Crédito em Conta"
+        category: "transferencia_ted_entrada"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "Impostos"
+        category: "impostos"
+        inferred: true
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "Dia"
+      - "Histórico"
+      - "Valor"
+    balance_consistency_check:
+      enabled: false
+      method: "not_available_without_balance_column"
+      tolerance: unknown
+    needs_manual_review_when:
+      - "amount_value_missing_but_sign_present"
+      - "sign_missing"
+      - "row_has_date_and_description_but_no_amount_or_sign"
+      - "multiline_description_detected"
+      - "lot_or_document_shifts_into_description_column"
+      - "ocr_confidence_low_on_parenthesized_sign"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "31/10/2024"
+        raw_description: "Saldo Anterior"
+        raw_document: unknown
+        raw_amount: "0,00 (+)"
+        raw_balance: unknown
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo anterior; não importar como transação"
+      - raw_date: "01/11/2024"
+        raw_description: "Recebimento Fornecedor"
+        raw_document: unknown
+        raw_amount: "(+)"
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Sinal positivo visível, mas valor monetário não pode ser confirmado na imagem"
+      - raw_date: "01/11/2024"
+        raw_description: "TED-Crédito em Conta"
+        raw_document: unknown
+        raw_amount: "(+)"
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Sinal positivo visível, mas valor monetário não pode ser confirmado na imagem"
+      - raw_date: "01/11/2024"
+        raw_description: "BB Rende Fácil Rende Facil"
+        raw_document: unknown
+        raw_amount: "(-)"
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Sinal negativo visível; descrição parece quebrada em duas linhas"
+  implementation_notes:
+    - "Classificar pelo título 'Extrato de Conta Corrente' e pela tabela simplificada 'Dia/Lote/Documento/Histórico/Valor'."
+    - "Usar a presença de '(+)' e '(-)' como principal regra de sinal."
+    - "Permitir que o valor monetário e o sinal sejam extraídos como tokens separados."
+    - "Detectar início de transação por data na primeira coluna."
+    - "Unir linhas de continuação de descrição até encontrar a próxima data."
+    - "Não importar 'Saldo Anterior' como transação."
+    - "Validar com PDF real se valores monetários ausentes na imagem aparecem na camada de texto."

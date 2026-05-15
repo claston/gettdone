@@ -1,0 +1,418 @@
+meta_model:
+  layout_id: banco_inter_extrato_conta_corrente_lista_diaria_v1
+  bank: Banco Inter
+  channel: unknown
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo/texto 'inter' visível no topo em laranja"
+      - "Texto 'Solicitado em: 20/12/2023 - 15h40'"
+      - "Campos 'CPF/CNPJ', 'Instituição: Banco Inter', 'Agência' e 'Conta'"
+      - "Tipo da conta visível: 'Conta Corrente'"
+      - "Saldo atual visível: 'R$ 104,89'"
+      - "Período explícito: '01/11/2023 a 30/11/2023'"
+      - "Lançamentos agrupados por data extensa, exemplo '30 de Novembro de 2023'"
+      - "Linhas em formato lista com descrição à esquerda e valor à direita"
+      - "Valores positivos aparecem com prefixo 'R$'"
+      - "Valores negativos aparecem com prefixo '-R$'"
+    weak:
+      - "Dados de CPF/CNPJ, agência e conta estão ocultos ou ilegíveis"
+      - "Não há cabeçalho tabular formal com nomes de colunas"
+      - "Não há documento, ID ou contraparte visível no recorte"
+      - "Não há coluna de saldo por transação"
+      - "Algumas descrições podem ter detalhes ocultos ou linhas complementares"
+    table_headers: []
+  page_structure:
+    header:
+      bank_logo: "inter"
+      institution: "Banco Inter"
+      title: "Extrato"
+      requested_at: "20/12/2023 - 15h40"
+      account_identifiers:
+        cpf_cnpj: unknown
+        agency: unknown
+        account: unknown
+      account_type: "Conta Corrente"
+      current_balance: "R$ 104,89"
+    metadata:
+      period: "01/11/2023 a 30/11/2023"
+      start_date: "01/11/2023"
+      end_date: "30/11/2023"
+    transactions_table:
+      representation: "grouped_list_without_header"
+      group_by: "date"
+      visible_group:
+        date_label: "30 de Novembro de 2023"
+        normalized_date: "30/11/2023"
+        rows:
+          - type: normal_transaction
+            date: "30/11/2023"
+            description: "Pix recebido"
+            document: unknown
+            amount: "R$ 15,00"
+            balance: unknown
+          - type: normal_transaction
+            date: "30/11/2023"
+            description: "Pix enviado"
+            document: unknown
+            amount: "-R$ 23,00"
+            balance: unknown
+          - type: normal_transaction
+            date: "30/11/2023"
+            description: "Pagamento efetuado"
+            document: unknown
+            amount: "-R$ 142,00"
+            balance: unknown
+          - type: normal_transaction
+            date: "30/11/2023"
+            description: "Pix recebido"
+            document: unknown
+            amount: "R$ 85,40"
+            balance: unknown
+      next_visible_group:
+        date_label: "29 de Novembro de 2023"
+        normalized_date: "29/11/2023"
+        rows: []
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo atual"
+        - "SALDO ANTERIOR"
+        - "SALDO INICIAL"
+        - "SALDO DO DIA"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: "summary_header"
+      inferred: false
+    normal_transaction:
+      row_has_date_context: true
+      row_has_description: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece com prefixo 'R$' sem sinal negativo"
+      negative_when:
+        - "Valor aparece com prefixo '-R$'"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      current_balance_in_header: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "Pix recebido"
+        reason: "Linhas visíveis possuem valores positivos com prefixo 'R$'"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "Pix enviado"
+        reason: "Linha visível possui prefixo '-R$'"
+        inferred: false
+      - pattern: "Pagamento efetuado"
+        reason: "Linha visível possui prefixo '-R$'"
+        inferred: false
+    caution:
+      - "Não inferir sinal por Pix isoladamente; usar prefixo 'R$' ou '-R$'."
+      - "Este layout é lista agrupada por data, não tabela."
+      - "Não há saldo por transação nem documento visível."
+      - "O saldo atual do cabeçalho não deve ser importado como transação."
+      - "A data do agrupador deve ser propagada para todas as transações abaixo até o próximo agrupador."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Período:"
+      group_anchor: "date_group_long_pt_br"
+      header_keywords: []
+    column_order:
+      - date_group
+      - description
+      - amount
+    row_behavior:
+      separator: "horizontal gray line under date group"
+      date_group_bold: true
+      date_group_format_long_pt_br: true
+      description_left_aligned: true
+      amount_right_aligned: true
+      positive_amount_prefix: "R$"
+      negative_amount_prefix: "-R$"
+      no_document_column: true
+      no_balance_column: true
+  parser_risks:
+    ambiguities:
+      - "Não há cabeçalho de colunas; parser precisa reconhecer grupos de data em português."
+      - "Não há documento, ID ou contraparte visível."
+      - "Não há saldo por linha; validação aritmética detalhada é limitada."
+      - "Algumas descrições podem ser genéricas, como 'Pagamento efetuado', sem detalhamento no recorte."
+      - "Canal de emissão não está explícito."
+    fields_that_may_be_missing:
+      - "document"
+      - "transaction_id"
+      - "counterparty"
+      - "balance"
+      - "cpf_cnpj"
+      - "agency"
+      - "account"
+      - "channel"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual preserva o agrupamento de data e a ordem das transações."
+      - "Se valores negativos sempre usam prefixo '-R$'."
+      - "Se créditos sempre aparecem apenas com 'R$' sem sinal '+'."
+      - "Se existem linhas de saldo inicial/final ou saldo do dia em páginas completas."
+      - "Se descrições possuem segunda linha com detalhes, contraparte ou IDs."
+      - "Se há paginação e repetição de cabeçalho."
+
+layout_profile:
+  profile_name: banco_inter_extrato_conta_corrente_lista_diaria_v1
+  bank: Banco Inter
+  layout_family: inter_extrato_conta_corrente_grouped_daily_list
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "inter"
+      - "Solicitado em"
+      - "CPF/CNPJ"
+      - "Instituição: Banco Inter"
+      - "Agência"
+      - "Conta"
+      - "Tipo: Conta Corrente"
+      - "Saldo atual"
+      - "Período"
+    optional_keywords:
+      - "Pix recebido"
+      - "Pix enviado"
+      - "Pagamento efetuado"
+      - "Novembro de 2023"
+      - "-R$"
+      - "R$"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "contasimples"
+      - "CRESOL"
+      - "infinitepay"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords: []
+    expected_column_order:
+      - date_group
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "date_group"
+        - "Data"
+      description:
+        - "Descrição"
+        - "Histórico"
+        - "Lançamento"
+      document:
+        - "Documento"
+        - "Doc."
+        - "ID"
+      amount:
+        - "Valor"
+        - "R$"
+        - "-R$"
+      balance:
+        - "Saldo atual"
+        - "Saldo"
+    table_starts_after:
+      - "Período:"
+    row_separator_hint: "date group uses long Portuguese date like '30 de Novembro de 2023'; transaction lines below have description left and amount right"
+  parsing:
+    date_format: "dd 'de' MMMM 'de' yyyy"
+    month_language: "pt-BR"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-R$ {amount}"
+      - "-R${amount}"
+      - "R$ -{amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+      - "R${amount_without_minus}"
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "inter"
+      - "Solicitado em"
+      - "CPF/CNPJ"
+      - "Instituição"
+      - "Banco Inter"
+      - "Agência"
+      - "Conta"
+      - "Tipo"
+      - "Conta Corrente"
+      - "Saldo atual"
+      - "Período"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "Saldo atual"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+      - counterparty
+      - transaction_id
+  sign_rules:
+    priority_order:
+      - "explicit_negative_currency_prefix"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "description_based_hint"
+      - "aggregate_balance_consistency"
+    description_based_overrides:
+      - pattern: "Pix recebido"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem valor positivo com R$ sem sinal negativo"
+      - pattern: "Pix enviado"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui prefixo '-R$'"
+      - pattern: "Pagamento efetuado"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui prefixo '-R$'"
+    cautions:
+      - "Não usar Pix isoladamente para definir sinal."
+      - "Se valor vier sem sinal negativo, tratar como positivo conforme regra geral, salvo evidência contrária no PDF real."
+      - "Se descrição e sinal conflitam, sinal explícito deve ter prioridade."
+      - "Sem saldo por linha, usar apenas validação agregada quando possível."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_case_optional"
+      - "merge_wrapped_description_lines"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Pix recebido"
+        category: "pix_recebido"
+        inferred: true
+      - pattern: "Pix enviado"
+        category: "pix_enviado"
+        inferred: true
+      - pattern: "Pagamento efetuado"
+        category: "pagamento"
+        inferred: true
+    transfer_hints:
+      - pattern: "Pix recebido"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "Pix enviado"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "Pix"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa"
+        category: "tarifa"
+        inferred: true
+      - pattern: "Taxa"
+        category: "taxa_servico"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "Juros"
+        category: "juros"
+        inferred: true
+  validation:
+    expected_min_columns: 2
+    reject_if_missing_headers:
+      - "Banco Inter"
+      - "Período"
+      - "R$"
+    balance_consistency_check:
+      enabled: true
+      method: "when current balance and all signed transactions for period are available, validate aggregate movement if opening balance is known"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "date_group_missing"
+      - "amount_without_currency_prefix"
+      - "description_too_generic_without_details"
+      - "transaction_id_or_counterparty_required_by_downstream"
+      - "ocr_confidence_low_on_negative_prefix"
+      - "aggregate_balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "30 de Novembro de 2023"
+        raw_description: "Pix recebido"
+        raw_document: unknown
+        raw_amount: "R$ 15,00"
+        raw_balance: unknown
+        normalized_amount: "15.00"
+        should_import_as_transaction: true
+        notes: "Crédito explícito por ausência de sinal negativo"
+      - raw_date: "30 de Novembro de 2023"
+        raw_description: "Pix enviado"
+        raw_document: unknown
+        raw_amount: "-R$ 23,00"
+        raw_balance: unknown
+        normalized_amount: "-23.00"
+        should_import_as_transaction: true
+        notes: "Débito explícito por prefixo '-R$'"
+      - raw_date: "30 de Novembro de 2023"
+        raw_description: "Pagamento efetuado"
+        raw_document: unknown
+        raw_amount: "-R$ 142,00"
+        raw_balance: unknown
+        normalized_amount: "-142.00"
+        should_import_as_transaction: true
+        notes: "Débito explícito por prefixo '-R$'"
+      - raw_date: "30 de Novembro de 2023"
+        raw_description: "Pix recebido"
+        raw_document: unknown
+        raw_amount: "R$ 85,40"
+        raw_balance: unknown
+        normalized_amount: "85.40"
+        should_import_as_transaction: true
+        notes: "Crédito explícito por ausência de sinal negativo"
+  implementation_notes:
+    - "Classificar pelo logo Inter, instituição Banco Inter e cabeçalho de conta corrente."
+    - "Este layout é uma lista diária sem cabeçalho de colunas."
+    - "Propagar a data extensa do agrupador para as transações abaixo."
+    - "Converter datas com mês em português para dd/MM/yyyy."
+    - "Usar '-R$' como regra primária de débito."
+    - "Não exigir documento, ID, contraparte ou saldo por transação."
+    - "Usar saldo atual apenas para validação agregada, não como transação."

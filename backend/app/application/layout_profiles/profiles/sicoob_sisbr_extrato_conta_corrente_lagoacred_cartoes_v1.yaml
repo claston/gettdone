@@ -1,0 +1,478 @@
+meta_model:
+  layout_id: sicoob_sisbr_extrato_conta_corrente_lagoacred_cartoes_v1
+  bank: Sicoob
+  channel: SISBR
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Cabeçalho 'SICOOB - Sistema de Cooperativas de Crédito do Brasil'"
+      - "Texto 'Plataforma de Serviços Financeiros do Sicoob - SISBR'"
+      - "Título 'EXTRATO CONTA CORRENTE'"
+      - "Data de emissão visível: '20/06/2024'"
+      - "Hora de emissão visível: '08:32:16'"
+      - "Campo 'COOP.' com valor textual visível '- SICOOB LAGOACRED'"
+      - "Campo 'CONTA:'"
+      - "Tabela com colunas 'DATA', 'DOCUMENTO', 'HISTÓRICO' e 'VALOR'"
+      - "Valores usam sufixo 'C' para crédito"
+      - "Linhas de saldo como 'SALDO ANTERIOR' e 'SALDO BLOQUEADO ANTERIOR'"
+      - "Históricos de recebimento de compras por cartão: 'CR COMPRAS VISA', 'CR COMPRAS CRE OUTRAS BANDEIRAS', 'CR COMPRAS MASTERCARD', 'CR COMPRAS MAESTRO', 'CR COMPRAS VISA ELECTRON'"
+      - "Históricos possuem linha complementar abaixo, como 'SIPAG_Cred._Visa', 'SIPAG_Cred._Elo', 'SIPAG_Cred._Mastercard' e 'SIPAG_Deb._Maestro'"
+    weak:
+      - "Número da conta está oculto ou ilegível"
+      - "Não há exemplo de débito visível no recorte"
+      - "Não há coluna de saldo separada"
+      - "Linhas de histórico são multi-linha e exigem concatenação"
+      - "A linha 'SALDO BLOQUEADO ANTERIOR' tem valor '870,00*' sem sufixo C/D, possivelmente anotação de saldo bloqueado"
+    table_headers:
+      - "DATA"
+      - "DOCUMENTO"
+      - "HISTÓRICO"
+      - "VALOR"
+  page_structure:
+    header:
+      bank_logo: "SICOOB"
+      institution: "Sistema de Cooperativas de Crédito do Brasil"
+      platform: "Plataforma de Serviços Financeiros do Sicoob - SISBR"
+      title: "EXTRATO CONTA CORRENTE"
+      generated_date: "20/06/2024"
+      generated_time: "08:32:16"
+      account_identifiers:
+        cooperative: "SICOOB LAGOACRED"
+        account: unknown
+    metadata:
+      explicit_period: unknown
+    transactions_table:
+      representation: "structured_table_with_multiline_history"
+      columns:
+        - "DATA"
+        - "DOCUMENTO"
+        - "HISTÓRICO"
+        - "VALOR"
+      visible_rows:
+        - type: opening_balance
+          date: "28/03/2024"
+          document: unknown
+          description: "SALDO ANTERIOR"
+          amount: "0,00 C"
+          balance: "0,00 C"
+        - type: balance_row
+          date: "28/03/2024"
+          document: unknown
+          description: "SALDO BLOQUEADO ANTERIOR"
+          amount: "870,00*"
+          balance: "870,00*"
+        - type: normal_transaction
+          date: "01/04/2024"
+          document: "1015224392"
+          description: "CR COMPRAS VISA | SIPAG_Cred._Visa"
+          amount: "986,88 C"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/04/2024"
+          document: "1015224391"
+          description: "CR COMPRAS CRE OUTRAS BANDEIRAS | SIPAG_Cred._Elo"
+          amount: "95,91 C"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/04/2024"
+          document: "1015224390"
+          description: "CR COMPRAS MASTERCARD | SIPAG_Cred._Mastercard"
+          amount: "1.070,59 C"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/04/2024"
+          document: "1015623576"
+          description: "CR COMPRAS MAESTRO | SIPAG_Deb._Maestro"
+          amount: "294,13 C"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/04/2024"
+          document: "1015623577"
+          description: "CR COMPRAS VISA ELECTRON"
+          amount: "76,73 C"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+        - "SALDO BLOQUEADO ANTERIOR"
+        - "SALDO DO DIA"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: "VALOR column on saldo rows"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_may_have_document: true
+      row_has_description: true
+      row_has_amount: true
+      row_may_have_balance: false
+      row_may_have_continuation_line: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor termina com sufixo 'C'"
+      negative_when:
+        - "Valor termina com sufixo 'D'"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      saldo_rows_use_value_column: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "CR COMPRAS VISA"
+        reason: "Linha visível possui sufixo C"
+        inferred: false
+      - pattern: "CR COMPRAS CRE OUTRAS BANDEIRAS"
+        reason: "Linha visível possui sufixo C"
+        inferred: false
+      - pattern: "CR COMPRAS MASTERCARD"
+        reason: "Linha visível possui sufixo C"
+        inferred: false
+      - pattern: "CR COMPRAS MAESTRO"
+        reason: "Linha visível possui sufixo C"
+        inferred: false
+      - pattern: "CR COMPRAS VISA ELECTRON"
+        reason: "Linha visível possui sufixo C"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "*"
+        reason: "Não há débitos visíveis no recorte; validar com PDF real"
+        inferred: true
+    caution:
+      - "Não importar 'SALDO ANTERIOR' nem 'SALDO BLOQUEADO ANTERIOR' como transações."
+      - "O sufixo C/D na coluna VALOR deve ser a regra primária de sinal."
+      - "O valor '870,00*' contém asterisco e não deve ser tratado como transação."
+      - "Linhas complementares de histórico, como 'SIPAG_Cred._Visa', devem ser concatenadas à linha anterior."
+      - "Apesar de termos como 'Deb.' em 'SIPAG_Deb._Maestro', o sinal financeiro no extrato é C; usar C/D do valor, não o texto da adquirência."
+  visual_model:
+    table_anchor:
+      starts_after_text: "DATA DOCUMENTO HISTÓRICO VALOR"
+      header_keywords:
+        - "DATA"
+        - "DOCUMENTO"
+        - "HISTÓRICO"
+        - "VALOR"
+    column_order:
+      - date
+      - document
+      - description
+      - amount
+    row_behavior:
+      separator: "whitespace alignment with clear columns"
+      date_repeated_for_main_rows: true
+      continuation_lines_without_date: true
+      document_numeric_when_present: true
+      description_uppercase_or_mixed: true
+      amount_right_aligned: true
+      credit_debit_suffix: true
+      credit_color_hint: "blue"
+      no_balance_column: true
+  parser_risks:
+    ambiguities:
+      - "Linhas complementares sem data podem ser confundidas com novas transações ou perdidas."
+      - "Termo 'SIPAG_Deb._Maestro' pode sugerir débito de cartão, mas o lançamento é crédito no extrato pelo sufixo C."
+      - "O valor com asterisco em saldo bloqueado não segue C/D e não deve ser importado."
+      - "Não há exemplos de débito para confirmar representação D neste recorte, embora o padrão Sicoob indique D."
+      - "Não há saldo por transação."
+    fields_that_may_be_missing:
+      - "balance"
+      - "account"
+      - "document"
+      - "period"
+      - "full_description"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual preserva as linhas complementares na ordem correta."
+      - "Se todos os valores de transação usam sufixo C/D."
+      - "Como aparecem débitos, tarifas, Pix enviado e estornos neste mesmo layout."
+      - "Se saldos do dia/final aparecem no documento completo."
+      - "Se documentos numéricos devem preservar zeros à esquerda em outros lançamentos."
+      - "Se o cabeçalho repete em páginas seguintes."
+
+layout_profile:
+  profile_name: sicoob_sisbr_extrato_conta_corrente_lagoacred_cartoes_v1
+  bank: Sicoob
+  layout_family: sicoob_sisbr_extrato_conta_corrente_cartoes_sipag_dc_suffix
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "SICOOB"
+      - "Sistema de Cooperativas de Crédito do Brasil"
+      - "SISBR"
+      - "EXTRATO CONTA CORRENTE"
+      - "COOP."
+      - "CONTA"
+      - "DATA"
+      - "DOCUMENTO"
+      - "HISTÓRICO"
+      - "VALOR"
+    optional_keywords:
+      - "SICOOB LAGOACRED"
+      - "SALDO ANTERIOR"
+      - "SALDO BLOQUEADO ANTERIOR"
+      - "CR COMPRAS VISA"
+      - "CR COMPRAS CRE OUTRAS BANDEIRAS"
+      - "CR COMPRAS MASTERCARD"
+      - "CR COMPRAS MAESTRO"
+      - "SIPAG_Cred._Visa"
+      - "SIPAG_Cred._Elo"
+      - "SIPAG_Cred._Mastercard"
+      - "SIPAG_Deb._Maestro"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "contasimples"
+      - "CRESOL"
+      - "infinitepay"
+      - "inter"
+      - "GRAFENO"
+      - "mercado pago"
+      - "PagBank"
+      - "PicPay"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.9
+  table_detection:
+    header_keywords:
+      - "DATA"
+      - "DOCUMENTO"
+      - "HISTÓRICO"
+      - "VALOR"
+    expected_column_order:
+      - date
+      - document
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "DATA"
+        - "Data"
+      description:
+        - "HISTÓRICO"
+        - "Histórico"
+        - "Historico"
+      document:
+        - "DOCUMENTO"
+        - "Documento"
+        - "Doc."
+      amount:
+        - "VALOR"
+        - "Valor"
+      balance:
+        - "SALDO"
+        - "Saldo"
+    table_starts_after:
+      - "DATA DOCUMENTO HISTÓRICO VALOR"
+      - "EXTRATO CONTA CORRENTE"
+    row_separator_hint: "main transaction row starts with dd/MM/yyyy; continuation line usually has no date and should be merged into previous history"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount}D"
+      - "{amount} D"
+      - "D {amount}"
+    positive_patterns:
+      - "{amount}C"
+      - "{amount} C"
+      - "C {amount}"
+    ignore_rows:
+      - "SICOOB"
+      - "Sistema de Cooperativas de Crédito do Brasil"
+      - "Plataforma de Serviços Financeiros do Sicoob - SISBR"
+      - "EXTRATO CONTA CORRENTE"
+      - "COOP."
+      - "CONTA"
+      - "DATA"
+      - "DOCUMENTO"
+      - "HISTÓRICO"
+      - "VALOR"
+      - "SALDO ANTERIOR"
+      - "SALDO BLOQUEADO ANTERIOR"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO BLOQUEADO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - complement
+      - balance
+  sign_rules:
+    priority_order:
+      - "credit_debit_suffix_C_D"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "description_based_hint"
+      - "color_hint_if_available"
+    description_based_overrides:
+      - pattern: "CR COMPRAS*"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem sufixo C"
+      - pattern: "SIPAG_Cred.*"
+        sign: positive
+        confidence: medium
+        inferred: true
+        reason: "Complemento de adquirência; confirmar pelo sufixo C na linha principal"
+      - pattern: "SIPAG_Deb.*"
+        sign: unknown
+        confidence: low
+        inferred: true
+        reason: "Texto representa produto/cartão, não sinal financeiro; usar C/D do valor"
+    cautions:
+      - "Sufixo C/D deve prevalecer sobre descrição e complemento SIPAG."
+      - "Não importar saldos como transações."
+      - "Não interpretar asterisco como sinal."
+      - "Se a linha complementar for separada, manter vínculo com a transação anterior."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "merge_continuation_lines_without_date"
+      - "normalize_uppercase_optional"
+      - "preserve_bank_abbreviations"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "CR COMPRAS VISA"
+        category: "recebimento_cartao_visa"
+        inferred: true
+      - pattern: "CR COMPRAS CRE OUTRAS BANDEIRAS"
+        category: "recebimento_cartao_outras_bandeiras"
+        inferred: true
+      - pattern: "CR COMPRAS MASTERCARD"
+        category: "recebimento_cartao_mastercard"
+        inferred: true
+      - pattern: "CR COMPRAS MAESTRO"
+        category: "recebimento_cartao_maestro"
+        inferred: true
+      - pattern: "CR COMPRAS VISA ELECTRON"
+        category: "recebimento_cartao_visa_electron"
+        inferred: true
+      - pattern: "SIPAG"
+        category: "recebimento_adquirencia_sipag"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia_ted"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+  validation:
+    expected_min_columns: 4
+    reject_if_missing_headers:
+      - "DATA"
+      - "HISTÓRICO"
+      - "VALOR"
+    balance_consistency_check:
+      enabled: false
+      method: "not_available_without_per_row_balance; can validate using saldo anterior/saldo final when full sequence is available"
+      tolerance: unknown
+    needs_manual_review_when:
+      - "amount_without_C_or_D_suffix"
+      - "continuation_line_not_merged"
+      - "saldo_row_detected_as_transaction"
+      - "asterisk_amount_detected"
+      - "document_history_column_shift"
+      - "ocr_confidence_low_on_C_D_suffix"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "28/03/2024"
+        raw_description: "SALDO ANTERIOR"
+        raw_document: unknown
+        raw_amount: "0,00C"
+        raw_balance: "0,00C"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo anterior; não importar"
+      - raw_date: "28/03/2024"
+        raw_description: "SALDO BLOQUEADO ANTERIOR"
+        raw_document: unknown
+        raw_amount: "870,00*"
+        raw_balance: "870,00*"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo bloqueado; asterisco é anotação"
+      - raw_date: "01/04/2024"
+        raw_description: "CR COMPRAS VISA | SIPAG_Cred._Visa"
+        raw_document: "1015224392"
+        raw_amount: "986,88C"
+        raw_balance: unknown
+        normalized_amount: "986.88"
+        should_import_as_transaction: true
+        notes: "Crédito de recebimento por cartão Visa; complemento SIPAG deve ser concatenado"
+      - raw_date: "01/04/2024"
+        raw_description: "CR COMPRAS CRE OUTRAS BANDEIRAS | SIPAG_Cred._Elo"
+        raw_document: "1015224391"
+        raw_amount: "95,91C"
+        raw_balance: unknown
+        normalized_amount: "95.91"
+        should_import_as_transaction: true
+        notes: "Crédito explícito pelo sufixo C"
+      - raw_date: "01/04/2024"
+        raw_description: "CR COMPRAS MASTERCARD | SIPAG_Cred._Mastercard"
+        raw_document: "1015224390"
+        raw_amount: "1.070,59C"
+        raw_balance: unknown
+        normalized_amount: "1070.59"
+        should_import_as_transaction: true
+        notes: "Crédito explícito pelo sufixo C"
+      - raw_date: "01/04/2024"
+        raw_description: "CR COMPRAS MAESTRO | SIPAG_Deb._Maestro"
+        raw_document: "1015623576"
+        raw_amount: "294,13C"
+        raw_balance: unknown
+        normalized_amount: "294.13"
+        should_import_as_transaction: true
+        notes: "Apesar de 'Deb.' no complemento, o valor tem sufixo C e deve ser crédito"
+  implementation_notes:
+    - "Classificar por SICOOB/SISBR e pela presença de 'SICOOB LAGOACRED' quando disponível."
+    - "Usar sufixo C/D como regra primária de sinal."
+    - "Filtrar saldos antes de importar transações."
+    - "Concatenar linhas complementares sem data ao histórico anterior."
+    - "Preservar DOCUMENTO como string."
+    - "Não usar 'SIPAG_Deb' como sinal financeiro; ele pode indicar modalidade do cartão, não débito da conta."
+    - "Validar com PDF real como débitos e saldos finais aparecem nesse layout."

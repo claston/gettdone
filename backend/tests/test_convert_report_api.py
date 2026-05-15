@@ -1,6 +1,8 @@
+from io import BytesIO
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 
 from app.application import AccessControlService, ReportService, TempAnalysisStorage
 from app.application.models import AnalysisData, TransactionRow
@@ -13,6 +15,7 @@ def _build_analysis_data(analysis_id: str = "an_convert123") -> AnalysisData:
         analysis_id=analysis_id,
         file_type="pdf",
         upload_filename="extrato_nubank.pdf",
+        layout_inference_name="bradesco_net_empresa_extrato_mensal_por_periodo_v1",
         transactions_total=1,
         total_inflows=100.0,
         total_outflows=-20.0,
@@ -98,6 +101,26 @@ def test_convert_report_download_csv_happy_path(tmp_path: Path) -> None:
     app.dependency_overrides.clear()
 
 
+def test_convert_report_download_xlsx_matches_conversion_review_layout(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+
+    response = client.get("/convert-report/an_convert123?format=xlsx&anonymous_fingerprint=fp-owner")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    assert "extrato_nubank_convertido.xlsx" in response.headers["content-disposition"]
+
+    workbook = load_workbook(filename=BytesIO(response.content), data_only=True)
+    sheet = workbook.active
+    headers = [sheet.cell(row=1, column=idx).value for idx in range(1, 5)]
+    assert headers == ["Data", "Historico", "Credito", "Debito"]
+    assert sheet.cell(row=2, column=1).value == "01-04-2026"
+    assert sheet.cell(row=2, column=2).value == "TEST"
+    assert sheet.cell(row=2, column=3).value is None
+    assert sheet.cell(row=2, column=4).value == 20
+    app.dependency_overrides.clear()
+
+
 def test_convert_report_returns_not_found_for_missing_analysis(tmp_path: Path) -> None:
     client = build_client(tmp_path)
 
@@ -129,4 +152,52 @@ def test_convert_report_accepts_bearer_user_token(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/x-ofx")
     assert "<STMTTRN>" in response.text
+    app.dependency_overrides.clear()
+
+
+def test_convert_report_ofx_accepts_closing_balance_override(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+
+    response = client.get(
+        "/convert-report/an_convert123?format=ofx&closing_balance=56276.06&anonymous_fingerprint=fp-owner"
+    )
+
+    assert response.status_code == 200
+    assert "<LEDGERBAL>" in response.text
+    assert "<BALAMT>56276.06" in response.text
+    assert "<BRANCHID>0001" in response.text
+    assert "<ACCTID>000000" in response.text
+    app.dependency_overrides.clear()
+
+
+def test_convert_report_ofx_accepts_bank_branch_and_account_number_override(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+
+    response = client.get(
+        "/convert-report/an_convert123?format=ofx&bank_branch=3456-7&account_number=12345-6&anonymous_fingerprint=fp-owner"
+    )
+
+    assert response.status_code == 200
+    assert "<BRANCHID>34567" in response.text
+    assert "<ACCTID>123456" in response.text
+    app.dependency_overrides.clear()
+
+
+def test_convert_report_ofx_infers_bank_code_from_layout(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+
+    response = client.get("/convert-report/an_convert123?format=ofx&anonymous_fingerprint=fp-owner")
+
+    assert response.status_code == 200
+    assert "<BANKID>237" in response.text
+    app.dependency_overrides.clear()
+
+
+def test_convert_report_ofx_accepts_bank_code_override(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+
+    response = client.get("/convert-report/an_convert123?format=ofx&bank_code=001&anonymous_fingerprint=fp-owner")
+
+    assert response.status_code == 200
+    assert "<BANKID>001" in response.text
     app.dependency_overrides.clear()

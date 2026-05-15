@@ -1,0 +1,417 @@
+meta_model:
+  layout_id: banco_brb_extrato_mensal_lancamentos_dados_conta_origem_v1
+  bank: Banco BRB
+  channel: unknown
+  statement_type: conta_corrente_extrato_mensal
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'banco BRB' visível no topo esquerdo"
+      - "Título 'Extrato' no cabeçalho"
+      - "Campos 'Data' e 'Hora' no topo direito"
+      - "Seção 'Dados da Conta Origem'"
+      - "Campos 'Nome do Titular', 'Número da Conta', 'Tipo de Conta' e 'Tipo de Extrato'"
+      - "Tipo de Conta visível como 'Conta Corrente'"
+      - "Tipo de Extrato visível como 'Mensal'"
+      - "Seção 'Lançamentos'"
+      - "Cabeçalho de tabela com colunas 'Data', 'Descrição', 'DOC', 'Valor', 'Saldo'"
+      - "Débitos visíveis com descrição 'DEBITO PIX' e sinal '-' separado após o valor"
+    weak:
+      - "Dados pessoais, número da conta, data/hora e saldos estão ocultos ou ilegíveis"
+      - "A coluna 'Saldo' existe, mas o saldo aparece oculto/ilegível; apenas marcador '+' é visível"
+      - "Valores negativos podem vir como número em coluna Valor e sinal '-' em coluna/posição separada"
+      - "A linha 'Saldo Anterior' não possui data visível"
+      - "Não há exemplo de crédito visível no recorte"
+    table_headers:
+      - "Data"
+      - "Descrição"
+      - "DOC"
+      - "Valor"
+      - "Saldo"
+  page_structure:
+    header:
+      bank_logo: "banco BRB"
+      title: "Extrato"
+      generated_date: unknown
+      generated_time: unknown
+    metadata:
+      account_section_title: "Dados da Conta Origem"
+      account_identifiers:
+        holder_name: unknown
+        account_number: unknown
+        account_type: "Conta Corrente"
+      statement_type_label: "Mensal"
+    transactions_table:
+      section_title: "Lançamentos"
+      header_background: "light gray"
+      banded_rows: true
+      columns:
+        - "Data"
+        - "Descrição"
+        - "DOC"
+        - "Valor"
+        - "Saldo"
+      visible_rows:
+        - type: opening_balance
+          date: unknown
+          description: "Saldo Anterior"
+          document: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "02/01/2024"
+          description: "DEBITO PIX"
+          document: "000000"
+          amount: "2.600,00 -"
+          balance: unknown
+        - type: normal_transaction
+          date: "02/01/2024"
+          description: "DEBITO PIX"
+          document: "000000"
+          amount: "6.000,00 -"
+          balance: unknown
+        - type: normal_transaction
+          date: "02/01/2024"
+          description: "DEBITO PIX"
+          document: "000000"
+          amount: "20.000,00 -"
+          balance: unknown
+        - type: normal_transaction
+          date: "02/01/2024"
+          description: "DEBITO PIX"
+          document: "000000"
+          amount: "130.000,00 -"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo Anterior"
+        - "SALDO ANTERIOR"
+        - "Saldo Inicial"
+      should_import_as_transaction: false
+      balance_source: "Saldo"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_document: true
+      row_has_amount: true
+      row_may_have_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece sem sinal negativo e sem marcador '-' associado"
+        - "Saldo/coluna indicar crédito, se presente no PDF real"
+      negative_when:
+        - "Valor possui sinal '-' logo após o número"
+        - "Descrição e sinal confirmam débito, como 'DEBITO PIX' com marcador '-'"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "Saldo"
+      may_be_blank_or_masked: true
+      visible_sign_marker: "+"
+      inferred: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "*"
+        reason: "Não há exemplos de crédito visíveis; usar sinal explícito/coluna em PDFs reais"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "DEBITO PIX"
+        reason: "Linhas visíveis possuem marcador '-' após o valor"
+        inferred: false
+    caution:
+      - "Neste layout o sinal negativo pode aparecer separado do número, como '2.600,00 -'."
+      - "Não importar 'Saldo Anterior' como transação."
+      - "A coluna Saldo pode conter marcadores ou valores mascarados; validar com PDF real."
+      - "Não depender apenas da descrição 'DEBITO PIX' quando houver sinal explícito; o sinal deve ter prioridade."
+      - "Não há exemplos de créditos; validar como entradas são representadas."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Lançamentos"
+      header_row_color: "light gray"
+      header_keywords:
+        - "Data"
+        - "Descrição"
+        - "DOC"
+        - "Valor"
+        - "Saldo"
+    column_order:
+      - date
+      - description
+      - document
+      - amount
+      - balance
+    row_behavior:
+      separator: "alternating light gray and white bands"
+      date_repeated_per_transaction: true
+      description_uppercase: true
+      document_fixed_width_numeric: true
+      amount_right_aligned: true
+      negative_sign_may_be_separate_token_after_amount: true
+      balance_right_aligned: true
+  parser_risks:
+    ambiguities:
+      - "O sinal '-' aparece separado do valor, podendo ser extraído como coluna/token independente."
+      - "A coluna Saldo está presente, mas os valores estão ocultos ou ilegíveis no recorte."
+      - "Marcadores '+' aparecem na região de saldo, mas não é possível confirmar se indicam saldo positivo, sinal do saldo ou artefato visual."
+      - "Não há exemplo de crédito para confirmar representação de entradas."
+      - "Canal de origem não é visível."
+    fields_that_may_be_missing:
+      - "holder_name"
+      - "account_number"
+      - "generated_date"
+      - "generated_time"
+      - "balance"
+      - "channel"
+    cases_that_need_real_pdf_validation:
+      - "Se o sinal '-' é extraído junto ao valor ou como token separado."
+      - "Se créditos usam sinal '+', ausência de sinal, cor ou outra coluna."
+      - "Se a coluna Saldo possui valor completo e sinal legível."
+      - "Se 'Saldo Anterior' possui valor de saldo em linha separada ou na coluna Saldo."
+      - "Se há paginação e repetição do cabeçalho."
+      - "Se descrições longas quebram em múltiplas linhas."
+
+layout_profile:
+  profile_name: banco_brb_extrato_mensal_lancamentos_dados_conta_origem_v1
+  bank: Banco BRB
+  layout_family: brb_extrato_mensal_dados_conta_origem
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "banco BRB"
+      - "Extrato"
+      - "Dados da Conta Origem"
+      - "Nome do Titular"
+      - "Número da Conta"
+      - "Tipo de Conta"
+      - "Tipo de Extrato"
+      - "Lançamentos"
+      - "Data"
+      - "Descrição"
+      - "DOC"
+      - "Valor"
+      - "Saldo"
+    optional_keywords:
+      - "Conta Corrente"
+      - "Mensal"
+      - "Saldo Anterior"
+      - "DEBITO PIX"
+      - "Data:"
+      - "Hora:"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "banco bmg"
+      - "JUNHO/2024"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Descrição"
+      - "DOC"
+      - "Valor"
+      - "Saldo"
+    expected_column_order:
+      - date
+      - description
+      - document
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Descrição"
+        - "Descricao"
+        - "Histórico"
+      document:
+        - "DOC"
+        - "Doc"
+        - "Documento"
+      amount:
+        - "Valor"
+      balance:
+        - "Saldo"
+    table_starts_after:
+      - "Lançamentos"
+      - "Data Descrição DOC Valor Saldo"
+    row_separator_hint: "transaction row starts when first column contains dd/MM/yyyy; rows alternate gray/white"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount} -"
+      - "{amount}-"
+      - "-{amount}"
+    positive_patterns:
+      - "{amount_without_minus}"
+      - "{amount} +"
+      - "{amount}+"
+    ignore_rows:
+      - "banco BRB"
+      - "Extrato"
+      - "Data:"
+      - "Hora:"
+      - "Dados da Conta Origem"
+      - "Nome do Titular"
+      - "Número da Conta"
+      - "Tipo de Conta"
+      - "Tipo de Extrato"
+      - "Conta Corrente"
+      - "Mensal"
+      - "Lançamentos"
+      - "Data"
+      - "Descrição"
+      - "DOC"
+      - "Valor"
+      - "Saldo"
+      - "Saldo Anterior"
+      - "SALDO ANTERIOR"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "Saldo Anterior"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_trailing_negative_sign"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "DEBITO PIX"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem marcador '-' após o valor"
+    cautions:
+      - "Não perder o sinal quando ele vier separado do número."
+      - "Não usar apenas descrição quando sinal explícito existir."
+      - "Não inferir créditos sem amostra real do layout."
+      - "Se o valor vier sem sinal e sem saldo legível, tratar como positivo pela regra geral, mas considerar revisão se o layout real usar marcadores separados."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+      - "remove_masking_artifacts_only_if_confirmed"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "DEBITO PIX"
+        category: "pix_enviado"
+        inferred: true
+    transfer_hints:
+      - pattern: "DEBITO PIX"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "CREDITO PIX"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "Data"
+      - "Descrição"
+      - "Valor"
+      - "Saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "when balance is legible, validate previous_balance_plus_signed_amount_equals_current_balance; support trailing sign tokens"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "sign_token_separated_from_amount"
+      - "amount_without_sign_and_balance_missing"
+      - "balance_column_masked_or_illegible"
+      - "plus_marker_in_balance_column_without_amount"
+      - "credit_representation_unknown"
+      - "ocr_confidence_low_on_amount_or_sign"
+      - "description_partially_masked_or_truncated"
+  examples_from_image:
+    sample_rows:
+      - raw_date: unknown
+        raw_description: "Saldo Anterior"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo anterior; não importar como transação"
+      - raw_date: "02/01/2024"
+        raw_description: "DEBITO PIX"
+        raw_document: "000000"
+        raw_amount: "2.600,00 -"
+        raw_balance: unknown
+        normalized_amount: "-2600.00"
+        should_import_as_transaction: true
+        notes: "Sinal negativo aparece separado após o valor"
+      - raw_date: "02/01/2024"
+        raw_description: "DEBITO PIX"
+        raw_document: "000000"
+        raw_amount: "6.000,00 -"
+        raw_balance: unknown
+        normalized_amount: "-6000.00"
+        should_import_as_transaction: true
+        notes: "Sinal negativo aparece separado após o valor"
+      - raw_date: "02/01/2024"
+        raw_description: "DEBITO PIX"
+        raw_document: "000000"
+        raw_amount: "20.000,00 -"
+        raw_balance: unknown
+        normalized_amount: "-20000.00"
+        should_import_as_transaction: true
+        notes: "Sinal negativo aparece separado após o valor"
+      - raw_date: "02/01/2024"
+        raw_description: "DEBITO PIX"
+        raw_document: "000000"
+        raw_amount: "130.000,00 -"
+        raw_balance: unknown
+        normalized_amount: "-130000.00"
+        should_import_as_transaction: true
+        notes: "Sinal negativo aparece separado após o valor"
+  implementation_notes:
+    - "Classificar pelo bloco 'Dados da Conta Origem' e pela tabela 'Lançamentos'."
+    - "Implementar parsing de sinal separado: valor monetário seguido por token '-' na mesma linha/região."
+    - "Não importar 'Saldo Anterior' como transação."
+    - "Não exigir saldo legível para importar transações, mas usar saldo para validação quando disponível."
+    - "Validar em PDF real como créditos aparecem e se a coluna saldo traz valores completos."
+    - "Preservar descrição original e documento '000000' quando presente."

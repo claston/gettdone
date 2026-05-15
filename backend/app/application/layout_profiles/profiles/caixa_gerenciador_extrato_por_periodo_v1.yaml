@@ -1,0 +1,420 @@
+meta_model:
+  layout_id: caixa_gerenciador_extrato_por_periodo_v1
+  bank: Caixa Econômica Federal
+  channel: Gerenciador Caixa
+  statement_type: conta_corrente_extrato_por_periodo
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'GERENCIADOR CAIXA' visível no topo"
+      - "Título 'Extrato por período'"
+      - "Campos de metadados 'Cliente', 'Conta', 'Data', 'Mês' e 'Período'"
+      - "Seção 'Extrato'"
+      - "Cabeçalho de tabela com colunas 'Data Mov.', 'Nr. Doc.', 'Histórico', 'Valor', 'Saldo'"
+      - "Valores e saldos usam sufixo 'C' e 'D'"
+    weak:
+      - "Dados de cliente e conta estão ocultos ou ilegíveis"
+      - "O banco é inferido pelo logo 'CAIXA' e pelo canal 'Gerenciador Caixa'"
+      - "A primeira linha 'SALDO ANTERIOR' não possui data visível"
+      - "Coluna Valor usa sufixo C/D em vez de colunas separadas de crédito/débito"
+    table_headers:
+      - "Data Mov."
+      - "Nr. Doc."
+      - "Histórico"
+      - "Valor"
+      - "Saldo"
+  page_structure:
+    header:
+      bank_logo: "CAIXA"
+      channel_title: "GERENCIADOR CAIXA"
+      title: "Extrato por período"
+      account_identifiers:
+        client: unknown
+        account: unknown
+    metadata:
+      generated_at: "14/05/2024 - 14:27"
+      month: "Abril/2024"
+      period: "1 - 30"
+      fields:
+        - "Cliente"
+        - "Conta"
+        - "Data"
+        - "Mês"
+        - "Período"
+    transactions_table:
+      section_title: "Extrato"
+      columns:
+        - "Data Mov."
+        - "Nr. Doc."
+        - "Histórico"
+        - "Valor"
+        - "Saldo"
+      visible_rows:
+        - type: opening_balance
+          date: unknown
+          document: "000000"
+          description: "SALDO ANTERIOR"
+          amount: "0,00"
+          balance: "368,43 D"
+        - type: normal_transaction
+          date: "01/04/2024"
+          document: "074697"
+          description: "CLOU MC CD"
+          amount: "212,05 C"
+          balance: "156,38 D"
+        - type: normal_transaction
+          date: "01/04/2024"
+          document: "074698"
+          description: "CLOU EL CD"
+          amount: "24,35 C"
+          balance: "132,03 D"
+        - type: normal_transaction
+          date: "01/04/2024"
+          document: "000000"
+          description: "DEB.IOF"
+          amount: "2,87 D"
+          balance: "134,90 D"
+        - type: normal_transaction
+          date: "01/04/2024"
+          document: "900001"
+          description: "DEB.JUROS"
+          amount: "2,81 D"
+          balance: "137,71 D"
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+        - "SALDO DO DIA"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: "Saldo"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_document: true
+      row_has_description: true
+      row_has_amount_with_credit_debit_suffix: true
+      row_has_balance_with_credit_debit_suffix: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor termina com sufixo 'C'"
+      negative_when:
+        - "Valor termina com sufixo 'D'"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "Saldo"
+      balance_sign_uses_suffix_C_D: true
+      debit_balance_suffix: "D"
+      credit_balance_suffix: "C"
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "CLOU * CD"
+        reason: "Linhas visíveis aparecem com sufixo 'C' no campo Valor"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "DEB.IOF"
+        reason: "Linha visível aparece com sufixo 'D' no campo Valor"
+        inferred: false
+      - pattern: "DEB.JUROS"
+        reason: "Linha visível aparece com sufixo 'D' no campo Valor"
+        inferred: false
+    caution:
+      - "Neste layout o sinal deve ser determinado pelo sufixo C/D no valor."
+      - "Saldos também usam C/D; saldo com D representa saldo devedor/negativo."
+      - "Não importar 'SALDO ANTERIOR' como transação."
+      - "Não inferir sinal apenas pela descrição; usar o sufixo C/D como fonte primária."
+      - "Validar com PDF real se o sufixo C/D vem junto ao valor ou separado por espaço."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Extrato"
+      header_keywords:
+        - "Data Mov."
+        - "Nr. Doc."
+        - "Histórico"
+        - "Valor"
+        - "Saldo"
+    column_order:
+      - date
+      - document
+      - description
+      - amount
+      - balance
+    row_behavior:
+      separator: "whitespace aligned rows; no strong grid lines visible"
+      date_repeated_per_transaction: true
+      opening_balance_date_may_be_blank: true
+      document_fixed_width_numeric: true
+      description_uppercase: true
+      amount_right_aligned: true
+      balance_right_aligned: true
+      amount_suffix_C_D: true
+      balance_suffix_C_D: true
+  parser_risks:
+    ambiguities:
+      - "Não é possível confirmar se todas as transações sempre possuem data; a linha de saldo anterior não possui data visível."
+      - "O significado exato dos históricos abreviados como 'CLOU MC CD' e 'CLOU EL CD' precisa de validação de domínio."
+      - "Saldo com sufixo D deve ser tratado como saldo negativo/devedor, mas essa regra precisa ser confirmada com PDFs reais."
+      - "O canal exato é inferido como Gerenciador Caixa pelo logo, mas o tipo de conta não está explicitamente visível."
+      - "Não há cabeçalho com agência visível; apenas cliente/conta."
+    fields_that_may_be_missing:
+      - "client"
+      - "account"
+      - "opening_balance_date"
+      - "agency"
+      - "channel_variant"
+    cases_that_need_real_pdf_validation:
+      - "Extração textual preserva colunas Data Mov., Nr. Doc., Histórico, Valor e Saldo."
+      - "Sufixos C/D são extraídos corretamente no valor e no saldo."
+      - "Históricos longos podem quebrar linha."
+      - "Como aparecem saldo do dia, saldo final, totais e paginação."
+      - "Se o saldo devedor D deve ser normalizado como negativo em todos os cenários."
+      - "Se existem valores com sinal explícito além do sufixo C/D."
+
+layout_profile:
+  profile_name: caixa_gerenciador_extrato_por_periodo_v1
+  bank: Caixa Econômica Federal
+  layout_family: gerenciador_caixa_extrato_por_periodo
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "GERENCIADOR CAIXA"
+      - "Extrato por período"
+      - "Cliente"
+      - "Conta"
+      - "Data"
+      - "Mês"
+      - "Período"
+      - "Extrato"
+      - "Data Mov."
+      - "Nr. Doc."
+      - "Histórico"
+      - "Valor"
+      - "Saldo"
+    optional_keywords:
+      - "SALDO ANTERIOR"
+      - "Abril/2024"
+      - "CLOU"
+      - "DEB.IOF"
+      - "DEB.JUROS"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "Itaú"
+      - "Fatura"
+      - "Cartão de Crédito"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data Mov."
+      - "Nr. Doc."
+      - "Histórico"
+      - "Valor"
+      - "Saldo"
+    expected_column_order:
+      - date
+      - document
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data Mov."
+        - "Data Movimento"
+        - "Data"
+      description:
+        - "Histórico"
+        - "Historico"
+      document:
+        - "Nr. Doc."
+        - "Nº Doc."
+        - "Documento"
+        - "Doc."
+      amount:
+        - "Valor"
+        - "Valor R$"
+      balance:
+        - "Saldo"
+    table_starts_after:
+      - "Extrato"
+      - "Data Mov. Nr. Doc. Histórico Valor Saldo"
+    row_separator_hint: "transaction row starts when first column has dd/MM/yyyy; opening balance may start with blank date and document 000000"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount} D"
+      - "{amount}D"
+    positive_patterns:
+      - "{amount} C"
+      - "{amount}C"
+      - "{amount_without_suffix_for_opening_balance_only}"
+    ignore_rows:
+      - "GERENCIADOR CAIXA"
+      - "Extrato por período"
+      - "Cliente"
+      - "Conta"
+      - "Data"
+      - "Mês"
+      - "Período"
+      - "Extrato"
+      - "Data Mov."
+      - "Nr. Doc."
+      - "Histórico"
+      - "Valor"
+      - "Saldo"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+      - balance_sign
+  sign_rules:
+    priority_order:
+      - "credit_debit_suffix_C_D"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "CLOU * CD"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis usam sufixo C"
+      - pattern: "DEB.IOF"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível usa sufixo D"
+      - pattern: "DEB.JUROS"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível usa sufixo D"
+    cautions:
+      - "Não remover C/D antes de definir o sinal."
+      - "Não usar apenas a palavra 'DEB' se o sufixo C/D estiver disponível."
+      - "Saldos com D devem provavelmente ser normalizados como negativos, mas validar com PDF real."
+      - "OCR pode confundir C/D com outros caracteres; aplicar validação de posição e regex."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_abbreviated_history_codes"
+      - "normalize_uppercase_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "CLOU * CD"
+        category: "cartao_credito_debito_recebimento"
+        inferred: true
+      - pattern: "DEB.IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "DEB.JUROS"
+        category: "juros_encargos"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "DOC"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "Data Mov."
+      - "Histórico"
+      - "Valor"
+      - "Saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "convert_C_D_amount_and_C_D_balance_to_signed_values_then_validate_current_balance_equals_previous_balance_plus_signed_amount"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "amount_has_no_C_or_D_suffix_on_transaction_row"
+      - "balance_has_no_C_or_D_suffix"
+      - "ocr_confidence_low_on_suffix_C_D"
+      - "row_has_date_and_description_but_no_amount"
+      - "description_abbreviation_unknown"
+      - "opening_balance_has_amount_and_balance_that_could_be_misclassified"
+      - "multiline_description_detected"
+  examples_from_image:
+    sample_rows:
+      - raw_date: unknown
+        raw_description: "SALDO ANTERIOR"
+        raw_document: "000000"
+        raw_amount: "0,00"
+        raw_balance: "368,43 D"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo anterior; saldo com D provavelmente representa saldo negativo/devedor"
+      - raw_date: "01/04/2024"
+        raw_description: "CLOU MC CD"
+        raw_document: "074697"
+        raw_amount: "212,05 C"
+        raw_balance: "156,38 D"
+        normalized_amount: "212.05"
+        should_import_as_transaction: true
+        notes: "Sufixo C indica crédito; saldo permanece devedor"
+      - raw_date: "01/04/2024"
+        raw_description: "CLOU EL CD"
+        raw_document: "074698"
+        raw_amount: "24,35 C"
+        raw_balance: "132,03 D"
+        normalized_amount: "24.35"
+        should_import_as_transaction: true
+        notes: "Sufixo C indica crédito"
+      - raw_date: "01/04/2024"
+        raw_description: "DEB.IOF"
+        raw_document: "000000"
+        raw_amount: "2,87 D"
+        raw_balance: "134,90 D"
+        normalized_amount: "-2.87"
+        should_import_as_transaction: true
+        notes: "Sufixo D indica débito"
+      - raw_date: "01/04/2024"
+        raw_description: "DEB.JUROS"
+        raw_document: "900001"
+        raw_amount: "2,81 D"
+        raw_balance: "137,71 D"
+        normalized_amount: "-2.81"
+        should_import_as_transaction: true
+        notes: "Sufixo D indica débito"
+  implementation_notes:
+    - "Classificar pelo logo/texto 'GERENCIADOR CAIXA' e pelo título 'Extrato por período'."
+    - "Detectar tabela a partir das colunas 'Data Mov.', 'Nr. Doc.', 'Histórico', 'Valor' e 'Saldo'."
+    - "Separar valor monetário do sufixo C/D antes da normalização."
+    - "Mapear C para valor positivo e D para valor negativo."
+    - "Para saldo, validar a convenção: C como saldo credor/positivo e D como saldo devedor/negativo."
+    - "Não importar 'SALDO ANTERIOR' como transação."
+    - "Preservar históricos abreviados porque podem ser códigos bancários relevantes."
+    - "Validar com PDF real se o OCR mantém alinhamento de colunas e sufixos C/D."

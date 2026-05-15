@@ -1,9 +1,10 @@
 from pathlib import Path
 
 from app.application.column_mapping import resolve_sheet_field_map
-from app.application.csv_parser import _parse_amount, parse_csv_transactions_with_mapping
+from app.application.csv_parser import parse_csv_transactions_with_mapping
 from app.application.errors import InvalidFileContentError, UnsupportedFileTypeError
 from app.application.models import NormalizedTransaction
+from app.application.normalization.amount import parse_amount
 from app.application.xlsx_parser import parse_xlsx_transactions_with_mapping
 
 _SHEET_ALLOWED_EXTENSIONS = {"csv", "xlsx"}
@@ -103,7 +104,7 @@ def _resolve_split_amount(debit_raw: object | None, credit_raw: object | None) -
 def _parse_amount_from_raw(value: object | None) -> float:
     if value is None:
         raise InvalidFileContentError("Sheet row has empty 'amount' value.")
-    return _parse_amount(str(value))
+    return parse_amount(str(value))
 
 
 def _has_value(value: object | None) -> bool:

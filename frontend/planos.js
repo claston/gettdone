@@ -7,6 +7,8 @@
   const topLinks = document.getElementById("top-links");
   const USER_TOKEN_KEY = "ofxsimples_user_token";
   const PROFILE_HINT_KEY = "ofxsimples_profile_hint";
+  const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+  const COLD_START_TIMEOUT_MS = 5000;
 
   if (yearNode) {
     yearNode.textContent = "(c) " + new Date().getFullYear() + " OFX Simples. Todos os direitos reservados.";
@@ -66,6 +68,57 @@
     return amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   }
 
+  function sleep(ms) {
+    return new Promise(function (resolve) {
+      window.setTimeout(resolve, ms);
+    });
+  }
+
+  function isRetryableStatus(statusCode) {
+    return RETRYABLE_STATUS.has(Number(statusCode || 0));
+  }
+
+  async function fetchJsonWithRetry(url, init, attempts) {
+    const maxAttempts = Math.max(1, Number(attempts || 1));
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const controller = typeof AbortController === "function" ? new AbortController() : null;
+      const timeoutHandle = controller
+        ? window.setTimeout(function () {
+            controller.abort();
+          }, COLD_START_TIMEOUT_MS)
+        : null;
+      try {
+        const response = await fetch(url, {
+          ...(init || {}),
+          ...(controller ? { signal: controller.signal } : {}),
+        });
+        const payload = await response.json().catch(function () {
+          return {};
+        });
+        if (response.ok) {
+          return payload;
+        }
+        if (attempt < maxAttempts && isRetryableStatus(response.status)) {
+          await sleep(450 * attempt);
+          continue;
+        }
+        throw new Error("catalog-unavailable");
+      } catch (error) {
+        lastError = error;
+        if (attempt < maxAttempts) {
+          await sleep(450 * attempt);
+          continue;
+        }
+      } finally {
+        if (timeoutHandle !== null) {
+          window.clearTimeout(timeoutHandle);
+        }
+      }
+    }
+    throw lastError || new Error("catalog-unavailable");
+  }
+
   function renderPlans(items) {
     if (!pricingGrid) return;
     const plans = Array.isArray(items) ? items.slice() : [];
@@ -114,11 +167,7 @@
     if (!pricingGrid) return;
     try {
       const apiBase = resolveApiBase();
-      const response = await fetch(`${apiBase}/plans`);
-      if (!response.ok) throw new Error("catalog-unavailable");
-      const payload = await response.json().catch(function () {
-        return {};
-      });
+      const payload = await fetchJsonWithRetry(`${apiBase}/plans`, undefined, 3);
       renderPlans(payload.items || []);
     } catch (_error) {
       renderPlans([]);

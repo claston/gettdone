@@ -1,0 +1,473 @@
+meta_model:
+  layout_id: banco_da_amazonia_gesop_extrato_mensal_v1
+  bank: Banco da Amazônia
+  channel: GESOP
+  statement_type: conta_corrente_extrato_mensal
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo/texto 'BANCO DA AMAZÔNIA' visível no topo esquerdo"
+      - "Texto 'GESOP' abaixo do logo"
+      - "Título central 'Emitir Extrato Mensal'"
+      - "Período/mês visível como '01 / 2024'"
+      - "Campos 'Agência', 'Titular', 'Conta', 'Saldo Disponível Inicial', 'Vencto. CH.AM', 'Limite' e 'Tipo Conta'"
+      - "Cabeçalho de tabela com colunas 'DATA', 'NR DOC', 'HISTÓRICO', 'VALOR LANCTO', 'D/C', 'SALDO'"
+      - "Coluna 'D/C' indica débito/crédito; linhas visíveis possuem 'D'"
+      - "Valores de débito aparecem com sinal negativo na coluna 'VALOR LANCTO'"
+    weak:
+      - "Dados de conta, titular, saldo inicial e limite estão ocultos/ilegíveis"
+      - "Canal inferido pelo texto 'GESOP'"
+      - "Tabela em estilo monoespaçado/legado, com separadores horizontais"
+      - "Não há exemplos de crédito visíveis no recorte"
+      - "A coluna saldo existe, mas os saldos das linhas visíveis não estão legíveis"
+    table_headers:
+      - "DATA"
+      - "NR DOC"
+      - "HISTÓRICO"
+      - "VALOR LANCTO"
+      - "D/C"
+      - "SALDO"
+  page_structure:
+    header:
+      bank_logo: "Banco da Amazônia"
+      channel_title: "GESOP"
+      title: "Emitir Extrato Mensal"
+      generated_date: unknown
+      generated_time: unknown
+    metadata:
+      period: "01/2024"
+      account_identifiers:
+        agency: unknown
+        account: unknown
+        holder: unknown
+        account_type: unknown
+      initial_available_balance_label: "Saldo Disponível Inicial"
+      initial_available_balance_value: unknown
+      overdraft_due_label: "Vencto. CH.AM"
+      overdraft_due_value: unknown
+      limit_label: "Limite"
+      limit_value: unknown
+    transactions_table:
+      header_background: "light gray"
+      representation: "legacy_fixed_width_table"
+      columns:
+        - "DATA"
+        - "NR DOC"
+        - "HISTÓRICO"
+        - "VALOR LANCTO"
+        - "D/C"
+        - "SALDO"
+      visible_rows:
+        - type: normal_transaction
+          date: "05/01/2024"
+          document: "1020"
+          description: "TARIFA PACOTE BASICO PJ"
+          amount: "-1.000,00"
+          debit_credit: "D"
+          balance: unknown
+        - type: normal_transaction
+          date: "10/01/2024"
+          document: "0014"
+          description: "TITULOS DEBITADOS"
+          amount: "-2.841,42"
+          debit_credit: "D"
+          balance: unknown
+        - type: normal_transaction
+          date: "15/01/2024"
+          document: "2020"
+          description: "PAGTO TEL CEL VIA BCO 24H TECBAN"
+          amount: "-1.578,30"
+          debit_credit: "D"
+          balance: unknown
+        - type: normal_transaction
+          date: "15/01/2024"
+          document: "2036"
+          description: "DEBITO DE ORDEM DE PAGAMENTO"
+          amount: "-707,27"
+          debit_credit: "D"
+          balance: unknown
+        - type: normal_transaction
+          date: "15/01/2024"
+          document: "2036"
+          description: "DEBITO DE ORDEM DE PAGAMENTO"
+          amount: "-150,00"
+          debit_credit: "D"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo Disponível Inicial"
+        - "SALDO ANTERIOR"
+        - "SALDO INICIAL"
+      should_import_as_transaction: false
+      balance_source: "Saldo Disponível Inicial or SALDO column"
+      inferred: true
+    normal_transaction:
+      row_has_date: true
+      row_has_document: true
+      row_has_description: true
+      row_has_amount: true
+      row_has_debit_credit_marker: true
+      row_may_have_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Coluna D/C contém 'C'"
+        - "Valor aparece sem sinal negativo em linha marcada como C"
+      negative_when:
+        - "Coluna D/C contém 'D'"
+        - "Valor aparece com sinal '-' em VALOR LANCTO"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "SALDO"
+      may_be_blank_or_illegible_in_visible_rows: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "*"
+        reason: "Não há exemplo de crédito visível; usar D/C='C' quando aparecer"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "TARIFA PACOTE BASICO PJ"
+        reason: "Linha visível possui D/C='D' e valor negativo"
+        inferred: false
+      - pattern: "TITULOS DEBITADOS"
+        reason: "Linha visível possui D/C='D' e valor negativo"
+        inferred: false
+      - pattern: "PAGTO TEL CEL VIA BCO 24H TECBAN"
+        reason: "Linha visível possui D/C='D' e valor negativo"
+        inferred: false
+      - pattern: "DEBITO DE ORDEM DE PAGAMENTO"
+        reason: "Linha visível possui D/C='D' e valor negativo"
+        inferred: false
+    caution:
+      - "Neste layout a coluna D/C deve ter prioridade para sinal, com validação pelo sinal numérico."
+      - "Evitar dupla negativação quando D/C='D' e o valor já vier com '-'."
+      - "Não há crédito visível; validar como créditos aparecem no PDF real."
+      - "A coluna saldo existe, mas pode estar ilegível/oculta no recorte."
+      - "Layout legado/monoespaçado pode exigir parsing por posição de coluna."
+  visual_model:
+    table_anchor:
+      starts_after_text: "DATA NR DOC HISTÓRICO VALOR LANCTO D/C SALDO"
+      header_row_color: "light gray"
+      header_keywords:
+        - "DATA"
+        - "NR DOC"
+        - "HISTÓRICO"
+        - "VALOR LANCTO"
+        - "D/C"
+        - "SALDO"
+    column_order:
+      - date
+      - document
+      - description
+      - amount
+      - debit_credit
+      - balance
+    row_behavior:
+      separator: "horizontal rules and monospaced alignment"
+      fixed_width_columns: true
+      date_repeated_per_transaction: true
+      document_left_of_description: true
+      description_uppercase: true
+      amount_right_aligned: true
+      debit_credit_marker_centered: true
+      balance_right_aligned: true
+  parser_risks:
+    ambiguities:
+      - "Não há exemplos de crédito para confirmar se o valor vem positivo, sem sinal, ou com D/C='C'."
+      - "A coluna saldo está presente, mas os valores estão ocultos/ilegíveis."
+      - "O campo 'NR DOC' pode ter zeros à esquerda e deve ser preservado como string."
+      - "Alguns textos do cabeçalho e dados de conta estão ocultos."
+      - "Pode haver quebras de linha em históricos longos no PDF real."
+    fields_that_may_be_missing:
+      - "balance"
+      - "agency"
+      - "account"
+      - "holder"
+      - "initial_available_balance"
+      - "generated_date"
+      - "generated_time"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual preserva a coluna D/C corretamente."
+      - "Se créditos usam D/C='C' e valor positivo sem sinal."
+      - "Se débitos sempre vêm com D/C='D' e sinal '-' no valor."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Se há linhas de saldo anterior/final e totais."
+      - "Se cabeçalho repete em páginas seguintes."
+
+layout_profile:
+  profile_name: banco_da_amazonia_gesop_extrato_mensal_v1
+  bank: Banco da Amazônia
+  layout_family: banco_da_amazonia_gesop_extrato_mensal_legacy
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "BANCO DA AMAZÔNIA"
+      - "GESOP"
+      - "Emitir Extrato Mensal"
+      - "Agência"
+      - "Titular"
+      - "Conta"
+      - "Saldo Disponível Inicial"
+      - "DATA"
+      - "NR DOC"
+      - "HISTÓRICO"
+      - "VALOR LANCTO"
+      - "D/C"
+      - "SALDO"
+    optional_keywords:
+      - "Tipo Conta"
+      - "Vencto. CH.AM"
+      - "Limite"
+      - "TARIFA PACOTE BASICO PJ"
+      - "TITULOS DEBITADOS"
+      - "DEBITO DE ORDEM DE PAGAMENTO"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "banco bmg"
+      - "banco BRB"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "DATA"
+      - "NR DOC"
+      - "HISTÓRICO"
+      - "VALOR LANCTO"
+      - "D/C"
+      - "SALDO"
+    expected_column_order:
+      - date
+      - document
+      - description
+      - amount
+      - debit_credit
+      - balance
+    column_aliases:
+      date:
+        - "DATA"
+        - "Data"
+      description:
+        - "HISTÓRICO"
+        - "Histórico"
+        - "Historico"
+      document:
+        - "NR DOC"
+        - "Nº DOC"
+        - "Documento"
+        - "Doc."
+      amount:
+        - "VALOR LANCTO"
+        - "Valor Lancto"
+        - "Valor"
+      balance:
+        - "SALDO"
+        - "Saldo"
+      debit_credit:
+        - "D/C"
+        - "D C"
+        - "Débito/Crédito"
+    table_starts_after:
+      - "DATA NR DOC HISTÓRICO VALOR LANCTO D/C SALDO"
+    row_separator_hint: "fixed-width row starts when first token is dd/MM/yyyy"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    date_year_source: "statement_period"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+      - "D_marker"
+    positive_patterns:
+      - "{amount_without_minus}"
+      - "C_marker"
+    ignore_rows:
+      - "BANCO DA AMAZÔNIA"
+      - "GESOP"
+      - "Emitir Extrato Mensal"
+      - "Data da emissão"
+      - "Hora da emissão"
+      - "Agência"
+      - "Titular"
+      - "Conta"
+      - "Saldo Disponível Inicial"
+      - "Vencto. CH.AM"
+      - "Limite"
+      - "Tipo Conta"
+      - "DATA"
+      - "NR DOC"
+      - "HISTÓRICO"
+      - "VALOR LANCTO"
+      - "D/C"
+      - "SALDO"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "Saldo Disponível Inicial"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+      - debit_credit
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "debit_credit_marker_D_C"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "TARIFA PACOTE BASICO PJ"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui D/C='D'"
+      - pattern: "TITULOS DEBITADOS"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui D/C='D'"
+      - pattern: "PAGTO TEL CEL VIA BCO 24H TECBAN"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui D/C='D'"
+      - pattern: "DEBITO DE ORDEM DE PAGAMENTO"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui D/C='D'"
+    cautions:
+      - "Não aplicar negativo duas vezes quando D/C='D' e o valor já possui '-'."
+      - "Não depender apenas da descrição se D/C estiver presente."
+      - "Se D/C estiver ilegível e o valor não tiver sinal, marcar para revisão."
+      - "Preservar NR DOC como string para manter zeros à esquerda."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+      - "remove_table_separator_artifacts"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "TARIFA PACOTE BASICO PJ"
+        category: "tarifa_pacote"
+        inferred: true
+      - pattern: "TITULOS DEBITADOS"
+        category: "pagamento_titulo"
+        inferred: true
+      - pattern: "PAGTO TEL CEL VIA BCO 24H TECBAN"
+        category: "pagamento_conta"
+        inferred: true
+      - pattern: "DEBITO DE ORDEM DE PAGAMENTO"
+        category: "ordem_pagamento"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "ORDEM DE PAGAMENTO"
+        category: "ordem_pagamento"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "PACOTE"
+        category: "tarifa_pacote"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 6
+    reject_if_missing_headers:
+      - "DATA"
+      - "HISTÓRICO"
+      - "VALOR LANCTO"
+      - "D/C"
+      - "SALDO"
+    balance_consistency_check:
+      enabled: true
+      method: "when balance is legible, use D/C to sign amount and validate previous_balance_plus_signed_amount_equals_current_balance"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "debit_credit_marker_missing_or_unreadable"
+      - "amount_sign_conflicts_with_D_C_marker"
+      - "balance_column_illegible"
+      - "document_with_leading_zero_lost"
+      - "row_has_date_and_description_but_no_amount"
+      - "ocr_confidence_low_on_fixed_width_columns"
+      - "description_line_wrap_detected"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "05/01/2024"
+        raw_description: "TARIFA PACOTE BASICO PJ"
+        raw_document: "1020"
+        raw_amount: "-1.000,00"
+        raw_balance: unknown
+        normalized_amount: "-1000.00"
+        should_import_as_transaction: true
+        notes: "D/C = D; débito. Evitar dupla negativação."
+      - raw_date: "10/01/2024"
+        raw_description: "TITULOS DEBITADOS"
+        raw_document: "0014"
+        raw_amount: "-2.841,42"
+        raw_balance: unknown
+        normalized_amount: "-2841.42"
+        should_import_as_transaction: true
+        notes: "D/C = D; documento com zeros à esquerda deve ser preservado."
+      - raw_date: "15/01/2024"
+        raw_description: "PAGTO TEL CEL VIA BCO 24H TECBAN"
+        raw_document: "2020"
+        raw_amount: "-1.578,30"
+        raw_balance: unknown
+        normalized_amount: "-1578.30"
+        should_import_as_transaction: true
+        notes: "D/C = D; pagamento/saída."
+      - raw_date: "15/01/2024"
+        raw_description: "DEBITO DE ORDEM DE PAGAMENTO"
+        raw_document: "2036"
+        raw_amount: "-707,27"
+        raw_balance: unknown
+        normalized_amount: "-707.27"
+        should_import_as_transaction: true
+        notes: "D/C = D; débito explícito."
+      - raw_date: "15/01/2024"
+        raw_description: "DEBITO DE ORDEM DE PAGAMENTO"
+        raw_document: "2036"
+        raw_amount: "-150,00"
+        raw_balance: unknown
+        normalized_amount: "-150.00"
+        should_import_as_transaction: true
+        notes: "D/C = D; débito explícito."
+  implementation_notes:
+    - "Classificar pelo conjunto 'BANCO DA AMAZÔNIA', 'GESOP' e 'Emitir Extrato Mensal'."
+    - "Usar parser fixed-width/posicional para separar DATA, NR DOC, HISTÓRICO, VALOR LANCTO, D/C e SALDO."
+    - "Preservar NR DOC como string."
+    - "Usar D/C como regra primária de sinal, evitando dupla negativação."
+    - "Não importar saldos iniciais/finais e linhas de total como transações."
+    - "Validar em PDF real se créditos aparecem com D/C='C' e como são exibidos os saldos."

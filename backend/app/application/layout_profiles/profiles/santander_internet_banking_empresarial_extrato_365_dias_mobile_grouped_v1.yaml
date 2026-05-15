@@ -1,0 +1,369 @@
+meta_model:
+  layout_id: santander_internet_banking_empresarial_extrato_365_dias_mobile_grouped_v1
+  bank: Santander
+  channel: Internet Banking Empresarial
+  statement_type: conta_corrente_extrato_365_dias
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo Santander visível no topo"
+      - "Texto 'Internet Banking Empresarial' no cabeçalho"
+      - "Campos 'Agência' e 'Conta' no cabeçalho"
+      - "Extrato exibido em formato agrupado por dia, sem cabeçalho tabular clássico"
+      - "Linhas de data com ícone de calendário e fundo azul claro"
+      - "Linhas 'Saldo do dia'"
+      - "Transações com descrição à esquerda e valor monetário à direita"
+      - "Ícone circular amarelo com seta para cima ao lado de lançamentos de débito"
+    weak:
+      - "Layout parece ser uma visualização/relatório alternativo do Santander Empresarial, possivelmente exportação/impressão do extrato 365 dias"
+      - "Não há colunas explícitas de Documento, Valor e Saldo em formato tabular"
+      - "O valor aparece com 'R$' e sinal negativo separado visualmente"
+      - "Não há dados visíveis de agência e conta"
+    table_headers: []
+  page_structure:
+    header:
+      bank_logo: "Santander"
+      channel_title: "Internet Banking Empresarial"
+      account_identifiers:
+        agency: unknown
+        account: unknown
+    metadata:
+      visible_period: unknown
+      generated_at: unknown
+      account_type: unknown
+    transactions_table:
+      type: "grouped_by_day_list"
+      has_classic_table_header: false
+      columns_inferred:
+        - "date_group"
+        - "description"
+        - "amount"
+      visible_groups:
+        - date_group: "09 de julho de 2024, terça-feira"
+          rows:
+            - type: daily_balance
+              description: "Saldo do dia"
+              amount: unknown
+              should_import_as_transaction: false
+            - type: normal_transaction
+              description: "Tarifa manutencao it vencido"
+              document: unknown
+              amount: "-R$ 1,90"
+              balance: unknown
+        - date_group: "05 de julho de 2024, sexta-feira"
+          rows:
+            - type: daily_balance
+              description: "Saldo do dia"
+              amount: "-R$ 14.720,00"
+              should_import_as_transaction: false
+            - type: normal_transaction
+              description: "Pagamento de boleto outros bancos"
+              document: unknown
+              amount: "-R$ 73,38"
+              balance: unknown
+            - type: normal_transaction
+              description: "Pagamento de boleto outros bancos"
+              document: unknown
+              amount: "-R$ 1.200,00"
+              balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo anterior"
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "daily/list balance area"
+      inferred: true
+    normal_transaction:
+      row_has_date: false
+      date_inherited_from_group_header: true
+      row_has_description: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece sem sinal negativo"
+        - "Ícone/sinal de crédito quando existir, a validar em PDF real"
+      negative_when:
+        - "Valor aparece com sinal '-' antes de R$"
+        - "Ícone circular amarelo com seta para cima pode indicar saída/débito neste layout"
+      inferred: true
+    balance_column:
+      exists: false
+      column_name: unknown
+      balance_present_as_daily_balance_row: true
+      daily_balance_should_not_be_imported: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "PIX RECEBIDO"
+        reason: "Comum em extratos Santander; não aparece nesta imagem, mas pode ocorrer no mesmo layout"
+        inferred: true
+      - pattern: "RESGATE CONTAMAX"
+        reason: "Resgate de aplicação costuma aumentar saldo; validar pelo sinal"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "Tarifa manutencao*"
+        reason: "Tarifa bancária aparece com valor negativo na imagem"
+        inferred: false
+      - pattern: "Pagamento de boleto outros bancos"
+        reason: "Linhas visíveis aparecem com valores negativos"
+        inferred: false
+    caution:
+      - "Este layout não usa tabela tradicional; parser deve herdar a data do cabeçalho do grupo"
+      - "Linhas 'Saldo do dia' são saldo/posição, não transações"
+      - "Não inferir débito apenas por descrição; usar sinal monetário e, quando possível, consistência de saldo"
+      - "A imagem não mostra lançamentos positivos; validar representação de créditos em PDF/imagem real"
+      - "Ícones visuais podem não estar disponíveis na extração textual de PDF"
+  visual_model:
+    table_anchor:
+      starts_after_header: "Internet Banking Empresarial / Agência / Conta"
+      group_header_style: "blue_light_background_with_calendar_icon"
+      no_classic_column_header: true
+    column_order:
+      - date_group
+      - description
+      - amount
+    row_behavior:
+      date_group_repeated_as_header: true
+      date_format_textual: true
+      transaction_date_inherited_from_group: true
+      description_left_aligned: true
+      amount_right_aligned: true
+      row_separator: "horizontal light gray lines"
+      daily_balance_row_before_transactions: true
+      transaction_icon_left: "yellow circular arrow icon for visible debit rows"
+  parser_risks:
+    ambiguities:
+      - "Não há cabeçalho tabular explícito; OCR pode misturar descrição e valor"
+      - "A data da transação não aparece em cada linha, apenas no grupo do dia"
+      - "O documento/identificador da transação não aparece na imagem"
+      - "O saldo do dia pode aparecer com valor na mesma linha ou em linha separada, dependendo do grupo"
+      - "O ícone de seta pode ser perdido no OCR e não deve ser a única fonte de sinal"
+      - "Não é possível confirmar como créditos são exibidos neste layout"
+    fields_that_may_be_missing:
+      - "document"
+      - "balance"
+      - "agency"
+      - "account"
+      - "transaction_specific_date"
+    cases_that_need_real_pdf_validation:
+      - "Verificar se PDFs reais preservam os blocos de data como texto extraível"
+      - "Verificar se o valor monetário fica na mesma linha da descrição após extração"
+      - "Verificar se transações longas quebram linha"
+      - "Verificar como créditos aparecem visualmente e textualmente"
+      - "Verificar paginação e continuidade de grupos de data entre páginas"
+      - "Verificar se 'Saldo do dia' sempre deve ser ignorado como transação"
+
+layout_profile:
+  profile_name: santander_empresarial_extrato_365_dias_mobile_grouped_v1
+  bank: Santander
+  layout_family: internet_banking_empresarial_grouped_list
+  statement_type: conta_corrente_extrato_365_dias
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Santander"
+      - "Internet Banking Empresarial"
+      - "Agência"
+      - "Conta"
+      - "Saldo do dia"
+    optional_keywords:
+      - "Conta corrente"
+      - "Extrato"
+      - "Ver extrato 365 dias"
+      - "Pagamento de boleto outros bancos"
+      - "Tarifa manutencao"
+      - "PIX RECEBIDO"
+      - "RESGATE CONTAMAX"
+    negative_keywords:
+      - "Histórico"
+      - "Documento"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+      - "Fatura"
+      - "Cartão de Crédito"
+      - "Comprovante"
+    min_score_hint: 0.75
+  table_detection:
+    header_keywords:
+      - "Saldo do dia"
+    expected_column_order:
+      - date_group
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "dd de mês de yyyy"
+        - "09 de julho de 2024"
+        - "05 de julho de 2024"
+      description:
+        - "Histórico"
+        - "Descrição"
+        - "Lançamento"
+      document: []
+      amount:
+        - "R$"
+        - "- R$"
+      balance:
+        - "Saldo do dia"
+    table_starts_after:
+      - "Agência:"
+      - "Conta:"
+      - "Internet Banking Empresarial"
+    row_separator_hint: "date groups with light blue background; transaction rows separated by light gray horizontal lines"
+  parsing:
+    date_format: "dd 'de' MMMM 'de' yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "- R$ {amount}"
+      - "-R$ {amount}"
+      - "- {amount}"
+    positive_patterns:
+      - "R$ {amount}"
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "Saldo do dia"
+      - "Agência:"
+      - "Conta:"
+      - "Internet Banking Empresarial"
+      - "Santander"
+    opening_balance_rows:
+      - "Saldo anterior"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency_when_daily_balances_available"
+      - "visual_icon_hint"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "Tarifa manutencao*"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível aparece com '- R$ 1,90'"
+      - pattern: "Pagamento de boleto outros bancos"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis aparecem com '- R$ 73,38' e '- R$ 1.200,00'"
+    cautions:
+      - "Não usar o ícone como única fonte do sinal"
+      - "Não tratar 'Saldo do dia' como transação"
+      - "Quando a data estiver apenas no grupo, aplicar a data do grupo a todas as transações até o próximo grupo"
+      - "Validar créditos reais antes de fechar regras de sinal positivo"
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "remove_line_breaks_inside_description"
+      - "preserve_original_case_optional"
+      - "normalize_accents_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Tarifa manutencao*"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "Pagamento de boleto outros bancos"
+        category: "pagamento_boleto"
+        inferred: true
+      - pattern: "PIX RECEBIDO"
+        category: "pix_recebido"
+        inferred: true
+      - pattern: "RESGATE CONTAMAX*"
+        category: "resgate_aplicacao"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "DOC"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa*"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "manutencao"
+        category: "tarifa_bancaria"
+        inferred: true
+  validation:
+    expected_min_columns: 3
+    reject_if_missing_headers:
+      - "Saldo do dia"
+    balance_consistency_check:
+      enabled: true
+      method: "when_daily_balance_values_are_available_validate_group_totals_against_previous_known_balance"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "date_group_not_detected_before_transaction"
+      - "amount_detected_without_explicit_sign"
+      - "line_contains_saldo_do_dia_but_parser_detects_amount_as_transaction"
+      - "description_and_amount_not_on_same_visual_row"
+      - "ocr_confidence_low_on_currency_or_date"
+      - "credit_icon_or_credit_label_detected_but_sign_missing"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "09 de julho de 2024"
+        raw_description: "Saldo do dia"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: false
+        notes: "Linha de saldo/agrupamento; não importar como transação"
+      - raw_date: "09 de julho de 2024"
+        raw_description: "Tarifa manutencao it vencido"
+        raw_document: unknown
+        raw_amount: "- R$ 1,90"
+        raw_balance: unknown
+        normalized_amount: "-1.90"
+        should_import_as_transaction: true
+        notes: "Data herdada do grupo; valor negativo explícito"
+      - raw_date: "05 de julho de 2024"
+        raw_description: "Saldo do dia"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "- R$ 14.720,00"
+        normalized_amount: unknown
+        should_import_as_transaction: false
+        notes: "Valor representa saldo do dia, não lançamento"
+      - raw_date: "05 de julho de 2024"
+        raw_description: "Pagamento de boleto outros bancos"
+        raw_document: unknown
+        raw_amount: "- R$ 73,38"
+        raw_balance: unknown
+        normalized_amount: "-73.38"
+        should_import_as_transaction: true
+        notes: "Data herdada do grupo; pagamento de boleto com sinal negativo explícito"
+      - raw_date: "05 de julho de 2024"
+        raw_description: "Pagamento de boleto outros bancos"
+        raw_document: unknown
+        raw_amount: "- R$ 1.200,00"
+        raw_balance: unknown
+        normalized_amount: "-1200.00"
+        should_import_as_transaction: true
+        notes: "Data herdada do grupo; valor negativo explícito"
+  implementation_notes:
+    - "Este perfil deve ser tratado como lista agrupada por data, não como tabela com colunas fixas."
+    - "Ao encontrar uma linha de data textual com fundo azul claro ou padrão 'dd de mês de yyyy', armazenar como current_date."
+    - "Cada transação abaixo do grupo deve herdar current_date até o próximo cabeçalho de data."
+    - "Ignorar linhas 'Saldo do dia' como transação, mas usar o valor de saldo para validação quando visível."
+    - "Extrair valor monetário preferencialmente pelo alinhamento à direita e padrão de moeda brasileiro."
+    - "Validar em PDF real se o texto extraído preserva a ordem: data do grupo, saldo do dia, transações."

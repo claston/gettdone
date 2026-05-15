@@ -1,0 +1,417 @@
+meta_model:
+  layout_id: ifood_conta_digital_extrato_pix_v1
+  bank: iFood Conta Digital
+  channel: iFood
+  statement_type: conta_digital_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'ifood' visível no topo esquerdo"
+      - "Título 'Extrato da Conta Digital iFood'"
+      - "Texto 'Solicitado em: 15/04/2024'"
+      - "Campos 'CNPJ' e 'Conta' no cabeçalho"
+      - "Período selecionado explícito: '15/02/2024 a 15/04/2024'"
+      - "Texto 'Saldo disponível no fim do período selecionado'"
+      - "Tabela com cabeçalhos 'Data', 'Movimentação' e 'Valor'"
+      - "Linhas de Pix com subtipo 'Pix recebido' e 'Pix enviado'"
+      - "Linhas de saldo diário: 'Saldo do dia'"
+      - "Valores negativos aparecem com prefixo '-R$'"
+    weak:
+      - "Dados de CNPJ e conta estão ocultos ou ilegíveis"
+      - "Não há documento, ID de transação ou contraparte visível"
+      - "Não há coluna de saldo por transação; saldos aparecem como linhas separadas"
+      - "Tabela tem estrutura simples, com descrição principal e subtítulo abaixo"
+      - "Não há exemplo de outras movimentações além de Pix"
+    table_headers:
+      - "Data"
+      - "Movimentação"
+      - "Valor"
+  page_structure:
+    header:
+      bank_logo: "iFood"
+      title: "Extrato da Conta Digital iFood"
+      requested_at: "15/04/2024"
+      account_identifiers:
+        cnpj: unknown
+        account: unknown
+    metadata:
+      selected_period: "15/02/2024 a 15/04/2024"
+      start_date: "15/02/2024"
+      end_date: "15/04/2024"
+      final_available_balance_label: "Saldo disponível no fim do período selecionado"
+      final_available_balance_value: "R$ 99,81"
+    transactions_table:
+      header_background: "light gray"
+      columns:
+        - "Data"
+        - "Movimentação"
+        - "Valor"
+      visible_rows:
+        - type: normal_transaction
+          date: "14/04/2024"
+          description: "Pix"
+          complement: "Pix recebido"
+          document: unknown
+          amount: "R$ 26,00"
+          balance: unknown
+        - type: balance_row
+          date: "14/04/2024"
+          description: "Saldo do dia"
+          document: unknown
+          amount: unknown
+          balance: "R$ 99,81"
+        - type: normal_transaction
+          date: "12/04/2024"
+          description: "Pix"
+          complement: "Pix enviado"
+          document: unknown
+          amount: "-R$ 144,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "12/04/2024"
+          description: "Pix"
+          complement: "Pix enviado"
+          document: unknown
+          amount: "-R$ 2.500,00"
+          balance: unknown
+        - type: balance_row
+          date: "12/04/2024"
+          description: "Saldo do dia"
+          document: unknown
+          amount: unknown
+          balance: "R$ 73,81"
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo disponível no fim do período selecionado"
+        - "Saldo do dia"
+        - "SALDO ANTERIOR"
+        - "SALDO INICIAL"
+      should_import_as_transaction: false
+      balance_source: "summary_or_daily_balance_row"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_complement: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece com prefixo 'R$' sem sinal negativo"
+        - "Complemento indica 'Pix recebido' e valor não possui sinal negativo"
+      negative_when:
+        - "Valor aparece com prefixo '-R$'"
+        - "Complemento indica 'Pix enviado' e valor possui sinal negativo"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      daily_balance_rows_exist: true
+      final_available_balance_exists: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "Pix recebido"
+        reason: "Linha visível possui valor positivo sem sinal negativo"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "Pix enviado"
+        reason: "Linhas visíveis possuem prefixo '-R$'"
+        inferred: false
+    caution:
+      - "Não importar 'Saldo do dia' como transação."
+      - "Não importar o saldo disponível final como transação."
+      - "Não usar apenas a palavra Pix para definir sinal; usar subtipo 'Pix recebido/enviado' e sinal monetário."
+      - "Não há documento ou contraparte visível; parser não deve exigir esses campos."
+      - "Usar saldos do dia para validação quando disponíveis."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Data Movimentação Valor"
+      header_keywords:
+        - "Data"
+        - "Movimentação"
+        - "Valor"
+    column_order:
+      - date
+      - description
+      - amount
+    row_behavior:
+      separator: "horizontal light gray row dividers"
+      date_repeated_per_transaction: true
+      description_has_title_and_subtitle: true
+      amount_right_aligned: true
+      negative_amount_prefix: "-R$"
+      balance_rows_have_label_saldo_do_dia: true
+      no_document_column: true
+      no_balance_column: true
+  parser_risks:
+    ambiguities:
+      - "A coluna Movimentação possui duas linhas textuais: tipo principal e subtipo."
+      - "Linhas 'Saldo do dia' aparecem dentro da região da tabela e podem ser confundidas com transações."
+      - "Não há documento, ID ou contraparte visível."
+      - "Não há exemplo de tarifas, pagamentos, TED ou outros tipos de movimentação."
+      - "O saldo final do período fica no cabeçalho e não deve ser importado."
+    fields_that_may_be_missing:
+      - "document"
+      - "transaction_id"
+      - "counterparty"
+      - "balance"
+      - "cnpj"
+      - "account"
+      - "channel"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual preserva a relação entre 'Pix' e subtipo 'Pix recebido/enviado'."
+      - "Se débitos sempre usam '-R$' sem espaço."
+      - "Se créditos aparecem sempre sem '+' explícito."
+      - "Se saldos do dia aparecem após cada dia com movimentação."
+      - "Se há paginação e repetição do cabeçalho."
+      - "Como aparecem outras transações: tarifas, ajustes, repasses, pagamento de boleto e estornos."
+
+layout_profile:
+  profile_name: ifood_conta_digital_extrato_pix_v1
+  bank: iFood Conta Digital
+  layout_family: ifood_conta_digital_extrato_tabela_simples
+  statement_type: conta_digital_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "iFood"
+      - "Extrato da Conta Digital iFood"
+      - "Solicitado em"
+      - "CNPJ"
+      - "Conta"
+      - "Período selecionado"
+      - "Saldo disponível no fim do período selecionado"
+      - "Data"
+      - "Movimentação"
+      - "Valor"
+    optional_keywords:
+      - "Pix"
+      - "Pix recebido"
+      - "Pix enviado"
+      - "Saldo do dia"
+      - "-R$"
+      - "R$"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Movimentação"
+      - "Valor"
+    expected_column_order:
+      - date
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Movimentação"
+        - "Movimentacao"
+        - "Descrição"
+        - "Lançamento"
+      document:
+        - "Documento"
+        - "Doc."
+        - "ID"
+      amount:
+        - "Valor"
+        - "R$"
+      balance:
+        - "Saldo do dia"
+        - "Saldo disponível"
+        - "Saldo"
+    table_starts_after:
+      - "Data Movimentação Valor"
+    row_separator_hint: "transaction row starts with dd/MM/yyyy; movement cell may include title and subtitle"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-R$ {amount}"
+      - "-R${amount}"
+      - "R$ -{amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+      - "{amount_without_minus}"
+      - "+R$ {amount}"
+    ignore_rows:
+      - "iFood"
+      - "Extrato da Conta Digital iFood"
+      - "Solicitado em"
+      - "CNPJ"
+      - "Conta"
+      - "Período selecionado"
+      - "Saldo disponível no fim do período selecionado"
+      - "Data"
+      - "Movimentação"
+      - "Valor"
+      - "Saldo do dia"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - complement
+      - document
+      - balance
+      - transaction_id
+  sign_rules:
+    priority_order:
+      - "explicit_negative_currency_prefix"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "movement_subtype_received_sent"
+      - "description_based_hint"
+      - "daily_balance_consistency"
+    description_based_overrides:
+      - pattern: "Pix recebido"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui valor positivo e subtipo recebido"
+      - pattern: "Pix enviado"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem prefixo '-R$' e subtipo enviado"
+    cautions:
+      - "Não usar 'Pix' sozinho para sinal."
+      - "Se 'Pix enviado' aparecer sem sinal negativo, marcar para revisão."
+      - "Se 'Pix recebido' aparecer com sinal negativo, marcar conflito para revisão."
+      - "Não importar linhas de saldo diário."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "combine_title_and_subtitle_optional"
+      - "normalize_case_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Pix recebido"
+        category: "pix_recebido"
+        inferred: true
+      - pattern: "Pix enviado"
+        category: "pix_enviado"
+        inferred: true
+    transfer_hints:
+      - pattern: "Pix recebido"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "Pix enviado"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "Pix"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa"
+        category: "tarifa"
+        inferred: true
+      - pattern: "Taxa"
+        category: "taxa_servico"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 3
+    reject_if_missing_headers:
+      - "Data"
+      - "Movimentação"
+      - "Valor"
+    balance_consistency_check:
+      enabled: true
+      method: "use saldo do dia rows to validate signed transactions grouped by date when previous daily balance is known"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "movement_subtitle_missing"
+      - "amount_without_sign_and_subtype_ambiguous"
+      - "saldo_do_dia_row_detected_as_transaction"
+      - "description_line_wrap_detected"
+      - "ocr_confidence_low_on_negative_prefix"
+      - "daily_balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "14/04/2024"
+        raw_description: "Pix | Pix recebido"
+        raw_document: unknown
+        raw_amount: "R$ 26,00"
+        raw_balance: unknown
+        normalized_amount: "26.00"
+        should_import_as_transaction: true
+        notes: "Crédito Pix recebido"
+      - raw_date: "14/04/2024"
+        raw_description: "Saldo do dia"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "R$ 99,81"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo diário; não importar"
+      - raw_date: "12/04/2024"
+        raw_description: "Pix | Pix enviado"
+        raw_document: unknown
+        raw_amount: "-R$ 144,00"
+        raw_balance: unknown
+        normalized_amount: "-144.00"
+        should_import_as_transaction: true
+        notes: "Débito Pix enviado"
+      - raw_date: "12/04/2024"
+        raw_description: "Pix | Pix enviado"
+        raw_document: unknown
+        raw_amount: "-R$ 2.500,00"
+        raw_balance: unknown
+        normalized_amount: "-2500.00"
+        should_import_as_transaction: true
+        notes: "Débito Pix enviado"
+      - raw_date: "12/04/2024"
+        raw_description: "Saldo do dia"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "R$ 73,81"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo diário; não importar"
+  implementation_notes:
+    - "Classificar pelo título 'Extrato da Conta Digital iFood'."
+    - "Processar a célula de movimentação como duas partes: tipo e subtipo."
+    - "Filtrar 'Saldo do dia' e saldo disponível final antes de importar transações."
+    - "Usar '-R$' como regra primária para débito."
+    - "Não exigir documento, ID ou contraparte."
+    - "Usar saldos do dia para validação quando a sequência de dias estiver completa."

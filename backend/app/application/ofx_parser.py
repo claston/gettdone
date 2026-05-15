@@ -1,9 +1,10 @@
 import re
 from datetime import datetime
 
-from app.application.csv_parser import _normalize_header, _parse_amount
+from app.application.csv_parser import _normalize_header
 from app.application.errors import InvalidFileContentError
 from app.application.models import NormalizedTransaction
+from app.application.normalization.amount import parse_amount
 
 STMT_BLOCK_PATTERN = re.compile(r"<STMTTRN>(.*?)</STMTTRN>", re.IGNORECASE | re.DOTALL)
 
@@ -23,7 +24,7 @@ def parse_ofx_transactions(raw_bytes: bytes) -> list[NormalizedTransaction]:
             raise InvalidFileContentError("OFX transaction is missing MEMO/NAME.")
         type_raw = _extract_optional_tag(block, "TRNTYPE") or ""
 
-        amount = _parse_amount(amount_raw)
+        amount = parse_amount(amount_raw)
         transactions.append(
             NormalizedTransaction(
                 date=_parse_ofx_date(date_raw),

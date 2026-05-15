@@ -1,0 +1,458 @@
+meta_model:
+  layout_id: caixa_extrato_por_periodo_pdf_sigilo_pessoal_v1
+  bank: Caixa Econômica Federal
+  channel: unknown
+  statement_type: conta_corrente_extrato_por_periodo
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo CAIXA no topo esquerdo"
+      - "Título 'Extrato por período'"
+      - "Caixa lateral com 'Grau de sigilo #PESSOAL'"
+      - "Bloco de metadados com 'Cliente', 'Conta' e 'Data'"
+      - "Caixa central com 'PERÍODO' e mês/ano"
+      - "Faixa cinza com texto 'Movimentações desde o dia ... até o dia ...'"
+      - "Cabeçalho de tabela com colunas 'DATA', 'NR. DOC.', 'HISTÓRICO', 'VALOR (R$)', 'SALDO (R$)'"
+      - "Valores e saldos usam sufixo 'C' e 'D'"
+    weak:
+      - "Canal não está explicitamente visível; parece exportação PDF/impressão da CAIXA"
+      - "Dados de cliente e parte da conta estão omitidos ou ilegíveis"
+      - "Linhas 'SALDO DIA' aparecem como linhas de saldo, não transações"
+      - "Tabela usa faixas alternadas cinza/branco"
+    table_headers:
+      - "DATA"
+      - "NR. DOC."
+      - "HISTÓRICO"
+      - "VALOR (R$)"
+      - "SALDO (R$)"
+  page_structure:
+    header:
+      bank_logo: "CAIXA"
+      title: "Extrato por período"
+      confidentiality: "Grau de sigilo #PESSOAL"
+      account_identifiers:
+        client: unknown
+        account: "1"
+        agency: unknown
+    metadata:
+      generated_at: "20/05/2024 - 10:19"
+      period_box:
+        label: "PERÍODO"
+        value: "ABR/2024"
+      movement_period_text: "Movimentações desde o dia 01/04/2024 até o dia 30/04/2024"
+      start_date: "01/04/2024"
+      end_date: "30/04/2024"
+    transactions_table:
+      header_background: "white"
+      banded_rows: true
+      columns:
+        - "DATA"
+        - "NR. DOC."
+        - "HISTÓRICO"
+        - "VALOR (R$)"
+        - "SALDO (R$)"
+      visible_rows:
+        - type: normal_transaction
+          date: "01/04/2024"
+          document: "0"
+          description: "DEB.IOF"
+          amount: "17,52 D"
+          balance: "3.891,72 D"
+        - type: normal_transaction
+          date: "01/04/2024"
+          document: "900001"
+          description: "DEB.JUROS"
+          amount: "1.572,45 D"
+          balance: "5.464,17 D"
+        - type: balance_row
+          date: "01/04/2024"
+          document: "0"
+          description: "SALDO DIA"
+          amount: unknown
+          balance: "5.464,17 D"
+        - type: balance_row
+          date: "02/04/2024"
+          document: "0"
+          description: "SALDO DIA"
+          amount: unknown
+          balance: "5.464,17 D"
+        - type: balance_row
+          date: "03/04/2024"
+          document: "0"
+          description: "SALDO DIA"
+          amount: unknown
+          balance: "5.464,17 D"
+        - type: balance_row
+          date: "04/04/2024"
+          document: "0"
+          description: "SALDO DIA"
+          amount: unknown
+          balance: "5.464,17 D"
+        - type: balance_row
+          date: "05/04/2024"
+          document: "0"
+          description: "SALDO DIA"
+          amount: unknown
+          balance: "5.464,17 D"
+        - type: normal_transaction
+          date: "08/04/2024"
+          document: "33"
+          description: "CRED TED"
+          amount: "141,80 C"
+          balance: "5.322,37 D"
+        - type: balance_row
+          date: "08/04/2024"
+          document: "0"
+          description: "SALDO DIA"
+          amount: unknown
+          balance: "5.322,37 D"
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "SALDO (R$)"
+      inferred: true
+    normal_transaction:
+      row_has_date: true
+      row_has_document: true
+      row_has_description: true
+      row_has_amount_with_credit_debit_suffix: true
+      row_has_balance_with_credit_debit_suffix: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor (R$) termina com sufixo 'C'"
+      negative_when:
+        - "Valor (R$) termina com sufixo 'D'"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "SALDO (R$)"
+      balance_sign_uses_suffix_C_D: true
+      credit_balance_suffix: "C"
+      debit_balance_suffix: "D"
+      saldo_dia_rows_present: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "CRED TED"
+        reason: "Linha visível aparece com sufixo 'C'"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "DEB.IOF"
+        reason: "Linha visível aparece com sufixo 'D'"
+        inferred: false
+      - pattern: "DEB.JUROS"
+        reason: "Linha visível aparece com sufixo 'D'"
+        inferred: false
+    caution:
+      - "Este layout usa C/D no valor e também no saldo; o sufixo deve ser preservado até a determinação do sinal."
+      - "Linhas 'SALDO DIA' devem ser tratadas como saldo diário, não como transações."
+      - "Saldo com sufixo D provavelmente representa saldo devedor/negativo; validar com PDFs reais."
+      - "A transação 'CRED TED' tem valor positivo, mas reduz saldo devedor de 5.464,17 D para 5.322,37 D; a consistência deve considerar sinal do saldo."
+      - "Não inferir débito apenas por o saldo estar com D; o sinal da transação vem do campo Valor."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Movimentações desde o dia"
+      header_keywords:
+        - "DATA"
+        - "NR. DOC."
+        - "HISTÓRICO"
+        - "VALOR (R$)"
+        - "SALDO (R$)"
+    column_order:
+      - date
+      - document
+      - description
+      - amount
+      - balance
+    row_behavior:
+      separator: "alternating gray and white bands"
+      date_repeated_per_row: true
+      document_fixed_width_numeric: true
+      description_uppercase: true
+      amount_right_aligned: true
+      balance_right_aligned: true
+      amount_suffix_C_D: true
+      balance_suffix_C_D: true
+      saldo_dia_rows_have_blank_amount: true
+  parser_risks:
+    ambiguities:
+      - "Canal exato não aparece no recorte; pode ser PDF exportado do Internet Banking/Gerenciador Caixa."
+      - "Não há linha de saldo anterior visível nesta imagem, mas o layout pode conter em outras páginas/períodos."
+      - "Linhas 'SALDO DIA' têm data e documento, podendo ser confundidas com transações se o parser não filtrar pelo histórico."
+      - "Saldo com D precisa ser normalizado como saldo negativo/devedor para validação aritmética."
+      - "Históricos abreviados como 'DEB.IOF', 'DEB.JUROS' e 'CRED TED' precisam ser preservados."
+    fields_that_may_be_missing:
+      - "client"
+      - "agency"
+      - "full_account"
+      - "opening_balance"
+      - "channel"
+    cases_that_need_real_pdf_validation:
+      - "Se a extração textual preserva os sufixos C/D dos campos Valor e Saldo."
+      - "Se 'SALDO DIA' sempre possui valor vazio e saldo preenchido."
+      - "Se há linha de 'SALDO ANTERIOR' antes das movimentações quando a página está completa."
+      - "Como o layout trata créditos, débitos, estornos, tarifas e transferências com descrições longas."
+      - "Se há paginação e repetição do cabeçalho da tabela."
+      - "Se saldos devedores com D devem ser convertidos para negativos em todos os casos."
+
+layout_profile:
+  profile_name: caixa_extrato_por_periodo_pdf_sigilo_pessoal_v1
+  bank: Caixa Econômica Federal
+  layout_family: caixa_extrato_por_periodo_pdf
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "CAIXA"
+      - "Extrato por período"
+      - "Grau de sigilo"
+      - "#PESSOAL"
+      - "PERÍODO"
+      - "Movimentações desde o dia"
+      - "DATA"
+      - "NR. DOC."
+      - "HISTÓRICO"
+      - "VALOR (R$)"
+      - "SALDO (R$)"
+    optional_keywords:
+      - "Cliente"
+      - "Conta"
+      - "Data"
+      - "ABR/2024"
+      - "SALDO DIA"
+      - "DEB.IOF"
+      - "DEB.JUROS"
+      - "CRED TED"
+    negative_keywords:
+      - "GERENCIADOR CAIXA"
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "Itaú"
+      - "Fatura"
+      - "Cartão de Crédito"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "DATA"
+      - "NR. DOC."
+      - "HISTÓRICO"
+      - "VALOR (R$)"
+      - "SALDO (R$)"
+    expected_column_order:
+      - date
+      - document
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "DATA"
+        - "Data"
+        - "Data Mov."
+        - "DATA MOV."
+      description:
+        - "HISTÓRICO"
+        - "Histórico"
+        - "Historico"
+      document:
+        - "NR. DOC."
+        - "Nr. Doc."
+        - "Nº Doc."
+        - "Documento"
+      amount:
+        - "VALOR (R$)"
+        - "Valor (R$)"
+        - "VALOR"
+        - "Valor"
+      balance:
+        - "SALDO (R$)"
+        - "Saldo (R$)"
+        - "SALDO"
+        - "Saldo"
+    table_starts_after:
+      - "Movimentações desde o dia"
+      - "DATA NR. DOC. HISTÓRICO VALOR (R$) SALDO (R$)"
+    row_separator_hint: "transaction or balance row starts when first column contains dd/MM/yyyy"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount} D"
+      - "{amount}D"
+    positive_patterns:
+      - "{amount} C"
+      - "{amount}C"
+    ignore_rows:
+      - "CAIXA"
+      - "Extrato por período"
+      - "Grau de sigilo"
+      - "#PESSOAL"
+      - "Cliente"
+      - "Conta"
+      - "Data"
+      - "PERÍODO"
+      - "Movimentações desde o dia"
+      - "DATA"
+      - "NR. DOC."
+      - "HISTÓRICO"
+      - "VALOR (R$)"
+      - "SALDO (R$)"
+      - "SALDO DIA"
+      - "SALDO ANTERIOR"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+      - balance_sign
+  sign_rules:
+    priority_order:
+      - "credit_debit_suffix_C_D"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "DEB.IOF"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível usa sufixo D"
+      - pattern: "DEB.JUROS"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível usa sufixo D"
+      - pattern: "CRED TED"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível usa sufixo C"
+    cautions:
+      - "Não remover C/D antes de determinar sinal."
+      - "Não importar 'SALDO DIA' como transação, apesar de ter data e saldo."
+      - "Não inferir sinal apenas pelo histórico quando o sufixo C/D estiver presente."
+      - "Para validação de saldo, converter saldo D em negativo/devedor e saldo C em positivo/credor."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_abbreviated_history_codes"
+      - "normalize_uppercase_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "DEB.IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "DEB.JUROS"
+        category: "juros_encargos"
+        inferred: true
+      - pattern: "CRED TED"
+        category: "transferencia_ted_entrada"
+        inferred: true
+    transfer_hints:
+      - pattern: "CRED TED"
+        category: "transferencia_ted_entrada"
+        inferred: true
+      - pattern: "ENVIO PIX"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "DATA"
+      - "HISTÓRICO"
+      - "VALOR"
+      - "SALDO"
+    balance_consistency_check:
+      enabled: true
+      method: "convert_C_D_amount_and_C_D_balance_to_signed_values_then_validate_current_balance_equals_previous_balance_plus_signed_amount"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "amount_has_no_C_or_D_suffix_on_transaction_row"
+      - "balance_has_no_C_or_D_suffix"
+      - "row_description_is_saldo_dia_but_amount_present"
+      - "ocr_confidence_low_on_suffix_C_D"
+      - "row_has_date_and_description_but_no_amount_and_not_saldo_dia"
+      - "description_abbreviation_unknown"
+      - "multiline_description_detected"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "01/04/2024"
+        raw_description: "DEB.IOF"
+        raw_document: "0"
+        raw_amount: "17,52 D"
+        raw_balance: "3.891,72 D"
+        normalized_amount: "-17.52"
+        should_import_as_transaction: true
+        notes: "Sufixo D indica débito; saldo D provavelmente representa saldo devedor"
+      - raw_date: "01/04/2024"
+        raw_description: "DEB.JUROS"
+        raw_document: "900001"
+        raw_amount: "1.572,45 D"
+        raw_balance: "5.464,17 D"
+        normalized_amount: "-1572.45"
+        should_import_as_transaction: true
+        notes: "Sufixo D indica débito"
+      - raw_date: "01/04/2024"
+        raw_description: "SALDO DIA"
+        raw_document: "0"
+        raw_amount: unknown
+        raw_balance: "5.464,17 D"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Saldo diário; não importar como transação"
+      - raw_date: "08/04/2024"
+        raw_description: "CRED TED"
+        raw_document: "33"
+        raw_amount: "141,80 C"
+        raw_balance: "5.322,37 D"
+        normalized_amount: "141.80"
+        should_import_as_transaction: true
+        notes: "Sufixo C indica crédito; reduz saldo devedor"
+      - raw_date: "08/04/2024"
+        raw_description: "SALDO DIA"
+        raw_document: "0"
+        raw_amount: unknown
+        raw_balance: "5.322,37 D"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Saldo diário; não importar como transação"
+  implementation_notes:
+    - "Classificar pelo conjunto 'CAIXA', 'Grau de sigilo #PESSOAL' e tabela com 'VALOR (R$)'/'SALDO (R$)'."
+    - "Detectar transações somente em linhas com valor preenchido e histórico diferente de saldo."
+    - "Filtrar 'SALDO DIA', 'SALDO ANTERIOR' e 'SALDO FINAL' antes da importação."
+    - "Separar valor monetário do sufixo C/D antes da normalização."
+    - "Mapear C para positivo e D para negativo no campo Valor."
+    - "Para o campo Saldo, validar a regra C positivo/credor e D negativo/devedor usando consistência aritmética."
+    - "Preservar históricos abreviados como 'DEB.IOF', 'DEB.JUROS' e 'CRED TED'."
+    - "Validar com PDFs reais se cabeçalhos e faixas cinzas não interferem na extração por OCR."

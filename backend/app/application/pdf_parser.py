@@ -1,94 +1,42 @@
-import os
 import re
-import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 
 from pypdf import PdfReader
 
-from app.application.csv_parser import _parse_amount
 from app.application.errors import InvalidFileContentError
-from app.application.models import NormalizedTransaction
+from app.application.layout_profiles.registry import DeclarativeLayoutProfile, get_layout_profile
+from app.application.models import CanonicalTransaction, NormalizedTransaction
+from app.application.normalization.balance import annotate_balance_consistency
+from app.application.normalization.canonical import build_canonical_transactions
+from app.application.normalization.canonical_metrics import build_canonical_quality_metrics
+from app.application.normalization.date import infer_default_statement_year
+from app.application.normalization.pdf_amount_tokens import find_amount_tokens, has_explicit_amount_sign, parse_pdf_amount
+from app.application.normalization.pdf_columnar_block_rules import next_columnar_block_index
+from app.application.normalization.pdf_columnar_row_rules import is_valid_columnar_transaction_row
+from app.application.normalization.pdf_columnar_rules import apply_type_sign_hint
+from app.application.normalization.pdf_grouped_amount_line_rules import parse_grouped_amount_line
+from app.application.normalization.pdf_grouped_date_rules import parse_grouped_date_line
+from app.application.normalization.pdf_grouped_line_rules import should_ignore_grouped_line
+from app.application.normalization.pdf_grouped_section_rules import resolve_grouped_section_hint
+from app.application.normalization.pdf_inline_amount_rules import extract_single_trailing_amount_match
+from app.application.normalization.pdf_parse_metrics import build_pdf_parse_metrics
+from app.application.normalization.pdf_parser_selection import select_parsed_rows
+from app.application.normalization.pdf_row_date_rules import parse_row_date
+from app.application.normalization.pdf_row_match_rules import (
+    is_amount_only_row,
+    is_date_only_row,
+    match_inline_row,
+    match_tabular_date_prefix,
+)
+from app.application.normalization.pdf_signed_amount_rules import compute_hint_signed_amount, compute_tabular_signed_amount
+from app.application.normalization.pdf_tabular_profile_rules import resolve_tabular_profile
+from app.application.normalization.pdf_tabular_rules import extract_document_reference, select_tabular_amount_token
+from app.application.normalization.pdf_text_rules import should_ignore_line, should_skip_transaction_description
+from app.application.normalization.text import normalize_upper_text
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
-
-MONTH_TO_NUMBER = {
-    "JAN": 1,
-    "FEV": 2,
-    "MAR": 3,
-    "ABR": 4,
-    "MAI": 5,
-    "JUN": 6,
-    "JUL": 7,
-    "AGO": 8,
-    "SET": 9,
-    "OUT": 10,
-    "NOV": 11,
-    "DEZ": 12,
-}
-MONTH_PATTERN = "|".join(MONTH_TO_NUMBER)
-DATE_HEADER_PATTERN = re.compile(rf"^(?P<day>\d{{2}})\s+(?P<month>{MONTH_PATTERN})\s+(?P<year>\d{{4}})(?P<rest>.*)$")
-AMOUNT_PATTERN = re.compile(r"^[+-]?\d+(?:\.\d{3})*,\d{2}[+-]?$")
-AMOUNT_TOKEN_PATTERN = re.compile(r"(?P<amount>(?:R\$\s*)?[+-]?\d+(?:\.\d{3})*,\d{2}[+-]?)")
-LOOSE_AMOUNT_PATTERN = re.compile(r"^[+-]?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:[.,]\d{2})[+-]?$")
-STATEMENT_AMOUNT_LINE_PATTERN = re.compile(r"^(?:R\$\s*)?[+-]?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}[+-]?$")
-
-INFLOW_HINTS = (
-    "TRANSFERENCIA RECEBIDA",
-    "RECEBIMENTO",
-    "ESTORNO",
-    "CREDITO",
-    "SALARIO",
-)
-OUTFLOW_HINTS = (
-    "TRANSFERENCIA ENVIADA",
-    "PAGAMENTO",
-    "COMPRA",
-    "DEBITO",
-    "SAIDA",
-    "TARIFA",
-    "SAQUE",
-)
-IGNORED_LINE_PREFIXES = (
-    "SALDO INICIAL",
-    "SALDO FINAL",
-    "MOVIMENTACOES",
-    "EXTRATO GERADO DIA",
-    "OUVIDORIA:",
-)
-IGNORED_LINE_TOKENS = (
-    "VALORES EM R",
-    "CNPJ AGENCIA CONTA",
-    "TOTAL A PAGAR",
-)
-IGNORED_TRANSACTION_HINTS = (
-    "SALDO DO DIA",
-    "SALDO FINAL",
-    "SALDO INICIAL",
-    "LIMITE DA CONTA",
-    "TOTAL DE ENTRADAS",
-    "TOTAL DE SAIDAS",
-    "RESUMO DA FATURA",
-    "FATURA ANTERIOR",
-    "PAGAMENTO RECEBIDO",
-)
-DEBIT_TYPE_HINTS = ("DEBITO", "DEBIT", "DEB")
-CREDIT_TYPE_HINTS = ("CREDITO", "CREDIT", "CRED")
-COLUMNAR_HEADER_TOKENS = {
-    "DATA",
-    "DESCRICAO",
-    "TIPO",
-    "VALOR",
-    "VALOR (R$)",
-    "SALDO",
-    "SALDO (R$)",
-}
-DATE_SLASH_TOKEN = r"\d{1,2}/\d{1,2}(?:/\d{2,4})?"
-DATE_MONTH_TOKEN = rf"\d{{1,2}}\s+(?:{MONTH_PATTERN})(?:\s+\d{{4}})?"
-DATE_TOKEN = rf"(?:{DATE_SLASH_TOKEN}|{DATE_MONTH_TOKEN})"
-INLINE_ROW_PATTERN = re.compile(rf"^(?P<date>{DATE_TOKEN})\s+(?P<rest>.+)$", re.IGNORECASE)
-TABULAR_DATE_PREFIX_PATTERN = re.compile(rf"^(?P<date>{DATE_TOKEN})\s+(?P<rest>.+)$", re.IGNORECASE)
-DATE_ONLY_PATTERN = re.compile(rf"^{DATE_TOKEN}$", re.IGNORECASE)
+from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE, extract_pdf_page_texts_with_ocr, is_pdf_ocr_enabled
 
 
 @dataclass(frozen=True)
@@ -96,79 +44,192 @@ class PdfParseResult:
     transactions: list[NormalizedTransaction]
     layout: PdfLayoutInference
     extracted_text: str
-    parse_metrics: dict[str, int | str]
+    parse_metrics: dict[str, int | float | str]
+    canonical_transactions: list[CanonicalTransaction] | None = None
 
 
 @dataclass(frozen=True)
-class _AmountToken:
-    value: str
-    start: int
-    end: int
+class _PdfLine:
+    text: str
+    page_number: int
+    line_number: int
+
+
+@dataclass(frozen=True)
+class _ParsedTransaction:
+    transaction: NormalizedTransaction
+    source_page: int | None = None
+    source_line: int | None = None
+    running_balance: float | None = None
+    external_reference_id: str | None = None
+    has_explicit_amount_sign: bool = False
 
 
 def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
     page_texts = _extract_pdf_page_texts(raw_bytes)
     joined_text = "\n".join(page_texts)
     layout = infer_pdf_layout(joined_text)
+    layout_profile = get_layout_profile(layout.layout_name)
     lines = _flatten_statement_lines(page_texts)
-    grouped_transactions = _parse_grouped_statement_lines(lines)
-    transactions = grouped_transactions
-    inline_candidates = 0
-    inline_transactions_count = 0
-    multiline_candidates = 0
-    multiline_transactions_count = 0
-    tabular_candidates = 0
-    columnar_candidates = 0
-    selected_parser = "grouped"
-    if not transactions:
-        inline_transactions, inline_candidates = _parse_inline_statement_rows(lines)
-        multiline_transactions, multiline_candidates = _parse_multiline_statement_rows(lines)
-        inline_transactions_count = len(inline_transactions)
-        multiline_transactions_count = len(multiline_transactions)
+    grouped_rows = _parse_grouped_statement_lines(lines)
+    selection = select_parsed_rows(
+        lines=lines,
+        grouped_rows=grouped_rows,
+        layout_profile=layout_profile,
+        parse_inline_rows=_parse_inline_statement_rows,
+        parse_tabular_rows=lambda all_lines, profile: _parse_tabular_statement_rows(all_lines, layout_profile=profile),
+        parse_columnar_rows=_parse_columnar_statement_blocks,
+    )
+    parsed_rows = selection.rows
+    parsed_rows = _adjust_forward_year_rollover_rows(parsed_rows, line_texts=_extract_line_texts(lines))
+    selected_parser = selection.selected_parser
+    inline_candidates = selection.inline_candidates
+    inline_transactions_count = selection.inline_transactions_count
+    tabular_candidates_count = selection.tabular_candidates
+    tabular_transactions_count = selection.tabular_transactions_count
+    columnar_candidates_count = selection.columnar_candidates
+    columnar_transactions_count = selection.columnar_transactions_count
+    parser_selection_reason = selection.selection_reason
+    inline_decision = selection.inline_decision
+    tabular_decision = selection.tabular_decision
+    columnar_decision = selection.columnar_decision
+    return _build_pdf_parse_result(
+        parsed_rows=parsed_rows,
+        layout=layout,
+        layout_profile=layout_profile,
+        selected_parser=selected_parser,
+        parser_selection_reason=parser_selection_reason,
+        inline_decision=inline_decision,
+        tabular_decision=tabular_decision,
+        columnar_decision=columnar_decision,
+        joined_text=joined_text,
+        page_count=len(page_texts),
+        flattened_line_count=len(lines),
+        grouped_transactions_count=len(grouped_rows),
+        inline_candidates_count=inline_candidates,
+        inline_transactions_count=inline_transactions_count,
+        tabular_candidates_count=tabular_candidates_count,
+        tabular_transactions_count=tabular_transactions_count,
+        columnar_candidates_count=columnar_candidates_count,
+        columnar_transactions_count=columnar_transactions_count,
+    )
 
-        if inline_transactions and multiline_transactions:
-            transactions = _merge_transactions(inline_transactions, multiline_transactions)
-            selected_parser = "inline"
-        elif inline_transactions:
-            transactions = inline_transactions
-            selected_parser = "inline"
-        else:
-            transactions = multiline_transactions
-            selected_parser = "multiline"
 
-        if not transactions:
-            transactions, tabular_candidates = _parse_tabular_statement_rows(lines)
-            if transactions:
-                selected_parser = "tabular"
-        if not transactions:
-            transactions, columnar_candidates = _parse_columnar_statement_blocks(lines)
-            if transactions:
-                selected_parser = "columnar"
-        if not transactions:
-            selected_parser = "none"
-            if inline_candidates > 0 or tabular_candidates > 0 or columnar_candidates > 0:
-                raise InvalidFileContentError(
-                    "PDF text was extracted, but transactions are in an unsupported table layout."
-                )
-            raise InvalidFileContentError(
-                "PDF text was extracted, but no recognizable transaction row pattern was found."
+def _adjust_forward_year_rollover_rows(
+    parsed_rows: list[_ParsedTransaction], *, line_texts: list[str]
+) -> list[_ParsedTransaction]:
+    if len(parsed_rows) < 2:
+        return parsed_rows
+    if not _has_explicit_adjacent_year_hints(line_texts):
+        return parsed_rows
+
+    adjusted_rows: list[_ParsedTransaction] = [parsed_rows[0]]
+    previous_date = datetime.strptime(parsed_rows[0].transaction.date, "%Y-%m-%d")
+
+    for row in parsed_rows[1:]:
+        current_date = datetime.strptime(row.transaction.date, "%Y-%m-%d")
+        should_roll_forward = (
+            current_date.year == previous_date.year
+            and previous_date.month == 12
+            and current_date.month == 1
+            and current_date < previous_date
+        )
+        if should_roll_forward:
+            rolled_date = current_date.replace(year=current_date.year + 1)
+            rolled_transaction = NormalizedTransaction(
+                date=rolled_date.strftime("%Y-%m-%d"),
+                description=row.transaction.description,
+                amount=row.transaction.amount,
+                type=row.transaction.type,
             )
+            adjusted_row = _ParsedTransaction(
+                transaction=rolled_transaction,
+                source_page=row.source_page,
+                source_line=row.source_line,
+                running_balance=row.running_balance,
+                external_reference_id=row.external_reference_id,
+            )
+            adjusted_rows.append(adjusted_row)
+            previous_date = rolled_date
+            continue
+
+        adjusted_rows.append(row)
+        previous_date = current_date
+
+    return adjusted_rows
+
+
+def _has_explicit_adjacent_year_hints(line_texts: list[str]) -> bool:
+    years: set[int] = set()
+    for line in line_texts:
+        for raw in re.findall(r"\b\d{4}\b", line):
+            year = int(raw)
+            if 1900 <= year <= 2100:
+                years.add(year)
+    if len(years) < 2:
+        return False
+    sorted_years = sorted(years)
+    return any(current - previous == 1 for previous, current in zip(sorted_years, sorted_years[1:]))
+
+
+def _build_pdf_parse_result(
+    *,
+    parsed_rows: list[_ParsedTransaction],
+    layout: PdfLayoutInference,
+    layout_profile: DeclarativeLayoutProfile | None,
+    selected_parser: str,
+    parser_selection_reason: str,
+    inline_decision: str,
+    tabular_decision: str,
+    columnar_decision: str,
+    joined_text: str,
+    page_count: int,
+    flattened_line_count: int,
+    grouped_transactions_count: int,
+    inline_candidates_count: int,
+    inline_transactions_count: int,
+    tabular_candidates_count: int,
+    tabular_transactions_count: int,
+    columnar_candidates_count: int,
+    columnar_transactions_count: int,
+) -> PdfParseResult:
+    transactions = [item.transaction for item in parsed_rows]
+    canonical_transactions = build_canonical_transactions(
+        parsed_rows,
+        bank_name=layout_profile.bank if layout_profile is not None else None,
+        layout_name=layout.layout_name,
+        layout_used_fallback=layout.used_fallback,
+        layout_confidence=layout.confidence,
+        source_parser=selected_parser,
+    )
+    balance_checked_count, balance_failed_count = annotate_balance_consistency(canonical_transactions)
+    canonical_quality_metrics = build_canonical_quality_metrics(canonical_transactions)
 
     return PdfParseResult(
         transactions=transactions,
+        canonical_transactions=canonical_transactions,
         layout=layout,
         extracted_text=joined_text,
-        parse_metrics={
-            "page_count": len(page_texts),
-            "extracted_char_count": len(joined_text),
-            "flattened_line_count": len(lines),
-            "grouped_transactions_count": len(grouped_transactions),
-            "inline_candidates_count": inline_candidates,
-            "inline_transactions_count": inline_transactions_count,
-            "multiline_candidates_count": multiline_candidates,
-            "multiline_transactions_count": multiline_transactions_count,
-            "selected_parser": selected_parser,
-        },
+        parse_metrics=build_pdf_parse_metrics(
+            page_count=page_count,
+            extracted_char_count=len(joined_text),
+              flattened_line_count=flattened_line_count,
+              grouped_transactions_count=grouped_transactions_count,
+              inline_candidates_count=inline_candidates_count,
+              inline_transactions_count=inline_transactions_count,
+              tabular_candidates_count=tabular_candidates_count,
+              tabular_transactions_count=tabular_transactions_count,
+              columnar_candidates_count=columnar_candidates_count,
+              columnar_transactions_count=columnar_transactions_count,
+              selected_parser=selected_parser,
+              parser_selection_reason=parser_selection_reason,
+              inline_decision=inline_decision,
+              tabular_decision=tabular_decision,
+              columnar_decision=columnar_decision,
+              balance_consistency_checked=balance_checked_count,
+              balance_consistency_failed=balance_failed_count,
+              canonical_quality_metrics=canonical_quality_metrics,
+        ),
     )
 
 
@@ -176,14 +237,12 @@ def _extract_pdf_page_texts(raw_bytes: bytes) -> list[str]:
     pages = _read_native_pdf_page_texts(raw_bytes)
     if pages:
         return pages
-
-    if _is_pdf_ocr_enabled():
-        ocr_pages = _extract_pdf_page_texts_with_ocr(raw_bytes)
+    if is_pdf_ocr_enabled():
+        ocr_pages = extract_pdf_page_texts_with_ocr(raw_bytes)
         if ocr_pages:
             return ocr_pages
-        raise InvalidFileContentError("OCR is enabled, but no text could be extracted from PDF pages.")
 
-    raise InvalidFileContentError("PDF does not contain extractable text.")
+    raise InvalidFileContentError(PDF_OCR_DISABLED_MESSAGE)
 
 
 def _read_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
@@ -197,572 +256,809 @@ def _read_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
     return pages
 
 
-def _extract_pdf_page_texts_with_ocr(raw_bytes: bytes) -> list[str]:
-    try:
-        import pypdfium2 as pdfium
-        import pytesseract
-    except Exception as exc:
-        raise InvalidFileContentError(
-            "OCR dependencies are not installed. Install optional packages for OCR support."
-        ) from exc
-
-    document = None
-    try:
-        document = pdfium.PdfDocument(raw_bytes)
-    except Exception as exc:
-        raise InvalidFileContentError("Unable to render PDF pages for OCR.") from exc
-
-    try:
-        max_pages = _get_pdf_ocr_max_pages()
-        if len(document) > max_pages:
-            raise InvalidFileContentError(
-                f"OCR fallback is limited to {max_pages} pages to protect memory usage. "
-                "Try a smaller PDF or disable OCR fallback."
-            )
-
-        texts: list[str] = []
-        for page_index in range(len(document)):
-            page = None
-            bitmap = None
-            image = None
-            try:
-                page = document[page_index]
-                bitmap = page.render(scale=200 / 72)
-                image = bitmap.to_pil()
-                text = (pytesseract.image_to_string(image, lang="por+eng") or "").strip()
-                if text:
-                    texts.append(text)
-            except Exception as exc:
-                raise InvalidFileContentError("OCR failed while processing PDF pages.") from exc
-            finally:
-                try:
-                    image.close()
-                except Exception:
-                    pass
-                try:
-                    bitmap.close()
-                except Exception:
-                    pass
-                try:
-                    page.close()
-                except Exception:
-                    pass
-        return texts
-    finally:
-        try:
-            document.close()
-        except Exception:
-            pass
-
-
-def _is_pdf_ocr_enabled() -> bool:
-    raw = os.getenv("PDF_OCR_ENABLED", "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
-
-
-def _get_pdf_ocr_max_pages() -> int:
-    raw = os.getenv("PDF_OCR_MAX_PAGES", "").strip()
-    if not raw:
-        return 12
-    try:
-        value = int(raw)
-    except ValueError:
-        return 12
-    return max(1, value)
-
-
-def _flatten_statement_lines(page_texts: list[str]) -> list[str]:
-    lines: list[str] = []
-    for page_text in page_texts:
-        for line in page_text.splitlines():
+def _flatten_statement_lines(page_texts: list[str]) -> list[_PdfLine]:
+    lines: list[_PdfLine] = []
+    for page_index, page_text in enumerate(page_texts):
+        for line_index, line in enumerate(page_text.splitlines()):
             cleaned = " ".join(line.split())
             if cleaned:
-                lines.append(cleaned)
+                lines.append(_PdfLine(text=cleaned, page_number=page_index + 1, line_number=line_index + 1))
     return lines
 
 
-def _parse_grouped_statement_lines(lines: list[str]) -> list[NormalizedTransaction]:
-    transactions: list[NormalizedTransaction] = []
+def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransaction]:
+    transactions: list[_ParsedTransaction] = []
     current_date: str | None = None
     current_section_hint: str | None = None
     description_parts: list[str] = []
-    inferred_year = _infer_default_statement_year(lines)
+    inferred_year = _infer_default_statement_year_from_lines(lines)
+    last_transaction_index: int | None = None
+    last_known_running_balance: float | None = None
+    pending_opening_balance_label: str | None = None
+    pending_opening_balance_line: _PdfLine | None = None
+    opening_balance_amount: float | None = None
+    opening_balance_amount_line: _PdfLine | None = None
+    opening_balance_inserted = False
 
     for line in lines:
-        normalized_line = _normalize_text(line)
-        date_match = DATE_HEADER_PATTERN.match(normalized_line)
-        if date_match:
-            current_date = _build_iso_date(
-                year=date_match.group("year"),
-                month_abbrev=date_match.group("month"),
-                day=date_match.group("day"),
-            )
-            current_section_hint = None
+        normalized_line = _normalize_text(line.text)
+        if normalized_line.startswith("SALDO ANTERIOR") or normalized_line.startswith("SALDO INICIAL"):
+            pending_opening_balance_label = "SALDO ANTERIOR" if "ANTERIOR" in normalized_line else "SALDO INICIAL"
+            pending_opening_balance_line = line
+            current_date = None
             description_parts = []
-            maybe_hint = _section_hint(date_match.group("rest"))
-            if maybe_hint:
-                current_section_hint = maybe_hint
+            continue
+        if (
+            pending_opening_balance_label is not None
+            and opening_balance_amount is None
+            and current_date is None
+            and is_amount_only_row(line.text)
+        ):
+            opening_balance_amount = parse_pdf_amount(line.text)
+            opening_balance_amount_line = line
             continue
 
-        month_only_match = re.fullmatch(
-            rf"(?P<day>\d{{1,2}})\s+(?P<month>{MONTH_PATTERN})(?:\s+(?P<year>\d{{4}}))?(?P<rest>.*)",
-            normalized_line,
-        )
-        if month_only_match:
-            year_value = month_only_match.group("year")
-            if year_value is None:
-                year_value = str(inferred_year if inferred_year is not None else datetime.utcnow().year)
-            current_date = _build_iso_date(
-                year=year_value,
-                month_abbrev=month_only_match.group("month"),
-                day=month_only_match.group("day"),
+        grouped_date_match = parse_grouped_date_line(normalized_line, inferred_year=inferred_year)
+        if grouped_date_match is not None:
+            current_date, current_section_hint, description_parts, inline_transaction = _parse_grouped_date_line_state(
+                line=line,
+                grouped_date=grouped_date_match.date,
+                grouped_rest=grouped_date_match.rest,
             )
-            current_section_hint = None
-            description_parts = []
-            maybe_hint = _section_hint(month_only_match.group("rest"))
-            if maybe_hint:
-                current_section_hint = maybe_hint
+            if inline_transaction is not None:
+                if (
+                    not opening_balance_inserted
+                    and opening_balance_amount is not None
+                    and pending_opening_balance_label is not None
+                ):
+                    opening_row = _build_parsed_transaction(
+                        date=grouped_date_match.date,
+                        description=pending_opening_balance_label,
+                        amount=opening_balance_amount,
+                        source_page=(opening_balance_amount_line or pending_opening_balance_line or line).page_number,
+                        source_line=(opening_balance_amount_line or pending_opening_balance_line or line).line_number,
+                        has_explicit_amount_sign=has_explicit_amount_sign(
+                            (opening_balance_amount_line or line).text
+                        ),
+                    )
+                    transactions.append(opening_row)
+                    last_transaction_index = len(transactions) - 1
+                    last_known_running_balance = opening_balance_amount
+                    opening_balance_inserted = True
+                transactions.append(inline_transaction)
+                last_transaction_index = len(transactions) - 1
+                description_parts = []
             continue
 
         if current_date is None:
             continue
 
-        maybe_hint = _section_hint(normalized_line)
-        if maybe_hint:
-            current_section_hint = maybe_hint
-            description_parts = []
+        current_section_hint, description_parts, should_continue = _update_grouped_section_state(
+            normalized_line=normalized_line,
+            current_section_hint=current_section_hint,
+            description_parts=description_parts,
+        )
+        if should_continue:
             continue
 
-        if _should_ignore_line(normalized_line):
-            description_parts = []
+        description_parts, should_continue = _handle_grouped_ignored_line(
+            normalized_line=normalized_line,
+            description_parts=description_parts,
+        )
+        if should_continue:
             continue
 
-        if AMOUNT_PATTERN.fullmatch(line):
-            if not description_parts:
-                continue
-            amount = _parse_pdf_amount(line)
-            description = " ".join(description_parts).strip()
-            signed_amount = _apply_sign_hints(amount=amount, description=description, section_hint=current_section_hint)
-            transactions.append(
-                NormalizedTransaction(
-                    date=current_date,
-                    description=description,
-                    amount=signed_amount,
-                    type="inflow" if signed_amount >= 0 else "outflow",
+        pre_amount_description_parts = description_parts
+        parsed_row, description_parts, should_continue = _handle_grouped_amount_only_line(
+            current_date=current_date,
+            description_parts=description_parts,
+            line=line,
+            section_hint=current_section_hint,
+        )
+        if should_continue:
+            if parsed_row is not None:
+                if (
+                    not opening_balance_inserted
+                    and opening_balance_amount is not None
+                    and pending_opening_balance_label is not None
+                ):
+                    opening_row = _build_parsed_transaction(
+                        date=parsed_row.transaction.date,
+                        description=pending_opening_balance_label,
+                        amount=opening_balance_amount,
+                        source_page=(opening_balance_amount_line or pending_opening_balance_line or line).page_number,
+                        source_line=(opening_balance_amount_line or pending_opening_balance_line or line).line_number,
+                        has_explicit_amount_sign=has_explicit_amount_sign(
+                            (opening_balance_amount_line or line).text
+                        ),
+                    )
+                    transactions.append(opening_row)
+                    last_transaction_index = len(transactions) - 1
+                    last_known_running_balance = opening_balance_amount
+                    opening_balance_inserted = True
+                transactions.append(parsed_row)
+                last_transaction_index = len(transactions) - 1
+                if parsed_row.running_balance is not None:
+                    last_known_running_balance = parsed_row.running_balance
+            elif _is_balance_snapshot_description(pre_amount_description_parts):
+                last_known_running_balance = parse_pdf_amount(line.text)
+            elif _can_attach_grouped_running_balance(description_parts=description_parts, last_transaction_index=last_transaction_index):
+                previous_balance = _resolve_previous_running_balance(transactions, last_transaction_index)
+                if previous_balance is None:
+                    previous_balance = last_known_running_balance
+                transactions[last_transaction_index] = _attach_running_balance_and_reconcile_sign(
+                    transaction=transactions[last_transaction_index],
+                    running_balance=parse_pdf_amount(line.text),
+                    previous_running_balance=previous_balance,
                 )
-            )
-            description_parts = []
+                last_known_running_balance = transactions[last_transaction_index].running_balance
             continue
 
-        description_parts.append(line.strip())
+        description_parts = _append_grouped_description_part(
+            description_parts=description_parts,
+            raw_text=line.text,
+        )
 
     return transactions
 
 
-def _parse_inline_statement_rows(lines: list[str]) -> tuple[list[NormalizedTransaction], int]:
-    transactions: list[NormalizedTransaction] = []
+def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTransaction], int]:
+    transactions: list[_ParsedTransaction] = []
     candidates = 0
-    inferred_year = _infer_default_statement_year(lines)
+    inferred_year = _infer_default_statement_year_from_lines(lines)
+    pending_inline: tuple[str, str, int, int] | None = None
+    pending_columnar_inline: list[tuple[str, str, int, int]] = []
+    columnar_amount_mode = False
+    columnar_balance_mode = False
+    saw_opening_balance_label = False
+    opening_balance_label = "SALDO ANTERIOR"
+    columnar_running_balances: list[float] = []
 
     for line in lines:
-        match = INLINE_ROW_PATTERN.match(line)
-        if not match:
+        if pending_inline is not None:
+            _, _, source_page, _ = pending_inline
+            if line.page_number != source_page:
+                pending_inline = None
+
+        normalized_line = _normalize_text(line.text)
+        if normalized_line.startswith("SALDO ANTERIOR"):
+            saw_opening_balance_label = True
+            opening_balance_label = "SALDO ANTERIOR"
+        elif normalized_line.startswith("SALDO INICIAL"):
+            saw_opening_balance_label = True
+            opening_balance_label = "SALDO INICIAL"
+        if pending_columnar_inline and _is_inline_columnar_amount_header(normalized_line):
+            columnar_amount_mode = True
+        if _is_inline_columnar_balance_header(normalized_line) and (transactions or pending_columnar_inline):
+            columnar_balance_mode = True
+
+        stripped_line = line.text.strip()
+        if columnar_balance_mode and is_amount_only_row(stripped_line):
+            columnar_running_balances.append(parse_pdf_amount(stripped_line))
             continue
+        if columnar_balance_mode and stripped_line and not _is_inline_columnar_balance_header(normalized_line):
+            columnar_balance_mode = False
 
-        rest = match.group("rest").strip()
-        amount_tokens = _find_amount_tokens(rest)
-        if len(amount_tokens) != 1:
-            continue
-        amount_token = amount_tokens[0]
-        if rest[amount_token.end :].strip():
-            continue
-
-        raw_description = rest[: amount_token.start].strip()
-        if not raw_description or _should_skip_transaction_description(raw_description):
-            continue
-
-        candidates += 1
-
-        amount = _parse_pdf_amount(amount_token.value)
-        signed_amount = _apply_sign_hints(
-            amount=amount,
-            description=raw_description,
-            section_hint=None,
-        )
-        transactions.append(
-            NormalizedTransaction(
-                date=_parse_statement_date(match.group("date"), fallback_year=inferred_year),
-                description=raw_description,
-                amount=signed_amount,
-                type="inflow" if signed_amount >= 0 else "outflow",
-            )
-        )
-
-    return transactions, candidates
-
-
-def _parse_multiline_statement_rows(lines: list[str]) -> tuple[list[NormalizedTransaction], int]:
-    transactions: list[NormalizedTransaction] = []
-    candidates = 0
-    inferred_year = _infer_default_statement_year(lines)
-    default_section_hint = _infer_multiline_default_section_hint(lines)
-    index = 0
-
-    while index < len(lines):
-        raw_date = lines[index].strip()
-        if not DATE_ONLY_PATTERN.fullmatch(raw_date):
-            index += 1
-            continue
-
-        lookahead = index + 1
-        description_parts: list[str] = []
-        amount_raw: str | None = None
-
-        while lookahead < len(lines):
-            current = lines[lookahead].strip()
-            if not current:
-                lookahead += 1
-                continue
-            if DATE_ONLY_PATTERN.fullmatch(current):
-                break
-            if _is_statement_amount_line(current):
-                amount_raw = current
-                break
-
-            normalized_current = _normalize_text(current)
-            if _should_ignore_line(normalized_current) or _should_skip_transaction_description(current):
-                lookahead += 1
-                continue
-
-            if description_parts:
-                lookahead += 1
-                continue
-
-            description_parts.append(current)
-            lookahead += 1
-
-        if amount_raw and description_parts:
-            description = " ".join(description_parts).strip()
-            if description and not _should_skip_transaction_description(description):
-                candidates += 1
-                amount = _parse_pdf_amount(amount_raw)
-                signed_amount = _apply_sign_hints(
-                    amount=amount,
-                    description=description,
-                    section_hint=default_section_hint,
+        if columnar_amount_mode and pending_columnar_inline and is_amount_only_row(stripped_line):
+            pending_date, pending_description, source_page, source_line = pending_columnar_inline.pop(0)
+            amount = parse_pdf_amount(stripped_line)
+            signed_amount = compute_hint_signed_amount(raw_amount=amount, description=pending_description)
+            transactions.append(
+                _build_parsed_transaction(
+                    date=pending_date,
+                    description=pending_description,
+                    amount=signed_amount,
+                    source_page=source_page,
+                    source_line=source_line,
                 )
-                transactions.append(
-                    NormalizedTransaction(
-                        date=_parse_statement_date(raw_date, fallback_year=inferred_year),
-                        description=description,
-                        amount=signed_amount,
-                        type="inflow" if signed_amount >= 0 else "outflow",
+            )
+            candidates += 1
+            pending_inline = None
+            if not pending_columnar_inline:
+                columnar_amount_mode = False
+            continue
+
+        if pending_inline is not None and is_amount_only_row(line.text.strip()):
+            pending_date, pending_description, source_page, source_line = pending_inline
+            amount = parse_pdf_amount(line.text.strip())
+            signed_amount = compute_hint_signed_amount(raw_amount=amount, description=pending_description)
+            transactions.append(
+                _build_parsed_transaction(
+                    date=pending_date,
+                    description=pending_description,
+                    amount=signed_amount,
+                    source_page=source_page,
+                    source_line=source_line,
+                )
+            )
+            candidates += 1
+            pending_inline = None
+            continue
+        if pending_inline is not None:
+            pending_date, pending_description, source_page, source_line = pending_inline
+            continuation = line.text.strip()
+            if _is_inline_pending_continuation_blocker(continuation):
+                pending_inline = None
+                pending_columnar_inline = []
+                columnar_amount_mode = False
+                continue
+            if _is_inline_pending_noise_line(continuation):
+                continue
+            if continuation and not match_inline_row(continuation) and not should_skip_transaction_description(continuation):
+                pending_inline = (
+                    pending_date,
+                    f"{pending_description} {continuation}".strip(),
+                    source_page,
+                    source_line,
+                )
+                continue
+            pending_inline = None
+
+        parsed_row = _parse_inline_statement_line(line=line, inferred_year=inferred_year)
+        if parsed_row is None:
+            match = match_inline_row(line.text)
+            if match:
+                rest = match.group("rest").strip()
+                if rest and extract_single_trailing_amount_match(rest) is None and not should_skip_transaction_description(rest):
+                    pending_columnar_inline.append(
+                        (
+                            parse_row_date(match.group("date"), fallback_year=inferred_year),
+                            rest,
+                            line.page_number,
+                            line.line_number,
+                        )
                     )
-                )
-                index = lookahead + 1
-                continue
+                    pending_inline = (
+                        parse_row_date(match.group("date"), fallback_year=inferred_year),
+                        rest,
+                        line.page_number,
+                        line.line_number,
+                    )
+                    continue
+            pending_inline = None
+            pending_columnar_inline = []
+            columnar_amount_mode = False
+            continue
+        pending_inline = None
+        pending_columnar_inline = []
+        columnar_amount_mode = False
+        candidates += 1
+        transactions.append(parsed_row)
 
-        index += 1
+    if saw_opening_balance_label and columnar_running_balances and transactions:
+        first_transaction = transactions[0]
+        inferred_opening_balance = round(columnar_running_balances[0] - first_transaction.transaction.amount, 2)
+        if len(columnar_running_balances) >= 2:
+            first_balance = columnar_running_balances[0]
+            second_balance = columnar_running_balances[1]
+            delta = round(second_balance - first_balance, 2)
+            first_amount = round(first_transaction.transaction.amount, 2)
+            if abs(delta - first_amount) <= 0.02:
+                inferred_opening_balance = round(first_balance, 2)
+        opening_transaction = _build_parsed_transaction(
+            date=first_transaction.transaction.date,
+            description=opening_balance_label,
+            amount=inferred_opening_balance,
+            source_page=first_transaction.source_page,
+            source_line=first_transaction.source_line,
+        )
+        transactions = [opening_transaction, *transactions]
+
+    return transactions, candidates
 
     return transactions, candidates
 
 
-def _parse_tabular_statement_rows(lines: list[str]) -> tuple[list[NormalizedTransaction], int]:
-    transactions: list[NormalizedTransaction] = []
+def _parse_tabular_statement_rows(
+    lines: list[_PdfLine], *, layout_profile: DeclarativeLayoutProfile | None = None
+) -> tuple[list[_ParsedTransaction], int]:
+    transactions: list[_ParsedTransaction] = []
     candidates = 0
-    inferred_year = _infer_default_statement_year(lines)
+    inferred_year = _infer_default_statement_year_from_lines(lines)
+    line_texts = _extract_line_texts(lines)
+    tabular_profile = resolve_tabular_profile(line_texts, layout_profile=layout_profile)
 
     for line in lines:
-        match = TABULAR_DATE_PREFIX_PATTERN.match(line)
-        if not match:
-            continue
-
-        rest = match.group("rest").strip()
-        if not rest:
-            continue
-
-        amount_tokens = _find_amount_tokens(rest)
-        if not amount_tokens:
-            continue
-        candidates += 1
-
-        amount_token = _select_tabular_amount_token(amount_tokens)
-        if amount_token is None:
-            continue
-
-        raw_description = rest[: amount_token.start].strip()
-        if not raw_description or _should_skip_transaction_description(raw_description):
-            continue
-
-        amount = _parse_pdf_amount(amount_token.value)
-        signed_amount = _apply_sign_hints(
-            amount=amount,
-            description=raw_description,
-            section_hint=None,
+        parsed_row, is_candidate = _classify_tabular_statement_line(
+            line=line,
+            inferred_year=inferred_year,
+            tabular_profile=tabular_profile,
         )
-        transactions.append(
-            NormalizedTransaction(
-                date=_parse_statement_date(match.group("date"), fallback_year=inferred_year),
-                description=raw_description,
-                amount=signed_amount,
-                type="inflow" if signed_amount >= 0 else "outflow",
-            )
+        candidates = _accumulate_tabular_row(
+            transactions=transactions,
+            parsed_row=parsed_row,
+            is_candidate=is_candidate,
+            candidates=candidates,
         )
 
     return transactions, candidates
 
-
-def _select_tabular_amount_token(tokens: list[_AmountToken]) -> _AmountToken | None:
-    if not tokens:
-        return None
-    if len(tokens) == 1:
-        return tokens[0]
-    # In statement-like tables with balance column, the rightmost amount is usually balance.
-    return tokens[-2]
-
-
-def _merge_transactions(
-    primary_transactions: list[NormalizedTransaction],
-    supplemental_transactions: list[NormalizedTransaction],
-) -> list[NormalizedTransaction]:
-    merged: list[NormalizedTransaction] = []
-    seen: set[tuple[str, str, float, str]] = set()
-
-    for item in [*primary_transactions, *supplemental_transactions]:
-        key = (item.date, item.description, item.amount, item.type)
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append(item)
-
-    return merged
-
-
-def _find_amount_tokens(text: str) -> list[_AmountToken]:
-    return [
-        _AmountToken(value=match.group("amount"), start=match.start("amount"), end=match.end("amount"))
-        for match in AMOUNT_TOKEN_PATTERN.finditer(text)
-    ]
-
-
-def _parse_pdf_amount(raw: str) -> float:
-    cleaned = re.sub(r"(?i)R\$", "", raw).strip()
-    if cleaned.endswith("-"):
-        cleaned = "-" + cleaned[:-1].strip()
-    elif cleaned.endswith("+"):
-        cleaned = cleaned[:-1].strip()
-    return _parse_amount(cleaned)
-
-
-def _parse_columnar_statement_blocks(lines: list[str]) -> tuple[list[NormalizedTransaction], int]:
-    transactions: list[NormalizedTransaction] = []
+def _parse_columnar_statement_blocks(lines: list[_PdfLine]) -> tuple[list[_ParsedTransaction], int]:
+    transactions: list[_ParsedTransaction] = []
     candidates = 0
-    inferred_year = _infer_default_statement_year(lines)
+    inferred_year = _infer_default_statement_year_from_lines(lines)
+    line_texts = _extract_line_texts(lines)
     index = 0
 
     while index < len(lines):
-        raw_date = lines[index].strip()
-        if not DATE_ONLY_PATTERN.fullmatch(raw_date):
-            index += 1
-            continue
-
-        if index + 3 >= len(lines):
-            index += 1
-            continue
-
-        description = lines[index + 1].strip()
-        type_raw = lines[index + 2].strip()
-        amount_raw = lines[index + 3].strip()
-        if not description or _is_columnar_header_line(description):
-            index += 1
-            continue
-        if not _is_transaction_type_hint(type_raw):
-            index += 1
-            continue
-        if not _is_amount_like(amount_raw):
-            index += 1
-            continue
-
-        candidates += 1
-        amount = _apply_type_sign_hint(_parse_pdf_amount(amount_raw), type_raw)
-        signed_amount = _apply_sign_hints(amount=amount, description=description, section_hint=None)
-        transactions.append(
-            NormalizedTransaction(
-                date=_parse_statement_date(raw_date, fallback_year=inferred_year),
-                description=description,
-                amount=signed_amount,
-                type="inflow" if signed_amount >= 0 else "outflow",
-            )
-        )
-
-        next_index = index + 4
-        if next_index < len(lines) and _is_amount_like(lines[next_index].strip()):
-            next_index += 1
-        index = next_index
+        parsed_row = _parse_columnar_block_at_index(lines=lines, index=index, inferred_year=inferred_year)
+        if parsed_row is not None:
+            candidates += 1
+            transactions.append(parsed_row)
+        index = _resolve_next_columnar_index(line_texts=line_texts, current_index=index, parsed_row=parsed_row)
 
     return transactions, candidates
 
 
-def _is_amount_like(raw: str) -> bool:
-    value = re.sub(r"(?i)R\$", "", raw).strip()
-    return bool(LOOSE_AMOUNT_PATTERN.fullmatch(value))
-
-
-def _is_statement_amount_line(raw: str) -> bool:
-    value = str(raw).strip()
-    return bool(STATEMENT_AMOUNT_LINE_PATTERN.fullmatch(value))
-
-
-def _is_transaction_type_hint(raw: str) -> bool:
-    normalized = _normalize_text(raw)
-    if not normalized:
-        return False
-    if any(token == normalized or normalized.startswith(token + " ") for token in DEBIT_TYPE_HINTS):
-        return True
-    if any(token == normalized or normalized.startswith(token + " ") for token in CREDIT_TYPE_HINTS):
-        return True
-    return False
-
-
-def _apply_type_sign_hint(amount: float, type_raw: str) -> float:
-    normalized = _normalize_text(type_raw)
-    if any(token == normalized or normalized.startswith(token + " ") for token in DEBIT_TYPE_HINTS):
-        return -abs(amount)
-    if any(token == normalized or normalized.startswith(token + " ") for token in CREDIT_TYPE_HINTS):
-        return abs(amount)
-    return amount
-
-
-def _is_columnar_header_line(raw: str) -> bool:
-    return _normalize_text(raw) in COLUMNAR_HEADER_TOKENS
-
-
-def _infer_default_statement_year(lines: list[str]) -> int | None:
-    year_counts: dict[int, int] = {}
-
-    for line in lines:
-        for raw in re.findall(r"\b\d{2}/\d{2}/(\d{4})\b", line):
-            year = int(raw)
-            year_counts[year] = year_counts.get(year, 0) + 1
-        normalized_line = _normalize_text(line)
-        for raw in re.findall(rf"\b\d{{1,2}}\s+(?:{MONTH_PATTERN})\s+(\d{{4}})\b", normalized_line):
-            year = int(raw)
-            year_counts[year] = year_counts.get(year, 0) + 1
-
-    if not year_counts:
+def _parse_columnar_block_at_index(
+    *, lines: list[_PdfLine], index: int, inferred_year: int | None
+) -> _ParsedTransaction | None:
+    raw_date = lines[index].text.strip()
+    if not is_date_only_row(raw_date):
         return None
-    return max(year_counts.items(), key=lambda item: item[1])[0]
+
+    if index + 3 >= len(lines):
+        return None
+
+    description = lines[index + 1].text.strip()
+    type_raw = lines[index + 2].text.strip()
+    amount_raw = lines[index + 3].text.strip()
+    if not is_valid_columnar_transaction_row(description=description, type_raw=type_raw, amount_raw=amount_raw):
+        return None
+
+    amount = apply_type_sign_hint(parse_pdf_amount(amount_raw), type_raw)
+    signed_amount = compute_hint_signed_amount(raw_amount=amount, description=description)
+    return _build_parsed_transaction(
+        date=parse_row_date(raw_date, fallback_year=inferred_year),
+        description=description,
+        amount=signed_amount,
+        source_page=lines[index].page_number,
+        source_line=lines[index].line_number,
+    )
 
 
-def _infer_multiline_default_section_hint(lines: list[str]) -> str | None:
-    normalized_lines = [_normalize_text(line) for line in lines]
-    has_statement_hint = any("FATURA" in line for line in normalized_lines)
-    has_transactions_hint = any("TRANSACOES" in line for line in normalized_lines)
-    if has_statement_hint and has_transactions_hint:
-        return "outflow"
+def _parse_grouped_date_line_state(
+    *,
+    line: _PdfLine,
+    grouped_date: str,
+    grouped_rest: str,
+) -> tuple[str, str | None, list[str], _ParsedTransaction | None]:
+    next_date = grouped_date
+    next_description_parts: list[str] = []
+    next_section_hint = resolve_grouped_section_hint(grouped_rest, current_hint=None)
+    inline_transaction = _build_inline_transaction_from_date_rest(
+        date=next_date,
+        rest=grouped_rest,
+        section_hint=next_section_hint,
+        source_page=line.page_number,
+        source_line=line.line_number,
+    )
+    return next_date, next_section_hint, next_description_parts, inline_transaction
+
+
+def _resolve_next_columnar_index(
+    *, line_texts: list[str], current_index: int, parsed_row: _ParsedTransaction | None
+) -> int:
+    if parsed_row is None:
+        return current_index + 1
+    return next_columnar_block_index(line_texts, current_index=current_index)
+
+
+def _parse_inline_statement_line(*, line: _PdfLine, inferred_year: int | None) -> _ParsedTransaction | None:
+    match = match_inline_row(line.text)
+    if not match:
+        return None
+
+    rest = match.group("rest").strip()
+    amount_match = extract_single_trailing_amount_match(rest)
+    if amount_match is None:
+        return None
+
+    raw_description = amount_match.description
+    if not raw_description or should_skip_transaction_description(raw_description):
+        return None
+
+    amount = parse_pdf_amount(amount_match.amount_token.value)
+    signed_amount = compute_hint_signed_amount(raw_amount=amount, description=raw_description)
+    return _build_parsed_transaction(
+        date=parse_row_date(match.group("date"), fallback_year=inferred_year),
+        description=raw_description,
+        amount=signed_amount,
+        source_page=line.page_number,
+        source_line=line.line_number,
+    )
+
+
+def _parse_tabular_statement_line(
+    *,
+    line: _PdfLine,
+    inferred_year: int | None,
+    tabular_profile: DeclarativeLayoutProfile | None,
+) -> _ParsedTransaction | None:
+    parsed_row, _ = _classify_tabular_statement_line(
+        line=line,
+        inferred_year=inferred_year,
+        tabular_profile=tabular_profile,
+    )
+    return parsed_row
+
+
+def _classify_tabular_statement_line(
+    *,
+    line: _PdfLine,
+    inferred_year: int | None,
+    tabular_profile: DeclarativeLayoutProfile | None,
+) -> tuple[_ParsedTransaction | None, bool]:
+    match = match_tabular_date_prefix(line.text)
+    if not match:
+        return None, False
+
+    rest = match.group("rest").strip()
+    if not rest:
+        return None, False
+
+    amount_tokens = find_amount_tokens(rest)
+    if not amount_tokens:
+        return None, False
+
+    selected_amount = select_tabular_amount_token(amount_tokens, layout_profile=tabular_profile)
+    if selected_amount is None:
+        return None, True
+
+    raw_description = rest[: selected_amount.description_end].strip()
+    if not raw_description or should_skip_transaction_description(raw_description):
+        return None, True
+    normalized_description = _normalize_text(raw_description)
+    if normalized_description.endswith(" SALDO"):
+        return None, True
+
+    external_reference_id = extract_document_reference(raw_description, layout_profile=tabular_profile)
+    amount_details = _build_tabular_amount_details(
+        amount_token_value=selected_amount.token.value,
+        selected_role=selected_amount.role,
+        raw_description=raw_description,
+        balance_token_value=selected_amount.balance_token.value if selected_amount.balance_token else None,
+    )
+    compact_amount = _extract_compact_cd_amount(raw_description)
+    if (
+        compact_amount is not None
+        and amount_details["running_balance"] is None
+        and abs(amount_details["signed_amount"]) > 100
+        and abs(compact_amount) <= 50
+    ):
+        amount_details["signed_amount"] = compact_amount
+    return (
+        _build_parsed_transaction(
+            date=parse_row_date(match.group("date"), fallback_year=inferred_year),
+            description=raw_description,
+            amount=amount_details["signed_amount"],
+            source_page=line.page_number,
+            source_line=line.line_number,
+            running_balance=amount_details["running_balance"],
+            external_reference_id=external_reference_id,
+        ),
+        True,
+    )
+
+
+def _accumulate_tabular_row(
+    *,
+    transactions: list[_ParsedTransaction],
+    parsed_row: _ParsedTransaction | None,
+    is_candidate: bool,
+    candidates: int,
+) -> int:
+    next_candidates = candidates + 1 if is_candidate else candidates
+    if parsed_row is not None:
+        transactions.append(_reconcile_tabular_amount_from_running_balance(parsed_row=parsed_row, transactions=transactions))
+    return next_candidates
+
+
+def _reconcile_tabular_amount_from_running_balance(
+    *, parsed_row: _ParsedTransaction, transactions: list[_ParsedTransaction]
+) -> _ParsedTransaction:
+    if parsed_row.running_balance is None:
+        return parsed_row
+
+    previous_running_balance = _resolve_latest_running_balance(transactions)
+    if previous_running_balance is None:
+        return parsed_row
+
+    delta = round(parsed_row.running_balance - previous_running_balance, 2)
+    if abs(delta) < 0.005:
+        return parsed_row
+
+    current_amount = parsed_row.transaction.amount
+    projected_balance = previous_running_balance + current_amount
+    current_error = abs(projected_balance - parsed_row.running_balance)
+    if current_error <= 0.02:
+        return parsed_row
+
+    amount_looks_like_balance = abs(abs(current_amount) - abs(parsed_row.running_balance)) <= 0.05
+    if not amount_looks_like_balance:
+        return parsed_row
+
+    normalized_transaction = NormalizedTransaction(
+        date=parsed_row.transaction.date,
+        description=parsed_row.transaction.description,
+        amount=delta,
+        type="inflow" if delta >= 0 else "outflow",
+    )
+    return _ParsedTransaction(
+        transaction=normalized_transaction,
+        source_page=parsed_row.source_page,
+        source_line=parsed_row.source_line,
+        running_balance=parsed_row.running_balance,
+        external_reference_id=parsed_row.external_reference_id,
+        has_explicit_amount_sign=parsed_row.has_explicit_amount_sign,
+    )
+
+
+def _resolve_latest_running_balance(transactions: list[_ParsedTransaction]) -> float | None:
+    for item in reversed(transactions):
+        if item.running_balance is not None:
+            return item.running_balance
     return None
 
 
-def _parse_statement_date(raw: str, fallback_year: int | None) -> str:
-    value = raw.strip()
-    upper_value = _normalize_text(value)
-    if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{4}", value):
-        return _parse_slash_date(value)
-
-    if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{2}", value):
-        day, month, year = value.split("/")
-        return _parse_slash_date(f"{day}/{month}/20{year}")
-
-    if re.fullmatch(r"\d{1,2}/\d{1,2}", value):
-        if fallback_year is None:
-            fallback_year = datetime.utcnow().year
-        return _parse_slash_date(f"{value}/{fallback_year}")
-
-    month_match = re.fullmatch(rf"(?P<day>\d{{1,2}})\s+(?P<month>{MONTH_PATTERN})(?:\s+(?P<year>\d{{4}}))?", upper_value)
-    if month_match:
-        day = int(month_match.group("day"))
-        month_abbrev = month_match.group("month")
-        month_value = MONTH_TO_NUMBER.get(month_abbrev)
-        if month_value is None:
-            raise InvalidFileContentError(f"Invalid month value in PDF statement: {month_abbrev!r}.")
-        year_raw = month_match.group("year")
-        if year_raw:
-            year_value = int(year_raw)
-        else:
-            year_value = fallback_year if fallback_year is not None else datetime.utcnow().year
-        try:
-            return datetime(year_value, month_value, day).strftime("%Y-%m-%d")
-        except ValueError as exc:
-            raise InvalidFileContentError(f"Invalid date value in PDF statement: {raw!r}.") from exc
-
-    raise InvalidFileContentError(f"Invalid date value in PDF statement: {raw!r}.")
+def _build_tabular_amount_details(
+    *,
+    amount_token_value: str,
+    selected_role: str,
+    raw_description: str,
+    balance_token_value: str | None,
+) -> dict[str, float | None]:
+    signed_amount = compute_tabular_signed_amount(
+        raw_amount=parse_pdf_amount(amount_token_value),
+        role=selected_role,
+        description=raw_description,
+    )
+    running_balance = parse_pdf_amount(balance_token_value) if balance_token_value is not None else None
+    return {"signed_amount": signed_amount, "running_balance": running_balance}
 
 
-def _section_hint(text: str) -> str | None:
-    normalized = _normalize_text(text)
-    if "TOTAL DE ENTRADAS" in normalized:
-        return "inflow"
-    if "TOTAL DE SAIDAS" in normalized:
-        return "outflow"
+def _extract_compact_cd_amount(description: str) -> float | None:
+    match = re.search(r"([+\-\u2212]?)\s*(\d{3,5})\s*([CD])\b", description.upper())
+    if not match:
+        return None
+    sign_prefix = match.group(1)
+    digits = int(match.group(2))
+    suffix = match.group(3)
+    value = digits / 100.0
+    if sign_prefix in {"-", "\u2212"} or suffix == "D":
+        return -abs(value)
+    if sign_prefix == "+" or suffix == "C":
+        return abs(value)
     return None
 
 
-def _should_ignore_line(normalized_line: str) -> bool:
-    if not normalized_line:
-        return True
-    if normalized_line in {"-", "--"}:
-        return True
-    if re.fullmatch(r"\d+\s+DE\s+\d+", normalized_line):
-        return True
-    if any(normalized_line.startswith(prefix) for prefix in IGNORED_LINE_PREFIXES):
-        return True
-    if any(token in normalized_line for token in IGNORED_LINE_TOKENS):
-        return True
-    return False
+def _update_grouped_section_state(
+    *,
+    normalized_line: str,
+    current_section_hint: str | None,
+    description_parts: list[str],
+) -> tuple[str | None, list[str], bool]:
+    next_hint = resolve_grouped_section_hint(normalized_line, current_hint=current_section_hint)
+    if next_hint != current_section_hint:
+        return next_hint, [], True
+    return next_hint, description_parts, False
 
 
-def _should_skip_transaction_description(description: str) -> bool:
-    normalized_description = _normalize_text(description)
-    if not normalized_description:
-        return True
-    if any(hint in normalized_description for hint in IGNORED_TRANSACTION_HINTS):
-        return True
-    if normalized_description.startswith("SALDO "):
-        return True
-    return False
+def _handle_grouped_ignored_line(*, normalized_line: str, description_parts: list[str]) -> tuple[list[str], bool]:
+    if should_ignore_grouped_line(normalized_line):
+        return [], True
+    return description_parts, False
 
 
-def _apply_sign_hints(amount: float, description: str, section_hint: str | None) -> float:
-    normalized_description = _normalize_text(description)
-    if any(token in normalized_description for token in INFLOW_HINTS):
-        return abs(amount)
-    if any(token in normalized_description for token in OUTFLOW_HINTS):
-        return -abs(amount)
-    if section_hint == "inflow":
-        return abs(amount)
-    if section_hint == "outflow":
-        return -abs(amount)
-    return amount
+def _handle_grouped_amount_only_line(
+    *,
+    current_date: str,
+    description_parts: list[str],
+    line: _PdfLine,
+    section_hint: str | None,
+) -> tuple[_ParsedTransaction | None, list[str], bool]:
+    if not is_amount_only_row(line.text):
+        return None, description_parts, False
+
+    parsed_row = _build_grouped_amount_only_transaction(
+        date=current_date,
+        description_parts=description_parts,
+        line=line,
+        section_hint=section_hint,
+    )
+    if parsed_row is None:
+        return None, [], True
+    return parsed_row, [], True
 
 
-def _parse_slash_date(raw: str) -> str:
-    try:
-        return datetime.strptime(raw, "%d/%m/%Y").strftime("%Y-%m-%d")
-    except ValueError as exc:
-        raise InvalidFileContentError(f"Invalid date value in PDF statement: {raw!r}.") from exc
+def _append_grouped_description_part(*, description_parts: list[str], raw_text: str) -> list[str]:
+    cleaned_text = raw_text.strip()
+    if not cleaned_text:
+        return description_parts
+    return [*description_parts, cleaned_text]
 
 
-def _build_iso_date(year: str, month_abbrev: str, day: str) -> str:
-    month_value = MONTH_TO_NUMBER.get(month_abbrev)
-    if month_value is None:
-        raise InvalidFileContentError(f"Invalid month value in PDF statement: {month_abbrev!r}.")
-    try:
-        return datetime(int(year), month_value, int(day)).strftime("%Y-%m-%d")
-    except ValueError as exc:
-        raise InvalidFileContentError(f"Invalid date value in PDF statement: {day}/{month_abbrev}/{year}.") from exc
+def _build_grouped_amount_only_transaction(
+    *,
+    date: str,
+    description_parts: list[str],
+    line: _PdfLine,
+    section_hint: str | None,
+) -> _ParsedTransaction | None:
+    if not description_parts:
+        return None
+
+    last_part_normalized = _normalize_text(description_parts[-1].strip()) if description_parts else ""
+    if last_part_normalized in {"DEBITO", "DÉBITO", "CREDITO", "CRÉDITO"} and len(description_parts) >= 2:
+        return None
+
+    description = " ".join(description_parts).strip()
+    if should_skip_transaction_description(description):
+        return None
+    signed_amount = parse_grouped_amount_line(
+        raw_amount_text=line.text,
+        description=description,
+        section_hint=section_hint,
+    )
+    return _build_parsed_transaction(
+        date=date,
+        description=description,
+        amount=signed_amount,
+        source_page=line.page_number,
+        source_line=line.line_number,
+        has_explicit_amount_sign=has_explicit_amount_sign(line.text),
+    )
+
+
+def _build_inline_transaction_from_date_rest(
+    *,
+    date: str,
+    rest: str,
+    section_hint: str | None,
+    source_page: int | None = None,
+    source_line: int | None = None,
+) -> _ParsedTransaction | None:
+    amount_match = extract_single_trailing_amount_match(rest)
+    if amount_match is None:
+        return None
+
+    raw_description = amount_match.description
+    if not raw_description or should_skip_transaction_description(raw_description):
+        return None
+    amount = parse_pdf_amount(amount_match.amount_token.value)
+    signed_amount = compute_hint_signed_amount(raw_amount=amount, description=raw_description, section_hint=section_hint)
+    return _build_parsed_transaction(
+        date=date,
+        description=raw_description,
+        amount=signed_amount,
+        source_page=source_page,
+        source_line=source_line,
+        has_explicit_amount_sign=has_explicit_amount_sign(amount_match.amount_token.value),
+    )
+
+
+def _build_parsed_transaction(
+    *,
+    date: str,
+    description: str,
+    amount: float,
+    source_page: int | None = None,
+    source_line: int | None = None,
+    running_balance: float | None = None,
+    external_reference_id: str | None = None,
+    has_explicit_amount_sign: bool = False,
+) -> _ParsedTransaction:
+    return _ParsedTransaction(
+        transaction=NormalizedTransaction(
+            date=date,
+            description=description,
+            amount=amount,
+            type="inflow" if amount >= 0 else "outflow",
+        ),
+        source_page=source_page,
+        source_line=source_line,
+        running_balance=running_balance,
+        external_reference_id=external_reference_id,
+        has_explicit_amount_sign=has_explicit_amount_sign,
+    )
+
+
+def _can_attach_grouped_running_balance(*, description_parts: list[str], last_transaction_index: int | None) -> bool:
+    return bool(not description_parts and last_transaction_index is not None)
+
+
+def _is_balance_snapshot_description(description_parts: list[str]) -> bool:
+    description = " ".join(description_parts).strip()
+    if not description:
+        return False
+    normalized = _normalize_text(description)
+    return normalized == "SALDO" or normalized.startswith("SALDO ")
+
+
+def _resolve_previous_running_balance(transactions: list[_ParsedTransaction], current_index: int) -> float | None:
+    for index in range(current_index - 1, -1, -1):
+        balance = transactions[index].running_balance
+        if balance is not None:
+            return balance
+
+    current = transactions[current_index]
+    normalized_description = _normalize_text(current.transaction.description)
+    if normalized_description.startswith("SALDO ANTERIOR") or normalized_description.startswith("SALDO INICIAL"):
+        return current.transaction.amount
+    if current_index > 0:
+        previous_description = _normalize_text(transactions[current_index - 1].transaction.description)
+        if previous_description.startswith("SALDO ANTERIOR") or previous_description.startswith("SALDO INICIAL"):
+            return transactions[current_index - 1].transaction.amount
+    return None
+
+
+def _attach_running_balance_and_reconcile_sign(
+    *,
+    transaction: _ParsedTransaction,
+    running_balance: float,
+    previous_running_balance: float | None,
+) -> _ParsedTransaction:
+    signed_amount = transaction.transaction.amount
+    if (not transaction.has_explicit_amount_sign) and previous_running_balance is not None:
+        delta = running_balance - previous_running_balance
+        amount_abs = abs(signed_amount)
+        positive_error = abs(delta - amount_abs)
+        negative_error = abs(delta + amount_abs)
+        if positive_error + 0.005 < negative_error:
+            signed_amount = amount_abs
+        elif negative_error + 0.005 < positive_error:
+            signed_amount = -amount_abs
+
+    normalized_transaction = NormalizedTransaction(
+        date=transaction.transaction.date,
+        description=transaction.transaction.description,
+        amount=signed_amount,
+        type="inflow" if signed_amount >= 0 else "outflow",
+    )
+    return _ParsedTransaction(
+        transaction=normalized_transaction,
+        source_page=transaction.source_page,
+        source_line=transaction.source_line,
+        running_balance=running_balance,
+        external_reference_id=transaction.external_reference_id,
+        has_explicit_amount_sign=transaction.has_explicit_amount_sign,
+    )
 
 
 def _normalize_text(value: str) -> str:
-    upper = unicodedata.normalize("NFKD", value.upper())
-    without_accents = "".join(ch for ch in upper if not unicodedata.combining(ch))
-    return re.sub(r"\s+", " ", without_accents).strip()
+    return normalize_upper_text(value)
+
+
+def _infer_default_statement_year_from_lines(lines: list[_PdfLine]) -> int | None:
+    return infer_default_statement_year(_extract_line_texts(lines))
+
+
+def _extract_line_texts(lines: list[_PdfLine]) -> list[str]:
+    return [line.text for line in lines]
+
+
+def _is_inline_pending_continuation_blocker(raw_text: str) -> bool:
+    normalized = _normalize_text(raw_text)
+    if should_ignore_line(normalized):
+        return True
+    if "DATA" in normalized and "CREDITO" in normalized and "DEBITO" in normalized and "SALDO" in normalized:
+        return True
+    return "EXTRATO" in normalized and "CONTA" in normalized
+
+
+def _is_inline_pending_noise_line(raw_text: str) -> bool:
+    value = raw_text.strip()
+    if not value:
+        return True
+    return bool(re.fullmatch(r"[|:;,\.\-_/\\Il!]+", value))
+
+
+def _is_inline_columnar_amount_header(normalized_line: str) -> bool:
+    if normalized_line in {"DOC", "VALOR", "SALDO"}:
+        return True
+    return normalized_line.startswith("DATA:") or normalized_line.startswith("HORA:")
+
+
+def _is_inline_columnar_balance_header(normalized_line: str) -> bool:
+    return normalized_line == "SALDO"
+

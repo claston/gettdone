@@ -1,6 +1,8 @@
 import re
-import unicodedata
 from dataclasses import dataclass
+
+from app.application.layout_profiles.registry import DeclarativeLayoutProfile, load_layout_profiles, score_layout_profile
+from app.application.normalization.text import normalize_upper_text
 
 MONTH_PATTERN = r"(?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)"
 DATE_HEADER_PATTERN = re.compile(rf"\b\d{{2}}\s+{MONTH_PATTERN}\s+\d{{4}}\b")
@@ -13,6 +15,8 @@ SPECIFIC_PROFILE_HIGH_CONFIDENCE = 0.7
 ANCHOR_MISS_MULTIPLIER = 0.45
 BR_PROFILE_TERMS: dict[str, tuple[tuple[str, float], ...]] = {
     "nubank_statement_ptbr": (
+        ("NUBANK", 0.7),
+        ("CONTA DO NUBANK", 0.16),
         ("TOTAL DE ENTRADAS", 0.22),
         ("TOTAL DE SAIDAS", 0.22),
         ("TRANSFERENCIA RECEBIDA PELO PIX", 0.2),
@@ -49,6 +53,10 @@ BR_PROFILE_TERMS: dict[str, tuple[tuple[str, float], ...]] = {
         ("LANCAMENTOS", 0.12),
         ("DOCUMENTO", 0.1),
         ("AGENCIA", 0.08),
+        ("OUVIDORIA BB", 0.24),
+        ("CLIENTE - CONTA ATUAL", 0.2),
+        ("DT BALANCETE DT MOVIMENTO", 0.18),
+        ("TRANSACAO EFETUADA COM SUCESSO POR", 0.14),
     ),
     "caixa_statement_ptbr": (
         ("CAIXA ECONOMICA FEDERAL", 0.32),
@@ -75,11 +83,11 @@ BR_PROFILE_TERMS: dict[str, tuple[tuple[str, float], ...]] = {
     ),
 }
 PROFILE_ANCHORS: dict[str, tuple[str, ...]] = {
-    "nubank_statement_ptbr": ("TOTAL DE ENTRADAS", "TRANSFERENCIA RECEBIDA PELO PIX", "MOVIMENTACOES"),
+    "nubank_statement_ptbr": ("NUBANK", "TOTAL DE ENTRADAS", "TRANSFERENCIA RECEBIDA PELO PIX", "MOVIMENTACOES"),
     "itau_statement_ptbr": ("EXTRATO CONTA / LANCAMENTOS", "LIMITE DA CONTA", "SALDO EM CONTA"),
     "santander_statement_ptbr": ("BANCO SANTANDER", "EXTRATO DE CONTA CORRENTE"),
     "bradesco_statement_ptbr": ("BANCO BRADESCO", "EXTRATO MENSAL"),
-    "bb_statement_ptbr": ("BANCO DO BRASIL", "EXTRATO CONTA CORRENTE"),
+    "bb_statement_ptbr": ("BANCO DO BRASIL", "EXTRATO CONTA CORRENTE", "OUVIDORIA BB", "CLIENTE - CONTA ATUAL"),
     "caixa_statement_ptbr": ("CAIXA ECONOMICA FEDERAL", "EXTRATO DA CONTA CORRENTE", "OPERACAO: 001"),
     "inter_statement_ptbr": ("BANCO INTER", "CONTA DIGITAL"),
     "sicredi_statement_ptbr": ("SICREDI", "COOPERATIVA"),
@@ -99,6 +107,12 @@ def infer_pdf_layout(text: str) -> PdfLayoutInference:
         layout_name: _score_layout_profile(layout_name, normalized, terms)
         for layout_name, terms in BR_PROFILE_TERMS.items()
     }
+    structure_score = _score_statement_structure(normalized)
+    declarative_scores = {
+        profile.profile_name: _score_declarative_layout_profile(profile, normalized, structure_score)
+        for profile in load_layout_profiles()
+    }
+    specific_scores.update(declarative_scores)
     generic_score = _score_generic_statement(normalized)
     specific_best_name, specific_best_score = max(specific_scores.items(), key=lambda item: item[1])
 
@@ -128,6 +142,15 @@ def _score_layout_profile(layout_name: str, normalized_text: str, terms: tuple[t
         score *= ANCHOR_MISS_MULTIPLIER
 
     return min(score, 1.0)
+
+
+def _score_declarative_layout_profile(
+    profile: DeclarativeLayoutProfile, normalized_text: str, structure_score: float
+) -> float:
+    score = score_layout_profile(profile, normalized_text, structure_score=structure_score)
+    if score < profile.min_score_hint:
+        return 0.0
+    return score
 
 
 def _score_generic_statement(normalized_text: str) -> float:
@@ -169,6 +192,4 @@ def _should_use_specific_profile(*, specific_best_score: float, generic_score: f
 
 
 def _normalize_text(value: str) -> str:
-    upper = unicodedata.normalize("NFKD", value.upper())
-    without_accents = "".join(ch for ch in upper if not unicodedata.combining(ch))
-    return re.sub(r"\s+", " ", without_accents).strip()
+    return normalize_upper_text(value)

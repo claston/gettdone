@@ -1,9 +1,8 @@
-import re
-import unicodedata
 from datetime import datetime
 
 from app.application.errors import InvalidFileContentError
 from app.application.models import NormalizedTransaction
+from app.application.normalization.text import normalize_description_text
 
 DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y%m%d")
 KNOWN_ESTABLISHMENTS = (
@@ -49,11 +48,7 @@ def _normalize_date(raw: str) -> str:
 
 
 def _normalize_description(raw: str) -> str:
-    value = unicodedata.normalize("NFKD", str(raw).strip().upper())
-    without_accents = "".join(ch for ch in value if not unicodedata.combining(ch))
-    alnum_spaced = re.sub(r"[^A-Z0-9]+", " ", without_accents)
-    cleaned = " ".join(alnum_spaced.split())
-    return _standardize_establishment(cleaned)
+    return _standardize_establishment(normalize_description_text(raw))
 
 
 def _normalize_amount(amount: float, raw_type: str, description: str) -> float:

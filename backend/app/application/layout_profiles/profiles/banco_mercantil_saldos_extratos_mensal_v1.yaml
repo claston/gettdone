@@ -1,0 +1,398 @@
+meta_model:
+  layout_id: banco_mercantil_saldos_extratos_mensal_v1
+  bank: Banco Mercantil
+  channel: unknown
+  statement_type: conta_corrente_extrato_mensal
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo/texto 'BANCO MERCANTIL' visível no topo direito"
+      - "Título 'Saldos e Extratos' no topo esquerdo"
+      - "Texto 'Extrato de Julho / 2024'"
+      - "Campo 'Agência / Conta'"
+      - "Data/hora de emissão visível: '01/08/2024 - 14:24'"
+      - "Linha de contexto 'Saldo Anterior'"
+      - "Agrupamento mensal 'JULHO'"
+      - "Linhas de lançamento com dia numérico, descrição e valor"
+      - "Valores negativos aparecem em vermelho com hífen ao final, exemplo 'R$ 6.516,47-'"
+    weak:
+      - "Dados de agência/conta e saldo anterior estão ocultos ou ilegíveis"
+      - "Não há cabeçalho tabular formal com nomes de colunas"
+      - "Não há coluna de documento visível"
+      - "Não há coluna de saldo por transação visível no recorte"
+      - "Todas as linhas visíveis têm a mesma descrição 'PG.FICHA COMPI.BANK' e valores negativos"
+    table_headers:
+      - "Saldo Anterior"
+      - "JULHO"
+  page_structure:
+    header:
+      bank_logo: "Banco Mercantil"
+      title: "Saldos e Extratos"
+      account_identifiers:
+        agency: unknown
+        account: unknown
+      generated_at: "01/08/2024 - 14:24"
+    metadata:
+      statement_label: "Extrato de Julho / 2024"
+      period: "Julho/2024"
+      opening_balance_label: "Saldo Anterior"
+      opening_balance_value: unknown
+    transactions_table:
+      representation: "grouped_month_list"
+      month_group: "JULHO"
+      columns_inferred:
+        - "day"
+        - "description"
+        - "amount"
+      visible_rows:
+        - type: normal_transaction
+          day: "01"
+          description: "PG.FICHA COMPI.BANK"
+          document: unknown
+          amount: "R$ 6.516,47-"
+          balance: unknown
+        - type: normal_transaction
+          day: "01"
+          description: "PG.FICHA COMPI.BANK"
+          document: unknown
+          amount: "R$ 2.436,42-"
+          balance: unknown
+        - type: normal_transaction
+          day: "01"
+          description: "PG.FICHA COMPI.BANK"
+          document: unknown
+          amount: "R$ 3.269,03-"
+          balance: unknown
+        - type: normal_transaction
+          day: "01"
+          description: "PG.FICHA COMPI.BANK"
+          document: unknown
+          amount: "R$ 931,49-"
+          balance: unknown
+        - type: normal_transaction
+          day: "01"
+          description: "PG.FICHA COMPI.BANK"
+          document: unknown
+          amount: "R$ 7.420,50-"
+          balance: unknown
+        - type: normal_transaction
+          day: "01"
+          description: "PG.FICHA COMPI.BANK"
+          document: unknown
+          amount: "R$ 9.894,25-"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo Anterior"
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "opening_balance_context"
+      inferred: false
+    normal_transaction:
+      row_has_day: true
+      row_has_description: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece sem hífen ao final"
+        - "Valor aparece com sinal positivo explícito, se presente"
+      negative_when:
+        - "Valor termina com hífen '-'"
+        - "Valor aparece em vermelho com hífen ao final"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      opening_balance_context_exists: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "*"
+        reason: "Não há exemplos de crédito visíveis; usar formato de sinal do valor no PDF real"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "PG.FICHA COMPI.BANK"
+        reason: "Linhas visíveis possuem valores em vermelho com hífen ao final"
+        inferred: false
+    caution:
+      - "Este layout usa negativo com hífen no final do valor, exemplo 'R$ 6.516,47-'."
+      - "Não há cabeçalho de tabela explícito; parsing depende de agrupador mensal e posições visuais."
+      - "Não importar 'Saldo Anterior' como transação."
+      - "Não há saldo por transação nem documento visível."
+      - "Datas aparecem apenas como dia do mês; mês/ano devem ser inferidos de 'Extrato de Julho / 2024' ou do agrupador 'JULHO'."
+  visual_model:
+    table_anchor:
+      starts_after_text: "JULHO"
+      header_keywords:
+        - "Saldo Anterior"
+      group_by_month: true
+    column_order:
+      - day
+      - description
+      - amount
+    row_behavior:
+      separator: "whitespace list without grid lines"
+      day_repeated_per_transaction: true
+      description_uppercase_bold: true
+      amount_right_aligned: true
+      negative_amount_color: "red"
+      negative_amount_trailing_minus: true
+      no_document_column: true
+      no_balance_column: true
+  parser_risks:
+    ambiguities:
+      - "Não há cabeçalho formal de colunas; parser deve usar posições e padrões."
+      - "Não há exemplos de crédito para confirmar representação de entradas."
+      - "A descrição 'PG.FICHA COMPI.BANK' pode ser abreviada e específica do banco."
+      - "Datas precisam ser completadas com mês/ano do cabeçalho."
+      - "Não há saldo por linha para validação aritmética."
+      - "Canal de origem não está visível."
+    fields_that_may_be_missing:
+      - "document"
+      - "balance"
+      - "agency"
+      - "account"
+      - "channel"
+      - "opening_balance_value"
+      - "full_date"
+    cases_that_need_real_pdf_validation:
+      - "Se valores positivos aparecem sem hífen final ou com cor diferente."
+      - "Se o hífen final é preservado na camada textual do PDF."
+      - "Se há documentos ou detalhes em linhas ocultas/fora do recorte."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Se há saldo final, saldo do dia ou totais no final do extrato."
+      - "Se o cabeçalho e agrupador mensal se repetem em páginas seguintes."
+
+layout_profile:
+  profile_name: banco_mercantil_saldos_extratos_mensal_v1
+  bank: Banco Mercantil
+  layout_family: mercantil_saldos_extratos_lista_mensal
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "BANCO MERCANTIL"
+      - "Saldos e Extratos"
+      - "Extrato de"
+      - "Agência / Conta"
+      - "Saldo Anterior"
+      - "JULHO"
+      - "R$"
+    optional_keywords:
+      - "PG.FICHA COMPI.BANK"
+      - "01/08/2024"
+      - "Julho / 2024"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "banco BRB"
+      - "banco bmg"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.8
+  table_detection:
+    header_keywords:
+      - "Saldo Anterior"
+      - "JULHO"
+    expected_column_order:
+      - date
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "day"
+        - "Dia"
+        - "Data"
+      description:
+        - "description"
+        - "Descrição"
+        - "Histórico"
+      document:
+        - "Documento"
+        - "Doc."
+      amount:
+        - "R$"
+        - "Valor"
+      balance:
+        - "Saldo"
+    table_starts_after:
+      - "Saldo Anterior"
+      - "JULHO"
+    row_separator_hint: "transaction row starts with two-digit day followed by uppercase description and amount at far right"
+  parsing:
+    date_format: "dd"
+    date_month_year_source: "statement_label_or_month_group"
+    month_language: "pt-BR"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "R$ {amount}-"
+      - "{amount}-"
+      - "-R$ {amount}"
+    positive_patterns:
+      - "R$ {amount_without_trailing_minus}"
+      - "{amount_without_trailing_minus}"
+    ignore_rows:
+      - "BANCO MERCANTIL"
+      - "Saldos e Extratos"
+      - "Extrato de"
+      - "Agência / Conta"
+      - "Saldo Anterior"
+      - "SALDO ANTERIOR"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+      - "JANEIRO"
+      - "FEVEREIRO"
+      - "MARÇO"
+      - "ABRIL"
+      - "MAIO"
+      - "JUNHO"
+      - "JULHO"
+      - "AGOSTO"
+      - "SETEMBRO"
+      - "OUTUBRO"
+      - "NOVEMBRO"
+      - "DEZEMBRO"
+    opening_balance_rows:
+      - "Saldo Anterior"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "trailing_negative_sign"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "visual_color_when_available"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "PG.FICHA COMPI.BANK"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem hífen final e cor vermelha"
+    cautions:
+      - "Não aplicar negativo duas vezes em valores com hífen final."
+      - "Não usar apenas a descrição quando o valor/sinal estiver disponível."
+      - "Se valor vier sem hífen final, tratar como positivo pela regra geral, mas validar com PDFs reais."
+      - "Sem saldo por linha, validação aritmética é limitada."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+      - "keep_bank_abbreviations"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "PG.FICHA COMPI.BANK"
+        category: "pagamento_boleto_ficha_compensacao"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "DOC"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 3
+    reject_if_missing_headers:
+      - "Saldos e Extratos"
+      - "Saldo Anterior"
+      - "R$"
+    balance_consistency_check:
+      enabled: false
+      method: "not_available_without_balance_column"
+      tolerance: unknown
+    needs_manual_review_when:
+      - "month_year_context_missing"
+      - "amount_without_trailing_minus_and_description_ambiguous"
+      - "credit_representation_unknown"
+      - "description_abbreviation_unknown"
+      - "ocr_confidence_low_on_trailing_minus"
+      - "row_spans_multiple_lines"
+      - "opening_balance_value_missing"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "01/07/2024"
+        raw_description: "PG.FICHA COMPI.BANK"
+        raw_document: unknown
+        raw_amount: "R$ 6.516,47-"
+        raw_balance: unknown
+        normalized_amount: "-6516.47"
+        should_import_as_transaction: true
+        notes: "Hífen final indica débito; mês/ano inferido do extrato de Julho/2024"
+      - raw_date: "01/07/2024"
+        raw_description: "PG.FICHA COMPI.BANK"
+        raw_document: unknown
+        raw_amount: "R$ 2.436,42-"
+        raw_balance: unknown
+        normalized_amount: "-2436.42"
+        should_import_as_transaction: true
+        notes: "Hífen final indica débito"
+      - raw_date: "01/07/2024"
+        raw_description: "PG.FICHA COMPI.BANK"
+        raw_document: unknown
+        raw_amount: "R$ 3.269,03-"
+        raw_balance: unknown
+        normalized_amount: "-3269.03"
+        should_import_as_transaction: true
+        notes: "Hífen final indica débito"
+      - raw_date: "01/07/2024"
+        raw_description: "PG.FICHA COMPI.BANK"
+        raw_document: unknown
+        raw_amount: "R$ 931,49-"
+        raw_balance: unknown
+        normalized_amount: "-931.49"
+        should_import_as_transaction: true
+        notes: "Hífen final indica débito"
+      - raw_date: "01/07/2024"
+        raw_description: "PG.FICHA COMPI.BANK"
+        raw_document: unknown
+        raw_amount: "R$ 7.420,50-"
+        raw_balance: unknown
+        normalized_amount: "-7420.50"
+        should_import_as_transaction: true
+        notes: "Hífen final indica débito"
+  implementation_notes:
+    - "Classificar pelo logo Banco Mercantil e título 'Saldos e Extratos'."
+    - "Este layout é uma lista mensal sem cabeçalho de colunas formal."
+    - "Completar datas usando o agrupador/mês do extrato."
+    - "Implementar suporte a negativo com hífen final após o valor."
+    - "Não exigir documento nem saldo por transação."
+    - "Não importar saldo anterior como transação."
+    - "Validar com PDFs reais como créditos e saldos finais são representados."

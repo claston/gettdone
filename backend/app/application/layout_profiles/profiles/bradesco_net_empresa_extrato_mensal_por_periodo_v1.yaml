@@ -1,0 +1,456 @@
+meta_model:
+  layout_id: bradesco_net_empresa_extrato_mensal_por_periodo_v1
+  bank: Bradesco
+  channel: Bradesco Net Empresa
+  statement_type: conta_corrente_extrato_mensal_por_periodo
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo Bradesco visível no topo esquerdo"
+      - "Texto 'net empresa' abaixo do logo"
+      - "Título 'Extrato Mensal / Por Período'"
+      - "Campo 'Data da operação'"
+      - "Indicação de página 'Folha 1/1'"
+      - "Bloco de resumo com 'Agência | Conta', 'Total Disponível (R$)' e 'Total (R$)'"
+      - "Linha 'Extrato de: Ag: | CC: | Entre ... e ...'"
+      - "Tabela com colunas 'Data', 'Lançamento', 'Dcto.', 'Crédito (R$)', 'Débito (R$)', 'Saldo (R$)'"
+    weak:
+      - "Dados de agência, conta e cliente estão omitidos ou ilegíveis"
+      - "Os valores negativos aparecem em vermelho"
+      - "Créditos aparecem em azul"
+      - "Algumas descrições ocupam múltiplas linhas"
+    table_headers:
+      - "Data"
+      - "Lançamento"
+      - "Dcto."
+      - "Crédito (R$)"
+      - "Débito (R$)"
+      - "Saldo (R$)"
+  page_structure:
+    header:
+      bank_logo: "Bradesco"
+      channel_title: "net empresa"
+      title: "Extrato Mensal / Por Período"
+      operation_datetime: "15/04/2024 - 08h58"
+      page_indicator: "Folha 1/1"
+    metadata:
+      account_summary:
+        agency_account_label: "Agência | Conta"
+        total_available_label: "Total Disponível (R$)"
+        total_label: "Total (R$)"
+        total_available_value: "-4.588,18"
+        total_value: "-4.588,18"
+      extract_period:
+        label: "Extrato de"
+        agency: unknown
+        account: unknown
+        start_date: "01/02/2024"
+        end_date: "29/02/2024"
+    transactions_table:
+      columns:
+        - "Data"
+        - "Lançamento"
+        - "Dcto."
+        - "Crédito (R$)"
+        - "Débito (R$)"
+        - "Saldo (R$)"
+      visible_rows:
+        - type: opening_balance
+          date: "31/01/2024"
+          description: "SALDO ANTERIOR"
+          document: unknown
+          credit: unknown
+          debit: unknown
+          balance: "-441,66"
+        - type: normal_transaction
+          date: "02/02/2024"
+          description: "TARIFA BANCARIA TRANSF PGTO PIX"
+          document: "310124"
+          credit: unknown
+          debit: "-7,00"
+          balance: "-448,66"
+        - type: normal_transaction
+          date: unknown
+          description: "ENCARGOS LIMITE DE CRED ENCARGO - 15,84%"
+          document: "2955661"
+          credit: unknown
+          debit: "-2,17"
+          balance: "-450,83"
+        - type: normal_transaction
+          date: unknown
+          description: "IOF S/ UTILIZACAO LIMITE"
+          document: "2955661"
+          credit: unknown
+          debit: "-1,70"
+          balance: "-452,53"
+        - type: normal_transaction
+          date: "05/02/2024"
+          description: "LIQUIDACAO DE COBRANCA Valor Disponivel"
+          document: "9016818"
+          credit: "5,00"
+          debit: unknown
+          balance: "-447,53"
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+        - "SALDO DO DIA"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: "Saldo (R$)"
+      inferred: false
+    normal_transaction:
+      row_has_description: true
+      row_may_have_date: true
+      row_may_have_document: true
+      row_may_have_credit: true
+      row_may_have_debit: true
+      row_has_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece na coluna 'Crédito (R$)'"
+      negative_when:
+        - "Valor aparece na coluna 'Débito (R$)'"
+        - "Valor aparece com sinal negativo em vermelho na coluna 'Débito (R$)'"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "Saldo (R$)"
+      may_be_negative: true
+      negative_values_use_minus_sign: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "LIQUIDACAO DE COBRANCA"
+        reason: "Linha visível possui valor na coluna Crédito (R$)"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "TARIFA BANCARIA"
+        reason: "Linha visível possui valor na coluna Débito (R$)"
+        inferred: false
+      - pattern: "ENCARGOS LIMITE DE CRED"
+        reason: "Linha visível possui valor na coluna Débito (R$)"
+        inferred: false
+      - pattern: "IOF S/ UTILIZACAO LIMITE"
+        reason: "Linha visível possui valor na coluna Débito (R$)"
+        inferred: false
+    caution:
+      - "Neste layout há colunas separadas de crédito e débito; não inferir sinal somente pela descrição."
+      - "Valores de débito aparecem com sinal negativo, mas a coluna Débito já define saída."
+      - "Algumas linhas podem não repetir a data; nesses casos a data deve ser herdada da linha anterior apenas se o PDF confirmar agrupamento visual."
+      - "Descrições podem quebrar em múltiplas linhas dentro do mesmo lançamento."
+      - "Linhas de saldo devem ser usadas como contexto, não como transação."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Data Lançamento Dcto. Crédito (R$) Débito (R$) Saldo (R$)"
+      header_keywords:
+        - "Data"
+        - "Lançamento"
+        - "Dcto."
+        - "Crédito (R$)"
+        - "Débito (R$)"
+        - "Saldo (R$)"
+    column_order:
+      - date
+      - description
+      - document
+      - credit
+      - debit
+      - balance
+    row_behavior:
+      separator: "horizontal lines above section headers and table header"
+      date_may_be_blank_on_continuation_or_same_day_rows: true
+      description_multiline_possible: true
+      document_right_of_description: true
+      credit_right_aligned: true
+      debit_right_aligned: true
+      balance_right_aligned: true
+      debit_and_negative_balance_color: "red"
+      credit_color: "blue"
+  parser_risks:
+    ambiguities:
+      - "Linhas sem data podem ser novas transações do mesmo dia ou continuação do lançamento anterior"
+      - "A imagem mostra recorte parcial do extrato; não dá para confirmar rodapé, totais ou paginação completa"
+      - "Algumas descrições quebram em duas linhas, como tarifa PIX e encargos"
+      - "Valores de débito já aparecem negativos; evitar aplicar sinal negativo duas vezes"
+      - "Documento pode estar ausente em linhas de saldo ou em algumas transações"
+    fields_that_may_be_missing:
+      - "date"
+      - "document"
+      - "agency"
+      - "account"
+      - "credit"
+      - "debit"
+    cases_that_need_real_pdf_validation:
+      - "Se linhas sem data devem herdar data anterior ou compõem descrições multilinha"
+      - "Como a camada textual do PDF separa colunas Crédito e Débito"
+      - "Se valores negativos em Débito vêm com sinal '-' ou apenas por coluna/cor"
+      - "Como saldos do dia e saldos finais aparecem"
+      - "Se cabeçalho repete em páginas seguintes"
+      - "Se descrição multilinha preserva ordem correta"
+
+layout_profile:
+  profile_name: bradesco_net_empresa_extrato_mensal_por_periodo_v1
+  bank: Bradesco
+  layout_family: bradesco_net_empresa_extrato_mensal_por_periodo
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "bradesco"
+      - "net empresa"
+      - "Extrato Mensal / Por Período"
+      - "Data da operação"
+      - "Agência | Conta"
+      - "Total Disponível (R$)"
+      - "Extrato de"
+      - "Data"
+      - "Lançamento"
+      - "Crédito (R$)"
+      - "Débito (R$)"
+      - "Saldo (R$)"
+    optional_keywords:
+      - "Folha"
+      - "Dcto."
+      - "Total (R$)"
+      - "SALDO ANTERIOR"
+      - "Entre"
+      - "Ag:"
+      - "CC:"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Itaú"
+      - "Fatura"
+      - "Cartão de Crédito"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Lançamento"
+      - "Dcto."
+      - "Crédito (R$)"
+      - "Débito (R$)"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - description
+      - document
+      - credit
+      - debit
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Lançamento"
+        - "Historico"
+        - "Histórico"
+      document:
+        - "Dcto."
+        - "Documento"
+        - "Doc."
+      amount:
+        - "Crédito (R$)"
+        - "Débito (R$)"
+      balance:
+        - "Saldo (R$)"
+        - "Saldo"
+    table_starts_after:
+      - "Data Lançamento Dcto. Crédito (R$) Débito (R$) Saldo (R$)"
+      - "Extrato de"
+    row_separator_hint: "rows are primarily column-aligned; new transaction usually has date or aligned description/document/amount"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "value_in_debit_column"
+      - "-{amount}"
+      - "red_text_in_debit_or_balance"
+    positive_patterns:
+      - "value_in_credit_column"
+      - "{amount_without_minus_in_credit_column}"
+      - "blue_text_in_credit_column"
+    ignore_rows:
+      - "Extrato Mensal / Por Período"
+      - "Data da operação"
+      - "Folha"
+      - "Agência | Conta"
+      - "Total Disponível (R$)"
+      - "Total (R$)"
+      - "Extrato de"
+      - "Ag:"
+      - "CC:"
+      - "Entre"
+      - "Data"
+      - "Lançamento"
+      - "Dcto."
+      - "Crédito (R$)"
+      - "Débito (R$)"
+      - "Saldo (R$)"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - description
+      - amount
+    optional_transaction_fields:
+      - date
+      - document
+      - credit
+      - debit
+      - balance
+      - continuation_description
+  sign_rules:
+    priority_order:
+      - "credit_or_debit_column"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "LIQUIDACAO DE COBRANCA"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Exemplo visível aparece na coluna Crédito (R$)"
+      - pattern: "TARIFA BANCARIA"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Exemplo visível aparece na coluna Débito (R$)"
+      - pattern: "ENCARGOS LIMITE DE CRED"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Exemplo visível aparece na coluna Débito (R$)"
+      - pattern: "IOF S/ UTILIZACAO LIMITE"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Exemplo visível aparece na coluna Débito (R$)"
+    cautions:
+      - "Não aplicar negativo duas vezes quando valor em Débito já vier com '-'"
+      - "Não usar cor como única regra; PDFs podem perder informação de cor"
+      - "Se crédito e débito estiverem preenchidos na mesma linha, marcar para revisão manual"
+      - "Se linha sem data tiver valor, decidir por coordenadas se é nova transação do mesmo dia"
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "join_multiline_description_until_next_transaction_boundary"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "TARIFA BANCARIA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "TRANSF PGTO PIX"
+        category: "pix_pagamento"
+        inferred: true
+      - pattern: "ENCARGOS LIMITE DE CRED"
+        category: "juros_encargos"
+        inferred: true
+      - pattern: "IOF S/ UTILIZACAO LIMITE"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "LIQUIDACAO DE COBRANCA"
+        category: "recebimento_cobranca"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TRANSF"
+        category: "transferencia"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "ENCARGOS"
+        category: "encargos"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 6
+    reject_if_missing_headers:
+      - "Data"
+      - "Lançamento"
+      - "Crédito"
+      - "Débito"
+      - "Saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "when_previous_and_current_balance_are_available_validate_current_balance_equals_previous_balance_plus_credit_minus_debit"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "both_credit_and_debit_present_same_row"
+      - "credit_or_debit_missing_but_balance_changes"
+      - "date_missing_on_row_with_amount"
+      - "multiline_description_detected"
+      - "document_overlaps_with_description_or_amount"
+      - "debit_value_has_minus_and_parser_already_negated_by_column"
+      - "ocr_confidence_low_on_amount_or_date"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "31/01/2024"
+        raw_description: "SALDO ANTERIOR"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "-441,66"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo anterior; usar como saldo inicial/contexto"
+      - raw_date: "02/02/2024"
+        raw_description: "TARIFA BANCARIA TRANSF PGTO PIX"
+        raw_document: "310124"
+        raw_amount: "-7,00"
+        raw_balance: "-448,66"
+        normalized_amount: "-7.00"
+        should_import_as_transaction: true
+        notes: "Valor aparece na coluna Débito (R$); saída"
+      - raw_date: unknown
+        raw_description: "ENCARGOS LIMITE DE CRED ENCARGO - 15,84%"
+        raw_document: "2955661"
+        raw_amount: "-2,17"
+        raw_balance: "-450,83"
+        normalized_amount: "-2.17"
+        should_import_as_transaction: true
+        notes: "Data não visível nesta linha; provavelmente herda 02/02/2024, mas requer validação com PDF real"
+      - raw_date: unknown
+        raw_description: "IOF S/ UTILIZACAO LIMITE"
+        raw_document: "2955661"
+        raw_amount: "-1,70"
+        raw_balance: "-452,53"
+        normalized_amount: "-1.70"
+        should_import_as_transaction: true
+        notes: "Data não visível nesta linha; requer regra de herança/agrupamento validada"
+      - raw_date: "05/02/2024"
+        raw_description: "LIQUIDACAO DE COBRANCA Valor Disponivel"
+        raw_document: "9016818"
+        raw_amount: "5,00"
+        raw_balance: "-447,53"
+        normalized_amount: "5.00"
+        should_import_as_transaction: true
+        notes: "Valor aparece na coluna Crédito (R$); entrada"
+  implementation_notes:
+    - "Classificar pelo conjunto 'Bradesco', 'net empresa' e 'Extrato Mensal / Por Período'."
+    - "Detectar tabela pelas colunas separadas de Crédito e Débito."
+    - "Normalizar crédito como positivo e débito como negativo."
+    - "Evitar dupla negativação em débitos que já vêm com sinal '-'."
+    - "Unir descrições multilinha até identificar nova transação por data/colunas de valor/documento."
+    - "Linhas sem data podem ser transações do mesmo dia; validar por coordenadas e PDF real."
+    - "Usar saldo para validação quando disponível."

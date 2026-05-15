@@ -26,9 +26,24 @@
 
   const analysisIdNode = document.getElementById("analysis-id");
   const processingIdNode = document.getElementById("processing-id");
+  const quotaRemainingLabelNode = document.getElementById("quota-remaining-label");
   const quotaRemainingNode = document.getElementById("quota-remaining");
+  const downloadSingleBtn = document.getElementById("download-report-btn");
   const downloadOfxBtn = document.getElementById("download-ofx-btn");
-  const VIEW_STATE_KEY = "ofxsimples_ofx_convert_view_state_v1";
+  const downloadExcelBtn = document.getElementById("download-excel-btn");
+  const hasDualDownloadButtons = Boolean(downloadOfxBtn && downloadExcelBtn);
+  const defaultDownloadBtn = downloadSingleBtn || downloadOfxBtn;
+  const outputFormat = hasDualDownloadButtons
+    ? "ofx"
+    : String(document.body.getAttribute("data-output-format") || "ofx")
+      .trim()
+      .toLowerCase() === "excel"
+      ? "excel"
+      : "ofx";
+  const requireAuthAccess = String(document.body.getAttribute("data-require-auth") || "").trim().toLowerCase() === "true";
+  const PUBLIC_CONVERT_PATH = "./convert.html";
+  const INTERNAL_LOGIN_URL = "./login.html?next=%2Fofx-convert.html&force_auth=1";
+  const VIEW_STATE_KEY = `ofxsimples_ofx_convert_view_state_${outputFormat}_v1`;
 
   const state = {
     analysisId: null,
@@ -44,7 +59,71 @@
     lastChangedRowKind: null,
     rowHighlightTimer: null,
     quotaMode: "conversion",
+    quotaRemaining: null,
+    quotaLimit: null,
+    closingBalanceOverride: null,
+    bankBranchOverride: "",
+    accountNumberOverride: "",
+    bankCodeOverride: "",
   };
+  let bankCodeOptions = [{ code: "", label: "Selecione o banco", name: "", short_name: "", aliases: [] }];
+
+  function isPagesQuotaMode(mode) {
+    return String(mode || "").toLowerCase() === "pages";
+  }
+
+  function normalizeQuotaMode(mode) {
+    return isPagesQuotaMode(mode) ? "pages" : "conversion";
+  }
+
+  function inferQuotaModeFromText(value) {
+    return /p[áa]ginas/i.test(String(value || "")) ? "pages" : "conversion";
+  }
+
+  function updateQuotaRemainingLabel() {
+    if (!quotaRemainingLabelNode) {
+      return;
+    }
+    quotaRemainingLabelNode.textContent = isPagesQuotaMode(state.quotaMode)
+      ? "páginas restantes:"
+      : "conversões restantes:";
+  }
+
+  function updateQuotaRemainingValue(remaining, limit) {
+    const parsedRemaining = Number(remaining);
+    const parsedLimit = Number(limit);
+    const hasNumbers = Number.isFinite(parsedRemaining) && Number.isFinite(parsedLimit);
+    const quotaLabel = isPagesQuotaMode(state.quotaMode) ? "páginas" : "conversões";
+    if (quotaRemainingNode) {
+      quotaRemainingNode.textContent = hasNumbers ? `${parsedRemaining} / ${parsedLimit} (${quotaLabel})` : "-";
+    }
+    updateQuotaRemainingLabel();
+  }
+
+  function parseQuotaNumbersFromText(value) {
+    const match = String(value || "").match(/(\d+)\s*\/\s*(\d+)/);
+    if (!match) {
+      return null;
+    }
+    const remaining = Number(match[1]);
+    const limit = Number(match[2]);
+    if (!Number.isFinite(remaining) || !Number.isFinite(limit)) {
+      return null;
+    }
+    return { remaining, limit };
+  }
+
+  function setDownloadButtonsDisabled(isDisabled) {
+    if (defaultDownloadBtn) {
+      defaultDownloadBtn.disabled = isDisabled;
+    }
+    if (downloadOfxBtn) {
+      downloadOfxBtn.disabled = isDisabled;
+    }
+    if (downloadExcelBtn) {
+      downloadExcelBtn.disabled = isDisabled;
+    }
+  }
 
   function isDraftRowId(rowId) {
     return String(rowId || "").startsWith("row_draft_");
@@ -259,6 +338,28 @@
     }
   }
 
+  function redirectToInternalLogin() {
+    window.location.replace(INTERNAL_LOGIN_URL);
+  }
+
+  async function enforceAuthenticatedAccess() {
+    if (!requireAuthAccess) {
+      return true;
+    }
+    const token = getUserToken();
+    if (!token) {
+      redirectToInternalLogin();
+      return false;
+    }
+    const sessionState = await getSessionValidationState();
+    if (sessionState !== "valid") {
+      clearUserToken();
+      redirectToInternalLogin();
+      return false;
+    }
+    return true;
+  }
+
   function buildOptionalAuthHeaders(userToken) {
     const token = String(userToken || "").trim();
     if (!token) {
@@ -299,6 +400,33 @@
       return `${year}-${month}-${day}`;
     }
     return null;
+  }
+
+  function toIsoDateInputValue(value) {
+    const raw = String(value || "").trim();
+    if (!raw) {
+      return "";
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      return raw;
+    }
+    const brMatch = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (brMatch) {
+      const [, day, month, year] = brMatch;
+      return `${year}-${month}-${day}`;
+    }
+    return "";
+  }
+
+  function applyDateInputMask(value) {
+    const digits = String(value || "").replace(/\D/g, "").slice(0, 8);
+    if (digits.length <= 2) {
+      return digits;
+    }
+    if (digits.length <= 4) {
+      return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+    }
+    return `${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4)}`;
   }
 
   function formatFileSize(bytes) {
@@ -448,7 +576,7 @@
         topAuthPrimaryLink.textContent = "Converter agora";
         topAuthPrimaryLink.classList.remove("top-account-trigger");
       }
-      topAuthPrimaryLink.setAttribute("href", hasSession ? "./client-area.html" : "./ofx-convert.html");
+      topAuthPrimaryLink.setAttribute("href", hasSession ? "./client-area.html" : PUBLIC_CONVERT_PATH);
     }
   }
 
@@ -580,6 +708,13 @@
         preview_transactions: previewRowsNoRowId,
       },
       quota_text: quotaRemainingNode.textContent || "-",
+      quota_mode: state.quotaMode,
+      quota_remaining: state.quotaRemaining,
+      quota_limit: state.quotaLimit,
+      closing_balance_override: state.closingBalanceOverride,
+      bank_branch_override: state.bankBranchOverride,
+      account_number_override: state.accountNumberOverride,
+      bank_code_override: state.bankCodeOverride,
       file_name,
       file_size,
       preview_rows: previewRowsNoRowId,
@@ -644,16 +779,22 @@
     state.analysisSnapshot = null;
     state.lastChangedRowId = null;
     state.lastChangedRowKind = null;
+    state.quotaRemaining = null;
+    state.quotaLimit = null;
+    state.closingBalanceOverride = null;
+    state.bankBranchOverride = "";
+    state.accountNumberOverride = "";
+    state.bankCodeOverride = "";
     markChangedRow(null);
     if (addRowBtn) addRowBtn.disabled = true;
-    if (downloadOfxBtn) downloadOfxBtn.disabled = true;
+    setDownloadButtonsDisabled(true);
     reviewRows.innerHTML = "";
     kpis.innerHTML = "";
     reviewSection.classList.add("hidden");
     downloadSection.classList.add("hidden");
     if (analysisIdNode) analysisIdNode.textContent = "-";
     if (processingIdNode) processingIdNode.textContent = "-";
-    quotaRemainingNode.textContent = "-";
+    updateQuotaRemainingValue(null, null);
     setLoading(false);
     setSelectedFileLabel();
     clearViewState();
@@ -677,24 +818,166 @@
     return "1";
   }
 
+  function toMoneyInputValue(value) {
+    const numeric = Number(value || 0);
+    if (!Number.isFinite(numeric)) {
+      return "0,00";
+    }
+    return numeric.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  function parsePtBrMoney(value) {
+    const raw = String(value || "").trim();
+    if (!raw) {
+      return null;
+    }
+
+    let normalized = raw.replace(/\s+/g, "");
+    let negative = false;
+
+    if (normalized.startsWith("(") && normalized.endsWith(")")) {
+      negative = true;
+      normalized = normalized.slice(1, -1);
+    }
+    if (/[dD]$/.test(normalized)) {
+      negative = true;
+      normalized = normalized.slice(0, -1);
+    }
+    if (normalized.startsWith("-")) {
+      negative = true;
+      normalized = normalized.slice(1);
+    }
+    if (normalized.startsWith("+")) {
+      normalized = normalized.slice(1);
+    }
+
+    normalized = normalized.replace(/\./g, "").replace(",", ".");
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed)) {
+      return null;
+    }
+    return negative ? -parsed : parsed;
+  }
+
+  function normalizeDigits(value) {
+    return String(value || "").replace(/\D+/g, "");
+  }
+
+  function normalizeDashedNumeric(value, maxLeft, maxRight) {
+    const sanitized = String(value || "").replace(/[^\d-]/g, "");
+    const firstHyphen = sanitized.indexOf("-");
+    if (firstHyphen < 0) {
+      return normalizeDigits(sanitized).slice(0, maxLeft);
+    }
+    const left = normalizeDigits(sanitized.slice(0, firstHyphen)).slice(0, maxLeft);
+    const right = normalizeDigits(sanitized.slice(firstHyphen + 1)).slice(0, maxRight);
+    if (!right) {
+      return `${left}-`;
+    }
+    return `${left}-${right}`;
+  }
+
+  function normalizeBankBranchDisplay(value) {
+    return normalizeDashedNumeric(value, 4, 1);
+  }
+
+  function normalizeAccountDisplay(value) {
+    return normalizeDashedNumeric(value, 6, 1);
+  }
+
+  function normalizeTextToken(value) {
+    const raw = String(value || "").trim().toLowerCase();
+    if (!raw) {
+      return "";
+    }
+    const folded = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return folded.replace(/[^a-z0-9]+/g, " ").trim();
+  }
+
+  function inferBankCodeFromLayout(layoutName) {
+    const normalized = normalizeTextToken(String(layoutName || "").replace(/[_-]+/g, " "));
+    if (!normalized) {
+      return "";
+    }
+    const compact = normalized.replace(/\s+/g, "");
+    for (const option of bankCodeOptions) {
+      const candidates = [
+        option.name,
+        option.short_name,
+        ...(Array.isArray(option.aliases) ? option.aliases : []),
+      ];
+      for (const candidate of candidates) {
+        const token = normalizeTextToken(candidate);
+        if (!token) continue;
+        const tokenCompact = token.replace(/\s+/g, "");
+        if (normalized.includes(token) || compact.includes(tokenCompact)) {
+          return String(option.code || "");
+        }
+      }
+    }
+    return "";
+  }
+
   function renderKpis(analysis) {
     const pagesConverted = resolveConvertedPages(analysis);
-    const entries = [
-      ["Transações", analysis.transactions_total],
-      ["Páginas convertidas", pagesConverted],
-      ["Entradas", formatCurrency(analysis.total_inflows)],
-      ["Saídas", formatCurrency(analysis.total_outflows)],
-      ["Saldo", formatCurrency(analysis.net_total)],
-    ];
+    const closingBalance = Number.isFinite(Number(state.closingBalanceOverride))
+      ? Number(state.closingBalanceOverride)
+      : Number((analysis && analysis.net_total) || 0);
 
-    kpis.innerHTML = entries
-      .map(([label, value]) => `
-        <article class="kpi">
-          <p class="kpi-label">${label}</p>
-          <p class="kpi-value">${value}</p>
-        </article>
-      `)
-      .join("");
+    const inflows = formatCurrency(analysis.total_inflows);
+    const outflows = formatCurrency(analysis.total_outflows);
+    const closingBalanceValue = toMoneyInputValue(closingBalance);
+    const isOfxFlow = outputFormat === "ofx";
+    const bankBranchValue = normalizeBankBranchDisplay(state.bankBranchOverride);
+    const accountNumberValue = normalizeAccountDisplay(state.accountNumberOverride);
+    const bankCodeValue = String(state.bankCodeOverride || "").trim();
+    const bankOptionsMarkup = bankCodeOptions.map((item) => {
+      const selected = item.code === bankCodeValue ? " selected" : "";
+      return `<option value="${item.code}"${selected}>${item.label}</option>`;
+    }).join("");
+    const ofxMetaRow = isOfxFlow
+      ? `
+      <div class="ofx-meta-row">
+        <p class="kpi-hint">Banco, Agência e Conta</p>
+        <div class="ofx-meta-fields">
+          <select id="bank-code-select" class="kpi-edit-input">${bankOptionsMarkup}</select>
+          <input id="bank-branch-input" class="kpi-edit-input" type="text" inputmode="numeric" placeholder="Agência (ex: 1234-5)" value="${bankBranchValue}" />
+          <input id="account-number-input" class="kpi-edit-input" type="text" inputmode="numeric" placeholder="Conta (ex: 123456-7)" value="${accountNumberValue}" />
+        </div>
+      </div>
+      `
+      : "";
+
+    kpis.innerHTML = `
+      ${ofxMetaRow}
+      <article class="kpi">
+        <p class="kpi-label">Transações</p>
+        <p class="kpi-value">${analysis.transactions_total}</p>
+      </article>
+      <article class="kpi">
+        <p class="kpi-label">Páginas convertidas</p>
+        <p class="kpi-value">${pagesConverted}</p>
+      </article>
+      <article class="kpi">
+        <p class="kpi-label">Entradas</p>
+        <p class="kpi-value">${inflows}</p>
+      </article>
+      <article class="kpi">
+        <p class="kpi-label">Saídas</p>
+        <p class="kpi-value">${outflows}</p>
+      </article>
+      <article class="kpi">
+        <p class="kpi-label">Saldo final</p>
+        ${
+          isOfxFlow
+            ? `<p class="kpi-value-editable"><input id="closing-balance-input" class="kpi-edit-input" type="text" inputmode="decimal" value="${closingBalanceValue}" /></p>`
+            : `<p class="kpi-value">${formatCurrency(closingBalance)}</p>`
+        }
+      </article>
+    `;
   }
 
   function toPositiveMoneyString(value) {
@@ -865,7 +1148,20 @@
     };
     markChangedRow(draftId, "new");
     renderRows();
+    focusEditingDateInput();
     persistCurrentViewState();
+  }
+
+  function focusEditingDateInput() {
+    window.requestAnimationFrame(() => {
+      const dateInput = reviewRows.querySelector('input[data-edit-field="date"]');
+      if (!(dateInput instanceof HTMLInputElement)) {
+        return;
+      }
+      dateInput.focus();
+      const valueLength = dateInput.value.length;
+      dateInput.setSelectionRange(valueLength, valueLength);
+    });
   }
 
   function startEditingRow(rowId) {
@@ -875,7 +1171,7 @@
     }
     state.editingRowId = rowId;
     state.editDraft = {
-      date: formatDate(row.date),
+      date: toIsoDateInputValue(row.date),
       description: row.description || "",
       credit: toPositiveMoneyString(getCreditAmount(row)),
       debit: toPositiveMoneyString(getDebitAmount(row)),
@@ -907,7 +1203,7 @@
     }
     const normalizedDate = normalizeDateInput(state.editDraft.date);
     if (!normalizedDate) {
-      setStatus("Data inválida. Use dd-mm-yyyy.", "error");
+      setStatus("Data inválida. Use o calendário ou o formato dd-mm-aaaa.", "error");
       return;
     }
 
@@ -1001,9 +1297,10 @@
         const rowDeleted = Boolean(row.is_deleted);
         const isEditing = row.rowId === state.editingRowId && state.editDraft;
         if (isEditing) {
+          const editDateValue = toIsoDateInputValue(state.editDraft.date);
           return `
           <tr class="${rowClass}">
-            <td><input class="cell-input cell-input-date" data-edit-field="date" value="${escapeAttr(state.editDraft.date)}" /></td>
+            <td><input class="cell-input cell-input-date" type="date" data-edit-field="date" autocomplete="off" value="${escapeAttr(editDateValue)}" /></td>
             <td><input class="cell-input cell-input-description" data-edit-field="description" value="${escapeAttr(state.editDraft.description)}" /></td>
             <td><input class="cell-input cell-input-money" data-edit-field="credit" inputmode="decimal" placeholder="0,00" value="${escapeAttr(state.editDraft.credit)}" /></td>
             <td><input class="cell-input cell-input-money" data-edit-field="debit" inputmode="decimal" placeholder="0,00" value="${escapeAttr(state.editDraft.debit)}" /></td>
@@ -1027,10 +1324,13 @@
         const debitMarkup = debitAmount !== null
           ? `<span class="amount-debit">${formatCurrency(debitAmount)}</span>`
           : '<span class="amount-empty">—</span>';
+        const descriptionText = String(row.description || "").trim();
+        const descriptionCellText = descriptionText || "-";
+        const descriptionTitleAttr = descriptionText ? ` title="${escapeAttr(descriptionText)}"` : "";
         return `
           <tr class="${rowClass} ${rowDeleted ? "row-deleted" : ""}">
             <td>${formatDate(row.date)}</td>
-            <td>${row.description || "-"}</td>
+            <td${descriptionTitleAttr}>${escapeAttr(descriptionCellText)}</td>
             <td>${creditMarkup}</td>
             <td>${debitMarkup}</td>
             <td class="actions-cell">
@@ -1070,6 +1370,11 @@
     if (viewState.updated_at && !state.analysisSnapshot.updated_at) {
       state.analysisSnapshot.updated_at = viewState.updated_at;
     }
+    const restoredClosingBalance = Number(viewState.closing_balance_override);
+    state.closingBalanceOverride = Number.isFinite(restoredClosingBalance) ? restoredClosingBalance : null;
+    state.bankBranchOverride = normalizeBankBranchDisplay(viewState.bank_branch_override || "");
+    state.accountNumberOverride = normalizeAccountDisplay(viewState.account_number_override || "");
+    state.bankCodeOverride = normalizeDigits(viewState.bank_code_override || "").slice(0, 3);
     state.restoredFileMeta = {
       name: String(viewState.file_name || "").trim() || "arquivo_restaurado.pdf",
       size: Number(viewState.file_size || 0),
@@ -1097,14 +1402,24 @@
 
     if (analysisIdNode) analysisIdNode.textContent = state.analysisId || "-";
     if (processingIdNode) processingIdNode.textContent = state.processingId || "-";
-    quotaRemainingNode.textContent = viewState.quota_text || "-";
+    state.quotaMode = normalizeQuotaMode(viewState.quota_mode || inferQuotaModeFromText(viewState.quota_text));
+    const restoredQuotaRemaining = Number(viewState.quota_remaining);
+    const restoredQuotaLimit = Number(viewState.quota_limit);
+    state.quotaRemaining = Number.isFinite(restoredQuotaRemaining) ? restoredQuotaRemaining : null;
+    state.quotaLimit = Number.isFinite(restoredQuotaLimit) ? restoredQuotaLimit : null;
+    if (state.quotaRemaining !== null && state.quotaLimit !== null) {
+      updateQuotaRemainingValue(state.quotaRemaining, state.quotaLimit);
+    } else {
+      updateQuotaRemainingLabel();
+      quotaRemainingNode.textContent = viewState.quota_text || "-";
+    }
 
     reviewSection.classList.remove("hidden");
     downloadSection.classList.remove("hidden");
     if (addRowBtn) addRowBtn.disabled = false;
 
     const canDownload = Boolean(state.analysisId || state.processingId);
-    if (downloadOfxBtn) downloadOfxBtn.disabled = !canDownload;
+    setDownloadButtonsDisabled(!canDownload);
 
     setStatus("Sessão restaurada. Você pode continuar o download.", "success");
   }
@@ -1150,13 +1465,65 @@
         ...requestInit,
       });
       if (!response.ok) {
+        state.quotaMode = "conversion";
+        updateQuotaRemainingLabel();
         setUploadLimitsText(2 * 1024 * 1024, 5);
         return;
       }
       const me = await response.json().catch(() => ({}));
+      state.quotaMode = normalizeQuotaMode(me.quota_mode);
+      if (state.quotaRemaining !== null && state.quotaLimit !== null) {
+        updateQuotaRemainingValue(state.quotaRemaining, state.quotaLimit);
+      } else {
+        const parsedQuota = parseQuotaNumbersFromText(quotaRemainingNode ? quotaRemainingNode.textContent : "");
+        if (parsedQuota) {
+          state.quotaRemaining = parsedQuota.remaining;
+          state.quotaLimit = parsedQuota.limit;
+          updateQuotaRemainingValue(state.quotaRemaining, state.quotaLimit);
+        } else {
+          updateQuotaRemainingLabel();
+        }
+      }
       setUploadLimitsText(Number(me.max_upload_size_bytes || 2 * 1024 * 1024), Number(me.max_pages_per_file || 5));
     } catch (_error) {
+      state.quotaMode = "conversion";
+      updateQuotaRemainingLabel();
       setUploadLimitsText(2 * 1024 * 1024, 5);
+    }
+  }
+
+  async function loadBankOptions() {
+    try {
+      const response = await fetch(`${apiBase}/banks`, {
+        method: "GET",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        return;
+      }
+      const payload = await response.json();
+      const rows = payload && Array.isArray(payload.banks) ? payload.banks : [];
+      const options = rows
+        .map((item) => ({
+          code: normalizeDigits(item.code || "").slice(0, 3),
+          label: String(item.label || "").trim(),
+          name: String(item.name || "").trim(),
+          short_name: String(item.short_name || "").trim(),
+          aliases: Array.isArray(item.aliases) ? item.aliases.map((value) => String(value || "").trim()).filter(Boolean) : [],
+        }))
+        .filter((item) => item.code && item.label);
+      if (!options.length) {
+        return;
+      }
+      bankCodeOptions = [{ code: "", label: "Selecione o banco", name: "", short_name: "", aliases: [] }, ...options];
+      if ((!state.bankCodeOverride || !String(state.bankCodeOverride).trim()) && state.analysisSnapshot) {
+        state.bankCodeOverride = inferBankCodeFromLayout(state.analysisSnapshot.layout_inference_name || "");
+      }
+      if (state.analysisSnapshot) {
+        renderKpis(state.analysisSnapshot);
+      }
+    } catch (_error) {
+      // Keep fallback option when the catalog endpoint is unavailable.
     }
   }
 
@@ -1219,12 +1586,16 @@
       }
 
       const payload = await postConvert(formData);
-      state.quotaMode = String(payload.quota_mode || "conversion").toLowerCase();
+      state.quotaMode = normalizeQuotaMode(payload.quota_mode);
 
       const analysis = payload.analysis;
       state.analysisId = analysis.analysis_id;
       state.processingId = payload.processing_id || analysis.analysis_id;
       state.analysisSnapshot = { ...analysis };
+      state.closingBalanceOverride = Number(analysis.net_total || 0);
+      state.bankBranchOverride = "";
+      state.accountNumberOverride = "";
+      state.bankCodeOverride = inferBankCodeFromLayout(analysis.layout_inference_name || "");
       markChangedRow(null);
       if (addRowBtn) addRowBtn.disabled = false;
 
@@ -1235,13 +1606,14 @@
 
       if (analysisIdNode) analysisIdNode.textContent = analysis.analysis_id || "-";
       if (processingIdNode) processingIdNode.textContent = state.processingId || "-";
-      const quotaLabel = state.quotaMode === "pages" ? "páginas" : "conversões";
-      quotaRemainingNode.textContent = `${payload.quota_remaining} / ${payload.quota_limit} (${quotaLabel})`;
+      state.quotaRemaining = Number(payload.quota_remaining);
+      state.quotaLimit = Number(payload.quota_limit);
+      updateQuotaRemainingValue(state.quotaRemaining, state.quotaLimit);
 
       reviewSection.classList.remove("hidden");
       downloadSection.classList.remove("hidden");
       const canDownload = Boolean(state.analysisId);
-      if (downloadOfxBtn) downloadOfxBtn.disabled = !canDownload;
+      setDownloadButtonsDisabled(!canDownload);
 
       persistCurrentViewState();
 
@@ -1287,19 +1659,67 @@
     }
   }
 
-  async function runDownloadOfx() {
-    if (!state.processingId) {
+  function resolveDownloadConfig(fileFormat) {
+    if (fileFormat === "excel") {
+      const processingId = state.processingId || state.analysisId;
+      return {
+        format: "excel",
+        reportFormat: "xlsx",
+        targetId: processingId,
+        endpoint: processingId ? `${apiBase}/convert-report/${processingId}` : "",
+        fileName: processingId ? `ofxsimples-${processingId}.xlsx` : "ofxsimples-convert.xlsx",
+        errorMessage: "Falha ao baixar Excel.",
+        networkErrorMessage: "Falha de rede ao baixar Excel.",
+      };
+    }
+    const processingId = state.processingId || state.analysisId;
+    return {
+      format: "ofx",
+      reportFormat: "ofx",
+      targetId: processingId,
+      endpoint: processingId ? `${apiBase}/convert-report/${processingId}` : "",
+      fileName: processingId ? `ofxsimples-${processingId}.ofx` : "ofxsimples-convert.ofx",
+      errorMessage: "Falha ao baixar OFX.",
+      networkErrorMessage: "Falha de rede ao baixar OFX.",
+    };
+  }
+
+  async function runDownloadReport(formatOverride) {
+    const requestedFormat = String(formatOverride || outputFormat).trim().toLowerCase() === "excel" ? "excel" : "ofx";
+    const downloadConfig = resolveDownloadConfig(requestedFormat);
+    if (!downloadConfig.targetId) {
       setStatus("Converta um arquivo antes de baixar.", "error");
       return;
     }
     const query = buildIdentityQueryParams();
-    query.set("format", "ofx");
     const token = getUserToken();
     const headers = buildOptionalAuthHeaders(token);
 
     try {
       setStatus("Preparando download...", null);
-      const response = await fetch(`${apiBase}/convert-report/${state.processingId}?${query.toString()}`, {
+      if (downloadConfig.reportFormat) {
+        query.set("format", downloadConfig.reportFormat);
+      }
+      if (requestedFormat === "ofx") {
+        const closingBalance = Number(state.closingBalanceOverride);
+        if (Number.isFinite(closingBalance)) {
+          query.set("closing_balance", closingBalance.toFixed(2));
+        }
+        const bankBranch = normalizeDigits(state.bankBranchOverride);
+        const accountNumber = normalizeDigits(state.accountNumberOverride);
+        if (bankBranch) {
+          query.set("bank_branch", bankBranch);
+        }
+        if (accountNumber) {
+          query.set("account_number", accountNumber);
+        }
+        const bankCode = normalizeDigits(state.bankCodeOverride || "").slice(0, 3);
+        if (bankCode) {
+          query.set("bank_code", bankCode);
+        }
+      }
+      const url = `${downloadConfig.endpoint}?${query.toString()}`;
+      const response = await fetch(url, {
         method: "GET",
         credentials: "include",
         ...(headers ? { headers } : {}),
@@ -1307,7 +1727,7 @@
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
         const detail = payload && typeof payload === "object" ? payload.detail : null;
-        const message = String(detail || "Falha ao baixar OFX.");
+        const message = String(detail || downloadConfig.errorMessage);
         setStatus(message, "error");
         return;
       }
@@ -1316,14 +1736,14 @@
       const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
-      anchor.download = `ofxsimples-${state.processingId}.ofx`;
+      anchor.download = downloadConfig.fileName;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(objectUrl);
       setStatus("Download iniciado.", "success");
     } catch (_error) {
-      setStatus("Falha de rede ao baixar OFX.", "error");
+      setStatus(downloadConfig.networkErrorMessage, "error");
     }
   }
 
@@ -1421,11 +1841,95 @@
     if (!field || !state.editDraft) {
       return;
     }
+    if (field === "date") {
+      if (target.type === "date") {
+        updateEditDraft(field, target.value);
+        return;
+      }
+      const masked = applyDateInputMask(target.value);
+      if (masked !== target.value) {
+        target.value = masked;
+      }
+      updateEditDraft(field, masked);
+      return;
+    }
     updateEditDraft(field, target.value);
+  });
+  kpis.addEventListener("input", function (event) {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) {
+      return;
+    }
+    if (target.id === "bank-branch-input") {
+      target.value = normalizeBankBranchDisplay(target.value);
+      return;
+    }
+    if (target.id === "account-number-input") {
+      target.value = normalizeAccountDisplay(target.value);
+    }
+  });
+  kpis.addEventListener("change", function (event) {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) {
+      return;
+    }
+    if (target.id === "bank-branch-input") {
+      state.bankBranchOverride = normalizeBankBranchDisplay(target.value);
+      target.value = state.bankBranchOverride;
+      persistCurrentViewState();
+      setStatus("Agência atualizada para o próximo download OFX.", "success");
+      return;
+    }
+    if (target.id === "account-number-input") {
+      state.accountNumberOverride = normalizeAccountDisplay(target.value);
+      target.value = state.accountNumberOverride;
+      persistCurrentViewState();
+      setStatus("Conta atualizada para o próximo download OFX.", "success");
+      return;
+    }
+    if (target.id === "bank-code-select") {
+      state.bankCodeOverride = normalizeDigits(target.value).slice(0, 3);
+      persistCurrentViewState();
+      setStatus(
+        state.bankCodeOverride
+          ? "Banco atualizado para o próximo download OFX."
+          : "Banco automático ativado para o próximo download OFX.",
+        "success",
+      );
+      return;
+    }
+    if (target.id !== "closing-balance-input") {
+      return;
+    }
+    const parsed = parsePtBrMoney(target.value);
+    if (parsed === null) {
+      setStatus("Saldo final inválido. Use formato como 56.276,06", "error");
+      target.value = toMoneyInputValue(
+        Number.isFinite(Number(state.closingBalanceOverride))
+          ? Number(state.closingBalanceOverride)
+          : Number((state.analysisSnapshot && state.analysisSnapshot.net_total) || 0),
+      );
+      return;
+    }
+    state.closingBalanceOverride = parsed;
+    target.value = toMoneyInputValue(parsed);
+    persistCurrentViewState();
+    setStatus("Saldo final atualizado para o próximo download OFX.", "success");
   });
   convertBtn.addEventListener("click", runConvert);
   if (addRowBtn) addRowBtn.addEventListener("click", startInsertRow);
-  if (downloadOfxBtn) downloadOfxBtn.addEventListener("click", runDownloadOfx);
+  if (hasDualDownloadButtons) {
+    downloadOfxBtn.addEventListener("click", function () {
+      void runDownloadReport("ofx");
+    });
+    downloadExcelBtn.addEventListener("click", function () {
+      void runDownloadReport("excel");
+    });
+  } else if (defaultDownloadBtn) {
+    defaultDownloadBtn.addEventListener("click", function () {
+      void runDownloadReport(outputFormat);
+    });
+  }
   if (clearFileBtn) {
     clearFileBtn.addEventListener("click", (event) => {
       event.preventDefault();
@@ -1452,24 +1956,36 @@
       menuToggle.setAttribute("aria-expanded", open ? "true" : "false");
     });
   }
-  forceUnlockUi();
-  setSelectedFileLabel();
-  const didForceLogout = consumeLogoutQueryFlag();
-  syncHeroAuthLinks();
-  void hydrateTopAccountEmail();
-  void syncUploadLimitsBySession();
-  syncQuotaAuthLinks();
-  const navigationType = getNavigationType();
-  const shouldRestoreState = navigationType === "reload";
-  if (!shouldRestoreState) {
-    clearViewState();
+  async function initializePage() {
+    updateQuotaRemainingLabel();
+    forceUnlockUi();
+    setSelectedFileLabel();
+    const didForceLogout = consumeLogoutQueryFlag();
+    if (!(await enforceAuthenticatedAccess())) {
+      return;
+    }
+    syncHeroAuthLinks();
+    void hydrateTopAccountEmail();
+    void loadBankOptions();
+    void syncUploadLimitsBySession();
+    syncQuotaAuthLinks();
+    const navigationType = getNavigationType();
+    const shouldRestoreState = navigationType === "reload";
+    if (!shouldRestoreState) {
+      clearViewState();
+    }
+    const persistedState = loadViewState();
+    if (persistedState) {
+      restoreViewFromState(persistedState);
+    }
+    void syncQuotaLockState();
+    if (didForceLogout && !requireAuthAccess) {
+      setStatus("Sessão encerrada. Você está no modo gratuito (anônimo).", "success");
+    }
   }
-  const persistedState = loadViewState();
-  if (persistedState) {
-    restoreViewFromState(persistedState);
-  }
-  void syncQuotaLockState();
-  if (didForceLogout) {
-    setStatus("Sessão encerrada. Você está no modo gratuito (anônimo).", "success");
-  }
+
+  void initializePage();
 })();
+
+
+

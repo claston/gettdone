@@ -1,0 +1,401 @@
+meta_model:
+  layout_id: banco_topazio_extrato_conta_corrente_lista_v1
+  bank: Banco Topázio
+  channel: unknown
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo/texto 'BANCO topázio' visível no topo esquerdo"
+      - "Texto 'Banco Topazio S.A' visível no topo direito"
+      - "Título central 'EXTRATO DE CONTA CORRENTE'"
+      - "Linha 'Extrato emitido em: 10/10/2024 - 11:32'"
+      - "Período explícito: '(Período: 01/09/24 - 30/09/24)'"
+      - "Campos 'CLIENTE' e 'AG/CONTA'"
+      - "Linhas de extrato em lista, com data abreviada, descrição e valor à direita"
+      - "Valores positivos aparecem em verde com prefixo 'R$'"
+      - "Valores negativos aparecem em vermelho com prefixo '-R$'"
+      - "Linhas de saldo como 'Saldo do dia' e 'Saldo final'"
+    weak:
+      - "Não há cabeçalho tabular formal com nomes de colunas"
+      - "Não há documento ou identificador de transação visível"
+      - "Não há coluna de saldo separada; saldos aparecem como linhas"
+      - "Algumas linhas de saldo têm valores na mesma posição visual dos valores de transação"
+      - "Datas usam formato dd/MM sem ano, dependentes do período do extrato"
+    table_headers: []
+  page_structure:
+    header:
+      bank_logo: "Banco Topázio"
+      bank_name: "Banco Topazio S.A"
+      title: "EXTRATO DE CONTA CORRENTE"
+      generated_at: "10/10/2024 - 11:32"
+      account_identifiers:
+        client: unknown
+        agency_account: "1 /"
+    metadata:
+      period: "01/09/24 - 30/09/24"
+      start_date: "01/09/2024"
+      end_date: "30/09/2024"
+    transactions_table:
+      representation: "statement_list_without_header"
+      columns_inferred:
+        - "date"
+        - "description"
+        - "amount_or_balance"
+      visible_rows:
+        - type: balance_row
+          date: "30/09/2024"
+          description: "Saldo final"
+          amount: unknown
+          balance: "R$ 15.280,92"
+        - type: balance_row
+          date: "25/09/2024"
+          description: "Saldo do dia"
+          amount: unknown
+          balance: "R$ 15.280,92"
+        - type: normal_transaction
+          date: "25/09/2024"
+          description: "TRANSF. INTERNA C/C MESMA TITULARIDADE"
+          document: unknown
+          amount: "R$ 918,78"
+          balance: unknown
+        - type: balance_row
+          date: "24/09/2024"
+          description: "Saldo do dia"
+          amount: unknown
+          balance: "R$ 14.362,14"
+        - type: normal_transaction
+          date: "24/09/2024"
+          description: "TRANSF. INTERNA C/C MESMA TITULARIDADE"
+          document: unknown
+          amount: "R$ 14.372,04"
+          balance: unknown
+        - type: normal_transaction
+          date: "24/09/2024"
+          description: "TARIFA TRANSFERÊNCIA TED"
+          document: unknown
+          amount: "-R$ 9,90"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo inicial"
+        - "SALDO INICIAL"
+        - "Saldo anterior"
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "balance_row"
+      inferred: true
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece com prefixo 'R$' sem sinal negativo"
+        - "Valor aparece em verde"
+      negative_when:
+        - "Valor aparece com prefixo '-R$'"
+        - "Valor aparece em vermelho com sinal negativo"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      balance_rows_exist: true
+      balance_row_labels:
+        - "Saldo do dia"
+        - "Saldo final"
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "TRANSF. INTERNA C/C MESMA TITULARIDADE"
+        reason: "Linhas visíveis possuem valores verdes positivos"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "TARIFA TRANSFERÊNCIA TED"
+        reason: "Linha visível possui valor vermelho com '-R$'"
+        inferred: false
+    caution:
+      - "Não importar linhas 'Saldo do dia' e 'Saldo final' como transações."
+      - "Neste layout, valores e saldos ocupam a mesma posição visual; diferenciar pelo texto da descrição."
+      - "Não inferir sinal apenas por 'TRANSF'; usar prefixo R$ / -R$."
+      - "Datas dd/MM devem ser completadas com o ano do período do extrato."
+      - "Não há documento nem saldo por transação."
+  visual_model:
+    table_anchor:
+      starts_after_text: "AG/CONTA"
+      header_keywords: []
+      group_by_date: false
+    column_order:
+      - date
+      - description
+      - amount_or_balance
+    row_behavior:
+      separator: "alternating light gray and white bands"
+      date_format_day_month: true
+      date_repeated_per_row: true
+      description_left_aligned: true
+      amount_right_aligned: true
+      positive_amount_color: "green"
+      negative_amount_color: "red"
+      negative_amount_prefix: "-R$"
+      balance_rows_use_green_amount: true
+      no_document_column: true
+      no_balance_column: true
+  parser_risks:
+    ambiguities:
+      - "Não há cabeçalho de colunas; parser deve usar posições e padrões de linhas."
+      - "Linhas de saldo têm valor à direita e podem ser confundidas com transações."
+      - "Não há documento, ID ou contraparte visíveis."
+      - "O canal de emissão não aparece no recorte."
+      - "Transferências internas podem ser entrada ou saída em outros casos; usar sinal explícito."
+    fields_that_may_be_missing:
+      - "document"
+      - "balance"
+      - "client"
+      - "full_agency_account"
+      - "channel"
+      - "transaction_id"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual preserva o prefixo '-R$' em débitos."
+      - "Se valores positivos sempre aparecem sem sinal positivo explícito."
+      - "Se as cores verde/vermelho são preservadas ou apenas o sinal textual."
+      - "Se linhas de saldo do dia/final aparecem sempre com esses labels."
+      - "Se há paginação e repetição do cabeçalho."
+      - "Se descrições longas quebram em múltiplas linhas."
+
+layout_profile:
+  profile_name: banco_topazio_extrato_conta_corrente_lista_v1
+  bank: Banco Topázio
+  layout_family: topazio_extrato_conta_corrente_lista
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "BANCO topázio"
+      - "Banco Topazio S.A"
+      - "EXTRATO DE CONTA CORRENTE"
+      - "Extrato emitido em"
+      - "Período"
+      - "CLIENTE"
+      - "AG/CONTA"
+    optional_keywords:
+      - "Saldo do dia"
+      - "Saldo final"
+      - "TRANSF. INTERNA C/C MESMA TITULARIDADE"
+      - "TARIFA TRANSFERÊNCIA TED"
+      - "R$"
+      - "-R$"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords: []
+    expected_column_order:
+      - date
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+        - "date_left"
+      description:
+        - "Descrição"
+        - "Histórico"
+        - "Lançamento"
+      document:
+        - "Documento"
+        - "Doc."
+      amount:
+        - "R$"
+        - "-R$"
+        - "Valor"
+      balance:
+        - "Saldo do dia"
+        - "Saldo final"
+        - "Saldo"
+    table_starts_after:
+      - "AG/CONTA"
+      - "Período"
+    row_separator_hint: "transaction or balance row starts with dd/MM followed by description and amount at right"
+  parsing:
+    date_format: "dd/MM"
+    date_year_source: "statement_period"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-R$ {amount}"
+      - "-R${amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+      - "R${amount_without_minus}"
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "BANCO topázio"
+      - "Banco Topazio S.A"
+      - "EXTRATO DE CONTA CORRENTE"
+      - "Extrato emitido em"
+      - "Período"
+      - "CLIENTE"
+      - "AG/CONTA"
+      - "Saldo do dia"
+      - "Saldo final"
+      - "Saldo inicial"
+      - "Saldo anterior"
+      - "SALDO FINAL"
+      - "SALDO DO DIA"
+      - "TOTAL"
+    opening_balance_rows:
+      - "Saldo inicial"
+      - "Saldo anterior"
+      - "SALDO INICIAL"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_currency_prefix"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "visual_color_when_available"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "TRANSF. INTERNA C/C MESMA TITULARIDADE"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem valor positivo em verde"
+      - pattern: "TARIFA TRANSFERÊNCIA TED"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui prefixo '-R$'"
+    cautions:
+      - "Não usar cor como única fonte de sinal se o texto tiver '-R$'."
+      - "Não importar 'Saldo do dia' ou 'Saldo final'."
+      - "Se valor vier como R$ sem sinal, tratar como positivo pela regra geral, mas validar com saldo quando possível."
+      - "Transferência interna pode ser crédito ou débito; usar sinal explícito."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+      - "preserve_abbreviations_like_C/C"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "TRANSF. INTERNA C/C MESMA TITULARIDADE"
+        category: "transferencia_interna_mesma_titularidade"
+        inferred: true
+      - pattern: "TARIFA TRANSFERÊNCIA TED"
+        category: "tarifa_ted"
+        inferred: true
+    transfer_hints:
+      - pattern: "TRANSF. INTERNA"
+        category: "transferencia_interna"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia_ted"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "TARIFA TRANSFERÊNCIA TED"
+        category: "tarifa_ted"
+        inferred: true
+  validation:
+    expected_min_columns: 3
+    reject_if_missing_headers:
+      - "EXTRATO DE CONTA CORRENTE"
+      - "Período"
+      - "R$"
+    balance_consistency_check:
+      enabled: true
+      method: "use daily/final balance rows when available to validate signed transaction sums between balance rows"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "row_description_is_saldo_like"
+      - "amount_without_currency_prefix"
+      - "date_year_context_missing"
+      - "sign_missing_and_description_ambiguous"
+      - "ocr_confidence_low_on_negative_currency_prefix"
+      - "balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "30/09"
+        raw_description: "Saldo final"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "R$ 15.280,92"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo final; não importar como transação"
+      - raw_date: "25/09"
+        raw_description: "Saldo do dia"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "R$ 15.280,92"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo do dia; não importar como transação"
+      - raw_date: "25/09"
+        raw_description: "TRANSF. INTERNA C/C MESMA TITULARIDADE"
+        raw_document: unknown
+        raw_amount: "R$ 918,78"
+        raw_balance: unknown
+        normalized_amount: "918.78"
+        should_import_as_transaction: true
+        notes: "Valor positivo sem sinal negativo"
+      - raw_date: "24/09"
+        raw_description: "TRANSF. INTERNA C/C MESMA TITULARIDADE"
+        raw_document: unknown
+        raw_amount: "R$ 14.372,04"
+        raw_balance: unknown
+        normalized_amount: "14372.04"
+        should_import_as_transaction: true
+        notes: "Valor positivo sem sinal negativo"
+      - raw_date: "24/09"
+        raw_description: "TARIFA TRANSFERÊNCIA TED"
+        raw_document: unknown
+        raw_amount: "-R$ 9,90"
+        raw_balance: unknown
+        normalized_amount: "-9.90"
+        should_import_as_transaction: true
+        notes: "Débito explícito por prefixo '-R$'"
+  implementation_notes:
+    - "Classificar pelo logo Banco Topázio e título 'EXTRATO DE CONTA CORRENTE'."
+    - "Este layout é lista sem cabeçalho de colunas; usar data inicial da linha e valor à direita."
+    - "Completar datas dd/MM com o ano do período."
+    - "Filtrar linhas 'Saldo do dia' e 'Saldo final' antes da importação."
+    - "Usar '-R$' como regra primária de débito."
+    - "Não exigir documento nem saldo por transação."
+    - "Usar saldos diários/final para validação quando possível."

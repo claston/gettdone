@@ -1,0 +1,381 @@
+meta_model:
+  layout_id: cresol_extrato_lancamentos_saldo_dia_pix_credito_v1
+  bank: Cresol
+  channel: unknown
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'CRESOL' visível no topo"
+      - "Campos 'Agência' e 'Conta' no cabeçalho"
+      - "Cards de resumo com 'Saldo em Conta', 'Limite de Crédito' e 'Saldo Disponível'"
+      - "Período explícito: '01 de Junho de 2024 a 01 de Julho de 2024'"
+      - "Seção 'Lançamentos'"
+      - "Agrupamento por data, exemplo '01/07/2024'"
+      - "Linha de saldo diário com texto 'Saldo do Dia: + R$'"
+      - "Lançamentos com ícone à esquerda, data, descrição e valor à direita"
+      - "Valores positivos aparecem em verde com prefixo '+ R$'"
+      - "Histórico visível 'PIX CREDITO DE:'"
+    weak:
+      - "Dados de agência, conta e valores de saldo estão ocultos ou ilegíveis"
+      - "Não há cabeçalho tabular formal com nomes de colunas"
+      - "Não há documento, ID ou contraparte claramente visível no recorte"
+      - "O histórico de PIX possui continuação em segunda linha com data/descrição parcial"
+      - "Não há exemplo de débito visível no recorte"
+    table_headers: []
+  page_structure:
+    header:
+      bank_logo: "CRESOL"
+      account_identifiers:
+        agency: unknown
+        account: unknown
+    metadata:
+      period: "01 de Junho de 2024 a 01 de Julho de 2024"
+      start_date: "01/06/2024"
+      end_date: "01/07/2024"
+      summary:
+        account_balance_label: "Saldo em Conta"
+        account_balance_value: unknown
+        credit_limit_label: "Limite de Crédito"
+        credit_limit_value: "R$ 0,00"
+        available_balance_label: "Saldo Disponível"
+        available_balance_value: unknown
+    transactions_table:
+      representation: "grouped_list_without_header"
+      section_title: "Lançamentos"
+      group_by: "date"
+      visible_group:
+        date: "01/07/2024"
+        daily_balance: unknown
+        rows:
+          - type: normal_transaction
+            date: "01/07/2024"
+            description: "PIX CREDITO DE:"
+            complement: "29/06"
+            document: unknown
+            amount: "+ R$ 250,00"
+            balance: unknown
+          - type: normal_transaction
+            date: "01/07/2024"
+            description: "PIX CREDITO DE:"
+            complement: unknown
+            document: unknown
+            amount: "+ R$ 45,00"
+            balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo em Conta"
+        - "Saldo Disponível"
+        - "Saldo do Dia"
+        - "SALDO ANTERIOR"
+        - "SALDO INICIAL"
+      should_import_as_transaction: false
+      balance_source: "summary_or_daily_balance_row"
+      inferred: false
+    normal_transaction:
+      row_has_date_context: true
+      row_has_description: true
+      row_may_have_complement: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece com prefixo '+ R$'"
+        - "Histórico indica crédito e valor possui prefixo '+ R$'"
+      negative_when:
+        - "Valor aparece com prefixo '- R$' ou '-R$'"
+        - "Histórico indica débito/saída e valor possui sinal negativo, se presente no PDF real"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      daily_balance_rows_exist: true
+      summary_balances_exist: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "PIX CREDITO DE:*"
+        reason: "Linhas visíveis possuem prefixo '+ R$' e descrição de crédito Pix"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "*"
+        reason: "Não há exemplos de débito visíveis; validar como saídas aparecem no PDF real"
+        inferred: true
+    caution:
+      - "Este layout é uma lista agrupada por data, não uma tabela com cabeçalhos."
+      - "Não importar 'Saldo do Dia' nem cards de saldo como transações."
+      - "Não inferir sinal apenas por PIX; usar '+ R$' ou '- R$'."
+      - "Históricos podem quebrar em múltiplas linhas; preservar/concatenar complementos quando disponíveis."
+      - "Não há documento, ID ou saldo por transação no recorte."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Lançamentos"
+      group_anchor: "date_group"
+      header_keywords: []
+    column_order:
+      - date_group
+      - transaction_date
+      - description
+      - amount
+    row_behavior:
+      separator: "horizontal green line below date group"
+      date_group_left_aligned: true
+      daily_balance_right_aligned_on_group_line: true
+      transaction_icon_left: true
+      transaction_date_left_of_description: true
+      description_may_wrap: true
+      amount_right_aligned: true
+      positive_amount_color: "green"
+      positive_amount_prefix: "+ R$"
+      no_document_column: true
+      no_balance_column: true
+  parser_risks:
+    ambiguities:
+      - "Não há cabeçalho de colunas; parser depende de agrupamento por data e posição visual."
+      - "Não há exemplo de débito para confirmar se usa '- R$', cor vermelha ou outro marcador."
+      - "A linha 'Saldo do Dia' possui valor à direita e pode ser confundida com transação."
+      - "Histórico 'PIX CREDITO DE:' pode conter contraparte ocultada ou em linha seguinte."
+      - "O complemento '29/06' pode ser parte da descrição, data de origem ou informação do pagador; validar com PDF real."
+    fields_that_may_be_missing:
+      - "document"
+      - "transaction_id"
+      - "counterparty"
+      - "balance"
+      - "agency"
+      - "account"
+      - "full_description"
+      - "channel"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual preserva o prefixo '+ R$' e '- R$'."
+      - "Como débitos, tarifas, TED e boletos aparecem neste modelo."
+      - "Se 'Saldo do Dia' aparece para todos os dias ou apenas em alguns grupos."
+      - "Se descrições de PIX são multi-linha e como unir contraparte/complementos."
+      - "Se há paginação e repetição do cabeçalho."
+      - "Se os cards de saldo do topo são sempre emitidos com o extrato."
+
+layout_profile:
+  profile_name: cresol_extrato_lancamentos_saldo_dia_pix_credito_v1
+  bank: Cresol
+  layout_family: cresol_extrato_lancamentos_grouped_list
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "CRESOL"
+      - "Agência"
+      - "Conta"
+      - "Saldo em Conta"
+      - "Limite de Crédito"
+      - "Saldo Disponível"
+      - "Lançamentos"
+      - "Saldo do Dia"
+    optional_keywords:
+      - "PIX CREDITO DE"
+      - "+ R$"
+      - "- R$"
+      - "01 de Junho de 2024 a 01 de Julho de 2024"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "contasimples"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords: []
+    expected_column_order:
+      - date_group
+      - date
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "date_group"
+        - "Data"
+      description:
+        - "Histórico"
+        - "Descrição"
+        - "Lançamento"
+      document:
+        - "Documento"
+        - "Doc."
+        - "ID"
+      amount:
+        - "Valor"
+        - "+ R$"
+        - "- R$"
+        - "R$"
+      balance:
+        - "Saldo do Dia"
+        - "Saldo em Conta"
+        - "Saldo Disponível"
+    table_starts_after:
+      - "Lançamentos"
+    row_separator_hint: "date group line shows dd/MM/yyyy and 'Saldo do Dia'; transaction rows below have icon, date, description and amount"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "- R$ {amount}"
+      - "-R$ {amount}"
+      - "R$ -{amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "+ R$ {amount}"
+      - "+R$ {amount}"
+      - "R$ {amount_without_minus}"
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "CRESOL"
+      - "Agência"
+      - "Conta"
+      - "Saldo em Conta"
+      - "Limite de Crédito"
+      - "Saldo Disponível"
+      - "Lançamentos"
+      - "Saldo do Dia"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "Saldo em Conta"
+      - "Saldo Disponível"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - complement
+      - document
+      - balance
+      - transaction_id
+      - counterparty
+  sign_rules:
+    priority_order:
+      - "explicit_positive_or_negative_currency_prefix"
+      - "explicit_negative_sign"
+      - "provider_transaction_type_if_available"
+      - "description_based_hint"
+      - "daily_balance_consistency"
+    description_based_overrides:
+      - pattern: "PIX CREDITO DE:*"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem prefixo '+ R$' e texto de crédito"
+    cautions:
+      - "Não usar Pix isoladamente para sinal."
+      - "Não importar linhas 'Saldo do Dia'."
+      - "Se valor vier sem + ou -, aplicar regra geral de positivo apenas com revisão/validação."
+      - "Se descrição de crédito conflitar com sinal negativo, marcar para revisão manual."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "merge_wrapped_description_lines"
+      - "normalize_case_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "PIX CREDITO DE:*"
+        category: "pix_recebido"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX CREDITO"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "PIX DEBITO"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 2
+    reject_if_missing_headers:
+      - "CRESOL"
+      - "Lançamentos"
+      - "Saldo do Dia"
+      - "R$"
+    balance_consistency_check:
+      enabled: true
+      method: "use daily balance rows when available to validate signed transactions grouped by date"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "date_group_missing"
+      - "saldo_do_dia_detected_as_transaction"
+      - "amount_without_explicit_sign"
+      - "debit_representation_unknown"
+      - "description_wrap_not_merged"
+      - "ocr_confidence_low_on_currency_prefix"
+      - "daily_balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "01/07/2024"
+        raw_description: "Saldo do Dia"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo diário; não importar"
+      - raw_date: "01/07/2024"
+        raw_description: "PIX CREDITO DE: 29/06"
+        raw_document: unknown
+        raw_amount: "+ R$ 250,00"
+        raw_balance: unknown
+        normalized_amount: "250.00"
+        should_import_as_transaction: true
+        notes: "Crédito explícito pelo prefixo '+ R$'; complemento pode pertencer à descrição"
+      - raw_date: "01/07/2024"
+        raw_description: "PIX CREDITO DE:"
+        raw_document: unknown
+        raw_amount: "+ R$ 45,00"
+        raw_balance: unknown
+        normalized_amount: "45.00"
+        should_import_as_transaction: true
+        notes: "Crédito explícito pelo prefixo '+ R$'"
+  implementation_notes:
+    - "Classificar pelo logo Cresol e pelos cards de saldo no topo."
+    - "Este layout é uma lista agrupada por data, sem cabeçalho tabular."
+    - "Propagar a data do grupo para as transações abaixo."
+    - "Filtrar linhas 'Saldo do Dia' antes de importar."
+    - "Usar '+ R$' e '- R$' como regra primária de sinal."
+    - "Concatenar descrições quebradas quando houver complemento em linha adicional."
+    - "Validar com PDFs reais como débitos e outras movimentações aparecem."

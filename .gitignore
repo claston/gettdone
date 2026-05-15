@@ -11,6 +11,7 @@ node_modules/
 .next/
 
 tmp/
+.worktrees/
 backend/tmp/
 backend/.tmp_sqlite_test/
 backend/samples/
@@ -21,3 +22,4 @@ backend/samples/
 # Local/private notes and drafts (do not version)
 local/
 doc/backlog-v1-conversor-pdf-multiformato.md
+.pr_body_*.md

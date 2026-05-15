@@ -1,0 +1,434 @@
+meta_model:
+  layout_id: unicred_extrato_conta_corrente_grade_v1
+  bank: Unicred
+  channel: unknown
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo/texto 'UNICRED' visível no topo"
+      - "Título central 'Extrato de Conta Corrente'"
+      - "Data no cabeçalho: '01/10/2024'"
+      - "Bloco de identificação em grade com 'Cooperativa', 'Agência', 'Cooperado', 'Data Atual', 'AG.', 'Conta', 'Usuário' e 'Saldo Anterior'"
+      - "Tabela de lançamentos com cabeçalho 'Data', 'Nº DOC', 'Histórico', 'Lançamentos (R$)' e 'Saldo (R$)'"
+      - "Linhas com históricos como 'CRED RECEBIMENTO PIX' e 'DEBITO TRANSF PIX'"
+      - "Coluna 'Nº DOC' pode trazer tipo/código textual como 'CRED PIX' e 'DEB PIX'"
+    weak:
+      - "Valores monetários e saldos estão ocultos ou ilegíveis no recorte"
+      - "Canal de origem não está visível"
+      - "A coluna 'Lançamentos (R$)' existe, mas os valores não aparecem na imagem"
+      - "A coluna 'Saldo (R$)' existe, mas os valores não aparecem na imagem"
+      - "Algumas linhas possuem mesmo dia e repetição de Pix"
+    table_headers:
+      - "Data"
+      - "Nº DOC"
+      - "Histórico"
+      - "Lançamentos (R$)"
+      - "Saldo (R$)"
+  page_structure:
+    header:
+      bank_logo: "UNICRED"
+      title: "Extrato de Conta Corrente"
+      header_date: "01/10/2024"
+      account_identifiers:
+        cooperative: unknown
+        agency: unknown
+        cooperative_member: unknown
+        account: unknown
+        user: unknown
+    metadata:
+      current_date: unknown
+      previous_balance_label: "Saldo Anterior"
+      previous_balance_value: unknown
+    transactions_table:
+      header_background: "white"
+      grid_lines: true
+      columns:
+        - "Data"
+        - "Nº DOC"
+        - "Histórico"
+        - "Lançamentos (R$)"
+        - "Saldo (R$)"
+      visible_rows:
+        - type: normal_transaction
+          date: "02/09/2024"
+          document: "CRED PIX"
+          description: "CRED RECEBIMENTO PIX"
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "02/09/2024"
+          document: "CRED PIX"
+          description: "CRED RECEBIMENTO PIX"
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "02/09/2024"
+          document: "DEB PIX"
+          description: "DEBITO TRANSF PIX"
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "02/09/2024"
+          document: "DEB PIX"
+          description: "DEBITO TRANSF PIX"
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "02/09/2024"
+          document: "CRED PIX"
+          description: "CRED RECEBIMENTO PIX"
+          amount: unknown
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo Anterior"
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "Saldo Anterior"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_document_or_type: true
+      row_has_description: true
+      row_may_have_amount: true
+      row_may_have_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Nº DOC ou Histórico indica 'CRED' e valor não possui sinal negativo"
+        - "Valor aparece sem sinal negativo em linha de crédito confirmada"
+      negative_when:
+        - "Nº DOC ou Histórico indica 'DEB' ou 'DEBITO'"
+        - "Valor aparece com sinal '-'"
+      inferred: true
+    balance_column:
+      exists: true
+      column_name: "Saldo (R$)"
+      may_be_blank_or_masked_in_visible_rows: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "CRED PIX"
+        reason: "Nº DOC indica crédito Pix"
+        inferred: false
+      - pattern: "CRED RECEBIMENTO PIX"
+        reason: "Histórico indica recebimento Pix"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "DEB PIX"
+        reason: "Nº DOC indica débito Pix"
+        inferred: false
+      - pattern: "DEBITO TRANSF PIX"
+        reason: "Histórico indica transferência Pix de saída"
+        inferred: false
+    caution:
+      - "Valores não estão visíveis no recorte; a regra de sinal por CRED/DEB precisa ser validada com PDF real."
+      - "Não inferir sinal apenas por PIX; usar CRED/DEB, valor explícito ou consistência de saldo."
+      - "Não importar 'Saldo Anterior' como transação."
+      - "Preservar 'Nº DOC' como string, pois neste layout ele pode ser um código textual, não apenas número."
+      - "A tabela tem grade rígida; OCR pode deslocar valores entre colunas."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Saldo Anterior"
+      header_keywords:
+        - "Data"
+        - "Nº DOC"
+        - "Histórico"
+        - "Lançamentos (R$)"
+        - "Saldo (R$)"
+    column_order:
+      - date
+      - document
+      - description
+      - amount
+      - balance
+    row_behavior:
+      separator: "strong grid lines"
+      date_repeated_per_transaction: true
+      document_may_be_textual_type: true
+      description_uppercase: true
+      amount_right_aligned_when_present: true
+      balance_right_aligned_when_present: true
+      no_color_signal_visible: true
+  parser_risks:
+    ambiguities:
+      - "Valores e saldos não estão visíveis, então não é possível confirmar o formato monetário e sinal."
+      - "A coluna 'Nº DOC' contém textos como 'CRED PIX' e 'DEB PIX', podendo não ser documento numérico."
+      - "Canal de origem não está visível."
+      - "A regra por CRED/DEB parece forte, mas deve ser validada contra valores reais."
+      - "Linhas de Pix podem ser entrada ou saída; a distinção vem de CRED/DEB e histórico."
+    fields_that_may_be_missing:
+      - "amount"
+      - "balance"
+      - "numeric_document"
+      - "cooperative"
+      - "agency"
+      - "account"
+      - "user"
+      - "channel"
+    cases_that_need_real_pdf_validation:
+      - "Se os valores aparecem com sinal negativo/positivo ou apenas dependem de CRED/DEB."
+      - "Se a coluna 'Nº DOC' pode conter documentos numéricos em outros lançamentos."
+      - "Se saldos são preenchidos em todas as linhas ou apenas em linhas específicas."
+      - "Se há linhas de saldo do dia/final e totais."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Se cabeçalho e grade se repetem em páginas seguintes."
+
+layout_profile:
+  profile_name: unicred_extrato_conta_corrente_grade_v1
+  bank: Unicred
+  layout_family: unicred_extrato_conta_corrente_grid
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "UNICRED"
+      - "Extrato de Conta Corrente"
+      - "Cooperativa"
+      - "Agência"
+      - "Cooperado"
+      - "Data Atual"
+      - "Saldo Anterior"
+      - "Data"
+      - "Nº DOC"
+      - "Histórico"
+      - "Lançamentos (R$)"
+      - "Saldo (R$)"
+    optional_keywords:
+      - "AG."
+      - "Conta"
+      - "Usuário"
+      - "CRED PIX"
+      - "DEB PIX"
+      - "CRED RECEBIMENTO PIX"
+      - "DEBITO TRANSF PIX"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Nº DOC"
+      - "Histórico"
+      - "Lançamentos (R$)"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - document
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Histórico"
+        - "Historico"
+        - "Descrição"
+      document:
+        - "Nº DOC"
+        - "N DOC"
+        - "Documento"
+        - "Doc."
+      amount:
+        - "Lançamentos (R$)"
+        - "Lancamentos (R$)"
+        - "Lançamentos"
+        - "Valor"
+      balance:
+        - "Saldo (R$)"
+        - "Saldo"
+    table_starts_after:
+      - "Saldo Anterior"
+      - "Data Nº DOC Histórico Lançamentos (R$) Saldo (R$)"
+    row_separator_hint: "grid table; transaction row starts when first column contains dd/MM/yyyy"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+      - "{amount}-"
+      - "DEB_marker"
+      - "DEBITO_marker"
+    positive_patterns:
+      - "{amount_without_minus}"
+      - "CRED_marker"
+    ignore_rows:
+      - "UNICRED"
+      - "Extrato de Conta Corrente"
+      - "Cooperativa"
+      - "Agência"
+      - "Cooperado"
+      - "Data Atual"
+      - "AG."
+      - "Conta"
+      - "Usuário"
+      - "Saldo Anterior"
+      - "Data"
+      - "Nº DOC"
+      - "Histórico"
+      - "Lançamentos (R$)"
+      - "Saldo (R$)"
+      - "SALDO ANTERIOR"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "Saldo Anterior"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+      - transaction_type
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "document_or_history_credit_debit_marker"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "CRED RECEBIMENTO PIX"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Histórico indica crédito/recebimento Pix"
+      - pattern: "CRED PIX"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Nº DOC indica crédito Pix"
+      - pattern: "DEBITO TRANSF PIX"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Histórico indica débito/transferência Pix"
+      - pattern: "DEB PIX"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Nº DOC indica débito Pix"
+    cautions:
+      - "Quando valor explícito tiver sinal, ele deve ter prioridade sobre CRED/DEB."
+      - "Se valor não estiver visível, usar CRED/DEB como inferência de sinal e marcar confiança conforme OCR."
+      - "Não usar a palavra PIX isoladamente para sinal."
+      - "Se CRED/DEB conflitar com sinal monetário, marcar para revisão manual."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "CRED RECEBIMENTO PIX"
+        category: "pix_recebido"
+        inferred: true
+      - pattern: "DEBITO TRANSF PIX"
+        category: "pix_enviado"
+        inferred: true
+    transfer_hints:
+      - pattern: "CRED RECEBIMENTO PIX"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "DEBITO TRANSF PIX"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "Data"
+      - "Histórico"
+      - "Lançamentos"
+      - "Saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "when values and balances are available, validate previous_balance_plus_signed_amount_equals_current_balance using explicit sign or CRED/DEB marker"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "amount_missing_or_masked"
+      - "sign_marker_conflicts_with_amount_sign"
+      - "document_column_contains_unknown_textual_code"
+      - "balance_column_missing_or_masked"
+      - "ocr_confidence_low_on_CRED_DEB"
+      - "description_line_wrap_detected"
+      - "balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "02/09/2024"
+        raw_description: "CRED RECEBIMENTO PIX"
+        raw_document: "CRED PIX"
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Crédito Pix pelo marcador CRED; valor não visível no recorte"
+      - raw_date: "02/09/2024"
+        raw_description: "CRED RECEBIMENTO PIX"
+        raw_document: "CRED PIX"
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Crédito Pix pelo marcador CRED; validar valor no PDF real"
+      - raw_date: "02/09/2024"
+        raw_description: "DEBITO TRANSF PIX"
+        raw_document: "DEB PIX"
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Débito Pix pelo marcador DEB/DEBITO; valor não visível no recorte"
+      - raw_date: "02/09/2024"
+        raw_description: "DEBITO TRANSF PIX"
+        raw_document: "DEB PIX"
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Débito Pix pelo marcador DEB/DEBITO; validar valor no PDF real"
+  implementation_notes:
+    - "Classificar pelo logo UNICRED, título 'Extrato de Conta Corrente' e tabela gradeada."
+    - "Usar Data/Nº DOC/Histórico/Lançamentos/Saldo como estrutura principal."
+    - "Preservar o campo Nº DOC como texto, pois pode conter 'CRED PIX' ou 'DEB PIX'."
+    - "Usar sinal explícito do valor quando disponível; fallback para CRED/DEB em documento/histórico."
+    - "Não importar saldo anterior como transação."
+    - "Validar com PDF real o formato dos valores monetários e saldos."

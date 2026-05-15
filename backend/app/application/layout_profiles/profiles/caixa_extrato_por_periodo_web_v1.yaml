@@ -1,0 +1,386 @@
+meta_model:
+  layout_id: caixa_extrato_por_periodo_web_v1
+  bank: Caixa Econômica Federal
+  channel: Caixa Internet Banking
+  statement_type: conta_corrente_extrato_por_periodo
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo CAIXA visível no topo esquerdo"
+      - "Título 'Extrato por período'"
+      - "Seção 'Extrato'"
+      - "Cabeçalho de tabela com colunas 'DATA MOV.', 'NR. DOC.', 'HISTÓRICO', 'VALOR'"
+      - "Linhas de saldo destacadas com texto 'Saldo' em área cinza"
+      - "Valores usam sufixo C/D para indicar crédito/débito"
+    weak:
+      - "Não há identificação visível de cliente, agência ou conta no recorte"
+      - "Não há coluna 'Saldo' no cabeçalho, mas há linhas intermediárias de saldo"
+      - "Alguns campos aparecem como links azuis sublinhados, sugerindo origem web"
+      - "A linha 'SALDO ANTERIOR' possui valor 0,00 e o saldo aparece na linha seguinte"
+    table_headers:
+      - "DATA MOV."
+      - "NR. DOC."
+      - "HISTÓRICO"
+      - "VALOR"
+  page_structure:
+    header:
+      bank_logo: "CAIXA"
+      title: "Extrato por período"
+      account_identifiers:
+        client: unknown
+        agency: unknown
+        account: unknown
+    metadata:
+      section_title: "Extrato"
+      period: unknown
+    transactions_table:
+      section_title: "Extrato"
+      header_background: "light gray"
+      columns:
+        - "DATA MOV."
+        - "NR. DOC."
+        - "HISTÓRICO"
+        - "VALOR"
+      visible_rows:
+        - type: opening_balance
+          date: unknown
+          document: unknown
+          description: "SALDO ANTERIOR"
+          amount: "0,00"
+          balance: unknown
+        - type: balance_row
+          date: unknown
+          document: unknown
+          description: "Saldo"
+          amount: unknown
+          balance: "10.000,00 C"
+        - type: normal_transaction
+          date: "01/04/2024"
+          document: "291338"
+          description: "ENVIO PIX"
+          amount: "2.150,00 D"
+          balance: unknown
+        - type: balance_row
+          date: unknown
+          document: unknown
+          description: "Saldo"
+          amount: unknown
+          balance: "7.850,00 C"
+        - type: balance_row
+          date: "01/04/2024"
+          document: "000000"
+          description: "SALDO DIA"
+          amount: unknown
+          balance: "7.850,00 C"
+        - type: balance_row
+          date: unknown
+          document: unknown
+          description: "Saldo"
+          amount: unknown
+          balance: "7.850,00 C"
+        - type: balance_row
+          date: "02/04/2024"
+          document: "000000"
+          description: "SALDO DIA"
+          amount: unknown
+          balance: "7.850,00 C"
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "following_balance_row_or_value_column"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_document: true
+      row_has_description: true
+      row_has_amount_with_credit_debit_suffix: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor termina com sufixo 'C'"
+      negative_when:
+        - "Valor termina com sufixo 'D'"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      balance_rows_exist: true
+      balance_values_appear_in_value_column: true
+      balance_sign_uses_suffix_C_D: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "*"
+        reason: "Transações com sufixo C no campo Valor devem ser tratadas como crédito"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "ENVIO PIX"
+        reason: "Linha visível aparece com sufixo 'D'"
+        inferred: false
+    caution:
+      - "Este layout não tem coluna Saldo formal no cabeçalho; saldos aparecem como linhas separadas."
+      - "Linhas 'Saldo', 'SALDO DIA' e 'SALDO ANTERIOR' não devem ser importadas como transações."
+      - "O valor da transação e o saldo usam a mesma coluna visual 'VALOR'; classificar pelo histórico/linha."
+      - "Sufixo D indica débito; sufixo C indica crédito ou saldo credor."
+      - "Campos em azul sublinhado podem ser links no HTML/PDF e não devem alterar a normalização."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Extrato"
+      header_row_color: "light gray"
+      header_keywords:
+        - "DATA MOV."
+        - "NR. DOC."
+        - "HISTÓRICO"
+        - "VALOR"
+    column_order:
+      - date
+      - document
+      - description
+      - amount_or_balance
+    row_behavior:
+      separator: "horizontal gray lines with alternating gray balance bands"
+      date_repeated_per_transaction: true
+      document_may_be_link_colored: true
+      description_may_be_link_colored: true
+      amount_right_aligned: true
+      balance_rows_have_description_saldo: true
+      daily_balance_rows_have_description_saldo_dia: true
+      amount_suffix_C_D: true
+  parser_risks:
+    ambiguities:
+      - "A coluna 'VALOR' contém tanto valores de transação quanto saldos em linhas especiais."
+      - "Não existe coluna de saldo separada no cabeçalho; o parser precisa identificar linhas de saldo pelo histórico."
+      - "A linha 'SALDO ANTERIOR' aparece com valor 0,00 e o saldo anterior real parece estar na linha seguinte."
+      - "Não é possível confirmar o canal exato, embora o visual sugira tela web/Internet Banking da Caixa."
+      - "Linhas de saldo intermediárias podem ser confundidas com transações se o parser usar apenas valor e sinal."
+    fields_that_may_be_missing:
+      - "client"
+      - "agency"
+      - "account"
+      - "explicit_balance_column"
+      - "period"
+      - "document"
+    cases_that_need_real_pdf_validation:
+      - "Se o PDF/HTML exportado mantém as linhas de saldo como linhas separadas."
+      - "Se 'Saldo' e 'SALDO DIA' sempre aparecem no histórico para diferenciar saldos de transações."
+      - "Se valores com C/D são extraídos juntos ou separados em tokens distintos."
+      - "Se campos azuis sublinhados são hyperlinks e afetam a extração textual."
+      - "Como aparecem créditos, tarifas, estornos, saldo final e paginação."
+      - "Se descrições longas quebram em mais de uma linha."
+
+layout_profile:
+  profile_name: caixa_extrato_por_periodo_web_v1
+  bank: Caixa Econômica Federal
+  layout_family: caixa_extrato_por_periodo_web
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "CAIXA"
+      - "Extrato por período"
+      - "Extrato"
+      - "DATA MOV."
+      - "NR. DOC."
+      - "HISTÓRICO"
+      - "VALOR"
+    optional_keywords:
+      - "SALDO ANTERIOR"
+      - "Saldo"
+      - "SALDO DIA"
+      - "ENVIO PIX"
+    negative_keywords:
+      - "GERENCIADOR CAIXA"
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "Itaú"
+      - "Cartão de Crédito"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.8
+  table_detection:
+    header_keywords:
+      - "DATA MOV."
+      - "NR. DOC."
+      - "HISTÓRICO"
+      - "VALOR"
+    expected_column_order:
+      - date
+      - document
+      - description
+      - amount_or_balance
+    column_aliases:
+      date:
+        - "DATA MOV."
+        - "Data Mov."
+        - "Data Movimento"
+        - "Data"
+      description:
+        - "HISTÓRICO"
+        - "Histórico"
+        - "Historico"
+      document:
+        - "NR. DOC."
+        - "Nr. Doc."
+        - "Nº Doc."
+        - "Documento"
+      amount:
+        - "VALOR"
+        - "Valor"
+      balance:
+        - "Saldo"
+        - "SALDO DIA"
+    table_starts_after:
+      - "Extrato"
+      - "DATA MOV. NR. DOC. HISTÓRICO VALOR"
+    row_separator_hint: "transaction row starts with dd/MM/yyyy in DATA MOV.; balance rows may have blank date and description 'Saldo'"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount} D"
+      - "{amount}D"
+    positive_patterns:
+      - "{amount} C"
+      - "{amount}C"
+      - "{amount_without_suffix_for_opening_balance_only}"
+    ignore_rows:
+      - "CAIXA"
+      - "Extrato por período"
+      - "Extrato"
+      - "DATA MOV."
+      - "NR. DOC."
+      - "HISTÓRICO"
+      - "VALOR"
+      - "Saldo"
+      - "SALDO DIA"
+      - "SALDO ANTERIOR"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance_after_transaction
+      - balance_row_after_transaction
+  sign_rules:
+    priority_order:
+      - "credit_debit_suffix_C_D"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "ENVIO PIX"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível usa sufixo D"
+    cautions:
+      - "Não importar linhas de saldo como transações."
+      - "Não usar somente a coluna VALOR para decidir transação; primeiro identificar se a linha é saldo."
+      - "Não remover o sufixo C/D antes de definir o sinal."
+      - "Saldo com C deve ser tratado como saldo credor/positivo; saldo com D como devedor/negativo, sujeito a validação."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+      - "remove_hyperlink_artifacts_if_present"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "ENVIO PIX"
+        category: "pix_enviado"
+        inferred: true
+    transfer_hints:
+      - pattern: "ENVIO PIX"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "PIX RECEBIDO"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "DOC"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+  validation:
+    expected_min_columns: 4
+    reject_if_missing_headers:
+      - "DATA MOV."
+      - "HISTÓRICO"
+      - "VALOR"
+    balance_consistency_check:
+      enabled: true
+      method: "use_balance_rows_after_transactions_when_available; convert C/D suffix to signed balances and validate previous_balance_plus_signed_amount_equals_next_balance"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "amount_has_no_C_or_D_suffix_on_transaction_row"
+      - "line_has_description_saldo_but_also_date_or_document"
+      - "balance_row_missing_after_transaction"
+      - "ocr_confidence_low_on_C_D_suffix"
+      - "row_has_date_and_description_but_no_amount"
+      - "multiline_description_detected"
+      - "hyperlink_text_breaks_column_alignment"
+  examples_from_image:
+    sample_rows:
+      - raw_date: unknown
+        raw_description: "SALDO ANTERIOR"
+        raw_document: unknown
+        raw_amount: "0,00"
+        raw_balance: "10.000,00 C"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Saldo anterior não deve ser importado; saldo real aparece na linha seguinte como 'Saldo 10.000,00 C'"
+      - raw_date: "01/04/2024"
+        raw_description: "ENVIO PIX"
+        raw_document: "291338"
+        raw_amount: "2.150,00 D"
+        raw_balance: "7.850,00 C"
+        normalized_amount: "-2150.00"
+        should_import_as_transaction: true
+        notes: "Sufixo D indica débito; saldo seguinte mostra 7.850,00 C"
+      - raw_date: "01/04/2024"
+        raw_description: "SALDO DIA"
+        raw_document: "000000"
+        raw_amount: "7.850,00 C"
+        raw_balance: "7.850,00 C"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo do dia; não importar como transação"
+      - raw_date: "02/04/2024"
+        raw_description: "SALDO DIA"
+        raw_document: "000000"
+        raw_amount: "7.850,00 C"
+        raw_balance: "7.850,00 C"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo diário sem movimentação visível; não importar como transação"
+  implementation_notes:
+    - "Classificar pelo logo CAIXA, título 'Extrato por período' e cabeçalho 'DATA MOV./NR. DOC./HISTÓRICO/VALOR'."
+    - "Identificar e remover linhas de saldo antes de montar transações normalizadas."
+    - "Tratar linhas 'Saldo' imediatamente após transação como balance_after_transaction da transação anterior."
+    - "Mapear valores com sufixo C para positivo e D para negativo."
+    - "Para saldos, mapear C como credor/positivo e D como devedor/negativo, validando com amostras reais."
+    - "Não importar 'SALDO ANTERIOR', 'Saldo' e 'SALDO DIA' como transações."
+    - "Validar com PDF real se o HTML/PDF exportado mantém os hyperlinks e se eles deslocam texto por OCR."

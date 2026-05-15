@@ -1,0 +1,401 @@
+meta_model:
+  layout_id: mercado_pago_extrato_conta_detalhe_movimentos_v1
+  bank: Mercado Pago
+  channel: Mercado Pago
+  statement_type: extrato_de_conta
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'mercado pago' visível no topo esquerdo"
+      - "Título 'EXTRATO DE CONTA' visível no topo direito"
+      - "Campos 'CPF/CNPJ', 'Agência', 'Conta' e 'Período'"
+      - "Card de resumo com 'Saldo inicial', 'Entradas', 'Saídas' e 'Saldo final'"
+      - "Seção central 'DETALHE DOS MOVIMENTOS'"
+      - "Tabela com colunas 'Data', 'Descrição', 'ID da operação', 'Valor' e 'Saldo'"
+      - "Linhas de movimentação com descrição 'Liberação de dinheiro'"
+      - "Datas no formato dd-MM-yyyy, exemplo '01-06-2024'"
+    weak:
+      - "Dados de CPF/CNPJ, agência, conta, período e valores de resumo estão ocultos ou ilegíveis"
+      - "Valores, saldos e IDs da operação não aparecem no recorte"
+      - "Não há exemplos visíveis de sinal positivo/negativo"
+      - "Não há linhas de saldo inicial/final no corpo da tabela visíveis"
+      - "Não é possível confirmar se a instituição bancária do extrato é conta Mercado Pago ou banco parceiro"
+    table_headers:
+      - "Data"
+      - "Descrição"
+      - "ID da operação"
+      - "Valor"
+      - "Saldo"
+  page_structure:
+    header:
+      bank_logo: "mercado pago"
+      title: "EXTRATO DE CONTA"
+      account_identifiers:
+        cpf_cnpj: unknown
+        agency: unknown
+        account: unknown
+      period: unknown
+    metadata:
+      summary:
+        opening_balance_label: "Saldo inicial"
+        opening_balance_value: unknown
+        inflows_label: "Entradas"
+        inflows_value: unknown
+        outflows_label: "Saídas"
+        outflows_value: unknown
+        final_balance_label: "Saldo final"
+        final_balance_value: unknown
+    transactions_table:
+      section_title: "DETALHE DOS MOVIMENTOS"
+      columns:
+        - "Data"
+        - "Descrição"
+        - "ID da operação"
+        - "Valor"
+        - "Saldo"
+      visible_rows:
+        - type: normal_transaction
+          date: "01-06-2024"
+          description: "Liberação de dinheiro"
+          operation_id: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "01-06-2024"
+          description: "Liberação de dinheiro"
+          operation_id: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "01-06-2024"
+          description: "Liberação de dinheiro"
+          operation_id: unknown
+          amount: unknown
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo inicial"
+        - "SALDO INICIAL"
+        - "Saldo final"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: "summary_card_or_saldo_column"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_operation_id: true
+      row_may_have_amount: true
+      row_may_have_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece sem sinal negativo, conforme regra geral, se não houver coluna/seção separada"
+        - "Descrição indica liberação/entrada e valor não possui sinal negativo"
+      negative_when:
+        - "Valor aparece com sinal '-'"
+        - "Valor aparece em coluna/indicador de saída, se presente no PDF real"
+      inferred: true
+    balance_column:
+      exists: true
+      column_name: "Saldo"
+      may_be_blank_or_masked_in_visible_rows: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "Liberação de dinheiro"
+        reason: "Descrição sugere entrada/disponibilização de saldo, mas valor/sinal não está visível"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "*"
+        reason: "Não há débitos visíveis; validar como saídas aparecem no PDF real"
+        inferred: true
+    caution:
+      - "Não importar 'Saldo inicial' nem 'Saldo final' do resumo como transações."
+      - "Valores e IDs da operação estão ocultos/ilegíveis; regras de sinal precisam de PDF real."
+      - "A descrição 'Liberação de dinheiro' provavelmente é crédito, mas o sinal deve ser confirmado pelo valor ou saldo."
+      - "A coluna 'ID da operação' deve ser preservada como string quando visível."
+      - "O formato de data usa hífen, não barra."
+  visual_model:
+    table_anchor:
+      starts_after_text: "DETALHE DOS MOVIMENTOS"
+      header_keywords:
+        - "Data"
+        - "Descrição"
+        - "ID da operação"
+        - "Valor"
+        - "Saldo"
+    column_order:
+      - date
+      - description
+      - operation_id
+      - amount
+      - balance
+    row_behavior:
+      separator: "horizontal light gray row dividers"
+      date_format_with_hyphen: true
+      date_repeated_per_transaction: true
+      description_left_aligned: true
+      operation_id_column_may_be_blank_or_masked: true
+      amount_right_aligned_when_visible: true
+      balance_right_aligned_when_visible: true
+  parser_risks:
+    ambiguities:
+      - "Valores e saldos não estão visíveis, impossibilitando confirmar sinal e formato monetário."
+      - "ID da operação está presente como coluna, mas não visível nas linhas do recorte."
+      - "Período não está visível, então o parser deve confiar nas datas das linhas quando completas."
+      - "Não há exemplos de saída, tarifa, transferência ou estorno."
+      - "Descrição genérica pode exigir ID da operação para rastreabilidade."
+    fields_that_may_be_missing:
+      - "amount"
+      - "balance"
+      - "operation_id"
+      - "cpf_cnpj"
+      - "agency"
+      - "account"
+      - "period"
+    cases_that_need_real_pdf_validation:
+      - "Se valores positivos aparecem com R$, +R$, ou apenas número."
+      - "Se valores negativos usam '-', cor ou coluna de saídas."
+      - "Se a coluna ID da operação é preenchida em todos os lançamentos."
+      - "Se há linhas de saldo no corpo da tabela."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Se cabeçalho e resumo repetem em páginas seguintes."
+
+layout_profile:
+  profile_name: mercado_pago_extrato_conta_detalhe_movimentos_v1
+  bank: Mercado Pago
+  layout_family: mercado_pago_extrato_conta_detalhe_movimentos
+  statement_type: extrato_de_conta
+  confidence: high
+  classifier:
+    required_keywords:
+      - "mercado pago"
+      - "EXTRATO DE CONTA"
+      - "CPF/CNPJ"
+      - "Agência"
+      - "Conta"
+      - "Período"
+      - "Saldo inicial"
+      - "Entradas"
+      - "Saídas"
+      - "Saldo final"
+      - "DETALHE DOS MOVIMENTOS"
+      - "Data"
+      - "Descrição"
+      - "ID da operação"
+      - "Valor"
+      - "Saldo"
+    optional_keywords:
+      - "Liberação de dinheiro"
+      - "01-06-2024"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "contasimples"
+      - "CRESOL"
+      - "infinitepay"
+      - "inter"
+      - "GRAFENO"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Descrição"
+      - "ID da operação"
+      - "Valor"
+      - "Saldo"
+    expected_column_order:
+      - date
+      - description
+      - operation_id
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Descrição"
+        - "Descricao"
+        - "Histórico"
+        - "Movimentação"
+      document:
+        - "ID da operação"
+        - "ID da operacao"
+        - "Documento"
+        - "ID"
+      amount:
+        - "Valor"
+      balance:
+        - "Saldo"
+      operation_id:
+        - "ID da operação"
+        - "ID da operacao"
+    table_starts_after:
+      - "DETALHE DOS MOVIMENTOS"
+      - "Data Descrição ID da operação Valor Saldo"
+    row_separator_hint: "transaction row starts when first column contains dd-MM-yyyy"
+  parsing:
+    date_format: "dd-MM-yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-R$ {amount}"
+      - "R$ -{amount}"
+      - "-{amount}"
+      - "{amount}-"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+      - "+R$ {amount}"
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "mercado pago"
+      - "EXTRATO DE CONTA"
+      - "CPF/CNPJ"
+      - "Agência"
+      - "Conta"
+      - "Período"
+      - "Saldo inicial"
+      - "Entradas"
+      - "Saídas"
+      - "Saldo final"
+      - "DETALHE DOS MOVIMENTOS"
+      - "Data"
+      - "Descrição"
+      - "ID da operação"
+      - "Valor"
+      - "Saldo"
+      - "SALDO INICIAL"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "Saldo inicial"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - operation_id
+      - balance
+      - document
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "Liberação de dinheiro"
+        sign: positive
+        confidence: low
+        inferred: true
+        reason: "Descrição sugere entrada, mas valor/sinal está oculto no recorte"
+    cautions:
+      - "Não usar descrição como regra final quando o valor assinado estiver disponível."
+      - "Se valor vier sem sinal, aplicar regra geral de positivo, mas validar com saldo."
+      - "Se descrição e sinal conflitarem, sinal explícito deve prevalecer."
+      - "Não importar saldos/resumos como transações."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_case_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Liberação de dinheiro"
+        category: "liberacao_de_saldo"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia_ted"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa"
+        category: "tarifa"
+        inferred: true
+      - pattern: "Taxa"
+        category: "taxa_servico"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "Data"
+      - "Descrição"
+      - "ID da operação"
+      - "Valor"
+      - "Saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "when amount and saldo values are available, validate previous_balance_plus_signed_amount_equals_current_balance"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "amount_missing_or_masked"
+      - "operation_id_missing_or_masked"
+      - "balance_missing_or_masked"
+      - "credit_debit_representation_unknown"
+      - "date_format_not_hyphenated"
+      - "ocr_confidence_low_on_amount_columns"
+      - "balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "01-06-2024"
+        raw_description: "Liberação de dinheiro"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Valor/ID/saldo ocultos; provável entrada, mas exige validação no PDF real"
+      - raw_date: "01-06-2024"
+        raw_description: "Liberação de dinheiro"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Valor/ID/saldo ocultos; preservar descrição original"
+      - raw_date: "01-06-2024"
+        raw_description: "Liberação de dinheiro"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Valor/ID/saldo ocultos; classificar como transação incompleta até PDF real"
+  implementation_notes:
+    - "Classificar pelo logo Mercado Pago e título 'EXTRATO DE CONTA'."
+    - "Usar a seção 'DETALHE DOS MOVIMENTOS' como âncora da tabela."
+    - "Suportar datas com hífen no formato dd-MM-yyyy."
+    - "Preservar ID da operação como string quando disponível."
+    - "Não importar resumo de saldos/entradas/saídas como transações."
+    - "Validar com PDF real os valores, saldos e padrões de sinal antes de consolidar regras definitivas."

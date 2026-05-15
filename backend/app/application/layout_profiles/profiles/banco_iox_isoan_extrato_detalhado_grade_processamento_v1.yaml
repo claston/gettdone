@@ -1,0 +1,485 @@
+meta_model:
+  layout_id: banco_iox_isoan_extrato_detalhado_grade_processamento_v1
+  bank: ISOAN/IOX
+  channel: unknown
+  statement_type: extrato_detalhado
+  source_quality: image_inferred
+  confidence: medium
+  detection_signals:
+    strong:
+      - "Logotipo dourado com símbolo semelhante a 'Q' visível no topo esquerdo"
+      - "Título 'Extrato Detalhado' no topo direito"
+      - "Texto 'Gerado em:' no cabeçalho"
+      - "Bloco de identificação com colunas 'Banco', 'Agência' e 'Conta'"
+      - "Período explícito: '29/11/2024 à 02/01/2025'"
+      - "Bloco de resumo 'Valores em processamento (R$)' com valor 'R$ 8.529,00'"
+      - "Tabela com colunas 'Data', 'Lançamento', 'Nome', 'Banco', 'Agência', 'Conta', 'Valor (R$)' e 'Saldo (R$)'"
+      - "Linhas com lançamentos como 'SALDO FINAL', 'TED Recebida' e 'Recebimento de boletos'"
+      - "Linha de status textual 'Em processamento' associada a recebimento de boletos"
+    weak:
+      - "Nome do banco/instituição não está legível no recorte, mas foi informado pelo usuário como ISOAN/IOX"
+      - "Valores e saldos transacionais estão ocultos ou parcialmente ilegíveis"
+      - "Algumas datas aparecem como '02/01/2025' e outras com hora, como '02/01/2025 15:04'"
+      - "Campos de nome, conta, valores e saldo estão mascarados/ocultos"
+      - "Não há exemplo claro de valor negativo no recorte"
+    table_headers:
+      - "Data"
+      - "Lançamento"
+      - "Nome"
+      - "Banco"
+      - "Agência"
+      - "Conta"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+  page_structure:
+    header:
+      bank_logo: "ISOAN/IOX gold logo"
+      title: "Extrato Detalhado"
+      generated_at: unknown
+      account_identifiers:
+        bank: ISOAN/IOX
+        agency: unknown
+        account: unknown
+    metadata:
+      period: "29/11/2024 à 02/01/2025"
+      start_date: "29/11/2024"
+      end_date: "02/01/2025"
+      processing_values:
+        label: "Valores em processamento (R$)"
+        value: "R$ 8.529,00"
+    transactions_table:
+      header_background: "white"
+      banded_rows: true
+      columns:
+        - "Data"
+        - "Lançamento"
+        - "Nome"
+        - "Banco"
+        - "Agência"
+        - "Conta"
+        - "Valor (R$)"
+        - "Saldo (R$)"
+      visible_rows:
+        - type: closing_balance
+          date: "02/01/2025"
+          description: "SALDO FINAL"
+          name: unknown
+          bank_code: unknown
+          agency: unknown
+          account: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "02/01/2025 15:04"
+          description: "TED Recebida"
+          name: unknown
+          bank_code: "363"
+          agency: "0001"
+          account: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "02/01/2025 14:54"
+          description: "TED Recebida"
+          name: unknown
+          bank_code: "033"
+          agency: "1279"
+          account: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "02/01/2025 14:37"
+          description: "TED Recebida"
+          name: unknown
+          bank_code: "269"
+          agency: unknown
+          account: unknown
+          amount: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "02/01/2025 14:37"
+          description: "Recebimento de boletos"
+          status: "Em processamento"
+          name: unknown
+          bank_code: unknown
+          agency: "4431"
+          account: unknown
+          amount: unknown
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO FINAL"
+        - "SALDO ANTERIOR"
+        - "SALDO INICIAL"
+        - "SALDO DO DIA"
+      should_import_as_transaction: false
+      balance_source: "Saldo (R$)"
+      inferred: false
+    normal_transaction:
+      row_has_date_or_datetime: true
+      row_has_description: true
+      row_may_have_name: true
+      row_may_have_bank_code: true
+      row_may_have_agency: true
+      row_may_have_account: true
+      row_may_have_amount: true
+      row_may_have_balance: true
+      row_may_have_status: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Lançamento indica recebimento/entrada e valor aparece sem sinal negativo"
+        - "Valor aparece sem sinal negativo, conforme regra geral, se não houver coluna/seção de débito/crédito"
+      negative_when:
+        - "Valor aparece com sinal '-'"
+        - "Lançamento indica pagamento/saída e valor/saldo confirma, se presente no PDF real"
+      inferred: true
+    balance_column:
+      exists: true
+      column_name: "Saldo (R$)"
+      may_be_blank_or_masked_in_visible_rows: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "TED Recebida"
+        reason: "Descrição indica entrada por TED recebida, mas valor/sinal está oculto"
+        inferred: true
+      - pattern: "Recebimento de boletos"
+        reason: "Descrição indica recebimento, mas linha está em processamento e valor/sinal está oculto"
+        inferred: true
+    likely_debit_patterns:
+      - pattern: "*"
+        reason: "Não há exemplo de débito visível; validar em PDF real"
+        inferred: true
+    caution:
+      - "Não importar 'SALDO FINAL' como transação."
+      - "Linhas em processamento podem não compor saldo final e podem exigir status separado."
+      - "Valores estão ocultos/ilegíveis; regras de sinal precisam ser validadas com PDF real."
+      - "A coluna Data pode conter data ou data/hora; parser deve aceitar ambos."
+      - "Códigos de banco e agência devem ser preservados como string para manter zeros à esquerda."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Data Lançamento Nome Banco Agência Conta Valor (R$) Saldo (R$)"
+      header_keywords:
+        - "Data"
+        - "Lançamento"
+        - "Nome"
+        - "Banco"
+        - "Agência"
+        - "Conta"
+        - "Valor (R$)"
+        - "Saldo (R$)"
+    column_order:
+      - date
+      - description
+      - name
+      - bank_code
+      - agency
+      - account
+      - amount
+      - balance
+    row_behavior:
+      separator: "grid table with vertical and horizontal lines"
+      alternating_row_background: true
+      date_may_include_time: true
+      description_may_have_status_inline: true
+      amount_right_aligned_when_visible: true
+      balance_right_aligned_when_visible: true
+      status_text_inside_description_or_name_area: true
+  parser_risks:
+    ambiguities:
+      - "Nome da instituição/banco informado pelo usuário como ISOAN/IOX; no recorte aparece principalmente o logotipo."
+      - "Valores e saldos estão ocultos/ilegíveis, impedindo confirmação de formato e sinal."
+      - "Status 'Em processamento' pode ser extraído na coluna Nome ou como parte do lançamento."
+      - "Linha 'SALDO FINAL' possui data e pode ser confundida com transação."
+      - "A coluna Banco pode representar código bancário de contraparte, não o banco emissor do extrato."
+    fields_that_may_be_missing:
+      - "amount"
+      - "balance"
+      - "name"
+      - "account"
+      - "generated_at"
+      - "issuer_bank_name"
+      - "status"
+    cases_that_need_real_pdf_validation:
+      - "Confirmar em PDF completo/metadados se a instituição emissora aparece como ISOAN, IOX ou variação oficial."
+      - "Se a camada textual preserva valores e saldos nas colunas corretas."
+      - "Como saídas/débitos são representados."
+      - "Se lançamentos em processamento devem ser importados ou apenas registrados como pendentes."
+      - "Se o cabeçalho repete em páginas seguintes."
+      - "Se data/hora sempre vem no formato dd/MM/yyyy HH:mm para transações."
+
+layout_profile:
+  profile_name: banco_iox_isoan_extrato_detalhado_grade_processamento_v1
+  bank: ISOAN/IOX
+  layout_family: iox_isoan_extrato_detalhado_grade_banco_agencia_conta
+  statement_type: extrato_detalhado
+  confidence: medium
+  classifier:
+    required_keywords:
+      - "Extrato Detalhado"
+      - "Gerado em"
+      - "Período"
+      - "Banco"
+      - "Agência"
+      - "Conta"
+      - "Valores em processamento (R$)"
+      - "Data"
+      - "Lançamento"
+      - "Nome"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    optional_keywords:
+      - "ISOAN"
+      - "IOX"
+      - "SALDO FINAL"
+      - "TED Recebida"
+      - "Recebimento de boletos"
+      - "Em processamento"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "contasimples"
+      - "CRESOL"
+      - "infinitepay"
+      - "inter"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.8
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Lançamento"
+      - "Nome"
+      - "Banco"
+      - "Agência"
+      - "Conta"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - description
+      - name
+      - bank_code
+      - agency
+      - account
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Lançamento"
+        - "Lancamento"
+        - "Descrição"
+        - "Histórico"
+      document:
+        - "Documento"
+        - "Doc."
+        - "ID"
+      amount:
+        - "Valor (R$)"
+        - "Valor"
+      balance:
+        - "Saldo (R$)"
+        - "Saldo"
+      name:
+        - "Nome"
+      bank_code:
+        - "Banco"
+      agency:
+        - "Agência"
+        - "Agencia"
+      account:
+        - "Conta"
+      status:
+        - "Em processamento"
+    table_starts_after:
+      - "Valores em processamento (R$)"
+      - "Data Lançamento Nome Banco Agência Conta Valor (R$) Saldo (R$)"
+    row_separator_hint: "grid row starts with dd/MM/yyyy optionally followed by HH:mm; balance rows contain SALDO FINAL"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    datetime_format: "dd/MM/yyyy HH:mm"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-R$ {amount}"
+      - "R$ -{amount}"
+      - "-{amount}"
+      - "{amount}-"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+      - "{amount_without_minus}"
+      - "+R$ {amount}"
+    ignore_rows:
+      - "Extrato Detalhado"
+      - "Gerado em"
+      - "Período"
+      - "Banco"
+      - "Agência"
+      - "Conta"
+      - "Valores em processamento (R$)"
+      - "Data"
+      - "Lançamento"
+      - "Nome"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+      - "SALDO FINAL"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO DO DIA"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - datetime
+      - name
+      - bank_code
+      - agency
+      - account
+      - balance
+      - status
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "status_and_description_based_hint"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "TED Recebida"
+        sign: positive
+        confidence: low
+        inferred: true
+        reason: "Descrição indica recebimento, mas valor/sinal está oculto"
+      - pattern: "Recebimento de boletos"
+        sign: positive
+        confidence: low
+        inferred: true
+        reason: "Descrição indica recebimento, mas valor/sinal está oculto e status pode ser pendente"
+    cautions:
+      - "Não usar descrição como regra final quando valor assinado estiver disponível."
+      - "Não importar SALDO FINAL como transação."
+      - "Linhas 'Em processamento' podem precisar de flag pending=true e podem não afetar saldo."
+      - "Se valor estiver ilegível/mascarado, marcar para revisão manual."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "extract_status_em_processamento"
+      - "normalize_case_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "TED Recebida"
+        category: "ted_recebida"
+        inferred: true
+      - pattern: "Recebimento de boletos"
+        category: "recebimento_boleto"
+        inferred: true
+    transfer_hints:
+      - pattern: "TED Recebida"
+        category: "transferencia_ted_entrada"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia_ted"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa"
+        category: "tarifa"
+        inferred: true
+      - pattern: "Taxa"
+        category: "taxa_servico"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 8
+    reject_if_missing_headers:
+      - "Data"
+      - "Lançamento"
+      - "Valor"
+      - "Saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "when amount and saldo values are available, validate previous_balance_plus_signed_amount_equals_current_balance; exclude pending rows if status is Em processamento"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "issuer_bank_name_user_provided_needs_pdf_confirmation"
+      - "amount_missing_or_masked"
+      - "balance_missing_or_masked"
+      - "status_em_processamento_present"
+      - "saldo_final_detected_as_transaction"
+      - "bank_agency_account_columns_shifted"
+      - "ocr_confidence_low_on_grid_columns"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "02/01/2025"
+        raw_description: "SALDO FINAL"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo final; não importar"
+      - raw_date: "02/01/2025 15:04"
+        raw_description: "TED Recebida"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "TED recebida; valor oculto, sinal provável positivo mas requer PDF real"
+      - raw_date: "02/01/2025 14:54"
+        raw_description: "TED Recebida"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Banco 033 e agência 1279 visíveis; preservar como string"
+      - raw_date: "02/01/2025 14:37"
+        raw_description: "Recebimento de boletos"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: unknown
+        should_import_as_transaction: true
+        notes: "Linha em processamento; importar como pendente ou revisar conforme regra de negócio"
+  implementation_notes:
+    - "Nome do banco emissor foi complementado pelo usuário como ISOAN/IOX; confirmar nomenclatura oficial no PDF real/metadados."
+    - "Classificar pelo título 'Extrato Detalhado' e pela tabela de oito colunas."
+    - "Aceitar Data com ou sem horário."
+    - "Filtrar SALDO FINAL e demais linhas de saldo."
+    - "Extrair status 'Em processamento' como metadado e não como parte da descrição principal."
+    - "Preservar banco/agência/conta como strings."
+    - "Validar com PDF real valores, saldos e regras de sinal antes de consolidar."

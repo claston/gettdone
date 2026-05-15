@@ -1,0 +1,301 @@
+meta_model:
+  layout_id: santander_empresarial_conta_corrente_extrato
+  bank: Santander
+  channel: Internet Banking Empresarial
+  country: BR
+  statement_type: conta_corrente
+  source_quality: image_inferred
+  confidence: medium
+  detection_signals:
+    strong:
+      - Santander
+      - Internet Banking Empresarial
+      - Conta Corrente > Extratos >
+      - Consultar
+      - Saldo disponivel para uso
+    weak:
+      - Opcao de Pesquisa
+      - Periodos
+      - Data/Hora
+      - Agencia
+      - Conta
+    table_headers:
+      - Data
+      - Historico
+      - Documento
+      - Valor (R$)
+      - Saldo (R$)
+  page_structure:
+    header:
+      contains:
+        - bank_logo
+        - channel_title
+        - agency_label
+        - account_label
+    metadata:
+      fields:
+        period:
+          label: Periodos
+          format: dd/mm/yyyy a dd/mm/yyyy
+        generated_at:
+          label: Data/Hora
+          format: dd/mm/yyyy as HHhMM
+        search_option:
+          label: Opcao de Pesquisa
+        available_balance:
+          label: Saldo disponivel para uso
+          format: R$999,99
+    transactions_table:
+      starts_after_header_row: true
+      header_background: gray
+      row_separator: horizontal_lines
+      columns:
+        date:
+          header: Data
+          format: dd/mm/yyyy
+          required: true
+        description:
+          header: Historico
+          casing: uppercase
+          required: true
+        document:
+          header: Documento
+          format: numeric_or_zero_padded
+          required: false
+        amount:
+          header: Valor (R$)
+          decimal_format: pt-BR
+          required: false
+        balance:
+          header: Saldo (R$)
+          decimal_format: pt-BR
+          required: false
+  transaction_rules:
+    opening_balance:
+      detect_descriptions:
+        - SALDO ANTERIOR
+      parse_as_transaction: false
+      map_to: opening_balance
+    normal_transaction:
+      required_fields:
+        - date
+        - description
+        - amount
+      optional_fields:
+        - document
+        - balance
+    amount_sign:
+      explicit_negative:
+        examples:
+          - "-260,27"
+        rule: negative_amount
+      explicit_positive:
+        examples:
+          - "23,79"
+          - "127,46"
+          - "109,02"
+        rule: positive_amount
+      color_hint:
+        red_text: negative
+        normal_blue_or_gray_text: positive_or_neutral
+    balance_column:
+      may_be_empty: true
+      if_present:
+        use_as_running_balance: true
+  normalization_hints:
+    descriptions:
+      - preserve_original_description
+      - normalize_repeated_spaces
+      - uppercase_for_matching
+    likely_credit_patterns:
+      - PAGAMENTO CARTAO DE DEBITO GETNET
+    likely_debit_patterns:
+      - APLICACAO
+      - TARIFA
+      - TRANSFERENCIA ENVIADA
+      - PIX ENVIADO
+    caution:
+      - PAGAMENTO CARTAO DE DEBITO GETNET appears positive in this layout, despite the word PAGAMENTO.
+      - Do not infer sign only from description. Prefer the Valor column sign/color/text.
+  visual_model:
+    table_anchor:
+      header_row_text:
+        - Data
+        - Historico
+        - Documento
+        - Valor (R$)
+        - Saldo (R$)
+      header_row_color: gray
+    column_order:
+      - date
+      - description
+      - document
+      - amount
+      - balance
+    row_behavior:
+      - date_repeats_on_each_row
+      - description_can_be_long
+      - document_may_be_blank_or_zero_filled
+      - amount_may_be_blank_for_balance_rows
+      - balance_may_be_blank_for_most_transactions
+  parser_risks:
+    ambiguities:
+      - Amount sign should not be inferred from words like PAGAMENTO.
+      - OCR may confuse accentless Historico variants and values with comma decimals.
+      - Color-based sign detection may be unavailable after PDF text extraction.
+    fields_that_may_be_missing:
+      - document
+      - balance
+      - account_number
+      - agency_number
+    cases_that_need_real_pdf_validation:
+      - multi_page_extracts
+      - page_break_inside_transaction_table
+      - descriptions_wrapping_to_multiple_lines
+      - rows_with_balance_but_empty_amount
+      - negative_amounts_without_color_metadata
+
+layout_profile:
+  profile_name: santander_empresarial_conta_corrente
+  bank: Santander
+  layout_family: internet_banking_empresarial
+  statement_type: conta_corrente
+  confidence: medium
+  classifier:
+    required_keywords:
+      - Santander
+      - Internet Banking Empresarial
+      - Conta Corrente
+      - Extratos
+    optional_keywords:
+      - Consultar
+      - Saldo disponivel para uso
+      - Opcao de Pesquisa
+      - Periodos
+    negative_keywords: []
+    min_score_hint: 0.78
+  table_detection:
+    header_keywords:
+      - Data
+      - Historico
+      - Documento
+      - Valor (R$)
+      - Saldo (R$)
+    expected_column_order:
+      - date
+      - description
+      - document
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - Data
+      description:
+        - Historico
+        - Histórico
+      document:
+        - Documento
+      amount:
+        - Valor (R$)
+        - Valor
+      balance:
+        - Saldo (R$)
+        - Saldo
+    table_starts_after:
+      - Data
+      - Historico
+      - Valor (R$)
+    row_separator_hint: horizontal_lines
+  parsing:
+    date_format: "%d/%m/%Y"
+    amount_locale: pt_BR
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - leading_minus
+      - red_text_if_available
+    positive_patterns:
+      - unsigned_amount
+    ignore_rows:
+      - SALDO ANTERIOR
+    opening_balance_rows:
+      - SALDO ANTERIOR
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - explicit_minus_in_amount
+      - red_color_if_available
+      - debit_credit_section_if_present
+      - description_heuristic_last
+    description_based_overrides: []
+    cautions:
+      - PAGAMENTO can be positive in card/acquirer settlement rows.
+      - Never force negative amount only because description contains PAGAMENTO.
+  normalization:
+    description_cleanup:
+      - trim
+      - collapse_internal_whitespace
+      - uppercase_for_matching
+    preserve_original_description: true
+    category_hints:
+      card_settlement:
+        - PAGAMENTO CARTAO DE DEBITO GETNET
+      investment:
+        - APLICACAO
+      fees:
+        - TARIFA
+    transfer_hints:
+      - TRANSFERENCIA
+      - PIX
+    fee_hints:
+      - TARIFA
+      - CESTA
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - Data
+      - Historico
+      - Valor (R$)
+    balance_consistency_check: optional
+    needs_manual_review_when:
+      - amount_is_blank_for_non_balance_row
+      - date_missing
+      - description_wrap_cannot_be_attached_to_previous_row
+      - negative_sign_detected_only_by_color
+  examples_from_image:
+    sample_rows:
+      - raw_date: "01/10/2021"
+        raw_description: SALDO ANTERIOR
+        raw_document: null
+        raw_amount: null
+        raw_balance: "0,00"
+        normalized_amount: null
+        should_import_as_transaction: false
+        notes: Opening balance row.
+      - raw_date: "01/10/2021"
+        raw_description: PAGAMENTO CARTAO DE DEBITO GETNET-MAESTRO
+        raw_document: "247258"
+        raw_amount: "23,79"
+        raw_balance: null
+        normalized_amount: 23.79
+        should_import_as_transaction: true
+        notes: Positive amount despite PAGAMENTO in description.
+      - raw_date: "01/10/2021"
+        raw_description: APLICACAO AUT CONTAMAX EMPRESARIAL
+        raw_document: "000000"
+        raw_amount: "-260,27"
+        raw_balance: "0,00"
+        normalized_amount: -260.27
+        should_import_as_transaction: true
+        notes: Explicit negative amount.
+  implementation_notes:
+    - Use table headers as the primary parser anchor.
+    - Keep sign parsing amount-first and description-last.
+    - Treat SALDO ANTERIOR as metadata/opening balance, not a transaction.
+    - Add real PDF samples before raising confidence to high.

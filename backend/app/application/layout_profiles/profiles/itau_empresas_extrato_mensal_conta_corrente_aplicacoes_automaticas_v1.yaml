@@ -1,0 +1,586 @@
+meta_model:
+  layout_id: itau_empresas_extrato_mensal_conta_corrente_aplicacoes_automaticas_v1
+  bank: Itaú
+  channel: Itaú Empresas
+  statement_type: extrato_mensal_conta_corrente_aplicacoes_automaticas
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo Itaú visível no topo esquerdo"
+      - "Texto 'ItaúEmpresas' no cabeçalho"
+      - "Texto 'extrato mensal'"
+      - "Bloco de resumo '01. Conta Corrente e Aplicações Automáticas'"
+      - "Gráfico/resumo de total entradas e total saídas"
+      - "Tabela 'Conta Corrente | Movimentação'"
+      - "Legenda de códigos: A, B, C, D, G, P"
+      - "Cabeçalho de tabela com colunas 'data', 'descrição', 'entradas R$ (créditos)', 'saídas R$ (débitos)', 'saldo R$'"
+      - "Débitos aparecem na coluna 'saídas R$ (débitos)' com sufixo '-' ao final do valor"
+      - "Créditos aparecem na coluna 'entradas R$ (créditos)' sem sinal negativo"
+    weak:
+      - "Imagem mostra página em escala reduzida; alguns textos e valores podem exigir validação com PDF real"
+      - "Dados de conta, período e identificadores estão pequenos/ilegíveis ou omitidos"
+      - "Algumas descrições aparecem abreviadas, como 'Sispag BOLETO' e 'Sispag PIX TRANSFERENCI'"
+      - "Linha 'SALDO APLIC AUT MAIS' parece saldo/contexto e não transação"
+    table_headers:
+      - "data"
+      - "descrição"
+      - "entradas R$ (créditos)"
+      - "saídas R$ (débitos)"
+      - "saldo R$"
+  page_structure:
+    header:
+      bank_logo: "Itaú"
+      channel_title: "ItaúEmpresas"
+      document_title: "extrato mensal"
+      account_identifiers:
+        account_type: "CC"
+        account: unknown
+        period: "fev 2024"
+        page: "001/006"
+    metadata:
+      summary_title: "01. Conta Corrente e Aplicações Automáticas"
+      summary_available:
+        saldo_em: 
+          start: "31/01/24"
+          end: "29/02/24"
+        categories:
+          entradas_creditos:
+            - "Outras entradas"
+            - "total"
+          saidas_debitos:
+            - "Aplicação em investimentos"
+            - "Outras saídas"
+            - "total"
+      legend:
+        A: "agendamento"
+        B: "ações movimentadas pela Bolsa de Valores"
+        C: "crédito a compensar"
+        D: "débito a compensar"
+        G: "aplicação programada"
+        P: "poupança automática"
+    transactions_table:
+      section_title: "Conta Corrente | Movimentação"
+      columns:
+        - "data"
+        - "descrição"
+        - "entradas R$ (créditos)"
+        - "saídas R$ (débitos)"
+        - "saldo R$"
+      visible_rows:
+        - type: opening_balance
+          date: "31/01"
+          description: "Saldo anterior"
+          credit: unknown
+          debit: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: "01/02"
+          description: "Sispag BOLET OUTR BCO"
+          credit: unknown
+          debit: "2.940,00-"
+          balance: unknown
+        - type: normal_transaction
+          date: unknown
+          description: "Sispag BOLETO"
+          credit: unknown
+          debit: "180,10-"
+          balance: unknown
+        - type: normal_transaction
+          date: unknown
+          description: "Sispag BOLETO"
+          credit: unknown
+          debit: "415,25-"
+          balance: unknown
+        - type: normal_transaction
+          date: unknown
+          description: "Sispag BOLETO"
+          credit: unknown
+          debit: "588,17-"
+          balance: unknown
+        - type: normal_transaction
+          date: unknown
+          description: "Sispag BOLETO"
+          credit: unknown
+          debit: "1.921,43-"
+          balance: unknown
+        - type: normal_transaction
+          date: unknown
+          description: "Sispag CONCESSIONARIA"
+          credit: unknown
+          debit: "152,05-"
+          balance: unknown
+        - type: normal_transaction
+          date: unknown
+          description: "Sispag CONCESSIONARIA"
+          credit: unknown
+          debit: "1.170,39-"
+          balance: unknown
+        - type: normal_transaction
+          date: unknown
+          description: "Sispag CONCESSIONARIA"
+          credit: unknown
+          debit: "76,49-"
+          balance: unknown
+        - type: normal_transaction
+          date: unknown
+          description: "Sispag PIX TRANSFERENCI"
+          credit: unknown
+          debit: "3.750,00-"
+          balance: unknown
+        - type: normal_transaction
+          date: unknown
+          description: "Sispag PIX TRANSFERENCI"
+          credit: unknown
+          debit: "1.427,76-"
+          balance: unknown
+        - type: normal_transaction
+          date: unknown
+          description: "Tar/Custas Cobrança"
+          credit: unknown
+          debit: "24,00-"
+          balance: unknown
+        - type: normal_transaction
+          date: unknown
+          description: "Mov Tit Cob Disp 1/025"
+          credit: "5.280,07"
+          debit: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: unknown
+          description: "Rede VISA"
+          credit: "495,75"
+          debit: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: unknown
+          description: "Mov Tit Cob Disp 1/025"
+          credit: "10.608,65"
+          debit: unknown
+          balance: unknown
+        - type: normal_transaction
+          date: unknown
+          description: "Apl Aplic Aut Mais"
+          credit: unknown
+          debit: "3.734,92-"
+          balance: unknown
+        - type: balance_row
+          date: unknown
+          description: "SALDO APLIC AUT MAIS"
+          credit: unknown
+          debit: unknown
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo anterior"
+        - "SALDO ANTERIOR"
+      should_import_as_transaction: false
+      balance_source: "saldo R$"
+      inferred: false
+    normal_transaction:
+      row_may_have_date: true
+      row_has_description: true
+      row_may_have_credit: true
+      row_may_have_debit: true
+      row_may_have_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece na coluna 'entradas R$ (créditos)'"
+      negative_when:
+        - "Valor aparece na coluna 'saídas R$ (débitos)'"
+        - "Valor termina com '-' na coluna de saídas"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "saldo R$"
+      may_be_blank_on_visible_rows: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "Mov Tit Cob Disp*"
+        reason: "Linhas visíveis possuem valores na coluna entradas R$"
+        inferred: false
+      - pattern: "Rede VISA"
+        reason: "Linha visível possui valor na coluna entradas R$"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "Sispag BOLETO*"
+        reason: "Linhas visíveis possuem valores na coluna saídas R$ com sufixo '-'"
+        inferred: false
+      - pattern: "Sispag PIX TRANSFERENCI*"
+        reason: "Linhas visíveis possuem valores na coluna saídas R$ com sufixo '-'"
+        inferred: false
+      - pattern: "Tar/Custas Cobrança"
+        reason: "Linha visível possui valor na coluna saídas R$ com sufixo '-'"
+        inferred: false
+      - pattern: "Apl Aplic Aut Mais"
+        reason: "Linha visível possui valor na coluna saídas R$ com sufixo '-'"
+        inferred: false
+    caution:
+      - "Este layout tem colunas separadas para entradas e saídas; usar coluna como regra primária de sinal."
+      - "Valores de débito usam sinal negativo ao final, exemplo '2.940,00-'; evitar dupla negativação."
+      - "Linhas sem data visível provavelmente herdam a data anterior, mas isso precisa ser validado no PDF real."
+      - "Linhas de saldo/aplicação como 'SALDO APLIC AUT MAIS' não devem ser importadas como transações."
+      - "A imagem está reduzida; validar campos e colunas em PDF real."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Conta Corrente | Movimentação"
+      header_keywords:
+        - "data"
+        - "descrição"
+        - "entradas R$"
+        - "saídas R$"
+        - "saldo R$"
+    column_order:
+      - date
+      - description
+      - credit
+      - debit
+      - balance
+    row_behavior:
+      separator: "mostly whitespace and horizontal rules"
+      date_may_be_omitted_on_subsequent_same_day_rows: true
+      description_left_aligned: true
+      credit_right_aligned: true
+      debit_right_aligned: true
+      debit_uses_trailing_minus: true
+      summary_chart_above_table: true
+      legend_left_of_table: true
+  parser_risks:
+    ambiguities:
+      - "Linhas sem data podem ser lançamentos do mesmo dia ou continuação visual; validação por PDF real é necessária."
+      - "O sinal negativo no débito aparece ao final do número, formato que pode ser perdido ou movido pelo OCR."
+      - "Imagem muito reduzida pode distorcer valores, descrições e cabeçalhos."
+      - "A coluna saldo está presente, mas não há saldos claramente legíveis nas linhas visíveis."
+      - "A legenda lateral com códigos A/B/C/D/G/P pode ser confundida com linhas da tabela se a segmentação de página for ruim."
+    fields_that_may_be_missing:
+      - "date"
+      - "balance"
+      - "account"
+      - "page_number"
+      - "full_period"
+      - "document"
+      - "origin_agency"
+    cases_that_need_real_pdf_validation:
+      - "Se a extração textual preserva as colunas de entradas, saídas e saldo."
+      - "Se o sinal '-' ao final dos débitos é preservado junto ao valor."
+      - "Se linhas sem data devem herdar a data imediatamente anterior."
+      - "Se cabeçalho e legenda aparecem em todas as páginas ou apenas na primeira."
+      - "Como são representados saldos finais, saldos de aplicação, totais e notas explicativas."
+      - "Se descrições longas como Sispag PIX aparecem truncadas ou completas."
+
+layout_profile:
+  profile_name: itau_empresas_extrato_mensal_conta_corrente_aplicacoes_automaticas_v1
+  bank: Itaú
+  layout_family: itau_empresas_extrato_mensal_movimentacao
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "ItaúEmpresas"
+      - "extrato mensal"
+      - "Conta Corrente"
+      - "Movimentação"
+      - "data"
+      - "descrição"
+      - "entradas R$"
+      - "créditos"
+      - "saídas R$"
+      - "débitos"
+      - "saldo R$"
+    optional_keywords:
+      - "01. Conta Corrente e Aplicações Automáticas"
+      - "Saldo anterior"
+      - "Sispag"
+      - "Rede VISA"
+      - "Apl Aplic Aut Mais"
+      - "SALDO APLIC AUT MAIS"
+      - "total entradas"
+      - "total saídas"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "30 horas"
+      - "Extrato de"
+      - "Cartão de Crédito"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "data"
+      - "descrição"
+      - "entradas R$ (créditos)"
+      - "saídas R$ (débitos)"
+      - "saldo R$"
+    expected_column_order:
+      - date
+      - description
+      - credit
+      - debit
+      - balance
+    column_aliases:
+      date:
+        - "data"
+        - "Data"
+      description:
+        - "descrição"
+        - "Descrição"
+        - "lançamento"
+        - "Lançamento"
+      document:
+        - "documento"
+        - "Documento"
+        - "doc."
+      amount:
+        - "entradas R$"
+        - "saídas R$"
+        - "valor"
+        - "Valor"
+      balance:
+        - "saldo R$"
+        - "Saldo R$"
+        - "saldo"
+      credit:
+        - "entradas R$"
+        - "créditos"
+      debit:
+        - "saídas R$"
+        - "débitos"
+    table_starts_after:
+      - "Conta Corrente | Movimentação"
+      - "data descrição entradas R$ saídas R$ saldo R$"
+    row_separator_hint: "new transaction usually has description in movimentação table; date may appear only on first row of the day"
+  parsing:
+    date_format: "dd/MM"
+    date_year_source: "statement_period_or_header"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount}-"
+      - "-{amount}"
+      - "value_in_debit_column"
+    positive_patterns:
+      - "{amount_without_minus_in_credit_column}"
+      - "value_in_credit_column"
+    ignore_rows:
+      - "ItaúEmpresas"
+      - "extrato mensal"
+      - "Conta Corrente"
+      - "Movimentação"
+      - "A = agendamento"
+      - "B = ações movimentadas"
+      - "C = crédito a compensar"
+      - "D = débito a compensar"
+      - "G = aplicação programada"
+      - "P = poupança automática"
+      - "data"
+      - "descrição"
+      - "entradas R$"
+      - "créditos"
+      - "saídas R$"
+      - "débitos"
+      - "saldo R$"
+      - "Saldo anterior"
+      - "SALDO APLIC AUT MAIS"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "Saldo anterior"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - description
+      - amount
+    optional_transaction_fields:
+      - date
+      - credit
+      - debit
+      - balance
+      - document
+      - origin_agency
+  sign_rules:
+    priority_order:
+      - "credit_or_debit_column"
+      - "trailing_negative_sign"
+      - "explicit_negative_sign"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "Sispag BOLETO*"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis estão na coluna saídas e possuem '-' ao final"
+      - pattern: "Sispag PIX TRANSFERENCI*"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis estão na coluna saídas e possuem '-' ao final"
+      - pattern: "Tar/Custas Cobrança"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível está na coluna saídas e possui '-' ao final"
+      - pattern: "Mov Tit Cob Disp*"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis estão na coluna entradas"
+      - pattern: "Rede VISA"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível está na coluna entradas"
+    cautions:
+      - "Não aplicar negativo duas vezes em valores da coluna saídas que já possuem '-' ao final."
+      - "Não usar Sispag isoladamente sem considerar a coluna de crédito/débito."
+      - "Quando uma linha não tiver data, herdar a data anterior somente após validar no PDF real."
+      - "Ignorar linhas de saldo e legendas antes da importação."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_case_optional"
+      - "keep_truncated_bank_description_as_seen"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Sispag BOLETO*"
+        category: "pagamento_boleto"
+        inferred: true
+      - pattern: "Sispag PIX TRANSFERENCI*"
+        category: "pix_enviado"
+        inferred: true
+      - pattern: "Sispag CONCESSIONARIA"
+        category: "pagamento_concessionaria"
+        inferred: true
+      - pattern: "Tar/Custas Cobrança"
+        category: "tarifa_cobranca"
+        inferred: true
+      - pattern: "Mov Tit Cob Disp*"
+        category: "recebimento_cobranca"
+        inferred: true
+      - pattern: "Rede VISA"
+        category: "recebimento_cartao"
+        inferred: true
+      - pattern: "Apl Aplic Aut Mais"
+        category: "aplicacao_automatica"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX TRANSFERENCI"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "DOC"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "Tar/Custas"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "Tarifa"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "Custas"
+        category: "custas"
+        inferred: true
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "data"
+      - "descrição"
+      - "entradas"
+      - "saídas"
+      - "saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "when balance is available, current_balance_equals_previous_balance_plus_credit_minus_debit; otherwise validate credit/debit column exclusivity"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "both_credit_and_debit_present_same_row"
+      - "amount_has_trailing_minus_but_is_in_credit_column"
+      - "row_without_date_after_page_break"
+      - "description_line_could_be_legend_or_note"
+      - "saldo_column_unreadable"
+      - "ocr_low_confidence_due_to_scaled_page"
+      - "balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "31/01"
+        raw_description: "Saldo anterior"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo anterior; não importar como transação"
+      - raw_date: "01/02"
+        raw_description: "Sispag BOLET OUTR BCO"
+        raw_document: unknown
+        raw_amount: "2.940,00-"
+        raw_balance: unknown
+        normalized_amount: "-2940.00"
+        should_import_as_transaction: true
+        notes: "Débito na coluna saídas com '-' ao final"
+      - raw_date: "01/02"
+        raw_description: "Sispag BOLETO"
+        raw_document: unknown
+        raw_amount: "180,10-"
+        raw_balance: unknown
+        normalized_amount: "-180.10"
+        should_import_as_transaction: true
+        notes: "Data possivelmente herdada da linha anterior; validar no PDF real"
+      - raw_date: "01/02"
+        raw_description: "Sispag PIX TRANSFERENCI"
+        raw_document: unknown
+        raw_amount: "3.750,00-"
+        raw_balance: unknown
+        normalized_amount: "-3750.00"
+        should_import_as_transaction: true
+        notes: "Débito de PIX com descrição truncada"
+      - raw_date: "01/02"
+        raw_description: "Mov Tit Cob Disp 1/025"
+        raw_document: unknown
+        raw_amount: "5.280,07"
+        raw_balance: unknown
+        normalized_amount: "5280.07"
+        should_import_as_transaction: true
+        notes: "Crédito na coluna entradas"
+      - raw_date: "01/02"
+        raw_description: "Rede VISA"
+        raw_document: unknown
+        raw_amount: "495,75"
+        raw_balance: unknown
+        normalized_amount: "495.75"
+        should_import_as_transaction: true
+        notes: "Crédito na coluna entradas"
+      - raw_date: "01/02"
+        raw_description: "Apl Aplic Aut Mais"
+        raw_document: unknown
+        raw_amount: "3.734,92-"
+        raw_balance: unknown
+        normalized_amount: "-3734.92"
+        should_import_as_transaction: true
+        notes: "Débito na coluna saídas"
+      - raw_date: "01/02"
+        raw_description: "SALDO APLIC AUT MAIS"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo/contexto de aplicação; não importar como transação"
+  implementation_notes:
+    - "Classificar pelo cabeçalho 'ItaúEmpresas', 'extrato mensal' e tabela 'Conta Corrente | Movimentação'."
+    - "Segmentar a página ignorando gráfico, resumo e legenda antes de processar a tabela."
+    - "Usar colunas separadas de entradas e saídas como regra principal de sinal."
+    - "Implementar parser para negativo com sinal no final do número, como '2.940,00-'."
+    - "Herdar data anterior em linhas sem data apenas depois de validar o comportamento no PDF real."
+    - "Não importar 'Saldo anterior' nem 'SALDO APLIC AUT MAIS' como transação."
+    - "Validar com PDFs reais em zoom/texto nativo, pois a imagem está muito reduzida."

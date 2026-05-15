@@ -1,0 +1,465 @@
+meta_model:
+  layout_id: infinitepay_relatorio_movimentacoes_v1
+  bank: InfinitePay
+  channel: InfinitePay
+  statement_type: relatorio_movimentacoes
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'infinitepay' visível no topo esquerdo"
+      - "Título 'Relatório de movimentações'"
+      - "Período explícito: '01 de março de 2024 a 31 de março de 2024'"
+      - "Tabela com cabeçalho preto contendo 'Data', 'Tipo de transação', 'Detalhe', 'Valor (R$)' e 'Saldo (R$)'"
+      - "Linhas agrupadas por data, exemplo '31/03/2024', '29/03/2024', '28/03/2024' e '26/03/2024'"
+      - "Linhas de saldo diário com texto 'Saldo do dia'"
+      - "Valores negativos aparecem com sinal '-' antes do valor"
+      - "Valores positivos aparecem com sinal '+' antes do valor"
+      - "Coluna de saldo diário aparece preenchida na coluna 'Saldo (R$)'"
+    weak:
+      - "Não há dados de conta, CNPJ, agência ou identificação do titular no recorte"
+      - "Tipo Pix aparece sem detalhe visível em algumas linhas"
+      - "Não há documento ou identificador de transação visível"
+      - "Saldos aparecem apenas em linhas 'Saldo do dia', não em todas as transações"
+      - "Valores usam vírgula decimal e podem aparecer sem símbolo R$ no corpo da tabela"
+    table_headers:
+      - "Data"
+      - "Tipo de transação"
+      - "Detalhe"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+  page_structure:
+    header:
+      bank_logo: "infinitepay"
+      title: "Relatório de movimentações"
+      account_identifiers:
+        account: unknown
+        cnpj: unknown
+        holder: unknown
+    metadata:
+      period: "01 de março de 2024 a 31 de março de 2024"
+      start_date: "01/03/2024"
+      end_date: "31/03/2024"
+    transactions_table:
+      header_background: "black"
+      columns:
+        - "Data"
+        - "Tipo de transação"
+        - "Detalhe"
+        - "Valor (R$)"
+        - "Saldo (R$)"
+      visible_rows:
+        - type: normal_transaction
+          date: "31/03/2024"
+          transaction_type: "Pix"
+          detail: unknown
+          document: unknown
+          amount: "-80,00"
+          balance: unknown
+        - type: balance_row
+          date: "31/03/2024"
+          transaction_type: "Saldo do dia"
+          detail: unknown
+          amount: unknown
+          balance: "105,30"
+        - type: normal_transaction
+          date: "29/03/2024"
+          transaction_type: "Pix"
+          detail: unknown
+          document: unknown
+          amount: "-25,00"
+          balance: unknown
+        - type: balance_row
+          date: "29/03/2024"
+          transaction_type: "Saldo do dia"
+          detail: unknown
+          amount: unknown
+          balance: "185,30"
+        - type: normal_transaction
+          date: "28/03/2024"
+          transaction_type: "Boleto bancário"
+          detail: "Pagamento realizado"
+          document: unknown
+          amount: "-50,00"
+          balance: unknown
+        - type: normal_transaction
+          date: "28/03/2024"
+          transaction_type: "Depósito de vendas"
+          detail: "Depósito InfinitePay"
+          document: unknown
+          amount: "+41,76"
+          balance: unknown
+        - type: balance_row
+          date: "28/03/2024"
+          transaction_type: "Saldo do dia"
+          detail: unknown
+          amount: unknown
+          balance: "185,30"
+        - type: normal_transaction
+          date: "26/03/2024"
+          transaction_type: "Depósito de vendas"
+          detail: "Depósito InfinitePay"
+          document: unknown
+          amount: "+90,11"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo do dia"
+        - "SALDO DO DIA"
+        - "Saldo anterior"
+        - "SALDO ANTERIOR"
+        - "Saldo inicial"
+        - "SALDO INICIAL"
+      should_import_as_transaction: false
+      balance_source: "Saldo (R$)"
+      inferred: false
+    normal_transaction:
+      row_has_date_context: true
+      row_has_transaction_type: true
+      row_may_have_detail: true
+      row_may_have_document: false
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor (R$) possui sinal '+' antes do valor"
+      negative_when:
+        - "Valor (R$) possui sinal '-' antes do valor"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "Saldo (R$)"
+      balance_filled_on_daily_balance_rows: true
+      balance_may_be_blank_on_transaction_rows: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "Depósito de vendas"
+        reason: "Linhas visíveis possuem sinal '+' no valor"
+        inferred: false
+      - pattern: "Depósito InfinitePay"
+        reason: "Detalhe visível associado a valor positivo"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "Pix"
+        reason: "Linhas Pix visíveis possuem sinal '-' no valor"
+        inferred: false
+      - pattern: "Boleto bancário"
+        reason: "Linha visível possui sinal '-' no valor e detalhe 'Pagamento realizado'"
+        inferred: false
+    caution:
+      - "Não importar 'Saldo do dia' como transação."
+      - "Neste layout, o sinal explícito + ou - no valor deve ser a regra primária."
+      - "A coluna Saldo(R$) é preenchida em linhas de saldo diário, não necessariamente por transação."
+      - "Não inferir sinal apenas por 'Pix', pois Pix pode ser entrada ou saída em outros contextos."
+      - "Não há documento ou identificador de transação visível no recorte."
+  visual_model:
+    table_anchor:
+      starts_after_text: "Data Tipo de transação Detalhe Valor (R$) Saldo (R$)"
+      header_row_color: "black"
+      header_keywords:
+        - "Data"
+        - "Tipo de transação"
+        - "Detalhe"
+        - "Valor (R$)"
+        - "Saldo (R$)"
+    column_order:
+      - date
+      - transaction_type
+      - detail
+      - amount
+      - balance
+    row_behavior:
+      separator: "horizontal light gray row dividers"
+      date_group_or_repeated_date: true
+      transaction_type_centered_or_left_aligned: true
+      detail_column_may_be_blank: true
+      amount_right_aligned: true
+      explicit_plus_minus_sign: true
+      balance_right_aligned_on_saldo_do_dia_rows: true
+  parser_risks:
+    ambiguities:
+      - "A data aparece como linha agrupadora e nem sempre se repete visualmente em cada sublinha."
+      - "Linhas 'Saldo do dia' têm estrutura semelhante a lançamentos e devem ser filtradas."
+      - "Detalhe pode estar em branco para Pix."
+      - "Não há identificação de conta/titular no recorte."
+      - "Não há documento/ID transacional visível."
+    fields_that_may_be_missing:
+      - "document"
+      - "transaction_id"
+      - "counterparty"
+      - "account"
+      - "cnpj"
+      - "holder"
+      - "balance_per_transaction"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual preserva sinal '+' e '-' no campo Valor."
+      - "Se a data é repetida em todas as linhas na extração textual ou apenas como agrupador."
+      - "Se saldos diários aparecem para todos os dias com movimentação."
+      - "Se existem páginas seguintes com repetição de cabeçalho."
+      - "Se descrições/detalhes longos quebram em múltiplas linhas."
+      - "Como aparecem estornos, tarifas, recebimentos via cartão e Pix recebido."
+
+layout_profile:
+  profile_name: infinitepay_relatorio_movimentacoes_v1
+  bank: InfinitePay
+  layout_family: infinitepay_relatorio_movimentacoes_tabela
+  statement_type: relatorio_movimentacoes
+  confidence: high
+  classifier:
+    required_keywords:
+      - "infinitepay"
+      - "Relatório de movimentações"
+      - "Período de"
+      - "Data"
+      - "Tipo de transação"
+      - "Detalhe"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    optional_keywords:
+      - "Saldo do dia"
+      - "Pix"
+      - "Boleto bancário"
+      - "Pagamento realizado"
+      - "Depósito de vendas"
+      - "Depósito InfinitePay"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "contasimples"
+      - "CRESOL"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Tipo de transação"
+      - "Detalhe"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - transaction_type
+      - detail
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Tipo de transação"
+        - "Detalhe"
+        - "Descrição"
+        - "Histórico"
+      document:
+        - "Documento"
+        - "Doc."
+        - "ID"
+      amount:
+        - "Valor (R$)"
+        - "Valor"
+      balance:
+        - "Saldo (R$)"
+        - "Saldo"
+      transaction_type:
+        - "Tipo de transação"
+      detail:
+        - "Detalhe"
+    table_starts_after:
+      - "Data Tipo de transação Detalhe Valor (R$) Saldo (R$)"
+    row_separator_hint: "row starts with dd/MM/yyyy date or inherits previous date until next date group; balance rows contain 'Saldo do dia'"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+      - "- {amount}"
+    positive_patterns:
+      - "+{amount}"
+      - "+ {amount}"
+    ignore_rows:
+      - "infinitepay"
+      - "Relatório de movimentações"
+      - "Período de"
+      - "Data"
+      - "Tipo de transação"
+      - "Detalhe"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+      - "Saldo do dia"
+      - "SALDO DO DIA"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "Saldo do dia"
+      - "SALDO DO DIA"
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - transaction_type
+      - amount
+    optional_transaction_fields:
+      - detail
+      - document
+      - balance
+      - transaction_id
+  sign_rules:
+    priority_order:
+      - "explicit_plus_minus_sign"
+      - "explicit_negative_sign"
+      - "transaction_type_based_hint"
+      - "daily_balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "Depósito de vendas"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem sinal '+'"
+      - pattern: "Depósito InfinitePay"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Detalhe visível associado a valor com '+'"
+      - pattern: "Boleto bancário"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sinal '-'"
+      - pattern: "Pix"
+        sign: unknown
+        confidence: low
+        inferred: true
+        reason: "Pix pode ser entrada ou saída; usar sinal explícito"
+    cautions:
+      - "Não usar tipo Pix sozinho para definir sinal."
+      - "Não importar linhas 'Saldo do dia'."
+      - "Se valor não tiver + ou -, marcar para revisão."
+      - "Se saldo diário conflitar com soma dos lançamentos, marcar para revisão."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "combine_transaction_type_and_detail_optional"
+      - "normalize_case_optional"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "Pix"
+        category: "pix"
+        inferred: true
+      - pattern: "Boleto bancário"
+        category: "pagamento_boleto"
+        inferred: true
+      - pattern: "Depósito de vendas"
+        category: "recebimento_vendas"
+        inferred: true
+      - pattern: "Depósito InfinitePay"
+        category: "deposito_infinitepay"
+        inferred: true
+    transfer_hints:
+      - pattern: "Pix"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa"
+        category: "tarifa"
+        inferred: true
+      - pattern: "Taxa"
+        category: "taxa_servico"
+        inferred: true
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "Data"
+      - "Tipo de transação"
+      - "Valor"
+      - "Saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "use Saldo do dia rows to validate signed transactions grouped by date; transaction rows may not have balance"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "date_group_missing_or_not_propagated"
+      - "amount_without_explicit_plus_minus"
+      - "saldo_do_dia_detected_as_transaction"
+      - "detail_column_shifted_or_missing"
+      - "daily_balance_consistency_fails"
+      - "ocr_confidence_low_on_sign_or_amount"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "31/03/2024"
+        raw_description: "Pix"
+        raw_document: unknown
+        raw_amount: "-80,00"
+        raw_balance: unknown
+        normalized_amount: "-80.00"
+        should_import_as_transaction: true
+        notes: "Débito explícito pelo sinal '-'"
+      - raw_date: "31/03/2024"
+        raw_description: "Saldo do dia"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "105,30"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo diário; não importar"
+      - raw_date: "29/03/2024"
+        raw_description: "Pix"
+        raw_document: unknown
+        raw_amount: "-25,00"
+        raw_balance: unknown
+        normalized_amount: "-25.00"
+        should_import_as_transaction: true
+        notes: "Débito explícito pelo sinal '-'"
+      - raw_date: "28/03/2024"
+        raw_description: "Boleto bancário | Pagamento realizado"
+        raw_document: unknown
+        raw_amount: "-50,00"
+        raw_balance: unknown
+        normalized_amount: "-50.00"
+        should_import_as_transaction: true
+        notes: "Pagamento de boleto; débito explícito"
+      - raw_date: "28/03/2024"
+        raw_description: "Depósito de vendas | Depósito InfinitePay"
+        raw_document: unknown
+        raw_amount: "+41,76"
+        raw_balance: unknown
+        normalized_amount: "41.76"
+        should_import_as_transaction: true
+        notes: "Crédito explícito pelo sinal '+'"
+  implementation_notes:
+    - "Classificar pelo logo InfinitePay e pelo título 'Relatório de movimentações'."
+    - "Usar sinal explícito + ou - como regra primária."
+    - "Propagar datas de agrupamento para linhas subsequentes quando a data não se repetir na extração textual."
+    - "Filtrar 'Saldo do dia' antes de importar transações."
+    - "Combinar Tipo de transação e Detalhe para descrição normalizada quando útil."
+    - "Usar saldos do dia para validação agregada diária."

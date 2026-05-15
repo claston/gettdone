@@ -1,3 +1,4 @@
+import logging
 import re
 import unicodedata
 from datetime import datetime, timezone
@@ -27,6 +28,7 @@ from app.schemas import (
 )
 
 SUPPORTED_EXTENSIONS = {"csv", "xlsx", "ofx", "pdf"}
+logger = logging.getLogger(__name__)
 
 
 class AnalyzeService:
@@ -38,6 +40,12 @@ class AnalyzeService:
         extension = Path(filename).suffix.replace(".", "").lower()
         if extension not in SUPPORTED_EXTENSIONS:
             raise UnsupportedFileTypeError
+        logger.info(
+            "analyze_start extension=%s size_bytes=%d filename=%s",
+            extension,
+            len(raw_bytes),
+            (filename or "")[:120],
+        )
 
         analysis_id = f"an_{uuid4().hex[:12]}"
         parse_start = perf_counter()
@@ -145,6 +153,30 @@ class AnalyzeService:
             ofx_account_type=ofx_account_type,
         )
         expires_at = self.storage.save_analysis(analysis_data)
+        logger.info(
+            "analyze_done analysis_id=%s extension=%s total_ms=%.3f parse_ms=%.3f tx_count=%d layout=%s parser=%s",
+            analysis_id,
+            extension,
+            round((perf_counter() - total_start) * 1000, 3),
+            parse_ms,
+            len(transactions),
+            layout_inference_name or "",
+            (pdf_processing_metrics or {}).get("selected_parser", ""),
+        )
+
+        insights = [
+            Insight(
+                type=f"{extension}_real_parser",
+                title=f"{extension.upper()} processado",
+                description=f"Extrato {extension.upper()} processado com parser real e normalizacao inicial.",
+            )
+        ]
+        review_insight = self._build_export_review_insight(
+            extension=extension,
+            pdf_processing_metrics=pdf_processing_metrics,
+        )
+        if review_insight is not None:
+            insights.append(review_insight)
 
         return AnalyzeResponse(
             analysis_id=analysis_id,
@@ -178,13 +210,7 @@ class AnalyzeService:
                 )
                 for row in top_expenses_rows
             ],
-            insights=[
-                Insight(
-                    type=f"{extension}_real_parser",
-                    title=f"{extension.upper()} processado",
-                    description=f"Extrato {extension.upper()} processado com parser real e normalizacao inicial.",
-                )
-            ],
+            insights=insights,
             preview_transactions=[
                 TransactionPreview(
                     date=row.date,
@@ -221,7 +247,7 @@ class AnalyzeService:
         str | None,
         float | None,
         str | None,
-        dict[str, int | str] | None,
+        dict[str, int | float | str] | None,
     ]:
         if extension == "csv":
             return parse_csv_transactions(raw_bytes), None, None, None, None
@@ -242,7 +268,7 @@ class AnalyzeService:
         self,
         *,
         extension: str,
-        parse_metrics: dict[str, int | str] | None,
+        parse_metrics: dict[str, int | float | str] | None,
         parse_ms: float,
         classify_ms: float,
         normalize_ms: float,
@@ -264,7 +290,55 @@ class AnalyzeService:
             "grouped_transactions_count": int(parse_metrics.get("grouped_transactions_count", 0)),
             "inline_candidates_count": int(parse_metrics.get("inline_candidates_count", 0)),
             "inline_transactions_count": int(parse_metrics.get("inline_transactions_count", 0)),
+            "tabular_candidates_count": int(parse_metrics.get("tabular_candidates_count", 0)),
+            "tabular_transactions_count": int(parse_metrics.get("tabular_transactions_count", 0)),
+            "columnar_candidates_count": int(parse_metrics.get("columnar_candidates_count", 0)),
+            "columnar_transactions_count": int(parse_metrics.get("columnar_transactions_count", 0)),
             "selected_parser": str(parse_metrics.get("selected_parser", "unknown")),
+            "parser_selection_reason": str(parse_metrics.get("parser_selection_reason", "")),
+            "inline_decision": str(parse_metrics.get("inline_decision", "")),
+            "tabular_decision": str(parse_metrics.get("tabular_decision", "")),
+            "columnar_decision": str(parse_metrics.get("columnar_decision", "")),
+            "confidence_band": str(parse_metrics.get("confidence_band", "")),
+            "export_recommendation": str(parse_metrics.get("export_recommendation", "")),
+            "export_recommendation_reason": str(parse_metrics.get("export_recommendation_reason", "")),
+            "balance_consistency_checked": int(parse_metrics.get("balance_consistency_checked", 0)),
+            "balance_consistency_failed": int(parse_metrics.get("balance_consistency_failed", 0)),
+            "canonical_transactions_count": int(parse_metrics.get("canonical_transactions_count", 0)),
+            "canonical_with_running_balance_count": int(parse_metrics.get("canonical_with_running_balance_count", 0)),
+            "canonical_with_external_reference_count": int(
+                parse_metrics.get("canonical_with_external_reference_count", 0)
+            ),
+            "canonical_warning_count": int(parse_metrics.get("canonical_warning_count", 0)),
+            "canonical_balance_warning_count": int(parse_metrics.get("canonical_balance_warning_count", 0)),
+            "canonical_warning_transactions_count": int(parse_metrics.get("canonical_warning_transactions_count", 0)),
+            "canonical_warning_types_count": int(parse_metrics.get("canonical_warning_types_count", 0)),
+            "canonical_warning_types": str(parse_metrics.get("canonical_warning_types", "")),
+            "canonical_warning_types_list": [
+                item
+                for item in str(parse_metrics.get("canonical_warning_types_list", "")).split("|")
+                if item.strip()
+            ],
+            "canonical_running_balance_coverage_rate": float(
+                parse_metrics.get("canonical_running_balance_coverage_rate", 0.0)
+            ),
+            "canonical_external_reference_coverage_rate": float(
+                parse_metrics.get("canonical_external_reference_coverage_rate", 0.0)
+            ),
+            "canonical_warning_transaction_rate": float(parse_metrics.get("canonical_warning_transaction_rate", 0.0)),
+            "canonical_source_parser_grouped_count": int(parse_metrics.get("canonical_source_parser_grouped_count", 0)),
+            "canonical_source_parser_inline_count": int(parse_metrics.get("canonical_source_parser_inline_count", 0)),
+            "canonical_source_parser_tabular_count": int(parse_metrics.get("canonical_source_parser_tabular_count", 0)),
+            "canonical_source_parser_columnar_count": int(
+                parse_metrics.get("canonical_source_parser_columnar_count", 0)
+            ),
+            "canonical_source_parser_types_count": int(parse_metrics.get("canonical_source_parser_types_count", 0)),
+            "canonical_source_parser_types": str(parse_metrics.get("canonical_source_parser_types", "")),
+            "canonical_source_parser_types_list": [
+                item
+                for item in str(parse_metrics.get("canonical_source_parser_types_list", "")).split("|")
+                if item.strip()
+            ],
         }
 
     def _resolve_ofx_account_type(
@@ -317,6 +391,28 @@ class AnalyzeService:
             return None
 
         return None
+
+    def _build_export_review_insight(
+        self,
+        *,
+        extension: str,
+        pdf_processing_metrics: dict[str, int | float | str] | None,
+    ) -> Insight | None:
+        if extension != "pdf" or pdf_processing_metrics is None:
+            return None
+        recommendation = str(pdf_processing_metrics.get("export_recommendation", "")).strip().lower()
+        if recommendation != "review_recommended":
+            return None
+        reason = str(pdf_processing_metrics.get("export_recommendation_reason", "")).strip()
+        reason_suffix = f" ({reason})" if reason else ""
+        return Insight(
+            type="pdf_export_review_recommended",
+            title="Revisao manual recomendada",
+            description=(
+                "A exportacao permanece disponivel, mas recomendamos revisar as transacoes antes de concluir"
+                f"{reason_suffix}."
+            ),
+        )
 
     def _decode_optional_text(self, raw_bytes: bytes) -> str:
         for encoding in ("utf-8-sig", "utf-8", "latin-1"):

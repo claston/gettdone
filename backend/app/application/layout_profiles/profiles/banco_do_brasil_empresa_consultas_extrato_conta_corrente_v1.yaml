@@ -1,0 +1,490 @@
+meta_model:
+  layout_id: banco_do_brasil_empresa_consultas_extrato_conta_corrente_v1
+  bank: Banco do Brasil
+  channel: BB Empresa
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo Banco do Brasil Empresa visível no topo esquerdo"
+      - "Título 'Consultas - Extrato de conta corrente'"
+      - "Seção 'Cliente - Conta atual'"
+      - "Seção 'Lançamentos'"
+      - "Cabeçalho com colunas 'Dt. balancete', 'Dt. movimento', 'Ag. origem', 'Lote', 'Histórico', 'Documento', 'Valor R$', 'Saldo'"
+      - "Valores de crédito marcados com sufixo 'C'"
+      - "Valores de débito marcados com sufixo 'D'"
+      - "Saldo também aparece com sufixo 'C'"
+    weak:
+      - "Alguns dados de cliente, agência e conta estão ocultos ou ilegíveis"
+      - "Campo 'Período do extrato' aparece em formato mês/ano"
+      - "Algumas descrições podem ocupar linha complementar sem data"
+      - "Existem códigos numéricos antes do histórico textual"
+    table_headers:
+      - "Dt. balancete"
+      - "Dt. movimento"
+      - "Ag. origem"
+      - "Lote"
+      - "Histórico"
+      - "Documento"
+      - "Valor R$"
+      - "Saldo"
+  page_structure:
+    header:
+      bank_logo: "Banco do Brasil Empresa"
+      title: "Consultas - Extrato de conta corrente"
+      account_identifiers:
+        agency: unknown
+        account: unknown
+        client: unknown
+    metadata:
+      section_title: "Cliente - Conta atual"
+      fields:
+        - "Agência"
+        - "Conta corrente"
+        - "Período do extrato"
+      period: "04/2024"
+    transactions_table:
+      section_title: "Lançamentos"
+      header_background: "white"
+      columns:
+        - "Dt. balancete"
+        - "Dt. movimento"
+        - "Ag. origem"
+        - "Lote"
+        - "Histórico"
+        - "Documento"
+        - "Valor R$"
+        - "Saldo"
+      visible_rows:
+        - type: opening_balance
+          balance_date: "28/03/2024"
+          movement_date: unknown
+          origin_agency: "0000"
+          batch: "00000"
+          description: "000 Saldo Anterior"
+          document: unknown
+          amount: unknown
+          balance: "0,00 C"
+        - type: normal_transaction
+          balance_date: "01/04/2024"
+          movement_date: unknown
+          origin_agency: "0000"
+          batch: "14020"
+          description: "624 Cobrança com Registro"
+          document: "110.921.000.012.858"
+          amount: "317,57 C"
+          balance: unknown
+        - type: normal_transaction
+          balance_date: "01/04/2024"
+          movement_date: unknown
+          origin_agency: "0000"
+          batch: "13113"
+          description: "124 Tarifa Liquid CBR Com Reg"
+          document: "2.057.500.017.019"
+          amount: "1,60 D"
+          balance: unknown
+          continuation_text: "Tar. agrupadas - ocorrencia 28/03/2024"
+        - type: normal_transaction
+          balance_date: "01/04/2024"
+          movement_date: unknown
+          origin_agency: "0000"
+          batch: "00000"
+          description: "351 BB Rende Fácil"
+          document: "9.903"
+          amount: "315,97 D"
+          balance: "0,00 C"
+        - type: normal_transaction
+          balance_date: "02/04/2024"
+          movement_date: unknown
+          origin_agency: "0000"
+          batch: "14020"
+          description: "624 Cobrança com Registro"
+          document: "110.931.000.010.924"
+          amount: "871,03 C"
+          balance: unknown
+        - type: normal_transaction
+          balance_date: "02/04/2024"
+          movement_date: unknown
+          origin_agency: "0000"
+          batch: "13105"
+          description: "144 Pix - Enviado"
+          document: "40.201"
+          amount: "1.100,00 D"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "Saldo Anterior"
+        - "SALDO ANTERIOR"
+        - "000 Saldo Anterior"
+      should_import_as_transaction: false
+      balance_source: "Saldo"
+      inferred: false
+    normal_transaction:
+      row_has_balance_date: true
+      row_may_have_movement_date: true
+      row_has_origin_agency: true
+      row_has_batch: true
+      row_has_description: true
+      row_may_have_document: true
+      row_has_amount_with_credit_debit_suffix: true
+      row_may_have_balance: true
+      row_may_have_continuation_description_line: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor R$ termina com sufixo 'C'"
+      negative_when:
+        - "Valor R$ termina com sufixo 'D'"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "Saldo"
+      may_be_blank_on_intermediate_rows: true
+      appears_on_opening_balance_rows: true
+      appears_on_some_transaction_rows: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "*Cobrança com Registro"
+        reason: "Linhas visíveis aparecem com sufixo 'C'"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "*Tarifa Liquid CBR Com Reg"
+        reason: "Linha visível aparece com sufixo 'D'"
+        inferred: false
+      - pattern: "*BB Rende Fácil"
+        reason: "Linha visível aparece com sufixo 'D'"
+        inferred: false
+      - pattern: "*Pix - Enviado"
+        reason: "Linha visível aparece com sufixo 'D'"
+        inferred: false
+    caution:
+      - "Neste layout, o sufixo C/D é a principal regra de sinal"
+      - "Códigos numéricos antes da descrição podem fazer parte do histórico e não devem ser confundidos com documento"
+      - "Linhas complementares sem data, como 'Tar. agrupadas - ocorrencia ...', devem ser anexadas ao lançamento anterior"
+      - "Não importar 'Saldo Anterior' como transação"
+      - "Validar com PDF real se o texto extraído mantém alinhamento entre documento, valor e saldo"
+  visual_model:
+    table_anchor:
+      starts_after_text: "Lançamentos"
+      header_keywords:
+        - "Dt. balancete"
+        - "Dt. movimento"
+        - "Ag. origem"
+        - "Lote"
+        - "Histórico"
+        - "Documento"
+        - "Valor R$"
+        - "Saldo"
+    column_order:
+      - balance_date
+      - movement_date
+      - origin_agency
+      - batch
+      - description
+      - document
+      - amount
+      - balance
+    row_behavior:
+      separator: "mostly whitespace; no strong horizontal grid lines visible"
+      date_repeated_per_transaction: true
+      movement_date_may_be_blank: true
+      origin_agency_and_batch_present_on_transaction_rows: true
+      amount_right_aligned: true
+      balance_right_aligned: true
+      credit_suffix_color: "blue"
+      debit_suffix_color: "red"
+      continuation_lines_possible: true
+      transaction_description_can_start_with_numeric_code: true
+  parser_risks:
+    ambiguities:
+      - "A coluna 'Dt. movimento' está vazia nas linhas visíveis, mas pode aparecer em outros lançamentos"
+      - "Descrição contém códigos como 624, 124, 351 e 144; pode haver necessidade de preservar ou separar código e texto"
+      - "Linhas complementares sem data podem ser confundidas com nova transação ou descartadas"
+      - "Saldo aparece apenas em algumas linhas; não assumir saldo em todas as transações"
+      - "Campos de cliente, agência e conta não podem ser confirmados pela imagem"
+    fields_that_may_be_missing:
+      - "movement_date"
+      - "document"
+      - "balance"
+      - "client"
+      - "agency"
+      - "account"
+    cases_that_need_real_pdf_validation:
+      - "Extração textual preserva sufixos C/D junto aos valores"
+      - "Linhas complementares do histórico são extraídas em sequência correta"
+      - "Documento pode conter pontos e muitos dígitos; validar regex para não quebrar coluna"
+      - "Paginação e repetição do cabeçalho em páginas seguintes"
+      - "Tratamento de saldos do dia, saldo final e totais"
+      - "Se há lançamentos com valor sem C/D ou com sinal explícito"
+
+layout_profile:
+  profile_name: banco_do_brasil_empresa_consultas_extrato_conta_corrente_v1
+  bank: Banco do Brasil
+  layout_family: bb_empresa_consultas_extrato_conta_corrente
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Consultas - Extrato de conta corrente"
+      - "Cliente - Conta atual"
+      - "Lançamentos"
+      - "Dt. balancete"
+      - "Dt. movimento"
+      - "Ag. origem"
+      - "Lote"
+      - "Histórico"
+      - "Valor R$"
+      - "Saldo"
+    optional_keywords:
+      - "Banco do Brasil"
+      - "Empresa"
+      - "Agência"
+      - "Conta corrente"
+      - "Período do extrato"
+      - "Documento"
+      - "Saldo Anterior"
+    negative_keywords:
+      - "Santander"
+      - "Itaú"
+      - "Bradesco"
+      - "Extrato de conta corrente - Autorizável"
+      - "Fatura"
+      - "Cartão de Crédito"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Dt. balancete"
+      - "Dt. movimento"
+      - "Ag. origem"
+      - "Lote"
+      - "Histórico"
+      - "Documento"
+      - "Valor R$"
+      - "Saldo"
+    expected_column_order:
+      - balance_date
+      - movement_date
+      - origin_agency
+      - batch
+      - description
+      - document
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Dt. balancete"
+        - "Dt. movimento"
+        - "Data"
+      description:
+        - "Histórico"
+      document:
+        - "Documento"
+      amount:
+        - "Valor R$"
+        - "Valor"
+      balance:
+        - "Saldo"
+    table_starts_after:
+      - "Lançamentos"
+      - "Dt. balancete Dt. movimento Ag. origem Lote Histórico Documento Valor R$ Saldo"
+    row_separator_hint: "columnar whitespace; transaction starts when a dd/MM/yyyy date appears in first column"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount} D"
+      - "{amount}D"
+      - "red_text_with_D_suffix"
+    positive_patterns:
+      - "{amount} C"
+      - "{amount}C"
+      - "blue_text_with_C_suffix"
+    ignore_rows:
+      - "Cliente - Conta atual"
+      - "Agência"
+      - "Conta corrente"
+      - "Período do extrato"
+      - "Lançamentos"
+      - "Dt. balancete"
+      - "Dt. movimento"
+      - "Ag. origem"
+      - "Lote"
+      - "Histórico"
+      - "Documento"
+      - "Valor R$"
+      - "Saldo"
+      - "Saldo do dia"
+      - "Saldo Final"
+      - "Total"
+    opening_balance_rows:
+      - "Saldo Anterior"
+      - "000 Saldo Anterior"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - movement_date
+      - origin_agency
+      - batch
+      - document
+      - balance
+      - continuation_description
+  sign_rules:
+    priority_order:
+      - "credit_debit_suffix_C_D"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "*Cobrança com Registro"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis usam sufixo C"
+      - pattern: "*Tarifa Liquid CBR Com Reg"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível usa sufixo D"
+      - pattern: "*BB Rende Fácil"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível usa sufixo D"
+      - pattern: "*Pix - Enviado"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível usa sufixo D"
+    cautions:
+      - "Não remover C/D antes de definir o sinal"
+      - "Não inferir sinal apenas pela descrição quando o sufixo C/D existir"
+      - "OCR pode separar o sufixo do valor; tratar valor e sufixo como tokens relacionados na mesma região horizontal"
+      - "Linhas complementares sem data devem ser anexadas ao histórico anterior"
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_numeric_history_code"
+      - "optionally_split_history_code_from_description"
+      - "append_continuation_lines_to_previous_description"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "*Cobrança com Registro"
+        category: "cobranca_recebida"
+        inferred: true
+      - pattern: "*Tarifa Liquid CBR Com Reg"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "*BB Rende Fácil"
+        category: "aplicacao_resgate_automatico"
+        inferred: true
+      - pattern: "*Pix - Enviado"
+        category: "pix_enviado"
+        inferred: true
+    transfer_hints:
+      - pattern: "*Pix - Enviado"
+        category: "transferencia_pix_saida"
+        inferred: true
+      - pattern: "*Pix - Recebido"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+      - pattern: "DOC"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "Tarifa"
+        category: "tarifa_bancaria"
+        inferred: true
+      - pattern: "Tar. agrupadas"
+        category: "tarifa_bancaria_detalhe"
+        inferred: true
+  validation:
+    expected_min_columns: 8
+    reject_if_missing_headers:
+      - "Dt. balancete"
+      - "Histórico"
+      - "Valor R$"
+      - "Saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "when_previous_and_current_balance_are_available_validate_current_balance_equals_previous_balance_plus_signed_amount"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "amount_has_no_C_or_D_suffix"
+      - "ocr_confidence_low_on_credit_debit_suffix"
+      - "line_without_date_appears_between_transactions"
+      - "document_column_overlaps_with_amount_column"
+      - "description_code_missing_or_merged_with_lote"
+      - "balance_present_without_previous_balance_context"
+      - "row_has_date_and_description_but_no_amount"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "28/03/2024"
+        raw_description: "000 Saldo Anterior"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "0,00 C"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo anterior; usar como contexto de saldo, não como transação"
+      - raw_date: "01/04/2024"
+        raw_description: "624 Cobrança com Registro"
+        raw_document: "110.921.000.012.858"
+        raw_amount: "317,57 C"
+        raw_balance: unknown
+        normalized_amount: "317.57"
+        should_import_as_transaction: true
+        notes: "Sufixo C indica crédito"
+      - raw_date: "01/04/2024"
+        raw_description: "124 Tarifa Liquid CBR Com Reg | Tar. agrupadas - ocorrencia 28/03/2024"
+        raw_document: "2.057.500.017.019"
+        raw_amount: "1,60 D"
+        raw_balance: unknown
+        normalized_amount: "-1.60"
+        should_import_as_transaction: true
+        notes: "Sufixo D indica débito; linha complementar deve ser anexada ao histórico"
+      - raw_date: "01/04/2024"
+        raw_description: "351 BB Rende Fácil"
+        raw_document: "9.903"
+        raw_amount: "315,97 D"
+        raw_balance: "0,00 C"
+        normalized_amount: "-315.97"
+        should_import_as_transaction: true
+        notes: "Sufixo D indica débito; saldo disponível na mesma linha"
+      - raw_date: "02/04/2024"
+        raw_description: "624 Cobrança com Registro"
+        raw_document: "110.931.000.010.924"
+        raw_amount: "871,03 C"
+        raw_balance: unknown
+        normalized_amount: "871.03"
+        should_import_as_transaction: true
+        notes: "Sufixo C indica crédito"
+      - raw_date: "02/04/2024"
+        raw_description: "144 Pix - Enviado"
+        raw_document: "40.201"
+        raw_amount: "1.100,00 D"
+        raw_balance: unknown
+        normalized_amount: "-1100.00"
+        should_import_as_transaction: true
+        notes: "Sufixo D indica débito"
+  implementation_notes:
+    - "Classificar pelo título 'Consultas - Extrato de conta corrente' e pelo cabeçalho de tabela com 'Dt. balancete'."
+    - "O início de uma transação deve ser identificado por data no formato dd/MM/yyyy na primeira coluna."
+    - "Linhas sem data imediatamente após uma transação devem ser tratadas como continuação do histórico anterior."
+    - "Separar sufixo C/D do valor monetário antes da conversão decimal."
+    - "Mapear C para positivo e D para negativo."
+    - "Manter o histórico original com código numérico, mas permitir campo derivado para descrição sem código."
+    - "Não importar linhas de saldo como transação."
+    - "Validar em PDF real se a extração textual preserva colunas de documento e valor sem colisão."

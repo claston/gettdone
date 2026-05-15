@@ -1,0 +1,520 @@
+meta_model:
+  layout_id: sicoob_sisbr_extrato_conta_corrente_monospace_valor_dc_v1
+  bank: Sicoob
+  channel: SISBR
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Cabeçalho central 'SICOOB'"
+      - "Texto 'SISTEMA DE COOPERATIVAS DE CRÉDITO DO BRASIL'"
+      - "Texto 'SISBR - SISTEMA DE INFORMÁTICA DO SICOOB'"
+      - "Título 'EXTRATO CONTA CORRENTE'"
+      - "Campos 'COOP.' e 'CONTA'"
+      - "Tabela em fonte monoespaçada com colunas 'DATA', 'DOCUMENTO', 'HISTÓRICO' e 'VALOR'"
+      - "Valores usam sufixo 'C' para crédito e 'D' para débito"
+      - "Linhas de saldo como 'SALDO ANTERIOR', 'SALDO BLOQUEADO ANTERIOR' e 'SALDO DO DIA'"
+      - "Históricos como 'CRÉD.TED-STR', 'TRANSF.RECEBIDA - PIX SICOOB', 'CHEQUE COMPE INTEGRADA', 'DÉB.IOF', 'JUROS CONTA GARANTIDA' e 'PIX RECEBIDO - OUTRA IF'"
+      - "Valores de crédito aparecem visualmente em azul e débitos em vermelho"
+    weak:
+      - "Dados de cooperativa e conta estão ocultos ou ilegíveis"
+      - "Algumas linhas estão parcialmente mascaradas/ilegíveis"
+      - "Não há coluna de saldo separada; a coluna VALOR também é usada em linhas de saldo"
+      - "Há linhas de saldo e linhas normais no mesmo corpo da tabela"
+      - "O layout é parecido com outro Sicoob/SISBR, mas em estilo monoespaçado/legado"
+    table_headers:
+      - "DATA"
+      - "DOCUMENTO"
+      - "HISTÓRICO"
+      - "VALOR"
+  page_structure:
+    header:
+      bank_logo: "SICOOB"
+      institution: "Sistema de Cooperativas de Crédito do Brasil"
+      platform: "SISBR - Sistema de Informática do Sicoob"
+      title: "EXTRATO CONTA CORRENTE"
+      account_identifiers:
+        cooperative: unknown
+        account: unknown
+    metadata:
+      explicit_period: unknown
+    transactions_table:
+      representation: "monospace_legacy_table"
+      columns:
+        - "DATA"
+        - "DOCUMENTO"
+        - "HISTÓRICO"
+        - "VALOR"
+      visible_rows:
+        - type: opening_balance
+          date: "31/07/2023"
+          document: unknown
+          description: "SALDO ANTERIOR"
+          amount: unknown
+          balance: unknown
+        - type: balance_row
+          date: "31/07/2023"
+          document: unknown
+          description: "SALDO BLOQUEADO ANTERIOR"
+          amount: "0,00*"
+          balance: "0,00*"
+        - type: normal_transaction
+          date: "01/08/2023"
+          document: unknown
+          description: "CRÉD.TED-STR"
+          amount: "643,62C"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/08/2023"
+          document: unknown
+          description: "TRANSF.RECEBIDA - PIX SICOOB"
+          amount: "3,00C"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/08/2023"
+          document: unknown
+          description: "TRANSF.RECEBIDA - PIX SICOOB"
+          amount: "601,22C"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/08/2023"
+          document: "000.979"
+          description: "CHEQUE COMPE INTEGRADA"
+          amount: "68,90D"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/08/2023"
+          document: "IOF/1-8"
+          description: "DÉB.IOF"
+          amount: "10,40D"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/08/2023"
+          document: "IOF/1-8"
+          description: "DEB.IOF"
+          amount: "44,50D"
+          balance: unknown
+        - type: normal_transaction
+          date: "01/08/2023"
+          document: unknown
+          description: "JUROS CONTA GARANTIDA"
+          amount: "494,43D"
+          balance: unknown
+        - type: balance_row
+          date: "01/08/2023"
+          document: unknown
+          description: "SALDO DO DIA"
+          amount: "7.854,75D"
+          balance: "7.854,75D"
+        - type: normal_transaction
+          date: "02/08/2023"
+          document: "Pix"
+          description: "PIX RECEBIDO - OUTRA IF"
+          amount: "684,19C"
+          balance: unknown
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+        - "SALDO BLOQUEADO ANTERIOR"
+        - "SALDO DO DIA"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: "VALOR column on saldo rows"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_may_have_document: true
+      row_has_description: true
+      row_has_amount: true
+      row_may_have_balance: false
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor termina com sufixo 'C'"
+      negative_when:
+        - "Valor termina com sufixo 'D'"
+      inferred: false
+    balance_column:
+      exists: false
+      column_name: unknown
+      saldo_rows_use_value_column: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "CRÉD.TED-STR"
+        reason: "Linha visível possui sufixo C"
+        inferred: false
+      - pattern: "TRANSF.RECEBIDA - PIX SICOOB"
+        reason: "Linhas visíveis possuem sufixo C"
+        inferred: false
+      - pattern: "PIX RECEBIDO - OUTRA IF"
+        reason: "Linha visível possui sufixo C"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "CHEQUE COMPE INTEGRADA"
+        reason: "Linha visível possui sufixo D"
+        inferred: false
+      - pattern: "DÉB.IOF"
+        reason: "Linha visível possui sufixo D"
+        inferred: false
+      - pattern: "DEB.IOF"
+        reason: "Linha visível possui sufixo D"
+        inferred: false
+      - pattern: "JUROS CONTA GARANTIDA"
+        reason: "Linha visível possui sufixo D"
+        inferred: false
+    caution:
+      - "Não importar linhas de saldo, como 'SALDO ANTERIOR', 'SALDO BLOQUEADO ANTERIOR' e 'SALDO DO DIA'."
+      - "O sufixo C/D é a principal fonte de sinal; não usar apenas cor ou descrição."
+      - "Asterisco em '0,00*' deve ser tratado como anotação, não como sinal."
+      - "O campo DOCUMENTO pode estar ausente, numérico, textual ou em formato especial como 'IOF/1-8'."
+      - "Em layout monoespaçado, a extração por posição pode ser mais confiável que detecção visual de tabela."
+  visual_model:
+    table_anchor:
+      starts_after_text: "DATA DOCUMENTO HISTÓRICO VALOR"
+      header_keywords:
+        - "DATA"
+        - "DOCUMENTO"
+        - "HISTÓRICO"
+        - "VALOR"
+    column_order:
+      - date
+      - document
+      - description
+      - amount
+    row_behavior:
+      separator: "monospace whitespace alignment; no visible grid"
+      date_repeated_per_transaction: true
+      document_may_be_blank: true
+      document_may_be_text_or_code: true
+      description_uppercase: true
+      amount_right_aligned: true
+      credit_debit_suffix: true
+      credit_color_hint: "blue"
+      debit_color_hint: "red"
+      no_balance_column: true
+  parser_risks:
+    ambiguities:
+      - "A tabela não tem grade; depende de alinhamento monoespaçado e OCR pode deslocar colunas."
+      - "Linhas de saldo têm data e valor, mas não são transações."
+      - "Alguns documentos aparecem parcialmente mascarados ou podem ser confundidos com histórico."
+      - "Não há saldo por transação."
+      - "Cores ajudam visualmente, mas a regra robusta deve ser o sufixo C/D."
+    fields_that_may_be_missing:
+      - "document"
+      - "balance"
+      - "cooperative"
+      - "account"
+      - "period"
+      - "full_description"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual mantém colunas por espaçamento monoespaçado."
+      - "Se todos os valores monetários terminam com C/D."
+      - "Como continuam descrições longas em linhas seguintes."
+      - "Se há saldos finais e totais no fim do extrato."
+      - "Se os documentos com pontos, barras e hífens são preservados."
+      - "Se páginas seguintes repetem cabeçalho e estrutura."
+
+layout_profile:
+  profile_name: sicoob_sisbr_extrato_conta_corrente_monospace_valor_dc_v1
+  bank: Sicoob
+  layout_family: sicoob_sisbr_extrato_conta_corrente_monospace_dc_suffix
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "SICOOB"
+      - "SISTEMA DE COOPERATIVAS DE CRÉDITO DO BRASIL"
+      - "SISBR - SISTEMA DE INFORMÁTICA DO SICOOB"
+      - "EXTRATO CONTA CORRENTE"
+      - "COOP."
+      - "CONTA"
+      - "DATA"
+      - "DOCUMENTO"
+      - "HISTÓRICO"
+      - "VALOR"
+    optional_keywords:
+      - "SALDO ANTERIOR"
+      - "SALDO BLOQUEADO ANTERIOR"
+      - "SALDO DO DIA"
+      - "CRÉD.TED-STR"
+      - "TRANSF.RECEBIDA - PIX SICOOB"
+      - "CHEQUE COMPE INTEGRADA"
+      - "DÉB.IOF"
+      - "JUROS CONTA GARANTIDA"
+      - "PIX RECEBIDO - OUTRA IF"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "ASAAS"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "Banco da Amazônia"
+      - "Banco do Nordeste"
+      - "Banpará"
+      - "Banco Mercantil"
+      - "Safra"
+      - "Banco Sorisa"
+      - "Banco Topázio"
+      - "tribanco"
+      - "UNICRED"
+      - "IUGU"
+      - "iFood"
+      - "C6 BANK"
+      - "contasimples"
+      - "CRESOL"
+      - "infinitepay"
+      - "inter"
+      - "GRAFENO"
+      - "mercado pago"
+      - "PagBank"
+      - "PicPay"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.9
+  table_detection:
+    header_keywords:
+      - "DATA"
+      - "DOCUMENTO"
+      - "HISTÓRICO"
+      - "VALOR"
+    expected_column_order:
+      - date
+      - document
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "DATA"
+        - "Data"
+      description:
+        - "HISTÓRICO"
+        - "Histórico"
+        - "Historico"
+      document:
+        - "DOCUMENTO"
+        - "Documento"
+        - "Doc."
+      amount:
+        - "VALOR"
+        - "Valor"
+      balance:
+        - "SALDO"
+        - "Saldo"
+    table_starts_after:
+      - "DATA DOCUMENTO HISTÓRICO VALOR"
+      - "EXTRATO CONTA CORRENTE"
+    row_separator_hint: "row starts with dd/MM/yyyy; use monospace x-position to separate document/history/value"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount}D"
+      - "{amount} D"
+      - "D {amount}"
+    positive_patterns:
+      - "{amount}C"
+      - "{amount} C"
+      - "C {amount}"
+    ignore_rows:
+      - "SICOOB"
+      - "SISTEMA DE COOPERATIVAS DE CRÉDITO DO BRASIL"
+      - "SISBR - SISTEMA DE INFORMÁTICA DO SICOOB"
+      - "EXTRATO CONTA CORRENTE"
+      - "COOP."
+      - "CONTA"
+      - "DATA"
+      - "DOCUMENTO"
+      - "HISTÓRICO"
+      - "VALOR"
+      - "SALDO ANTERIOR"
+      - "SALDO BLOQUEADO ANTERIOR"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO BLOQUEADO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - complement
+      - balance
+  sign_rules:
+    priority_order:
+      - "credit_debit_suffix_C_D"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "color_hint_if_available"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "CRÉD.TED-STR"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sufixo C"
+      - pattern: "TRANSF.RECEBIDA - PIX SICOOB"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis possuem sufixo C"
+      - pattern: "PIX RECEBIDO - OUTRA IF"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sufixo C"
+      - pattern: "CHEQUE COMPE INTEGRADA"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sufixo D"
+      - pattern: "DÉB.IOF"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sufixo D"
+      - pattern: "JUROS CONTA GARANTIDA"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível possui sufixo D"
+    cautions:
+      - "Sufixo C/D deve prevalecer sobre descrição e cor."
+      - "Não usar Pix isoladamente para sinal."
+      - "Não interpretar asterisco como sinal."
+      - "Se valor estiver sem C/D, marcar para revisão."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "normalize_uppercase_optional"
+      - "preserve_bank_abbreviations"
+      - "merge_continuation_lines_without_date"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "CRÉD.TED-STR"
+        category: "ted_recebida"
+        inferred: true
+      - pattern: "TRANSF.RECEBIDA - PIX SICOOB"
+        category: "pix_recebido"
+        inferred: true
+      - pattern: "PIX RECEBIDO - OUTRA IF"
+        category: "pix_recebido"
+        inferred: true
+      - pattern: "CHEQUE COMPE INTEGRADA"
+        category: "cheque_compensado"
+        inferred: true
+      - pattern: "DÉB.IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "JUROS CONTA GARANTIDA"
+        category: "juros"
+        inferred: true
+    transfer_hints:
+      - pattern: "TED"
+        category: "transferencia_ted"
+        inferred: true
+      - pattern: "TRANSF.RECEBIDA - PIX"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "PIX RECEBIDO"
+        category: "transferencia_pix_entrada"
+        inferred: true
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+    fee_hints:
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+  validation:
+    expected_min_columns: 4
+    reject_if_missing_headers:
+      - "DATA"
+      - "HISTÓRICO"
+      - "VALOR"
+    balance_consistency_check:
+      enabled: false
+      method: "not_available_without_per_row_balance; can validate using saldo anterior/saldo do dia when full sequence is available"
+      tolerance: unknown
+    needs_manual_review_when:
+      - "amount_without_C_or_D_suffix"
+      - "saldo_row_detected_as_transaction"
+      - "asterisk_amount_detected"
+      - "document_history_column_shift"
+      - "monospace_alignment_lost"
+      - "ocr_confidence_low_on_C_D_suffix"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "31/07/2023"
+        raw_description: "SALDO ANTERIOR"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: unknown
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo anterior; não importar"
+      - raw_date: "01/08/2023"
+        raw_description: "CRÉD.TED-STR"
+        raw_document: unknown
+        raw_amount: "643,62C"
+        raw_balance: unknown
+        normalized_amount: "643.62"
+        should_import_as_transaction: true
+        notes: "Crédito explícito pelo sufixo C"
+      - raw_date: "01/08/2023"
+        raw_description: "TRANSF.RECEBIDA - PIX SICOOB"
+        raw_document: unknown
+        raw_amount: "3,00C"
+        raw_balance: unknown
+        normalized_amount: "3.00"
+        should_import_as_transaction: true
+        notes: "Crédito Pix explícito pelo sufixo C"
+      - raw_date: "01/08/2023"
+        raw_description: "CHEQUE COMPE INTEGRADA"
+        raw_document: "000.979"
+        raw_amount: "68,90D"
+        raw_balance: unknown
+        normalized_amount: "-68.90"
+        should_import_as_transaction: true
+        notes: "Débito explícito pelo sufixo D"
+      - raw_date: "01/08/2023"
+        raw_description: "SALDO DO DIA"
+        raw_document: unknown
+        raw_amount: "7.854,75D"
+        raw_balance: "7.854,75D"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo diário; não importar"
+      - raw_date: "02/08/2023"
+        raw_description: "PIX RECEBIDO - OUTRA IF"
+        raw_document: "Pix"
+        raw_amount: "684,19C"
+        raw_balance: unknown
+        normalized_amount: "684.19"
+        should_import_as_transaction: true
+        notes: "Crédito Pix explícito pelo sufixo C"
+  implementation_notes:
+    - "Classificar por SICOOB/SISBR e layout monoespaçado com colunas DATA/DOCUMENTO/HISTÓRICO/VALOR."
+    - "Usar sufixo C/D como regra primária de sinal."
+    - "Filtrar saldos antes de importar transações."
+    - "Preservar DOCUMENTO como string, inclusive códigos com ponto, barra, hífen ou texto."
+    - "Tratar valores com asterisco como anotados e exigir validação."
+    - "Em PDFs textuais, preferir parsing por posições fixas/monoespaçadas."

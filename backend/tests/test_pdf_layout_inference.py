@@ -16,6 +16,21 @@ def test_infer_pdf_layout_prefers_nubank_profile_when_tokens_match() -> None:
     assert result.confidence >= 0.6
 
 
+def test_infer_pdf_layout_prefers_nubank_profile_when_brand_token_matches() -> None:
+    text = """
+    Nubank
+    Conta
+    15/04/2026 PIX RECEBIDO CLIENTE 100,00 1.100,00
+    16/04/2026 PAGAMENTO BOLETO -50,00 1.050,00
+    Saldo disponivel
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "nubank_statement_ptbr"
+    assert result.confidence >= 0.7
+
+
 def test_infer_pdf_layout_prefers_itau_profile_when_tokens_match() -> None:
     text = """
     saldo em conta Limite da Conta utilizado Limite da Conta disponível
@@ -153,3 +168,37 @@ def test_infer_pdf_layout_prefers_sicredi_profile_when_tokens_match() -> None:
 
     assert result.layout_name == "sicredi_statement_ptbr"
     assert result.confidence >= 0.5
+
+
+def test_infer_pdf_layout_uses_declarative_c6_profile() -> None:
+    text = """
+    C6 BANK
+    Extrato
+    Agencia 0001 Conta 123456-7
+    Periodo Abril 2024
+    Entradas Saidas
+    Data Tipo Descricao Valor
+    01/04 Outros gastos Debito De Cartao R$ 81,67
+    01/04 Saida PIX Pix enviado R$ 225,00
+    Saldo do dia
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "c6_bank_extrato_mensal_tabela_tipo_descricao_valor_v1"
+    assert result.confidence >= 0.7
+
+
+def test_infer_pdf_layout_ignores_declarative_profile_below_min_score_hint() -> None:
+    text = """
+    C6 BANK
+    Extrato
+    Data Tipo Descricao Valor
+    01/04 PIX Pix enviado R$ 225,00
+    02/04 Pagamento PGTO DE BOLETO R$ 10,00
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "generic_statement_ptbr"
+    assert result.used_fallback is True

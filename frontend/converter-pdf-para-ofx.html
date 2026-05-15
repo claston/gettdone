@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+
+  <link rel="icon" type="image/png" href="/assets/favicon.png" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Converter PDF para OFX | OFX Simples</title>
+  <meta
+    name="description"
+    content="Converta extrato em PDF para OFX em poucos passos: upload, revisão das transações e download do arquivo OFX pronto para importar."
+  />
+  <link rel="canonical" href="https://www.ofxsimples.com.br/converter-pdf-para-ofx.html" />
+  <meta property="og:title" content="Converter PDF para OFX | OFX Simples" />
+  <meta
+    property="og:description"
+    content="Transforme seu extrato em PDF em arquivo OFX pronto para uso no seu sistema financeiro."
+  />
+  <meta property="og:url" content="https://www.ofxsimples.com.br/converter-pdf-para-ofx.html" />
+  <meta property="og:site_name" content="OFX Simples" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Converter PDF para OFX | OFX Simples" />
+  <meta
+    name="twitter:description"
+    content="Converta PDF para OFX com revisão antes do download."
+  />
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": "Converter PDF para OFX",
+      "url": "https://www.ofxsimples.com.br/converter-pdf-para-ofx.html",
+      "description": "Conversor online de PDF para OFX com revisão de lançamentos."
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./ofx-convert.css?v=6" />
+  <link rel="stylesheet" href="./topbar-unified.css?v=1" />
+  <script src="/privacy-consent.js" defer></script>
+</head>
+<body data-output-format="ofx">
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="./index.html">OFX Simples</a>
+      <button id="menu-toggle" class="menu-toggle" type="button" aria-expanded="false" aria-controls="top-links">
+        Menu
+      </button>
+      <nav id="top-links" class="top-links" aria-label="Navegação principal">
+        <a href="./index.html#como-funciona">Como funciona</a>
+        <a href="./index.html#faq">FAQ</a>
+        <a href="./planos.html">Planos</a>
+        <a href="./contato.html">Contato</a>
+      </nav>
+      <div class="top-actions">
+        <a id="top-auth-login-link" class="link-plain" href="./login.html?next=%2Fconverter-pdf-para-ofx.html">Entrar</a>
+        <a id="top-auth-primary-link" class="btn btn-primary" href="./convert.html">Converter agora</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="hero">
+      <h1>Converter PDF para OFX</h1>
+      <p class="lead">Envie o PDF, revise os lançamentos e baixe o OFX pronto para importação.</p>
+    </section>
+
+    <section id="upload-section" class="panel" aria-labelledby="upload-title">
+      <div class="panel-head">
+        <h2 id="upload-title">1. Upload</h2>
+        <p id="upload-limits-text">Somente PDF (até 2 MB e 5 páginas por arquivo)</p>
+      </div>
+
+      <label id="dropzone" class="dropzone" for="file-input" tabindex="0">
+        <input id="file-input" type="file" accept=".pdf,application/pdf" hidden />
+        <div id="dropzone-empty" class="dropzone-empty">
+          <div class="pdf-placeholder-icon" aria-hidden="true">PDF</div>
+          <strong>Arraste o arquivo aqui</strong>
+          <span>ou clique para selecionar</span>
+        </div>
+        <div id="dropzone-loaded" class="dropzone-loaded hidden">
+          <div class="loaded-icon" aria-hidden="true">OK</div>
+          <div class="loaded-text">
+            <strong>Arquivo PDF carregado</strong>
+            <span id="dropzone-file-meta">Pronto para conversão</span>
+          </div>
+          <button id="clear-file-btn" class="clear-file-btn" type="button">Remover arquivo</button>
+        </div>
+      </label>
+
+      <div class="upload-meta">
+        <span id="selected-file" class="hidden-label">Nenhum arquivo selecionado</span>
+        <button id="convert-btn" class="btn btn-primary" type="button" disabled>Converter</button>
+      </div>
+
+      <p id="status-msg" class="status" aria-live="polite"></p>
+      <p class="support-hint">Não conseguiu converter? <a href="./contato.html">Falar com suporte</a></p>
+    </section>
+
+    <section id="review-section" class="panel hidden" aria-labelledby="review-title">
+      <div class="panel-head">
+        <div class="review-headline">
+          <div>
+            <h2 id="review-title">2. Revisão</h2>
+            <p>Prévia das transações retornadas pela conversão.</p>
+          </div>
+          <button id="add-row-btn" class="btn btn-inline btn-ghost" type="button">
+            <span class="btn-icon" aria-hidden="true">+</span><span>Novo lançamento</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="kpis" id="kpis"></div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Histórico</th>
+              <th>Crédito</th>
+              <th>Débito</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="review-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="download-section" class="panel hidden" aria-labelledby="download-title">
+      <div class="panel-head">
+        <h2 id="download-title">3. Download</h2>
+        <p>Baixe o relatório processado com um clique.</p>
+      </div>
+
+      <div class="download-row">
+        <div>
+          <p><strong id="quota-remaining-label">conversões restantes:</strong> <span id="quota-remaining">-</span></p>
+        </div>
+        <div class="download-actions">
+          <button id="download-report-btn" class="btn btn-secondary" type="button" disabled>Baixar OFX</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="quota-lock-overlay" class="quota-lock-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="quota-lock-title">
+    <div class="quota-lock-modal">
+      <p class="quota-lock-badge">Limite semanal atingido</p>
+      <h2 id="quota-lock-title">Crie sua conta para continuar convertendo</h2>
+      <p id="quota-lock-message" class="quota-lock-message">
+        Você usou as 3 conversões gratuitas desta semana. Cadastre-se para liberar +10 conversões semanais.
+      </p>
+      <div class="quota-lock-actions">
+        <a id="quota-lock-signup-link" class="btn btn-primary" href="./signup.html?next=%2Fclient-area.html&reason=quota">Criar conta</a>
+        <a id="quota-lock-login-link" class="btn btn-ghost" href="./login.html?next=%2Fclient-area.html">Já tenho conta</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="./ofx-convert.js?v=8"></script>
+</body>
+</html>
+

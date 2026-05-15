@@ -1,0 +1,532 @@
+meta_model:
+  layout_id: viacredi_ailos_extrato_conta_corrente_v1
+  bank: Viacredi
+  channel: Cooperativa Ailos
+  statement_type: conta_corrente_extrato
+  source_quality: image_inferred
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo 'VIACREDI' visível no topo esquerdo"
+      - "Texto 'COOPERATIVA AILOS' abaixo do logo"
+      - "Título central 'EXTRATO'"
+      - "Período explícito no cabeçalho: 'Período 01/10/2023 a 31/10/2023'"
+      - "Campos de identificação 'Cooperativa', 'Banco', 'Agência' e 'Conta'"
+      - "Cabeçalho de tabela com colunas 'DATA', 'DESCRIÇÃO', 'DOCUMENTO', 'CRÉDITO (R$)', 'DÉBITO (R$)', 'SALDO (R$)'"
+      - "Créditos aparecem na coluna CRÉDITO (R$), em verde"
+      - "Débitos aparecem na coluna DÉBITO (R$), em vermelho e com sinal negativo"
+      - "Saldo anterior aparece como linha de saldo/contexto"
+    weak:
+      - "Alguns dados de conta/documento estão mascarados ou simulados"
+      - "Banco informado no cabeçalho é '085', associado ao sistema cooperativo; bank normalizado como Viacredi/Ailos pela marca"
+      - "Descrições podem terminar com hífen, exemplo 'DEBITO PIX -' e 'TR.INTERNET -'"
+      - "Valores negativos usam ponto ou vírgula visualmente; validar separador decimal no PDF real"
+    table_headers:
+      - "DATA"
+      - "DESCRIÇÃO"
+      - "DOCUMENTO"
+      - "CRÉDITO (R$)"
+      - "DÉBITO (R$)"
+      - "SALDO (R$)"
+  page_structure:
+    header:
+      bank_logo: "VIACREDI"
+      cooperative_network: "COOPERATIVA AILOS"
+      title: "EXTRATO"
+      generated_at: "16/11/2023 às 15:08:13"
+      account_identifiers:
+        name: "OFX Fácil LTDA"
+        cooperative: "VIACREDI"
+        bank_code: "085"
+        agency: "0001-5"
+        account: "99999999"
+    metadata:
+      period: "01/10/2023 a 31/10/2023"
+      start_date: "01/10/2023"
+      end_date: "31/10/2023"
+    transactions_table:
+      header_background: "dark teal"
+      columns:
+        - "DATA"
+        - "DESCRIÇÃO"
+        - "DOCUMENTO"
+        - "CRÉDITO (R$)"
+        - "DÉBITO (R$)"
+        - "SALDO (R$)"
+      visible_rows:
+        - type: opening_balance
+          date: unknown
+          description: "SALDO ANTERIOR"
+          document: unknown
+          credit: unknown
+          debit: unknown
+          balance: "-233,00"
+        - type: normal_transaction
+          date: "02/10/2023"
+          description: "DEBITO PIX -"
+          document: "999.999.9"
+          credit: unknown
+          debit: "-94,99"
+          balance: "-327,99"
+        - type: normal_transaction
+          date: "02/10/2023"
+          description: "TR.INTERNET -"
+          document: "999.999.9"
+          credit: unknown
+          debit: "-150,00"
+          balance: "-477,99"
+        - type: normal_transaction
+          date: "02/10/2023"
+          description: "IOF S/ C-C"
+          document: "999999999123"
+          credit: unknown
+          debit: "-2,00"
+          balance: "-479,99"
+        - type: normal_transaction
+          date: "02/10/2023"
+          description: "JUROS LIM.CRD"
+          document: "999999999123"
+          credit: unknown
+          debit: "-3,40"
+          balance: "-483,39"
+        - type: normal_transaction
+          date: "05/10/2023"
+          description: "CREDITO PIX -"
+          document: "999999999123"
+          credit: "499,00"
+          debit: unknown
+          balance: "15,61"
+        - type: normal_transaction
+          date: "05/10/2023"
+          description: "TR.INTERNET -"
+          document: "999.999.9"
+          credit: unknown
+          debit: "-5,00"
+          balance: "10,61"
+        - type: normal_transaction
+          date: "05/10/2023"
+          description: "CREDITO PIX -"
+          document: "999999999123"
+          credit: "100,00"
+          debit: unknown
+          balance: "110,61"
+        - type: normal_transaction
+          date: "05/10/2023"
+          description: "TR.INTERNET -"
+          document: "999.999.9"
+          credit: unknown
+          debit: "-200,00"
+          balance: "-89,39"
+        - type: normal_transaction
+          date: "05/10/2023"
+          description: "TR.INTERNET -"
+          document: "999.999.9"
+          credit: unknown
+          debit: "-5,00"
+          balance: "-94,39"
+        - type: normal_transaction
+          date: "06/10/2023"
+          description: "TR.INTERNET -"
+          document: "999.999.9"
+          credit: unknown
+          debit: "-100,00"
+          balance: "-194,39"
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+        - "SALDO DO DIA"
+        - "SALDO FINAL"
+      should_import_as_transaction: false
+      balance_source: "SALDO (R$)"
+      inferred: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_may_have_document: true
+      row_may_have_credit: true
+      row_may_have_debit: true
+      row_has_balance: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor aparece na coluna 'CRÉDITO (R$)'"
+        - "Valor de crédito aparece em verde"
+      negative_when:
+        - "Valor aparece na coluna 'DÉBITO (R$)'"
+        - "Valor de débito aparece com sinal '-' e em vermelho"
+      inferred: false
+    balance_column:
+      exists: true
+      column_name: "SALDO (R$)"
+      may_be_negative: true
+      negative_values_use_minus_sign: true
+  normalization_hints:
+    likely_credit_patterns:
+      - pattern: "CREDITO PIX -"
+        reason: "Linhas visíveis aparecem na coluna CRÉDITO (R$)"
+        inferred: false
+    likely_debit_patterns:
+      - pattern: "DEBITO PIX -"
+        reason: "Linha visível aparece na coluna DÉBITO (R$)"
+        inferred: false
+      - pattern: "TR.INTERNET -"
+        reason: "Linhas visíveis aparecem na coluna DÉBITO (R$)"
+        inferred: false
+      - pattern: "IOF S/ C-C"
+        reason: "Linha visível aparece na coluna DÉBITO (R$)"
+        inferred: false
+      - pattern: "JUROS LIM.CRD"
+        reason: "Linha visível aparece na coluna DÉBITO (R$)"
+        inferred: false
+    caution:
+      - "Este layout possui colunas separadas para crédito e débito; a coluna deve ter prioridade sobre a descrição."
+      - "Valores de débito já vêm negativos; evitar aplicar sinal negativo duas vezes."
+      - "Não importar 'SALDO ANTERIOR' como transação."
+      - "Descrições com PIX podem ser crédito ou débito; usar a coluna correta, não apenas a palavra PIX."
+      - "Validar no PDF real se cores e sinais são preservados na extração textual."
+  visual_model:
+    table_anchor:
+      starts_after_text: "DATA DESCRIÇÃO DOCUMENTO CRÉDITO (R$) DÉBITO (R$) SALDO (R$)"
+      header_row_color: "dark teal"
+      header_keywords:
+        - "DATA"
+        - "DESCRIÇÃO"
+        - "DOCUMENTO"
+        - "CRÉDITO (R$)"
+        - "DÉBITO (R$)"
+        - "SALDO (R$)"
+    column_order:
+      - date
+      - description
+      - document
+      - credit
+      - debit
+      - balance
+    row_behavior:
+      separator: "minimal grid; rows aligned by columns"
+      date_repeated_per_transaction: true
+      description_uppercase: true
+      document_right_aligned_or_centered: true
+      credit_right_aligned: true
+      debit_right_aligned: true
+      balance_right_aligned: true
+      credit_color: "green"
+      debit_color: "red"
+      balance_color: "dark"
+  parser_risks:
+    ambiguities:
+      - "Alguns números/documentos estão mascarados, mas a estrutura de coluna é clara."
+      - "A grafia de valores/saldos pode sofrer ruído OCR, especialmente vírgula decimal e sinal negativo."
+      - "O cabeçalho indica Banco 085, mas a marca principal é Viacredi/Ailos; classifier deve aceitar ambos como sinais."
+      - "Descrições terminadas com '-' podem fazer parte do histórico e não devem ser confundidas com sinal do valor."
+      - "Saldo anterior não tem data visível na imagem."
+    fields_that_may_be_missing:
+      - "opening_balance_date"
+      - "document"
+      - "account_identifiers"
+      - "credit"
+      - "debit"
+    cases_that_need_real_pdf_validation:
+      - "Se a camada textual preserva acentos em CRÉDITO/DÉBITO e DESCRIÇÃO."
+      - "Se valores negativos na coluna débito sempre vêm com sinal '-' ou apenas por coluna/cor."
+      - "Se descrições longas quebram em múltiplas linhas."
+      - "Como aparecem saldo do dia, saldo final, totais, estornos e lançamentos futuros."
+      - "Se cabeçalho repete em páginas seguintes."
+      - "Se o documento pode conter pontos e dígitos variáveis sem deslocar colunas."
+
+layout_profile:
+  profile_name: viacredi_ailos_extrato_conta_corrente_v1
+  bank: Viacredi
+  layout_family: viacredi_ailos_extrato_tabela_credito_debito
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "VIACREDI"
+      - "COOPERATIVA AILOS"
+      - "EXTRATO"
+      - "Período"
+      - "Cooperativa"
+      - "Banco"
+      - "Agência"
+      - "Conta"
+      - "DATA"
+      - "DESCRIÇÃO"
+      - "DOCUMENTO"
+      - "CRÉDITO (R$)"
+      - "DÉBITO (R$)"
+      - "SALDO (R$)"
+    optional_keywords:
+      - "SALDO ANTERIOR"
+      - "DEBITO PIX"
+      - "CREDITO PIX"
+      - "TR.INTERNET"
+      - "IOF S/ C-C"
+      - "JUROS LIM.CRD"
+      - "Banco: 085"
+      - "Emitido em"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "Cartão de Crédito"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "DATA"
+      - "DESCRIÇÃO"
+      - "DOCUMENTO"
+      - "CRÉDITO (R$)"
+      - "DÉBITO (R$)"
+      - "SALDO (R$)"
+    expected_column_order:
+      - date
+      - description
+      - document
+      - credit
+      - debit
+      - balance
+    column_aliases:
+      date:
+        - "DATA"
+        - "Data"
+      description:
+        - "DESCRIÇÃO"
+        - "Descrição"
+        - "Descricao"
+        - "Histórico"
+      document:
+        - "DOCUMENTO"
+        - "Documento"
+        - "Doc."
+      amount:
+        - "CRÉDITO (R$)"
+        - "DÉBITO (R$)"
+        - "Crédito"
+        - "Débito"
+      credit:
+        - "CRÉDITO (R$)"
+        - "CREDITO (R$)"
+        - "Crédito"
+        - "Credito"
+      debit:
+        - "DÉBITO (R$)"
+        - "DEBITO (R$)"
+        - "Débito"
+        - "Debito"
+      balance:
+        - "SALDO (R$)"
+        - "Saldo"
+    table_starts_after:
+      - "DATA DESCRIÇÃO DOCUMENTO CRÉDITO (R$) DÉBITO (R$) SALDO (R$)"
+    row_separator_hint: "transaction starts when first column contains dd/MM/yyyy; saldo anterior row may have blank date"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "value_in_debit_column"
+      - "-{amount}"
+      - "red_text_in_debit_column"
+    positive_patterns:
+      - "value_in_credit_column"
+      - "{amount_without_minus_in_credit_column}"
+      - "green_text_in_credit_column"
+    ignore_rows:
+      - "VIACREDI"
+      - "COOPERATIVA AILOS"
+      - "EXTRATO"
+      - "Período"
+      - "Nome"
+      - "Cooperativa"
+      - "Banco"
+      - "Agência"
+      - "Conta"
+      - "Emitido em"
+      - "DATA"
+      - "DESCRIÇÃO"
+      - "DOCUMENTO"
+      - "CRÉDITO (R$)"
+      - "DÉBITO (R$)"
+      - "SALDO (R$)"
+      - "SALDO ANTERIOR"
+      - "SALDO DO DIA"
+      - "SALDO FINAL"
+      - "TOTAL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - credit
+      - debit
+      - balance
+  sign_rules:
+    priority_order:
+      - "credit_or_debit_column"
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "CREDITO PIX -"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis estão na coluna CRÉDITO (R$)"
+      - pattern: "DEBITO PIX -"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível está na coluna DÉBITO (R$)"
+      - pattern: "TR.INTERNET -"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linhas visíveis estão na coluna DÉBITO (R$)"
+      - pattern: "IOF S/ C-C"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível está na coluna DÉBITO (R$)"
+      - pattern: "JUROS LIM.CRD"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "Linha visível está na coluna DÉBITO (R$)"
+    cautions:
+      - "Não aplicar negativo duas vezes quando débito já vier com '-' e também estiver na coluna DÉBITO."
+      - "Não usar o hífen no final da descrição como indicador de sinal."
+      - "Não inferir sinal apenas por PIX, pois há DEBITO PIX e CREDITO PIX."
+      - "Se crédito e débito vierem preenchidos na mesma linha, marcar para revisão manual."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_trailing_hyphen_in_original_description"
+      - "normalize_uppercase_optional"
+      - "preserve_original_description"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "CREDITO PIX -"
+        category: "pix_recebido"
+        inferred: true
+      - pattern: "DEBITO PIX -"
+        category: "pix_enviado"
+        inferred: true
+      - pattern: "TR.INTERNET -"
+        category: "transferencia_internet"
+        inferred: true
+      - pattern: "IOF S/ C-C"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "JUROS LIM.CRD"
+        category: "juros_limite_credito"
+        inferred: true
+    transfer_hints:
+      - pattern: "PIX"
+        category: "transferencia_pix"
+        inferred: true
+      - pattern: "TR.INTERNET"
+        category: "transferencia_internet"
+        inferred: true
+      - pattern: "TED"
+        category: "transferencia"
+        inferred: true
+    fee_hints:
+      - pattern: "IOF"
+        category: "imposto_iof"
+        inferred: true
+      - pattern: "JUROS"
+        category: "juros"
+        inferred: true
+      - pattern: "TARIFA"
+        category: "tarifa_bancaria"
+        inferred: true
+  validation:
+    expected_min_columns: 6
+    reject_if_missing_headers:
+      - "DATA"
+      - "DESCRIÇÃO"
+      - "CRÉDITO"
+      - "DÉBITO"
+      - "SALDO"
+    balance_consistency_check:
+      enabled: true
+      method: "current_balance_equals_previous_balance_plus_credit_minus_debit; avoid double negative when debit value already has '-'"
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "both_credit_and_debit_present_same_row"
+      - "amount_present_outside_credit_or_debit_columns"
+      - "debit_value_without_minus_but_in_debit_column"
+      - "ocr_confidence_low_on_decimal_separator_or_minus_sign"
+      - "description_line_wrap_detected"
+      - "document_column_shifts_into_credit_or_debit"
+      - "balance_consistency_fails"
+  examples_from_image:
+    sample_rows:
+      - raw_date: unknown
+        raw_description: "SALDO ANTERIOR"
+        raw_document: unknown
+        raw_amount: unknown
+        raw_balance: "-233,00"
+        normalized_amount: "0.00"
+        should_import_as_transaction: false
+        notes: "Linha de saldo anterior; não importar como transação"
+      - raw_date: "02/10/2023"
+        raw_description: "DEBITO PIX -"
+        raw_document: "999.999.9"
+        raw_amount: "-94,99"
+        raw_balance: "-327,99"
+        normalized_amount: "-94.99"
+        should_import_as_transaction: true
+        notes: "Valor na coluna DÉBITO; saída"
+      - raw_date: "02/10/2023"
+        raw_description: "TR.INTERNET -"
+        raw_document: "999.999.9"
+        raw_amount: "-150,00"
+        raw_balance: "-477,99"
+        normalized_amount: "-150.00"
+        should_import_as_transaction: true
+        notes: "Valor na coluna DÉBITO; saída"
+      - raw_date: "02/10/2023"
+        raw_description: "IOF S/ C-C"
+        raw_document: "999999999123"
+        raw_amount: "-2,00"
+        raw_balance: "-479,99"
+        normalized_amount: "-2.00"
+        should_import_as_transaction: true
+        notes: "IOF em coluna DÉBITO"
+      - raw_date: "05/10/2023"
+        raw_description: "CREDITO PIX -"
+        raw_document: "999999999123"
+        raw_amount: "499,00"
+        raw_balance: "15,61"
+        normalized_amount: "499.00"
+        should_import_as_transaction: true
+        notes: "Valor na coluna CRÉDITO; entrada"
+      - raw_date: "05/10/2023"
+        raw_description: "CREDITO PIX -"
+        raw_document: "999999999123"
+        raw_amount: "100,00"
+        raw_balance: "110,61"
+        normalized_amount: "100.00"
+        should_import_as_transaction: true
+        notes: "Valor na coluna CRÉDITO; entrada"
+  implementation_notes:
+    - "Classificar pela combinação de 'VIACREDI', 'COOPERATIVA AILOS' e cabeçalho com CRÉDITO/DÉBITO/SALDO."
+    - "Usar colunas separadas de crédito e débito como regra principal de sinal."
+    - "Evitar dupla negativação em débitos que já chegam com sinal '-'."
+    - "Preservar descrições originais, inclusive hífen final, pois pode ser padrão do banco."
+    - "Não importar 'SALDO ANTERIOR', 'SALDO DO DIA' e 'SALDO FINAL' como transações."
+    - "Validar consistência de saldo após normalizar crédito e débito."
+    - "Validar com PDF real se acentos e valores coloridos são preservados na camada textual."
