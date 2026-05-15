@@ -1,6 +1,6 @@
+import logging
 import re
 import unicodedata
-import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter

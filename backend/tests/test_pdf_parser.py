@@ -1,7 +1,4 @@
-﻿import pytest
-
 from app.application import pdf_parser as pdf_parser_module
-from app.application.errors import InvalidFileContentError
 from app.application.pdf_parser import parse_pdf_transactions
 from tests.fixtures.pdf_golden_samples import (
     GROUPED_INLINE_MULTILINE_SAMPLE,
