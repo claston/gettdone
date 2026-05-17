@@ -4,6 +4,7 @@ import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
+from typing import Callable
 from uuid import uuid4
 
 from app.application.csv_parser import parse_csv_transactions
@@ -35,7 +36,12 @@ class AnalyzeService:
     def __init__(self, storage: TempAnalysisStorage) -> None:
         self.storage = storage
 
-    def analyze(self, filename: str, raw_bytes: bytes) -> AnalyzeResponse:
+    def analyze(
+        self,
+        filename: str,
+        raw_bytes: bytes,
+        on_ocr_progress: Callable[[int, int], None] | None = None,
+    ) -> AnalyzeResponse:
         total_start = perf_counter()
         extension = Path(filename).suffix.replace(".", "").lower()
         if extension not in SUPPORTED_EXTENSIONS:
@@ -58,6 +64,7 @@ class AnalyzeService:
         ) = self._build_transactions_for_extension(
             extension,
             raw_bytes,
+            on_ocr_progress=on_ocr_progress,
         )
         parse_ms = round((perf_counter() - parse_start) * 1000, 3)
         classify_start = perf_counter()
@@ -242,6 +249,7 @@ class AnalyzeService:
         self,
         extension: str,
         raw_bytes: bytes,
+        on_ocr_progress: Callable[[int, int], None] | None = None,
     ) -> tuple[
         list[NormalizedTransaction],
         str | None,
@@ -255,7 +263,7 @@ class AnalyzeService:
             return parse_xlsx_transactions(raw_bytes), None, None, None, None
         if extension == "ofx":
             return parse_ofx_transactions(raw_bytes), None, None, None, None
-        result = parse_pdf_transactions(raw_bytes)
+        result = parse_pdf_transactions(raw_bytes, on_ocr_progress=on_ocr_progress)
         return (
             result.transactions,
             result.layout.layout_name,

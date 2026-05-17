@@ -2,6 +2,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
+from typing import Callable
 
 from pypdf import PdfReader
 
@@ -65,8 +66,11 @@ class _ParsedTransaction:
     has_explicit_amount_sign: bool = False
 
 
-def parse_pdf_transactions(raw_bytes: bytes) -> PdfParseResult:
-    page_texts = _extract_pdf_page_texts(raw_bytes)
+def parse_pdf_transactions(
+    raw_bytes: bytes,
+    on_ocr_progress: Callable[[int, int], None] | None = None,
+) -> PdfParseResult:
+    page_texts = _extract_pdf_page_texts(raw_bytes, on_ocr_progress=on_ocr_progress)
     joined_text = "\n".join(page_texts)
     layout = infer_pdf_layout(joined_text)
     layout_profile = get_layout_profile(layout.layout_name)
@@ -233,12 +237,15 @@ def _build_pdf_parse_result(
     )
 
 
-def _extract_pdf_page_texts(raw_bytes: bytes) -> list[str]:
+def _extract_pdf_page_texts(
+    raw_bytes: bytes,
+    on_ocr_progress: Callable[[int, int], None] | None = None,
+) -> list[str]:
     pages = _read_native_pdf_page_texts(raw_bytes)
     if pages:
         return pages
     if is_pdf_ocr_enabled():
-        ocr_pages = extract_pdf_page_texts_with_ocr(raw_bytes)
+        ocr_pages = extract_pdf_page_texts_with_ocr(raw_bytes, on_progress=on_ocr_progress)
         if ocr_pages:
             return ocr_pages
 
