@@ -68,11 +68,19 @@ class ReportService:
         analysis_id: str,
         edits: list[dict[str, object]],
         expected_updated_at: str | None = None,
+        closing_balance: float | None = None,
+        bank_branch: str | None = None,
+        account_number: str | None = None,
+        bank_code: str | None = None,
     ) -> dict[str, object]:
         return self.storage.apply_convert_edits(
             analysis_id=analysis_id,
             edits=edits,
             expected_updated_at=expected_updated_at,
+            closing_balance=closing_balance,
+            bank_branch=bank_branch,
+            account_number=account_number,
+            bank_code=bank_code,
         )
 
     def save_reconcile_report(

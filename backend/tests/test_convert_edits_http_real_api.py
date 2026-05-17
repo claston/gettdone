@@ -61,7 +61,17 @@ class FakeReportService:
 
             raise AnalysisAccessDeniedError
 
-    def apply_convert_edits(self, analysis_id: str, edits: list[dict], expected_updated_at: str | None = None):
+    def apply_convert_edits(
+        self,
+        analysis_id: str,
+        edits: list[dict],
+        expected_updated_at: str | None = None,
+        closing_balance: float | None = None,
+        bank_branch: str | None = None,
+        account_number: str | None = None,
+        bank_code: str | None = None,
+    ):
+        _ = (closing_balance, bank_branch, account_number, bank_code)
         if analysis_id not in self._owners:
             from app.application import AnalysisNotFoundError
 

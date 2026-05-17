@@ -318,3 +318,28 @@ def test_convert_edits_accepts_bearer_user_token(tmp_path: Path) -> None:
     payload = response.json()
     assert payload["preview_transactions"][0]["description"] == "EDITED VIA HEADER"
     app.dependency_overrides.clear()
+
+
+def test_convert_edits_persists_ofx_export_settings_for_download_without_query(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+
+    save_settings = client.post(
+        "/convert-edits/an_convert123?anonymous_fingerprint=fp-owner",
+        json={
+            "edits": [],
+            "closing_balance": 56276.06,
+            "bank_branch": "3456-7",
+            "account_number": "12345-6",
+            "bank_code": "001",
+        },
+    )
+    assert save_settings.status_code == 200
+
+    ofx_report = client.get("/convert-report/an_convert123?format=ofx&anonymous_fingerprint=fp-owner")
+    assert ofx_report.status_code == 200
+    assert "<LEDGERBAL>" in ofx_report.text
+    assert "<BALAMT>56276.06" in ofx_report.text
+    assert "<BRANCHID>34567" in ofx_report.text
+    assert "<ACCTID>123456" in ofx_report.text
+    assert "<BANKID>001" in ofx_report.text
+    app.dependency_overrides.clear()

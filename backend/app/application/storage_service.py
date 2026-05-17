@@ -261,6 +261,10 @@ class TempAnalysisStorage:
         analysis_id: str,
         edits: list[dict[str, object]],
         expected_updated_at: str | None = None,
+        closing_balance: float | None = None,
+        bank_branch: str | None = None,
+        account_number: str | None = None,
+        bank_code: str | None = None,
     ) -> dict[str, object]:
         analysis_dir = self.root_dir / analysis_id
         if self._is_expired(analysis_dir):
@@ -343,6 +347,38 @@ class TempAnalysisStorage:
         total_outflows = round(sum(item.amount for item in active_rows if item.amount < 0), 2)
         net_total = round(total_inflows + total_outflows, 2)
 
+        requested_overrides = self._normalize_convert_overrides(
+            closing_balance=closing_balance,
+            bank_branch=bank_branch,
+            account_number=account_number,
+            bank_code=bank_code,
+        )
+        persisted_overrides = self._extract_convert_overrides(content)
+        effective_overrides = {
+            "closing_balance": (
+                requested_overrides.get("closing_balance")
+                if requested_overrides.get("closing_balance") is not None
+                else persisted_overrides.get("closing_balance")
+            ),
+            "bank_branch": (
+                requested_overrides.get("bank_branch")
+                if requested_overrides.get("bank_branch") is not None
+                else persisted_overrides.get("bank_branch")
+            ),
+            "account_number": (
+                requested_overrides.get("account_number")
+                if requested_overrides.get("account_number") is not None
+                else persisted_overrides.get("account_number")
+            ),
+            "bank_code": (
+                requested_overrides.get("bank_code")
+                if requested_overrides.get("bank_code") is not None
+                else persisted_overrides.get("bank_code")
+            ),
+        }
+        if requested_overrides:
+            self._apply_convert_overrides_to_content(content, requested_overrides)
+
         content["transactions_total"] = len(active_rows)
         content["total_inflows"] = total_inflows
         content["total_outflows"] = total_outflows
@@ -359,6 +395,10 @@ class TempAnalysisStorage:
             report_rows,
             ofx_account_type=str(content.get("ofx_account_type") or "").strip() or None,
             layout_inference_name=str(content.get("layout_inference_name") or "").strip() or None,
+            closing_balance=effective_overrides.get("closing_balance"),
+            bank_branch=effective_overrides.get("bank_branch"),
+            account_number=effective_overrides.get("account_number"),
+            bank_code=effective_overrides.get("bank_code"),
         )
 
         return {
@@ -600,16 +640,98 @@ class TempAnalysisStorage:
         if not report_rows:
             raise AnalysisNotFoundError
 
+        persisted_overrides = self._extract_convert_overrides(content)
+        requested_overrides = self._normalize_convert_overrides(
+            closing_balance=closing_balance,
+            bank_branch=bank_branch,
+            account_number=account_number,
+            bank_code=bank_code,
+        )
+        effective_overrides = {
+            "closing_balance": (
+                requested_overrides.get("closing_balance")
+                if requested_overrides.get("closing_balance") is not None
+                else persisted_overrides.get("closing_balance")
+            ),
+            "bank_branch": (
+                requested_overrides.get("bank_branch")
+                if requested_overrides.get("bank_branch") is not None
+                else persisted_overrides.get("bank_branch")
+            ),
+            "account_number": (
+                requested_overrides.get("account_number")
+                if requested_overrides.get("account_number") is not None
+                else persisted_overrides.get("account_number")
+            ),
+            "bank_code": (
+                requested_overrides.get("bank_code")
+                if requested_overrides.get("bank_code") is not None
+                else persisted_overrides.get("bank_code")
+            ),
+        }
+        if requested_overrides:
+            self._apply_convert_overrides_to_content(content, requested_overrides)
+            metadata_path.write_text(json.dumps(content, ensure_ascii=True, indent=2), encoding="utf-8")
+
         self._write_convert_artifacts(
             analysis_dir,
             report_rows,
             ofx_account_type=str(content.get("ofx_account_type") or "").strip() or None,
             layout_inference_name=str(content.get("layout_inference_name") or "").strip() or None,
-            closing_balance=float(closing_balance) if closing_balance is not None else None,
-            bank_branch=bank_branch,
-            account_number=account_number,
-            bank_code=bank_code,
+            closing_balance=effective_overrides.get("closing_balance"),
+            bank_branch=effective_overrides.get("bank_branch"),
+            account_number=effective_overrides.get("account_number"),
+            bank_code=effective_overrides.get("bank_code"),
         )
+
+    def _normalize_convert_overrides(
+        self,
+        *,
+        closing_balance: float | None,
+        bank_branch: str | None,
+        account_number: str | None,
+        bank_code: str | None,
+    ) -> dict[str, float | str]:
+        normalized: dict[str, float | str] = {}
+        if closing_balance is not None:
+            normalized["closing_balance"] = float(closing_balance)
+        branch = str(bank_branch or "").strip()
+        if branch:
+            normalized["bank_branch"] = branch
+        account = str(account_number or "").strip()
+        if account:
+            normalized["account_number"] = account
+        code = str(bank_code or "").strip()
+        if code:
+            normalized["bank_code"] = code
+        return normalized
+
+    def _extract_convert_overrides(self, content: dict[str, object]) -> dict[str, float | str | None]:
+        closing_raw = content.get("convert_closing_balance")
+        closing_balance = float(closing_raw) if closing_raw is not None else None
+        branch = str(content.get("convert_bank_branch") or "").strip() or None
+        account = str(content.get("convert_account_number") or "").strip() or None
+        code = str(content.get("convert_bank_code") or "").strip() or None
+        return {
+            "closing_balance": closing_balance,
+            "bank_branch": branch,
+            "account_number": account,
+            "bank_code": code,
+        }
+
+    def _apply_convert_overrides_to_content(
+        self,
+        content: dict[str, object],
+        overrides: dict[str, float | str],
+    ) -> None:
+        if "closing_balance" in overrides:
+            content["convert_closing_balance"] = float(overrides["closing_balance"])
+        if "bank_branch" in overrides:
+            content["convert_bank_branch"] = str(overrides["bank_branch"])
+        if "account_number" in overrides:
+            content["convert_account_number"] = str(overrides["account_number"])
+        if "bank_code" in overrides:
+            content["convert_bank_code"] = str(overrides["bank_code"])
 
     def _write_report_workbook(
         self,
