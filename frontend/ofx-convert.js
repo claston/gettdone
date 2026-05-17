@@ -368,6 +368,47 @@
     return { authorization: `Bearer ${token}` };
   }
 
+  function parseDownloadFilenameFromContentDisposition(headerValue) {
+    const raw = String(headerValue || "").trim();
+    if (!raw) {
+      return "";
+    }
+    const utf8Match = raw.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match && utf8Match[1]) {
+      try {
+        return decodeURIComponent(utf8Match[1].trim());
+      } catch (_error) {
+        return utf8Match[1].trim();
+      }
+    }
+    const quotedMatch = raw.match(/filename=\"([^\"]+)\"/i);
+    if (quotedMatch && quotedMatch[1]) {
+      return quotedMatch[1].trim();
+    }
+    const plainMatch = raw.match(/filename=([^;]+)/i);
+    if (plainMatch && plainMatch[1]) {
+      return plainMatch[1].trim();
+    }
+    return "";
+  }
+
+  function buildFallbackDownloadFilename(extension) {
+    const safeExtension = String(extension || "").trim().toLowerCase();
+    const { file_name } = getCurrentFileMeta();
+    const rawName = String(file_name || "").trim();
+    if (rawName) {
+      const stem = rawName.replace(/\.[^/.]+$/, "").trim();
+      if (stem) {
+        return `${stem}.${safeExtension}`;
+      }
+    }
+    const processingId = state.processingId || state.analysisId;
+    if (processingId) {
+      return `ofxsimples-${processingId}.${safeExtension}`;
+    }
+    return `ofxsimples-convert.${safeExtension}`;
+  }
+
   function buildIdentityQueryParams() {
     const params = new URLSearchParams();
     params.set("anonymous_fingerprint", getAnonymousFingerprint());
@@ -1667,7 +1708,7 @@
         reportFormat: "xlsx",
         targetId: processingId,
         endpoint: processingId ? `${apiBase}/convert-report/${processingId}` : "",
-        fileName: processingId ? `ofxsimples-${processingId}.xlsx` : "ofxsimples-convert.xlsx",
+        fileName: buildFallbackDownloadFilename("xlsx"),
         errorMessage: "Falha ao baixar Excel.",
         networkErrorMessage: "Falha de rede ao baixar Excel.",
       };
@@ -1678,7 +1719,7 @@
       reportFormat: "ofx",
       targetId: processingId,
       endpoint: processingId ? `${apiBase}/convert-report/${processingId}` : "",
-      fileName: processingId ? `ofxsimples-${processingId}.ofx` : "ofxsimples-convert.ofx",
+      fileName: buildFallbackDownloadFilename("ofx"),
       errorMessage: "Falha ao baixar OFX.",
       networkErrorMessage: "Falha de rede ao baixar OFX.",
     };
@@ -1702,20 +1743,37 @@
       }
       if (requestedFormat === "ofx") {
         const closingBalance = Number(state.closingBalanceOverride);
-        if (Number.isFinite(closingBalance)) {
-          query.set("closing_balance", closingBalance.toFixed(2));
-        }
         const bankBranch = normalizeDigits(state.bankBranchOverride);
         const accountNumber = normalizeDigits(state.accountNumberOverride);
-        if (bankBranch) {
-          query.set("bank_branch", bankBranch);
-        }
-        if (accountNumber) {
-          query.set("account_number", accountNumber);
-        }
         const bankCode = normalizeDigits(state.bankCodeOverride || "").slice(0, 3);
-        if (bankCode) {
-          query.set("bank_code", bankCode);
+        const settingsQuery = buildIdentityQueryParams();
+        const settingsResponse = await fetch(`${apiBase}/convert-edits/${downloadConfig.targetId}?${settingsQuery.toString()}`, {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            ...(headers || {}),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            edits: [],
+            expected_updated_at: state.analysisSnapshot ? state.analysisSnapshot.updated_at || null : null,
+            closing_balance: Number.isFinite(closingBalance) ? Number(closingBalance.toFixed(2)) : null,
+            bank_branch: bankBranch || null,
+            account_number: accountNumber || null,
+            bank_code: bankCode || null,
+          }),
+        });
+        if (!settingsResponse.ok) {
+          const settingsPayload = await settingsResponse.json().catch(() => ({}));
+          const detail = settingsPayload && typeof settingsPayload === "object" ? settingsPayload.detail : null;
+          const message = String(detail || "Falha ao atualizar os dados do OFX.");
+          setStatus(message, "error");
+          return;
+        }
+        const settingsPayload = await settingsResponse.json().catch(() => ({}));
+        if (settingsPayload && typeof settingsPayload.updated_at === "string" && state.analysisSnapshot) {
+          state.analysisSnapshot.updated_at = settingsPayload.updated_at;
+          persistCurrentViewState();
         }
       }
       const url = `${downloadConfig.endpoint}?${query.toString()}`;
@@ -1736,7 +1794,9 @@
       const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
-      anchor.download = downloadConfig.fileName;
+      const contentDisposition = response.headers.get("content-disposition");
+      const serverFileName = parseDownloadFilenameFromContentDisposition(contentDisposition);
+      anchor.download = serverFileName || downloadConfig.fileName;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();

@@ -186,6 +186,10 @@ class ConvertEditPatch(BaseModel):
 class ConvertEditsRequest(BaseModel):
     edits: list[ConvertEditPatch]
     expected_updated_at: str | None = None
+    closing_balance: float | None = None
+    bank_branch: str | None = None
+    account_number: str | None = None
+    bank_code: str | None = None
 
 
 class ConvertEditsResponse(BaseModel):

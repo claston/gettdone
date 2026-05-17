@@ -210,6 +210,10 @@ def apply_convert_edits(
             analysis_id=processing_id,
             edits=[item.model_dump() for item in payload.edits],
             expected_updated_at=payload.expected_updated_at,
+            closing_balance=payload.closing_balance,
+            bank_branch=payload.bank_branch,
+            account_number=payload.account_number,
+            bank_code=payload.bank_code,
         )
         return ConvertEditsResponse(**result)
     except AnalysisNotFoundError:
@@ -232,5 +236,5 @@ def _build_convert_download_filename(analysis_id: str, upload_filename: str | No
         safe_name = Path(upload_filename).name.strip()
         stem = Path(safe_name).stem.strip()
         if stem:
-            return f"{stem}_convertido.{file_format}"
+            return f"{stem}.{file_format}"
     return f"ofxsimples_convert_{analysis_id}.{file_format}"

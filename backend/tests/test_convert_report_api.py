@@ -84,7 +84,7 @@ def test_convert_report_download_happy_path(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/x-ofx")
-    assert "extrato_nubank_convertido.ofx" in response.headers["content-disposition"]
+    assert "extrato_nubank.ofx" in response.headers["content-disposition"]
     assert "<STMTTRN>" in response.text
     app.dependency_overrides.clear()
 
@@ -96,7 +96,7 @@ def test_convert_report_download_csv_happy_path(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/csv")
-    assert "extrato_nubank_convertido.csv" in response.headers["content-disposition"]
+    assert "extrato_nubank.csv" in response.headers["content-disposition"]
     assert "date,description,amount" in response.text
     app.dependency_overrides.clear()
 
@@ -108,7 +108,7 @@ def test_convert_report_download_xlsx_matches_conversion_review_layout(tmp_path:
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    assert "extrato_nubank_convertido.xlsx" in response.headers["content-disposition"]
+    assert "extrato_nubank.xlsx" in response.headers["content-disposition"]
 
     workbook = load_workbook(filename=BytesIO(response.content), data_only=True)
     sheet = workbook.active
