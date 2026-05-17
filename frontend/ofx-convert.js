@@ -1465,22 +1465,65 @@
     setStatus("Sessão restaurada. Você pode continuar o download.", "success");
   }
 
-  async function postConvert(formData) {
+  async function postConvert(formData, options) {
+    const onStatusEvent = options && typeof options.onStatusEvent === "function" ? options.onStatusEvent : null;
     const token = getUserToken();
-    const headers = buildOptionalAuthHeaders(token);
-    const response = await fetch(`${apiBase}/convert`, {
+    const headers = {
+      Accept: "text/event-stream",
+      ...(buildOptionalAuthHeaders(token) || {}),
+    };
+    const response = await fetch(`${apiBase}/api/conversions/upload`, {
       method: "POST",
       credentials: "include",
-      ...(headers ? { headers } : {}),
+      headers,
       body: formData,
     });
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+
+    if (contentType.includes("text/event-stream") && response.body) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+      let completedPayload = null;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+        for (const rawEvent of events) {
+          const dataLine = rawEvent
+            .split("\n")
+            .find(function (line) {
+              return line.startsWith("data: ");
+            });
+          if (!dataLine) continue;
+          const event = JSON.parse(dataLine.slice(6));
+          if (onStatusEvent) onStatusEvent(event);
+          if (event.stage === "failed") {
+            throw buildApiError(400, {
+              code: String(event.code || "processing_failed"),
+              message: String(event.message || "Falha ao converter arquivo."),
+              retryable: Boolean(event.retryable),
+            });
+          }
+          if (event.stage === "completed") {
+            completedPayload = event.convertPayload || null;
+          }
+        }
+      }
+
+      if (completedPayload && typeof completedPayload === "object") {
+        return completedPayload;
+      }
+      throw buildApiError(500, "Conversão finalizada sem dados de retorno.");
+    }
 
     const payload = await response.json().catch(() => ({}));
-
     if (!response.ok) {
       throw buildApiError(response.status, payload.detail || "Falha ao converter arquivo.");
     }
-
     return payload;
   }
 
@@ -1626,7 +1669,18 @@
         formData.append("anonymous_fingerprint", getAnonymousFingerprint());
       }
 
-      const payload = await postConvert(formData);
+      const payload = await postConvert(formData, {
+        onStatusEvent: function (event) {
+          const stage = String((event && event.stage) || "").trim();
+          const message = String((event && event.message) || "").trim();
+          if (!stage || !message) return;
+          if (stage === "ocr_progress" && Number.isFinite(Number(event.currentPage)) && Number.isFinite(Number(event.totalPages))) {
+            setStatus(`Lendo página ${Number(event.currentPage)} de ${Number(event.totalPages)}...`, null);
+            return;
+          }
+          setStatus(message, null);
+        },
+      });
       state.quotaMode = normalizeQuotaMode(payload.quota_mode);
 
       const analysis = payload.analysis;

@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 from threading import BoundedSemaphore
+from typing import Callable
 
 from app.application.errors import InvalidFileContentError
 
@@ -19,7 +20,10 @@ def is_pdf_ocr_enabled() -> bool:
     return _is_dev_auto_ocr_enabled()
 
 
-def extract_pdf_page_texts_with_ocr(raw_bytes: bytes) -> list[str]:
+def extract_pdf_page_texts_with_ocr(
+    raw_bytes: bytes,
+    on_progress: Callable[[int, int], None] | None = None,
+) -> list[str]:
     if not is_pdf_ocr_enabled():
         raise InvalidFileContentError(PDF_OCR_DISABLED_MESSAGE)
     _enforce_pdf_ocr_file_size_limit(raw_bytes)
@@ -53,7 +57,8 @@ def extract_pdf_page_texts_with_ocr(raw_bytes: bytes) -> list[str]:
 
         texts: list[str] = []
         render_dpi = _get_pdf_ocr_render_dpi()
-        for page_index in range(len(document)):
+        total_pages = len(document)
+        for page_index in range(total_pages):
             page = None
             bitmap = None
             image = None
@@ -70,6 +75,8 @@ def extract_pdf_page_texts_with_ocr(raw_bytes: bytes) -> list[str]:
                     )
                     or ""
                 ).strip()
+                if on_progress is not None:
+                    on_progress(page_index + 1, total_pages)
                 if text:
                     texts.append(text)
             except Exception as exc:
