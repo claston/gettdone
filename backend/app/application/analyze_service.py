@@ -263,7 +263,10 @@ class AnalyzeService:
             return parse_xlsx_transactions(raw_bytes), None, None, None, None
         if extension == "ofx":
             return parse_ofx_transactions(raw_bytes), None, None, None, None
-        result = parse_pdf_transactions(raw_bytes, on_ocr_progress=on_ocr_progress)
+        if on_ocr_progress is None:
+            result = parse_pdf_transactions(raw_bytes)
+        else:
+            result = parse_pdf_transactions(raw_bytes, on_ocr_progress=on_ocr_progress)
         return (
             result.transactions,
             result.layout.layout_name,

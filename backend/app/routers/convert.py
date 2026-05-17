@@ -77,54 +77,63 @@ def _build_convert_response(
     access_control_service: AccessControlService,
     on_ocr_progress=None,
 ) -> ConvertResponse:
-    resolved_user_token = resolve_user_token_with_session(
-        access_control_service=access_control_service,
-        authorization=authorization,
-        explicit_user_token=user_token,
-        access_cookie_token=access_cookie_token,
-    )
-    identity = access_control_service.resolve_identity(
-        anonymous_fingerprint=anonymous_fingerprint,
-        user_token=resolved_user_token,
-    )
-    access_control_service.assert_upload_size(data, max_upload_size_bytes=identity.max_upload_size_bytes)
-    access_control_service.ensure_quota_available(identity, required_units=1)
-    if on_ocr_progress is None:
-        analysis = analyze_service.analyze(filename=file.filename or "", raw_bytes=data)
-    else:
-        analysis = analyze_service.analyze(filename=file.filename or "", raw_bytes=data, on_ocr_progress=on_ocr_progress)
-    report_service.set_convert_owner(
-        analysis_id=analysis.analysis_id,
-        identity_type=identity.identity_type,
-        identity_id=identity.identity_id,
-    )
-    pages_count = _resolve_processed_pages(analysis)
-    consumed_units = _resolve_consumed_units(identity, analysis)
-    quota_remaining = access_control_service.consume_quota(identity, consumed_units=consumed_units)
-    if identity.identity_type == "user":
-        file_type = str(analysis.file_type or "").strip().lower()
-        conversion_type = f"{file_type}-ofx" if file_type else "pdf-ofx"
-        access_control_service.record_user_conversion(
-            user_id=identity.identity_id,
-            processing_id=analysis.analysis_id,
-            filename=(file.filename or "").strip() or f"{analysis.analysis_id}.pdf",
-            model=(analysis.layout_inference_name or "").strip() or "Nao identificado",
-            conversion_type=conversion_type,
-            status="Sucesso",
-            transactions_count=int(analysis.transactions_total),
-            pages_count=pages_count,
-            expires_at=analysis.expires_at,
+    identity = None
+    try:
+        resolved_user_token = resolve_user_token_with_session(
+            access_control_service=access_control_service,
+            authorization=authorization,
+            explicit_user_token=user_token,
+            access_cookie_token=access_cookie_token,
         )
-    return ConvertResponse(
-        processing_id=analysis.analysis_id,
-        quota_remaining=quota_remaining,
-        quota_limit=identity.quota_limit,
-        identity_type=identity.identity_type,
-        analysis=analysis,
-    )
+        identity = access_control_service.resolve_identity(
+            anonymous_fingerprint=anonymous_fingerprint,
+            user_token=resolved_user_token,
+        )
+        access_control_service.assert_upload_size(data, max_upload_size_bytes=identity.max_upload_size_bytes)
+        access_control_service.ensure_quota_available(identity, required_units=1)
+        if on_ocr_progress is None:
+            analysis = analyze_service.analyze(filename=file.filename or "", raw_bytes=data)
+        else:
+            analysis = analyze_service.analyze(
+                filename=file.filename or "", raw_bytes=data, on_ocr_progress=on_ocr_progress
+            )
+        report_service.set_convert_owner(
+            analysis_id=analysis.analysis_id,
+            identity_type=identity.identity_type,
+            identity_id=identity.identity_id,
+        )
+        pages_count = _resolve_processed_pages(analysis)
+        consumed_units = _resolve_consumed_units(identity, analysis)
+        quota_remaining = access_control_service.consume_quota(identity, consumed_units=consumed_units)
+        if identity.identity_type == "user":
+            file_type = str(analysis.file_type or "").strip().lower()
+            conversion_type = f"{file_type}-ofx" if file_type else "pdf-ofx"
+            access_control_service.record_user_conversion(
+                user_id=identity.identity_id,
+                processing_id=analysis.analysis_id,
+                filename=(file.filename or "").strip() or f"{analysis.analysis_id}.pdf",
+                model=(analysis.layout_inference_name or "").strip() or "Nao identificado",
+                conversion_type=conversion_type,
+                status="Sucesso",
+                transactions_count=int(analysis.transactions_total),
+                pages_count=pages_count,
+                expires_at=analysis.expires_at,
+            )
+        return ConvertResponse(
+            processing_id=analysis.analysis_id,
+            quota_remaining=quota_remaining,
+            quota_limit=identity.quota_limit,
+            identity_type=identity.identity_type,
+            analysis=analysis,
+        )
+    except Exception as exc:
+        setattr(exc, "_convert_identity", identity)
+        raise
 
 
 def _raise_http_convert_error(exc: Exception, *, identity, access_control_service: AccessControlService) -> None:
+    if identity is None:
+        identity = getattr(exc, "_convert_identity", None)
     if isinstance(exc, FileTooLargeError):
         max_bytes = int(identity.max_upload_size_bytes) if identity is not None else 2 * 1024 * 1024
         max_mb = max(1, int(max_bytes // (1024 * 1024)))
