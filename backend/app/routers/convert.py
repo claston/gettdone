@@ -89,7 +89,10 @@ def _build_convert_response(
     )
     access_control_service.assert_upload_size(data, max_upload_size_bytes=identity.max_upload_size_bytes)
     access_control_service.ensure_quota_available(identity, required_units=1)
-    analysis = analyze_service.analyze(filename=file.filename or "", raw_bytes=data, on_ocr_progress=on_ocr_progress)
+    if on_ocr_progress is None:
+        analysis = analyze_service.analyze(filename=file.filename or "", raw_bytes=data)
+    else:
+        analysis = analyze_service.analyze(filename=file.filename or "", raw_bytes=data, on_ocr_progress=on_ocr_progress)
     report_service.set_convert_owner(
         analysis_id=analysis.analysis_id,
         identity_type=identity.identity_type,
