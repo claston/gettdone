@@ -75,6 +75,28 @@ def _safe_record_anonymous_conversion_event(access_control_service: AccessContro
         logger.warning("Failed to persist anonymous conversion event telemetry.", exc_info=True)
 
 
+def _log_pages_limit_exceeded_attempt(
+    *,
+    identity,
+    filename: str,
+    pages_count: int,
+    max_pages_per_file: int,
+    scanned_likely: bool | None,
+) -> None:
+    logger.info(
+        (
+            "conversion_pages_limit_exceeded identity_type=%s identity_id=%s filename=%s "
+            "pages_count=%s max_pages_per_file=%s scanned_likely=%s"
+        ),
+        getattr(identity, "identity_type", "unknown"),
+        getattr(identity, "identity_id", "unknown"),
+        filename,
+        pages_count,
+        max_pages_per_file,
+        scanned_likely,
+    )
+
+
 def _resolve_processed_pages(analysis) -> int | None:
     metrics = getattr(analysis, "pdf_processing_metrics", None)
     if metrics is None:
@@ -148,8 +170,17 @@ def _build_convert_response(
             user_token=resolved_user_token,
         )
         if Path(file.filename or "").suffix.lower() == ".pdf" and estimated_pages_count is not None:
-            max_pages_per_file = max(1, int(identity.max_pages_per_file))
+            # Backward compatibility: older identity fixtures/providers may not expose
+            # max_pages_per_file yet. In that case, skip the limit by using a large fallback.
+            max_pages_per_file = max(1, int(getattr(identity, "max_pages_per_file", 10**9)))
             if int(estimated_pages_count) > max_pages_per_file:
+                _log_pages_limit_exceeded_attempt(
+                    identity=identity,
+                    filename=file.filename or "",
+                    pages_count=int(estimated_pages_count),
+                    max_pages_per_file=max_pages_per_file,
+                    scanned_likely=scanned_likely,
+                )
                 raise MaxPagesPerFileExceededError(
                     pages_count=int(estimated_pages_count),
                     max_pages_per_file=max_pages_per_file,

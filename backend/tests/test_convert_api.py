@@ -156,7 +156,7 @@ def test_convert_rejects_file_larger_than_2mb(tmp_path) -> None:
 
 def test_convert_rejects_pdf_above_max_pages_per_file(tmp_path) -> None:
     client = build_client(tmp_path)
-    oversized_pdf = _build_pdf_with_pages(6)
+    oversized_pdf = _build_pdf_with_pages(16)
 
     response = client.post(
         "/convert",
@@ -167,8 +167,8 @@ def test_convert_rejects_pdf_above_max_pages_per_file(tmp_path) -> None:
     assert response.status_code == 400
     detail = response.json()["detail"]
     assert detail["code"] == "pages_limit_exceeded"
-    assert detail["pages_count"] == 6
-    assert detail["max_pages_per_file"] == 5
+    assert detail["pages_count"] == 16
+    assert detail["max_pages_per_file"] == 15
     app.dependency_overrides.clear()
 
 

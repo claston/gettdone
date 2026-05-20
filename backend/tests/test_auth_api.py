@@ -64,6 +64,7 @@ def test_login_returns_user_token_and_registered_quota() -> None:
         assert payload["quota_remaining"] == 10
         assert payload["quota_limit"] == 10
         assert payload["quota_mode"] == "conversion"
+        assert payload["max_pages_per_file"] == 15
     finally:
         app.dependency_overrides.clear()
         shutil.rmtree(state_dir, ignore_errors=True)
@@ -111,6 +112,7 @@ def test_auth_me_returns_user_profile_for_valid_token() -> None:
         assert payload["quota_remaining"] == 10
         assert payload["quota_limit"] == 10
         assert payload["quota_mode"] == "conversion"
+        assert payload["max_pages_per_file"] == 15
     finally:
         app.dependency_overrides.clear()
         shutil.rmtree(state_dir, ignore_errors=True)
