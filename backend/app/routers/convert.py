@@ -298,7 +298,16 @@ async def conversion_upload_stream(
                     access_control_service=access_control_service,
                     on_ocr_progress=on_ocr_progress if scanned_likely else None,
                 )
-                progress_queue.put(("event", {"stage": "conversion", "progress": 93 if scanned_likely else 82, "message": "Gerando prévia..."}))
+                progress_queue.put(
+                    (
+                        "event",
+                        {
+                            "stage": "conversion",
+                            "progress": 93 if scanned_likely else 82,
+                            "message": "Gerando prévia...",
+                        },
+                    )
+                )
                 progress_queue.put(("result", payload))
             except Exception as exc:
                 progress_queue.put(("error", exc))
