@@ -244,6 +244,61 @@ def test_create_checkout_intent_persists_pending_order(tmp_path) -> None:
     assert intent["price_cents"] == 3990
 
 
+def test_record_anonymous_conversion_event_persists_metrics(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+    )
+    service.record_anonymous_conversion_event(
+        event_id="anon_evt_test_001",
+        anonymous_fingerprint="fp-anon-1",
+        filename="statement.pdf",
+        model="nubank_statement_ptbr",
+        conversion_type="pdf-ofx",
+        status="Sucesso",
+        transactions_count=12,
+        pages_count=5,
+        scanned_likely=True,
+        ocr_used=True,
+        ocr_pages_processed=5,
+        duration_ms=1842,
+        error_code=None,
+    )
+
+    with service._connect() as conn:
+        row = service._fetchone(
+            conn,
+            """
+            SELECT
+              anonymous_fingerprint,
+              filename,
+              model,
+              conversion_type,
+              status,
+              transactions_count,
+              pages_count,
+              scanned_likely,
+              ocr_used,
+              ocr_pages_processed,
+              duration_ms
+            FROM anonymous_conversion_events
+            WHERE id = ?
+            """,
+            ("anon_evt_test_001",),
+        )
+
+    assert row is not None
+    assert str(row["anonymous_fingerprint"]) == "fp-anon-1"
+    assert str(row["filename"]) == "statement.pdf"
+    assert str(row["model"]) == "nubank_statement_ptbr"
+    assert str(row["conversion_type"]) == "pdf-ofx"
+    assert str(row["status"]) == "Sucesso"
+    assert int(row["transactions_count"]) == 12
+    assert int(row["pages_count"]) == 5
+    assert int(row["ocr_pages_processed"]) == 5
+    assert int(row["duration_ms"]) == 1842
+
+
 def test_retryable_db_exception_includes_unexpected_ssl_close(tmp_path) -> None:
     service = AccessControlService(
         state_file=tmp_path / "state.json",

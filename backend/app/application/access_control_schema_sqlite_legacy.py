@@ -62,6 +62,23 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
             FOREIGN KEY(user_id) REFERENCES users(id)
         );
 
+        CREATE TABLE IF NOT EXISTS anonymous_conversion_events (
+            id TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL,
+            anonymous_fingerprint TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            model TEXT NOT NULL,
+            conversion_type TEXT NOT NULL,
+            status TEXT NOT NULL,
+            transactions_count INTEGER,
+            pages_count INTEGER,
+            scanned_likely INTEGER,
+            ocr_used INTEGER NOT NULL DEFAULT 0,
+            ocr_pages_processed INTEGER NOT NULL DEFAULT 0,
+            duration_ms INTEGER NOT NULL DEFAULT 0,
+            error_code TEXT
+        );
+
         CREATE TABLE IF NOT EXISTS google_oauth_states (
             state TEXT PRIMARY KEY,
             code_verifier TEXT NOT NULL,
@@ -194,6 +211,12 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
         """
         CREATE INDEX IF NOT EXISTS idx_user_conversions_user_created_at
         ON user_conversions(user_id, created_at DESC)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_anonymous_conversion_events_created_at
+        ON anonymous_conversion_events(created_at DESC)
         """
     )
     conn.execute(

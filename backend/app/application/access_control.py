@@ -277,6 +277,39 @@ class AccessControlService:
     def list_user_conversions(self, *, user_id: str, limit: int = 20) -> list[dict[str, str | int]]:
         return self.checkout.list_user_conversions(user_id=user_id, limit=limit)
 
+    def record_anonymous_conversion_event(
+        self,
+        *,
+        event_id: str,
+        anonymous_fingerprint: str,
+        filename: str,
+        model: str,
+        conversion_type: str,
+        status: str,
+        transactions_count: int | None,
+        pages_count: int | None,
+        scanned_likely: bool | None,
+        ocr_used: bool,
+        ocr_pages_processed: int,
+        duration_ms: int,
+        error_code: str | None = None,
+    ) -> None:
+        self.checkout.record_anonymous_conversion_event(
+            event_id=event_id,
+            anonymous_fingerprint=anonymous_fingerprint,
+            filename=filename,
+            model=model,
+            conversion_type=conversion_type,
+            status=status,
+            transactions_count=transactions_count,
+            pages_count=pages_count,
+            scanned_likely=scanned_likely,
+            ocr_used=ocr_used,
+            ocr_pages_processed=ocr_pages_processed,
+            duration_ms=duration_ms,
+            error_code=error_code,
+        )
+
     def list_public_plans(self) -> list[dict[str, str | int]]:
         return self.checkout.list_public_plans()
 
