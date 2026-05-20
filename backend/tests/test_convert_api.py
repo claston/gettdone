@@ -1,4 +1,7 @@
+from io import BytesIO
+
 from fastapi.testclient import TestClient
+from pypdf import PdfWriter
 
 from app.application.access_control import AccessControlService
 from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
@@ -96,6 +99,15 @@ def build_client(tmp_path) -> TestClient:
     return TestClient(app)
 
 
+def _build_pdf_with_pages(page_count: int) -> bytes:
+    writer = PdfWriter()
+    for _ in range(max(1, int(page_count))):
+        writer.add_blank_page(width=612, height=792)
+    payload = BytesIO()
+    writer.write(payload)
+    return payload.getvalue()
+
+
 def test_convert_happy_path(tmp_path) -> None:
     client = build_client(tmp_path)
     response = client.post(
@@ -139,6 +151,24 @@ def test_convert_rejects_file_larger_than_2mb(tmp_path) -> None:
 
     assert response.status_code == 413
     assert "maximum size of 2 MB" in response.json()["detail"]
+    app.dependency_overrides.clear()
+
+
+def test_convert_rejects_pdf_above_max_pages_per_file(tmp_path) -> None:
+    client = build_client(tmp_path)
+    oversized_pdf = _build_pdf_with_pages(6)
+
+    response = client.post(
+        "/convert",
+        data={"anonymous_fingerprint": "anon-fp-many-pages"},
+        files={"file": ("sample.pdf", oversized_pdf, "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["code"] == "pages_limit_exceeded"
+    assert detail["pages_count"] == 6
+    assert detail["max_pages_per_file"] == 5
     app.dependency_overrides.clear()
 
 

@@ -19,6 +19,7 @@ from app.application import (
     FileTooLargeError,
     InvalidFileContentError,
     InvalidUserTokenError,
+    MaxPagesPerFileExceededError,
     QuotaExceededError,
     ReportService,
     UnsupportedFileTypeError,
@@ -49,6 +50,8 @@ def _resolve_conversion_type_from_filename(filename: str) -> str:
 def _resolve_failed_conversion_code(exc: Exception) -> str:
     if isinstance(exc, FileTooLargeError):
         return "file_too_large"
+    if isinstance(exc, MaxPagesPerFileExceededError):
+        return "pages_limit_exceeded"
     if isinstance(exc, InvalidUserTokenError):
         return "invalid_identity_context"
     if isinstance(exc, QuotaExceededError):
@@ -144,6 +147,13 @@ def _build_convert_response(
             anonymous_fingerprint=anonymous_fingerprint,
             user_token=resolved_user_token,
         )
+        if Path(file.filename or "").suffix.lower() == ".pdf" and estimated_pages_count is not None:
+            max_pages_per_file = max(1, int(identity.max_pages_per_file))
+            if int(estimated_pages_count) > max_pages_per_file:
+                raise MaxPagesPerFileExceededError(
+                    pages_count=int(estimated_pages_count),
+                    max_pages_per_file=max_pages_per_file,
+                )
         access_control_service.assert_upload_size(data, max_upload_size_bytes=identity.max_upload_size_bytes)
         access_control_service.ensure_quota_available(identity, required_units=1)
         analysis = analyze_service.analyze(
@@ -226,6 +236,16 @@ def _raise_http_convert_error(exc: Exception, *, identity, access_control_servic
         max_bytes = int(identity.max_upload_size_bytes) if identity is not None else 2 * 1024 * 1024
         max_mb = max(1, int(max_bytes // (1024 * 1024)))
         raise HTTPException(status_code=413, detail=f"File exceeds maximum size of {max_mb} MB.")
+    if isinstance(exc, MaxPagesPerFileExceededError):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "pages_limit_exceeded",
+                "message": f"Este PDF tem {exc.pages_count} páginas e excede o limite de {exc.max_pages_per_file}.",
+                "pages_count": exc.pages_count,
+                "max_pages_per_file": exc.max_pages_per_file,
+            },
+        )
     if isinstance(exc, InvalidUserTokenError):
         raise HTTPException(
             status_code=400,
@@ -470,6 +490,9 @@ async def conversion_upload_stream(
                 code = "quota_exceeded"
                 message = "Você atingiu o limite do plano para conversões."
                 retryable = True
+            elif isinstance(error, MaxPagesPerFileExceededError):
+                code = "pages_limit_exceeded"
+                message = f"Este PDF tem {error.pages_count} páginas e excede o limite de {error.max_pages_per_file}."
             elif isinstance(error, UnsupportedFileTypeError):
                 code = "unsupported_type"
                 message = "Formato não suportado. Envie um PDF."
