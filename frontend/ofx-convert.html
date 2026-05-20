@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./ofx-convert.css?v=6" />
+  <link rel="stylesheet" href="./ofx-convert.css?v=7" />
   <link rel="stylesheet" href="./topbar-unified.css?v=1" />
   <script src="/privacy-consent.js" defer></script>
 </head>
@@ -70,6 +70,9 @@
       </div>
 
       <p id="status-msg" class="status" aria-live="polite"></p>
+      <div id="processing-progress" class="processing-progress hidden" aria-hidden="true">
+        <div id="processing-progress-fill" class="processing-progress-fill"></div>
+      </div>
       <p class="support-hint">Não conseguiu converter? <a href="./contato.html">Falar com suporte</a></p>
     </section>
 
@@ -136,6 +139,6 @@
     </div>
   </div>
 
-  <script src="./ofx-convert.js?v=9"></script>
+  <script src="./ofx-convert.js?v=10"></script>
 </body>
 </html>

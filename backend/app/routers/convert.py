@@ -3,6 +3,7 @@ from io import BytesIO
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Thread
+from time import monotonic
 
 from fastapi import APIRouter, Cookie, Depends, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
@@ -29,6 +30,12 @@ router = APIRouter()
 
 def _sse_event(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _resolve_ocr_progress_percent(current_page: int, total_pages: int) -> int:
+    safe_total = max(1, int(total_pages or 0))
+    safe_current = max(1, min(int(current_page or 1), safe_total))
+    return min(90, 78 + int((safe_current / safe_total) * 12))
 
 
 def _resolve_processed_pages(analysis) -> int | None:
@@ -236,13 +243,13 @@ async def conversion_upload_stream(
         yield _sse_event("processing_status", {"stage": "upload_received", "progress": 5, "message": "Arquivo recebido."})
         yield _sse_event(
             "processing_status",
-            {"stage": "pdf_inspection", "progress": 15, "message": "Analisando estrutura do PDF..."},
+            {"stage": "pdf_inspection", "progress": 12, "message": "Analisando estrutura do PDF..."},
         )
         yield _sse_event(
             "processing_status",
             {
                 "stage": "scan_detection",
-                "progress": 25,
+                "progress": 20,
                 "message": "Este PDF parece ser escaneado. A leitura pode levar um pouco mais."
                 if scanned_likely
                 else "Texto encontrado no documento.",
@@ -252,7 +259,7 @@ async def conversion_upload_stream(
         if scanned_likely:
             yield _sse_event(
                 "processing_status",
-                {"stage": "ocr_started", "progress": 35, "message": "Iniciando reconhecimento de texto..."},
+                {"stage": "ocr_started", "progress": 28, "message": "Iniciando reconhecimento de texto..."},
             )
 
         progress_queue: Queue[tuple[str, dict | ConvertResponse | Exception]] = Queue()
@@ -260,13 +267,13 @@ async def conversion_upload_stream(
         def on_ocr_progress(current_page: int, total_page_count: int) -> None:
             safe_total = max(1, int(total_page_count or 0))
             safe_current = max(1, min(int(current_page or 1), safe_total))
-            percent = 35 + int((safe_current / safe_total) * 25)
+            percent = _resolve_ocr_progress_percent(safe_current, safe_total)
             progress_queue.put(
                 (
                     "event",
                     {
                         "stage": "ocr_progress",
-                        "progress": min(percent, 60),
+                        "progress": percent,
                         "message": f"Lendo página {safe_current} de {safe_total}...",
                         "currentPage": safe_current,
                         "totalPages": safe_total,
@@ -277,7 +284,7 @@ async def conversion_upload_stream(
         def worker() -> None:
             try:
                 progress_queue.put(
-                    ("event", {"stage": "text_extraction", "progress": 65, "message": "Extraindo transações..."})
+                    ("event", {"stage": "text_extraction", "progress": 76 if scanned_likely else 34, "message": "Extraindo transações..."})
                 )
                 payload = _build_convert_response(
                     file=file,
@@ -291,19 +298,45 @@ async def conversion_upload_stream(
                     access_control_service=access_control_service,
                     on_ocr_progress=on_ocr_progress if scanned_likely else None,
                 )
-                progress_queue.put(("event", {"stage": "conversion", "progress": 80, "message": "Gerando prévia..."}))
+                progress_queue.put(("event", {"stage": "conversion", "progress": 93 if scanned_likely else 82, "message": "Gerando prévia..."}))
                 progress_queue.put(("result", payload))
             except Exception as exc:
                 progress_queue.put(("error", exc))
 
         thread = Thread(target=worker, daemon=True)
         thread.start()
+        heartbeat_progress = 77 if scanned_likely else 35
+        last_heartbeat_at = monotonic()
 
         while thread.is_alive() or not progress_queue.empty():
             try:
                 kind, payload = progress_queue.get(timeout=0.2)
             except Empty:
+                now = monotonic()
+                if now - last_heartbeat_at >= 0.9 and thread.is_alive():
+                    if scanned_likely:
+                        heartbeat_progress = min(90, heartbeat_progress + 1)
+                        yield _sse_event(
+                            "processing_status",
+                            {
+                                "stage": "text_extraction",
+                                "progress": heartbeat_progress,
+                                "message": "Extraindo transações...",
+                            },
+                        )
+                    else:
+                        heartbeat_progress = min(80, heartbeat_progress + 2)
+                        yield _sse_event(
+                            "processing_status",
+                            {
+                                "stage": "conversion_progress",
+                                "progress": heartbeat_progress,
+                                "message": "Processando arquivo...",
+                            },
+                        )
+                    last_heartbeat_at = now
                 continue
+            last_heartbeat_at = monotonic()
             if kind == "event":
                 yield _sse_event("processing_status", payload)
                 continue
