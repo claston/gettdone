@@ -69,7 +69,7 @@ def record_anonymous_conversion_event(
             transactions_count,
             pages_count,
             scanned_likely,
-            1 if ocr_used else 0,
+            bool(ocr_used),
             max(0, int(ocr_pages_processed or 0)),
             max(0, int(duration_ms or 0)),
             (error_code or "").strip() or None,
