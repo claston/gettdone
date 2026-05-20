@@ -79,6 +79,12 @@ class FakeReportService:
         _ = (analysis_id, identity_type, identity_id)
 
 
+class FailingAnonymousTelemetryAccessControlService(AccessControlService):
+    def record_anonymous_conversion_event(self, **kwargs) -> None:
+        _ = kwargs
+        raise RuntimeError("telemetry storage unavailable")
+
+
 def build_client(tmp_path) -> TestClient:
     access_control = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
@@ -155,4 +161,25 @@ def test_convert_blocks_4th_attempt_with_structured_quota_detail(tmp_path) -> No
     assert detail["upgrade_url"] == "./signup.html?next=%2Fofx-convert.html&reason=quota"
     assert isinstance(detail["reset_at"], str)
     assert "T" in detail["reset_at"]
+    app.dependency_overrides.clear()
+
+
+def test_convert_succeeds_when_anonymous_telemetry_persistence_fails(tmp_path) -> None:
+    access_control = FailingAnonymousTelemetryAccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    app.dependency_overrides[get_access_control_service] = lambda: access_control
+    app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()
+    app.dependency_overrides[get_report_service] = lambda: FakeReportService()
+    client = TestClient(app)
+
+    response = client.post(
+        "/convert",
+        data={"anonymous_fingerprint": "anon-fp-telemetry-fail"},
+        files={"file": ("sample.pdf", b"%PDF data", "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["identity_type"] == "anonymous"
     app.dependency_overrides.clear()

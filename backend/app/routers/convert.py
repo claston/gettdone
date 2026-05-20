@@ -1,4 +1,5 @@
 import json
+import logging
 from io import BytesIO
 from pathlib import Path
 from queue import Empty, Queue
@@ -27,6 +28,7 @@ from app.routers.auth_session import SESSION_ACCESS_COOKIE_NAME, resolve_user_to
 from app.schemas import ConvertResponse
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _sse_event(event: str, data: dict) -> str:
@@ -61,6 +63,13 @@ def _resolve_failed_conversion_code(exc: Exception) -> str:
             return "insufficient_text"
         return "invalid_pdf_content"
     return "processing_failed"
+
+
+def _safe_record_anonymous_conversion_event(access_control_service: AccessControlService, **kwargs) -> None:
+    try:
+        access_control_service.record_anonymous_conversion_event(**kwargs)
+    except Exception:
+        logger.warning("Failed to persist anonymous conversion event telemetry.", exc_info=True)
 
 
 def _resolve_processed_pages(analysis) -> int | None:
@@ -165,7 +174,8 @@ def _build_convert_response(
                 expires_at=analysis.expires_at,
             )
         elif identity.identity_type == "anonymous":
-            access_control_service.record_anonymous_conversion_event(
+            _safe_record_anonymous_conversion_event(
+                access_control_service,
                 event_id=f"anon_evt_{uuid4().hex[:24]}",
                 anonymous_fingerprint=identity.identity_id,
                 filename=(file.filename or "").strip() or f"{analysis.analysis_id}.pdf",
@@ -189,7 +199,8 @@ def _build_convert_response(
         )
     except Exception as exc:
         if identity is not None and identity.identity_type == "anonymous":
-            access_control_service.record_anonymous_conversion_event(
+            _safe_record_anonymous_conversion_event(
+                access_control_service,
                 event_id=f"anon_evt_{uuid4().hex[:24]}",
                 anonymous_fingerprint=identity.identity_id,
                 filename=(file.filename or "").strip() or "unknown.pdf",
