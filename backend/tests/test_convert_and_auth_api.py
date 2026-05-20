@@ -43,7 +43,8 @@ class _AccessControlServiceInMemory(AccessControlService):
 
 
 class FakeAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes) -> AnalyzeResponse:
+    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None) -> AnalyzeResponse:
+        _ = on_ocr_progress
         return AnalyzeResponse(
             analysis_id="an_convert123",
             file_type="pdf",
