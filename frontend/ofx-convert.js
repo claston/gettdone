@@ -8,6 +8,8 @@
   const selectedFile = document.getElementById("selected-file");
   const convertBtn = document.getElementById("convert-btn");
   const statusMsg = document.getElementById("status-msg");
+  const processingProgress = document.getElementById("processing-progress");
+  const processingProgressFill = document.getElementById("processing-progress-fill");
   const topAuthLoginLink = document.getElementById("top-auth-login-link");
   const topAuthPrimaryLink = document.getElementById("top-auth-primary-link");
   const menuToggle = document.getElementById("menu-toggle");
@@ -65,6 +67,12 @@
     bankBranchOverride: "",
     accountNumberOverride: "",
     bankCodeOverride: "",
+    progressDisplay: 0,
+    progressTarget: 0,
+    progressFrame: null,
+    progressDriftTimer: null,
+    statusPendingTimer: null,
+    lastStatusAt: 0,
   };
   let bankCodeOptions = [{ code: "", label: "Selecione o banco", name: "", short_name: "", aliases: [] }];
 
@@ -595,6 +603,98 @@
     }
   }
 
+  function updateProgressBarUI(percent) {
+    if (!processingProgress || !processingProgressFill) {
+      return;
+    }
+    const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+    processingProgressFill.style.width = `${safePercent.toFixed(1)}%`;
+  }
+
+  function animateProgressStep() {
+    if (state.progressDisplay >= state.progressTarget) {
+      state.progressFrame = null;
+      return;
+    }
+    const distance = state.progressTarget - state.progressDisplay;
+    const step = Math.max(0.25, Math.min(2.25, distance * 0.16));
+    state.progressDisplay = Math.min(state.progressTarget, state.progressDisplay + step);
+    updateProgressBarUI(state.progressDisplay);
+    state.progressFrame = window.requestAnimationFrame(animateProgressStep);
+  }
+
+  function setProgressTarget(percent) {
+    const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+    if (safePercent <= state.progressTarget) {
+      return;
+    }
+    state.progressTarget = safePercent;
+    if (state.progressFrame === null) {
+      state.progressFrame = window.requestAnimationFrame(animateProgressStep);
+    }
+  }
+
+  function startProgressDrift() {
+    if (state.progressDriftTimer !== null) {
+      window.clearInterval(state.progressDriftTimer);
+    }
+    state.progressDriftTimer = window.setInterval(() => {
+      if (!state.isLoading) return;
+      if (state.progressTarget >= 95) return;
+      setProgressTarget(state.progressTarget + 0.8);
+    }, 260);
+  }
+
+  function setStatusSmooth(message, kind) {
+    const now = Date.now();
+    const minGapMs = 420;
+    const elapsed = now - Number(state.lastStatusAt || 0);
+    const apply = () => {
+      setStatus(message, kind || null);
+      state.lastStatusAt = Date.now();
+    };
+    if (elapsed >= minGapMs) {
+      apply();
+      return;
+    }
+    if (state.statusPendingTimer !== null) {
+      window.clearTimeout(state.statusPendingTimer);
+      state.statusPendingTimer = null;
+    }
+    state.statusPendingTimer = window.setTimeout(apply, minGapMs - elapsed);
+  }
+
+  function showProgressBar() {
+    if (!processingProgress) {
+      return;
+    }
+    processingProgress.classList.remove("hidden");
+    processingProgress.setAttribute("aria-hidden", "false");
+  }
+
+  function resetProgressBar() {
+    if (state.progressFrame !== null) {
+      window.cancelAnimationFrame(state.progressFrame);
+      state.progressFrame = null;
+    }
+    if (state.progressDriftTimer !== null) {
+      window.clearInterval(state.progressDriftTimer);
+      state.progressDriftTimer = null;
+    }
+    if (state.statusPendingTimer !== null) {
+      window.clearTimeout(state.statusPendingTimer);
+      state.statusPendingTimer = null;
+    }
+    state.progressDisplay = 0;
+    state.progressTarget = 0;
+    state.lastStatusAt = 0;
+    updateProgressBarUI(0);
+    if (processingProgress) {
+      processingProgress.classList.add("hidden");
+      processingProgress.setAttribute("aria-hidden", "true");
+    }
+  }
+
   function isUnrecognizedPdfLayoutError(message) {
     const normalized = String(message || "").toLowerCase();
     return (
@@ -770,6 +870,9 @@
     state.isLoading = isLoading;
     convertBtn.disabled = isQuotaLocked() || isLoading || !input.files || input.files.length === 0;
     convertBtn.textContent = isLoading ? "Convertendo..." : "Converter";
+    if (!isLoading) {
+      resetProgressBar();
+    }
   }
 
   function setSelectedFileLabel() {
@@ -1651,6 +1754,9 @@
 
     setLoading(true);
     setStatus("Processando arquivo...", null);
+    showProgressBar();
+    setProgressTarget(3);
+    startProgressDrift();
 
     try {
       const formData = new FormData();
@@ -1673,12 +1779,16 @@
         onStatusEvent: function (event) {
           const stage = String((event && event.stage) || "").trim();
           const message = String((event && event.message) || "").trim();
+          const progress = Number((event && event.progress) || 0);
+          if (Number.isFinite(progress) && progress > 0) {
+            setProgressTarget(progress);
+          }
           if (!stage || !message) return;
           if (stage === "ocr_progress" && Number.isFinite(Number(event.currentPage)) && Number.isFinite(Number(event.totalPages))) {
-            setStatus(`Lendo página ${Number(event.currentPage)} de ${Number(event.totalPages)}...`, null);
+            setStatusSmooth(`Lendo página ${Number(event.currentPage)} de ${Number(event.totalPages)}...`, null);
             return;
           }
-          setStatus(message, null);
+          setStatusSmooth(message, null);
         },
       });
       state.quotaMode = normalizeQuotaMode(payload.quota_mode);
@@ -1713,6 +1823,7 @@
       persistCurrentViewState();
 
       setStatus("Conversão concluída. Revise os dados e baixe o relatório.", "success");
+      setProgressTarget(100);
       reviewSection.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Erro inesperado.";

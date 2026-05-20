@@ -318,6 +318,22 @@ body {
   color: var(--muted);
 }
 
+.processing-progress {
+  width: min(540px, 100%);
+  height: 0.54rem;
+  margin-top: 0.55rem;
+  border-radius: 999px;
+  background: #d8dce6;
+  overflow: hidden;
+}
+
+.processing-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #003ec7 0%, #1f77ff 55%, #1ca06f 100%);
+  transition: width 220ms linear;
+}
+
 .support-hint {
   margin: 0.35rem 0 0;
   color: var(--muted);

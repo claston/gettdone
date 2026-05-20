@@ -157,6 +157,10 @@ def test_streaming_upload_marks_scanned_pdf_and_emits_ocr_progress() -> None:
     assert scan_event["scannedLikely"] is True
     assert any(item.get("stage") == "ocr_started" for item in payloads)
     assert any(item.get("stage") == "ocr_progress" for item in payloads)
+    progress_values = [int(item.get("progress", 0)) for item in payloads if isinstance(item.get("progress"), int | float)]
+    assert progress_values
+    assert progress_values == sorted(progress_values)
+    assert max(progress_values) == 100
 
 
 def test_streaming_upload_emits_failed_event_for_ocr_failure() -> None:
@@ -183,4 +187,17 @@ def test_upload_without_sse_accept_keeps_json_fallback() -> None:
     assert response.status_code == 200
     payload = ConvertResponse.model_validate(response.json())
     assert payload.processing_id == "an_sse_001"
+
+
+def test_streaming_upload_non_scanned_progress_advances_to_conversion_stage() -> None:
+    client = _build_client()
+    response = client.post(
+        "/api/conversions/upload",
+        headers={"accept": "text/event-stream"},
+        data={"anonymous_fingerprint": "fp-normal"},
+        files={"file": ("statement.pdf", b"data,valor,descricao\n2026-05-17,10.0,PIX", "application/pdf")},
+    )
+    payloads = _parse_sse_payloads(response.text)
+    conversion_event = next(item for item in payloads if item.get("stage") == "conversion")
+    assert int(conversion_event.get("progress", 0)) >= 80
 
