@@ -106,6 +106,9 @@ class FakeAccessControlService:
     def record_user_conversion(self, **kwargs) -> None:
         _ = kwargs
 
+    def record_anonymous_conversion_event(self, **kwargs) -> None:
+        _ = kwargs
+
 
 def _build_client() -> TestClient:
     app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()

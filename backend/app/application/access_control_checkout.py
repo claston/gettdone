@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from app.application.anonymous_conversion_history import (
+    record_anonymous_conversion_event as record_anonymous_conversion_event_query,
+)
 from app.application.checkout_management import (
     create_checkout_intent as create_checkout_intent_query,
 )
@@ -94,6 +97,45 @@ class AccessControlCheckoutComponent:
                     user_id=user_id,
                     limit=limit,
                 )
+
+    def record_anonymous_conversion_event(
+        self,
+        *,
+        event_id: str,
+        anonymous_fingerprint: str,
+        filename: str,
+        model: str,
+        conversion_type: str,
+        status: str,
+        transactions_count: int | None,
+        pages_count: int | None,
+        scanned_likely: bool | None,
+        ocr_used: bool,
+        ocr_pages_processed: int,
+        duration_ms: int,
+        error_code: str | None = None,
+    ) -> None:
+        with self._service._lock:
+            with self._service._connect() as conn:
+                record_anonymous_conversion_event_query(
+                    conn,
+                    execute=self._service._execute,
+                    event_id=event_id,
+                    created_at=self._service.now_provider().isoformat(),
+                    anonymous_fingerprint=anonymous_fingerprint,
+                    filename=filename,
+                    model=model,
+                    conversion_type=conversion_type,
+                    status=status,
+                    transactions_count=transactions_count,
+                    pages_count=pages_count,
+                    scanned_likely=scanned_likely,
+                    ocr_used=ocr_used,
+                    ocr_pages_processed=ocr_pages_processed,
+                    duration_ms=duration_ms,
+                    error_code=error_code,
+                )
+                conn.commit()
 
     def list_public_plans(self) -> list[dict[str, str | int]]:
         with self._service._lock:

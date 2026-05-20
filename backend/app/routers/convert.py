@@ -4,6 +4,7 @@ from pathlib import Path
 from queue import Empty, Queue
 from threading import Thread
 from time import monotonic
+from uuid import uuid4
 
 from fastapi import APIRouter, Cookie, Depends, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
@@ -36,6 +37,30 @@ def _resolve_ocr_progress_percent(current_page: int, total_pages: int) -> int:
     safe_total = max(1, int(total_pages or 0))
     safe_current = max(1, min(int(current_page or 1), safe_total))
     return min(90, 78 + int((safe_current / safe_total) * 12))
+
+
+def _resolve_conversion_type_from_filename(filename: str) -> str:
+    extension = Path(filename or "").suffix.lower().strip(".")
+    return f"{extension}-ofx" if extension else "pdf-ofx"
+
+
+def _resolve_failed_conversion_code(exc: Exception) -> str:
+    if isinstance(exc, FileTooLargeError):
+        return "file_too_large"
+    if isinstance(exc, InvalidUserTokenError):
+        return "invalid_identity_context"
+    if isinstance(exc, QuotaExceededError):
+        return "quota_exceeded"
+    if isinstance(exc, UnsupportedFileTypeError):
+        return "unsupported_type"
+    if isinstance(exc, InvalidFileContentError):
+        detail = str(exc).lower()
+        if "password" in detail or "senha" in detail:
+            return "password_protected_pdf"
+        if "text" in detail or "ocr" in detail:
+            return "insufficient_text"
+        return "invalid_pdf_content"
+    return "processing_failed"
 
 
 def _resolve_processed_pages(analysis) -> int | None:
@@ -83,8 +108,22 @@ def _build_convert_response(
     report_service: ReportService,
     access_control_service: AccessControlService,
     on_ocr_progress=None,
+    scanned_likely: bool | None = None,
+    estimated_pages_count: int | None = None,
 ) -> ConvertResponse:
     identity = None
+    started_at = monotonic()
+    ocr_pages_processed = 0
+
+    def telemetry_ocr_progress(current_page: int, total_page_count: int) -> None:
+        nonlocal ocr_pages_processed
+        ocr_pages_processed = max(
+            ocr_pages_processed,
+            max(1, min(int(current_page or 1), max(1, int(total_page_count or 0)))),
+        )
+        if on_ocr_progress is not None:
+            on_ocr_progress(current_page, total_page_count)
+
     try:
         resolved_user_token = resolve_user_token_with_session(
             access_control_service=access_control_service,
@@ -98,12 +137,11 @@ def _build_convert_response(
         )
         access_control_service.assert_upload_size(data, max_upload_size_bytes=identity.max_upload_size_bytes)
         access_control_service.ensure_quota_available(identity, required_units=1)
-        if on_ocr_progress is None:
-            analysis = analyze_service.analyze(filename=file.filename or "", raw_bytes=data)
-        else:
-            analysis = analyze_service.analyze(
-                filename=file.filename or "", raw_bytes=data, on_ocr_progress=on_ocr_progress
-            )
+        analysis = analyze_service.analyze(
+            filename=file.filename or "",
+            raw_bytes=data,
+            on_ocr_progress=telemetry_ocr_progress,
+        )
         report_service.set_convert_owner(
             analysis_id=analysis.analysis_id,
             identity_type=identity.identity_type,
@@ -126,6 +164,22 @@ def _build_convert_response(
                 pages_count=pages_count,
                 expires_at=analysis.expires_at,
             )
+        elif identity.identity_type == "anonymous":
+            access_control_service.record_anonymous_conversion_event(
+                event_id=f"anon_evt_{uuid4().hex[:24]}",
+                anonymous_fingerprint=identity.identity_id,
+                filename=(file.filename or "").strip() or f"{analysis.analysis_id}.pdf",
+                model=(analysis.layout_inference_name or "").strip() or "Nao identificado",
+                conversion_type=_resolve_conversion_type_from_filename(file.filename or ""),
+                status="Sucesso",
+                transactions_count=int(analysis.transactions_total),
+                pages_count=pages_count,
+                scanned_likely=scanned_likely,
+                ocr_used=ocr_pages_processed > 0,
+                ocr_pages_processed=ocr_pages_processed,
+                duration_ms=int((monotonic() - started_at) * 1000),
+                error_code=None,
+            )
         return ConvertResponse(
             processing_id=analysis.analysis_id,
             quota_remaining=quota_remaining,
@@ -134,6 +188,22 @@ def _build_convert_response(
             analysis=analysis,
         )
     except Exception as exc:
+        if identity is not None and identity.identity_type == "anonymous":
+            access_control_service.record_anonymous_conversion_event(
+                event_id=f"anon_evt_{uuid4().hex[:24]}",
+                anonymous_fingerprint=identity.identity_id,
+                filename=(file.filename or "").strip() or "unknown.pdf",
+                model="Nao identificado",
+                conversion_type=_resolve_conversion_type_from_filename(file.filename or ""),
+                status="Falha",
+                transactions_count=None,
+                pages_count=estimated_pages_count,
+                scanned_likely=scanned_likely,
+                ocr_used=ocr_pages_processed > 0,
+                ocr_pages_processed=ocr_pages_processed,
+                duration_ms=int((monotonic() - started_at) * 1000),
+                error_code=_resolve_failed_conversion_code(exc),
+            )
         setattr(exc, "_convert_identity", identity)
         raise
 
@@ -195,6 +265,7 @@ async def convert(
     identity = None
     try:
         data = await file.read()
+        scanned_likely, total_pages = _inspect_pdf_scan_likely(file.filename or "", data)
         return _build_convert_response(
             file=file,
             data=data,
@@ -205,6 +276,8 @@ async def convert(
             analyze_service=analyze_service,
             report_service=report_service,
             access_control_service=access_control_service,
+            scanned_likely=scanned_likely,
+            estimated_pages_count=total_pages,
         )
     except Exception as exc:
         _raise_http_convert_error(exc, identity=identity, access_control_service=access_control_service)
@@ -297,6 +370,8 @@ async def conversion_upload_stream(
                     report_service=report_service,
                     access_control_service=access_control_service,
                     on_ocr_progress=on_ocr_progress if scanned_likely else None,
+                    scanned_likely=scanned_likely,
+                    estimated_pages_count=total_pages,
                 )
                 progress_queue.put(
                     (

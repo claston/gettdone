@@ -36,6 +36,7 @@ class AccessControlSchemaComponent:
             "anonymous_identities",
             "usage",
             "user_conversions",
+            "anonymous_conversion_events",
             "google_oauth_states",
             "user_sessions",
             "plan_versions",
