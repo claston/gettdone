@@ -32,6 +32,21 @@ body {
   flex-direction: column;
 }
 
+/* Safety net: this page must never display quota/modal lock overlays. */
+body.client-area-page.quota-locked,
+html.quota-locked,
+body.client-area-page.modal-open,
+html.modal-open {
+  overflow: auto !important;
+}
+
+body.client-area-page .quota-lock-overlay,
+body.client-area-page .modal-overlay,
+body.client-area-page .modal-backdrop {
+  display: none !important;
+  pointer-events: none !important;
+}
+
 .glass-header {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
