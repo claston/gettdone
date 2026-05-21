@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
 from app.application.access_control import AccessControlService
+from app.application.errors import InvalidFileContentError
 from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
 from app.main import app
 from app.schemas import (
@@ -77,6 +78,20 @@ class FakeAnalyzeService:
         )
 
 
+class InsufficientTextAnalyzeService:
+    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None) -> AnalyzeResponse:
+        _ = (filename, raw_bytes, on_ocr_progress)
+        raise InvalidFileContentError("Não encontramos texto suficiente para OCR neste PDF.")
+
+
+class EmptyBytesInvalidContentAnalyzeService:
+    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None) -> AnalyzeResponse:
+        _ = (filename, on_ocr_progress)
+        if not raw_bytes:
+            raise InvalidFileContentError("Não foi possível ler este PDF.")
+        return FakeAnalyzeService().analyze(filename=filename, raw_bytes=raw_bytes, on_ocr_progress=on_ocr_progress)
+
+
 class FakeReportService:
     def set_convert_owner(self, analysis_id: str, identity_type: str, identity_id: str) -> None:
         _ = (analysis_id, identity_type, identity_id)
@@ -102,6 +117,13 @@ def build_client(tmp_path) -> TestClient:
 def build_client_with_access_control(access_control: AccessControlService) -> TestClient:
     app.dependency_overrides[get_access_control_service] = lambda: access_control
     app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()
+    app.dependency_overrides[get_report_service] = lambda: FakeReportService()
+    return TestClient(app)
+
+
+def build_client_with_overrides(access_control: AccessControlService, analyze_service) -> TestClient:
+    app.dependency_overrides[get_access_control_service] = lambda: access_control
+    app.dependency_overrides[get_analyze_service] = lambda: analyze_service
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     return TestClient(app)
 
@@ -266,6 +288,59 @@ def test_convert_rejects_ocr_pdf_above_15_pages_for_paid_user(tmp_path, monkeypa
     assert detail["code"] == "pages_limit_exceeded"
     assert detail["pages_count"] == 16
     assert detail["max_pages_per_file"] == 15
+    app.dependency_overrides.clear()
+
+
+def test_convert_returns_pages_limit_when_ocr_like_pdf_is_misdetected_as_text(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.routers.convert._inspect_pdf_scan_likely",
+        lambda filename, raw_bytes: (False, 16),
+    )
+    access_control = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    user = access_control.register_user(name="Erica", email="erica@example.com", password="strong-pass")
+    access_control.activate_user_plan(user_id=user.user_id, plan_code="profissional")
+    client = build_client_with_overrides(access_control, InsufficientTextAnalyzeService())
+
+    response = client.post(
+        "/convert",
+        data={"user_token": user.token},
+        files={"file": ("sample.pdf", b"%PDF ocr-like", "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["code"] == "pages_limit_exceeded"
+    assert detail["pages_count"] == 16
+    assert detail["max_pages_per_file"] == 15
+    app.dependency_overrides.clear()
+
+
+def test_conversion_upload_non_sse_keeps_ocr_pages_limit_validation(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("app.routers.convert.OCR_PDF_MAX_PAGES_PER_FILE", 5)
+    monkeypatch.setattr(
+        "app.routers.convert._inspect_pdf_scan_likely",
+        lambda filename, raw_bytes: (True, 6),
+    )
+    access_control = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    client = build_client_with_overrides(access_control, EmptyBytesInvalidContentAnalyzeService())
+
+    response = client.post(
+        "/api/conversions/upload",
+        data={"anonymous_fingerprint": "anon-fp-upload-ocr-limit"},
+        files={"file": ("sample.pdf", b"%PDF non-empty", "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["code"] == "pages_limit_exceeded"
+    assert detail["pages_count"] == 6
+    assert detail["max_pages_per_file"] == 5
     app.dependency_overrides.clear()
 
 

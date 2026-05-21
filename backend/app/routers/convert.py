@@ -110,6 +110,11 @@ def _resolve_max_pages_per_file(identity, scanned_likely: bool | None) -> int:
     return identity_max_pages
 
 
+def _resolve_ocr_max_pages_per_file(identity) -> int:
+    identity_max_pages = max(1, int(getattr(identity, "max_pages_per_file", 10**9)))
+    return min(identity_max_pages, OCR_PDF_MAX_PAGES_PER_FILE)
+
+
 def _resolve_max_upload_size_bytes(
     identity,
     scanned_likely: bool | None,
@@ -218,11 +223,36 @@ def _build_convert_response(
             setattr(exc, "_max_upload_size_bytes", max_upload_size_bytes)
             raise
         access_control_service.ensure_quota_available(identity, required_units=1)
-        analysis = analyze_service.analyze(
-            filename=file.filename or "",
-            raw_bytes=data,
-            on_ocr_progress=telemetry_ocr_progress,
-        )
+        try:
+            analysis = analyze_service.analyze(
+                filename=file.filename or "",
+                raw_bytes=data,
+                on_ocr_progress=telemetry_ocr_progress,
+            )
+        except InvalidFileContentError as exc:
+            # If inspection misclassifies a scanned PDF as text-based, analyze may fail with
+            # insufficient text/OCR detail. In that case, surface a clear pages-limit error
+            # when OCR caps would be exceeded.
+            detail = str(exc).lower()
+            if (
+                Path(file.filename or "").suffix.lower() == ".pdf"
+                and estimated_pages_count is not None
+                and ("text" in detail or "ocr" in detail)
+            ):
+                ocr_max_pages = _resolve_ocr_max_pages_per_file(identity)
+                if int(estimated_pages_count) > ocr_max_pages:
+                    _log_pages_limit_exceeded_attempt(
+                        identity=identity,
+                        filename=file.filename or "",
+                        pages_count=int(estimated_pages_count),
+                        max_pages_per_file=ocr_max_pages,
+                        scanned_likely=scanned_likely,
+                    )
+                    raise MaxPagesPerFileExceededError(
+                        pages_count=int(estimated_pages_count),
+                        max_pages_per_file=ocr_max_pages,
+                    ) from exc
+            raise
         report_service.set_convert_owner(
             analysis_id=analysis.analysis_id,
             identity_type=identity.identity_type,
@@ -398,16 +428,25 @@ async def conversion_upload_stream(
 ):
     data = await file.read()
     if not _is_sse_request(accept):
-        return await convert(
-            file=file,
-            anonymous_fingerprint=anonymous_fingerprint,
-            user_token=user_token,
-            authorization=authorization,
-            access_cookie_token=access_cookie_token,
-            analyze_service=analyze_service,
-            report_service=report_service,
-            access_control_service=access_control_service,
-        )
+        identity = None
+        try:
+            scanned_likely, total_pages = _inspect_pdf_scan_likely(file.filename or "", data)
+            return _build_convert_response(
+                file=file,
+                data=data,
+                anonymous_fingerprint=anonymous_fingerprint,
+                user_token=user_token,
+                authorization=authorization,
+                access_cookie_token=access_cookie_token,
+                analyze_service=analyze_service,
+                report_service=report_service,
+                access_control_service=access_control_service,
+                scanned_likely=scanned_likely,
+                estimated_pages_count=total_pages,
+            )
+        except Exception as exc:
+            _raise_http_convert_error(exc, identity=identity, access_control_service=access_control_service)
+            raise
 
     scanned_likely, total_pages = _inspect_pdf_scan_likely(file.filename or "", data)
 
@@ -542,7 +581,18 @@ async def conversion_upload_stream(
             code = "processing_failed"
             message = "Não foi possível ler este PDF."
             retryable = False
-            if isinstance(error, InvalidFileContentError):
+            if isinstance(error, FileTooLargeError):
+                code = "file_too_large"
+                max_bytes = int(
+                    getattr(
+                        error,
+                        "_max_upload_size_bytes",
+                        OCR_PDF_MAX_UPLOAD_SIZE_BYTES if scanned_likely else TEXT_PDF_MAX_UPLOAD_SIZE_BYTES,
+                    )
+                )
+                max_mb = max(1, int(max_bytes // (1024 * 1024)))
+                message = f"Arquivo excede o tamanho máximo de {max_mb} MB."
+            elif isinstance(error, InvalidFileContentError):
                 detail = str(error).lower()
                 if "password" in detail or "senha" in detail:
                     code = "password_protected_pdf"

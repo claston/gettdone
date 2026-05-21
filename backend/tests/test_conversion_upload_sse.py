@@ -4,7 +4,7 @@ from io import BytesIO
 from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
-from app.application import InvalidFileContentError
+from app.application import FileTooLargeError, InvalidFileContentError
 from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
 from app.main import app
 from app.schemas import (
@@ -110,10 +110,25 @@ class FakeAccessControlService:
         _ = kwargs
 
 
+class TooLargeAccessControlService(FakeAccessControlService):
+    def assert_upload_size(self, raw_bytes: bytes, max_upload_size_bytes: int) -> None:
+        _ = raw_bytes
+        err = FileTooLargeError()
+        setattr(err, "_max_upload_size_bytes", max_upload_size_bytes)
+        raise err
+
+
 def _build_client() -> TestClient:
     app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
+    return TestClient(app)
+
+
+def _build_client_with_access_control(access_control_service) -> TestClient:
+    app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()
+    app.dependency_overrides[get_report_service] = lambda: FakeReportService()
+    app.dependency_overrides[get_access_control_service] = lambda: access_control_service
     return TestClient(app)
 
 
@@ -203,4 +218,18 @@ def test_streaming_upload_non_scanned_progress_advances_to_conversion_stage() ->
     payloads = _parse_sse_payloads(response.text)
     conversion_event = next(item for item in payloads if item.get("stage") == "conversion")
     assert int(conversion_event.get("progress", 0)) >= 80
+
+
+def test_streaming_upload_emits_file_too_large_error_message() -> None:
+    client = _build_client_with_access_control(TooLargeAccessControlService())
+    response = client.post(
+        "/api/conversions/upload",
+        headers={"accept": "text/event-stream"},
+        data={"anonymous_fingerprint": "fp-too-large"},
+        files={"file": ("sample.pdf", _blank_pdf_bytes(), "application/pdf")},
+    )
+    payloads = _parse_sse_payloads(response.text)
+    failed = next(item for item in payloads if item.get("stage") == "failed")
+    assert failed["code"] == "file_too_large"
+    assert "tamanho máximo" in str(failed["message"]).lower()
 

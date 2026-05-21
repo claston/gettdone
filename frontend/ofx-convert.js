@@ -21,6 +21,8 @@
   const uploadLimitsText = document.getElementById("upload-limits-text");
   const TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
   const TEXT_PDF_MAX_PAGES_PER_FILE = 250;
+  const OCR_PDF_MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024;
+  const OCR_PDF_MAX_PAGES_PER_FILE = 15;
 
   const reviewSection = document.getElementById("review-section");
   const downloadSection = document.getElementById("download-section");
@@ -1634,12 +1636,12 @@
 
   function setUploadLimitsText(maxUploadBytes, maxPagesPerFile) {
     if (!uploadLimitsText) return;
-    const mb = Number(maxUploadBytes || 0) / (1024 * 1024);
-    const pages = Number(maxPagesPerFile || 0);
-    const safeMb = Number.isFinite(mb) && mb > 0 ? mb.toFixed(0) : "2";
-    const safePages = Number.isFinite(pages) && pages > 0 ? String(pages) : "15";
-    const textPdfMb = Math.max(Number(safeMb), TEXT_PDF_MAX_UPLOAD_SIZE_BYTES / (1024 * 1024)).toFixed(0);
-    uploadLimitsText.textContent = `PDF com texto: até ${textPdfMb} MB e ${TEXT_PDF_MAX_PAGES_PER_FILE} páginas. PDF escaneado: até ${safeMb} MB e ${safePages} páginas.`;
+    const textMb = Number(maxUploadBytes || 0) / (1024 * 1024);
+    const textPages = Number(maxPagesPerFile || 0);
+    const safeTextMb = Number.isFinite(textMb) && textMb > 0 ? Math.max(textMb, TEXT_PDF_MAX_UPLOAD_SIZE_BYTES / (1024 * 1024)) : TEXT_PDF_MAX_UPLOAD_SIZE_BYTES / (1024 * 1024);
+    const safeTextPages = Number.isFinite(textPages) && textPages > 0 ? Math.max(textPages, TEXT_PDF_MAX_PAGES_PER_FILE) : TEXT_PDF_MAX_PAGES_PER_FILE;
+    const ocrMb = OCR_PDF_MAX_UPLOAD_SIZE_BYTES / (1024 * 1024);
+    uploadLimitsText.textContent = `PDF com texto: até ${safeTextMb.toFixed(0)} MB e ${safeTextPages} páginas. PDF escaneado: até ${ocrMb.toFixed(0)} MB e ${OCR_PDF_MAX_PAGES_PER_FILE} páginas.`;
   }
 
   async function syncUploadLimitsBySession() {
