@@ -4,7 +4,7 @@ from io import BytesIO
 from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
-from app.application import FileTooLargeError, InvalidFileContentError
+from app.application import FileTooLargeError, InvalidFileContentError, QuotaExceededError
 from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
 from app.main import app
 from app.schemas import (
@@ -116,6 +116,12 @@ class TooLargeAccessControlService(FakeAccessControlService):
         err = FileTooLargeError()
         setattr(err, "_max_upload_size_bytes", max_upload_size_bytes)
         raise err
+
+
+class AnonymousQuotaExceededAccessControlService(FakeAccessControlService):
+    def ensure_quota_available(self, identity, required_units: int = 1) -> None:
+        _ = (identity, required_units)
+        raise QuotaExceededError()
 
 
 def _build_client() -> TestClient:
@@ -232,4 +238,18 @@ def test_streaming_upload_emits_file_too_large_error_message() -> None:
     failed = next(item for item in payloads if item.get("stage") == "failed")
     assert failed["code"] == "file_too_large"
     assert "tamanho máximo" in str(failed["message"]).lower()
+
+
+def test_streaming_upload_emits_weekly_quota_failed_event_with_identity_type() -> None:
+    client = _build_client_with_access_control(AnonymousQuotaExceededAccessControlService())
+    response = client.post(
+        "/api/conversions/upload",
+        headers={"accept": "text/event-stream"},
+        data={"anonymous_fingerprint": "fp-weekly-limit"},
+        files={"file": ("sample.pdf", _blank_pdf_bytes(), "application/pdf")},
+    )
+    payloads = _parse_sse_payloads(response.text)
+    failed = next(item for item in payloads if item.get("stage") == "failed")
+    assert failed["code"] == "weekly_quota_exceeded"
+    assert failed["identity_type"] == "anonymous"
 
