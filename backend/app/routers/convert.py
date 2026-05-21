@@ -581,7 +581,18 @@ async def conversion_upload_stream(
             code = "processing_failed"
             message = "Não foi possível ler este PDF."
             retryable = False
-            if isinstance(error, InvalidFileContentError):
+            if isinstance(error, FileTooLargeError):
+                code = "file_too_large"
+                max_bytes = int(
+                    getattr(
+                        error,
+                        "_max_upload_size_bytes",
+                        OCR_PDF_MAX_UPLOAD_SIZE_BYTES if scanned_likely else TEXT_PDF_MAX_UPLOAD_SIZE_BYTES,
+                    )
+                )
+                max_mb = max(1, int(max_bytes // (1024 * 1024)))
+                message = f"Arquivo excede o tamanho máximo de {max_mb} MB."
+            elif isinstance(error, InvalidFileContentError):
                 detail = str(error).lower()
                 if "password" in detail or "senha" in detail:
                     code = "password_protected_pdf"
