@@ -110,6 +110,11 @@ def _resolve_max_pages_per_file(identity, scanned_likely: bool | None) -> int:
     return identity_max_pages
 
 
+def _resolve_ocr_max_pages_per_file(identity) -> int:
+    identity_max_pages = max(1, int(getattr(identity, "max_pages_per_file", 10**9)))
+    return min(identity_max_pages, OCR_PDF_MAX_PAGES_PER_FILE)
+
+
 def _resolve_max_upload_size_bytes(
     identity,
     scanned_likely: bool | None,
@@ -218,11 +223,36 @@ def _build_convert_response(
             setattr(exc, "_max_upload_size_bytes", max_upload_size_bytes)
             raise
         access_control_service.ensure_quota_available(identity, required_units=1)
-        analysis = analyze_service.analyze(
-            filename=file.filename or "",
-            raw_bytes=data,
-            on_ocr_progress=telemetry_ocr_progress,
-        )
+        try:
+            analysis = analyze_service.analyze(
+                filename=file.filename or "",
+                raw_bytes=data,
+                on_ocr_progress=telemetry_ocr_progress,
+            )
+        except InvalidFileContentError as exc:
+            # If inspection misclassifies a scanned PDF as text-based, analyze may fail with
+            # insufficient text/OCR detail. In that case, surface a clear pages-limit error
+            # when OCR caps would be exceeded.
+            detail = str(exc).lower()
+            if (
+                Path(file.filename or "").suffix.lower() == ".pdf"
+                and estimated_pages_count is not None
+                and ("text" in detail or "ocr" in detail)
+            ):
+                ocr_max_pages = _resolve_ocr_max_pages_per_file(identity)
+                if int(estimated_pages_count) > ocr_max_pages:
+                    _log_pages_limit_exceeded_attempt(
+                        identity=identity,
+                        filename=file.filename or "",
+                        pages_count=int(estimated_pages_count),
+                        max_pages_per_file=ocr_max_pages,
+                        scanned_likely=scanned_likely,
+                    )
+                    raise MaxPagesPerFileExceededError(
+                        pages_count=int(estimated_pages_count),
+                        max_pages_per_file=ocr_max_pages,
+                    ) from exc
+            raise
         report_service.set_convert_owner(
             analysis_id=analysis.analysis_id,
             identity_type=identity.identity_type,
