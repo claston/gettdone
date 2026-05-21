@@ -11,6 +11,37 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./client-area.css" />
   <link rel="stylesheet" href="./topbar-unified.css?v=1" />
+  <script>
+    (function () {
+      try {
+        var selectors = [
+          "#quota-lock-overlay",
+          ".quota-lock-overlay",
+          ".modal-overlay",
+          ".modal-backdrop"
+        ];
+        document.documentElement.classList.remove("quota-locked", "modal-open");
+        if (document.body) {
+          document.body.classList.remove("quota-locked", "modal-open");
+          document.body.style.overflow = "";
+          document.body.style.pointerEvents = "";
+        }
+        for (var i = 0; i < selectors.length; i += 1) {
+          var nodes = document.querySelectorAll(selectors[i]);
+          for (var j = 0; j < nodes.length; j += 1) {
+            var node = nodes[j];
+            if (!(node instanceof HTMLElement)) continue;
+            node.classList.remove("is-open");
+            node.classList.add("hidden");
+            node.style.display = "none";
+            node.style.pointerEvents = "none";
+          }
+        }
+      } catch (_error) {
+        // no-op
+      }
+    })();
+  </script>
   <script src="/privacy-consent.js" defer></script>
 </head>
 <body class="client-area-page">
