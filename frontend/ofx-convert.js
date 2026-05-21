@@ -1843,7 +1843,11 @@
         return;
       }
       if (status === 429 && code === "weekly_quota_exceeded") {
-        if (!getUserToken()) {
+        const detailIdentityType =
+          detail && typeof detail === "object" ? String(detail.identity_type || "").trim().toLowerCase() : "";
+        const shouldShowAnonymousQuotaLock =
+          detailIdentityType === "anonymous" || (!detailIdentityType && !getUserToken());
+        if (shouldShowAnonymousQuotaLock) {
           showQuotaLockOverlay(detail);
           setStatus("Você atingiu o limite gratuito desta semana.", "error");
           return;
