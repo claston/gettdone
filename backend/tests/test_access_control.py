@@ -16,6 +16,7 @@ def test_anonymous_quota_blocks_4th_attempt(tmp_path) -> None:
     identity = service.resolve_identity(anonymous_fingerprint="anon-device-a", user_token=None)
     assert identity.identity_type == "anonymous"
     assert identity.quota_limit == ANONYMOUS_QUOTA_LIMIT
+    assert identity.max_pages_per_file == 15
 
     assert service.get_remaining_quota(identity) == 3
     assert service.consume_quota(identity) == 2
@@ -41,6 +42,7 @@ def test_register_user_gets_10_quota_and_valid_token(tmp_path) -> None:
 
     assert identity.identity_type == "user"
     assert identity.quota_limit == REGISTERED_QUOTA_LIMIT
+    assert identity.max_pages_per_file == 15
     assert service.get_remaining_quota(identity) == 10
 
 

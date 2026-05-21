@@ -19,6 +19,8 @@
   const quotaLockSignupLink = document.getElementById("quota-lock-signup-link");
   const quotaLockLoginLink = document.getElementById("quota-lock-login-link");
   const uploadLimitsText = document.getElementById("upload-limits-text");
+  const TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
+  const TEXT_PDF_MAX_PAGES_PER_FILE = 250;
 
   const reviewSection = document.getElementById("review-section");
   const downloadSection = document.getElementById("download-section");
@@ -1635,8 +1637,9 @@
     const mb = Number(maxUploadBytes || 0) / (1024 * 1024);
     const pages = Number(maxPagesPerFile || 0);
     const safeMb = Number.isFinite(mb) && mb > 0 ? mb.toFixed(0) : "2";
-    const safePages = Number.isFinite(pages) && pages > 0 ? String(pages) : "5";
-    uploadLimitsText.textContent = `Somente PDF (até ${safeMb} MB e ${safePages} páginas por arquivo)`;
+    const safePages = Number.isFinite(pages) && pages > 0 ? String(pages) : "15";
+    const textPdfMb = Math.max(Number(safeMb), TEXT_PDF_MAX_UPLOAD_SIZE_BYTES / (1024 * 1024)).toFixed(0);
+    uploadLimitsText.textContent = `PDF com texto: até ${textPdfMb} MB e ${TEXT_PDF_MAX_PAGES_PER_FILE} páginas. PDF escaneado: até ${safeMb} MB e ${safePages} páginas.`;
   }
 
   async function syncUploadLimitsBySession() {
@@ -1654,7 +1657,7 @@
       if (!response.ok) {
         state.quotaMode = "conversion";
         updateQuotaRemainingLabel();
-        setUploadLimitsText(2 * 1024 * 1024, 5);
+        setUploadLimitsText(2 * 1024 * 1024, 15);
         return;
       }
       const me = await response.json().catch(() => ({}));
@@ -1671,11 +1674,11 @@
           updateQuotaRemainingLabel();
         }
       }
-      setUploadLimitsText(Number(me.max_upload_size_bytes || 2 * 1024 * 1024), Number(me.max_pages_per_file || 5));
+      setUploadLimitsText(Number(me.max_upload_size_bytes || 2 * 1024 * 1024), Number(me.max_pages_per_file || 15));
     } catch (_error) {
       state.quotaMode = "conversion";
       updateQuotaRemainingLabel();
-      setUploadLimitsText(2 * 1024 * 1024, 5);
+      setUploadLimitsText(2 * 1024 * 1024, 15);
     }
   }
 

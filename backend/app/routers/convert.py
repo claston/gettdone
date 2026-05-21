@@ -19,6 +19,7 @@ from app.application import (
     FileTooLargeError,
     InvalidFileContentError,
     InvalidUserTokenError,
+    MaxPagesPerFileExceededError,
     QuotaExceededError,
     ReportService,
     UnsupportedFileTypeError,
@@ -29,6 +30,10 @@ from app.schemas import ConvertResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+TEXT_PDF_MAX_PAGES_PER_FILE = 250
+TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
+OCR_PDF_MAX_PAGES_PER_FILE = 15
+OCR_PDF_MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024
 
 
 def _sse_event(event: str, data: dict) -> str:
@@ -49,6 +54,8 @@ def _resolve_conversion_type_from_filename(filename: str) -> str:
 def _resolve_failed_conversion_code(exc: Exception) -> str:
     if isinstance(exc, FileTooLargeError):
         return "file_too_large"
+    if isinstance(exc, MaxPagesPerFileExceededError):
+        return "pages_limit_exceeded"
     if isinstance(exc, InvalidUserTokenError):
         return "invalid_identity_context"
     if isinstance(exc, QuotaExceededError):
@@ -70,6 +77,50 @@ def _safe_record_anonymous_conversion_event(access_control_service: AccessContro
         access_control_service.record_anonymous_conversion_event(**kwargs)
     except Exception:
         logger.warning("Failed to persist anonymous conversion event telemetry.", exc_info=True)
+
+
+def _log_pages_limit_exceeded_attempt(
+    *,
+    identity,
+    filename: str,
+    pages_count: int,
+    max_pages_per_file: int,
+    scanned_likely: bool | None,
+) -> None:
+    logger.info(
+        (
+            "conversion_pages_limit_exceeded identity_type=%s identity_id=%s filename=%s "
+            "pages_count=%s max_pages_per_file=%s scanned_likely=%s"
+        ),
+        getattr(identity, "identity_type", "unknown"),
+        getattr(identity, "identity_id", "unknown"),
+        filename,
+        pages_count,
+        max_pages_per_file,
+        scanned_likely,
+    )
+
+
+def _resolve_max_pages_per_file(identity, scanned_likely: bool | None) -> int:
+    identity_max_pages = max(1, int(getattr(identity, "max_pages_per_file", 10**9)))
+    if scanned_likely is True:
+        return min(identity_max_pages, OCR_PDF_MAX_PAGES_PER_FILE)
+    if scanned_likely is False:
+        return max(identity_max_pages, TEXT_PDF_MAX_PAGES_PER_FILE)
+    return identity_max_pages
+
+
+def _resolve_max_upload_size_bytes(
+    identity,
+    scanned_likely: bool | None,
+    estimated_pages_count: int | None,
+) -> int:
+    identity_max_bytes = max(1, int(getattr(identity, "max_upload_size_bytes", 10**9)))
+    if scanned_likely is True:
+        return min(identity_max_bytes, OCR_PDF_MAX_UPLOAD_SIZE_BYTES)
+    if scanned_likely is False and estimated_pages_count is not None:
+        return max(identity_max_bytes, TEXT_PDF_MAX_UPLOAD_SIZE_BYTES)
+    return identity_max_bytes
 
 
 def _resolve_processed_pages(analysis) -> int | None:
@@ -144,7 +195,28 @@ def _build_convert_response(
             anonymous_fingerprint=anonymous_fingerprint,
             user_token=resolved_user_token,
         )
-        access_control_service.assert_upload_size(data, max_upload_size_bytes=identity.max_upload_size_bytes)
+        if Path(file.filename or "").suffix.lower() == ".pdf" and estimated_pages_count is not None:
+            # Backward compatibility: older identity fixtures/providers may not expose
+            # max_pages_per_file yet. In that case, skip the limit by using a large fallback.
+            max_pages_per_file = _resolve_max_pages_per_file(identity, scanned_likely)
+            if int(estimated_pages_count) > max_pages_per_file:
+                _log_pages_limit_exceeded_attempt(
+                    identity=identity,
+                    filename=file.filename or "",
+                    pages_count=int(estimated_pages_count),
+                    max_pages_per_file=max_pages_per_file,
+                    scanned_likely=scanned_likely,
+                )
+                raise MaxPagesPerFileExceededError(
+                    pages_count=int(estimated_pages_count),
+                    max_pages_per_file=max_pages_per_file,
+                )
+        max_upload_size_bytes = _resolve_max_upload_size_bytes(identity, scanned_likely, estimated_pages_count)
+        try:
+            access_control_service.assert_upload_size(data, max_upload_size_bytes=max_upload_size_bytes)
+        except FileTooLargeError as exc:
+            setattr(exc, "_max_upload_size_bytes", max_upload_size_bytes)
+            raise
         access_control_service.ensure_quota_available(identity, required_units=1)
         analysis = analyze_service.analyze(
             filename=file.filename or "",
@@ -223,9 +295,25 @@ def _raise_http_convert_error(exc: Exception, *, identity, access_control_servic
     if identity is None:
         identity = getattr(exc, "_convert_identity", None)
     if isinstance(exc, FileTooLargeError):
-        max_bytes = int(identity.max_upload_size_bytes) if identity is not None else 2 * 1024 * 1024
+        max_bytes = int(
+            getattr(
+                exc,
+                "_max_upload_size_bytes",
+                int(identity.max_upload_size_bytes) if identity is not None else 2 * 1024 * 1024,
+            )
+        )
         max_mb = max(1, int(max_bytes // (1024 * 1024)))
         raise HTTPException(status_code=413, detail=f"File exceeds maximum size of {max_mb} MB.")
+    if isinstance(exc, MaxPagesPerFileExceededError):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "pages_limit_exceeded",
+                "message": f"Este PDF tem {exc.pages_count} páginas e excede o limite de {exc.max_pages_per_file}.",
+                "pages_count": exc.pages_count,
+                "max_pages_per_file": exc.max_pages_per_file,
+            },
+        )
     if isinstance(exc, InvalidUserTokenError):
         raise HTTPException(
             status_code=400,
@@ -470,6 +558,9 @@ async def conversion_upload_stream(
                 code = "quota_exceeded"
                 message = "Você atingiu o limite do plano para conversões."
                 retryable = True
+            elif isinstance(error, MaxPagesPerFileExceededError):
+                code = "pages_limit_exceeded"
+                message = f"Este PDF tem {error.pages_count} páginas e excede o limite de {error.max_pages_per_file}."
             elif isinstance(error, UnsupportedFileTypeError):
                 code = "unsupported_type"
                 message = "Formato não suportado. Envie um PDF."

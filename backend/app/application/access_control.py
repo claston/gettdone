@@ -30,6 +30,7 @@ from app.application.access_control_session_core import AccessControlSessionCore
 ANONYMOUS_QUOTA_LIMIT = 3
 REGISTERED_QUOTA_LIMIT = 10
 MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024
+DEFAULT_MAX_PAGES_PER_FILE = 15
 QUOTA_WINDOW_DAYS = 7
 SESSION_ACCESS_TOKEN_TTL_SECONDS = 15 * 60
 SESSION_REFRESH_TOKEN_TTL_SECONDS = 14 * 24 * 60 * 60
@@ -49,7 +50,7 @@ class IdentityContext:
     quota_mode: str = "conversion"
     quota_window_days: int = QUOTA_WINDOW_DAYS
     max_upload_size_bytes: int = MAX_UPLOAD_SIZE_BYTES
-    max_pages_per_file: int = 5
+    max_pages_per_file: int = DEFAULT_MAX_PAGES_PER_FILE
     plan_code: str | None = None
     plan_name: str | None = None
 
