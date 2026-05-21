@@ -32,6 +32,8 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 TEXT_PDF_MAX_PAGES_PER_FILE = 250
 TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
+OCR_PDF_MAX_PAGES_PER_FILE = 15
+OCR_PDF_MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024
 
 
 def _sse_event(event: str, data: dict) -> str:
@@ -101,6 +103,8 @@ def _log_pages_limit_exceeded_attempt(
 
 def _resolve_max_pages_per_file(identity, scanned_likely: bool | None) -> int:
     identity_max_pages = max(1, int(getattr(identity, "max_pages_per_file", 10**9)))
+    if scanned_likely is True:
+        return min(identity_max_pages, OCR_PDF_MAX_PAGES_PER_FILE)
     if scanned_likely is False:
         return max(identity_max_pages, TEXT_PDF_MAX_PAGES_PER_FILE)
     return identity_max_pages
@@ -112,6 +116,8 @@ def _resolve_max_upload_size_bytes(
     estimated_pages_count: int | None,
 ) -> int:
     identity_max_bytes = max(1, int(getattr(identity, "max_upload_size_bytes", 10**9)))
+    if scanned_likely is True:
+        return min(identity_max_bytes, OCR_PDF_MAX_UPLOAD_SIZE_BYTES)
     if scanned_likely is False and estimated_pages_count is not None:
         return max(identity_max_bytes, TEXT_PDF_MAX_UPLOAD_SIZE_BYTES)
     return identity_max_bytes

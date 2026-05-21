@@ -99,6 +99,13 @@ def build_client(tmp_path) -> TestClient:
     return TestClient(app)
 
 
+def build_client_with_access_control(access_control: AccessControlService) -> TestClient:
+    app.dependency_overrides[get_access_control_service] = lambda: access_control
+    app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()
+    app.dependency_overrides[get_report_service] = lambda: FakeReportService()
+    return TestClient(app)
+
+
 def _build_pdf_with_pages(page_count: int) -> bytes:
     writer = PdfWriter()
     for _ in range(max(1, int(page_count))):
@@ -154,6 +161,31 @@ def test_convert_rejects_file_larger_than_2mb(tmp_path) -> None:
     app.dependency_overrides.clear()
 
 
+def test_convert_rejects_ocr_pdf_larger_than_2mb_for_paid_user(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.routers.convert._inspect_pdf_scan_likely",
+        lambda filename, raw_bytes: (True, 1),
+    )
+    access_control = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    user = access_control.register_user(name="Erica", email="erica@example.com", password="strong-pass")
+    access_control.activate_user_plan(user_id=user.user_id, plan_code="profissional")
+    client = build_client_with_access_control(access_control)
+    oversized = b"a" * ((2 * 1024 * 1024) + 1)
+
+    response = client.post(
+        "/convert",
+        data={"user_token": user.token},
+        files={"file": ("sample.pdf", oversized, "application/pdf")},
+    )
+
+    assert response.status_code == 413
+    assert "maximum size of 2 MB" in response.json()["detail"]
+    app.dependency_overrides.clear()
+
+
 def test_convert_allows_text_pdf_up_to_10mb(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
         "app.routers.convert._inspect_pdf_scan_likely",
@@ -200,6 +232,33 @@ def test_convert_rejects_pdf_above_max_pages_per_file(tmp_path) -> None:
         "/convert",
         data={"anonymous_fingerprint": "anon-fp-many-pages"},
         files={"file": ("sample.pdf", oversized_pdf, "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["code"] == "pages_limit_exceeded"
+    assert detail["pages_count"] == 16
+    assert detail["max_pages_per_file"] == 15
+    app.dependency_overrides.clear()
+
+
+def test_convert_rejects_ocr_pdf_above_15_pages_for_paid_user(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.routers.convert._inspect_pdf_scan_likely",
+        lambda filename, raw_bytes: (True, 16),
+    )
+    access_control = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    user = access_control.register_user(name="Erica", email="erica@example.com", password="strong-pass")
+    access_control.activate_user_plan(user_id=user.user_id, plan_code="profissional")
+    client = build_client_with_access_control(access_control)
+
+    response = client.post(
+        "/convert",
+        data={"user_token": user.token},
+        files={"file": ("sample.pdf", b"%PDF scanned", "application/pdf")},
     )
 
     assert response.status_code == 400
