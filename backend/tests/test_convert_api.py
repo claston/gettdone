@@ -154,6 +154,44 @@ def test_convert_rejects_file_larger_than_2mb(tmp_path) -> None:
     app.dependency_overrides.clear()
 
 
+def test_convert_allows_text_pdf_up_to_10mb(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.routers.convert._inspect_pdf_scan_likely",
+        lambda filename, raw_bytes: (False, 1),
+    )
+    client = build_client(tmp_path)
+    text_pdf = b"a" * ((2 * 1024 * 1024) + 1)
+
+    response = client.post(
+        "/convert",
+        data={"anonymous_fingerprint": "anon-fp-text-size"},
+        files={"file": ("sample.pdf", text_pdf, "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["identity_type"] == "anonymous"
+    app.dependency_overrides.clear()
+
+
+def test_convert_rejects_text_pdf_larger_than_10mb(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.routers.convert._inspect_pdf_scan_likely",
+        lambda filename, raw_bytes: (False, 1),
+    )
+    client = build_client(tmp_path)
+    oversized = b"a" * ((10 * 1024 * 1024) + 1)
+
+    response = client.post(
+        "/convert",
+        data={"anonymous_fingerprint": "anon-fp-text-too-large"},
+        files={"file": ("sample.pdf", oversized, "application/pdf")},
+    )
+
+    assert response.status_code == 413
+    assert "maximum size of 10 MB" in response.json()["detail"]
+    app.dependency_overrides.clear()
+
+
 def test_convert_rejects_pdf_above_max_pages_per_file(tmp_path) -> None:
     client = build_client(tmp_path)
     oversized_pdf = _build_pdf_with_pages(16)
@@ -169,6 +207,45 @@ def test_convert_rejects_pdf_above_max_pages_per_file(tmp_path) -> None:
     assert detail["code"] == "pages_limit_exceeded"
     assert detail["pages_count"] == 16
     assert detail["max_pages_per_file"] == 15
+    app.dependency_overrides.clear()
+
+
+def test_convert_allows_text_pdf_up_to_250_pages(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.routers.convert._inspect_pdf_scan_likely",
+        lambda filename, raw_bytes: (False, 250),
+    )
+    client = build_client(tmp_path)
+
+    response = client.post(
+        "/convert",
+        data={"anonymous_fingerprint": "anon-fp-text-pages"},
+        files={"file": ("sample.pdf", b"%PDF text", "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["identity_type"] == "anonymous"
+    app.dependency_overrides.clear()
+
+
+def test_convert_rejects_text_pdf_above_250_pages(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.routers.convert._inspect_pdf_scan_likely",
+        lambda filename, raw_bytes: (False, 251),
+    )
+    client = build_client(tmp_path)
+
+    response = client.post(
+        "/convert",
+        data={"anonymous_fingerprint": "anon-fp-text-too-many-pages"},
+        files={"file": ("sample.pdf", b"%PDF text", "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["code"] == "pages_limit_exceeded"
+    assert detail["pages_count"] == 251
+    assert detail["max_pages_per_file"] == 250
     app.dependency_overrides.clear()
 
 

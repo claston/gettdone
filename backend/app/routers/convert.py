@@ -30,6 +30,8 @@ from app.schemas import ConvertResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+TEXT_PDF_MAX_PAGES_PER_FILE = 250
+TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
 
 
 def _sse_event(event: str, data: dict) -> str:
@@ -95,6 +97,24 @@ def _log_pages_limit_exceeded_attempt(
         max_pages_per_file,
         scanned_likely,
     )
+
+
+def _resolve_max_pages_per_file(identity, scanned_likely: bool | None) -> int:
+    identity_max_pages = max(1, int(getattr(identity, "max_pages_per_file", 10**9)))
+    if scanned_likely is False:
+        return max(identity_max_pages, TEXT_PDF_MAX_PAGES_PER_FILE)
+    return identity_max_pages
+
+
+def _resolve_max_upload_size_bytes(
+    identity,
+    scanned_likely: bool | None,
+    estimated_pages_count: int | None,
+) -> int:
+    identity_max_bytes = max(1, int(getattr(identity, "max_upload_size_bytes", 10**9)))
+    if scanned_likely is False and estimated_pages_count is not None:
+        return max(identity_max_bytes, TEXT_PDF_MAX_UPLOAD_SIZE_BYTES)
+    return identity_max_bytes
 
 
 def _resolve_processed_pages(analysis) -> int | None:
@@ -172,7 +192,7 @@ def _build_convert_response(
         if Path(file.filename or "").suffix.lower() == ".pdf" and estimated_pages_count is not None:
             # Backward compatibility: older identity fixtures/providers may not expose
             # max_pages_per_file yet. In that case, skip the limit by using a large fallback.
-            max_pages_per_file = max(1, int(getattr(identity, "max_pages_per_file", 10**9)))
+            max_pages_per_file = _resolve_max_pages_per_file(identity, scanned_likely)
             if int(estimated_pages_count) > max_pages_per_file:
                 _log_pages_limit_exceeded_attempt(
                     identity=identity,
@@ -185,7 +205,12 @@ def _build_convert_response(
                     pages_count=int(estimated_pages_count),
                     max_pages_per_file=max_pages_per_file,
                 )
-        access_control_service.assert_upload_size(data, max_upload_size_bytes=identity.max_upload_size_bytes)
+        max_upload_size_bytes = _resolve_max_upload_size_bytes(identity, scanned_likely, estimated_pages_count)
+        try:
+            access_control_service.assert_upload_size(data, max_upload_size_bytes=max_upload_size_bytes)
+        except FileTooLargeError as exc:
+            setattr(exc, "_max_upload_size_bytes", max_upload_size_bytes)
+            raise
         access_control_service.ensure_quota_available(identity, required_units=1)
         analysis = analyze_service.analyze(
             filename=file.filename or "",
@@ -264,7 +289,13 @@ def _raise_http_convert_error(exc: Exception, *, identity, access_control_servic
     if identity is None:
         identity = getattr(exc, "_convert_identity", None)
     if isinstance(exc, FileTooLargeError):
-        max_bytes = int(identity.max_upload_size_bytes) if identity is not None else 2 * 1024 * 1024
+        max_bytes = int(
+            getattr(
+                exc,
+                "_max_upload_size_bytes",
+                int(identity.max_upload_size_bytes) if identity is not None else 2 * 1024 * 1024,
+            )
+        )
         max_mb = max(1, int(max_bytes // (1024 * 1024)))
         raise HTTPException(status_code=413, detail=f"File exceeds maximum size of {max_mb} MB.")
     if isinstance(exc, MaxPagesPerFileExceededError):
