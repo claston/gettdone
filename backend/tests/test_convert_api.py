@@ -84,6 +84,14 @@ class InsufficientTextAnalyzeService:
         raise InvalidFileContentError("Não encontramos texto suficiente para OCR neste PDF.")
 
 
+class EmptyBytesInvalidContentAnalyzeService:
+    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None) -> AnalyzeResponse:
+        _ = (filename, on_ocr_progress)
+        if not raw_bytes:
+            raise InvalidFileContentError("Não foi possível ler este PDF.")
+        return FakeAnalyzeService().analyze(filename=filename, raw_bytes=raw_bytes, on_ocr_progress=on_ocr_progress)
+
+
 class FakeReportService:
     def set_convert_owner(self, analysis_id: str, identity_type: str, identity_id: str) -> None:
         _ = (analysis_id, identity_type, identity_id)
@@ -307,6 +315,32 @@ def test_convert_returns_pages_limit_when_ocr_like_pdf_is_misdetected_as_text(tm
     assert detail["code"] == "pages_limit_exceeded"
     assert detail["pages_count"] == 16
     assert detail["max_pages_per_file"] == 15
+    app.dependency_overrides.clear()
+
+
+def test_conversion_upload_non_sse_keeps_ocr_pages_limit_validation(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("app.routers.convert.OCR_PDF_MAX_PAGES_PER_FILE", 5)
+    monkeypatch.setattr(
+        "app.routers.convert._inspect_pdf_scan_likely",
+        lambda filename, raw_bytes: (True, 6),
+    )
+    access_control = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    client = build_client_with_overrides(access_control, EmptyBytesInvalidContentAnalyzeService())
+
+    response = client.post(
+        "/api/conversions/upload",
+        data={"anonymous_fingerprint": "anon-fp-upload-ocr-limit"},
+        files={"file": ("sample.pdf", b"%PDF non-empty", "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["code"] == "pages_limit_exceeded"
+    assert detail["pages_count"] == 6
+    assert detail["max_pages_per_file"] == 5
     app.dependency_overrides.clear()
 
 

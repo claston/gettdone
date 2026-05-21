@@ -428,16 +428,25 @@ async def conversion_upload_stream(
 ):
     data = await file.read()
     if not _is_sse_request(accept):
-        return await convert(
-            file=file,
-            anonymous_fingerprint=anonymous_fingerprint,
-            user_token=user_token,
-            authorization=authorization,
-            access_cookie_token=access_cookie_token,
-            analyze_service=analyze_service,
-            report_service=report_service,
-            access_control_service=access_control_service,
-        )
+        identity = None
+        try:
+            scanned_likely, total_pages = _inspect_pdf_scan_likely(file.filename or "", data)
+            return _build_convert_response(
+                file=file,
+                data=data,
+                anonymous_fingerprint=anonymous_fingerprint,
+                user_token=user_token,
+                authorization=authorization,
+                access_cookie_token=access_cookie_token,
+                analyze_service=analyze_service,
+                report_service=report_service,
+                access_control_service=access_control_service,
+                scanned_likely=scanned_likely,
+                estimated_pages_count=total_pages,
+            )
+        except Exception as exc:
+            _raise_http_convert_error(exc, identity=identity, access_control_service=access_control_service)
+            raise
 
     scanned_likely, total_pages = _inspect_pdf_scan_likely(file.filename or "", data)
 
