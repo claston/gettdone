@@ -581,6 +581,13 @@ async def conversion_upload_stream(
             code = "processing_failed"
             message = "Não foi possível ler este PDF."
             retryable = False
+            failed_event_payload = {
+                "stage": "failed",
+                "progress": 90 if scanned_likely else 40,
+                "message": message,
+                "code": code,
+                "retryable": retryable,
+            }
             if isinstance(error, FileTooLargeError):
                 code = "file_too_large"
                 max_bytes = int(
@@ -608,22 +615,26 @@ async def conversion_upload_stream(
                 code = "quota_exceeded"
                 message = "Você atingiu o limite do plano para conversões."
                 retryable = True
+                identity = getattr(error, "_convert_identity", None)
+                if identity is not None:
+                    identity_type = str(getattr(identity, "identity_type", "")).strip().lower()
+                    if identity_type == "anonymous":
+                        code = "weekly_quota_exceeded"
+                        message = "Você atingiu o limite gratuito desta semana."
+                    elif str(getattr(identity, "quota_mode", "")).strip().lower() == "pages":
+                        code = "monthly_pages_quota_exceeded"
+                        message = "Você atingiu o limite mensal de páginas do seu plano."
+                    failed_event_payload["identity_type"] = identity_type
             elif isinstance(error, MaxPagesPerFileExceededError):
                 code = "pages_limit_exceeded"
                 message = f"Este PDF tem {error.pages_count} páginas e excede o limite de {error.max_pages_per_file}."
             elif isinstance(error, UnsupportedFileTypeError):
                 code = "unsupported_type"
                 message = "Formato não suportado. Envie um PDF."
-            yield _sse_event(
-                "processing_status",
-                {
-                    "stage": "failed",
-                    "progress": 90 if scanned_likely else 40,
-                    "message": message,
-                    "code": code,
-                    "retryable": retryable,
-                },
-            )
+            failed_event_payload["message"] = message
+            failed_event_payload["code"] = code
+            failed_event_payload["retryable"] = retryable
+            yield _sse_event("processing_status", failed_event_payload)
             return
 
     headers = {

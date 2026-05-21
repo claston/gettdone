@@ -526,6 +526,17 @@
     return error;
   }
 
+  function resolveSseFailedStatus(code) {
+    const normalized = String(code || "").trim().toLowerCase();
+    if (normalized === "weekly_quota_exceeded" || normalized === "monthly_pages_quota_exceeded") {
+      return 429;
+    }
+    if (normalized === "file_too_large") {
+      return 413;
+    }
+    return 400;
+  }
+
   function formatResetAt(resetAtRaw) {
     const parsed = new Date(String(resetAtRaw || ""));
     if (Number.isNaN(parsed.getTime())) {
@@ -1609,8 +1620,9 @@
           const event = JSON.parse(dataLine.slice(6));
           if (onStatusEvent) onStatusEvent(event);
           if (event.stage === "failed") {
-            throw buildApiError(400, {
-              code: String(event.code || "processing_failed"),
+            const failedCode = String(event.code || "processing_failed");
+            throw buildApiError(resolveSseFailedStatus(failedCode), {
+              code: failedCode,
               message: String(event.message || "Falha ao converter arquivo."),
               retryable: Boolean(event.retryable),
             });
@@ -1843,7 +1855,11 @@
         return;
       }
       if (status === 429 && code === "weekly_quota_exceeded") {
-        if (!getUserToken()) {
+        const detailIdentityType =
+          detail && typeof detail === "object" ? String(detail.identity_type || "").trim().toLowerCase() : "";
+        const shouldShowAnonymousQuotaLock =
+          detailIdentityType === "anonymous" || (!detailIdentityType && !getUserToken());
+        if (shouldShowAnonymousQuotaLock) {
           showQuotaLockOverlay(detail);
           setStatus("Você atingiu o limite gratuito desta semana.", "error");
           return;
