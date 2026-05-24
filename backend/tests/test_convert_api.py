@@ -92,6 +92,12 @@ class EmptyBytesInvalidContentAnalyzeService:
         return FakeAnalyzeService().analyze(filename=filename, raw_bytes=raw_bytes, on_ocr_progress=on_ocr_progress)
 
 
+class CorruptedPdfAnalyzeService:
+    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None) -> AnalyzeResponse:
+        _ = (filename, raw_bytes, on_ocr_progress)
+        raise InvalidFileContentError("Ignoring wrong pointing object 9 0 (offset 0)")
+
+
 class FakeReportService:
     def set_convert_owner(self, analysis_id: str, identity_type: str, identity_id: str) -> None:
         _ = (analysis_id, identity_type, identity_id)
@@ -168,9 +174,9 @@ def test_convert_rejects_unsupported_file_type(tmp_path) -> None:
     app.dependency_overrides.clear()
 
 
-def test_convert_rejects_file_larger_than_2mb(tmp_path) -> None:
+def test_convert_rejects_file_larger_than_5mb(tmp_path) -> None:
     client = build_client(tmp_path)
-    oversized = b"a" * ((2 * 1024 * 1024) + 1)
+    oversized = b"a" * ((5 * 1024 * 1024) + 1)
 
     response = client.post(
         "/convert",
@@ -179,11 +185,11 @@ def test_convert_rejects_file_larger_than_2mb(tmp_path) -> None:
     )
 
     assert response.status_code == 413
-    assert "maximum size of 2 MB" in response.json()["detail"]
+    assert "maximum size of 5 MB" in response.json()["detail"]
     app.dependency_overrides.clear()
 
 
-def test_convert_rejects_ocr_pdf_larger_than_2mb_for_paid_user(tmp_path, monkeypatch) -> None:
+def test_convert_rejects_ocr_pdf_larger_than_5mb_for_paid_user(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
         "app.routers.convert._inspect_pdf_scan_likely",
         lambda filename, raw_bytes: (True, 1),
@@ -195,7 +201,7 @@ def test_convert_rejects_ocr_pdf_larger_than_2mb_for_paid_user(tmp_path, monkeyp
     user = access_control.register_user(name="Erica", email="erica@example.com", password="strong-pass")
     access_control.activate_user_plan(user_id=user.user_id, plan_code="profissional")
     client = build_client_with_access_control(access_control)
-    oversized = b"a" * ((2 * 1024 * 1024) + 1)
+    oversized = b"a" * ((5 * 1024 * 1024) + 1)
 
     response = client.post(
         "/convert",
@@ -204,7 +210,7 @@ def test_convert_rejects_ocr_pdf_larger_than_2mb_for_paid_user(tmp_path, monkeyp
     )
 
     assert response.status_code == 413
-    assert "maximum size of 2 MB" in response.json()["detail"]
+    assert "maximum size of 5 MB" in response.json()["detail"]
     app.dependency_overrides.clear()
 
 
@@ -214,7 +220,7 @@ def test_convert_allows_text_pdf_up_to_10mb(tmp_path, monkeypatch) -> None:
         lambda filename, raw_bytes: (False, 1),
     )
     client = build_client(tmp_path)
-    text_pdf = b"a" * ((2 * 1024 * 1024) + 1)
+    text_pdf = b"a" * ((5 * 1024 * 1024) + 1)
 
     response = client.post(
         "/convert",
@@ -248,7 +254,7 @@ def test_convert_rejects_text_pdf_larger_than_10mb(tmp_path, monkeypatch) -> Non
 
 def test_convert_rejects_pdf_above_max_pages_per_file(tmp_path) -> None:
     client = build_client(tmp_path)
-    oversized_pdf = _build_pdf_with_pages(16)
+    oversized_pdf = _build_pdf_with_pages(11)
 
     response = client.post(
         "/convert",
@@ -259,15 +265,15 @@ def test_convert_rejects_pdf_above_max_pages_per_file(tmp_path) -> None:
     assert response.status_code == 400
     detail = response.json()["detail"]
     assert detail["code"] == "pages_limit_exceeded"
-    assert detail["pages_count"] == 16
-    assert detail["max_pages_per_file"] == 15
+    assert detail["pages_count"] == 11
+    assert detail["max_pages_per_file"] == 10
     app.dependency_overrides.clear()
 
 
-def test_convert_rejects_ocr_pdf_above_15_pages_for_paid_user(tmp_path, monkeypatch) -> None:
+def test_convert_rejects_ocr_pdf_above_10_pages_for_paid_user(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
         "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (True, 16),
+        lambda filename, raw_bytes: (True, 11),
     )
     access_control = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
@@ -286,15 +292,15 @@ def test_convert_rejects_ocr_pdf_above_15_pages_for_paid_user(tmp_path, monkeypa
     assert response.status_code == 400
     detail = response.json()["detail"]
     assert detail["code"] == "pages_limit_exceeded"
-    assert detail["pages_count"] == 16
-    assert detail["max_pages_per_file"] == 15
+    assert detail["pages_count"] == 11
+    assert detail["max_pages_per_file"] == 10
     app.dependency_overrides.clear()
 
 
 def test_convert_returns_pages_limit_when_ocr_like_pdf_is_misdetected_as_text(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
         "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (False, 16),
+        lambda filename, raw_bytes: (False, 11),
     )
     access_control = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
@@ -313,8 +319,8 @@ def test_convert_returns_pages_limit_when_ocr_like_pdf_is_misdetected_as_text(tm
     assert response.status_code == 400
     detail = response.json()["detail"]
     assert detail["code"] == "pages_limit_exceeded"
-    assert detail["pages_count"] == 16
-    assert detail["max_pages_per_file"] == 15
+    assert detail["pages_count"] == 11
+    assert detail["max_pages_per_file"] == 10
     app.dependency_overrides.clear()
 
 
@@ -341,6 +347,46 @@ def test_conversion_upload_non_sse_keeps_ocr_pages_limit_validation(tmp_path, mo
     assert detail["code"] == "pages_limit_exceeded"
     assert detail["pages_count"] == 6
     assert detail["max_pages_per_file"] == 5
+    app.dependency_overrides.clear()
+
+
+def test_convert_returns_friendly_message_for_likely_corrupted_pdf(tmp_path) -> None:
+    access_control = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    client = build_client_with_overrides(access_control, CorruptedPdfAnalyzeService())
+
+    response = client.post(
+        "/convert",
+        data={"anonymous_fingerprint": "anon-fp-corrupted"},
+        files={"file": ("sample.pdf", b"%PDF maybe-corrupted", "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["code"] == "invalid_pdf_content"
+    assert detail["message"] == "Parece que seu arquivo PDF está corrompido."
+    app.dependency_overrides.clear()
+
+
+def test_conversion_upload_non_sse_returns_friendly_message_for_likely_corrupted_pdf(tmp_path) -> None:
+    access_control = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    client = build_client_with_overrides(access_control, CorruptedPdfAnalyzeService())
+
+    response = client.post(
+        "/api/conversions/upload",
+        data={"anonymous_fingerprint": "anon-fp-upload-corrupted"},
+        files={"file": ("sample.pdf", b"%PDF maybe-corrupted", "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["code"] == "invalid_pdf_content"
+    assert detail["message"] == "Parece que seu arquivo PDF está corrompido."
     app.dependency_overrides.clear()
 
 
@@ -424,3 +470,4 @@ def test_convert_succeeds_when_anonymous_telemetry_persistence_fails(tmp_path) -
     assert response.status_code == 200
     assert response.json()["identity_type"] == "anonymous"
     app.dependency_overrides.clear()
+

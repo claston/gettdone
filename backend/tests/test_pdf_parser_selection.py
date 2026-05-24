@@ -16,16 +16,39 @@ def test_select_parsed_rows_prioritizes_grouped_when_available() -> None:
 
     assert result.selected_parser == "grouped"
     assert result.rows == ["grouped-row"]
-    assert result.inline_candidates == 0
-    assert result.inline_transactions_count == 0
-    assert result.tabular_candidates == 0
-    assert result.columnar_candidates == 0
-    assert result.tabular_transactions_count == 0
-    assert result.columnar_transactions_count == 0
+    assert result.inline_candidates == 1
+    assert result.inline_transactions_count == 1
+    assert result.tabular_candidates == 1
+    assert result.columnar_candidates == 1
+    assert result.tabular_transactions_count == 1
+    assert result.columnar_transactions_count == 1
     assert result.selection_reason == "grouped_rows_available"
-    assert result.inline_decision == "skipped_due_to_grouped"
-    assert result.tabular_decision == "skipped_due_to_grouped"
-    assert result.columnar_decision == "skipped_due_to_grouped"
+    assert result.inline_decision == "not_selected_grouped_priority"
+    assert result.tabular_decision == "not_selected_grouped_priority"
+    assert result.columnar_decision == "not_selected_grouped_priority"
+
+
+def test_select_parsed_rows_overrides_grouped_when_tabular_has_large_row_count_gap() -> None:
+    result = select_parsed_rows(
+        lines=["line"],
+        grouped_rows=["grouped-1", "grouped-2"],
+        layout_profile=object(),
+        parse_inline_rows=lambda _: (["inline-row"], 1),
+        parse_tabular_rows=lambda _lines, _profile: (
+            ["tabular-1", "tabular-2", "tabular-3", "tabular-4", "tabular-5", "tabular-6"],
+            6,
+        ),
+        parse_columnar_rows=lambda _: ([], 0),
+    )
+
+    assert result.selected_parser == "tabular"
+    assert result.rows == ["tabular-1", "tabular-2", "tabular-3", "tabular-4", "tabular-5", "tabular-6"]
+    assert result.selection_reason == "tabular_preferred_over_grouped_on_row_count_gap"
+    assert result.inline_transactions_count == 1
+    assert result.tabular_transactions_count == 6
+    assert result.inline_decision == "not_selected_grouped_overridden"
+    assert result.tabular_decision == "selected_on_grouped_override_row_count_gap"
+    assert result.columnar_decision == "no_rows"
 
 
 def test_select_parsed_rows_falls_back_to_tabular_and_preserves_inline_counters() -> None:

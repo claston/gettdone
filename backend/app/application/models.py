@@ -8,7 +8,9 @@ class TransactionRow:
     amount: float
     category: str
     reconciliation_status: str
+    running_balance: float | None = None
     is_deleted: bool = False
+    warning_types: list[str] = field(default_factory=list)
 
 
 @dataclass

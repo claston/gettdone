@@ -167,7 +167,7 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
     "grouped": {
         "selected_parser": "grouped",
         "transactions_count": 2,
-        "inline_candidates_count": 0,
+        "inline_candidates_count": 2,
         "balance_consistency_checked": 0,
         "balance_consistency_failed": 0,
         "first_transaction": {"date": "2026-03-16", "amount": -240.24, "type": "outflow", "source_page": 1, "source_line": 2},
@@ -753,7 +753,7 @@ PDF_PARSE_METRICS_GROUPED_CANONICAL_OK = {
     "extracted_char_count": 72,
     "flattened_line_count": 3,
     "grouped_transactions_count": 2,
-    "inline_candidates_count": 0,
+    "inline_candidates_count": 2,
     "inline_transactions_count": 0,
     "selected_parser": "grouped",
     "balance_consistency_checked": 1,

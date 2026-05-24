@@ -202,10 +202,10 @@ def test_register_then_convert_with_user_token() -> None:
         shutil.rmtree(state_dir, ignore_errors=True)
 
 
-def test_convert_rejects_file_bigger_than_2mb() -> None:
+def test_convert_rejects_file_bigger_than_5mb() -> None:
     state_dir = Path(mkdtemp(prefix="convert-auth-api-"))
     client, _service = build_client(state_dir)
-    oversized = b"a" * ((2 * 1024 * 1024) + 1)
+    oversized = b"a" * ((5 * 1024 * 1024) + 1)
 
     try:
         response = client.post(
@@ -214,7 +214,7 @@ def test_convert_rejects_file_bigger_than_2mb() -> None:
             files={"file": ("sample.pdf", oversized, "application/pdf")},
         )
         assert response.status_code == 413
-        assert "maximum size of 2 MB" in response.json()["detail"]
+        assert "maximum size of 5 MB" in response.json()["detail"]
     finally:
         app.dependency_overrides.clear()
         shutil.rmtree(state_dir, ignore_errors=True)
@@ -245,3 +245,4 @@ def test_paid_pages_plan_consumes_quota_by_page_count() -> None:
     finally:
         app.dependency_overrides.clear()
         shutil.rmtree(state_dir, ignore_errors=True)
+

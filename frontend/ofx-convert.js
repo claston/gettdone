@@ -21,8 +21,8 @@
   const uploadLimitsText = document.getElementById("upload-limits-text");
   const TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
   const TEXT_PDF_MAX_PAGES_PER_FILE = 250;
-  const OCR_PDF_MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024;
-  const OCR_PDF_MAX_PAGES_PER_FILE = 15;
+  const OCR_PDF_MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024;
+  const OCR_PDF_MAX_PAGES_PER_FILE = 10;
 
   const reviewSection = document.getElementById("review-section");
   const downloadSection = document.getElementById("download-section");
@@ -1085,6 +1085,7 @@
     const closingBalance = Number.isFinite(Number(state.closingBalanceOverride))
       ? Number(state.closingBalanceOverride)
       : Number((analysis && analysis.net_total) || 0);
+    const reviewWarningsMarkup = buildReviewWarningsMarkup(analysis);
 
     const inflows = formatCurrency(analysis.total_inflows);
     const outflows = formatCurrency(analysis.total_outflows);
@@ -1111,6 +1112,7 @@
       : "";
 
     kpis.innerHTML = `
+      ${reviewWarningsMarkup}
       ${ofxMetaRow}
       <article class="kpi">
         <p class="kpi-label">Transações</p>
@@ -1137,6 +1139,54 @@
         }
       </article>
     `;
+  }
+
+  function buildReviewWarningsMarkup(analysis) {
+    const warnings = collectReviewWarnings(analysis);
+    if (!warnings.length) {
+      return "";
+    }
+    const items = warnings.map((item) => `<li>${escapeAttr(item)}</li>`).join("");
+    return `
+      <section class="review-warning-card" role="status" aria-live="polite">
+        <h3 class="review-warning-title">Atenção na revisão</h3>
+        <ul class="review-warning-list">${items}</ul>
+      </section>
+    `;
+  }
+
+  function collectReviewWarnings(analysis) {
+    const list = [];
+    const metrics = analysis && typeof analysis === "object" ? analysis.pdf_processing_metrics : null;
+    if (!metrics || typeof metrics !== "object") {
+      return list;
+    }
+    const txCount = Number(analysis.transactions_total || 0);
+    const pageCount = Number(metrics.page_count || 0);
+    const parser = String(metrics.selected_parser || "").trim().toLowerCase();
+    const layout = String(analysis.layout_inference_name || "").trim().toLowerCase();
+    const confidenceBand = String(metrics.confidence_band || "").trim().toLowerCase();
+    const exportRecommendation = String(metrics.export_recommendation || "").trim().toLowerCase();
+    const balanceFailed = Number(metrics.balance_consistency_failed || 0);
+
+    if (
+      pageCount >= 2 &&
+      txCount <= Math.max(3, pageCount) &&
+      (layout === "generic_statement_ptbr" || parser === "grouped")
+    ) {
+      list.push(
+        `Leitura parcial detectada: ${txCount} transações em ${pageCount} páginas. Revise com atenção antes de exportar.`
+      );
+    }
+    if (balanceFailed > 0) {
+      list.push(
+        `Saldo linha a linha com inconsistências: ${balanceFailed} lançamento(s) não bateram no cálculo de saldo.`
+      );
+    }
+    if (confidenceBand === "low" || exportRecommendation === "review_recommended") {
+      list.push("Recomendamos revisar os lançamentos antes de baixar o arquivo.");
+    }
+    return list;
   }
 
   function toPositiveMoneyString(value) {
@@ -1173,6 +1223,15 @@
   function getDebitAmount(row) {
     const amount = Number(row.amount || 0);
     return amount < 0 ? Math.abs(amount) : null;
+  }
+
+  function getRunningBalanceAmount(row) {
+    const value = row && Object.prototype.hasOwnProperty.call(row, "running_balance") ? row.running_balance : null;
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 
   function setPreviewRows(rows) {
@@ -1441,7 +1500,7 @@
   function renderRows() {
     const rows = state.previewRows;
     if (!rows || rows.length === 0) {
-      reviewRows.innerHTML = '<tr><td colspan="5">Nenhuma transação para exibir.</td></tr>';
+      reviewRows.innerHTML = '<tr><td colspan="6">Nenhuma transação para exibir.</td></tr>';
       return;
     }
 
@@ -1463,6 +1522,7 @@
             <td><input class="cell-input cell-input-description" data-edit-field="description" value="${escapeAttr(state.editDraft.description)}" /></td>
             <td><input class="cell-input cell-input-money" data-edit-field="credit" inputmode="decimal" placeholder="0,00" value="${escapeAttr(state.editDraft.credit)}" /></td>
             <td><input class="cell-input cell-input-money" data-edit-field="debit" inputmode="decimal" placeholder="0,00" value="${escapeAttr(state.editDraft.debit)}" /></td>
+            <td><span class="amount-empty">—</span></td>
             <td class="actions-cell">
               <button class="btn btn-secondary btn-inline" type="button" data-action="save-row" data-row-id="${row.rowId}" aria-label="Salvar edição">
                 <span class="btn-icon" aria-hidden="true">&#10003;</span><span>Salvar</span>
@@ -1475,6 +1535,8 @@
         `;
         }
         const rowChanged = isRowChanged(row);
+        const warningTypes = Array.isArray(row.warning_types) ? row.warning_types : [];
+        const hasWarning = warningTypes.length > 0;
         const creditAmount = getCreditAmount(row);
         const debitAmount = getDebitAmount(row);
         const creditMarkup = creditAmount !== null
@@ -1483,15 +1545,23 @@
         const debitMarkup = debitAmount !== null
           ? `<span class="amount-debit">${formatCurrency(debitAmount)}</span>`
           : '<span class="amount-empty">—</span>';
+        const runningBalanceAmount = getRunningBalanceAmount(row);
+        const runningBalanceMarkup = runningBalanceAmount !== null
+          ? `<span class="amount-balance">${formatCurrency(runningBalanceAmount)}</span>`
+          : '<span class="amount-empty">—</span>';
         const descriptionText = String(row.description || "").trim();
         const descriptionCellText = descriptionText || "-";
         const descriptionTitleAttr = descriptionText ? ` title="${escapeAttr(descriptionText)}"` : "";
+        const warningBadge = hasWarning
+          ? `<span class="row-warning-badge" title="${escapeAttr(warningTypes.map(mapWarningTypeLabel).join(", "))}">${escapeAttr(mapWarningTypeLabel(warningTypes[0]))}</span>`
+          : "";
         return `
-          <tr class="${rowClass} ${rowDeleted ? "row-deleted" : ""}">
+          <tr class="${rowClass} ${rowDeleted ? "row-deleted" : ""} ${hasWarning ? "row-has-warning" : ""}">
             <td>${formatDate(row.date)}</td>
-            <td${descriptionTitleAttr}>${escapeAttr(descriptionCellText)}</td>
+            <td${descriptionTitleAttr}>${escapeAttr(descriptionCellText)}${warningBadge}</td>
             <td>${creditMarkup}</td>
             <td>${debitMarkup}</td>
+            <td>${runningBalanceMarkup}</td>
             <td class="actions-cell">
               ${
                 !rowDeleted && !isDraftRowId(row.rowId)
@@ -1515,6 +1585,14 @@
         `;
       })
       .join("");
+  }
+
+  function mapWarningTypeLabel(value) {
+    const key = String(value || "").trim().toLowerCase();
+    if (key === "balance_consistency_failed") {
+      return "Saldo inconsistente";
+    }
+    return "Linha com alerta";
   }
 
   function restoreViewFromState(viewState) {
@@ -1671,7 +1749,7 @@
       if (!response.ok) {
         state.quotaMode = "conversion";
         updateQuotaRemainingLabel();
-        setUploadLimitsText(2 * 1024 * 1024, 15);
+        setUploadLimitsText(5 * 1024 * 1024, 10);
         return;
       }
       const me = await response.json().catch(() => ({}));
@@ -1688,11 +1766,11 @@
           updateQuotaRemainingLabel();
         }
       }
-      setUploadLimitsText(Number(me.max_upload_size_bytes || 2 * 1024 * 1024), Number(me.max_pages_per_file || 15));
+      setUploadLimitsText(Number(me.max_upload_size_bytes || 5 * 1024 * 1024), Number(me.max_pages_per_file || 10));
     } catch (_error) {
       state.quotaMode = "conversion";
       updateQuotaRemainingLabel();
-      setUploadLimitsText(2 * 1024 * 1024, 15);
+      setUploadLimitsText(5 * 1024 * 1024, 10);
     }
   }
 
@@ -2232,6 +2310,7 @@
 
   void initializePage();
 })();
+
 
 
 
