@@ -32,8 +32,9 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 TEXT_PDF_MAX_PAGES_PER_FILE = 250
 TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
-OCR_PDF_MAX_PAGES_PER_FILE = 15
-OCR_PDF_MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024
+OCR_PDF_MAX_PAGES_PER_FILE = 10
+OCR_PDF_MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024
+CORRUPTED_PDF_USER_MESSAGE = "Parece que seu arquivo PDF está corrompido."
 
 
 def _sse_event(event: str, data: dict) -> str:
@@ -70,6 +71,23 @@ def _resolve_failed_conversion_code(exc: Exception) -> str:
             return "insufficient_text"
         return "invalid_pdf_content"
     return "processing_failed"
+
+
+def _is_likely_corrupted_pdf_detail(detail: str) -> bool:
+    normalized = str(detail or "").strip().lower()
+    if not normalized:
+        return False
+    corrupted_markers = (
+        "wrong pointing object",
+        "broken xref",
+        "startxref",
+        "eof marker",
+        "malformed pdf",
+        "invalid pdf",
+        "corrupt",
+        "corrompid",
+    )
+    return any(marker in normalized for marker in corrupted_markers)
 
 
 def _safe_record_anonymous_conversion_event(access_control_service: AccessControlService, **kwargs) -> None:
@@ -329,7 +347,7 @@ def _raise_http_convert_error(exc: Exception, *, identity, access_control_servic
             getattr(
                 exc,
                 "_max_upload_size_bytes",
-                int(identity.max_upload_size_bytes) if identity is not None else 2 * 1024 * 1024,
+                int(identity.max_upload_size_bytes) if identity is not None else 5 * 1024 * 1024,
             )
         )
         max_mb = max(1, int(max_bytes // (1024 * 1024)))
@@ -372,7 +390,17 @@ def _raise_http_convert_error(exc: Exception, *, identity, access_control_servic
     if isinstance(exc, UnsupportedFileTypeError):
         raise HTTPException(status_code=400, detail="Unsupported file type. Use CSV, XLSX, OFX, or PDF.")
     if isinstance(exc, InvalidFileContentError):
-        raise HTTPException(status_code=400, detail=str(exc))
+        detail = str(exc)
+        if _is_likely_corrupted_pdf_detail(detail):
+            logger.warning("conversion_invalid_pdf_content_likely_corrupted detail=%s", detail)
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "invalid_pdf_content",
+                    "message": CORRUPTED_PDF_USER_MESSAGE,
+                },
+            )
+        raise HTTPException(status_code=400, detail=detail)
     if isinstance(exc, AnalysisNotFoundError):
         raise HTTPException(status_code=404, detail="Analysis not found")
     if isinstance(exc, AnalysisAccessDeniedError):
@@ -610,7 +638,7 @@ async def conversion_upload_stream(
                     retryable = True
                 else:
                     code = "invalid_pdf_content"
-                    message = str(error)
+                    message = CORRUPTED_PDF_USER_MESSAGE if _is_likely_corrupted_pdf_detail(str(error)) else str(error)
             elif isinstance(error, QuotaExceededError):
                 code = "quota_exceeded"
                 message = "Você atingiu o limite do plano para conversões."
@@ -644,3 +672,5 @@ async def conversion_upload_stream(
     if scanned_likely and total_pages:
         headers["X-OCR-Estimated-Pages"] = str(total_pages)
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
+
+

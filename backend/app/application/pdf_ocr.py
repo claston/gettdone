@@ -29,15 +29,34 @@ def extract_pdf_page_texts_with_ocr(
     _enforce_pdf_ocr_file_size_limit(raw_bytes)
     _acquire_ocr_slot_or_raise()
 
+    engine = _resolve_pdf_ocr_engine()
     try:
         import pypdfium2 as pdfium
-        import pytesseract
     except Exception as exc:
         raise InvalidFileContentError(
             "OCR dependencies are not installed. Install optional packages for OCR support."
         ) from exc
 
-    _configure_tesseract_command(pytesseract)
+    pytesseract = None
+    paddle_ocr = None
+    if engine == "tesseract":
+        try:
+            import pytesseract
+        except Exception as exc:
+            raise InvalidFileContentError(
+                "Tesseract OCR dependencies are not installed."
+            ) from exc
+        _configure_tesseract_command(pytesseract)
+    else:
+        _configure_paddle_cache_dir()
+        try:
+            from paddleocr import PaddleOCR
+        except Exception as exc:
+            raise InvalidFileContentError(
+                f"PaddleOCR initialization failed: {exc}"
+            ) from exc
+        paddle_ocr = PaddleOCR(use_angle_cls=True, lang="en")
+
     ocr_lang = _resolve_ocr_lang()
     page_timeout_seconds = _get_pdf_ocr_page_timeout_seconds()
 
@@ -66,21 +85,31 @@ def extract_pdf_page_texts_with_ocr(
                 page = document[page_index]
                 bitmap = page.render(scale=render_dpi / 72)
                 image = bitmap.to_pil()
-                text = (
-                    _image_to_string_with_timeout(
-                        pytesseract,
-                        image=image,
-                        lang=ocr_lang,
-                        timeout_seconds=page_timeout_seconds,
-                    )
-                    or ""
-                ).strip()
+                if engine == "tesseract":
+                    text = (
+                        _image_to_string_with_timeout(
+                            pytesseract,
+                            image=image,
+                            lang=ocr_lang,
+                            timeout_seconds=page_timeout_seconds,
+                        )
+                        or ""
+                    ).strip()
+                else:
+                    text = (
+                        _image_to_string_with_paddle_timeout(
+                            paddle_ocr,
+                            image=image,
+                            timeout_seconds=page_timeout_seconds,
+                        )
+                        or ""
+                    ).strip()
                 if on_progress is not None:
                     on_progress(page_index + 1, total_pages)
                 if text:
                     texts.append(text)
             except Exception as exc:
-                raise InvalidFileContentError("OCR failed while processing PDF pages.") from exc
+                raise InvalidFileContentError(f"OCR failed while processing PDF pages: {exc}") from exc
             finally:
                 try:
                     image.close()
@@ -143,6 +172,15 @@ def _resolve_ocr_lang() -> str:
     return "por+eng"
 
 
+def _resolve_pdf_ocr_engine() -> str:
+    raw = os.getenv("PDF_OCR_ENGINE", "").strip().lower()
+    if raw in {"", "tesseract"}:
+        return "tesseract"
+    if raw in {"paddle", "paddleocr"}:
+        return "paddle"
+    return "tesseract"
+
+
 def _image_to_string_with_lang_fallback(pytesseract, *, image, lang: str) -> str:
     try:
         return pytesseract.image_to_string(image, lang=lang)
@@ -155,6 +193,41 @@ def _image_to_string_with_lang_fallback(pytesseract, *, image, lang: str) -> str
 def _image_to_string_with_timeout(pytesseract, *, image, lang: str, timeout_seconds: float) -> str:
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(_image_to_string_with_lang_fallback, pytesseract, image=image, lang=lang)
+        try:
+            return future.result(timeout=timeout_seconds)
+        except FutureTimeoutError as exc:
+            raise InvalidFileContentError(
+                f"OCR timeout after {timeout_seconds:.0f}s on one page. Try a smaller or clearer PDF."
+            ) from exc
+
+
+def _image_to_string_with_paddle(paddle_ocr, *, image) -> str:
+    try:
+        import numpy as np
+    except Exception as exc:
+        raise InvalidFileContentError("PaddleOCR requires numpy.") from exc
+
+    np_image = np.array(image.convert("RGB"))
+    result = paddle_ocr.ocr(np_image)
+    if not result:
+        return ""
+
+    lines: list[str] = []
+    for block in result:
+        if not block:
+            continue
+        for item in block:
+            if len(item) < 2 or not item[1]:
+                continue
+            text = str(item[1][0] or "").strip()
+            if text:
+                lines.append(text)
+    return "\n".join(lines)
+
+
+def _image_to_string_with_paddle_timeout(paddle_ocr, *, image, timeout_seconds: float) -> str:
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_image_to_string_with_paddle, paddle_ocr, image=image)
         try:
             return future.result(timeout=timeout_seconds)
         except FutureTimeoutError as exc:
@@ -253,6 +326,18 @@ def _get_pdf_ocr_concurrency_limit() -> int:
 
 def _resolve_local_tessdata_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "tmp" / "tessdata"
+
+
+def _configure_paddle_cache_dir() -> None:
+    cache_dir = Path(__file__).resolve().parents[2] / "tmp" / "paddlex"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    home_dir = cache_dir / "home"
+    home_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["PADDLE_PDX_CACHE_HOME"] = str(cache_dir)
+    os.environ["PADDLE_HOME"] = str(cache_dir / "paddle_home")
+    os.environ["XDG_CACHE_HOME"] = str(cache_dir / "xdg_cache")
+    os.environ["HOME"] = str(home_dir)
+    os.environ["USERPROFILE"] = str(home_dir)
 
 
 def _find_default_tesseract_cmd() -> Path | None:

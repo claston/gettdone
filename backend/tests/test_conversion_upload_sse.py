@@ -32,6 +32,8 @@ class FakeAnalyzeService:
     def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None) -> AnalyzeResponse:
         if "fail_ocr" in filename:
             raise InvalidFileContentError("OCR failed while processing PDF pages.")
+        if "corrupted" in filename:
+            raise InvalidFileContentError("Ignoring wrong pointing object 9 0 (offset 0)")
         if on_ocr_progress is not None:
             on_ocr_progress(1, 2)
             on_ocr_progress(2, 2)
@@ -86,7 +88,7 @@ class FakeAccessControlService:
             self.identity_type = "anonymous"
             self.identity_id = "anon_fp"
             self.quota_limit = 5
-            self.max_upload_size_bytes = 2 * 1024 * 1024
+            self.max_upload_size_bytes = 5 * 1024 * 1024
             self.quota_mode = "conversion"
 
     def resolve_identity(self, anonymous_fingerprint: str | None, user_token: str | None):
@@ -201,6 +203,20 @@ def test_streaming_upload_emits_failed_event_for_ocr_failure() -> None:
     assert isinstance(failed["retryable"], bool)
 
 
+def test_streaming_upload_emits_friendly_message_for_corrupted_pdf() -> None:
+    client = _build_client()
+    response = client.post(
+        "/api/conversions/upload",
+        headers={"accept": "text/event-stream"},
+        data={"anonymous_fingerprint": "fp-corrupted"},
+        files={"file": ("corrupted.pdf", _blank_pdf_bytes(), "application/pdf")},
+    )
+    payloads = _parse_sse_payloads(response.text)
+    failed = next(item for item in payloads if item.get("stage") == "failed")
+    assert failed["code"] == "invalid_pdf_content"
+    assert failed["message"] == "Parece que seu arquivo PDF está corrompido."
+
+
 def test_upload_without_sse_accept_keeps_json_fallback() -> None:
     client = _build_client()
     response = client.post(
@@ -237,7 +253,7 @@ def test_streaming_upload_emits_file_too_large_error_message() -> None:
     payloads = _parse_sse_payloads(response.text)
     failed = next(item for item in payloads if item.get("stage") == "failed")
     assert failed["code"] == "file_too_large"
-    assert "tamanho máximo" in str(failed["message"]).lower()
+    assert "5 mb" in str(failed["message"]).lower()
 
 
 def test_streaming_upload_emits_weekly_quota_failed_event_with_identity_type() -> None:
@@ -252,4 +268,6 @@ def test_streaming_upload_emits_weekly_quota_failed_event_with_identity_type() -
     failed = next(item for item in payloads if item.get("stage") == "failed")
     assert failed["code"] == "weekly_quota_exceeded"
     assert failed["identity_type"] == "anonymous"
+
+
 

@@ -74,6 +74,35 @@ def parse_pdf_transactions(
         page_texts = _extract_pdf_page_texts(raw_bytes)
     else:
         page_texts = _extract_pdf_page_texts(raw_bytes, on_ocr_progress)
+    primary_result = _parse_pdf_transactions_from_page_texts(page_texts)
+
+    try:
+        native_pages = _read_native_pdf_page_texts(raw_bytes)
+    except InvalidFileContentError:
+        native_pages = []
+
+    using_native_text = bool(native_pages) and page_texts == native_pages
+    if not using_native_text:
+        return primary_result
+    if not _should_try_ocr_reparse(primary_result, page_count=len(native_pages)):
+        return primary_result
+    if not is_pdf_ocr_enabled():
+        return primary_result
+
+    if on_ocr_progress is None:
+        ocr_pages = extract_pdf_page_texts_with_ocr(raw_bytes)
+    else:
+        ocr_pages = extract_pdf_page_texts_with_ocr(raw_bytes, on_ocr_progress)
+    if not ocr_pages:
+        return primary_result
+
+    ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
+    if _is_better_parse_result(candidate=ocr_result, baseline=primary_result):
+        return ocr_result
+    return primary_result
+
+
+def _parse_pdf_transactions_from_page_texts(page_texts: list[str]) -> PdfParseResult:
     joined_text = "\n".join(page_texts)
     layout = infer_pdf_layout(joined_text)
     layout_profile = get_layout_profile(layout.layout_name)
@@ -120,6 +149,42 @@ def parse_pdf_transactions(
         columnar_candidates_count=columnar_candidates_count,
         columnar_transactions_count=columnar_transactions_count,
     )
+
+
+def _should_try_ocr_reparse(result: PdfParseResult, *, page_count: int) -> bool:
+    if page_count < 2:
+        return False
+    if result.layout.layout_name != "generic_statement_ptbr":
+        return False
+    tx_count = len(result.transactions)
+    if tx_count > max(3, page_count):
+        return False
+    confidence_band = str(result.parse_metrics.get("confidence_band", "")).strip().lower()
+    if tx_count <= 2:
+        return True
+    return confidence_band == "low"
+
+
+def _is_better_parse_result(*, candidate: PdfParseResult, baseline: PdfParseResult) -> bool:
+    candidate_tx = len(candidate.transactions)
+    baseline_tx = len(baseline.transactions)
+    if candidate_tx >= baseline_tx + 2:
+        return True
+    if candidate_tx < baseline_tx:
+        return False
+
+    candidate_generic = candidate.layout.layout_name == "generic_statement_ptbr"
+    baseline_generic = baseline.layout.layout_name == "generic_statement_ptbr"
+    candidate_failed = int(candidate.parse_metrics.get("balance_consistency_failed", 0))
+    baseline_failed = int(baseline.parse_metrics.get("balance_consistency_failed", 0))
+
+    if candidate_tx > baseline_tx and (not candidate_generic or baseline_generic):
+        return candidate_failed <= baseline_failed + 2
+    if candidate_tx == baseline_tx and baseline_generic and not candidate_generic:
+        return candidate_failed <= baseline_failed
+    if candidate_tx == baseline_tx and candidate_failed + 2 < baseline_failed:
+        return True
+    return False
 
 
 def _adjust_forward_year_rollover_rows(
@@ -211,7 +276,6 @@ def _build_pdf_parse_result(
     )
     balance_checked_count, balance_failed_count = annotate_balance_consistency(canonical_transactions)
     canonical_quality_metrics = build_canonical_quality_metrics(canonical_transactions)
-
     return PdfParseResult(
         transactions=transactions,
         canonical_transactions=canonical_transactions,
@@ -219,7 +283,7 @@ def _build_pdf_parse_result(
         extracted_text=joined_text,
         parse_metrics=build_pdf_parse_metrics(
             page_count=page_count,
-            extracted_char_count=len(joined_text),
+              extracted_char_count=len(joined_text),
               flattened_line_count=flattened_line_count,
               grouped_transactions_count=grouped_transactions_count,
               inline_candidates_count=inline_candidates_count,
@@ -292,8 +356,21 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
     opening_balance_amount: float | None = None
     opening_balance_amount_line: _PdfLine | None = None
     opening_balance_inserted = False
+    current_page_number: int | None = None
 
     for line in lines:
+        if current_page_number is None:
+            current_page_number = line.page_number
+        elif line.page_number != current_page_number:
+            # Do not carry grouped parsing context across pages; page headers can contain
+            # amount-like tokens such as "Total Disponível" that must not attach to prior rows.
+            current_page_number = line.page_number
+            current_date = None
+            current_section_hint = None
+            description_parts = []
+            pending_opening_balance_label = None
+            pending_opening_balance_line = None
+
         normalized_line = _normalize_text(line.text)
         if normalized_line.startswith("SALDO ANTERIOR") or normalized_line.startswith("SALDO INICIAL"):
             pending_opening_balance_label = "SALDO ANTERIOR" if "ANTERIOR" in normalized_line else "SALDO INICIAL"
@@ -570,21 +647,146 @@ def _parse_tabular_statement_rows(
     inferred_year = _infer_default_statement_year_from_lines(lines)
     line_texts = _extract_line_texts(lines)
     tabular_profile = resolve_tabular_profile(line_texts, layout_profile=layout_profile)
-
-    for line in lines:
+    opening_balance_anchor_index = _resolve_opening_balance_anchor_index(lines)
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if opening_balance_anchor_index is not None and index < opening_balance_anchor_index:
+            index += 1
+            continue
+        if _maybe_attach_tabular_running_balance_line(transactions=transactions, line=line):
+            index += 1
+            continue
         parsed_row, is_candidate = _classify_tabular_statement_line(
             line=line,
             inferred_year=inferred_year,
             tabular_profile=tabular_profile,
         )
+        consumed = 1
+        if parsed_row is None:
+            recovered_row, recovered_candidate, recovered_consumed = _recover_tabular_multiline_row(
+                lines=lines,
+                start_index=index,
+                inferred_year=inferred_year,
+            )
+            if recovered_row is not None:
+                parsed_row = recovered_row
+                is_candidate = recovered_candidate
+                consumed = recovered_consumed
         candidates = _accumulate_tabular_row(
             transactions=transactions,
             parsed_row=parsed_row,
             is_candidate=is_candidate,
             candidates=candidates,
         )
+        index += max(1, consumed)
 
     return transactions, candidates
+
+
+def _resolve_opening_balance_anchor_index(lines: list[_PdfLine]) -> int | None:
+    for index, line in enumerate(lines):
+        normalized = _normalize_text(line.text)
+        if (
+            normalized.startswith("SALDO ANTERIOR")
+            or normalized.startswith("SALDO INICIAL")
+            or " SALDO ANTERIOR" in normalized
+            or " SALDO INICIAL" in normalized
+        ):
+            return index
+    return None
+
+
+def _maybe_attach_tabular_running_balance_line(
+    *,
+    transactions: list[_ParsedTransaction],
+    line: _PdfLine,
+) -> bool:
+    if not transactions:
+        return False
+    if not is_amount_only_row(line.text):
+        return False
+
+    last_transaction = transactions[-1]
+    if last_transaction.running_balance is not None:
+        return False
+    if last_transaction.source_page != line.page_number:
+        return False
+    if last_transaction.source_line is not None and line.line_number <= last_transaction.source_line:
+        return False
+    if last_transaction.source_line is not None and (line.line_number - last_transaction.source_line) > 12:
+        return False
+
+    previous_running_balance = _resolve_latest_running_balance(transactions[:-1])
+    transactions[-1] = _attach_running_balance_and_reconcile_sign(
+        transaction=last_transaction,
+        running_balance=parse_pdf_amount(line.text),
+        previous_running_balance=previous_running_balance,
+    )
+    return True
+
+
+def _recover_tabular_multiline_row(
+    *,
+    lines: list[_PdfLine],
+    start_index: int,
+    inferred_year: int | None,
+) -> tuple[_ParsedTransaction | None, bool, int]:
+    date_line = lines[start_index]
+    if not is_date_only_row(date_line.text):
+        return None, False, 1
+
+    description_parts: list[str] = []
+    amount_line: _PdfLine | None = None
+    running_balance: float | None = None
+    last_index = start_index
+
+    for index in range(start_index + 1, min(len(lines), start_index + 6)):
+        current = lines[index]
+        if current.page_number != date_line.page_number:
+            break
+        normalized_line = _normalize_text(current.text)
+        if is_date_only_row(current.text):
+            break
+
+        if is_amount_only_row(current.text):
+            if amount_line is None:
+                amount_line = current
+                last_index = index
+                continue
+            # Some OCR outputs split amount and running balance into separate lines.
+            running_balance = parse_pdf_amount(current.text)
+            last_index = index
+            break
+
+        if should_ignore_line(normalized_line) or should_skip_transaction_description(current.text):
+            # OCR can interleave repeated page header/footer fragments between date/description/amount tokens.
+            last_index = index
+            continue
+
+        description_parts.append(current.text.strip())
+        last_index = index
+
+    if amount_line is None:
+        return None, False, 1
+    raw_description = " ".join(part for part in description_parts if part).strip()
+    if not raw_description or should_skip_transaction_description(raw_description):
+        return None, True, max(1, last_index - start_index + 1)
+
+    signed_amount = compute_hint_signed_amount(
+        raw_amount=parse_pdf_amount(amount_line.text),
+        description=raw_description,
+    )
+    parsed_row = _build_parsed_transaction(
+        date=parse_row_date(date_line.text, fallback_year=inferred_year),
+        description=raw_description,
+        amount=signed_amount,
+        source_page=date_line.page_number,
+        source_line=date_line.line_number,
+        running_balance=running_balance,
+        has_explicit_amount_sign=has_explicit_amount_sign(amount_line.text),
+    )
+    return parsed_row, True, max(1, last_index - start_index + 1)
 
 def _parse_columnar_statement_blocks(lines: list[_PdfLine]) -> tuple[list[_ParsedTransaction], int]:
     transactions: list[_ParsedTransaction] = []
@@ -749,6 +951,7 @@ def _classify_tabular_statement_line(
             source_line=line.line_number,
             running_balance=amount_details["running_balance"],
             external_reference_id=external_reference_id,
+            has_explicit_amount_sign=has_explicit_amount_sign(selected_amount.token.value),
         ),
         True,
     )
@@ -770,12 +973,15 @@ def _accumulate_tabular_row(
 def _reconcile_tabular_amount_from_running_balance(
     *, parsed_row: _ParsedTransaction, transactions: list[_ParsedTransaction]
 ) -> _ParsedTransaction:
-    if parsed_row.running_balance is None:
-        return parsed_row
-
     previous_running_balance = _resolve_latest_running_balance(transactions)
     if previous_running_balance is None:
         return parsed_row
+
+    if parsed_row.running_balance is None:
+        return _maybe_reconcile_single_token_balance_noise(
+            parsed_row=parsed_row,
+            previous_running_balance=previous_running_balance,
+        )
 
     delta = round(parsed_row.running_balance - previous_running_balance, 2)
     if abs(delta) < 0.005:
@@ -802,6 +1008,40 @@ def _reconcile_tabular_amount_from_running_balance(
         source_page=parsed_row.source_page,
         source_line=parsed_row.source_line,
         running_balance=parsed_row.running_balance,
+        external_reference_id=parsed_row.external_reference_id,
+        has_explicit_amount_sign=parsed_row.has_explicit_amount_sign,
+    )
+
+
+def _maybe_reconcile_single_token_balance_noise(
+    *,
+    parsed_row: _ParsedTransaction,
+    previous_running_balance: float,
+) -> _ParsedTransaction:
+    if parsed_row.has_explicit_amount_sign:
+        return parsed_row
+    current_amount = parsed_row.transaction.amount
+    # Heuristic for OCR lines where debit disappeared and only running balance token survived.
+    if abs(current_amount) < 1000:
+        return parsed_row
+    inferred_running_balance = abs(current_amount)
+    delta = round(inferred_running_balance - previous_running_balance, 2)
+    if abs(delta) < 0.01 or abs(delta) > 200:
+        return parsed_row
+    if abs(inferred_running_balance - previous_running_balance) > 200:
+        return parsed_row
+
+    normalized_transaction = NormalizedTransaction(
+        date=parsed_row.transaction.date,
+        description=parsed_row.transaction.description,
+        amount=delta,
+        type="inflow" if delta >= 0 else "outflow",
+    )
+    return _ParsedTransaction(
+        transaction=normalized_transaction,
+        source_page=parsed_row.source_page,
+        source_line=parsed_row.source_line,
+        running_balance=inferred_running_balance,
         external_reference_id=parsed_row.external_reference_id,
         has_explicit_amount_sign=parsed_row.has_explicit_amount_sign,
     )

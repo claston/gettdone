@@ -779,7 +779,19 @@ class TempAnalysisStorage:
                     amount=float(item.get("amount") or 0.0),
                     category=str(item.get("category") or "Outros"),
                     reconciliation_status=str(item.get("reconciliation_status") or "unmatched"),
+                    running_balance=(
+                        float(item.get("running_balance"))
+                        if item.get("running_balance") is not None
+                        else None
+                    ),
                     is_deleted=bool(item.get("is_deleted") or False),
+                    warning_types=[
+                        str(entry).strip()
+                        for entry in (item.get("warning_types") or [])
+                        if str(entry).strip()
+                    ]
+                    if isinstance(item.get("warning_types"), list)
+                    else [],
                 )
             )
         return parsed

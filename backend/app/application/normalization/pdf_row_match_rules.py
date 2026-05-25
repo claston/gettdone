@@ -14,6 +14,7 @@ DATE_MONTH_TOKEN = rf"\d{{1,2}}\s+(?:{MONTH_PATTERN})(?:\s+\d{{4}})?"
 DATE_TOKEN = rf"(?:{DATE_SLASH_TOKEN}|{DATE_MONTH_TOKEN})"
 INLINE_ROW_PATTERN = re.compile(rf"^(?P<date>{DATE_TOKEN})\s+(?P<rest>.+)$", re.IGNORECASE)
 TABULAR_DATE_PREFIX_PATTERN = re.compile(rf"^(?P<date>{DATE_TOKEN})\s+(?P<rest>.+)$", re.IGNORECASE)
+TABULAR_DATE_PREFIX_GLUE_PATTERN = re.compile(rf"^(?P<date>{DATE_TOKEN})(?P<rest>[A-Z0-9].+)$", re.IGNORECASE)
 DATE_ONLY_PATTERN = re.compile(rf"^{DATE_TOKEN}$", re.IGNORECASE)
 
 
@@ -25,8 +26,11 @@ def match_tabular_date_prefix(raw_line: str) -> re.Match[str] | None:
     match = TABULAR_DATE_PREFIX_PATTERN.match(raw_line)
     if match is not None:
         return match
-    cleaned = raw_line.lstrip(" ([{")
-    return TABULAR_DATE_PREFIX_PATTERN.match(cleaned)
+    cleaned = raw_line.lstrip(" ([{_|=.:;-")
+    spaced_match = TABULAR_DATE_PREFIX_PATTERN.match(cleaned)
+    if spaced_match is not None:
+        return spaced_match
+    return TABULAR_DATE_PREFIX_GLUE_PATTERN.match(cleaned)
 
 
 def is_date_only_row(raw_line: str) -> bool:

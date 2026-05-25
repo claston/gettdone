@@ -61,6 +61,8 @@ class AnalyzeService:
             layout_inference_confidence,
             extracted_text,
             parse_metrics,
+            transaction_warning_types,
+            transaction_running_balances,
         ) = self._build_transactions_for_extension(
             extension,
             raw_bytes,
@@ -99,6 +101,10 @@ class AnalyzeService:
                 amount=item.amount,
                 category="Outros",
                 reconciliation_status=reconciliation_result.statuses[idx],
+                running_balance=(
+                    transaction_running_balances[idx] if idx < len(transaction_running_balances) else None
+                ),
+                warning_types=transaction_warning_types[idx] if idx < len(transaction_warning_types) else [],
             )
             for idx, item in enumerate(transactions)
         ]
@@ -109,6 +115,10 @@ class AnalyzeService:
                 amount=item.amount,
                 category="Outros",
                 reconciliation_status=reconciliation_result.statuses[idx],
+                running_balance=(
+                    transaction_running_balances[idx] if idx < len(transaction_running_balances) else None
+                ),
+                warning_types=transaction_warning_types[idx] if idx < len(transaction_warning_types) else [],
             )
             for idx, item in enumerate(transactions)
         ]
@@ -223,8 +233,10 @@ class AnalyzeService:
                     date=row.date,
                     description=row.description,
                     amount=row.amount,
+                    running_balance=row.running_balance,
                     category=row.category,
                     reconciliation_status=row.reconciliation_status,
+                    warning_types=list(row.warning_types or []),
                 )
                 for row in preview_rows
             ],
@@ -256,23 +268,42 @@ class AnalyzeService:
         float | None,
         str | None,
         dict[str, int | float | str] | None,
+        list[list[str]],
+        list[float | None],
     ]:
         if extension == "csv":
-            return parse_csv_transactions(raw_bytes), None, None, None, None
+            transactions = parse_csv_transactions(raw_bytes)
+            return transactions, None, None, None, None, [[] for _ in transactions], [None for _ in transactions]
         if extension == "xlsx":
-            return parse_xlsx_transactions(raw_bytes), None, None, None, None
+            transactions = parse_xlsx_transactions(raw_bytes)
+            return transactions, None, None, None, None, [[] for _ in transactions], [None for _ in transactions]
         if extension == "ofx":
-            return parse_ofx_transactions(raw_bytes), None, None, None, None
+            transactions = parse_ofx_transactions(raw_bytes)
+            return transactions, None, None, None, None, [[] for _ in transactions], [None for _ in transactions]
         if on_ocr_progress is None:
             result = parse_pdf_transactions(raw_bytes)
         else:
             result = parse_pdf_transactions(raw_bytes, on_ocr_progress=on_ocr_progress)
+        warning_types = [
+            list(item.warnings or [])
+            for item in (result.canonical_transactions or [])
+        ]
+        running_balances = [
+            item.running_balance
+            for item in (result.canonical_transactions or [])
+        ]
+        if len(warning_types) < len(result.transactions):
+            warning_types.extend([[] for _ in range(len(result.transactions) - len(warning_types))])
+        if len(running_balances) < len(result.transactions):
+            running_balances.extend([None for _ in range(len(result.transactions) - len(running_balances))])
         return (
             result.transactions,
             result.layout.layout_name,
             result.layout.confidence,
             result.extracted_text,
             result.parse_metrics,
+            warning_types,
+            running_balances,
         )
 
     def _build_pdf_processing_metrics(

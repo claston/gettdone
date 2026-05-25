@@ -13,8 +13,11 @@ node_modules/
 tmp/
 .worktrees/
 backend/tmp/
+backend/tmp_analysis_smoke2/
 backend/.tmp_sqlite_test/
 backend/samples/
+backend/venv_paddle_bench/
+backend/venv_paddle_bench2/
 
 .env
 .env.local
