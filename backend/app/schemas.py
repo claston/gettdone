@@ -46,9 +46,11 @@ class TransactionPreview(BaseModel):
     date: str
     description: str
     amount: float
+    running_balance: float | None = None
     category: str
     reconciliation_status: str
     is_deleted: bool = False
+    warning_types: list[str] = []
 
 
 class BeforeAfterPreview(BaseModel):

@@ -56,6 +56,124 @@ def test_parse_pdf_transactions_uses_ocr_fallback_when_enabled(monkeypatch) -> N
     assert result.transactions[0].amount == 10.0
 
 
+def test_parse_pdf_transactions_retries_with_ocr_when_native_is_generic_low_coverage(monkeypatch) -> None:
+    native_pages = ["native page 1", "native page 2", "native page 3", "native page 4", "native page 5", "native page 6"]
+    ocr_pages = ["ocr page 1", "ocr page 2", "ocr page 3", "ocr page 4", "ocr page 5", "ocr page 6"]
+    native_result = pdf_parser_module.PdfParseResult(
+        transactions=[
+            pdf_parser_module.NormalizedTransaction(
+                date="2024-03-01",
+                description="TX 1",
+                amount=10.0,
+                type="inflow",
+            ),
+            pdf_parser_module.NormalizedTransaction(
+                date="2024-03-02",
+                description="TX 2",
+                amount=-5.0,
+                type="outflow",
+            ),
+        ],
+        layout=pdf_parser_module.PdfLayoutInference(
+            layout_name="generic_statement_ptbr",
+            confidence=0.25,
+            used_fallback=True,
+        ),
+        extracted_text="native",
+        parse_metrics={"confidence_band": "low", "balance_consistency_failed": 2},
+    )
+    ocr_result = pdf_parser_module.PdfParseResult(
+        transactions=[
+            pdf_parser_module.NormalizedTransaction(
+                date="2024-03-01",
+                description="A",
+                amount=10.0,
+                type="inflow",
+            ),
+            pdf_parser_module.NormalizedTransaction(
+                date="2024-03-02",
+                description="B",
+                amount=-5.0,
+                type="outflow",
+            ),
+            pdf_parser_module.NormalizedTransaction(
+                date="2024-03-03",
+                description="C",
+                amount=15.0,
+                type="inflow",
+            ),
+            pdf_parser_module.NormalizedTransaction(
+                date="2024-03-04",
+                description="D",
+                amount=-3.0,
+                type="outflow",
+            ),
+            pdf_parser_module.NormalizedTransaction(
+                date="2024-03-05",
+                description="E",
+                amount=2.0,
+                type="inflow",
+            ),
+        ],
+        layout=pdf_parser_module.PdfLayoutInference(
+            layout_name="bradesco_net_empresa_extrato_mensal_por_periodo_v1",
+            confidence=0.86,
+            used_fallback=False,
+        ),
+        extracted_text="ocr",
+        parse_metrics={"confidence_band": "medium", "balance_consistency_failed": 0},
+    )
+
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: native_pages)
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: True)
+    monkeypatch.setattr(pdf_parser_module, "extract_pdf_page_texts_with_ocr", lambda raw_bytes: ocr_pages)
+    monkeypatch.setattr(
+        pdf_parser_module,
+        "_parse_pdf_transactions_from_page_texts",
+        lambda pages: native_result if pages == native_pages else ocr_result,
+    )
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result is ocr_result
+    assert len(result.transactions) == 5
+
+
+def test_parse_pdf_transactions_keeps_native_when_coverage_is_healthy(monkeypatch) -> None:
+    native_pages = ["native page 1", "native page 2", "native page 3"]
+    native_result = pdf_parser_module.PdfParseResult(
+        transactions=[
+            pdf_parser_module.NormalizedTransaction(date="2024-03-01", description="A", amount=10.0, type="inflow"),
+            pdf_parser_module.NormalizedTransaction(date="2024-03-02", description="B", amount=-5.0, type="outflow"),
+            pdf_parser_module.NormalizedTransaction(date="2024-03-03", description="C", amount=3.0, type="inflow"),
+            pdf_parser_module.NormalizedTransaction(date="2024-03-04", description="D", amount=-2.0, type="outflow"),
+        ],
+        layout=pdf_parser_module.PdfLayoutInference(
+            layout_name="bradesco_net_empresa_extrato_mensal_por_periodo_v1",
+            confidence=0.87,
+            used_fallback=False,
+        ),
+        extracted_text="native",
+        parse_metrics={"confidence_band": "medium", "balance_consistency_failed": 1},
+    )
+
+    calls = {"ocr": 0}
+
+    def _ocr_stub(raw_bytes):
+        calls["ocr"] += 1
+        return ["ocr page"]
+
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: native_pages)
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: True)
+    monkeypatch.setattr(pdf_parser_module, "extract_pdf_page_texts_with_ocr", _ocr_stub)
+    monkeypatch.setattr(pdf_parser_module, "_parse_pdf_transactions_from_page_texts", lambda pages: native_result)
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result is native_result
+    assert calls["ocr"] == 0
+
+
 def test_parse_pdf_transactions_uses_declarative_credit_debit_columns(monkeypatch) -> None:
     monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [VIACREDI_TABULAR_BALANCE_OK])
     monkeypatch.setattr(
@@ -304,6 +422,40 @@ def test_parse_pdf_transactions_ignores_grouped_saldo_rows_from_transaction_tota
     assert result.transactions[1].amount == 200.0
     assert result.transactions[2].description == "PAGAMENTO BOLETO"
     assert result.transactions[2].amount == -50.0
+
+
+def test_parse_pdf_transactions_does_not_attach_total_disponivel_header_as_running_balance(monkeypatch) -> None:
+    page_one = "\n".join(
+        [
+            "01/01/2024",
+            "PIX RECEBIDO CLIENTE ALFA",
+            "100,00",
+            "1.000,00",
+        ]
+    )
+    page_two = "\n".join(
+        [
+            "bradesco",
+            "Total Disponível (R$)",
+            "-1.320.888,92",
+            "-1.320.888,92",
+            "02/01/2024",
+            "PAGAMENTO BOLETO",
+            "50,00 D",
+            "950,00",
+        ]
+    )
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [page_one, page_two])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert len(result.transactions) == 2
+    assert result.transactions[0].description == "PIX RECEBIDO CLIENTE ALFA"
+    assert result.transactions[1].description == "PAGAMENTO BOLETO"
+    assert all(
+        item.running_balance is None or abs(abs(item.running_balance) - 1320888.92) > 0.01
+        for item in (result.canonical_transactions or [])
+    )
 
 
 def test_parse_pdf_transactions_includes_opening_balance_without_date_on_first_transaction_date(monkeypatch) -> None:
@@ -660,6 +812,79 @@ def test_parse_tabular_statement_line_builds_transaction_with_metadata() -> None
     assert parsed_row.source_line == 12
 
 
+def test_parse_tabular_statement_rows_recovers_multiline_ocr_row() -> None:
+    lines = [
+        pdf_parser_module._PdfLine(text="03/03/2024", page_number=1, line_number=10),
+        pdf_parser_module._PdfLine(text="TARIFA PACOTE SERVICOS", page_number=1, line_number=11),
+        pdf_parser_module._PdfLine(text="030324886", page_number=1, line_number=12),
+        pdf_parser_module._PdfLine(text="-32,40", page_number=1, line_number=13),
+        pdf_parser_module._PdfLine(text="5.908,12", page_number=1, line_number=14),
+    ]
+
+    parsed_rows, candidates = pdf_parser_module._parse_tabular_statement_rows(lines, layout_profile=None)
+
+    assert candidates == 1
+    assert len(parsed_rows) == 1
+    assert parsed_rows[0].transaction.date == "2024-03-03"
+    assert parsed_rows[0].transaction.description == "TARIFA PACOTE SERVICOS 030324886"
+    assert parsed_rows[0].transaction.amount == -32.4
+    assert parsed_rows[0].running_balance == 5908.12
+
+
+def test_parse_tabular_statement_rows_recovers_multiline_ocr_row_with_header_noise() -> None:
+    lines = [
+        pdf_parser_module._PdfLine(text="03/03/2024", page_number=1, line_number=3),
+        pdf_parser_module._PdfLine(text="Extrato Mensal / Por Período", page_number=1, line_number=5),
+        pdf_parser_module._PdfLine(text="Data da operação: 15/04/2024 - 09h15", page_number=1, line_number=7),
+        pdf_parser_module._PdfLine(text="TARIFA PACOTE SERVICOS", page_number=1, line_number=9),
+        pdf_parser_module._PdfLine(text="030324886", page_number=1, line_number=11),
+        pdf_parser_module._PdfLine(text="-32,40", page_number=1, line_number=13),
+    ]
+
+    parsed_rows, candidates = pdf_parser_module._parse_tabular_statement_rows(lines, layout_profile=None)
+
+    assert candidates == 1
+    assert len(parsed_rows) == 1
+    assert parsed_rows[0].transaction.date == "2024-03-03"
+    assert parsed_rows[0].transaction.description == "TARIFA PACOTE SERVICOS 030324886"
+    assert parsed_rows[0].transaction.amount == -32.4
+
+
+def test_parse_tabular_statement_rows_attaches_amount_only_line_as_running_balance_same_page() -> None:
+    lines = [
+        pdf_parser_module._PdfLine(text="02/03/2024 TED RECEBIDA OMEGA 020324975 4.729,51 9.687,29", page_number=1, line_number=10),
+        pdf_parser_module._PdfLine(text="03/03/2024 TARIFA BANCARIA 030324755 -37,91", page_number=1, line_number=11),
+        pdf_parser_module._PdfLine(text="5.940,52", page_number=1, line_number=12),
+    ]
+
+    parsed_rows, candidates = pdf_parser_module._parse_tabular_statement_rows(lines, layout_profile=None)
+
+    assert candidates == 2
+    assert len(parsed_rows) == 2
+    assert parsed_rows[1].transaction.description == "TARIFA BANCARIA 030324755"
+    assert parsed_rows[1].running_balance == 5940.52
+    assert parsed_rows[1].transaction.amount == -37.91
+
+
+def test_parse_tabular_statement_rows_ignores_pre_opening_balance_ocr_leak() -> None:
+    lines = [
+        pdf_parser_module._PdfLine(text="03/03/2024", page_number=1, line_number=3),
+        pdf_parser_module._PdfLine(text="TARIFA PACOTE SERVICOS", page_number=1, line_number=4),
+        pdf_parser_module._PdfLine(text="030324886", page_number=1, line_number=5),
+        pdf_parser_module._PdfLine(text="-32,40", page_number=1, line_number=6),
+        pdf_parser_module._PdfLine(text="SALDO ANTERIOR", page_number=1, line_number=20),
+        pdf_parser_module._PdfLine(text="29/02/2024 SALDO ANTERIOR -441,66", page_number=1, line_number=21),
+        pdf_parser_module._PdfLine(text="01/03/2024 DEPOSITO IDENTIFICADO 010324854 289,73 -151,93", page_number=1, line_number=22),
+    ]
+
+    parsed_rows, candidates = pdf_parser_module._parse_tabular_statement_rows(lines, layout_profile=None)
+
+    assert candidates == 2
+    assert len(parsed_rows) == 2
+    assert parsed_rows[0].transaction.date == "2024-02-29"
+    assert "030324886" not in parsed_rows[0].transaction.description
+
+
 def test_update_grouped_section_state_keeps_description_when_hint_is_unchanged() -> None:
     next_hint, next_parts, should_continue = pdf_parser_module._update_grouped_section_state(
         normalized_line="COMPRA CARTAO",
@@ -888,3 +1113,82 @@ def test_accumulate_tabular_row_reconciles_amount_when_value_matches_balance_by_
     assert len(transactions) == 2
     assert transactions[1].transaction.amount == -2.25
     assert transactions[1].transaction.type == "outflow"
+
+
+def test_accumulate_tabular_row_reconciles_single_token_balance_noise_when_sign_is_implicit() -> None:
+    transactions: list[pdf_parser_module._ParsedTransaction] = [
+        pdf_parser_module._ParsedTransaction(
+            transaction=pdf_parser_module.NormalizedTransaction(
+                date="2024-03-02",
+                description="Linha anterior",
+                amount=150.15,
+                type="inflow",
+            ),
+            source_page=1,
+            source_line=1,
+            running_balance=4712.66,
+        )
+    ]
+    parsed_row = pdf_parser_module._ParsedTransaction(
+        transaction=pdf_parser_module.NormalizedTransaction(
+            date="2024-03-02",
+            description="TARIFA BANCARIA 020324384 FAZ 22",
+            amount=-4670.44,
+            type="outflow",
+        ),
+        source_page=1,
+        source_line=2,
+        running_balance=None,
+        has_explicit_amount_sign=False,
+    )
+
+    next_candidates = pdf_parser_module._accumulate_tabular_row(
+        transactions=transactions,
+        parsed_row=parsed_row,
+        is_candidate=True,
+        candidates=1,
+    )
+
+    assert next_candidates == 2
+    assert len(transactions) == 2
+    assert transactions[1].transaction.amount == -42.22
+    assert transactions[1].running_balance == 4670.44
+
+
+def test_accumulate_tabular_row_keeps_single_token_amount_when_sign_is_explicit() -> None:
+    transactions: list[pdf_parser_module._ParsedTransaction] = [
+        pdf_parser_module._ParsedTransaction(
+            transaction=pdf_parser_module.NormalizedTransaction(
+                date="2024-03-02",
+                description="Linha anterior",
+                amount=150.15,
+                type="inflow",
+            ),
+            source_page=1,
+            source_line=1,
+            running_balance=4712.66,
+        )
+    ]
+    parsed_row = pdf_parser_module._ParsedTransaction(
+        transaction=pdf_parser_module.NormalizedTransaction(
+            date="2024-03-02",
+            description="DEBITO EXPLICITO",
+            amount=-4670.44,
+            type="outflow",
+        ),
+        source_page=1,
+        source_line=2,
+        running_balance=None,
+        has_explicit_amount_sign=True,
+    )
+
+    _ = pdf_parser_module._accumulate_tabular_row(
+        transactions=transactions,
+        parsed_row=parsed_row,
+        is_candidate=True,
+        candidates=1,
+    )
+
+    assert len(transactions) == 2
+    assert transactions[1].transaction.amount == -4670.44
+    assert transactions[1].running_balance is None

@@ -33,19 +33,44 @@ def select_parsed_rows(
     parse_columnar_rows: RowsParser,
 ) -> SelectedParserRows:
     if grouped_rows:
+        inline_rows, inline_candidates = parse_inline_rows(lines)
+        inline_transactions_count = len(inline_rows)
+        tabular_rows, tabular_candidates = parse_tabular_rows(lines, layout_profile)
+        tabular_transactions_count = len(tabular_rows)
+        columnar_rows, columnar_candidates = parse_columnar_rows(lines)
+        columnar_transactions_count = len(columnar_rows)
+        grouped_transactions_count = len(grouped_rows)
+        tabular_is_clearly_better_than_grouped = tabular_transactions_count >= grouped_transactions_count + 3
+
+        if tabular_rows and tabular_is_clearly_better_than_grouped:
+            return SelectedParserRows(
+                selected_parser="tabular",
+                rows=tabular_rows,
+                inline_candidates=inline_candidates,
+                inline_transactions_count=inline_transactions_count,
+                tabular_candidates=tabular_candidates,
+                columnar_candidates=columnar_candidates,
+                tabular_transactions_count=tabular_transactions_count,
+                columnar_transactions_count=columnar_transactions_count,
+                selection_reason="tabular_preferred_over_grouped_on_row_count_gap",
+                inline_decision="not_selected_grouped_overridden",
+                tabular_decision="selected_on_grouped_override_row_count_gap",
+                columnar_decision="no_rows" if not columnar_rows else "not_selected_tabular_priority",
+            )
+
         return SelectedParserRows(
             selected_parser="grouped",
             rows=grouped_rows,
-            inline_candidates=0,
-            inline_transactions_count=0,
-            tabular_candidates=0,
-            columnar_candidates=0,
-            tabular_transactions_count=0,
-            columnar_transactions_count=0,
+            inline_candidates=inline_candidates,
+            inline_transactions_count=inline_transactions_count,
+            tabular_candidates=tabular_candidates,
+            columnar_candidates=columnar_candidates,
+            tabular_transactions_count=tabular_transactions_count,
+            columnar_transactions_count=columnar_transactions_count,
             selection_reason="grouped_rows_available",
-            inline_decision="skipped_due_to_grouped",
-            tabular_decision="skipped_due_to_grouped",
-            columnar_decision="skipped_due_to_grouped",
+            inline_decision="not_selected_grouped_priority" if inline_rows else "no_rows",
+            tabular_decision="not_selected_grouped_priority" if tabular_rows else "no_rows",
+            columnar_decision="not_selected_grouped_priority" if columnar_rows else "no_rows",
         )
 
     inline_rows, inline_candidates = parse_inline_rows(lines)
