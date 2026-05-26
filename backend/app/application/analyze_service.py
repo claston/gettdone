@@ -7,6 +7,7 @@ from time import perf_counter
 from typing import Callable
 from uuid import uuid4
 
+from app.application.bank_resolver import DEFAULT_BANK_CODE, resolve_bank_code
 from app.application.csv_parser import parse_csv_transactions
 from app.application.document_classifier import classify_document
 from app.application.errors import UnsupportedFileTypeError
@@ -15,7 +16,6 @@ from app.application.normalizer import normalize_transactions
 from app.application.ofx_parser import parse_ofx_transactions
 from app.application.pdf_parser import parse_pdf_transactions
 from app.application.reconciliation import reconcile_transactions
-from app.application.bank_resolver import DEFAULT_BANK_CODE, resolve_bank_code
 from app.application.storage_service import TempAnalysisStorage
 from app.application.xlsx_parser import parse_xlsx_transactions
 from app.schemas import (
