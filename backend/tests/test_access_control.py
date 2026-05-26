@@ -192,6 +192,7 @@ def test_registered_user_can_use_pages_plan_quota(tmp_path) -> None:
     assert identity.quota_mode == "pages"
     assert identity.quota_limit == 150
     assert identity.plan_code == "essencial"
+    assert identity.max_pages_per_file_ocr == 6
 
     service.ensure_quota_available(identity, required_units=10)
     remaining = service.consume_quota(identity, consumed_units=10)

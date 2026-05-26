@@ -392,6 +392,7 @@
     planDetailsNode.innerHTML = [
       `<li>${Number(plan.quota_limit || 0)} páginas por mês</li>`,
       `<li>Até ${Number(plan.max_pages_per_file || 0)} páginas por arquivo</li>`,
+      `<li>PDF escaneado (OCR): até ${Number(plan.max_pages_per_file_ocr || 0)} páginas por arquivo</li>`,
       `<li>Tamanho máximo: ${Math.round(Number(plan.max_upload_size_bytes || 0) / (1024 * 1024))} MB por arquivo</li>`,
       "<li>Ativação manual apos pagamento Pix</li>",
     ].join("");

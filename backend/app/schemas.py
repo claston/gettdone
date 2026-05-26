@@ -306,6 +306,7 @@ class PlanCatalogItem(BaseModel):
     quota_window_days: int
     max_upload_size_bytes: int
     max_pages_per_file: int
+    max_pages_per_file_ocr: int
 
 
 class PlanCatalogResponse(BaseModel):

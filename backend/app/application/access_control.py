@@ -51,6 +51,7 @@ class IdentityContext:
     quota_window_days: int = QUOTA_WINDOW_DAYS
     max_upload_size_bytes: int = MAX_UPLOAD_SIZE_BYTES
     max_pages_per_file: int = DEFAULT_MAX_PAGES_PER_FILE
+    max_pages_per_file_ocr: int | None = None
     plan_code: str | None = None
     plan_name: str | None = None
 

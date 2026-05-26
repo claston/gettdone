@@ -264,7 +264,7 @@ def test_convert_rejects_pdf_above_max_pages_per_file(tmp_path) -> None:
     app.dependency_overrides.clear()
 
 
-def test_convert_rejects_ocr_pdf_above_15_pages_for_paid_user(tmp_path, monkeypatch) -> None:
+def test_convert_rejects_ocr_pdf_above_6_pages_for_paid_user(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
         "app.routers.convert._inspect_pdf_scan_likely",
         lambda filename, raw_bytes: (True, 16),
@@ -287,7 +287,7 @@ def test_convert_rejects_ocr_pdf_above_15_pages_for_paid_user(tmp_path, monkeypa
     detail = response.json()["detail"]
     assert detail["code"] == "pages_limit_exceeded"
     assert detail["pages_count"] == 16
-    assert detail["max_pages_per_file"] == 15
+    assert detail["max_pages_per_file"] == 6
     app.dependency_overrides.clear()
 
 
@@ -314,7 +314,7 @@ def test_convert_returns_pages_limit_when_ocr_like_pdf_is_misdetected_as_text(tm
     detail = response.json()["detail"]
     assert detail["code"] == "pages_limit_exceeded"
     assert detail["pages_count"] == 16
-    assert detail["max_pages_per_file"] == 15
+    assert detail["max_pages_per_file"] == 6
     app.dependency_overrides.clear()
 
 

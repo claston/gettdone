@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   const input = document.getElementById("file-input");
   const dropzone = document.getElementById("dropzone");
   const dropzoneEmpty = document.getElementById("dropzone-empty");
@@ -21,8 +21,8 @@
   const uploadLimitsText = document.getElementById("upload-limits-text");
   const TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
   const TEXT_PDF_MAX_PAGES_PER_FILE = 250;
-  const OCR_PDF_MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024;
-  const OCR_PDF_MAX_PAGES_PER_FILE = 15;
+  const OCR_PDF_MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024;
+  const OCR_PDF_MAX_PAGES_PER_FILE = 6;
 
   const reviewSection = document.getElementById("review-section");
   const downloadSection = document.getElementById("download-section");
@@ -1671,7 +1671,7 @@
       if (!response.ok) {
         state.quotaMode = "conversion";
         updateQuotaRemainingLabel();
-        setUploadLimitsText(2 * 1024 * 1024, 15);
+        setUploadLimitsText(5 * 1024 * 1024, 6);
         return;
       }
       const me = await response.json().catch(() => ({}));
@@ -1692,7 +1692,7 @@
     } catch (_error) {
       state.quotaMode = "conversion";
       updateQuotaRemainingLabel();
-      setUploadLimitsText(2 * 1024 * 1024, 15);
+      setUploadLimitsText(5 * 1024 * 1024, 6);
     }
   }
 

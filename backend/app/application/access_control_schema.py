@@ -51,6 +51,7 @@ class AccessControlSchemaComponent:
             "users": ("auth_provider", "provider_user_id", "is_admin"),
             "usage": ("window_started_at",),
             "user_conversions": ("pages_count",),
+            "plan_versions": ("max_pages_per_file_ocr",),
             "checkout_intents": ("user_id", "payment_link", "payment_link_sent_at", "released_at"),
         }
         missing_columns: list[str] = []
