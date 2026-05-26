@@ -1649,11 +1649,10 @@
   function setUploadLimitsText(maxUploadBytes, maxPagesPerFile) {
     if (!uploadLimitsText) return;
     const textMb = Number(maxUploadBytes || 0) / (1024 * 1024);
-    const textPages = Number(maxPagesPerFile || 0);
     const safeTextMb = Number.isFinite(textMb) && textMb > 0 ? Math.max(textMb, TEXT_PDF_MAX_UPLOAD_SIZE_BYTES / (1024 * 1024)) : TEXT_PDF_MAX_UPLOAD_SIZE_BYTES / (1024 * 1024);
-    const safeTextPages = Number.isFinite(textPages) && textPages > 0 ? Math.max(textPages, TEXT_PDF_MAX_PAGES_PER_FILE) : TEXT_PDF_MAX_PAGES_PER_FILE;
+    void maxPagesPerFile;
     const ocrMb = OCR_PDF_MAX_UPLOAD_SIZE_BYTES / (1024 * 1024);
-    uploadLimitsText.textContent = `PDF com texto: até ${safeTextMb.toFixed(0)} MB e ${safeTextPages} páginas. PDF escaneado: até ${ocrMb.toFixed(0)} MB e ${OCR_PDF_MAX_PAGES_PER_FILE} páginas.`;
+    uploadLimitsText.textContent = `PDF com texto: até ${safeTextMb.toFixed(0)} MB. PDF escaneado: até ${ocrMb.toFixed(0)} MB e ${OCR_PDF_MAX_PAGES_PER_FILE} páginas.`;
   }
 
   async function syncUploadLimitsBySession() {
