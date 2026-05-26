@@ -72,3 +72,4 @@ class AnalysisData:
     closing_balance: float | None = None
     bank_branch: str | None = None
     account_number: str | None = None
+    bank_code: str | None = None
