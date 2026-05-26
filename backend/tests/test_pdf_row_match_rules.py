@@ -25,6 +25,20 @@ def test_match_tabular_date_prefix_accepts_leading_ocr_symbol() -> None:
     assert match.group("date") == "24/04/2024"
 
 
+def test_match_tabular_date_prefix_accepts_ocr_glued_date_and_description() -> None:
+    match = match_tabular_date_prefix("03/03/2024TARIFA PACOTE SERVICOS030324886 -32,40 5.908,12")
+    assert match is not None
+    assert match.group("date") == "03/03/2024"
+    assert match.group("rest").startswith("TARIFA PACOTE SERVICOS")
+
+
+def test_match_tabular_date_prefix_accepts_leading_ocr_noise_prefix() -> None:
+    match = match_tabular_date_prefix("_ 07/01/2024 TARIFA BANCARIA = 0701963 . == -82,24 -5.625,47 -")
+    assert match is not None
+    assert match.group("date") == "07/01/2024"
+    assert "0701963" in match.group("rest")
+
+
 def test_is_date_only_row_and_amount_only_row() -> None:
     assert is_date_only_row("2 out") is True
     assert is_date_only_row("2 out COMPRA") is False

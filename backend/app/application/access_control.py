@@ -29,8 +29,8 @@ from app.application.access_control_session_core import AccessControlSessionCore
 
 ANONYMOUS_QUOTA_LIMIT = 3
 REGISTERED_QUOTA_LIMIT = 10
-MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024
-DEFAULT_MAX_PAGES_PER_FILE = 15
+MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024
+DEFAULT_MAX_PAGES_PER_FILE = 10
 QUOTA_WINDOW_DAYS = 7
 SESSION_ACCESS_TOKEN_TTL_SECONDS = 15 * 60
 SESSION_REFRESH_TOKEN_TTL_SECONDS = 14 * 24 * 60 * 60
@@ -638,3 +638,4 @@ class AccessControlService:
 
     def _normalize_database_schema(self, schema: str | None) -> str:
         return AccessControlHelpersComponent.normalize_database_schema(schema)
+

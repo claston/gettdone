@@ -16,7 +16,7 @@ def test_anonymous_quota_blocks_4th_attempt(tmp_path) -> None:
     identity = service.resolve_identity(anonymous_fingerprint="anon-device-a", user_token=None)
     assert identity.identity_type == "anonymous"
     assert identity.quota_limit == ANONYMOUS_QUOTA_LIMIT
-    assert identity.max_pages_per_file == 15
+    assert identity.max_pages_per_file == 10
 
     assert service.get_remaining_quota(identity) == 3
     assert service.consume_quota(identity) == 2
@@ -42,16 +42,16 @@ def test_register_user_gets_10_quota_and_valid_token(tmp_path) -> None:
 
     assert identity.identity_type == "user"
     assert identity.quota_limit == REGISTERED_QUOTA_LIMIT
-    assert identity.max_pages_per_file == 15
+    assert identity.max_pages_per_file == 10
     assert service.get_remaining_quota(identity) == 10
 
 
-def test_upload_larger_than_2mb_is_rejected(tmp_path) -> None:
+def test_upload_larger_than_5mb_is_rejected(tmp_path) -> None:
     service = AccessControlService(
         state_file=tmp_path / "state.json",
         token_secret="test-secret",
     )
-    raw = b"a" * ((2 * 1024 * 1024) + 1)
+    raw = b"a" * ((5 * 1024 * 1024) + 1)
     try:
         service.assert_upload_size(raw)
         assert False, "Expected FileTooLargeError"
@@ -309,3 +309,4 @@ def test_retryable_db_exception_includes_unexpected_ssl_close(tmp_path) -> None:
     )
     exc = Exception("consuming input failed: SSL connection has been closed unexpectedly")
     assert service._is_retryable_db_exception(exc) is True
+

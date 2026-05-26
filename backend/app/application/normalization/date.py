@@ -31,12 +31,17 @@ def parse_statement_date(raw: str, fallback_year: int | None) -> str:
         day, month, year = value.split("/")
         return _parse_slash_date(f"{day}/{month}/20{year}")
 
+    if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{3}", value):
+        day, month, year_prefix = value.split("/")
+        resolved_year = _resolve_truncated_year_prefix(year_prefix, fallback_year=fallback_year)
+        return _parse_slash_date(f"{day}/{month}/{resolved_year}")
+
     if re.fullmatch(r"\d{1,2}/\d{1,2}", value):
         if fallback_year is None:
             fallback_year = datetime.now(timezone.utc).year
         return _parse_slash_date(f"{value}/{fallback_year}")
 
-    month_match = re.fullmatch(rf"(?P<day>\d{{1,2}})\s+(?P<month>{MONTH_PATTERN})(?:\s+(?P<year>\d{{4}}))?", upper_value)
+    month_match = re.fullmatch(rf"(?P<day>\d{{1,2}})\s+(?P<month>{MONTH_PATTERN})(?:\s+(?P<year>\d{{3,4}}))?", upper_value)
     if month_match:
         day = int(month_match.group("day"))
         month_abbrev = month_match.group("month")
@@ -45,7 +50,10 @@ def parse_statement_date(raw: str, fallback_year: int | None) -> str:
             raise InvalidFileContentError(f"Invalid month value in PDF statement: {month_abbrev!r}.")
         year_raw = month_match.group("year")
         if year_raw:
-            year_value = int(year_raw)
+            if len(year_raw) == 3:
+                year_value = _resolve_truncated_year_prefix(year_raw, fallback_year=fallback_year)
+            else:
+                year_value = int(year_raw)
         else:
             year_value = fallback_year if fallback_year is not None else datetime.now(timezone.utc).year
         try:
@@ -88,3 +96,12 @@ def _parse_slash_date(raw: str) -> str:
         return datetime.strptime(raw, "%d/%m/%Y").strftime("%Y-%m-%d")
     except ValueError as exc:
         raise InvalidFileContentError(f"Invalid date value in PDF statement: {raw!r}.") from exc
+
+
+def _resolve_truncated_year_prefix(year_prefix: str, *, fallback_year: int | None) -> int:
+    if fallback_year is not None and str(fallback_year).startswith(year_prefix):
+        return fallback_year
+    current_year = datetime.now(timezone.utc).year
+    if str(current_year).startswith(year_prefix):
+        return current_year
+    raise InvalidFileContentError(f"Invalid date value in PDF statement: {year_prefix!r}.")

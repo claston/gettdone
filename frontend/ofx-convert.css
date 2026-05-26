@@ -390,6 +390,36 @@ body {
   margin: 0.3rem 0 1.1rem;
 }
 
+.review-warning-card {
+  grid-column: 1 / -1;
+  border: 1px solid #f2cf8a;
+  background: #fff8e8;
+  border-radius: 0.85rem;
+  padding: 0.8rem 0.95rem;
+}
+
+.review-warning-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: #7a4a00;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.review-warning-list {
+  margin: 0;
+  padding-left: 1.15rem;
+  color: #6a4200;
+  display: grid;
+  gap: 0.28rem;
+}
+
+.review-warning-list li {
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
 .kpi {
   border: none;
   border-radius: 0.9rem;
@@ -500,6 +530,11 @@ td:nth-child(2) {
   font-weight: 800;
 }
 
+.amount-balance {
+  color: #24324a;
+  font-weight: 700;
+}
+
 .amount-empty {
   color: #98a0ae;
 }
@@ -517,6 +552,24 @@ th:last-child, td:last-child {
 
 tr.row-changed td {
   background: #fff3d4;
+}
+
+tr.row-has-warning td {
+  background: #fff7ea;
+}
+
+.row-warning-badge {
+  display: inline-flex;
+  margin-left: 0.5rem;
+  padding: 0.12rem 0.46rem;
+  border-radius: 999px;
+  border: 1px solid #f0c56f;
+  background: #fff1cc;
+  color: #7a4a00;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
 }
 
 tr.row-new td {
