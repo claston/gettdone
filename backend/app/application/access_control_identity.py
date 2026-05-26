@@ -35,6 +35,7 @@ class AccessControlIdentityComponent:
                     quota_window_days=int(active_plan["quota_window_days"]),
                     max_upload_size_bytes=int(active_plan["max_upload_size_bytes"]),
                     max_pages_per_file=int(active_plan["max_pages_per_file"]),
+                    max_pages_per_file_ocr=int(active_plan["max_pages_per_file_ocr"]),
                     plan_code=str(active_plan["code"]),
                     plan_name=str(active_plan["name"]),
                 )

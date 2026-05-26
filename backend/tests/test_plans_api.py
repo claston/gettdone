@@ -22,6 +22,7 @@ def test_plans_returns_public_versioned_catalog(tmp_path) -> None:
         codes = {item["code"] for item in payload["items"]}
         assert {"essencial", "profissional", "escritorio"}.issubset(codes)
         assert all(int(item["version"]) >= 1 for item in payload["items"])
+        assert all(int(item["max_pages_per_file_ocr"]) == 6 for item in payload["items"])
     finally:
         app.dependency_overrides.clear()
 

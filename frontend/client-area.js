@@ -649,11 +649,11 @@
       } else {
         quotaText.textContent = `${me.quota_remaining} / ${me.quota_limit}`;
       }
-      const maxMb = Number(me.max_upload_size_bytes || 0) / (1024 * 1024);
-      const maxPages = Number(me.max_pages_per_file || 0);
+      
+      
       if (planText) {
         planText.textContent =
-          `Limite por arquivo: ${maxMb.toFixed(0)} MB e ${maxPages} páginas`;
+          "Limite por arquivo: PDF com texto até 10 MB. PDF escaneado até 5 MB e 6 páginas.";
       }
       if (planSummary) {
         planSummary.textContent = String(me.plan_name || "").trim() || (quotaMode === "pages" ? "Plano pago" : "Plano gratuito");

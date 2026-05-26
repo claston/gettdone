@@ -4,12 +4,12 @@ from typing import Callable
 
 from app.application.errors import InvalidUserTokenError
 
-PlanTuple = tuple[str, str, int, str, int, int]
+PlanTuple = tuple[str, str, int, str, int, int, int]
 
 DEFAULT_PUBLIC_PLANS: tuple[PlanTuple, ...] = (
-    ("essencial", "Essencial", 1, "BRL", 2990, 150),
-    ("profissional", "Profissional", 1, "BRL", 3990, 300),
-    ("escritorio", "Escritorio", 1, "BRL", 4990, 500),
+    ("essencial", "Essencial", 1, "BRL", 2990, 150, 6),
+    ("profissional", "Profissional", 1, "BRL", 3990, 300, 6),
+    ("escritorio", "Escritorio", 1, "BRL", 4990, 500, 6),
 )
 
 MONTHLY_QUOTA_WINDOW_DAYS = 30
@@ -38,7 +38,8 @@ def list_public_plans(
           quota_limit,
           quota_window_days,
           max_upload_size_bytes,
-          max_pages_per_file
+          max_pages_per_file,
+          max_pages_per_file_ocr
         FROM plan_versions
         WHERE is_public = ? AND is_active = ?
         ORDER BY code ASC, version DESC
@@ -61,6 +62,7 @@ def list_public_plans(
                 "quota_window_days": int(row["quota_window_days"]),
                 "max_upload_size_bytes": int(row["max_upload_size_bytes"]),
                 "max_pages_per_file": int(row["max_pages_per_file"]),
+                "max_pages_per_file_ocr": int(row["max_pages_per_file_ocr"]),
             }
         )
     return items
@@ -95,7 +97,8 @@ def activate_user_plan(
           quota_limit,
           quota_window_days,
           max_upload_size_bytes,
-          max_pages_per_file
+          max_pages_per_file,
+          max_pages_per_file_ocr
         FROM plan_versions
         WHERE code = ? AND is_active = ?
         ORDER BY version DESC
@@ -177,7 +180,8 @@ def read_active_user_plan(
           pv.quota_limit,
           pv.quota_window_days,
           pv.max_upload_size_bytes,
-          pv.max_pages_per_file
+          pv.max_pages_per_file,
+          pv.max_pages_per_file_ocr
         FROM user_plan_subscriptions ups
         JOIN plan_versions pv ON pv.id = ups.plan_version_id
         WHERE ups.user_id = ? AND ups.status = 'active'
@@ -197,6 +201,7 @@ def read_active_user_plan(
         "quota_window_days": int(row["quota_window_days"]),
         "max_upload_size_bytes": int(row["max_upload_size_bytes"]),
         "max_pages_per_file": int(row["max_pages_per_file"]),
+        "max_pages_per_file_ocr": int(row["max_pages_per_file_ocr"]),
     }
 
 
@@ -208,7 +213,7 @@ def seed_default_public_plans(
     now_iso: str,
     true_value: bool | int,
 ) -> None:
-    for code, name, version, currency, price_cents, quota_limit in DEFAULT_PUBLIC_PLANS:
+    for code, name, version, currency, price_cents, quota_limit, max_pages_per_file_ocr in DEFAULT_PUBLIC_PLANS:
         existing_version = fetchone(
             conn,
             """
@@ -237,11 +242,12 @@ def seed_default_public_plans(
               quota_window_days,
               max_upload_size_bytes,
               max_pages_per_file,
+              max_pages_per_file_ocr,
               is_public,
               is_active,
               created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 f"plan_{code}_v{version}",
@@ -256,6 +262,7 @@ def seed_default_public_plans(
                 MONTHLY_QUOTA_WINDOW_DAYS,
                 PAID_MAX_UPLOAD_SIZE_BYTES,
                 PAID_MAX_PAGES_PER_FILE,
+                max_pages_per_file_ocr,
                 true_value,
                 true_value,
                 now_iso,

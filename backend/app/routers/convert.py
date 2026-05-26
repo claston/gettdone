@@ -122,7 +122,11 @@ def _log_pages_limit_exceeded_attempt(
 def _resolve_max_pages_per_file(identity, scanned_likely: bool | None) -> int:
     identity_max_pages = max(1, int(getattr(identity, "max_pages_per_file", 10**9)))
     if scanned_likely is True:
-        return min(identity_max_pages, OCR_PDF_MAX_PAGES_PER_FILE)
+        identity_ocr_pages = max(
+            1,
+            int(getattr(identity, "max_pages_per_file_ocr", OCR_PDF_MAX_PAGES_PER_FILE) or OCR_PDF_MAX_PAGES_PER_FILE),
+        )
+        return min(identity_max_pages, identity_ocr_pages)
     if scanned_likely is False:
         return max(identity_max_pages, TEXT_PDF_MAX_PAGES_PER_FILE)
     return identity_max_pages
@@ -130,7 +134,11 @@ def _resolve_max_pages_per_file(identity, scanned_likely: bool | None) -> int:
 
 def _resolve_ocr_max_pages_per_file(identity) -> int:
     identity_max_pages = max(1, int(getattr(identity, "max_pages_per_file", 10**9)))
-    return min(identity_max_pages, OCR_PDF_MAX_PAGES_PER_FILE)
+    identity_ocr_pages = max(
+        1,
+        int(getattr(identity, "max_pages_per_file_ocr", OCR_PDF_MAX_PAGES_PER_FILE) or OCR_PDF_MAX_PAGES_PER_FILE),
+    )
+    return min(identity_max_pages, identity_ocr_pages)
 
 
 def _resolve_max_upload_size_bytes(

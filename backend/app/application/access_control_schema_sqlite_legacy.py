@@ -116,6 +116,7 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
             quota_window_days INTEGER NOT NULL,
             max_upload_size_bytes INTEGER NOT NULL,
             max_pages_per_file INTEGER NOT NULL,
+            max_pages_per_file_ocr INTEGER NOT NULL DEFAULT 6,
             is_public INTEGER NOT NULL DEFAULT 1,
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL
@@ -257,6 +258,12 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
     }
     if "pages_count" not in user_conversions_columns:
         conn.execute("ALTER TABLE user_conversions ADD COLUMN pages_count INTEGER")
+    plan_versions_columns = {
+        str(row["name"])
+        for row in conn.execute("PRAGMA table_info(plan_versions)").fetchall()
+    }
+    if "max_pages_per_file_ocr" not in plan_versions_columns:
+        conn.execute("ALTER TABLE plan_versions ADD COLUMN max_pages_per_file_ocr INTEGER NOT NULL DEFAULT 6")
     checkout_intents_columns = {
         str(row["name"])
         for row in conn.execute("PRAGMA table_info(checkout_intents)").fetchall()
