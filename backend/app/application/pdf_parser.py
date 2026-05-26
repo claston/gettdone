@@ -1,3 +1,4 @@
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -6,7 +7,7 @@ from typing import Callable
 
 from pypdf import PdfReader
 
-from app.application.errors import InvalidFileContentError
+from app.application.errors import InvalidFileContentError, MaxPagesPerFileExceededError
 from app.application.layout_profiles.registry import DeclarativeLayoutProfile, get_layout_profile
 from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.normalization.balance import annotate_balance_consistency
@@ -38,6 +39,9 @@ from app.application.normalization.pdf_text_rules import should_ignore_line, sho
 from app.application.normalization.text import normalize_upper_text
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
 from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE, extract_pdf_page_texts_with_ocr, is_pdf_ocr_enabled
+from app.application.textract_extraction_mapper import map_textract_blocks_to_extraction
+from app.application.textract_gateway import TextractGateway
+from app.application.textract_transaction_adapter import adapt_textract_extraction_to_transactions
 
 
 @dataclass(frozen=True)
@@ -69,17 +73,38 @@ class _ParsedTransaction:
 def parse_pdf_transactions(
     raw_bytes: bytes,
     on_ocr_progress: Callable[[int, int], None] | None = None,
+    max_ocr_pages: int | None = None,
 ) -> PdfParseResult:
+    try:
+        native_pages = _read_native_pdf_page_texts(raw_bytes)
+    except InvalidFileContentError:
+        native_pages = []
+
+    if is_textract_enabled() and (not native_pages or is_textract_forced()):
+        _enforce_ocr_page_limit(page_count=len(native_pages), max_ocr_pages=max_ocr_pages)
+        try:
+            return _parse_scanned_pdf_with_textract_gateway(raw_bytes)
+        except InvalidFileContentError as textract_error:
+            if not is_pdf_ocr_enabled():
+                raise
+            _enforce_ocr_page_limit(page_count=len(native_pages), max_ocr_pages=max_ocr_pages)
+            fallback_result = _parse_scanned_pdf_with_local_ocr_adapter(raw_bytes, on_ocr_progress=on_ocr_progress)
+            fallback_metrics = dict(fallback_result.parse_metrics)
+            fallback_metrics["textract_used"] = 0
+            fallback_metrics["textract_error_type"] = textract_error.__class__.__name__
+            return PdfParseResult(
+                transactions=fallback_result.transactions,
+                canonical_transactions=fallback_result.canonical_transactions,
+                layout=fallback_result.layout,
+                extracted_text=fallback_result.extracted_text,
+                parse_metrics=fallback_metrics,
+            )
+
     if on_ocr_progress is None:
         page_texts = _extract_pdf_page_texts(raw_bytes)
     else:
         page_texts = _extract_pdf_page_texts(raw_bytes, on_ocr_progress)
     primary_result = _parse_pdf_transactions_from_page_texts(page_texts)
-
-    try:
-        native_pages = _read_native_pdf_page_texts(raw_bytes)
-    except InvalidFileContentError:
-        native_pages = []
 
     using_native_text = bool(native_pages) and page_texts == native_pages
     if not using_native_text:
@@ -88,6 +113,7 @@ def parse_pdf_transactions(
         return primary_result
     if not is_pdf_ocr_enabled():
         return primary_result
+    _enforce_ocr_page_limit(page_count=len(native_pages), max_ocr_pages=max_ocr_pages)
 
     if on_ocr_progress is None:
         ocr_pages = extract_pdf_page_texts_with_ocr(raw_bytes)
@@ -100,6 +126,88 @@ def parse_pdf_transactions(
     if _is_better_parse_result(candidate=ocr_result, baseline=primary_result):
         return ocr_result
     return primary_result
+
+
+def _enforce_ocr_page_limit(*, page_count: int, max_ocr_pages: int | None) -> None:
+    if max_ocr_pages is None:
+        return
+    safe_limit = max(1, int(max_ocr_pages))
+    safe_pages = max(0, int(page_count))
+    if safe_pages > safe_limit:
+        raise MaxPagesPerFileExceededError(pages_count=safe_pages, max_pages_per_file=safe_limit)
+
+
+def is_textract_enabled() -> bool:
+    raw = os.getenv("TEXTRACT_ENABLED", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def is_textract_forced() -> bool:
+    raw = os.getenv("TEXTRACT_FORCE", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult:
+    gateway = TextractGateway()
+    gateway_result = gateway.analyze_pdf(raw_bytes=raw_bytes)
+    extraction = map_textract_blocks_to_extraction(
+        document_hash=str(gateway_result.get("document_hash") or ""),
+        blocks=list(gateway_result.get("blocks") or []),
+        page_count=int(gateway_result.get("page_count") or 0),
+    )
+    adapted = adapt_textract_extraction_to_transactions(extraction)
+    inferred_layout = infer_pdf_layout(adapted.extracted_text)
+    canonical_transactions = adapted.canonical_transactions
+    balance_checked_count, balance_failed_count = annotate_balance_consistency(canonical_transactions)
+    canonical_quality_metrics = build_canonical_quality_metrics(canonical_transactions)
+    flattened_line_count = sum(len(page.lines) for page in extraction.pages)
+    parse_metrics = build_pdf_parse_metrics(
+        page_count=len(extraction.pages),
+        extracted_char_count=len(adapted.extracted_text),
+        flattened_line_count=flattened_line_count,
+        grouped_transactions_count=len(adapted.transactions),
+        inline_candidates_count=0,
+        inline_transactions_count=0,
+        tabular_candidates_count=int(adapted.parse_metrics.get("transaction_count", len(adapted.transactions))),
+        tabular_transactions_count=len(adapted.transactions),
+        columnar_candidates_count=0,
+        columnar_transactions_count=0,
+        selected_parser=str(adapted.parse_metrics.get("selected_parser") or "textract_table"),
+        parser_selection_reason="textract",
+        inline_decision="",
+        tabular_decision="",
+        columnar_decision="",
+        balance_consistency_checked=balance_checked_count,
+        balance_consistency_failed=balance_failed_count,
+        canonical_quality_metrics=canonical_quality_metrics,
+    )
+    parse_metrics["extraction_provider"] = "aws_textract"
+    parse_metrics["textract_enabled"] = 1
+    parse_metrics["textract_used"] = 1
+    for key, value in dict(gateway_result.get("metrics") or {}).items():
+        parse_metrics[str(key)] = value
+    return PdfParseResult(
+        transactions=adapted.transactions,
+        canonical_transactions=canonical_transactions,
+        layout=inferred_layout,
+        extracted_text=adapted.extracted_text,
+        parse_metrics=parse_metrics,
+    )
+
+
+def _parse_scanned_pdf_with_local_ocr_adapter(
+    raw_bytes: bytes,
+    *,
+    on_ocr_progress: Callable[[int, int], None] | None,
+) -> PdfParseResult:
+    if on_ocr_progress is None:
+        ocr_pages = extract_pdf_page_texts_with_ocr(raw_bytes)
+    else:
+        ocr_pages = extract_pdf_page_texts_with_ocr(raw_bytes, on_ocr_progress)
+    if not ocr_pages:
+        raise InvalidFileContentError(PDF_OCR_DISABLED_MESSAGE)
+
+    return _parse_pdf_transactions_from_page_texts(ocr_pages)
 
 
 def _parse_pdf_transactions_from_page_texts(page_texts: list[str]) -> PdfParseResult:

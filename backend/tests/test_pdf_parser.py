@@ -1,5 +1,7 @@
 from app.application import pdf_parser as pdf_parser_module
+from app.application.document_extraction_models import RawDocumentExtraction
 from app.application.pdf_parser import parse_pdf_transactions
+from app.application.textract_transaction_adapter import TextractTransactionExtractionResult
 from tests.fixtures.pdf_golden_samples import (
     GROUPED_INLINE_MULTILINE_SAMPLE,
     UNICODE_MINUS_SINGLE_ROW_SAMPLE,
@@ -54,6 +56,145 @@ def test_parse_pdf_transactions_uses_ocr_fallback_when_enabled(monkeypatch) -> N
     assert len(result.transactions) == 1
     assert result.transactions[0].date == "2026-04-10"
     assert result.transactions[0].amount == 10.0
+
+
+def test_parse_pdf_transactions_uses_textract_adapter_path_for_scanned_pdf_when_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("TEXTRACT_ENABLED", "true")
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [])
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: False)
+
+    class _GatewayStub:
+        def analyze_pdf(self, *, raw_bytes: bytes) -> dict[str, object]:
+            _ = raw_bytes
+            return {
+                "document_hash": "hash",
+                "page_count": 1,
+                "blocks": [
+                    {
+                        "BlockType": "LINE",
+                        "Id": "l1",
+                        "Page": 1,
+                        "Text": "01/04/2026 PIX RECEBIDO 10,00",
+                        "Confidence": 99.0,
+                    }
+                ],
+                "metrics": {"textract_total_ms": 120.0},
+            }
+
+    monkeypatch.setattr(pdf_parser_module, "TextractGateway", lambda: _GatewayStub())
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert len(result.transactions) == 1
+    assert result.transactions[0].amount == 10.0
+    assert result.parse_metrics.get("extraction_provider") == "aws_textract"
+    assert result.parse_metrics.get("textract_used") == 1
+
+
+def test_parse_pdf_transactions_uses_textract_when_forced_even_with_native_text(monkeypatch) -> None:
+    monkeypatch.setenv("TEXTRACT_ENABLED", "true")
+    monkeypatch.setenv("TEXTRACT_FORCE", "true")
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: ["native text exists"])
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: False)
+
+    class _GatewayStub:
+        def analyze_pdf(self, *, raw_bytes: bytes) -> dict[str, object]:
+            _ = raw_bytes
+            return {
+                "document_hash": "hash",
+                "page_count": 1,
+                "blocks": [{"BlockType": "LINE", "Id": "l1", "Page": 1, "Text": "01/04/2026 PIX 10,00"}],
+                "metrics": {},
+            }
+
+    monkeypatch.setattr(pdf_parser_module, "TextractGateway", lambda: _GatewayStub())
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert len(result.transactions) == 1
+    assert result.parse_metrics.get("extraction_provider") == "aws_textract"
+
+
+def test_parse_pdf_transactions_falls_back_to_local_ocr_when_textract_fails(monkeypatch) -> None:
+    monkeypatch.setenv("TEXTRACT_ENABLED", "true")
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [])
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: True)
+
+    class _FailingGatewayStub:
+        def analyze_pdf(self, *, raw_bytes: bytes) -> dict[str, object]:
+            _ = raw_bytes
+            raise pdf_parser_module.InvalidFileContentError("provider failed")
+
+    monkeypatch.setattr(pdf_parser_module, "TextractGateway", lambda: _FailingGatewayStub())
+    monkeypatch.setattr(
+        pdf_parser_module,
+        "extract_pdf_page_texts_with_ocr",
+        lambda raw_bytes, on_progress=None: ["01/04/2026 PIX RECEBIDO 10,00"],
+    )
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert len(result.transactions) == 1
+    assert result.transactions[0].amount == 10.0
+    assert result.parse_metrics.get("textract_used") == 0
+    assert result.parse_metrics.get("textract_error_type") == "InvalidFileContentError"
+
+
+def test_parse_pdf_transactions_textract_path_applies_balance_consistency_check(monkeypatch) -> None:
+    monkeypatch.setenv("TEXTRACT_ENABLED", "true")
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [])
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: False)
+
+    class _GatewayStub:
+        def analyze_pdf(self, *, raw_bytes: bytes) -> dict[str, object]:
+            _ = raw_bytes
+            return {"document_hash": "hash", "page_count": 1, "blocks": [], "metrics": {}}
+
+    monkeypatch.setattr(pdf_parser_module, "TextractGateway", lambda: _GatewayStub())
+    monkeypatch.setattr(
+        pdf_parser_module,
+        "map_textract_blocks_to_extraction",
+        lambda document_hash, blocks, page_count: RawDocumentExtraction(
+            provider="aws_textract",
+            document_hash=document_hash,
+            pages=[],
+            metrics={},
+        ),
+    )
+
+    adapted = TextractTransactionExtractionResult(
+        transactions=[
+            pdf_parser_module.NormalizedTransaction(date="2024-03-01", description="A", amount=100.0, type="inflow"),
+            pdf_parser_module.NormalizedTransaction(date="2024-03-02", description="B", amount=-10.0, type="outflow"),
+        ],
+        canonical_transactions=[
+            pdf_parser_module.CanonicalTransaction(
+                date="2024-03-01",
+                description="A",
+                amount=100.0,
+                type="inflow",
+                running_balance=100.0,
+                source_parser="textract_table",
+            ),
+            pdf_parser_module.CanonicalTransaction(
+                date="2024-03-02",
+                description="B",
+                amount=-10.0,
+                type="outflow",
+                running_balance=95.0,
+                source_parser="textract_table",
+            ),
+        ],
+        extracted_text="A\nB",
+        parse_metrics={"selected_parser": "textract_table", "transaction_count": 2},
+    )
+    monkeypatch.setattr(pdf_parser_module, "adapt_textract_extraction_to_transactions", lambda extraction: adapted)
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.parse_metrics.get("balance_consistency_checked") == 1
+    assert result.parse_metrics.get("balance_consistency_failed") == 1
+    assert "balance_consistency_failed" in result.canonical_transactions[1].warnings
 
 
 def test_parse_pdf_transactions_retries_with_ocr_when_native_is_generic_low_coverage(monkeypatch) -> None:

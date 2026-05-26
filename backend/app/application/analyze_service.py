@@ -7,6 +7,7 @@ from time import perf_counter
 from typing import Callable
 from uuid import uuid4
 
+from app.application.bank_resolver import DEFAULT_BANK_CODE, resolve_bank_code
 from app.application.csv_parser import parse_csv_transactions
 from app.application.document_classifier import classify_document
 from app.application.errors import UnsupportedFileTypeError
@@ -41,6 +42,7 @@ class AnalyzeService:
         filename: str,
         raw_bytes: bytes,
         on_ocr_progress: Callable[[int, int], None] | None = None,
+        max_ocr_pages: int | None = None,
     ) -> AnalyzeResponse:
         total_start = perf_counter()
         extension = Path(filename).suffix.replace(".", "").lower()
@@ -67,6 +69,7 @@ class AnalyzeService:
             extension,
             raw_bytes,
             on_ocr_progress=on_ocr_progress,
+            max_ocr_pages=max_ocr_pages,
         )
         parse_ms = round((perf_counter() - parse_start) * 1000, 3)
         classify_start = perf_counter()
@@ -126,6 +129,10 @@ class AnalyzeService:
         total_inflows = round(sum(item.amount for item in transactions if item.amount > 0), 2)
         total_outflows = round(sum(item.amount for item in transactions if item.amount < 0), 2)
         net_total = round(total_inflows + total_outflows, 2)
+        opening_balance = self._resolve_opening_balance(preview_rows, extracted_text=extracted_text)
+        closing_balance = self._resolve_closing_balance(preview_rows)
+        bank_branch, account_number = self._extract_bank_account_metadata(extracted_text)
+        inferred_bank_code = self._resolve_inferred_bank_code(extension=extension, layout_inference_name=layout_inference_name)
         total_volume = round(sum(abs(item.amount) for item in transactions), 2)
         inflow_count = sum(1 for item in transactions if item.amount > 0)
         outflow_count = sum(1 for item in transactions if item.amount < 0)
@@ -168,6 +175,11 @@ class AnalyzeService:
             layout_inference_confidence=layout_inference_confidence,
             pdf_processing_metrics=pdf_processing_metrics,
             ofx_account_type=ofx_account_type,
+            opening_balance=opening_balance,
+            closing_balance=closing_balance,
+            bank_branch=bank_branch,
+            account_number=account_number,
+            bank_code=inferred_bank_code,
         )
         expires_at = self.storage.save_analysis(analysis_data)
         logger.info(
@@ -255,13 +267,50 @@ class AnalyzeService:
             layout_inference_name=layout_inference_name,
             layout_inference_confidence=layout_inference_confidence,
             pdf_processing_metrics=pdf_processing_metrics,
+            opening_balance=analysis_data.opening_balance,
+            closing_balance=analysis_data.closing_balance,
+            bank_branch=analysis_data.bank_branch,
+            account_number=analysis_data.account_number,
+            bank_code=analysis_data.bank_code,
         )
+
+    def _resolve_opening_balance(self, rows: list[TransactionRow], *, extracted_text: str | None = None) -> float | None:
+        for row in rows:
+            if row.running_balance is None:
+                continue
+            return round(float(row.running_balance) - float(row.amount), 2)
+
+        for row in rows:
+            normalized_description = self._normalize_text_for_profile(row.description)
+            if normalized_description in {"SALDO ANTERIOR", "SALDO INICIAL"}:
+                return round(float(row.amount), 2)
+
+        normalized_text = self._normalize_text_for_profile(extracted_text or "")
+        if normalized_text:
+            match = re.search(
+                r"\bSALDO\s+(?:ANTERIOR|INICIAL)\b[^0-9\-+]{0,20}([\-+]?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})|[\-+]?\d+(?:,\d{2})?)",
+                normalized_text,
+            )
+            if match:
+                try:
+                    raw_amount = match.group(1).replace(" ", "").replace(".", "").replace(",", ".")
+                    return round(float(raw_amount), 2)
+                except ValueError:
+                    pass
+        return None
+
+    def _resolve_closing_balance(self, rows: list[TransactionRow]) -> float | None:
+        for row in reversed(rows):
+            if row.running_balance is not None:
+                return round(float(row.running_balance), 2)
+        return None
 
     def _build_transactions_for_extension(
         self,
         extension: str,
         raw_bytes: bytes,
         on_ocr_progress: Callable[[int, int], None] | None = None,
+        max_ocr_pages: int | None = None,
     ) -> tuple[
         list[NormalizedTransaction],
         str | None,
@@ -281,9 +330,23 @@ class AnalyzeService:
             transactions = parse_ofx_transactions(raw_bytes)
             return transactions, None, None, None, None, [[] for _ in transactions], [None for _ in transactions]
         if on_ocr_progress is None:
-            result = parse_pdf_transactions(raw_bytes)
+            try:
+                result = parse_pdf_transactions(raw_bytes, max_ocr_pages=max_ocr_pages)
+            except TypeError as exc:
+                if "max_ocr_pages" not in str(exc):
+                    raise
+                result = parse_pdf_transactions(raw_bytes)
         else:
-            result = parse_pdf_transactions(raw_bytes, on_ocr_progress=on_ocr_progress)
+            try:
+                result = parse_pdf_transactions(
+                    raw_bytes,
+                    on_ocr_progress=on_ocr_progress,
+                    max_ocr_pages=max_ocr_pages,
+                )
+            except TypeError as exc:
+                if "max_ocr_pages" not in str(exc):
+                    raise
+                result = parse_pdf_transactions(raw_bytes, on_ocr_progress=on_ocr_progress)
         warning_types = [
             list(item.warnings or [])
             for item in (result.canonical_transactions or [])
@@ -455,6 +518,166 @@ class AnalyzeService:
                 f"{reason_suffix}."
             ),
         )
+
+    def _resolve_inferred_bank_code(self, *, extension: str, layout_inference_name: str | None) -> str | None:
+        if extension != "pdf":
+            return None
+        code = resolve_bank_code(layout_inference_name=layout_inference_name)
+        return None if code == DEFAULT_BANK_CODE else code
+
+    def _extract_bank_account_metadata(self, extracted_text: str | None) -> tuple[str | None, str | None]:
+        raw_lines = [line.strip() for line in str(extracted_text or "").splitlines() if line.strip()]
+        if not raw_lines:
+            return None, None
+        return self._extract_bank_account_metadata_from_header(raw_lines)
+
+        branch_patterns = (
+            r"\bAG(?:E|Ê)NCIA\s*[:\-]?\s*(\d{3,6}(?:[-.]\d)?)\b",
+            r"\bAG\s*[:\-]?\s*(\d{3,6}(?:[-.]\d)?)\b",
+        )
+        account_patterns = (
+            r"\bCONTA(?:\s+CORRENTE)?\s*[:\-]\s*(\d{4,14}(?:[-.]\d)?)\b",
+            r"\bC\/C\s*[:\-]\s*(\d{4,14}(?:[-.]\d)?)\b",
+            r"\bCC\s*[:\-]\s*(\d{4,14}(?:[-.]\d)?)\b",
+        )
+
+        # Prefer account metadata from header-like lines (before transaction body),
+        # and support both "CONTA: 12345-6" and "CONTA 12345-6".
+        raw_lines = [line.strip() for line in str(extracted_text or "").splitlines() if line.strip()]
+        header_lines: list[str] = []
+        for line in raw_lines[:80]:
+            normalized_line = self._normalize_text_for_profile(line)
+            if "LANCAMENTOS" in normalized_line or "MOVIMENTACOES" in normalized_line:
+                break
+            if re.match(r"^\d{1,2}[/-]\d{1,2}\b", line):
+                continue
+            header_lines.append(line)
+        if header_lines:
+            search_scope = self._normalize_text_for_profile("\n".join(header_lines))
+        else:
+            search_scope = ""
+
+        branch_patterns = (
+            r"\bAG(?:E|Ê)NCIA\s*(?:[:\-]\s*|\s+)(\d{3,6}(?:[-.]\d)?)\b",
+            r"\bAG\s*(?:[:\-]\s*|\s+)(\d{3,6}(?:[-.]\d)?)\b",
+        )
+        account_patterns = (
+            r"\bCONTA(?:\s+CORRENTE)?\s*(?:[:\-]\s*|\s+)(\d{4,14}(?:[-.]\d)?)\b",
+            r"\bC\/C\s*(?:[:\-]\s*|\s+)(\d{4,14}(?:[-.]\d)?)\b",
+            r"\bCC\s*(?:[:\-]\s*|\s+)(\d{4,14}(?:[-.]\d)?)\b",
+        )
+
+        for pattern in branch_patterns:
+            match = re.search(pattern, search_scope)
+            if match:
+                branch = self._normalize_account_identifier(match.group(1))
+                if branch:
+                    break
+
+        for pattern in account_patterns:
+            match = re.search(pattern, search_scope)
+            if match:
+                account = self._normalize_account_identifier(match.group(1))
+                if account:
+                    break
+
+        return branch, account
+
+    def _extract_bank_account_metadata_from_header(self, raw_lines: list[str]) -> tuple[str | None, str | None]:
+        header_lines: list[str] = []
+        for line in raw_lines[:80]:
+            normalized_line = self._normalize_text_for_profile(line)
+            if (
+                "LANCAMENTOS" in normalized_line
+                or "MOVIMENTACOES" in normalized_line
+                or ("DATA" in normalized_line and "VALOR" in normalized_line)
+            ):
+                break
+            if re.match(r"^\d{1,2}[/-]\d{1,2}\b", line):
+                break
+            header_lines.append(line)
+        if not header_lines:
+            return None, None
+
+        normalized_lines = [self._normalize_text_for_profile(line) for line in header_lines]
+        branch: str | None = None
+        account: str | None = None
+
+        def _extract_value_from_line(
+            line: str,
+            *,
+            min_len: int,
+            max_len: int,
+            label_pattern: str | None = None,
+        ) -> str | None:
+            if label_pattern:
+                match = re.search(
+                    rf"{label_pattern}\s*[:\-]?\s*(\d{{{min_len},{max_len}}}(?:[-.]\d)?)\b",
+                    line,
+                )
+            else:
+                match = re.search(rf"\b(\d{{{min_len},{max_len}}}(?:[-.]\d)?)\b", line)
+            if not match:
+                return None
+            return self._normalize_account_identifier(match.group(1))
+
+        for idx, line in enumerate(normalized_lines):
+            if branch is None and re.search(r"\bAGENCIA\b", line):
+                candidate = _extract_value_from_line(
+                    line,
+                    min_len=3,
+                    max_len=8,
+                    label_pattern=r"\bAGENCIA\b",
+                )
+                if candidate is None and idx + 1 < len(normalized_lines):
+                    candidate = _extract_value_from_line(normalized_lines[idx + 1], min_len=3, max_len=8)
+                if candidate:
+                    branch = candidate
+
+            if account is None and re.search(r"\b(CONTA(?:\s+CORRENTE)?|C/C|CC)\b", line):
+                candidate = _extract_value_from_line(
+                    line,
+                    min_len=4,
+                    max_len=14,
+                    label_pattern=r"\b(?:CONTA(?:\s+CORRENTE)?|C/C|CC)\b",
+                )
+                allow_next_line = bool(
+                    re.search(r"^\s*(?:CONTA(?:\s+CORRENTE)?|C/C|CC)\s*:?\s*$", line)
+                )
+                if candidate is None and allow_next_line and idx + 1 < len(normalized_lines):
+                    candidate = _extract_value_from_line(normalized_lines[idx + 1], min_len=4, max_len=14)
+                if candidate:
+                    account = candidate
+
+            if branch and account:
+                break
+
+        return branch, account
+
+    def _extract_account_metadata_scope(self, normalized_text: str) -> str:
+        if not normalized_text:
+            return ""
+        limit_markers = (" LANCAMENTOS ", " MOVIMENTACOES ", " EXTRATO ")
+        cut_index = len(normalized_text)
+        for marker in limit_markers:
+            idx = normalized_text.find(marker)
+            if idx > 0:
+                cut_index = min(cut_index, idx)
+        return normalized_text[: min(cut_index, 1400)]
+
+    def _normalize_account_identifier(self, value: str | None) -> str | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        digits = re.sub(r"\D", "", raw)
+        if len(digits) < 3:
+            return None
+        if "-" in raw or "." in raw:
+            cleaned = raw.replace(".", "-")
+            cleaned = re.sub(r"[^0-9-]", "", cleaned)
+            cleaned = re.sub(r"-{2,}", "-", cleaned).strip("-")
+            return cleaned or digits
+        return digits
 
     def _decode_optional_text(self, raw_bytes: bytes) -> str:
         for encoding in ("utf-8-sig", "utf-8", "latin-1"):

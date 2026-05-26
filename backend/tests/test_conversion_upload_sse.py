@@ -29,7 +29,7 @@ def _blank_pdf_bytes() -> bytes:
 
 
 class FakeAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None) -> AnalyzeResponse:
+    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
         if "fail_ocr" in filename:
             raise InvalidFileContentError("OCR failed while processing PDF pages.")
         if "corrupted" in filename:
@@ -162,9 +162,9 @@ def test_streaming_upload_emits_minimum_events_and_completed() -> None:
     assert "text/event-stream" in response.headers.get("content-type", "")
     payloads = _parse_sse_payloads(response.text)
     stages = [item.get("stage") for item in payloads]
-    assert "upload_received" in stages
-    assert "pdf_inspection" in stages
-    assert "scan_detection" in stages
+    assert "document_received" in stages
+    assert "document_analysis" in stages
+    assert "document_preparation" in stages
     assert "completed" in stages
     completed = next(item for item in payloads if item.get("stage") == "completed")
     assert completed["conversionId"] == "an_sse_001"
@@ -179,10 +179,9 @@ def test_streaming_upload_marks_scanned_pdf_and_emits_ocr_progress() -> None:
         files={"file": ("scan_sample.pdf", _blank_pdf_bytes(), "application/pdf")},
     )
     payloads = _parse_sse_payloads(response.text)
-    scan_event = next(item for item in payloads if item.get("stage") == "scan_detection")
+    scan_event = next(item for item in payloads if item.get("stage") == "document_preparation")
     assert scan_event["scannedLikely"] is True
-    assert any(item.get("stage") == "ocr_started" for item in payloads)
-    assert any(item.get("stage") == "ocr_progress" for item in payloads)
+    assert any(item.get("stage") == "document_processing" for item in payloads)
     progress_values = [int(item.get("progress", 0)) for item in payloads if isinstance(item.get("progress"), int | float)]
     assert progress_values
     assert progress_values == sorted(progress_values)
@@ -238,7 +237,7 @@ def test_streaming_upload_non_scanned_progress_advances_to_conversion_stage() ->
         files={"file": ("statement.pdf", b"data,valor,descricao\n2026-05-17,10.0,PIX", "application/pdf")},
     )
     payloads = _parse_sse_payloads(response.text)
-    conversion_event = next(item for item in payloads if item.get("stage") == "conversion")
+    conversion_event = next(item for item in payloads if item.get("stage") == "preview_generation")
     assert int(conversion_event.get("progress", 0)) >= 80
 
 

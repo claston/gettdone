@@ -130,6 +130,11 @@ class AnalyzeResponse(BaseModel):
     layout_inference_name: str | None = None
     layout_inference_confidence: float | None = None
     pdf_processing_metrics: PdfProcessingMetrics | None = None
+    opening_balance: float | None = None
+    closing_balance: float | None = None
+    bank_branch: str | None = None
+    account_number: str | None = None
+    bank_code: str | None = None
 
 
 class ReconcileIntakeResponse(BaseModel):
@@ -202,6 +207,8 @@ class ConvertEditsResponse(BaseModel):
     net_total: float
     preview_transactions: list[TransactionPreview]
     updated_at: str
+    opening_balance: float | None = None
+    closing_balance: float | None = None
 
 
 class RegisterRequest(BaseModel):

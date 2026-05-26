@@ -204,3 +204,201 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
         for insight in result.insights
     )
 
+
+def test_analyze_service_extracts_bank_branch_and_account_from_pdf_text(tmp_path, monkeypatch) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    service = AnalyzeService(storage=storage)
+    monkeypatch.setattr(
+        analyze_service_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes: build_pdf_parse_result(
+            transactions=[
+                NormalizedTransaction(
+                    date="2026-04-13",
+                    description="PIX RECEBIDO CLIENTE A",
+                    amount=1000.00,
+                    type="inflow",
+                ),
+            ],
+            layout_name="santander_aplicativo_empresas_conta_corrente_extrato_v1",
+            confidence=0.99,
+            extracted_text="AGÊNCIA: 1234-5 CONTA: 123456-7",
+            parse_metrics=PDF_PARSE_METRICS_GROUPED_CANONICAL_OK,
+        ),
+    )
+
+    result = service.analyze(filename="bradesco.pdf", raw_bytes=b"%PDF synthetic")
+
+    assert result.bank_branch == "1234-5"
+    assert result.account_number == "123456-7"
+    assert result.bank_code == "033"
+
+
+def test_analyze_service_resolves_opening_balance_from_saldo_anterior_row_when_running_balance_missing(
+    tmp_path, monkeypatch
+) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    service = AnalyzeService(storage=storage)
+    monkeypatch.setattr(
+        analyze_service_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes: build_pdf_parse_result(
+            transactions=[
+                NormalizedTransaction(
+                    date="2024-04-01",
+                    description="SALDO ANTERIOR",
+                    amount=10000.0,
+                    type="inflow",
+                ),
+                NormalizedTransaction(
+                    date="2024-04-01",
+                    description="PAGAMENTO BOLETO",
+                    amount=-150.0,
+                    type="outflow",
+                ),
+            ],
+            layout_name="caixa_gerenciador_extrato_por_periodo_v1",
+            confidence=0.95,
+            extracted_text="SALDO ANTERIOR 10.000,00",
+            parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+        ),
+    )
+
+    result = service.analyze(filename="caixa.pdf", raw_bytes=b"%PDF synthetic")
+
+    assert result.opening_balance == 10000.0
+
+
+def test_analyze_service_resolves_opening_balance_from_extracted_text_when_outside_table(
+    tmp_path, monkeypatch
+) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    service = AnalyzeService(storage=storage)
+    monkeypatch.setattr(
+        analyze_service_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes: build_pdf_parse_result(
+            transactions=[
+                NormalizedTransaction(
+                    date="2024-05-02",
+                    description="TED RECEBIDA CLIENTE",
+                    amount=3000.0,
+                    type="inflow",
+                ),
+            ],
+            layout_name="banco_do_nordeste_extrato_conta_corrente_v1",
+            confidence=0.95,
+            extracted_text="DADOS DA CONTA\nSALDO ANTERIOR R$ 10.000,00\nLANCAMENTOS",
+            parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+        ),
+    )
+
+    result = service.analyze(filename="bnb.pdf", raw_bytes=b"%PDF synthetic")
+
+    assert result.opening_balance == 10000.0
+
+
+def test_analyze_service_does_not_extract_account_from_transaction_body_without_header_label(
+    tmp_path, monkeypatch
+) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    service = AnalyzeService(storage=storage)
+    monkeypatch.setattr(
+        analyze_service_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes: build_pdf_parse_result(
+            transactions=[
+                NormalizedTransaction(
+                    date="2024-05-02",
+                    description="TARIFA MANUTENCAO CONTA 990003",
+                    amount=-60.0,
+                    type="outflow",
+                ),
+            ],
+            layout_name="banco_do_nordeste_extrato_conta_corrente_v1",
+            confidence=0.95,
+            extracted_text=(
+                "LANCAMENTOS\n"
+                "02/05 TARIFA MANUTENCAO CONTA 990003 60,00 D\n"
+                "03/05 PIX RECEBIDO CLIENTE 300,00 C"
+            ),
+            parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+        ),
+    )
+
+    result = service.analyze(filename="bnb.pdf", raw_bytes=b"%PDF synthetic")
+
+    assert result.account_number is None
+
+
+def test_analyze_service_extracts_account_and_branch_from_header_without_colon(
+    tmp_path, monkeypatch
+) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    service = AnalyzeService(storage=storage)
+    monkeypatch.setattr(
+        analyze_service_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes: build_pdf_parse_result(
+            transactions=[
+                NormalizedTransaction(
+                    date="2024-05-02",
+                    description="PIX RECEBIDO CLIENTE",
+                    amount=300.0,
+                    type="inflow",
+                ),
+            ],
+            layout_name="santander_aplicativo_empresas_conta_corrente_extrato_v1",
+            confidence=0.95,
+            extracted_text=(
+                "DADOS DA CONTA\n"
+                "AGENCIA 1234-5\n"
+                "CONTA 123456-7\n"
+                "LANCAMENTOS\n"
+                "02/05 PIX RECEBIDO CLIENTE 300,00 C"
+            ),
+            parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+        ),
+    )
+
+    result = service.analyze(filename="santander.pdf", raw_bytes=b"%PDF synthetic")
+
+    assert result.bank_branch == "1234-5"
+    assert result.account_number == "123456-7"
+
+
+def test_analyze_service_extracts_branch_from_split_header_line_without_inventing_account(
+    tmp_path, monkeypatch
+) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    service = AnalyzeService(storage=storage)
+    monkeypatch.setattr(
+        analyze_service_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes: build_pdf_parse_result(
+            transactions=[
+                NormalizedTransaction(
+                    date="2024-05-02",
+                    description="TARIFA MANUTENCAO CONTA 990003",
+                    amount=-60.0,
+                    type="outflow",
+                ),
+            ],
+            layout_name="banco_do_nordeste_extrato_conta_corrente_v1",
+            confidence=0.95,
+            extracted_text=(
+                "BANCO DO NORDESTE\n"
+                "AGENCIA:\n"
+                "1234\n"
+                "LANCAMENTOS\n"
+                "02/05 TARIFA MANUTENCAO CONTA 990003 60,00 D"
+            ),
+            parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+        ),
+    )
+
+    result = service.analyze(filename="bnb.pdf", raw_bytes=b"%PDF synthetic")
+
+    assert result.bank_branch == "1234"
+    assert result.account_number is None
+
