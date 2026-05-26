@@ -7,7 +7,7 @@ from typing import Callable
 
 from pypdf import PdfReader
 
-from app.application.errors import InvalidFileContentError
+from app.application.errors import InvalidFileContentError, MaxPagesPerFileExceededError
 from app.application.layout_profiles.registry import DeclarativeLayoutProfile, get_layout_profile
 from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.normalization.balance import annotate_balance_consistency
@@ -73,6 +73,7 @@ class _ParsedTransaction:
 def parse_pdf_transactions(
     raw_bytes: bytes,
     on_ocr_progress: Callable[[int, int], None] | None = None,
+    max_ocr_pages: int | None = None,
 ) -> PdfParseResult:
     try:
         native_pages = _read_native_pdf_page_texts(raw_bytes)
@@ -80,11 +81,13 @@ def parse_pdf_transactions(
         native_pages = []
 
     if is_textract_enabled() and (not native_pages or is_textract_forced()):
+        _enforce_ocr_page_limit(page_count=len(native_pages), max_ocr_pages=max_ocr_pages)
         try:
             return _parse_scanned_pdf_with_textract_gateway(raw_bytes)
         except InvalidFileContentError as textract_error:
             if not is_pdf_ocr_enabled():
                 raise
+            _enforce_ocr_page_limit(page_count=len(native_pages), max_ocr_pages=max_ocr_pages)
             fallback_result = _parse_scanned_pdf_with_local_ocr_adapter(raw_bytes, on_ocr_progress=on_ocr_progress)
             fallback_metrics = dict(fallback_result.parse_metrics)
             fallback_metrics["textract_used"] = 0
@@ -110,6 +113,7 @@ def parse_pdf_transactions(
         return primary_result
     if not is_pdf_ocr_enabled():
         return primary_result
+    _enforce_ocr_page_limit(page_count=len(native_pages), max_ocr_pages=max_ocr_pages)
 
     if on_ocr_progress is None:
         ocr_pages = extract_pdf_page_texts_with_ocr(raw_bytes)
@@ -122,6 +126,15 @@ def parse_pdf_transactions(
     if _is_better_parse_result(candidate=ocr_result, baseline=primary_result):
         return ocr_result
     return primary_result
+
+
+def _enforce_ocr_page_limit(*, page_count: int, max_ocr_pages: int | None) -> None:
+    if max_ocr_pages is None:
+        return
+    safe_limit = max(1, int(max_ocr_pages))
+    safe_pages = max(0, int(page_count))
+    if safe_pages > safe_limit:
+        raise MaxPagesPerFileExceededError(pages_count=safe_pages, max_pages_per_file=safe_limit)
 
 
 def is_textract_enabled() -> bool:

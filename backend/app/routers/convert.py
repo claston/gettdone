@@ -257,10 +257,12 @@ def _build_convert_response(
             raise
         access_control_service.ensure_quota_available(identity, required_units=1)
         try:
+            ocr_max_pages = _resolve_ocr_max_pages_per_file(identity)
             analysis = analyze_service.analyze(
                 filename=file.filename or "",
                 raw_bytes=data,
                 on_ocr_progress=telemetry_ocr_progress,
+                max_ocr_pages=ocr_max_pages,
             )
         except InvalidFileContentError as exc:
             # If inspection misclassifies a scanned PDF as text-based, analyze may fail with

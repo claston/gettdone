@@ -20,7 +20,7 @@ from app.schemas import (
 
 
 class FakeAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None) -> AnalyzeResponse:
+    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
         _ = on_ocr_progress
         if not filename.endswith((".csv", ".xlsx", ".ofx", ".pdf")):
             from app.application import UnsupportedFileTypeError
@@ -79,21 +79,26 @@ class FakeAnalyzeService:
 
 
 class InsufficientTextAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None) -> AnalyzeResponse:
+    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
         _ = (filename, raw_bytes, on_ocr_progress)
         raise InvalidFileContentError("Não encontramos texto suficiente para OCR neste PDF.")
 
 
 class EmptyBytesInvalidContentAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None) -> AnalyzeResponse:
+    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
         _ = (filename, on_ocr_progress)
         if not raw_bytes:
             raise InvalidFileContentError("Não foi possível ler este PDF.")
-        return FakeAnalyzeService().analyze(filename=filename, raw_bytes=raw_bytes, on_ocr_progress=on_ocr_progress)
+        return FakeAnalyzeService().analyze(
+            filename=filename,
+            raw_bytes=raw_bytes,
+            on_ocr_progress=on_ocr_progress,
+            max_ocr_pages=max_ocr_pages,
+        )
 
 
 class CorruptedPdfAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None) -> AnalyzeResponse:
+    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
         _ = (filename, raw_bytes, on_ocr_progress)
         raise InvalidFileContentError("Ignoring wrong pointing object 9 0 (offset 0)")
 

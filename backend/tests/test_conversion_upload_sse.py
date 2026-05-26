@@ -29,7 +29,7 @@ def _blank_pdf_bytes() -> bytes:
 
 
 class FakeAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None) -> AnalyzeResponse:
+    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
         if "fail_ocr" in filename:
             raise InvalidFileContentError("OCR failed while processing PDF pages.")
         if "corrupted" in filename:
