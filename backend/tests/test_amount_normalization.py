@@ -16,6 +16,9 @@ from app.application.normalization.amount import parse_amount
         ("10,00-", -10.00),
         ("10.00-", -10.00),
         ("\u2212R$ 240,24", -240.24),
+        ("-53,02\u00b0", -53.02),
+        ("-84,043,32", -84043.32),
+        ("1.234.567", 1234567.0),
     ],
 )
 def test_parse_amount_accepts_supported_money_formats(raw: str, expected: float) -> None:

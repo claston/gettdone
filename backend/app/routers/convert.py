@@ -47,6 +47,10 @@ def _resolve_ocr_progress_percent(current_page: int, total_pages: int) -> int:
     return min(90, 78 + int((safe_current / safe_total) * 12))
 
 
+def _resolve_document_progress_percent(current_page: int, total_pages: int) -> int:
+    return _resolve_ocr_progress_percent(current_page, total_pages)
+
+
 def _resolve_conversion_type_from_filename(filename: str) -> str:
     extension = Path(filename or "").suffix.lower().strip(".")
     return f"{extension}-ofx" if extension else "pdf-ofx"
@@ -158,7 +162,10 @@ def _resolve_processed_pages(analysis) -> int | None:
     metrics = getattr(analysis, "pdf_processing_metrics", None)
     if metrics is None:
         return None
-    page_count = int(getattr(metrics, "page_count", 0) or 0)
+    if isinstance(metrics, dict):
+        page_count = int(metrics.get("page_count", 0) or 0)
+    else:
+        page_count = int(getattr(metrics, "page_count", 0) or 0)
     return max(1, page_count)
 
 
@@ -487,26 +494,24 @@ async def conversion_upload_stream(
     scanned_likely, total_pages = _inspect_pdf_scan_likely(file.filename or "", data)
 
     def event_stream():
-        yield _sse_event("processing_status", {"stage": "upload_received", "progress": 5, "message": "Arquivo recebido."})
+        yield _sse_event("processing_status", {"stage": "document_received", "progress": 5, "message": "Documento recebido."})
         yield _sse_event(
             "processing_status",
-            {"stage": "pdf_inspection", "progress": 12, "message": "Analisando estrutura do PDF..."},
+            {"stage": "document_analysis", "progress": 12, "message": "Analisando o documento..."},
         )
         yield _sse_event(
             "processing_status",
             {
-                "stage": "scan_detection",
+                "stage": "document_preparation",
                 "progress": 20,
-                "message": "Este PDF parece ser escaneado. A leitura pode levar um pouco mais."
-                if scanned_likely
-                else "Texto encontrado no documento.",
+                "message": "Preparando a leitura do documento.",
                 "scannedLikely": scanned_likely,
             },
         )
         if scanned_likely:
             yield _sse_event(
                 "processing_status",
-                {"stage": "ocr_started", "progress": 28, "message": "Iniciando reconhecimento de texto..."},
+                {"stage": "document_processing", "progress": 28, "message": "Processando o documento..."},
             )
 
         progress_queue: Queue[tuple[str, dict | ConvertResponse | Exception]] = Queue()
@@ -514,14 +519,14 @@ async def conversion_upload_stream(
         def on_ocr_progress(current_page: int, total_page_count: int) -> None:
             safe_total = max(1, int(total_page_count or 0))
             safe_current = max(1, min(int(current_page or 1), safe_total))
-            percent = _resolve_ocr_progress_percent(safe_current, safe_total)
+            percent = _resolve_document_progress_percent(safe_current, safe_total)
             progress_queue.put(
                 (
                     "event",
                     {
-                        "stage": "ocr_progress",
+                        "stage": "document_processing",
                         "progress": percent,
-                        "message": f"Lendo página {safe_current} de {safe_total}...",
+                        "message": "Processando o documento...",
                         "currentPage": safe_current,
                         "totalPages": safe_total,
                     },
@@ -531,7 +536,7 @@ async def conversion_upload_stream(
         def worker() -> None:
             try:
                 progress_queue.put(
-                    ("event", {"stage": "text_extraction", "progress": 76 if scanned_likely else 34, "message": "Extraindo transações..."})
+                    ("event", {"stage": "data_extraction", "progress": 76 if scanned_likely else 34, "message": "Extraindo informações..."})
                 )
                 payload = _build_convert_response(
                     file=file,
@@ -551,7 +556,7 @@ async def conversion_upload_stream(
                     (
                         "event",
                         {
-                            "stage": "conversion",
+                            "stage": "preview_generation",
                             "progress": 93 if scanned_likely else 82,
                             "message": "Gerando prévia...",
                         },
@@ -573,23 +578,35 @@ async def conversion_upload_stream(
                 now = monotonic()
                 if now - last_heartbeat_at >= 0.9 and thread.is_alive():
                     if scanned_likely:
-                        heartbeat_progress = min(90, heartbeat_progress + 1)
+                        heartbeat_progress = min(97, heartbeat_progress + 1)
                         yield _sse_event(
                             "processing_status",
                             {
-                                "stage": "text_extraction",
+                                "stage": "preview_generation" if heartbeat_progress >= 88 else "data_extraction",
                                 "progress": heartbeat_progress,
-                                "message": "Extraindo transações...",
+                                "message": (
+                                    "Finalizando o documento..."
+                                    if heartbeat_progress >= 94
+                                    else "Preparando a prévia..."
+                                    if heartbeat_progress >= 88
+                                    else "Extraindo informações..."
+                                ),
                             },
                         )
                     else:
-                        heartbeat_progress = min(80, heartbeat_progress + 2)
+                        heartbeat_progress = min(97, heartbeat_progress + 2)
                         yield _sse_event(
                             "processing_status",
                             {
-                                "stage": "conversion_progress",
+                                "stage": "preview_generation" if heartbeat_progress >= 82 else "document_processing",
                                 "progress": heartbeat_progress,
-                                "message": "Processando arquivo...",
+                                "message": (
+                                    "Finalizando o documento..."
+                                    if heartbeat_progress >= 94
+                                    else "Preparando a prévia..."
+                                    if heartbeat_progress >= 82
+                                    else "Processando o documento..."
+                                ),
                             },
                         )
                     last_heartbeat_at = now

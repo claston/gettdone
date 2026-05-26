@@ -29,7 +29,13 @@ def build_canonical_quality_metrics(canonical_transactions: list[CanonicalTransa
         "tabular": sum(1 for item in canonical_transactions if item.source_parser == "tabular"),
         "columnar": sum(1 for item in canonical_transactions if item.source_parser == "columnar"),
     }
-    parser_types = [name for name, count in parser_counts.items() if count > 0]
+    parser_types = sorted(
+        {
+            str(item.source_parser).strip()
+            for item in canonical_transactions
+            if str(item.source_parser or "").strip()
+        }
+    )
     return {
         "canonical_transactions_count": total_count,
         "canonical_with_running_balance_count": with_running_balance_count,

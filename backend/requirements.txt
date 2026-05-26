@@ -12,3 +12,4 @@ pytesseract==0.3.13
 psycopg[binary,pool]==3.2.9
 SQLAlchemy==2.0.44
 alembic==1.17.1
+boto3==1.39.8

@@ -204,3 +204,31 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
         for insight in result.insights
     )
 
+
+def test_analyze_service_extracts_bank_branch_and_account_from_pdf_text(tmp_path, monkeypatch) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    service = AnalyzeService(storage=storage)
+    monkeypatch.setattr(
+        analyze_service_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes: build_pdf_parse_result(
+            transactions=[
+                NormalizedTransaction(
+                    date="2026-04-13",
+                    description="PIX RECEBIDO CLIENTE A",
+                    amount=1000.00,
+                    type="inflow",
+                ),
+            ],
+            layout_name="bradesco_net_empresa_extrato_mensal_por_periodo_v1",
+            confidence=0.99,
+            extracted_text="AGÊNCIA: 1234-5 CONTA: 123456-7",
+            parse_metrics=PDF_PARSE_METRICS_GROUPED_CANONICAL_OK,
+        ),
+    )
+
+    result = service.analyze(filename="bradesco.pdf", raw_bytes=b"%PDF synthetic")
+
+    assert result.bank_branch == "1234-5"
+    assert result.account_number == "123456-7"
+

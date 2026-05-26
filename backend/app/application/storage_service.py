@@ -383,6 +383,9 @@ class TempAnalysisStorage:
         content["total_inflows"] = total_inflows
         content["total_outflows"] = total_outflows
         content["net_total"] = net_total
+        opening_balance_value, closing_balance_value = self._resolve_balance_bounds(active_rows)
+        content["opening_balance"] = opening_balance_value
+        content["closing_balance"] = closing_balance_value
         content["preview_transactions"] = [asdict(item) for item in preview_rows]
         content["report_transactions"] = [asdict(item) for item in report_rows]
         new_updated_at = self.now_provider().isoformat()
@@ -409,6 +412,8 @@ class TempAnalysisStorage:
             "net_total": net_total,
             "preview_transactions": [asdict(item) for item in preview_rows],
             "updated_at": new_updated_at,
+            "opening_balance": opening_balance_value,
+            "closing_balance": closing_balance_value,
         }
 
     def save_reconcile_report(
@@ -609,13 +614,19 @@ class TempAnalysisStorage:
         workbook = Workbook()
         sheet = workbook.active
         sheet.title = "Conversao"
-        sheet.append(["Data", "Historico", "Credito", "Debito"])
+        sheet.append(["Data", "Historico", "Credito", "Debito", "Saldo"])
         for item in active_rows:
             amount = float(item.amount)
             credit = round(amount, 2) if amount > 0 else None
             debit = round(abs(amount), 2) if amount < 0 else None
-            sheet.append([self._format_convert_date(item.date), item.description, credit, debit])
+            sheet.append([self._format_convert_date(item.date), item.description, credit, debit, item.running_balance])
         self._format_transacoes_sheet(sheet)
+        opening_balance, closing_balance = self._resolve_balance_bounds(active_rows)
+        summary_sheet = workbook.create_sheet(title="Resumo")
+        summary_sheet.append(["Campo", "Valor"])
+        summary_sheet.append(["Saldo anterior", opening_balance])
+        summary_sheet.append(["Saldo final", closing_balance])
+        self._format_transacoes_sheet(summary_sheet)
         workbook.save(analysis_dir / "converted.xlsx")
 
     def _regenerate_ofx_with_overrides(
@@ -1003,3 +1014,17 @@ class TempAnalysisStorage:
             "none": "-",
         }
         return labels.get(text, text or "-")
+
+    def _resolve_balance_bounds(self, rows: list[TransactionRow]) -> tuple[float | None, float | None]:
+        opening_balance: float | None = None
+        closing_balance: float | None = None
+        for item in rows:
+            if item.running_balance is None:
+                continue
+            opening_balance = round(float(item.running_balance) - float(item.amount), 2)
+            break
+        for item in reversed(rows):
+            if item.running_balance is not None:
+                closing_balance = round(float(item.running_balance), 2)
+                break
+        return opening_balance, closing_balance

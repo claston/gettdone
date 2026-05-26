@@ -68,6 +68,7 @@
     quotaRemaining: null,
     quotaLimit: null,
     closingBalanceOverride: null,
+    closingBalanceManuallyEdited: false,
     bankBranchOverride: "",
     accountNumberOverride: "",
     bankCodeOverride: "",
@@ -941,6 +942,7 @@
     state.quotaRemaining = null;
     state.quotaLimit = null;
     state.closingBalanceOverride = null;
+    state.closingBalanceManuallyEdited = false;
     state.bankBranchOverride = "";
     state.accountNumberOverride = "";
     state.bankCodeOverride = "";
@@ -1056,6 +1058,11 @@
     return folded.replace(/[^a-z0-9]+/g, " ").trim();
   }
 
+  function isOpeningBalanceRow(row) {
+    const normalized = normalizeTextToken(row && row.description);
+    return normalized === "saldo anterior" || normalized === "saldo inicial";
+  }
+
   function inferBankCodeFromLayout(layoutName) {
     const normalized = normalizeTextToken(String(layoutName || "").replace(/[_-]+/g, " "));
     if (!normalized) {
@@ -1081,14 +1088,27 @@
   }
 
   function renderKpis(analysis) {
+    const hasPreviewRows = Array.isArray(state.previewRows) && state.previewRows.length > 0;
+    const derived = hasPreviewRows
+      ? buildDerivedSummaryFromRows(state.previewRows)
+      : {
+          transactionsTotal: Number((analysis && analysis.transactions_total) || 0),
+          totalInflows: Number((analysis && analysis.total_inflows) || 0),
+          totalOutflows: Number((analysis && analysis.total_outflows) || 0),
+          netTotal: Number((analysis && analysis.net_total) || 0),
+        };
     const pagesConverted = resolveConvertedPages(analysis);
+    const analysisOpeningBalance = Number((analysis && analysis.opening_balance) || 0);
+    const analysisClosingBalance = Number(
+      (analysis && analysis.closing_balance != null ? analysis.closing_balance : derived.netTotal) || 0
+    );
     const closingBalance = Number.isFinite(Number(state.closingBalanceOverride))
       ? Number(state.closingBalanceOverride)
-      : Number((analysis && analysis.net_total) || 0);
+      : analysisClosingBalance;
     const reviewWarningsMarkup = buildReviewWarningsMarkup(analysis);
 
-    const inflows = formatCurrency(analysis.total_inflows);
-    const outflows = formatCurrency(analysis.total_outflows);
+    const inflows = formatCurrency(derived.totalInflows);
+    const outflows = formatCurrency(derived.totalOutflows);
     const closingBalanceValue = toMoneyInputValue(closingBalance);
     const isOfxFlow = outputFormat === "ofx";
     const bankBranchValue = normalizeBankBranchDisplay(state.bankBranchOverride);
@@ -1116,7 +1136,7 @@
       ${ofxMetaRow}
       <article class="kpi">
         <p class="kpi-label">Transações</p>
-        <p class="kpi-value">${analysis.transactions_total}</p>
+        <p class="kpi-value">${derived.transactionsTotal}</p>
       </article>
       <article class="kpi">
         <p class="kpi-label">Páginas convertidas</p>
@@ -1129,6 +1149,10 @@
       <article class="kpi">
         <p class="kpi-label">Saídas</p>
         <p class="kpi-value">${outflows}</p>
+      </article>
+      <article class="kpi">
+        <p class="kpi-label">Saldo anterior</p>
+        <p class="kpi-value">${formatCurrency(analysisOpeningBalance)}</p>
       </article>
       <article class="kpi">
         <p class="kpi-label">Saldo final</p>
@@ -1234,6 +1258,76 @@
     return Number.isFinite(parsed) ? parsed : null;
   }
 
+  function roundMoney(value) {
+    return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+  }
+
+  function buildDisplayedRunningBalances(rows) {
+    const displayed = [];
+    const opening = Number(state.analysisSnapshot && state.analysisSnapshot.opening_balance);
+    let cursor = Number.isFinite(opening) ? opening : null;
+
+    for (const row of rows || []) {
+      const explicit = getRunningBalanceAmount(row);
+      if (explicit !== null) {
+        cursor = explicit;
+        displayed.push(explicit);
+        continue;
+      }
+
+      if (cursor === null) {
+        displayed.push(null);
+        continue;
+      }
+
+      const amount = Number(row && row.amount);
+      const safeAmount = Number.isFinite(amount) ? amount : 0;
+      cursor = roundMoney(cursor + safeAmount);
+      displayed.push(cursor);
+    }
+
+    return displayed;
+  }
+
+  function buildDerivedSummaryFromRows(rows) {
+    const activeRows = (rows || []).filter(
+      (row) => row && row.is_deleted !== true && !isOpeningBalanceRow(row)
+    );
+    const totalInflows = roundMoney(
+      activeRows.reduce((acc, row) => {
+        const amount = Number(row && row.amount);
+        return Number.isFinite(amount) && amount > 0 ? acc + amount : acc;
+      }, 0)
+    );
+    const totalOutflows = roundMoney(
+      activeRows.reduce((acc, row) => {
+        const amount = Number(row && row.amount);
+        return Number.isFinite(amount) && amount < 0 ? acc + amount : acc;
+      }, 0)
+    );
+    return {
+      transactionsTotal: activeRows.length,
+      totalInflows,
+      totalOutflows,
+      netTotal: roundMoney(totalInflows + totalOutflows),
+    };
+  }
+
+  function syncClosingBalanceFromPayload(payload) {
+    if (state.closingBalanceManuallyEdited) {
+      return;
+    }
+    const closingFromPayload =
+      payload && payload.closing_balance != null
+        ? Number(payload.closing_balance)
+        : payload
+          ? Number(payload.net_total)
+          : NaN;
+    if (Number.isFinite(closingFromPayload)) {
+      state.closingBalanceOverride = closingFromPayload;
+    }
+  }
+
   function setPreviewRows(rows) {
     state.previewRows = (rows || []).map((row, idx) => ({
       ...row,
@@ -1296,6 +1390,13 @@
       state.analysisSnapshot.total_inflows = Number(payload.total_inflows || state.analysisSnapshot.total_inflows || 0);
       state.analysisSnapshot.total_outflows = Number(payload.total_outflows || state.analysisSnapshot.total_outflows || 0);
       state.analysisSnapshot.net_total = Number(payload.net_total || state.analysisSnapshot.net_total || 0);
+      if (payload.opening_balance != null) {
+        state.analysisSnapshot.opening_balance = Number(payload.opening_balance);
+      }
+      if (payload.closing_balance != null) {
+        state.analysisSnapshot.closing_balance = Number(payload.closing_balance);
+      }
+      syncClosingBalanceFromPayload(payload);
       state.analysisSnapshot.updated_at = payload.updated_at || state.analysisSnapshot.updated_at || null;
       renderKpis(state.analysisSnapshot);
       markChangedRow(rowId);
@@ -1328,6 +1429,13 @@
       state.analysisSnapshot.total_inflows = Number(payload.total_inflows || state.analysisSnapshot.total_inflows || 0);
       state.analysisSnapshot.total_outflows = Number(payload.total_outflows || state.analysisSnapshot.total_outflows || 0);
       state.analysisSnapshot.net_total = Number(payload.net_total || state.analysisSnapshot.net_total || 0);
+      if (payload.opening_balance != null) {
+        state.analysisSnapshot.opening_balance = Number(payload.opening_balance);
+      }
+      if (payload.closing_balance != null) {
+        state.analysisSnapshot.closing_balance = Number(payload.closing_balance);
+      }
+      syncClosingBalanceFromPayload(payload);
       state.analysisSnapshot.updated_at = payload.updated_at || state.analysisSnapshot.updated_at || null;
       renderKpis(state.analysisSnapshot);
       markChangedRow(rowId);
@@ -1485,6 +1593,13 @@
         state.analysisSnapshot.total_inflows = Number(payload.total_inflows || state.analysisSnapshot.total_inflows || 0);
         state.analysisSnapshot.total_outflows = Number(payload.total_outflows || state.analysisSnapshot.total_outflows || 0);
         state.analysisSnapshot.net_total = Number(payload.net_total || state.analysisSnapshot.net_total || 0);
+        if (payload.opening_balance != null) {
+          state.analysisSnapshot.opening_balance = Number(payload.opening_balance);
+        }
+        if (payload.closing_balance != null) {
+          state.analysisSnapshot.closing_balance = Number(payload.closing_balance);
+        }
+        syncClosingBalanceFromPayload(payload);
         state.analysisSnapshot.updated_at = payload.updated_at || state.analysisSnapshot.updated_at || null;
         renderKpis(state.analysisSnapshot);
       }
@@ -1498,14 +1613,15 @@
   }
 
   function renderRows() {
-    const rows = state.previewRows;
+    const rows = (state.previewRows || []).filter((row) => !isOpeningBalanceRow(row));
     if (!rows || rows.length === 0) {
       reviewRows.innerHTML = '<tr><td colspan="6">Nenhuma transação para exibir.</td></tr>';
       return;
     }
 
+    const displayedRunningBalances = buildDisplayedRunningBalances(rows);
     reviewRows.innerHTML = rows
-      .map((row) => {
+      .map((row, index) => {
         const rowClass =
           row.rowId === state.lastChangedRowId
             ? state.lastChangedRowKind === "new"
@@ -1545,7 +1661,7 @@
         const debitMarkup = debitAmount !== null
           ? `<span class="amount-debit">${formatCurrency(debitAmount)}</span>`
           : '<span class="amount-empty">—</span>';
-        const runningBalanceAmount = getRunningBalanceAmount(row);
+        const runningBalanceAmount = displayedRunningBalances[index];
         const runningBalanceMarkup = runningBalanceAmount !== null
           ? `<span class="amount-balance">${formatCurrency(runningBalanceAmount)}</span>`
           : '<span class="amount-empty">—</span>';
@@ -1609,6 +1725,7 @@
     }
     const restoredClosingBalance = Number(viewState.closing_balance_override);
     state.closingBalanceOverride = Number.isFinite(restoredClosingBalance) ? restoredClosingBalance : null;
+    state.closingBalanceManuallyEdited = Number.isFinite(restoredClosingBalance);
     state.bankBranchOverride = normalizeBankBranchDisplay(viewState.bank_branch_override || "");
     state.accountNumberOverride = normalizeAccountDisplay(viewState.account_number_override || "");
     state.bankCodeOverride = normalizeDigits(viewState.bank_code_override || "").slice(0, 3);
@@ -1878,7 +1995,11 @@
             setProgressTarget(progress);
           }
           if (!stage || !message) return;
-          if (stage === "ocr_progress" && Number.isFinite(Number(event.currentPage)) && Number.isFinite(Number(event.totalPages))) {
+          if (
+            stage === "document_processing" &&
+            Number.isFinite(Number(event.currentPage)) &&
+            Number.isFinite(Number(event.totalPages))
+          ) {
             setStatusSmooth(`Lendo página ${Number(event.currentPage)} de ${Number(event.totalPages)}...`, null);
             return;
           }
@@ -1891,16 +2012,19 @@
       state.analysisId = analysis.analysis_id;
       state.processingId = payload.processing_id || analysis.analysis_id;
       state.analysisSnapshot = { ...analysis };
-      state.closingBalanceOverride = Number(analysis.net_total || 0);
-      state.bankBranchOverride = "";
-      state.accountNumberOverride = "";
+      state.closingBalanceManuallyEdited = false;
+      state.closingBalanceOverride = Number(
+        analysis.closing_balance != null ? analysis.closing_balance : analysis.net_total || 0
+      );
+      state.bankBranchOverride = normalizeBankBranchDisplay(analysis.bank_branch || "");
+      state.accountNumberOverride = normalizeAccountDisplay(analysis.account_number || "");
       state.bankCodeOverride = inferBankCodeFromLayout(analysis.layout_inference_name || "");
       markChangedRow(null);
       if (addRowBtn) addRowBtn.disabled = false;
 
-      renderKpis(analysis);
       setPreviewRows(analysis.preview_transactions || []);
       setOriginalRows(analysis.preview_transactions || []);
+      renderKpis(analysis);
       renderRows();
 
       if (analysisIdNode) analysisIdNode.textContent = analysis.analysis_id || "-";
@@ -2230,11 +2354,18 @@
       target.value = toMoneyInputValue(
         Number.isFinite(Number(state.closingBalanceOverride))
           ? Number(state.closingBalanceOverride)
-          : Number((state.analysisSnapshot && state.analysisSnapshot.net_total) || 0),
+          : Number(
+              (state.analysisSnapshot &&
+                (state.analysisSnapshot.closing_balance != null
+                  ? state.analysisSnapshot.closing_balance
+                  : state.analysisSnapshot.net_total)) ||
+                0
+            ),
       );
       return;
     }
     state.closingBalanceOverride = parsed;
+    state.closingBalanceManuallyEdited = true;
     target.value = toMoneyInputValue(parsed);
     persistCurrentViewState();
     setStatus("Saldo final atualizado para o próximo download OFX.", "success");

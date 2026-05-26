@@ -126,6 +126,9 @@ class AnalyzeService:
         total_inflows = round(sum(item.amount for item in transactions if item.amount > 0), 2)
         total_outflows = round(sum(item.amount for item in transactions if item.amount < 0), 2)
         net_total = round(total_inflows + total_outflows, 2)
+        opening_balance = self._resolve_opening_balance(preview_rows)
+        closing_balance = self._resolve_closing_balance(preview_rows)
+        bank_branch, account_number = self._extract_bank_account_metadata(extracted_text)
         total_volume = round(sum(abs(item.amount) for item in transactions), 2)
         inflow_count = sum(1 for item in transactions if item.amount > 0)
         outflow_count = sum(1 for item in transactions if item.amount < 0)
@@ -168,6 +171,10 @@ class AnalyzeService:
             layout_inference_confidence=layout_inference_confidence,
             pdf_processing_metrics=pdf_processing_metrics,
             ofx_account_type=ofx_account_type,
+            opening_balance=opening_balance,
+            closing_balance=closing_balance,
+            bank_branch=bank_branch,
+            account_number=account_number,
         )
         expires_at = self.storage.save_analysis(analysis_data)
         logger.info(
@@ -255,7 +262,24 @@ class AnalyzeService:
             layout_inference_name=layout_inference_name,
             layout_inference_confidence=layout_inference_confidence,
             pdf_processing_metrics=pdf_processing_metrics,
+            opening_balance=analysis_data.opening_balance,
+            closing_balance=analysis_data.closing_balance,
+            bank_branch=analysis_data.bank_branch,
+            account_number=analysis_data.account_number,
         )
+
+    def _resolve_opening_balance(self, rows: list[TransactionRow]) -> float | None:
+        for row in rows:
+            if row.running_balance is None:
+                continue
+            return round(float(row.running_balance) - float(row.amount), 2)
+        return None
+
+    def _resolve_closing_balance(self, rows: list[TransactionRow]) -> float | None:
+        for row in reversed(rows):
+            if row.running_balance is not None:
+                return round(float(row.running_balance), 2)
+        return None
 
     def _build_transactions_for_extension(
         self,
@@ -455,6 +479,56 @@ class AnalyzeService:
                 f"{reason_suffix}."
             ),
         )
+
+    def _extract_bank_account_metadata(self, extracted_text: str | None) -> tuple[str | None, str | None]:
+        normalized = self._normalize_text_for_profile(extracted_text or "")
+        if not normalized:
+            return None, None
+
+        branch: str | None = None
+        account: str | None = None
+
+        branch_patterns = (
+            r"\bAG(?:E|Ê)NCIA\s*[:\-]?\s*(\d{3,6}(?:[-.]\d)?)\b",
+            r"\bAG\s*[:\-]?\s*(\d{3,6}(?:[-.]\d)?)\b",
+        )
+        account_patterns = (
+            r"\bCONTA(?:\s+CORRENTE)?\s*[:\-]?\s*(\d{4,14}(?:[-.]\d)?)\b",
+            r"\bC\/C\s*[:\-]?\s*(\d{4,14}(?:[-.]\d)?)\b",
+            r"\bCC\s*[:\-]?\s*(\d{4,14}(?:[-.]\d)?)\b",
+        )
+
+        for pattern in branch_patterns:
+            match = re.search(pattern, normalized)
+            if match:
+                branch = self._normalize_account_identifier(match.group(1))
+                if branch:
+                    break
+
+        for pattern in account_patterns:
+            match = re.search(pattern, normalized)
+            if match:
+                account = self._normalize_account_identifier(match.group(1))
+                if account:
+                    break
+
+        return branch, account
+
+    def _normalize_account_identifier(self, value: str | None) -> str | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        digits = re.sub(r"\D", "", raw)
+        if len(digits) < 3:
+            return None
+        if "-" in raw or "." in raw:
+            cleaned = raw.replace(".", "-")
+            cleaned = re.sub(r"[^0-9-]", "", cleaned)
+            cleaned = re.sub(r"-{2,}", "-", cleaned).strip("-")
+            return cleaned or digits
+        if len(digits) > 1:
+            return f"{digits[:-1]}-{digits[-1]}"
+        return digits
 
     def _decode_optional_text(self, raw_bytes: bytes) -> str:
         for encoding in ("utf-8-sig", "utf-8", "latin-1"):
