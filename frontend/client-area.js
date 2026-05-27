@@ -653,7 +653,7 @@
       
       if (planText) {
         planText.textContent =
-          "Limite por arquivo: PDF com texto até 10 MB. PDF escaneado até 5 MB e 10 páginas.";
+          "Limite por arquivo: PDF com texto até 10 MB.";
       }
       if (planSummary) {
         planSummary.textContent = String(me.plan_name || "").trim() || (quotaMode === "pages" ? "Plano pago" : "Plano gratuito");
