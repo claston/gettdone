@@ -17,6 +17,13 @@ def record_user_conversion(
     status: str,
     transactions_count: int | None,
     pages_count: int | None = None,
+    scanned_likely: bool | None = None,
+    ocr_used: bool = False,
+    ocr_pages_processed: int = 0,
+    duration_ms: int = 0,
+    error_code: str | None = None,
+    canonical_warning_transactions_count: int = 0,
+    balance_consistency_failed: int = 0,
     created_at: str | None = None,
     expires_at: str | None = None,
 ) -> None:
@@ -33,9 +40,16 @@ def record_user_conversion(
           conversion_type,
           status,
           transactions_count,
-          pages_count
+          pages_count,
+          scanned_likely,
+          ocr_used,
+          ocr_pages_processed,
+          duration_ms,
+          error_code,
+          canonical_warning_transactions_count,
+          balance_consistency_failed
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(analysis_id)
         DO UPDATE SET
           user_id=excluded.user_id,
@@ -46,7 +60,14 @@ def record_user_conversion(
           conversion_type=excluded.conversion_type,
           status=excluded.status,
           transactions_count=excluded.transactions_count,
-          pages_count=excluded.pages_count
+          pages_count=excluded.pages_count,
+          scanned_likely=excluded.scanned_likely,
+          ocr_used=excluded.ocr_used,
+          ocr_pages_processed=excluded.ocr_pages_processed,
+          duration_ms=excluded.duration_ms,
+          error_code=excluded.error_code,
+          canonical_warning_transactions_count=excluded.canonical_warning_transactions_count,
+          balance_consistency_failed=excluded.balance_consistency_failed
         """,
         (
             processing_id,
@@ -59,6 +80,13 @@ def record_user_conversion(
             status.strip() or "Sucesso",
             transactions_count,
             pages_count,
+            scanned_likely,
+            bool(ocr_used),
+            max(0, int(ocr_pages_processed or 0)),
+            max(0, int(duration_ms or 0)),
+            (error_code or "").strip() or None,
+            max(0, int(canonical_warning_transactions_count or 0)),
+            max(0, int(balance_consistency_failed or 0)),
         ),
     )
 

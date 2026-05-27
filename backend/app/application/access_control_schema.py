@@ -50,7 +50,20 @@ class AccessControlSchemaComponent:
         required_columns: dict[str, tuple[str, ...]] = {
             "users": ("auth_provider", "provider_user_id", "is_admin"),
             "usage": ("window_started_at",),
-            "user_conversions": ("pages_count",),
+            "user_conversions": (
+                "pages_count",
+                "scanned_likely",
+                "ocr_used",
+                "ocr_pages_processed",
+                "duration_ms",
+                "error_code",
+                "canonical_warning_transactions_count",
+                "balance_consistency_failed",
+            ),
+            "anonymous_conversion_events": (
+                "canonical_warning_transactions_count",
+                "balance_consistency_failed",
+            ),
             "plan_versions": ("max_pages_per_file_ocr",),
             "checkout_intents": ("user_id", "payment_link", "payment_link_sent_at", "released_at"),
         }

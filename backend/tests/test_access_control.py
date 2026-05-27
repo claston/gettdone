@@ -225,6 +225,43 @@ def test_list_user_conversions_marks_expired_items(tmp_path) -> None:
     assert items[0]["pages_count"] == 4
 
 
+def test_record_user_conversion_persists_warning_metrics(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+    )
+    user = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
+    service.record_user_conversion(
+        user_id=user.user_id,
+        processing_id="an_metrics_user_001",
+        filename="statement.pdf",
+        model="nubank_statement_ptbr",
+        conversion_type="pdf-ofx",
+        status="Sucesso",
+        transactions_count=12,
+        pages_count=5,
+        canonical_warning_transactions_count=2,
+        balance_consistency_failed=1,
+    )
+
+    with service._connect() as conn:
+        row = service._fetchone(
+            conn,
+            """
+            SELECT
+              canonical_warning_transactions_count,
+              balance_consistency_failed
+            FROM user_conversions
+            WHERE analysis_id = ?
+            """,
+            ("an_metrics_user_001",),
+        )
+
+    assert row is not None
+    assert int(row["canonical_warning_transactions_count"]) == 2
+    assert int(row["balance_consistency_failed"]) == 1
+
+
 def test_create_checkout_intent_persists_pending_order(tmp_path) -> None:
     service = AccessControlService(
         state_file=tmp_path / "state.json",
@@ -265,6 +302,8 @@ def test_record_anonymous_conversion_event_persists_metrics(tmp_path) -> None:
         ocr_used=True,
         ocr_pages_processed=5,
         duration_ms=1842,
+        canonical_warning_transactions_count=2,
+        balance_consistency_failed=1,
         error_code=None,
     )
 
@@ -283,7 +322,9 @@ def test_record_anonymous_conversion_event_persists_metrics(tmp_path) -> None:
               scanned_likely,
               ocr_used,
               ocr_pages_processed,
-              duration_ms
+              duration_ms,
+              canonical_warning_transactions_count,
+              balance_consistency_failed
             FROM anonymous_conversion_events
             WHERE id = ?
             """,
@@ -300,6 +341,8 @@ def test_record_anonymous_conversion_event_persists_metrics(tmp_path) -> None:
     assert int(row["pages_count"]) == 5
     assert int(row["ocr_pages_processed"]) == 5
     assert int(row["duration_ms"]) == 1842
+    assert int(row["canonical_warning_transactions_count"]) == 2
+    assert int(row["balance_consistency_failed"]) == 1
 
 
 def test_retryable_db_exception_includes_unexpected_ssl_close(tmp_path) -> None:

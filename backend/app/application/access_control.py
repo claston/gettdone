@@ -260,6 +260,13 @@ class AccessControlService:
         status: str,
         transactions_count: int | None,
         pages_count: int | None = None,
+        scanned_likely: bool | None = None,
+        ocr_used: bool = False,
+        ocr_pages_processed: int = 0,
+        duration_ms: int = 0,
+        error_code: str | None = None,
+        canonical_warning_transactions_count: int = 0,
+        balance_consistency_failed: int = 0,
         created_at: str | None = None,
         expires_at: str | None = None,
     ) -> None:
@@ -272,6 +279,13 @@ class AccessControlService:
             status=status,
             transactions_count=transactions_count,
             pages_count=pages_count,
+            scanned_likely=scanned_likely,
+            ocr_used=ocr_used,
+            ocr_pages_processed=ocr_pages_processed,
+            duration_ms=duration_ms,
+            error_code=error_code,
+            canonical_warning_transactions_count=canonical_warning_transactions_count,
+            balance_consistency_failed=balance_consistency_failed,
             created_at=created_at,
             expires_at=expires_at,
         )
@@ -294,6 +308,8 @@ class AccessControlService:
         ocr_used: bool,
         ocr_pages_processed: int,
         duration_ms: int,
+        canonical_warning_transactions_count: int = 0,
+        balance_consistency_failed: int = 0,
         error_code: str | None = None,
     ) -> None:
         self.checkout.record_anonymous_conversion_event(
@@ -309,6 +325,8 @@ class AccessControlService:
             ocr_used=ocr_used,
             ocr_pages_processed=ocr_pages_processed,
             duration_ms=duration_ms,
+            canonical_warning_transactions_count=canonical_warning_transactions_count,
+            balance_consistency_failed=balance_consistency_failed,
             error_code=error_code,
         )
 
