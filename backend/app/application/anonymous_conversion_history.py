@@ -20,6 +20,8 @@ def record_anonymous_conversion_event(
     ocr_used: bool,
     ocr_pages_processed: int,
     duration_ms: int,
+    canonical_warning_transactions_count: int = 0,
+    balance_consistency_failed: int = 0,
     error_code: str | None = None,
 ) -> None:
     execute(
@@ -39,9 +41,11 @@ def record_anonymous_conversion_event(
           ocr_used,
           ocr_pages_processed,
           duration_ms,
+          canonical_warning_transactions_count,
+          balance_consistency_failed,
           error_code
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id)
         DO UPDATE SET
           created_at=excluded.created_at,
@@ -56,6 +60,8 @@ def record_anonymous_conversion_event(
           ocr_used=excluded.ocr_used,
           ocr_pages_processed=excluded.ocr_pages_processed,
           duration_ms=excluded.duration_ms,
+          canonical_warning_transactions_count=excluded.canonical_warning_transactions_count,
+          balance_consistency_failed=excluded.balance_consistency_failed,
           error_code=excluded.error_code
         """,
         (
@@ -72,6 +78,8 @@ def record_anonymous_conversion_event(
             bool(ocr_used),
             max(0, int(ocr_pages_processed or 0)),
             max(0, int(duration_ms or 0)),
+            max(0, int(canonical_warning_transactions_count or 0)),
+            max(0, int(balance_consistency_failed or 0)),
             (error_code or "").strip() or None,
         ),
     )

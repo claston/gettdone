@@ -169,6 +169,19 @@ def _resolve_processed_pages(analysis) -> int | None:
     return max(1, page_count)
 
 
+def _resolve_warning_metrics(analysis) -> tuple[int, int]:
+    metrics = getattr(analysis, "pdf_processing_metrics", None)
+    if metrics is None:
+        return 0, 0
+    if isinstance(metrics, dict):
+        warning_rows = int(metrics.get("canonical_warning_transactions_count", 0) or 0)
+        balance_failed = int(metrics.get("balance_consistency_failed", 0) or 0)
+    else:
+        warning_rows = int(getattr(metrics, "canonical_warning_transactions_count", 0) or 0)
+        balance_failed = int(getattr(metrics, "balance_consistency_failed", 0) or 0)
+    return max(0, warning_rows), max(0, balance_failed)
+
+
 def _resolve_consumed_units(identity, analysis) -> int:
     if getattr(identity, "quota_mode", "conversion") != "pages":
         return 1
@@ -294,6 +307,7 @@ def _build_convert_response(
             identity_id=identity.identity_id,
         )
         pages_count = _resolve_processed_pages(analysis)
+        warning_rows_count, balance_failed_count = _resolve_warning_metrics(analysis)
         consumed_units = _resolve_consumed_units(identity, analysis)
         quota_remaining = access_control_service.consume_quota(identity, consumed_units=consumed_units)
         if identity.identity_type == "user":
@@ -308,6 +322,13 @@ def _build_convert_response(
                 status="Sucesso",
                 transactions_count=int(analysis.transactions_total),
                 pages_count=pages_count,
+                scanned_likely=scanned_likely,
+                ocr_used=ocr_pages_processed > 0,
+                ocr_pages_processed=ocr_pages_processed,
+                duration_ms=int((monotonic() - started_at) * 1000),
+                error_code=None,
+                canonical_warning_transactions_count=warning_rows_count,
+                balance_consistency_failed=balance_failed_count,
                 expires_at=analysis.expires_at,
             )
         elif identity.identity_type == "anonymous":
@@ -325,6 +346,8 @@ def _build_convert_response(
                 ocr_used=ocr_pages_processed > 0,
                 ocr_pages_processed=ocr_pages_processed,
                 duration_ms=int((monotonic() - started_at) * 1000),
+                canonical_warning_transactions_count=warning_rows_count,
+                balance_consistency_failed=balance_failed_count,
                 error_code=None,
             )
         return ConvertResponse(

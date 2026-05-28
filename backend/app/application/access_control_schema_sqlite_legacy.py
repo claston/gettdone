@@ -59,6 +59,13 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
             status TEXT NOT NULL,
             transactions_count INTEGER NOT NULL DEFAULT 0,
             pages_count INTEGER,
+            scanned_likely INTEGER,
+            ocr_used INTEGER NOT NULL DEFAULT 0,
+            ocr_pages_processed INTEGER NOT NULL DEFAULT 0,
+            duration_ms INTEGER NOT NULL DEFAULT 0,
+            error_code TEXT,
+            canonical_warning_transactions_count INTEGER NOT NULL DEFAULT 0,
+            balance_consistency_failed INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY(user_id) REFERENCES users(id)
         );
 
@@ -76,6 +83,8 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
             ocr_used INTEGER NOT NULL DEFAULT 0,
             ocr_pages_processed INTEGER NOT NULL DEFAULT 0,
             duration_ms INTEGER NOT NULL DEFAULT 0,
+            canonical_warning_transactions_count INTEGER NOT NULL DEFAULT 0,
+            balance_consistency_failed INTEGER NOT NULL DEFAULT 0,
             error_code TEXT
         );
 
@@ -258,6 +267,34 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
     }
     if "pages_count" not in user_conversions_columns:
         conn.execute("ALTER TABLE user_conversions ADD COLUMN pages_count INTEGER")
+    if "scanned_likely" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN scanned_likely INTEGER")
+    if "ocr_used" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN ocr_used INTEGER NOT NULL DEFAULT 0")
+    if "ocr_pages_processed" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN ocr_pages_processed INTEGER NOT NULL DEFAULT 0")
+    if "duration_ms" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0")
+    if "error_code" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN error_code TEXT")
+    if "canonical_warning_transactions_count" not in user_conversions_columns:
+        conn.execute(
+            "ALTER TABLE user_conversions ADD COLUMN canonical_warning_transactions_count INTEGER NOT NULL DEFAULT 0"
+        )
+    if "balance_consistency_failed" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN balance_consistency_failed INTEGER NOT NULL DEFAULT 0")
+    anonymous_conversion_event_columns = {
+        str(row["name"])
+        for row in conn.execute("PRAGMA table_info(anonymous_conversion_events)").fetchall()
+    }
+    if "canonical_warning_transactions_count" not in anonymous_conversion_event_columns:
+        conn.execute(
+            "ALTER TABLE anonymous_conversion_events ADD COLUMN canonical_warning_transactions_count INTEGER NOT NULL DEFAULT 0"
+        )
+    if "balance_consistency_failed" not in anonymous_conversion_event_columns:
+        conn.execute(
+            "ALTER TABLE anonymous_conversion_events ADD COLUMN balance_consistency_failed INTEGER NOT NULL DEFAULT 0"
+        )
     plan_versions_columns = {
         str(row["name"])
         for row in conn.execute("PRAGMA table_info(plan_versions)").fetchall()
