@@ -23,6 +23,18 @@ def record_anonymous_conversion_event(
     canonical_warning_transactions_count: int = 0,
     balance_consistency_failed: int = 0,
     error_code: str | None = None,
+    error_stage: str | None = None,
+    error_subcode: str | None = None,
+    exception_class: str | None = None,
+    layout_inference_name: str | None = None,
+    layout_inference_confidence: float | None = None,
+    selected_parser: str | None = None,
+    parser_selection_reason: str | None = None,
+    pdf_page_count: int | None = None,
+    extracted_char_count: int | None = None,
+    ocr_attempted: bool = False,
+    ocr_engine: str | None = None,
+    file_sha256: str | None = None,
 ) -> None:
     execute(
         conn,
@@ -43,9 +55,21 @@ def record_anonymous_conversion_event(
           duration_ms,
           canonical_warning_transactions_count,
           balance_consistency_failed,
-          error_code
+          error_code,
+          error_stage,
+          error_subcode,
+          exception_class,
+          layout_inference_name,
+          layout_inference_confidence,
+          selected_parser,
+          parser_selection_reason,
+          pdf_page_count,
+          extracted_char_count,
+          ocr_attempted,
+          ocr_engine,
+          file_sha256
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id)
         DO UPDATE SET
           created_at=excluded.created_at,
@@ -62,7 +86,19 @@ def record_anonymous_conversion_event(
           duration_ms=excluded.duration_ms,
           canonical_warning_transactions_count=excluded.canonical_warning_transactions_count,
           balance_consistency_failed=excluded.balance_consistency_failed,
-          error_code=excluded.error_code
+          error_code=excluded.error_code,
+          error_stage=excluded.error_stage,
+          error_subcode=excluded.error_subcode,
+          exception_class=excluded.exception_class,
+          layout_inference_name=excluded.layout_inference_name,
+          layout_inference_confidence=excluded.layout_inference_confidence,
+          selected_parser=excluded.selected_parser,
+          parser_selection_reason=excluded.parser_selection_reason,
+          pdf_page_count=excluded.pdf_page_count,
+          extracted_char_count=excluded.extracted_char_count,
+          ocr_attempted=excluded.ocr_attempted,
+          ocr_engine=excluded.ocr_engine,
+          file_sha256=excluded.file_sha256
         """,
         (
             event_id,
@@ -81,5 +117,17 @@ def record_anonymous_conversion_event(
             max(0, int(canonical_warning_transactions_count or 0)),
             max(0, int(balance_consistency_failed or 0)),
             (error_code or "").strip() or None,
+            (error_stage or "").strip() or None,
+            (error_subcode or "").strip() or None,
+            (exception_class or "").strip() or None,
+            (layout_inference_name or "").strip() or None,
+            float(layout_inference_confidence) if layout_inference_confidence is not None else None,
+            (selected_parser or "").strip() or None,
+            (parser_selection_reason or "").strip() or None,
+            pdf_page_count,
+            extracted_char_count,
+            bool(ocr_attempted),
+            (ocr_engine or "").strip() or None,
+            (file_sha256 or "").strip() or None,
         ),
     )
