@@ -211,49 +211,6 @@ class ConvertEditsResponse(BaseModel):
     closing_balance: float | None = None
 
 
-class OfxEditTransaction(BaseModel):
-    date: str
-    description: str
-    amount: float
-    type: str
-
-
-class OfxEditPreviewResponse(BaseModel):
-    transactions_total: int
-    total_inflows: float
-    total_outflows: float
-    net_total: float
-    transactions: list[OfxEditTransaction]
-
-
-class OfxEditExportRequest(BaseModel):
-    transactions: list[OfxEditTransaction]
-    file_name: str | None = None
-    closing_balance: float | None = None
-    bank_branch: str | None = None
-    account_number: str | None = None
-    bank_code: str | None = None
-
-
-class OfxMergePreviewResponse(BaseModel):
-    files_count: int
-    transactions_total: int
-    duplicates_removed: int
-    total_inflows: float
-    total_outflows: float
-    net_total: float
-    transactions: list[OfxEditTransaction]
-
-
-class OfxMergeExportRequest(BaseModel):
-    transactions: list[OfxEditTransaction]
-    file_name: str | None = None
-    closing_balance: float | None = None
-    bank_branch: str | None = None
-    account_number: str | None = None
-    bank_code: str | None = None
-
-
 class RegisterRequest(BaseModel):
     name: str
     email: str

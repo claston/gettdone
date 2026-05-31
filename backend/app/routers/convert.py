@@ -1,8 +1,5 @@
 import json
 import logging
-import os
-import re
-from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from queue import Empty, Queue
@@ -27,19 +24,9 @@ from app.application import (
     ReportService,
     UnsupportedFileTypeError,
 )
-from app.application.models import NormalizedTransaction
-from app.application.ofx_parser import parse_ofx_transactions
-from app.application.ofx_writer import build_ofx_statement
 from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
 from app.routers.auth_session import SESSION_ACCESS_COOKIE_NAME, resolve_user_token_with_session
-from app.schemas import (
-    ConvertResponse,
-    OfxEditExportRequest,
-    OfxEditPreviewResponse,
-    OfxEditTransaction,
-    OfxMergeExportRequest,
-    OfxMergePreviewResponse,
-)
+from app.schemas import ConvertResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -48,7 +35,6 @@ TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
 OCR_PDF_MAX_PAGES_PER_FILE = 10
 OCR_PDF_MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024
 CORRUPTED_PDF_USER_MESSAGE = "Parece que seu arquivo PDF está corrompido."
-DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def _sse_event(event: str, data: dict) -> str:
@@ -106,49 +92,6 @@ def _is_likely_corrupted_pdf_detail(detail: str) -> bool:
         "corrompid",
     )
     return any(marker in normalized for marker in corrupted_markers)
-
-
-def _normalize_ofx_edit_transactions(transactions: list[OfxEditTransaction]) -> list[NormalizedTransaction]:
-    normalized: list[NormalizedTransaction] = []
-    for row in transactions:
-        date = str(row.date or "").strip()
-        description = str(row.description or "").strip()
-        if not DATE_PATTERN.match(date):
-            raise HTTPException(status_code=400, detail=f"Invalid transaction date format: {date!r}. Use YYYY-MM-DD.")
-        if not description:
-            raise HTTPException(status_code=400, detail="Transaction description cannot be empty.")
-        amount = float(row.amount)
-        row_type = str(row.type or "").strip().lower()
-        if row_type not in {"inflow", "outflow"}:
-            row_type = "inflow" if amount >= 0 else "outflow"
-        normalized.append(
-            NormalizedTransaction(
-                date=date,
-                description=description,
-                amount=amount,
-                type=row_type,
-            )
-        )
-    return normalized
-
-
-def _merge_transactions(
-    transactions: list[NormalizedTransaction], *, deduplicate: bool
-) -> tuple[list[NormalizedTransaction], int]:
-    if not deduplicate:
-        merged = sorted(transactions, key=lambda tx: (tx.date, tx.description.lower(), tx.amount))
-        return merged, 0
-    seen: set[tuple[str, str, str]] = set()
-    merged: list[NormalizedTransaction] = []
-    duplicates_removed = 0
-    for tx in sorted(transactions, key=lambda item: (item.date, item.description.lower(), item.amount)):
-        key = (tx.date, f"{float(tx.amount):.2f}", tx.description.strip().lower())
-        if key in seen:
-            duplicates_removed += 1
-            continue
-        seen.add(key)
-        merged.append(tx)
-    return merged, duplicates_removed
 
 
 def _safe_record_anonymous_conversion_event(access_control_service: AccessControlService, **kwargs) -> None:
@@ -239,67 +182,6 @@ def _resolve_warning_metrics(analysis) -> tuple[int, int]:
     return max(0, warning_rows), max(0, balance_failed)
 
 
-def _resolve_parse_observability_metrics(analysis) -> dict[str, str | int | float | None]:
-    metrics = getattr(analysis, "pdf_processing_metrics", None)
-    if metrics is None:
-        return {
-            "layout_inference_name": (getattr(analysis, "layout_inference_name", None) or None),
-            "layout_inference_confidence": getattr(analysis, "layout_inference_confidence", None),
-            "selected_parser": None,
-            "parser_selection_reason": None,
-            "pdf_page_count": None,
-            "extracted_char_count": None,
-        }
-    if isinstance(metrics, dict):
-        selected_parser = metrics.get("selected_parser")
-        parser_selection_reason = metrics.get("parser_selection_reason")
-        page_count = metrics.get("page_count")
-        extracted_char_count = metrics.get("extracted_char_count")
-    else:
-        selected_parser = getattr(metrics, "selected_parser", None)
-        parser_selection_reason = getattr(metrics, "parser_selection_reason", None)
-        page_count = getattr(metrics, "page_count", None)
-        extracted_char_count = getattr(metrics, "extracted_char_count", None)
-    return {
-        "layout_inference_name": (getattr(analysis, "layout_inference_name", None) or None),
-        "layout_inference_confidence": getattr(analysis, "layout_inference_confidence", None),
-        "selected_parser": str(selected_parser).strip() if selected_parser is not None else None,
-        "parser_selection_reason": str(parser_selection_reason).strip() if parser_selection_reason is not None else None,
-        "pdf_page_count": int(page_count) if page_count is not None else None,
-        "extracted_char_count": int(extracted_char_count) if extracted_char_count is not None else None,
-    }
-
-
-def _resolve_error_observability(exc: Exception) -> tuple[str | None, str | None, str]:
-    exception_class = exc.__class__.__name__
-    if isinstance(exc, FileTooLargeError):
-        return "upload_validation", "upload_size_limit_exceeded", exception_class
-    if isinstance(exc, MaxPagesPerFileExceededError):
-        return "upload_validation", "pdf_page_limit_exceeded", exception_class
-    if isinstance(exc, InvalidUserTokenError):
-        return "identity_resolution", "invalid_identity_context", exception_class
-    if isinstance(exc, QuotaExceededError):
-        return "quota_check", "quota_exceeded", exception_class
-    if isinstance(exc, UnsupportedFileTypeError):
-        return "upload_validation", "unsupported_file_type", exception_class
-    if isinstance(exc, InvalidFileContentError):
-        detail = str(exc).lower()
-        if "password" in detail or "senha" in detail:
-            return "native_pdf_read", "password_protected_pdf", exception_class
-        if _is_likely_corrupted_pdf_detail(detail):
-            return "native_pdf_read", "corrupted_pdf", exception_class
-        if "unable to read pdf bytes" in detail:
-            return "native_pdf_read", "pdf_read_failed", exception_class
-        if "ocr timeout" in detail:
-            return "ocr", "ocr_timeout", exception_class
-        if "ocr dependencies" in detail or "tesseract" in detail or "paddleocr" in detail:
-            return "ocr", "ocr_dependency_missing", exception_class
-        if "text" in detail or "ocr" in detail:
-            return "parse", "insufficient_text", exception_class
-        return "parse", "invalid_pdf_content", exception_class
-    return "processing", "processing_failed", exception_class
-
-
 def _resolve_consumed_units(identity, analysis) -> int:
     if getattr(identity, "quota_mode", "conversion") != "pages":
         return 1
@@ -343,8 +225,6 @@ def _build_convert_response(
     identity = None
     started_at = monotonic()
     ocr_pages_processed = 0
-    file_digest = sha256(data).hexdigest() if data else None
-    ocr_engine = os.getenv("PDF_OCR_ENGINE", "").strip().lower() or "tesseract"
 
     def telemetry_ocr_progress(current_page: int, total_page_count: int) -> None:
         nonlocal ocr_pages_processed
@@ -428,7 +308,6 @@ def _build_convert_response(
         )
         pages_count = _resolve_processed_pages(analysis)
         warning_rows_count, balance_failed_count = _resolve_warning_metrics(analysis)
-        parse_meta = _resolve_parse_observability_metrics(analysis)
         consumed_units = _resolve_consumed_units(identity, analysis)
         quota_remaining = access_control_service.consume_quota(identity, consumed_units=consumed_units)
         if identity.identity_type == "user":
@@ -448,18 +327,6 @@ def _build_convert_response(
                 ocr_pages_processed=ocr_pages_processed,
                 duration_ms=int((monotonic() - started_at) * 1000),
                 error_code=None,
-                error_stage=None,
-                error_subcode=None,
-                exception_class=None,
-                layout_inference_name=parse_meta["layout_inference_name"],
-                layout_inference_confidence=parse_meta["layout_inference_confidence"],
-                selected_parser=parse_meta["selected_parser"],
-                parser_selection_reason=parse_meta["parser_selection_reason"],
-                pdf_page_count=parse_meta["pdf_page_count"],
-                extracted_char_count=parse_meta["extracted_char_count"],
-                ocr_attempted=ocr_pages_processed > 0,
-                ocr_engine=ocr_engine,
-                file_sha256=file_digest,
                 canonical_warning_transactions_count=warning_rows_count,
                 balance_consistency_failed=balance_failed_count,
                 expires_at=analysis.expires_at,
@@ -482,18 +349,6 @@ def _build_convert_response(
                 canonical_warning_transactions_count=warning_rows_count,
                 balance_consistency_failed=balance_failed_count,
                 error_code=None,
-                error_stage=None,
-                error_subcode=None,
-                exception_class=None,
-                layout_inference_name=parse_meta["layout_inference_name"],
-                layout_inference_confidence=parse_meta["layout_inference_confidence"],
-                selected_parser=parse_meta["selected_parser"],
-                parser_selection_reason=parse_meta["parser_selection_reason"],
-                pdf_page_count=parse_meta["pdf_page_count"],
-                extracted_char_count=parse_meta["extracted_char_count"],
-                ocr_attempted=ocr_pages_processed > 0,
-                ocr_engine=ocr_engine,
-                file_sha256=file_digest,
             )
         return ConvertResponse(
             processing_id=analysis.analysis_id,
@@ -504,7 +359,6 @@ def _build_convert_response(
         )
     except Exception as exc:
         if identity is not None and identity.identity_type == "anonymous":
-            error_stage, error_subcode, exception_class = _resolve_error_observability(exc)
             _safe_record_anonymous_conversion_event(
                 access_control_service,
                 event_id=f"anon_evt_{uuid4().hex[:24]}",
@@ -520,18 +374,6 @@ def _build_convert_response(
                 ocr_pages_processed=ocr_pages_processed,
                 duration_ms=int((monotonic() - started_at) * 1000),
                 error_code=_resolve_failed_conversion_code(exc),
-                error_stage=error_stage,
-                error_subcode=error_subcode,
-                exception_class=exception_class,
-                layout_inference_name=None,
-                layout_inference_confidence=None,
-                selected_parser=None,
-                parser_selection_reason=None,
-                pdf_page_count=estimated_pages_count,
-                extracted_char_count=None,
-                ocr_attempted=ocr_pages_processed > 0,
-                ocr_engine=ocr_engine,
-                file_sha256=file_digest,
             )
         setattr(exc, "_convert_identity", identity)
         raise
@@ -880,118 +722,5 @@ async def conversion_upload_stream(
     if scanned_likely and total_pages:
         headers["X-OCR-Estimated-Pages"] = str(total_pages)
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
-
-
-@router.post("/ofx-edit/preview", response_model=OfxEditPreviewResponse)
-async def ofx_edit_preview(file: UploadFile = File(...)) -> OfxEditPreviewResponse:
-    filename = str(file.filename or "").strip().lower()
-    if not filename.endswith(".ofx"):
-        raise HTTPException(status_code=400, detail="Unsupported file type. Use OFX.")
-
-    raw_bytes = await file.read()
-    try:
-        transactions = parse_ofx_transactions(raw_bytes)
-    except InvalidFileContentError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    total_inflows = sum(tx.amount for tx in transactions if tx.amount >= 0)
-    total_outflows = sum(tx.amount for tx in transactions if tx.amount < 0)
-    preview_rows = [
-        OfxEditTransaction(
-            date=tx.date,
-            description=tx.description,
-            amount=tx.amount,
-            type=tx.type,
-        )
-        for tx in transactions
-    ]
-    return OfxEditPreviewResponse(
-        transactions_total=len(preview_rows),
-        total_inflows=total_inflows,
-        total_outflows=total_outflows,
-        net_total=total_inflows + total_outflows,
-        transactions=preview_rows,
-    )
-
-
-@router.post("/ofx-edit/export")
-async def ofx_edit_export(payload: OfxEditExportRequest) -> StreamingResponse:
-    if not payload.transactions:
-        raise HTTPException(status_code=400, detail="At least one transaction is required to export OFX.")
-
-    normalized = _normalize_ofx_edit_transactions(payload.transactions)
-    statement = build_ofx_statement(
-        normalized,
-        closing_balance=payload.closing_balance,
-        bank_branch=payload.bank_branch,
-        account_number=payload.account_number,
-        bank_id=payload.bank_code,
-    )
-    filename = str(payload.file_name or "ofx_editado.ofx").strip() or "ofx_editado.ofx"
-    if not filename.lower().endswith(".ofx"):
-        filename = f"{filename}.ofx"
-    return StreamingResponse(
-        BytesIO(statement.encode("utf-8")),
-        media_type="application/x-ofx",
-        headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'},
-    )
-
-
-@router.post("/ofx-merge/preview", response_model=OfxMergePreviewResponse)
-async def ofx_merge_preview(
-    files: list[UploadFile] = File(...),
-    deduplicate: bool = Form(default=True),
-) -> OfxMergePreviewResponse:
-    if not files:
-        raise HTTPException(status_code=400, detail="Send at least one OFX file.")
-    parsed_transactions: list[NormalizedTransaction] = []
-    for file in files:
-        filename = str(file.filename or "").strip().lower()
-        if not filename.endswith(".ofx"):
-            raise HTTPException(status_code=400, detail="Unsupported file type. Use OFX.")
-        raw_bytes = await file.read()
-        try:
-            parsed_transactions.extend(parse_ofx_transactions(raw_bytes))
-        except InvalidFileContentError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    merged, duplicates_removed = _merge_transactions(parsed_transactions, deduplicate=bool(deduplicate))
-    total_inflows = sum(tx.amount for tx in merged if tx.amount >= 0)
-    total_outflows = sum(tx.amount for tx in merged if tx.amount < 0)
-    preview_rows = [
-        OfxEditTransaction(date=tx.date, description=tx.description, amount=tx.amount, type=tx.type) for tx in merged
-    ]
-    return OfxMergePreviewResponse(
-        files_count=len(files),
-        transactions_total=len(preview_rows),
-        duplicates_removed=duplicates_removed,
-        total_inflows=total_inflows,
-        total_outflows=total_outflows,
-        net_total=total_inflows + total_outflows,
-        transactions=preview_rows,
-    )
-
-
-@router.post("/ofx-merge/export")
-async def ofx_merge_export(payload: OfxMergeExportRequest) -> StreamingResponse:
-    if not payload.transactions:
-        raise HTTPException(status_code=400, detail="At least one transaction is required to export OFX.")
-
-    normalized = _normalize_ofx_edit_transactions(payload.transactions)
-    statement = build_ofx_statement(
-        normalized,
-        closing_balance=payload.closing_balance,
-        bank_branch=payload.bank_branch,
-        account_number=payload.account_number,
-        bank_id=payload.bank_code,
-    )
-    filename = str(payload.file_name or "ofx_consolidado.ofx").strip() or "ofx_consolidado.ofx"
-    if not filename.lower().endswith(".ofx"):
-        filename = f"{filename}.ofx"
-    return StreamingResponse(
-        BytesIO(statement.encode("utf-8")),
-        media_type="application/x-ofx",
-        headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'},
-    )
 
 
