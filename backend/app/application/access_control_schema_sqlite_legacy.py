@@ -64,6 +64,18 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
             ocr_pages_processed INTEGER NOT NULL DEFAULT 0,
             duration_ms INTEGER NOT NULL DEFAULT 0,
             error_code TEXT,
+            error_stage TEXT,
+            error_subcode TEXT,
+            exception_class TEXT,
+            layout_inference_name TEXT,
+            layout_inference_confidence REAL,
+            selected_parser TEXT,
+            parser_selection_reason TEXT,
+            pdf_page_count INTEGER,
+            extracted_char_count INTEGER,
+            ocr_attempted INTEGER NOT NULL DEFAULT 0,
+            ocr_engine TEXT,
+            file_sha256 TEXT,
             canonical_warning_transactions_count INTEGER NOT NULL DEFAULT 0,
             balance_consistency_failed INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY(user_id) REFERENCES users(id)
@@ -85,7 +97,19 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
             duration_ms INTEGER NOT NULL DEFAULT 0,
             canonical_warning_transactions_count INTEGER NOT NULL DEFAULT 0,
             balance_consistency_failed INTEGER NOT NULL DEFAULT 0,
-            error_code TEXT
+            error_code TEXT,
+            error_stage TEXT,
+            error_subcode TEXT,
+            exception_class TEXT,
+            layout_inference_name TEXT,
+            layout_inference_confidence REAL,
+            selected_parser TEXT,
+            parser_selection_reason TEXT,
+            pdf_page_count INTEGER,
+            extracted_char_count INTEGER,
+            ocr_attempted INTEGER NOT NULL DEFAULT 0,
+            ocr_engine TEXT,
+            file_sha256 TEXT
         );
 
         CREATE TABLE IF NOT EXISTS google_oauth_states (
@@ -277,6 +301,30 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
         conn.execute("ALTER TABLE user_conversions ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0")
     if "error_code" not in user_conversions_columns:
         conn.execute("ALTER TABLE user_conversions ADD COLUMN error_code TEXT")
+    if "error_stage" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN error_stage TEXT")
+    if "error_subcode" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN error_subcode TEXT")
+    if "exception_class" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN exception_class TEXT")
+    if "layout_inference_name" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN layout_inference_name TEXT")
+    if "layout_inference_confidence" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN layout_inference_confidence REAL")
+    if "selected_parser" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN selected_parser TEXT")
+    if "parser_selection_reason" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN parser_selection_reason TEXT")
+    if "pdf_page_count" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN pdf_page_count INTEGER")
+    if "extracted_char_count" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN extracted_char_count INTEGER")
+    if "ocr_attempted" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN ocr_attempted INTEGER NOT NULL DEFAULT 0")
+    if "ocr_engine" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN ocr_engine TEXT")
+    if "file_sha256" not in user_conversions_columns:
+        conn.execute("ALTER TABLE user_conversions ADD COLUMN file_sha256 TEXT")
     if "canonical_warning_transactions_count" not in user_conversions_columns:
         conn.execute(
             "ALTER TABLE user_conversions ADD COLUMN canonical_warning_transactions_count INTEGER NOT NULL DEFAULT 0"
@@ -295,6 +343,30 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
         conn.execute(
             "ALTER TABLE anonymous_conversion_events ADD COLUMN balance_consistency_failed INTEGER NOT NULL DEFAULT 0"
         )
+    if "error_stage" not in anonymous_conversion_event_columns:
+        conn.execute("ALTER TABLE anonymous_conversion_events ADD COLUMN error_stage TEXT")
+    if "error_subcode" not in anonymous_conversion_event_columns:
+        conn.execute("ALTER TABLE anonymous_conversion_events ADD COLUMN error_subcode TEXT")
+    if "exception_class" not in anonymous_conversion_event_columns:
+        conn.execute("ALTER TABLE anonymous_conversion_events ADD COLUMN exception_class TEXT")
+    if "layout_inference_name" not in anonymous_conversion_event_columns:
+        conn.execute("ALTER TABLE anonymous_conversion_events ADD COLUMN layout_inference_name TEXT")
+    if "layout_inference_confidence" not in anonymous_conversion_event_columns:
+        conn.execute("ALTER TABLE anonymous_conversion_events ADD COLUMN layout_inference_confidence REAL")
+    if "selected_parser" not in anonymous_conversion_event_columns:
+        conn.execute("ALTER TABLE anonymous_conversion_events ADD COLUMN selected_parser TEXT")
+    if "parser_selection_reason" not in anonymous_conversion_event_columns:
+        conn.execute("ALTER TABLE anonymous_conversion_events ADD COLUMN parser_selection_reason TEXT")
+    if "pdf_page_count" not in anonymous_conversion_event_columns:
+        conn.execute("ALTER TABLE anonymous_conversion_events ADD COLUMN pdf_page_count INTEGER")
+    if "extracted_char_count" not in anonymous_conversion_event_columns:
+        conn.execute("ALTER TABLE anonymous_conversion_events ADD COLUMN extracted_char_count INTEGER")
+    if "ocr_attempted" not in anonymous_conversion_event_columns:
+        conn.execute("ALTER TABLE anonymous_conversion_events ADD COLUMN ocr_attempted INTEGER NOT NULL DEFAULT 0")
+    if "ocr_engine" not in anonymous_conversion_event_columns:
+        conn.execute("ALTER TABLE anonymous_conversion_events ADD COLUMN ocr_engine TEXT")
+    if "file_sha256" not in anonymous_conversion_event_columns:
+        conn.execute("ALTER TABLE anonymous_conversion_events ADD COLUMN file_sha256 TEXT")
     plan_versions_columns = {
         str(row["name"])
         for row in conn.execute("PRAGMA table_info(plan_versions)").fetchall()
