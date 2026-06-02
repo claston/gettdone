@@ -1,5 +1,8 @@
+import pytest
+
 from app.application import pdf_parser as pdf_parser_module
 from app.application.document_extraction_models import RawDocumentExtraction
+from app.application.errors import InvalidFileContentError
 from app.application.pdf_parser import parse_pdf_transactions
 from app.application.textract_transaction_adapter import TextractTransactionExtractionResult
 from tests.fixtures.pdf_golden_samples import (
@@ -33,6 +36,46 @@ def test_parse_pdf_transactions_handles_inline_and_multiline_amount_rows(monkeyp
     assert result.parse_metrics["canonical_source_parser_types"] == "grouped"
 
 
+def test_parse_pdf_transactions_skips_invalid_inline_date_candidate_and_keeps_valid_rows() -> None:
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        ["00/00/0000 LANCAMENTO INVALIDO 10,00\n10/04/2026 PIX RECEBIDO 25,00"]
+    )
+
+    assert len(result.transactions) == 1
+    assert result.transactions[0].date == "2026-04-10"
+    assert result.transactions[0].description == "PIX RECEBIDO"
+    assert result.transactions[0].amount == 25.0
+    assert result.parse_metrics["invalid_date_candidates_skipped"] == 1
+
+
+def test_parse_pdf_transactions_skips_invalid_date_only_candidate_and_keeps_grouped_rows() -> None:
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        ["00/00/0000\nLINHA INVALIDA\n10/04/2026\nPIX RECEBIDO\n25,00"]
+    )
+
+    assert len(result.transactions) == 1
+    assert result.transactions[0].date == "2026-04-10"
+    assert result.transactions[0].description == "PIX RECEBIDO"
+    assert result.transactions[0].amount == 25.0
+    assert result.parse_metrics["invalid_date_candidates_skipped"] == 1
+
+
+def test_parse_pdf_transactions_ignores_placeholder_year_when_valid_row_has_no_year() -> None:
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        ["00/00/0000 LANCAMENTO INVALIDO 10,00\n10/04 PIX RECEBIDO 25,00"]
+    )
+
+    assert len(result.transactions) == 1
+    assert result.transactions[0].date.endswith("-04-10")
+    assert result.transactions[0].description == "PIX RECEBIDO"
+    assert result.parse_metrics["invalid_date_candidates_skipped"] == 1
+
+
+def test_parse_pdf_transactions_rejects_document_with_only_invalid_date_candidates() -> None:
+    with pytest.raises(InvalidFileContentError, match="no recognizable transaction row pattern"):
+        pdf_parser_module._parse_pdf_transactions_from_page_texts(["00/00/0000 LANCAMENTO INVALIDO 10,00"])
+
+
 def test_parse_pdf_transactions_parses_unicode_minus_with_currency_prefix(monkeypatch) -> None:
     monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [UNICODE_MINUS_SINGLE_ROW_SAMPLE])
 
@@ -47,15 +90,32 @@ def test_parse_pdf_transactions_parses_unicode_minus_with_currency_prefix(monkey
     assert result.canonical_transactions[0].source_parser == "grouped"
 
 
+def test_parse_pdf_transactions_skips_invalid_date_candidate_from_native_text(monkeypatch) -> None:
+    page_texts = ["00/00/0000 LANCAMENTO INVALIDO 10,00\n10/04/2026 PIX RECEBIDO 25,00"]
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: page_texts)
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert len(result.transactions) == 1
+    assert result.transactions[0].date == "2026-04-10"
+    assert result.transactions[0].amount == 25.0
+    assert result.parse_metrics["invalid_date_candidates_skipped"] == 1
+
+
 def test_parse_pdf_transactions_uses_ocr_fallback_when_enabled(monkeypatch) -> None:
     monkeypatch.setenv("PDF_OCR_ENABLED", "true")
     monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [])
-    monkeypatch.setattr(pdf_parser_module, "extract_pdf_page_texts_with_ocr", lambda raw_bytes: ["10/04 PIX 10,00"])
+    monkeypatch.setattr(
+        pdf_parser_module,
+        "extract_pdf_page_texts_with_ocr",
+        lambda raw_bytes: ["00/00/0000 LANCAMENTO INVALIDO 10,00\n10/04 PIX 10,00"],
+    )
 
     result = parse_pdf_transactions(b"%PDF synthetic")
     assert len(result.transactions) == 1
     assert result.transactions[0].date == "2026-04-10"
     assert result.transactions[0].amount == 10.0
+    assert result.parse_metrics["invalid_date_candidates_skipped"] == 1
 
 
 def test_parse_pdf_transactions_uses_textract_adapter_path_for_scanned_pdf_when_enabled(monkeypatch) -> None:

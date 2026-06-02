@@ -18,6 +18,7 @@ def build_pdf_parse_metrics(
     balance_consistency_checked: int,
     balance_consistency_failed: int,
     canonical_quality_metrics: dict[str, int | float | str],
+    invalid_date_candidates_skipped: int = 0,
 ) -> dict[str, int | float | str]:
     confidence_band = _resolve_confidence_band(
         selected_parser=selected_parser,
@@ -39,6 +40,7 @@ def build_pdf_parse_metrics(
         "page_count": page_count,
         "extracted_char_count": extracted_char_count,
         "flattened_line_count": flattened_line_count,
+        "invalid_date_candidates_skipped": invalid_date_candidates_skipped,
         "grouped_transactions_count": grouped_transactions_count,
         "inline_candidates_count": inline_candidates_count,
         "inline_transactions_count": inline_transactions_count,
