@@ -51,3 +51,7 @@ def test_infer_default_statement_year_prefers_most_frequent_year() -> None:
 
 def test_infer_default_statement_year_returns_none_when_absent() -> None:
     assert infer_default_statement_year(["SEM DATA", "PIX RECEBIDO"]) is None
+
+
+def test_infer_default_statement_year_ignores_placeholder_year() -> None:
+    assert infer_default_statement_year(["00/00/0000 LINHA INVALIDA", "01/04/2025 PIX RECEBIDO 100,00"]) == 2025

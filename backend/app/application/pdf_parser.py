@@ -215,6 +215,7 @@ def _parse_pdf_transactions_from_page_texts(page_texts: list[str]) -> PdfParseRe
     layout = infer_pdf_layout(joined_text)
     layout_profile = get_layout_profile(layout.layout_name)
     lines = _flatten_statement_lines(page_texts)
+    lines, invalid_date_candidates_skipped = _filter_invalid_leading_date_candidate_lines(lines)
     grouped_rows = _parse_grouped_statement_lines(lines)
     selection = select_parsed_rows(
         lines=lines,
@@ -249,6 +250,7 @@ def _parse_pdf_transactions_from_page_texts(page_texts: list[str]) -> PdfParseRe
         joined_text=joined_text,
         page_count=len(page_texts),
         flattened_line_count=len(lines),
+        invalid_date_candidates_skipped=invalid_date_candidates_skipped,
         grouped_transactions_count=len(grouped_rows),
         inline_candidates_count=inline_candidates,
         inline_transactions_count=inline_transactions_count,
@@ -365,6 +367,7 @@ def _build_pdf_parse_result(
     joined_text: str,
     page_count: int,
     flattened_line_count: int,
+    invalid_date_candidates_skipped: int,
     grouped_transactions_count: int,
     inline_candidates_count: int,
     inline_transactions_count: int,
@@ -391,23 +394,24 @@ def _build_pdf_parse_result(
         extracted_text=joined_text,
         parse_metrics=build_pdf_parse_metrics(
             page_count=page_count,
-              extracted_char_count=len(joined_text),
-              flattened_line_count=flattened_line_count,
-              grouped_transactions_count=grouped_transactions_count,
-              inline_candidates_count=inline_candidates_count,
-              inline_transactions_count=inline_transactions_count,
-              tabular_candidates_count=tabular_candidates_count,
-              tabular_transactions_count=tabular_transactions_count,
-              columnar_candidates_count=columnar_candidates_count,
-              columnar_transactions_count=columnar_transactions_count,
-              selected_parser=selected_parser,
-              parser_selection_reason=parser_selection_reason,
-              inline_decision=inline_decision,
-              tabular_decision=tabular_decision,
-              columnar_decision=columnar_decision,
-              balance_consistency_checked=balance_checked_count,
-              balance_consistency_failed=balance_failed_count,
-              canonical_quality_metrics=canonical_quality_metrics,
+            extracted_char_count=len(joined_text),
+            flattened_line_count=flattened_line_count,
+            invalid_date_candidates_skipped=invalid_date_candidates_skipped,
+            grouped_transactions_count=grouped_transactions_count,
+            inline_candidates_count=inline_candidates_count,
+            inline_transactions_count=inline_transactions_count,
+            tabular_candidates_count=tabular_candidates_count,
+            tabular_transactions_count=tabular_transactions_count,
+            columnar_candidates_count=columnar_candidates_count,
+            columnar_transactions_count=columnar_transactions_count,
+            selected_parser=selected_parser,
+            parser_selection_reason=parser_selection_reason,
+            inline_decision=inline_decision,
+            tabular_decision=tabular_decision,
+            columnar_decision=columnar_decision,
+            balance_consistency_checked=balance_checked_count,
+            balance_consistency_failed=balance_failed_count,
+            canonical_quality_metrics=canonical_quality_metrics,
         ),
     )
 
@@ -449,6 +453,36 @@ def _flatten_statement_lines(page_texts: list[str]) -> list[_PdfLine]:
             if cleaned:
                 lines.append(_PdfLine(text=cleaned, page_number=page_index + 1, line_number=line_index + 1))
     return lines
+
+
+def _filter_invalid_leading_date_candidate_lines(lines: list[_PdfLine]) -> tuple[list[_PdfLine], int]:
+    filtered_lines: list[_PdfLine] = []
+    skipped = 0
+    inferred_year = _infer_default_statement_year_from_lines(lines)
+
+    for line in lines:
+        raw_date = _extract_leading_date_candidate(line.text)
+        if raw_date is None:
+            filtered_lines.append(line)
+            continue
+        try:
+            parse_row_date(raw_date, fallback_year=inferred_year)
+        except InvalidFileContentError:
+            skipped += 1
+            continue
+        filtered_lines.append(line)
+
+    return filtered_lines, skipped
+
+
+def _extract_leading_date_candidate(raw_line: str) -> str | None:
+    stripped_line = raw_line.strip()
+    if is_date_only_row(stripped_line):
+        return stripped_line
+    match = match_tabular_date_prefix(stripped_line)
+    if match is None:
+        return None
+    return match.group("date")
 
 
 def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransaction]:
