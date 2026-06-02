@@ -1,5 +1,8 @@
 import json
 import logging
+import os
+import re
+from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from queue import Empty, Queue
@@ -101,6 +104,43 @@ def _safe_record_anonymous_conversion_event(access_control_service: AccessContro
         logger.warning("Failed to persist anonymous conversion event telemetry.", exc_info=True)
 
 
+def _log_conversion_failure(
+    *,
+    identity,
+    filename: str,
+    event_id: str | None,
+    error_code: str,
+    error_stage: str | None,
+    error_subcode: str | None,
+    exception_class: str,
+    scanned_likely: bool | None,
+    estimated_pages_count: int | None,
+    ocr_pages_processed: int,
+    duration_ms: int,
+    failure_diagnostics: dict[str, str | int | bool | list[str]],
+) -> None:
+    logger.exception(
+        (
+            "conversion_processing_failed event_id=%s identity_type=%s identity_id=%s filename=%s "
+            "error_code=%s error_stage=%s error_subcode=%s exception_class=%s scanned_likely=%s "
+            "estimated_pages_count=%s ocr_pages_processed=%s duration_ms=%s failure_diagnostics=%s"
+        ),
+        event_id or "",
+        getattr(identity, "identity_type", "unknown"),
+        getattr(identity, "identity_id", "unknown"),
+        filename,
+        error_code,
+        error_stage or "",
+        error_subcode or "",
+        exception_class,
+        scanned_likely,
+        estimated_pages_count,
+        ocr_pages_processed,
+        duration_ms,
+        json.dumps(failure_diagnostics, ensure_ascii=False),
+    )
+
+
 def _log_pages_limit_exceeded_attempt(
     *,
     identity,
@@ -182,6 +222,125 @@ def _resolve_warning_metrics(analysis) -> tuple[int, int]:
     return max(0, warning_rows), max(0, balance_failed)
 
 
+def _resolve_parse_observability_metrics(analysis) -> dict[str, str | int | float | None]:
+    metrics = getattr(analysis, "pdf_processing_metrics", None)
+    if metrics is None:
+        return {
+            "layout_inference_name": (getattr(analysis, "layout_inference_name", None) or None),
+            "layout_inference_confidence": getattr(analysis, "layout_inference_confidence", None),
+            "selected_parser": None,
+            "parser_selection_reason": None,
+            "pdf_page_count": None,
+            "extracted_char_count": None,
+        }
+    if isinstance(metrics, dict):
+        selected_parser = metrics.get("selected_parser")
+        parser_selection_reason = metrics.get("parser_selection_reason")
+        page_count = metrics.get("page_count")
+        extracted_char_count = metrics.get("extracted_char_count")
+    else:
+        selected_parser = getattr(metrics, "selected_parser", None)
+        parser_selection_reason = getattr(metrics, "parser_selection_reason", None)
+        page_count = getattr(metrics, "page_count", None)
+        extracted_char_count = getattr(metrics, "extracted_char_count", None)
+    return {
+        "layout_inference_name": (getattr(analysis, "layout_inference_name", None) or None),
+        "layout_inference_confidence": getattr(analysis, "layout_inference_confidence", None),
+        "selected_parser": str(selected_parser).strip() if selected_parser is not None else None,
+        "parser_selection_reason": str(parser_selection_reason).strip() if parser_selection_reason is not None else None,
+        "pdf_page_count": int(page_count) if page_count is not None else None,
+        "extracted_char_count": int(extracted_char_count) if extracted_char_count is not None else None,
+    }
+
+
+def _resolve_error_observability(exc: Exception) -> tuple[str | None, str | None, str]:
+    exception_class = exc.__class__.__name__
+    if isinstance(exc, FileTooLargeError):
+        return "upload_validation", "upload_size_limit_exceeded", exception_class
+    if isinstance(exc, MaxPagesPerFileExceededError):
+        return "upload_validation", "pdf_page_limit_exceeded", exception_class
+    if isinstance(exc, InvalidUserTokenError):
+        return "identity_resolution", "invalid_identity_context", exception_class
+    if isinstance(exc, QuotaExceededError):
+        return "quota_check", "quota_exceeded", exception_class
+    if isinstance(exc, UnsupportedFileTypeError):
+        return "upload_validation", "unsupported_file_type", exception_class
+    if isinstance(exc, InvalidFileContentError):
+        detail = str(exc).lower()
+        if "password" in detail or "senha" in detail:
+            return "native_pdf_read", "password_protected_pdf", exception_class
+        if _is_likely_corrupted_pdf_detail(detail):
+            return "native_pdf_read", "corrupted_pdf", exception_class
+        if "unable to read pdf bytes" in detail:
+            return "native_pdf_read", "pdf_read_failed", exception_class
+        if "unsupported table layout" in detail:
+            return "parse", "unsupported_table_layout", exception_class
+        if "no recognizable transaction row pattern" in detail:
+            return "parse", "no_transaction_row_pattern", exception_class
+        if "ocr supports files up to" in detail:
+            return "ocr", "ocr_file_size_limit", exception_class
+        if "ocr is busy" in detail:
+            return "ocr", "ocr_busy", exception_class
+        if "ocr timeout" in detail:
+            return "ocr", "ocr_timeout", exception_class
+        if "ocr dependencies" in detail or "tesseract" in detail or "paddleocr" in detail:
+            return "ocr", "ocr_dependency_missing", exception_class
+        if "text" in detail or "ocr" in detail:
+            return "parse", "insufficient_text", exception_class
+        return "parse", "invalid_pdf_content", exception_class
+    return "processing", "processing_failed", exception_class
+
+
+def _build_failure_diagnostics(exc: Exception) -> dict[str, str | int | bool | list[str]]:
+    detail = str(exc or "").strip()
+    detail_lower = detail.lower()
+    missing_signals: list[str] = []
+    pdf_read_ok = "unable to read pdf bytes" not in detail_lower
+    text_extracted = "text was extracted" in detail_lower or "transa" in detail_lower
+
+    if "no recognizable transaction row pattern" in detail_lower:
+        missing_signals.append("transaction_row_pattern")
+    if "unsupported table layout" in detail_lower:
+        missing_signals.append("supported_table_layout")
+    if "text sufficient" in detail_lower or "insufficient text" in detail_lower:
+        missing_signals.append("sufficient_text")
+    if "ocr timeout" in detail_lower:
+        missing_signals.append("ocr_completion")
+
+    if "valor" in detail_lower or "amount" in detail_lower:
+        missing_signals.append("amount_pattern")
+    if "data" in detail_lower or "date" in detail_lower:
+        missing_signals.append("date_pattern")
+
+    parser_metrics: dict[str, int] = {}
+    for key in ("inline_candidates", "tabular_candidates", "columnar_candidates"):
+        match = re.search(rf"{key}=(\d+)", detail_lower)
+        if match:
+            parser_metrics[key] = int(match.group(1))
+    has_date_like_match = re.search(r"has_date_like=(\d+)", detail_lower)
+    has_amount_like_match = re.search(r"has_amount_like=(\d+)", detail_lower)
+    detail_signals_match = re.search(r"missing_signals=([a-z_,-]+)", detail_lower)
+    if detail_signals_match:
+        parsed_signals = [item.strip() for item in detail_signals_match.group(1).split(",") if item.strip()]
+        missing_signals.extend(parsed_signals)
+
+    diagnostics: dict[str, str | int | bool | list[str]] = {
+        "pdf_read_ok": pdf_read_ok,
+        "text_extracted_likely": text_extracted,
+        "missing_signals": sorted(set(missing_signals)),
+        "error_detail_excerpt": detail[:240],
+    }
+    if has_date_like_match:
+        diagnostics["has_date_like"] = bool(int(has_date_like_match.group(1)))
+    if has_amount_like_match:
+        diagnostics["has_amount_like"] = bool(int(has_amount_like_match.group(1)))
+    if parser_metrics:
+        diagnostics["inline_candidates"] = parser_metrics.get("inline_candidates", 0)
+        diagnostics["tabular_candidates"] = parser_metrics.get("tabular_candidates", 0)
+        diagnostics["columnar_candidates"] = parser_metrics.get("columnar_candidates", 0)
+    return diagnostics
+
+
 def _resolve_consumed_units(identity, analysis) -> int:
     if getattr(identity, "quota_mode", "conversion") != "pages":
         return 1
@@ -225,6 +384,8 @@ def _build_convert_response(
     identity = None
     started_at = monotonic()
     ocr_pages_processed = 0
+    file_digest = sha256(data).hexdigest() if data else None
+    ocr_engine = os.getenv("PDF_OCR_ENGINE", "").strip().lower() or "tesseract"
 
     def telemetry_ocr_progress(current_page: int, total_page_count: int) -> None:
         nonlocal ocr_pages_processed
@@ -308,6 +469,7 @@ def _build_convert_response(
         )
         pages_count = _resolve_processed_pages(analysis)
         warning_rows_count, balance_failed_count = _resolve_warning_metrics(analysis)
+        parse_meta = _resolve_parse_observability_metrics(analysis)
         consumed_units = _resolve_consumed_units(identity, analysis)
         quota_remaining = access_control_service.consume_quota(identity, consumed_units=consumed_units)
         if identity.identity_type == "user":
@@ -327,6 +489,18 @@ def _build_convert_response(
                 ocr_pages_processed=ocr_pages_processed,
                 duration_ms=int((monotonic() - started_at) * 1000),
                 error_code=None,
+                error_stage=None,
+                error_subcode=None,
+                exception_class=None,
+                layout_inference_name=parse_meta["layout_inference_name"],
+                layout_inference_confidence=parse_meta["layout_inference_confidence"],
+                selected_parser=parse_meta["selected_parser"],
+                parser_selection_reason=parse_meta["parser_selection_reason"],
+                pdf_page_count=parse_meta["pdf_page_count"],
+                extracted_char_count=parse_meta["extracted_char_count"],
+                ocr_attempted=ocr_pages_processed > 0,
+                ocr_engine=ocr_engine,
+                file_sha256=file_digest,
                 canonical_warning_transactions_count=warning_rows_count,
                 balance_consistency_failed=balance_failed_count,
                 expires_at=analysis.expires_at,
@@ -349,6 +523,18 @@ def _build_convert_response(
                 canonical_warning_transactions_count=warning_rows_count,
                 balance_consistency_failed=balance_failed_count,
                 error_code=None,
+                error_stage=None,
+                error_subcode=None,
+                exception_class=None,
+                layout_inference_name=parse_meta["layout_inference_name"],
+                layout_inference_confidence=parse_meta["layout_inference_confidence"],
+                selected_parser=parse_meta["selected_parser"],
+                parser_selection_reason=parse_meta["parser_selection_reason"],
+                pdf_page_count=parse_meta["pdf_page_count"],
+                extracted_char_count=parse_meta["extracted_char_count"],
+                ocr_attempted=ocr_pages_processed > 0,
+                ocr_engine=ocr_engine,
+                file_sha256=file_digest,
             )
         return ConvertResponse(
             processing_id=analysis.analysis_id,
@@ -358,10 +544,16 @@ def _build_convert_response(
             analysis=analysis,
         )
     except Exception as exc:
+        error_stage, error_subcode, exception_class = _resolve_error_observability(exc)
+        error_code = _resolve_failed_conversion_code(exc)
+        failure_diagnostics = _build_failure_diagnostics(exc)
+        duration_ms = int((monotonic() - started_at) * 1000)
+        failed_event_id: str | None = None
         if identity is not None and identity.identity_type == "anonymous":
+            failed_event_id = f"anon_evt_{uuid4().hex[:24]}"
             _safe_record_anonymous_conversion_event(
                 access_control_service,
-                event_id=f"anon_evt_{uuid4().hex[:24]}",
+                event_id=failed_event_id,
                 anonymous_fingerprint=identity.identity_id,
                 filename=(file.filename or "").strip() or "unknown.pdf",
                 model="Nao identificado",
@@ -372,9 +564,35 @@ def _build_convert_response(
                 scanned_likely=scanned_likely,
                 ocr_used=ocr_pages_processed > 0,
                 ocr_pages_processed=ocr_pages_processed,
-                duration_ms=int((monotonic() - started_at) * 1000),
-                error_code=_resolve_failed_conversion_code(exc),
+                duration_ms=duration_ms,
+                error_code=error_code,
+                error_stage=error_stage,
+                error_subcode=error_subcode,
+                exception_class=exception_class,
+                layout_inference_name=None,
+                layout_inference_confidence=None,
+                selected_parser=None,
+                parser_selection_reason=None,
+                pdf_page_count=estimated_pages_count,
+                extracted_char_count=None,
+                ocr_attempted=ocr_pages_processed > 0,
+                ocr_engine=ocr_engine,
+                file_sha256=file_digest,
             )
+        _log_conversion_failure(
+            identity=identity,
+            filename=(file.filename or "").strip() or "unknown.pdf",
+            event_id=failed_event_id,
+            error_code=error_code,
+            error_stage=error_stage,
+            error_subcode=error_subcode,
+            exception_class=exception_class,
+            scanned_likely=scanned_likely,
+            estimated_pages_count=estimated_pages_count,
+            ocr_pages_processed=ocr_pages_processed,
+            duration_ms=duration_ms,
+            failure_diagnostics=failure_diagnostics,
+        )
         setattr(exc, "_convert_identity", identity)
         raise
 

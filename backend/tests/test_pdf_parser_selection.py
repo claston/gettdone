@@ -159,7 +159,7 @@ def test_select_parsed_rows_prefers_tabular_on_large_row_count_gap_without_layou
 
 
 def test_select_parsed_rows_raises_unsupported_layout_when_candidates_exist_without_rows() -> None:
-    with pytest.raises(InvalidFileContentError, match="unsupported table layout"):
+    with pytest.raises(InvalidFileContentError, match="unsupported table layout") as exc_info:
         select_parsed_rows(
             lines=["line"],
             grouped_rows=[],
@@ -168,10 +168,14 @@ def test_select_parsed_rows_raises_unsupported_layout_when_candidates_exist_with
             parse_tabular_rows=lambda _lines, _profile: ([], 0),
             parse_columnar_rows=lambda _: ([], 0),
         )
+    assert "inline_candidates=1" in str(exc_info.value)
+    assert "missing_signals=" in str(exc_info.value)
+    assert "date_pattern" in str(exc_info.value)
+    assert "amount_pattern" in str(exc_info.value)
 
 
 def test_select_parsed_rows_raises_no_pattern_when_no_candidates_exist() -> None:
-    with pytest.raises(InvalidFileContentError, match="no recognizable transaction row pattern"):
+    with pytest.raises(InvalidFileContentError, match="no recognizable transaction row pattern") as exc_info:
         select_parsed_rows(
             lines=["line"],
             grouped_rows=[],
@@ -180,3 +184,8 @@ def test_select_parsed_rows_raises_no_pattern_when_no_candidates_exist() -> None
             parse_tabular_rows=lambda _lines, _profile: ([], 0),
             parse_columnar_rows=lambda _: ([], 0),
         )
+    assert "inline_candidates=0" in str(exc_info.value)
+    assert "missing_signals=" in str(exc_info.value)
+    assert "date_pattern" in str(exc_info.value)
+    assert "amount_pattern" in str(exc_info.value)
+    assert "transaction_row_pattern" in str(exc_info.value)
