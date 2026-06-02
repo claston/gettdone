@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -5,6 +6,9 @@ from app.application.errors import InvalidFileContentError
 
 RowsParser = Callable[[list[Any]], tuple[list[Any], int]]
 TabularRowsParser = Callable[[list[Any], Any | None], tuple[list[Any], int]]
+
+_DATE_PATTERN = re.compile(r"\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b")
+_AMOUNT_PATTERN = re.compile(r"[\-+]?\d{1,3}(?:[.\s]\d{3})*,\d{2}\b|[\-+]?\d+\.\d{2}\b")
 
 
 @dataclass(frozen=True)
@@ -21,6 +25,49 @@ class SelectedParserRows:
     inline_decision: str
     tabular_decision: str
     columnar_decision: str
+
+
+def _resolve_line_texts(lines: list[Any]) -> list[str]:
+    resolved: list[str] = []
+    for item in lines:
+        if isinstance(item, str):
+            text = item.strip()
+        else:
+            text = str(getattr(item, "text", "")).strip()
+        if text:
+            resolved.append(text)
+    return resolved
+
+
+def _build_pdf_pattern_failure_detail(
+    *,
+    base_message: str,
+    lines: list[Any],
+    inline_candidates: int,
+    tabular_candidates: int,
+    columnar_candidates: int,
+) -> str:
+    line_texts = _resolve_line_texts(lines)
+    joined = "\n".join(line_texts)
+    has_date_like = bool(_DATE_PATTERN.search(joined))
+    has_amount_like = bool(_AMOUNT_PATTERN.search(joined))
+    missing_signals: list[str] = []
+    if not has_date_like:
+        missing_signals.append("date_pattern")
+    if not has_amount_like:
+        missing_signals.append("amount_pattern")
+    if inline_candidates == 0 and tabular_candidates == 0 and columnar_candidates == 0:
+        missing_signals.append("transaction_row_pattern")
+    detail_suffix = (
+        " diagnostics:"
+        f" has_date_like={int(has_date_like)}"
+        f" has_amount_like={int(has_amount_like)}"
+        f" inline_candidates={inline_candidates}"
+        f" tabular_candidates={tabular_candidates}"
+        f" columnar_candidates={columnar_candidates}"
+        f" missing_signals={','.join(sorted(set(missing_signals)))}"
+    )
+    return base_message + detail_suffix
 
 
 def select_parsed_rows(
@@ -164,5 +211,21 @@ def select_parsed_rows(
         )
 
     if inline_candidates > 0 or tabular_candidates > 0 or columnar_candidates > 0:
-        raise InvalidFileContentError("PDF text was extracted, but transactions are in an unsupported table layout.")
-    raise InvalidFileContentError("PDF text was extracted, but no recognizable transaction row pattern was found.")
+        raise InvalidFileContentError(
+            _build_pdf_pattern_failure_detail(
+                base_message="PDF text was extracted, but transactions are in an unsupported table layout.",
+                lines=lines,
+                inline_candidates=inline_candidates,
+                tabular_candidates=tabular_candidates,
+                columnar_candidates=columnar_candidates,
+            )
+        )
+    raise InvalidFileContentError(
+        _build_pdf_pattern_failure_detail(
+            base_message="PDF text was extracted, but no recognizable transaction row pattern was found.",
+            lines=lines,
+            inline_candidates=inline_candidates,
+            tabular_candidates=tabular_candidates,
+            columnar_candidates=columnar_candidates,
+        )
+    )
