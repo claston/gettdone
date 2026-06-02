@@ -1,6 +1,6 @@
+import re
 from dataclasses import dataclass
 from typing import Any, Callable
-import re
 
 from app.application.errors import InvalidFileContentError
 
