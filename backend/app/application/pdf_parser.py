@@ -104,9 +104,20 @@ def parse_pdf_transactions(
         page_texts = _extract_pdf_page_texts(raw_bytes)
     else:
         page_texts = _extract_pdf_page_texts(raw_bytes, on_ocr_progress)
-    primary_result = _parse_pdf_transactions_from_page_texts(page_texts)
-
     using_native_text = bool(native_pages) and page_texts == native_pages
+    try:
+        primary_result = _parse_pdf_transactions_from_page_texts(page_texts)
+    except InvalidFileContentError as native_parse_error:
+        if not using_native_text:
+            raise
+        return _retry_native_parse_failure_with_ocr(
+            raw_bytes,
+            native_pages=native_pages,
+            native_parse_error=native_parse_error,
+            on_ocr_progress=on_ocr_progress,
+            max_ocr_pages=max_ocr_pages,
+        )
+
     if not using_native_text:
         return primary_result
     if not _should_try_ocr_reparse(primary_result, page_count=len(native_pages)):
@@ -115,10 +126,7 @@ def parse_pdf_transactions(
         return primary_result
     _enforce_ocr_page_limit(page_count=len(native_pages), max_ocr_pages=max_ocr_pages)
 
-    if on_ocr_progress is None:
-        ocr_pages = extract_pdf_page_texts_with_ocr(raw_bytes)
-    else:
-        ocr_pages = extract_pdf_page_texts_with_ocr(raw_bytes, on_ocr_progress)
+    ocr_pages = _extract_pdf_page_texts_with_ocr(raw_bytes, on_ocr_progress=on_ocr_progress)
     if not ocr_pages:
         return primary_result
 
@@ -126,6 +134,44 @@ def parse_pdf_transactions(
     if _is_better_parse_result(candidate=ocr_result, baseline=primary_result):
         return ocr_result
     return primary_result
+
+
+def _retry_native_parse_failure_with_ocr(
+    raw_bytes: bytes,
+    *,
+    native_pages: list[str],
+    native_parse_error: InvalidFileContentError,
+    on_ocr_progress: Callable[[int, int], None] | None,
+    max_ocr_pages: int | None,
+) -> PdfParseResult:
+    if not is_pdf_ocr_enabled():
+        raise native_parse_error
+    _enforce_ocr_page_limit(page_count=len(native_pages), max_ocr_pages=max_ocr_pages)
+
+    ocr_pages = _extract_pdf_page_texts_with_ocr(raw_bytes, on_ocr_progress=on_ocr_progress)
+    if not ocr_pages:
+        raise native_parse_error
+
+    ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
+    parse_metrics = dict(ocr_result.parse_metrics)
+    parse_metrics["ocr_retry_reason"] = "native_parse_failed"
+    return PdfParseResult(
+        transactions=ocr_result.transactions,
+        canonical_transactions=ocr_result.canonical_transactions,
+        layout=ocr_result.layout,
+        extracted_text=ocr_result.extracted_text,
+        parse_metrics=parse_metrics,
+    )
+
+
+def _extract_pdf_page_texts_with_ocr(
+    raw_bytes: bytes,
+    *,
+    on_ocr_progress: Callable[[int, int], None] | None,
+) -> list[str]:
+    if on_ocr_progress is None:
+        return extract_pdf_page_texts_with_ocr(raw_bytes)
+    return extract_pdf_page_texts_with_ocr(raw_bytes, on_ocr_progress)
 
 
 def _enforce_ocr_page_limit(*, page_count: int, max_ocr_pages: int | None) -> None:
@@ -200,10 +246,7 @@ def _parse_scanned_pdf_with_local_ocr_adapter(
     *,
     on_ocr_progress: Callable[[int, int], None] | None,
 ) -> PdfParseResult:
-    if on_ocr_progress is None:
-        ocr_pages = extract_pdf_page_texts_with_ocr(raw_bytes)
-    else:
-        ocr_pages = extract_pdf_page_texts_with_ocr(raw_bytes, on_ocr_progress)
+    ocr_pages = _extract_pdf_page_texts_with_ocr(raw_bytes, on_ocr_progress=on_ocr_progress)
     if not ocr_pages:
         raise InvalidFileContentError(PDF_OCR_DISABLED_MESSAGE)
 

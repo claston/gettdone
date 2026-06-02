@@ -340,6 +340,81 @@ def test_parse_pdf_transactions_retries_with_ocr_when_native_is_generic_low_cove
     assert len(result.transactions) == 5
 
 
+def test_parse_pdf_transactions_retries_with_ocr_when_native_parse_fails(monkeypatch) -> None:
+    native_pages = ["native page 1", "native page 2"]
+    ocr_pages = ["01/04/2026 PIX RECEBIDO 10,00"]
+    native_error = InvalidFileContentError("native parse failed")
+    parse_pages = pdf_parser_module._parse_pdf_transactions_from_page_texts
+    progress: list[tuple[int, int]] = []
+
+    def _ocr_stub(raw_bytes, on_progress):
+        on_progress(1, 2)
+        return ocr_pages
+
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: native_pages)
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: True)
+    monkeypatch.setattr(pdf_parser_module, "extract_pdf_page_texts_with_ocr", _ocr_stub)
+
+    def _parse_pages(pages):
+        if pages == native_pages:
+            raise native_error
+        return parse_pages(ocr_pages)
+
+    monkeypatch.setattr(pdf_parser_module, "_parse_pdf_transactions_from_page_texts", _parse_pages)
+
+    result = parse_pdf_transactions(b"%PDF synthetic", on_ocr_progress=lambda current, total: progress.append((current, total)))
+
+    assert len(result.transactions) == 1
+    assert result.transactions[0].amount == 10.0
+    assert result.parse_metrics["ocr_retry_reason"] == "native_parse_failed"
+    assert progress == [(1, 2)]
+
+
+def test_parse_pdf_transactions_keeps_native_parse_error_when_ocr_is_disabled(monkeypatch) -> None:
+    native_pages = ["native page 1", "native page 2"]
+    native_error = InvalidFileContentError("native parse failed")
+
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: native_pages)
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: False)
+    monkeypatch.setattr(pdf_parser_module, "_parse_pdf_transactions_from_page_texts", lambda pages: (_ for _ in ()).throw(native_error))
+
+    with pytest.raises(InvalidFileContentError, match="native parse failed"):
+        parse_pdf_transactions(b"%PDF synthetic")
+
+
+def test_parse_pdf_transactions_enforces_page_limit_before_native_failure_ocr_retry(monkeypatch) -> None:
+    native_pages = ["native page 1", "native page 2", "native page 3"]
+    native_error = InvalidFileContentError("native parse failed")
+    calls = {"ocr": 0}
+
+    def _ocr_stub(raw_bytes):
+        calls["ocr"] += 1
+        return ["01/04/2026 PIX RECEBIDO 10,00"]
+
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: native_pages)
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: True)
+    monkeypatch.setattr(pdf_parser_module, "extract_pdf_page_texts_with_ocr", _ocr_stub)
+    monkeypatch.setattr(pdf_parser_module, "_parse_pdf_transactions_from_page_texts", lambda pages: (_ for _ in ()).throw(native_error))
+
+    with pytest.raises(pdf_parser_module.MaxPagesPerFileExceededError):
+        parse_pdf_transactions(b"%PDF synthetic", max_ocr_pages=2)
+
+    assert calls["ocr"] == 0
+
+
+def test_parse_pdf_transactions_keeps_native_parse_error_when_failure_ocr_retry_is_empty(monkeypatch) -> None:
+    native_pages = ["native page 1", "native page 2"]
+    native_error = InvalidFileContentError("native parse failed")
+
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: native_pages)
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: True)
+    monkeypatch.setattr(pdf_parser_module, "extract_pdf_page_texts_with_ocr", lambda raw_bytes: [])
+    monkeypatch.setattr(pdf_parser_module, "_parse_pdf_transactions_from_page_texts", lambda pages: (_ for _ in ()).throw(native_error))
+
+    with pytest.raises(InvalidFileContentError, match="native parse failed"):
+        parse_pdf_transactions(b"%PDF synthetic")
+
+
 def test_parse_pdf_transactions_keeps_native_when_coverage_is_healthy(monkeypatch) -> None:
     native_pages = ["native page 1", "native page 2", "native page 3"]
     native_result = pdf_parser_module.PdfParseResult(
