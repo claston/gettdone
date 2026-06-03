@@ -118,6 +118,57 @@ def test_parse_pdf_transactions_uses_ocr_fallback_when_enabled(monkeypatch) -> N
     assert result.parse_metrics["invalid_date_candidates_skipped"] == 1
 
 
+def test_parse_pdf_transactions_retries_with_ocr_when_native_text_is_empty(monkeypatch) -> None:
+    progress: list[tuple[int, int]] = []
+
+    def _ocr_stub(raw_bytes, on_progress):
+        on_progress(6, 6)
+        return ["10/04/2026 PIX RECEBIDO 50,00"]
+
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [])
+    monkeypatch.setattr(pdf_parser_module, "_read_pdf_page_count", lambda raw_bytes: 6)
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: True)
+    monkeypatch.setattr(pdf_parser_module, "extract_pdf_page_texts_with_ocr", _ocr_stub)
+
+    result = parse_pdf_transactions(
+        b"%PDF synthetic",
+        on_ocr_progress=lambda current, total: progress.append((current, total)),
+        max_ocr_pages=6,
+    )
+
+    assert len(result.transactions) == 1
+    assert result.transactions[0].amount == 50.0
+    assert result.parse_metrics["ocr_retry_reason"] == "insufficient_native_text"
+    assert progress == [(6, 6)]
+
+
+def test_parse_pdf_transactions_enforces_page_limit_before_empty_native_text_ocr_retry(monkeypatch) -> None:
+    calls = {"ocr": 0}
+
+    def _ocr_stub(raw_bytes):
+        calls["ocr"] += 1
+        return ["10/04/2026 PIX RECEBIDO 50,00"]
+
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [])
+    monkeypatch.setattr(pdf_parser_module, "_read_pdf_page_count", lambda raw_bytes: 6)
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: True)
+    monkeypatch.setattr(pdf_parser_module, "extract_pdf_page_texts_with_ocr", _ocr_stub)
+
+    with pytest.raises(pdf_parser_module.MaxPagesPerFileExceededError):
+        parse_pdf_transactions(b"%PDF synthetic", max_ocr_pages=5)
+
+    assert calls["ocr"] == 0
+
+
+def test_parse_pdf_transactions_keeps_insufficient_text_error_when_empty_native_text_ocr_is_disabled(monkeypatch) -> None:
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [])
+    monkeypatch.setattr(pdf_parser_module, "_read_pdf_page_count", lambda raw_bytes: 6)
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: False)
+
+    with pytest.raises(InvalidFileContentError, match="does not contain extractable text"):
+        parse_pdf_transactions(b"%PDF synthetic", max_ocr_pages=6)
+
+
 def test_parse_pdf_transactions_uses_textract_adapter_path_for_scanned_pdf_when_enabled(monkeypatch) -> None:
     monkeypatch.setenv("TEXTRACT_ENABLED", "true")
     monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [])
