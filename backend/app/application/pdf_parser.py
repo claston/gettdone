@@ -75,10 +75,12 @@ def parse_pdf_transactions(
     on_ocr_progress: Callable[[int, int], None] | None = None,
     max_ocr_pages: int | None = None,
 ) -> PdfParseResult:
+    native_read_error: InvalidFileContentError | None = None
     try:
         native_pages = _read_native_pdf_page_texts(raw_bytes)
-    except InvalidFileContentError:
+    except InvalidFileContentError as exc:
         native_pages = []
+        native_read_error = exc
 
     if is_textract_enabled() and (not native_pages or is_textract_forced()):
         _enforce_ocr_page_limit(page_count=len(native_pages), max_ocr_pages=max_ocr_pages)
@@ -99,6 +101,13 @@ def parse_pdf_transactions(
                 extracted_text=fallback_result.extracted_text,
                 parse_metrics=fallback_metrics,
             )
+
+    if native_read_error is None and not native_pages:
+        return _retry_insufficient_native_text_with_ocr(
+            raw_bytes,
+            on_ocr_progress=on_ocr_progress,
+            max_ocr_pages=max_ocr_pages,
+        )
 
     if on_ocr_progress is None:
         page_texts = _extract_pdf_page_texts(raw_bytes)
@@ -134,6 +143,33 @@ def parse_pdf_transactions(
     if _is_better_parse_result(candidate=ocr_result, baseline=primary_result):
         return ocr_result
     return primary_result
+
+
+def _retry_insufficient_native_text_with_ocr(
+    raw_bytes: bytes,
+    *,
+    on_ocr_progress: Callable[[int, int], None] | None,
+    max_ocr_pages: int | None,
+) -> PdfParseResult:
+    if not is_pdf_ocr_enabled():
+        raise InvalidFileContentError(PDF_OCR_DISABLED_MESSAGE)
+    if max_ocr_pages is not None:
+        _enforce_ocr_page_limit(page_count=_read_pdf_page_count(raw_bytes), max_ocr_pages=max_ocr_pages)
+
+    ocr_pages = _extract_pdf_page_texts_with_ocr(raw_bytes, on_ocr_progress=on_ocr_progress)
+    if not ocr_pages:
+        raise InvalidFileContentError(PDF_OCR_DISABLED_MESSAGE)
+
+    ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
+    parse_metrics = dict(ocr_result.parse_metrics)
+    parse_metrics["ocr_retry_reason"] = "insufficient_native_text"
+    return PdfParseResult(
+        transactions=ocr_result.transactions,
+        canonical_transactions=ocr_result.canonical_transactions,
+        layout=ocr_result.layout,
+        extracted_text=ocr_result.extracted_text,
+        parse_metrics=parse_metrics,
+    )
 
 
 def _retry_native_parse_failure_with_ocr(
@@ -486,6 +522,14 @@ def _read_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
     pages = [(page.extract_text() or "").strip() for page in reader.pages]
     pages = [item for item in pages if item]
     return pages
+
+
+def _read_pdf_page_count(raw_bytes: bytes) -> int:
+    try:
+        reader = PdfReader(BytesIO(raw_bytes))
+        return len(reader.pages)
+    except Exception as exc:  # pragma: no cover - defensive guard for parser internals
+        raise InvalidFileContentError("Unable to read PDF bytes.") from exc
 
 
 def _flatten_statement_lines(page_texts: list[str]) -> list[_PdfLine]:
