@@ -4,9 +4,10 @@ from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
 from app.application.access_control import AccessControlService
-from app.application.errors import InvalidFileContentError
+from app.application.errors import InvalidFileContentError, MaxPagesPerFileExceededError
 from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
 from app.main import app
+from app.routers.convert import OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK, _resolve_error_observability
 from app.schemas import (
     AnalyzeResponse,
     BeforeAfterPreview,
@@ -299,6 +300,10 @@ def test_convert_rejects_ocr_pdf_above_6_pages_for_paid_user(tmp_path, monkeypat
     assert detail["code"] == "pages_limit_exceeded"
     assert detail["pages_count"] == 11
     assert detail["max_pages_per_file"] == 6
+    assert detail["ocr_context"] == "scanned_pdf"
+    assert "documento escaneado" in detail["message"]
+    assert "11" not in detail["message"]
+    assert "6" not in detail["message"]
     app.dependency_overrides.clear()
 
 
@@ -326,6 +331,11 @@ def test_convert_returns_pages_limit_when_ocr_like_pdf_is_misdetected_as_text(tm
     assert detail["code"] == "pages_limit_exceeded"
     assert detail["pages_count"] == 11
     assert detail["max_pages_per_file"] == 6
+    assert detail["ocr_context"] == "unidentified_model_fallback"
+    assert "Não identificamos automaticamente o modelo" in detail["message"]
+    assert "documento escaneado" in detail["message"]
+    assert "11" not in detail["message"]
+    assert "6" not in detail["message"]
     app.dependency_overrides.clear()
 
 
@@ -353,6 +363,20 @@ def test_conversion_upload_non_sse_keeps_ocr_pages_limit_validation(tmp_path, mo
     assert detail["pages_count"] == 6
     assert detail["max_pages_per_file"] == 5
     app.dependency_overrides.clear()
+
+
+def test_ocr_pages_limit_observability_uses_ocr_stage() -> None:
+    error = MaxPagesPerFileExceededError(
+        pages_count=11,
+        max_pages_per_file=6,
+        ocr_context=OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK,
+    )
+
+    assert _resolve_error_observability(error) == (
+        "ocr",
+        "ocr_pages_limit_exceeded",
+        "MaxPagesPerFileExceededError",
+    )
 
 
 def test_convert_returns_friendly_message_for_likely_corrupted_pdf(tmp_path) -> None:

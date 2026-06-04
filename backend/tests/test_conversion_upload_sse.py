@@ -255,6 +255,30 @@ def test_streaming_upload_emits_file_too_large_error_message() -> None:
     assert "5 mb" in str(failed["message"]).lower()
 
 
+def test_streaming_upload_explains_scanned_pdf_pages_limit_without_numeric_limit(monkeypatch) -> None:
+    monkeypatch.setenv("PDF_OCR_MAX_PAGES", "8")
+    monkeypatch.setattr(
+        "app.routers.convert._inspect_pdf_scan_likely",
+        lambda filename, raw_bytes: (True, 11),
+    )
+    client = _build_client()
+    response = client.post(
+        "/api/conversions/upload",
+        headers={"accept": "text/event-stream"},
+        data={"anonymous_fingerprint": "fp-scanned-limit"},
+        files={"file": ("scanned.pdf", b"%PDF scanned", "application/pdf")},
+    )
+    payloads = _parse_sse_payloads(response.text)
+    failed = next(item for item in payloads if item.get("stage") == "failed")
+    assert failed["code"] == "pages_limit_exceeded"
+    assert failed["ocr_context"] == "scanned_pdf"
+    assert failed["pages_count"] == 11
+    assert failed["max_pages_per_file"] == 8
+    assert "documento escaneado" in failed["message"]
+    assert "11" not in failed["message"]
+    assert "8" not in failed["message"]
+
+
 def test_streaming_upload_emits_weekly_quota_failed_event_with_identity_type() -> None:
     client = _build_client_with_access_control(AnonymousQuotaExceededAccessControlService())
     response = client.post(

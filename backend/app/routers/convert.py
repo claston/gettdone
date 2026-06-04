@@ -37,6 +37,51 @@ TEXT_PDF_MAX_PAGES_PER_FILE = 250
 TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
 OCR_PDF_MAX_PAGES_PER_FILE = 10
 OCR_PDF_MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024
+OCR_CONTEXT_SCANNED_PDF = "scanned_pdf"
+OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK = "unidentified_model_fallback"
+
+
+def _resolve_ocr_limit_context(scanned_likely: bool | None) -> str:
+    if scanned_likely is True:
+        return OCR_CONTEXT_SCANNED_PDF
+    return OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK
+
+
+def _apply_ocr_limit_context(exc: MaxPagesPerFileExceededError, scanned_likely: bool | None) -> None:
+    if not getattr(exc, "ocr_context", None):
+        exc.ocr_context = _resolve_ocr_limit_context(scanned_likely)
+
+
+def _build_pages_limit_user_message(exc: MaxPagesPerFileExceededError) -> str:
+    context = str(getattr(exc, "ocr_context", "") or "")
+    if context == OCR_CONTEXT_SCANNED_PDF:
+        return (
+            "Identificamos que este arquivo parece ser um documento escaneado. "
+            "Ele é um pouco grande para esse tipo de processamento. "
+            "Você pode dividir o PDF em arquivos menores e tentar a conversão novamente, "
+            "ou enviar o arquivo para analisarmos."
+        )
+    if context == OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK:
+        return (
+            "Não identificamos automaticamente o modelo deste extrato. "
+            "Tentamos ler o arquivo como um documento escaneado, mas ele é um pouco grande "
+            "para esse tipo de processamento. Você pode enviar o arquivo para analisarmos "
+            "o modelo ou dividir o PDF em arquivos menores e tentar a conversão novamente."
+        )
+    return "Este PDF é um pouco grande para o processamento. Divida o arquivo em partes menores e tente novamente."
+
+
+def _build_pages_limit_detail(exc: MaxPagesPerFileExceededError) -> dict[str, str | int]:
+    detail: dict[str, str | int] = {
+        "code": "pages_limit_exceeded",
+        "message": _build_pages_limit_user_message(exc),
+        "pages_count": exc.pages_count,
+        "max_pages_per_file": exc.max_pages_per_file,
+    }
+    context = str(getattr(exc, "ocr_context", "") or "")
+    if context:
+        detail["ocr_context"] = context
+    return detail
 CORRUPTED_PDF_USER_MESSAGE = "Parece que seu arquivo PDF está corrompido."
 
 
@@ -166,14 +211,21 @@ def _log_pages_limit_exceeded_attempt(
 def _resolve_max_pages_per_file(identity, scanned_likely: bool | None) -> int:
     identity_max_pages = max(1, int(getattr(identity, "max_pages_per_file", 10**9)))
     if scanned_likely is True:
-        identity_ocr_pages = max(
-            1,
-            int(getattr(identity, "max_pages_per_file_ocr", OCR_PDF_MAX_PAGES_PER_FILE) or OCR_PDF_MAX_PAGES_PER_FILE),
-        )
-        return min(identity_max_pages, identity_ocr_pages)
+        return _resolve_ocr_max_pages_per_file(identity)
     if scanned_likely is False:
         return max(identity_max_pages, TEXT_PDF_MAX_PAGES_PER_FILE)
     return identity_max_pages
+
+
+def _resolve_pdf_ocr_env_max_pages() -> int:
+    raw = os.getenv("PDF_OCR_MAX_PAGES", "").strip()
+    if not raw:
+        return 12
+    try:
+        value = int(raw)
+    except ValueError:
+        return 12
+    return max(1, value)
 
 
 def _resolve_ocr_max_pages_per_file(identity) -> int:
@@ -182,7 +234,7 @@ def _resolve_ocr_max_pages_per_file(identity) -> int:
         1,
         int(getattr(identity, "max_pages_per_file_ocr", OCR_PDF_MAX_PAGES_PER_FILE) or OCR_PDF_MAX_PAGES_PER_FILE),
     )
-    return min(identity_max_pages, identity_ocr_pages)
+    return min(identity_max_pages, identity_ocr_pages, _resolve_pdf_ocr_env_max_pages())
 
 
 def _resolve_max_upload_size_bytes(
@@ -258,6 +310,8 @@ def _resolve_error_observability(exc: Exception) -> tuple[str | None, str | None
     if isinstance(exc, FileTooLargeError):
         return "upload_validation", "upload_size_limit_exceeded", exception_class
     if isinstance(exc, MaxPagesPerFileExceededError):
+        if getattr(exc, "ocr_context", None):
+            return "ocr", "ocr_pages_limit_exceeded", exception_class
         return "upload_validation", "pdf_page_limit_exceeded", exception_class
     if isinstance(exc, InvalidUserTokenError):
         return "identity_resolution", "invalid_identity_context", exception_class
@@ -422,6 +476,7 @@ def _build_convert_response(
                 raise MaxPagesPerFileExceededError(
                     pages_count=int(estimated_pages_count),
                     max_pages_per_file=max_pages_per_file,
+                    ocr_context=OCR_CONTEXT_SCANNED_PDF if scanned_likely is True else None,
                 )
         max_upload_size_bytes = _resolve_max_upload_size_bytes(identity, scanned_likely, estimated_pages_count)
         try:
@@ -438,6 +493,9 @@ def _build_convert_response(
                 on_ocr_progress=telemetry_ocr_progress,
                 max_ocr_pages=ocr_max_pages,
             )
+        except MaxPagesPerFileExceededError as exc:
+            _apply_ocr_limit_context(exc, scanned_likely)
+            raise
         except InvalidFileContentError as exc:
             # If inspection misclassifies a scanned PDF as text-based, analyze may fail with
             # insufficient text/OCR detail. In that case, surface a clear pages-limit error
@@ -460,6 +518,7 @@ def _build_convert_response(
                     raise MaxPagesPerFileExceededError(
                         pages_count=int(estimated_pages_count),
                         max_pages_per_file=ocr_max_pages,
+                        ocr_context=_resolve_ocr_limit_context(scanned_likely),
                     ) from exc
             raise
         report_service.set_convert_owner(
@@ -547,7 +606,14 @@ def _build_convert_response(
         error_stage, error_subcode, exception_class = _resolve_error_observability(exc)
         error_code = _resolve_failed_conversion_code(exc)
         failure_diagnostics = _build_failure_diagnostics(exc)
+        ocr_context = str(getattr(exc, "ocr_context", "") or "")
+        if ocr_context:
+            failure_diagnostics["ocr_fallback_attempted"] = True
+            failure_diagnostics["ocr_fallback_reason"] = ocr_context
+            if isinstance(exc, MaxPagesPerFileExceededError):
+                failure_diagnostics["ocr_max_pages"] = exc.max_pages_per_file
         duration_ms = int((monotonic() - started_at) * 1000)
+        ocr_attempted = ocr_pages_processed > 0 or bool(ocr_context)
         failed_event_id: str | None = None
         if identity is not None and identity.identity_type == "anonymous":
             failed_event_id = f"anon_evt_{uuid4().hex[:24]}"
@@ -575,7 +641,7 @@ def _build_convert_response(
                 parser_selection_reason=None,
                 pdf_page_count=estimated_pages_count,
                 extracted_char_count=None,
-                ocr_attempted=ocr_pages_processed > 0,
+                ocr_attempted=ocr_attempted,
                 ocr_engine=ocr_engine,
                 file_sha256=file_digest,
             )
@@ -613,12 +679,7 @@ def _raise_http_convert_error(exc: Exception, *, identity, access_control_servic
     if isinstance(exc, MaxPagesPerFileExceededError):
         raise HTTPException(
             status_code=400,
-            detail={
-                "code": "pages_limit_exceeded",
-                "message": f"Este PDF tem {exc.pages_count} páginas e excede o limite de {exc.max_pages_per_file}.",
-                "pages_count": exc.pages_count,
-                "max_pages_per_file": exc.max_pages_per_file,
-            },
+            detail=_build_pages_limit_detail(exc),
         )
     if isinstance(exc, InvalidUserTokenError):
         raise HTTPException(
@@ -923,7 +984,9 @@ async def conversion_upload_stream(
                     failed_event_payload["identity_type"] = identity_type
             elif isinstance(error, MaxPagesPerFileExceededError):
                 code = "pages_limit_exceeded"
-                message = f"Este PDF tem {error.pages_count} páginas e excede o limite de {error.max_pages_per_file}."
+                pages_limit_detail = _build_pages_limit_detail(error)
+                message = str(pages_limit_detail["message"])
+                failed_event_payload.update(pages_limit_detail)
             elif isinstance(error, UnsupportedFileTypeError):
                 code = "unsupported_type"
                 message = "Formato não suportado. Envie um PDF."
