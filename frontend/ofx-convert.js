@@ -617,6 +617,29 @@
     }
   }
 
+  function buildPagesLimitStatusHtml(detail) {
+    const context =
+      detail && typeof detail === "object" ? String(detail.ocr_context || "").trim().toLowerCase() : "";
+    if (context === "scanned_pdf") {
+      return (
+        "Identificamos que este arquivo parece ser um documento escaneado. " +
+        "Ele é um pouco grande para esse tipo de processamento. " +
+        'Você pode dividir o PDF em arquivos menores e tentar novamente, ou <a href="./contato.html">enviar o arquivo para analisarmos</a>.'
+      );
+    }
+    if (context === "unidentified_model_fallback") {
+      return (
+        "Não identificamos automaticamente o modelo deste extrato. " +
+        "Tentamos ler o arquivo como um documento escaneado, mas ele é um pouco grande para esse tipo de processamento. " +
+        'Você pode <a href="./contato.html">enviar o arquivo para analisarmos o modelo</a> ou dividir o PDF em arquivos menores e tentar novamente.'
+      );
+    }
+    return (
+      "Identificamos que o arquivo é um pouco grande para este processamento. " +
+      'Você pode <a href="./contato.html">enviar o arquivo para analisarmos</a> ou dividir o PDF em arquivos menores e tentar novamente.'
+    );
+  }
+
   function updateProgressBarUI(percent) {
     if (!processingProgress || !processingProgressFill) {
       return;
@@ -1818,6 +1841,9 @@
               code: failedCode,
               message: String(event.message || "Falha ao converter arquivo."),
               retryable: Boolean(event.retryable),
+              ocr_context: event.ocr_context || null,
+              pages_count: event.pages_count || null,
+              max_pages_per_file: event.max_pages_per_file || null,
             });
           }
           if (event.stage === "completed") {
@@ -2065,6 +2091,10 @@
       }
       if (status === 429 && code === "monthly_pages_quota_exceeded") {
         setStatus("Você atingiu o limite mensal de páginas do seu plano.", "error");
+        return;
+      }
+      if (status === 400 && code === "pages_limit_exceeded") {
+        setStatusHtml(buildPagesLimitStatusHtml(detail), "error");
         return;
       }
       const normalizedMessage = String(message || "").toLowerCase();

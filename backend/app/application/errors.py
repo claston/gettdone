@@ -13,9 +13,16 @@ class InvalidFileContentError(Exception):
 class MaxPagesPerFileExceededError(Exception):
     """Raised when a PDF exceeds the maximum allowed pages for current identity."""
 
-    def __init__(self, *, pages_count: int, max_pages_per_file: int) -> None:
+    def __init__(
+        self,
+        *,
+        pages_count: int,
+        max_pages_per_file: int,
+        ocr_context: str | None = None,
+    ) -> None:
         self.pages_count = max(0, int(pages_count))
         self.max_pages_per_file = max(1, int(max_pages_per_file))
+        self.ocr_context = str(ocr_context or "").strip() or None
         super().__init__(
             f"PDF has {self.pages_count} pages, exceeding the max of {self.max_pages_per_file} pages per file."
         )
