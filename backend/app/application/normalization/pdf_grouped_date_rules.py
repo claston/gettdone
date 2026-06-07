@@ -14,6 +14,26 @@ MONTH_ONLY_DATE_PATTERN = re.compile(
 SLASH_DATE_PATTERN = re.compile(
     r"^(?P<day>\d{1,2})/(?P<month>\d{1,2})(?:/(?P<year>\d{2,4}))?(?P<rest>.*)$"
 )
+WEEKDAY_GROUP_DATE_PATTERN = re.compile(
+    r"^(?:SEGUNDA|TERCA|QUARTA|QUINTA|SEXTA|SABADO|DOMINGO)(?:-FEIRA)?\s*,?\s*"
+    r"(?P<day>\d{1,2})\s+DE\s+"
+    r"(?P<month>JANEIRO|FEVEREIRO|MARCO|ABRIL|MAIO|JUNHO|JULHO|AGOSTO|SETEMBRO|OUTUBRO|NOVEMBRO|DEZEMBRO)"
+    r"\s+DE\s+(?P<year>\d{4})(?P<rest>.*)$"
+)
+FULL_MONTH_TO_ABBREV = {
+    "JANEIRO": "JAN",
+    "FEVEREIRO": "FEV",
+    "MARCO": "MAR",
+    "ABRIL": "ABR",
+    "MAIO": "MAI",
+    "JUNHO": "JUN",
+    "JULHO": "JUL",
+    "AGOSTO": "AGO",
+    "SETEMBRO": "SET",
+    "OUTUBRO": "OUT",
+    "NOVEMBRO": "NOV",
+    "DEZEMBRO": "DEZ",
+}
 
 
 @dataclass(frozen=True)
@@ -40,6 +60,20 @@ def parse_grouped_date_line(raw_line: str, *, inferred_year: int | None) -> Grou
                 "%Y-%m-%d"
             ),
             rest=rest_value,
+        )
+
+    weekday_match = WEEKDAY_GROUP_DATE_PATTERN.match(normalized_line)
+    if weekday_match:
+        month_abbrev = FULL_MONTH_TO_ABBREV.get(weekday_match.group("month"))
+        if month_abbrev is None:
+            return None
+        return GroupedDateMatch(
+            date=build_iso_date(
+                year=weekday_match.group("year"),
+                month_abbrev=month_abbrev,
+                day=weekday_match.group("day"),
+            ),
+            rest=weekday_match.group("rest"),
         )
 
     date_match = DATE_HEADER_PATTERN.match(normalized_line)

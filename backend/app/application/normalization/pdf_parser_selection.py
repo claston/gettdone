@@ -70,6 +70,29 @@ def _build_pdf_pattern_failure_detail(
     return base_message + detail_suffix
 
 
+def _should_prefer_tabular_over_grouped_on_traceability(
+    *, grouped_rows: list[Any], tabular_rows: list[Any], grouped_transactions_count: int, tabular_transactions_count: int
+) -> bool:
+    if grouped_transactions_count == 0 or tabular_transactions_count == 0:
+        return False
+    if grouped_transactions_count != tabular_transactions_count:
+        return False
+
+    grouped_source_lines = [getattr(item, "source_line", None) for item in grouped_rows]
+    tabular_source_lines = [getattr(item, "source_line", None) for item in tabular_rows]
+    grouped_descriptions = [str(getattr(getattr(item, "transaction", None), "description", "")).strip().upper() for item in grouped_rows]
+    tabular_descriptions = [str(getattr(getattr(item, "transaction", None), "description", "")).strip().upper() for item in tabular_rows]
+    if any(line is None for line in grouped_source_lines) or any(line is None for line in tabular_source_lines):
+        return False
+    if not any(
+        (" DEBITO" in tabular_description or " CREDITO" in tabular_description)
+        and (" DEBITO" not in grouped_description and " CREDITO" not in grouped_description)
+        for grouped_description, tabular_description in zip(grouped_descriptions, tabular_descriptions)
+    ):
+        return False
+    return all(int(grouped_line) > int(tabular_line) for grouped_line, tabular_line in zip(grouped_source_lines, tabular_source_lines))
+
+
 def select_parsed_rows(
     *,
     lines: list[Any],
@@ -88,8 +111,14 @@ def select_parsed_rows(
         columnar_transactions_count = len(columnar_rows)
         grouped_transactions_count = len(grouped_rows)
         tabular_is_clearly_better_than_grouped = tabular_transactions_count >= grouped_transactions_count + 3
+        tabular_preserves_better_traceability_than_grouped = _should_prefer_tabular_over_grouped_on_traceability(
+            grouped_rows=grouped_rows,
+            tabular_rows=tabular_rows,
+            grouped_transactions_count=grouped_transactions_count,
+            tabular_transactions_count=tabular_transactions_count,
+        )
 
-        if tabular_rows and tabular_is_clearly_better_than_grouped:
+        if tabular_rows and (tabular_is_clearly_better_than_grouped or tabular_preserves_better_traceability_than_grouped):
             return SelectedParserRows(
                 selected_parser="tabular",
                 rows=tabular_rows,
@@ -99,9 +128,17 @@ def select_parsed_rows(
                 columnar_candidates=columnar_candidates,
                 tabular_transactions_count=tabular_transactions_count,
                 columnar_transactions_count=columnar_transactions_count,
-                selection_reason="tabular_preferred_over_grouped_on_row_count_gap",
+                selection_reason=(
+                    "tabular_preferred_over_grouped_on_row_count_gap"
+                    if tabular_is_clearly_better_than_grouped
+                    else "tabular_preferred_over_grouped_on_traceability"
+                ),
                 inline_decision="not_selected_grouped_overridden",
-                tabular_decision="selected_on_grouped_override_row_count_gap",
+                tabular_decision=(
+                    "selected_on_grouped_override_row_count_gap"
+                    if tabular_is_clearly_better_than_grouped
+                    else "selected_on_grouped_override_traceability"
+                ),
                 columnar_decision="no_rows" if not columnar_rows else "not_selected_tabular_priority",
             )
 

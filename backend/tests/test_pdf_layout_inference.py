@@ -98,6 +98,36 @@ def test_infer_pdf_layout_prefers_santander_negocios_profile_with_credit_debit_t
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_prefers_new_santander_empresarial_grouped_period_profile() -> None:
+    text = """
+    Santander
+    Internet Banking Empresarial
+    Agencia:
+    Conta:
+    Banco Santander Pessoa Juridica
+    Busque por um periodo
+    Periodo
+    01/02/2022 - 28/02/2022
+    Exibindo resultados para 01/02/2022 a 28/02/2022
+    Para consultas acima de 90 dias clique aqui.
+    Todos
+    Creditos
+    Debitos
+    Quarta, 02 de fevereiro de 2022
+    PIX ENVIADO OUTRA
+    DEBITO
+    -R$ 8.000,00
+    TED RECEBIDA DIF TITULARIDADE STR
+    CREDITO
+    R$ 9.325,90
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "santander_internet_banking_empresarial_periodo_agrupado_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_bradesco_profile_when_tokens_match() -> None:
     text = """
     BANCO BRADESCO S.A.
