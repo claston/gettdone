@@ -289,14 +289,14 @@ class AnalyzeService:
 
     def _resolve_opening_balance(self, rows: list[TransactionRow], *, extracted_text: str | None = None) -> float | None:
         for row in rows:
-            if row.running_balance is None:
-                continue
-            return round(float(row.running_balance) - float(row.amount), 2)
-
-        for row in rows:
             normalized_description = self._normalize_text_for_profile(row.description)
             if normalized_description in {"SALDO ANTERIOR", "SALDO INICIAL"}:
                 return round(float(row.amount), 2)
+
+        for row in rows:
+            if row.running_balance is None:
+                continue
+            return round(float(row.running_balance) - float(row.amount), 2)
 
         normalized_text = self._normalize_text_for_profile(extracted_text or "")
         if normalized_text:

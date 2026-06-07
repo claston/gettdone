@@ -4,7 +4,9 @@ from openpyxl import Workbook
 
 from app.application import analyze_service as analyze_service_module
 from app.application.analyze_service import AnalyzeService
-from app.application.models import NormalizedTransaction
+from app.application.models import CanonicalTransaction, NormalizedTransaction
+from app.application.pdf_layout_inference import PdfLayoutInference
+from app.application.pdf_parser import PdfParseResult
 from app.application.storage_service import TempAnalysisStorage
 from tests.fixtures.pdf_golden_samples import (
     PDF_PARSE_METRICS_GROUPED_CANONICAL_OK,
@@ -261,6 +263,68 @@ def test_analyze_service_resolves_opening_balance_from_saldo_anterior_row_when_r
             confidence=0.95,
             extracted_text="SALDO ANTERIOR 10.000,00",
             parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+        ),
+    )
+
+    result = service.analyze(filename="caixa.pdf", raw_bytes=b"%PDF synthetic")
+
+    assert result.opening_balance == 10000.0
+
+
+def test_analyze_service_prefers_saldo_anterior_row_over_later_running_balance(tmp_path, monkeypatch) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    service = AnalyzeService(storage=storage)
+    monkeypatch.setattr(
+        analyze_service_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes, **kwargs: PdfParseResult(
+            transactions=[
+                NormalizedTransaction(
+                    date="2024-04-01",
+                    description="SALDO ANTERIOR",
+                    amount=10000.0,
+                    type="inflow",
+                ),
+                NormalizedTransaction(
+                    date="2024-04-01",
+                    description="PAGAMENTO BOLETO",
+                    amount=-150.0,
+                    type="outflow",
+                ),
+            ],
+            layout=PdfLayoutInference(
+                layout_name="caixa_gerenciador_extrato_por_periodo_v1",
+                confidence=0.95,
+                used_fallback=False,
+            ),
+            extracted_text="SALDO ANTERIOR 10.000,00",
+            parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+            canonical_transactions=[
+                CanonicalTransaction(
+                    date="2024-04-01",
+                    description="SALDO ANTERIOR",
+                    amount=10000.0,
+                    type="inflow",
+                    running_balance=None,
+                    source_page=1,
+                    source_line=1,
+                    layout_name="caixa_gerenciador_extrato_por_periodo_v1",
+                    confidence=0.95,
+                    source_parser="grouped",
+                ),
+                CanonicalTransaction(
+                    date="2024-04-01",
+                    description="PAGAMENTO BOLETO",
+                    amount=-150.0,
+                    type="outflow",
+                    running_balance=9850.0,
+                    source_page=1,
+                    source_line=2,
+                    layout_name="caixa_gerenciador_extrato_por_periodo_v1",
+                    confidence=0.95,
+                    source_parser="grouped",
+                ),
+            ],
         ),
     )
 

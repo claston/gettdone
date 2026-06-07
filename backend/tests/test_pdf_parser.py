@@ -815,6 +815,47 @@ def test_parse_pdf_transactions_keeps_explicit_negative_sign_even_if_running_bal
     assert result.transactions[1].amount == -125.45
 
 
+def test_parse_pdf_transactions_does_not_reconcile_grouped_sign_from_non_adjacent_running_balance(monkeypatch) -> None:
+    sample_text = "\n".join(
+        [
+            "01. Conta Corrente e Aplicações Automáticas",
+            "Conta Corrente |",
+            "Movimentação",
+            "data",
+            "descrição",
+            "entradas R$",
+            "(créditos)",
+            "saídas R$",
+            "(débitos)",
+            "saldo R$",
+            "27/10",
+            "Saldo anterior",
+            "3.039,28",
+            "03/11",
+            "Sitpag",
+            "3.000,00-",
+            "Tar Contr",
+            "165,00-",
+            "Tar Conta Certa",
+            "201,90-",
+            "Res Aplic Aut Mais",
+            "3.029,28",
+            "Rend Pag Aplic Aut Mais",
+            "0,02",
+            "2.701,68",
+        ]
+    )
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [sample_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert len(result.transactions) == 6
+    assert result.transactions[-1].description == "Rend Pag Aplic Aut Mais"
+    assert result.transactions[-1].amount == 0.02
+    assert result.canonical_transactions[-1].running_balance == 2701.68
+
+
 def test_parse_pdf_transactions_ignores_grouped_saldo_rows_from_transaction_totals(monkeypatch) -> None:
     sample_text = "\n".join(
         [
