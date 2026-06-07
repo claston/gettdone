@@ -709,9 +709,11 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
             elif _is_balance_snapshot_description(pre_amount_description_parts):
                 last_known_running_balance = parse_pdf_amount(line.text)
             elif _can_attach_grouped_running_balance(description_parts=description_parts, last_transaction_index=last_transaction_index):
-                previous_balance = _resolve_previous_running_balance(transactions, last_transaction_index)
-                if previous_balance is None:
-                    previous_balance = last_known_running_balance
+                previous_balance = None
+                if _has_adjacent_previous_running_balance_context(transactions, last_transaction_index):
+                    previous_balance = _resolve_previous_running_balance(transactions, last_transaction_index)
+                    if previous_balance is None:
+                        previous_balance = last_known_running_balance
                 transactions[last_transaction_index] = _attach_running_balance_and_reconcile_sign(
                     transaction=transactions[last_transaction_index],
                     running_balance=parse_pdf_amount(line.text),
@@ -1552,6 +1554,18 @@ def _resolve_previous_running_balance(transactions: list[_ParsedTransaction], cu
         if previous_description.startswith("SALDO ANTERIOR") or previous_description.startswith("SALDO INICIAL"):
             return transactions[current_index - 1].transaction.amount
     return None
+
+
+def _has_adjacent_previous_running_balance_context(
+    transactions: list[_ParsedTransaction], current_index: int
+) -> bool:
+    if current_index <= 0:
+        return False
+    previous_item = transactions[current_index - 1]
+    if previous_item.running_balance is not None:
+        return True
+    previous_description = _normalize_text(previous_item.transaction.description)
+    return previous_description.startswith("SALDO ANTERIOR") or previous_description.startswith("SALDO INICIAL")
 
 
 def _attach_running_balance_and_reconcile_sign(

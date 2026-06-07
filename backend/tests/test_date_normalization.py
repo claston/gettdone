@@ -49,6 +49,16 @@ def test_infer_default_statement_year_prefers_most_frequent_year() -> None:
     assert infer_default_statement_year(lines) == 2025
 
 
+def test_infer_default_statement_year_supports_two_digit_years() -> None:
+    lines = [
+        "saldo em 27/10/21",
+        "saldo em 30/11/21",
+        "03/11 Sitpag 3.000,00-",
+    ]
+
+    assert infer_default_statement_year(lines) == 2021
+
+
 def test_infer_default_statement_year_returns_none_when_absent() -> None:
     assert infer_default_statement_year(["SEM DATA", "PIX RECEBIDO"]) is None
 
