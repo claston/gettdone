@@ -149,6 +149,13 @@ def _safe_record_anonymous_conversion_event(access_control_service: AccessContro
         logger.warning("Failed to persist anonymous conversion event telemetry.", exc_info=True)
 
 
+def _safe_record_user_conversion(access_control_service: AccessControlService, **kwargs) -> None:
+    try:
+        access_control_service.record_user_conversion(**kwargs)
+    except Exception:
+        logger.warning("Failed to persist user conversion telemetry.", exc_info=True)
+
+
 def _log_conversion_failure(
     *,
     identity,
@@ -644,6 +651,38 @@ def _build_convert_response(
                 ocr_attempted=ocr_attempted,
                 ocr_engine=ocr_engine,
                 file_sha256=file_digest,
+            )
+        elif identity is not None and identity.identity_type == "user":
+            _safe_record_user_conversion(
+                access_control_service,
+                user_id=identity.identity_id,
+                processing_id=f"failed_usr_evt_{uuid4().hex[:24]}",
+                filename=(file.filename or "").strip() or "unknown.pdf",
+                model="Nao identificado",
+                conversion_type=_resolve_conversion_type_from_filename(file.filename or ""),
+                status="Falha",
+                transactions_count=0,
+                pages_count=estimated_pages_count,
+                scanned_likely=scanned_likely,
+                ocr_used=ocr_pages_processed > 0,
+                ocr_pages_processed=ocr_pages_processed,
+                duration_ms=duration_ms,
+                error_code=error_code,
+                error_stage=error_stage,
+                error_subcode=error_subcode,
+                exception_class=exception_class,
+                layout_inference_name=None,
+                layout_inference_confidence=None,
+                selected_parser=None,
+                parser_selection_reason=None,
+                pdf_page_count=estimated_pages_count,
+                extracted_char_count=None,
+                ocr_attempted=ocr_attempted,
+                ocr_engine=ocr_engine,
+                file_sha256=file_digest,
+                canonical_warning_transactions_count=0,
+                balance_consistency_failed=0,
+                expires_at=None,
             )
         _log_conversion_failure(
             identity=identity,

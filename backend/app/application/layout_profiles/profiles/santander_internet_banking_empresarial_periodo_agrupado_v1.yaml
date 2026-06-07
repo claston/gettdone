@@ -1,0 +1,128 @@
+meta_model:
+  layout_id: santander_internet_banking_empresarial_periodo_agrupado_v1
+  bank: Santander
+  channel: Internet Banking Empresarial
+  statement_type: conta_corrente_extrato_periodo_agrupado
+  source_quality: real_pdf_validated
+  confidence: high
+  detection_signals:
+    strong:
+      - "Logo Santander visível no topo"
+      - "Texto 'Internet Banking Empresarial' no cabeçalho"
+      - "Identificação 'Banco Santander Pessoa Jurídica'"
+      - "Filtro 'Busque por um período'"
+      - "Abas 'Todos', 'Créditos', 'Débitos'"
+      - "Linhas agrupadas por data textual com dia da semana"
+      - "Linhas de transação com descrição, marcador CREDITO/DEBITO e valor"
+    weak:
+      - "Campos 'Agência' e 'Conta' podem aparecer sem valores"
+      - "Link 'Para consultas acima de 90 dias clique aqui.' abaixo do período"
+      - "Saldo não aparece nas linhas visíveis"
+      - "Documento não aparece nas linhas visíveis"
+    table_headers:
+      - "Todos"
+      - "Créditos"
+      - "Débitos"
+      - "Data agrupadora"
+      - "Histórico/descrição"
+      - "Tipo: CREDITO/DEBITO"
+      - "Valor"
+
+layout_profile:
+  profile_name: santander_internet_banking_empresarial_periodo_agrupado_v1
+  bank: Santander
+  layout_family: internet_banking_empresarial_periodo_grouped_list
+  statement_type: conta_corrente_extrato_periodo_agrupado
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Santander"
+      - "Internet Banking Empresarial"
+      - "Banco Santander Pessoa Jurídica"
+      - "Busque por um período"
+      - "Todos"
+      - "Créditos"
+      - "Débitos"
+      - "Exibindo resultados para"
+    optional_keywords:
+      - "Agência"
+      - "Conta"
+      - "Período"
+      - "Para consultas acima de 90 dias clique aqui"
+      - "CREDITO"
+      - "DEBITO"
+    negative_keywords:
+      - "Ver extrato 365 dias"
+      - "Aplicativo Santander Empresas"
+      - "Data Histórico Documento Valor (R$) Saldo (R$)"
+      - "Fatura"
+      - "Cartão de Crédito"
+      - "Comprovante"
+    min_score_hint: 0.8
+  table_detection:
+    header_keywords:
+      - "Todos"
+      - "Créditos"
+      - "Débitos"
+    expected_column_order:
+      - date_group
+      - description
+      - movement_type
+      - amount
+    column_aliases:
+      date:
+        - "Quarta, 02 de fevereiro de 2022"
+        - "date_group"
+      description:
+        - "Histórico"
+        - "Descrição"
+        - "PIX ENVIADO OUTRA"
+        - "TED RECEBIDA DIF TITULARIDADE STR"
+      document:
+        - "Documento"
+      amount:
+        - "Valor"
+        - "R$"
+      balance:
+        - "Saldo"
+    table_starts_after:
+      - "Todos"
+      - "Créditos"
+      - "Débitos"
+    row_separator_hint: "light gray horizontal lines; gray date group blocks with calendar icon"
+  parsing:
+    date_format: "weekday_textual_pt_BR_group_date"
+    date_format_normalized: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "DEBITO"
+      - "-R$ {amount}"
+      - "R$ -{amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "CREDITO"
+      - "R$ {amount_without_minus}"
+    ignore_rows:
+      - "Busque por um período"
+      - "Período"
+      - "Exibindo resultados para"
+      - "Para consultas acima de 90 dias clique aqui"
+      - "Todos"
+      - "Créditos"
+      - "Débitos"
+      - "Agência"
+      - "Conta"
+      - "Banco Santander Pessoa Jurídica"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+      - movement_type
+    optional_transaction_fields:
+      - document
+      - balance

@@ -6,6 +6,7 @@ from tempfile import mkdtemp
 from fastapi.testclient import TestClient
 
 from app.application.access_control import AccessControlService
+from app.application.errors import InvalidFileContentError
 from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
 from app.main import app
 from app.schemas import (
@@ -126,6 +127,16 @@ class FakeReportService:
         _ = (analysis_id, identity_type, identity_id)
 
 
+class FailingAnalyzeService:
+    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
+        _ = (filename, raw_bytes, on_ocr_progress, max_ocr_pages)
+        raise InvalidFileContentError(
+            "PDF text was extracted, but no recognizable transaction row pattern was found. "
+            "diagnostics: has_date_like=1 has_amount_like=1 inline_candidates=0 "
+            "tabular_candidates=0 columnar_candidates=0 missing_signals=transaction_row_pattern"
+        )
+
+
 def build_client(state_dir: Path) -> tuple[TestClient, AccessControlService]:
     access_control = _AccessControlServiceInMemory(
         state_file=state_dir / "access-control-state.json",
@@ -133,6 +144,17 @@ def build_client(state_dir: Path) -> tuple[TestClient, AccessControlService]:
     )
     app.dependency_overrides[get_access_control_service] = lambda: access_control
     app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()
+    app.dependency_overrides[get_report_service] = lambda: FakeReportService()
+    return TestClient(app), access_control
+
+
+def build_client_with_failing_analyze(state_dir: Path) -> tuple[TestClient, AccessControlService]:
+    access_control = _AccessControlServiceInMemory(
+        state_file=state_dir / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    app.dependency_overrides[get_access_control_service] = lambda: access_control
+    app.dependency_overrides[get_analyze_service] = lambda: FailingAnalyzeService()
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     return TestClient(app), access_control
 
@@ -242,6 +264,35 @@ def test_paid_pages_plan_consumes_quota_by_page_count() -> None:
         payload = convert.json()
         assert payload["quota_limit"] == 150
         assert payload["quota_remaining"] == 147
+    finally:
+        app.dependency_overrides.clear()
+        shutil.rmtree(state_dir, ignore_errors=True)
+
+
+def test_convert_persists_failed_user_conversion_for_authenticated_user() -> None:
+    state_dir = Path(mkdtemp(prefix="convert-auth-api-failed-"))
+    client, service = build_client_with_failing_analyze(state_dir)
+
+    try:
+        register = client.post(
+            "/auth/register",
+            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+        )
+        token = register.json()["user_token"]
+        user_id = register.json()["user_id"]
+
+        response = client.post(
+            "/convert",
+            data={"user_token": token},
+            files={"file": ("sample.pdf", b"%PDF data", "application/pdf")},
+        )
+
+        assert response.status_code == 400
+        conversions = service.list_user_conversions(user_id=user_id, limit=5)
+        assert len(conversions) == 1
+        assert conversions[0]["status"] == "Falha"
+        assert conversions[0]["filename"] == "sample.pdf"
+        assert conversions[0]["model"] == "Nao identificado"
     finally:
         app.dependency_overrides.clear()
         shutil.rmtree(state_dir, ignore_errors=True)

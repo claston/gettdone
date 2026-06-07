@@ -709,6 +709,52 @@ def test_parse_pdf_transactions_supports_grouped_slash_dates_and_credit_debit_su
     assert result.transactions[1].amount == -2150.0
 
 
+def test_parse_pdf_transactions_supports_santander_grouped_period_with_weekday_headers(monkeypatch) -> None:
+    sample_text = "\n".join(
+        [
+            "Santander",
+            "Internet Banking Empresarial",
+            "Agência:",
+            "Conta:",
+            "Banco Santander Pessoa Jurídica",
+            "Busque por um período",
+            "Período",
+            "01/02/2022",
+            "-",
+            "28/02/2022",
+            "Exibindo resultados para 01/02/2022 à 28/02/2022",
+            "Para consultas acima de 90 dias clique aqui.",
+            "Todos",
+            "Créditos",
+            "Débitos",
+            "Quarta, 02 de fevereiro de 2022",
+            "PIX ENVIADO OUTRA",
+            "DEBITO",
+            "-R$ 8.000,00",
+            "PAGAMENTO CONTA LUZ",
+            "DEBITO",
+            "-R$ 355,94",
+            "TED RECEBIDA DIF TITULARIDADE STR",
+            "CREDITO",
+            "R$ 9.325,90",
+        ]
+    )
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [sample_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "santander_internet_banking_empresarial_periodo_agrupado_v1"
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert len(result.transactions) == 3
+    assert result.transactions[0].date == "2022-02-02"
+    assert result.transactions[0].description == "PIX ENVIADO OUTRA"
+    assert result.transactions[0].amount == -8000.0
+    assert result.transactions[1].description == "PAGAMENTO CONTA LUZ"
+    assert result.transactions[1].amount == -355.94
+    assert result.transactions[2].description == "TED RECEBIDA DIF TITULARIDADE STR"
+    assert result.transactions[2].amount == 9325.9
+
+
 def test_parse_pdf_transactions_uses_running_balance_to_override_heuristic_when_amount_has_no_explicit_sign(
     monkeypatch,
 ) -> None:

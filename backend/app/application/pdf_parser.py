@@ -1437,17 +1437,16 @@ def _build_grouped_amount_only_transaction(
     if not description_parts:
         return None
 
-    last_part_normalized = _normalize_text(description_parts[-1].strip()) if description_parts else ""
-    if last_part_normalized in {"DEBITO", "DÉBITO", "CREDITO", "CRÉDITO"} and len(description_parts) >= 2:
-        return None
-
-    description = " ".join(description_parts).strip()
+    description, resolved_section_hint = _resolve_grouped_description_and_hint(
+        description_parts=description_parts,
+        section_hint=section_hint,
+    )
     if should_skip_transaction_description(description):
         return None
     signed_amount = parse_grouped_amount_line(
         raw_amount_text=line.text,
         description=description,
-        section_hint=section_hint,
+        section_hint=resolved_section_hint,
     )
     return _build_parsed_transaction(
         date=date,
@@ -1457,6 +1456,20 @@ def _build_grouped_amount_only_transaction(
         source_line=line.line_number,
         has_explicit_amount_sign=has_explicit_amount_sign(line.text),
     )
+
+
+def _resolve_grouped_description_and_hint(
+    *, description_parts: list[str], section_hint: str | None
+) -> tuple[str, str | None]:
+    description = " ".join(description_parts).strip()
+    if not description_parts:
+        return description, section_hint
+
+    last_part_normalized = _normalize_text(description_parts[-1].strip())
+    if last_part_normalized in {"DEBITO", "DÉBITO", "CREDITO", "CRÉDITO"} and len(description_parts) >= 2:
+        resolved_hint = "outflow" if "DEBIT" in last_part_normalized else "inflow"
+        return " ".join(description_parts[:-1]).strip(), resolved_hint
+    return description, section_hint
 
 
 def _build_inline_transaction_from_date_rest(
