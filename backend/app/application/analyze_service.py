@@ -7,6 +7,8 @@ from time import perf_counter
 from typing import Callable
 from uuid import uuid4
 
+from app.application.bank_catalog import resolve_bank_code_from_name
+from app.application.bank_identity import resolve_bank_name
 from app.application.bank_resolver import DEFAULT_BANK_CODE, resolve_bank_code
 from app.application.csv_parser import parse_csv_transactions
 from app.application.document_classifier import classify_document
@@ -131,8 +133,17 @@ class AnalyzeService:
         net_total = round(total_inflows + total_outflows, 2)
         opening_balance = self._resolve_opening_balance(preview_rows, extracted_text=extracted_text)
         closing_balance = self._resolve_closing_balance(preview_rows)
+        bank_name = self._resolve_bank_name(
+            extension=extension,
+            layout_inference_name=layout_inference_name,
+            extracted_text=extracted_text,
+        )
         bank_branch, account_number = self._extract_bank_account_metadata(extracted_text)
-        inferred_bank_code = self._resolve_inferred_bank_code(extension=extension, layout_inference_name=layout_inference_name)
+        inferred_bank_code = self._resolve_inferred_bank_code(
+            extension=extension,
+            layout_inference_name=layout_inference_name,
+            bank_name=bank_name,
+        )
         total_volume = round(sum(abs(item.amount) for item in transactions), 2)
         inflow_count = sum(1 for item in transactions if item.amount > 0)
         outflow_count = sum(1 for item in transactions if item.amount < 0)
@@ -177,6 +188,7 @@ class AnalyzeService:
             ofx_account_type=ofx_account_type,
             opening_balance=opening_balance,
             closing_balance=closing_balance,
+            bank_name=bank_name,
             bank_branch=bank_branch,
             account_number=account_number,
             bank_code=inferred_bank_code,
@@ -269,6 +281,7 @@ class AnalyzeService:
             pdf_processing_metrics=pdf_processing_metrics,
             opening_balance=analysis_data.opening_balance,
             closing_balance=analysis_data.closing_balance,
+            bank_name=analysis_data.bank_name,
             bank_branch=analysis_data.bank_branch,
             account_number=analysis_data.account_number,
             bank_code=analysis_data.bank_code,
@@ -519,10 +532,32 @@ class AnalyzeService:
             ),
         )
 
-    def _resolve_inferred_bank_code(self, *, extension: str, layout_inference_name: str | None) -> str | None:
+    def _resolve_bank_name(
+        self,
+        *,
+        extension: str,
+        layout_inference_name: str | None,
+        extracted_text: str | None,
+    ) -> str | None:
+        if extension != "pdf":
+            return None
+        return resolve_bank_name(
+            layout_inference_name=layout_inference_name,
+            extracted_text=extracted_text,
+        )
+
+    def _resolve_inferred_bank_code(
+        self,
+        *,
+        extension: str,
+        layout_inference_name: str | None,
+        bank_name: str | None,
+    ) -> str | None:
         if extension != "pdf":
             return None
         code = resolve_bank_code(layout_inference_name=layout_inference_name)
+        if code == DEFAULT_BANK_CODE and bank_name:
+            code = resolve_bank_code_from_name(bank_name) or DEFAULT_BANK_CODE
         return None if code == DEFAULT_BANK_CODE else code
 
     def _extract_bank_account_metadata(self, extracted_text: str | None) -> tuple[str | None, str | None]:

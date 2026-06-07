@@ -70,6 +70,7 @@ class AnalysisData:
     ofx_account_type: str | None = None
     opening_balance: float | None = None
     closing_balance: float | None = None
+    bank_name: str | None = None
     bank_branch: str | None = None
     account_number: str | None = None
     bank_code: str | None = None

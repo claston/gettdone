@@ -27,6 +27,7 @@ from app.application import (
     ReportService,
     UnsupportedFileTypeError,
 )
+from app.application.bank_identity import resolve_conversion_model_label
 from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
 from app.routers.auth_session import SESSION_ACCESS_COOKIE_NAME, resolve_user_token_with_session
 from app.schemas import ConvertResponse
@@ -536,6 +537,10 @@ def _build_convert_response(
         pages_count = _resolve_processed_pages(analysis)
         warning_rows_count, balance_failed_count = _resolve_warning_metrics(analysis)
         parse_meta = _resolve_parse_observability_metrics(analysis)
+        conversion_model_label = resolve_conversion_model_label(
+            layout_inference_name=getattr(analysis, "layout_inference_name", None),
+            bank_name=getattr(analysis, "bank_name", None),
+        )
         consumed_units = _resolve_consumed_units(identity, analysis)
         quota_remaining = access_control_service.consume_quota(identity, consumed_units=consumed_units)
         if identity.identity_type == "user":
@@ -545,7 +550,7 @@ def _build_convert_response(
                 user_id=identity.identity_id,
                 processing_id=analysis.analysis_id,
                 filename=(file.filename or "").strip() or f"{analysis.analysis_id}.pdf",
-                model=(analysis.layout_inference_name or "").strip() or "Nao identificado",
+                model=conversion_model_label,
                 conversion_type=conversion_type,
                 status="Sucesso",
                 transactions_count=int(analysis.transactions_total),
@@ -577,7 +582,7 @@ def _build_convert_response(
                 event_id=f"anon_evt_{uuid4().hex[:24]}",
                 anonymous_fingerprint=identity.identity_id,
                 filename=(file.filename or "").strip() or f"{analysis.analysis_id}.pdf",
-                model=(analysis.layout_inference_name or "").strip() or "Nao identificado",
+                model=conversion_model_label,
                 conversion_type=_resolve_conversion_type_from_filename(file.filename or ""),
                 status="Sucesso",
                 transactions_count=int(analysis.transactions_total),
