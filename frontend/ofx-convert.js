@@ -1089,7 +1089,6 @@
     if (!normalized) {
       return "";
     }
-    const compact = normalized.replace(/\s+/g, "");
     for (const option of bankCodeOptions) {
       const candidates = [
         option.name,
@@ -1099,13 +1098,33 @@
       for (const candidate of candidates) {
         const token = normalizeTextToken(candidate);
         if (!token) continue;
-        const tokenCompact = token.replace(/\s+/g, "");
-        if (normalized.includes(token) || compact.includes(tokenCompact)) {
+        if (matchesWholeTokenPhrase(normalized, token)) {
           return String(option.code || "");
         }
       }
     }
     return "";
+  }
+
+  function matchesWholeTokenPhrase(source, phrase) {
+    const normalizedSource = ` ${normalizeTextToken(source)} `;
+    const normalizedPhrase = normalizeTextToken(phrase);
+    if (!normalizedPhrase) {
+      return false;
+    }
+    return normalizedSource.includes(` ${normalizedPhrase} `);
+  }
+
+  function resolveInitialBankCode(analysis, preferredOverride) {
+    const overrideCode = normalizeDigits(preferredOverride || "").slice(0, 3);
+    if (overrideCode) {
+      return overrideCode;
+    }
+    const analysisBankCode = normalizeDigits((analysis && analysis.bank_code) || "").slice(0, 3);
+    if (analysisBankCode) {
+      return analysisBankCode;
+    }
+    return inferBankCodeFromLayout((analysis && analysis.layout_inference_name) || "");
   }
 
   function renderKpis(analysis) {
@@ -1749,7 +1768,7 @@
     state.closingBalanceManuallyEdited = Number.isFinite(restoredClosingBalance);
     state.bankBranchOverride = normalizeBankBranchDisplay(viewState.bank_branch_override || "");
     state.accountNumberOverride = normalizeAccountDisplay(viewState.account_number_override || "");
-    state.bankCodeOverride = normalizeDigits(viewState.bank_code_override || "").slice(0, 3);
+    state.bankCodeOverride = resolveInitialBankCode(analysis, viewState.bank_code_override || "");
     state.restoredFileMeta = {
       name: String(viewState.file_name || "").trim() || "arquivo_restaurado.pdf",
       size: Number(viewState.file_size || 0),
@@ -1938,7 +1957,7 @@
       }
       bankCodeOptions = [{ code: "", label: "Selecione o banco", name: "", short_name: "", aliases: [] }, ...options];
       if ((!state.bankCodeOverride || !String(state.bankCodeOverride).trim()) && state.analysisSnapshot) {
-        state.bankCodeOverride = inferBankCodeFromLayout(state.analysisSnapshot.layout_inference_name || "");
+        state.bankCodeOverride = resolveInitialBankCode(state.analysisSnapshot, state.bankCodeOverride);
       }
       if (state.analysisSnapshot) {
         renderKpis(state.analysisSnapshot);
@@ -2041,7 +2060,7 @@
       );
       state.bankBranchOverride = normalizeBankBranchDisplay(analysis.bank_branch || "");
       state.accountNumberOverride = normalizeAccountDisplay(analysis.account_number || "");
-      state.bankCodeOverride = inferBankCodeFromLayout(analysis.layout_inference_name || "");
+      state.bankCodeOverride = resolveInitialBankCode(analysis, state.bankCodeOverride);
       markChangedRow(null);
       if (addRowBtn) addRowBtn.disabled = false;
 
