@@ -10,6 +10,7 @@ from uuid import uuid4
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
+from app.application.bank_identity import resolve_conversion_model_label
 from app.application.bank_resolver import resolve_bank_code
 from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConflictError, AnalysisNotFoundError
 from app.application.models import AnalysisData, NormalizedTransaction, TransactionRow
@@ -237,7 +238,10 @@ class TempAnalysisStorage:
             processing_id = str(content.get("analysis_id") or analysis_dir.name).strip()
             created_at = str(content.get("created_at") or content.get("updated_at") or "").strip()
             filename = str(content.get("upload_filename") or "").strip() or f"{processing_id}.pdf"
-            model = str(content.get("layout_inference_name") or "").strip() or "Nao identificado"
+            model = resolve_conversion_model_label(
+                layout_inference_name=str(content.get("layout_inference_name") or "").strip() or None,
+                bank_name=str(content.get("bank_name") or "").strip() or None,
+            )
             file_type = str(content.get("file_type") or "").strip().lower()
             conversion_type = f"{file_type}-ofx" if file_type else "pdf-ofx"
             status = "Sucesso" if (analysis_dir / "converted.ofx").exists() else "Processando"
@@ -772,6 +776,7 @@ class TempAnalysisStorage:
             matched_groups=int(content.get("matched_groups", 0)),
             reversed_entries=int(content.get("reversed_entries", 0)),
             potential_duplicates=int(content.get("potential_duplicates", 0)),
+            bank_name=str(content.get("bank_name") or "").strip() or None,
         )
         self._add_conciliacao_sheet(workbook, snapshot)
         workbook.save(analysis_dir / "report.xlsx")
