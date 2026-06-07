@@ -217,8 +217,6 @@ layout_profile:
     required_keywords:
       - "C6 BANK"
       - "Extrato"
-      - "Agência"
-      - "Conta"
       - "Período"
       - "Entradas"
       - "Saídas"
@@ -227,8 +225,12 @@ layout_profile:
       - "Descrição"
       - "Valor"
     optional_keywords:
-      - "Abril 2024"
+      - "Agência"
+      - "Conta"
       - "Saldo do dia"
+      - "Entrada PIX"
+      - "Pix recebido de"
+      - "Transferência recebida"
       - "Outros gastos"
       - "Saída PIX"
       - "Pagamento"
@@ -257,7 +259,7 @@ layout_profile:
       - "iFood"
       - "Fatura"
       - "Comprovante"
-    min_score_hint: 0.85
+    min_score_hint: 0.74
   table_detection:
     header_keywords:
       - "Data"
