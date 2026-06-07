@@ -1709,7 +1709,7 @@
         const descriptionCellText = descriptionText || "-";
         const descriptionTitleAttr = descriptionText ? ` title="${escapeAttr(descriptionText)}"` : "";
         const warningBadge = hasWarning
-          ? `<span class="row-warning-badge" title="${escapeAttr(warningTypes.map(mapWarningTypeLabel).join(", "))}">${escapeAttr(mapWarningTypeLabel(warningTypes[0]))}</span>`
+          ? `<span class="row-warning-badge" title="${escapeAttr(warningTypes.map(mapWarningTypeExplanation).join(" | "))}">${escapeAttr(mapWarningTypeLabel(warningTypes[0]))}</span>`
           : "";
         return `
           <tr class="${rowClass} ${rowDeleted ? "row-deleted" : ""} ${hasWarning ? "row-has-warning" : ""}">
@@ -1748,7 +1748,39 @@
     if (key === "balance_consistency_failed") {
       return "Saldo inconsistente";
     }
+    if (key === "layout_fallback") {
+      return "Modelo generico";
+    }
+    if (key === "manual_review_recommended") {
+      return "Revisao manual";
+    }
+    if (key === "textract_layout_inferred") {
+      return "Layout inferido";
+    }
+    if (key === "textract_table_row_candidate") {
+      return "Linha inferida";
+    }
     return "Linha com alerta";
+  }
+
+  function mapWarningTypeExplanation(value) {
+    const key = String(value || "").trim().toLowerCase();
+    if (key === "balance_consistency_failed") {
+      return "O saldo calculado para esta linha nao bateu com a consistencia esperada do extrato.";
+    }
+    if (key === "layout_fallback") {
+      return "O PDF foi lido com o modelo generico porque o layout especifico do extrato nao foi identificado com confianca.";
+    }
+    if (key === "manual_review_recommended") {
+      return "Esta linha foi marcada para revisao manual antes da exportacao.";
+    }
+    if (key === "textract_layout_inferred") {
+      return "Esta linha veio de uma inferencia automatica de layout e pode precisar de conferencia.";
+    }
+    if (key === "textract_table_row_candidate") {
+      return "Esta linha foi montada a partir de uma extracao tabular automatica e deve ser conferida.";
+    }
+    return "Esta linha recebeu um alerta e precisa de revisao antes da exportacao.";
   }
 
   function restoreViewFromState(viewState) {

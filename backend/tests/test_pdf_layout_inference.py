@@ -240,6 +240,43 @@ def test_infer_pdf_layout_uses_declarative_c6_profile() -> None:
     assert result.confidence >= 0.7
 
 
+def test_infer_pdf_layout_uses_declarative_c6_profile_for_real_extracted_pdf_text() -> None:
+    text = """
+    C6
+    BANK
+    Extrato
+    Periodo 1 de setembro de 2024 ate 30 de setembro de 2024
+    Saldo do dia 18 de novembro de 2024 R$ 4,63
+    Setembro 2024
+    (01/09/2024 - 30/09/2024)
+    Entradas
+    R$ 8.400,00
+    Saidas
+    R$ 8.032,41
+    Data
+    Tipo
+    Descricao
+    Valor
+    02/09
+    Entrada PIX
+    Pix recebido de
+    R$ 1.000,00
+    02/09
+    Pagamento
+    PGTO DE BOLETO
+    R$ 58,00
+    11/09
+    Entrada PIX
+    Transferencia recebida de CLIENTE BETA
+    R$ 3.000,00
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "c6_bank_extrato_mensal_tabela_tipo_descricao_valor_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_ignores_declarative_profile_below_min_score_hint() -> None:
     text = """
     C6 BANK
