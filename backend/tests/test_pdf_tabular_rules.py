@@ -58,6 +58,33 @@ def test_select_tabular_amount_token_prefers_credit_debit_roles_when_declarative
     assert selected.description_end == 20
 
 
+def test_select_tabular_amount_token_uses_sign_when_credit_or_debit_column_is_blank() -> None:
+    profile = _profile(
+        expected_column_order=("date", "description", "document", "credit", "debit", "balance"),
+        column_aliases={"credit": ("credito",), "debit": ("debito",), "balance": ("saldo",)},
+    )
+    credit_tokens = [
+        AmountToken(value="2.850,00", start=40, end=48),
+        AmountToken(value="7.479,72", start=54, end=62),
+    ]
+    debit_tokens = [
+        AmountToken(value="1.500,00-", start=40, end=49),
+        AmountToken(value="4.629,72", start=54, end=62),
+    ]
+
+    credit = select_tabular_amount_token(credit_tokens, layout_profile=profile)
+    debit = select_tabular_amount_token(debit_tokens, layout_profile=profile)
+
+    assert credit is not None
+    assert credit.token == credit_tokens[0]
+    assert credit.role == "credit"
+    assert credit.balance_token == credit_tokens[1]
+    assert debit is not None
+    assert debit.token == debit_tokens[0]
+    assert debit.role == "debit"
+    assert debit.balance_token == debit_tokens[1]
+
+
 def test_extract_document_reference_requires_document_column() -> None:
     with_document = _profile(expected_column_order=("description", "document", "amount"), column_aliases={})
     without_document = _profile(expected_column_order=("description", "amount"), column_aliases={})

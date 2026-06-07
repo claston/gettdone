@@ -221,14 +221,14 @@ layout_profile:
       - "Pagamentos / Transferências"
       - "Saldo Disponível"
       - "Saldo de Investimentos com Resgate Automático"
+      - "Extrato Santander"
     negative_keywords:
       - "Internet Banking Empresarial"
       - "Aplicativo Santander Empresas"
       - "Fatura"
       - "Cartão de Crédito"
       - "Comprovante"
-      - "Boleto"
-    min_score_hint: 0.85
+    min_score_hint: 0.65
   table_detection:
     header_keywords:
       - "Data"

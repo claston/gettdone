@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from app.application.normalization.amount import parse_amount
 
 SIGN_TOKEN = r"[+\-\u2212]"
+MONEY_TOKEN = r"(?:R\$\s*)?\d+(?:\.\d{3})*,\d{2}"
 AMOUNT_TOKEN_PATTERN = re.compile(
-    rf"(?P<amount>(?:{SIGN_TOKEN}\s*)?(?:R\$\s*)?\d+(?:\.\d{{3}})*,\d{{2}}(?:\s*{SIGN_TOKEN}(?!\s*\d))?(?:\s*[CD])?)"
+    rf"(?P<amount>(?:{SIGN_TOKEN}\s*)?{MONEY_TOKEN}(?:{SIGN_TOKEN}|\s+{SIGN_TOKEN}(?!\s*\d))?(?:\s*[CD])?)"
 )
 LOOSE_AMOUNT_PATTERN = re.compile(
     rf"^(?:{SIGN_TOKEN})?(?:\d{{1,3}}(?:\.\d{{3}})+|\d+)(?:[.,]\d{{2}})(?:\s*{SIGN_TOKEN})?$"
