@@ -61,6 +61,13 @@ class _PdfLine:
 
 
 @dataclass(frozen=True)
+class _TabularColumnPositions:
+    credit_start: int
+    debit_start: int
+    balance_start: int
+
+
+@dataclass(frozen=True)
 class _ParsedTransaction:
     transaction: NormalizedTransaction
     source_page: int | None = None
@@ -876,6 +883,7 @@ def _parse_tabular_statement_rows(
     inferred_year = _infer_default_statement_year_from_lines(lines)
     line_texts = _extract_line_texts(lines)
     tabular_profile = resolve_tabular_profile(line_texts, layout_profile=layout_profile)
+    column_positions = _resolve_tabular_column_positions(line_texts) if tabular_profile is not None else None
     opening_balance_anchor_index = _resolve_opening_balance_anchor_index(lines)
     index = 0
     while index < len(lines):
@@ -890,6 +898,7 @@ def _parse_tabular_statement_rows(
             line=line,
             inferred_year=inferred_year,
             tabular_profile=tabular_profile,
+            column_positions=column_positions,
         )
         consumed = 1
         if parsed_row is None:
@@ -924,6 +933,55 @@ def _resolve_opening_balance_anchor_index(lines: list[_PdfLine]) -> int | None:
         ):
             return index
     return None
+
+
+def _resolve_tabular_column_positions(line_texts: list[str]) -> _TabularColumnPositions | None:
+    for line in line_texts:
+        credit_start = _find_first_column_alias(line, ("CRÉDITOS", "CREDITOS"))
+        debit_start = _find_first_column_alias(line, ("DÉBITOS", "DEBITOS"))
+        balance_start = _find_first_column_alias(line, ("SALDO (R$)", "SALDO"))
+        if credit_start is None or debit_start is None or balance_start is None:
+            continue
+        if credit_start < debit_start < balance_start:
+            return _TabularColumnPositions(
+                credit_start=credit_start,
+                debit_start=debit_start,
+                balance_start=balance_start,
+            )
+    return None
+
+
+def _find_first_column_alias(line: str, aliases: tuple[str, ...]) -> int | None:
+    upper_line = line.upper()
+    matches = [upper_line.find(alias) for alias in aliases]
+    valid_matches = [index for index in matches if index >= 0]
+    if not valid_matches:
+        return None
+    return min(valid_matches)
+
+
+def _resolve_tabular_column_role(
+    *,
+    line_text: str,
+    rest_start: int,
+    amount_start: int,
+    amount_token_value: str,
+    fallback_role: str | None,
+    column_positions: _TabularColumnPositions | None,
+) -> str | None:
+    if column_positions is None or has_explicit_amount_sign(amount_token_value):
+        return fallback_role
+
+    absolute_amount_start = rest_start + amount_start
+    credit_debit_boundary = (column_positions.credit_start + column_positions.debit_start) / 2
+    debit_balance_boundary = (column_positions.debit_start + column_positions.balance_start) / 2
+    if absolute_amount_start < credit_debit_boundary:
+        return fallback_role
+    if absolute_amount_start < debit_balance_boundary:
+        return "credit"
+    if absolute_amount_start < len(line_text):
+        return "debit"
+    return fallback_role
 
 
 def _maybe_attach_tabular_running_balance_line(
@@ -1132,6 +1190,7 @@ def _classify_tabular_statement_line(
     line: _PdfLine,
     inferred_year: int | None,
     tabular_profile: DeclarativeLayoutProfile | None,
+    column_positions: _TabularColumnPositions | None = None,
 ) -> tuple[_ParsedTransaction | None, bool]:
     match = match_tabular_date_prefix(line.text)
     if not match:
@@ -1157,9 +1216,17 @@ def _classify_tabular_statement_line(
         return None, True
 
     external_reference_id = extract_document_reference(raw_description, layout_profile=tabular_profile)
+    selected_role = _resolve_tabular_column_role(
+        line_text=line.text,
+        rest_start=match.start("rest"),
+        amount_start=selected_amount.token.start,
+        amount_token_value=selected_amount.token.value,
+        fallback_role=selected_amount.role,
+        column_positions=column_positions,
+    )
     amount_details = _build_tabular_amount_details(
         amount_token_value=selected_amount.token.value,
-        selected_role=selected_amount.role,
+        selected_role=selected_role,
         raw_description=raw_description,
         balance_token_value=selected_amount.balance_token.value if selected_amount.balance_token else None,
     )

@@ -26,6 +26,15 @@ def test_find_amount_tokens_does_not_consume_next_balance_negative_sign() -> Non
     assert tokens[1].value == "-448,66"
 
 
+def test_find_amount_tokens_keeps_immediate_trailing_minus_with_amount_before_balance() -> None:
+    text = "PIX ENVIADO 1.500,00- 4.629,72"
+    tokens = find_amount_tokens(text)
+
+    assert len(tokens) == 2
+    assert tokens[0].value == "1.500,00-"
+    assert tokens[1].value == "4.629,72"
+
+
 def test_parse_pdf_amount_handles_currency_and_unicode_minus() -> None:
     assert parse_pdf_amount("R$ 1.234,56") == 1234.56
     assert parse_pdf_amount("-10,00") == -10.0

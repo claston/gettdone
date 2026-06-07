@@ -77,6 +77,27 @@ def test_infer_pdf_layout_prefers_santander_profile_when_tokens_match() -> None:
     assert result.confidence >= 0.55
 
 
+def test_infer_pdf_layout_prefers_santander_negocios_profile_with_credit_debit_table() -> None:
+    text = """
+    Extrato Santander Negócios & Empresas - Saldo Coerente
+    Santander Negócios & Empresas
+    Resumo - março/2021
+    Conta Corrente
+    Movimentação
+    Data Descrição Nº Documento Créditos Débitos Saldo
+    SALDO EM 28/02 0,00
+    01/03 TARIFA RECOLHIMENTO DE VALORES - 257,62- -257,62
+    02/03 PIX ENVIADO FORNECEDOR XYZ 991112 1.500,00- 4.629,72
+    03/03 PIX RECEBIDO CLIENTE ALFA 102551 2.850,00 7.479,72
+    04/03 PAGAMENTO BOLETO 881211 980,00- 6.499,72
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_bradesco_profile_when_tokens_match() -> None:
     text = """
     BANCO BRADESCO S.A.

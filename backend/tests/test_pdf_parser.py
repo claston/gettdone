@@ -36,6 +36,58 @@ def test_parse_pdf_transactions_handles_inline_and_multiline_amount_rows(monkeyp
     assert result.parse_metrics["canonical_source_parser_types"] == "grouped"
 
 
+def test_parse_pdf_transactions_respects_credit_column_before_description_hint() -> None:
+    text = """
+    Extrato Santander Negócios & Empresas - Saldo Coerente
+    Santander Negócios & Empresas
+    Resumo - março/2021
+    Conta Corrente
+    Movimentação
+    Data Descrição Nº Documento Créditos Débitos Saldo
+              SALDO EM 28/02 0,00
+    01/03     PAGAMENTO CARTAO DE DEBITO 585269          3.006,98       3.006,98
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert result.layout.layout_name == "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
+    assert result.transactions == [
+        pdf_parser_module.NormalizedTransaction(
+            date="2026-03-01",
+            description="PAGAMENTO CARTAO DE DEBITO 585269",
+            amount=3006.98,
+            type="inflow",
+        )
+    ]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
+def test_parse_pdf_transactions_respects_credit_column_when_row_has_no_running_balance() -> None:
+    text = """
+    Extrato Santander Negócios & Empresas - Saldo Coerente
+    Santander Negócios & Empresas
+    Resumo - março/2021
+    Conta Corrente
+    Movimentação
+    Data      Descrição                                Nº Documento        Créditos        Débitos        Saldo
+              SALDO EM 28/02                                                                             0,00
+    01/03     PAGAMENTO CARTAO DE DEBITO                   585269          3.006,98
+              GETNET-ELO DEBITO
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert result.layout.layout_name == "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
+    assert result.transactions == [
+        pdf_parser_module.NormalizedTransaction(
+            date="2026-03-01",
+            description="PAGAMENTO CARTAO DE DEBITO 585269",
+            amount=3006.98,
+            type="inflow",
+        )
+    ]
+
+
 def test_parse_pdf_transactions_skips_invalid_inline_date_candidate_and_keeps_valid_rows() -> None:
     result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
         ["00/00/0000 LANCAMENTO INVALIDO 10,00\n10/04/2026 PIX RECEBIDO 25,00"]
