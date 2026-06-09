@@ -645,6 +645,7 @@ def _build_convert_response(
             processing_id=analysis.analysis_id,
             quota_remaining=quota_remaining,
             quota_limit=identity.quota_limit,
+            quota_mode=identity.quota_mode,
             identity_type=identity.identity_type,
             analysis=analysis,
         )

@@ -357,6 +357,7 @@ def test_paid_pages_plan_consumes_quota_by_page_count() -> None:
         )
         assert convert.status_code == 200
         payload = convert.json()
+        assert payload["quota_mode"] == "pages"
         assert payload["quota_limit"] == 150
         assert payload["quota_remaining"] == 147
     finally:

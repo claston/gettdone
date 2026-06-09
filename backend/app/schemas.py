@@ -177,6 +177,7 @@ class ConvertResponse(BaseModel):
     processing_id: str
     quota_remaining: int
     quota_limit: int
+    quota_mode: str = "conversion"
     identity_type: str
     analysis: AnalyzeResponse
 
