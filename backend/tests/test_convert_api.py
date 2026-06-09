@@ -475,6 +475,8 @@ def test_convert_blocks_4th_attempt_with_structured_quota_detail(tmp_path) -> No
     assert detail["quota_limit"] == 3
     assert detail["quota_remaining"] == 0
     assert detail["upgrade_url"] == "./signup.html?next=%2Fofx-convert.html&reason=quota"
+    assert detail["support_url"] == "./contato.html?reason=quota"
+    assert detail["quota_mode"] == "conversion"
     assert isinstance(detail["reset_at"], str)
     assert "T" in detail["reset_at"]
     app.dependency_overrides.clear()

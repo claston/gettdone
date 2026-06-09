@@ -278,6 +278,47 @@ def test_register_then_convert_with_user_token() -> None:
         shutil.rmtree(state_dir, ignore_errors=True)
 
 
+def test_registered_free_user_sees_upgrade_links_when_weekly_quota_is_exhausted() -> None:
+    state_dir = Path(mkdtemp(prefix="convert-auth-api-"))
+    client, _service = build_client(state_dir)
+
+    try:
+        register = client.post(
+            "/auth/register",
+            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+        )
+        assert register.status_code == 200
+        token = register.json()["user_token"]
+
+        for expected_remaining in range(9, -1, -1):
+            response = client.post(
+                "/convert",
+                data={"user_token": token},
+                files={"file": ("sample.pdf", b"%PDF data", "application/pdf")},
+            )
+            assert response.status_code == 200
+            assert response.json()["quota_remaining"] == expected_remaining
+
+        blocked = client.post(
+            "/convert",
+            data={"user_token": token},
+            files={"file": ("sample.pdf", b"%PDF data", "application/pdf")},
+        )
+        assert blocked.status_code == 429
+        detail = blocked.json()["detail"]
+        assert detail["code"] == "weekly_quota_exceeded"
+        assert detail["identity_type"] == "user"
+        assert detail["quota_mode"] == "conversion"
+        assert detail["quota_limit"] == 10
+        assert detail["quota_remaining"] == 0
+        assert detail["upgrade_url"] == "./planos.html?reason=quota"
+        assert detail["support_url"] == "./contato.html?reason=quota"
+        assert isinstance(detail["reset_at"], str)
+    finally:
+        app.dependency_overrides.clear()
+        shutil.rmtree(state_dir, ignore_errors=True)
+
+
 def test_convert_rejects_file_bigger_than_5mb() -> None:
     state_dir = Path(mkdtemp(prefix="convert-auth-api-"))
     client, _service = build_client(state_dir)

@@ -15,6 +15,8 @@
   const menuToggle = document.getElementById("menu-toggle");
   const topLinks = document.getElementById("top-links");
   const quotaLockOverlay = document.getElementById("quota-lock-overlay");
+  const quotaLockBadge = document.getElementById("quota-lock-badge");
+  const quotaLockTitle = document.getElementById("quota-lock-title");
   const quotaLockMessage = document.getElementById("quota-lock-message");
   const quotaLockSignupLink = document.getElementById("quota-lock-signup-link");
   const quotaLockLoginLink = document.getElementById("quota-lock-login-link");
@@ -76,6 +78,7 @@
     progressDriftTimer: null,
     statusPendingTimer: null,
     lastStatusAt: 0,
+    quotaLockVariant: null,
   };
   let bankCodeOptions = [{ code: "", label: "Selecione o banco", name: "", short_name: "", aliases: [] }];
 
@@ -157,11 +160,15 @@
   const apiBase = resolveApiBase();
   const QUOTA_SIGNUP_URL = "./signup.html?next=%2Fclient-area.html&reason=quota";
   const QUOTA_LOGIN_URL = "./login.html?next=%2Fclient-area.html&force_auth=1";
+  const QUOTA_PLANS_URL = "./planos.html?reason=quota";
+  const QUOTA_SUPPORT_URL = "./contato.html?reason=quota";
   const USER_TOKEN_KEY = "ofxsimples_user_token";
   const USER_TOKEN_COOKIE = "ofxsimples_user_token";
   const TOKEN_SHARED_COOKIE_ALLOWLIST = ["ofxsimples.com.br"];
   const PROFILE_HINT_KEY = "ofxsimples_profile_hint";
   const ANON_FINGERPRINT_KEY = "ofxsimples_anon_fingerprint";
+  const QUOTA_LOCK_VARIANT_ANONYMOUS = "anonymous-free-limit";
+  const QUOTA_LOCK_VARIANT_REGISTERED = "registered-free-limit";
 
   function isIpv4Host(hostname) {
     return /^\d{1,3}(\.\d{1,3}){3}$/.test(String(hostname || "").trim());
@@ -323,6 +330,33 @@
     if (quotaLockLoginLink) {
       quotaLockLoginLink.setAttribute("href", QUOTA_LOGIN_URL);
     }
+  }
+
+  function setQuotaLockActions(primaryLabel, primaryHref, secondaryLabel, secondaryHref) {
+    if (quotaLockSignupLink) {
+      quotaLockSignupLink.textContent = primaryLabel || "";
+      quotaLockSignupLink.setAttribute("href", primaryHref || QUOTA_SIGNUP_URL);
+    }
+    if (quotaLockLoginLink) {
+      quotaLockLoginLink.textContent = secondaryLabel || "";
+      quotaLockLoginLink.setAttribute("href", secondaryHref || QUOTA_LOGIN_URL);
+      quotaLockLoginLink.classList.toggle("hidden", !secondaryLabel);
+    }
+  }
+
+  function openQuotaLockOverlay(variant) {
+    state.quotaLockVariant = variant || null;
+    if (quotaLockOverlay) {
+      if (variant) {
+        quotaLockOverlay.dataset.variant = variant;
+      } else {
+        delete quotaLockOverlay.dataset.variant;
+      }
+      quotaLockOverlay.classList.remove("hidden");
+      quotaLockOverlay.classList.add("is-open");
+    }
+    document.body.classList.add("quota-locked");
+    convertBtn.disabled = true;
   }
 
   async function getSessionValidationState() {
@@ -549,19 +583,45 @@
       return;
     }
     const resetAt = detail && typeof detail === "object" ? formatResetAt(detail.reset_at) : null;
+    if (quotaLockBadge) {
+      quotaLockBadge.textContent = "Limite semanal atingido";
+    }
+    if (quotaLockTitle) {
+      quotaLockTitle.textContent = "Crie sua conta para continuar convertendo";
+    }
     if (quotaLockMessage) {
       quotaLockMessage.textContent = resetAt
         ? `Você usou as 3 conversões gratuitas desta semana. O próximo ciclo libera novas conversões em ${resetAt}. Cadastre-se para liberar +10 conversões semanais agora.`
         : "Você usou as 3 conversões gratuitas desta semana. Cadastre-se para liberar +10 conversões semanais agora.";
     }
-    if (quotaLockSignupLink) {
-      quotaLockSignupLink.setAttribute("href", QUOTA_SIGNUP_URL);
+    setQuotaLockActions("Criar conta", QUOTA_SIGNUP_URL, "Já tenho conta", QUOTA_LOGIN_URL);
+    openQuotaLockOverlay(QUOTA_LOCK_VARIANT_ANONYMOUS);
+  }
+
+  function showRegisteredQuotaUpgradeOverlay(detail) {
+    if (!quotaLockOverlay) {
+      return;
     }
-    syncQuotaAuthLinks();
-    document.body.classList.add("quota-locked");
-    quotaLockOverlay.classList.remove("hidden");
-    quotaLockOverlay.classList.add("is-open");
-    convertBtn.disabled = true;
+    const safeDetail = detail && typeof detail === "object" ? detail : {};
+    const resetAt = formatResetAt(safeDetail.reset_at);
+    if (quotaLockBadge) {
+      quotaLockBadge.textContent = "Limite de 10 conversões atingido";
+    }
+    if (quotaLockTitle) {
+      quotaLockTitle.textContent = "Seu plano gratuito chegou ao limite";
+    }
+    if (quotaLockMessage) {
+      quotaLockMessage.textContent = resetAt
+        ? `Você já usou as 10 conversões do plano gratuito neste ciclo. O próximo ciclo libera novas conversões em ${resetAt}. Para continuar agora, escolha um plano ou fale com o suporte.`
+        : "Você já usou as 10 conversões do plano gratuito neste ciclo. Para continuar agora, escolha um plano ou fale com o suporte.";
+    }
+    setQuotaLockActions(
+      "Ver planos",
+      safeDetail.upgrade_url || QUOTA_PLANS_URL,
+      "Falar com suporte",
+      safeDetail.support_url || QUOTA_SUPPORT_URL,
+    );
+    openQuotaLockOverlay(QUOTA_LOCK_VARIANT_REGISTERED);
   }
 
   function hideQuotaLockOverlay() {
@@ -570,7 +630,9 @@
     }
     quotaLockOverlay.classList.remove("is-open");
     quotaLockOverlay.classList.add("hidden");
+    delete quotaLockOverlay.dataset.variant;
     document.body.classList.remove("quota-locked");
+    state.quotaLockVariant = null;
     setSelectedFileLabel();
   }
 
@@ -578,20 +640,29 @@
     if (quotaLockOverlay) {
       quotaLockOverlay.classList.remove("is-open");
       quotaLockOverlay.classList.add("hidden");
+      delete quotaLockOverlay.dataset.variant;
     }
     document.body.classList.remove("quota-locked");
+    state.quotaLockVariant = null;
   }
 
   async function syncQuotaLockState() {
     if (!isQuotaLocked()) {
       return;
     }
+    const quotaLockVariant =
+      state.quotaLockVariant ||
+      (quotaLockOverlay && quotaLockOverlay.dataset ? quotaLockOverlay.dataset.variant : "") ||
+      "";
     const sessionState = await getSessionValidationState();
     if (sessionState === "invalid") {
       hideQuotaLockOverlay();
       clearUserToken();
       syncHeroAuthLinks();
       setStatus("Sua sessão expirou. Faça login novamente para continuar.", "error");
+      return;
+    }
+    if (quotaLockVariant !== QUOTA_LOCK_VARIANT_ANONYMOUS) {
       return;
     }
     if (sessionState === "valid" || sessionState === "unknown") {
@@ -1892,6 +1963,14 @@
               code: failedCode,
               message: String(event.message || "Falha ao converter arquivo."),
               retryable: Boolean(event.retryable),
+              identity_type: event.identity_type || null,
+              quota_mode: event.quota_mode || null,
+              quota_limit: event.quota_limit || null,
+              quota_remaining: event.quota_remaining || null,
+              reset_at: event.reset_at || null,
+              upgrade_url: event.upgrade_url || null,
+              support_url: event.support_url || null,
+              plan_name: event.plan_name || null,
               ocr_context: event.ocr_context || null,
               pages_count: event.pages_count || null,
               max_pages_per_file: event.max_pages_per_file || null,
@@ -2132,11 +2211,18 @@
       if (status === 429 && code === "weekly_quota_exceeded") {
         const detailIdentityType =
           detail && typeof detail === "object" ? String(detail.identity_type || "").trim().toLowerCase() : "";
+        const detailQuotaMode =
+          detail && typeof detail === "object" ? String(detail.quota_mode || "").trim().toLowerCase() : "";
         const shouldShowAnonymousQuotaLock =
           detailIdentityType === "anonymous" || (!detailIdentityType && !getUserToken());
         if (shouldShowAnonymousQuotaLock) {
           showQuotaLockOverlay(detail);
           setStatus("Você atingiu o limite gratuito desta semana.", "error");
+          return;
+        }
+        if (detailIdentityType === "user" && (!detailQuotaMode || detailQuotaMode === "conversion")) {
+          showRegisteredQuotaUpgradeOverlay(detail);
+          setStatus("Seu plano gratuito chegou ao limite. Veja os planos ou fale com o suporte.", "error");
           return;
         }
       }
