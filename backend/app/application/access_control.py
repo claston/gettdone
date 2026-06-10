@@ -165,8 +165,26 @@ class AccessControlService:
             user_token=user_token,
         )
 
-    def register_user(self, name: str, email: str, password: str) -> RegisteredUser:
-        return self.auth.register_user(name=name, email=email, password=password)
+    def register_user(
+        self,
+        name: str,
+        email: str,
+        password: str,
+        *,
+        terms_accepted_at: str | None = None,
+        privacy_accepted_at: str | None = None,
+        product_updates_opt_in: bool = False,
+        product_updates_opted_in_at: str | None = None,
+    ) -> RegisteredUser:
+        return self.auth.register_user(
+            name=name,
+            email=email,
+            password=password,
+            terms_accepted_at=terms_accepted_at,
+            privacy_accepted_at=privacy_accepted_at,
+            product_updates_opt_in=product_updates_opt_in,
+            product_updates_opted_in_at=product_updates_opted_in_at,
+        )
 
     def authenticate_user(self, email: str, password: str) -> RegisteredUser:
         return self.auth.authenticate_user(email=email, password=password)

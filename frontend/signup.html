@@ -48,7 +48,7 @@
         <p id="status-msg" class="status"></p>
 
         <button id="google-signup-btn" type="button" class="btn btn-social" hidden>Continuar com Google</button>
-        <p class="form-divider">ou</p>
+        <p id="google-signup-divider" class="form-divider" hidden>ou</p>
 
         <form id="signup-form" class="form">
           <label for="name">Nome completo</label>
@@ -60,6 +60,19 @@
           <label for="password">Senha</label>
           <input id="password" type="password" placeholder="••••••••" required />
 
+          <label class="checkbox-field" for="accepted-terms">
+            <input id="accepted-terms" type="checkbox" required />
+            <span>
+              Li e concordo com os <a href="./termos-de-uso.html">Termos de Uso</a> e a
+              <a href="./politica-de-privacidade.html">Política de Privacidade</a>.
+            </span>
+          </label>
+          <label class="checkbox-field checkbox-field-optional" for="product-updates-opt-in">
+            <input id="product-updates-opt-in" type="checkbox" />
+            <span>
+              Quero receber novidades e atualizações do OFX Simples por e-mail. Posso cancelar quando quiser.
+            </span>
+          </label>
           <button type="submit" class="btn btn-primary">Criar conta</button>
         </form>
 

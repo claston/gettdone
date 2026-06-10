@@ -47,7 +47,12 @@ def test_login_returns_user_token_and_registered_quota() -> None:
     try:
         register = client.post(
             "/auth/register",
-            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
         )
         assert register.status_code == 200
 
@@ -77,7 +82,12 @@ def test_login_rejects_invalid_credentials() -> None:
     try:
         client.post(
             "/auth/register",
-            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
         )
 
         response = client.post(
@@ -99,7 +109,12 @@ def test_auth_me_returns_user_profile_for_valid_token() -> None:
     try:
         register = client.post(
             "/auth/register",
-            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
         )
         token = register.json()["user_token"]
 
@@ -125,7 +140,12 @@ def test_auth_me_accepts_bearer_token() -> None:
     try:
         register = client.post(
             "/auth/register",
-            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
         )
         token = register.json()["user_token"]
 
@@ -160,7 +180,12 @@ def test_auth_me_reflects_active_pages_plan(tmp_path: Path) -> None:
     try:
         register = client.post(
             "/auth/register",
-            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
         )
         user_id = register.json()["user_id"]
         token = register.json()["user_token"]
@@ -175,4 +200,133 @@ def test_auth_me_reflects_active_pages_plan(tmp_path: Path) -> None:
         assert payload["plan_code"] == "essencial"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_register_requires_terms_acceptance() -> None:
+    state_dir = Path(mkdtemp(prefix="auth-api-"))
+    client, _service = build_client(state_dir)
+
+    try:
+        response = client.post(
+            "/auth/register",
+            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+        )
+
+        assert response.status_code == 400
+        assert "privacidade" in response.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.clear()
+        shutil.rmtree(state_dir, ignore_errors=True)
+
+
+def test_register_persists_terms_and_privacy_acceptance_timestamps() -> None:
+    state_dir = Path(mkdtemp(prefix="auth-api-"))
+    client, service = build_client(state_dir)
+
+    try:
+        response = client.post(
+            "/auth/register",
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+
+        with service._connect() as conn:
+            row = service._fetchone(
+                conn,
+                """
+                SELECT terms_accepted_at, privacy_accepted_at
+                FROM users
+                WHERE id = ?
+                """,
+                (payload["user_id"],),
+            )
+
+        assert row is not None
+        assert row["terms_accepted_at"]
+        assert row["privacy_accepted_at"]
+    finally:
+        app.dependency_overrides.clear()
+        shutil.rmtree(state_dir, ignore_errors=True)
+
+
+def test_register_defaults_product_updates_opt_in_to_false() -> None:
+    state_dir = Path(mkdtemp(prefix="auth-api-"))
+    client, service = build_client(state_dir)
+
+    try:
+        response = client.post(
+            "/auth/register",
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+
+        with service._connect() as conn:
+            row = service._fetchone(
+                conn,
+                """
+                SELECT product_updates_opt_in, product_updates_opted_in_at
+                FROM users
+                WHERE id = ?
+                """,
+                (payload["user_id"],),
+            )
+
+        assert row is not None
+        assert bool(row["product_updates_opt_in"]) is False
+        assert row["product_updates_opted_in_at"] is None
+    finally:
+        app.dependency_overrides.clear()
+        shutil.rmtree(state_dir, ignore_errors=True)
+
+
+def test_register_persists_product_updates_opt_in_when_checked() -> None:
+    state_dir = Path(mkdtemp(prefix="auth-api-"))
+    client, service = build_client(state_dir)
+
+    try:
+        response = client.post(
+            "/auth/register",
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+                "product_updates_opt_in": True,
+            },
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+
+        with service._connect() as conn:
+            row = service._fetchone(
+                conn,
+                """
+                SELECT product_updates_opt_in, product_updates_opted_in_at
+                FROM users
+                WHERE id = ?
+                """,
+                (payload["user_id"],),
+            )
+
+        assert row is not None
+        assert bool(row["product_updates_opt_in"]) is True
+        assert row["product_updates_opted_in_at"]
+    finally:
+        app.dependency_overrides.clear()
+        shutil.rmtree(state_dir, ignore_errors=True)
 

@@ -87,7 +87,12 @@ def test_http_auth_session_login_sets_cookies_and_me_works_without_bearer() -> N
         with httpx.Client(timeout=5.0) as client:
             register = client.post(
                 f"{base_url}/auth/register",
-                json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+                json={
+                    "name": "Erica",
+                    "email": "erica@example.com",
+                    "password": "strong-pass",
+                    "accepted_terms": True,
+                },
             )
             assert register.status_code == 200
 
@@ -110,7 +115,12 @@ def test_http_auth_session_refresh_rotates_cookie_and_detects_reuse() -> None:
         with httpx.Client(timeout=5.0) as client:
             register = client.post(
                 f"{base_url}/auth/register",
-                json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+                json={
+                    "name": "Erica",
+                    "email": "erica@example.com",
+                    "password": "strong-pass",
+                    "accepted_terms": True,
+                },
             )
             assert register.status_code == 200
 
@@ -140,7 +150,12 @@ def test_http_auth_session_logout_revokes_session_cookie() -> None:
         with httpx.Client(timeout=5.0) as client:
             register = client.post(
                 f"{base_url}/auth/register",
-                json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+                json={
+                    "name": "Erica",
+                    "email": "erica@example.com",
+                    "password": "strong-pass",
+                    "accepted_terms": True,
+                },
             )
             assert register.status_code == 200
 

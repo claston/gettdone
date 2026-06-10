@@ -113,8 +113,24 @@ def register(
     payload: RegisterRequest,
     service: AccessControlService = Depends(get_access_control_service),
 ) -> RegisterResponse:
+    if not payload.accepted_terms:
+        raise HTTPException(
+            status_code=400,
+            detail="Você precisa aceitar os Termos de Uso e a Política de Privacidade para criar a conta.",
+        )
+
+    accepted_at = service.now_provider().isoformat()
+    product_updates_opted_in_at = accepted_at if payload.product_updates_opt_in else None
     try:
-        user = service.register_user(name=payload.name, email=payload.email, password=payload.password)
+        user = service.register_user(
+            name=payload.name,
+            email=payload.email,
+            password=payload.password,
+            terms_accepted_at=accepted_at,
+            privacy_accepted_at=accepted_at,
+            product_updates_opt_in=payload.product_updates_opt_in,
+            product_updates_opted_in_at=product_updates_opted_in_at,
+        )
     except UserAlreadyExistsError:
         raise HTTPException(status_code=409, detail="Email already registered.")
 

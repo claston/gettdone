@@ -4,6 +4,7 @@
   const loginLink = document.getElementById("login-link");
   const topLoginLink = document.getElementById("top-login-link");
   const googleSignupBtn = document.getElementById("google-signup-btn");
+  const googleSignupDivider = document.getElementById("google-signup-divider");
   const USER_TOKEN_KEY = "ofxsimples_user_token";
   const USER_TOKEN_COOKIE = "ofxsimples_user_token";
   const TOKEN_SHARED_COOKIE_ALLOWLIST = ["ofxsimples.com.br"];
@@ -146,6 +147,13 @@
     if (kind) statusMsg.classList.add(kind);
   }
 
+  function syncGoogleSignupDivider() {
+    if (!(googleSignupBtn instanceof HTMLElement) || !(googleSignupDivider instanceof HTMLElement)) {
+      return;
+    }
+    googleSignupDivider.hidden = googleSignupBtn.hidden;
+  }
+
   function getNextPath() {
     const params = new URLSearchParams(window.location.search);
     const next = String(params.get("next") || "").trim();
@@ -218,11 +226,20 @@
       const name = document.getElementById("name");
       const email = document.getElementById("email");
       const password = document.getElementById("password");
+      const acceptedTerms = document.getElementById("accepted-terms");
+      const productUpdatesOptIn = document.getElementById("product-updates-opt-in");
       if (
         !(name instanceof HTMLInputElement) ||
         !(email instanceof HTMLInputElement) ||
-        !(password instanceof HTMLInputElement)
+        !(password instanceof HTMLInputElement) ||
+        !(acceptedTerms instanceof HTMLInputElement) ||
+        !(productUpdatesOptIn instanceof HTMLInputElement)
       ) {
+        return;
+      }
+      if (!acceptedTerms.checked) {
+        setStatus("Você precisa aceitar os Termos de Uso e a Política de Privacidade para criar sua conta.", "error");
+        acceptedTerms.focus();
         return;
       }
       try {
@@ -231,6 +248,8 @@
           name: name.value,
           email: email.value,
           password: password.value,
+          accepted_terms: acceptedTerms.checked,
+          product_updates_opt_in: productUpdatesOptIn.checked,
         });
         storeUserToken(String(payload.user_token || ""));
         setStatus("Conta criada com sucesso.", "success");
@@ -248,5 +267,6 @@
     });
   }
 
+  syncGoogleSignupDivider();
   void bootstrapExistingSession();
 })();

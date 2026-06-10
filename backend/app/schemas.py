@@ -217,6 +217,8 @@ class RegisterRequest(BaseModel):
     name: str
     email: str
     password: str
+    accepted_terms: bool = False
+    product_updates_opt_in: bool = False
 
 
 class RegisterResponse(BaseModel):

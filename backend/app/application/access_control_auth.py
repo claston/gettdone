@@ -14,7 +14,17 @@ class AccessControlAuthComponent:
     def __init__(self, service: AccessControlService) -> None:
         self._service = service
 
-    def register_user(self, name: str, email: str, password: str) -> RegisteredUser:
+    def register_user(
+        self,
+        name: str,
+        email: str,
+        password: str,
+        *,
+        terms_accepted_at: str | None = None,
+        privacy_accepted_at: str | None = None,
+        product_updates_opt_in: bool = False,
+        product_updates_opted_in_at: str | None = None,
+    ) -> RegisteredUser:
         normalized_email = email.strip().lower()
         is_admin = normalized_email in self._service.admin_emails
         now = self._service.now_provider().isoformat()
@@ -38,10 +48,14 @@ class AccessControlAuthComponent:
                         password_salt,
                         auth_provider,
                         provider_user_id,
+                        terms_accepted_at,
+                        privacy_accepted_at,
+                        product_updates_opt_in,
+                        product_updates_opted_in_at,
                         created_at,
                         updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user_id,
@@ -52,6 +66,10 @@ class AccessControlAuthComponent:
                         salt,
                         "local",
                         None,
+                        terms_accepted_at,
+                        privacy_accepted_at,
+                        self._service._true_value() if product_updates_opt_in else self._service._false_value(),
+                        product_updates_opted_in_at,
                         now,
                         now,
                     ),

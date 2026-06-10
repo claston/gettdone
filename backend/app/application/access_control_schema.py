@@ -48,7 +48,15 @@ class AccessControlSchemaComponent:
         missing_tables = [table for table in required_tables if not self._postgres_table_exists(conn, table)]
 
         required_columns: dict[str, tuple[str, ...]] = {
-            "users": ("auth_provider", "provider_user_id", "is_admin"),
+            "users": (
+                "auth_provider",
+                "provider_user_id",
+                "is_admin",
+                "terms_accepted_at",
+                "privacy_accepted_at",
+                "product_updates_opt_in",
+                "product_updates_opted_in_at",
+            ),
             "usage": ("window_started_at",),
             "user_conversions": (
                 "pages_count",
