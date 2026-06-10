@@ -47,7 +47,12 @@ def test_session_login_sets_http_only_cookies_and_me_works_without_bearer() -> N
     try:
         register = client.post(
             "/auth/register",
-            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
         )
         assert register.status_code == 200
 
@@ -75,7 +80,12 @@ def test_session_refresh_rotates_token_and_detects_reuse() -> None:
     try:
         register = client.post(
             "/auth/register",
-            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
         )
         assert register.status_code == 200
 
@@ -112,7 +122,12 @@ def test_session_logout_revokes_cookie_session() -> None:
     try:
         register = client.post(
             "/auth/register",
-            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
         )
         assert register.status_code == 200
 

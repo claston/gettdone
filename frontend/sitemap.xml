@@ -43,6 +43,12 @@
     <priority>0.3</priority>
   </url>
   <url>
+    <loc>https://www.ofxsimples.com.br/termos-de-uso.html</loc>
+    <lastmod>2026-06-10</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
     <loc>https://www.ofxsimples.com.br/blog/</loc>
     <lastmod>2026-05-11</lastmod>
     <changefreq>weekly</changefreq>

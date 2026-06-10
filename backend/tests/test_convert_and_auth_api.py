@@ -251,7 +251,12 @@ def test_register_then_convert_with_user_token() -> None:
     try:
         register = client.post(
             "/auth/register",
-            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
         )
         assert register.status_code == 200
         assert register.json()["quota_remaining"] == 10
@@ -303,7 +308,12 @@ def test_paid_pages_plan_consumes_quota_by_page_count() -> None:
     try:
         register = client.post(
             "/auth/register",
-            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
         )
         user_id = register.json()["user_id"]
         token = register.json()["user_token"]
@@ -330,7 +340,12 @@ def test_convert_persists_failed_user_conversion_for_authenticated_user() -> Non
     try:
         register = client.post(
             "/auth/register",
-            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
         )
         token = register.json()["user_token"]
         user_id = register.json()["user_id"]
@@ -359,7 +374,12 @@ def test_convert_history_uses_bank_name_when_layout_is_generic() -> None:
     try:
         register = client.post(
             "/auth/register",
-            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
         )
         token = register.json()["user_token"]
         user_id = register.json()["user_id"]
