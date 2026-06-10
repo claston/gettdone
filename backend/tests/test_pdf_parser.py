@@ -88,6 +88,63 @@ def test_parse_pdf_transactions_respects_credit_column_when_row_has_no_running_b
     ]
 
 
+def test_parse_pdf_transactions_keeps_grouped_transaction_when_standalone_minus_sits_between_description_and_amount() -> None:
+    text = """
+    Santander
+    Negócios
+    & Empresas
+    EXTRATO CONSOLIDADO INTELIGENTE
+    Resumo - março/2021
+    Conta Corrente
+    Movimentação
+    Data
+    Descrição
+    Nº Documento
+    Movimentos (R$)
+    Saldo (R$)
+    Créditos
+    Débitos
+    SALDO EM 28/02
+    0,00
+    01/03
+    TARIFA RECOLHIMENTO DE VALORES
+    -
+    257,62-
+    PAGAMENTO CARTAO DE DEBITO
+    GETNET-ELO DEBITO
+    585269
+    3.006,98
+    PAGAMENTO CARTAO DE DEBITO
+    GETNET-MASTERCARD
+    585269
+    3.380,36
+    6.129,72
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert result.transactions == [
+        pdf_parser_module.NormalizedTransaction(
+            date="2026-03-01",
+            description="TARIFA RECOLHIMENTO DE VALORES",
+            amount=-257.62,
+            type="outflow",
+        ),
+        pdf_parser_module.NormalizedTransaction(
+            date="2026-03-01",
+            description="PAGAMENTO CARTAO DE DEBITO GETNET-ELO DEBITO 585269",
+            amount=-3006.98,
+            type="outflow",
+        ),
+        pdf_parser_module.NormalizedTransaction(
+            date="2026-03-01",
+            description="PAGAMENTO CARTAO DE DEBITO GETNET-MASTERCARD 585269",
+            amount=-3380.36,
+            type="outflow",
+        ),
+    ]
+
+
 def test_parse_pdf_transactions_skips_invalid_inline_date_candidate_and_keeps_valid_rows() -> None:
     result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
         ["00/00/0000 LANCAMENTO INVALIDO 10,00\n10/04/2026 PIX RECEBIDO 25,00"]
