@@ -126,6 +126,21 @@ class AnonymousQuotaExceededAccessControlService(FakeAccessControlService):
         raise QuotaExceededError()
 
 
+class RegisteredFreeQuotaExceededAccessControlService(FakeAccessControlService):
+    class _Identity:
+        def __init__(self) -> None:
+            self.identity_type = "user"
+            self.identity_id = "usr_123"
+            self.quota_limit = 10
+            self.max_upload_size_bytes = 5 * 1024 * 1024
+            self.quota_mode = "conversion"
+            self.plan_name = None
+
+    def ensure_quota_available(self, identity, required_units: int = 1) -> None:
+        _ = (identity, required_units)
+        raise QuotaExceededError()
+
+
 def _build_client() -> TestClient:
     app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
@@ -291,6 +306,23 @@ def test_streaming_upload_emits_weekly_quota_failed_event_with_identity_type() -
     failed = next(item for item in payloads if item.get("stage") == "failed")
     assert failed["code"] == "weekly_quota_exceeded"
     assert failed["identity_type"] == "anonymous"
+
+
+def test_streaming_upload_emits_upgrade_links_for_registered_free_user_at_weekly_limit() -> None:
+    client = _build_client_with_access_control(RegisteredFreeQuotaExceededAccessControlService())
+    response = client.post(
+        "/api/conversions/upload",
+        headers={"accept": "text/event-stream"},
+        data={"user_token": "token-user-free"},
+        files={"file": ("sample.pdf", _blank_pdf_bytes(), "application/pdf")},
+    )
+    payloads = _parse_sse_payloads(response.text)
+    failed = next(item for item in payloads if item.get("stage") == "failed")
+    assert failed["code"] == "weekly_quota_exceeded"
+    assert failed["identity_type"] == "user"
+    assert failed["quota_mode"] == "conversion"
+    assert failed["upgrade_url"] == "./planos.html?reason=quota"
+    assert failed["support_url"] == "./contato.html?reason=quota"
 
 
 

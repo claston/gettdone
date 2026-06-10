@@ -266,6 +266,7 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
         inline_decision="",
         tabular_decision="",
         columnar_decision="",
+        layout_used_fallback=inferred_layout.used_fallback,
         balance_consistency_checked=balance_checked_count,
         balance_consistency_failed=balance_failed_count,
         canonical_quality_metrics=canonical_quality_metrics,
@@ -495,6 +496,7 @@ def _build_pdf_parse_result(
             inline_decision=inline_decision,
             tabular_decision=tabular_decision,
             columnar_decision=columnar_decision,
+            layout_used_fallback=layout.used_fallback,
             balance_consistency_checked=balance_checked_count,
             balance_consistency_failed=balance_failed_count,
             canonical_quality_metrics=canonical_quality_metrics,
@@ -1396,6 +1398,8 @@ def _update_grouped_section_state(
 
 
 def _handle_grouped_ignored_line(*, normalized_line: str, description_parts: list[str]) -> tuple[list[str], bool]:
+    if normalized_line in {"-", "--"}:
+        return description_parts, True
     if should_ignore_grouped_line(normalized_line):
         return [], True
     return description_parts, False

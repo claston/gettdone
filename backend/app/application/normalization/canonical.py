@@ -52,7 +52,7 @@ def build_canonical_transactions(
     layout_confidence: float,
     source_parser: str,
 ) -> list[CanonicalTransaction]:
-    warning_list = ["layout_fallback"] if layout_used_fallback else None
+    _ = layout_used_fallback
     return [
         from_normalized_transaction(
             row.transaction,
@@ -63,7 +63,6 @@ def build_canonical_transactions(
             source_parser=source_parser,
             running_balance=row.running_balance,
             external_reference_id=row.external_reference_id,
-            warnings=warning_list,
             confidence=layout_confidence,
         )
         for row in rows

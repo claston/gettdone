@@ -40,6 +40,7 @@ def test_build_pdf_parse_metrics_preserves_contract_keys_and_values() -> None:
         inline_decision="no_rows",
         tabular_decision="selected",
         columnar_decision="no_rows",
+        layout_used_fallback=False,
         balance_consistency_checked=1,
         balance_consistency_failed=1,
         canonical_quality_metrics=canonical_quality_metrics,
@@ -108,6 +109,7 @@ def test_build_pdf_parse_metrics_sets_confidence_band_high_for_clean_inline_flow
         inline_decision="selected",
         tabular_decision="no_rows",
         columnar_decision="no_rows",
+        layout_used_fallback=False,
         balance_consistency_checked=0,
         balance_consistency_failed=0,
         canonical_quality_metrics=canonical_quality_metrics,
@@ -157,6 +159,7 @@ def test_build_pdf_parse_metrics_sets_confidence_band_medium_for_conflict_select
         inline_decision="not_selected_conflict_lost_to_tabular",
         tabular_decision="selected_on_conflict",
         columnar_decision="no_rows",
+        layout_used_fallback=False,
         balance_consistency_checked=0,
         balance_consistency_failed=0,
         canonical_quality_metrics=canonical_quality_metrics,
@@ -206,6 +209,7 @@ def test_build_pdf_parse_metrics_sets_confidence_band_medium_for_partial_inline_
         inline_decision="selected",
         tabular_decision="no_rows",
         columnar_decision="no_rows",
+        layout_used_fallback=False,
         balance_consistency_checked=0,
         balance_consistency_failed=0,
         canonical_quality_metrics=canonical_quality_metrics,
@@ -255,6 +259,7 @@ def test_build_pdf_parse_metrics_sets_confidence_band_low_for_poor_inline_covera
         inline_decision="selected",
         tabular_decision="no_rows",
         columnar_decision="no_rows",
+        layout_used_fallback=False,
         balance_consistency_checked=0,
         balance_consistency_failed=0,
         canonical_quality_metrics=canonical_quality_metrics,
@@ -263,3 +268,55 @@ def test_build_pdf_parse_metrics_sets_confidence_band_low_for_poor_inline_covera
     assert metrics["confidence_band"] == "low"
     assert metrics["export_recommendation"] == "review_recommended"
     assert metrics["export_recommendation_reason"] == "low_confidence_band"
+
+
+def test_build_pdf_parse_metrics_keeps_review_recommended_for_generic_layout_without_row_warnings() -> None:
+    canonical_quality_metrics = {
+        "canonical_transactions_count": 2,
+        "canonical_with_running_balance_count": 0,
+        "canonical_with_external_reference_count": 0,
+        "canonical_warning_count": 0,
+        "canonical_balance_warning_count": 0,
+        "canonical_warning_transactions_count": 0,
+        "canonical_warning_types_count": 0,
+        "canonical_warning_types": "",
+        "canonical_warning_types_list": "",
+        "canonical_running_balance_coverage_rate": 0.0,
+        "canonical_external_reference_coverage_rate": 0.0,
+        "canonical_warning_transaction_rate": 0.0,
+        "canonical_source_parser_grouped_count": 2,
+        "canonical_source_parser_inline_count": 0,
+        "canonical_source_parser_tabular_count": 0,
+        "canonical_source_parser_columnar_count": 0,
+        "canonical_source_parser_types_count": 1,
+        "canonical_source_parser_types": "grouped",
+        "canonical_source_parser_types_list": "grouped",
+    }
+
+    metrics = build_pdf_parse_metrics(
+        page_count=1,
+        extracted_char_count=220,
+        flattened_line_count=14,
+        grouped_transactions_count=2,
+        inline_candidates_count=0,
+        inline_transactions_count=0,
+        tabular_candidates_count=0,
+        tabular_transactions_count=0,
+        columnar_candidates_count=0,
+        columnar_transactions_count=0,
+        selected_parser="grouped",
+        parser_selection_reason="grouped_rows_available",
+        inline_decision="no_rows",
+        tabular_decision="no_rows",
+        columnar_decision="no_rows",
+        layout_used_fallback=True,
+        balance_consistency_checked=0,
+        balance_consistency_failed=0,
+        canonical_quality_metrics=canonical_quality_metrics,
+    )
+
+    assert metrics["canonical_warning_count"] == 0
+    assert metrics["canonical_warning_types"] == ""
+    assert metrics["confidence_band"] == "medium"
+    assert metrics["export_recommendation"] == "review_recommended"
+    assert metrics["export_recommendation_reason"] == "medium_confidence_band"

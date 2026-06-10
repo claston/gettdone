@@ -86,6 +86,40 @@ def _build_pages_limit_detail(exc: MaxPagesPerFileExceededError) -> dict[str, st
 CORRUPTED_PDF_USER_MESSAGE = "Parece que seu arquivo PDF está corrompido."
 
 
+def _build_quota_exceeded_detail(
+    *,
+    identity,
+    access_control_service: AccessControlService | None = None,
+) -> dict[str, str | int | None]:
+    identity_type = str(getattr(identity, "identity_type", "anonymous") or "anonymous").strip().lower()
+    quota_mode = str(getattr(identity, "quota_mode", "conversion") or "conversion").strip().lower()
+    is_pages_mode = quota_mode == "pages"
+    if identity_type == "anonymous":
+        upgrade_url = "./signup.html?next=%2Fofx-convert.html&reason=quota"
+    elif is_pages_mode:
+        upgrade_url = None
+    else:
+        upgrade_url = "./planos.html?reason=quota"
+    return {
+        "code": "monthly_pages_quota_exceeded" if is_pages_mode else "weekly_quota_exceeded",
+        "message": "Voce atingiu o limite mensal de paginas."
+        if is_pages_mode
+        else "Voce atingiu o limite semanal de conversoes.",
+        "identity_type": identity_type,
+        "quota_mode": quota_mode,
+        "quota_limit": int(getattr(identity, "quota_limit", 0) or 0),
+        "quota_remaining": 0,
+        "reset_at": access_control_service.get_quota_reset_at(identity)
+        if access_control_service is not None
+        and hasattr(access_control_service, "get_quota_reset_at")
+        and identity is not None
+        else None,
+        "upgrade_url": upgrade_url,
+        "support_url": "./contato.html?reason=quota",
+        "plan_name": getattr(identity, "plan_name", None),
+    }
+
+
 def _sse_event(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
@@ -611,6 +645,7 @@ def _build_convert_response(
             processing_id=analysis.analysis_id,
             quota_remaining=quota_remaining,
             quota_limit=identity.quota_limit,
+            quota_mode=identity.quota_mode,
             identity_type=identity.identity_type,
             analysis=analysis,
         )
@@ -731,24 +766,9 @@ def _raise_http_convert_error(exc: Exception, *, identity, access_control_servic
             detail="Missing or invalid identity context. Send anonymous_fingerprint or a valid user_token.",
         )
     if isinstance(exc, QuotaExceededError):
-        quota_limit = int(identity.quota_limit) if identity is not None else 0
-        reset_at = access_control_service.get_quota_reset_at(identity) if identity is not None else None
-        identity_type = str(identity.identity_type) if identity is not None else "anonymous"
-        upgrade_url = "./signup.html?next=%2Fofx-convert.html&reason=quota" if identity_type == "anonymous" else None
-        is_pages_mode = bool(identity is not None and str(identity.quota_mode) == "pages")
         raise HTTPException(
             status_code=429,
-            detail={
-                "code": "monthly_pages_quota_exceeded" if is_pages_mode else "weekly_quota_exceeded",
-                "message": "Voce atingiu o limite mensal de paginas."
-                if is_pages_mode
-                else "Voce atingiu o limite semanal de conversoes.",
-                "identity_type": identity_type,
-                "quota_limit": quota_limit,
-                "quota_remaining": 0,
-                "reset_at": reset_at,
-                "upgrade_url": upgrade_url,
-            },
+            detail=_build_quota_exceeded_detail(identity=identity, access_control_service=access_control_service),
         )
     if isinstance(exc, UnsupportedFileTypeError):
         raise HTTPException(status_code=400, detail="Unsupported file type. Use CSV, XLSX, OFX, or PDF.")
@@ -1026,6 +1046,13 @@ async def conversion_upload_stream(
                         code = "monthly_pages_quota_exceeded"
                         message = "Você atingiu o limite mensal de páginas do seu plano."
                     failed_event_payload["identity_type"] = identity_type
+                    quota_detail = _build_quota_exceeded_detail(
+                        identity=identity,
+                        access_control_service=access_control_service,
+                    )
+                    code = str(quota_detail["code"])
+                    message = str(quota_detail["message"])
+                    failed_event_payload.update(quota_detail)
             elif isinstance(error, MaxPagesPerFileExceededError):
                 code = "pages_limit_exceeded"
                 pages_limit_detail = _build_pages_limit_detail(error)
