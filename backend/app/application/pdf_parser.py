@@ -1396,6 +1396,8 @@ def _update_grouped_section_state(
 
 
 def _handle_grouped_ignored_line(*, normalized_line: str, description_parts: list[str]) -> tuple[list[str], bool]:
+    if normalized_line in {"-", "--"}:
+        return description_parts, True
     if should_ignore_grouped_line(normalized_line):
         return [], True
     return description_parts, False
