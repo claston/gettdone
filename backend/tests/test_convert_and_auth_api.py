@@ -290,7 +290,12 @@ def test_registered_free_user_sees_upgrade_links_when_weekly_quota_is_exhausted(
     try:
         register = client.post(
             "/auth/register",
-            json={"name": "Erica", "email": "erica@example.com", "password": "strong-pass"},
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
         )
         assert register.status_code == 200
         token = register.json()["user_token"]
