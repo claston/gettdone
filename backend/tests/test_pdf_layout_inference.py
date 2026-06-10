@@ -128,6 +128,46 @@ def test_infer_pdf_layout_prefers_new_santander_empresarial_grouped_period_profi
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_prefers_santander_monthly_landscape_consolidated_profile() -> None:
+    text = """
+    Santander
+    UYLS0001
+    EXTRATO MENSAL CONSOLIDADO - MES REFERENCIA:  01/2021
+    CPF/CNPJ:
+    MOVIMENTACAO CONTA CORRENTE
+    ------------------------
+    DATA
+    DESCRICAO
+    N.DOC
+    MOVIMENTO(R$)
+    31/12
+    SALDO ANTERIOR
+    0,00
+    06/01
+    COMPRA CARTAO MAESTRO
+    46407
+    12,46-
+    06/01
+    06/01
+    COMPRA CARTAO MAESTRO
+    48357
+    4,00-
+    06/01
+    06/01
+    RESGATE AUT CONTAMAX
+    00000
+    16,46
+    06/01
+    SALDO FINAL DIA
+    0,00
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "santander_extrato_mensal_consolidado_paisagem_conta_corrente_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_bradesco_profile_when_tokens_match() -> None:
     text = """
     BANCO BRADESCO S.A.

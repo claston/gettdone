@@ -1,0 +1,106 @@
+layout_profile:
+  profile_name: santander_extrato_mensal_consolidado_paisagem_conta_corrente_v1
+  bank: Santander
+  layout_family: extrato_mensal_consolidado_paisagem
+  statement_type: conta_corrente_extrato
+  confidence: medium
+  classifier:
+    required_keywords:
+      - "Santander"
+      - "EXTRATO MENSAL CONSOLIDADO"
+      - "MES REFERENCIA"
+      - "MOVIMENTACAO CONTA CORRENTE"
+      - "DATA"
+      - "DESCRICAO"
+      - "N.DOC"
+      - "MOVIMENTO(R$)"
+    optional_keywords:
+      - "UYLS0001"
+      - "CPF/CNPJ"
+      - "SALDO ANTERIOR"
+      - "SALDO FINAL DIA"
+      - "RESGATE AUT CONTAMAX"
+    negative_keywords:
+      - "INTERNET BANKING EMPRESARIAL"
+      - "NEGOCIOS & EMPRESAS"
+      - "APLICATIVO SANTANDER EMPRESAS"
+      - "EXTRATO CONSOLIDADO INTELIGENTE"
+    min_score_hint: 0.72
+  table_detection:
+    header_keywords:
+      - "DATA"
+      - "DESCRICAO"
+      - "N.DOC"
+      - "MOVIMENTO(R$)"
+    expected_column_order:
+      - date
+      - description
+      - document
+      - amount
+    column_aliases:
+      date:
+        - "DATA"
+      description:
+        - "DESCRICAO"
+        - "DESCRICAO "
+      document:
+        - "N.DOC"
+        - "NDOC"
+        - "DOC"
+      amount:
+        - "MOVIMENTO(R$)"
+        - "MOVIMENTO"
+        - "MOVIMENTO (R$)"
+      balance:
+        - "SALDO"
+    table_starts_after:
+      - "MOVIMENTACAO CONTA CORRENTE"
+      - "DATA"
+      - "DESCRICAO"
+      - "N.DOC"
+      - "MOVIMENTO(R$)"
+    row_separator_hint: "grouped rows with date, description, document and amount split across lines"
+  parsing:
+    date_format: "dd/MM inferred_year"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "trailing_minus"
+      - "leading_minus"
+    positive_patterns:
+      - "unsigned_amount"
+    ignore_rows:
+      - "MOVIMENTACAO CONTA CORRENTE"
+      - "CPF/CNPJ"
+      - "SALDO FINAL DIA"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - description
+      - amount
+    optional_transaction_fields:
+      - date
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "RESGATE AUT"
+        sign: positive
+        confidence: high
+        inferred: true
+        reason: "Rows labelled RESGATE AUT in the sampled monthly consolidated landscape statement appear as inflows."
+    cautions:
+      - "Rows are visually grouped and the date may repeat across the debit, credit and daily-balance lines."
+      - "SALDO FINAL DIA should not be exported as a transaction row."
+  normalization:
+    description_cleanup:
+      - trim
+      - collapse_internal_whitespace
+    preserve_original_description: true
+  validation:
+    expected_min_columns: 4
