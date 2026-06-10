@@ -53,7 +53,7 @@ def test_from_normalized_transaction_sets_optional_metadata() -> None:
     assert canonical.confidence == 0.91
 
 
-def test_build_canonical_transactions_maps_row_metadata_and_layout_fallback_warning() -> None:
+def test_build_canonical_transactions_maps_row_metadata_without_layout_fallback_row_warning() -> None:
     class _ParsedRow:
         def __init__(
             self,
@@ -104,4 +104,4 @@ def test_build_canonical_transactions_maps_row_metadata_and_layout_fallback_warn
     assert canonical.running_balance == 1500.0
     assert canonical.external_reference_id == "abc-123"
     assert canonical.confidence == 0.88
-    assert canonical.warnings == ["layout_fallback"]
+    assert canonical.warnings == []

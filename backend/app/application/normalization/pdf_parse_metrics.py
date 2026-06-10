@@ -15,6 +15,7 @@ def build_pdf_parse_metrics(
     inline_decision: str,
     tabular_decision: str,
     columnar_decision: str,
+    layout_used_fallback: bool,
     balance_consistency_checked: int,
     balance_consistency_failed: int,
     canonical_quality_metrics: dict[str, int | float | str],
@@ -30,6 +31,7 @@ def build_pdf_parse_metrics(
         tabular_transactions_count=tabular_transactions_count,
         columnar_candidates_count=columnar_candidates_count,
         columnar_transactions_count=columnar_transactions_count,
+        layout_used_fallback=layout_used_fallback,
         balance_consistency_failed=balance_consistency_failed,
         canonical_warning_count=int(canonical_quality_metrics["canonical_warning_count"]),
     )
@@ -95,6 +97,7 @@ def _resolve_confidence_band(
     tabular_transactions_count: int,
     columnar_candidates_count: int,
     columnar_transactions_count: int,
+    layout_used_fallback: bool,
     balance_consistency_failed: int,
     canonical_warning_count: int,
 ) -> str:
@@ -115,6 +118,8 @@ def _resolve_confidence_band(
             return "low"
         if coverage < 0.85:
             return "medium"
+    if layout_used_fallback:
+        return "medium"
     if selected_parser != "inline":
         return "medium"
     if "conflict" in parser_selection_reason:

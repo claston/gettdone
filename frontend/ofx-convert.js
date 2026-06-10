@@ -1762,7 +1762,9 @@
         `;
         }
         const rowChanged = isRowChanged(row);
-        const warningTypes = Array.isArray(row.warning_types) ? row.warning_types : [];
+        const warningTypes = Array.isArray(row.warning_types)
+          ? row.warning_types.filter((value) => String(value || "").trim().toLowerCase() !== "layout_fallback")
+          : [];
         const hasWarning = warningTypes.length > 0;
         const creditAmount = getCreditAmount(row);
         const debitAmount = getDebitAmount(row);

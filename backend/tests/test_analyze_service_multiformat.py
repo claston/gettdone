@@ -207,6 +207,53 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
     )
 
 
+def test_analyze_service_keeps_document_review_without_generic_row_badges(tmp_path, monkeypatch) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    service = AnalyzeService(storage=storage)
+    parse_metrics = dict(PDF_PARSE_METRICS_GROUPED_CANONICAL_OK)
+    parse_metrics["canonical_warning_count"] = 0
+    parse_metrics["canonical_warning_transactions_count"] = 0
+    parse_metrics["canonical_warning_types_count"] = 0
+    parse_metrics["canonical_warning_types"] = ""
+    parse_metrics["canonical_warning_types_list"] = ""
+    parse_metrics["confidence_band"] = "medium"
+    parse_metrics["export_recommendation"] = "review_recommended"
+    parse_metrics["export_recommendation_reason"] = "medium_confidence_band"
+    monkeypatch.setattr(
+        analyze_service_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes: build_pdf_parse_result(
+            transactions=[
+                NormalizedTransaction(
+                    date="2026-01-06",
+                    description="COMPRA CARTAO MAESTRO 46407",
+                    amount=-12.46,
+                    type="outflow",
+                ),
+                NormalizedTransaction(
+                    date="2026-01-06",
+                    description="RESGATE AUT CONTAMAX 00000",
+                    amount=16.46,
+                    type="inflow",
+                ),
+            ],
+            layout_name="generic_statement_ptbr",
+            confidence=0.62,
+            extracted_text="SANTANDER\nEXTRATO MENSAL CONSOLIDADO\nMOVIMENTACAO CONTA CORRENTE",
+            parse_metrics=parse_metrics,
+            used_fallback=True,
+        ),
+    )
+
+    result = service.analyze(filename="generic-santander.pdf", raw_bytes=b"%PDF synthetic")
+
+    assert result.pdf_processing_metrics is not None
+    assert result.pdf_processing_metrics.export_recommendation == "review_recommended"
+    assert result.pdf_processing_metrics.confidence_band == "medium"
+    assert all("layout_fallback" not in row.warning_types for row in result.preview_transactions)
+    assert any(insight.type == "pdf_export_review_recommended" for insight in result.insights)
+
+
 def test_analyze_service_extracts_bank_branch_and_account_from_pdf_text(tmp_path, monkeypatch) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     service = AnalyzeService(storage=storage)

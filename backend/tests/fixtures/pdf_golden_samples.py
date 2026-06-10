@@ -819,13 +819,14 @@ def build_pdf_parse_result(
     confidence: float,
     extracted_text: str,
     parse_metrics: dict[str, int | float | str],
+    used_fallback: bool = False,
 ) -> PdfParseResult:
     return PdfParseResult(
         transactions=transactions,
         layout=PdfLayoutInference(
             layout_name=layout_name,
             confidence=confidence,
-            used_fallback=False,
+            used_fallback=used_fallback,
         ),
         extracted_text=extracted_text,
         parse_metrics=parse_metrics,
