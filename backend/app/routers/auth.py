@@ -1,3 +1,4 @@
+import logging
 import os
 from urllib.parse import urlencode
 
@@ -29,6 +30,7 @@ from app.schemas import (
 from app.security_baseline import is_production_env, read_bool_env
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 SESSION_ACCESS_COOKIE_NAME = os.getenv("SESSION_ACCESS_COOKIE_NAME", "__Host-ofx_at").strip() or "__Host-ofx_at"
 SESSION_REFRESH_COOKIE_NAME = os.getenv("SESSION_REFRESH_COOKIE_NAME", "__Secure-ofx_rt").strip() or "__Secure-ofx_rt"
 SESSION_ACCESS_TOKEN_TTL_SECONDS = int(os.getenv("SESSION_ACCESS_TOKEN_TTL_SECONDS", "900"))
@@ -352,12 +354,31 @@ def session_logout_all(
 @router.get("/auth/google/start")
 def google_start(
     next_path: str = Query(default="/client-area.html", alias="next"),
+    flow: str = Query(default="login"),
+    accepted_terms: bool = Query(default=False),
+    product_updates_opt_in: bool = Query(default=False),
     oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
 ) -> RedirectResponse:
+    normalized_flow = "signup" if str(flow or "").strip().lower() == "signup" else "login"
+    if normalized_flow == "signup" and not accepted_terms:
+        raise HTTPException(
+            status_code=400,
+            detail="Você precisa aceitar os Termos de Uso e a Política de Privacidade para criar sua conta com Google.",
+        )
     try:
-        auth_url = oauth_service.build_authorization_url(next_path=next_path)
+        auth_url = oauth_service.build_authorization_url(
+            next_path=next_path,
+            flow_mode=normalized_flow,
+            terms_accepted=accepted_terms,
+            product_updates_opt_in=product_updates_opt_in,
+        )
     except GoogleOAuthNotConfiguredError:
         raise HTTPException(status_code=503, detail="Google OAuth is not configured.")
+    logger.info(
+        "google_oauth_start next=%s redirect_uri=%s",
+        next_path,
+        getattr(oauth_service.config, "redirect_uri", ""),
+    )
     return RedirectResponse(url=auth_url, status_code=307)
 
 
@@ -371,13 +392,22 @@ def google_callback(
         redirect_url = oauth_service.build_callback_redirect_url(code=code, state=state)
     except GoogleOAuthNotConfiguredError:
         raise HTTPException(status_code=503, detail="Google OAuth is not configured.")
-    except (GoogleOAuthStateError, GoogleOAuthExchangeError):
-        params = urlencode(
-            {
-                "error": "google_oauth_failed",
-                "next": "/client-area.html",
-            }
+    except (GoogleOAuthStateError, GoogleOAuthExchangeError) as exc:
+        logger.exception(
+            "google_oauth_callback_failed state=%s redirect_uri=%s frontend_base_url=%s error=%s",
+            state,
+            getattr(oauth_service.config, "redirect_uri", ""),
+            getattr(oauth_service.config, "frontend_base_url", ""),
+            exc,
         )
+        payload = {
+            "error": "google_oauth_failed",
+            "next": "/client-area.html",
+        }
+        if not is_production_env():
+            payload["error_detail"] = str(exc).strip() or exc.__class__.__name__
+        params = urlencode(payload)
         fallback = f"{oauth_service.config.frontend_base_url}/auth-callback.html?{params}"
         return RedirectResponse(url=fallback, status_code=307)
+    logger.info("google_oauth_callback_succeeded state=%s redirect=%s", state, redirect_url)
     return RedirectResponse(url=redirect_url, status_code=307)

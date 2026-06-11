@@ -229,7 +229,7 @@
   if (googleLoginBtn) {
     googleLoginBtn.addEventListener("click", () => {
       const next = encodeURIComponent(getNextPath());
-      window.location.href = `${apiBase}/auth/google/start?next=${next}`;
+      window.location.href = `${apiBase}/auth/google/start?next=${next}&flow=login`;
     });
   }
 

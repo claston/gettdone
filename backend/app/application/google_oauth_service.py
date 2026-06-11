@@ -7,7 +7,12 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from app.application.access_control import AccessControlService
-from app.application.errors import GoogleOAuthExchangeError, GoogleOAuthNotConfiguredError, GoogleOAuthStateError
+from app.application.errors import (
+    GoogleOAuthAccountNotFoundError,
+    GoogleOAuthExchangeError,
+    GoogleOAuthNotConfiguredError,
+    GoogleOAuthStateError,
+)
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -33,12 +38,22 @@ class GoogleOAuthService:
         self.config = config
         self.access_control_service = access_control_service
 
-    def build_authorization_url(self, *, next_path: str) -> str:
+    def build_authorization_url(
+        self,
+        *,
+        next_path: str,
+        flow_mode: str = "login",
+        terms_accepted: bool = False,
+        product_updates_opt_in: bool = False,
+    ) -> str:
         self._assert_configured()
         safe_next = self._normalize_next_path(next_path)
         state, code_verifier = self.access_control_service.create_google_oauth_state(
             next_path=safe_next,
             ttl_seconds=self.config.state_ttl_seconds,
+            flow_mode=flow_mode,
+            terms_accepted=terms_accepted,
+            product_updates_opt_in=product_updates_opt_in,
         )
         code_challenge = self._build_code_challenge(code_verifier)
         params = {
@@ -72,15 +87,36 @@ class GoogleOAuthService:
         email = str(profile.get("email") or "").strip().lower()
         name = str(profile.get("name") or "").strip()
         email_verified = bool(profile.get("email_verified"))
+        flow_mode = "signup" if bool(oauth_state.get("flow_mode") == "signup") else "login"
+        terms_accepted = bool(oauth_state.get("terms_accepted"))
+        product_updates_opt_in = bool(oauth_state.get("product_updates_opt_in"))
 
         if not provider_user_id or not email or not email_verified:
             raise GoogleOAuthExchangeError("Google profile is missing required verified identity fields.")
 
-        user = self.access_control_service.register_or_authenticate_google_user(
-            provider_user_id=provider_user_id,
-            email=email,
-            name=name or email.split("@", 1)[0],
-        )
+        accepted_at = self.access_control_service.now_provider().isoformat() if terms_accepted else None
+        product_updates_opted_in_at = accepted_at if product_updates_opt_in and accepted_at else None
+        try:
+            user = self.access_control_service.register_or_authenticate_google_user(
+                provider_user_id=provider_user_id,
+                email=email,
+                name=name or email.split("@", 1)[0],
+                allow_create=flow_mode == "signup",
+                terms_accepted_at=accepted_at,
+                privacy_accepted_at=accepted_at,
+                product_updates_opt_in=product_updates_opt_in,
+                product_updates_opted_in_at=product_updates_opted_in_at,
+            )
+        except GoogleOAuthAccountNotFoundError:
+            params = urlencode(
+                {
+                    "next": self._normalize_next_path(str(oauth_state["next_path"])),
+                    "reason": "google_signup_required",
+                    "prefill_email": email,
+                    "prefill_name": name or email.split("@", 1)[0],
+                }
+            )
+            return f"{self.config.frontend_base_url}/signup.html?{params}"
 
         params = urlencode(
             {

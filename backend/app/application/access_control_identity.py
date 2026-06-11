@@ -59,8 +59,20 @@ class AccessControlIdentityComponent:
             quota_window_days=service.quota_window_days,
         )
 
-    def create_google_oauth_state(self, *, next_path: str, ttl_seconds: int = 600) -> tuple[str, str]:
-        state = f"gst_{secrets.token_urlsafe(24)}"
+    def create_google_oauth_state(
+        self,
+        *,
+        next_path: str,
+        ttl_seconds: int = 600,
+        flow_mode: str = "login",
+        terms_accepted: bool = False,
+        product_updates_opt_in: bool = False,
+    ) -> tuple[str, str]:
+        normalized_flow = "signup" if str(flow_mode or "").strip().lower() == "signup" else "login"
+        flow_marker = "s" if normalized_flow == "signup" else "l"
+        terms_marker = "1" if terms_accepted else "0"
+        opt_in_marker = "1" if product_updates_opt_in else "0"
+        state = f"gst_{flow_marker}{terms_marker}{opt_in_marker}_{secrets.token_urlsafe(24)}"
         code_verifier = secrets.token_urlsafe(64)
         now = self._service.now_provider()
         expires_at = (now + timedelta(seconds=max(60, int(ttl_seconds)))).isoformat()
@@ -128,6 +140,26 @@ class AccessControlIdentityComponent:
             "state": str(row["state"]),
             "code_verifier": str(row["code_verifier"]),
             "next_path": self._service._normalize_next_path(str(row["next_path"])),
+            "flow_mode": self._parse_google_oauth_state(str(row["state"])).get("flow_mode", "login"),
+            "terms_accepted": self._parse_google_oauth_state(str(row["state"])).get("terms_accepted", False),
+            "product_updates_opt_in": self._parse_google_oauth_state(str(row["state"])).get("product_updates_opt_in", False),
+        }
+
+    def _parse_google_oauth_state(self, state: str) -> dict[str, str | bool]:
+        raw = str(state or "").strip()
+        if raw.startswith("gst_") and len(raw) >= 10:
+            metadata = raw[4:7]
+            if len(metadata) == 3:
+                flow_mode = "signup" if metadata[0] == "s" else "login"
+                return {
+                    "flow_mode": flow_mode,
+                    "terms_accepted": metadata[1] == "1",
+                    "product_updates_opt_in": metadata[2] == "1",
+                }
+        return {
+            "flow_mode": "login",
+            "terms_accepted": False,
+            "product_updates_opt_in": False,
         }
 
     def ensure_anonymous_identity(self, fingerprint: str) -> str:

@@ -21,6 +21,7 @@ backend/venv_paddle_bench2/
 
 .env
 .env.local
+backend/.env.dev
 
 # Local/private notes and drafts (do not version)
 local/

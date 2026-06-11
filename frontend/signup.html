@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./auth.css?v=2" />
+  <link rel="stylesheet" href="./auth.css?v=4" />
   <link rel="stylesheet" href="./topbar-unified.css?v=1" />
   <script src="/privacy-consent.js" defer></script>
 </head>
@@ -47,9 +47,6 @@
 
         <p id="status-msg" class="status"></p>
 
-        <button id="google-signup-btn" type="button" class="btn btn-social" hidden>Continuar com Google</button>
-        <p id="google-signup-divider" class="form-divider" hidden>ou</p>
-
         <form id="signup-form" class="form">
           <label for="name">Nome completo</label>
           <input id="name" type="text" placeholder="John Doe" required />
@@ -67,6 +64,7 @@
               <a href="./politica-de-privacidade.html">Política de Privacidade</a>.
             </span>
           </label>
+          <p id="accepted-terms-error" class="field-error hidden" aria-live="polite"></p>
           <label class="checkbox-field checkbox-field-optional" for="product-updates-opt-in">
             <input id="product-updates-opt-in" type="checkbox" />
             <span>
@@ -76,11 +74,22 @@
           <button type="submit" class="btn btn-primary">Criar conta</button>
         </form>
 
+        <p id="google-signup-divider" class="form-divider">ou</p>
+        <button id="google-signup-btn" type="button" class="btn btn-social">
+          <svg class="social-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="#EA4335" d="M12 10.2v3.9h5.4c-.24 1.26-.96 2.32-2.04 3.03l3.3 2.56c1.92-1.77 3.03-4.38 3.03-7.48 0-.71-.06-1.39-.18-2.04H12z" />
+            <path fill="#34A853" d="M12 22c2.7 0 4.97-.9 6.63-2.44l-3.3-2.56c-.91.61-2.08.97-3.33.97-2.6 0-4.8-1.75-5.59-4.11H3.01v2.64A9.99 9.99 0 0 0 12 22z" />
+            <path fill="#FBBC05" d="M6.41 13.86A6 6 0 0 1 6.1 12c0-.65.11-1.28.31-1.86V7.5H3.01A9.99 9.99 0 0 0 2 12c0 1.61.39 3.14 1.01 4.5l3.4-2.64z" />
+            <path fill="#4285F4" d="M12 6.03c1.47 0 2.79.51 3.83 1.5l2.87-2.87C16.96 3.05 14.7 2 12 2A9.99 9.99 0 0 0 3.01 7.5l3.4 2.64C7.2 7.78 9.4 6.03 12 6.03z" />
+          </svg>
+          <span class="social-label">Continuar com Google</span>
+        </button>
+
         <p class="footnote">Já tem uma conta? <a id="login-link" href="./login.html">Entre</a></p>
       </article>
     </section>
   </main>
 
-  <script src="./signup.js"></script>
+  <script src="./signup.js?v=3"></script>
 </body>
 </html>

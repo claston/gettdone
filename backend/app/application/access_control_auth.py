@@ -4,7 +4,12 @@ import secrets
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from app.application.errors import InvalidCredentialsError, InvalidUserTokenError, UserAlreadyExistsError
+from app.application.errors import (
+    GoogleOAuthAccountNotFoundError,
+    InvalidCredentialsError,
+    InvalidUserTokenError,
+    UserAlreadyExistsError,
+)
 
 if TYPE_CHECKING:
     from app.application.access_control import AccessControlService, RegisteredUser
@@ -153,11 +158,17 @@ class AccessControlAuthComponent:
         provider_user_id: str,
         email: str,
         name: str,
+        allow_create: bool = True,
+        terms_accepted_at: str | None = None,
+        privacy_accepted_at: str | None = None,
+        product_updates_opt_in: bool = False,
+        product_updates_opted_in_at: str | None = None,
     ) -> RegisteredUser:
         normalized_email = email.strip().lower()
         provider_user_id = provider_user_id.strip()
         display_name = name.strip() or normalized_email.split("@", 1)[0]
         now = self._service.now_provider().isoformat()
+        true_value = self._service._true_value()
 
         with self._service._lock:
             with self._service._connect() as conn:
@@ -176,10 +187,30 @@ class AccessControlAuthComponent:
                         conn,
                         """
                         UPDATE users
-                        SET name = ?, email = ?, updated_at = ?
+                        SET
+                            name = ?,
+                            email = ?,
+                            terms_accepted_at = COALESCE(?, terms_accepted_at),
+                            privacy_accepted_at = COALESCE(?, privacy_accepted_at),
+                            product_updates_opt_in = CASE
+                                WHEN ? THEN ?
+                                ELSE product_updates_opt_in
+                            END,
+                            product_updates_opted_in_at = COALESCE(?, product_updates_opted_in_at),
+                            updated_at = ?
                         WHERE id = ?
                         """,
-                        (display_name, normalized_email, now, user_id),
+                        (
+                            display_name,
+                            normalized_email,
+                            terms_accepted_at,
+                            privacy_accepted_at,
+                            product_updates_opt_in,
+                            true_value,
+                            product_updates_opted_in_at,
+                            now,
+                            user_id,
+                        ),
                     )
                     conn.commit()
                     return self._service._registered_user_factory(
@@ -201,10 +232,31 @@ class AccessControlAuthComponent:
                         conn,
                         """
                         UPDATE users
-                        SET name = ?, auth_provider = 'google', provider_user_id = ?, updated_at = ?
+                        SET
+                            name = ?,
+                            auth_provider = 'google',
+                            provider_user_id = ?,
+                            terms_accepted_at = COALESCE(?, terms_accepted_at),
+                            privacy_accepted_at = COALESCE(?, privacy_accepted_at),
+                            product_updates_opt_in = CASE
+                                WHEN ? THEN ?
+                                ELSE product_updates_opt_in
+                            END,
+                            product_updates_opted_in_at = COALESCE(?, product_updates_opted_in_at),
+                            updated_at = ?
                         WHERE id = ?
                         """,
-                        (display_name, provider_user_id, now, user_id),
+                        (
+                            display_name,
+                            provider_user_id,
+                            terms_accepted_at,
+                            privacy_accepted_at,
+                            product_updates_opt_in,
+                            true_value,
+                            product_updates_opted_in_at,
+                            now,
+                            user_id,
+                        ),
                     )
                     conn.commit()
                     return self._service._registered_user_factory(
@@ -214,6 +266,9 @@ class AccessControlAuthComponent:
                         token=self._service._encode_token(user_id),
                         is_admin=self._service._row_is_admin(existing_by_email),
                     )
+
+                if not allow_create:
+                    raise GoogleOAuthAccountNotFoundError
 
                 user_id = f"usr_{uuid4().hex[:12]}"
                 is_admin = normalized_email in self._service.admin_emails
@@ -229,10 +284,14 @@ class AccessControlAuthComponent:
                         password_salt,
                         auth_provider,
                         provider_user_id,
+                        terms_accepted_at,
+                        privacy_accepted_at,
+                        product_updates_opt_in,
+                        product_updates_opted_in_at,
                         created_at,
                         updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user_id,
@@ -243,6 +302,10 @@ class AccessControlAuthComponent:
                         "",
                         "google",
                         provider_user_id,
+                        terms_accepted_at,
+                        privacy_accepted_at,
+                        true_value if product_updates_opt_in else self._service._false_value(),
+                        product_updates_opted_in_at,
                         now,
                         now,
                     ),
