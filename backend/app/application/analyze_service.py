@@ -132,7 +132,7 @@ class AnalyzeService:
         total_outflows = round(sum(item.amount for item in transactions if item.amount < 0), 2)
         net_total = round(total_inflows + total_outflows, 2)
         opening_balance = self._resolve_opening_balance(preview_rows, extracted_text=extracted_text)
-        closing_balance = self._resolve_closing_balance(preview_rows)
+        closing_balance = self._resolve_closing_balance(preview_rows, opening_balance=opening_balance)
         bank_name = self._resolve_bank_name(
             extension=extension,
             layout_inference_name=layout_inference_name,
@@ -293,29 +293,49 @@ class AnalyzeService:
             if normalized_description in {"SALDO ANTERIOR", "SALDO INICIAL"}:
                 return round(float(row.amount), 2)
 
+        amount_pattern = r"([\-+]?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})|[\-+]?\d+(?:,\d{2})?)"
+        opening_label_pattern = re.compile(r"S\s*A\s*L\s*D\s*O\s+(?:A\s*N\s*T\s*E\s*R\s*I\s*O\s*R|I\s*N\s*I\s*C\s*I\s*A\s*L)", flags=re.IGNORECASE)
+        for raw_line in (extracted_text or "").splitlines():
+            normalized_line = self._normalize_text_for_profile(raw_line)
+            if (
+                "SALDO ANTERIOR" not in normalized_line
+                and "SALDO INICIAL" not in normalized_line
+                and not opening_label_pattern.search(raw_line)
+            ):
+                continue
+            match = re.search(amount_pattern, raw_line)
+            if not match:
+                continue
+            try:
+                raw_amount = match.group(1).replace(" ", "").replace(".", "").replace(",", ".")
+                return round(float(raw_amount), 2)
+            except ValueError:
+                continue
         for row in rows:
             if row.running_balance is None:
                 continue
             return round(float(row.running_balance) - float(row.amount), 2)
-
-        normalized_text = self._normalize_text_for_profile(extracted_text or "")
-        if normalized_text:
-            match = re.search(
-                r"\bSALDO\s+(?:ANTERIOR|INICIAL)\b[^0-9\-+]{0,20}([\-+]?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})|[\-+]?\d+(?:,\d{2})?)",
-                normalized_text,
-            )
-            if match:
-                try:
-                    raw_amount = match.group(1).replace(" ", "").replace(".", "").replace(",", ".")
-                    return round(float(raw_amount), 2)
-                except ValueError:
-                    pass
         return None
 
-    def _resolve_closing_balance(self, rows: list[TransactionRow]) -> float | None:
-        for row in reversed(rows):
-            if row.running_balance is not None:
-                return round(float(row.running_balance), 2)
+    def _resolve_closing_balance(self, rows: list[TransactionRow], *, opening_balance: float | None = None) -> float | None:
+        last_balance_index: int | None = None
+        last_running_balance: float | None = None
+        for index, row in enumerate(rows):
+            if row.running_balance is None:
+                continue
+            last_balance_index = index
+            last_running_balance = round(float(row.running_balance), 2)
+        if last_running_balance is not None and last_balance_index is not None:
+            trailing_amount = sum(float(row.amount) for row in rows[last_balance_index + 1 :])
+            return round(last_running_balance + trailing_amount, 2)
+
+        if opening_balance is not None:
+            transaction_total = sum(
+                float(row.amount)
+                for row in rows
+                if self._normalize_text_for_profile(row.description) not in {"SALDO ANTERIOR", "SALDO INICIAL"}
+            )
+            return round(float(opening_balance) + transaction_total, 2)
         return None
 
     def _build_transactions_for_extension(

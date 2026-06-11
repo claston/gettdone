@@ -409,6 +409,108 @@ def test_analyze_service_resolves_opening_balance_from_extracted_text_when_outsi
     assert result.opening_balance == 10000.0
 
 
+def test_analyze_service_resolves_opening_balance_from_spaced_saldo_anterior_text(
+    tmp_path, monkeypatch
+) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    service = AnalyzeService(storage=storage)
+    monkeypatch.setattr(
+        analyze_service_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes: build_pdf_parse_result(
+            transactions=[
+                NormalizedTransaction(
+                    date="2021-01-04",
+                    description="LIQUIDACAO BOLETO",
+                    amount=-1678.83,
+                    type="outflow",
+                ),
+            ],
+            layout_name="sicredi_matricial_paisagem_conta_corrente_v1",
+            confidence=1.0,
+            extracted_text=(
+                "    DATA    DOCUMENTO  HISTORICO                                        SALDO\n"
+                "**/**/****            ********         S A L D O  A N T E R I O R"
+                "                                                                                        73.997,11\n"
+                "04/01/2021 LIQUIDACAO BOLETO 1.678,83"
+            ),
+            parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+        ),
+    )
+
+    result = service.analyze(filename="sicredi.pdf", raw_bytes=b"%PDF synthetic")
+
+    assert result.opening_balance == 73997.11
+
+
+def test_analyze_service_resolves_closing_balance_from_last_running_balance_plus_trailing_rows(
+    tmp_path, monkeypatch
+) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    service = AnalyzeService(storage=storage)
+    monkeypatch.setattr(
+        analyze_service_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes, **kwargs: PdfParseResult(
+            transactions=[
+                NormalizedTransaction(date="2021-01-04", description="A", amount=100.0, type="inflow"),
+                NormalizedTransaction(date="2021-01-04", description="B", amount=-50.0, type="outflow"),
+                NormalizedTransaction(date="2021-01-05", description="C", amount=-25.0, type="outflow"),
+            ],
+            layout=PdfLayoutInference(
+                layout_name="sicredi_matricial_paisagem_conta_corrente_v1",
+                confidence=1.0,
+                used_fallback=False,
+            ),
+            extracted_text="SALDO ANTERIOR 1.000,00",
+            parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+            canonical_transactions=[
+                CanonicalTransaction(
+                    date="2021-01-04",
+                    description="A",
+                    amount=100.0,
+                    type="inflow",
+                    running_balance=None,
+                    source_page=1,
+                    source_line=1,
+                    layout_name="sicredi_matricial_paisagem_conta_corrente_v1",
+                    confidence=1.0,
+                    source_parser="tabular",
+                ),
+                CanonicalTransaction(
+                    date="2021-01-04",
+                    description="B",
+                    amount=-50.0,
+                    type="outflow",
+                    running_balance=1050.0,
+                    source_page=1,
+                    source_line=2,
+                    layout_name="sicredi_matricial_paisagem_conta_corrente_v1",
+                    confidence=1.0,
+                    source_parser="tabular",
+                ),
+                CanonicalTransaction(
+                    date="2021-01-05",
+                    description="C",
+                    amount=-25.0,
+                    type="outflow",
+                    running_balance=None,
+                    source_page=1,
+                    source_line=3,
+                    layout_name="sicredi_matricial_paisagem_conta_corrente_v1",
+                    confidence=1.0,
+                    source_parser="tabular",
+                ),
+            ],
+        ),
+    )
+
+    result = service.analyze(filename="sicredi.pdf", raw_bytes=b"%PDF synthetic")
+
+    assert result.opening_balance == 1000.0
+    assert result.closing_balance == 1025.0
+
+
 def test_analyze_service_does_not_extract_account_from_transaction_body_without_header_label(
     tmp_path, monkeypatch
 ) -> None:

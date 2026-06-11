@@ -1,0 +1,101 @@
+layout_profile:
+  profile_name: sicredi_matricial_paisagem_conta_corrente_v1
+  bank: Sicredi
+  layout_family: sicredi_matricial_paisagem
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "COOP CRED"
+      - "EXTRATO DE CONTA CORRENTE"
+      - "PERIODO: DE"
+      - "DATA"
+      - "DOCUMENTO"
+      - "HISTORICO"
+      - "DEBITO"
+      - "CREDITO"
+      - "SALDO"
+    optional_keywords:
+      - "S A L D O A N T E R I O R"
+      - "SICREDI CREDITO"
+      - "LIQUIDACAO BOLETO"
+      - "JUROS UTILIZ.CH.ESPECIAL"
+      - "TRANSF.ENTRE CONTAS"
+      - "PAG.:"
+    negative_keywords:
+      - "SICOOB"
+      - "SANTANDER"
+      - "BRADESCO"
+      - "BANCO DO BRASIL"
+      - "CAIXA"
+      - "ITAU"
+      - "C6 BANK"
+      - "VIACREDI"
+      - "BANRISUL"
+      - "ASAAS"
+      - "PICPAY"
+    min_score_hint: 0.74
+  table_detection:
+    header_keywords:
+      - "DATA"
+      - "DOCUMENTO"
+      - "HISTORICO"
+      - "DEBITO"
+      - "CREDITO"
+      - "SALDO"
+    expected_column_order:
+      - date
+      - document
+      - description
+      - debit
+      - credit
+      - balance
+    column_aliases:
+      date:
+        - "DATA"
+      document:
+        - "DOCUMENTO"
+      description:
+        - "HISTORICO"
+      debit:
+        - "DEBITO"
+        - "DEBITOS"
+      credit:
+        - "CREDITO"
+        - "CREDITOS"
+      balance:
+        - "SALDO"
+    table_starts_after:
+      - "PERIODO: DE"
+      - "DATA DOCUMENTO HISTORICO"
+    row_separator_hint: "landscape matrix rows with sparse debit or credit columns and optional trailing balance"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "debit_column"
+      - "-{amount}"
+    positive_patterns:
+      - "credit_column"
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "COOP CRED"
+      - "EXTRATO DE CONTA CORRENTE"
+      - "PERIODO: DE"
+      - "DATA"
+      - "DOCUMENTO"
+      - "HISTORICO"
+      - "DEBITO"
+      - "CREDITO"
+      - "SALDO"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance

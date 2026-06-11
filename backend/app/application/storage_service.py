@@ -68,6 +68,8 @@ class TempAnalysisStorage:
             report_rows,
             ofx_account_type=data.ofx_account_type,
             layout_inference_name=data.layout_inference_name,
+            opening_balance=data.opening_balance,
+            closing_balance=data.closing_balance,
         )
         return expires_at.isoformat()
 
@@ -265,6 +267,7 @@ class TempAnalysisStorage:
         analysis_id: str,
         edits: list[dict[str, object]],
         expected_updated_at: str | None = None,
+        opening_balance: float | None = None,
         closing_balance: float | None = None,
         bank_branch: str | None = None,
         account_number: str | None = None,
@@ -352,6 +355,7 @@ class TempAnalysisStorage:
         net_total = round(total_inflows + total_outflows, 2)
 
         requested_overrides = self._normalize_convert_overrides(
+            opening_balance=opening_balance,
             closing_balance=closing_balance,
             bank_branch=bank_branch,
             account_number=account_number,
@@ -359,6 +363,11 @@ class TempAnalysisStorage:
         )
         persisted_overrides = self._extract_convert_overrides(content)
         effective_overrides = {
+            "opening_balance": (
+                requested_overrides.get("opening_balance")
+                if requested_overrides.get("opening_balance") is not None
+                else persisted_overrides.get("opening_balance")
+            ),
             "closing_balance": (
                 requested_overrides.get("closing_balance")
                 if requested_overrides.get("closing_balance") is not None
@@ -387,7 +396,10 @@ class TempAnalysisStorage:
         content["total_inflows"] = total_inflows
         content["total_outflows"] = total_outflows
         content["net_total"] = net_total
-        opening_balance_value, closing_balance_value = self._resolve_balance_bounds(active_rows)
+        opening_balance_value, closing_balance_value = self._resolve_balance_bounds(
+            active_rows,
+            opening_balance_hint=effective_overrides.get("opening_balance"),
+        )
         content["opening_balance"] = opening_balance_value
         content["closing_balance"] = closing_balance_value
         content["preview_transactions"] = [asdict(item) for item in preview_rows]
@@ -402,6 +414,7 @@ class TempAnalysisStorage:
             report_rows,
             ofx_account_type=str(content.get("ofx_account_type") or "").strip() or None,
             layout_inference_name=str(content.get("layout_inference_name") or "").strip() or None,
+            opening_balance=opening_balance_value,
             closing_balance=effective_overrides.get("closing_balance"),
             bank_branch=effective_overrides.get("bank_branch"),
             account_number=effective_overrides.get("account_number"),
@@ -575,6 +588,7 @@ class TempAnalysisStorage:
         *,
         ofx_account_type: str | None = None,
         layout_inference_name: str | None = None,
+        opening_balance: float | None = None,
         closing_balance: float | None = None,
         bank_branch: str | None = None,
         account_number: str | None = None,
@@ -625,7 +639,11 @@ class TempAnalysisStorage:
             debit = round(abs(amount), 2) if amount < 0 else None
             sheet.append([self._format_convert_date(item.date), item.description, credit, debit, item.running_balance])
         self._format_transacoes_sheet(sheet)
-        opening_balance, closing_balance = self._resolve_balance_bounds(active_rows)
+        opening_balance, closing_balance = self._resolve_balance_bounds(
+            active_rows,
+            opening_balance_hint=opening_balance,
+            closing_balance_hint=closing_balance,
+        )
         summary_sheet = workbook.create_sheet(title="Resumo")
         summary_sheet.append(["Campo", "Valor"])
         summary_sheet.append(["Saldo anterior", opening_balance])
@@ -657,12 +675,14 @@ class TempAnalysisStorage:
 
         persisted_overrides = self._extract_convert_overrides(content)
         requested_overrides = self._normalize_convert_overrides(
+            opening_balance=None,
             closing_balance=closing_balance,
             bank_branch=bank_branch,
             account_number=account_number,
             bank_code=bank_code,
         )
         effective_overrides = {
+            "opening_balance": persisted_overrides.get("opening_balance"),
             "closing_balance": (
                 requested_overrides.get("closing_balance")
                 if requested_overrides.get("closing_balance") is not None
@@ -693,6 +713,7 @@ class TempAnalysisStorage:
             report_rows,
             ofx_account_type=str(content.get("ofx_account_type") or "").strip() or None,
             layout_inference_name=str(content.get("layout_inference_name") or "").strip() or None,
+            opening_balance=effective_overrides.get("opening_balance"),
             closing_balance=effective_overrides.get("closing_balance"),
             bank_branch=effective_overrides.get("bank_branch"),
             account_number=effective_overrides.get("account_number"),
@@ -702,12 +723,15 @@ class TempAnalysisStorage:
     def _normalize_convert_overrides(
         self,
         *,
+        opening_balance: float | None,
         closing_balance: float | None,
         bank_branch: str | None,
         account_number: str | None,
         bank_code: str | None,
     ) -> dict[str, float | str]:
         normalized: dict[str, float | str] = {}
+        if opening_balance is not None:
+            normalized["opening_balance"] = float(opening_balance)
         if closing_balance is not None:
             normalized["closing_balance"] = float(closing_balance)
         branch = str(bank_branch or "").strip()
@@ -722,12 +746,15 @@ class TempAnalysisStorage:
         return normalized
 
     def _extract_convert_overrides(self, content: dict[str, object]) -> dict[str, float | str | None]:
+        opening_raw = content.get("convert_opening_balance")
+        opening_balance = float(opening_raw) if opening_raw is not None else None
         closing_raw = content.get("convert_closing_balance")
         closing_balance = float(closing_raw) if closing_raw is not None else None
         branch = str(content.get("convert_bank_branch") or "").strip() or None
         account = str(content.get("convert_account_number") or "").strip() or None
         code = str(content.get("convert_bank_code") or "").strip() or None
         return {
+            "opening_balance": opening_balance,
             "closing_balance": closing_balance,
             "bank_branch": branch,
             "account_number": account,
@@ -739,6 +766,8 @@ class TempAnalysisStorage:
         content: dict[str, object],
         overrides: dict[str, float | str],
     ) -> None:
+        if "opening_balance" in overrides:
+            content["convert_opening_balance"] = float(overrides["opening_balance"])
         if "closing_balance" in overrides:
             content["convert_closing_balance"] = float(overrides["closing_balance"])
         if "bank_branch" in overrides:
@@ -1020,16 +1049,55 @@ class TempAnalysisStorage:
         }
         return labels.get(text, text or "-")
 
-    def _resolve_balance_bounds(self, rows: list[TransactionRow]) -> tuple[float | None, float | None]:
-        opening_balance: float | None = None
+    def _resolve_balance_bounds(
+        self,
+        rows: list[TransactionRow],
+        *,
+        opening_balance_hint: float | str | None = None,
+        closing_balance_hint: float | str | None = None,
+    ) -> tuple[float | None, float | None]:
+        opening_balance = self._coerce_balance_value(opening_balance_hint)
+        if opening_balance is None:
+            for item in rows:
+                if self._is_opening_balance_row(item):
+                    opening_balance = round(float(item.amount), 2)
+                    break
+            if opening_balance is None:
+                for item in rows:
+                    if item.running_balance is None:
+                        continue
+                    opening_balance = round(float(item.running_balance) - float(item.amount), 2)
+                    break
+
+        manual_closing_balance = self._coerce_balance_value(closing_balance_hint)
+        if manual_closing_balance is not None:
+            return opening_balance, manual_closing_balance
+
+        last_balance_index: int | None = None
         closing_balance: float | None = None
-        for item in rows:
+        for index, item in enumerate(rows):
             if item.running_balance is None:
                 continue
-            opening_balance = round(float(item.running_balance) - float(item.amount), 2)
-            break
-        for item in reversed(rows):
-            if item.running_balance is not None:
-                closing_balance = round(float(item.running_balance), 2)
-                break
-        return opening_balance, closing_balance
+            last_balance_index = index
+            closing_balance = round(float(item.running_balance), 2)
+        if closing_balance is not None and last_balance_index is not None:
+            trailing_amount = sum(float(item.amount) for item in rows[last_balance_index + 1 :])
+            return opening_balance, round(closing_balance + trailing_amount, 2)
+
+        if opening_balance is not None:
+            transaction_amounts = sum(float(item.amount) for item in rows if not self._is_opening_balance_row(item))
+            return opening_balance, round(opening_balance + transaction_amounts, 2)
+
+        return None, None
+
+    def _coerce_balance_value(self, value: float | str | None) -> float | None:
+        if value is None or value == "":
+            return None
+        try:
+            return round(float(value), 2)
+        except (TypeError, ValueError):
+            return None
+
+    def _is_opening_balance_row(self, row: TransactionRow) -> bool:
+        normalized = " ".join(str(row.description or "").strip().upper().split())
+        return normalized in {"SALDO ANTERIOR", "SALDO INICIAL"}

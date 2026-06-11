@@ -55,11 +55,10 @@ def select_declarative_tabular_amount(
     balance_token = role_token_map.get("balance")
     if {"credit", "debit", "balance"}.issubset(set(amount_roles)) and len(aligned_tokens) == 2 and balance_token is not None:
         transaction_token = aligned_tokens[0]
-        amount = parse_pdf_amount(transaction_token.value)
-        role = "debit" if amount < 0 else "credit"
+        preferred_role = next((role for role in amount_roles if role in {"credit", "debit"}), None)
         return SelectedTabularAmount(
             token=transaction_token,
-            role=role,
+            role=preferred_role,
             description_end=description_end,
             balance_token=balance_token,
         )
