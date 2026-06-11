@@ -409,5 +409,5 @@ def google_callback(
         params = urlencode(payload)
         fallback = f"{oauth_service.config.frontend_base_url}/auth-callback.html?{params}"
         return RedirectResponse(url=fallback, status_code=307)
-    logger.info("google_oauth_callback_succeeded state=%s redirect=%s", state, redirect_url)
+    logger.info("google_oauth_callback_succeeded")
     return RedirectResponse(url=redirect_url, status_code=307)
