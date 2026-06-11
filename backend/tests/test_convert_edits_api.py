@@ -327,6 +327,7 @@ def test_convert_edits_persists_ofx_export_settings_for_download_without_query(t
         "/convert-edits/an_convert123?anonymous_fingerprint=fp-owner",
         json={
             "edits": [],
+            "opening_balance": 73997.11,
             "closing_balance": 56276.06,
             "bank_branch": "3456-7",
             "account_number": "12345-6",
@@ -334,6 +335,7 @@ def test_convert_edits_persists_ofx_export_settings_for_download_without_query(t
         },
     )
     assert save_settings.status_code == 200
+    assert save_settings.json()["opening_balance"] == 73997.11
 
     ofx_report = client.get("/convert-report/an_convert123?format=ofx&anonymous_fingerprint=fp-owner")
     assert ofx_report.status_code == 200

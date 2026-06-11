@@ -261,6 +261,25 @@ def test_infer_pdf_layout_prefers_sicredi_profile_when_tokens_match() -> None:
     assert result.confidence >= 0.5
 
 
+def test_infer_pdf_layout_prefers_sicredi_matricial_paisagem_profile() -> None:
+    text = """
+    COOP CRED, POUP E INV VALOR SUSTENTAVEL EXTRATO DE CONTA CORRENTE
+    JARDIM MEDICA LTDA
+    PAG.: 00001
+    PERIODO: DE 01/2021 A 12/2021
+    DATA DOCUMENTO HISTORICO DEBITO CREDITO SALDO
+    S A L D O A N T E R I O R 73.997,11
+    04/01/2021 174611538 SICREDI CREDITO ELO 91,05
+    04/01/2021 LIQUIDACAO BOLETO 1.678,83
+    04/01/2021 REP029 JUROS UTILIZ.CH.ESPECIAL 59,00 71.304,94
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "sicredi_matricial_paisagem_conta_corrente_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_uses_declarative_c6_profile() -> None:
     text = """
     C6 BANK

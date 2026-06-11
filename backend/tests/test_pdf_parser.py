@@ -812,6 +812,76 @@ def test_parse_pdf_transactions_supports_santander_grouped_period_with_weekday_h
     assert result.transactions[2].amount == 9325.9
 
 
+def test_parse_pdf_transactions_prefers_layout_text_for_sicredi_matricial_paisagem(monkeypatch) -> None:
+    native_text = """
+    ======================================================================================================================
+    COOP CRED, POUP E INV VALOR SUSTENTAVEL EXTRATO DE CONTA CORRENTE
+    JARDIM MEDICA LTDA
+    19565-0
+    PERIODO: DE 01/2021 A 12/2021
+    DATA DOCUMENTO HISTORICO
+    DEBITO
+    CREDITO
+    SALDO
+    **/**/****
+    ********
+    S A L D O A N T E R I O R
+    73.997,11
+    04/01/2021
+    174611538
+    SICREDI CREDITO ELO
+    91,05
+    04/01/2021
+    LIQUIDACAO BOLETO
+    1.678,83
+    04/01/2021
+    REP029
+    JUROS UTILIZ.CH.ESPECIAL
+    59,00
+    71.304,94
+    """
+    layout_text = """
+    ======================================================================================================================
+                                           COOP CRED, POUP E INV VALOR SUSTENTAVEL  EXTRATO DE CONTA CORRENTE
+    JARDIM MEDICA LTDA                                                                                             19565-0
+    PERIODO: DE 01/2021 A 12/2021
+    DATA    DOCUMENTO  HISTORICO                                                           DEBITO      CREDITO        SALDO
+    **/**/****            ********         S A L D O  A N T E R I O R                                          73.997,11
+    04/01/2021            174611538        SICREDI CREDITO ELO                                                     91,05
+    04/01/2021                             LIQUIDACAO BOLETO                                      1.678,83
+    04/01/2021            REP029           JUROS UTILIZ.CH.ESPECIAL                               59,00          71.304,94
+    """
+
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [layout_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "sicredi_matricial_paisagem_conta_corrente_v1"
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert [transaction.amount for transaction in result.transactions] == [91.05, -1678.83, -59.0]
+    assert [transaction.type for transaction in result.transactions] == ["inflow", "outflow", "outflow"]
+    assert result.canonical_transactions[2].running_balance == 71304.94
+
+
+def test_parse_pdf_transactions_resolves_singular_credit_debit_headers_in_tabular_positions() -> None:
+    sample_text = "\n".join(
+        [
+            "COOP CRED, POUP E INV VALOR SUSTENTAVEL EXTRATO DE CONTA CORRENTE",
+            "PERIODO: DE 01/2021 A 12/2021",
+            "DATA    DOCUMENTO  HISTORICO                                                           DEBITO      CREDITO        SALDO",
+            "04/01/2021            174611538        SICREDI CREDITO ELO                                                     91,05",
+            "04/01/2021                             LIQUIDACAO BOLETO                                      1.678,83",
+            "04/01/2021            REP029           JUROS UTILIZ.CH.ESPECIAL                               59,00          71.304,94",
+        ]
+    )
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([sample_text], preserve_layout_spacing=True)
+
+    assert result.layout.layout_name == "sicredi_matricial_paisagem_conta_corrente_v1"
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert [transaction.amount for transaction in result.transactions] == [91.05, -1678.83, -59.0]
+
+
 def test_parse_pdf_transactions_uses_running_balance_to_override_heuristic_when_amount_has_no_explicit_sign(
     monkeypatch,
 ) -> None:

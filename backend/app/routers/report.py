@@ -210,6 +210,7 @@ def apply_convert_edits(
             analysis_id=processing_id,
             edits=[item.model_dump() for item in payload.edits],
             expected_updated_at=payload.expected_updated_at,
+            opening_balance=payload.opening_balance,
             closing_balance=payload.closing_balance,
             bank_branch=payload.bank_branch,
             account_number=payload.account_number,

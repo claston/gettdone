@@ -93,6 +93,34 @@ def _should_prefer_tabular_over_grouped_on_traceability(
     return all(int(grouped_line) > int(tabular_line) for grouped_line, tabular_line in zip(grouped_source_lines, tabular_source_lines))
 
 
+def _should_prefer_tabular_over_grouped_on_credit_debit_columns(
+    *, grouped_rows: list[Any], tabular_rows: list[Any], layout_profile: Any | None
+) -> bool:
+    if layout_profile is None:
+        return False
+    expected_column_order = tuple(getattr(layout_profile, "expected_column_order", ()) or ())
+    if "credit" not in expected_column_order and "debit" not in expected_column_order:
+        return False
+    if not grouped_rows or len(grouped_rows) != len(tabular_rows):
+        return False
+
+    for grouped_row, tabular_row in zip(grouped_rows, tabular_rows, strict=False):
+        grouped_tx = getattr(grouped_row, "transaction", None)
+        tabular_tx = getattr(tabular_row, "transaction", None)
+        if grouped_tx is None or tabular_tx is None:
+            return False
+        if getattr(grouped_tx, "date", None) != getattr(tabular_tx, "date", None):
+            return False
+        if getattr(grouped_tx, "description", None) != getattr(tabular_tx, "description", None):
+            return False
+
+    return any(
+        getattr(getattr(grouped_row, "transaction", None), "amount", 0.0)
+        != getattr(getattr(tabular_row, "transaction", None), "amount", 0.0)
+        for grouped_row, tabular_row in zip(grouped_rows, tabular_rows, strict=False)
+    )
+
+
 def select_parsed_rows(
     *,
     lines: list[Any],
@@ -111,6 +139,11 @@ def select_parsed_rows(
         columnar_transactions_count = len(columnar_rows)
         grouped_transactions_count = len(grouped_rows)
         tabular_is_clearly_better_than_grouped = tabular_transactions_count >= grouped_transactions_count + 3
+        tabular_preserves_credit_debit_signals = _should_prefer_tabular_over_grouped_on_credit_debit_columns(
+            grouped_rows=grouped_rows,
+            tabular_rows=tabular_rows,
+            layout_profile=layout_profile,
+        )
         tabular_preserves_better_traceability_than_grouped = _should_prefer_tabular_over_grouped_on_traceability(
             grouped_rows=grouped_rows,
             tabular_rows=tabular_rows,
@@ -118,7 +151,11 @@ def select_parsed_rows(
             tabular_transactions_count=tabular_transactions_count,
         )
 
-        if tabular_rows and (tabular_is_clearly_better_than_grouped or tabular_preserves_better_traceability_than_grouped):
+        if tabular_rows and (
+            tabular_is_clearly_better_than_grouped
+            or tabular_preserves_credit_debit_signals
+            or tabular_preserves_better_traceability_than_grouped
+        ):
             return SelectedParserRows(
                 selected_parser="tabular",
                 rows=tabular_rows,
@@ -131,12 +168,16 @@ def select_parsed_rows(
                 selection_reason=(
                     "tabular_preferred_over_grouped_on_row_count_gap"
                     if tabular_is_clearly_better_than_grouped
+                    else "tabular_preferred_over_grouped_on_credit_debit_columns"
+                    if tabular_preserves_credit_debit_signals
                     else "tabular_preferred_over_grouped_on_traceability"
                 ),
                 inline_decision="not_selected_grouped_overridden",
                 tabular_decision=(
                     "selected_on_grouped_override_row_count_gap"
                     if tabular_is_clearly_better_than_grouped
+                    else "selected_on_grouped_override_credit_debit_columns"
+                    if tabular_preserves_credit_debit_signals
                     else "selected_on_grouped_override_traceability"
                 ),
                 columnar_decision="no_rows" if not columnar_rows else "not_selected_tabular_priority",

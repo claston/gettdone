@@ -67,6 +67,8 @@
     quotaMode: "conversion",
     quotaRemaining: null,
     quotaLimit: null,
+    openingBalanceOverride: null,
+    openingBalanceManuallyEdited: false,
     closingBalanceOverride: null,
     closingBalanceManuallyEdited: false,
     bankBranchOverride: "",
@@ -987,6 +989,7 @@
       quota_mode: state.quotaMode,
       quota_remaining: state.quotaRemaining,
       quota_limit: state.quotaLimit,
+      opening_balance_override: state.openingBalanceOverride,
       closing_balance_override: state.closingBalanceOverride,
       bank_branch_override: state.bankBranchOverride,
       account_number_override: state.accountNumberOverride,
@@ -1060,6 +1063,8 @@
     state.lastChangedRowKind = null;
     state.quotaRemaining = null;
     state.quotaLimit = null;
+    state.openingBalanceOverride = null;
+    state.openingBalanceManuallyEdited = false;
     state.closingBalanceOverride = null;
     state.closingBalanceManuallyEdited = false;
     state.bankBranchOverride = "";
@@ -1240,6 +1245,9 @@
     const analysisClosingBalance = Number(
       (analysis && analysis.closing_balance != null ? analysis.closing_balance : derived.netTotal) || 0
     );
+    const openingBalance = Number.isFinite(Number(state.openingBalanceOverride))
+      ? Number(state.openingBalanceOverride)
+      : analysisOpeningBalance;
     const closingBalance = Number.isFinite(Number(state.closingBalanceOverride))
       ? Number(state.closingBalanceOverride)
       : analysisClosingBalance;
@@ -1247,6 +1255,7 @@
 
     const inflows = formatCurrency(derived.totalInflows);
     const outflows = formatCurrency(derived.totalOutflows);
+    const openingBalanceValue = toMoneyInputValue(openingBalance);
     const closingBalanceValue = toMoneyInputValue(closingBalance);
     const isOfxFlow = outputFormat === "ofx";
     const bankBranchValue = normalizeBankBranchDisplay(state.bankBranchOverride);
@@ -1290,7 +1299,11 @@
       </article>
       <article class="kpi">
         <p class="kpi-label">Saldo anterior</p>
-        <p class="kpi-value">${formatCurrency(analysisOpeningBalance)}</p>
+        ${
+          isOfxFlow
+            ? `<p class="kpi-value-editable"><input id="opening-balance-input" class="kpi-edit-input" type="text" inputmode="decimal" value="${openingBalanceValue}" /></p>`
+            : `<p class="kpi-value">${formatCurrency(openingBalance)}</p>`
+        }
       </article>
       <article class="kpi">
         <p class="kpi-label">Saldo final</p>
@@ -1402,7 +1415,9 @@
 
   function buildDisplayedRunningBalances(rows) {
     const displayed = [];
-    const opening = Number(state.analysisSnapshot && state.analysisSnapshot.opening_balance);
+    const opening = Number.isFinite(Number(state.openingBalanceOverride))
+      ? Number(state.openingBalanceOverride)
+      : Number(state.analysisSnapshot && state.analysisSnapshot.opening_balance);
     let cursor = Number.isFinite(opening) ? opening : null;
 
     for (const row of rows || []) {
@@ -1449,6 +1464,16 @@
       totalOutflows,
       netTotal: roundMoney(totalInflows + totalOutflows),
     };
+  }
+
+  function syncOpeningBalanceFromPayload(payload) {
+    if (state.openingBalanceManuallyEdited) {
+      return;
+    }
+    const openingFromPayload = payload && payload.opening_balance != null ? Number(payload.opening_balance) : NaN;
+    if (Number.isFinite(openingFromPayload)) {
+      state.openingBalanceOverride = openingFromPayload;
+    }
   }
 
   function syncClosingBalanceFromPayload(payload) {
@@ -1534,6 +1559,7 @@
       if (payload.closing_balance != null) {
         state.analysisSnapshot.closing_balance = Number(payload.closing_balance);
       }
+      syncOpeningBalanceFromPayload(payload);
       syncClosingBalanceFromPayload(payload);
       state.analysisSnapshot.updated_at = payload.updated_at || state.analysisSnapshot.updated_at || null;
       renderKpis(state.analysisSnapshot);
@@ -1573,6 +1599,7 @@
       if (payload.closing_balance != null) {
         state.analysisSnapshot.closing_balance = Number(payload.closing_balance);
       }
+      syncOpeningBalanceFromPayload(payload);
       syncClosingBalanceFromPayload(payload);
       state.analysisSnapshot.updated_at = payload.updated_at || state.analysisSnapshot.updated_at || null;
       renderKpis(state.analysisSnapshot);
@@ -1737,6 +1764,7 @@
         if (payload.closing_balance != null) {
           state.analysisSnapshot.closing_balance = Number(payload.closing_balance);
         }
+        syncOpeningBalanceFromPayload(payload);
         syncClosingBalanceFromPayload(payload);
         state.analysisSnapshot.updated_at = payload.updated_at || state.analysisSnapshot.updated_at || null;
         renderKpis(state.analysisSnapshot);
@@ -1895,7 +1923,10 @@
     if (viewState.updated_at && !state.analysisSnapshot.updated_at) {
       state.analysisSnapshot.updated_at = viewState.updated_at;
     }
+    const restoredOpeningBalance = Number(viewState.opening_balance_override);
     const restoredClosingBalance = Number(viewState.closing_balance_override);
+    state.openingBalanceOverride = Number.isFinite(restoredOpeningBalance) ? restoredOpeningBalance : null;
+    state.openingBalanceManuallyEdited = Number.isFinite(restoredOpeningBalance);
     state.closingBalanceOverride = Number.isFinite(restoredClosingBalance) ? restoredClosingBalance : null;
     state.closingBalanceManuallyEdited = Number.isFinite(restoredClosingBalance);
     state.bankBranchOverride = normalizeBankBranchDisplay(viewState.bank_branch_override || "");
@@ -2194,6 +2225,8 @@
       state.analysisId = analysis.analysis_id;
       state.processingId = payload.processing_id || analysis.analysis_id;
       state.analysisSnapshot = { ...analysis };
+      state.openingBalanceManuallyEdited = false;
+      state.openingBalanceOverride = Number(analysis.opening_balance != null ? analysis.opening_balance : 0);
       state.closingBalanceManuallyEdited = false;
       state.closingBalanceOverride = Number(
         analysis.closing_balance != null ? analysis.closing_balance : analysis.net_total || 0
@@ -2322,6 +2355,7 @@
         query.set("format", downloadConfig.reportFormat);
       }
       if (requestedFormat === "ofx") {
+        const openingBalance = Number(state.openingBalanceOverride);
         const closingBalance = Number(state.closingBalanceOverride);
         const bankBranch = normalizeDigits(state.bankBranchOverride);
         const accountNumber = normalizeDigits(state.accountNumberOverride);
@@ -2337,6 +2371,7 @@
           body: JSON.stringify({
             edits: [],
             expected_updated_at: state.analysisSnapshot ? state.analysisSnapshot.updated_at || null : null,
+            opening_balance: Number.isFinite(openingBalance) ? Number(openingBalance.toFixed(2)) : null,
             closing_balance: Number.isFinite(closingBalance) ? Number(closingBalance.toFixed(2)) : null,
             bank_branch: bankBranch || null,
             account_number: accountNumber || null,
@@ -2536,6 +2571,25 @@
           : "Banco automático ativado para o próximo download OFX.",
         "success",
       );
+      return;
+    }
+    if (target.id === "opening-balance-input") {
+      const parsed = parsePtBrMoney(target.value);
+      if (parsed === null) {
+        setStatus("Saldo anterior inválido. Use formato como 56.276,06", "error");
+        target.value = toMoneyInputValue(
+          Number.isFinite(Number(state.openingBalanceOverride))
+            ? Number(state.openingBalanceOverride)
+            : Number((state.analysisSnapshot && state.analysisSnapshot.opening_balance) || 0),
+        );
+        return;
+      }
+      state.openingBalanceOverride = parsed;
+      state.openingBalanceManuallyEdited = true;
+      target.value = toMoneyInputValue(parsed);
+      persistCurrentViewState();
+      renderRows();
+      setStatus("Saldo anterior atualizado para a revisão e o próximo download OFX.", "success");
       return;
     }
     if (target.id !== "closing-balance-input") {

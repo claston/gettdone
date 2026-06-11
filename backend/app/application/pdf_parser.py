@@ -63,7 +63,9 @@ class _PdfLine:
 @dataclass(frozen=True)
 class _TabularColumnPositions:
     credit_start: int
+    credit_end: int
     debit_start: int
+    debit_end: int
     balance_start: int
 
 
@@ -133,6 +135,8 @@ def parse_pdf_transactions(
             on_ocr_progress=on_ocr_progress,
             max_ocr_pages=max_ocr_pages,
         )
+    if using_native_text:
+        primary_result = _maybe_upgrade_native_parse_with_layout_text(raw_bytes=raw_bytes, baseline_result=primary_result)
 
     if not using_native_text:
         return primary_result
@@ -297,11 +301,13 @@ def _parse_scanned_pdf_with_local_ocr_adapter(
     return _parse_pdf_transactions_from_page_texts(ocr_pages)
 
 
-def _parse_pdf_transactions_from_page_texts(page_texts: list[str]) -> PdfParseResult:
+def _parse_pdf_transactions_from_page_texts(
+    page_texts: list[str], *, preserve_layout_spacing: bool = False
+) -> PdfParseResult:
     joined_text = "\n".join(page_texts)
     layout = infer_pdf_layout(joined_text)
     layout_profile = get_layout_profile(layout.layout_name)
-    lines = _flatten_statement_lines(page_texts)
+    lines = _flatten_statement_lines(page_texts, preserve_layout_spacing=preserve_layout_spacing)
     lines, invalid_date_candidates_skipped = _filter_invalid_leading_date_candidate_lines(lines)
     grouped_rows = _parse_grouped_statement_lines(lines)
     selection = select_parsed_rows(
@@ -533,6 +539,17 @@ def _read_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
     return pages
 
 
+def _read_layout_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
+    try:
+        reader = PdfReader(BytesIO(raw_bytes))
+    except Exception as exc:  # pragma: no cover - defensive guard for parser internals
+        raise InvalidFileContentError("Unable to read PDF bytes.") from exc
+
+    pages = [(page.extract_text(extraction_mode="layout") or "").strip() for page in reader.pages]
+    pages = [item for item in pages if item]
+    return pages
+
+
 def _read_pdf_page_count(raw_bytes: bytes) -> int:
     try:
         reader = PdfReader(BytesIO(raw_bytes))
@@ -541,11 +558,11 @@ def _read_pdf_page_count(raw_bytes: bytes) -> int:
         raise InvalidFileContentError("Unable to read PDF bytes.") from exc
 
 
-def _flatten_statement_lines(page_texts: list[str]) -> list[_PdfLine]:
+def _flatten_statement_lines(page_texts: list[str], *, preserve_layout_spacing: bool = False) -> list[_PdfLine]:
     lines: list[_PdfLine] = []
     for page_index, page_text in enumerate(page_texts):
         for line_index, line in enumerate(page_text.splitlines()):
-            cleaned = " ".join(line.split())
+            cleaned = line.strip() if preserve_layout_spacing else " ".join(line.split())
             if cleaned:
                 lines.append(_PdfLine(text=cleaned, page_number=page_index + 1, line_number=line_index + 1))
     return lines
@@ -939,31 +956,6 @@ def _resolve_opening_balance_anchor_index(lines: list[_PdfLine]) -> int | None:
     return None
 
 
-def _resolve_tabular_column_positions(line_texts: list[str]) -> _TabularColumnPositions | None:
-    for line in line_texts:
-        credit_start = _find_first_column_alias(line, ("CRÉDITOS", "CREDITOS"))
-        debit_start = _find_first_column_alias(line, ("DÉBITOS", "DEBITOS"))
-        balance_start = _find_first_column_alias(line, ("SALDO (R$)", "SALDO"))
-        if credit_start is None or debit_start is None or balance_start is None:
-            continue
-        if credit_start < debit_start < balance_start:
-            return _TabularColumnPositions(
-                credit_start=credit_start,
-                debit_start=debit_start,
-                balance_start=balance_start,
-            )
-    return None
-
-
-def _find_first_column_alias(line: str, aliases: tuple[str, ...]) -> int | None:
-    upper_line = line.upper()
-    matches = [upper_line.find(alias) for alias in aliases]
-    valid_matches = [index for index in matches if index >= 0]
-    if not valid_matches:
-        return None
-    return min(valid_matches)
-
-
 def _resolve_tabular_column_role(
     *,
     line_text: str,
@@ -972,19 +964,45 @@ def _resolve_tabular_column_role(
     amount_token_value: str,
     fallback_role: str | None,
     column_positions: _TabularColumnPositions | None,
+    has_balance_token: bool = False,
 ) -> str | None:
-    if column_positions is None or has_explicit_amount_sign(amount_token_value):
+    if column_positions is None or has_explicit_amount_sign(amount_token_value) or fallback_role in {"credit", "debit"}:
         return fallback_role
 
     absolute_amount_start = rest_start + amount_start
-    credit_debit_boundary = (column_positions.credit_start + column_positions.debit_start) / 2
-    debit_balance_boundary = (column_positions.debit_start + column_positions.balance_start) / 2
-    if absolute_amount_start < credit_debit_boundary:
+    first_role, first_start, first_end, second_role, second_start, second_end = (
+        (
+            "credit",
+            column_positions.credit_start,
+            column_positions.credit_end,
+            "debit",
+            column_positions.debit_start,
+            column_positions.debit_end,
+        )
+        if column_positions.credit_start <= column_positions.debit_start
+        else (
+            "debit",
+            column_positions.debit_start,
+            column_positions.debit_end,
+            "credit",
+            column_positions.credit_start,
+            column_positions.credit_end,
+        )
+    )
+    first_center = (first_start + first_end) / 2
+    second_center = (second_start + second_end) / 2
+    first_second_boundary = (first_center + second_center) / 2
+    second_balance_boundary = (second_end + column_positions.balance_start) / 2
+    if absolute_amount_start < first_start:
         return fallback_role
-    if absolute_amount_start < debit_balance_boundary:
-        return "credit"
-    if absolute_amount_start < len(line_text):
-        return "debit"
+    if not has_balance_token and "  " not in line_text:
+        return first_role
+    if absolute_amount_start < first_second_boundary:
+        return first_role
+    if not has_balance_token:
+        return second_role
+    if absolute_amount_start < second_balance_boundary:
+        return second_role
     return fallback_role
 
 
@@ -1212,7 +1230,7 @@ def _classify_tabular_statement_line(
     if selected_amount is None:
         return None, True
 
-    raw_description = rest[: selected_amount.description_end].strip()
+    raw_description = " ".join(rest[: selected_amount.description_end].split())
     if not raw_description or should_skip_transaction_description(raw_description):
         return None, True
     normalized_description = _normalize_text(raw_description)
@@ -1227,6 +1245,7 @@ def _classify_tabular_statement_line(
         amount_token_value=selected_amount.token.value,
         fallback_role=selected_amount.role,
         column_positions=column_positions,
+        has_balance_token=selected_amount.balance_token is not None,
     )
     amount_details = _build_tabular_amount_details(
         amount_token_value=selected_amount.token.value,
@@ -1607,6 +1626,122 @@ def _attach_running_balance_and_reconcile_sign(
 
 def _normalize_text(value: str) -> str:
     return normalize_upper_text(value)
+
+
+def _ascii_fold_upper(value: str) -> str:
+    return value.upper().translate(
+        str.maketrans(
+            {
+                "Á": "A",
+                "À": "A",
+                "Ã": "A",
+                "Â": "A",
+                "Ä": "A",
+                "É": "E",
+                "È": "E",
+                "Ê": "E",
+                "Ë": "E",
+                "Í": "I",
+                "Ì": "I",
+                "Î": "I",
+                "Ï": "I",
+                "Ó": "O",
+                "Ò": "O",
+                "Ô": "O",
+                "Õ": "O",
+                "Ö": "O",
+                "Ú": "U",
+                "Ù": "U",
+                "Û": "U",
+                "Ü": "U",
+                "Ç": "C",
+            }
+        )
+    ).replace("?", "E")
+
+
+def _find_first_column_alias(line: str, aliases: tuple[str, ...]) -> int | None:
+    span = _find_first_column_alias_span(line, aliases)
+    if span is None:
+        return None
+    return span[0]
+
+
+def _find_first_column_alias_span(line: str, aliases: tuple[str, ...]) -> tuple[int, int] | None:
+    folded_line = _ascii_fold_upper(line)
+    spans = [(folded_line.find(alias), folded_line.find(alias) + len(alias)) for alias in aliases]
+    valid_spans = [span for span in spans if span[0] >= 0]
+    if not valid_spans:
+        return None
+    return min(valid_spans, key=lambda span: span[0])
+
+
+def _resolve_tabular_column_positions(line_texts: list[str]) -> _TabularColumnPositions | None:
+    for line in line_texts:
+        credit_span = _find_first_column_alias_span(line, ("CREDITO", "CREDITOS"))
+        debit_span = _find_first_column_alias_span(line, ("DEBITO", "DEBITOS"))
+        balance_start = _find_first_column_alias(line, ("SALDO (R$)", "SALDO"))
+        if credit_span is None or debit_span is None or balance_start is None:
+            continue
+        credit_start, credit_end = credit_span
+        debit_start, debit_end = debit_span
+        if credit_start < balance_start and debit_start < balance_start:
+            return _TabularColumnPositions(
+                credit_start=credit_start,
+                credit_end=credit_end,
+                debit_start=debit_start,
+                debit_end=debit_end,
+                balance_start=balance_start,
+            )
+    return None
+
+
+def _maybe_upgrade_native_parse_with_layout_text(*, raw_bytes: bytes, baseline_result: PdfParseResult) -> PdfParseResult:
+    try:
+        layout_pages = _read_layout_native_pdf_page_texts(raw_bytes)
+    except InvalidFileContentError:
+        return baseline_result
+
+    if not layout_pages:
+        return baseline_result
+    if "\n".join(layout_pages).strip() == baseline_result.extracted_text.strip():
+        return baseline_result
+
+    try:
+        candidate_result = _parse_pdf_transactions_from_page_texts(layout_pages, preserve_layout_spacing=True)
+    except InvalidFileContentError:
+        return baseline_result
+
+    if _is_better_parse_result(candidate=candidate_result, baseline=baseline_result):
+        return candidate_result
+    if _should_prefer_layout_text_result(candidate=candidate_result, baseline=baseline_result):
+        return candidate_result
+    return baseline_result
+
+
+def _should_prefer_layout_text_result(*, candidate: PdfParseResult, baseline: PdfParseResult) -> bool:
+    if len(candidate.transactions) != len(baseline.transactions):
+        return False
+    if str(candidate.parse_metrics.get("selected_parser")) != "tabular":
+        return False
+    if str(baseline.parse_metrics.get("selected_parser")) == "tabular":
+        return False
+
+    candidate_profile = get_layout_profile(candidate.layout.layout_name)
+    if candidate_profile is None:
+        return False
+    expected_column_order = set(candidate_profile.expected_column_order)
+    if "credit" not in expected_column_order and "debit" not in expected_column_order:
+        return False
+
+    candidate_outflows = sum(1 for transaction in candidate.transactions if transaction.amount < 0)
+    baseline_outflows = sum(1 for transaction in baseline.transactions if transaction.amount < 0)
+    if candidate_outflows <= baseline_outflows:
+        return False
+
+    candidate_balances = int(candidate.parse_metrics.get("canonical_with_running_balance_count", 0))
+    baseline_balances = int(baseline.parse_metrics.get("canonical_with_running_balance_count", 0))
+    return candidate_balances >= baseline_balances
 
 
 def _infer_default_statement_year_from_lines(lines: list[_PdfLine]) -> int | None:
