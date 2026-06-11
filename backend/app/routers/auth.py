@@ -1,5 +1,4 @@
 import logging
-import os
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Request
@@ -18,6 +17,13 @@ from app.application import (
     UserAlreadyExistsError,
 )
 from app.dependencies import get_access_control_service, get_google_oauth_service
+from app.routers.access_control_common import (
+    SESSION_ACCESS_COOKIE_NAME,
+    SESSION_REFRESH_COOKIE_NAME,
+    clear_session_cookies,
+    resolve_header_query_or_cookie_token,
+    set_session_cookies,
+)
 from app.schemas import (
     AuthMeResponse,
     LoginRequest,
@@ -27,32 +33,10 @@ from app.schemas import (
     SessionAuthResponse,
     SessionLogoutResponse,
 )
-from app.security_baseline import is_production_env, read_bool_env
+from app.security_baseline import is_production_env
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-SESSION_ACCESS_COOKIE_NAME = os.getenv("SESSION_ACCESS_COOKIE_NAME", "__Host-ofx_at").strip() or "__Host-ofx_at"
-SESSION_REFRESH_COOKIE_NAME = os.getenv("SESSION_REFRESH_COOKIE_NAME", "__Secure-ofx_rt").strip() or "__Secure-ofx_rt"
-SESSION_ACCESS_TOKEN_TTL_SECONDS = int(os.getenv("SESSION_ACCESS_TOKEN_TTL_SECONDS", "900"))
-SESSION_REFRESH_TOKEN_TTL_SECONDS = int(os.getenv("SESSION_REFRESH_TOKEN_TTL_SECONDS", "1209600"))
-SESSION_COOKIE_SECURE = read_bool_env("SESSION_COOKIE_SECURE", default=is_production_env())
-
-
-def _resolve_user_token(
-    *,
-    authorization: str | None,
-    user_token_query: str | None,
-    access_cookie_token: str | None = None,
-) -> str:
-    auth_header = (authorization or "").strip()
-    if auth_header.lower().startswith("bearer "):
-        bearer = auth_header[7:].strip()
-        if bearer:
-            return bearer
-    cookie_token = (access_cookie_token or "").strip()
-    if cookie_token:
-        return cookie_token
-    return (user_token_query or "").strip()
 
 
 def _auth_me_payload(*, service: AccessControlService, user_token: str, response_model=AuthMeResponse):
@@ -69,44 +53,6 @@ def _auth_me_payload(*, service: AccessControlService, user_token: str, response
         plan_name=identity.plan_name,
         max_upload_size_bytes=identity.max_upload_size_bytes,
         max_pages_per_file=identity.max_pages_per_file,
-    )
-
-
-def _set_session_cookies(response: JSONResponse, *, access_token: str, refresh_token: str) -> None:
-    response.set_cookie(
-        key=SESSION_ACCESS_COOKIE_NAME,
-        value=access_token,
-        max_age=SESSION_ACCESS_TOKEN_TTL_SECONDS,
-        httponly=True,
-        secure=SESSION_COOKIE_SECURE,
-        samesite="lax",
-        path="/",
-    )
-    response.set_cookie(
-        key=SESSION_REFRESH_COOKIE_NAME,
-        value=refresh_token,
-        max_age=SESSION_REFRESH_TOKEN_TTL_SECONDS,
-        httponly=True,
-        secure=SESSION_COOKIE_SECURE,
-        samesite="strict",
-        path="/auth/session/refresh",
-    )
-
-
-def _clear_session_cookies(response: JSONResponse) -> None:
-    response.delete_cookie(
-        key=SESSION_ACCESS_COOKIE_NAME,
-        path="/",
-        secure=SESSION_COOKIE_SECURE,
-        httponly=True,
-        samesite="lax",
-    )
-    response.delete_cookie(
-        key=SESSION_REFRESH_COOKIE_NAME,
-        path="/auth/session/refresh",
-        secure=SESSION_COOKIE_SECURE,
-        httponly=True,
-        samesite="strict",
     )
 
 
@@ -185,10 +131,10 @@ def me(
     access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     service: AccessControlService = Depends(get_access_control_service),
 ) -> AuthMeResponse:
-    resolved_token = _resolve_user_token(
+    resolved_token = resolve_header_query_or_cookie_token(
         authorization=authorization,
-        user_token_query=user_token,
-        access_cookie_token=None,
+        query_token=user_token,
+        cookie_token=None,
     )
     if resolved_token:
         try:
@@ -249,7 +195,7 @@ def session_login(
     )
     response = JSONResponse(content=payload_model.model_dump())
     response.headers["Cache-Control"] = "no-store"
-    _set_session_cookies(
+    set_session_cookies(
         response,
         access_token=session_bundle.access_token,
         refresh_token=session_bundle.refresh_token,
@@ -293,7 +239,7 @@ def session_refresh(
     )
     response = JSONResponse(content=payload_model.model_dump())
     response.headers["Cache-Control"] = "no-store"
-    _set_session_cookies(
+    set_session_cookies(
         response,
         access_token=session_bundle.access_token,
         refresh_token=session_bundle.refresh_token,
@@ -311,7 +257,7 @@ def session_logout(
         service.revoke_user_session(refresh_token=refresh_token)
     response = JSONResponse(content=SessionLogoutResponse().model_dump())
     response.headers["Cache-Control"] = "no-store"
-    _clear_session_cookies(response)
+    clear_session_cookies(response)
     return response
 
 
@@ -322,10 +268,10 @@ def session_logout_all(
     access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     service: AccessControlService = Depends(get_access_control_service),
 ) -> JSONResponse:
-    resolved_token = _resolve_user_token(
+    resolved_token = resolve_header_query_or_cookie_token(
         authorization=authorization,
-        user_token_query=user_token,
-        access_cookie_token=None,
+        query_token=user_token,
+        cookie_token=None,
     )
     if not resolved_token:
         access_cookie = (access_cookie_token or "").strip()
@@ -338,7 +284,7 @@ def session_logout_all(
         service.revoke_all_user_sessions(user_id=user.user_id)
         response = JSONResponse(content=SessionLogoutResponse().model_dump())
         response.headers["Cache-Control"] = "no-store"
-        _clear_session_cookies(response)
+        clear_session_cookies(response)
         return response
     try:
         user = service.get_user_by_token(user_token=resolved_token)
@@ -347,7 +293,7 @@ def session_logout_all(
     service.revoke_all_user_sessions(user_id=user.user_id)
     response = JSONResponse(content=SessionLogoutResponse().model_dump())
     response.headers["Cache-Control"] = "no-store"
-    _clear_session_cookies(response)
+    clear_session_cookies(response)
     return response
 
 

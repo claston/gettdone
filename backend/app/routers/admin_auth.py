@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from app.application import AccessControlService, InvalidCredentialsError, InvalidUserTokenError
 from app.dependencies import get_access_control_service
+from app.routers.access_control_common import require_admin_user
 from app.schemas import (
     AdminLoginRequest,
     AdminLoginResponse,
@@ -14,45 +15,6 @@ from app.schemas import (
 )
 
 router = APIRouter()
-
-
-def _resolve_admin_token(
-    *,
-    x_admin_token: str | None,
-    authorization: str | None,
-    admin_token_query: str | None,
-) -> str:
-    if x_admin_token and x_admin_token.strip():
-        return x_admin_token.strip()
-    auth_header = (authorization or "").strip()
-    if auth_header.lower().startswith("bearer "):
-        bearer = auth_header[7:].strip()
-        if bearer:
-            return bearer
-    return (admin_token_query or "").strip()
-
-
-def _require_admin_user(
-    *,
-    x_admin_token: str | None,
-    authorization: str | None,
-    admin_token_query: str | None,
-    access_control_service: AccessControlService,
-):
-    resolved_token = _resolve_admin_token(
-        x_admin_token=x_admin_token,
-        authorization=authorization,
-        admin_token_query=admin_token_query,
-    )
-    if not resolved_token:
-        raise HTTPException(status_code=401, detail="Admin token is required.")
-    try:
-        user = access_control_service.get_user_by_token(user_token=resolved_token)
-    except InvalidUserTokenError:
-        raise HTTPException(status_code=401, detail="Invalid admin token.")
-    if not access_control_service.is_user_admin(user_id=user.user_id):
-        raise HTTPException(status_code=403, detail="Admin access required.")
-    return user
 
 
 @router.post("/admin/auth/login", response_model=AdminLoginResponse)
@@ -83,7 +45,7 @@ def admin_me(
     admin_token: str | None = Query(default=None),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> AdminMeResponse:
-    user = _require_admin_user(
+    user = require_admin_user(
         x_admin_token=x_admin_token,
         authorization=authorization,
         admin_token_query=admin_token,
@@ -113,7 +75,7 @@ def list_users_for_admin(
     admin_token: str | None = Query(default=None),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> AdminUserListResponse:
-    _require_admin_user(
+    require_admin_user(
         x_admin_token=x_admin_token,
         authorization=authorization,
         admin_token_query=admin_token,
@@ -141,7 +103,7 @@ def set_user_role_for_admin(
     admin_token: str | None = Query(default=None),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> AdminUserItem:
-    actor_user = _require_admin_user(
+    actor_user = require_admin_user(
         x_admin_token=x_admin_token,
         authorization=authorization,
         admin_token_query=admin_token,
@@ -172,7 +134,7 @@ def list_user_role_history_for_admin(
     admin_token: str | None = Query(default=None),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> AdminUserRoleHistoryResponse:
-    _require_admin_user(
+    require_admin_user(
         x_admin_token=x_admin_token,
         authorization=authorization,
         admin_token_query=admin_token,
