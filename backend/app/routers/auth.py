@@ -1,6 +1,6 @@
 import logging
 import os
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -409,7 +409,5 @@ def google_callback(
         params = urlencode(payload)
         fallback = f"{oauth_service.config.frontend_base_url}/auth-callback.html?{params}"
         return RedirectResponse(url=fallback, status_code=307)
-    redirect_parts = urlsplit(redirect_url)
-    redirect_target = redirect_parts.path or "/"
-    logger.info("google_oauth_callback_succeeded state=%s redirect_path=%s", state, redirect_target)
+    logger.info("google_oauth_callback_succeeded")
     return RedirectResponse(url=redirect_url, status_code=307)
