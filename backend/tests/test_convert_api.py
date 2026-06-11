@@ -21,7 +21,9 @@ from app.schemas import (
 
 
 class FakeAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
+    def analyze(
+        self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
+    ) -> AnalyzeResponse:
         _ = on_ocr_progress
         if not filename.endswith((".csv", ".xlsx", ".ofx", ".pdf")):
             from app.application import UnsupportedFileTypeError
@@ -29,7 +31,7 @@ class FakeAnalyzeService:
             raise UnsupportedFileTypeError
 
         return AnalyzeResponse(
-            analysis_id="an_convert123",
+            analysis_id=analysis_id or "an_convert123",
             file_type="pdf",
             transactions_total=1,
             total_inflows=100.0,
@@ -80,14 +82,18 @@ class FakeAnalyzeService:
 
 
 class InsufficientTextAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
-        _ = (filename, raw_bytes, on_ocr_progress)
+    def analyze(
+        self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
+    ) -> AnalyzeResponse:
+        _ = (filename, raw_bytes, on_ocr_progress, analysis_id)
         raise InvalidFileContentError("Não encontramos texto suficiente para OCR neste PDF.")
 
 
 class EmptyBytesInvalidContentAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
-        _ = (filename, on_ocr_progress)
+    def analyze(
+        self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
+    ) -> AnalyzeResponse:
+        _ = (filename, on_ocr_progress, analysis_id)
         if not raw_bytes:
             raise InvalidFileContentError("Não foi possível ler este PDF.")
         return FakeAnalyzeService().analyze(
@@ -95,13 +101,33 @@ class EmptyBytesInvalidContentAnalyzeService:
             raw_bytes=raw_bytes,
             on_ocr_progress=on_ocr_progress,
             max_ocr_pages=max_ocr_pages,
+            analysis_id=analysis_id,
         )
 
 
 class CorruptedPdfAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
-        _ = (filename, raw_bytes, on_ocr_progress)
+    def analyze(
+        self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
+    ) -> AnalyzeResponse:
+        _ = (filename, raw_bytes, on_ocr_progress, analysis_id)
         raise InvalidFileContentError("Ignoring wrong pointing object 9 0 (offset 0)")
+
+
+class TrackingAnalyzeService:
+    def __init__(self) -> None:
+        self.called = False
+
+    def analyze(
+        self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
+    ) -> AnalyzeResponse:
+        self.called = True
+        return FakeAnalyzeService().analyze(
+            filename=filename,
+            raw_bytes=raw_bytes,
+            on_ocr_progress=on_ocr_progress,
+            max_ocr_pages=max_ocr_pages,
+            analysis_id=analysis_id,
+        )
 
 
 class FakeReportService:
@@ -255,6 +281,27 @@ def test_convert_rejects_text_pdf_larger_than_10mb(tmp_path, monkeypatch) -> Non
 
     assert response.status_code == 413
     assert "maximum size of 10 MB" in response.json()["detail"]
+    app.dependency_overrides.clear()
+
+
+def test_convert_rejects_obviously_large_request_before_analyze(tmp_path) -> None:
+    access_control = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    analyze_service = TrackingAnalyzeService()
+    client = build_client_with_overrides(access_control, analyze_service)
+    clearly_oversized = b"a" * ((10 * 1024 * 1024) + (256 * 1024))
+
+    response = client.post(
+        "/convert",
+        data={"anonymous_fingerprint": "anon-fp-early-guard"},
+        files={"file": ("sample.pdf", clearly_oversized, "application/pdf")},
+    )
+
+    assert response.status_code == 413
+    assert "maximum size of 10 MB" in str(response.json()["detail"])
+    assert analyze_service.called is False
     app.dependency_overrides.clear()
 
 

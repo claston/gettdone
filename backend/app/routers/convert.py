@@ -480,11 +480,22 @@ def _build_convert_response(
     identity = None
     started_at = monotonic()
     ocr_pages_processed = 0
+    ocr_started_logged = False
+    attempt_processing_id: str | None = None
+    attempt_anonymous_event_id: str | None = None
     file_digest = sha256(data).hexdigest() if data else None
     ocr_engine = os.getenv("PDF_OCR_ENGINE", "").strip().lower() or "tesseract"
 
     def telemetry_ocr_progress(current_page: int, total_page_count: int) -> None:
-        nonlocal ocr_pages_processed
+        nonlocal ocr_pages_processed, ocr_started_logged
+        if not ocr_started_logged:
+            logger.info(
+                "conversion_ocr_started filename=%s estimated_pages_count=%s ocr_engine=%s",
+                (file.filename or "").strip() or "unknown.pdf",
+                estimated_pages_count,
+                ocr_engine,
+            )
+            ocr_started_logged = True
         ocr_pages_processed = max(
             ocr_pages_processed,
             max(1, min(int(current_page or 1), max(1, int(total_page_count or 0)))),
@@ -502,6 +513,13 @@ def _build_convert_response(
         identity = access_control_service.resolve_identity(
             anonymous_fingerprint=anonymous_fingerprint,
             user_token=resolved_user_token,
+        )
+        logger.info(
+            "conversion_analyze_precheck filename=%s identity_type=%s scanned_likely=%s estimated_pages_count=%s",
+            (file.filename or "").strip() or "unknown.pdf",
+            getattr(identity, "identity_type", "unknown"),
+            scanned_likely,
+            estimated_pages_count,
         )
         if Path(file.filename or "").suffix.lower() == ".pdf" and estimated_pages_count is not None:
             # Backward compatibility: older identity fixtures/providers may not expose
@@ -527,13 +545,91 @@ def _build_convert_response(
             setattr(exc, "_max_upload_size_bytes", max_upload_size_bytes)
             raise
         access_control_service.ensure_quota_available(identity, required_units=1)
+        if identity.identity_type == "user":
+            attempt_processing_id = f"an_{uuid4().hex[:12]}"
+            _safe_record_user_conversion(
+                access_control_service,
+                user_id=identity.identity_id,
+                processing_id=attempt_processing_id,
+                filename=(file.filename or "").strip() or f"{attempt_processing_id}.pdf",
+                model="Nao identificado",
+                conversion_type=_resolve_conversion_type_from_filename(file.filename or ""),
+                status="Processando",
+                transactions_count=0,
+                pages_count=estimated_pages_count,
+                scanned_likely=scanned_likely,
+                ocr_used=False,
+                ocr_pages_processed=0,
+                duration_ms=0,
+                error_code=None,
+                error_stage=None,
+                error_subcode=None,
+                exception_class=None,
+                layout_inference_name=None,
+                layout_inference_confidence=None,
+                selected_parser=None,
+                parser_selection_reason=None,
+                pdf_page_count=estimated_pages_count,
+                extracted_char_count=None,
+                ocr_attempted=False,
+                ocr_engine=ocr_engine,
+                file_sha256=file_digest,
+                canonical_warning_transactions_count=0,
+                balance_consistency_failed=0,
+                expires_at=None,
+            )
+        elif identity.identity_type == "anonymous":
+            attempt_anonymous_event_id = f"anon_evt_{uuid4().hex[:24]}"
+            _safe_record_anonymous_conversion_event(
+                access_control_service,
+                event_id=attempt_anonymous_event_id,
+                anonymous_fingerprint=identity.identity_id,
+                filename=(file.filename or "").strip() or "unknown.pdf",
+                model="Nao identificado",
+                conversion_type=_resolve_conversion_type_from_filename(file.filename or ""),
+                status="Processando",
+                transactions_count=None,
+                pages_count=estimated_pages_count,
+                scanned_likely=scanned_likely,
+                ocr_used=False,
+                ocr_pages_processed=0,
+                duration_ms=0,
+                canonical_warning_transactions_count=0,
+                balance_consistency_failed=0,
+                error_code=None,
+                error_stage=None,
+                error_subcode=None,
+                exception_class=None,
+                layout_inference_name=None,
+                layout_inference_confidence=None,
+                selected_parser=None,
+                parser_selection_reason=None,
+                pdf_page_count=estimated_pages_count,
+                extracted_char_count=None,
+                ocr_attempted=False,
+                ocr_engine=ocr_engine,
+                file_sha256=file_digest,
+            )
         try:
             ocr_max_pages = _resolve_ocr_max_pages_per_file(identity)
+            logger.info(
+                (
+                    "conversion_analyze_started filename=%s identity_type=%s scanned_likely=%s "
+                    "estimated_pages_count=%s max_upload_size_bytes=%s ocr_max_pages=%s"
+                ),
+                (file.filename or "").strip() or "unknown.pdf",
+                getattr(identity, "identity_type", "unknown"),
+                scanned_likely,
+                estimated_pages_count,
+                max_upload_size_bytes,
+                ocr_max_pages,
+            )
             analysis = analyze_service.analyze(
                 filename=file.filename or "",
                 raw_bytes=data,
                 on_ocr_progress=telemetry_ocr_progress,
                 max_ocr_pages=ocr_max_pages,
+                analysis_id=attempt_processing_id,
             )
         except MaxPagesPerFileExceededError as exc:
             _apply_ocr_limit_context(exc, scanned_likely)
@@ -575,6 +671,12 @@ def _build_convert_response(
             layout_inference_name=getattr(analysis, "layout_inference_name", None),
             bank_name=getattr(analysis, "bank_name", None),
         )
+        logger.info(
+            "conversion_result_persist_started filename=%s identity_type=%s status=Sucesso analysis_id=%s",
+            (file.filename or "").strip() or "unknown.pdf",
+            getattr(identity, "identity_type", "unknown"),
+            analysis.analysis_id,
+        )
         consumed_units = _resolve_consumed_units(identity, analysis)
         quota_remaining = access_control_service.consume_quota(identity, consumed_units=consumed_units)
         if identity.identity_type == "user":
@@ -582,7 +684,7 @@ def _build_convert_response(
             conversion_type = f"{file_type}-ofx" if file_type else "pdf-ofx"
             access_control_service.record_user_conversion(
                 user_id=identity.identity_id,
-                processing_id=analysis.analysis_id,
+                processing_id=attempt_processing_id or analysis.analysis_id,
                 filename=(file.filename or "").strip() or f"{analysis.analysis_id}.pdf",
                 model=conversion_model_label,
                 conversion_type=conversion_type,
@@ -613,7 +715,7 @@ def _build_convert_response(
         elif identity.identity_type == "anonymous":
             _safe_record_anonymous_conversion_event(
                 access_control_service,
-                event_id=f"anon_evt_{uuid4().hex[:24]}",
+                event_id=attempt_anonymous_event_id or f"anon_evt_{uuid4().hex[:24]}",
                 anonymous_fingerprint=identity.identity_id,
                 filename=(file.filename or "").strip() or f"{analysis.analysis_id}.pdf",
                 model=conversion_model_label,
@@ -662,8 +764,15 @@ def _build_convert_response(
         duration_ms = int((monotonic() - started_at) * 1000)
         ocr_attempted = ocr_pages_processed > 0 or bool(ocr_context)
         failed_event_id: str | None = None
+        logger.info(
+            "conversion_result_persist_started filename=%s identity_type=%s status=Falha error_code=%s error_stage=%s",
+            (file.filename or "").strip() or "unknown.pdf",
+            getattr(identity, "identity_type", "unknown"),
+            error_code,
+            error_stage or "",
+        )
         if identity is not None and identity.identity_type == "anonymous":
-            failed_event_id = f"anon_evt_{uuid4().hex[:24]}"
+            failed_event_id = attempt_anonymous_event_id or f"anon_evt_{uuid4().hex[:24]}"
             _safe_record_anonymous_conversion_event(
                 access_control_service,
                 event_id=failed_event_id,
@@ -696,7 +805,7 @@ def _build_convert_response(
             _safe_record_user_conversion(
                 access_control_service,
                 user_id=identity.identity_id,
-                processing_id=f"failed_usr_evt_{uuid4().hex[:24]}",
+                processing_id=attempt_processing_id or f"failed_usr_evt_{uuid4().hex[:24]}",
                 filename=(file.filename or "").strip() or "unknown.pdf",
                 model="Nao identificado",
                 conversion_type=_resolve_conversion_type_from_filename(file.filename or ""),
@@ -837,11 +946,23 @@ async def conversion_upload_stream(
     report_service: ReportService = Depends(get_report_service),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ):
+    logger.info("conversion_upload_received filename=%s accept=%s", file.filename or "", accept or "")
     data = await file.read()
+    logger.info(
+        "conversion_upload_read_complete filename=%s size_bytes=%s",
+        file.filename or "",
+        len(data),
+    )
     if not _is_sse_request(accept):
         identity = None
         try:
             scanned_likely, total_pages = _inspect_pdf_scan_likely(file.filename or "", data)
+            logger.info(
+                "conversion_pdf_inspection_complete filename=%s scanned_likely=%s estimated_pages_count=%s",
+                file.filename or "",
+                scanned_likely,
+                total_pages,
+            )
             return _build_convert_response(
                 file=file,
                 data=data,
@@ -860,6 +981,12 @@ async def conversion_upload_stream(
             raise
 
     scanned_likely, total_pages = _inspect_pdf_scan_likely(file.filename or "", data)
+    logger.info(
+        "conversion_pdf_inspection_complete filename=%s scanned_likely=%s estimated_pages_count=%s",
+        file.filename or "",
+        scanned_likely,
+        total_pages,
+    )
 
     def event_stream():
         yield _sse_event("processing_status", {"stage": "document_received", "progress": 5, "message": "Documento recebido."})
