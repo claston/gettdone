@@ -82,3 +82,7 @@ class GoogleOAuthStateError(Exception):
 
 class GoogleOAuthExchangeError(Exception):
     """Raised when token exchange or profile fetch fails."""
+
+
+class GoogleOAuthAccountNotFoundError(Exception):
+    """Raised when Google login flow requires an existing account but none matches."""

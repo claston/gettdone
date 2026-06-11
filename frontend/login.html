@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./auth.css?v=2" />
+  <link rel="stylesheet" href="./auth.css?v=3" />
   <link rel="stylesheet" href="./topbar-unified.css?v=1" />
   <script src="/privacy-consent.js" defer></script>
 </head>
@@ -46,8 +46,6 @@
 
         <p id="status-msg" class="status"></p>
 
-        <button id="google-login-btn" type="button" class="btn btn-social" hidden>Continuar com Google</button>
-
         <form id="login-form" class="form">
           <label for="email">E-mail</label>
           <input id="email" type="email" placeholder="name@company.com" required />
@@ -60,6 +58,17 @@
           <button type="submit" class="btn btn-primary">Entrar</button>
         </form>
 
+        <p class="form-divider">ou</p>
+        <button id="google-login-btn" type="button" class="btn btn-social">
+          <svg class="social-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="#EA4335" d="M12 10.2v3.9h5.4c-.24 1.26-.96 2.32-2.04 3.03l3.3 2.56c1.92-1.77 3.03-4.38 3.03-7.48 0-.71-.06-1.39-.18-2.04H12z" />
+            <path fill="#34A853" d="M12 22c2.7 0 4.97-.9 6.63-2.44l-3.3-2.56c-.91.61-2.08.97-3.33.97-2.6 0-4.8-1.75-5.59-4.11H3.01v2.64A9.99 9.99 0 0 0 12 22z" />
+            <path fill="#FBBC05" d="M6.41 13.86A6 6 0 0 1 6.1 12c0-.65.11-1.28.31-1.86V7.5H3.01A9.99 9.99 0 0 0 2 12c0 1.61.39 3.14 1.01 4.5l3.4-2.64z" />
+            <path fill="#4285F4" d="M12 6.03c1.47 0 2.79.51 3.83 1.5l2.87-2.87C16.96 3.05 14.7 2 12 2A9.99 9.99 0 0 0 3.01 7.5l3.4 2.64C7.2 7.78 9.4 6.03 12 6.03z" />
+          </svg>
+          <span class="social-label">Continuar com Google</span>
+        </button>
+
         <p class="footnote">Não tem uma conta? <a id="signup-link" href="./signup.html">Cadastre-se</a></p>
         <p class="legal-note">
           Consulte nossos <a href="./termos-de-uso.html">Termos de Uso</a> e a
@@ -69,6 +78,6 @@
     </section>
   </main>
 
-  <script src="./login.js"></script>
+  <script src="./login.js?v=2"></script>
 </body>
 </html>

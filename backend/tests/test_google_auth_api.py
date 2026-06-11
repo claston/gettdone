@@ -13,7 +13,15 @@ class FakeGoogleOAuthService:
     def __init__(self) -> None:
         self.config = _FakeConfig()
 
-    def build_authorization_url(self, *, next_path: str) -> str:
+    def build_authorization_url(
+        self,
+        *,
+        next_path: str,
+        flow_mode: str = "login",
+        terms_accepted: bool = False,
+        product_updates_opt_in: bool = False,
+    ) -> str:
+        _ = (flow_mode, terms_accepted, product_updates_opt_in)
         return f"https://accounts.google.com/mock?next={next_path}"
 
     def build_callback_redirect_url(self, *, code: str, state: str) -> str:
@@ -64,5 +72,17 @@ def test_google_auth_callback_redirects_with_error_when_state_invalid() -> None:
     location = response.headers["location"]
     assert location.startswith("http://localhost:3000/auth-callback.html")
     assert "error=google_oauth_failed" in location
+    assert "error_detail=GoogleOAuthStateError" in location
+
+    app.dependency_overrides.clear()
+
+
+def test_google_auth_start_requires_terms_for_signup_flow() -> None:
+    app.dependency_overrides[get_google_oauth_service] = lambda: FakeGoogleOAuthService()
+    client = TestClient(app)
+
+    response = client.get("/auth/google/start?next=%2Fsignup.html&flow=signup", follow_redirects=False)
+    assert response.status_code == 400
+    assert "Termos de Uso" in response.json()["detail"]
 
     app.dependency_overrides.clear()

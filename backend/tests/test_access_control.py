@@ -5,7 +5,12 @@ from app.application.access_control import (
     REGISTERED_QUOTA_LIMIT,
     AccessControlService,
 )
-from app.application.errors import FileTooLargeError, InvalidUserTokenError, QuotaExceededError
+from app.application.errors import (
+    FileTooLargeError,
+    GoogleOAuthAccountNotFoundError,
+    InvalidUserTokenError,
+    QuotaExceededError,
+)
 
 
 def test_anonymous_quota_blocks_4th_attempt(tmp_path) -> None:
@@ -127,6 +132,59 @@ def test_google_user_is_created_and_reused_by_provider_id(tmp_path) -> None:
     assert first.user_id == second.user_id
     assert second.name == "Erica Souza"
     assert second.token
+
+
+def test_google_signup_persists_terms_and_opt_in(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+    )
+
+    created = service.register_or_authenticate_google_user(
+        provider_user_id="google-sub-consent",
+        email="erica@example.com",
+        name="Erica",
+        allow_create=True,
+        terms_accepted_at="2026-06-10T12:00:00+00:00",
+        privacy_accepted_at="2026-06-10T12:00:00+00:00",
+        product_updates_opt_in=True,
+        product_updates_opted_in_at="2026-06-10T12:00:00+00:00",
+    )
+
+    with service._connect() as conn:
+        row = service._fetchone(
+            conn,
+            """
+            SELECT terms_accepted_at, privacy_accepted_at, product_updates_opt_in, product_updates_opted_in_at
+            FROM users
+            WHERE id = ?
+            """,
+            (created.user_id,),
+        )
+
+    assert row is not None
+    assert row["terms_accepted_at"] == "2026-06-10T12:00:00+00:00"
+    assert row["privacy_accepted_at"] == "2026-06-10T12:00:00+00:00"
+    assert bool(row["product_updates_opt_in"]) is True
+    assert row["product_updates_opted_in_at"] == "2026-06-10T12:00:00+00:00"
+
+
+def test_google_login_does_not_create_missing_account(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+    )
+
+    try:
+        service.register_or_authenticate_google_user(
+            provider_user_id="google-sub-missing",
+            email="newuser@example.com",
+            name="New User",
+            allow_create=False,
+        )
+        assert False, "Expected GoogleOAuthAccountNotFoundError"
+    except GoogleOAuthAccountNotFoundError:
+        assert True
 
 
 def test_google_oauth_state_can_be_consumed_once(tmp_path) -> None:

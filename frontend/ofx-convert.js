@@ -164,6 +164,7 @@
   const QUOTA_SUPPORT_URL = "./contato.html?reason=quota";
   const USER_TOKEN_KEY = "ofxsimples_user_token";
   const USER_TOKEN_COOKIE = "ofxsimples_user_token";
+  const OAUTH_DEBUG_KEY = "ofxsimples_last_google_oauth_debug";
   const TOKEN_SHARED_COOKIE_ALLOWLIST = ["ofxsimples.com.br"];
   const PROFILE_HINT_KEY = "ofxsimples_profile_hint";
   const ANON_FINGERPRINT_KEY = "ofxsimples_anon_fingerprint";
@@ -294,6 +295,20 @@
     clearUserTokenCookie();
   }
 
+  function persistOAuthDebug(payload) {
+    try {
+      sessionStorage.setItem(
+        OAUTH_DEBUG_KEY,
+        JSON.stringify({
+          ...payload,
+          at: new Date().toISOString(),
+        }),
+      );
+    } catch (_error) {
+      // no-op
+    }
+  }
+
   function getProfileHint() {
     return String(localStorage.getItem(PROFILE_HINT_KEY) || "").trim() || "conta";
   }
@@ -371,6 +386,13 @@
       const response = await fetch(`${apiBase}/auth/me`, {
         ...requestInit,
       });
+      persistOAuthDebug({
+        stage: "ofx_convert_auth_me_result",
+        path: window.location.pathname,
+        hasToken: Boolean(token),
+        status: response.status,
+        ok: response.ok,
+      });
       if (response.ok) {
         return "valid";
       }
@@ -379,6 +401,11 @@
       }
       return "unknown";
     } catch (_error) {
+      persistOAuthDebug({
+        stage: "ofx_convert_auth_me_network_error",
+        path: window.location.pathname,
+        hasToken: Boolean(token),
+      });
       return "unknown";
     }
   }

@@ -2,6 +2,7 @@
   const statusMsg = document.getElementById("status-msg");
   const USER_TOKEN_KEY = "ofxsimples_user_token";
   const USER_TOKEN_COOKIE = "ofxsimples_user_token";
+  const OAUTH_DEBUG_KEY = "ofxsimples_last_google_oauth_debug";
   const TOKEN_SHARED_COOKIE_ALLOWLIST = ["ofxsimples.com.br"];
 
   function isIpv4Host(hostname) {
@@ -89,9 +90,15 @@
   const params = new URLSearchParams(window.location.search);
   const userToken = String(params.get("user_token") || "").trim();
   const error = String(params.get("error") || "").trim();
+  const errorDetail = String(params.get("error_detail") || "").trim();
   const nextPath = getSafeNextPath(params);
 
   if (userToken) {
+    persistOAuthDebug({
+      stage: "auth_callback_success",
+      nextPath,
+      hasUserToken: true,
+    });
     storeUserToken(userToken);
     clearCallbackQuery();
     setStatus("Login com Google concluido. Redirecionando...", "success");
@@ -103,9 +110,36 @@
 
   clearCallbackQuery();
   if (error) {
-    setStatus("Nao foi possivel concluir o login com Google. Tente novamente.", "error");
+    const detailSuffix = errorDetail ? ` Detalhe: ${errorDetail}` : "";
+    persistOAuthDebug({
+      stage: "auth_callback_error",
+      nextPath,
+      error,
+      errorDetail,
+      hasUserToken: false,
+    });
+    setStatus(`Nao foi possivel concluir o login com Google. Tente novamente.${detailSuffix}`, "error");
   } else {
+    persistOAuthDebug({
+      stage: "auth_callback_invalid_response",
+      nextPath,
+      hasUserToken: false,
+    });
     setStatus("Resposta de autenticacao invalida.", "error");
+  }
+
+  function persistOAuthDebug(payload) {
+    try {
+      sessionStorage.setItem(
+        OAUTH_DEBUG_KEY,
+        JSON.stringify({
+          ...payload,
+          at: new Date().toISOString(),
+        }),
+      );
+    } catch (_error) {
+      // no-op
+    }
   }
 
   window.setTimeout(() => {

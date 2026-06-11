@@ -5,6 +5,7 @@
   const topLoginLink = document.getElementById("top-login-link");
   const googleSignupBtn = document.getElementById("google-signup-btn");
   const googleSignupDivider = document.getElementById("google-signup-divider");
+  const acceptedTermsError = document.getElementById("accepted-terms-error");
   const USER_TOKEN_KEY = "ofxsimples_user_token";
   const USER_TOKEN_COOKIE = "ofxsimples_user_token";
   const TOKEN_SHARED_COOKIE_ALLOWLIST = ["ofxsimples.com.br"];
@@ -147,6 +148,27 @@
     if (kind) statusMsg.classList.add(kind);
   }
 
+  function setTermsError(message) {
+    const acceptedTerms = document.getElementById("accepted-terms");
+    const acceptedTermsField =
+      acceptedTerms instanceof HTMLElement ? acceptedTerms.closest(".checkbox-field") : null;
+    if (acceptedTermsField instanceof HTMLElement) {
+      acceptedTermsField.classList.toggle("is-invalid", !!message);
+    }
+    if (acceptedTermsError instanceof HTMLElement) {
+      acceptedTermsError.textContent = message || "";
+      acceptedTermsError.classList.toggle("hidden", !message);
+    }
+  }
+
+  function focusTermsField() {
+    const acceptedTerms = document.getElementById("accepted-terms");
+    if (acceptedTerms instanceof HTMLInputElement) {
+      acceptedTerms.focus();
+      acceptedTerms.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
+
   function syncGoogleSignupDivider() {
     if (!(googleSignupBtn instanceof HTMLElement) || !(googleSignupDivider instanceof HTMLElement)) {
       return;
@@ -197,6 +219,11 @@
     return String(params.get("reason") || "").trim().toLowerCase();
   }
 
+  function getPrefillValue(paramName) {
+    const params = new URLSearchParams(window.location.search);
+    return String(params.get(paramName) || "").trim();
+  }
+
   async function postSignup(payload) {
     const response = await fetch(`${apiBase}/auth/register`, {
       method: "POST",
@@ -217,7 +244,22 @@
   }
 
   if (getReason() === "quota") {
-    setStatus("Você atingiu o limite gratuito. Crie sua conta para liberar +10 conversões.", null);
+    setStatus("Voce atingiu o limite gratuito. Crie sua conta para liberar +10 conversoes.", null);
+  }
+
+  if (getReason() === "google_signup_required") {
+    setStatus("Nao encontramos uma conta para este Google. Aceite os termos e continue com Google para criar sua conta.", null);
+  }
+
+  if (form) {
+    const name = document.getElementById("name");
+    const email = document.getElementById("email");
+    if (name instanceof HTMLInputElement && !name.value.trim()) {
+      name.value = getPrefillValue("prefill_name");
+    }
+    if (email instanceof HTMLInputElement && !email.value.trim()) {
+      email.value = getPrefillValue("prefill_email");
+    }
   }
 
   if (form) {
@@ -238,10 +280,11 @@
         return;
       }
       if (!acceptedTerms.checked) {
-        setStatus("Você precisa aceitar os Termos de Uso e a Política de Privacidade para criar sua conta.", "error");
-        acceptedTerms.focus();
+        setTermsError("Voce precisa aceitar os Termos de Uso e a Politica de Privacidade.");
+        focusTermsField();
         return;
       }
+      setTermsError("");
       try {
         setStatus("Criando sua conta...", null);
         const payload = await postSignup({
@@ -262,8 +305,30 @@
 
   if (googleSignupBtn) {
     googleSignupBtn.addEventListener("click", () => {
+      const acceptedTerms = document.getElementById("accepted-terms");
+      const productUpdatesOptIn = document.getElementById("product-updates-opt-in");
+      if (!(acceptedTerms instanceof HTMLInputElement) || !(productUpdatesOptIn instanceof HTMLInputElement)) {
+        return;
+      }
+      if (!acceptedTerms.checked) {
+        setTermsError("Aceite os Termos de Uso e a Politica de Privacidade para continuar com Google.");
+        focusTermsField();
+        return;
+      }
+      setTermsError("");
       const next = encodeURIComponent(getNextPath());
-      window.location.href = `${apiBase}/auth/google/start?next=${next}`;
+      const productUpdatesOptInValue = productUpdatesOptIn.checked ? "1" : "0";
+      window.location.href =
+        `${apiBase}/auth/google/start?next=${next}&flow=signup&accepted_terms=1&product_updates_opt_in=${productUpdatesOptInValue}`;
+    });
+  }
+
+  const acceptedTerms = document.getElementById("accepted-terms");
+  if (acceptedTerms instanceof HTMLInputElement) {
+    acceptedTerms.addEventListener("change", () => {
+      if (acceptedTerms.checked) {
+        setTermsError("");
+      }
     });
   }
 

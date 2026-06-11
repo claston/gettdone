@@ -239,15 +239,39 @@ class AccessControlService:
         provider_user_id: str,
         email: str,
         name: str,
+        allow_create: bool = True,
+        terms_accepted_at: str | None = None,
+        privacy_accepted_at: str | None = None,
+        product_updates_opt_in: bool = False,
+        product_updates_opted_in_at: str | None = None,
     ) -> RegisteredUser:
         return self.auth.register_or_authenticate_google_user(
             provider_user_id=provider_user_id,
             email=email,
             name=name,
+            allow_create=allow_create,
+            terms_accepted_at=terms_accepted_at,
+            privacy_accepted_at=privacy_accepted_at,
+            product_updates_opt_in=product_updates_opt_in,
+            product_updates_opted_in_at=product_updates_opted_in_at,
         )
 
-    def create_google_oauth_state(self, *, next_path: str, ttl_seconds: int = 600) -> tuple[str, str]:
-        return self.identity.create_google_oauth_state(next_path=next_path, ttl_seconds=ttl_seconds)
+    def create_google_oauth_state(
+        self,
+        *,
+        next_path: str,
+        ttl_seconds: int = 600,
+        flow_mode: str = "login",
+        terms_accepted: bool = False,
+        product_updates_opt_in: bool = False,
+    ) -> tuple[str, str]:
+        return self.identity.create_google_oauth_state(
+            next_path=next_path,
+            ttl_seconds=ttl_seconds,
+            flow_mode=flow_mode,
+            terms_accepted=terms_accepted,
+            product_updates_opt_in=product_updates_opt_in,
+        )
 
     def consume_google_oauth_state(self, *, state: str) -> dict[str, str] | None:
         return self.identity.consume_google_oauth_state(state=state)
