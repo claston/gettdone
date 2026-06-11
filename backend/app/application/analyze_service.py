@@ -294,7 +294,10 @@ class AnalyzeService:
                 return round(float(row.amount), 2)
 
         amount_pattern = r"([\-+]?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})|[\-+]?\d+(?:,\d{2})?)"
-        opening_label_pattern = re.compile(r"S\s*A\s*L\s*D\s*O\s+(?:A\s*N\s*T\s*E\s*R\s*I\s*O\s*R|I\s*N\s*I\s*C\s*I\s*A\s*L)", flags=re.IGNORECASE)
+        opening_label_pattern = re.compile(
+            r"S\s*A\s*L\s*D\s*O\s+(?:A\s*N\s*T\s*E\s*R\s*I\s*O\s*R|I\s*N\s*I\s*C\s*I\s*A\s*L)",
+            flags=re.IGNORECASE,
+        )
         for raw_line in (extracted_text or "").splitlines():
             normalized_line = self._normalize_text_for_profile(raw_line)
             if (

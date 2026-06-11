@@ -971,9 +971,23 @@ def _resolve_tabular_column_role(
 
     absolute_amount_start = rest_start + amount_start
     first_role, first_start, first_end, second_role, second_start, second_end = (
-        ("credit", column_positions.credit_start, column_positions.credit_end, "debit", column_positions.debit_start, column_positions.debit_end)
+        (
+            "credit",
+            column_positions.credit_start,
+            column_positions.credit_end,
+            "debit",
+            column_positions.debit_start,
+            column_positions.debit_end,
+        )
         if column_positions.credit_start <= column_positions.debit_start
-        else ("debit", column_positions.debit_start, column_positions.debit_end, "credit", column_positions.credit_start, column_positions.credit_end)
+        else (
+            "debit",
+            column_positions.debit_start,
+            column_positions.debit_end,
+            "credit",
+            column_positions.credit_start,
+            column_positions.credit_end,
+        )
     )
     first_center = (first_start + first_end) / 2
     second_center = (second_start + second_end) / 2
