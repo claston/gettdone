@@ -49,7 +49,9 @@ class _AccessControlServiceInMemory(AccessControlService):
 
 
 class FakeAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
+    def analyze(
+        self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
+    ) -> AnalyzeResponse:
         _ = on_ocr_progress
         if not filename.endswith((".csv", ".xlsx", ".ofx", ".pdf")):
             from app.application import UnsupportedFileTypeError
@@ -57,7 +59,7 @@ class FakeAnalyzeService:
             raise UnsupportedFileTypeError
 
         return AnalyzeResponse(
-            analysis_id="an_convert_http123",
+            analysis_id=analysis_id or "an_convert_http123",
             file_type="pdf",
             transactions_total=2,
             total_inflows=100.0,

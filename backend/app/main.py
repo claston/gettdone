@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 
@@ -8,7 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.dependencies import close_access_control_service, get_analyze_service, get_report_service
+from app.dependencies import (
+    close_access_control_service,
+    get_analyze_service,
+    get_report_service,
+)
 from app.routers import (
     admin_auth_router,
     analyze_router,
@@ -28,6 +33,17 @@ from app.security_baseline import (
     parse_cors_allow_origins,
     read_bool_env,
     validate_production_security_baseline,
+)
+
+logger = logging.getLogger(__name__)
+EARLY_CONVERT_UPLOAD_MAX_BYTES = 10 * 1024 * 1024
+EARLY_CONVERT_UPLOAD_TOLERANCE_BYTES = 128 * 1024
+EARLY_CONVERT_UPLOAD_PATHS = frozenset(
+    {
+        "/convert",
+        "/conversions/upload",
+        "/api/conversions/upload",
+    }
 )
 
 
@@ -102,6 +118,30 @@ async def security_headers_middleware(request: Request, call_next):
     if is_production_env():
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
+
+
+@app.middleware("http")
+async def early_convert_upload_size_guard(request: Request, call_next):
+    if request.method.upper() == "POST" and request.url.path in EARLY_CONVERT_UPLOAD_PATHS:
+        raw_content_length = request.headers.get("content-length", "").strip()
+        if raw_content_length:
+            try:
+                content_length = int(raw_content_length)
+            except ValueError:
+                content_length = 0
+            early_limit = EARLY_CONVERT_UPLOAD_MAX_BYTES + EARLY_CONVERT_UPLOAD_TOLERANCE_BYTES
+            if content_length > early_limit:
+                logger.warning(
+                    "conversion_upload_rejected_early_size path=%s content_length=%s limit_bytes=%s",
+                    request.url.path,
+                    content_length,
+                    EARLY_CONVERT_UPLOAD_MAX_BYTES,
+                )
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": "File exceeds maximum size of 10 MB."},
+                )
+    return await call_next(request)
 
 
 @app.exception_handler(RequestValidationError)
