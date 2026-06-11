@@ -66,12 +66,13 @@ class FakeReportService:
         analysis_id: str,
         edits: list[dict],
         expected_updated_at: str | None = None,
+        opening_balance: float | None = None,
         closing_balance: float | None = None,
         bank_branch: str | None = None,
         account_number: str | None = None,
         bank_code: str | None = None,
     ):
-        _ = (closing_balance, bank_branch, account_number, bank_code)
+        _ = (opening_balance, closing_balance, bank_branch, account_number, bank_code)
         if analysis_id not in self._owners:
             from app.application import AnalysisNotFoundError
 

@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 
 from app.application.layout_profiles.registry import DeclarativeLayoutProfile
-from app.application.normalization.pdf_amount_tokens import AmountToken, parse_pdf_amount
+from app.application.normalization.pdf_amount_tokens import AmountToken, has_explicit_amount_sign, parse_pdf_amount
 from app.application.normalization.text import normalize_upper_text
 
 
@@ -56,6 +56,8 @@ def select_declarative_tabular_amount(
     if {"credit", "debit", "balance"}.issubset(set(amount_roles)) and len(aligned_tokens) == 2 and balance_token is not None:
         transaction_token = aligned_tokens[0]
         preferred_role = next((role for role in amount_roles if role in {"credit", "debit"}), None)
+        if has_explicit_amount_sign(transaction_token.value):
+            preferred_role = "debit" if parse_pdf_amount(transaction_token.value) < 0 else "credit"
         return SelectedTabularAmount(
             token=transaction_token,
             role=preferred_role,
