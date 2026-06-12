@@ -1,5 +1,4 @@
 import os
-import secrets
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
@@ -7,8 +6,22 @@ from fastapi.responses import JSONResponse
 from app.application import AccessControlService, InvalidSessionTokenError, InvalidUserTokenError
 from app.security_baseline import is_production_env, read_bool_env
 
-SESSION_ACCESS_COOKIE_NAME = os.getenv("SESSION_ACCESS_COOKIE_NAME", "__Host-ofx_at").strip() or "__Host-ofx_at"
-SESSION_REFRESH_COOKIE_NAME = os.getenv("SESSION_REFRESH_COOKIE_NAME", "__Secure-ofx_rt").strip() or "__Secure-ofx_rt"
+def _default_session_access_cookie_name() -> str:
+    return "__Host-ofx_at" if is_production_env() else "ofx_at"
+
+
+def _default_session_refresh_cookie_name() -> str:
+    return "__Secure-ofx_rt" if is_production_env() else "ofx_rt"
+
+
+SESSION_ACCESS_COOKIE_NAME = (
+    os.getenv("SESSION_ACCESS_COOKIE_NAME", _default_session_access_cookie_name()).strip()
+    or _default_session_access_cookie_name()
+)
+SESSION_REFRESH_COOKIE_NAME = (
+    os.getenv("SESSION_REFRESH_COOKIE_NAME", _default_session_refresh_cookie_name()).strip()
+    or _default_session_refresh_cookie_name()
+)
 SESSION_ACCESS_TOKEN_TTL_SECONDS = int(os.getenv("SESSION_ACCESS_TOKEN_TTL_SECONDS", "900"))
 SESSION_REFRESH_TOKEN_TTL_SECONDS = int(os.getenv("SESSION_REFRESH_TOKEN_TTL_SECONDS", "1209600"))
 SESSION_COOKIE_SECURE = read_bool_env("SESSION_COOKIE_SECURE", default=is_production_env())
@@ -100,14 +113,14 @@ def resolve_admin_token(
     *,
     x_admin_token: str | None,
     authorization: str | None,
-    admin_token_query: str | None,
+    access_cookie_token: str | None,
 ) -> str:
     if x_admin_token and x_admin_token.strip():
         return x_admin_token.strip()
     return resolve_header_query_or_cookie_token(
         authorization=authorization,
-        query_token=admin_token_query,
-        cookie_token=None,
+        query_token=None,
+        cookie_token=access_cookie_token,
     )
 
 
@@ -115,20 +128,20 @@ def require_admin_user(
     *,
     x_admin_token: str | None,
     authorization: str | None,
-    admin_token_query: str | None,
+    access_cookie_token: str | None,
     access_control_service: AccessControlService,
 ):
     resolved_token = resolve_admin_token(
         x_admin_token=x_admin_token,
         authorization=authorization,
-        admin_token_query=admin_token_query,
+        access_cookie_token=access_cookie_token,
     )
     if not resolved_token:
-        raise HTTPException(status_code=401, detail="Admin token is required.")
+        raise HTTPException(status_code=401, detail="Admin session is required.")
     try:
-        user = access_control_service.get_user_by_token(user_token=resolved_token)
-    except InvalidUserTokenError:
-        raise HTTPException(status_code=401, detail="Invalid admin token.")
+        user = access_control_service.get_user_by_session_access_token(resolved_token)
+    except InvalidSessionTokenError:
+        raise HTTPException(status_code=401, detail="Invalid admin session.")
     if not access_control_service.is_user_admin(user_id=user.user_id):
         raise HTTPException(status_code=403, detail="Admin access required.")
     return user
@@ -139,25 +152,12 @@ def require_admin_actor(
     access_control_service: AccessControlService,
     x_admin_token: str | None,
     authorization: str | None,
-    admin_token_query: str | None,
-    legacy_token_env_var: str = "PLANS_ADMIN_TOKEN",
+    access_cookie_token: str | None,
 ) -> tuple[str, str | None]:
-    provided_admin_token = resolve_admin_token(
-        x_admin_token=x_admin_token,
-        authorization=authorization,
-        admin_token_query=admin_token_query,
-    )
-    if not provided_admin_token:
-        raise HTTPException(status_code=401, detail="Admin token is required.")
-
-    expected_admin_token = os.getenv(legacy_token_env_var, "").strip()
-    if expected_admin_token and secrets.compare_digest(provided_admin_token, expected_admin_token):
-        return "legacy_token", None
-
     admin_user = require_admin_user(
         x_admin_token=x_admin_token,
         authorization=authorization,
-        admin_token_query=admin_token_query,
+        access_cookie_token=access_cookie_token,
         access_control_service=access_control_service,
     )
     return "admin_user", admin_user.user_id

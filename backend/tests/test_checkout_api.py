@@ -98,6 +98,14 @@ def _create_admin_user(service: AccessControlService) -> str:
     return admin.token
 
 
+def _login_admin(client: TestClient) -> None:
+    response = client.post(
+        "/admin/auth/login",
+        json={"email": "admin@example.com", "password": "admin-pass"},
+    )
+    assert response.status_code == 200
+
+
 def test_checkout_creates_intent_and_sends_admin_and_customer_emails() -> None:
     fake_contact = FakeContactService()
     client, service = build_client(fake_contact)
@@ -185,12 +193,20 @@ def test_checkout_rejects_duplicate_open_order_for_same_plan() -> None:
         app.dependency_overrides.clear()
 
 
-def test_checkout_status_read_and_admin_payment_link_update(monkeypatch) -> None:
+def test_checkout_status_read_and_admin_payment_link_update() -> None:
     fake_contact = FakeContactService()
-    client, service = build_client(fake_contact)
-    monkeypatch.setenv("PLANS_ADMIN_TOKEN", "pricing-admin-secret")
+    access_control = _AccessControlServiceInMemory(
+        state_file=Path("backend/tmp/checkout-access-control-state.json"),
+        token_secret="test-secret",
+        admin_emails={"admin@example.com"},
+    )
+    app.dependency_overrides[get_access_control_service] = lambda: access_control
+    app.dependency_overrides[get_contact_service] = lambda: fake_contact
+    client = TestClient(app)
     try:
-        user_token = _create_user_token(service)
+        _create_admin_user(access_control)
+        _login_admin(client)
+        user_token = _create_user_token(access_control)
         created = _create_checkout_intent(client, user_token=user_token, plan_code="essencial")
         intent_id = created["intent_id"]
 
@@ -201,7 +217,6 @@ def test_checkout_status_read_and_admin_payment_link_update(monkeypatch) -> None
 
         update = client.post(
             f"/admin/checkout/intents/{intent_id}/payment-link",
-            headers={"x-admin-token": "pricing-admin-secret"},
             json={"payment_link": "https://pay.example.com/order/chk_123"},
         )
         assert update.status_code == 200
@@ -242,7 +257,7 @@ def test_checkout_status_read_accepts_bearer_token() -> None:
         app.dependency_overrides.clear()
 
 
-def test_admin_checkout_intents_list_filters_open_with_admin_user_token() -> None:
+def test_admin_checkout_intents_list_filters_open_with_admin_session() -> None:
     fake_contact = FakeContactService()
     access_control = _AccessControlServiceInMemory(
         state_file=Path("backend/tmp/checkout-access-control-state.json"),
@@ -253,13 +268,13 @@ def test_admin_checkout_intents_list_filters_open_with_admin_user_token() -> Non
     app.dependency_overrides[get_contact_service] = lambda: fake_contact
     client = TestClient(app)
     try:
-        admin_token = _create_admin_user(access_control)
+        _create_admin_user(access_control)
+        _login_admin(client)
         user_token = _create_user_token(access_control)
         created = _create_checkout_intent(client, user_token=user_token, plan_code="essencial")
 
         update = client.post(
             f"/admin/checkout/intents/{created['intent_id']}/payment-link",
-            headers={"authorization": f"Bearer {admin_token}"},
             json={"payment_link": "https://pay.example.com/order/chk_test"},
         )
         assert update.status_code == 200
@@ -267,7 +282,6 @@ def test_admin_checkout_intents_list_filters_open_with_admin_user_token() -> Non
         response = client.get(
             "/admin/checkout/intents",
             params={"status": "open", "limit": 10},
-            headers={"authorization": f"Bearer {admin_token}"},
         )
         assert response.status_code == 200
         payload = response.json()
@@ -293,14 +307,14 @@ def test_admin_release_checkout_intent_activates_plan() -> None:
     app.dependency_overrides[get_contact_service] = lambda: fake_contact
     client = TestClient(app)
     try:
-        admin_token = _create_admin_user(access_control)
+        _create_admin_user(access_control)
+        _login_admin(client)
         user_token = _create_user_token(access_control)
         user = access_control.get_user_by_token(user_token=user_token)
         created = _create_checkout_intent(client, user_token=user_token, plan_code="profissional")
 
         response = client.post(
             f"/admin/checkout/intents/{created['intent_id']}/release",
-            headers={"authorization": f"Bearer {admin_token}"},
         )
         assert response.status_code == 200
         payload = response.json()
@@ -331,7 +345,8 @@ def test_admin_release_checkout_intent_without_user_id_uses_customer_email() -> 
     app.dependency_overrides[get_contact_service] = lambda: fake_contact
     client = TestClient(app)
     try:
-        admin_token = _create_admin_user(access_control)
+        _create_admin_user(access_control)
+        _login_admin(client)
         user_token = _create_user_token(access_control)
         user = access_control.get_user_by_token(user_token=user_token)
         intent_id = "chk_legacy_without_user_id"
@@ -387,7 +402,6 @@ def test_admin_release_checkout_intent_without_user_id_uses_customer_email() -> 
 
         response = client.post(
             f"/admin/checkout/intents/{intent_id}/release",
-            headers={"authorization": f"Bearer {admin_token}"},
         )
         assert response.status_code == 200
         payload = response.json()
@@ -412,27 +426,25 @@ def test_admin_checkout_history_returns_order_and_manual_events() -> None:
     app.dependency_overrides[get_contact_service] = lambda: fake_contact
     client = TestClient(app)
     try:
-        admin_token = _create_admin_user(access_control)
+        _create_admin_user(access_control)
+        _login_admin(client)
         user_token = _create_user_token(access_control)
         created = _create_checkout_intent(client, user_token=user_token, plan_code="profissional")
         intent_id = created["intent_id"]
 
         send_link = client.post(
             f"/admin/checkout/intents/{intent_id}/payment-link",
-            headers={"authorization": f"Bearer {admin_token}"},
             json={"payment_link": "https://pay.example.com/order/chk_history"},
         )
         assert send_link.status_code == 200
 
         release = client.post(
             f"/admin/checkout/intents/{intent_id}/release",
-            headers={"authorization": f"Bearer {admin_token}"},
         )
         assert release.status_code == 200
 
         history = client.get(
             f"/admin/checkout/intents/{intent_id}/history",
-            headers={"authorization": f"Bearer {admin_token}"},
         )
         assert history.status_code == 200
         payload = history.json()
@@ -456,13 +468,13 @@ def test_admin_checkout_list_supports_query_and_offset() -> None:
     app.dependency_overrides[get_contact_service] = lambda: fake_contact
     client = TestClient(app)
     try:
-        admin_token = _create_admin_user(access_control)
+        _create_admin_user(access_control)
+        _login_admin(client)
         user_token = _create_user_token(access_control)
         _create_checkout_intent(client, user_token=user_token, plan_code="essencial")
         _create_checkout_intent(client, user_token=user_token, plan_code="escritorio")
         set_link = client.post(
             "/admin/checkout/intents/chk_does_not_exist/payment-link",
-            headers={"authorization": f"Bearer {admin_token}"},
             json={"payment_link": "https://pay.example.com/none"},
         )
         assert set_link.status_code == 404
@@ -470,7 +482,6 @@ def test_admin_checkout_list_supports_query_and_offset() -> None:
         listed = client.get(
             "/admin/checkout/intents",
             params={"status": "all", "query": "erica@example.com", "limit": 1, "offset": 0},
-            headers={"authorization": f"Bearer {admin_token}"},
         )
         assert listed.status_code == 200
         first_page = listed.json()
@@ -482,7 +493,6 @@ def test_admin_checkout_list_supports_query_and_offset() -> None:
         second_page = client.get(
             "/admin/checkout/intents",
             params={"status": "all", "query": "erica@example.com", "limit": 1, "offset": 1},
-            headers={"authorization": f"Bearer {admin_token}"},
         )
         assert second_page.status_code == 200
         assert second_page.json()["offset"] == 1
@@ -565,14 +575,14 @@ def test_checkout_latest_prioritizes_awaiting_payment_with_link() -> None:
     app.dependency_overrides[get_contact_service] = lambda: fake_contact
     client = TestClient(app)
     try:
-        admin_token = _create_admin_user(access_control)
+        _create_admin_user(access_control)
+        _login_admin(client)
         user_token = _create_user_token(access_control)
         created_first = _create_checkout_intent(client, user_token=user_token, plan_code="essencial")
         first_intent_id = created_first["intent_id"]
 
         set_link = client.post(
             f"/admin/checkout/intents/{first_intent_id}/payment-link",
-            headers={"authorization": f"Bearer {admin_token}"},
             json={"payment_link": "https://pay.example.com/order/chk_priority"},
         )
         assert set_link.status_code == 200

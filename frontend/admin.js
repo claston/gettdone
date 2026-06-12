@@ -1,5 +1,4 @@
 (function () {
-  const ADMIN_TOKEN_KEY = "ofxsimples_admin_token";
   const ORDER_PAGE_SIZE = 10;
   const USER_PAGE_SIZE = 20;
 
@@ -36,22 +35,9 @@
     const port = window.location.port;
     const isLocalHost = host === "localhost" || host === "127.0.0.1";
     const isDevFrontend = isLocalHost && port !== "8000";
-    if (isDevFrontend) return "http://127.0.0.1:8000";
+    if (isDevFrontend) return `http://${host}:8000`;
     if (window.location.origin && window.location.origin !== "null") return window.location.origin;
     return "http://127.0.0.1:8000";
-  }
-
-  function getAdminToken() {
-    const token = String(localStorage.getItem(ADMIN_TOKEN_KEY) || "").trim();
-    return token || null;
-  }
-
-  function saveAdminToken(token) {
-    localStorage.setItem(ADMIN_TOKEN_KEY, String(token || "").trim());
-  }
-
-  function clearAdminToken() {
-    localStorage.removeItem(ADMIN_TOKEN_KEY);
   }
 
   function setStatus(message, kind) {
@@ -114,11 +100,22 @@
     return "badge";
   }
 
-  async function apiRequest(path, init) {
-    const token = getAdminToken();
-    const headers = Object.assign({}, init?.headers || {});
-    if (token) headers.authorization = `Bearer ${token}`;
-    const response = await fetch(`${resolveApiBase()}${path}`, Object.assign({}, init || {}, { headers }));
+  async function tryRefreshAdminSession() {
+    const response = await fetch(`${resolveApiBase()}/auth/session/refresh`, {
+      method: "POST",
+      credentials: "include",
+    });
+    return response.ok;
+  }
+
+  async function apiRequest(path, init, allowRetry) {
+    const response = await fetch(`${resolveApiBase()}${path}`, Object.assign({}, init || {}, { credentials: "include" }));
+    if (response.status === 401 && allowRetry !== false) {
+      const refreshed = await tryRefreshAdminSession();
+      if (refreshed) {
+        return apiRequest(path, init, false);
+      }
+    }
     const payload = await response.json().catch(function () {
       return {};
     });
@@ -126,15 +123,9 @@
   }
 
   async function verifyAdminSession() {
-    const token = getAdminToken();
-    if (!token) {
-      setAuthenticatedView(false);
-      return;
-    }
     try {
       const { response } = await apiRequest("/admin/me");
       if (!response.ok) {
-        clearAdminToken();
         setAuthenticatedView(false);
         return;
       }
@@ -167,7 +158,6 @@
       );
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
-          clearAdminToken();
           setAuthenticatedView(false);
         }
         setStatus(String(payload.detail || "Nao foi possivel carregar os pedidos."), "error");
@@ -429,6 +419,7 @@
         const response = await fetch(`${resolveApiBase()}/admin/auth/login`, {
           method: "POST",
           headers: { "content-type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({ email: email, password: password }),
         });
         const payload = await response.json().catch(function () {
@@ -438,7 +429,6 @@
           setStatus(String(payload.detail || "Login admin invalido."), "error");
           return;
         }
-        saveAdminToken(payload.admin_token);
         setAuthenticatedView(true);
         setStatus("Login admin realizado.", "ok");
         await Promise.all([loadOrders(), loadUsers()]);
@@ -508,8 +498,14 @@
   }
 
   if (logoutBtn) {
-    logoutBtn.addEventListener("click", function () {
-      clearAdminToken();
+    logoutBtn.addEventListener("click", async function () {
+      try {
+        await fetch(`${resolveApiBase()}/admin/auth/logout`, {
+          method: "POST",
+          credentials: "include",
+        });
+      } catch (_error) {
+      }
       setAuthenticatedView(false);
       setStatus("Sessao encerrada.", "ok");
       setUsersStatus("", null);
