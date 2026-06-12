@@ -3,8 +3,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 from threading import RLock
 
-from app.application import access_control_schema as access_control_schema_module
-from app.application.access_control_schema import AccessControlSchemaComponent
+from app.application.access_control import access_control_schema as access_control_schema_module
+from app.application.access_control.access_control_schema import AccessControlSchemaComponent
 
 
 class _DummyConn:

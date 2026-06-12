@@ -1,6 +1,3 @@
-import os
-import secrets
-
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query
 
 from app.application import (
@@ -16,7 +13,11 @@ from app.application.checkout_management import (
     CHECKOUT_STATUS_REQUESTED,
 )
 from app.dependencies import get_access_control_service, get_contact_service
-from app.routers.auth_session import SESSION_ACCESS_COOKIE_NAME, resolve_user_token_with_session
+from app.routers.access_control_common import (
+    SESSION_ACCESS_COOKIE_NAME,
+    require_admin_actor,
+    resolve_user_token_with_session,
+)
 from app.schemas import (
     AdminCheckoutIntentHistoryResponse,
     AdminCheckoutIntentItem,
@@ -45,22 +46,6 @@ def _next_step_for_status(status: str) -> str:
     if status == CHECKOUT_STATUS_RELEASED_FOR_USE:
         return "READY_TO_USE"
     return "REVIEW_ORDER"
-
-
-def _resolve_admin_token(
-    *,
-    x_admin_token: str | None,
-    authorization: str | None,
-    admin_token_query: str | None,
-) -> str:
-    if x_admin_token and x_admin_token.strip():
-        return x_admin_token.strip()
-    auth_header = (authorization or "").strip()
-    if auth_header.lower().startswith("bearer "):
-        bearer = auth_header[7:].strip()
-        if bearer:
-            return bearer
-    return (admin_token_query or "").strip()
 
 
 def _build_checkout_intent_status_response(intent: dict[str, str | int | None]) -> CheckoutIntentStatusResponse:
@@ -105,34 +90,6 @@ def _build_admin_checkout_intent_item(intent: dict[str, str | int | None]) -> Ad
         payment_link_sent_at=(str(intent["payment_link_sent_at"]) if intent.get("payment_link_sent_at") else None),
         released_at=(str(intent["released_at"]) if intent.get("released_at") else None),
     )
-
-
-def _require_admin_access(
-    *,
-    access_control_service: AccessControlService,
-    x_admin_token: str | None,
-    authorization: str | None,
-    admin_token_query: str | None,
-) -> tuple[str, str | None]:
-    provided_admin_token = _resolve_admin_token(
-        x_admin_token=x_admin_token,
-        authorization=authorization,
-        admin_token_query=admin_token_query,
-    )
-    if not provided_admin_token:
-        raise HTTPException(status_code=401, detail="Admin token is required.")
-    expected_admin_token = os.getenv("PLANS_ADMIN_TOKEN", "").strip()
-    if expected_admin_token and secrets.compare_digest(provided_admin_token, expected_admin_token):
-        return "legacy_token", None
-
-    try:
-        admin_user = access_control_service.get_user_by_token(user_token=provided_admin_token)
-    except InvalidUserTokenError:
-        raise HTTPException(status_code=401, detail="Invalid admin token.")
-    if not access_control_service.is_user_admin(user_id=admin_user.user_id):
-        raise HTTPException(status_code=403, detail="Admin access required.")
-    return "admin_user", admin_user.user_id
-
 
 @router.post("/checkout/intents", response_model=CheckoutIntentResponse, status_code=202)
 async def create_checkout_intent(
@@ -323,7 +280,7 @@ def set_checkout_intent_payment_link(
     admin_token: str | None = Query(default=None, alias="admin_token"),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> CheckoutIntentStatusResponse:
-    actor_kind, actor_user_id = _require_admin_access(
+    actor_kind, actor_user_id = require_admin_actor(
         access_control_service=access_control_service,
         x_admin_token=x_admin_token,
         authorization=authorization,
@@ -361,7 +318,7 @@ def list_checkout_intents_for_admin(
     admin_token: str | None = Query(default=None, alias="admin_token"),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> AdminCheckoutIntentListResponse:
-    _require_admin_access(
+    require_admin_actor(
         access_control_service=access_control_service,
         x_admin_token=x_admin_token,
         authorization=authorization,
@@ -406,7 +363,7 @@ def list_checkout_intent_history_for_admin(
     admin_token: str | None = Query(default=None, alias="admin_token"),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> AdminCheckoutIntentHistoryResponse:
-    _require_admin_access(
+    require_admin_actor(
         access_control_service=access_control_service,
         x_admin_token=x_admin_token,
         authorization=authorization,
@@ -445,7 +402,7 @@ def release_checkout_intent_for_use(
     admin_token: str | None = Query(default=None, alias="admin_token"),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> CheckoutIntentStatusResponse:
-    actor_kind, actor_user_id = _require_admin_access(
+    actor_kind, actor_user_id = require_admin_actor(
         access_control_service=access_control_service,
         x_admin_token=x_admin_token,
         authorization=authorization,

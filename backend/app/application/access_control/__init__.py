@@ -16,16 +16,16 @@ try:
 except Exception:  # pragma: no cover - optional dependency for postgres deployments
     ConnectionPool = None
 
-from app.application.access_control_admin import AccessControlAdminComponent
-from app.application.access_control_auth import AccessControlAuthComponent
-from app.application.access_control_checkout import AccessControlCheckoutComponent
-from app.application.access_control_db import AccessControlDbComponent
-from app.application.access_control_helpers import AccessControlHelpersComponent
-from app.application.access_control_identity import AccessControlIdentityComponent
-from app.application.access_control_quota import AccessControlQuotaComponent
-from app.application.access_control_schema import AccessControlSchemaComponent
-from app.application.access_control_session import AccessControlSessionComponent
-from app.application.access_control_session_core import AccessControlSessionCoreComponent
+from app.application.access_control.access_control_admin import AccessControlAdminComponent
+from app.application.access_control.access_control_auth import AccessControlAuthComponent
+from app.application.access_control.access_control_checkout import AccessControlCheckoutComponent
+from app.application.access_control.access_control_db import AccessControlDbComponent
+from app.application.access_control.access_control_helpers import AccessControlHelpersComponent
+from app.application.access_control.access_control_identity import AccessControlIdentityComponent
+from app.application.access_control.access_control_quota import AccessControlQuotaComponent
+from app.application.access_control.access_control_schema import AccessControlSchemaComponent
+from app.application.access_control.access_control_session import AccessControlSessionComponent
+from app.application.access_control.access_control_session_core import AccessControlSessionCoreComponent
 
 ANONYMOUS_QUOTA_LIMIT = 3
 REGISTERED_QUOTA_LIMIT = 10

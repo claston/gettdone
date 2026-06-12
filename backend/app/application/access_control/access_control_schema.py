@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from app.application.access_control_schema_sqlite_legacy import (
+from app.application.access_control.access_control_schema_sqlite_legacy import (
     apply_sqlite_legacy_schema_bootstrap,
 )
 
