@@ -44,10 +44,12 @@ class _AccessControlServiceInMemory(AccessControlService):
 
 
 class FakeAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
+    def analyze(
+        self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
+    ) -> AnalyzeResponse:
         _ = on_ocr_progress
         return AnalyzeResponse(
-            analysis_id="an_convert123",
+            analysis_id=analysis_id or "an_convert123",
             file_type="pdf",
             bank_name="Itau",
             transactions_total=1,
@@ -124,10 +126,12 @@ class FakeAnalyzeService:
 
 
 class FakeAnalyzeServiceGenericBank:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
-        _ = (filename, raw_bytes, on_ocr_progress, max_ocr_pages)
+    def analyze(
+        self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
+    ) -> AnalyzeResponse:
+        _ = (filename, raw_bytes, on_ocr_progress, max_ocr_pages, analysis_id)
         return AnalyzeResponse(
-            analysis_id="an_convert_generic_bank",
+            analysis_id=analysis_id or "an_convert_generic_bank",
             file_type="pdf",
             bank_name="Itau",
             transactions_total=1,
@@ -171,8 +175,10 @@ class FakeReportService:
 
 
 class FailingAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
-        _ = (filename, raw_bytes, on_ocr_progress, max_ocr_pages)
+    def analyze(
+        self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
+    ) -> AnalyzeResponse:
+        _ = (filename, raw_bytes, on_ocr_progress, max_ocr_pages, analysis_id)
         raise InvalidFileContentError(
             "PDF text was extracted, but no recognizable transaction row pattern was found. "
             "diagnostics: has_date_like=1 has_amount_like=1 inline_candidates=0 "
@@ -407,8 +413,43 @@ def test_convert_persists_failed_user_conversion_for_authenticated_user() -> Non
         conversions = service.list_user_conversions(user_id=user_id, limit=5)
         assert len(conversions) == 1
         assert conversions[0]["status"] == "Falha"
+        assert str(conversions[0]["processing_id"]).startswith("an_")
         assert conversions[0]["filename"] == "sample.pdf"
         assert conversions[0]["model"] == "Nao identificado"
+    finally:
+        app.dependency_overrides.clear()
+        shutil.rmtree(state_dir, ignore_errors=True)
+
+
+def test_convert_success_updates_preallocated_user_conversion_attempt() -> None:
+    state_dir = Path(mkdtemp(prefix="convert-auth-api-success-attempt-"))
+    client, service = build_client(state_dir)
+
+    try:
+        register = client.post(
+            "/auth/register",
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
+        )
+        token = register.json()["user_token"]
+        user_id = register.json()["user_id"]
+
+        response = client.post(
+            "/convert",
+            data={"user_token": token},
+            files={"file": ("sample.pdf", b"%PDF data", "application/pdf")},
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        conversions = service.list_user_conversions(user_id=user_id, limit=5)
+        assert len(conversions) == 1
+        assert conversions[0]["status"] == "Sucesso"
+        assert conversions[0]["processing_id"] == payload["processing_id"]
     finally:
         app.dependency_overrides.clear()
         shutil.rmtree(state_dir, ignore_errors=True)

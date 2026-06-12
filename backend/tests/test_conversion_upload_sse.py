@@ -29,7 +29,13 @@ def _blank_pdf_bytes() -> bytes:
 
 
 class FakeAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
+    def __init__(self) -> None:
+        self.called = False
+
+    def analyze(
+        self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
+    ) -> AnalyzeResponse:
+        self.called = True
         if "fail_ocr" in filename:
             raise InvalidFileContentError("OCR failed while processing PDF pages.")
         if "corrupted" in filename:
@@ -38,7 +44,7 @@ class FakeAnalyzeService:
             on_ocr_progress(1, 2)
             on_ocr_progress(2, 2)
         return AnalyzeResponse(
-            analysis_id="an_sse_001",
+            analysis_id=analysis_id or "an_sse_001",
             file_type="pdf",
             transactions_total=1,
             total_inflows=10.0,
@@ -150,6 +156,13 @@ def _build_client() -> TestClient:
 
 def _build_client_with_access_control(access_control_service) -> TestClient:
     app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()
+    app.dependency_overrides[get_report_service] = lambda: FakeReportService()
+    app.dependency_overrides[get_access_control_service] = lambda: access_control_service
+    return TestClient(app)
+
+
+def _build_client_with_services(*, analyze_service, access_control_service) -> TestClient:
+    app.dependency_overrides[get_analyze_service] = lambda: analyze_service
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     app.dependency_overrides[get_access_control_service] = lambda: access_control_service
     return TestClient(app)
@@ -273,8 +286,8 @@ def test_streaming_upload_emits_file_too_large_error_message() -> None:
 def test_streaming_upload_explains_scanned_pdf_pages_limit_without_numeric_limit(monkeypatch) -> None:
     monkeypatch.setenv("PDF_OCR_MAX_PAGES", "8")
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (True, 11),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (True, 11),
     )
     client = _build_client()
     response = client.post(
@@ -323,6 +336,27 @@ def test_streaming_upload_emits_upgrade_links_for_registered_free_user_at_weekly
     assert failed["quota_mode"] == "conversion"
     assert failed["upgrade_url"] == "./planos.html?reason=quota"
     assert failed["support_url"] == "./contato.html?reason=quota"
+
+
+def test_streaming_upload_rejects_obviously_large_request_before_analyze() -> None:
+    analyze_service = FakeAnalyzeService()
+    client = _build_client_with_services(
+        analyze_service=analyze_service,
+        access_control_service=FakeAccessControlService(),
+    )
+    clearly_oversized = b"a" * ((10 * 1024 * 1024) + (256 * 1024))
+
+    response = client.post(
+        "/api/conversions/upload",
+        headers={"accept": "text/event-stream"},
+        data={"anonymous_fingerprint": "fp-early-guard"},
+        files={"file": ("sample.pdf", clearly_oversized, "application/pdf")},
+    )
+
+    assert response.status_code == 413
+    assert "maximum size of 10 MB" in str(response.json()["detail"])
+    assert analyze_service.called is False
+    app.dependency_overrides.clear()
 
 
 

@@ -45,6 +45,7 @@ class AnalyzeService:
         raw_bytes: bytes,
         on_ocr_progress: Callable[[int, int], None] | None = None,
         max_ocr_pages: int | None = None,
+        analysis_id: str | None = None,
     ) -> AnalyzeResponse:
         total_start = perf_counter()
         extension = Path(filename).suffix.replace(".", "").lower()
@@ -57,7 +58,7 @@ class AnalyzeService:
             (filename or "")[:120],
         )
 
-        analysis_id = f"an_{uuid4().hex[:12]}"
+        analysis_id = (analysis_id or "").strip() or f"an_{uuid4().hex[:12]}"
         parse_start = perf_counter()
         (
             parsed_transactions,

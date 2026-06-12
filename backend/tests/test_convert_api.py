@@ -1,13 +1,20 @@
+import asyncio
 from io import BytesIO
 
+from fastapi import UploadFile
 from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
 from app.application.access_control import AccessControlService
-from app.application.errors import InvalidFileContentError, MaxPagesPerFileExceededError
+from app.application.errors import FileTooLargeError, InvalidFileContentError, MaxPagesPerFileExceededError
 from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
 from app.main import app
-from app.routers.convert import OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK, _resolve_error_observability
+from app.routers.convert import (
+    OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK,
+    _cleanup_staged_upload,
+    _resolve_error_observability,
+    _stage_upload_to_temp_file,
+)
 from app.schemas import (
     AnalyzeResponse,
     BeforeAfterPreview,
@@ -21,7 +28,9 @@ from app.schemas import (
 
 
 class FakeAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
+    def analyze(
+        self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
+    ) -> AnalyzeResponse:
         _ = on_ocr_progress
         if not filename.endswith((".csv", ".xlsx", ".ofx", ".pdf")):
             from app.application import UnsupportedFileTypeError
@@ -29,7 +38,7 @@ class FakeAnalyzeService:
             raise UnsupportedFileTypeError
 
         return AnalyzeResponse(
-            analysis_id="an_convert123",
+            analysis_id=analysis_id or "an_convert123",
             file_type="pdf",
             transactions_total=1,
             total_inflows=100.0,
@@ -80,14 +89,18 @@ class FakeAnalyzeService:
 
 
 class InsufficientTextAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
-        _ = (filename, raw_bytes, on_ocr_progress)
+    def analyze(
+        self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
+    ) -> AnalyzeResponse:
+        _ = (filename, raw_bytes, on_ocr_progress, analysis_id)
         raise InvalidFileContentError("Não encontramos texto suficiente para OCR neste PDF.")
 
 
 class EmptyBytesInvalidContentAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
-        _ = (filename, on_ocr_progress)
+    def analyze(
+        self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
+    ) -> AnalyzeResponse:
+        _ = (filename, on_ocr_progress, analysis_id)
         if not raw_bytes:
             raise InvalidFileContentError("Não foi possível ler este PDF.")
         return FakeAnalyzeService().analyze(
@@ -95,13 +108,33 @@ class EmptyBytesInvalidContentAnalyzeService:
             raw_bytes=raw_bytes,
             on_ocr_progress=on_ocr_progress,
             max_ocr_pages=max_ocr_pages,
+            analysis_id=analysis_id,
         )
 
 
 class CorruptedPdfAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None) -> AnalyzeResponse:
-        _ = (filename, raw_bytes, on_ocr_progress)
+    def analyze(
+        self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
+    ) -> AnalyzeResponse:
+        _ = (filename, raw_bytes, on_ocr_progress, analysis_id)
         raise InvalidFileContentError("Ignoring wrong pointing object 9 0 (offset 0)")
+
+
+class TrackingAnalyzeService:
+    def __init__(self) -> None:
+        self.called = False
+
+    def analyze(
+        self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
+    ) -> AnalyzeResponse:
+        self.called = True
+        return FakeAnalyzeService().analyze(
+            filename=filename,
+            raw_bytes=raw_bytes,
+            on_ocr_progress=on_ocr_progress,
+            max_ocr_pages=max_ocr_pages,
+            analysis_id=analysis_id,
+        )
 
 
 class FakeReportService:
@@ -147,6 +180,35 @@ def _build_pdf_with_pages(page_count: int) -> bytes:
     payload = BytesIO()
     writer.write(payload)
     return payload.getvalue()
+
+
+def test_stage_upload_to_temp_file_streams_and_hashes_contents(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("app.routers.convert._resolve_upload_staging_dir", lambda: tmp_path)
+    payload = (b"a" * (1024 * 1024)) + (b"b" * 512) + b"tail"
+    upload = UploadFile(filename="statement.pdf", file=BytesIO(payload))
+
+    staged = asyncio.run(_stage_upload_to_temp_file(upload, max_bytes=len(payload) + 1))
+
+    assert staged.size_bytes == len(payload)
+    assert staged.path.exists()
+    assert staged.path.read_bytes() == payload
+    _cleanup_staged_upload(staged)
+    assert not staged.path.exists()
+
+
+def test_stage_upload_to_temp_file_rejects_when_chunks_exceed_limit(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("app.routers.convert._resolve_upload_staging_dir", lambda: tmp_path)
+    payload = b"x" * ((1024 * 1024) + 32)
+    upload = UploadFile(filename="statement.pdf", file=BytesIO(payload))
+
+    try:
+        asyncio.run(_stage_upload_to_temp_file(upload, max_bytes=1024 * 1024))
+    except FileTooLargeError as exc:
+        assert int(getattr(exc, "_max_upload_size_bytes", 0)) == 1024 * 1024
+    else:
+        raise AssertionError("Expected FileTooLargeError")
+
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_convert_happy_path(tmp_path) -> None:
@@ -197,8 +259,8 @@ def test_convert_rejects_file_larger_than_5mb(tmp_path) -> None:
 
 def test_convert_rejects_ocr_pdf_larger_than_5mb_for_paid_user(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (True, 1),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (True, 1),
     )
     access_control = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
@@ -222,8 +284,8 @@ def test_convert_rejects_ocr_pdf_larger_than_5mb_for_paid_user(tmp_path, monkeyp
 
 def test_convert_allows_text_pdf_up_to_10mb(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (False, 1),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (False, 1),
     )
     client = build_client(tmp_path)
     text_pdf = b"a" * ((5 * 1024 * 1024) + 1)
@@ -241,8 +303,8 @@ def test_convert_allows_text_pdf_up_to_10mb(tmp_path, monkeypatch) -> None:
 
 def test_convert_rejects_text_pdf_larger_than_10mb(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (False, 1),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (False, 1),
     )
     client = build_client(tmp_path)
     oversized = b"a" * ((10 * 1024 * 1024) + 1)
@@ -255,6 +317,27 @@ def test_convert_rejects_text_pdf_larger_than_10mb(tmp_path, monkeypatch) -> Non
 
     assert response.status_code == 413
     assert "maximum size of 10 MB" in response.json()["detail"]
+    app.dependency_overrides.clear()
+
+
+def test_convert_rejects_obviously_large_request_before_analyze(tmp_path) -> None:
+    access_control = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    analyze_service = TrackingAnalyzeService()
+    client = build_client_with_overrides(access_control, analyze_service)
+    clearly_oversized = b"a" * ((10 * 1024 * 1024) + (256 * 1024))
+
+    response = client.post(
+        "/convert",
+        data={"anonymous_fingerprint": "anon-fp-early-guard"},
+        files={"file": ("sample.pdf", clearly_oversized, "application/pdf")},
+    )
+
+    assert response.status_code == 413
+    assert "maximum size of 10 MB" in str(response.json()["detail"])
+    assert analyze_service.called is False
     app.dependency_overrides.clear()
 
 
@@ -278,8 +361,8 @@ def test_convert_rejects_pdf_above_max_pages_per_file(tmp_path) -> None:
 
 def test_convert_rejects_ocr_pdf_above_6_pages_for_paid_user(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (True, 11),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (True, 11),
     )
     access_control = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
@@ -309,8 +392,8 @@ def test_convert_rejects_ocr_pdf_above_6_pages_for_paid_user(tmp_path, monkeypat
 
 def test_convert_returns_pages_limit_when_ocr_like_pdf_is_misdetected_as_text(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (False, 11),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (False, 11),
     )
     access_control = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
@@ -342,8 +425,8 @@ def test_convert_returns_pages_limit_when_ocr_like_pdf_is_misdetected_as_text(tm
 def test_conversion_upload_non_sse_keeps_ocr_pages_limit_validation(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("app.routers.convert.OCR_PDF_MAX_PAGES_PER_FILE", 5)
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (True, 6),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (True, 6),
     )
     access_control = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
@@ -421,8 +504,8 @@ def test_conversion_upload_non_sse_returns_friendly_message_for_likely_corrupted
 
 def test_convert_allows_text_pdf_up_to_250_pages(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (False, 250),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (False, 250),
     )
     client = build_client(tmp_path)
 
@@ -439,8 +522,8 @@ def test_convert_allows_text_pdf_up_to_250_pages(tmp_path, monkeypatch) -> None:
 
 def test_convert_rejects_text_pdf_above_250_pages(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (False, 251),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (False, 251),
     )
     client = build_client(tmp_path)
 
