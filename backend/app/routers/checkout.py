@@ -277,14 +277,14 @@ def set_checkout_intent_payment_link(
     payload: CheckoutIntentPaymentLinkRequest,
     x_admin_token: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
-    admin_token: str | None = Query(default=None, alias="admin_token"),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> CheckoutIntentStatusResponse:
     actor_kind, actor_user_id = require_admin_actor(
         access_control_service=access_control_service,
         x_admin_token=x_admin_token,
         authorization=authorization,
-        admin_token_query=admin_token,
+        access_cookie_token=access_cookie_token,
     )
 
     clean_intent_id = intent_id.strip()
@@ -315,14 +315,14 @@ def list_checkout_intents_for_admin(
     offset: int = Query(default=0, ge=0),
     x_admin_token: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
-    admin_token: str | None = Query(default=None, alias="admin_token"),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> AdminCheckoutIntentListResponse:
     require_admin_actor(
         access_control_service=access_control_service,
         x_admin_token=x_admin_token,
         authorization=authorization,
-        admin_token_query=admin_token,
+        access_cookie_token=access_cookie_token,
     )
 
     normalized_status = status.strip().lower()
@@ -360,14 +360,14 @@ def list_checkout_intent_history_for_admin(
     limit: int = Query(default=100, ge=1, le=500),
     x_admin_token: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
-    admin_token: str | None = Query(default=None, alias="admin_token"),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> AdminCheckoutIntentHistoryResponse:
     require_admin_actor(
         access_control_service=access_control_service,
         x_admin_token=x_admin_token,
         authorization=authorization,
-        admin_token_query=admin_token,
+        access_cookie_token=access_cookie_token,
     )
     clean_intent_id = intent_id.strip()
     if not clean_intent_id:
@@ -399,14 +399,14 @@ def release_checkout_intent_for_use(
     intent_id: str,
     x_admin_token: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
-    admin_token: str | None = Query(default=None, alias="admin_token"),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> CheckoutIntentStatusResponse:
     actor_kind, actor_user_id = require_admin_actor(
         access_control_service=access_control_service,
         x_admin_token=x_admin_token,
         authorization=authorization,
-        admin_token_query=admin_token,
+        access_cookie_token=access_cookie_token,
     )
     clean_intent_id = intent_id.strip()
     if not clean_intent_id:

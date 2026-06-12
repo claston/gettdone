@@ -296,7 +296,8 @@ class AdminLoginResponse(BaseModel):
     user_id: str
     name: str
     email: str
-    admin_token: str
+    access_expires_at: str
+    refresh_expires_at: str
     role: str = "admin"
 
 

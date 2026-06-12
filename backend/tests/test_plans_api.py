@@ -5,6 +5,14 @@ from app.dependencies import get_access_control_service
 from app.main import app
 
 
+def _login_admin(client: TestClient, *, email: str = "admin@example.com", password: str = "admin-pass") -> None:
+    response = client.post(
+        "/admin/auth/login",
+        json={"email": email, "password": password},
+    )
+    assert response.status_code == 200
+
+
 def test_plans_returns_public_versioned_catalog(tmp_path) -> None:
     service = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
@@ -27,11 +35,13 @@ def test_plans_returns_public_versioned_catalog(tmp_path) -> None:
         app.dependency_overrides.clear()
 
 
-def test_admin_activate_plan_updates_user_subscription(tmp_path, monkeypatch) -> None:
+def test_admin_activate_plan_updates_user_subscription(tmp_path) -> None:
     service = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
         token_secret="test-secret",
+        admin_emails={"admin@example.com"},
     )
+    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
     created = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
     intent = service.create_checkout_intent(
         user_id=created.user_id,
@@ -40,14 +50,13 @@ def test_admin_activate_plan_updates_user_subscription(tmp_path, monkeypatch) ->
         customer_email="erica@example.com",
         customer_whatsapp="+55 11 99999-0000",
     )
-    monkeypatch.setenv("PLANS_ADMIN_TOKEN", "pricing-admin-secret")
     app.dependency_overrides[get_access_control_service] = lambda: service
     client = TestClient(app)
 
     try:
+        _login_admin(client)
         response = client.post(
             "/admin/plans/activate",
-            headers={"x-admin-token": "pricing-admin-secret"},
             json={"user_id": created.user_id, "plan_code": "profissional"},
         )
         assert response.status_code == 200
@@ -67,11 +76,13 @@ def test_admin_activate_plan_updates_user_subscription(tmp_path, monkeypatch) ->
         app.dependency_overrides.clear()
 
 
-def test_admin_activate_plan_requires_valid_admin_token(tmp_path, monkeypatch) -> None:
+def test_admin_activate_plan_requires_admin_session(tmp_path) -> None:
     service = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
         token_secret="test-secret",
+        admin_emails={"admin@example.com"},
     )
+    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
     created = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
     service.create_checkout_intent(
         user_id=created.user_id,
@@ -80,77 +91,21 @@ def test_admin_activate_plan_requires_valid_admin_token(tmp_path, monkeypatch) -
         customer_email="erica@example.com",
         customer_whatsapp="+55 11 99999-0000",
     )
-    monkeypatch.setenv("PLANS_ADMIN_TOKEN", "pricing-admin-secret")
     app.dependency_overrides[get_access_control_service] = lambda: service
     client = TestClient(app)
 
     try:
         response = client.post(
             "/admin/plans/activate",
-            headers={"x-admin-token": "wrong-token"},
             json={"user_id": created.user_id, "plan_code": "essencial"},
         )
         assert response.status_code == 401
-        assert "Invalid admin token" in response.json()["detail"]
+        assert "required" in response.json()["detail"].lower()
     finally:
         app.dependency_overrides.clear()
 
 
-def test_admin_activate_plan_accepts_bearer_token_and_legacy_path(tmp_path, monkeypatch) -> None:
-    service = AccessControlService(
-        state_file=tmp_path / "access-control-state.json",
-        token_secret="test-secret",
-    )
-    created = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
-    service.create_checkout_intent(
-        user_id=created.user_id,
-        plan_code="profissional",
-        customer_name="Erica",
-        customer_email="erica@example.com",
-        customer_whatsapp="+55 11 99999-0000",
-    )
-    monkeypatch.setenv("PLANS_ADMIN_TOKEN", "pricing-admin-secret")
-    app.dependency_overrides[get_access_control_service] = lambda: service
-    client = TestClient(app)
-
-    try:
-        response = client.post(
-            "/plans/activate",
-            headers={"authorization": "Bearer pricing-admin-secret"},
-            json={"user_id": created.user_id, "plan_code": "essencial"},
-        )
-        assert response.status_code == 200
-        payload = response.json()
-        assert payload["plan_code"] == "essencial"
-        assert payload["quota_mode"] == "pages"
-        assert payload["quota_limit"] == 150
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_admin_activate_plan_requires_configuration(tmp_path, monkeypatch) -> None:
-    service = AccessControlService(
-        state_file=tmp_path / "access-control-state.json",
-        token_secret="test-secret",
-    )
-    created = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
-    monkeypatch.delenv("PLANS_ADMIN_TOKEN", raising=False)
-    app.dependency_overrides[get_access_control_service] = lambda: service
-    client = TestClient(app)
-
-    try:
-        response = client.post(
-            "/admin/plans/activate",
-            headers={"x-admin-token": "any-value"},
-            json={"user_id": created.user_id, "plan_code": "essencial"},
-        )
-        assert response.status_code == 401
-        assert "Invalid admin token" in response.json()["detail"]
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_admin_activate_plan_accepts_admin_user_token_when_legacy_token_not_set(tmp_path, monkeypatch) -> None:
+def test_admin_activate_plan_rejects_query_string_admin_token(tmp_path) -> None:
     service = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
         token_secret="test-secret",
@@ -158,18 +113,65 @@ def test_admin_activate_plan_accepts_admin_user_token_when_legacy_token_not_set(
     )
     admin_user = service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
     created = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
-    monkeypatch.delenv("PLANS_ADMIN_TOKEN", raising=False)
+    service.create_checkout_intent(
+        user_id=created.user_id,
+        plan_code="profissional",
+        customer_name="Erica",
+        customer_email="erica@example.com",
+        customer_whatsapp="+55 11 99999-0000",
+    )
     app.dependency_overrides[get_access_control_service] = lambda: service
     client = TestClient(app)
 
     try:
         response = client.post(
             "/admin/plans/activate",
-            headers={"authorization": f"Bearer {admin_user.token}"},
+            params={"admin_token": admin_user.token},
+            json={"user_id": created.user_id, "plan_code": "essencial"},
+        )
+        assert response.status_code == 401
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_admin_activate_plan_accepts_admin_session_cookie(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+        admin_emails={"admin@example.com"},
+    )
+    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    created = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
+    app.dependency_overrides[get_access_control_service] = lambda: service
+    client = TestClient(app)
+
+    try:
+        _login_admin(client)
+        response = client.post(
+            "/admin/plans/activate",
             json={"user_id": created.user_id, "plan_code": "essencial"},
         )
         assert response.status_code == 200
         payload = response.json()
         assert payload["plan_code"] == "essencial"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_admin_activate_plan_rejects_non_admin_session(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
+    app.dependency_overrides[get_access_control_service] = lambda: service
+    client = TestClient(app)
+
+    try:
+        login = client.post(
+            "/admin/auth/login",
+            json={"email": "erica@example.com", "password": "strong-pass"},
+        )
+        assert login.status_code == 403
     finally:
         app.dependency_overrides.clear()

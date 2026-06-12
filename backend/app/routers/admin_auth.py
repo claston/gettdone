@@ -1,8 +1,14 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 from app.application import AccessControlService, InvalidCredentialsError, InvalidUserTokenError
 from app.dependencies import get_access_control_service
-from app.routers.access_control_common import require_admin_user
+from app.routers.access_control_common import (
+    SESSION_ACCESS_COOKIE_NAME,
+    clear_session_cookies,
+    require_admin_user,
+    set_session_cookies,
+)
 from app.schemas import (
     AdminLoginRequest,
     AdminLoginResponse,
@@ -21,7 +27,7 @@ router = APIRouter()
 def admin_login(
     payload: AdminLoginRequest,
     access_control_service: AccessControlService = Depends(get_access_control_service),
-) -> AdminLoginResponse:
+) -> JSONResponse:
     try:
         user = access_control_service.authenticate_user(email=payload.email, password=payload.password)
     except InvalidCredentialsError:
@@ -30,25 +36,39 @@ def admin_login(
     if not access_control_service.is_user_admin(user_id=user.user_id):
         raise HTTPException(status_code=403, detail="Admin access required.")
 
-    return AdminLoginResponse(
+    session_bundle = access_control_service.create_user_session(
+        user_id=user.user_id,
+        ip_address=None,
+        user_agent=None,
+    )
+    payload_model = AdminLoginResponse(
         user_id=user.user_id,
         name=user.name,
         email=user.email,
-        admin_token=user.token,
+        access_expires_at=session_bundle.access_expires_at,
+        refresh_expires_at=session_bundle.refresh_expires_at,
     )
+    response = JSONResponse(content=payload_model.model_dump())
+    response.headers["Cache-Control"] = "no-store"
+    set_session_cookies(
+        response,
+        access_token=session_bundle.access_token,
+        refresh_token=session_bundle.refresh_token,
+    )
+    return response
 
 
 @router.get("/admin/me", response_model=AdminMeResponse)
 def admin_me(
     x_admin_token: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
-    admin_token: str | None = Query(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> AdminMeResponse:
     user = require_admin_user(
         x_admin_token=x_admin_token,
         authorization=authorization,
-        admin_token_query=admin_token,
+        access_cookie_token=access_cookie_token,
         access_control_service=access_control_service,
     )
 
@@ -60,8 +80,11 @@ def admin_me(
 
 
 @router.post("/admin/auth/logout")
-def admin_logout() -> dict[str, str]:
-    return {"status": "ok"}
+def admin_logout() -> JSONResponse:
+    response = JSONResponse(content={"status": "ok"})
+    response.headers["Cache-Control"] = "no-store"
+    clear_session_cookies(response)
+    return response
 
 
 @router.get("/admin/users", response_model=AdminUserListResponse)
@@ -72,13 +95,13 @@ def list_users_for_admin(
     offset: int = Query(default=0, ge=0),
     x_admin_token: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
-    admin_token: str | None = Query(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> AdminUserListResponse:
     require_admin_user(
         x_admin_token=x_admin_token,
         authorization=authorization,
-        admin_token_query=admin_token,
+        access_cookie_token=access_cookie_token,
         access_control_service=access_control_service,
     )
     items, total = access_control_service.list_users_for_admin(
@@ -100,13 +123,13 @@ def set_user_role_for_admin(
     payload: AdminSetUserRoleRequest,
     x_admin_token: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
-    admin_token: str | None = Query(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> AdminUserItem:
     actor_user = require_admin_user(
         x_admin_token=x_admin_token,
         authorization=authorization,
-        admin_token_query=admin_token,
+        access_cookie_token=access_cookie_token,
         access_control_service=access_control_service,
     )
     target_user_id = payload.user_id.strip()
@@ -131,13 +154,13 @@ def list_user_role_history_for_admin(
     limit: int = Query(default=100, ge=1, le=500),
     x_admin_token: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
-    admin_token: str | None = Query(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> AdminUserRoleHistoryResponse:
     require_admin_user(
         x_admin_token=x_admin_token,
         authorization=authorization,
-        admin_token_query=admin_token,
+        access_cookie_token=access_cookie_token,
         access_control_service=access_control_service,
     )
     clean_user_id = user_id.strip()

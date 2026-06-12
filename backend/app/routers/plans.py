@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException
 
 from app.application import AccessControlService, InvalidUserTokenError
 from app.dependencies import get_access_control_service
-from app.routers.access_control_common import require_admin_actor
+from app.routers.access_control_common import SESSION_ACCESS_COOKIE_NAME, require_admin_actor
 from app.schemas import (
     AdminActivatePlanRequest,
     AdminActivatePlanResponse,
@@ -20,21 +20,19 @@ def list_plans(
     items = access_control_service.list_public_plans()
     return PlanCatalogResponse(items=[PlanCatalogItem(**item) for item in items])
 
-
 @router.post("/admin/plans/activate", response_model=AdminActivatePlanResponse)
-@router.post("/plans/activate", response_model=AdminActivatePlanResponse, include_in_schema=False)
 def activate_user_plan(
     payload: AdminActivatePlanRequest,
     x_admin_token: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
-    admin_token: str | None = Query(default=None, alias="admin_token"),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> AdminActivatePlanResponse:
     actor_kind, actor_user_id = require_admin_actor(
         access_control_service=access_control_service,
         x_admin_token=x_admin_token,
         authorization=authorization,
-        admin_token_query=admin_token,
+        access_cookie_token=access_cookie_token,
     )
 
     try:
