@@ -1048,12 +1048,12 @@ async def conversion_upload_stream(
             _raise_http_convert_error(exc, identity=None, access_control_service=access_control_service)
             raise
 
-        def failed_stream():
+        def failed_stream(error: Exception = exc):
             code = "processing_failed"
             message = "NÃ£o foi possÃ­vel ler este PDF."
-            if isinstance(exc, FileTooLargeError):
+            if isinstance(error, FileTooLargeError):
                 code = "file_too_large"
-                max_bytes = int(getattr(exc, "_max_upload_size_bytes", TEXT_PDF_MAX_UPLOAD_SIZE_BYTES))
+                max_bytes = int(getattr(error, "_max_upload_size_bytes", TEXT_PDF_MAX_UPLOAD_SIZE_BYTES))
                 max_mb = max(1, int(max_bytes // (1024 * 1024)))
                 message = f"Arquivo excede o tamanho mÃ¡ximo de {max_mb} MB."
             yield _sse_event(
