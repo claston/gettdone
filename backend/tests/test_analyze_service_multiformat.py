@@ -316,6 +316,11 @@ def test_analyze_service_resolves_opening_balance_from_saldo_anterior_row_when_r
     result = service.analyze(filename="caixa.pdf", raw_bytes=b"%PDF synthetic")
 
     assert result.opening_balance == 10000.0
+    assert result.transactions_total == 1
+    assert len(result.preview_transactions) == 1
+    assert result.preview_transactions[0].description == "PAGAMENTO BOLETO"
+    assert result.total_outflows == -150.0
+    assert result.net_total == -150.0
 
 
 def test_analyze_service_prefers_saldo_anterior_row_over_later_running_balance(tmp_path, monkeypatch) -> None:
@@ -378,6 +383,108 @@ def test_analyze_service_prefers_saldo_anterior_row_over_later_running_balance(t
     result = service.analyze(filename="caixa.pdf", raw_bytes=b"%PDF synthetic")
 
     assert result.opening_balance == 10000.0
+    assert result.transactions_total == 1
+    assert result.preview_transactions[0].description == "PAGAMENTO BOLETO"
+
+
+def test_analyze_service_filters_opening_balance_row_even_when_description_contains_date_and_amount(
+    tmp_path, monkeypatch
+) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    service = AnalyzeService(storage=storage)
+    monkeypatch.setattr(
+        analyze_service_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes: build_pdf_parse_result(
+            transactions=[
+                NormalizedTransaction(
+                    date="2024-02-29",
+                    description="29 02 2024 SALDO ANTERIOR 441 66",
+                    amount=-441.66,
+                    type="outflow",
+                ),
+                NormalizedTransaction(
+                    date="2024-03-01",
+                    description="DEPOSITO IDENTIFICADO 010324854",
+                    amount=289.73,
+                    type="inflow",
+                ),
+            ],
+            layout_name="bradesco_net_empresa_extrato_mensal_por_periodo_v1",
+            confidence=0.91,
+            extracted_text="29/02/2024 SALDO ANTERIOR -441,66\n01/03/2024 DEPOSITO IDENTIFICADO 010324854 289,73",
+            parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+        ),
+    )
+
+    result = service.analyze(filename="bradesco.pdf", raw_bytes=b"%PDF synthetic")
+
+    assert result.opening_balance == -441.66
+    assert result.transactions_total == 1
+    assert len(result.preview_transactions) == 1
+    assert result.preview_transactions[0].description == "DEPOSITO IDENTIFICADO 010324854"
+    assert result.total_inflows == 289.73
+    assert result.net_total == 289.73
+
+
+def test_analyze_service_filters_trailing_closing_balance_snapshot_row(tmp_path, monkeypatch) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    service = AnalyzeService(storage=storage)
+    monkeypatch.setattr(
+        analyze_service_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes, **kwargs: PdfParseResult(
+            transactions=[
+                NormalizedTransaction(date="2024-04-30", description="TRANSFERENCIA RECEBIDA", amount=3850.0, type="inflow"),
+                NormalizedTransaction(date="2024-04-30", description="0000 00000 999 SALDO", amount=6422.6, type="inflow"),
+            ],
+            layout=PdfLayoutInference(
+                layout_name="bb_statement_ptbr",
+                confidence=1.0,
+                used_fallback=False,
+            ),
+            extracted_text=(
+                "30/04/2024 TRANSFERENCIA RECEBIDA 3.850,00 6.422,60\n"
+                "30/04/2024 0000 00000 999 SALDO 6.422,60"
+            ),
+            parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+            canonical_transactions=[
+                CanonicalTransaction(
+                    date="2024-04-30",
+                    description="TRANSFERENCIA RECEBIDA",
+                    amount=3850.0,
+                    type="inflow",
+                    running_balance=6422.6,
+                    source_page=1,
+                    source_line=1,
+                    layout_name="bb_statement_ptbr",
+                    confidence=1.0,
+                    source_parser="grouped",
+                ),
+                CanonicalTransaction(
+                    date="2024-04-30",
+                    description="0000 00000 999 SALDO",
+                    amount=6422.6,
+                    type="inflow",
+                    running_balance=None,
+                    source_page=1,
+                    source_line=2,
+                    layout_name="bb_statement_ptbr",
+                    confidence=1.0,
+                    source_parser="grouped",
+                ),
+            ],
+        ),
+    )
+
+    result = service.analyze(filename="bb.pdf", raw_bytes=b"%PDF synthetic")
+
+    assert result.transactions_total == 1
+    assert len(result.preview_transactions) == 1
+    assert result.preview_transactions[0].description == "TRANSFERENCIA RECEBIDA"
+    assert result.preview_transactions[0].running_balance == 6422.6
+    assert result.total_inflows == 3850.0
+    assert result.closing_balance == 6422.6
 
 
 def test_analyze_service_resolves_opening_balance_from_extracted_text_when_outside_table(

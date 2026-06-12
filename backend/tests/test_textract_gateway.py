@@ -26,9 +26,17 @@ class _FakeTextractClient:
         self.fail = fail
         self.poll_calls = 0
         self.fetch_calls = 0
+        self.start_analysis_calls = 0
+        self.start_text_calls = 0
 
     def start_document_analysis(self, **kwargs):
         _ = kwargs
+        self.start_analysis_calls += 1
+        return {"JobId": "job-123"}
+
+    def start_document_text_detection(self, **kwargs):
+        _ = kwargs
+        self.start_text_calls += 1
         return {"JobId": "job-123"}
 
     def get_document_analysis(self, **kwargs):
@@ -54,6 +62,9 @@ class _FakeTextractClient:
             "DocumentMetadata": {"Pages": 2},
             "Blocks": [{"BlockType": "LINE", "Id": "l2", "Text": "b"}],
         }
+
+    def get_document_text_detection(self, **kwargs):
+        return self.get_document_analysis(**kwargs)
 
 
 class _FakeSession:
@@ -100,6 +111,30 @@ def test_gateway_fetches_paginated_blocks_and_deletes_s3_object(monkeypatch) -> 
     assert len(result["blocks"]) == 2
     assert s3.upload_calls == 1
     assert s3.delete_calls == 1
+    assert textract.start_text_calls == 1
+    assert textract.start_analysis_calls == 0
+    assert result["metrics"]["textract_mode"] == "text"
+
+
+def test_gateway_uses_analysis_mode_when_requested(monkeypatch) -> None:
+    s3 = _FakeS3Client()
+    textract = _FakeTextractClient()
+    fake_boto3 = _FakeBoto3(s3=s3, textract=textract)
+    monkeypatch.setattr("app.application.textract_gateway._load_boto3", lambda: fake_boto3)
+
+    gateway = TextractGateway(
+        bucket="test-bucket",
+        region="us-east-1",
+        poll_interval_seconds=0.01,
+        timeout_seconds=3.0,
+        mode="analysis",
+    )
+    result = gateway.analyze_pdf(raw_bytes=b"%PDF synthetic")
+
+    assert result["provider"] == "aws_textract"
+    assert textract.start_analysis_calls == 1
+    assert textract.start_text_calls == 0
+    assert result["metrics"]["textract_mode"] == "analysis"
 
 
 def test_gateway_deletes_s3_object_even_when_textract_job_fails(monkeypatch) -> None:

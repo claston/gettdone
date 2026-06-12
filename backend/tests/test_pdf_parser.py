@@ -311,6 +311,59 @@ def test_parse_pdf_transactions_uses_textract_adapter_path_for_scanned_pdf_when_
     assert result.parse_metrics.get("textract_used") == 1
 
 
+def test_parse_pdf_transactions_uses_standard_pdf_parser_for_textract_text_mode(monkeypatch) -> None:
+    monkeypatch.setenv("TEXTRACT_ENABLED", "true")
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [])
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: False)
+
+    class _GatewayStub:
+        def analyze_pdf(self, *, raw_bytes: bytes) -> dict[str, object]:
+            _ = raw_bytes
+            return {
+                "document_hash": "hash",
+                "page_count": 1,
+                "blocks": [
+                    {
+                        "BlockType": "LINE",
+                        "Id": "l1",
+                        "Page": 1,
+                        "Text": "Data Historico Documento Valor Saldo",
+                        "Confidence": 99.0,
+                    },
+                    {
+                        "BlockType": "LINE",
+                        "Id": "l2",
+                        "Page": 1,
+                        "Text": "29/02/2024 SALDO ANTERIOR -441,66 -441,66",
+                        "Confidence": 99.0,
+                    },
+                    {
+                        "BlockType": "LINE",
+                        "Id": "l3",
+                        "Page": 1,
+                        "Text": "01/03/2024 DEPOSITO IDENTIFICADO 010324854 289,73 -151,93",
+                        "Confidence": 99.0,
+                    },
+                ],
+                "metrics": {"textract_total_ms": 120.0, "textract_mode": "text"},
+            }
+
+    monkeypatch.setattr(pdf_parser_module, "TextractGateway", lambda: _GatewayStub())
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert len(result.transactions) == 2
+    assert result.transactions[0].description == "SALDO ANTERIOR"
+    assert result.transactions[1].description == "DEPOSITO IDENTIFICADO 010324854"
+    assert result.canonical_transactions[0].running_balance == -441.66
+    assert result.canonical_transactions[1].running_balance == -151.93
+    assert result.parse_metrics.get("selected_parser") == "tabular"
+    assert result.parse_metrics.get("extraction_provider") == "aws_textract"
+    assert result.parse_metrics.get("textract_mode") == "text"
+    assert result.canonical_transactions[0].warnings == []
+    assert result.canonical_transactions[1].warnings == []
+
+
 def test_parse_pdf_transactions_uses_textract_when_forced_even_with_native_text(monkeypatch) -> None:
     monkeypatch.setenv("TEXTRACT_ENABLED", "true")
     monkeypatch.setenv("TEXTRACT_FORCE", "true")
