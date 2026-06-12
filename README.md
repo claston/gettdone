@@ -29,7 +29,7 @@ doc/
 ```powershell
 cd backend
 venv\Scripts\python.exe -m pip install -r requirements.txt
-venv\Scripts\python.exe -m uvicorn app.main:app --reload
+venv\Scripts\python.exe -m uvicorn app.main:app --reload --env-file .env
 ```
 
 API docs: `http://127.0.0.1:8000/docs`
@@ -51,6 +51,15 @@ OCR para PDF sem camada de texto:
 - Timeout padrao de OCR por pagina: `12s` (configuravel por `PDF_OCR_PAGE_TIMEOUT_SECONDS`).
 - Concorrencia padrao de OCR por processo: `1` (configuravel por `PDF_OCR_CONCURRENCY_LIMIT`).
 
+Textract para PDF escaneado:
+
+- Ative com `TEXTRACT_ENABLED=true`.
+- O modo padrao agora e `TEXTRACT_MODE=text`, que usa apenas extracao de texto (`StartDocumentTextDetection`) e deixa o OCR local como fallback.
+- Use `TEXTRACT_MODE=analysis` somente quando quiser habilitar o caminho com tabelas/layout para pacotes futuros.
+- Para o teste local, configure tambem `AWS_REGION` e `TEXTRACT_TEMP_BUCKET`.
+- `TEXTRACT_FEATURE_TYPES` so e usado em `TEXTRACT_MODE=analysis`.
+- Se quiser forcar Textract mesmo quando o PDF tiver texto nativo, use `TEXTRACT_FORCE=true`.
+
 ## Rodar frontend
 
 ```powershell
@@ -67,7 +76,7 @@ Terminal 1 (backend):
 
 ```powershell
 cd backend
-venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --env-file .env
 ```
 
 Terminal 2 (frontend):

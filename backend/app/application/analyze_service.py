@@ -85,8 +85,38 @@ class AnalyzeService:
         )
         classify_ms = round((perf_counter() - classify_start) * 1000, 3)
         normalize_start = perf_counter()
-        transactions = normalize_transactions(parsed_transactions)
+        normalized_transactions = normalize_transactions(parsed_transactions)
         normalize_ms = round((perf_counter() - normalize_start) * 1000, 3)
+        metadata_candidate_rows = [
+            TransactionRow(
+                date=item.date,
+                description=item.description,
+                amount=item.amount,
+                category="Outros",
+                reconciliation_status="unmatched",
+                running_balance=(
+                    transaction_running_balances[idx] if idx < len(transaction_running_balances) else None
+                ),
+                warning_types=transaction_warning_types[idx] if idx < len(transaction_warning_types) else [],
+            )
+            for idx, item in enumerate(normalized_transactions)
+        ]
+        opening_balance = self._resolve_opening_balance(metadata_candidate_rows, extracted_text=extracted_text)
+        kept_indices = [
+            idx
+            for idx, row in enumerate(metadata_candidate_rows)
+            if not self._is_balance_metadata_row(metadata_candidate_rows, idx)
+        ]
+        parsed_transactions = [parsed_transactions[idx] for idx in kept_indices]
+        transactions = [normalized_transactions[idx] for idx in kept_indices]
+        transaction_warning_types = [
+            transaction_warning_types[idx] if idx < len(transaction_warning_types) else []
+            for idx in kept_indices
+        ]
+        transaction_running_balances = [
+            transaction_running_balances[idx] if idx < len(transaction_running_balances) else None
+            for idx in kept_indices
+        ]
         reconcile_start = perf_counter()
         reconciliation_result = reconcile_transactions(transactions)
         reconcile_ms = round((perf_counter() - reconcile_start) * 1000, 3)
@@ -132,7 +162,6 @@ class AnalyzeService:
         total_inflows = round(sum(item.amount for item in transactions if item.amount > 0), 2)
         total_outflows = round(sum(item.amount for item in transactions if item.amount < 0), 2)
         net_total = round(total_inflows + total_outflows, 2)
-        opening_balance = self._resolve_opening_balance(preview_rows, extracted_text=extracted_text)
         closing_balance = self._resolve_closing_balance(preview_rows, opening_balance=opening_balance)
         bank_name = self._resolve_bank_name(
             extension=extension,
@@ -291,7 +320,7 @@ class AnalyzeService:
     def _resolve_opening_balance(self, rows: list[TransactionRow], *, extracted_text: str | None = None) -> float | None:
         for row in rows:
             normalized_description = self._normalize_text_for_profile(row.description)
-            if normalized_description in {"SALDO ANTERIOR", "SALDO INICIAL"}:
+            if self._is_opening_balance_description(normalized_description):
                 return round(float(row.amount), 2)
 
         amount_pattern = r"([\-+]?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})|[\-+]?\d+(?:,\d{2})?)"
@@ -337,10 +366,35 @@ class AnalyzeService:
             transaction_total = sum(
                 float(row.amount)
                 for row in rows
-                if self._normalize_text_for_profile(row.description) not in {"SALDO ANTERIOR", "SALDO INICIAL"}
+                if not self._is_opening_balance_description(row.description)
             )
             return round(float(opening_balance) + transaction_total, 2)
         return None
+
+    def _is_opening_balance_description(self, description: str) -> bool:
+        normalized = self._normalize_text_for_profile(description)
+        return "SALDO ANTERIOR" in normalized or "SALDO INICIAL" in normalized
+
+    def _is_balance_metadata_row(self, rows: list[TransactionRow], index: int) -> bool:
+        row = rows[index]
+        if self._is_opening_balance_description(row.description):
+            return True
+
+        normalized = self._normalize_text_for_profile(row.description)
+        if "SALDO" not in normalized:
+            return False
+        if row.running_balance is not None:
+            return False
+        if index == 0:
+            return False
+
+        previous_balance = rows[index - 1].running_balance
+        if previous_balance is None:
+            return False
+        if abs(float(row.amount) - float(previous_balance)) > 0.05:
+            return False
+
+        return True
 
     def _build_transactions_for_extension(
         self,

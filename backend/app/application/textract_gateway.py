@@ -10,6 +10,9 @@ from app.application.errors import InvalidFileContentError
 
 DEFAULT_FEATURE_TYPES = ("TABLES", "LAYOUT")
 TERMINAL_JOB_STATUSES = {"SUCCEEDED", "FAILED", "PARTIAL_SUCCESS"}
+DEFAULT_TEXTRACT_MODE = "text"
+TEXTRACT_ANALYSIS_MODE = "analysis"
+TEXTRACT_TEXT_MODE = "text"
 
 
 class TextractGateway:
@@ -22,6 +25,7 @@ class TextractGateway:
         poll_interval_seconds: float | None = None,
         timeout_seconds: float | None = None,
         feature_types: tuple[str, ...] | None = None,
+        mode: str | None = None,
     ) -> None:
         self.bucket = (bucket or os.getenv("TEXTRACT_TEMP_BUCKET", "")).strip()
         if not self.bucket:
@@ -34,6 +38,7 @@ class TextractGateway:
         self.timeout_seconds = _to_float_env(
             timeout_seconds, "TEXTRACT_JOB_TIMEOUT_SECONDS", default=600.0, min_value=5.0
         )
+        self.mode = _resolve_textract_mode(mode)
         self.feature_types = feature_types or _resolve_feature_types()
 
     def analyze_pdf(self, *, raw_bytes: bytes) -> dict[str, object]:
@@ -52,9 +57,12 @@ class TextractGateway:
             timings_ms["textract_upload_ms"] = _elapsed_ms(upload_started)
 
             job_started = time.perf_counter()
-            start_response = textract_client.start_document_analysis(
-                DocumentLocation={"S3Object": {"Bucket": self.bucket, "Name": s3_key}},
-                FeatureTypes=list(self.feature_types),
+            start_response = _start_textract_job(
+                textract_client=textract_client,
+                mode=self.mode,
+                bucket=self.bucket,
+                s3_key=s3_key,
+                feature_types=self.feature_types,
             )
             job_id = str(start_response.get("JobId") or "").strip()
             if not job_id:
@@ -65,11 +73,16 @@ class TextractGateway:
                 job_id=job_id,
                 poll_interval_seconds=self.poll_interval_seconds,
                 timeout_seconds=self.timeout_seconds,
+                mode=self.mode,
             )
             timings_ms["textract_job_ms"] = _elapsed_ms(job_started)
 
             fetch_started = time.perf_counter()
-            page_count, blocks, metadata = _fetch_document_analysis(textract_client=textract_client, job_id=job_id)
+            page_count, blocks, metadata = _fetch_textract_result(
+                textract_client=textract_client,
+                job_id=job_id,
+                mode=self.mode,
+            )
             timings_ms["textract_result_fetch_ms"] = _elapsed_ms(fetch_started)
             return {
                 "provider": "aws_textract",
@@ -82,6 +95,7 @@ class TextractGateway:
                     "textract_used": 1,
                     "textract_page_count": page_count,
                     "textract_block_count": len(blocks),
+                    "textract_mode": self.mode,
                     **timings_ms,
                 },
             }
@@ -116,10 +130,10 @@ def _build_s3_key(*, prefix: str, file_hash: str) -> str:
     return file_name
 
 
-def _wait_for_job(*, textract_client, job_id: str, poll_interval_seconds: float, timeout_seconds: float) -> None:
+def _wait_for_job(*, textract_client, job_id: str, poll_interval_seconds: float, timeout_seconds: float, mode: str) -> None:
     deadline = time.perf_counter() + timeout_seconds
     while time.perf_counter() < deadline:
-        response = textract_client.get_document_analysis(JobId=job_id, MaxResults=1)
+        response = _get_textract_job_status(textract_client=textract_client, job_id=job_id, mode=mode)
         status = str(response.get("JobStatus") or "").strip().upper()
         if status in TERMINAL_JOB_STATUSES:
             if status == "FAILED":
@@ -130,7 +144,7 @@ def _wait_for_job(*, textract_client, job_id: str, poll_interval_seconds: float,
     raise TimeoutError(f"OCR timeout after {timeout_seconds:.1f}s while waiting for processing.")
 
 
-def _fetch_document_analysis(*, textract_client, job_id: str) -> tuple[int, list[dict[str, object]], dict[str, object]]:
+def _fetch_textract_result(*, textract_client, job_id: str, mode: str) -> tuple[int, list[dict[str, object]], dict[str, object]]:
     blocks: list[dict[str, object]] = []
     next_token: str | None = None
     page_count = 0
@@ -139,7 +153,7 @@ def _fetch_document_analysis(*, textract_client, job_id: str) -> tuple[int, list
         params: dict[str, object] = {"JobId": job_id, "MaxResults": 1000}
         if next_token:
             params["NextToken"] = next_token
-        response = textract_client.get_document_analysis(**params)
+        response = _get_textract_result_page(textract_client=textract_client, mode=mode, params=params)
         status = str(response.get("JobStatus") or "").strip().upper()
         if status == "FAILED":
             message = str(response.get("StatusMessage") or "Textract job failed.").strip()
@@ -155,6 +169,28 @@ def _fetch_document_analysis(*, textract_client, job_id: str) -> tuple[int, list
     return page_count, blocks, document_metadata
 
 
+def _start_textract_job(*, textract_client, mode: str, bucket: str, s3_key: str, feature_types: tuple[str, ...]):
+    document_location = {"S3Object": {"Bucket": bucket, "Name": s3_key}}
+    if mode == TEXTRACT_ANALYSIS_MODE:
+        return textract_client.start_document_analysis(
+            DocumentLocation=document_location,
+            FeatureTypes=list(feature_types),
+        )
+    return textract_client.start_document_text_detection(DocumentLocation=document_location)
+
+
+def _get_textract_job_status(*, textract_client, job_id: str, mode: str) -> dict[str, object]:
+    if mode == TEXTRACT_ANALYSIS_MODE:
+        return textract_client.get_document_analysis(JobId=job_id, MaxResults=1)
+    return textract_client.get_document_text_detection(JobId=job_id, MaxResults=1)
+
+
+def _get_textract_result_page(*, textract_client, mode: str, params: dict[str, object]) -> dict[str, object]:
+    if mode == TEXTRACT_ANALYSIS_MODE:
+        return textract_client.get_document_analysis(**params)
+    return textract_client.get_document_text_detection(**params)
+
+
 def _resolve_feature_types() -> tuple[str, ...]:
     raw = os.getenv("TEXTRACT_FEATURE_TYPES", "").strip()
     if not raw:
@@ -163,6 +199,13 @@ def _resolve_feature_types() -> tuple[str, ...]:
     if not parts:
         return DEFAULT_FEATURE_TYPES
     return tuple(parts)
+
+
+def _resolve_textract_mode(explicit: str | None) -> str:
+    raw = (explicit or os.getenv("TEXTRACT_MODE") or "").strip().lower()
+    if raw == TEXTRACT_ANALYSIS_MODE:
+        return TEXTRACT_ANALYSIS_MODE
+    return TEXTRACT_TEXT_MODE
 
 
 def _to_float_env(explicit: float | None, key: str, *, default: float, min_value: float) -> float:

@@ -248,6 +248,23 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
         blocks=list(gateway_result.get("blocks") or []),
         page_count=int(gateway_result.get("page_count") or 0),
     )
+    gateway_metrics = dict(gateway_result.get("metrics") or {})
+    textract_mode = str(gateway_metrics.get("textract_mode") or "").strip().lower()
+    if textract_mode == "text":
+        text_mode_result = _parse_scanned_pdf_with_textract_text_pages(extraction)
+        text_mode_metrics = dict(text_mode_result.parse_metrics)
+        text_mode_metrics["extraction_provider"] = "aws_textract"
+        text_mode_metrics["textract_enabled"] = 1
+        text_mode_metrics["textract_used"] = 1
+        for key, value in gateway_metrics.items():
+            text_mode_metrics[str(key)] = value
+        return PdfParseResult(
+            transactions=text_mode_result.transactions,
+            canonical_transactions=text_mode_result.canonical_transactions,
+            layout=text_mode_result.layout,
+            extracted_text=text_mode_result.extracted_text,
+            parse_metrics=text_mode_metrics,
+        )
     adapted = adapt_textract_extraction_to_transactions(extraction)
     inferred_layout = infer_pdf_layout(adapted.extracted_text)
     canonical_transactions = adapted.canonical_transactions
@@ -278,7 +295,7 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
     parse_metrics["extraction_provider"] = "aws_textract"
     parse_metrics["textract_enabled"] = 1
     parse_metrics["textract_used"] = 1
-    for key, value in dict(gateway_result.get("metrics") or {}).items():
+    for key, value in gateway_metrics.items():
         parse_metrics[str(key)] = value
     return PdfParseResult(
         transactions=adapted.transactions,
@@ -287,6 +304,34 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
         extracted_text=adapted.extracted_text,
         parse_metrics=parse_metrics,
     )
+
+
+def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
+    page_texts = [
+        "\n".join(
+            line.text
+            for line in sorted(page.lines, key=lambda value: value.line_index)
+            if line.text
+        )
+        for page in extraction.pages
+    ]
+    if not any(page_texts):
+        raise InvalidFileContentError("Nao foi possivel extrair transacoes do OCR para revisao.")
+    try:
+        return _parse_pdf_transactions_from_page_texts(page_texts)
+    except InvalidFileContentError:
+        adapted = adapt_textract_extraction_to_transactions(extraction)
+        inferred_layout = infer_pdf_layout(adapted.extracted_text)
+        return PdfParseResult(
+            transactions=adapted.transactions,
+            canonical_transactions=adapted.canonical_transactions,
+            layout=inferred_layout,
+            extracted_text=adapted.extracted_text,
+            parse_metrics={
+                "selected_parser": str(adapted.parse_metrics.get("selected_parser") or "textract_line_window"),
+                "parser_selection_reason": "textract_text_fallback",
+            },
+        )
 
 
 def _parse_scanned_pdf_with_local_ocr_adapter(
