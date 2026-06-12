@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from app.application import AccessControlService, InvalidSessionTokenError, InvalidUserTokenError
 from app.security_baseline import is_production_env, read_bool_env
 
+
 def _default_session_access_cookie_name() -> str:
     return "__Host-ofx_at" if is_production_env() else "ofx_at"
 
