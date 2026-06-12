@@ -1149,7 +1149,10 @@ async def conversion_upload_stream(
         def worker() -> None:
             try:
                 progress_queue.put(
-                    ("event", {"stage": "data_extraction", "progress": 76 if scanned_likely else 34, "message": "Extraindo informações..."})
+                    (
+                        "event",
+                        {"stage": "data_extraction", "progress": 76 if scanned_likely else 34, "message": "Extraindo informações..."},
+                    )
                 )
                 payload = _build_convert_response(
                     file=file,
