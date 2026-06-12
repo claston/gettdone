@@ -286,8 +286,8 @@ def test_streaming_upload_emits_file_too_large_error_message() -> None:
 def test_streaming_upload_explains_scanned_pdf_pages_limit_without_numeric_limit(monkeypatch) -> None:
     monkeypatch.setenv("PDF_OCR_MAX_PAGES", "8")
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (True, 11),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (True, 11),
     )
     client = _build_client()
     response = client.post(

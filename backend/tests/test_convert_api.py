@@ -1,13 +1,20 @@
+import asyncio
 from io import BytesIO
 
+from fastapi import UploadFile
 from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
 from app.application.access_control import AccessControlService
-from app.application.errors import InvalidFileContentError, MaxPagesPerFileExceededError
+from app.application.errors import FileTooLargeError, InvalidFileContentError, MaxPagesPerFileExceededError
 from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
 from app.main import app
-from app.routers.convert import OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK, _resolve_error_observability
+from app.routers.convert import (
+    OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK,
+    _cleanup_staged_upload,
+    _resolve_error_observability,
+    _stage_upload_to_temp_file,
+)
 from app.schemas import (
     AnalyzeResponse,
     BeforeAfterPreview,
@@ -175,6 +182,35 @@ def _build_pdf_with_pages(page_count: int) -> bytes:
     return payload.getvalue()
 
 
+def test_stage_upload_to_temp_file_streams_and_hashes_contents(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("app.routers.convert._resolve_upload_staging_dir", lambda: tmp_path)
+    payload = (b"a" * (1024 * 1024)) + (b"b" * 512) + b"tail"
+    upload = UploadFile(filename="statement.pdf", file=BytesIO(payload))
+
+    staged = asyncio.run(_stage_upload_to_temp_file(upload, max_bytes=len(payload) + 1))
+
+    assert staged.size_bytes == len(payload)
+    assert staged.path.exists()
+    assert staged.path.read_bytes() == payload
+    _cleanup_staged_upload(staged)
+    assert not staged.path.exists()
+
+
+def test_stage_upload_to_temp_file_rejects_when_chunks_exceed_limit(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("app.routers.convert._resolve_upload_staging_dir", lambda: tmp_path)
+    payload = b"x" * ((1024 * 1024) + 32)
+    upload = UploadFile(filename="statement.pdf", file=BytesIO(payload))
+
+    try:
+        asyncio.run(_stage_upload_to_temp_file(upload, max_bytes=1024 * 1024))
+    except FileTooLargeError as exc:
+        assert int(getattr(exc, "_max_upload_size_bytes", 0)) == 1024 * 1024
+    else:
+        raise AssertionError("Expected FileTooLargeError")
+
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_convert_happy_path(tmp_path) -> None:
     client = build_client(tmp_path)
     response = client.post(
@@ -223,8 +259,8 @@ def test_convert_rejects_file_larger_than_5mb(tmp_path) -> None:
 
 def test_convert_rejects_ocr_pdf_larger_than_5mb_for_paid_user(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (True, 1),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (True, 1),
     )
     access_control = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
@@ -248,8 +284,8 @@ def test_convert_rejects_ocr_pdf_larger_than_5mb_for_paid_user(tmp_path, monkeyp
 
 def test_convert_allows_text_pdf_up_to_10mb(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (False, 1),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (False, 1),
     )
     client = build_client(tmp_path)
     text_pdf = b"a" * ((5 * 1024 * 1024) + 1)
@@ -267,8 +303,8 @@ def test_convert_allows_text_pdf_up_to_10mb(tmp_path, monkeypatch) -> None:
 
 def test_convert_rejects_text_pdf_larger_than_10mb(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (False, 1),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (False, 1),
     )
     client = build_client(tmp_path)
     oversized = b"a" * ((10 * 1024 * 1024) + 1)
@@ -325,8 +361,8 @@ def test_convert_rejects_pdf_above_max_pages_per_file(tmp_path) -> None:
 
 def test_convert_rejects_ocr_pdf_above_6_pages_for_paid_user(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (True, 11),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (True, 11),
     )
     access_control = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
@@ -356,8 +392,8 @@ def test_convert_rejects_ocr_pdf_above_6_pages_for_paid_user(tmp_path, monkeypat
 
 def test_convert_returns_pages_limit_when_ocr_like_pdf_is_misdetected_as_text(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (False, 11),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (False, 11),
     )
     access_control = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
@@ -389,8 +425,8 @@ def test_convert_returns_pages_limit_when_ocr_like_pdf_is_misdetected_as_text(tm
 def test_conversion_upload_non_sse_keeps_ocr_pages_limit_validation(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("app.routers.convert.OCR_PDF_MAX_PAGES_PER_FILE", 5)
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (True, 6),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (True, 6),
     )
     access_control = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
@@ -468,8 +504,8 @@ def test_conversion_upload_non_sse_returns_friendly_message_for_likely_corrupted
 
 def test_convert_allows_text_pdf_up_to_250_pages(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (False, 250),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (False, 250),
     )
     client = build_client(tmp_path)
 
@@ -486,8 +522,8 @@ def test_convert_allows_text_pdf_up_to_250_pages(tmp_path, monkeypatch) -> None:
 
 def test_convert_rejects_text_pdf_above_250_pages(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely",
-        lambda filename, raw_bytes: (False, 251),
+        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        lambda filename, staged_path: (False, 251),
     )
     client = build_client(tmp_path)
 

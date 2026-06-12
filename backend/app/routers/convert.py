@@ -2,6 +2,8 @@ import json
 import logging
 import os
 import re
+import tempfile
+from dataclasses import dataclass
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
@@ -13,6 +15,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Cookie, Depends, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pypdf import PdfReader
+from starlette.background import BackgroundTask
 
 from app.application import (
     AccessControlService,
@@ -38,8 +41,17 @@ TEXT_PDF_MAX_PAGES_PER_FILE = 250
 TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
 OCR_PDF_MAX_PAGES_PER_FILE = 10
 OCR_PDF_MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024
+UPLOAD_READ_CHUNK_SIZE_BYTES = 1024 * 1024
+UPLOAD_STAGING_MAX_BYTES = TEXT_PDF_MAX_UPLOAD_SIZE_BYTES
 OCR_CONTEXT_SCANNED_PDF = "scanned_pdf"
 OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK = "unidentified_model_fallback"
+
+
+@dataclass(slots=True)
+class _StagedUpload:
+    path: Path
+    size_bytes: int
+    sha256_hex: str
 
 
 def _resolve_ocr_limit_context(scanned_likely: bool | None) -> str:
@@ -448,6 +460,62 @@ def _is_sse_request(accept: str | None) -> bool:
     return "text/event-stream" in str(accept or "").lower()
 
 
+def _resolve_upload_staging_dir() -> Path:
+    staging_dir = Path(__file__).resolve().parents[2] / "tmp" / "upload_staging"
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    return staging_dir
+
+
+def _build_file_too_large_error(max_upload_size_bytes: int) -> FileTooLargeError:
+    exc = FileTooLargeError()
+    setattr(exc, "_max_upload_size_bytes", int(max_upload_size_bytes))
+    return exc
+
+
+async def _stage_upload_to_temp_file(
+    file: UploadFile,
+    *,
+    max_bytes: int = UPLOAD_STAGING_MAX_BYTES,
+) -> _StagedUpload:
+    staging_dir = _resolve_upload_staging_dir()
+    fd, temp_path = tempfile.mkstemp(
+        prefix="convert-upload-",
+        suffix=Path(file.filename or "").suffix or ".bin",
+        dir=staging_dir,
+    )
+    staged_path = Path(temp_path)
+    total = 0
+    digest = sha256()
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            while chunk := await file.read(UPLOAD_READ_CHUNK_SIZE_BYTES):
+                total += len(chunk)
+                if total > max_bytes:
+                    raise _build_file_too_large_error(max_bytes)
+                digest.update(chunk)
+                handle.write(chunk)
+        return _StagedUpload(path=staged_path, size_bytes=total, sha256_hex=digest.hexdigest())
+    except Exception:
+        try:
+            staged_path.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Failed to remove staged upload file %s", staged_path, exc_info=True)
+        raise
+
+
+def _cleanup_staged_upload(staged_upload: _StagedUpload | None) -> None:
+    if staged_upload is None:
+        return
+    try:
+        staged_upload.path.unlink(missing_ok=True)
+    except OSError:
+        logger.warning("Failed to remove staged upload file %s", staged_upload.path, exc_info=True)
+
+
+def _read_staged_upload_bytes(staged_upload: _StagedUpload) -> bytes:
+    return staged_upload.path.read_bytes()
+
+
 def _inspect_pdf_scan_likely(filename: str, raw_bytes: bytes) -> tuple[bool, int | None]:
     if Path(filename or "").suffix.lower() != ".pdf":
         return False, None
@@ -462,10 +530,24 @@ def _inspect_pdf_scan_likely(filename: str, raw_bytes: bytes) -> tuple[bool, int
         return False, None
 
 
+def _inspect_pdf_scan_likely_from_path(filename: str, staged_path: Path) -> tuple[bool, int | None]:
+    if Path(filename or "").suffix.lower() != ".pdf":
+        return False, None
+    try:
+        reader = PdfReader(str(staged_path))
+        total_pages = len(reader.pages)
+        extracted_chars = 0
+        for page in reader.pages:
+            extracted_chars += len((page.extract_text() or "").strip())
+        return extracted_chars < 40, total_pages
+    except Exception:
+        return False, None
+
+
 def _build_convert_response(
     *,
     file: UploadFile,
-    data: bytes,
+    staged_upload: _StagedUpload,
     anonymous_fingerprint: str | None,
     user_token: str | None,
     authorization: str | None,
@@ -483,7 +565,7 @@ def _build_convert_response(
     ocr_started_logged = False
     attempt_processing_id: str | None = None
     attempt_anonymous_event_id: str | None = None
-    file_digest = sha256(data).hexdigest() if data else None
+    file_digest = staged_upload.sha256_hex or None
     ocr_engine = os.getenv("PDF_OCR_ENGINE", "").strip().lower() or "tesseract"
 
     def telemetry_ocr_progress(current_page: int, total_page_count: int) -> None:
@@ -539,6 +621,9 @@ def _build_convert_response(
                     ocr_context=OCR_CONTEXT_SCANNED_PDF if scanned_likely is True else None,
                 )
         max_upload_size_bytes = _resolve_max_upload_size_bytes(identity, scanned_likely, estimated_pages_count)
+        if staged_upload.size_bytes > max_upload_size_bytes:
+            raise _build_file_too_large_error(max_upload_size_bytes)
+        data = _read_staged_upload_bytes(staged_upload)
         try:
             access_control_service.assert_upload_size(data, max_upload_size_bytes=max_upload_size_bytes)
         except FileTooLargeError as exc:
@@ -912,12 +997,13 @@ async def convert(
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> ConvertResponse:
     identity = None
+    staged_upload: _StagedUpload | None = None
     try:
-        data = await file.read()
-        scanned_likely, total_pages = _inspect_pdf_scan_likely(file.filename or "", data)
+        staged_upload = await _stage_upload_to_temp_file(file)
+        scanned_likely, total_pages = _inspect_pdf_scan_likely_from_path(file.filename or "", staged_upload.path)
         return _build_convert_response(
             file=file,
-            data=data,
+            staged_upload=staged_upload,
             anonymous_fingerprint=anonymous_fingerprint,
             user_token=user_token,
             authorization=authorization,
@@ -931,6 +1017,8 @@ async def convert(
     except Exception as exc:
         _raise_http_convert_error(exc, identity=identity, access_control_service=access_control_service)
         raise
+    finally:
+        _cleanup_staged_upload(staged_upload)
 
 
 @router.post("/api/conversions/upload")
@@ -947,16 +1035,44 @@ async def conversion_upload_stream(
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ):
     logger.info("conversion_upload_received filename=%s accept=%s", file.filename or "", accept or "")
-    data = await file.read()
-    logger.info(
-        "conversion_upload_read_complete filename=%s size_bytes=%s",
-        file.filename or "",
-        len(data),
-    )
-    if not _is_sse_request(accept):
+    wants_sse = _is_sse_request(accept)
+    try:
+        staged_upload = await _stage_upload_to_temp_file(file)
+        logger.info(
+            "conversion_upload_read_complete filename=%s size_bytes=%s",
+            file.filename or "",
+            staged_upload.size_bytes,
+        )
+    except Exception as exc:
+        if not wants_sse:
+            _raise_http_convert_error(exc, identity=None, access_control_service=access_control_service)
+            raise
+
+        def failed_stream(error: Exception = exc):
+            code = "processing_failed"
+            message = "NÃ£o foi possÃ­vel ler este PDF."
+            if isinstance(error, FileTooLargeError):
+                code = "file_too_large"
+                max_bytes = int(getattr(error, "_max_upload_size_bytes", TEXT_PDF_MAX_UPLOAD_SIZE_BYTES))
+                max_mb = max(1, int(max_bytes // (1024 * 1024)))
+                message = f"Arquivo excede o tamanho mÃ¡ximo de {max_mb} MB."
+            yield _sse_event(
+                "processing_status",
+                {
+                    "stage": "failed",
+                    "progress": 5,
+                    "message": message,
+                    "code": code,
+                    "retryable": False,
+                },
+            )
+
+        return StreamingResponse(failed_stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+    if not wants_sse:
         identity = None
         try:
-            scanned_likely, total_pages = _inspect_pdf_scan_likely(file.filename or "", data)
+            scanned_likely, total_pages = _inspect_pdf_scan_likely_from_path(file.filename or "", staged_upload.path)
             logger.info(
                 "conversion_pdf_inspection_complete filename=%s scanned_likely=%s estimated_pages_count=%s",
                 file.filename or "",
@@ -965,7 +1081,7 @@ async def conversion_upload_stream(
             )
             return _build_convert_response(
                 file=file,
-                data=data,
+                staged_upload=staged_upload,
                 anonymous_fingerprint=anonymous_fingerprint,
                 user_token=user_token,
                 authorization=authorization,
@@ -979,8 +1095,10 @@ async def conversion_upload_stream(
         except Exception as exc:
             _raise_http_convert_error(exc, identity=identity, access_control_service=access_control_service)
             raise
+        finally:
+            _cleanup_staged_upload(staged_upload)
 
-    scanned_likely, total_pages = _inspect_pdf_scan_likely(file.filename or "", data)
+    scanned_likely, total_pages = _inspect_pdf_scan_likely_from_path(file.filename or "", staged_upload.path)
     logger.info(
         "conversion_pdf_inspection_complete filename=%s scanned_likely=%s estimated_pages_count=%s",
         file.filename or "",
@@ -1031,11 +1149,14 @@ async def conversion_upload_stream(
         def worker() -> None:
             try:
                 progress_queue.put(
-                    ("event", {"stage": "data_extraction", "progress": 76 if scanned_likely else 34, "message": "Extraindo informações..."})
+                    (
+                        "event",
+                        {"stage": "data_extraction", "progress": 76 if scanned_likely else 34, "message": "Extraindo informações..."},
+                    )
                 )
                 payload = _build_convert_response(
                     file=file,
-                    data=data,
+                    staged_upload=staged_upload,
                     anonymous_fingerprint=anonymous_fingerprint,
                     user_token=user_token,
                     authorization=authorization,
@@ -1200,6 +1321,11 @@ async def conversion_upload_stream(
     }
     if scanned_likely and total_pages:
         headers["X-OCR-Estimated-Pages"] = str(total_pages)
-    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers=headers,
+        background=BackgroundTask(_cleanup_staged_upload, staged_upload),
+    )
 
 
