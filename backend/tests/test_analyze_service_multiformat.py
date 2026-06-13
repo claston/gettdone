@@ -97,6 +97,9 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
     parse_metrics = dict(PDF_PARSE_METRICS_GROUPED_CANONICAL_OK)
     parse_metrics["export_recommendation"] = "review_recommended"
     parse_metrics["export_recommendation_reason"] = "medium_confidence_band"
+    parse_metrics["extraction_provider"] = "aws_textract"
+    parse_metrics["textract_used"] = 1
+    parse_metrics["textract_enabled"] = 1
     monkeypatch.setattr(
         analyze_service_module,
         "parse_pdf_transactions",
@@ -151,6 +154,9 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
     assert result.pdf_processing_metrics.canonical_source_parser_grouped_count == 2
     assert result.pdf_processing_metrics.canonical_source_parser_types == "grouped"
     assert result.pdf_processing_metrics.canonical_source_parser_types_list == ["grouped"]
+    assert result.pdf_processing_metrics.extraction_provider == "aws_textract"
+    assert result.pdf_processing_metrics.textract_used == 1
+    assert result.pdf_processing_metrics.textract_enabled == 1
     assert result.pdf_processing_metrics.total_ms >= 0.0
     assert any(
         insight.type == "pdf_export_review_recommended"

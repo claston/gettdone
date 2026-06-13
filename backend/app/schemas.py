@@ -79,6 +79,9 @@ class PdfProcessingMetrics(BaseModel):
     columnar_transactions_count: int = 0
     selected_parser: str
     parser_selection_reason: str = ""
+    extraction_provider: str = ""
+    textract_used: int = 0
+    textract_enabled: int = 0
     inline_decision: str = ""
     tabular_decision: str = ""
     columnar_decision: str = ""

@@ -338,17 +338,23 @@ def _resolve_parse_observability_metrics(analysis) -> dict[str, str | int | floa
             "parser_selection_reason": None,
             "pdf_page_count": None,
             "extracted_char_count": None,
+            "extraction_provider": None,
+            "textract_used": 0,
         }
     if isinstance(metrics, dict):
         selected_parser = metrics.get("selected_parser")
         parser_selection_reason = metrics.get("parser_selection_reason")
         page_count = metrics.get("page_count")
         extracted_char_count = metrics.get("extracted_char_count")
+        extraction_provider = metrics.get("extraction_provider")
+        textract_used = metrics.get("textract_used")
     else:
         selected_parser = getattr(metrics, "selected_parser", None)
         parser_selection_reason = getattr(metrics, "parser_selection_reason", None)
         page_count = getattr(metrics, "page_count", None)
         extracted_char_count = getattr(metrics, "extracted_char_count", None)
+        extraction_provider = getattr(metrics, "extraction_provider", None)
+        textract_used = getattr(metrics, "textract_used", None)
     return {
         "layout_inference_name": (getattr(analysis, "layout_inference_name", None) or None),
         "layout_inference_confidence": getattr(analysis, "layout_inference_confidence", None),
@@ -356,7 +362,24 @@ def _resolve_parse_observability_metrics(analysis) -> dict[str, str | int | floa
         "parser_selection_reason": str(parser_selection_reason).strip() if parser_selection_reason is not None else None,
         "pdf_page_count": int(page_count) if page_count is not None else None,
         "extracted_char_count": int(extracted_char_count) if extracted_char_count is not None else None,
+        "extraction_provider": str(extraction_provider).strip() if extraction_provider is not None else None,
+        "textract_used": int(textract_used or 0),
     }
+
+
+def _resolve_effective_ocr_observability(
+    *,
+    parse_meta: dict[str, str | int | float | None],
+    ocr_pages_processed: int,
+    default_ocr_engine: str,
+) -> tuple[bool, bool, str]:
+    textract_used = int(parse_meta.get("textract_used", 0) or 0) > 0
+    local_ocr_used = max(0, int(ocr_pages_processed or 0)) > 0
+    effective_ocr_used = textract_used or local_ocr_used
+    if textract_used:
+        provider = str(parse_meta.get("extraction_provider") or "").strip()
+        return effective_ocr_used, True, provider or "aws_textract"
+    return effective_ocr_used, local_ocr_used, default_ocr_engine
 
 
 def _resolve_error_observability(exc: Exception) -> tuple[str | None, str | None, str]:
@@ -752,6 +775,11 @@ def _build_convert_response(
         pages_count = _resolve_processed_pages(analysis)
         warning_rows_count, balance_failed_count = _resolve_warning_metrics(analysis)
         parse_meta = _resolve_parse_observability_metrics(analysis)
+        effective_ocr_used, effective_ocr_attempted, effective_ocr_engine = _resolve_effective_ocr_observability(
+            parse_meta=parse_meta,
+            ocr_pages_processed=ocr_pages_processed,
+            default_ocr_engine=ocr_engine,
+        )
         conversion_model_label = resolve_conversion_model_label(
             layout_inference_name=getattr(analysis, "layout_inference_name", None),
             bank_name=getattr(analysis, "bank_name", None),
@@ -777,7 +805,7 @@ def _build_convert_response(
                 transactions_count=int(analysis.transactions_total),
                 pages_count=pages_count,
                 scanned_likely=scanned_likely,
-                ocr_used=ocr_pages_processed > 0,
+                ocr_used=effective_ocr_used,
                 ocr_pages_processed=ocr_pages_processed,
                 duration_ms=int((monotonic() - started_at) * 1000),
                 error_code=None,
@@ -790,8 +818,8 @@ def _build_convert_response(
                 parser_selection_reason=parse_meta["parser_selection_reason"],
                 pdf_page_count=parse_meta["pdf_page_count"],
                 extracted_char_count=parse_meta["extracted_char_count"],
-                ocr_attempted=ocr_pages_processed > 0,
-                ocr_engine=ocr_engine,
+                ocr_attempted=effective_ocr_attempted,
+                ocr_engine=effective_ocr_engine,
                 file_sha256=file_digest,
                 canonical_warning_transactions_count=warning_rows_count,
                 balance_consistency_failed=balance_failed_count,
@@ -809,7 +837,7 @@ def _build_convert_response(
                 transactions_count=int(analysis.transactions_total),
                 pages_count=pages_count,
                 scanned_likely=scanned_likely,
-                ocr_used=ocr_pages_processed > 0,
+                ocr_used=effective_ocr_used,
                 ocr_pages_processed=ocr_pages_processed,
                 duration_ms=int((monotonic() - started_at) * 1000),
                 canonical_warning_transactions_count=warning_rows_count,
@@ -824,8 +852,8 @@ def _build_convert_response(
                 parser_selection_reason=parse_meta["parser_selection_reason"],
                 pdf_page_count=parse_meta["pdf_page_count"],
                 extracted_char_count=parse_meta["extracted_char_count"],
-                ocr_attempted=ocr_pages_processed > 0,
-                ocr_engine=ocr_engine,
+                ocr_attempted=effective_ocr_attempted,
+                ocr_engine=effective_ocr_engine,
                 file_sha256=file_digest,
             )
         return ConvertResponse(

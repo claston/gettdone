@@ -169,6 +169,71 @@ class FakeAnalyzeServiceGenericBank:
         )
 
 
+class FakeAnalyzeServiceTextract:
+    def analyze(
+        self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
+    ) -> AnalyzeResponse:
+        _ = (filename, raw_bytes, on_ocr_progress, max_ocr_pages)
+        return AnalyzeResponse(
+            analysis_id=analysis_id or "an_convert_textract",
+            file_type="pdf",
+            bank_name="Bradesco",
+            transactions_total=1,
+            total_inflows=100.0,
+            total_outflows=-20.0,
+            net_total=80.0,
+            operational_summary=OperationalSummary(
+                total_volume=120.0,
+                inflow_count=1,
+                outflow_count=1,
+                reconciled_entries=0,
+                unmatched_entries=1,
+            ),
+            reconciliation=ReconciliationSummary(
+                matched_groups=0,
+                reversed_entries=0,
+                potential_duplicates=0,
+            ),
+            categories=[CategorySummary(category="Outros", total=-20.0, count=1)],
+            top_expenses=[],
+            insights=[],
+            preview_transactions=[
+                TransactionPreview(
+                    date="2026-04-01",
+                    description="TEST",
+                    amount=-20.0,
+                    category="Outros",
+                    reconciliation_status="unmatched",
+                )
+            ],
+            preview_before_after=[],
+            expires_at=None,
+            layout_inference_name="bradesco_statement_ptbr",
+            layout_inference_confidence=0.91,
+            pdf_processing_metrics=PdfProcessingMetrics(
+                total_ms=1.0,
+                parse_ms=1.0,
+                classify_ms=0.0,
+                normalize_ms=0.0,
+                reconcile_ms=0.0,
+                page_count=6,
+                extracted_char_count=8113,
+                flattened_line_count=10,
+                grouped_transactions_count=1,
+                inline_candidates_count=0,
+                inline_transactions_count=0,
+                tabular_candidates_count=1,
+                tabular_transactions_count=1,
+                columnar_candidates_count=0,
+                columnar_transactions_count=0,
+                selected_parser="grouped",
+                parser_selection_reason="textract",
+                extraction_provider="aws_textract",
+                textract_used=1,
+            ),
+        )
+
+
 class FakeReportService:
     def set_convert_owner(self, analysis_id: str, identity_type: str, identity_id: str) -> None:
         _ = (analysis_id, identity_type, identity_id)
@@ -215,6 +280,17 @@ def build_client_with_generic_bank_analyze(state_dir: Path) -> tuple[TestClient,
     )
     app.dependency_overrides[get_access_control_service] = lambda: access_control
     app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeServiceGenericBank()
+    app.dependency_overrides[get_report_service] = lambda: FakeReportService()
+    return TestClient(app), access_control
+
+
+def build_client_with_textract_analyze(state_dir: Path) -> tuple[TestClient, AccessControlService]:
+    access_control = _AccessControlServiceInMemory(
+        state_file=state_dir / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    app.dependency_overrides[get_access_control_service] = lambda: access_control
+    app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeServiceTextract()
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     return TestClient(app), access_control
 
@@ -482,6 +558,56 @@ def test_convert_history_uses_bank_name_when_layout_is_generic() -> None:
         conversions = service.list_user_conversions(user_id=user_id, limit=5)
         assert len(conversions) == 1
         assert conversions[0]["model"] == "Nao identificado - Itau"
+    finally:
+        app.dependency_overrides.clear()
+        shutil.rmtree(state_dir, ignore_errors=True)
+
+
+def test_convert_history_marks_textract_as_effective_ocr_engine() -> None:
+    state_dir = Path(mkdtemp(prefix="convert-auth-api-textract-history-"))
+    client, service = build_client_with_textract_analyze(state_dir)
+
+    try:
+        register = client.post(
+            "/auth/register",
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
+        )
+        token = register.json()["user_token"]
+        user_id = register.json()["user_id"]
+
+        response = client.post(
+            "/convert",
+            data={"user_token": token},
+            files={"file": ("sample.pdf", b"%PDF data", "application/pdf")},
+        )
+
+        assert response.status_code == 200
+
+        with service._connect() as conn:
+            row = service._fetchone(
+                conn,
+                """
+                SELECT
+                  ocr_used,
+                  ocr_pages_processed,
+                  ocr_attempted,
+                  ocr_engine
+                FROM user_conversions
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            )
+
+        assert row is not None
+        assert int(row["ocr_used"]) == 1
+        assert int(row["ocr_pages_processed"]) == 0
+        assert int(row["ocr_attempted"]) == 1
+        assert row["ocr_engine"] == "aws_textract"
     finally:
         app.dependency_overrides.clear()
         shutil.rmtree(state_dir, ignore_errors=True)
