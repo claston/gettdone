@@ -13,8 +13,9 @@ from openpyxl.utils import get_column_letter
 from app.application.bank_identity import resolve_conversion_model_label
 from app.application.bank_resolver import resolve_bank_code
 from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConflictError, AnalysisNotFoundError
-from app.application.models import AnalysisData, NormalizedTransaction, TransactionRow
+from app.application.models import AnalysisData, BeforeAfterRow, NormalizedTransaction, TransactionRow
 from app.application.ofx_writer import build_ofx_statement
+from app.application.structured_conversion import build_structured_conversion_result_from_analysis_data
 
 
 class TempAnalysisStorage:
@@ -36,6 +37,11 @@ class TempAnalysisStorage:
         expires_at = now + timedelta(seconds=self.ttl_seconds)
         report_rows = data.report_transactions or data.preview_transactions
         updated_at = data.updated_at or now.isoformat()
+        data.updated_at = updated_at
+        data.structured_result = build_structured_conversion_result_from_analysis_data(
+            data,
+            expires_at=expires_at.isoformat(),
+        )
 
         json_path = analysis_dir / "analysis.json"
         json_path.write_text(
@@ -406,6 +412,7 @@ class TempAnalysisStorage:
         content["report_transactions"] = [asdict(item) for item in report_rows]
         new_updated_at = self.now_provider().isoformat()
         content["updated_at"] = new_updated_at
+        self._refresh_structured_result_content(content, preview_rows=preview_rows, report_rows=report_rows)
 
         metadata_path.write_text(json.dumps(content, ensure_ascii=True, indent=2), encoding="utf-8")
         self._write_report_workbook(analysis_dir, content=content, report_rows=report_rows, preview_rows=preview_rows)
@@ -706,6 +713,7 @@ class TempAnalysisStorage:
         }
         if requested_overrides:
             self._apply_convert_overrides_to_content(content, requested_overrides)
+            self._refresh_structured_result_content(content, preview_rows=report_rows, report_rows=report_rows)
             metadata_path.write_text(json.dumps(content, ensure_ascii=True, indent=2), encoding="utf-8")
 
         self._write_convert_artifacts(
@@ -792,20 +800,10 @@ class TempAnalysisStorage:
             sheet.append([item.date, item.description, item.amount, item.category, item.reconciliation_status])
         self._format_transacoes_sheet(sheet)
 
-        snapshot = AnalysisData(
-            analysis_id=str(content.get("analysis_id", "")),
-            file_type=str(content.get("file_type", "")),
-            upload_filename=content.get("upload_filename") if isinstance(content.get("upload_filename"), str) else None,
-            transactions_total=int(content.get("transactions_total", len(report_rows))),
-            total_inflows=float(content.get("total_inflows", 0.0)),
-            total_outflows=float(content.get("total_outflows", 0.0)),
-            net_total=float(content.get("net_total", 0.0)),
-            preview_transactions=preview_rows,
-            report_transactions=report_rows,
-            matched_groups=int(content.get("matched_groups", 0)),
-            reversed_entries=int(content.get("reversed_entries", 0)),
-            potential_duplicates=int(content.get("potential_duplicates", 0)),
-            bank_name=str(content.get("bank_name") or "").strip() or None,
+        snapshot = self._build_analysis_snapshot_from_content(
+            content,
+            preview_rows=preview_rows,
+            report_rows=report_rows,
         )
         self._add_conciliacao_sheet(workbook, snapshot)
         workbook.save(analysis_dir / "report.xlsx")
@@ -841,8 +839,98 @@ class TempAnalysisStorage:
             )
         return parsed
 
+    def _parse_before_after_rows(self, rows_raw: object) -> list[BeforeAfterRow]:
+        parsed: list[BeforeAfterRow] = []
+        if not isinstance(rows_raw, list):
+            return parsed
+        for item in rows_raw:
+            if not isinstance(item, dict):
+                continue
+            parsed.append(
+                BeforeAfterRow(
+                    date=str(item.get("date") or ""),
+                    description_before=str(item.get("description_before") or ""),
+                    description_after=str(item.get("description_after") or ""),
+                    amount_before=float(item.get("amount_before") or 0.0),
+                    amount_after=float(item.get("amount_after") or 0.0),
+                )
+            )
+        return parsed
+
     def _active_rows(self, rows: list[TransactionRow]) -> list[TransactionRow]:
         return [item for item in rows if not item.is_deleted]
+
+    def _build_analysis_snapshot_from_content(
+        self,
+        content: dict[str, object],
+        *,
+        preview_rows: list[TransactionRow],
+        report_rows: list[TransactionRow],
+    ) -> AnalysisData:
+        return AnalysisData(
+            analysis_id=str(content.get("analysis_id", "")),
+            file_type=str(content.get("file_type", "")),
+            upload_filename=content.get("upload_filename") if isinstance(content.get("upload_filename"), str) else None,
+            transactions_total=int(content.get("transactions_total", len(self._active_rows(report_rows)))),
+            total_inflows=float(content.get("total_inflows", 0.0)),
+            total_outflows=float(content.get("total_outflows", 0.0)),
+            net_total=float(content.get("net_total", 0.0)),
+            preview_transactions=preview_rows,
+            report_transactions=report_rows,
+            semantic_type=str(content.get("semantic_type") or "").strip() or None,
+            semantic_confidence=(
+                float(content["semantic_confidence"]) if content.get("semantic_confidence") is not None else None
+            ),
+            semantic_evidence=[
+                str(item).strip()
+                for item in (content.get("semantic_evidence") or [])
+                if str(item).strip()
+            ]
+            if isinstance(content.get("semantic_evidence"), list)
+            else None,
+            preview_before_after=self._parse_before_after_rows(content.get("preview_before_after", [])),
+            matched_groups=int(content.get("matched_groups", 0)),
+            reversed_entries=int(content.get("reversed_entries", 0)),
+            potential_duplicates=int(content.get("potential_duplicates", 0)),
+            updated_at=str(content.get("updated_at") or "").strip() or None,
+            layout_inference_name=str(content.get("layout_inference_name") or "").strip() or None,
+            layout_inference_confidence=(
+                float(content["layout_inference_confidence"])
+                if content.get("layout_inference_confidence") is not None
+                else None
+            ),
+            pdf_processing_metrics=(
+                dict(content["pdf_processing_metrics"])
+                if isinstance(content.get("pdf_processing_metrics"), dict)
+                else None
+            ),
+            ofx_account_type=str(content.get("ofx_account_type") or "").strip() or None,
+            opening_balance=float(content["opening_balance"]) if content.get("opening_balance") is not None else None,
+            closing_balance=float(content["closing_balance"]) if content.get("closing_balance") is not None else None,
+            bank_name=str(content.get("bank_name") or "").strip() or None,
+            bank_branch=str(content.get("bank_branch") or "").strip() or None,
+            account_number=str(content.get("account_number") or "").strip() or None,
+            bank_code=str(content.get("bank_code") or "").strip() or None,
+        )
+
+    def _refresh_structured_result_content(
+        self,
+        content: dict[str, object],
+        *,
+        preview_rows: list[TransactionRow],
+        report_rows: list[TransactionRow],
+    ) -> None:
+        snapshot = self._build_analysis_snapshot_from_content(
+            content,
+            preview_rows=preview_rows,
+            report_rows=report_rows,
+        )
+        content["structured_result"] = asdict(
+            build_structured_conversion_result_from_analysis_data(
+                snapshot,
+                expires_at=str(content.get("expires_at") or "").strip() or None,
+            )
+        )
 
     def _resolve_row_index(self, row_id_raw: object, max_index: int) -> int:
         row_id = str(row_id_raw or "").strip()
