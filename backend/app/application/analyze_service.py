@@ -19,6 +19,7 @@ from app.application.ofx_parser import parse_ofx_transactions
 from app.application.pdf_parser import parse_pdf_transactions
 from app.application.reconciliation import reconcile_transactions
 from app.application.storage_service import TempAnalysisStorage
+from app.application.structured_conversion import build_structured_conversion_result_from_analysis_data
 from app.application.xlsx_parser import parse_xlsx_transactions
 from app.schemas import (
     AnalyzeResponse,
@@ -201,6 +202,9 @@ class AnalyzeService:
             analysis_id=analysis_id,
             file_type=extension,
             upload_filename=filename or None,
+            semantic_type=classification_result.semantic_type,
+            semantic_confidence=classification_result.confidence,
+            semantic_evidence=list(classification_result.evidence or []),
             transactions_total=len(transactions),
             total_inflows=total_inflows,
             total_outflows=total_outflows,
@@ -223,6 +227,7 @@ class AnalyzeService:
             account_number=account_number,
             bank_code=inferred_bank_code,
         )
+        analysis_data.structured_result = build_structured_conversion_result_from_analysis_data(analysis_data)
         expires_at = self.storage.save_analysis(analysis_data)
         logger.info(
             "analyze_done analysis_id=%s extension=%s total_ms=%.3f parse_ms=%.3f tx_count=%d layout=%s parser=%s",

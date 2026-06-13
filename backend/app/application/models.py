@@ -1,4 +1,10 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.application.structured_conversion import StructuredConversionResult
 
 
 @dataclass
@@ -59,6 +65,9 @@ class AnalysisData:
     net_total: float
     preview_transactions: list[TransactionRow]
     report_transactions: list[TransactionRow] | None = None
+    semantic_type: str | None = None
+    semantic_confidence: float | None = None
+    semantic_evidence: list[str] | None = None
     preview_before_after: list[BeforeAfterRow] = field(default_factory=list)
     matched_groups: int = 0
     reversed_entries: int = 0
@@ -74,3 +83,4 @@ class AnalysisData:
     bank_branch: str | None = None
     account_number: str | None = None
     bank_code: str | None = None
+    structured_result: StructuredConversionResult | None = None
