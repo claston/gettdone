@@ -1,8 +1,6 @@
-import csv
 import json
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
-from io import StringIO
 from pathlib import Path
 from typing import Callable
 from uuid import uuid4
@@ -11,10 +9,9 @@ from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
 from app.application.bank_identity import resolve_conversion_model_label
-from app.application.bank_resolver import resolve_bank_code
 from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConflictError, AnalysisNotFoundError
-from app.application.models import AnalysisData, BeforeAfterRow, NormalizedTransaction, TransactionRow
-from app.application.ofx_writer import build_ofx_statement
+from app.application.export_artifact_service import ExportArtifactService
+from app.application.models import AnalysisData, BeforeAfterRow, TransactionRow
 from app.application.structured_conversion import build_structured_conversion_result_from_analysis_data
 
 
@@ -24,10 +21,12 @@ class TempAnalysisStorage:
         root_dir: Path,
         ttl_seconds: int = 24 * 60 * 60,
         now_provider: Callable[[], datetime] | None = None,
+        export_artifact_service: ExportArtifactService | None = None,
     ) -> None:
         self.root_dir = root_dir
         self.ttl_seconds = ttl_seconds
         self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
+        self.export_artifact_service = export_artifact_service or ExportArtifactService()
         self.root_dir.mkdir(parents=True, exist_ok=True)
 
     def save_analysis(self, data: AnalysisData) -> str:
@@ -60,18 +59,14 @@ class TempAnalysisStorage:
             encoding="utf-8",
         )
 
-        workbook = Workbook()
-        sheet = workbook.active
-        sheet.title = "Transacoes"
-        sheet.append(["date", "description", "amount", "category", "reconciliation_status"])
-        for item in report_rows:
-            sheet.append([item.date, item.description, item.amount, item.category, item.reconciliation_status])
-        self._format_transacoes_sheet(sheet)
-        self._add_conciliacao_sheet(workbook, data)
-        workbook.save(analysis_dir / "report.xlsx")
-        self._write_convert_artifacts(
+        self.export_artifact_service.write_analysis_report_workbook(
+            analysis_dir / "report.xlsx",
+            report_rows=report_rows,
+            snapshot=data,
+        )
+        self.export_artifact_service.write_convert_artifacts(
             analysis_dir,
-            report_rows,
+            report_rows=report_rows,
             ofx_account_type=data.ofx_account_type,
             layout_inference_name=data.layout_inference_name,
             opening_balance=data.opening_balance,
@@ -416,9 +411,9 @@ class TempAnalysisStorage:
 
         metadata_path.write_text(json.dumps(content, ensure_ascii=True, indent=2), encoding="utf-8")
         self._write_report_workbook(analysis_dir, content=content, report_rows=report_rows, preview_rows=preview_rows)
-        self._write_convert_artifacts(
+        self.export_artifact_service.write_convert_artifacts(
             analysis_dir,
-            report_rows,
+            report_rows=report_rows,
             ofx_account_type=str(content.get("ofx_account_type") or "").strip() or None,
             layout_inference_name=str(content.get("layout_inference_name") or "").strip() or None,
             opening_balance=opening_balance_value,
@@ -588,76 +583,6 @@ class TempAnalysisStorage:
             raise AnalysisNotFoundError
         return report_path
 
-    def _write_convert_artifacts(
-        self,
-        analysis_dir: Path,
-        report_rows: list[TransactionRow],
-        *,
-        ofx_account_type: str | None = None,
-        layout_inference_name: str | None = None,
-        opening_balance: float | None = None,
-        closing_balance: float | None = None,
-        bank_branch: str | None = None,
-        account_number: str | None = None,
-        bank_code: str | None = None,
-    ) -> None:
-        active_rows = self._active_rows(report_rows)
-        normalized_transactions = [
-            NormalizedTransaction(
-                date=item.date,
-                description=item.description,
-                amount=item.amount,
-                type="inflow" if item.amount >= 0 else "outflow",
-            )
-            for item in active_rows
-        ]
-
-        resolved_bank_code = resolve_bank_code(
-            bank_code_override=bank_code,
-            layout_inference_name=layout_inference_name,
-        )
-        (analysis_dir / "converted.ofx").write_text(
-            build_ofx_statement(
-                normalized_transactions,
-                account_type=ofx_account_type,
-                closing_balance=closing_balance,
-                bank_branch=bank_branch,
-                account_number=account_number,
-                bank_id=resolved_bank_code,
-            ),
-            encoding="utf-8",
-        )
-
-        csv_buffer = StringIO()
-        writer = csv.writer(csv_buffer)
-        writer.writerow(["date", "description", "amount", "category", "reconciliation_status"])
-        for item in active_rows:
-            writer.writerow([item.date, item.description, item.amount, item.category, item.reconciliation_status])
-        (analysis_dir / "converted.csv").write_text(csv_buffer.getvalue(), encoding="utf-8")
-
-        # Converted XLSX mirrors the conversion review table (Data, Historico, Credito, Debito).
-        workbook = Workbook()
-        sheet = workbook.active
-        sheet.title = "Conversao"
-        sheet.append(["Data", "Historico", "Credito", "Debito", "Saldo"])
-        for item in active_rows:
-            amount = float(item.amount)
-            credit = round(amount, 2) if amount > 0 else None
-            debit = round(abs(amount), 2) if amount < 0 else None
-            sheet.append([self._format_convert_date(item.date), item.description, credit, debit, item.running_balance])
-        self._format_transacoes_sheet(sheet)
-        opening_balance, closing_balance = self._resolve_balance_bounds(
-            active_rows,
-            opening_balance_hint=opening_balance,
-            closing_balance_hint=closing_balance,
-        )
-        summary_sheet = workbook.create_sheet(title="Resumo")
-        summary_sheet.append(["Campo", "Valor"])
-        summary_sheet.append(["Saldo anterior", opening_balance])
-        summary_sheet.append(["Saldo final", closing_balance])
-        self._format_transacoes_sheet(summary_sheet)
-        workbook.save(analysis_dir / "converted.xlsx")
-
     def _regenerate_ofx_with_overrides(
         self,
         analysis_dir: Path,
@@ -716,9 +641,9 @@ class TempAnalysisStorage:
             self._refresh_structured_result_content(content, preview_rows=report_rows, report_rows=report_rows)
             metadata_path.write_text(json.dumps(content, ensure_ascii=True, indent=2), encoding="utf-8")
 
-        self._write_convert_artifacts(
+        self.export_artifact_service.write_convert_artifacts(
             analysis_dir,
-            report_rows,
+            report_rows=report_rows,
             ofx_account_type=str(content.get("ofx_account_type") or "").strip() or None,
             layout_inference_name=str(content.get("layout_inference_name") or "").strip() or None,
             opening_balance=effective_overrides.get("opening_balance"),
@@ -792,21 +717,16 @@ class TempAnalysisStorage:
         report_rows: list[TransactionRow],
         preview_rows: list[TransactionRow],
     ) -> None:
-        workbook = Workbook()
-        sheet = workbook.active
-        sheet.title = "Transacoes"
-        sheet.append(["date", "description", "amount", "category", "reconciliation_status"])
-        for item in self._active_rows(report_rows):
-            sheet.append([item.date, item.description, item.amount, item.category, item.reconciliation_status])
-        self._format_transacoes_sheet(sheet)
-
         snapshot = self._build_analysis_snapshot_from_content(
             content,
             preview_rows=preview_rows,
             report_rows=report_rows,
         )
-        self._add_conciliacao_sheet(workbook, snapshot)
-        workbook.save(analysis_dir / "report.xlsx")
+        self.export_artifact_service.write_analysis_report_workbook(
+            analysis_dir / "report.xlsx",
+            report_rows=report_rows,
+            snapshot=snapshot,
+        )
 
     def _parse_transaction_rows(self, rows_raw: object) -> list[TransactionRow]:
         parsed: list[TransactionRow] = []
@@ -1060,23 +980,6 @@ class TempAnalysisStorage:
                 max_len = max(max_len, len(str(cell_value)) if cell_value is not None else 0)
             sheet.column_dimensions[column_letter].width = min(max(max_len + 2, 12), 80)
 
-    def _add_conciliacao_sheet(self, workbook: Workbook, data: AnalysisData) -> None:
-        sheet = workbook.create_sheet(title="Conciliacao")
-        sheet.append(["metric", "value"])
-        sheet.append(["matched_groups", data.matched_groups])
-        sheet.append(["reversed_entries", data.reversed_entries])
-        sheet.append(["potential_duplicates", data.potential_duplicates])
-        sheet.append([])
-        sheet.append(["date", "description", "amount", "category", "reconciliation_status"])
-        for item in data.preview_transactions:
-            if item.reconciliation_status != "unmatched":
-                sheet.append([item.date, item.description, item.amount, item.category, item.reconciliation_status])
-
-        if sheet.max_row == 6:
-            sheet.append(["-", "No reconciled entries in preview", "", "", "unmatched"])
-
-        self._format_transacoes_sheet(sheet)
-
     def _build_analysis_id(self, prefix: str) -> str:
         return f"{prefix}_{uuid4().hex[:12]}"
 
@@ -1085,14 +988,6 @@ class TempAnalysisStorage:
         if any(char in text for char in [",", "\"", "\n", "\r"]):
             return f"\"{text.replace('\"', '\"\"')}\""
         return text
-
-    def _format_convert_date(self, value: str) -> str:
-        raw = str(value or "").strip()
-        if len(raw) == 10 and raw[4] == "-" and raw[7] == "-":
-            year, month, day = raw.split("-")
-            if year.isdigit() and month.isdigit() and day.isdigit():
-                return f"{day}-{month}-{year}"
-        return raw
 
     def _translate_source_label(self, source: object) -> str:
         text = "" if source is None else str(source)
