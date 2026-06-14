@@ -2,6 +2,7 @@ from app.application.access_control import AccessControlService
 from app.application.analyze_service import AnalyzeService
 from app.application.bank_parser import parse_bank_statement_rows
 from app.application.contact_service import ContactAttachment, ContactDeliveryResult, ContactMessage, ContactService
+from app.application.conversion_service import ConversionService
 from app.application.errors import (
     AnalysisAccessDeniedError,
     AnalysisEditConflictError,
@@ -46,6 +47,7 @@ __all__ = [
     "ContactMessage",
     "ContactProviderNotConfiguredError",
     "ContactService",
+    "ConversionService",
     "FileTooLargeError",
     "GoogleOAuthAccountNotFoundError",
     "GoogleOAuthConfig",
