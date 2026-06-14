@@ -1,10 +1,10 @@
 from pathlib import Path
 
-from app.application.storage_service import TempAnalysisStorage
+from app.application.repositories import ReportRepository
 
 
 class ReportService:
-    def __init__(self, storage: TempAnalysisStorage) -> None:
+    def __init__(self, storage: ReportRepository) -> None:
         self.storage = storage
 
     def get_report_path(self, analysis_id: str) -> Path:
