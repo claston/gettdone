@@ -18,7 +18,7 @@ from app.application.normalizer import normalize_transactions
 from app.application.ofx_parser import parse_ofx_transactions
 from app.application.pdf_parser import parse_pdf_transactions
 from app.application.reconciliation import reconcile_transactions
-from app.application.storage_service import TempAnalysisStorage
+from app.application.repositories import AnalysisRepository
 from app.application.structured_conversion import build_structured_conversion_result_from_analysis_data
 from app.application.xlsx_parser import parse_xlsx_transactions
 from app.schemas import (
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 class AnalyzeService:
-    def __init__(self, storage: TempAnalysisStorage) -> None:
+    def __init__(self, storage: AnalysisRepository) -> None:
         self.storage = storage
 
     def analyze(

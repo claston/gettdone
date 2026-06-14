@@ -32,6 +32,7 @@ from app.application.ofx_writer import build_ofx_statement
 from app.application.reconcile_problem_engine import generate_reconciliation_problems
 from app.application.reconcile_status_engine import classify_reconciliation_rows
 from app.application.report_service import ReportService
+from app.application.repositories import AnalysisRepository, ReportRepository
 from app.application.sheet_parser import parse_operational_sheet_rows
 from app.application.storage_service import TempAnalysisStorage
 
@@ -39,6 +40,7 @@ __all__ = [
     "AccessControlService",
     "AnalyzeService",
     "AnalysisAccessDeniedError",
+    "AnalysisRepository",
     "AnalysisEditConflictError",
     "AnalysisNotFoundError",
     "ContactAttachment",
@@ -68,6 +70,7 @@ __all__ = [
     "parse_bank_statement_rows",
     "QuotaExceededError",
     "ReportService",
+    "ReportRepository",
     "TempAnalysisStorage",
     "UnsupportedFileTypeError",
     "UserAlreadyExistsError",
