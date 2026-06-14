@@ -10,7 +10,7 @@ from typing import Any
 from openpyxl import load_workbook
 from pypdf import PdfReader
 
-from app.application.column_mapping import normalize_header
+from app.application.parsers.column_mapping import normalize_header
 
 _PREVIEW_LIMIT = 20
 _MAX_EVIDENCE = 6
