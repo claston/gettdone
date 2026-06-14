@@ -3,14 +3,12 @@ import logging
 import os
 import re
 import tempfile
-from dataclasses import dataclass
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Thread
 from time import monotonic
-from uuid import uuid4
 
 from fastapi import APIRouter, Cookie, Depends, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
@@ -22,6 +20,7 @@ from app.application import (
     AnalysisAccessDeniedError,
     AnalysisNotFoundError,
     AnalyzeService,
+    ConversionService,
     FileTooLargeError,
     InvalidFileContentError,
     InvalidUserTokenError,
@@ -30,9 +29,14 @@ from app.application import (
     ReportService,
     UnsupportedFileTypeError,
 )
-from app.application.bank_identity import resolve_conversion_model_label
+from app.application import conversion_service as conversion_service_module
+from app.application.conversion_service import (
+    OCR_CONTEXT_SCANNED_PDF,
+    OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK,
+    StagedUploadRef,
+)
 from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
-from app.routers.auth_session import SESSION_ACCESS_COOKIE_NAME, resolve_user_token_with_session
+from app.routers.auth_session import SESSION_ACCESS_COOKIE_NAME
 from app.schemas import ConvertResponse
 
 router = APIRouter()
@@ -43,15 +47,7 @@ OCR_PDF_MAX_PAGES_PER_FILE = 10
 OCR_PDF_MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024
 UPLOAD_READ_CHUNK_SIZE_BYTES = 1024 * 1024
 UPLOAD_STAGING_MAX_BYTES = TEXT_PDF_MAX_UPLOAD_SIZE_BYTES
-OCR_CONTEXT_SCANNED_PDF = "scanned_pdf"
-OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK = "unidentified_model_fallback"
-
-
-@dataclass(slots=True)
-class _StagedUpload:
-    path: Path
-    size_bytes: int
-    sha256_hex: str
+_StagedUpload = StagedUploadRef
 
 
 def _resolve_ocr_limit_context(scanned_likely: bool | None) -> str:
@@ -582,386 +578,26 @@ def _build_convert_response(
     scanned_likely: bool | None = None,
     estimated_pages_count: int | None = None,
 ) -> ConvertResponse:
-    identity = None
-    started_at = monotonic()
-    ocr_pages_processed = 0
-    ocr_started_logged = False
-    attempt_processing_id: str | None = None
-    attempt_anonymous_event_id: str | None = None
-    file_digest = staged_upload.sha256_hex or None
-    ocr_engine = os.getenv("PDF_OCR_ENGINE", "").strip().lower() or "tesseract"
-
-    def telemetry_ocr_progress(current_page: int, total_page_count: int) -> None:
-        nonlocal ocr_pages_processed, ocr_started_logged
-        if not ocr_started_logged:
-            logger.info(
-                "conversion_ocr_started filename=%s estimated_pages_count=%s ocr_engine=%s",
-                (file.filename or "").strip() or "unknown.pdf",
-                estimated_pages_count,
-                ocr_engine,
-            )
-            ocr_started_logged = True
-        ocr_pages_processed = max(
-            ocr_pages_processed,
-            max(1, min(int(current_page or 1), max(1, int(total_page_count or 0)))),
-        )
-        if on_ocr_progress is not None:
-            on_ocr_progress(current_page, total_page_count)
-
-    try:
-        resolved_user_token = resolve_user_token_with_session(
-            access_control_service=access_control_service,
-            authorization=authorization,
-            explicit_user_token=user_token,
-            access_cookie_token=access_cookie_token,
-        )
-        identity = access_control_service.resolve_identity(
-            anonymous_fingerprint=anonymous_fingerprint,
-            user_token=resolved_user_token,
-        )
-        logger.info(
-            "conversion_analyze_precheck filename=%s identity_type=%s scanned_likely=%s estimated_pages_count=%s",
-            (file.filename or "").strip() or "unknown.pdf",
-            getattr(identity, "identity_type", "unknown"),
-            scanned_likely,
-            estimated_pages_count,
-        )
-        if Path(file.filename or "").suffix.lower() == ".pdf" and estimated_pages_count is not None:
-            # Backward compatibility: older identity fixtures/providers may not expose
-            # max_pages_per_file yet. In that case, skip the limit by using a large fallback.
-            max_pages_per_file = _resolve_max_pages_per_file(identity, scanned_likely)
-            if int(estimated_pages_count) > max_pages_per_file:
-                _log_pages_limit_exceeded_attempt(
-                    identity=identity,
-                    filename=file.filename or "",
-                    pages_count=int(estimated_pages_count),
-                    max_pages_per_file=max_pages_per_file,
-                    scanned_likely=scanned_likely,
-                )
-                raise MaxPagesPerFileExceededError(
-                    pages_count=int(estimated_pages_count),
-                    max_pages_per_file=max_pages_per_file,
-                    ocr_context=OCR_CONTEXT_SCANNED_PDF if scanned_likely is True else None,
-                )
-        max_upload_size_bytes = _resolve_max_upload_size_bytes(identity, scanned_likely, estimated_pages_count)
-        if staged_upload.size_bytes > max_upload_size_bytes:
-            raise _build_file_too_large_error(max_upload_size_bytes)
-        data = _read_staged_upload_bytes(staged_upload)
-        try:
-            access_control_service.assert_upload_size(data, max_upload_size_bytes=max_upload_size_bytes)
-        except FileTooLargeError as exc:
-            setattr(exc, "_max_upload_size_bytes", max_upload_size_bytes)
-            raise
-        access_control_service.ensure_quota_available(identity, required_units=1)
-        if identity.identity_type == "user":
-            attempt_processing_id = f"an_{uuid4().hex[:12]}"
-            _safe_record_user_conversion(
-                access_control_service,
-                user_id=identity.identity_id,
-                processing_id=attempt_processing_id,
-                filename=(file.filename or "").strip() or f"{attempt_processing_id}.pdf",
-                model="Nao identificado",
-                conversion_type=_resolve_conversion_type_from_filename(file.filename or ""),
-                status="Processando",
-                transactions_count=0,
-                pages_count=estimated_pages_count,
-                scanned_likely=scanned_likely,
-                ocr_used=False,
-                ocr_pages_processed=0,
-                duration_ms=0,
-                error_code=None,
-                error_stage=None,
-                error_subcode=None,
-                exception_class=None,
-                layout_inference_name=None,
-                layout_inference_confidence=None,
-                selected_parser=None,
-                parser_selection_reason=None,
-                pdf_page_count=estimated_pages_count,
-                extracted_char_count=None,
-                ocr_attempted=False,
-                ocr_engine=ocr_engine,
-                file_sha256=file_digest,
-                canonical_warning_transactions_count=0,
-                balance_consistency_failed=0,
-                expires_at=None,
-            )
-        elif identity.identity_type == "anonymous":
-            attempt_anonymous_event_id = f"anon_evt_{uuid4().hex[:24]}"
-            _safe_record_anonymous_conversion_event(
-                access_control_service,
-                event_id=attempt_anonymous_event_id,
-                anonymous_fingerprint=identity.identity_id,
-                filename=(file.filename or "").strip() or "unknown.pdf",
-                model="Nao identificado",
-                conversion_type=_resolve_conversion_type_from_filename(file.filename or ""),
-                status="Processando",
-                transactions_count=None,
-                pages_count=estimated_pages_count,
-                scanned_likely=scanned_likely,
-                ocr_used=False,
-                ocr_pages_processed=0,
-                duration_ms=0,
-                canonical_warning_transactions_count=0,
-                balance_consistency_failed=0,
-                error_code=None,
-                error_stage=None,
-                error_subcode=None,
-                exception_class=None,
-                layout_inference_name=None,
-                layout_inference_confidence=None,
-                selected_parser=None,
-                parser_selection_reason=None,
-                pdf_page_count=estimated_pages_count,
-                extracted_char_count=None,
-                ocr_attempted=False,
-                ocr_engine=ocr_engine,
-                file_sha256=file_digest,
-            )
-        try:
-            ocr_max_pages = _resolve_ocr_max_pages_per_file(identity)
-            logger.info(
-                (
-                    "conversion_analyze_started filename=%s identity_type=%s scanned_likely=%s "
-                    "estimated_pages_count=%s max_upload_size_bytes=%s ocr_max_pages=%s"
-                ),
-                (file.filename or "").strip() or "unknown.pdf",
-                getattr(identity, "identity_type", "unknown"),
-                scanned_likely,
-                estimated_pages_count,
-                max_upload_size_bytes,
-                ocr_max_pages,
-            )
-            analysis = analyze_service.analyze(
-                filename=file.filename or "",
-                raw_bytes=data,
-                on_ocr_progress=telemetry_ocr_progress,
-                max_ocr_pages=ocr_max_pages,
-                analysis_id=attempt_processing_id,
-            )
-        except MaxPagesPerFileExceededError as exc:
-            _apply_ocr_limit_context(exc, scanned_likely)
-            raise
-        except InvalidFileContentError as exc:
-            # If inspection misclassifies a scanned PDF as text-based, analyze may fail with
-            # insufficient text/OCR detail. In that case, surface a clear pages-limit error
-            # when OCR caps would be exceeded.
-            detail = str(exc).lower()
-            if (
-                Path(file.filename or "").suffix.lower() == ".pdf"
-                and estimated_pages_count is not None
-                and ("text" in detail or "ocr" in detail)
-            ):
-                ocr_max_pages = _resolve_ocr_max_pages_per_file(identity)
-                if int(estimated_pages_count) > ocr_max_pages:
-                    _log_pages_limit_exceeded_attempt(
-                        identity=identity,
-                        filename=file.filename or "",
-                        pages_count=int(estimated_pages_count),
-                        max_pages_per_file=ocr_max_pages,
-                        scanned_likely=scanned_likely,
-                    )
-                    raise MaxPagesPerFileExceededError(
-                        pages_count=int(estimated_pages_count),
-                        max_pages_per_file=ocr_max_pages,
-                        ocr_context=_resolve_ocr_limit_context(scanned_likely),
-                    ) from exc
-            raise
-        report_service.set_convert_owner(
-            analysis_id=analysis.analysis_id,
-            identity_type=identity.identity_type,
-            identity_id=identity.identity_id,
-        )
-        pages_count = _resolve_processed_pages(analysis)
-        warning_rows_count, balance_failed_count = _resolve_warning_metrics(analysis)
-        parse_meta = _resolve_parse_observability_metrics(analysis)
-        effective_ocr_used, effective_ocr_attempted, effective_ocr_engine = _resolve_effective_ocr_observability(
-            parse_meta=parse_meta,
-            ocr_pages_processed=ocr_pages_processed,
-            default_ocr_engine=ocr_engine,
-        )
-        conversion_model_label = resolve_conversion_model_label(
-            layout_inference_name=getattr(analysis, "layout_inference_name", None),
-            bank_name=getattr(analysis, "bank_name", None),
-        )
-        logger.info(
-            "conversion_result_persist_started filename=%s identity_type=%s status=Sucesso analysis_id=%s",
-            (file.filename or "").strip() or "unknown.pdf",
-            getattr(identity, "identity_type", "unknown"),
-            analysis.analysis_id,
-        )
-        consumed_units = _resolve_consumed_units(identity, analysis)
-        quota_remaining = access_control_service.consume_quota(identity, consumed_units=consumed_units)
-        if identity.identity_type == "user":
-            file_type = str(analysis.file_type or "").strip().lower()
-            conversion_type = f"{file_type}-ofx" if file_type else "pdf-ofx"
-            access_control_service.record_user_conversion(
-                user_id=identity.identity_id,
-                processing_id=attempt_processing_id or analysis.analysis_id,
-                filename=(file.filename or "").strip() or f"{analysis.analysis_id}.pdf",
-                model=conversion_model_label,
-                conversion_type=conversion_type,
-                status="Sucesso",
-                transactions_count=int(analysis.transactions_total),
-                pages_count=pages_count,
-                scanned_likely=scanned_likely,
-                ocr_used=effective_ocr_used,
-                ocr_pages_processed=ocr_pages_processed,
-                duration_ms=int((monotonic() - started_at) * 1000),
-                error_code=None,
-                error_stage=None,
-                error_subcode=None,
-                exception_class=None,
-                layout_inference_name=parse_meta["layout_inference_name"],
-                layout_inference_confidence=parse_meta["layout_inference_confidence"],
-                selected_parser=parse_meta["selected_parser"],
-                parser_selection_reason=parse_meta["parser_selection_reason"],
-                pdf_page_count=parse_meta["pdf_page_count"],
-                extracted_char_count=parse_meta["extracted_char_count"],
-                ocr_attempted=effective_ocr_attempted,
-                ocr_engine=effective_ocr_engine,
-                file_sha256=file_digest,
-                canonical_warning_transactions_count=warning_rows_count,
-                balance_consistency_failed=balance_failed_count,
-                expires_at=analysis.expires_at,
-            )
-        elif identity.identity_type == "anonymous":
-            _safe_record_anonymous_conversion_event(
-                access_control_service,
-                event_id=attempt_anonymous_event_id or f"anon_evt_{uuid4().hex[:24]}",
-                anonymous_fingerprint=identity.identity_id,
-                filename=(file.filename or "").strip() or f"{analysis.analysis_id}.pdf",
-                model=conversion_model_label,
-                conversion_type=_resolve_conversion_type_from_filename(file.filename or ""),
-                status="Sucesso",
-                transactions_count=int(analysis.transactions_total),
-                pages_count=pages_count,
-                scanned_likely=scanned_likely,
-                ocr_used=effective_ocr_used,
-                ocr_pages_processed=ocr_pages_processed,
-                duration_ms=int((monotonic() - started_at) * 1000),
-                canonical_warning_transactions_count=warning_rows_count,
-                balance_consistency_failed=balance_failed_count,
-                error_code=None,
-                error_stage=None,
-                error_subcode=None,
-                exception_class=None,
-                layout_inference_name=parse_meta["layout_inference_name"],
-                layout_inference_confidence=parse_meta["layout_inference_confidence"],
-                selected_parser=parse_meta["selected_parser"],
-                parser_selection_reason=parse_meta["parser_selection_reason"],
-                pdf_page_count=parse_meta["pdf_page_count"],
-                extracted_char_count=parse_meta["extracted_char_count"],
-                ocr_attempted=effective_ocr_attempted,
-                ocr_engine=effective_ocr_engine,
-                file_sha256=file_digest,
-            )
-        return ConvertResponse(
-            processing_id=analysis.analysis_id,
-            quota_remaining=quota_remaining,
-            quota_limit=identity.quota_limit,
-            quota_mode=identity.quota_mode,
-            identity_type=identity.identity_type,
-            analysis=analysis,
-        )
-    except Exception as exc:
-        error_stage, error_subcode, exception_class = _resolve_error_observability(exc)
-        error_code = _resolve_failed_conversion_code(exc)
-        failure_diagnostics = _build_failure_diagnostics(exc)
-        ocr_context = str(getattr(exc, "ocr_context", "") or "")
-        if ocr_context:
-            failure_diagnostics["ocr_fallback_attempted"] = True
-            failure_diagnostics["ocr_fallback_reason"] = ocr_context
-            if isinstance(exc, MaxPagesPerFileExceededError):
-                failure_diagnostics["ocr_max_pages"] = exc.max_pages_per_file
-        duration_ms = int((monotonic() - started_at) * 1000)
-        ocr_attempted = ocr_pages_processed > 0 or bool(ocr_context)
-        failed_event_id: str | None = None
-        logger.info(
-            "conversion_result_persist_started filename=%s identity_type=%s status=Falha error_code=%s error_stage=%s",
-            (file.filename or "").strip() or "unknown.pdf",
-            getattr(identity, "identity_type", "unknown"),
-            error_code,
-            error_stage or "",
-        )
-        if identity is not None and identity.identity_type == "anonymous":
-            failed_event_id = attempt_anonymous_event_id or f"anon_evt_{uuid4().hex[:24]}"
-            _safe_record_anonymous_conversion_event(
-                access_control_service,
-                event_id=failed_event_id,
-                anonymous_fingerprint=identity.identity_id,
-                filename=(file.filename or "").strip() or "unknown.pdf",
-                model="Nao identificado",
-                conversion_type=_resolve_conversion_type_from_filename(file.filename or ""),
-                status="Falha",
-                transactions_count=None,
-                pages_count=estimated_pages_count,
-                scanned_likely=scanned_likely,
-                ocr_used=ocr_pages_processed > 0,
-                ocr_pages_processed=ocr_pages_processed,
-                duration_ms=duration_ms,
-                error_code=error_code,
-                error_stage=error_stage,
-                error_subcode=error_subcode,
-                exception_class=exception_class,
-                layout_inference_name=None,
-                layout_inference_confidence=None,
-                selected_parser=None,
-                parser_selection_reason=None,
-                pdf_page_count=estimated_pages_count,
-                extracted_char_count=None,
-                ocr_attempted=ocr_attempted,
-                ocr_engine=ocr_engine,
-                file_sha256=file_digest,
-            )
-        elif identity is not None and identity.identity_type == "user":
-            _safe_record_user_conversion(
-                access_control_service,
-                user_id=identity.identity_id,
-                processing_id=attempt_processing_id or f"failed_usr_evt_{uuid4().hex[:24]}",
-                filename=(file.filename or "").strip() or "unknown.pdf",
-                model="Nao identificado",
-                conversion_type=_resolve_conversion_type_from_filename(file.filename or ""),
-                status="Falha",
-                transactions_count=0,
-                pages_count=estimated_pages_count,
-                scanned_likely=scanned_likely,
-                ocr_used=ocr_pages_processed > 0,
-                ocr_pages_processed=ocr_pages_processed,
-                duration_ms=duration_ms,
-                error_code=error_code,
-                error_stage=error_stage,
-                error_subcode=error_subcode,
-                exception_class=exception_class,
-                layout_inference_name=None,
-                layout_inference_confidence=None,
-                selected_parser=None,
-                parser_selection_reason=None,
-                pdf_page_count=estimated_pages_count,
-                extracted_char_count=None,
-                ocr_attempted=ocr_attempted,
-                ocr_engine=ocr_engine,
-                file_sha256=file_digest,
-                canonical_warning_transactions_count=0,
-                balance_consistency_failed=0,
-                expires_at=None,
-            )
-        _log_conversion_failure(
-            identity=identity,
-            filename=(file.filename or "").strip() or "unknown.pdf",
-            event_id=failed_event_id,
-            error_code=error_code,
-            error_stage=error_stage,
-            error_subcode=error_subcode,
-            exception_class=exception_class,
-            scanned_likely=scanned_likely,
-            estimated_pages_count=estimated_pages_count,
-            ocr_pages_processed=ocr_pages_processed,
-            duration_ms=duration_ms,
-            failure_diagnostics=failure_diagnostics,
-        )
-        setattr(exc, "_convert_identity", identity)
-        raise
+    conversion_service_module.TEXT_PDF_MAX_PAGES_PER_FILE = TEXT_PDF_MAX_PAGES_PER_FILE
+    conversion_service_module.TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = TEXT_PDF_MAX_UPLOAD_SIZE_BYTES
+    conversion_service_module.OCR_PDF_MAX_PAGES_PER_FILE = OCR_PDF_MAX_PAGES_PER_FILE
+    conversion_service_module.OCR_PDF_MAX_UPLOAD_SIZE_BYTES = OCR_PDF_MAX_UPLOAD_SIZE_BYTES
+    service = ConversionService(
+        analyze_service=analyze_service,
+        report_service=report_service,
+        access_control_service=access_control_service,
+    )
+    return service.build_convert_response(
+        filename=file.filename or "",
+        staged_upload=staged_upload,
+        anonymous_fingerprint=anonymous_fingerprint,
+        user_token=user_token,
+        authorization=authorization,
+        access_cookie_token=access_cookie_token,
+        on_ocr_progress=on_ocr_progress,
+        scanned_likely=scanned_likely,
+        estimated_pages_count=estimated_pages_count,
+    )
 
 
 def _raise_http_convert_error(exc: Exception, *, identity, access_control_service: AccessControlService) -> None:
