@@ -10,17 +10,17 @@ from uuid import uuid4
 from app.application.bank_catalog import resolve_bank_code_from_name
 from app.application.bank_identity import resolve_bank_name
 from app.application.bank_resolver import DEFAULT_BANK_CODE, resolve_bank_code
-from app.application.csv_parser import parse_csv_transactions
 from app.application.document_classifier import classify_document
 from app.application.errors import UnsupportedFileTypeError
 from app.application.models import AnalysisData, BeforeAfterRow, NormalizedTransaction, TransactionRow
 from app.application.normalizer import normalize_transactions
-from app.application.ofx_parser import parse_ofx_transactions
+from app.application.parsers.csv import parse_csv_transactions
+from app.application.parsers.ofx import parse_ofx_transactions
+from app.application.parsers.xlsx import parse_xlsx_transactions
 from app.application.pdf_parser import parse_pdf_transactions
 from app.application.reconciliation import reconcile_transactions
 from app.application.repositories import AnalysisRepository
 from app.application.structured_conversion import build_structured_conversion_result_from_analysis_data
-from app.application.xlsx_parser import parse_xlsx_transactions
 from app.schemas import (
     AnalyzeResponse,
     BeforeAfterPreview,
