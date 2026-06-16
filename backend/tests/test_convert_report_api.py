@@ -131,6 +131,16 @@ def test_convert_report_returns_not_found_for_missing_analysis(tmp_path: Path) -
     app.dependency_overrides.clear()
 
 
+def test_convert_report_rejects_path_traversal_processing_id(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+
+    response = client.get("/convert-report/..%5Can_convert123?format=ofx&anonymous_fingerprint=fp-owner")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Analysis not found"
+    app.dependency_overrides.clear()
+
+
 def test_convert_report_rejects_access_from_other_identity(tmp_path: Path) -> None:
     client = build_client(tmp_path)
 
