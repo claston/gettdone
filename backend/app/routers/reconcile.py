@@ -15,7 +15,7 @@ from app.application import (
 )
 from app.application.document_classifier import classify_document
 from app.application.models import NormalizedTransaction
-from app.application.normalizer import normalize_transactions
+from app.application.normalization.transaction_normalizer import normalize_transactions
 from app.dependencies import get_access_control_service, get_report_service
 from app.routers.auth_session import SESSION_ACCESS_COOKIE_NAME, resolve_user_token_with_session
 from app.schemas import ReconcileIntakeResponse
