@@ -1,15 +1,12 @@
 import os
 import re
-from dataclasses import dataclass
 from datetime import datetime
-from io import BytesIO
 from typing import Callable
-
-from pypdf import PdfReader
 
 from app.application.errors import InvalidFileContentError, MaxPagesPerFileExceededError
 from app.application.layout_profiles.registry import DeclarativeLayoutProfile, get_layout_profile
-from app.application.models import CanonicalTransaction, NormalizedTransaction
+from app.application.models import CanonicalTransaction as CanonicalTransaction
+from app.application.models import NormalizedTransaction
 from app.application.normalization.balance import annotate_balance_consistency
 from app.application.normalization.canonical import build_canonical_transactions
 from app.application.normalization.canonical_metrics import build_canonical_quality_metrics
@@ -37,46 +34,13 @@ from app.application.normalization.pdf_tabular_profile_rules import resolve_tabu
 from app.application.normalization.pdf_tabular_rules import extract_document_reference, select_tabular_amount_token
 from app.application.normalization.pdf_text_rules import should_ignore_line, should_skip_transaction_description
 from app.application.normalization.text import normalize_upper_text
+from app.application.parsers.pdf import text_extraction
+from app.application.parsers.pdf.models import PdfParseResult, _ParsedTransaction, _PdfLine, _TabularColumnPositions
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
 from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE, extract_pdf_page_texts_with_ocr, is_pdf_ocr_enabled
 from app.application.textract_extraction_mapper import map_textract_blocks_to_extraction
 from app.application.textract_gateway import TextractGateway
 from app.application.textract_transaction_adapter import adapt_textract_extraction_to_transactions
-
-
-@dataclass(frozen=True)
-class PdfParseResult:
-    transactions: list[NormalizedTransaction]
-    layout: PdfLayoutInference
-    extracted_text: str
-    parse_metrics: dict[str, int | float | str]
-    canonical_transactions: list[CanonicalTransaction] | None = None
-
-
-@dataclass(frozen=True)
-class _PdfLine:
-    text: str
-    page_number: int
-    line_number: int
-
-
-@dataclass(frozen=True)
-class _TabularColumnPositions:
-    credit_start: int
-    credit_end: int
-    debit_start: int
-    debit_end: int
-    balance_start: int
-
-
-@dataclass(frozen=True)
-class _ParsedTransaction:
-    transaction: NormalizedTransaction
-    source_page: int | None = None
-    source_line: int | None = None
-    running_balance: float | None = None
-    external_reference_id: str | None = None
-    has_explicit_amount_sign: bool = False
 
 
 def parse_pdf_transactions(
@@ -574,33 +538,15 @@ def _extract_pdf_page_texts(
 
 
 def _read_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
-    try:
-        reader = PdfReader(BytesIO(raw_bytes))
-    except Exception as exc:  # pragma: no cover - defensive guard for parser internals
-        raise InvalidFileContentError("Unable to read PDF bytes.") from exc
-
-    pages = [(page.extract_text() or "").strip() for page in reader.pages]
-    pages = [item for item in pages if item]
-    return pages
+    return text_extraction.read_native_pdf_page_texts(raw_bytes)
 
 
 def _read_layout_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
-    try:
-        reader = PdfReader(BytesIO(raw_bytes))
-    except Exception as exc:  # pragma: no cover - defensive guard for parser internals
-        raise InvalidFileContentError("Unable to read PDF bytes.") from exc
-
-    pages = [(page.extract_text(extraction_mode="layout") or "").strip() for page in reader.pages]
-    pages = [item for item in pages if item]
-    return pages
+    return text_extraction.read_layout_native_pdf_page_texts(raw_bytes)
 
 
 def _read_pdf_page_count(raw_bytes: bytes) -> int:
-    try:
-        reader = PdfReader(BytesIO(raw_bytes))
-        return len(reader.pages)
-    except Exception as exc:  # pragma: no cover - defensive guard for parser internals
-        raise InvalidFileContentError("Unable to read PDF bytes.") from exc
+    return text_extraction.read_pdf_page_count(raw_bytes)
 
 
 def _flatten_statement_lines(page_texts: list[str], *, preserve_layout_spacing: bool = False) -> list[_PdfLine]:
