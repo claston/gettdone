@@ -1,5 +1,7 @@
 from app.application.conversion_pipeline import ConversionPipeline
+from app.application.ingestion import ingest_uploaded_document
 from app.application.models import NormalizedTransaction
+from app.application.parsers.service import ParsingService
 
 
 def test_conversion_pipeline_builds_analysis_data_without_storage() -> None:
@@ -53,3 +55,21 @@ def test_conversion_pipeline_accepts_custom_reconciliation_hook() -> None:
 
     assert result.analysis_data.preview_transactions[0].reconciliation_status == "matched_custom"
     assert result.operational_summary.reconciled_entries == 1
+
+
+def test_conversion_pipeline_builds_analysis_data_from_parsed_document() -> None:
+    raw = b"date,description,amount\n2026-04-01,PIX recebido cliente,300.00\n"
+    document = ingest_uploaded_document(filename="extrato.csv", raw_bytes=raw)
+    parsed_document = ParsingService().parse(document)
+
+    result = ConversionPipeline().run_parsed_document(
+        document=document,
+        parsed_document=parsed_document,
+        analysis_id="an_test_pipeline_parsed",
+        parse_ms=1.5,
+    )
+
+    assert result.analysis_data.analysis_id == "an_test_pipeline_parsed"
+    assert result.analysis_data.file_type == "csv"
+    assert result.analysis_data.transactions_total == 1
+    assert result.parse_ms == 1.5

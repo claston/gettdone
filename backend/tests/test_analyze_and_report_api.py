@@ -3,82 +3,8 @@ from tempfile import NamedTemporaryFile
 
 from fastapi.testclient import TestClient
 
-from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
+from app.dependencies import get_access_control_service, get_report_service
 from app.main import app
-from app.schemas import (
-    AnalyzeResponse,
-    BeforeAfterPreview,
-    CategorySummary,
-    Insight,
-    OperationalSummary,
-    ReconciliationSummary,
-    TopExpense,
-    TransactionPreview,
-)
-
-
-class FakeAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes) -> AnalyzeResponse:
-        if not filename.endswith((".csv", ".xlsx", ".ofx", ".pdf")):
-            from app.application import UnsupportedFileTypeError
-
-            raise UnsupportedFileTypeError
-
-        return AnalyzeResponse(
-            analysis_id="an_test123",
-            file_type="csv",
-            transactions_total=1,
-            total_inflows=100.0,
-            total_outflows=-20.0,
-            net_total=80.0,
-            operational_summary=OperationalSummary(
-                total_volume=120.0,
-                inflow_count=1,
-                outflow_count=1,
-                reconciled_entries=0,
-                unmatched_entries=1,
-            ),
-            reconciliation=ReconciliationSummary(
-                matched_groups=0,
-                reversed_entries=0,
-                potential_duplicates=0,
-            ),
-            categories=[CategorySummary(category="Outros", total=-20.0, count=1)],
-            top_expenses=[
-                TopExpense(
-                    description="TEST",
-                    amount=-20.0,
-                    date="2026-04-01",
-                    category="Outros",
-                )
-            ],
-            insights=[
-                Insight(
-                    type="test",
-                    title="Test insight",
-                    description=f"Bytes: {len(raw_bytes)}",
-                )
-            ],
-            preview_transactions=[
-                TransactionPreview(
-                    date="2026-04-01",
-                    description="TEST",
-                    amount=-20.0,
-                    category="Outros",
-                    reconciliation_status="unmatched",
-                )
-            ],
-            preview_before_after=[
-                BeforeAfterPreview(
-                    date="2026-04-01",
-                    description_before="test",
-                    description_after="TEST",
-                    amount_before=-20.0,
-                    amount_after=-20.0,
-                )
-            ],
-            expires_at=None,
-        )
 
 
 class FakeReportService:
@@ -144,36 +70,21 @@ class FakeAccessControlService:
 
 
 def build_client() -> TestClient:
-    analyze_service = FakeAnalyzeService()
     report_service = FakeReportService()
     access_control_service = FakeAccessControlService()
-    app.dependency_overrides[get_analyze_service] = lambda: analyze_service
     app.dependency_overrides[get_report_service] = lambda: report_service
     app.dependency_overrides[get_access_control_service] = lambda: access_control_service
     return TestClient(app)
 
 
-def test_analyze_happy_path() -> None:
+def test_analyze_route_is_disabled() -> None:
     client = build_client()
     response = client.post(
         "/analyze",
         files={"file": ("sample.csv", b"date,description,amount\n2026-04-01,TEST,-20.0", "text/csv")},
     )
 
-    assert response.status_code == 200
-    assert response.json()["analysis_id"] == "an_test123"
-    app.dependency_overrides.clear()
-
-
-def test_analyze_unsupported_file_type() -> None:
-    client = build_client()
-    response = client.post(
-        "/analyze",
-        files={"file": ("sample.txt", b"unsupported", "text/plain")},
-    )
-
-    assert response.status_code == 400
-    assert "Unsupported file type" in response.json()["detail"]
+    assert response.status_code == 405
     app.dependency_overrides.clear()
 
 
@@ -194,13 +105,8 @@ def test_report_requires_identity_and_enforces_owner() -> None:
 
     no_identity = client.get("/report/an_test123")
     assert no_identity.status_code == 400
-
-    intake = client.post(
-        "/analyze",
-        data={"anonymous_fingerprint": "fp-owner"},
-        files={"file": ("sample.csv", b"date,description,amount\n2026-04-01,TEST,-20.0", "text/csv")},
-    )
-    assert intake.status_code == 200
+    report_service = app.dependency_overrides[get_report_service]()
+    report_service.set_report_owner("an_test123", "anonymous", "anon_fp-owner")
 
     owner = client.get("/report/an_test123", params={"anonymous_fingerprint": "fp-owner"})
     assert owner.status_code == 200

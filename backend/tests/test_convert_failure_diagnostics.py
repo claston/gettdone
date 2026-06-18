@@ -1,5 +1,5 @@
 from app.application import InvalidFileContentError
-from app.routers.convert import _build_failure_diagnostics, _resolve_error_observability
+from app.routers.upload import _build_failure_diagnostics, _resolve_error_observability
 
 
 def test_failure_diagnostics_marks_pdf_read_failure() -> None:

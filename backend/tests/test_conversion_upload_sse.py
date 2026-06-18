@@ -5,7 +5,8 @@ from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
 from app.application import FileTooLargeError, InvalidFileContentError, QuotaExceededError
-from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
+from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult
+from app.dependencies import get_access_control_service, get_legacy_conversion_runner, get_report_service
 from app.main import app
 from app.schemas import (
     AnalyzeResponse,
@@ -20,6 +21,28 @@ from app.schemas import (
 )
 
 
+def _build_conversion_result(analysis: AnalyzeResponse) -> ConversionPipelineResult:
+    return ConversionPipelineResult.completed(
+        payload=ConvertResponse(
+            processing_id=analysis.analysis_id,
+            quota_remaining=4,
+            quota_limit=5,
+            quota_mode="conversion",
+            identity_type="anonymous",
+            analysis=analysis,
+        ).model_dump(),
+    )
+
+
+def _as_legacy_conversion_runner(fake_pipeline):
+    def runner(**kwargs) -> AnalyzeResponse:
+        result = fake_pipeline.run(**kwargs)
+        payload = result.payload or {}
+        return AnalyzeResponse.model_validate(payload["analysis"])
+
+    return runner
+
+
 def _blank_pdf_bytes() -> bytes:
     writer = PdfWriter()
     writer.add_blank_page(width=595, height=842)
@@ -28,13 +51,13 @@ def _blank_pdf_bytes() -> bytes:
     return buffer.getvalue()
 
 
-class FakeAnalyzeService:
+class _LegacyFakeAnalyzeService:
     def __init__(self) -> None:
         self.called = False
 
-    def analyze(
+    def run(
         self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
-    ) -> AnalyzeResponse:
+    ) -> ConversionPipelineResult:
         self.called = True
         if "fail_ocr" in filename:
             raise InvalidFileContentError("OCR failed while processing PDF pages.")
@@ -43,7 +66,7 @@ class FakeAnalyzeService:
         if on_ocr_progress is not None:
             on_ocr_progress(1, 2)
             on_ocr_progress(2, 2)
-        return AnalyzeResponse(
+        analysis = AnalyzeResponse(
             analysis_id=analysis_id or "an_sse_001",
             file_type="pdf",
             transactions_total=1,
@@ -81,6 +104,7 @@ class FakeAnalyzeService:
             ],
             expires_at=None,
         )
+        return _build_conversion_result(analysis)
 
 
 class FakeReportService:
@@ -147,22 +171,90 @@ class RegisteredFreeQuotaExceededAccessControlService(FakeAccessControlService):
         raise QuotaExceededError()
 
 
+def _resolve_pipeline_raw_bytes(*, staged_upload, raw_bytes: bytes | None) -> bytes:
+    if raw_bytes is not None:
+        return raw_bytes
+    if staged_upload is None:
+        return b""
+    return staged_upload.path.read_bytes()
+
+
+class FakeAnalyzeService:
+    def __init__(self) -> None:
+        self.called = False
+
+    def run(self, **kwargs) -> ConversionPipelineResult:
+        self.called = True
+        filename = kwargs["filename"]
+        raw = _resolve_pipeline_raw_bytes(
+            staged_upload=kwargs.get("staged_upload"),
+            raw_bytes=kwargs.get("raw_bytes"),
+        )
+        on_ocr_progress = kwargs.get("on_ocr_progress")
+        if "fail_ocr" in filename:
+            raise InvalidFileContentError("OCR failed while processing PDF pages.")
+        if "corrupted" in filename:
+            raise InvalidFileContentError("Ignoring wrong pointing object 9 0 (offset 0)")
+        if on_ocr_progress is not None:
+            on_ocr_progress(1, 2)
+            on_ocr_progress(2, 2)
+        analysis = AnalyzeResponse(
+            analysis_id=kwargs.get("analysis_id") or "an_sse_001",
+            file_type="pdf",
+            transactions_total=1,
+            total_inflows=10.0,
+            total_outflows=-2.0,
+            net_total=8.0,
+            operational_summary=OperationalSummary(
+                total_volume=12.0,
+                inflow_count=1,
+                outflow_count=1,
+                reconciled_entries=0,
+                unmatched_entries=1,
+            ),
+            reconciliation=ReconciliationSummary(matched_groups=0, reversed_entries=0, potential_duplicates=0),
+            categories=[CategorySummary(category="Outros", total=8.0, count=1)],
+            top_expenses=[TopExpense(description="TESTE", amount=-2.0, date="2026-05-17", category="Outros")],
+            insights=[Insight(type="test", title="ok", description=f"ok {len(raw)}")],
+            preview_transactions=[
+                TransactionPreview(
+                    date="2026-05-17",
+                    description="TESTE",
+                    amount=-2.0,
+                    category="Outros",
+                    reconciliation_status="unmatched",
+                )
+            ],
+            preview_before_after=[
+                BeforeAfterPreview(
+                    date="2026-05-17",
+                    description_before="teste",
+                    description_after="TESTE",
+                    amount_before=-2.0,
+                    amount_after=-2.0,
+                )
+            ],
+            expires_at=None,
+        )
+        return _build_conversion_result(analysis)
+
+
 def _build_client() -> TestClient:
-    app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()
+    app.dependency_overrides[get_legacy_conversion_runner] = lambda: _as_legacy_conversion_runner(FakeAnalyzeService())
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
     return TestClient(app)
 
 
 def _build_client_with_access_control(access_control_service) -> TestClient:
-    app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()
+    app.dependency_overrides[get_legacy_conversion_runner] = lambda: _as_legacy_conversion_runner(FakeAnalyzeService())
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     app.dependency_overrides[get_access_control_service] = lambda: access_control_service
     return TestClient(app)
 
 
 def _build_client_with_services(*, analyze_service, access_control_service) -> TestClient:
-    app.dependency_overrides[get_analyze_service] = lambda: analyze_service
+    app.dependency_overrides[get_legacy_conversion_runner] = lambda: _as_legacy_conversion_runner(analyze_service)
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     app.dependency_overrides[get_access_control_service] = lambda: access_control_service
     return TestClient(app)
@@ -286,7 +378,7 @@ def test_streaming_upload_emits_file_too_large_error_message() -> None:
 def test_streaming_upload_explains_scanned_pdf_pages_limit_without_numeric_limit(monkeypatch) -> None:
     monkeypatch.setenv("PDF_OCR_MAX_PAGES", "8")
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        "app.routers.upload._inspect_pdf_scan_likely_from_path",
         lambda filename, staged_path: (True, 11),
     )
     client = _build_client()

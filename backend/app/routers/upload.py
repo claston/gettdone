@@ -4,7 +4,6 @@ import os
 import re
 import tempfile
 from hashlib import sha256
-from io import BytesIO
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Thread
@@ -12,39 +11,40 @@ from time import monotonic
 
 from fastapi import APIRouter, Cookie, Depends, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from pypdf import PdfReader
 from starlette.background import BackgroundTask
 
 from app.application import (
     AccessControlService,
     AnalysisAccessDeniedError,
     AnalysisNotFoundError,
-    AnalyzeService,
-    ConversionService,
+    ConvertDocumentResult,
+    ConvertDocumentStatus,
+    ConvertDocumentUseCase,
+    DocumentPreflightService,
     FileTooLargeError,
     InvalidFileContentError,
     InvalidUserTokenError,
     MaxPagesPerFileExceededError,
     QuotaExceededError,
-    ReportService,
     UnsupportedFileTypeError,
 )
 from app.application import conversion_service as conversion_service_module
-from app.application.conversion_service import (
+from app.application.conversion import document_preflight_service as document_preflight_service_module
+from app.application.conversion.document_conversion_pipeline import StagedUploadRef
+from app.application.conversion.document_preflight_service import (
     OCR_CONTEXT_SCANNED_PDF,
     OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK,
-    StagedUploadRef,
 )
-from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
+from app.dependencies import get_access_control_service, get_convert_document_use_case
 from app.routers.auth_session import SESSION_ACCESS_COOKIE_NAME
 from app.schemas import ConvertResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-TEXT_PDF_MAX_PAGES_PER_FILE = 250
-TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
-OCR_PDF_MAX_PAGES_PER_FILE = 10
-OCR_PDF_MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024
+TEXT_PDF_MAX_PAGES_PER_FILE = document_preflight_service_module.TEXT_PDF_MAX_PAGES_PER_FILE
+TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = document_preflight_service_module.TEXT_PDF_MAX_UPLOAD_SIZE_BYTES
+OCR_PDF_MAX_PAGES_PER_FILE = document_preflight_service_module.OCR_PDF_MAX_PAGES_PER_FILE
+OCR_PDF_MAX_UPLOAD_SIZE_BYTES = document_preflight_service_module.OCR_PDF_MAX_UPLOAD_SIZE_BYTES
 UPLOAD_READ_CHUNK_SIZE_BYTES = 1024 * 1024
 UPLOAD_STAGING_MAX_BYTES = TEXT_PDF_MAX_UPLOAD_SIZE_BYTES
 _StagedUpload = StagedUploadRef
@@ -536,31 +536,13 @@ def _read_staged_upload_bytes(staged_upload: _StagedUpload) -> bytes:
 
 
 def _inspect_pdf_scan_likely(filename: str, raw_bytes: bytes) -> tuple[bool, int | None]:
-    if Path(filename or "").suffix.lower() != ".pdf":
-        return False, None
-    try:
-        reader = PdfReader(BytesIO(raw_bytes))
-        total_pages = len(reader.pages)
-        extracted_chars = 0
-        for page in reader.pages:
-            extracted_chars += len((page.extract_text() or "").strip())
-        return extracted_chars < 40, total_pages
-    except Exception:
-        return False, None
+    preflight = DocumentPreflightService().inspect_raw_bytes(filename=filename, raw_bytes=raw_bytes)
+    return preflight.scanned_likely, preflight.estimated_pages_count
 
 
 def _inspect_pdf_scan_likely_from_path(filename: str, staged_path: Path) -> tuple[bool, int | None]:
-    if Path(filename or "").suffix.lower() != ".pdf":
-        return False, None
-    try:
-        reader = PdfReader(str(staged_path))
-        total_pages = len(reader.pages)
-        extracted_chars = 0
-        for page in reader.pages:
-            extracted_chars += len((page.extract_text() or "").strip())
-        return extracted_chars < 40, total_pages
-    except Exception:
-        return False, None
+    preflight = DocumentPreflightService().inspect_staged_upload(filename=filename, staged_path=staged_path)
+    return preflight.scanned_likely, preflight.estimated_pages_count
 
 
 def _build_convert_response(
@@ -571,9 +553,7 @@ def _build_convert_response(
     user_token: str | None,
     authorization: str | None,
     access_cookie_token: str | None,
-    analyze_service: AnalyzeService,
-    report_service: ReportService,
-    access_control_service: AccessControlService,
+    use_case: ConvertDocumentUseCase,
     on_ocr_progress=None,
     scanned_likely: bool | None = None,
     estimated_pages_count: int | None = None,
@@ -582,12 +562,11 @@ def _build_convert_response(
     conversion_service_module.TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = TEXT_PDF_MAX_UPLOAD_SIZE_BYTES
     conversion_service_module.OCR_PDF_MAX_PAGES_PER_FILE = OCR_PDF_MAX_PAGES_PER_FILE
     conversion_service_module.OCR_PDF_MAX_UPLOAD_SIZE_BYTES = OCR_PDF_MAX_UPLOAD_SIZE_BYTES
-    service = ConversionService(
-        analyze_service=analyze_service,
-        report_service=report_service,
-        access_control_service=access_control_service,
-    )
-    return service.build_convert_response(
+    document_preflight_service_module.TEXT_PDF_MAX_PAGES_PER_FILE = TEXT_PDF_MAX_PAGES_PER_FILE
+    document_preflight_service_module.TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = TEXT_PDF_MAX_UPLOAD_SIZE_BYTES
+    document_preflight_service_module.OCR_PDF_MAX_PAGES_PER_FILE = OCR_PDF_MAX_PAGES_PER_FILE
+    document_preflight_service_module.OCR_PDF_MAX_UPLOAD_SIZE_BYTES = OCR_PDF_MAX_UPLOAD_SIZE_BYTES
+    result = use_case.execute(
         filename=file.filename or "",
         staged_upload=staged_upload,
         anonymous_fingerprint=anonymous_fingerprint,
@@ -598,6 +577,15 @@ def _build_convert_response(
         scanned_likely=scanned_likely,
         estimated_pages_count=estimated_pages_count,
     )
+    return _result_to_convert_response(result)
+
+
+def _result_to_convert_response(result: ConvertDocumentResult) -> ConvertResponse:
+    if result.status != ConvertDocumentStatus.COMPLETED or result.payload is None:
+        raise RuntimeError(
+            f"ConvertDocumentUseCase must return a completed result with payload for HTTP conversion. status={result.status}"
+        )
+    return ConvertResponse.model_validate(result.payload)
 
 
 def _raise_http_convert_error(exc: Exception, *, identity, access_control_service: AccessControlService) -> None:
@@ -656,8 +644,7 @@ async def convert(
     user_token: str | None = Form(default=None),
     authorization: str | None = Header(default=None),
     access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
-    analyze_service: AnalyzeService = Depends(get_analyze_service),
-    report_service: ReportService = Depends(get_report_service),
+    use_case: ConvertDocumentUseCase = Depends(get_convert_document_use_case),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> ConvertResponse:
     identity = None
@@ -672,9 +659,7 @@ async def convert(
             user_token=user_token,
             authorization=authorization,
             access_cookie_token=access_cookie_token,
-            analyze_service=analyze_service,
-            report_service=report_service,
-            access_control_service=access_control_service,
+            use_case=use_case,
             scanned_likely=scanned_likely,
             estimated_pages_count=total_pages,
         )
@@ -694,8 +679,7 @@ async def conversion_upload_stream(
     authorization: str | None = Header(default=None),
     accept: str | None = Header(default=None),
     access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
-    analyze_service: AnalyzeService = Depends(get_analyze_service),
-    report_service: ReportService = Depends(get_report_service),
+    use_case: ConvertDocumentUseCase = Depends(get_convert_document_use_case),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ):
     logger.info("conversion_upload_received filename=%s accept=%s", file.filename or "", accept or "")
@@ -750,9 +734,7 @@ async def conversion_upload_stream(
                 user_token=user_token,
                 authorization=authorization,
                 access_cookie_token=access_cookie_token,
-                analyze_service=analyze_service,
-                report_service=report_service,
-                access_control_service=access_control_service,
+                use_case=use_case,
                 scanned_likely=scanned_likely,
                 estimated_pages_count=total_pages,
             )
@@ -825,9 +807,7 @@ async def conversion_upload_stream(
                     user_token=user_token,
                     authorization=authorization,
                     access_cookie_token=access_cookie_token,
-                    analyze_service=analyze_service,
-                    report_service=report_service,
-                    access_control_service=access_control_service,
+                    use_case=use_case,
                     on_ocr_progress=on_ocr_progress if scanned_likely else None,
                     scanned_likely=scanned_likely,
                     estimated_pages_count=total_pages,

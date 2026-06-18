@@ -1,6 +1,8 @@
 from pathlib import Path
+from uuid import uuid4
 
-from app.application.analyze_service import AnalyzeService
+from app.application.analysis_response_builder import build_analyze_response, persist_conversion_result
+from app.application.default_conversion_pipeline import build_default_conversion_pipeline
 from app.application.models import AnalysisData
 from app.application.report_service import ReportService
 
@@ -113,12 +115,14 @@ class FakeReportRepository:
 
 def test_analyze_service_accepts_analysis_repository_protocol() -> None:
     repository = FakeAnalysisRepository()
-    service = AnalyzeService(storage=repository)
 
-    result = service.analyze(
+    pipeline_result = build_default_conversion_pipeline().run(
         filename="sample.csv",
         raw_bytes=b"date,description,amount\n2026-04-01,IFOOD,-58.90\n",
+        analysis_id=f"an_{uuid4().hex[:12]}",
     )
+    persisted_result = persist_conversion_result(storage=repository, pipeline_result=pipeline_result)
+    result = build_analyze_response(persisted_result=persisted_result)
 
     assert result.analysis_id.startswith("an_")
     assert result.expires_at == "2026-06-13T20:00:00+00:00"
