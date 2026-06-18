@@ -8,9 +8,12 @@ from app.application.conversion.document_conversion_pipeline import (
     DocumentConversionRuntime,
     StagedUploadRef,
 )
+from app.application.conversion.document_extractor import ExtractedDocument
 from app.application.conversion.document_preflight_service import DocumentPreflightResult
+from app.application.conversion.statement_parser import ParsedBankStatement, ParsedTransaction
 from app.application.conversion_pipeline import ConversionPipelineResult, OperationalPipelineSummary
 from app.application.models import AnalysisData, NormalizedTransaction, TransactionRow
+from app.application.parsers.service import ParsedDocument
 
 
 class FakeAccessControlService:
@@ -69,20 +72,20 @@ class FakeProcessingPipeline:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
 
-    def run_document(
+    def run_parsed_document(
         self,
         *,
         document,
+        parsed_document,
         analysis_id: str,
-        on_ocr_progress=None,
-        max_ocr_pages: int | None = None,
+        parse_ms: float,
     ) -> ConversionPipelineResult:
         self.calls.append(
             {
                 "document": document,
+                "parsed_document": parsed_document,
                 "analysis_id": analysis_id,
-                "on_ocr_progress": on_ocr_progress,
-                "max_ocr_pages": max_ocr_pages,
+                "parse_ms": parse_ms,
             }
         )
         analysis_data = AnalysisData(
@@ -158,6 +161,69 @@ class FakeProcessingPipeline:
         )
 
 
+class FakeDocumentExtractor:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def extract(
+        self,
+        *,
+        document,
+        on_ocr_progress=None,
+        max_ocr_pages: int | None = None,
+        pdf_parser=None,
+    ) -> ExtractedDocument:
+        self.calls.append(
+            {
+                "document": document,
+                "on_ocr_progress": on_ocr_progress,
+                "max_ocr_pages": max_ocr_pages,
+                "pdf_parser": pdf_parser,
+            }
+        )
+        return ExtractedDocument(
+            source_document=document,
+            extracted_text="2026-06-18 PIX RECEBIDO 150,00",
+            metadata={
+                "legacy_parsed_document": ParsedDocument(
+                    file_type=document.file_type,
+                    transactions=[
+                        NormalizedTransaction(
+                            date="2026-06-18",
+                            description="PIX RECEBIDO",
+                            amount=150.0,
+                            type="credit",
+                        )
+                    ],
+                    extracted_text="2026-06-18 PIX RECEBIDO 150,00",
+                    parse_metrics={"page_count": 1, "selected_parser": "grouped"},
+                )
+            },
+        )
+
+
+class FakeStatementParser:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def parse(self, *, extracted_document: ExtractedDocument) -> ParsedBankStatement:
+        self.calls.append({"extracted_document": extracted_document})
+        return ParsedBankStatement(
+            file_type=extracted_document.source_document.file_type,
+            transactions=[
+                ParsedTransaction(
+                    date="2026-06-18",
+                    description="PIX RECEBIDO",
+                    amount=150.0,
+                    type="credit",
+                )
+            ],
+            extracted_document=extracted_document,
+            extracted_text=extracted_document.extracted_text,
+            metadata=dict(extracted_document.metadata or {}),
+        )
+
+
 class FailingAnalyzeFallbackService:
     def analyze(self, **_kwargs):
         raise AssertionError("Fallback analyze service should not be called when processing_pipeline is available.")
@@ -225,11 +291,15 @@ def test_document_conversion_pipeline_uses_processing_pipeline_when_available() 
     report_service = FakeReportService()
     analysis_repository = FakeAnalysisRepository()
     processing_pipeline = FakeProcessingPipeline()
+    document_extractor = FakeDocumentExtractor()
+    statement_parser = FakeStatementParser()
     pipeline = DocumentConversionPipeline(
         report_service=report_service,
         access_control_service=access_control_service,
         processing_pipeline=processing_pipeline,
         analysis_repository=analysis_repository,
+        document_extractor=document_extractor,
+        statement_parser=statement_parser,
         analyze_fallback_service=FailingAnalyzeFallbackService(),
     )
 
@@ -248,8 +318,12 @@ def test_document_conversion_pipeline_uses_processing_pipeline_when_available() 
         estimated_pages_count=None,
     )
 
+    assert len(document_extractor.calls) == 1
+    assert document_extractor.calls[0]["document"].filename == "statement.csv"
+    assert len(statement_parser.calls) == 1
     assert len(processing_pipeline.calls) == 1
     assert processing_pipeline.calls[0]["document"].filename == "statement.csv"
+    assert processing_pipeline.calls[0]["parsed_document"].file_type == "csv"
     assert response.status == ConversionPipelineStatus.COMPLETED
     assert response.payload is not None
     assert analysis_repository.saved_analysis is not None

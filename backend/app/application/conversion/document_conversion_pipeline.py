@@ -14,12 +14,21 @@ from app.application.bank_identity import resolve_conversion_model_label
 from app.application.conversion.conversion_pipeline_result import (
     ConversionPipelineResult,
 )
+from app.application.conversion.document_extractor import (
+    DocumentExtractor,
+    LegacyParsingServiceDocumentExtractor,
+)
 from app.application.conversion.document_preflight_service import (
     DocumentPreflightPolicy,
     DocumentPreflightResult,
     DocumentPreflightService,
 )
 from app.application.conversion.quota_validator_service import QuotaValidatorService
+from app.application.conversion.statement_parser import (
+    LegacyExtractedDocumentStatementParser,
+    StatementParser,
+    resolve_legacy_parsed_statement,
+)
 from app.application.conversion_pipeline import ConversionPipeline
 from app.application.errors import (
     FileTooLargeError,
@@ -145,6 +154,8 @@ class DocumentConversionPipeline:
         quota_validator_service: QuotaValidatorService | None = None,
         processing_pipeline: ConversionPipeline | None = None,
         analysis_repository: AnalysisRepository | None = None,
+        document_extractor: DocumentExtractor | None = None,
+        statement_parser: StatementParser | None = None,
         analyze_fallback_service=None,
     ) -> None:
         self.report_service = report_service
@@ -155,6 +166,10 @@ class DocumentConversionPipeline:
         )
         self.processing_pipeline = processing_pipeline
         self.analysis_repository = analysis_repository
+        self.document_extractor = document_extractor or LegacyParsingServiceDocumentExtractor(
+            parsing_service=getattr(processing_pipeline, "parser", None)
+        )
+        self.statement_parser = statement_parser or LegacyExtractedDocumentStatementParser()
         self.analyze_fallback_service = analyze_fallback_service
 
     def run(
@@ -617,11 +632,19 @@ class DocumentConversionPipeline:
                 (filename or "")[:120],
             )
             resolved_analysis_id = (analysis_id or "").strip() or f"an_{uuid4().hex[:12]}"
-            pipeline_result = self.processing_pipeline.run_document(
+            parse_started_at = monotonic()
+            extracted_document = self.document_extractor.extract(
                 document=document,
-                analysis_id=resolved_analysis_id,
                 on_ocr_progress=on_ocr_progress,
                 max_ocr_pages=max_ocr_pages,
+            )
+            parsed_statement = self.statement_parser.parse(extracted_document=extracted_document)
+            parse_ms = round((monotonic() - parse_started_at) * 1000, 3)
+            pipeline_result = self.processing_pipeline.run_parsed_document(
+                document=document,
+                parsed_document=resolve_legacy_parsed_statement(parsed_statement),
+                analysis_id=resolved_analysis_id,
+                parse_ms=parse_ms,
             )
             analysis = persist_and_build_analyze_response(
                 storage=self.analysis_repository,

@@ -101,11 +101,6 @@ class ConversionPipeline:
         max_ocr_pages: int | None = None,
         pdf_parser: PdfParser = parse_pdf_transactions,
     ) -> ConversionPipelineResult:
-        total_start = perf_counter()
-        filename = document.filename
-        raw_bytes = document.raw_bytes
-        extension = document.file_type
-
         parse_start = perf_counter()
         parsed_document = self.parser.parse(
             document,
@@ -114,6 +109,25 @@ class ConversionPipeline:
             pdf_parser=pdf_parser,
         )
         parse_ms = round((perf_counter() - parse_start) * 1000, 3)
+        return self.run_parsed_document(
+            document=document,
+            parsed_document=parsed_document,
+            analysis_id=analysis_id,
+            parse_ms=parse_ms,
+        )
+
+    def run_parsed_document(
+        self,
+        *,
+        document: IngestedDocument,
+        parsed_document: ParsedDocument,
+        analysis_id: str,
+        parse_ms: float,
+    ) -> ConversionPipelineResult:
+        total_start = perf_counter()
+        filename = document.filename
+        raw_bytes = document.raw_bytes
+        extension = document.file_type
 
         parsed_transactions = parsed_document.transactions
         layout_inference_name = parsed_document.layout_inference_name
@@ -208,7 +222,7 @@ class ConversionPipeline:
             classify_ms=classify_ms,
             normalize_ms=normalize_ms,
             reconcile_ms=reconcile_ms,
-            total_ms=round((perf_counter() - total_start) * 1000, 3),
+            total_ms=round(parse_ms + ((perf_counter() - total_start) * 1000), 3),
         )
         ofx_account_type = self.resolve_ofx_account_type(
             extension,

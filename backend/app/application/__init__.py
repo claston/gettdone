@@ -9,6 +9,7 @@ from app.application.conversion.document_conversion_pipeline import (
     DocumentConversionPipeline,
     StagedUploadRef,
 )
+from app.application.conversion.document_extractor import DocumentExtractor, ExtractedDocument
 from app.application.conversion.document_preflight_service import (
     DocumentPreflightPolicy,
     DocumentPreflightResult,
@@ -18,6 +19,7 @@ from app.application.conversion.quota_validator_service import (
     QuotaConsumptionResult,
     QuotaValidatorService,
 )
+from app.application.conversion.statement_parser import ParsedBankStatement, ParsedTransaction, StatementParser
 from app.application.conversion_service import ConversionService
 from app.application.errors import (
     AnalysisAccessDeniedError,
@@ -71,12 +73,16 @@ __all__ = [
     "ConvertDocumentUseCase",
     "ConvertDocumentResult",
     "ConvertDocumentStatus",
+    "DocumentExtractor",
     "DocumentConversionPipeline",
     "DocumentPreflightPolicy",
     "DocumentPreflightResult",
     "DocumentPreflightService",
+    "ExtractedDocument",
     "QuotaConsumptionResult",
     "QuotaValidatorService",
+    "ParsedBankStatement",
+    "ParsedTransaction",
     "ConversionService",
     "FileTooLargeError",
     "GoogleOAuthAccountNotFoundError",
@@ -100,6 +106,7 @@ __all__ = [
     "ReportService",
     "ReportRepository",
     "StagedUploadRef",
+    "StatementParser",
     "TempAnalysisStorage",
     "UnsupportedFileTypeError",
     "UserAlreadyExistsError",
