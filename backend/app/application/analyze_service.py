@@ -2,7 +2,6 @@ import logging
 import re
 import unicodedata
 from datetime import datetime, timezone
-from pathlib import Path
 from time import perf_counter
 from typing import Callable
 from uuid import uuid4
@@ -11,12 +10,10 @@ from app.application.bank_catalog import resolve_bank_code_from_name
 from app.application.bank_identity import resolve_bank_name
 from app.application.bank_resolver import DEFAULT_BANK_CODE, resolve_bank_code
 from app.application.document_classifier import classify_document
-from app.application.errors import UnsupportedFileTypeError
-from app.application.models import AnalysisData, BeforeAfterRow, NormalizedTransaction, TransactionRow
-from app.application.normalizer import normalize_transactions
-from app.application.parsers.csv import parse_csv_transactions
-from app.application.parsers.ofx import parse_ofx_transactions
-from app.application.parsers.xlsx import parse_xlsx_transactions
+from app.application.ingestion import SUPPORTED_DOCUMENT_EXTENSIONS, ingest_uploaded_document
+from app.application.models import AnalysisData, BeforeAfterRow, TransactionRow
+from app.application.normalization.transaction_normalizer import normalize_transactions
+from app.application.parsers.service import ParsingService
 from app.application.pdf_parser import parse_pdf_transactions
 from app.application.reconciliation import reconcile_transactions
 from app.application.repositories import AnalysisRepository
@@ -32,13 +29,14 @@ from app.schemas import (
     TransactionPreview,
 )
 
-SUPPORTED_EXTENSIONS = {"csv", "xlsx", "ofx", "pdf"}
+SUPPORTED_EXTENSIONS = SUPPORTED_DOCUMENT_EXTENSIONS
 logger = logging.getLogger(__name__)
 
 
 class AnalyzeService:
-    def __init__(self, storage: AnalysisRepository) -> None:
+    def __init__(self, storage: AnalysisRepository, parser: ParsingService | None = None) -> None:
         self.storage = storage
+        self.parser = parser or ParsingService()
 
     def analyze(
         self,
@@ -49,32 +47,30 @@ class AnalyzeService:
         analysis_id: str | None = None,
     ) -> AnalyzeResponse:
         total_start = perf_counter()
-        extension = Path(filename).suffix.replace(".", "").lower()
-        if extension not in SUPPORTED_EXTENSIONS:
-            raise UnsupportedFileTypeError
+        document = ingest_uploaded_document(filename=filename, raw_bytes=raw_bytes)
+        extension = document.file_type
         logger.info(
             "analyze_start extension=%s size_bytes=%d filename=%s",
             extension,
-            len(raw_bytes),
+            document.size_bytes,
             (filename or "")[:120],
         )
 
         analysis_id = (analysis_id or "").strip() or f"an_{uuid4().hex[:12]}"
         parse_start = perf_counter()
-        (
-            parsed_transactions,
-            layout_inference_name,
-            layout_inference_confidence,
-            extracted_text,
-            parse_metrics,
-            transaction_warning_types,
-            transaction_running_balances,
-        ) = self._build_transactions_for_extension(
-            extension,
-            raw_bytes,
+        parsed_document = self.parser.parse(
+            document,
             on_ocr_progress=on_ocr_progress,
             max_ocr_pages=max_ocr_pages,
+            pdf_parser=parse_pdf_transactions,
         )
+        parsed_transactions = parsed_document.transactions
+        layout_inference_name = parsed_document.layout_inference_name
+        layout_inference_confidence = parsed_document.layout_inference_confidence
+        extracted_text = parsed_document.extracted_text
+        parse_metrics = parsed_document.parse_metrics
+        transaction_warning_types = parsed_document.warning_types or [[] for _ in parsed_transactions]
+        transaction_running_balances = parsed_document.running_balances or [None for _ in parsed_transactions]
         parse_ms = round((perf_counter() - parse_start) * 1000, 3)
         classify_start = perf_counter()
         classification_result = classify_document(
@@ -400,70 +396,6 @@ class AnalyzeService:
             return False
 
         return True
-
-    def _build_transactions_for_extension(
-        self,
-        extension: str,
-        raw_bytes: bytes,
-        on_ocr_progress: Callable[[int, int], None] | None = None,
-        max_ocr_pages: int | None = None,
-    ) -> tuple[
-        list[NormalizedTransaction],
-        str | None,
-        float | None,
-        str | None,
-        dict[str, int | float | str] | None,
-        list[list[str]],
-        list[float | None],
-    ]:
-        if extension == "csv":
-            transactions = parse_csv_transactions(raw_bytes)
-            return transactions, None, None, None, None, [[] for _ in transactions], [None for _ in transactions]
-        if extension == "xlsx":
-            transactions = parse_xlsx_transactions(raw_bytes)
-            return transactions, None, None, None, None, [[] for _ in transactions], [None for _ in transactions]
-        if extension == "ofx":
-            transactions = parse_ofx_transactions(raw_bytes)
-            return transactions, None, None, None, None, [[] for _ in transactions], [None for _ in transactions]
-        if on_ocr_progress is None:
-            try:
-                result = parse_pdf_transactions(raw_bytes, max_ocr_pages=max_ocr_pages)
-            except TypeError as exc:
-                if "max_ocr_pages" not in str(exc):
-                    raise
-                result = parse_pdf_transactions(raw_bytes)
-        else:
-            try:
-                result = parse_pdf_transactions(
-                    raw_bytes,
-                    on_ocr_progress=on_ocr_progress,
-                    max_ocr_pages=max_ocr_pages,
-                )
-            except TypeError as exc:
-                if "max_ocr_pages" not in str(exc):
-                    raise
-                result = parse_pdf_transactions(raw_bytes, on_ocr_progress=on_ocr_progress)
-        warning_types = [
-            list(item.warnings or [])
-            for item in (result.canonical_transactions or [])
-        ]
-        running_balances = [
-            item.running_balance
-            for item in (result.canonical_transactions or [])
-        ]
-        if len(warning_types) < len(result.transactions):
-            warning_types.extend([[] for _ in range(len(result.transactions) - len(warning_types))])
-        if len(running_balances) < len(result.transactions):
-            running_balances.extend([None for _ in range(len(result.transactions) - len(running_balances))])
-        return (
-            result.transactions,
-            result.layout.layout_name,
-            result.layout.confidence,
-            result.extracted_text,
-            result.parse_metrics,
-            warning_types,
-            running_balances,
-        )
 
     def _build_pdf_processing_metrics(
         self,
