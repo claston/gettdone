@@ -4,6 +4,7 @@ import unicodedata
 from typing import Callable
 from uuid import uuid4
 
+from app.application.analysis_response_builder import persist_and_build_analyze_response
 from app.application.bank_catalog import resolve_bank_code_from_name
 from app.application.bank_identity import resolve_bank_name
 from app.application.bank_resolver import DEFAULT_BANK_CODE, resolve_bank_code
@@ -13,17 +14,7 @@ from app.application.models import TransactionRow
 from app.application.parsers.service import ParsingService
 from app.application.pdf_parser import parse_pdf_transactions
 from app.application.repositories import AnalysisRepository
-from app.application.structured_conversion import build_structured_conversion_result_from_analysis_data
-from app.schemas import (
-    AnalyzeResponse,
-    BeforeAfterPreview,
-    CategorySummary,
-    Insight,
-    OperationalSummary,
-    ReconciliationSummary,
-    TopExpense,
-    TransactionPreview,
-)
+from app.schemas import AnalyzeResponse
 
 SUPPORTED_EXTENSIONS = SUPPORTED_DOCUMENT_EXTENSIONS
 logger = logging.getLogger(__name__)
@@ -98,107 +89,22 @@ class AnalyzeService:
             max_ocr_pages=max_ocr_pages,
             pdf_parser=parse_pdf_transactions,
         )
-        analysis_data = pipeline_result.analysis_data
-        analysis_data.structured_result = build_structured_conversion_result_from_analysis_data(analysis_data)
-        expires_at = self.storage.save_analysis(analysis_data)
+        analysis = persist_and_build_analyze_response(
+            storage=self.storage,
+            pipeline_result=pipeline_result,
+        )
         logger.info(
             "analyze_done analysis_id=%s extension=%s total_ms=%.3f parse_ms=%.3f tx_count=%d layout=%s parser=%s",
             analysis_id,
             extension,
-            (analysis_data.pdf_processing_metrics or {}).get("total_ms", 0.0),
+            _metrics_get(analysis.pdf_processing_metrics, "total_ms", 0.0),
             pipeline_result.parse_ms,
-            analysis_data.transactions_total,
-            analysis_data.layout_inference_name or "",
-            (analysis_data.pdf_processing_metrics or {}).get("selected_parser", ""),
+            analysis.transactions_total,
+            analysis.layout_inference_name or "",
+            _metrics_get(analysis.pdf_processing_metrics, "selected_parser", ""),
         )
 
-        insights = [
-            Insight(
-                type=f"{extension}_real_parser",
-                title=f"{extension.upper()} processado",
-                description=f"Extrato {extension.upper()} processado com parser real e normalizacao inicial.",
-            )
-        ]
-        review_insight = self._build_export_review_insight(
-            extension=extension,
-            pdf_processing_metrics=analysis_data.pdf_processing_metrics,
-        )
-        if review_insight is not None:
-            insights.append(review_insight)
-
-        return AnalyzeResponse(
-            analysis_id=analysis_id,
-            file_type=extension,
-            semantic_type=analysis_data.semantic_type,
-            semantic_confidence=analysis_data.semantic_confidence,
-            semantic_evidence=analysis_data.semantic_evidence or [],
-            transactions_total=analysis_data.transactions_total,
-            total_inflows=analysis_data.total_inflows,
-            total_outflows=analysis_data.total_outflows,
-            net_total=analysis_data.net_total,
-            operational_summary=OperationalSummary(
-                total_volume=pipeline_result.operational_summary.total_volume,
-                inflow_count=pipeline_result.operational_summary.inflow_count,
-                outflow_count=pipeline_result.operational_summary.outflow_count,
-                reconciled_entries=pipeline_result.operational_summary.reconciled_entries,
-                unmatched_entries=pipeline_result.operational_summary.unmatched_entries,
-            ),
-            reconciliation=ReconciliationSummary(
-                matched_groups=analysis_data.matched_groups,
-                reversed_entries=analysis_data.reversed_entries,
-                potential_duplicates=analysis_data.potential_duplicates,
-            ),
-            categories=[
-                CategorySummary(
-                    category="Outros",
-                    total=analysis_data.net_total,
-                    count=analysis_data.transactions_total,
-                )
-            ],
-            top_expenses=[
-                TopExpense(
-                    description=row.description,
-                    amount=row.amount,
-                    date=row.date,
-                    category="Outros",
-                )
-                for row in pipeline_result.top_expenses_rows
-            ],
-            insights=insights,
-            preview_transactions=[
-                TransactionPreview(
-                    date=row.date,
-                    description=row.description,
-                    amount=row.amount,
-                    running_balance=row.running_balance,
-                    category=row.category,
-                    reconciliation_status=row.reconciliation_status,
-                    warning_types=list(row.warning_types or []),
-                )
-                for row in analysis_data.preview_transactions
-            ],
-            preview_before_after=[
-                BeforeAfterPreview(
-                    date=row.date,
-                    description_before=row.description_before,
-                    description_after=row.description_after,
-                    amount_before=row.amount_before,
-                    amount_after=row.amount_after,
-                )
-                for row in analysis_data.preview_before_after
-            ],
-            expires_at=expires_at,
-            updated_at=analysis_data.updated_at,
-            layout_inference_name=analysis_data.layout_inference_name,
-            layout_inference_confidence=analysis_data.layout_inference_confidence,
-            pdf_processing_metrics=analysis_data.pdf_processing_metrics,
-            opening_balance=analysis_data.opening_balance,
-            closing_balance=analysis_data.closing_balance,
-            bank_name=analysis_data.bank_name,
-            bank_branch=analysis_data.bank_branch,
-            account_number=analysis_data.account_number,
-            bank_code=analysis_data.bank_code,
-        )
+        return analysis
 
     def _resolve_opening_balance(self, rows: list[TransactionRow], *, extracted_text: str | None = None) -> float | None:
         for row in rows:
@@ -410,28 +316,6 @@ class AnalyzeService:
 
         return None
 
-    def _build_export_review_insight(
-        self,
-        *,
-        extension: str,
-        pdf_processing_metrics: dict[str, int | float | str] | None,
-    ) -> Insight | None:
-        if extension != "pdf" or pdf_processing_metrics is None:
-            return None
-        recommendation = str(pdf_processing_metrics.get("export_recommendation", "")).strip().lower()
-        if recommendation != "review_recommended":
-            return None
-        reason = str(pdf_processing_metrics.get("export_recommendation_reason", "")).strip()
-        reason_suffix = f" ({reason})" if reason else ""
-        return Insight(
-            type="pdf_export_review_recommended",
-            title="Revisao manual recomendada",
-            description=(
-                "A exportacao permanece disponivel, mas recomendamos revisar as transacoes antes de concluir"
-                f"{reason_suffix}."
-            ),
-        )
-
     def _resolve_bank_name(
         self,
         *,
@@ -626,3 +510,11 @@ class AnalyzeService:
         upper = unicodedata.normalize("NFKD", value.upper())
         without_accents = "".join(ch for ch in upper if not unicodedata.combining(ch))
         return re.sub(r"\s+", " ", without_accents).strip()
+
+
+def _metrics_get(metrics, key: str, default):
+    if metrics is None:
+        return default
+    if isinstance(metrics, dict):
+        return metrics.get(key, default)
+    return getattr(metrics, key, default)

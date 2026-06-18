@@ -1,6 +1,21 @@
 from app.application.access_control import AccessControlService
+from app.application.analysis_response_builder import persist_and_build_analyze_response
 from app.application.analyze_service import AnalyzeService
 from app.application.contact_service import ContactAttachment, ContactDeliveryResult, ContactMessage, ContactService
+from app.application.conversion.convert_document_use_case import ConvertDocumentUseCase
+from app.application.conversion.document_conversion_pipeline import (
+    DocumentConversionPipeline,
+    StagedUploadRef,
+)
+from app.application.conversion.document_preflight_service import (
+    DocumentPreflightPolicy,
+    DocumentPreflightResult,
+    DocumentPreflightService,
+)
+from app.application.conversion.quota_validator_service import (
+    QuotaConsumptionResult,
+    QuotaValidatorService,
+)
 from app.application.conversion_service import ConversionService
 from app.application.errors import (
     AnalysisAccessDeniedError,
@@ -49,6 +64,13 @@ __all__ = [
     "ContactMessage",
     "ContactProviderNotConfiguredError",
     "ContactService",
+    "ConvertDocumentUseCase",
+    "DocumentConversionPipeline",
+    "DocumentPreflightPolicy",
+    "DocumentPreflightResult",
+    "DocumentPreflightService",
+    "QuotaConsumptionResult",
+    "QuotaValidatorService",
     "ConversionService",
     "FileTooLargeError",
     "GoogleOAuthAccountNotFoundError",
@@ -71,8 +93,10 @@ __all__ = [
     "QuotaExceededError",
     "ReportService",
     "ReportRepository",
+    "StagedUploadRef",
     "TempAnalysisStorage",
     "UnsupportedFileTypeError",
     "UserAlreadyExistsError",
+    "persist_and_build_analyze_response",
     "parse_operational_sheet_rows",
 ]

@@ -1,15 +1,22 @@
 import os
 from pathlib import Path
 
+from fastapi import Depends
+
 from app.application import (
     AccessControlService,
     AnalyzeService,
     ContactService,
+    ConvertDocumentUseCase,
+    DocumentConversionPipeline,
+    DocumentPreflightService,
     GoogleOAuthConfig,
     GoogleOAuthService,
+    QuotaValidatorService,
     ReportService,
     TempAnalysisStorage,
 )
+from app.application.repositories import AnalysisRepository
 from app.security_baseline import is_production_env, read_bool_env
 
 _backend_root = Path(__file__).resolve().parents[1]
@@ -19,6 +26,7 @@ _storage = TempAnalysisStorage(
 )
 _analyze_service = AnalyzeService(storage=_storage)
 _report_service = ReportService(storage=_storage)
+_document_preflight_service = DocumentPreflightService()
 _access_control_service: AccessControlService | None = None
 _contact_service: ContactService | None = None
 _google_oauth_service: GoogleOAuthService | None = None
@@ -42,6 +50,14 @@ def get_analyze_service() -> AnalyzeService:
 
 def get_report_service() -> ReportService:
     return _report_service
+
+
+def get_analysis_repository() -> AnalysisRepository:
+    return _storage
+
+
+def get_document_preflight_service() -> DocumentPreflightService:
+    return _document_preflight_service
 
 
 def get_access_control_service() -> AccessControlService:
@@ -86,6 +102,39 @@ def close_access_control_service() -> None:
     if _access_control_service is not None:
         _access_control_service.close()
         _access_control_service = None
+
+
+def get_quota_validator_service(
+    access_control_service: AccessControlService = Depends(get_access_control_service),
+) -> QuotaValidatorService:
+    return QuotaValidatorService(access_control_service=access_control_service)
+
+
+def get_document_conversion_pipeline(
+    analyze_service: AnalyzeService = Depends(get_analyze_service),
+    report_service: ReportService = Depends(get_report_service),
+    document_preflight_service: DocumentPreflightService = Depends(get_document_preflight_service),
+    quota_validator_service: QuotaValidatorService = Depends(get_quota_validator_service),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
+    analysis_repository: AnalysisRepository = Depends(get_analysis_repository),
+) -> DocumentConversionPipeline:
+    return DocumentConversionPipeline(
+        report_service=report_service,
+        access_control_service=access_control_service,
+        document_preflight_service=document_preflight_service,
+        quota_validator_service=quota_validator_service,
+        processing_pipeline=getattr(analyze_service, "pipeline", None),
+        analysis_repository=analysis_repository,
+        analyze_fallback_service=analyze_service,
+    )
+
+
+def get_convert_document_use_case(
+    document_conversion_pipeline: DocumentConversionPipeline = Depends(get_document_conversion_pipeline),
+) -> ConvertDocumentUseCase:
+    return ConvertDocumentUseCase(
+        document_conversion_pipeline=document_conversion_pipeline
+    )
 
 
 def get_contact_service() -> ContactService:

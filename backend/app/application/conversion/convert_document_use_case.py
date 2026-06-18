@@ -1,23 +1,21 @@
-from app.application.conversion import document_preflight_service as document_preflight_service_module
 from app.application.conversion.document_conversion_pipeline import (
     DocumentConversionPipeline,
     StagedUploadRef,
 )
 from app.schemas import ConvertResponse
 
-TEXT_PDF_MAX_PAGES_PER_FILE = document_preflight_service_module.TEXT_PDF_MAX_PAGES_PER_FILE
-TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = document_preflight_service_module.TEXT_PDF_MAX_UPLOAD_SIZE_BYTES
-OCR_PDF_MAX_PAGES_PER_FILE = document_preflight_service_module.OCR_PDF_MAX_PAGES_PER_FILE
-OCR_PDF_MAX_UPLOAD_SIZE_BYTES = document_preflight_service_module.OCR_PDF_MAX_UPLOAD_SIZE_BYTES
 
+class ConvertDocumentUseCase:
+    """Application entrypoint for the document conversion flow.
 
-class ConversionService:
-    """Temporary compatibility facade around the application conversion pipeline."""
+    This incremental version delegates to the application conversion pipeline
+    while keeping the existing endpoint contract stable.
+    """
 
     def __init__(self, *, document_conversion_pipeline: DocumentConversionPipeline) -> None:
         self.document_conversion_pipeline = document_conversion_pipeline
 
-    def build_convert_response(
+    def execute(
         self,
         *,
         filename: str,

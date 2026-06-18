@@ -5,11 +5,11 @@ from app.routers.banks import router as banks_router
 from app.routers.checkout import router as checkout_router
 from app.routers.client import router as client_router
 from app.routers.contact import router as contact_router
-from app.routers.convert import router as convert_router
 from app.routers.health import router as health_router
 from app.routers.plans import router as plans_router
 from app.routers.reconcile import router as reconcile_router
 from app.routers.report import router as report_router
+from app.routers.upload import router as convert_router
 
 __all__ = [
     "analyze_router",

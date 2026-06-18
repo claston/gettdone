@@ -7,9 +7,9 @@ from pypdf import PdfWriter
 
 from app.application.access_control import AccessControlService
 from app.application.errors import FileTooLargeError, InvalidFileContentError, MaxPagesPerFileExceededError
-from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
+from app.dependencies import get_access_control_service, get_analyze_service, get_convert_document_use_case, get_report_service
 from app.main import app
-from app.routers.convert import (
+from app.routers.upload import (
     OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK,
     _cleanup_staged_upload,
     _resolve_error_observability,
@@ -19,6 +19,7 @@ from app.schemas import (
     AnalyzeResponse,
     BeforeAfterPreview,
     CategorySummary,
+    ConvertResponse,
     Insight,
     OperationalSummary,
     ReconciliationSummary,
@@ -142,6 +143,49 @@ class FakeReportService:
         _ = (analysis_id, identity_type, identity_id)
 
 
+class TrackingConvertDocumentUseCase:
+    def __init__(self) -> None:
+        self.called = False
+        self.filename = ""
+        self.scanned_likely = None
+        self.estimated_pages_count = None
+
+    def execute(
+        self,
+        *,
+        filename: str,
+        staged_upload,
+        anonymous_fingerprint: str | None,
+        user_token: str | None,
+        authorization: str | None,
+        access_cookie_token: str | None,
+        on_ocr_progress=None,
+        scanned_likely: bool | None = None,
+        estimated_pages_count: int | None = None,
+    ) -> ConvertResponse:
+        _ = (
+            staged_upload,
+            anonymous_fingerprint,
+            user_token,
+            authorization,
+            access_cookie_token,
+            on_ocr_progress,
+        )
+        self.called = True
+        self.filename = filename
+        self.scanned_likely = scanned_likely
+        self.estimated_pages_count = estimated_pages_count
+        analysis = FakeAnalyzeService().analyze(filename=filename, raw_bytes=b"%PDF data")
+        return ConvertResponse(
+            processing_id=analysis.analysis_id,
+            quota_remaining=2,
+            quota_limit=3,
+            quota_mode="conversion",
+            identity_type="anonymous",
+            analysis=analysis,
+        )
+
+
 class FailingAnonymousTelemetryAccessControlService(AccessControlService):
     def record_anonymous_conversion_event(self, **kwargs) -> None:
         _ = kwargs
@@ -183,7 +227,7 @@ def _build_pdf_with_pages(page_count: int) -> bytes:
 
 
 def test_stage_upload_to_temp_file_streams_and_hashes_contents(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("app.routers.convert._resolve_upload_staging_dir", lambda: tmp_path)
+    monkeypatch.setattr("app.routers.upload._resolve_upload_staging_dir", lambda: tmp_path)
     payload = (b"a" * (1024 * 1024)) + (b"b" * 512) + b"tail"
     upload = UploadFile(filename="statement.pdf", file=BytesIO(payload))
 
@@ -197,7 +241,7 @@ def test_stage_upload_to_temp_file_streams_and_hashes_contents(tmp_path, monkeyp
 
 
 def test_stage_upload_to_temp_file_rejects_when_chunks_exceed_limit(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("app.routers.convert._resolve_upload_staging_dir", lambda: tmp_path)
+    monkeypatch.setattr("app.routers.upload._resolve_upload_staging_dir", lambda: tmp_path)
     payload = b"x" * ((1024 * 1024) + 32)
     upload = UploadFile(filename="statement.pdf", file=BytesIO(payload))
 
@@ -226,6 +270,28 @@ def test_convert_happy_path(tmp_path) -> None:
     assert payload["quota_remaining"] == 2
     assert payload["quota_limit"] == 3
     assert payload["analysis"]["analysis_id"] == "an_convert123"
+    app.dependency_overrides.clear()
+
+
+def test_convert_endpoint_uses_convert_document_use_case(tmp_path) -> None:
+    access_control = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    tracking_use_case = TrackingConvertDocumentUseCase()
+    app.dependency_overrides[get_access_control_service] = lambda: access_control
+    app.dependency_overrides[get_convert_document_use_case] = lambda: tracking_use_case
+    client = TestClient(app)
+
+    response = client.post(
+        "/convert",
+        data={"anonymous_fingerprint": "anon-fp-use-case"},
+        files={"file": ("sample.pdf", b"%PDF data", "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    assert tracking_use_case.called is True
+    assert tracking_use_case.filename == "sample.pdf"
     app.dependency_overrides.clear()
 
 
@@ -259,7 +325,7 @@ def test_convert_rejects_file_larger_than_5mb(tmp_path) -> None:
 
 def test_convert_rejects_ocr_pdf_larger_than_5mb_for_paid_user(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        "app.routers.upload._inspect_pdf_scan_likely_from_path",
         lambda filename, staged_path: (True, 1),
     )
     access_control = AccessControlService(
@@ -284,7 +350,7 @@ def test_convert_rejects_ocr_pdf_larger_than_5mb_for_paid_user(tmp_path, monkeyp
 
 def test_convert_allows_text_pdf_up_to_10mb(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        "app.routers.upload._inspect_pdf_scan_likely_from_path",
         lambda filename, staged_path: (False, 1),
     )
     client = build_client(tmp_path)
@@ -303,7 +369,7 @@ def test_convert_allows_text_pdf_up_to_10mb(tmp_path, monkeypatch) -> None:
 
 def test_convert_rejects_text_pdf_larger_than_10mb(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        "app.routers.upload._inspect_pdf_scan_likely_from_path",
         lambda filename, staged_path: (False, 1),
     )
     client = build_client(tmp_path)
@@ -361,7 +427,7 @@ def test_convert_rejects_pdf_above_max_pages_per_file(tmp_path) -> None:
 
 def test_convert_rejects_ocr_pdf_above_6_pages_for_paid_user(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        "app.routers.upload._inspect_pdf_scan_likely_from_path",
         lambda filename, staged_path: (True, 11),
     )
     access_control = AccessControlService(
@@ -392,7 +458,7 @@ def test_convert_rejects_ocr_pdf_above_6_pages_for_paid_user(tmp_path, monkeypat
 
 def test_convert_returns_pages_limit_when_ocr_like_pdf_is_misdetected_as_text(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        "app.routers.upload._inspect_pdf_scan_likely_from_path",
         lambda filename, staged_path: (False, 11),
     )
     access_control = AccessControlService(
@@ -423,9 +489,9 @@ def test_convert_returns_pages_limit_when_ocr_like_pdf_is_misdetected_as_text(tm
 
 
 def test_conversion_upload_non_sse_keeps_ocr_pages_limit_validation(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("app.routers.convert.OCR_PDF_MAX_PAGES_PER_FILE", 5)
+    monkeypatch.setattr("app.routers.upload.OCR_PDF_MAX_PAGES_PER_FILE", 5)
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        "app.routers.upload._inspect_pdf_scan_likely_from_path",
         lambda filename, staged_path: (True, 6),
     )
     access_control = AccessControlService(
@@ -504,7 +570,7 @@ def test_conversion_upload_non_sse_returns_friendly_message_for_likely_corrupted
 
 def test_convert_allows_text_pdf_up_to_250_pages(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        "app.routers.upload._inspect_pdf_scan_likely_from_path",
         lambda filename, staged_path: (False, 250),
     )
     client = build_client(tmp_path)
@@ -522,7 +588,7 @@ def test_convert_allows_text_pdf_up_to_250_pages(tmp_path, monkeypatch) -> None:
 
 def test_convert_rejects_text_pdf_above_250_pages(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.routers.convert._inspect_pdf_scan_likely_from_path",
+        "app.routers.upload._inspect_pdf_scan_likely_from_path",
         lambda filename, staged_path: (False, 251),
     )
     client = build_client(tmp_path)
