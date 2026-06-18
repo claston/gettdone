@@ -3,8 +3,11 @@ from types import SimpleNamespace
 
 from app.application.conversion.document_conversion_pipeline import (
     DocumentConversionPipeline,
+    DocumentConversionRequest,
+    DocumentConversionRuntime,
     StagedUploadRef,
 )
+from app.application.conversion.document_preflight_service import DocumentPreflightResult
 from app.application.conversion_pipeline import ConversionPipelineResult, OperationalPipelineSummary
 from app.application.models import AnalysisData, NormalizedTransaction, TransactionRow
 
@@ -157,6 +160,62 @@ class FakeProcessingPipeline:
 class FailingAnalyzeFallbackService:
     def analyze(self, **_kwargs):
         raise AssertionError("Fallback analyze service should not be called when processing_pipeline is available.")
+
+
+def test_document_conversion_request_captures_preflight_flags() -> None:
+    staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
+
+    request = DocumentConversionRequest.from_inputs(
+        filename="statement.pdf",
+        staged_upload=StagedUploadRef(
+            path=staged_path,
+            size_bytes=staged_path.stat().st_size,
+            sha256_hex="abc123",
+        ),
+        anonymous_fingerprint="anon-123",
+        user_token="user-token",
+        authorization="Bearer auth-token",
+        access_cookie_token="cookie-token",
+        on_ocr_progress=None,
+        scanned_likely=True,
+        estimated_pages_count=4,
+    )
+
+    assert request.filename == "statement.pdf"
+    assert request.preflight_result == DocumentPreflightResult(
+        scanned_likely=True,
+        estimated_pages_count=4,
+    )
+
+
+def test_document_conversion_runtime_tracks_ocr_progress_and_forwards_callback() -> None:
+    staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
+    observed_progress: list[tuple[int, int]] = []
+    request = DocumentConversionRequest.from_inputs(
+        filename="statement.pdf",
+        staged_upload=StagedUploadRef(
+            path=staged_path,
+            size_bytes=staged_path.stat().st_size,
+            sha256_hex="abc123",
+        ),
+        anonymous_fingerprint=None,
+        user_token="user-token",
+        authorization=None,
+        access_cookie_token=None,
+        on_ocr_progress=lambda current_page, total_page_count: observed_progress.append(
+            (current_page, total_page_count)
+        ),
+        scanned_likely=True,
+        estimated_pages_count=3,
+    )
+
+    runtime = DocumentConversionRuntime.from_request(request)
+    callback = runtime.build_ocr_progress_callback(request=request)
+    callback(2, 3)
+    callback(1, 3)
+
+    assert runtime.ocr_pages_processed == 2
+    assert observed_progress == [(2, 3), (1, 3)]
 
 
 def test_document_conversion_pipeline_uses_processing_pipeline_when_available() -> None:
