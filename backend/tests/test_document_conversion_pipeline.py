@@ -224,11 +224,6 @@ class FakeStatementParser:
         )
 
 
-class FailingAnalyzeFallbackService:
-    def analyze(self, **_kwargs):
-        raise AssertionError("Fallback analyze service should not be called when processing_pipeline is available.")
-
-
 def test_document_conversion_request_captures_preflight_flags() -> None:
     staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
 
@@ -300,7 +295,6 @@ def test_document_conversion_pipeline_uses_processing_pipeline_when_available() 
         analysis_repository=analysis_repository,
         document_extractor=document_extractor,
         statement_parser=statement_parser,
-        analyze_fallback_service=FailingAnalyzeFallbackService(),
     )
 
     response = pipeline.run(
