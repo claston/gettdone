@@ -156,7 +156,7 @@ class DocumentConversionPipeline:
         analysis_repository: AnalysisRepository | None = None,
         document_extractor: DocumentExtractor | None = None,
         statement_parser: StatementParser | None = None,
-        analyze_fallback_service=None,
+        legacy_conversion_runner=None,
     ) -> None:
         self.report_service = report_service
         self.access_control_service = access_control_service
@@ -170,7 +170,7 @@ class DocumentConversionPipeline:
             parsing_service=getattr(processing_pipeline, "parser", None)
         )
         self.statement_parser = statement_parser or LegacyExtractedDocumentStatementParser()
-        self.analyze_fallback_service = analyze_fallback_service
+        self.legacy_conversion_runner = legacy_conversion_runner
 
     def run(
         self,
@@ -199,8 +199,107 @@ class DocumentConversionPipeline:
         runtime = DocumentConversionRuntime.from_request(request)
         try:
             prepared = self._prepare_conversion(request=request, runtime=runtime)
-            analysis = self._execute_analysis_step(prepared=prepared, runtime=runtime)
-            return self._finalize_success(prepared=prepared, runtime=runtime, analysis=analysis)
+            request = prepared.request
+            ocr_max_pages = prepared.preflight_policy.ocr_max_pages
+            logger.info(
+                (
+                    "conversion_analyze_started filename=%s identity_type=%s scanned_likely=%s "
+                    "estimated_pages_count=%s max_upload_size_bytes=%s ocr_max_pages=%s"
+                ),
+                request.filename or "unknown.pdf",
+                getattr(prepared.identity, "identity_type", "unknown"),
+                request.preflight_result.scanned_likely,
+                request.preflight_result.estimated_pages_count,
+                prepared.preflight_policy.max_upload_size_bytes,
+                ocr_max_pages,
+            )
+            if self.legacy_conversion_runner is not None:
+                conversion_response = self.legacy_conversion_runner(
+                    filename=request.filename,
+                    raw_bytes=prepared.raw_bytes,
+                    on_ocr_progress=runtime.build_ocr_progress_callback(request=request),
+                    max_ocr_pages=ocr_max_pages,
+                    analysis_id=runtime.attempt_processing_id,
+                )
+            elif self.processing_pipeline is None or self.analysis_repository is None:
+                raise RuntimeError(
+                    "DocumentConversionPipeline requires both processing_pipeline and analysis_repository."
+                )
+            else:
+                document = ingest_uploaded_document(filename=request.filename, raw_bytes=prepared.raw_bytes)
+                logger.info(
+                    "analyze_start extension=%s size_bytes=%d filename=%s",
+                    document.file_type,
+                    document.size_bytes,
+                    (request.filename or "")[:120],
+                )
+                resolved_analysis_id = (runtime.attempt_processing_id or "").strip() or f"an_{uuid4().hex[:12]}"
+                parse_started_at = monotonic()
+                extracted_document = self.document_extractor.extract(
+                    document=document,
+                    on_ocr_progress=runtime.build_ocr_progress_callback(request=request),
+                    max_ocr_pages=ocr_max_pages,
+                )
+                parsed_statement = self.statement_parser.parse(extracted_document=extracted_document)
+                parse_ms = round((monotonic() - parse_started_at) * 1000, 3)
+                legacy_pipeline_result = self.processing_pipeline.run_parsed_document(
+                    document=document,
+                    parsed_document=resolve_legacy_parsed_statement(parsed_statement),
+                    analysis_id=resolved_analysis_id,
+                    parse_ms=parse_ms,
+                )
+                conversion_response = persist_and_build_analyze_response(
+                    storage=self.analysis_repository,
+                    pipeline_result=legacy_pipeline_result,
+                )
+                logger.info(
+                    "analyze_done analysis_id=%s extension=%s total_ms=%.3f parse_ms=%.3f tx_count=%d layout=%s parser=%s",
+                    conversion_response.analysis_id,
+                    document.file_type,
+                    _metrics_get(conversion_response.pdf_processing_metrics, "total_ms", 0.0),
+                    legacy_pipeline_result.parse_ms,
+                    conversion_response.transactions_total,
+                    conversion_response.layout_inference_name or "",
+                    _metrics_get(conversion_response.pdf_processing_metrics, "selected_parser", ""),
+                )
+            return self._finalize_success(
+                prepared=prepared,
+                runtime=runtime,
+                conversion_response=conversion_response,
+            )
+        except MaxPagesPerFileExceededError as exc:
+            _apply_ocr_limit_context(
+                exc,
+                scanned_likely=request.preflight_result.scanned_likely,
+                document_preflight_service=self.document_preflight_service,
+            )
+            self._finalize_failure(request=request, runtime=runtime, exc=exc)
+            raise
+        except InvalidFileContentError as exc:
+            detail = str(exc).lower()
+            if (
+                Path(request.filename or "").suffix.lower() == ".pdf"
+                and request.preflight_result.estimated_pages_count is not None
+                and ("text" in detail or "ocr" in detail)
+            ):
+                ocr_max_pages = self.document_preflight_service.resolve_ocr_max_pages_per_file(prepared.identity)
+                if int(request.preflight_result.estimated_pages_count) > ocr_max_pages:
+                    self.document_preflight_service._log_pages_limit_exceeded_attempt(
+                        identity=prepared.identity,
+                        filename=request.filename,
+                        pages_count=int(request.preflight_result.estimated_pages_count),
+                        max_pages_per_file=ocr_max_pages,
+                        scanned_likely=request.preflight_result.scanned_likely,
+                    )
+                    exc = MaxPagesPerFileExceededError(
+                        pages_count=int(request.preflight_result.estimated_pages_count),
+                        max_pages_per_file=ocr_max_pages,
+                        ocr_context=self.document_preflight_service.resolve_ocr_limit_context(
+                            scanned_likely=request.preflight_result.scanned_likely
+                        ),
+                    )
+            self._finalize_failure(request=request, runtime=runtime, exc=exc)
+            raise exc
         except Exception as exc:
             self._finalize_failure(request=request, runtime=runtime, exc=exc)
             raise
@@ -326,115 +425,54 @@ class DocumentConversionPipeline:
                 file_sha256=runtime.file_digest,
             )
 
-    def _execute_analysis_step(
-        self,
-        *,
-        prepared: PreparedDocumentConversion,
-        runtime: DocumentConversionRuntime,
-    ) -> AnalyzeResponse:
-        request = prepared.request
-        preflight_result = request.preflight_result
-        try:
-            ocr_max_pages = prepared.preflight_policy.ocr_max_pages
-            logger.info(
-                (
-                    "conversion_analyze_started filename=%s identity_type=%s scanned_likely=%s "
-                    "estimated_pages_count=%s max_upload_size_bytes=%s ocr_max_pages=%s"
-                ),
-                request.filename or "unknown.pdf",
-                getattr(prepared.identity, "identity_type", "unknown"),
-                preflight_result.scanned_likely,
-                preflight_result.estimated_pages_count,
-                prepared.preflight_policy.max_upload_size_bytes,
-                ocr_max_pages,
-            )
-            return self._analyze_document(
-                filename=request.filename,
-                raw_bytes=prepared.raw_bytes,
-                analysis_id=runtime.attempt_processing_id,
-                on_ocr_progress=runtime.build_ocr_progress_callback(request=request),
-                max_ocr_pages=ocr_max_pages,
-            )
-        except MaxPagesPerFileExceededError as exc:
-            _apply_ocr_limit_context(
-                exc,
-                scanned_likely=preflight_result.scanned_likely,
-                document_preflight_service=self.document_preflight_service,
-            )
-            raise
-        except InvalidFileContentError as exc:
-            detail = str(exc).lower()
-            if (
-                Path(request.filename or "").suffix.lower() == ".pdf"
-                and preflight_result.estimated_pages_count is not None
-                and ("text" in detail or "ocr" in detail)
-            ):
-                ocr_max_pages = self.document_preflight_service.resolve_ocr_max_pages_per_file(prepared.identity)
-                if int(preflight_result.estimated_pages_count) > ocr_max_pages:
-                    self.document_preflight_service._log_pages_limit_exceeded_attempt(
-                        identity=prepared.identity,
-                        filename=request.filename,
-                        pages_count=int(preflight_result.estimated_pages_count),
-                        max_pages_per_file=ocr_max_pages,
-                        scanned_likely=preflight_result.scanned_likely,
-                    )
-                    raise MaxPagesPerFileExceededError(
-                        pages_count=int(preflight_result.estimated_pages_count),
-                        max_pages_per_file=ocr_max_pages,
-                        ocr_context=self.document_preflight_service.resolve_ocr_limit_context(
-                            scanned_likely=preflight_result.scanned_likely
-                        ),
-                    ) from exc
-            raise
-
     def _finalize_success(
         self,
         *,
         prepared: PreparedDocumentConversion,
         runtime: DocumentConversionRuntime,
-        analysis: AnalyzeResponse,
+        conversion_response: AnalyzeResponse,
     ) -> ConversionPipelineResult:
         request = prepared.request
         identity = prepared.identity
         self.report_service.set_convert_owner(
-            analysis_id=analysis.analysis_id,
+            analysis_id=conversion_response.analysis_id,
             identity_type=identity.identity_type,
             identity_id=identity.identity_id,
         )
-        pages_count = _resolve_processed_pages(analysis)
-        warning_rows_count, balance_failed_count = _resolve_warning_metrics(analysis)
-        parse_meta = _resolve_parse_observability_metrics(analysis)
+        pages_count = _resolve_processed_pages(conversion_response)
+        warning_rows_count, balance_failed_count = _resolve_warning_metrics(conversion_response)
+        parse_meta = _resolve_parse_observability_metrics(conversion_response)
         effective_ocr_used, effective_ocr_attempted, effective_ocr_engine = _resolve_effective_ocr_observability(
             parse_meta=parse_meta,
             ocr_pages_processed=runtime.ocr_pages_processed,
             default_ocr_engine=runtime.ocr_engine,
         )
         conversion_model_label = resolve_conversion_model_label(
-            layout_inference_name=getattr(analysis, "layout_inference_name", None),
-            bank_name=getattr(analysis, "bank_name", None),
+            layout_inference_name=getattr(conversion_response, "layout_inference_name", None),
+            bank_name=getattr(conversion_response, "bank_name", None),
         )
         logger.info(
             "conversion_result_persist_started filename=%s identity_type=%s status=Sucesso analysis_id=%s",
             request.filename or "unknown.pdf",
             getattr(identity, "identity_type", "unknown"),
-            analysis.analysis_id,
+            conversion_response.analysis_id,
         )
         quota_result = self.quota_validator_service.consume_quota_for_conversion(
             identity=identity,
-            analysis=analysis,
+            analysis=conversion_response,
         )
         quota_remaining = quota_result.quota_remaining
         if identity.identity_type == "user":
-            file_type = str(analysis.file_type or "").strip().lower()
+            file_type = str(conversion_response.file_type or "").strip().lower()
             conversion_type = f"{file_type}-ofx" if file_type else "pdf-ofx"
             self.access_control_service.record_user_conversion(
                 user_id=identity.identity_id,
-                processing_id=runtime.attempt_processing_id or analysis.analysis_id,
-                filename=request.filename or f"{analysis.analysis_id}.pdf",
+                processing_id=runtime.attempt_processing_id or conversion_response.analysis_id,
+                filename=request.filename or f"{conversion_response.analysis_id}.pdf",
                 model=conversion_model_label,
                 conversion_type=conversion_type,
                 status="Sucesso",
-                transactions_count=int(analysis.transactions_total),
+                transactions_count=int(conversion_response.transactions_total),
                 pages_count=pages_count,
                 scanned_likely=request.preflight_result.scanned_likely,
                 ocr_used=effective_ocr_used,
@@ -455,18 +493,18 @@ class DocumentConversionPipeline:
                 file_sha256=runtime.file_digest,
                 canonical_warning_transactions_count=warning_rows_count,
                 balance_consistency_failed=balance_failed_count,
-                expires_at=analysis.expires_at,
+                expires_at=conversion_response.expires_at,
             )
         elif identity.identity_type == "anonymous":
             _safe_record_anonymous_conversion_event(
                 self.access_control_service,
                 event_id=runtime.attempt_anonymous_event_id or f"anon_evt_{uuid4().hex[:24]}",
                 anonymous_fingerprint=identity.identity_id,
-                filename=request.filename or f"{analysis.analysis_id}.pdf",
+                filename=request.filename or f"{conversion_response.analysis_id}.pdf",
                 model=conversion_model_label,
                 conversion_type=_resolve_conversion_type_from_filename(request.filename),
                 status="Sucesso",
-                transactions_count=int(analysis.transactions_total),
+                transactions_count=int(conversion_response.transactions_total),
                 pages_count=pages_count,
                 scanned_likely=request.preflight_result.scanned_likely,
                 ocr_used=effective_ocr_used,
@@ -489,17 +527,17 @@ class DocumentConversionPipeline:
                 file_sha256=runtime.file_digest,
             )
         response = ConvertResponse(
-            processing_id=analysis.analysis_id,
+            processing_id=conversion_response.analysis_id,
             quota_remaining=quota_remaining,
             quota_limit=identity.quota_limit,
             quota_mode=identity.quota_mode,
             identity_type=identity.identity_type,
-            analysis=analysis,
+            analysis=conversion_response,
         )
         return ConversionPipelineResult.completed(
             payload=response.model_dump(),
             metadata=_build_conversion_pipeline_metadata(
-                analysis=analysis,
+                analysis=conversion_response,
                 scanned_likely=request.preflight_result.scanned_likely,
                 quota_remaining=quota_remaining,
                 ocr_used=effective_ocr_used,
@@ -613,64 +651,6 @@ class DocumentConversionPipeline:
             failure_diagnostics=failure_diagnostics,
         )
         setattr(exc, "_convert_identity", identity)
-
-    def _analyze_document(
-        self,
-        *,
-        filename: str,
-        raw_bytes: bytes,
-        analysis_id: str | None,
-        on_ocr_progress,
-        max_ocr_pages: int | None,
-    ) -> AnalyzeResponse:
-        if self.processing_pipeline is not None and self.analysis_repository is not None:
-            document = ingest_uploaded_document(filename=filename, raw_bytes=raw_bytes)
-            logger.info(
-                "analyze_start extension=%s size_bytes=%d filename=%s",
-                document.file_type,
-                document.size_bytes,
-                (filename or "")[:120],
-            )
-            resolved_analysis_id = (analysis_id or "").strip() or f"an_{uuid4().hex[:12]}"
-            parse_started_at = monotonic()
-            extracted_document = self.document_extractor.extract(
-                document=document,
-                on_ocr_progress=on_ocr_progress,
-                max_ocr_pages=max_ocr_pages,
-            )
-            parsed_statement = self.statement_parser.parse(extracted_document=extracted_document)
-            parse_ms = round((monotonic() - parse_started_at) * 1000, 3)
-            pipeline_result = self.processing_pipeline.run_parsed_document(
-                document=document,
-                parsed_document=resolve_legacy_parsed_statement(parsed_statement),
-                analysis_id=resolved_analysis_id,
-                parse_ms=parse_ms,
-            )
-            analysis = persist_and_build_analyze_response(
-                storage=self.analysis_repository,
-                pipeline_result=pipeline_result,
-            )
-            logger.info(
-                "analyze_done analysis_id=%s extension=%s total_ms=%.3f parse_ms=%.3f tx_count=%d layout=%s parser=%s",
-                analysis.analysis_id,
-                document.file_type,
-                _metrics_get(analysis.pdf_processing_metrics, "total_ms", 0.0),
-                pipeline_result.parse_ms,
-                analysis.transactions_total,
-                analysis.layout_inference_name or "",
-                _metrics_get(analysis.pdf_processing_metrics, "selected_parser", ""),
-            )
-            return analysis
-        if self.analyze_fallback_service is None:
-            raise RuntimeError("DocumentConversionPipeline requires a processing pipeline or analyze fallback service.")
-        return self.analyze_fallback_service.analyze(
-            filename=filename,
-            raw_bytes=raw_bytes,
-            on_ocr_progress=on_ocr_progress,
-            max_ocr_pages=max_ocr_pages,
-            analysis_id=analysis_id,
-        )
-
 
 def _resolve_processed_pages(analysis) -> int | None:
     metrics = getattr(analysis, "pdf_processing_metrics", None)

@@ -2,8 +2,8 @@ from io import BytesIO
 
 from openpyxl import Workbook
 
-from app.application import analyze_service as analyze_service_module
-from app.application.analyze_service import AnalyzeService
+from app.application import analyze_document as analyze_document_module
+from app.application.analyze_document import build_default_conversion_pipeline, run_analysis
 from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.pdf_layout_inference import PdfLayoutInference
 from app.application.pdf_parser import PdfParseResult
@@ -25,9 +25,22 @@ def _build_xlsx_bytes(rows: list[list[object]]) -> bytes:
     return buffer.getvalue()
 
 
+def _run_analysis_with_storage(
+    *,
+    storage: TempAnalysisStorage,
+    filename: str,
+    raw_bytes: bytes,
+):
+    return run_analysis(
+        storage=storage,
+        pipeline=build_default_conversion_pipeline(),
+        filename=filename,
+        raw_bytes=raw_bytes,
+    )
+
+
 def test_analyze_service_uses_real_xlsx_content(tmp_path) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    service = AnalyzeService(storage=storage)
     raw = _build_xlsx_bytes(
         [
             ["Data", "Descricao", "Valor"],
@@ -36,7 +49,12 @@ def test_analyze_service_uses_real_xlsx_content(tmp_path) -> None:
         ]
     )
 
-    result = service.analyze(filename="sample.xlsx", raw_bytes=raw)
+    result = run_analysis(
+        storage=storage,
+        pipeline=build_default_conversion_pipeline(),
+        filename="sample.xlsx",
+        raw_bytes=raw,
+    )
 
     assert result.file_type == "xlsx"
     assert result.transactions_total == 2
@@ -50,7 +68,6 @@ def test_analyze_service_uses_real_xlsx_content(tmp_path) -> None:
 
 def test_analyze_service_uses_real_ofx_content(tmp_path) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    service = AnalyzeService(storage=storage)
     raw = """OFXHEADER:100
 DATA:OFXSGML
 VERSION:102
@@ -79,7 +96,12 @@ VERSION:102
 </OFX>
 """.encode("utf-8")
 
-    result = service.analyze(filename="sample.ofx", raw_bytes=raw)
+    result = run_analysis(
+        storage=storage,
+        pipeline=build_default_conversion_pipeline(),
+        filename="sample.ofx",
+        raw_bytes=raw,
+    )
 
     assert result.file_type == "ofx"
     assert result.transactions_total == 2
@@ -93,7 +115,6 @@ VERSION:102
 
 def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkeypatch) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    service = AnalyzeService(storage=storage)
     parse_metrics = dict(PDF_PARSE_METRICS_GROUPED_CANONICAL_OK)
     parse_metrics["export_recommendation"] = "review_recommended"
     parse_metrics["export_recommendation_reason"] = "medium_confidence_band"
@@ -101,7 +122,7 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
     parse_metrics["textract_used"] = 1
     parse_metrics["textract_enabled"] = 1
     monkeypatch.setattr(
-        analyze_service_module,
+        analyze_document_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -125,7 +146,11 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
         ),
     )
 
-    result = service.analyze(filename="sample.pdf", raw_bytes=b"%PDF synthetic")
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="sample.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
 
     assert result.file_type == "pdf"
     assert result.transactions_total == 2
@@ -166,12 +191,11 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
 
 def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    service = AnalyzeService(storage=storage)
     parse_metrics = dict(PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY)
     parse_metrics["export_recommendation"] = "safe_to_export"
     parse_metrics["export_recommendation_reason"] = "high_confidence_band"
     monkeypatch.setattr(
-        analyze_service_module,
+        analyze_document_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -195,7 +219,11 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
         ),
     )
 
-    result = service.analyze(filename="itau.pdf", raw_bytes=b"%PDF synthetic")
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="itau.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
 
     assert result.file_type == "pdf"
     assert result.transactions_total == 2
@@ -215,7 +243,6 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
 
 def test_analyze_service_keeps_document_review_without_generic_row_badges(tmp_path, monkeypatch) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    service = AnalyzeService(storage=storage)
     parse_metrics = dict(PDF_PARSE_METRICS_GROUPED_CANONICAL_OK)
     parse_metrics["canonical_warning_count"] = 0
     parse_metrics["canonical_warning_transactions_count"] = 0
@@ -226,7 +253,7 @@ def test_analyze_service_keeps_document_review_without_generic_row_badges(tmp_pa
     parse_metrics["export_recommendation"] = "review_recommended"
     parse_metrics["export_recommendation_reason"] = "medium_confidence_band"
     monkeypatch.setattr(
-        analyze_service_module,
+        analyze_document_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -251,7 +278,11 @@ def test_analyze_service_keeps_document_review_without_generic_row_badges(tmp_pa
         ),
     )
 
-    result = service.analyze(filename="generic-santander.pdf", raw_bytes=b"%PDF synthetic")
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="generic-santander.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
 
     assert result.pdf_processing_metrics is not None
     assert result.pdf_processing_metrics.export_recommendation == "review_recommended"
@@ -262,9 +293,8 @@ def test_analyze_service_keeps_document_review_without_generic_row_badges(tmp_pa
 
 def test_analyze_service_extracts_bank_branch_and_account_from_pdf_text(tmp_path, monkeypatch) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    service = AnalyzeService(storage=storage)
     monkeypatch.setattr(
-        analyze_service_module,
+        analyze_document_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -282,7 +312,11 @@ def test_analyze_service_extracts_bank_branch_and_account_from_pdf_text(tmp_path
         ),
     )
 
-    result = service.analyze(filename="bradesco.pdf", raw_bytes=b"%PDF synthetic")
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="bradesco.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
 
     assert result.bank_branch == "1234-5"
     assert result.account_number == "123456-7"
@@ -293,9 +327,8 @@ def test_analyze_service_resolves_opening_balance_from_saldo_anterior_row_when_r
     tmp_path, monkeypatch
 ) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    service = AnalyzeService(storage=storage)
     monkeypatch.setattr(
-        analyze_service_module,
+        analyze_document_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -319,7 +352,11 @@ def test_analyze_service_resolves_opening_balance_from_saldo_anterior_row_when_r
         ),
     )
 
-    result = service.analyze(filename="caixa.pdf", raw_bytes=b"%PDF synthetic")
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="caixa.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
 
     assert result.opening_balance == 10000.0
     assert result.transactions_total == 1
@@ -331,9 +368,8 @@ def test_analyze_service_resolves_opening_balance_from_saldo_anterior_row_when_r
 
 def test_analyze_service_prefers_saldo_anterior_row_over_later_running_balance(tmp_path, monkeypatch) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    service = AnalyzeService(storage=storage)
     monkeypatch.setattr(
-        analyze_service_module,
+        analyze_document_module,
         "parse_pdf_transactions",
         lambda raw_bytes, **kwargs: PdfParseResult(
             transactions=[
@@ -386,7 +422,11 @@ def test_analyze_service_prefers_saldo_anterior_row_over_later_running_balance(t
         ),
     )
 
-    result = service.analyze(filename="caixa.pdf", raw_bytes=b"%PDF synthetic")
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="caixa.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
 
     assert result.opening_balance == 10000.0
     assert result.transactions_total == 1
@@ -397,9 +437,8 @@ def test_analyze_service_filters_opening_balance_row_even_when_description_conta
     tmp_path, monkeypatch
 ) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    service = AnalyzeService(storage=storage)
     monkeypatch.setattr(
-        analyze_service_module,
+        analyze_document_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -423,7 +462,11 @@ def test_analyze_service_filters_opening_balance_row_even_when_description_conta
         ),
     )
 
-    result = service.analyze(filename="bradesco.pdf", raw_bytes=b"%PDF synthetic")
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="bradesco.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
 
     assert result.opening_balance == -441.66
     assert result.transactions_total == 1
@@ -435,9 +478,8 @@ def test_analyze_service_filters_opening_balance_row_even_when_description_conta
 
 def test_analyze_service_filters_trailing_closing_balance_snapshot_row(tmp_path, monkeypatch) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    service = AnalyzeService(storage=storage)
     monkeypatch.setattr(
-        analyze_service_module,
+        analyze_document_module,
         "parse_pdf_transactions",
         lambda raw_bytes, **kwargs: PdfParseResult(
             transactions=[
@@ -483,7 +525,11 @@ def test_analyze_service_filters_trailing_closing_balance_snapshot_row(tmp_path,
         ),
     )
 
-    result = service.analyze(filename="bb.pdf", raw_bytes=b"%PDF synthetic")
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="bb.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
 
     assert result.transactions_total == 1
     assert len(result.preview_transactions) == 1
@@ -497,9 +543,8 @@ def test_analyze_service_resolves_opening_balance_from_extracted_text_when_outsi
     tmp_path, monkeypatch
 ) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    service = AnalyzeService(storage=storage)
     monkeypatch.setattr(
-        analyze_service_module,
+        analyze_document_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -517,7 +562,11 @@ def test_analyze_service_resolves_opening_balance_from_extracted_text_when_outsi
         ),
     )
 
-    result = service.analyze(filename="bnb.pdf", raw_bytes=b"%PDF synthetic")
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="bnb.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
 
     assert result.opening_balance == 10000.0
 
@@ -526,9 +575,8 @@ def test_analyze_service_resolves_opening_balance_from_spaced_saldo_anterior_tex
     tmp_path, monkeypatch
 ) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    service = AnalyzeService(storage=storage)
     monkeypatch.setattr(
-        analyze_service_module,
+        analyze_document_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -551,7 +599,11 @@ def test_analyze_service_resolves_opening_balance_from_spaced_saldo_anterior_tex
         ),
     )
 
-    result = service.analyze(filename="sicredi.pdf", raw_bytes=b"%PDF synthetic")
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="sicredi.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
 
     assert result.opening_balance == 73997.11
 
@@ -560,9 +612,8 @@ def test_analyze_service_resolves_closing_balance_from_last_running_balance_plus
     tmp_path, monkeypatch
 ) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    service = AnalyzeService(storage=storage)
     monkeypatch.setattr(
-        analyze_service_module,
+        analyze_document_module,
         "parse_pdf_transactions",
         lambda raw_bytes, **kwargs: PdfParseResult(
             transactions=[
@@ -618,7 +669,11 @@ def test_analyze_service_resolves_closing_balance_from_last_running_balance_plus
         ),
     )
 
-    result = service.analyze(filename="sicredi.pdf", raw_bytes=b"%PDF synthetic")
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="sicredi.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
 
     assert result.opening_balance == 1000.0
     assert result.closing_balance == 1025.0
@@ -628,9 +683,8 @@ def test_analyze_service_does_not_extract_account_from_transaction_body_without_
     tmp_path, monkeypatch
 ) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    service = AnalyzeService(storage=storage)
     monkeypatch.setattr(
-        analyze_service_module,
+        analyze_document_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -652,7 +706,11 @@ def test_analyze_service_does_not_extract_account_from_transaction_body_without_
         ),
     )
 
-    result = service.analyze(filename="bnb.pdf", raw_bytes=b"%PDF synthetic")
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="bnb.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
 
     assert result.account_number is None
 
@@ -661,9 +719,8 @@ def test_analyze_service_extracts_account_and_branch_from_header_without_colon(
     tmp_path, monkeypatch
 ) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    service = AnalyzeService(storage=storage)
     monkeypatch.setattr(
-        analyze_service_module,
+        analyze_document_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -687,7 +744,11 @@ def test_analyze_service_extracts_account_and_branch_from_header_without_colon(
         ),
     )
 
-    result = service.analyze(filename="santander.pdf", raw_bytes=b"%PDF synthetic")
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="santander.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
 
     assert result.bank_branch == "1234-5"
     assert result.account_number == "123456-7"
@@ -697,9 +758,8 @@ def test_analyze_service_extracts_branch_from_split_header_line_without_inventin
     tmp_path, monkeypatch
 ) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    service = AnalyzeService(storage=storage)
     monkeypatch.setattr(
-        analyze_service_module,
+        analyze_document_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -723,7 +783,11 @@ def test_analyze_service_extracts_branch_from_split_header_line_without_inventin
         ),
     )
 
-    result = service.analyze(filename="bnb.pdf", raw_bytes=b"%PDF synthetic")
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="bnb.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
 
     assert result.bank_branch == "1234"
     assert result.account_number is None

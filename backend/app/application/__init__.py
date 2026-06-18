@@ -1,6 +1,10 @@
 from app.application.access_control import AccessControlService
 from app.application.analysis_response_builder import persist_and_build_analyze_response
-from app.application.analyze_service import AnalyzeService
+from app.application.analyze_document import (
+    AnalyzeDocumentRunner,
+    build_default_conversion_pipeline,
+    run_analysis,
+)
 from app.application.contact_service import ContactAttachment, ContactDeliveryResult, ContactMessage, ContactService
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult, ConversionPipelineStatus
 from app.application.conversion.convert_document_result import ConvertDocumentResult, ConvertDocumentStatus
@@ -57,7 +61,7 @@ from app.application.storage_service import TempAnalysisStorage
 
 __all__ = [
     "AccessControlService",
-    "AnalyzeService",
+    "AnalyzeDocumentRunner",
     "AnalysisAccessDeniedError",
     "AnalysisRepository",
     "AnalysisEditConflictError",
@@ -98,6 +102,7 @@ __all__ = [
     "MaxPagesPerFileExceededError",
     "ReusedSessionTokenError",
     "build_ofx_statement",
+    "build_default_conversion_pipeline",
     "match_exact_then_date_tolerance_then_description_similarity_1to1",
     "generate_reconciliation_problems",
     "classify_reconciliation_rows",
@@ -112,4 +117,5 @@ __all__ = [
     "UserAlreadyExistsError",
     "persist_and_build_analyze_response",
     "parse_operational_sheet_rows",
+    "run_analysis",
 ]

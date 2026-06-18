@@ -3,7 +3,7 @@ from tempfile import NamedTemporaryFile
 
 from fastapi.testclient import TestClient
 
-from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
+from app.dependencies import get_access_control_service, get_analyze_document, get_report_service
 from app.main import app
 from app.schemas import (
     AnalyzeResponse,
@@ -18,7 +18,7 @@ from app.schemas import (
 
 
 class FakeAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes) -> AnalyzeResponse:
+    def __call__(self, *, filename: str, raw_bytes: bytes, **_kwargs) -> AnalyzeResponse:
         if not filename.endswith((".csv", ".xlsx", ".ofx", ".pdf")):
             from app.application import UnsupportedFileTypeError
 
@@ -147,7 +147,7 @@ def build_client() -> TestClient:
     analyze_service = FakeAnalyzeService()
     report_service = FakeReportService()
     access_control_service = FakeAccessControlService()
-    app.dependency_overrides[get_analyze_service] = lambda: analyze_service
+    app.dependency_overrides[get_analyze_document] = lambda: analyze_service
     app.dependency_overrides[get_report_service] = lambda: report_service
     app.dependency_overrides[get_access_control_service] = lambda: access_control_service
     return TestClient(app)

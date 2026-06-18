@@ -2,13 +2,13 @@ from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Uploa
 
 from app.application import (
     AccessControlService,
-    AnalyzeService,
+    AnalyzeDocumentRunner,
     InvalidFileContentError,
     InvalidUserTokenError,
     ReportService,
     UnsupportedFileTypeError,
 )
-from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
+from app.dependencies import get_access_control_service, get_analyze_document, get_report_service
 from app.schemas import AnalyzeResponse
 
 router = APIRouter()
@@ -30,13 +30,13 @@ async def analyze(
     anonymous_fingerprint: str | None = Form(default=None),
     user_token: str | None = Form(default=None),
     authorization: str | None = Header(default=None),
-    service: AnalyzeService = Depends(get_analyze_service),
+    analyze_document: AnalyzeDocumentRunner = Depends(get_analyze_document),
     report_service: ReportService = Depends(get_report_service),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> AnalyzeResponse:
     try:
         data = await file.read()
-        analysis = service.analyze(filename=file.filename or "", raw_bytes=data)
+        analysis = analyze_document(filename=file.filename or "", raw_bytes=data)
         resolved_user_token = _resolve_user_token(authorization=authorization, user_token_form=user_token)
         has_identity_hint = bool((anonymous_fingerprint or "").strip() or resolved_user_token)
         if has_identity_hint:

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.application.analyze_service import AnalyzeService
+from app.application.analyze_document import build_default_conversion_pipeline, run_analysis
 from app.application.models import AnalysisData
 from app.application.report_service import ReportService
 
@@ -113,9 +113,10 @@ class FakeReportRepository:
 
 def test_analyze_service_accepts_analysis_repository_protocol() -> None:
     repository = FakeAnalysisRepository()
-    service = AnalyzeService(storage=repository)
 
-    result = service.analyze(
+    result = run_analysis(
+        storage=repository,
+        pipeline=build_default_conversion_pipeline(),
         filename="sample.csv",
         raw_bytes=b"date,description,amount\n2026-04-01,IFOOD,-58.90\n",
     )

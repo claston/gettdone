@@ -12,7 +12,8 @@ import httpx
 import uvicorn
 
 from app.application import AccessControlService
-from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
+from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult
+from app.dependencies import get_access_control_service, get_legacy_conversion_runner, get_report_service
 from app.main import app
 from app.schemas import (
     AnalyzeResponse,
@@ -25,6 +26,30 @@ from app.schemas import (
     TopExpense,
     TransactionPreview,
 )
+
+
+def _build_conversion_result(analysis: AnalyzeResponse) -> ConversionPipelineResult:
+    from app.schemas import ConvertResponse
+
+    return ConversionPipelineResult.completed(
+        payload=ConvertResponse(
+            processing_id=analysis.analysis_id,
+            quota_remaining=2,
+            quota_limit=3,
+            quota_mode="conversion",
+            identity_type="anonymous",
+            analysis=analysis,
+        ).model_dump(),
+    )
+
+
+def _as_legacy_conversion_runner(fake_pipeline):
+    def runner(**kwargs) -> AnalyzeResponse:
+        result = fake_pipeline.run(**kwargs)
+        payload = result.payload or {}
+        return AnalyzeResponse.model_validate(payload["analysis"])
+
+    return runner
 
 
 class _InMemoryConnCtx:
@@ -48,17 +73,17 @@ class _AccessControlServiceInMemory(AccessControlService):
         return _InMemoryConnCtx(self._test_conn)
 
 
-class FakeAnalyzeService:
-    def analyze(
+class _LegacyFakeAnalyzeService:
+    def run(
         self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
-    ) -> AnalyzeResponse:
+    ) -> ConversionPipelineResult:
         _ = on_ocr_progress
         if not filename.endswith((".csv", ".xlsx", ".ofx", ".pdf")):
             from app.application import UnsupportedFileTypeError
 
             raise UnsupportedFileTypeError
 
-        return AnalyzeResponse(
+        analysis = AnalyzeResponse(
             analysis_id=analysis_id or "an_convert_http123",
             file_type="pdf",
             transactions_total=2,
@@ -146,6 +171,7 @@ class FakeAnalyzeService:
                 canonical_warning_transaction_rate=0.5,
             ),
         )
+        return _build_conversion_result(analysis)
 
 
 class FakeReportService:
@@ -196,6 +222,117 @@ class FakeReportService:
         return "extrato_nubank.pdf"
 
 
+def _resolve_pipeline_raw_bytes(*, staged_upload, raw_bytes: bytes | None) -> bytes:
+    if raw_bytes is not None:
+        return raw_bytes
+    if staged_upload is None:
+        return b""
+    return staged_upload.path.read_bytes()
+
+
+class FakeAnalyzeService:
+    def run(self, **kwargs) -> ConversionPipelineResult:
+        filename = kwargs["filename"]
+        raw = _resolve_pipeline_raw_bytes(
+            staged_upload=kwargs.get("staged_upload"),
+            raw_bytes=kwargs.get("raw_bytes"),
+        )
+        if not filename.endswith((".csv", ".xlsx", ".ofx", ".pdf")):
+            from app.application import UnsupportedFileTypeError
+
+            raise UnsupportedFileTypeError
+
+        analysis = AnalyzeResponse(
+            analysis_id=kwargs.get("analysis_id") or "an_convert_http123",
+            file_type="pdf",
+            transactions_total=2,
+            total_inflows=100.0,
+            total_outflows=-20.0,
+            net_total=80.0,
+            operational_summary=OperationalSummary(
+                total_volume=120.0,
+                inflow_count=1,
+                outflow_count=1,
+                reconciled_entries=0,
+                unmatched_entries=2,
+            ),
+            reconciliation=ReconciliationSummary(
+                matched_groups=0,
+                reversed_entries=0,
+                potential_duplicates=0,
+            ),
+            categories=[CategorySummary(category="Outros", total=-20.0, count=1)],
+            top_expenses=[
+                TopExpense(
+                    description="TEST",
+                    amount=-20.0,
+                    date="2026-04-01",
+                    category="Outros",
+                )
+            ],
+            insights=[Insight(type="test", title="Test insight", description=f"Bytes: {len(raw)}")],
+            preview_transactions=[
+                TransactionPreview(
+                    date="2026-04-01",
+                    description="TEST",
+                    amount=-20.0,
+                    category="Outros",
+                    reconciliation_status="unmatched",
+                )
+            ],
+            preview_before_after=[
+                BeforeAfterPreview(
+                    date="2026-04-01",
+                    description_before="test",
+                    description_after="TEST",
+                    amount_before=-20.0,
+                    amount_after=-20.0,
+                )
+            ],
+            expires_at=None,
+            pdf_processing_metrics=PdfProcessingMetrics(
+                total_ms=21.0,
+                parse_ms=11.0,
+                classify_ms=2.0,
+                normalize_ms=3.0,
+                reconcile_ms=5.0,
+                page_count=2,
+                extracted_char_count=501,
+                flattened_line_count=25,
+                grouped_transactions_count=2,
+                inline_candidates_count=2,
+                inline_transactions_count=2,
+                tabular_candidates_count=0,
+                tabular_transactions_count=0,
+                columnar_candidates_count=0,
+                columnar_transactions_count=0,
+                selected_parser="grouped",
+                parser_selection_reason="grouped_rows_available",
+                inline_decision="skipped_due_to_grouped",
+                tabular_decision="skipped_due_to_grouped",
+                columnar_decision="skipped_due_to_grouped",
+                confidence_band="low",
+                export_recommendation="review_recommended",
+                export_recommendation_reason="low_confidence_band",
+                balance_consistency_checked=1,
+                balance_consistency_failed=0,
+                canonical_transactions_count=2,
+                canonical_with_running_balance_count=2,
+                canonical_with_external_reference_count=2,
+                canonical_warning_count=1,
+                canonical_balance_warning_count=1,
+                canonical_warning_transactions_count=1,
+                canonical_warning_types_count=1,
+                canonical_warning_types="balance_consistency_failed",
+                canonical_warning_types_list=["balance_consistency_failed"],
+                canonical_running_balance_coverage_rate=1.0,
+                canonical_external_reference_coverage_rate=1.0,
+                canonical_warning_transaction_rate=0.5,
+            ),
+        )
+        return _build_conversion_result(analysis)
+
+
 def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -211,7 +348,7 @@ def _run_http_server():
     )
     report_service = FakeReportService()
 
-    app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()
+    app.dependency_overrides[get_legacy_conversion_runner] = lambda: _as_legacy_conversion_runner(FakeAnalyzeService())
     app.dependency_overrides[get_access_control_service] = lambda: access_control
     app.dependency_overrides[get_report_service] = lambda: report_service
 

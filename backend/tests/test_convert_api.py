@@ -6,9 +6,15 @@ from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
 from app.application.access_control import AccessControlService
+from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult
 from app.application.conversion.convert_document_result import ConvertDocumentResult
 from app.application.errors import FileTooLargeError, InvalidFileContentError, MaxPagesPerFileExceededError
-from app.dependencies import get_access_control_service, get_analyze_service, get_convert_document_use_case, get_report_service
+from app.dependencies import (
+    get_access_control_service,
+    get_convert_document_use_case,
+    get_legacy_conversion_runner,
+    get_report_service,
+)
 from app.main import app
 from app.routers.upload import (
     OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK,
@@ -30,17 +36,64 @@ from app.schemas import (
 )
 
 
-class FakeAnalyzeService:
-    def analyze(
-        self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
-    ) -> AnalyzeResponse:
+def _build_conversion_result(analysis: AnalyzeResponse) -> ConversionPipelineResult:
+    return ConversionPipelineResult.completed(
+        payload=ConvertResponse(
+            processing_id=analysis.analysis_id,
+            quota_remaining=2,
+            quota_limit=3,
+            quota_mode="conversion",
+            identity_type="anonymous",
+            analysis=analysis,
+        ).model_dump(),
+    )
+
+
+def _as_legacy_conversion_runner(fake_pipeline):
+    def runner(**kwargs) -> AnalyzeResponse:
+        result = fake_pipeline.run(**kwargs)
+        payload = result.payload or {}
+        return AnalyzeResponse.model_validate(payload["analysis"])
+
+    return runner
+
+
+class _LegacyFakeAnalyzeService:
+    def run(
+        self,
+        *,
+        filename: str,
+        staged_upload=None,
+        raw_bytes: bytes | None = None,
+        anonymous_fingerprint: str | None = None,
+        user_token: str | None = None,
+        authorization: str | None = None,
+        access_cookie_token: str | None = None,
+        on_ocr_progress=None,
+        scanned_likely: bool | None = None,
+        estimated_pages_count: int | None = None,
+        max_ocr_pages=None,
+        analysis_id=None,
+    ) -> ConversionPipelineResult:
+        _ = (
+            anonymous_fingerprint,
+            user_token,
+            authorization,
+            access_cookie_token,
+            scanned_likely,
+            estimated_pages_count,
+            max_ocr_pages,
+        )
+        if raw_bytes is None and staged_upload is not None:
+            raw_bytes = staged_upload.path.read_bytes()
+        raw_bytes = raw_bytes or b""
         _ = on_ocr_progress
         if not filename.endswith((".csv", ".xlsx", ".ofx", ".pdf")):
             from app.application import UnsupportedFileTypeError
 
             raise UnsupportedFileTypeError
 
-        return AnalyzeResponse(
+        analysis = AnalyzeResponse(
             analysis_id=analysis_id or "an_convert123",
             file_type="pdf",
             transactions_total=1,
@@ -89,24 +142,25 @@ class FakeAnalyzeService:
             ],
             expires_at=None,
         )
+        return _build_conversion_result(analysis)
 
 
 class InsufficientTextAnalyzeService:
-    def analyze(
+    def run(
         self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
-    ) -> AnalyzeResponse:
+    ) -> ConversionPipelineResult:
         _ = (filename, raw_bytes, on_ocr_progress, analysis_id)
         raise InvalidFileContentError("Não encontramos texto suficiente para OCR neste PDF.")
 
 
 class EmptyBytesInvalidContentAnalyzeService:
-    def analyze(
+    def run(
         self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
-    ) -> AnalyzeResponse:
+    ) -> ConversionPipelineResult:
         _ = (filename, on_ocr_progress, analysis_id)
         if not raw_bytes:
             raise InvalidFileContentError("Não foi possível ler este PDF.")
-        return FakeAnalyzeService().analyze(
+        return FakeAnalyzeService().run(
             filename=filename,
             raw_bytes=raw_bytes,
             on_ocr_progress=on_ocr_progress,
@@ -116,9 +170,9 @@ class EmptyBytesInvalidContentAnalyzeService:
 
 
 class CorruptedPdfAnalyzeService:
-    def analyze(
+    def run(
         self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
-    ) -> AnalyzeResponse:
+    ) -> ConversionPipelineResult:
         _ = (filename, raw_bytes, on_ocr_progress, analysis_id)
         raise InvalidFileContentError("Ignoring wrong pointing object 9 0 (offset 0)")
 
@@ -127,16 +181,163 @@ class TrackingAnalyzeService:
     def __init__(self) -> None:
         self.called = False
 
-    def analyze(
+    def run(
         self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
-    ) -> AnalyzeResponse:
+    ) -> ConversionPipelineResult:
         self.called = True
-        return FakeAnalyzeService().analyze(
+        return FakeAnalyzeService().run(
             filename=filename,
             raw_bytes=raw_bytes,
             on_ocr_progress=on_ocr_progress,
             max_ocr_pages=max_ocr_pages,
             analysis_id=analysis_id,
+        )
+
+
+def _resolve_pipeline_raw_bytes(*, staged_upload, raw_bytes: bytes | None) -> bytes:
+    if raw_bytes is not None:
+        return raw_bytes
+    if staged_upload is None:
+        return b""
+    return staged_upload.path.read_bytes()
+
+
+class FakeAnalyzeService:
+    def run(
+        self,
+        *,
+        filename: str,
+        staged_upload=None,
+        raw_bytes: bytes | None = None,
+        anonymous_fingerprint: str | None = None,
+        user_token: str | None = None,
+        authorization: str | None = None,
+        access_cookie_token: str | None = None,
+        on_ocr_progress=None,
+        scanned_likely: bool | None = None,
+        estimated_pages_count: int | None = None,
+        max_ocr_pages=None,
+        analysis_id=None,
+    ) -> ConversionPipelineResult:
+        _ = (
+            anonymous_fingerprint,
+            user_token,
+            authorization,
+            access_cookie_token,
+            scanned_likely,
+            estimated_pages_count,
+            max_ocr_pages,
+            on_ocr_progress,
+        )
+        raw = _resolve_pipeline_raw_bytes(staged_upload=staged_upload, raw_bytes=raw_bytes)
+        if not filename.endswith((".csv", ".xlsx", ".ofx", ".pdf")):
+            from app.application import UnsupportedFileTypeError
+
+            raise UnsupportedFileTypeError
+
+        analysis = AnalyzeResponse(
+            analysis_id=analysis_id or "an_convert123",
+            file_type="pdf",
+            transactions_total=1,
+            total_inflows=100.0,
+            total_outflows=-20.0,
+            net_total=80.0,
+            operational_summary=OperationalSummary(
+                total_volume=120.0,
+                inflow_count=1,
+                outflow_count=1,
+                reconciled_entries=0,
+                unmatched_entries=1,
+            ),
+            reconciliation=ReconciliationSummary(
+                matched_groups=0,
+                reversed_entries=0,
+                potential_duplicates=0,
+            ),
+            categories=[CategorySummary(category="Outros", total=-20.0, count=1)],
+            top_expenses=[
+                TopExpense(
+                    description="TEST",
+                    amount=-20.0,
+                    date="2026-04-01",
+                    category="Outros",
+                )
+            ],
+            insights=[Insight(type="test", title="Test insight", description=f"Bytes: {len(raw)}")],
+            preview_transactions=[
+                TransactionPreview(
+                    date="2026-04-01",
+                    description="TEST",
+                    amount=-20.0,
+                    category="Outros",
+                    reconciliation_status="unmatched",
+                )
+            ],
+            preview_before_after=[
+                BeforeAfterPreview(
+                    date="2026-04-01",
+                    description_before="test",
+                    description_after="TEST",
+                    amount_before=-20.0,
+                    amount_after=-20.0,
+                )
+            ],
+            expires_at=None,
+        )
+        return _build_conversion_result(analysis)
+
+
+class _LegacyInsufficientTextAnalyzeService:
+    def run(self, **kwargs) -> ConversionPipelineResult:
+        _ = kwargs
+        raise InvalidFileContentError("NÃ£o encontramos texto suficiente para OCR neste PDF.")
+
+
+class _LegacyEmptyBytesInvalidContentAnalyzeService:
+    def run(self, **kwargs) -> ConversionPipelineResult:
+        raw = _resolve_pipeline_raw_bytes(
+            staged_upload=kwargs.get("staged_upload"),
+            raw_bytes=kwargs.get("raw_bytes"),
+        )
+        if not raw:
+            raise InvalidFileContentError("NÃ£o foi possÃ­vel ler este PDF.")
+        return FakeAnalyzeService().run(
+            filename=kwargs["filename"],
+            raw_bytes=raw,
+            on_ocr_progress=kwargs.get("on_ocr_progress"),
+            max_ocr_pages=kwargs.get("max_ocr_pages"),
+            analysis_id=kwargs.get("analysis_id"),
+        )
+
+
+class _LegacyCorruptedPdfAnalyzeService:
+    def run(self, **kwargs) -> ConversionPipelineResult:
+        _ = kwargs
+        raise InvalidFileContentError("Ignoring wrong pointing object 9 0 (offset 0)")
+
+
+class _LegacyTrackingAnalyzeService:
+    def __init__(self) -> None:
+        self.called = False
+
+    def run(self, **kwargs) -> ConversionPipelineResult:
+        self.called = True
+        raw = _resolve_pipeline_raw_bytes(
+            staged_upload=kwargs.get("staged_upload"),
+            raw_bytes=kwargs.get("raw_bytes"),
+        )
+        return FakeAnalyzeService().run(
+            filename=kwargs["filename"],
+            raw_bytes=raw,
+            anonymous_fingerprint=kwargs.get("anonymous_fingerprint"),
+            user_token=kwargs.get("user_token"),
+            authorization=kwargs.get("authorization"),
+            access_cookie_token=kwargs.get("access_cookie_token"),
+            on_ocr_progress=kwargs.get("on_ocr_progress"),
+            scanned_likely=kwargs.get("scanned_likely"),
+            estimated_pages_count=kwargs.get("estimated_pages_count"),
+            max_ocr_pages=kwargs.get("max_ocr_pages"),
+            analysis_id=kwargs.get("analysis_id"),
         )
 
 
@@ -177,7 +378,9 @@ class TrackingConvertDocumentUseCase:
         self.filename = filename
         self.scanned_likely = scanned_likely
         self.estimated_pages_count = estimated_pages_count
-        analysis = FakeAnalyzeService().analyze(filename=filename, raw_bytes=b"%PDF data")
+        payload = FakeAnalyzeService().run(filename=filename, raw_bytes=b"%PDF data").payload
+        assert payload is not None
+        analysis = AnalyzeResponse.model_validate(payload["analysis"])
         return ConvertDocumentResult.completed(
             analysis_id=analysis.analysis_id,
             payload=ConvertResponse(
@@ -192,7 +395,9 @@ class TrackingConvertDocumentUseCase:
 
 
 def test_result_to_convert_response_maps_completed_payload() -> None:
-    analysis = FakeAnalyzeService().analyze(filename="sample.pdf", raw_bytes=b"%PDF data")
+    payload = FakeAnalyzeService().run(filename="sample.pdf", raw_bytes=b"%PDF data").payload
+    assert payload is not None
+    analysis = AnalyzeResponse.model_validate(payload["analysis"])
     result = ConvertDocumentResult.completed(
         analysis_id=analysis.analysis_id,
         payload=ConvertResponse(
@@ -234,21 +439,21 @@ def build_client(tmp_path) -> TestClient:
         token_secret="test-secret",
     )
     app.dependency_overrides[get_access_control_service] = lambda: access_control
-    app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()
+    app.dependency_overrides[get_legacy_conversion_runner] = lambda: _as_legacy_conversion_runner(FakeAnalyzeService())
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     return TestClient(app)
 
 
 def build_client_with_access_control(access_control: AccessControlService) -> TestClient:
     app.dependency_overrides[get_access_control_service] = lambda: access_control
-    app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()
+    app.dependency_overrides[get_legacy_conversion_runner] = lambda: _as_legacy_conversion_runner(FakeAnalyzeService())
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     return TestClient(app)
 
 
 def build_client_with_overrides(access_control: AccessControlService, analyze_service) -> TestClient:
     app.dependency_overrides[get_access_control_service] = lambda: access_control
-    app.dependency_overrides[get_analyze_service] = lambda: analyze_service
+    app.dependency_overrides[get_legacy_conversion_runner] = lambda: _as_legacy_conversion_runner(analyze_service)
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     return TestClient(app)
 
@@ -673,7 +878,7 @@ def test_convert_succeeds_when_anonymous_telemetry_persistence_fails(tmp_path) -
         token_secret="test-secret",
     )
     app.dependency_overrides[get_access_control_service] = lambda: access_control
-    app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()
+    app.dependency_overrides[get_legacy_conversion_runner] = lambda: _as_legacy_conversion_runner(FakeAnalyzeService())
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     client = TestClient(app)
 

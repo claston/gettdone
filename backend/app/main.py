@@ -11,7 +11,6 @@ from fastapi.staticfiles import StaticFiles
 
 from app.dependencies import (
     close_access_control_service,
-    get_analyze_service,
     get_report_service,
 )
 from app.routers import (
@@ -157,7 +156,6 @@ async def validation_exception_handler(_request: Request, exc: RequestValidation
 
 __all__ = [
     "app",
-    "get_analyze_service",
     "get_report_service",
     "get_cors_allow_origins",
 ]

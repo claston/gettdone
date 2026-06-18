@@ -5,7 +5,7 @@ from fastapi import Depends
 
 from app.application import (
     AccessControlService,
-    AnalyzeService,
+    AnalyzeDocumentRunner,
     ContactService,
     ConvertDocumentUseCase,
     DocumentConversionPipeline,
@@ -15,7 +15,10 @@ from app.application import (
     QuotaValidatorService,
     ReportService,
     TempAnalysisStorage,
+    build_default_conversion_pipeline,
+    run_analysis,
 )
+from app.application.conversion_pipeline import ConversionPipeline
 from app.application.repositories import AnalysisRepository
 from app.security_baseline import is_production_env, read_bool_env
 
@@ -24,7 +27,7 @@ _storage = TempAnalysisStorage(
     root_dir=_backend_root / "tmp" / "analyses",
     ttl_seconds=int(os.getenv("ANALYSIS_TTL_SECONDS", "86400")),
 )
-_analyze_service = AnalyzeService(storage=_storage)
+_conversion_processing_pipeline = build_default_conversion_pipeline()
 _report_service = ReportService(storage=_storage)
 _document_preflight_service = DocumentPreflightService()
 _access_control_service: AccessControlService | None = None
@@ -44,8 +47,34 @@ def _resolve_access_control_state_file() -> Path:
     return _backend_root / "tmp" / "access_control" / "state.json"
 
 
-def get_analyze_service() -> AnalyzeService:
-    return _analyze_service
+def get_conversion_processing_pipeline() -> ConversionPipeline:
+    return _conversion_processing_pipeline
+
+
+def get_analyze_document() -> AnalyzeDocumentRunner:
+    def analyze_document(
+        *,
+        filename: str,
+        raw_bytes: bytes,
+        on_ocr_progress=None,
+        max_ocr_pages: int | None = None,
+        analysis_id: str | None = None,
+    ):
+        return run_analysis(
+            storage=_storage,
+            pipeline=_conversion_processing_pipeline,
+            filename=filename,
+            raw_bytes=raw_bytes,
+            on_ocr_progress=on_ocr_progress,
+            max_ocr_pages=max_ocr_pages,
+            analysis_id=analysis_id,
+        )
+
+    return analyze_document
+
+
+def get_legacy_conversion_runner():
+    return None
 
 
 def get_report_service() -> ReportService:
@@ -111,7 +140,8 @@ def get_quota_validator_service(
 
 
 def get_document_conversion_pipeline(
-    analyze_service: AnalyzeService = Depends(get_analyze_service),
+    processing_pipeline: ConversionPipeline = Depends(get_conversion_processing_pipeline),
+    legacy_conversion_runner=Depends(get_legacy_conversion_runner),
     report_service: ReportService = Depends(get_report_service),
     document_preflight_service: DocumentPreflightService = Depends(get_document_preflight_service),
     quota_validator_service: QuotaValidatorService = Depends(get_quota_validator_service),
@@ -123,9 +153,9 @@ def get_document_conversion_pipeline(
         access_control_service=access_control_service,
         document_preflight_service=document_preflight_service,
         quota_validator_service=quota_validator_service,
-        processing_pipeline=getattr(analyze_service, "pipeline", None),
+        processing_pipeline=processing_pipeline,
         analysis_repository=analysis_repository,
-        analyze_fallback_service=analyze_service,
+        legacy_conversion_runner=legacy_conversion_runner,
     )
 
 

@@ -10,7 +10,7 @@ from tempfile import NamedTemporaryFile
 import httpx
 import uvicorn
 
-from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
+from app.dependencies import get_access_control_service, get_analyze_document, get_report_service
 from app.main import app
 from app.schemas import (
     AnalyzeResponse,
@@ -26,7 +26,7 @@ from app.schemas import (
 
 
 class FakeAnalyzeService:
-    def analyze(self, filename: str, raw_bytes: bytes) -> AnalyzeResponse:
+    def __call__(self, *, filename: str, raw_bytes: bytes, **_kwargs) -> AnalyzeResponse:
         if not filename.endswith((".csv", ".xlsx", ".ofx", ".pdf")):
             from app.application import UnsupportedFileTypeError
 
@@ -133,8 +133,9 @@ class FakeAnalyzeService:
 
 
 class FakeAnalyzeServiceSafeToExport(FakeAnalyzeService):
-    def analyze(self, filename: str, raw_bytes: bytes) -> AnalyzeResponse:
-        base = super().analyze(filename, raw_bytes)
+    def __call__(self, *, filename: str, raw_bytes: bytes, **kwargs) -> AnalyzeResponse:
+        _ = kwargs
+        base = super().__call__(filename=filename, raw_bytes=raw_bytes)
         return base.model_copy(
             update={
                 "insights": [Insight(type="test", title="Test insight", description=f"Bytes: {len(raw_bytes)}")],
@@ -219,7 +220,7 @@ def _find_free_port() -> int:
 
 @contextmanager
 def _run_http_server():
-    app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()
+    app.dependency_overrides[get_analyze_document] = lambda: FakeAnalyzeService()
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
 
@@ -263,7 +264,7 @@ def _run_http_server():
 
 @contextmanager
 def _run_http_server_with_analyze_service(analyze_service):
-    app.dependency_overrides[get_analyze_service] = lambda: analyze_service
+    app.dependency_overrides[get_analyze_document] = lambda: analyze_service
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
 
