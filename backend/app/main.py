@@ -15,7 +15,6 @@ from app.dependencies import (
 )
 from app.routers import (
     admin_auth_router,
-    analyze_router,
     auth_router,
     banks_router,
     checkout_router,
@@ -94,7 +93,6 @@ app.include_router(health_router)
 app.include_router(banks_router)
 app.include_router(plans_router)
 app.include_router(admin_auth_router)
-app.include_router(analyze_router)
 app.include_router(convert_router)
 app.include_router(auth_router)
 app.include_router(client_router)

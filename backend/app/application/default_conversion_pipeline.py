@@ -1,34 +1,21 @@
 import logging
 import re
 import unicodedata
-from collections.abc import Callable
-from typing import Protocol
-from uuid import uuid4
 
-from app.application.analysis_response_builder import persist_and_build_analyze_response
 from app.application.bank_catalog import resolve_bank_code_from_name
 from app.application.bank_identity import resolve_bank_name
 from app.application.bank_resolver import DEFAULT_BANK_CODE, resolve_bank_code
-from app.application.conversion_pipeline import ConversionPipeline, PdfParser
+from app.application.conversion_pipeline import ConversionPipeline
 from app.application.models import TransactionRow
 from app.application.parsers.service import ParsingService
 from app.application.pdf_parser import parse_pdf_transactions
-from app.application.repositories import AnalysisRepository
-from app.schemas import AnalyzeResponse
 
 logger = logging.getLogger(__name__)
 
-
-class AnalyzeDocumentRunner(Protocol):
-    def __call__(
-        self,
-        *,
-        filename: str,
-        raw_bytes: bytes,
-        on_ocr_progress: Callable[[int, int], None] | None = None,
-        max_ocr_pages: int | None = None,
-        analysis_id: str | None = None,
-    ) -> AnalyzeResponse: ...
+__all__ = [
+    "build_default_conversion_pipeline",
+    "parse_pdf_transactions",
+]
 
 
 def build_default_conversion_pipeline(
@@ -67,42 +54,6 @@ def build_default_conversion_pipeline(
                 layout_inference_name=layout_inference_name,
             )
         ),
-    )
-
-
-def run_analysis(
-    *,
-    storage: AnalysisRepository,
-    filename: str,
-    raw_bytes: bytes,
-    pipeline: ConversionPipeline | None = None,
-    on_ocr_progress: Callable[[int, int], None] | None = None,
-    max_ocr_pages: int | None = None,
-    analysis_id: str | None = None,
-    pdf_parser: PdfParser | None = None,
-) -> AnalyzeResponse:
-    processing_pipeline = pipeline or build_default_conversion_pipeline()
-    document = processing_pipeline.run(
-        filename=filename,
-        raw_bytes=raw_bytes,
-        analysis_id=(analysis_id or "").strip() or f"an_{uuid4().hex[:12]}",
-        on_ocr_progress=on_ocr_progress,
-        max_ocr_pages=max_ocr_pages,
-        pdf_parser=pdf_parser or parse_pdf_transactions,
-    )
-    logger.info(
-        "analyze_done analysis_id=%s extension=%s total_ms=%.3f parse_ms=%.3f tx_count=%d layout=%s parser=%s",
-        document.analysis_data.analysis_id,
-        document.document.file_type,
-        _metrics_get(document.analysis_data.pdf_processing_metrics, "total_ms", 0.0),
-        document.parse_ms,
-        document.analysis_data.transactions_total,
-        document.analysis_data.layout_inference_name or "",
-        _metrics_get(document.analysis_data.pdf_processing_metrics, "selected_parser", ""),
-    )
-    return persist_and_build_analyze_response(
-        storage=storage,
-        pipeline_result=document,
     )
 
 
@@ -269,63 +220,7 @@ def _build_pdf_processing_metrics(
     }
 
 
-def _resolve_ofx_account_type(
-    *,
-    extension: str,
-    filename: str,
-    raw_bytes: bytes,
-    extracted_text: str | None,
-    layout_inference_name: str | None,
-) -> str | None:
-    if extension == "ofx":
-        decoded = _decode_optional_text(raw_bytes)
-        normalized = decoded.upper()
-        if "CREDITCARDMSGSRSV1" in normalized or "<CCSTMTRS>" in normalized:
-            return "credit_card"
-        if "BANKMSGSRSV1" in normalized or "<STMTRS>" in normalized:
-            return "bank"
-        return None
-
-    if extension == "pdf":
-        normalized = _normalize_text_for_profile((extracted_text or "") + " " + filename)
-        layout_name = str(layout_inference_name or "").strip().lower()
-
-        bank_indicators = (
-            "TRANSFERENCIA RECEBIDA",
-            "TRANSFERENCIA ENVIADA",
-            "TOTAL DE ENTRADAS",
-            "TOTAL DE SAIDAS",
-            "SALDO DO DIA",
-            "EXTRATO CONTA",
-        )
-        has_bank_indicators = any(token in normalized for token in bank_indicators)
-        if layout_name == "nubank_statement_ptbr" and has_bank_indicators:
-            return "bank"
-
-        card_indicators = (
-            "FATURA",
-            "TOTAL A PAGAR",
-            "TOTAL DE COMPRAS DE TODOS OS CARTOES",
-            "PAGAMENTOS E FINANCIAMENTOS",
-            "CARTAO DE CREDITO",
-            "DATA DE VENCIMENTO",
-        )
-        card_matches = sum(1 for token in card_indicators if token in normalized)
-        has_card_window = "TRANSACOES DE" in normalized and " A " in normalized
-
-        if card_matches >= 2 and (has_card_window or "TOTAL A PAGAR" in normalized) and not has_bank_indicators:
-            return "credit_card"
-        return None
-
-    return None
-
-
-def _resolve_bank_name(
-    *,
-    extension: str,
-    layout_inference_name: str | None,
-    extracted_text: str | None,
-) -> str | None:
+def _resolve_bank_name(*, extension: str, layout_inference_name: str | None, extracted_text: str | None) -> str | None:
     if extension != "pdf":
         return None
     return resolve_bank_name(
@@ -442,6 +337,57 @@ def _normalize_account_identifier(value: str | None) -> str | None:
     return digits
 
 
+def _resolve_ofx_account_type(
+    *,
+    extension: str,
+    filename: str,
+    raw_bytes: bytes,
+    extracted_text: str | None,
+    layout_inference_name: str | None,
+) -> str | None:
+    if extension == "ofx":
+        decoded = _decode_optional_text(raw_bytes)
+        normalized = decoded.upper()
+        if "CREDITCARDMSGSRSV1" in normalized or "<CCSTMTRS>" in normalized:
+            return "credit_card"
+        if "BANKMSGSRSV1" in normalized or "<STMTRS>" in normalized:
+            return "bank"
+        return None
+
+    if extension == "pdf":
+        normalized = _normalize_text_for_profile((extracted_text or "") + " " + filename)
+        layout_name = str(layout_inference_name or "").strip().lower()
+
+        bank_indicators = (
+            "TRANSFERENCIA RECEBIDA",
+            "TRANSFERENCIA ENVIADA",
+            "TOTAL DE ENTRADAS",
+            "TOTAL DE SAIDAS",
+            "SALDO DO DIA",
+            "EXTRATO CONTA",
+        )
+        has_bank_indicators = any(token in normalized for token in bank_indicators)
+        if layout_name == "nubank_statement_ptbr" and has_bank_indicators:
+            return "bank"
+
+        card_indicators = (
+            "FATURA",
+            "TOTAL A PAGAR",
+            "TOTAL DE COMPRAS DE TODOS OS CARTOES",
+            "PAGAMENTOS E FINANCIAMENTOS",
+            "CARTAO DE CREDITO",
+            "DATA DE VENCIMENTO",
+        )
+        card_matches = sum(1 for token in card_indicators if token in normalized)
+        has_card_window = "TRANSACOES DE" in normalized and " A " in normalized
+
+        if card_matches >= 2 and (has_card_window or "TOTAL A PAGAR" in normalized) and not has_bank_indicators:
+            return "credit_card"
+        return None
+
+    return None
+
+
 def _decode_optional_text(raw_bytes: bytes) -> str:
     for encoding in ("utf-8-sig", "utf-8", "latin-1"):
         try:
@@ -455,11 +401,3 @@ def _normalize_text_for_profile(value: str) -> str:
     upper = unicodedata.normalize("NFKD", value.upper())
     without_accents = "".join(ch for ch in upper if not unicodedata.combining(ch))
     return re.sub(r"\s+", " ", without_accents).strip()
-
-
-def _metrics_get(metrics, key: str, default):
-    if metrics is None:
-        return default
-    if isinstance(metrics, dict):
-        return metrics.get(key, default)
-    return getattr(metrics, key, default)

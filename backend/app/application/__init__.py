@@ -1,9 +1,9 @@
 from app.application.access_control import AccessControlService
-from app.application.analysis_response_builder import persist_and_build_analyze_response
-from app.application.analyze_document import (
-    AnalyzeDocumentRunner,
-    build_default_conversion_pipeline,
-    run_analysis,
+from app.application.analysis_response_builder import (
+    build_analyze_response,
+    build_convert_response_payload,
+    persist_and_build_analyze_response,
+    persist_conversion_result,
 )
 from app.application.contact_service import ContactAttachment, ContactDeliveryResult, ContactMessage, ContactService
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult, ConversionPipelineStatus
@@ -19,12 +19,14 @@ from app.application.conversion.document_preflight_service import (
     DocumentPreflightResult,
     DocumentPreflightService,
 )
+from app.application.conversion.persisted_conversion_result import PersistedConversionResult
 from app.application.conversion.quota_validator_service import (
     QuotaConsumptionResult,
     QuotaValidatorService,
 )
 from app.application.conversion.statement_parser import ParsedBankStatement, ParsedTransaction, StatementParser
 from app.application.conversion_service import ConversionService
+from app.application.default_conversion_pipeline import build_default_conversion_pipeline
 from app.application.errors import (
     AnalysisAccessDeniedError,
     AnalysisEditConflictError,
@@ -61,7 +63,6 @@ from app.application.storage_service import TempAnalysisStorage
 
 __all__ = [
     "AccessControlService",
-    "AnalyzeDocumentRunner",
     "AnalysisAccessDeniedError",
     "AnalysisRepository",
     "AnalysisEditConflictError",
@@ -83,6 +84,7 @@ __all__ = [
     "DocumentPreflightResult",
     "DocumentPreflightService",
     "ExtractedDocument",
+    "PersistedConversionResult",
     "QuotaConsumptionResult",
     "QuotaValidatorService",
     "ParsedBankStatement",
@@ -115,7 +117,9 @@ __all__ = [
     "TempAnalysisStorage",
     "UnsupportedFileTypeError",
     "UserAlreadyExistsError",
+    "build_analyze_response",
     "persist_and_build_analyze_response",
+    "build_convert_response_payload",
+    "persist_conversion_result",
     "parse_operational_sheet_rows",
-    "run_analysis",
 ]

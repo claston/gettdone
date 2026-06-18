@@ -1,9 +1,11 @@
 from io import BytesIO
+from uuid import uuid4
 
 from openpyxl import Workbook
 
-from app.application import analyze_document as analyze_document_module
-from app.application.analyze_document import build_default_conversion_pipeline, run_analysis
+from app.application import default_conversion_pipeline as default_conversion_pipeline_module
+from app.application.analysis_response_builder import build_analyze_response, persist_conversion_result
+from app.application.default_conversion_pipeline import build_default_conversion_pipeline
 from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.pdf_layout_inference import PdfLayoutInference
 from app.application.pdf_parser import PdfParseResult
@@ -31,12 +33,14 @@ def _run_analysis_with_storage(
     filename: str,
     raw_bytes: bytes,
 ):
-    return run_analysis(
-        storage=storage,
-        pipeline=build_default_conversion_pipeline(),
+    pipeline_result = build_default_conversion_pipeline().run(
         filename=filename,
         raw_bytes=raw_bytes,
+        analysis_id=f"an_{uuid4().hex[:12]}",
+        pdf_parser=default_conversion_pipeline_module.parse_pdf_transactions,
     )
+    persisted_result = persist_conversion_result(storage=storage, pipeline_result=pipeline_result)
+    return build_analyze_response(persisted_result=persisted_result)
 
 
 def test_analyze_service_uses_real_xlsx_content(tmp_path) -> None:
@@ -49,12 +53,7 @@ def test_analyze_service_uses_real_xlsx_content(tmp_path) -> None:
         ]
     )
 
-    result = run_analysis(
-        storage=storage,
-        pipeline=build_default_conversion_pipeline(),
-        filename="sample.xlsx",
-        raw_bytes=raw,
-    )
+    result = _run_analysis_with_storage(storage=storage, filename="sample.xlsx", raw_bytes=raw)
 
     assert result.file_type == "xlsx"
     assert result.transactions_total == 2
@@ -96,12 +95,7 @@ VERSION:102
 </OFX>
 """.encode("utf-8")
 
-    result = run_analysis(
-        storage=storage,
-        pipeline=build_default_conversion_pipeline(),
-        filename="sample.ofx",
-        raw_bytes=raw,
-    )
+    result = _run_analysis_with_storage(storage=storage, filename="sample.ofx", raw_bytes=raw)
 
     assert result.file_type == "ofx"
     assert result.transactions_total == 2
@@ -122,7 +116,7 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
     parse_metrics["textract_used"] = 1
     parse_metrics["textract_enabled"] = 1
     monkeypatch.setattr(
-        analyze_document_module,
+        default_conversion_pipeline_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -195,7 +189,7 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
     parse_metrics["export_recommendation"] = "safe_to_export"
     parse_metrics["export_recommendation_reason"] = "high_confidence_band"
     monkeypatch.setattr(
-        analyze_document_module,
+        default_conversion_pipeline_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -253,7 +247,7 @@ def test_analyze_service_keeps_document_review_without_generic_row_badges(tmp_pa
     parse_metrics["export_recommendation"] = "review_recommended"
     parse_metrics["export_recommendation_reason"] = "medium_confidence_band"
     monkeypatch.setattr(
-        analyze_document_module,
+        default_conversion_pipeline_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -294,7 +288,7 @@ def test_analyze_service_keeps_document_review_without_generic_row_badges(tmp_pa
 def test_analyze_service_extracts_bank_branch_and_account_from_pdf_text(tmp_path, monkeypatch) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     monkeypatch.setattr(
-        analyze_document_module,
+        default_conversion_pipeline_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -328,7 +322,7 @@ def test_analyze_service_resolves_opening_balance_from_saldo_anterior_row_when_r
 ) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     monkeypatch.setattr(
-        analyze_document_module,
+        default_conversion_pipeline_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -369,7 +363,7 @@ def test_analyze_service_resolves_opening_balance_from_saldo_anterior_row_when_r
 def test_analyze_service_prefers_saldo_anterior_row_over_later_running_balance(tmp_path, monkeypatch) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     monkeypatch.setattr(
-        analyze_document_module,
+        default_conversion_pipeline_module,
         "parse_pdf_transactions",
         lambda raw_bytes, **kwargs: PdfParseResult(
             transactions=[
@@ -438,7 +432,7 @@ def test_analyze_service_filters_opening_balance_row_even_when_description_conta
 ) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     monkeypatch.setattr(
-        analyze_document_module,
+        default_conversion_pipeline_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -479,7 +473,7 @@ def test_analyze_service_filters_opening_balance_row_even_when_description_conta
 def test_analyze_service_filters_trailing_closing_balance_snapshot_row(tmp_path, monkeypatch) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     monkeypatch.setattr(
-        analyze_document_module,
+        default_conversion_pipeline_module,
         "parse_pdf_transactions",
         lambda raw_bytes, **kwargs: PdfParseResult(
             transactions=[
@@ -544,7 +538,7 @@ def test_analyze_service_resolves_opening_balance_from_extracted_text_when_outsi
 ) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     monkeypatch.setattr(
-        analyze_document_module,
+        default_conversion_pipeline_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -576,7 +570,7 @@ def test_analyze_service_resolves_opening_balance_from_spaced_saldo_anterior_tex
 ) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     monkeypatch.setattr(
-        analyze_document_module,
+        default_conversion_pipeline_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -613,7 +607,7 @@ def test_analyze_service_resolves_closing_balance_from_last_running_balance_plus
 ) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     monkeypatch.setattr(
-        analyze_document_module,
+        default_conversion_pipeline_module,
         "parse_pdf_transactions",
         lambda raw_bytes, **kwargs: PdfParseResult(
             transactions=[
@@ -684,7 +678,7 @@ def test_analyze_service_does_not_extract_account_from_transaction_body_without_
 ) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     monkeypatch.setattr(
-        analyze_document_module,
+        default_conversion_pipeline_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -720,7 +714,7 @@ def test_analyze_service_extracts_account_and_branch_from_header_without_colon(
 ) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     monkeypatch.setattr(
-        analyze_document_module,
+        default_conversion_pipeline_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[
@@ -759,7 +753,7 @@ def test_analyze_service_extracts_branch_from_split_header_line_without_inventin
 ) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     monkeypatch.setattr(
-        analyze_document_module,
+        default_conversion_pipeline_module,
         "parse_pdf_transactions",
         lambda raw_bytes: build_pdf_parse_result(
             transactions=[

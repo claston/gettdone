@@ -9,7 +9,7 @@ from time import monotonic
 from uuid import uuid4
 
 from app.application.access_control import AccessControlService
-from app.application.analysis_response_builder import persist_and_build_analyze_response
+from app.application.analysis_response_builder import build_convert_response_payload, persist_conversion_result
 from app.application.bank_identity import resolve_conversion_model_label
 from app.application.conversion.conversion_pipeline_result import (
     ConversionPipelineResult,
@@ -23,6 +23,7 @@ from app.application.conversion.document_preflight_service import (
     DocumentPreflightResult,
     DocumentPreflightService,
 )
+from app.application.conversion.persisted_conversion_result import PersistedConversionResult
 from app.application.conversion.quota_validator_service import QuotaValidatorService
 from app.application.conversion.statement_parser import (
     LegacyExtractedDocumentStatementParser,
@@ -42,7 +43,6 @@ from app.application.errors import (
 from app.application.ingestion import ingest_uploaded_document
 from app.application.report_service import ReportService
 from app.application.repositories import AnalysisRepository
-from app.schemas import AnalyzeResponse, ConvertResponse
 
 logger = logging.getLogger(__name__)
 
@@ -248,20 +248,22 @@ class DocumentConversionPipeline:
                     analysis_id=resolved_analysis_id,
                     parse_ms=parse_ms,
                 )
-                conversion_response = persist_and_build_analyze_response(
+                persisted_result = persist_conversion_result(
                     storage=self.analysis_repository,
                     pipeline_result=legacy_pipeline_result,
                 )
+                analysis_data = persisted_result.analysis_data
                 logger.info(
                     "analyze_done analysis_id=%s extension=%s total_ms=%.3f parse_ms=%.3f tx_count=%d layout=%s parser=%s",
-                    conversion_response.analysis_id,
+                    analysis_data.analysis_id,
                     document.file_type,
-                    _metrics_get(conversion_response.pdf_processing_metrics, "total_ms", 0.0),
+                    _metrics_get(analysis_data.pdf_processing_metrics, "total_ms", 0.0),
                     legacy_pipeline_result.parse_ms,
-                    conversion_response.transactions_total,
-                    conversion_response.layout_inference_name or "",
-                    _metrics_get(conversion_response.pdf_processing_metrics, "selected_parser", ""),
+                    analysis_data.transactions_total,
+                    analysis_data.layout_inference_name or "",
+                    _metrics_get(analysis_data.pdf_processing_metrics, "selected_parser", ""),
                 )
+                conversion_response = persisted_result
             return self._finalize_success(
                 prepared=prepared,
                 runtime=runtime,
@@ -430,49 +432,55 @@ class DocumentConversionPipeline:
         *,
         prepared: PreparedDocumentConversion,
         runtime: DocumentConversionRuntime,
-        conversion_response: AnalyzeResponse,
+        conversion_response,
     ) -> ConversionPipelineResult:
         request = prepared.request
         identity = prepared.identity
+        if isinstance(conversion_response, PersistedConversionResult):
+            persisted_result = conversion_response
+            analysis = persisted_result.analysis_data
+        else:
+            persisted_result = None
+            analysis = conversion_response
         self.report_service.set_convert_owner(
-            analysis_id=conversion_response.analysis_id,
+            analysis_id=analysis.analysis_id,
             identity_type=identity.identity_type,
             identity_id=identity.identity_id,
         )
-        pages_count = _resolve_processed_pages(conversion_response)
-        warning_rows_count, balance_failed_count = _resolve_warning_metrics(conversion_response)
-        parse_meta = _resolve_parse_observability_metrics(conversion_response)
+        pages_count = _resolve_processed_pages(analysis)
+        warning_rows_count, balance_failed_count = _resolve_warning_metrics(analysis)
+        parse_meta = _resolve_parse_observability_metrics(analysis)
         effective_ocr_used, effective_ocr_attempted, effective_ocr_engine = _resolve_effective_ocr_observability(
             parse_meta=parse_meta,
             ocr_pages_processed=runtime.ocr_pages_processed,
             default_ocr_engine=runtime.ocr_engine,
         )
         conversion_model_label = resolve_conversion_model_label(
-            layout_inference_name=getattr(conversion_response, "layout_inference_name", None),
-            bank_name=getattr(conversion_response, "bank_name", None),
+            layout_inference_name=getattr(analysis, "layout_inference_name", None),
+            bank_name=getattr(analysis, "bank_name", None),
         )
         logger.info(
             "conversion_result_persist_started filename=%s identity_type=%s status=Sucesso analysis_id=%s",
             request.filename or "unknown.pdf",
             getattr(identity, "identity_type", "unknown"),
-            conversion_response.analysis_id,
+            analysis.analysis_id,
         )
         quota_result = self.quota_validator_service.consume_quota_for_conversion(
             identity=identity,
-            analysis=conversion_response,
+            analysis=analysis,
         )
         quota_remaining = quota_result.quota_remaining
         if identity.identity_type == "user":
-            file_type = str(conversion_response.file_type or "").strip().lower()
+            file_type = str(analysis.file_type or "").strip().lower()
             conversion_type = f"{file_type}-ofx" if file_type else "pdf-ofx"
             self.access_control_service.record_user_conversion(
                 user_id=identity.identity_id,
-                processing_id=runtime.attempt_processing_id or conversion_response.analysis_id,
-                filename=request.filename or f"{conversion_response.analysis_id}.pdf",
+                processing_id=runtime.attempt_processing_id or analysis.analysis_id,
+                filename=request.filename or f"{analysis.analysis_id}.pdf",
                 model=conversion_model_label,
                 conversion_type=conversion_type,
                 status="Sucesso",
-                transactions_count=int(conversion_response.transactions_total),
+                transactions_count=int(analysis.transactions_total),
                 pages_count=pages_count,
                 scanned_likely=request.preflight_result.scanned_likely,
                 ocr_used=effective_ocr_used,
@@ -493,18 +501,18 @@ class DocumentConversionPipeline:
                 file_sha256=runtime.file_digest,
                 canonical_warning_transactions_count=warning_rows_count,
                 balance_consistency_failed=balance_failed_count,
-                expires_at=conversion_response.expires_at,
+                expires_at=(persisted_result.expires_at if persisted_result is not None else getattr(analysis, "expires_at", None)),
             )
         elif identity.identity_type == "anonymous":
             _safe_record_anonymous_conversion_event(
                 self.access_control_service,
                 event_id=runtime.attempt_anonymous_event_id or f"anon_evt_{uuid4().hex[:24]}",
                 anonymous_fingerprint=identity.identity_id,
-                filename=request.filename or f"{conversion_response.analysis_id}.pdf",
+                filename=request.filename or f"{analysis.analysis_id}.pdf",
                 model=conversion_model_label,
                 conversion_type=_resolve_conversion_type_from_filename(request.filename),
                 status="Sucesso",
-                transactions_count=int(conversion_response.transactions_total),
+                transactions_count=int(analysis.transactions_total),
                 pages_count=pages_count,
                 scanned_likely=request.preflight_result.scanned_likely,
                 ocr_used=effective_ocr_used,
@@ -526,18 +534,27 @@ class DocumentConversionPipeline:
                 ocr_engine=effective_ocr_engine,
                 file_sha256=runtime.file_digest,
             )
-        response = ConvertResponse(
-            processing_id=conversion_response.analysis_id,
-            quota_remaining=quota_remaining,
-            quota_limit=identity.quota_limit,
-            quota_mode=identity.quota_mode,
-            identity_type=identity.identity_type,
-            analysis=conversion_response,
-        )
+        if persisted_result is not None:
+            payload = build_convert_response_payload(
+                persisted_result=persisted_result,
+                quota_remaining=quota_remaining,
+                quota_limit=identity.quota_limit,
+                quota_mode=identity.quota_mode,
+                identity_type=identity.identity_type,
+            )
+        else:
+            payload = {
+                "processing_id": analysis.analysis_id,
+                "quota_remaining": quota_remaining,
+                "quota_limit": identity.quota_limit,
+                "quota_mode": identity.quota_mode,
+                "identity_type": identity.identity_type,
+                "analysis": analysis.model_dump(),
+            }
         return ConversionPipelineResult.completed(
-            payload=response.model_dump(),
+            payload=payload,
             metadata=_build_conversion_pipeline_metadata(
-                analysis=conversion_response,
+                analysis=analysis,
                 scanned_likely=request.preflight_result.scanned_likely,
                 quota_remaining=quota_remaining,
                 ocr_used=effective_ocr_used,

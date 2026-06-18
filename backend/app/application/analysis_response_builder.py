@@ -1,3 +1,6 @@
+from typing import Any
+
+from app.application.conversion.persisted_conversion_result import PersistedConversionResult
 from app.application.conversion_pipeline import ConversionPipelineResult
 from app.application.repositories import AnalysisRepository
 from app.application.structured_conversion import build_structured_conversion_result_from_analysis_data
@@ -5,6 +8,7 @@ from app.schemas import (
     AnalyzeResponse,
     BeforeAfterPreview,
     CategorySummary,
+    ConvertResponse,
     Insight,
     OperationalSummary,
     ReconciliationSummary,
@@ -13,14 +17,27 @@ from app.schemas import (
 )
 
 
-def persist_and_build_analyze_response(
+def persist_conversion_result(
     *,
     storage: AnalysisRepository,
     pipeline_result: ConversionPipelineResult,
-) -> AnalyzeResponse:
+) -> PersistedConversionResult:
     analysis_data = pipeline_result.analysis_data
     analysis_data.structured_result = build_structured_conversion_result_from_analysis_data(analysis_data)
     expires_at = storage.save_analysis(analysis_data)
+    return PersistedConversionResult(
+        analysis_data=analysis_data,
+        operational_summary=pipeline_result.operational_summary,
+        top_expenses_rows=list(pipeline_result.top_expenses_rows),
+        expires_at=expires_at,
+    )
+
+
+def build_analyze_response(
+    *,
+    persisted_result: PersistedConversionResult,
+) -> AnalyzeResponse:
+    analysis_data = persisted_result.analysis_data
 
     extension = analysis_data.file_type
     insights = [
@@ -48,11 +65,11 @@ def persist_and_build_analyze_response(
         total_outflows=analysis_data.total_outflows,
         net_total=analysis_data.net_total,
         operational_summary=OperationalSummary(
-            total_volume=pipeline_result.operational_summary.total_volume,
-            inflow_count=pipeline_result.operational_summary.inflow_count,
-            outflow_count=pipeline_result.operational_summary.outflow_count,
-            reconciled_entries=pipeline_result.operational_summary.reconciled_entries,
-            unmatched_entries=pipeline_result.operational_summary.unmatched_entries,
+            total_volume=persisted_result.operational_summary.total_volume,
+            inflow_count=persisted_result.operational_summary.inflow_count,
+            outflow_count=persisted_result.operational_summary.outflow_count,
+            reconciled_entries=persisted_result.operational_summary.reconciled_entries,
+            unmatched_entries=persisted_result.operational_summary.unmatched_entries,
         ),
         reconciliation=ReconciliationSummary(
             matched_groups=analysis_data.matched_groups,
@@ -73,7 +90,7 @@ def persist_and_build_analyze_response(
                 date=row.date,
                 category="Outros",
             )
-            for row in pipeline_result.top_expenses_rows
+            for row in persisted_result.top_expenses_rows
         ],
         insights=insights,
         preview_transactions=[
@@ -98,7 +115,7 @@ def persist_and_build_analyze_response(
             )
             for row in analysis_data.preview_before_after
         ],
-        expires_at=expires_at,
+        expires_at=persisted_result.expires_at,
         updated_at=analysis_data.updated_at,
         layout_inference_name=analysis_data.layout_inference_name,
         layout_inference_confidence=analysis_data.layout_inference_confidence,
@@ -110,6 +127,38 @@ def persist_and_build_analyze_response(
         account_number=analysis_data.account_number,
         bank_code=analysis_data.bank_code,
     )
+
+
+def build_convert_response_payload(
+    *,
+    persisted_result: PersistedConversionResult,
+    quota_remaining: int,
+    quota_limit: int,
+    quota_mode: str,
+    identity_type: str,
+) -> dict[str, Any]:
+    analyze_response = build_analyze_response(persisted_result=persisted_result)
+    response = ConvertResponse(
+        processing_id=analyze_response.analysis_id,
+        quota_remaining=quota_remaining,
+        quota_limit=quota_limit,
+        quota_mode=quota_mode,
+        identity_type=identity_type,
+        analysis=analyze_response,
+    )
+    return response.model_dump()
+
+
+def persist_and_build_analyze_response(
+    *,
+    storage: AnalysisRepository,
+    pipeline_result: ConversionPipelineResult,
+) -> AnalyzeResponse:
+    persisted_result = persist_conversion_result(
+        storage=storage,
+        pipeline_result=pipeline_result,
+    )
+    return build_analyze_response(persisted_result=persisted_result)
 
 
 def _build_export_review_insight(

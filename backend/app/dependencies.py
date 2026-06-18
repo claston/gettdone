@@ -5,7 +5,6 @@ from fastapi import Depends
 
 from app.application import (
     AccessControlService,
-    AnalyzeDocumentRunner,
     ContactService,
     ConvertDocumentUseCase,
     DocumentConversionPipeline,
@@ -15,10 +14,9 @@ from app.application import (
     QuotaValidatorService,
     ReportService,
     TempAnalysisStorage,
-    build_default_conversion_pipeline,
-    run_analysis,
 )
 from app.application.conversion_pipeline import ConversionPipeline
+from app.application.default_conversion_pipeline import build_default_conversion_pipeline
 from app.application.repositories import AnalysisRepository
 from app.security_baseline import is_production_env, read_bool_env
 
@@ -49,29 +47,6 @@ def _resolve_access_control_state_file() -> Path:
 
 def get_conversion_processing_pipeline() -> ConversionPipeline:
     return _conversion_processing_pipeline
-
-
-def get_analyze_document() -> AnalyzeDocumentRunner:
-    def analyze_document(
-        *,
-        filename: str,
-        raw_bytes: bytes,
-        on_ocr_progress=None,
-        max_ocr_pages: int | None = None,
-        analysis_id: str | None = None,
-    ):
-        return run_analysis(
-            storage=_storage,
-            pipeline=_conversion_processing_pipeline,
-            filename=filename,
-            raw_bytes=raw_bytes,
-            on_ocr_progress=on_ocr_progress,
-            max_ocr_pages=max_ocr_pages,
-            analysis_id=analysis_id,
-        )
-
-    return analyze_document
-
 
 def get_legacy_conversion_runner():
     return None
