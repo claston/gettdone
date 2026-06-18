@@ -11,6 +11,9 @@ from uuid import uuid4
 from app.application.access_control import AccessControlService
 from app.application.analysis_response_builder import persist_and_build_analyze_response
 from app.application.bank_identity import resolve_conversion_model_label
+from app.application.conversion.conversion_pipeline_result import (
+    ConversionPipelineResult,
+)
 from app.application.conversion.document_preflight_service import (
     DocumentPreflightPolicy,
     DocumentPreflightResult,
@@ -166,7 +169,7 @@ class DocumentConversionPipeline:
         on_ocr_progress=None,
         scanned_likely: bool | None = None,
         estimated_pages_count: int | None = None,
-    ) -> ConvertResponse:
+    ) -> ConversionPipelineResult:
         request = DocumentConversionRequest.from_inputs(
             filename=filename,
             staged_upload=staged_upload,
@@ -375,7 +378,7 @@ class DocumentConversionPipeline:
         prepared: PreparedDocumentConversion,
         runtime: DocumentConversionRuntime,
         analysis: AnalyzeResponse,
-    ) -> ConvertResponse:
+    ) -> ConversionPipelineResult:
         request = prepared.request
         identity = prepared.identity
         self.report_service.set_convert_owner(
@@ -470,13 +473,23 @@ class DocumentConversionPipeline:
                 ocr_engine=effective_ocr_engine,
                 file_sha256=runtime.file_digest,
             )
-        return ConvertResponse(
+        response = ConvertResponse(
             processing_id=analysis.analysis_id,
             quota_remaining=quota_remaining,
             quota_limit=identity.quota_limit,
             quota_mode=identity.quota_mode,
             identity_type=identity.identity_type,
             analysis=analysis,
+        )
+        return ConversionPipelineResult.completed(
+            payload=response.model_dump(),
+            metadata=_build_conversion_pipeline_metadata(
+                analysis=analysis,
+                scanned_likely=request.preflight_result.scanned_likely,
+                quota_remaining=quota_remaining,
+                ocr_used=effective_ocr_used,
+                extractor_used=parse_meta["selected_parser"],
+            ),
         )
 
     def _finalize_failure(
@@ -921,6 +934,26 @@ def _build_failure_diagnostics(exc: Exception) -> dict[str, str | int | bool | l
 def _resolve_conversion_type_from_filename(filename: str) -> str:
     extension = Path(filename or "").suffix.lower().strip(".")
     return f"{extension}-ofx" if extension else "pdf-ofx"
+
+
+def _build_conversion_pipeline_metadata(
+    *,
+    analysis,
+    scanned_likely: bool | None,
+    quota_remaining: int,
+    ocr_used: bool,
+    extractor_used: str | int | float | None,
+) -> dict[str, str | int | bool | None]:
+    parse_meta = _resolve_parse_observability_metrics(analysis)
+    return {
+        "page_count": _resolve_processed_pages(analysis),
+        "is_scanned": scanned_likely,
+        "required_quota": 1,
+        "remaining_quota": quota_remaining,
+        "extractor_used": str(extractor_used).strip() if extractor_used is not None else None,
+        "ocr_used": ocr_used,
+        "extractor_provider": parse_meta["extraction_provider"],
+    }
 
 
 def _metrics_get(metrics, key: str, default):

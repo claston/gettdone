@@ -17,6 +17,8 @@ from app.application import (
     AccessControlService,
     AnalysisAccessDeniedError,
     AnalysisNotFoundError,
+    ConvertDocumentResult,
+    ConvertDocumentStatus,
     ConvertDocumentUseCase,
     DocumentPreflightService,
     FileTooLargeError,
@@ -564,7 +566,7 @@ def _build_convert_response(
     document_preflight_service_module.TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = TEXT_PDF_MAX_UPLOAD_SIZE_BYTES
     document_preflight_service_module.OCR_PDF_MAX_PAGES_PER_FILE = OCR_PDF_MAX_PAGES_PER_FILE
     document_preflight_service_module.OCR_PDF_MAX_UPLOAD_SIZE_BYTES = OCR_PDF_MAX_UPLOAD_SIZE_BYTES
-    return use_case.execute(
+    result = use_case.execute(
         filename=file.filename or "",
         staged_upload=staged_upload,
         anonymous_fingerprint=anonymous_fingerprint,
@@ -575,6 +577,15 @@ def _build_convert_response(
         scanned_likely=scanned_likely,
         estimated_pages_count=estimated_pages_count,
     )
+    return _result_to_convert_response(result)
+
+
+def _result_to_convert_response(result: ConvertDocumentResult) -> ConvertResponse:
+    if result.status != ConvertDocumentStatus.COMPLETED or result.payload is None:
+        raise RuntimeError(
+            f"ConvertDocumentUseCase must return a completed result with payload for HTTP conversion. status={result.status}"
+        )
+    return ConvertResponse.model_validate(result.payload)
 
 
 def _raise_http_convert_error(exc: Exception, *, identity, access_control_service: AccessControlService) -> None:

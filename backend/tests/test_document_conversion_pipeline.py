@@ -1,6 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+from app.application.conversion.conversion_pipeline_result import ConversionPipelineStatus
 from app.application.conversion.document_conversion_pipeline import (
     DocumentConversionPipeline,
     DocumentConversionRequest,
@@ -249,10 +250,15 @@ def test_document_conversion_pipeline_uses_processing_pipeline_when_available() 
 
     assert len(processing_pipeline.calls) == 1
     assert processing_pipeline.calls[0]["document"].filename == "statement.csv"
+    assert response.status == ConversionPipelineStatus.COMPLETED
+    assert response.payload is not None
     assert analysis_repository.saved_analysis is not None
-    assert analysis_repository.saved_analysis.analysis_id == response.processing_id
-    assert response.analysis.analysis_id == response.processing_id
-    assert response.identity_type == "user"
-    assert response.quota_remaining == 9
-    assert report_service.owners == [(response.processing_id, "user", "user_123")]
+    assert analysis_repository.saved_analysis.analysis_id == response.payload["processing_id"]
+    assert response.payload["analysis"]["analysis_id"] == response.payload["processing_id"]
+    assert response.payload["identity_type"] == "user"
+    assert response.payload["quota_remaining"] == 9
+    assert response.metadata is not None
+    assert response.metadata["remaining_quota"] == 9
+    assert response.metadata["page_count"] == 1
+    assert report_service.owners == [(response.payload["processing_id"], "user", "user_123")]
     assert access_control_service.consumed_units == [1]

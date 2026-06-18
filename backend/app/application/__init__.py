@@ -2,6 +2,8 @@ from app.application.access_control import AccessControlService
 from app.application.analysis_response_builder import persist_and_build_analyze_response
 from app.application.analyze_service import AnalyzeService
 from app.application.contact_service import ContactAttachment, ContactDeliveryResult, ContactMessage, ContactService
+from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult, ConversionPipelineStatus
+from app.application.conversion.convert_document_result import ConvertDocumentResult, ConvertDocumentStatus
 from app.application.conversion.convert_document_use_case import ConvertDocumentUseCase
 from app.application.conversion.document_conversion_pipeline import (
     DocumentConversionPipeline,
@@ -64,7 +66,11 @@ __all__ = [
     "ContactMessage",
     "ContactProviderNotConfiguredError",
     "ContactService",
+    "ConversionPipelineResult",
+    "ConversionPipelineStatus",
     "ConvertDocumentUseCase",
+    "ConvertDocumentResult",
+    "ConvertDocumentStatus",
     "DocumentConversionPipeline",
     "DocumentPreflightPolicy",
     "DocumentPreflightResult",

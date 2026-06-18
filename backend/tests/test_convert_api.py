@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
 from app.application.access_control import AccessControlService
+from app.application.conversion.convert_document_result import ConvertDocumentResult
 from app.application.errors import FileTooLargeError, InvalidFileContentError, MaxPagesPerFileExceededError
 from app.dependencies import get_access_control_service, get_analyze_service, get_convert_document_use_case, get_report_service
 from app.main import app
@@ -13,6 +14,7 @@ from app.routers.upload import (
     OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK,
     _cleanup_staged_upload,
     _resolve_error_observability,
+    _result_to_convert_response,
     _stage_upload_to_temp_file,
 )
 from app.schemas import (
@@ -162,7 +164,7 @@ class TrackingConvertDocumentUseCase:
         on_ocr_progress=None,
         scanned_likely: bool | None = None,
         estimated_pages_count: int | None = None,
-    ) -> ConvertResponse:
+    ) -> ConvertDocumentResult:
         _ = (
             staged_upload,
             anonymous_fingerprint,
@@ -176,14 +178,48 @@ class TrackingConvertDocumentUseCase:
         self.scanned_likely = scanned_likely
         self.estimated_pages_count = estimated_pages_count
         analysis = FakeAnalyzeService().analyze(filename=filename, raw_bytes=b"%PDF data")
-        return ConvertResponse(
+        return ConvertDocumentResult.completed(
+            analysis_id=analysis.analysis_id,
+            payload=ConvertResponse(
+                processing_id=analysis.analysis_id,
+                quota_remaining=2,
+                quota_limit=3,
+                quota_mode="conversion",
+                identity_type="anonymous",
+                analysis=analysis,
+            ).model_dump(),
+        )
+
+
+def test_result_to_convert_response_maps_completed_payload() -> None:
+    analysis = FakeAnalyzeService().analyze(filename="sample.pdf", raw_bytes=b"%PDF data")
+    result = ConvertDocumentResult.completed(
+        analysis_id=analysis.analysis_id,
+        payload=ConvertResponse(
             processing_id=analysis.analysis_id,
             quota_remaining=2,
             quota_limit=3,
             quota_mode="conversion",
             identity_type="anonymous",
             analysis=analysis,
-        )
+        ).model_dump(),
+    )
+
+    response = _result_to_convert_response(result)
+
+    assert response.processing_id == "an_convert123"
+    assert response.identity_type == "anonymous"
+
+
+def test_result_to_convert_response_rejects_non_completed_result() -> None:
+    result = ConvertDocumentResult.failed(analysis_id="an_failed", message="processing failed")
+
+    try:
+        _result_to_convert_response(result)
+    except RuntimeError as exc:
+        assert "completed result with payload" in str(exc)
+    else:
+        raise AssertionError("Expected RuntimeError for non-completed conversion result")
 
 
 class FailingAnonymousTelemetryAccessControlService(AccessControlService):
