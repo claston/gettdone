@@ -21,6 +21,7 @@ def test_should_ignore_line_matches_known_headers() -> None:
 
 def test_should_skip_transaction_description_filters_balance_and_noise() -> None:
     assert should_skip_transaction_description("SALDO DO DIA")
+    assert should_skip_transaction_description("000000 SALDO DIA")
     assert should_skip_transaction_description("LIMITE DA CONTA")
     assert should_skip_transaction_description("SALDO EM CONTA")
     assert should_skip_transaction_description("Agência | Conta Total Disponível (R$) Total (R$) 1234 | 56789-0 12609,62")
