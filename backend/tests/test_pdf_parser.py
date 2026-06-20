@@ -1070,6 +1070,50 @@ def test_parse_pdf_transactions_ignores_grouped_saldo_rows_from_transaction_tota
     assert result.transactions[2].amount == -50.0
 
 
+def test_parse_pdf_transactions_ignores_caixa_siatr_saldo_dia_rows(monkeypatch) -> None:
+    sample_text = "\n".join(
+        [
+            "SIATR-SISTEMA DE AUTO ATENDIMENTO REESTRUTURADO",
+            "SALDOS E LANCAMENTOS",
+            "CAIXA",
+            "SDO DISP:",
+            "5.740,61C",
+            "DATA MOV NR.DOC DESCRICAO",
+            "VALOR",
+            "SALDO",
+            "07/08/25",
+            "071551 CRED PIX CHAVE",
+            "5.000,00C",
+            "7.446,29C",
+            "07/08/25",
+            "071553 PAG BOLETO IBC",
+            "6.328,90D",
+            "1.117,39C",
+            "07/08/25",
+            "000000 SALDO DIA",
+            "0,00C",
+            "1.117,39C",
+            "11/08/25",
+            "101833 CRED PIX CHAVE",
+            "5.000,00C",
+            "5.879,54C",
+        ]
+    )
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [sample_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "caixa_siatr_saldos_lancamentos_a4_v1"
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert len(result.transactions) == 3
+    assert [item.description for item in result.transactions] == [
+        "071551 CRED PIX CHAVE",
+        "071553 PAG BOLETO IBC",
+        "101833 CRED PIX CHAVE",
+    ]
+    assert all("SALDO DIA" not in item.description for item in result.transactions)
+
+
 def test_parse_pdf_transactions_does_not_attach_total_disponivel_header_as_running_balance(monkeypatch) -> None:
     page_one = "\n".join(
         [
