@@ -5,6 +5,9 @@ from fastapi import UploadFile
 from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
+from app.api.conversion.conversion_observability import _resolve_error_observability
+from app.api.conversion.conversion_response_mapper import _result_to_convert_response
+from app.api.conversion.upload_staging import _cleanup_staged_upload, _stage_upload_to_temp_file
 from app.application.access_control import AccessControlService
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult
 from app.application.conversion.convert_document_result import ConvertDocumentResult
@@ -16,13 +19,7 @@ from app.dependencies import (
     get_report_service,
 )
 from app.main import app
-from app.routers.upload import (
-    OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK,
-    _cleanup_staged_upload,
-    _resolve_error_observability,
-    _result_to_convert_response,
-    _stage_upload_to_temp_file,
-)
+from app.routers.upload import OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK
 from app.schemas import (
     AnalyzeResponse,
     BeforeAfterPreview,
@@ -468,7 +465,7 @@ def _build_pdf_with_pages(page_count: int) -> bytes:
 
 
 def test_stage_upload_to_temp_file_streams_and_hashes_contents(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("app.routers.upload._resolve_upload_staging_dir", lambda: tmp_path)
+    monkeypatch.setattr("app.api.conversion.upload_staging._resolve_upload_staging_dir", lambda: tmp_path)
     payload = (b"a" * (1024 * 1024)) + (b"b" * 512) + b"tail"
     upload = UploadFile(filename="statement.pdf", file=BytesIO(payload))
 
@@ -482,7 +479,7 @@ def test_stage_upload_to_temp_file_streams_and_hashes_contents(tmp_path, monkeyp
 
 
 def test_stage_upload_to_temp_file_rejects_when_chunks_exceed_limit(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("app.routers.upload._resolve_upload_staging_dir", lambda: tmp_path)
+    monkeypatch.setattr("app.api.conversion.upload_staging._resolve_upload_staging_dir", lambda: tmp_path)
     payload = b"x" * ((1024 * 1024) + 32)
     upload = UploadFile(filename="statement.pdf", file=BytesIO(payload))
 
