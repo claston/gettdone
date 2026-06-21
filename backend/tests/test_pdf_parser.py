@@ -409,8 +409,10 @@ def test_parse_pdf_transactions_falls_back_to_local_ocr_when_textract_fails(monk
 
     assert len(result.transactions) == 1
     assert result.transactions[0].amount == 10.0
+    assert result.parse_metrics.get("textract_attempted") == 1
     assert result.parse_metrics.get("textract_used") == 0
     assert result.parse_metrics.get("textract_error_type") == "InvalidFileContentError"
+    assert result.parse_metrics.get("native_text_detected") == 0
 
 
 def test_parse_pdf_transactions_textract_path_applies_balance_consistency_check(monkeypatch) -> None:
@@ -549,7 +551,11 @@ def test_parse_pdf_transactions_retries_with_ocr_when_native_is_generic_low_cove
 
     result = parse_pdf_transactions(b"%PDF synthetic")
 
-    assert result is ocr_result
+    assert result.transactions == ocr_result.transactions
+    assert result.extracted_text == ocr_result.extracted_text
+    assert result.layout == ocr_result.layout
+    assert result.parse_metrics.get("textract_attempted") == 0
+    assert result.parse_metrics.get("native_text_detected") == 1
     assert len(result.transactions) == 5
 
 
@@ -659,7 +665,11 @@ def test_parse_pdf_transactions_keeps_native_when_coverage_is_healthy(monkeypatc
 
     result = parse_pdf_transactions(b"%PDF synthetic")
 
-    assert result is native_result
+    assert result.transactions == native_result.transactions
+    assert result.extracted_text == native_result.extracted_text
+    assert result.layout == native_result.layout
+    assert result.parse_metrics.get("textract_attempted") == 0
+    assert result.parse_metrics.get("native_text_detected") == 1
     assert calls["ocr"] == 0
 
 
