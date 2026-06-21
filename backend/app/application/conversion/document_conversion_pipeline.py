@@ -843,6 +843,9 @@ def _resolve_parse_observability_metrics(analysis) -> dict[str, str | int | floa
             "extracted_char_count": None,
             "extraction_provider": None,
             "textract_used": 0,
+            "textract_attempted": 0,
+            "textract_error_type": None,
+            "native_text_detected": 0,
         }
     if isinstance(metrics, dict):
         selected_parser = metrics.get("selected_parser")
@@ -851,6 +854,9 @@ def _resolve_parse_observability_metrics(analysis) -> dict[str, str | int | floa
         extracted_char_count = metrics.get("extracted_char_count")
         extraction_provider = metrics.get("extraction_provider")
         textract_used = metrics.get("textract_used")
+        textract_attempted = metrics.get("textract_attempted")
+        textract_error_type = metrics.get("textract_error_type")
+        native_text_detected = metrics.get("native_text_detected")
     else:
         selected_parser = getattr(metrics, "selected_parser", None)
         parser_selection_reason = getattr(metrics, "parser_selection_reason", None)
@@ -858,6 +864,9 @@ def _resolve_parse_observability_metrics(analysis) -> dict[str, str | int | floa
         extracted_char_count = getattr(metrics, "extracted_char_count", None)
         extraction_provider = getattr(metrics, "extraction_provider", None)
         textract_used = getattr(metrics, "textract_used", None)
+        textract_attempted = getattr(metrics, "textract_attempted", None)
+        textract_error_type = getattr(metrics, "textract_error_type", None)
+        native_text_detected = getattr(metrics, "native_text_detected", None)
     return {
         "layout_inference_name": getattr(analysis, "layout_inference_name", None) or None,
         "layout_inference_confidence": getattr(analysis, "layout_inference_confidence", None),
@@ -867,6 +876,9 @@ def _resolve_parse_observability_metrics(analysis) -> dict[str, str | int | floa
         "extracted_char_count": int(extracted_char_count) if extracted_char_count is not None else None,
         "extraction_provider": str(extraction_provider).strip() if extraction_provider is not None else None,
         "textract_used": int(textract_used or 0),
+        "textract_attempted": int(textract_attempted or 0),
+        "textract_error_type": str(textract_error_type).strip() if textract_error_type is not None else None,
+        "native_text_detected": int(native_text_detected or 0),
     }
 
 
@@ -918,6 +930,7 @@ def _resolve_error_observability(exc: Exception) -> tuple[str | None, str | None
 def _build_failure_diagnostics(exc: Exception) -> dict[str, str | int | bool | list[str]]:
     detail = str(exc or "").strip()
     detail_lower = detail.lower()
+    parse_observability = dict(getattr(exc, "_parse_observability", {}) or {})
     missing_signals: list[str] = []
     pdf_read_ok = "unable to read pdf bytes" not in detail_lower
     text_extracted = "text was extracted" in detail_lower or "transa" in detail_lower
@@ -948,6 +961,12 @@ def _build_failure_diagnostics(exc: Exception) -> dict[str, str | int | bool | l
         diagnostics["inline_candidates"] = parser_metrics.get("inline_candidates", 0)
         diagnostics["tabular_candidates"] = parser_metrics.get("tabular_candidates", 0)
         diagnostics["columnar_candidates"] = parser_metrics.get("columnar_candidates", 0)
+    for key in ("textract_attempted", "textract_used", "native_text_detected"):
+        if key in parse_observability:
+            diagnostics[key] = int(parse_observability.get(key) or 0)
+    textract_error_type = str(parse_observability.get("textract_error_type") or "").strip()
+    if textract_error_type:
+        diagnostics["textract_error_type"] = textract_error_type
     return diagnostics
 
 

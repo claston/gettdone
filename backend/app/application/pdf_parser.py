@@ -43,6 +43,40 @@ from app.application.textract_gateway import TextractGateway
 from app.application.textract_transaction_adapter import adapt_textract_extraction_to_transactions
 
 
+def _normalize_parse_observability_value(value: object) -> int | float | str:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float, str)):
+        return value
+    return str(value)
+
+
+def _with_parse_observability(
+    result: PdfParseResult,
+    **values: object,
+) -> PdfParseResult:
+    parse_metrics = dict(result.parse_metrics)
+    for key, value in values.items():
+        if value is not None:
+            parse_metrics[key] = _normalize_parse_observability_value(value)
+    return PdfParseResult(
+        transactions=result.transactions,
+        canonical_transactions=result.canonical_transactions,
+        layout=result.layout,
+        extracted_text=result.extracted_text,
+        parse_metrics=parse_metrics,
+    )
+
+
+def _attach_parse_observability(exc: Exception, **values: object) -> Exception:
+    observability = dict(getattr(exc, "_parse_observability", {}) or {})
+    for key, value in values.items():
+        if value is not None:
+            observability[key] = _normalize_parse_observability_value(value)
+    setattr(exc, "_parse_observability", observability)
+    return exc
+
+
 def parse_pdf_transactions(
     raw_bytes: bytes,
     on_ocr_progress: Callable[[int, int], None] | None = None,
@@ -54,25 +88,53 @@ def parse_pdf_transactions(
     except InvalidFileContentError as exc:
         native_pages = []
         native_read_error = exc
+    native_text_detected = bool(native_pages)
+    textract_enabled = is_textract_enabled()
+    textract_forced = is_textract_forced() if textract_enabled else False
+    textract_attempted = textract_enabled and (not native_pages or textract_forced)
 
-    if is_textract_enabled() and (not native_pages or is_textract_forced()):
+    if textract_attempted:
         _enforce_ocr_page_limit(page_count=len(native_pages), max_ocr_pages=max_ocr_pages)
         try:
-            return _parse_scanned_pdf_with_textract_gateway(raw_bytes)
+            textract_result = _parse_scanned_pdf_with_textract_gateway(raw_bytes)
+            return _with_parse_observability(
+                textract_result,
+                textract_attempted=textract_attempted,
+                native_text_detected=native_text_detected,
+            )
         except InvalidFileContentError as textract_error:
             if not is_pdf_ocr_enabled():
-                raise
+                raise _attach_parse_observability(
+                    textract_error,
+                    textract_attempted=textract_attempted,
+                    textract_used=0,
+                    textract_error_type=textract_error.__class__.__name__,
+                    native_text_detected=native_text_detected,
+                )
             _enforce_ocr_page_limit(page_count=len(native_pages), max_ocr_pages=max_ocr_pages)
-            fallback_result = _parse_scanned_pdf_with_local_ocr_adapter(raw_bytes, on_ocr_progress=on_ocr_progress)
+            try:
+                fallback_result = _parse_scanned_pdf_with_local_ocr_adapter(raw_bytes, on_ocr_progress=on_ocr_progress)
+            except InvalidFileContentError as fallback_error:
+                raise _attach_parse_observability(
+                    fallback_error,
+                    textract_attempted=textract_attempted,
+                    textract_used=0,
+                    textract_error_type=textract_error.__class__.__name__,
+                    native_text_detected=native_text_detected,
+                ) from textract_error
             fallback_metrics = dict(fallback_result.parse_metrics)
             fallback_metrics["textract_used"] = 0
             fallback_metrics["textract_error_type"] = textract_error.__class__.__name__
-            return PdfParseResult(
-                transactions=fallback_result.transactions,
-                canonical_transactions=fallback_result.canonical_transactions,
-                layout=fallback_result.layout,
-                extracted_text=fallback_result.extracted_text,
-                parse_metrics=fallback_metrics,
+            return _with_parse_observability(
+                PdfParseResult(
+                    transactions=fallback_result.transactions,
+                    canonical_transactions=fallback_result.canonical_transactions,
+                    layout=fallback_result.layout,
+                    extracted_text=fallback_result.extracted_text,
+                    parse_metrics=fallback_metrics,
+                ),
+                textract_attempted=textract_attempted,
+                native_text_detected=native_text_detected,
             )
 
     if native_read_error is None and not native_pages:
@@ -80,6 +142,8 @@ def parse_pdf_transactions(
             raw_bytes,
             on_ocr_progress=on_ocr_progress,
             max_ocr_pages=max_ocr_pages,
+            textract_attempted=textract_attempted,
+            native_text_detected=native_text_detected,
         )
 
     if on_ocr_progress is None:
@@ -91,16 +155,27 @@ def parse_pdf_transactions(
         primary_result = _parse_pdf_transactions_from_page_texts(page_texts)
     except InvalidFileContentError as native_parse_error:
         if not using_native_text:
-            raise
+            raise _attach_parse_observability(
+                native_parse_error,
+                textract_attempted=textract_attempted,
+                native_text_detected=native_text_detected,
+            )
         return _retry_native_parse_failure_with_ocr(
             raw_bytes,
             native_pages=native_pages,
             native_parse_error=native_parse_error,
             on_ocr_progress=on_ocr_progress,
             max_ocr_pages=max_ocr_pages,
+            textract_attempted=textract_attempted,
+            native_text_detected=native_text_detected,
         )
     if using_native_text:
         primary_result = _maybe_upgrade_native_parse_with_layout_text(raw_bytes=raw_bytes, baseline_result=primary_result)
+    primary_result = _with_parse_observability(
+        primary_result,
+        textract_attempted=textract_attempted,
+        native_text_detected=native_text_detected,
+    )
 
     if not using_native_text:
         return primary_result
@@ -114,7 +189,19 @@ def parse_pdf_transactions(
     if not ocr_pages:
         return primary_result
 
-    ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
+    try:
+        ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
+    except InvalidFileContentError as ocr_error:
+        raise _attach_parse_observability(
+            ocr_error,
+            textract_attempted=textract_attempted,
+            native_text_detected=native_text_detected,
+        )
+    ocr_result = _with_parse_observability(
+        ocr_result,
+        textract_attempted=textract_attempted,
+        native_text_detected=native_text_detected,
+    )
     if _is_better_parse_result(candidate=ocr_result, baseline=primary_result):
         return ocr_result
     return primary_result
@@ -125,25 +212,46 @@ def _retry_insufficient_native_text_with_ocr(
     *,
     on_ocr_progress: Callable[[int, int], None] | None,
     max_ocr_pages: int | None,
+    textract_attempted: bool,
+    native_text_detected: bool,
 ) -> PdfParseResult:
     if not is_pdf_ocr_enabled():
-        raise InvalidFileContentError(PDF_OCR_DISABLED_MESSAGE)
+        raise _attach_parse_observability(
+            InvalidFileContentError(PDF_OCR_DISABLED_MESSAGE),
+            textract_attempted=textract_attempted,
+            native_text_detected=native_text_detected,
+        )
     if max_ocr_pages is not None:
         _enforce_ocr_page_limit(page_count=_read_pdf_page_count(raw_bytes), max_ocr_pages=max_ocr_pages)
 
     ocr_pages = _extract_pdf_page_texts_with_ocr(raw_bytes, on_ocr_progress=on_ocr_progress)
     if not ocr_pages:
-        raise InvalidFileContentError(PDF_OCR_DISABLED_MESSAGE)
+        raise _attach_parse_observability(
+            InvalidFileContentError(PDF_OCR_DISABLED_MESSAGE),
+            textract_attempted=textract_attempted,
+            native_text_detected=native_text_detected,
+        )
 
-    ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
+    try:
+        ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
+    except InvalidFileContentError as ocr_error:
+        raise _attach_parse_observability(
+            ocr_error,
+            textract_attempted=textract_attempted,
+            native_text_detected=native_text_detected,
+        )
     parse_metrics = dict(ocr_result.parse_metrics)
     parse_metrics["ocr_retry_reason"] = "insufficient_native_text"
-    return PdfParseResult(
-        transactions=ocr_result.transactions,
-        canonical_transactions=ocr_result.canonical_transactions,
-        layout=ocr_result.layout,
-        extracted_text=ocr_result.extracted_text,
-        parse_metrics=parse_metrics,
+    return _with_parse_observability(
+        PdfParseResult(
+            transactions=ocr_result.transactions,
+            canonical_transactions=ocr_result.canonical_transactions,
+            layout=ocr_result.layout,
+            extracted_text=ocr_result.extracted_text,
+            parse_metrics=parse_metrics,
+        ),
+        textract_attempted=textract_attempted,
+        native_text_detected=native_text_detected,
     )
 
 
@@ -154,24 +262,45 @@ def _retry_native_parse_failure_with_ocr(
     native_parse_error: InvalidFileContentError,
     on_ocr_progress: Callable[[int, int], None] | None,
     max_ocr_pages: int | None,
+    textract_attempted: bool,
+    native_text_detected: bool,
 ) -> PdfParseResult:
     if not is_pdf_ocr_enabled():
-        raise native_parse_error
+        raise _attach_parse_observability(
+            native_parse_error,
+            textract_attempted=textract_attempted,
+            native_text_detected=native_text_detected,
+        )
     _enforce_ocr_page_limit(page_count=len(native_pages), max_ocr_pages=max_ocr_pages)
 
     ocr_pages = _extract_pdf_page_texts_with_ocr(raw_bytes, on_ocr_progress=on_ocr_progress)
     if not ocr_pages:
-        raise native_parse_error
+        raise _attach_parse_observability(
+            native_parse_error,
+            textract_attempted=textract_attempted,
+            native_text_detected=native_text_detected,
+        )
 
-    ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
+    try:
+        ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
+    except InvalidFileContentError as ocr_error:
+        raise _attach_parse_observability(
+            ocr_error,
+            textract_attempted=textract_attempted,
+            native_text_detected=native_text_detected,
+        ) from native_parse_error
     parse_metrics = dict(ocr_result.parse_metrics)
     parse_metrics["ocr_retry_reason"] = "native_parse_failed"
-    return PdfParseResult(
-        transactions=ocr_result.transactions,
-        canonical_transactions=ocr_result.canonical_transactions,
-        layout=ocr_result.layout,
-        extracted_text=ocr_result.extracted_text,
-        parse_metrics=parse_metrics,
+    return _with_parse_observability(
+        PdfParseResult(
+            transactions=ocr_result.transactions,
+            canonical_transactions=ocr_result.canonical_transactions,
+            layout=ocr_result.layout,
+            extracted_text=ocr_result.extracted_text,
+            parse_metrics=parse_metrics,
+        ),
+        textract_attempted=textract_attempted,
+        native_text_detected=native_text_detected,
     )
 
 
