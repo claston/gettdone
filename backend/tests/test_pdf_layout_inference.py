@@ -349,3 +349,32 @@ def test_infer_pdf_layout_ignores_declarative_profile_below_min_score_hint() -> 
 
     assert result.layout_name == "generic_statement_ptbr"
     assert result.used_fallback is True
+
+
+def test_infer_pdf_layout_prefers_caixa_siatr_saldos_lancamentos_profile() -> None:
+    text = """
+    SIATR-SISTEMA DE AUTO ATENDIMENTO REESTRUTURADO
+    SALDOS E LANCAMENTOS
+    CAIXA
+    AG:
+    PRODUTO:
+    NOME:
+    CPF/CNPJ:
+    SDO DISP:
+    5.740,61C
+    SDO TOT:
+    5.740,61C
+    SDO CTBL:
+    5.592,95C
+    PERIODO.:
+    DATA MOV NR.DOC DESCRICAO
+    VALOR
+    SALDO
+    07/08/25 071551 CRED PIX CHAVE 5.000,00C 7.446,29C
+    07/08/25 000000 SALDO DIA 0,00C 1.117,39C
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "caixa_siatr_saldos_lancamentos_a4_v1"
+    assert result.used_fallback is False
