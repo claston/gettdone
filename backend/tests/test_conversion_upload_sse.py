@@ -348,6 +348,18 @@ def test_upload_without_sse_accept_keeps_json_fallback() -> None:
     assert payload.processing_id == "an_sse_001"
 
 
+def test_legacy_short_upload_path_is_not_exposed() -> None:
+    client = _build_client()
+    response = client.post(
+        "/conversions/upload",
+        headers={"accept": "text/event-stream"},
+        data={"anonymous_fingerprint": "fp-legacy-path"},
+        files={"file": ("sample.pdf", _blank_pdf_bytes(), "application/pdf")},
+    )
+
+    assert response.status_code == 405
+
+
 def test_streaming_upload_non_scanned_progress_advances_to_conversion_stage() -> None:
     client = _build_client()
     response = client.post(
