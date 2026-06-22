@@ -3,10 +3,8 @@ from app.application.conversion.conversion_pipeline_result import (
     ConversionPipelineStatus,
 )
 from app.application.conversion.convert_document_result import ConvertDocumentResult
-from app.application.conversion.document_conversion_pipeline import (
-    DocumentConversionPipeline,
-    StagedUploadRef,
-)
+from app.application.conversion.document_conversion_pipeline import DocumentConversionPipeline
+from app.application.conversion.uploaded_document import UploadedDocument
 
 
 class ConvertDocumentUseCase:
@@ -22,8 +20,7 @@ class ConvertDocumentUseCase:
     def execute(
         self,
         *,
-        filename: str,
-        staged_upload: StagedUploadRef,
+        document: UploadedDocument,
         anonymous_fingerprint: str | None,
         user_token: str | None,
         authorization: str | None,
@@ -33,8 +30,7 @@ class ConvertDocumentUseCase:
         estimated_pages_count: int | None = None,
     ) -> ConvertDocumentResult:
         pipeline_result = self.document_conversion_pipeline.run(
-            filename=filename,
-            staged_upload=staged_upload,
+            document=document,
             anonymous_fingerprint=anonymous_fingerprint,
             user_token=user_token,
             authorization=authorization,

@@ -28,6 +28,7 @@ from app.application.conversion.document_preflight_service import (
     OCR_CONTEXT_SCANNED_PDF,
     OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK,
 )
+from app.application.conversion.uploaded_document import UploadedDocument
 from app.dependencies import get_access_control_service, get_convert_document_use_case
 from app.routers.auth_session import SESSION_ACCESS_COOKIE_NAME
 from app.schemas import ConvertResponse
@@ -91,9 +92,12 @@ def _execute_conversion_and_build_response(
     document_preflight_service_module.TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = TEXT_PDF_MAX_UPLOAD_SIZE_BYTES
     document_preflight_service_module.OCR_PDF_MAX_PAGES_PER_FILE = OCR_PDF_MAX_PAGES_PER_FILE
     document_preflight_service_module.OCR_PDF_MAX_UPLOAD_SIZE_BYTES = OCR_PDF_MAX_UPLOAD_SIZE_BYTES
-    result = use_case.execute(
+    document = UploadedDocument.from_staged_upload(
         filename=file.filename or "",
         staged_upload=staged_upload,
+    )
+    result = use_case.execute(
+        document=document,
         anonymous_fingerprint=anonymous_fingerprint,
         user_token=user_token,
         authorization=authorization,

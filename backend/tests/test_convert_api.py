@@ -11,6 +11,7 @@ from app.api.conversion.upload_staging import _cleanup_staged_upload, _stage_upl
 from app.application.access_control import AccessControlService
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult
 from app.application.conversion.convert_document_result import ConvertDocumentResult
+from app.application.conversion.uploaded_document import UploadedDocument
 from app.application.errors import FileTooLargeError, InvalidFileContentError, MaxPagesPerFileExceededError
 from app.dependencies import (
     get_access_control_service,
@@ -353,8 +354,7 @@ class TrackingConvertDocumentUseCase:
     def execute(
         self,
         *,
-        filename: str,
-        staged_upload,
+        document: UploadedDocument,
         anonymous_fingerprint: str | None,
         user_token: str | None,
         authorization: str | None,
@@ -364,7 +364,6 @@ class TrackingConvertDocumentUseCase:
         estimated_pages_count: int | None = None,
     ) -> ConvertDocumentResult:
         _ = (
-            staged_upload,
             anonymous_fingerprint,
             user_token,
             authorization,
@@ -372,10 +371,10 @@ class TrackingConvertDocumentUseCase:
             on_ocr_progress,
         )
         self.called = True
-        self.filename = filename
+        self.filename = document.filename
         self.scanned_likely = scanned_likely
         self.estimated_pages_count = estimated_pages_count
-        payload = FakeAnalyzeService().run(filename=filename, raw_bytes=b"%PDF data").payload
+        payload = FakeAnalyzeService().run(filename=document.filename, raw_bytes=document.raw_bytes).payload
         assert payload is not None
         analysis = AnalyzeResponse.model_validate(payload["analysis"])
         return ConvertDocumentResult.completed(
