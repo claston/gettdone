@@ -3,7 +3,7 @@ from pathlib import Path
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult
 from app.application.conversion.convert_document_result import ConvertDocumentStatus
 from app.application.conversion.convert_document_use_case import ConvertDocumentUseCase
-from app.application.conversion.document_conversion_pipeline import StagedUploadRef
+from app.application.conversion.uploaded_document import UploadedDocument, UploadedDocumentStage
 from app.schemas import (
     AnalyzeResponse,
     BeforeAfterPreview,
@@ -87,11 +87,13 @@ def test_convert_document_use_case_returns_application_result() -> None:
     staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
 
     result = use_case.execute(
-        filename="statement.csv",
-        staged_upload=StagedUploadRef(
-            path=staged_path,
-            size_bytes=staged_path.stat().st_size,
-            sha256_hex="abc123",
+        document=UploadedDocument.from_staged_upload(
+            filename="statement.csv",
+            staged_upload=UploadedDocumentStage(
+                path=staged_path,
+                size_bytes=staged_path.stat().st_size,
+                sha256_hex="abc123",
+            ),
         ),
         anonymous_fingerprint="anon-fp",
         user_token=None,
@@ -122,11 +124,13 @@ def test_convert_document_use_case_maps_rejected_pipeline_result() -> None:
     staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
 
     result = use_case.execute(
-        filename="statement.csv",
-        staged_upload=StagedUploadRef(
-            path=staged_path,
-            size_bytes=staged_path.stat().st_size,
-            sha256_hex="abc123",
+        document=UploadedDocument.from_staged_upload(
+            filename="statement.csv",
+            staged_upload=UploadedDocumentStage(
+                path=staged_path,
+                size_bytes=staged_path.stat().st_size,
+                sha256_hex="abc123",
+            ),
         ),
         anonymous_fingerprint="anon-fp",
         user_token=None,

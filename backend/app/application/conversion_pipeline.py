@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 from time import perf_counter
 from typing import Callable, Protocol
 
+from app.application.conversion.uploaded_document import UploadedDocument, ingest_uploaded_document
 from app.application.document_classifier import DocumentClassification, classify_document
-from app.application.ingestion import IngestedDocument, ingest_uploaded_document
 from app.application.models import AnalysisData, BeforeAfterRow, NormalizedTransaction, TransactionRow
 from app.application.normalization.transaction_normalizer import normalize_transactions as default_normalize_transactions
 from app.application.parsers.service import ParsedDocument, ParsingService
@@ -34,7 +34,7 @@ class OperationalPipelineSummary:
 @dataclass(frozen=True)
 class ConversionPipelineResult:
     analysis_data: AnalysisData
-    document: IngestedDocument
+    document: UploadedDocument
     parsed_document: ParsedDocument
     classification: DocumentClassification
     operational_summary: OperationalPipelineSummary
@@ -95,7 +95,7 @@ class ConversionPipeline:
     def run_document(
         self,
         *,
-        document: IngestedDocument,
+        document: UploadedDocument,
         analysis_id: str,
         on_ocr_progress: OcrProgressCallback | None = None,
         max_ocr_pages: int | None = None,
@@ -119,7 +119,7 @@ class ConversionPipeline:
     def run_parsed_document(
         self,
         *,
-        document: IngestedDocument,
+        document: UploadedDocument,
         parsed_document: ParsedDocument,
         analysis_id: str,
         parse_ms: float,

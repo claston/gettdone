@@ -8,12 +8,12 @@ from fastapi import UploadFile
 
 from app.application import FileTooLargeError
 from app.application.conversion import document_preflight_service as document_preflight_service_module
-from app.application.conversion.document_conversion_pipeline import StagedUploadRef
+from app.application.conversion.uploaded_document import UploadedDocumentStage
 
 logger = logging.getLogger(__name__)
 UPLOAD_READ_CHUNK_SIZE_BYTES = 1024 * 1024
 UPLOAD_STAGING_MAX_BYTES = document_preflight_service_module.TEXT_PDF_MAX_UPLOAD_SIZE_BYTES
-StagedUpload = StagedUploadRef
+StagedUpload = UploadedDocumentStage
 
 
 def _resolve_upload_staging_dir() -> Path:

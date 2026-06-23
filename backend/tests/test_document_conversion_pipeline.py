@@ -6,11 +6,11 @@ from app.application.conversion.document_conversion_pipeline import (
     DocumentConversionPipeline,
     DocumentConversionRequest,
     DocumentConversionRuntime,
-    StagedUploadRef,
 )
 from app.application.conversion.document_extractor import ExtractedDocument
 from app.application.conversion.document_preflight_service import DocumentPreflightResult
 from app.application.conversion.statement_parser import ParsedBankStatement, ParsedTransaction
+from app.application.conversion.uploaded_document import UploadedDocument, UploadedDocumentStage
 from app.application.conversion_pipeline import ConversionPipelineResult, OperationalPipelineSummary
 from app.application.models import AnalysisData, NormalizedTransaction, TransactionRow
 from app.application.parsers.service import ParsedDocument
@@ -228,11 +228,13 @@ def test_document_conversion_request_captures_preflight_flags() -> None:
     staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
 
     request = DocumentConversionRequest.from_inputs(
-        filename="statement.pdf",
-        staged_upload=StagedUploadRef(
-            path=staged_path,
-            size_bytes=staged_path.stat().st_size,
-            sha256_hex="abc123",
+        document=UploadedDocument.from_staged_upload(
+            filename="statement.pdf",
+            staged_upload=UploadedDocumentStage(
+                path=staged_path,
+                size_bytes=staged_path.stat().st_size,
+                sha256_hex="abc123",
+            ),
         ),
         anonymous_fingerprint="anon-123",
         user_token="user-token",
@@ -243,7 +245,7 @@ def test_document_conversion_request_captures_preflight_flags() -> None:
         estimated_pages_count=4,
     )
 
-    assert request.filename == "statement.pdf"
+    assert request.document.filename == "statement.pdf"
     assert request.preflight_result == DocumentPreflightResult(
         scanned_likely=True,
         estimated_pages_count=4,
@@ -254,11 +256,13 @@ def test_document_conversion_runtime_tracks_ocr_progress_and_forwards_callback()
     staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
     observed_progress: list[tuple[int, int]] = []
     request = DocumentConversionRequest.from_inputs(
-        filename="statement.pdf",
-        staged_upload=StagedUploadRef(
-            path=staged_path,
-            size_bytes=staged_path.stat().st_size,
-            sha256_hex="abc123",
+        document=UploadedDocument.from_staged_upload(
+            filename="statement.pdf",
+            staged_upload=UploadedDocumentStage(
+                path=staged_path,
+                size_bytes=staged_path.stat().st_size,
+                sha256_hex="abc123",
+            ),
         ),
         anonymous_fingerprint=None,
         user_token="user-token",
@@ -298,11 +302,13 @@ def test_document_conversion_pipeline_uses_processing_pipeline_when_available() 
     )
 
     response = pipeline.run(
-        filename="statement.csv",
-        staged_upload=StagedUploadRef(
-            path=staged_path,
-            size_bytes=staged_path.stat().st_size,
-            sha256_hex="abc123",
+        document=UploadedDocument.from_staged_upload(
+            filename="statement.csv",
+            staged_upload=UploadedDocumentStage(
+                path=staged_path,
+                size_bytes=staged_path.stat().st_size,
+                sha256_hex="abc123",
+            ),
         ),
         anonymous_fingerprint=None,
         user_token="user-token",

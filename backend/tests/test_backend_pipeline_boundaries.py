@@ -1,5 +1,5 @@
 from app.application.canonization import build_transaction_metadata
-from app.application.ingestion import ingest_uploaded_document
+from app.application.conversion.uploaded_document import UploadedDocument, ingest_uploaded_document
 from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.normalization.transaction_normalizer import normalize_transactions
 from app.application.parsers.service import ParsedDocument, ParsingService
@@ -11,6 +11,7 @@ def test_ingestion_builds_supported_document_contract() -> None:
         raw_bytes=b"date,description,amount\n2026-04-01,Pix recebido,10.00\n",
     )
 
+    assert isinstance(document, UploadedDocument)
     assert document.filename == "extrato.CSV"
     assert document.file_type == "csv"
     assert document.size_bytes == 54
