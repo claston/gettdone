@@ -1,5 +1,13 @@
 from app.application.models import CanonicalTransaction
 
+_DESCENDING_RUNNING_BALANCE_LAYOUTS = {
+    "stone_extrato_conta_corrente_a4_v1",
+}
+
+
+def uses_descending_running_balance(layout_name: str | None) -> bool:
+    return str(layout_name or "").strip().lower() in _DESCENDING_RUNNING_BALANCE_LAYOUTS
+
 
 def annotate_balance_consistency(canonical_transactions: list[CanonicalTransaction]) -> tuple[int, int]:
     checked_count = 0
@@ -15,7 +23,10 @@ def annotate_balance_consistency(canonical_transactions: list[CanonicalTransacti
             previous = current
             continue
 
-        expected_current_balance = previous.running_balance + current.amount
+        if uses_descending_running_balance(current.layout_name or previous.layout_name):
+            expected_current_balance = previous.running_balance - previous.amount
+        else:
+            expected_current_balance = previous.running_balance + current.amount
         checked_count += 1
         if abs(current.running_balance - expected_current_balance) > tolerance:
             failed_count += 1

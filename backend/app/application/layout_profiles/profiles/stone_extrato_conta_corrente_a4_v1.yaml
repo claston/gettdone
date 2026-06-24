@@ -1,0 +1,75 @@
+layout_profile:
+  profile_name: stone_extrato_conta_corrente_a4_v1
+  bank: Stone
+  layout_family: stone_extrato_conta_corrente_tipo_valor_saldo_contraparte
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "stone"
+      - "Extrato de conta corrente"
+      - "Stone Instituicao de Pagamento S.A."
+      - "Periodo:"
+      - "DATA"
+      - "TIPO"
+      - "DESCRICAO"
+      - "VALOR"
+      - "SALDO"
+      - "CONTRAPARTE"
+    optional_keywords:
+      - "Emitido em"
+      - "Dados da conta"
+      - "Nome"
+      - "Documento"
+      - "Instituicao"
+      - "Agencia"
+      - "Conta"
+      - "Entrada"
+      - "Saida"
+      - "Transferencia | Pix"
+      - "Recebimento vendas"
+      - "Pagina 1 de"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itau"
+      - "SICOOB"
+      - "Sicredi"
+      - "Nubank"
+    min_score_hint: 0.74
+  table_detection:
+    header_keywords:
+      - "DATA"
+      - "TIPO"
+      - "DESCRICAO"
+      - "VALOR"
+      - "SALDO"
+      - "CONTRAPARTE"
+    expected_column_order:
+      - date
+      - type
+      - description
+      - amount
+      - balance
+      - counterparty
+    column_aliases:
+      date:
+        - "DATA"
+        - "Data"
+      type:
+        - "TIPO"
+        - "Tipo"
+      description:
+        - "DESCRICAO"
+        - "Descricao"
+      amount:
+        - "VALOR"
+        - "Valor"
+      balance:
+        - "SALDO"
+        - "Saldo"
+      counterparty:
+        - "CONTRAPARTE"
+        - "Contraparte"

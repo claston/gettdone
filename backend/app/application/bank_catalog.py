@@ -19,6 +19,21 @@ class BankRecord:
     active: bool
 
 
+_EXTRA_BANK_RECORDS = (
+    BankRecord(
+        code="197",
+        name="Stone Instituicao de Pagamento S.A.",
+        short_name="Stone",
+        aliases=(
+            "Stone",
+            "Stone Instituicao de Pagamento S.A.",
+            "Stone Instituição de Pagamento S.A.",
+        ),
+        active=True,
+    ),
+)
+
+
 @lru_cache(maxsize=1)
 def load_bank_catalog() -> tuple[BankRecord, ...]:
     try:
@@ -48,6 +63,10 @@ def load_bank_catalog() -> tuple[BankRecord, ...]:
                 active=bool(item.get("active", True)),
             )
         )
+    existing_codes = {record.code for record in records}
+    for extra_record in _EXTRA_BANK_RECORDS:
+        if extra_record.code not in existing_codes:
+            records.append(extra_record)
     return tuple(records)
 
 

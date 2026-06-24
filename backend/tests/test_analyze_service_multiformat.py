@@ -673,6 +673,108 @@ def test_analyze_service_resolves_closing_balance_from_last_running_balance_plus
     assert result.closing_balance == 1025.0
 
 
+def test_analyze_service_resolves_descending_stone_opening_and_closing_balance(tmp_path, monkeypatch) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    monkeypatch.setattr(
+        default_conversion_pipeline_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes, **kwargs: PdfParseResult(
+            transactions=[
+                NormalizedTransaction(date="2025-11-04", description="SAIDA ATACADO PAGAMENTO", amount=-3898.12, type="outflow"),
+                NormalizedTransaction(date="2025-11-04", description="ENTRADA TRANSFERENCIA PIX", amount=673.87, type="inflow"),
+                NormalizedTransaction(date="2025-11-04", description="SAIDA TRANSFERENCIA PIX", amount=-10.0, type="outflow"),
+                NormalizedTransaction(date="2025-11-04", description="ENTRADA RECEBIMENTO VENDAS", amount=166.47, type="inflow"),
+                NormalizedTransaction(
+                    date="2025-11-04",
+                    description="ENTRADA RECEBIMENTO VENDAS MAESTRO",
+                    amount=1424.58,
+                    type="inflow",
+                ),
+            ],
+            layout=PdfLayoutInference(
+                layout_name="stone_extrato_conta_corrente_a4_v1",
+                confidence=0.98,
+                used_fallback=False,
+            ),
+            extracted_text="Stone Instituição de Pagamento S.A.",
+            parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+            canonical_transactions=[
+                CanonicalTransaction(
+                    date="2025-11-04",
+                    description="SAIDA ATACADO PAGAMENTO",
+                    amount=-3898.12,
+                    type="outflow",
+                    running_balance=0.0,
+                    source_page=1,
+                    source_line=1,
+                    layout_name="stone_extrato_conta_corrente_a4_v1",
+                    confidence=0.98,
+                    source_parser="grouped",
+                ),
+                CanonicalTransaction(
+                    date="2025-11-04",
+                    description="ENTRADA TRANSFERENCIA PIX",
+                    amount=673.87,
+                    type="inflow",
+                    running_balance=3898.12,
+                    source_page=1,
+                    source_line=2,
+                    layout_name="stone_extrato_conta_corrente_a4_v1",
+                    confidence=0.98,
+                    source_parser="grouped",
+                ),
+                CanonicalTransaction(
+                    date="2025-11-04",
+                    description="SAIDA TRANSFERENCIA PIX",
+                    amount=-10.0,
+                    type="outflow",
+                    running_balance=3224.25,
+                    source_page=1,
+                    source_line=3,
+                    layout_name="stone_extrato_conta_corrente_a4_v1",
+                    confidence=0.98,
+                    source_parser="grouped",
+                ),
+                CanonicalTransaction(
+                    date="2025-11-04",
+                    description="ENTRADA RECEBIMENTO VENDAS",
+                    amount=166.47,
+                    type="inflow",
+                    running_balance=3234.25,
+                    source_page=1,
+                    source_line=4,
+                    layout_name="stone_extrato_conta_corrente_a4_v1",
+                    confidence=0.98,
+                    source_parser="grouped",
+                ),
+                CanonicalTransaction(
+                    date="2025-11-04",
+                    description="ENTRADA RECEBIMENTO VENDAS MAESTRO",
+                    amount=1424.58,
+                    type="inflow",
+                    running_balance=3067.78,
+                    source_page=1,
+                    source_line=5,
+                    layout_name="stone_extrato_conta_corrente_a4_v1",
+                    confidence=0.98,
+                    source_parser="grouped",
+                ),
+            ],
+        ),
+    )
+
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="stone.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
+
+    assert result.bank_name == "Stone"
+    assert result.bank_code == "197"
+    assert result.opening_balance == 1643.2
+    assert result.closing_balance == 0.0
+
+
 def test_analyze_service_does_not_extract_account_from_transaction_body_without_header_label(
     tmp_path, monkeypatch
 ) -> None:

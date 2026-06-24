@@ -51,9 +51,9 @@ class ConversionPipeline:
         = default_normalize_transactions,
         reconcile_transactions: ReconciliationFunction = default_reconcile_transactions,
         classifier: Callable[..., DocumentClassification] = classify_document,
-        resolve_opening_balance: Callable[[list[TransactionRow], str | None], float | None] | None = None,
+        resolve_opening_balance: Callable[[list[TransactionRow], str | None, str | None], float | None] | None = None,
         is_balance_metadata_row: Callable[[list[TransactionRow], int], bool] | None = None,
-        resolve_closing_balance: Callable[[list[TransactionRow], float | None], float | None] | None = None,
+        resolve_closing_balance: Callable[[list[TransactionRow], float | None, str | None], float | None] | None = None,
         build_pdf_processing_metrics: Callable[..., dict[str, int | float | str] | None] | None = None,
         resolve_bank_name: Callable[[str, str | None, str | None], str | None] | None = None,
         extract_bank_account_metadata: Callable[[str | None], tuple[str | None, str | None]] | None = None,
@@ -157,7 +157,11 @@ class ConversionPipeline:
             warning_types=transaction_warning_types,
             running_balances=transaction_running_balances,
         )
-        opening_balance = self.resolve_opening_balance(metadata_candidate_rows, extracted_text)
+        opening_balance = self.resolve_opening_balance(
+            metadata_candidate_rows,
+            extracted_text,
+            layout_inference_name,
+        )
         kept_indices = [
             idx
             for idx, _row in enumerate(metadata_candidate_rows)
@@ -205,7 +209,11 @@ class ConversionPipeline:
         total_inflows = round(sum(item.amount for item in transactions if item.amount > 0), 2)
         total_outflows = round(sum(item.amount for item in transactions if item.amount < 0), 2)
         net_total = round(total_inflows + total_outflows, 2)
-        closing_balance = self.resolve_closing_balance(preview_rows, opening_balance)
+        closing_balance = self.resolve_closing_balance(
+            preview_rows,
+            opening_balance,
+            layout_inference_name,
+        )
         bank_name = self.resolve_bank_name(extension, layout_inference_name, extracted_text)
         bank_branch, account_number = self.extract_bank_account_metadata(extracted_text)
         inferred_bank_code = self.resolve_inferred_bank_code(extension, layout_inference_name, bank_name)
@@ -300,7 +308,11 @@ def _build_transaction_rows(
     ]
 
 
-def _default_resolve_opening_balance(_rows: list[TransactionRow], _extracted_text: str | None) -> float | None:
+def _default_resolve_opening_balance(
+    _rows: list[TransactionRow],
+    _extracted_text: str | None,
+    _layout_inference_name: str | None,
+) -> float | None:
     return None
 
 
@@ -308,7 +320,11 @@ def _default_is_balance_metadata_row(_rows: list[TransactionRow], _index: int) -
     return False
 
 
-def _default_resolve_closing_balance(_rows: list[TransactionRow], _opening_balance: float | None) -> float | None:
+def _default_resolve_closing_balance(
+    _rows: list[TransactionRow],
+    _opening_balance: float | None,
+    _layout_inference_name: str | None,
+) -> float | None:
     return None
 
 
