@@ -351,6 +351,45 @@ def test_infer_pdf_layout_ignores_declarative_profile_below_min_score_hint() -> 
     assert result.used_fallback is True
 
 
+def test_infer_pdf_layout_prefers_stone_a4_profile_for_real_extracted_pdf_text() -> None:
+    text = """
+    Extrato de conta corrente
+    Emitido em 04 novembro 2025 às 15:21:19
+    stone
+    Página 1 de 32
+    Dados da conta
+    Nome
+    Documento
+    Instituição
+    Agência
+    Conta
+    Stone Instituição de Pagamento S.A.
+    Período: de 01/09/2025 a 04/11/2025
+    DATA
+    TIPO
+    DESCRIÇÃO
+    VALOR
+    SALDO
+    CONTRAPARTE
+    04/11/25
+    Saída
+    ATACADO
+    Pagamento
+    - R$ 3.898,12
+    R$ 0,00
+    04/11/25
+    Entrada
+    Transferência | Pix
+    R$ 673,87
+    R$ 3.898,12
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "stone_extrato_conta_corrente_a4_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_caixa_siatr_saldos_lancamentos_profile() -> None:
     text = """
     SIATR-SISTEMA DE AUTO ATENDIMENTO REESTRUTURADO

@@ -1723,9 +1723,9 @@ def _attach_running_balance_and_reconcile_sign(
         amount_abs = abs(signed_amount)
         positive_error = abs(delta - amount_abs)
         negative_error = abs(delta + amount_abs)
-        if positive_error + 0.005 < negative_error:
+        if positive_error <= 0.05 and positive_error + 0.005 < negative_error:
             signed_amount = amount_abs
-        elif negative_error + 0.005 < positive_error:
+        elif negative_error <= 0.05 and negative_error + 0.005 < positive_error:
             signed_amount = -amount_abs
 
     normalized_transaction = NormalizedTransaction(

@@ -927,6 +927,70 @@ def test_parse_pdf_transactions_prefers_layout_text_for_sicredi_matricial_paisag
     assert result.canonical_transactions[2].running_balance == 71304.94
 
 
+def test_parse_pdf_transactions_supports_stone_a4_statement_with_entry_exit_type_prefixes(monkeypatch) -> None:
+    native_text = """
+    Extrato de conta corrente
+    Emitido em 04 novembro 2025 às 15:21:19
+    stone
+    Página 1 de 32
+    Dados da conta
+    Nome
+    Documento
+    Instituição
+    Agência
+    Conta
+    Stone Instituição de Pagamento S.A.
+    Período: de 01/09/2025 a 04/11/2025
+    DATA
+    TIPO
+    DESCRIÇÃO
+    VALOR
+    SALDO
+    CONTRAPARTE
+    04/11/25
+    Saída
+    ATACADO
+    Pagamento
+    - R$ 3.898,12
+    R$ 0,00
+    04/11/25
+    Entrada
+    Transferência | Pix
+    R$ 673,87
+    R$ 3.898,12
+    04/11/25
+    Saída
+    Transferência | Pix
+    - R$ 10,00
+    R$ 3.224,25
+    04/11/25
+    Entrada
+    Recebimento vendas
+    Elo | Débito
+    R$ 166,47
+    R$ 3.234,25
+    04/11/25
+    Entrada
+    Recebimento vendas
+    Maestro | Débito
+    R$ 1.424,58
+    R$ 3.067,78
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [native_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "stone_extrato_conta_corrente_a4_v1"
+    assert result.layout.used_fallback is False
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert [transaction.amount for transaction in result.transactions] == [-3898.12, 673.87, -10.0, 166.47, 1424.58]
+    assert result.parse_metrics["balance_consistency_checked"] == 4
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert result.transactions[4].description == "Entrada Recebimento vendas Maestro | Débito"
+    assert result.transactions[4].type == "inflow"
+
+
 def test_parse_pdf_transactions_resolves_singular_credit_debit_headers_in_tabular_positions() -> None:
     sample_text = "\n".join(
         [

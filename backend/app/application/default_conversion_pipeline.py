@@ -7,6 +7,7 @@ from app.application.bank_identity import resolve_bank_name
 from app.application.bank_resolver import DEFAULT_BANK_CODE, resolve_bank_code
 from app.application.conversion_pipeline import ConversionPipeline
 from app.application.models import TransactionRow
+from app.application.normalization.balance import uses_descending_running_balance
 from app.application.parsers.service import ParsingService
 from app.application.pdf_parser import parse_pdf_transactions
 
@@ -24,14 +25,16 @@ def build_default_conversion_pipeline(
 ) -> ConversionPipeline:
     return ConversionPipeline(
         parser=parser or ParsingService(),
-        resolve_opening_balance=lambda rows, extracted_text: _resolve_opening_balance(
+        resolve_opening_balance=lambda rows, extracted_text, layout_inference_name: _resolve_opening_balance(
             rows,
             extracted_text=extracted_text,
+            layout_name=layout_inference_name,
         ),
         is_balance_metadata_row=_is_balance_metadata_row,
-        resolve_closing_balance=lambda rows, opening_balance: _resolve_closing_balance(
+        resolve_closing_balance=lambda rows, opening_balance, layout_inference_name: _resolve_closing_balance(
             rows,
             opening_balance=opening_balance,
+            layout_name=layout_inference_name,
         ),
         build_pdf_processing_metrics=_build_pdf_processing_metrics,
         resolve_bank_name=lambda extension, layout_inference_name, extracted_text: _resolve_bank_name(
@@ -57,7 +60,12 @@ def build_default_conversion_pipeline(
     )
 
 
-def _resolve_opening_balance(rows: list[TransactionRow], *, extracted_text: str | None = None) -> float | None:
+def _resolve_opening_balance(
+    rows: list[TransactionRow],
+    *,
+    extracted_text: str | None = None,
+    layout_name: str | None = None,
+) -> float | None:
     for row in rows:
         normalized_description = _normalize_text_for_profile(row.description)
         if _is_opening_balance_description(normalized_description):
@@ -84,14 +92,26 @@ def _resolve_opening_balance(rows: list[TransactionRow], *, extracted_text: str 
             return round(float(raw_amount), 2)
         except ValueError:
             continue
-    for row in rows:
+    balance_rows = reversed(rows) if uses_descending_running_balance(layout_name) else rows
+    for row in balance_rows:
         if row.running_balance is None:
             continue
         return round(float(row.running_balance) - float(row.amount), 2)
     return None
 
 
-def _resolve_closing_balance(rows: list[TransactionRow], *, opening_balance: float | None = None) -> float | None:
+def _resolve_closing_balance(
+    rows: list[TransactionRow],
+    *,
+    opening_balance: float | None = None,
+    layout_name: str | None = None,
+) -> float | None:
+    if uses_descending_running_balance(layout_name):
+        for row in rows:
+            if row.running_balance is None:
+                continue
+            return round(float(row.running_balance), 2)
+
     last_balance_index: int | None = None
     last_running_balance: float | None = None
     for index, row in enumerate(rows):
