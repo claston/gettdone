@@ -673,7 +673,9 @@ def test_analyze_service_resolves_closing_balance_from_last_running_balance_plus
     assert result.closing_balance == 1025.0
 
 
-def test_analyze_service_resolves_descending_stone_opening_and_closing_balance(tmp_path, monkeypatch) -> None:
+def test_analyze_service_keeps_descending_stone_closing_balance_without_inventing_opening_balance(
+    tmp_path, monkeypatch
+) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     monkeypatch.setattr(
         default_conversion_pipeline_module,
@@ -771,7 +773,7 @@ def test_analyze_service_resolves_descending_stone_opening_and_closing_balance(t
 
     assert result.bank_name == "Stone"
     assert result.bank_code == "197"
-    assert result.opening_balance == 1643.2
+    assert result.opening_balance is None
     assert result.closing_balance == 0.0
 
 

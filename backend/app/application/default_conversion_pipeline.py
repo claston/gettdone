@@ -92,6 +92,8 @@ def _resolve_opening_balance(
             return round(float(raw_amount), 2)
         except ValueError:
             continue
+    if uses_descending_running_balance(layout_name):
+        return None
     balance_rows = reversed(rows) if uses_descending_running_balance(layout_name) else rows
     for row in balance_rows:
         if row.running_balance is None:
