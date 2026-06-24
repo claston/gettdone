@@ -308,7 +308,11 @@ def _build_transaction_rows(
     ]
 
 
-def _default_resolve_opening_balance(_rows: list[TransactionRow], _extracted_text: str | None) -> float | None:
+def _default_resolve_opening_balance(
+    _rows: list[TransactionRow],
+    _extracted_text: str | None,
+    _layout_inference_name: str | None,
+) -> float | None:
     return None
 
 
@@ -316,7 +320,11 @@ def _default_is_balance_metadata_row(_rows: list[TransactionRow], _index: int) -
     return False
 
 
-def _default_resolve_closing_balance(_rows: list[TransactionRow], _opening_balance: float | None) -> float | None:
+def _default_resolve_closing_balance(
+    _rows: list[TransactionRow],
+    _opening_balance: float | None,
+    _layout_inference_name: str | None,
+) -> float | None:
     return None
 
 
