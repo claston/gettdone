@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
-from app.application.ingestion import IngestedDocument
+from app.application.conversion.uploaded_document import UploadedDocument
 from app.application.parsers.service import ParsedDocument, ParsingService
 from app.application.pdf_parser import parse_pdf_transactions
 
@@ -13,7 +13,7 @@ PdfParser = Callable[..., object]
 
 @dataclass(frozen=True, slots=True)
 class ExtractedDocument:
-    source_document: IngestedDocument
+    source_document: UploadedDocument
     extracted_text: str | None = None
     layout_inference_name: str | None = None
     layout_inference_confidence: float | None = None
@@ -24,7 +24,7 @@ class DocumentExtractor(Protocol):
     def extract(
         self,
         *,
-        document: IngestedDocument,
+        document: UploadedDocument,
         on_ocr_progress: OcrProgressCallback | None = None,
         max_ocr_pages: int | None = None,
         pdf_parser: PdfParser = parse_pdf_transactions,
@@ -40,7 +40,7 @@ class LegacyParsingServiceDocumentExtractor:
     def extract(
         self,
         *,
-        document: IngestedDocument,
+        document: UploadedDocument,
         on_ocr_progress: OcrProgressCallback | None = None,
         max_ocr_pages: int | None = None,
         pdf_parser: PdfParser = parse_pdf_transactions,

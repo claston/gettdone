@@ -1,5 +1,5 @@
+from app.application.conversion.uploaded_document import ingest_uploaded_document
 from app.application.conversion_pipeline import ConversionPipeline
-from app.application.ingestion import ingest_uploaded_document
 from app.application.models import NormalizedTransaction
 from app.application.parsers.service import ParsingService
 

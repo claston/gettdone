@@ -2,7 +2,7 @@ from dataclasses import dataclass, replace
 from typing import Callable
 
 from app.application.canonization import build_transaction_metadata
-from app.application.ingestion import IngestedDocument
+from app.application.conversion.uploaded_document import UploadedDocument
 from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.parsers.csv import parse_csv_transactions
 from app.application.parsers.ofx import parse_ofx_transactions
@@ -29,7 +29,7 @@ class ParsedDocument:
 class ParsingService:
     def parse(
         self,
-        document: IngestedDocument,
+        document: UploadedDocument,
         *,
         on_ocr_progress: OcrProgressCallback | None = None,
         max_ocr_pages: int | None = None,
@@ -65,7 +65,7 @@ class ParsingService:
 
     def _parse_pdf(
         self,
-        document: IngestedDocument,
+        document: UploadedDocument,
         *,
         on_ocr_progress: OcrProgressCallback | None,
         max_ocr_pages: int | None,

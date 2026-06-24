@@ -30,6 +30,7 @@ from app.application.conversion.statement_parser import (
     StatementParser,
     resolve_legacy_parsed_statement,
 )
+from app.application.conversion.uploaded_document import UploadedDocument
 from app.application.conversion_pipeline import ConversionPipeline
 from app.application.errors import (
     FileTooLargeError,
@@ -40,24 +41,15 @@ from app.application.errors import (
     QuotaExceededError,
     UnsupportedFileTypeError,
 )
-from app.application.ingestion import ingest_uploaded_document
 from app.application.report_service import ReportService
 from app.application.repositories import AnalysisRepository
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass(slots=True)
-class StagedUploadRef:
-    path: Path
-    size_bytes: int
-    sha256_hex: str
-
-
 @dataclass(frozen=True, slots=True)
 class DocumentConversionRequest:
-    filename: str
-    staged_upload: StagedUploadRef
+    document: UploadedDocument
     anonymous_fingerprint: str | None
     user_token: str | None
     authorization: str | None
@@ -69,8 +61,7 @@ class DocumentConversionRequest:
     def from_inputs(
         cls,
         *,
-        filename: str,
-        staged_upload: StagedUploadRef,
+        document: UploadedDocument,
         anonymous_fingerprint: str | None,
         user_token: str | None,
         authorization: str | None,
@@ -80,8 +71,7 @@ class DocumentConversionRequest:
         estimated_pages_count: int | None = None,
     ) -> "DocumentConversionRequest":
         return cls(
-            filename=filename,
-            staged_upload=staged_upload,
+            document=document,
             anonymous_fingerprint=anonymous_fingerprint,
             user_token=user_token,
             authorization=authorization,
@@ -109,7 +99,7 @@ class DocumentConversionRuntime:
     def from_request(cls, request: DocumentConversionRequest) -> "DocumentConversionRuntime":
         return cls(
             started_at=monotonic(),
-            file_digest=request.staged_upload.sha256_hex or None,
+            file_digest=(request.document.staging.sha256_hex if request.document.staging is not None else None) or None,
             ocr_engine=os.getenv("PDF_OCR_ENGINE", "").strip().lower() or "tesseract",
         )
 
@@ -118,7 +108,7 @@ class DocumentConversionRuntime:
             if not self.ocr_started_logged:
                 logger.info(
                     "conversion_ocr_started filename=%s estimated_pages_count=%s ocr_engine=%s",
-                    request.filename or "unknown.pdf",
+                    request.document.filename or "unknown.pdf",
                     request.preflight_result.estimated_pages_count,
                     self.ocr_engine,
                 )
@@ -141,7 +131,6 @@ class PreparedDocumentConversion:
     request: DocumentConversionRequest
     identity: object
     preflight_policy: DocumentPreflightPolicy
-    raw_bytes: bytes
 
 
 class DocumentConversionPipeline:
@@ -175,8 +164,7 @@ class DocumentConversionPipeline:
     def run(
         self,
         *,
-        filename: str,
-        staged_upload: StagedUploadRef,
+        document: UploadedDocument,
         anonymous_fingerprint: str | None,
         user_token: str | None,
         authorization: str | None,
@@ -186,8 +174,7 @@ class DocumentConversionPipeline:
         estimated_pages_count: int | None = None,
     ) -> ConversionPipelineResult:
         request = DocumentConversionRequest.from_inputs(
-            filename=filename,
-            staged_upload=staged_upload,
+            document=document,
             anonymous_fingerprint=anonymous_fingerprint,
             user_token=user_token,
             authorization=authorization,
@@ -206,7 +193,7 @@ class DocumentConversionPipeline:
                     "conversion_analyze_started filename=%s identity_type=%s scanned_likely=%s "
                     "estimated_pages_count=%s max_upload_size_bytes=%s ocr_max_pages=%s"
                 ),
-                request.filename or "unknown.pdf",
+                request.document.filename or "unknown.pdf",
                 getattr(prepared.identity, "identity_type", "unknown"),
                 request.preflight_result.scanned_likely,
                 request.preflight_result.estimated_pages_count,
@@ -215,8 +202,8 @@ class DocumentConversionPipeline:
             )
             if self.legacy_conversion_runner is not None:
                 conversion_response = self.legacy_conversion_runner(
-                    filename=request.filename,
-                    raw_bytes=prepared.raw_bytes,
+                    filename=request.document.filename,
+                    raw_bytes=request.document.raw_bytes,
                     on_ocr_progress=runtime.build_ocr_progress_callback(request=request),
                     max_ocr_pages=ocr_max_pages,
                     analysis_id=runtime.attempt_processing_id,
@@ -226,12 +213,12 @@ class DocumentConversionPipeline:
                     "DocumentConversionPipeline requires both processing_pipeline and analysis_repository."
                 )
             else:
-                document = ingest_uploaded_document(filename=request.filename, raw_bytes=prepared.raw_bytes)
+                document = request.document
                 logger.info(
                     "analyze_start extension=%s size_bytes=%d filename=%s",
                     document.file_type,
                     document.size_bytes,
-                    (request.filename or "")[:120],
+                    (document.filename or "")[:120],
                 )
                 resolved_analysis_id = (runtime.attempt_processing_id or "").strip() or f"an_{uuid4().hex[:12]}"
                 parse_started_at = monotonic()
@@ -280,7 +267,7 @@ class DocumentConversionPipeline:
         except InvalidFileContentError as exc:
             detail = str(exc).lower()
             if (
-                Path(request.filename or "").suffix.lower() == ".pdf"
+                request.document.file_type == "pdf"
                 and request.preflight_result.estimated_pages_count is not None
                 and ("text" in detail or "ocr" in detail)
             ):
@@ -288,7 +275,7 @@ class DocumentConversionPipeline:
                 if int(request.preflight_result.estimated_pages_count) > ocr_max_pages:
                     self.document_preflight_service._log_pages_limit_exceeded_attempt(
                         identity=prepared.identity,
-                        filename=request.filename,
+                        filename=request.document.filename,
                         pages_count=int(request.preflight_result.estimated_pages_count),
                         max_pages_per_file=ocr_max_pages,
                         scanned_likely=request.preflight_result.scanned_likely,
@@ -325,21 +312,23 @@ class DocumentConversionPipeline:
         runtime.identity = identity
         logger.info(
             "conversion_analyze_precheck filename=%s identity_type=%s scanned_likely=%s estimated_pages_count=%s",
-            request.filename or "unknown.pdf",
+            request.document.filename or "unknown.pdf",
             getattr(identity, "identity_type", "unknown"),
             request.preflight_result.scanned_likely,
             request.preflight_result.estimated_pages_count,
         )
+        staged_size_bytes = (
+            request.document.staging.size_bytes if request.document.staging is not None else request.document.size_bytes
+        )
         preflight_policy = self.document_preflight_service.build_policy(
             identity=identity,
-            filename=request.filename,
-            staged_upload_size_bytes=request.staged_upload.size_bytes,
+            filename=request.document.filename,
+            staged_upload_size_bytes=staged_size_bytes,
             preflight_result=request.preflight_result,
         )
-        raw_bytes = request.staged_upload.path.read_bytes()
         try:
             self.access_control_service.assert_upload_size(
-                raw_bytes,
+                request.document.raw_bytes,
                 max_upload_size_bytes=preflight_policy.max_upload_size_bytes,
             )
         except FileTooLargeError as exc:
@@ -351,7 +340,6 @@ class DocumentConversionPipeline:
             request=request,
             identity=identity,
             preflight_policy=preflight_policy,
-            raw_bytes=raw_bytes,
         )
 
     def _record_processing_started(
@@ -367,9 +355,9 @@ class DocumentConversionPipeline:
                 self.access_control_service,
                 user_id=identity.identity_id,
                 processing_id=runtime.attempt_processing_id,
-                filename=request.filename or f"{runtime.attempt_processing_id}.pdf",
+                filename=request.document.filename or f"{runtime.attempt_processing_id}.pdf",
                 model="Nao identificado",
-                conversion_type=_resolve_conversion_type_from_filename(request.filename),
+                conversion_type=_resolve_conversion_type_from_filename(request.document.filename),
                 status="Processando",
                 transactions_count=0,
                 pages_count=request.preflight_result.estimated_pages_count,
@@ -400,9 +388,9 @@ class DocumentConversionPipeline:
                 self.access_control_service,
                 event_id=runtime.attempt_anonymous_event_id,
                 anonymous_fingerprint=identity.identity_id,
-                filename=request.filename or "unknown.pdf",
+                filename=request.document.filename or "unknown.pdf",
                 model="Nao identificado",
-                conversion_type=_resolve_conversion_type_from_filename(request.filename),
+                conversion_type=_resolve_conversion_type_from_filename(request.document.filename),
                 status="Processando",
                 transactions_count=None,
                 pages_count=request.preflight_result.estimated_pages_count,
@@ -461,7 +449,7 @@ class DocumentConversionPipeline:
         )
         logger.info(
             "conversion_result_persist_started filename=%s identity_type=%s status=Sucesso analysis_id=%s",
-            request.filename or "unknown.pdf",
+            request.document.filename or "unknown.pdf",
             getattr(identity, "identity_type", "unknown"),
             analysis.analysis_id,
         )
@@ -476,7 +464,7 @@ class DocumentConversionPipeline:
             self.access_control_service.record_user_conversion(
                 user_id=identity.identity_id,
                 processing_id=runtime.attempt_processing_id or analysis.analysis_id,
-                filename=request.filename or f"{analysis.analysis_id}.pdf",
+                filename=request.document.filename or f"{analysis.analysis_id}.pdf",
                 model=conversion_model_label,
                 conversion_type=conversion_type,
                 status="Sucesso",
@@ -508,9 +496,9 @@ class DocumentConversionPipeline:
                 self.access_control_service,
                 event_id=runtime.attempt_anonymous_event_id or f"anon_evt_{uuid4().hex[:24]}",
                 anonymous_fingerprint=identity.identity_id,
-                filename=request.filename or f"{analysis.analysis_id}.pdf",
+                filename=request.document.filename or f"{analysis.analysis_id}.pdf",
                 model=conversion_model_label,
-                conversion_type=_resolve_conversion_type_from_filename(request.filename),
+                conversion_type=_resolve_conversion_type_from_filename(request.document.filename),
                 status="Sucesso",
                 transactions_count=int(analysis.transactions_total),
                 pages_count=pages_count,
@@ -584,7 +572,7 @@ class DocumentConversionPipeline:
         failed_event_id: str | None = None
         logger.info(
             "conversion_result_persist_started filename=%s identity_type=%s status=Falha error_code=%s error_stage=%s",
-            request.filename or "unknown.pdf",
+            request.document.filename or "unknown.pdf",
             getattr(identity, "identity_type", "unknown"),
             error_code,
             error_stage or "",
@@ -595,9 +583,9 @@ class DocumentConversionPipeline:
                 self.access_control_service,
                 event_id=failed_event_id,
                 anonymous_fingerprint=identity.identity_id,
-                filename=request.filename or "unknown.pdf",
+                filename=request.document.filename or "unknown.pdf",
                 model="Nao identificado",
-                conversion_type=_resolve_conversion_type_from_filename(request.filename),
+                conversion_type=_resolve_conversion_type_from_filename(request.document.filename),
                 status="Falha",
                 transactions_count=None,
                 pages_count=request.preflight_result.estimated_pages_count,
@@ -626,9 +614,9 @@ class DocumentConversionPipeline:
                 self.access_control_service,
                 user_id=identity.identity_id,
                 processing_id=runtime.attempt_processing_id or f"an_{uuid4().hex[:12]}",
-                filename=request.filename or "unknown.pdf",
+                filename=request.document.filename or "unknown.pdf",
                 model="Nao identificado",
-                conversion_type=_resolve_conversion_type_from_filename(request.filename),
+                conversion_type=_resolve_conversion_type_from_filename(request.document.filename),
                 status="Falha",
                 transactions_count=0,
                 pages_count=request.preflight_result.estimated_pages_count,
@@ -655,7 +643,7 @@ class DocumentConversionPipeline:
             )
         _log_conversion_failure(
             identity=identity,
-            filename=request.filename or "unknown.pdf",
+            filename=request.document.filename or "unknown.pdf",
             event_id=failed_event_id,
             error_code=error_code,
             error_stage=error_stage,

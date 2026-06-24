@@ -9,10 +9,7 @@ from app.application.contact_service import ContactAttachment, ContactDeliveryRe
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult, ConversionPipelineStatus
 from app.application.conversion.convert_document_result import ConvertDocumentResult, ConvertDocumentStatus
 from app.application.conversion.convert_document_use_case import ConvertDocumentUseCase
-from app.application.conversion.document_conversion_pipeline import (
-    DocumentConversionPipeline,
-    StagedUploadRef,
-)
+from app.application.conversion.document_conversion_pipeline import DocumentConversionPipeline
 from app.application.conversion.document_extractor import DocumentExtractor, ExtractedDocument
 from app.application.conversion.document_preflight_service import (
     DocumentPreflightPolicy,
@@ -25,6 +22,12 @@ from app.application.conversion.quota_validator_service import (
     QuotaValidatorService,
 )
 from app.application.conversion.statement_parser import ParsedBankStatement, ParsedTransaction, StatementParser
+from app.application.conversion.uploaded_document import (
+    SUPPORTED_DOCUMENT_EXTENSIONS,
+    UploadedDocument,
+    UploadedDocumentStage,
+    ingest_uploaded_document,
+)
 from app.application.conversion_service import ConversionService
 from app.application.default_conversion_pipeline import build_default_conversion_pipeline
 from app.application.errors import (
@@ -89,6 +92,7 @@ __all__ = [
     "QuotaValidatorService",
     "ParsedBankStatement",
     "ParsedTransaction",
+    "SUPPORTED_DOCUMENT_EXTENSIONS",
     "ConversionService",
     "FileTooLargeError",
     "GoogleOAuthAccountNotFoundError",
@@ -112,8 +116,9 @@ __all__ = [
     "QuotaExceededError",
     "ReportService",
     "ReportRepository",
-    "StagedUploadRef",
     "StatementParser",
+    "UploadedDocument",
+    "UploadedDocumentStage",
     "TempAnalysisStorage",
     "UnsupportedFileTypeError",
     "UserAlreadyExistsError",
@@ -121,5 +126,6 @@ __all__ = [
     "persist_and_build_analyze_response",
     "build_convert_response_payload",
     "persist_conversion_result",
+    "ingest_uploaded_document",
     "parse_operational_sheet_rows",
 ]
