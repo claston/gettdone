@@ -29,6 +29,7 @@ IGNORED_LINE_TOKENS = (
 )
 IGNORED_TRANSACTION_HINTS = (
     "SALDO DO DIA",
+    "SALDO DIA",
     "SALDO FINAL",
     "SALDO INICIAL",
     "LIMITE DA CONTA",
@@ -89,6 +90,10 @@ def should_skip_transaction_description(description: str) -> bool:
 
 def apply_sign_hints(amount: float, description: str, section_hint_value: str | None) -> float:
     normalized_description = normalize_upper_text(description)
+    if normalized_description == "ENTRADA" or normalized_description.startswith("ENTRADA "):
+        return abs(amount)
+    if normalized_description == "SAIDA" or normalized_description.startswith("SAIDA "):
+        return -abs(amount)
     if any(token in normalized_description for token in INFLOW_HINTS):
         return abs(amount)
     if any(token in normalized_description for token in OUTFLOW_HINTS):

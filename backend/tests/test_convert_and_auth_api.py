@@ -6,8 +6,9 @@ from tempfile import mkdtemp
 from fastapi.testclient import TestClient
 
 from app.application.access_control import AccessControlService
+from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult
 from app.application.errors import InvalidFileContentError
-from app.dependencies import get_access_control_service, get_analyze_service, get_report_service
+from app.dependencies import get_access_control_service, get_legacy_conversion_runner, get_report_service
 from app.main import app
 from app.schemas import (
     AnalyzeResponse,
@@ -20,6 +21,37 @@ from app.schemas import (
     TopExpense,
     TransactionPreview,
 )
+
+
+def _build_conversion_result(
+    analysis: AnalyzeResponse,
+    *,
+    quota_remaining: int = 2,
+    quota_limit: int = 3,
+    quota_mode: str = "conversion",
+    identity_type: str = "anonymous",
+) -> ConversionPipelineResult:
+    from app.schemas import ConvertResponse
+
+    return ConversionPipelineResult.completed(
+        payload=ConvertResponse(
+            processing_id=analysis.analysis_id,
+            quota_remaining=quota_remaining,
+            quota_limit=quota_limit,
+            quota_mode=quota_mode,
+            identity_type=identity_type,
+            analysis=analysis,
+        ).model_dump(),
+    )
+
+
+def _as_legacy_conversion_runner(fake_pipeline):
+    def runner(**kwargs) -> AnalyzeResponse:
+        result = fake_pipeline.run(**kwargs)
+        payload = result.payload or {}
+        return AnalyzeResponse.model_validate(payload["analysis"])
+
+    return runner
 
 
 class _InMemoryConnCtx:
@@ -43,12 +75,12 @@ class _AccessControlServiceInMemory(AccessControlService):
         return _InMemoryConnCtx(self._test_conn)
 
 
-class FakeAnalyzeService:
-    def analyze(
+class _LegacyFakeAnalyzeService:
+    def run(
         self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
-    ) -> AnalyzeResponse:
+    ) -> ConversionPipelineResult:
         _ = on_ocr_progress
-        return AnalyzeResponse(
+        analysis = AnalyzeResponse(
             analysis_id=analysis_id or "an_convert123",
             file_type="pdf",
             bank_name="Itau",
@@ -123,14 +155,15 @@ class FakeAnalyzeService:
                 export_recommendation_reason="low_confidence_band",
             ),
         )
+        return _build_conversion_result(analysis)
 
 
-class FakeAnalyzeServiceGenericBank:
-    def analyze(
+class _LegacyFakeAnalyzeServiceGenericBank:
+    def run(
         self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
-    ) -> AnalyzeResponse:
+    ) -> ConversionPipelineResult:
         _ = (filename, raw_bytes, on_ocr_progress, max_ocr_pages, analysis_id)
-        return AnalyzeResponse(
+        analysis = AnalyzeResponse(
             analysis_id=analysis_id or "an_convert_generic_bank",
             file_type="pdf",
             bank_name="Itau",
@@ -167,14 +200,15 @@ class FakeAnalyzeServiceGenericBank:
             layout_inference_name="generic_statement_ptbr",
             layout_inference_confidence=0.61,
         )
+        return _build_conversion_result(analysis)
 
 
-class FakeAnalyzeServiceTextract:
-    def analyze(
+class _LegacyFakeAnalyzeServiceTextract:
+    def run(
         self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
-    ) -> AnalyzeResponse:
+    ) -> ConversionPipelineResult:
         _ = (filename, raw_bytes, on_ocr_progress, max_ocr_pages)
-        return AnalyzeResponse(
+        analysis = AnalyzeResponse(
             analysis_id=analysis_id or "an_convert_textract",
             file_type="pdf",
             bank_name="Bradesco",
@@ -232,6 +266,7 @@ class FakeAnalyzeServiceTextract:
                 textract_used=1,
             ),
         )
+        return _build_conversion_result(analysis)
 
 
 class FakeReportService:
@@ -239,11 +274,220 @@ class FakeReportService:
         _ = (analysis_id, identity_type, identity_id)
 
 
-class FailingAnalyzeService:
-    def analyze(
+class _LegacyFailingAnalyzeService:
+    def run(
         self, filename: str, raw_bytes: bytes, on_ocr_progress=None, max_ocr_pages=None, analysis_id=None
-    ) -> AnalyzeResponse:
+    ) -> ConversionPipelineResult:
         _ = (filename, raw_bytes, on_ocr_progress, max_ocr_pages, analysis_id)
+        raise InvalidFileContentError(
+            "PDF text was extracted, but no recognizable transaction row pattern was found. "
+            "diagnostics: has_date_like=1 has_amount_like=1 inline_candidates=0 "
+            "tabular_candidates=0 columnar_candidates=0 missing_signals=transaction_row_pattern"
+        )
+
+
+def _resolve_pipeline_raw_bytes(*, staged_upload, raw_bytes: bytes | None) -> bytes:
+    if raw_bytes is not None:
+        return raw_bytes
+    if staged_upload is None:
+        return b""
+    return staged_upload.path.read_bytes()
+
+
+class FakeAnalyzeService:
+    def run(self, **kwargs) -> ConversionPipelineResult:
+        raw = _resolve_pipeline_raw_bytes(
+            staged_upload=kwargs.get("staged_upload"),
+            raw_bytes=kwargs.get("raw_bytes"),
+        )
+        analysis = AnalyzeResponse(
+            analysis_id=kwargs.get("analysis_id") or "an_convert123",
+            file_type="pdf",
+            bank_name="Itau",
+            transactions_total=1,
+            total_inflows=100.0,
+            total_outflows=-20.0,
+            net_total=80.0,
+            operational_summary=OperationalSummary(
+                total_volume=120.0,
+                inflow_count=1,
+                outflow_count=1,
+                reconciled_entries=0,
+                unmatched_entries=1,
+            ),
+            reconciliation=ReconciliationSummary(
+                matched_groups=0,
+                reversed_entries=0,
+                potential_duplicates=0,
+            ),
+            categories=[CategorySummary(category="Outros", total=-20.0, count=1)],
+            top_expenses=[
+                TopExpense(
+                    description="TEST",
+                    amount=-20.0,
+                    date="2026-04-01",
+                    category="Outros",
+                )
+            ],
+            insights=[Insight(type="test", title="Test insight", description=f"Bytes: {len(raw)}")],
+            preview_transactions=[
+                TransactionPreview(
+                    date="2026-04-01",
+                    description="TEST",
+                    amount=-20.0,
+                    category="Outros",
+                    reconciliation_status="unmatched",
+                )
+            ],
+            preview_before_after=[
+                BeforeAfterPreview(
+                    date="2026-04-01",
+                    description_before="test",
+                    description_after="TEST",
+                    amount_before=-20.0,
+                    amount_after=-20.0,
+                )
+            ],
+            expires_at=None,
+            pdf_processing_metrics=PdfProcessingMetrics(
+                total_ms=1.0,
+                parse_ms=1.0,
+                classify_ms=0.0,
+                normalize_ms=0.0,
+                reconcile_ms=0.0,
+                page_count=3,
+                extracted_char_count=10,
+                flattened_line_count=1,
+                grouped_transactions_count=1,
+                inline_candidates_count=0,
+                inline_transactions_count=0,
+                tabular_candidates_count=0,
+                tabular_transactions_count=0,
+                columnar_candidates_count=0,
+                columnar_transactions_count=0,
+                selected_parser="grouped",
+                parser_selection_reason="grouped_rows_available",
+                inline_decision="skipped_due_to_grouped",
+                tabular_decision="skipped_due_to_grouped",
+                columnar_decision="skipped_due_to_grouped",
+                confidence_band="low",
+                export_recommendation="review_recommended",
+                export_recommendation_reason="low_confidence_band",
+            ),
+        )
+        return _build_conversion_result(analysis)
+
+
+class FakeAnalyzeServiceGenericBank:
+    def run(self, **kwargs) -> ConversionPipelineResult:
+        _ = kwargs
+        analysis = AnalyzeResponse(
+            analysis_id=kwargs.get("analysis_id") or "an_convert_generic_bank",
+            file_type="pdf",
+            bank_name="Itau",
+            transactions_total=1,
+            total_inflows=100.0,
+            total_outflows=-20.0,
+            net_total=80.0,
+            operational_summary=OperationalSummary(
+                total_volume=120.0,
+                inflow_count=1,
+                outflow_count=1,
+                reconciled_entries=0,
+                unmatched_entries=1,
+            ),
+            reconciliation=ReconciliationSummary(
+                matched_groups=0,
+                reversed_entries=0,
+                potential_duplicates=0,
+            ),
+            categories=[CategorySummary(category="Outros", total=-20.0, count=1)],
+            top_expenses=[],
+            insights=[],
+            preview_transactions=[
+                TransactionPreview(
+                    date="2026-04-01",
+                    description="TEST",
+                    amount=-20.0,
+                    category="Outros",
+                    reconciliation_status="unmatched",
+                )
+            ],
+            preview_before_after=[],
+            expires_at=None,
+            layout_inference_name="generic_statement_ptbr",
+            layout_inference_confidence=0.61,
+        )
+        return _build_conversion_result(analysis)
+
+
+class FakeAnalyzeServiceTextract:
+    def run(self, **kwargs) -> ConversionPipelineResult:
+        _ = kwargs
+        analysis = AnalyzeResponse(
+            analysis_id=kwargs.get("analysis_id") or "an_convert_textract",
+            file_type="pdf",
+            bank_name="Bradesco",
+            transactions_total=1,
+            total_inflows=100.0,
+            total_outflows=-20.0,
+            net_total=80.0,
+            operational_summary=OperationalSummary(
+                total_volume=120.0,
+                inflow_count=1,
+                outflow_count=1,
+                reconciled_entries=0,
+                unmatched_entries=1,
+            ),
+            reconciliation=ReconciliationSummary(
+                matched_groups=0,
+                reversed_entries=0,
+                potential_duplicates=0,
+            ),
+            categories=[CategorySummary(category="Outros", total=-20.0, count=1)],
+            top_expenses=[],
+            insights=[],
+            preview_transactions=[
+                TransactionPreview(
+                    date="2026-04-01",
+                    description="TEST",
+                    amount=-20.0,
+                    category="Outros",
+                    reconciliation_status="unmatched",
+                )
+            ],
+            preview_before_after=[],
+            expires_at=None,
+            layout_inference_name="bradesco_statement_ptbr",
+            layout_inference_confidence=0.91,
+            pdf_processing_metrics=PdfProcessingMetrics(
+                total_ms=1.0,
+                parse_ms=1.0,
+                classify_ms=0.0,
+                normalize_ms=0.0,
+                reconcile_ms=0.0,
+                page_count=6,
+                extracted_char_count=8113,
+                flattened_line_count=10,
+                grouped_transactions_count=1,
+                inline_candidates_count=0,
+                inline_transactions_count=0,
+                tabular_candidates_count=1,
+                tabular_transactions_count=1,
+                columnar_candidates_count=0,
+                columnar_transactions_count=0,
+                selected_parser="grouped",
+                parser_selection_reason="textract",
+                extraction_provider="aws_textract",
+                textract_used=1,
+            ),
+        )
+        return _build_conversion_result(analysis)
+
+
+class FailingAnalyzeService:
+    def run(self, **kwargs) -> ConversionPipelineResult:
+        _ = kwargs
         raise InvalidFileContentError(
             "PDF text was extracted, but no recognizable transaction row pattern was found. "
             "diagnostics: has_date_like=1 has_amount_like=1 inline_candidates=0 "
@@ -257,7 +501,7 @@ def build_client(state_dir: Path) -> tuple[TestClient, AccessControlService]:
         token_secret="test-secret",
     )
     app.dependency_overrides[get_access_control_service] = lambda: access_control
-    app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeService()
+    app.dependency_overrides[get_legacy_conversion_runner] = lambda: _as_legacy_conversion_runner(FakeAnalyzeService())
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     return TestClient(app), access_control
 
@@ -268,7 +512,7 @@ def build_client_with_failing_analyze(state_dir: Path) -> tuple[TestClient, Acce
         token_secret="test-secret",
     )
     app.dependency_overrides[get_access_control_service] = lambda: access_control
-    app.dependency_overrides[get_analyze_service] = lambda: FailingAnalyzeService()
+    app.dependency_overrides[get_legacy_conversion_runner] = lambda: _as_legacy_conversion_runner(FailingAnalyzeService())
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     return TestClient(app), access_control
 
@@ -279,7 +523,9 @@ def build_client_with_generic_bank_analyze(state_dir: Path) -> tuple[TestClient,
         token_secret="test-secret",
     )
     app.dependency_overrides[get_access_control_service] = lambda: access_control
-    app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeServiceGenericBank()
+    app.dependency_overrides[get_legacy_conversion_runner] = lambda: _as_legacy_conversion_runner(
+        FakeAnalyzeServiceGenericBank()
+    )
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     return TestClient(app), access_control
 
@@ -290,7 +536,9 @@ def build_client_with_textract_analyze(state_dir: Path) -> tuple[TestClient, Acc
         token_secret="test-secret",
     )
     app.dependency_overrides[get_access_control_service] = lambda: access_control
-    app.dependency_overrides[get_analyze_service] = lambda: FakeAnalyzeServiceTextract()
+    app.dependency_overrides[get_legacy_conversion_runner] = lambda: _as_legacy_conversion_runner(
+        FakeAnalyzeServiceTextract()
+    )
     app.dependency_overrides[get_report_service] = lambda: FakeReportService()
     return TestClient(app), access_control
 

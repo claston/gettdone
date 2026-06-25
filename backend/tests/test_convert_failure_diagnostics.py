@@ -1,5 +1,5 @@
+from app.api.conversion.conversion_observability import _build_failure_diagnostics, _resolve_error_observability
 from app.application import InvalidFileContentError
-from app.routers.convert import _build_failure_diagnostics, _resolve_error_observability
 
 
 def test_failure_diagnostics_marks_pdf_read_failure() -> None:
@@ -41,3 +41,24 @@ def test_failure_diagnostics_extracts_parser_signal_details() -> None:
     assert diagnostics["columnar_candidates"] == 0
     assert "amount_pattern" in diagnostics["missing_signals"]
     assert "transaction_row_pattern" in diagnostics["missing_signals"]
+
+
+def test_failure_diagnostics_includes_attached_parse_observability() -> None:
+    exc = InvalidFileContentError("PDF text was extracted, but no recognizable transaction row pattern was found.")
+    setattr(
+        exc,
+        "_parse_observability",
+        {
+            "textract_attempted": 1,
+            "textract_used": 0,
+            "textract_error_type": "InvalidFileContentError",
+            "native_text_detected": 0,
+        },
+    )
+
+    diagnostics = _build_failure_diagnostics(exc)
+
+    assert diagnostics["textract_attempted"] == 1
+    assert diagnostics["textract_used"] == 0
+    assert diagnostics["textract_error_type"] == "InvalidFileContentError"
+    assert diagnostics["native_text_detected"] == 0

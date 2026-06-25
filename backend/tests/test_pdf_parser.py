@@ -409,8 +409,10 @@ def test_parse_pdf_transactions_falls_back_to_local_ocr_when_textract_fails(monk
 
     assert len(result.transactions) == 1
     assert result.transactions[0].amount == 10.0
+    assert result.parse_metrics.get("textract_attempted") == 1
     assert result.parse_metrics.get("textract_used") == 0
     assert result.parse_metrics.get("textract_error_type") == "InvalidFileContentError"
+    assert result.parse_metrics.get("native_text_detected") == 0
 
 
 def test_parse_pdf_transactions_textract_path_applies_balance_consistency_check(monkeypatch) -> None:
@@ -549,7 +551,11 @@ def test_parse_pdf_transactions_retries_with_ocr_when_native_is_generic_low_cove
 
     result = parse_pdf_transactions(b"%PDF synthetic")
 
-    assert result is ocr_result
+    assert result.transactions == ocr_result.transactions
+    assert result.extracted_text == ocr_result.extracted_text
+    assert result.layout == ocr_result.layout
+    assert result.parse_metrics.get("textract_attempted") == 0
+    assert result.parse_metrics.get("native_text_detected") == 1
     assert len(result.transactions) == 5
 
 
@@ -659,7 +665,11 @@ def test_parse_pdf_transactions_keeps_native_when_coverage_is_healthy(monkeypatc
 
     result = parse_pdf_transactions(b"%PDF synthetic")
 
-    assert result is native_result
+    assert result.transactions == native_result.transactions
+    assert result.extracted_text == native_result.extracted_text
+    assert result.layout == native_result.layout
+    assert result.parse_metrics.get("textract_attempted") == 0
+    assert result.parse_metrics.get("native_text_detected") == 1
     assert calls["ocr"] == 0
 
 
@@ -917,6 +927,70 @@ def test_parse_pdf_transactions_prefers_layout_text_for_sicredi_matricial_paisag
     assert result.canonical_transactions[2].running_balance == 71304.94
 
 
+def test_parse_pdf_transactions_supports_stone_a4_statement_with_entry_exit_type_prefixes(monkeypatch) -> None:
+    native_text = """
+    Extrato de conta corrente
+    Emitido em 04 novembro 2025 às 15:21:19
+    stone
+    Página 1 de 32
+    Dados da conta
+    Nome
+    Documento
+    Instituição
+    Agência
+    Conta
+    Stone Instituição de Pagamento S.A.
+    Período: de 01/09/2025 a 04/11/2025
+    DATA
+    TIPO
+    DESCRIÇÃO
+    VALOR
+    SALDO
+    CONTRAPARTE
+    04/11/25
+    Saída
+    ATACADO
+    Pagamento
+    - R$ 3.898,12
+    R$ 0,00
+    04/11/25
+    Entrada
+    Transferência | Pix
+    R$ 673,87
+    R$ 3.898,12
+    04/11/25
+    Saída
+    Transferência | Pix
+    - R$ 10,00
+    R$ 3.224,25
+    04/11/25
+    Entrada
+    Recebimento vendas
+    Elo | Débito
+    R$ 166,47
+    R$ 3.234,25
+    04/11/25
+    Entrada
+    Recebimento vendas
+    Maestro | Débito
+    R$ 1.424,58
+    R$ 3.067,78
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [native_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "stone_extrato_conta_corrente_a4_v1"
+    assert result.layout.used_fallback is False
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert [transaction.amount for transaction in result.transactions] == [-3898.12, 673.87, -10.0, 166.47, 1424.58]
+    assert result.parse_metrics["balance_consistency_checked"] == 4
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert result.transactions[4].description == "Entrada Recebimento vendas Maestro | Débito"
+    assert result.transactions[4].type == "inflow"
+
+
 def test_parse_pdf_transactions_resolves_singular_credit_debit_headers_in_tabular_positions() -> None:
     sample_text = "\n".join(
         [
@@ -1068,6 +1142,50 @@ def test_parse_pdf_transactions_ignores_grouped_saldo_rows_from_transaction_tota
     assert result.transactions[1].amount == 200.0
     assert result.transactions[2].description == "PAGAMENTO BOLETO"
     assert result.transactions[2].amount == -50.0
+
+
+def test_parse_pdf_transactions_ignores_caixa_siatr_saldo_dia_rows(monkeypatch) -> None:
+    sample_text = "\n".join(
+        [
+            "SIATR-SISTEMA DE AUTO ATENDIMENTO REESTRUTURADO",
+            "SALDOS E LANCAMENTOS",
+            "CAIXA",
+            "SDO DISP:",
+            "5.740,61C",
+            "DATA MOV NR.DOC DESCRICAO",
+            "VALOR",
+            "SALDO",
+            "07/08/25",
+            "071551 CRED PIX CHAVE",
+            "5.000,00C",
+            "7.446,29C",
+            "07/08/25",
+            "071553 PAG BOLETO IBC",
+            "6.328,90D",
+            "1.117,39C",
+            "07/08/25",
+            "000000 SALDO DIA",
+            "0,00C",
+            "1.117,39C",
+            "11/08/25",
+            "101833 CRED PIX CHAVE",
+            "5.000,00C",
+            "5.879,54C",
+        ]
+    )
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [sample_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "caixa_siatr_saldos_lancamentos_a4_v1"
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert len(result.transactions) == 3
+    assert [item.description for item in result.transactions] == [
+        "071551 CRED PIX CHAVE",
+        "071553 PAG BOLETO IBC",
+        "101833 CRED PIX CHAVE",
+    ]
+    assert all("SALDO DIA" not in item.description for item in result.transactions)
 
 
 def test_parse_pdf_transactions_does_not_attach_total_disponivel_header_as_running_balance(monkeypatch) -> None:

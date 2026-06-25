@@ -82,6 +82,9 @@ class PdfProcessingMetrics(BaseModel):
     extraction_provider: str = ""
     textract_used: int = 0
     textract_enabled: int = 0
+    textract_attempted: int = 0
+    textract_error_type: str = ""
+    native_text_detected: int = 0
     inline_decision: str = ""
     tabular_decision: str = ""
     columnar_decision: str = ""

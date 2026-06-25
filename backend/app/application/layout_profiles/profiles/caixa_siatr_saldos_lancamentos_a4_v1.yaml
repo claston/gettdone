@@ -1,0 +1,61 @@
+layout_profile:
+  profile_name: caixa_siatr_saldos_lancamentos_a4_v1
+  bank: Caixa
+  confidence: high
+  classifier:
+    required_keywords:
+      - "SIATR-SISTEMA DE AUTO ATENDIMENTO REESTRUTURADO"
+      - "SALDOS E LANCAMENTOS"
+      - "CAIXA"
+      - "SDO DISP:"
+      - "SDO TOT:"
+      - "SDO CTBL:"
+      - "DATA MOV"
+      - "NR.DOC"
+      - "DESCRICAO"
+      - "VALOR"
+      - "SALDO"
+    optional_keywords:
+      - "CPF/CNPJ:"
+      - "LIMITE..:"
+      - "CRED PIX CHAVE"
+      - "PAG BOLETO IBC"
+      - "SALDO DIA"
+    negative_keywords:
+      - "GERENCIADOR CAIXA"
+      - "EXTRATO DA CONTA CORRENTE"
+      - "BANCO SANTANDER"
+      - "BANCO BRADESCO"
+      - "BANCO DO BRASIL"
+      - "BANCO INTER"
+      - "SICREDI"
+    min_score_hint: 0.72
+  table_detection:
+    header_keywords:
+      - "DATA MOV"
+      - "NR.DOC"
+      - "DESCRICAO"
+      - "VALOR"
+      - "SALDO"
+    expected_column_order:
+      - date
+      - document
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "DATA MOV"
+        - "DATA"
+      document:
+        - "NR.DOC"
+        - "DOCUMENTO"
+      description:
+        - "DESCRICAO"
+        - "HISTORICO"
+      amount:
+        - "VALOR"
+        - "VALOR(R$)"
+      balance:
+        - "SALDO"
+        - "SALDO(R$)"

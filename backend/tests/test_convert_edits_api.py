@@ -1,6 +1,8 @@
+from io import BytesIO
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 
 from app.application import AccessControlService, ReportService, TempAnalysisStorage
 from app.application.models import AnalysisData, TransactionRow
@@ -16,6 +18,7 @@ def _build_analysis_data(analysis_id: str = "an_convert123") -> AnalysisData:
             amount=-20.0,
             category="Outros",
             reconciliation_status="unmatched",
+            running_balance=80.0,
         ),
         TransactionRow(
             date="2026-04-02",
@@ -23,6 +26,7 @@ def _build_analysis_data(analysis_id: str = "an_convert123") -> AnalysisData:
             amount=100.0,
             category="Outros",
             reconciliation_status="unmatched",
+            running_balance=180.0,
         ),
     ]
     return AnalysisData(
@@ -102,6 +106,42 @@ def test_convert_edits_updates_preview_and_csv_artifact(tmp_path: Path) -> None:
     assert csv_report.status_code == 200
     assert "2026-04-05,EDITED CREDIT,45.75" in csv_report.text
     assert isinstance(payload["updated_at"], str)
+    app.dependency_overrides.clear()
+
+
+def test_convert_edits_recalculates_running_balances_after_edit_and_xlsx_export(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+
+    response = client.post(
+        "/convert-edits/an_convert123?anonymous_fingerprint=fp-owner",
+        json={
+            "edits": [
+                {
+                    "row_id": "row_1",
+                    "date": "2026-04-05",
+                    "description": "EDITED DEBIT",
+                    "credit": None,
+                    "debit": 10.0,
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["preview_transactions"][0]["amount"] == -10.0
+    assert payload["preview_transactions"][0]["running_balance"] == 90.0
+    assert payload["preview_transactions"][1]["running_balance"] == 190.0
+    assert payload["closing_balance"] == 190.0
+
+    xlsx_report = client.get("/convert-report/an_convert123?format=xlsx&anonymous_fingerprint=fp-owner")
+    assert xlsx_report.status_code == 200
+    workbook = load_workbook(filename=BytesIO(xlsx_report.content), data_only=True)
+    sheet = workbook["Conversao"]
+    summary = workbook["Resumo"]
+    assert sheet.cell(row=2, column=5).value == 90
+    assert sheet.cell(row=3, column=5).value == 190
+    assert summary.cell(row=3, column=2).value == 190
     app.dependency_overrides.clear()
 
 

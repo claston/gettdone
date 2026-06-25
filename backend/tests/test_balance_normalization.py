@@ -64,3 +64,42 @@ def test_annotate_balance_consistency_ignores_rows_without_running_balance() -> 
     assert failed_count == 0
     assert canonical_transactions[0].warnings == []
     assert canonical_transactions[1].warnings == []
+
+
+def test_annotate_balance_consistency_supports_descending_stone_layout() -> None:
+    canonical_transactions = [
+        CanonicalTransaction(
+            date="2025-11-04",
+            description="SAIDA ATACADO PAGAMENTO",
+            amount=-3898.12,
+            type="outflow",
+            running_balance=0.0,
+            source_parser="grouped",
+            layout_name="stone_extrato_conta_corrente_a4_v1",
+        ),
+        CanonicalTransaction(
+            date="2025-11-04",
+            description="ENTRADA TRANSFERENCIA PIX",
+            amount=673.87,
+            type="inflow",
+            running_balance=3898.12,
+            source_parser="grouped",
+            layout_name="stone_extrato_conta_corrente_a4_v1",
+        ),
+        CanonicalTransaction(
+            date="2025-11-04",
+            description="SAIDA TRANSFERENCIA PIX",
+            amount=-10.0,
+            type="outflow",
+            running_balance=3224.25,
+            source_parser="grouped",
+            layout_name="stone_extrato_conta_corrente_a4_v1",
+        ),
+    ]
+
+    checked_count, failed_count = annotate_balance_consistency(canonical_transactions)
+
+    assert checked_count == 2
+    assert failed_count == 0
+    assert canonical_transactions[1].warnings == []
+    assert canonical_transactions[2].warnings == []

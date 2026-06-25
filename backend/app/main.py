@@ -11,12 +11,10 @@ from fastapi.staticfiles import StaticFiles
 
 from app.dependencies import (
     close_access_control_service,
-    get_analyze_service,
     get_report_service,
 )
 from app.routers import (
     admin_auth_router,
-    analyze_router,
     auth_router,
     banks_router,
     checkout_router,
@@ -95,7 +93,6 @@ app.include_router(health_router)
 app.include_router(banks_router)
 app.include_router(plans_router)
 app.include_router(admin_auth_router)
-app.include_router(analyze_router)
 app.include_router(convert_router)
 app.include_router(auth_router)
 app.include_router(client_router)
@@ -157,7 +154,6 @@ async def validation_exception_handler(_request: Request, exc: RequestValidation
 
 __all__ = [
     "app",
-    "get_analyze_service",
     "get_report_service",
     "get_cors_allow_origins",
 ]

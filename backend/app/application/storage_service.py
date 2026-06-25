@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -13,6 +14,8 @@ from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConfli
 from app.application.export_artifact_service import ExportArtifactService
 from app.application.models import AnalysisData, BeforeAfterRow, TransactionRow
 from app.application.structured_conversion import build_structured_conversion_result_from_analysis_data
+
+_SAFE_ANALYSIS_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 
 
 class TempAnalysisStorage:
@@ -30,7 +33,7 @@ class TempAnalysisStorage:
         self.root_dir.mkdir(parents=True, exist_ok=True)
 
     def save_analysis(self, data: AnalysisData) -> str:
-        analysis_dir = self.root_dir / data.analysis_id
+        analysis_dir = self._resolve_analysis_dir(data.analysis_id)
         analysis_dir.mkdir(parents=True, exist_ok=True)
         now = self.now_provider()
         expires_at = now + timedelta(seconds=self.ttl_seconds)
@@ -75,7 +78,7 @@ class TempAnalysisStorage:
         return expires_at.isoformat()
 
     def get_report_path(self, analysis_id: str) -> Path:
-        analysis_dir = self.root_dir / analysis_id
+        analysis_dir = self._resolve_analysis_dir(analysis_id)
         report_path = analysis_dir / "report.xlsx"
         if not report_path.exists():
             raise AnalysisNotFoundError
@@ -94,7 +97,7 @@ class TempAnalysisStorage:
         account_number: str | None = None,
         bank_code: str | None = None,
     ) -> Path:
-        analysis_dir = self.root_dir / analysis_id
+        analysis_dir = self._resolve_analysis_dir(analysis_id)
         if file_format == "ofx" and (
             closing_balance is not None
             or (str(bank_branch or "").strip() != "")
@@ -123,7 +126,7 @@ class TempAnalysisStorage:
         return report_path
 
     def get_upload_filename(self, analysis_id: str) -> str | None:
-        analysis_dir = self.root_dir / analysis_id
+        analysis_dir = self._resolve_analysis_dir(analysis_id)
         if self._is_expired(analysis_dir):
             self._cleanup_analysis(analysis_dir)
             raise AnalysisNotFoundError
@@ -274,7 +277,7 @@ class TempAnalysisStorage:
         account_number: str | None = None,
         bank_code: str | None = None,
     ) -> dict[str, object]:
-        analysis_dir = self.root_dir / analysis_id
+        analysis_dir = self._resolve_analysis_dir(analysis_id)
         if self._is_expired(analysis_dir):
             self._cleanup_analysis(analysis_dir)
             raise AnalysisNotFoundError
@@ -350,11 +353,6 @@ class TempAnalysisStorage:
             preview_target.amount = amount
             preview_target.is_deleted = False
 
-        active_rows = self._active_rows(report_rows)
-        total_inflows = round(sum(item.amount for item in active_rows if item.amount > 0), 2)
-        total_outflows = round(sum(item.amount for item in active_rows if item.amount < 0), 2)
-        net_total = round(total_inflows + total_outflows, 2)
-
         requested_overrides = self._normalize_convert_overrides(
             opening_balance=opening_balance,
             closing_balance=closing_balance,
@@ -363,6 +361,23 @@ class TempAnalysisStorage:
             bank_code=bank_code,
         )
         persisted_overrides = self._extract_convert_overrides(content)
+        opening_balance_seed = self._resolve_recalculation_opening_balance(
+            original_rows=report_rows_raw,
+            current_rows=report_rows,
+            content=content,
+            requested_opening_balance=requested_overrides.get("opening_balance"),
+            persisted_opening_balance=persisted_overrides.get("opening_balance"),
+        )
+        self._recalculate_running_balances(
+            preview_rows=preview_rows,
+            report_rows=report_rows,
+            opening_balance=opening_balance_seed,
+        )
+
+        active_rows = self._active_rows(report_rows)
+        total_inflows = round(sum(item.amount for item in active_rows if item.amount > 0), 2)
+        total_outflows = round(sum(item.amount for item in active_rows if item.amount < 0), 2)
+        net_total = round(total_inflows + total_outflows, 2)
         effective_overrides = {
             "opening_balance": (
                 requested_overrides.get("opening_balance")
@@ -442,7 +457,7 @@ class TempAnalysisStorage:
         problems: list[dict[str, str]],
     ) -> tuple[str, str]:
         analysis_id = self._build_analysis_id(prefix="rc")
-        analysis_dir = self.root_dir / analysis_id
+        analysis_dir = self._resolve_analysis_dir(analysis_id)
         analysis_dir.mkdir(parents=True, exist_ok=True)
         now = self.now_provider()
         expires_at = now + timedelta(seconds=self.ttl_seconds)
@@ -572,7 +587,7 @@ class TempAnalysisStorage:
         return analysis_id, expires_at.isoformat()
 
     def get_reconcile_report_path(self, analysis_id: str, file_format: str) -> Path:
-        analysis_dir = self.root_dir / analysis_id
+        analysis_dir = self._resolve_analysis_dir(analysis_id)
         if self._is_expired(analysis_dir):
             self._cleanup_analysis(analysis_dir)
             raise AnalysisNotFoundError
@@ -931,7 +946,7 @@ class TempAnalysisStorage:
             raise AnalysisAccessDeniedError
 
     def _read_analysis_metadata(self, *, analysis_id: str, metadata_filename: str) -> tuple[dict[str, object], Path]:
-        analysis_dir = self.root_dir / analysis_id
+        analysis_dir = self._resolve_analysis_dir(analysis_id)
         if self._is_expired(analysis_dir):
             self._cleanup_analysis(analysis_dir)
             raise AnalysisNotFoundError
@@ -944,6 +959,12 @@ class TempAnalysisStorage:
         except (OSError, json.JSONDecodeError):
             raise AnalysisNotFoundError from None
         return content, metadata_path
+
+    def _resolve_analysis_dir(self, analysis_id: str) -> Path:
+        clean_analysis_id = str(analysis_id or "").strip()
+        if not _SAFE_ANALYSIS_ID_RE.fullmatch(clean_analysis_id):
+            raise AnalysisNotFoundError
+        return self.root_dir / clean_analysis_id
 
     def _is_expired(self, analysis_dir: Path) -> bool:
         metadata_path = analysis_dir / "analysis.json"
@@ -1072,6 +1093,71 @@ class TempAnalysisStorage:
             return opening_balance, round(opening_balance + transaction_amounts, 2)
 
         return None, None
+
+    def _resolve_recalculation_opening_balance(
+        self,
+        *,
+        original_rows: list[dict[str, object]] | list[TransactionRow],
+        current_rows: list[TransactionRow],
+        content: dict[str, object],
+        requested_opening_balance: float | str | None,
+        persisted_opening_balance: float | str | None,
+    ) -> float | None:
+        for candidate in (
+            requested_opening_balance,
+            persisted_opening_balance,
+            content.get("opening_balance"),
+        ):
+            coerced = self._coerce_balance_value(candidate)
+            if coerced is not None:
+                return coerced
+
+        original_parsed_rows = (
+            original_rows
+            if original_rows and isinstance(original_rows[0], TransactionRow)
+            else self._parse_transaction_rows(original_rows)
+        )
+        original_opening_balance, _ = self._resolve_balance_bounds(original_parsed_rows)
+        if original_opening_balance is not None:
+            return original_opening_balance
+
+        current_opening_balance, _ = self._resolve_balance_bounds(current_rows)
+        return current_opening_balance
+
+    def _recalculate_running_balances(
+        self,
+        *,
+        preview_rows: list[TransactionRow],
+        report_rows: list[TransactionRow],
+        opening_balance: float | None,
+    ) -> None:
+        has_balance_context = opening_balance is not None or any(
+            row.running_balance is not None for row in report_rows
+        )
+        if not has_balance_context:
+            return
+
+        cursor = round(float(opening_balance), 2) if opening_balance is not None else None
+        for preview_row, report_row in zip(preview_rows, report_rows, strict=False):
+            if preview_row.is_deleted or report_row.is_deleted:
+                preview_row.running_balance = None
+                report_row.running_balance = None
+                continue
+
+            if self._is_opening_balance_row(report_row):
+                cursor = round(float(report_row.amount), 2)
+                preview_row.running_balance = cursor
+                report_row.running_balance = cursor
+                continue
+
+            if cursor is None:
+                preview_row.running_balance = None
+                report_row.running_balance = None
+                continue
+
+            cursor = round(cursor + float(report_row.amount), 2)
+            preview_row.running_balance = cursor
+            report_row.running_balance = cursor
 
     def _coerce_balance_value(self, value: float | str | None) -> float | None:
         if value is None or value == "":
