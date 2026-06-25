@@ -353,11 +353,6 @@ class TempAnalysisStorage:
             preview_target.amount = amount
             preview_target.is_deleted = False
 
-        active_rows = self._active_rows(report_rows)
-        total_inflows = round(sum(item.amount for item in active_rows if item.amount > 0), 2)
-        total_outflows = round(sum(item.amount for item in active_rows if item.amount < 0), 2)
-        net_total = round(total_inflows + total_outflows, 2)
-
         requested_overrides = self._normalize_convert_overrides(
             opening_balance=opening_balance,
             closing_balance=closing_balance,
@@ -366,6 +361,23 @@ class TempAnalysisStorage:
             bank_code=bank_code,
         )
         persisted_overrides = self._extract_convert_overrides(content)
+        opening_balance_seed = self._resolve_recalculation_opening_balance(
+            original_rows=report_rows_raw,
+            current_rows=report_rows,
+            content=content,
+            requested_opening_balance=requested_overrides.get("opening_balance"),
+            persisted_opening_balance=persisted_overrides.get("opening_balance"),
+        )
+        self._recalculate_running_balances(
+            preview_rows=preview_rows,
+            report_rows=report_rows,
+            opening_balance=opening_balance_seed,
+        )
+
+        active_rows = self._active_rows(report_rows)
+        total_inflows = round(sum(item.amount for item in active_rows if item.amount > 0), 2)
+        total_outflows = round(sum(item.amount for item in active_rows if item.amount < 0), 2)
+        net_total = round(total_inflows + total_outflows, 2)
         effective_overrides = {
             "opening_balance": (
                 requested_overrides.get("opening_balance")
@@ -1081,6 +1093,71 @@ class TempAnalysisStorage:
             return opening_balance, round(opening_balance + transaction_amounts, 2)
 
         return None, None
+
+    def _resolve_recalculation_opening_balance(
+        self,
+        *,
+        original_rows: list[dict[str, object]] | list[TransactionRow],
+        current_rows: list[TransactionRow],
+        content: dict[str, object],
+        requested_opening_balance: float | str | None,
+        persisted_opening_balance: float | str | None,
+    ) -> float | None:
+        for candidate in (
+            requested_opening_balance,
+            persisted_opening_balance,
+            content.get("opening_balance"),
+        ):
+            coerced = self._coerce_balance_value(candidate)
+            if coerced is not None:
+                return coerced
+
+        original_parsed_rows = (
+            original_rows
+            if original_rows and isinstance(original_rows[0], TransactionRow)
+            else self._parse_transaction_rows(original_rows)
+        )
+        original_opening_balance, _ = self._resolve_balance_bounds(original_parsed_rows)
+        if original_opening_balance is not None:
+            return original_opening_balance
+
+        current_opening_balance, _ = self._resolve_balance_bounds(current_rows)
+        return current_opening_balance
+
+    def _recalculate_running_balances(
+        self,
+        *,
+        preview_rows: list[TransactionRow],
+        report_rows: list[TransactionRow],
+        opening_balance: float | None,
+    ) -> None:
+        has_balance_context = opening_balance is not None or any(
+            row.running_balance is not None for row in report_rows
+        )
+        if not has_balance_context:
+            return
+
+        cursor = round(float(opening_balance), 2) if opening_balance is not None else None
+        for preview_row, report_row in zip(preview_rows, report_rows, strict=False):
+            if preview_row.is_deleted or report_row.is_deleted:
+                preview_row.running_balance = None
+                report_row.running_balance = None
+                continue
+
+            if self._is_opening_balance_row(report_row):
+                cursor = round(float(report_row.amount), 2)
+                preview_row.running_balance = cursor
+                report_row.running_balance = cursor
+                continue
+
+            if cursor is None:
+                preview_row.running_balance = None
+                report_row.running_balance = None
+                continue
+
+            cursor = round(cursor + float(report_row.amount), 2)
+            preview_row.running_balance = cursor
+            report_row.running_balance = cursor
 
     def _coerce_balance_value(self, value: float | str | None) -> float | None:
         if value is None or value == "":
