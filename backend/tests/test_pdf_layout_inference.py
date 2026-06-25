@@ -46,6 +46,32 @@ def test_infer_pdf_layout_prefers_itau_profile_when_tokens_match() -> None:
     assert result.confidence >= 0.6
 
 
+def test_infer_pdf_layout_prefers_itau_empresas_30_horas_posicao_profile() -> None:
+    text = """
+    Banco Itau S/A
+    ItauEmpresas
+    30 horas
+    Extrato de conta corrente
+    Nome:
+    Agencia:
+    Conta:
+    Posicao da Conta Corrente
+    01/10/2022 a 31/10/2022
+    Data Lancamento Valor (R$) Saldo (R$)
+    03/10 SALDO ANTERIOR 10,00
+    04/10 PIX 9773 2.436,50
+    04/10 TAR 6381 122,00-
+    04/10 SDO 7.593,74
+    05/10 SISPAG 6381 520,00-
+    05/10 VIVO 6381 113,99-
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "itau_empresas_extrato_30_horas_posicao_conta_corrente_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_falls_back_to_generic_profile() -> None:
     text = """
     01 JAN 2026

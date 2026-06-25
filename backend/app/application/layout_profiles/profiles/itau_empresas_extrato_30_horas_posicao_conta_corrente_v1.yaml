@@ -1,0 +1,95 @@
+layout_profile:
+  profile_name: itau_empresas_extrato_30_horas_posicao_conta_corrente_v1
+  bank: Itaú
+  layout_family: itau_empresas_30_horas_posicao_conta_corrente
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "ItaúEmpresas"
+      - "30 horas"
+      - "Extrato de conta corrente"
+      - "Posição da Conta Corrente"
+      - "Lançamento"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    optional_keywords:
+      - "Banco Itaú S/A"
+      - "Nome"
+      - "Agência"
+      - "Conta"
+      - "SALDO ANTERIOR"
+      - "PIX"
+      - "TAR"
+      - "SISPAG"
+      - "VIVO"
+    negative_keywords:
+      - "extrato completo"
+      - "dados gerais"
+      - "aplicações automáticas"
+      - "Ag./Origem"
+      - "Limite da Conta"
+      - "Saldo em conta"
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+    min_score_hint: 0.62
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Lançamento"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Lançamento"
+        - "Histórico"
+      amount:
+        - "Valor (R$)"
+        - "Valor"
+      balance:
+        - "Saldo (R$)"
+        - "Saldo"
+    table_starts_after:
+      - "Posição da Conta Corrente"
+      - "Data Lançamento Valor (R$) Saldo (R$)"
+    row_separator_hint: "transaction row starts when first token is dd/MM and amount or balance appears at the end"
+  parsing:
+    date_format: "dd/MM"
+    date_year_source: "statement_period"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount}-"
+      - "-{amount}"
+    positive_patterns:
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "ItaúEmpresas"
+      - "30 horas"
+      - "Extrato de conta corrente"
+      - "Posição da Conta Corrente"
+      - "Data"
+      - "Lançamento"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+      - "SALDO ANTERIOR"
+      - "SALDO DO DIA"
+      - "SDO"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - balance
