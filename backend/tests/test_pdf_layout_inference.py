@@ -72,6 +72,27 @@ def test_infer_pdf_layout_prefers_itau_empresas_30_horas_posicao_profile() -> No
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_prefers_itau_historico_lancamentos_orig_profile() -> None:
+    text = """
+    Itau
+    Agencia:
+    Conta:
+    Nome:
+    JANEIRO/2022
+    Data Historico de Lancamentos Orig Valor (R$) Saldo (R$)
+    03/01 SALDO INICIAL 10,00
+    03/01 SISPAG BOLETO 1380 206,66-
+    03/01 SISPAG BOLETO 1380 211,89-
+    03/01 SISPAG CONCESSIONARIA 1380 135,05-
+    03/01 SISPAG BOLET OUTR BCO 1380 236,40-
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "itau_extrato_historico_lancamentos_orig_valor_saldo_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_falls_back_to_generic_profile() -> None:
     text = """
     01 JAN 2026
