@@ -1,0 +1,101 @@
+layout_profile:
+  profile_name: itau_extrato_historico_lancamentos_orig_valor_saldo_v1
+  bank: Itau
+  layout_family: itau_extrato_historico_lancamentos_orig_valor_saldo
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Agencia"
+      - "Conta"
+      - "Nome"
+      - "Historico de Lancamentos"
+      - "Orig"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    optional_keywords:
+      - "Itau"
+      - "SALDO INICIAL"
+      - "SISPAG BOLETO"
+      - "SISPAG CONCESSIONARIA"
+      - "SISPAG BOLET OUTR BCO"
+      - "JANEIRO/2022"
+    negative_keywords:
+      - "ItauEmpresas"
+      - "30 horas"
+      - "Posicao da Conta Corrente"
+      - "Extrato de conta corrente"
+      - "Ag./Origem"
+      - "dados gerais"
+      - "extrato completo"
+      - "aplicacoes automaticas"
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+    min_score_hint: 0.6
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Historico de Lancamentos"
+      - "Orig"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - description
+      - origin_agency
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Historico de Lancamentos"
+        - "Historico"
+        - "Lancamentos"
+      origin_agency:
+        - "Orig"
+        - "Origem"
+      amount:
+        - "Valor (R$)"
+        - "Valor"
+      balance:
+        - "Saldo (R$)"
+        - "Saldo"
+    table_starts_after:
+      - "JANEIRO/2022"
+      - "Data Historico de Lancamentos Orig Valor (R$) Saldo (R$)"
+    row_separator_hint: "transaction row starts when the first token is a short date and the value column appears near the end"
+  parsing:
+    date_format: "dd/MM"
+    date_year_source: "statement_period_or_header"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount}-"
+      - "-{amount}"
+    positive_patterns:
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "Itau"
+      - "Agencia"
+      - "Conta"
+      - "Nome"
+      - "Data"
+      - "Historico de Lancamentos"
+      - "Orig"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+      - "SALDO INICIAL"
+    opening_balance_rows:
+      - "SALDO INICIAL"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - origin_agency
+      - balance
