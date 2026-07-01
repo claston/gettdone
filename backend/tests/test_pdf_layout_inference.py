@@ -258,6 +258,35 @@ def test_infer_pdf_layout_prefers_santander_monthly_landscape_consolidated_profi
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_prefers_santander_vangogh_resumo_profile() -> None:
+    text = """
+    Santander Van Gogh EXTRATO CONSOLIDADO
+    Resumo - agosto/2024
+    Nome
+    Agencia
+    Conta Corrente
+    (-) Saldo de Conta Corrente em 31/07 2.071,46
+    (=) Saldo de Conta Corrente em 31/08 4.174,56
+    (=) Saldo Disponivel de Conta Corrente 4.174,56
+    Conta Corrente
+    Movimentacao
+    Data Descricao N Documento Movimento (R$) Saldo (R$)
+    01/08 SALDO EM 31/07 2.071,46
+    01/08 PIX RECEBIDO - 8.736,70
+    RG FAMILY OFFICE ASSESSOR
+    PAGAMENTO DE BOLETO OUTROS - 3.301,28-
+    IOF IMPOSTO OF 3070/24 1,27-
+    IOF ADICIONAL - AUTOMATICO - 14,81- 7.490,80
+    06/08 PAGAMENTO DE BOLETO - 3.123,64-
+    REMUNERACAO APLICACAO - 0,02 4.367,18
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "santander_vangogh_resumo_consolidado_conta_corrente_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_bradesco_profile_when_tokens_match() -> None:
     text = """
     BANCO BRADESCO S.A.

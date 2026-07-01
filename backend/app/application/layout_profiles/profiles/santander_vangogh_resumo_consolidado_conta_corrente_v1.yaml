@@ -1,0 +1,133 @@
+layout_profile:
+  profile_name: santander_vangogh_resumo_consolidado_conta_corrente_v1
+  bank: Santander
+  layout_family: vangogh_resumo_consolidado
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Santander"
+      - "Van Gogh"
+      - "EXTRATO CONSOLIDADO"
+      - "Resumo -"
+      - "Conta Corrente"
+      - "Movimentacao"
+      - "Data"
+      - "Descricao"
+      - "Movimento (R$)"
+      - "Saldo (R$)"
+    optional_keywords:
+      - "Saldo de Conta Corrente em"
+      - "Saldo Disponivel de Conta Corrente"
+      - "Limite Santander Master"
+      - "Saldo Disponivel Total em"
+      - "SALDO EM"
+      - "PIX RECEBIDO"
+      - "PAGAMENTO DE BOLETO"
+      - "REMUNERACAO APLICACAO"
+    negative_keywords:
+      - "INTERNET BANKING EMPRESARIAL"
+      - "NEGOCIOS & EMPRESAS"
+      - "EXTRATO MENSAL CONSOLIDADO"
+      - "APLICATIVO SANTANDER EMPRESAS"
+      - "Mes Referencia"
+      - "Tipo Consolidacao"
+      - "Créditos"
+      - "Débitos"
+    min_score_hint: 0.74
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Descricao"
+      - "N Documento"
+      - "Movimento (R$)"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - description
+      - document
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Descricao"
+        - "Movimentacao"
+      document:
+        - "N Documento"
+        - "N° Documento"
+        - "Documento"
+      amount:
+        - "Movimento (R$)"
+        - "Movimento"
+      balance:
+        - "Saldo (R$)"
+        - "Saldo"
+    table_starts_after:
+      - "Conta Corrente"
+      - "Movimentacao"
+      - "Data Descricao"
+    row_separator_hint: "summary block first, then a consolidated movement table with single amount column and optional running balance"
+  parsing:
+    date_format: "dd/MM"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "trailing_minus"
+      - "leading_minus"
+    positive_patterns:
+      - "unsigned_amount"
+    ignore_rows:
+      - "Resumo"
+      - "Nome"
+      - "Agencia"
+      - "Conta Corrente"
+      - "Movimentacao"
+      - "Saldo de Conta Corrente em"
+      - "Saldo Disponivel de Conta Corrente"
+      - "Limite Santander Master"
+      - "Saldo Disponivel Total em"
+    opening_balance_rows:
+      - "SALDO EM"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - description
+      - amount
+    optional_transaction_fields:
+      - date
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "running_balance_consistency"
+      - "description_based_hint"
+    description_based_overrides:
+      - pattern: "PIX RECEBIDO"
+        sign: positive
+        confidence: high
+        inferred: false
+        reason: "The sampled Van Gogh statement shows PIX received as an inflow in the movement column."
+      - pattern: "PAGAMENTO DE BOLETO"
+        sign: negative
+        confidence: high
+        inferred: false
+        reason: "The sampled Van Gogh statement shows boleto payments as outflows with trailing minus."
+    cautions:
+      - "The summary section above the table must not be imported as transactions."
+      - "SALDO EM dd/MM is an opening balance row, not a transaction."
+      - "Descriptions can wrap into continuation lines before the next amount."
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "Data"
+      - "Descricao"
+      - "Movimento"
+      - "Saldo"
+    balance_consistency_check:
+      enabled: true
+      method: "when_previous_and_current_balance_are_available_validate_current_balance_equals_previous_balance_plus_amount"
+      tolerance: "0.01"

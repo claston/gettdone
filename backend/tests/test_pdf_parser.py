@@ -956,6 +956,112 @@ def test_parse_pdf_transactions_supports_santander_grouped_period_with_weekday_h
     assert result.transactions[2].amount == 9325.9
 
 
+def test_parse_pdf_transactions_keeps_vangogh_grouped_multiline_descriptions_with_the_correct_rows() -> None:
+    text = """
+    Santander Van Gogh EXTRATO CONSOLIDADO
+    Resumo - agosto/2024
+    Nome
+    Agencia
+    Conta Corrente
+    (-) Saldo de Conta Corrente em 31/07
+    2.071,46
+    (=) Saldo de Conta Corrente em 31/08
+    4.174,56
+    Conta Corrente
+    Movimentacao
+    Data
+    Descricao
+    N Documento
+    Movimento (R$)
+    Saldo (R$)
+    01/08
+    SALDO EM 31/07
+    2.071,46
+    01/08
+    PIX RECEBIDO
+    -
+    8.736,70
+    RG FAMILY OFFICE ASSESSOR
+    PAGAMENTO DE BOLETO OUTROS
+    -
+    3.301,28-
+    TITU ADMINISTRADORA DE
+    IOF IMPOSTO OF 3070/24
+    1,27-
+    IOF ADICIONAL - AUTOMATICO
+    -
+    14,81-
+    7.490,80
+    PERIODO 01/07 A 31/07/24
+    06/08
+    PAGAMENTO DE BOLETO
+    -
+    3.123,64-
+    GPROA LTDA
+    REMUNERACAO APLICACAO
+    -
+    0,02
+    4.367,18
+    07/08
+    PAGAMENTO DE BOLETO
+    -
+    192,62-
+    4.174,56
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert result.layout.layout_name == "santander_vangogh_resumo_consolidado_conta_corrente_v1"
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert result.transactions == [
+        pdf_parser_module.NormalizedTransaction(
+            date="2024-08-01",
+            description="PIX RECEBIDO RG FAMILY OFFICE ASSESSOR",
+            amount=8736.7,
+            type="inflow",
+        ),
+        pdf_parser_module.NormalizedTransaction(
+            date="2024-08-01",
+            description="PAGAMENTO DE BOLETO OUTROS TITU ADMINISTRADORA DE",
+            amount=-3301.28,
+            type="outflow",
+        ),
+        pdf_parser_module.NormalizedTransaction(
+            date="2024-08-01",
+            description="IOF IMPOSTO OF 3070/24",
+            amount=-1.27,
+            type="outflow",
+        ),
+        pdf_parser_module.NormalizedTransaction(
+            date="2024-08-01",
+            description="IOF ADICIONAL - AUTOMATICO PERIODO 01/07 A 31/07/24",
+            amount=-14.81,
+            type="outflow",
+        ),
+        pdf_parser_module.NormalizedTransaction(
+            date="2024-08-06",
+            description="PAGAMENTO DE BOLETO GPROA LTDA",
+            amount=-3123.64,
+            type="outflow",
+        ),
+        pdf_parser_module.NormalizedTransaction(
+            date="2024-08-06",
+            description="REMUNERACAO APLICACAO",
+            amount=0.02,
+            type="inflow",
+        ),
+        pdf_parser_module.NormalizedTransaction(
+            date="2024-08-07",
+            description="PAGAMENTO DE BOLETO",
+            amount=-192.62,
+            type="outflow",
+        ),
+    ]
+    assert result.canonical_transactions[3].running_balance == 7490.8
+    assert result.canonical_transactions[5].running_balance == 4367.18
+    assert result.canonical_transactions[6].running_balance == 4174.56
+
+
 def test_parse_pdf_transactions_prefers_layout_text_for_sicredi_matricial_paisagem(monkeypatch) -> None:
     native_text = """
     ======================================================================================================================
