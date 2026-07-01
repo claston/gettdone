@@ -423,6 +423,92 @@ def test_analyze_service_prefers_saldo_anterior_row_over_later_running_balance(t
     )
 
     assert result.opening_balance == 10000.0
+
+
+def test_analyze_service_uses_grouped_saldo_em_snapshot_as_opening_balance(tmp_path, monkeypatch) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    monkeypatch.setattr(
+        default_conversion_pipeline_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes, **kwargs: PdfParseResult(
+            transactions=[
+                NormalizedTransaction(
+                    date="2024-08-01",
+                    description="SALDO ANTERIOR",
+                    amount=2071.46,
+                    type="inflow",
+                ),
+                NormalizedTransaction(
+                    date="2024-08-01",
+                    description="PIX RECEBIDO RG FAMILY OFFICE ASSESSOR",
+                    amount=8736.7,
+                    type="inflow",
+                ),
+                NormalizedTransaction(
+                    date="2024-08-01",
+                    description="IOF ADICIONAL - AUTOMATICO",
+                    amount=-14.81,
+                    type="outflow",
+                ),
+            ],
+            layout=PdfLayoutInference(
+                layout_name="santander_vangogh_resumo_consolidado_conta_corrente_v1",
+                confidence=0.95,
+                used_fallback=False,
+            ),
+            extracted_text="01/08 SALDO EM 31/07 2.071,46",
+            parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+            canonical_transactions=[
+                CanonicalTransaction(
+                    date="2024-08-01",
+                    description="SALDO ANTERIOR",
+                    amount=2071.46,
+                    type="inflow",
+                    running_balance=None,
+                    source_page=1,
+                    source_line=1,
+                    layout_name="santander_vangogh_resumo_consolidado_conta_corrente_v1",
+                    confidence=0.95,
+                    source_parser="grouped",
+                ),
+                CanonicalTransaction(
+                    date="2024-08-01",
+                    description="PIX RECEBIDO RG FAMILY OFFICE ASSESSOR",
+                    amount=8736.7,
+                    type="inflow",
+                    running_balance=None,
+                    source_page=1,
+                    source_line=2,
+                    layout_name="santander_vangogh_resumo_consolidado_conta_corrente_v1",
+                    confidence=0.95,
+                    source_parser="grouped",
+                ),
+                CanonicalTransaction(
+                    date="2024-08-01",
+                    description="IOF ADICIONAL - AUTOMATICO",
+                    amount=-14.81,
+                    type="outflow",
+                    running_balance=7490.8,
+                    source_page=1,
+                    source_line=3,
+                    layout_name="santander_vangogh_resumo_consolidado_conta_corrente_v1",
+                    confidence=0.95,
+                    source_parser="grouped",
+                ),
+            ],
+        ),
+    )
+
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="santander-vangogh.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
+
+    assert result.opening_balance == 2071.46
+    assert result.transactions_total == 2
+    assert len(result.preview_transactions) == 2
+    assert result.preview_transactions[0].description == "PIX RECEBIDO RG FAMILY OFFICE ASSESSOR"
     assert result.transactions_total == 1
     assert result.preview_transactions[0].description == "PAGAMENTO BOLETO"
 

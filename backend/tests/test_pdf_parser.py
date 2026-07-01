@@ -1016,6 +1016,12 @@ def test_parse_pdf_transactions_keeps_vangogh_grouped_multiline_descriptions_wit
     assert result.transactions == [
         pdf_parser_module.NormalizedTransaction(
             date="2024-08-01",
+            description="SALDO ANTERIOR",
+            amount=2071.46,
+            type="inflow",
+        ),
+        pdf_parser_module.NormalizedTransaction(
+            date="2024-08-01",
             description="PIX RECEBIDO RG FAMILY OFFICE ASSESSOR",
             amount=8736.7,
             type="inflow",
@@ -1057,9 +1063,9 @@ def test_parse_pdf_transactions_keeps_vangogh_grouped_multiline_descriptions_wit
             type="outflow",
         ),
     ]
-    assert result.canonical_transactions[3].running_balance == 7490.8
-    assert result.canonical_transactions[5].running_balance == 4367.18
-    assert result.canonical_transactions[6].running_balance == 4174.56
+    assert result.canonical_transactions[4].running_balance == 7490.8
+    assert result.canonical_transactions[6].running_balance == 4367.18
+    assert result.canonical_transactions[7].running_balance == 4174.56
 
 
 def test_parse_pdf_transactions_prefers_layout_text_for_sicredi_matricial_paisagem(monkeypatch) -> None:
