@@ -887,7 +887,20 @@ def _parse_grouped_statement_lines(
                 if parsed_row.running_balance is not None:
                     last_known_running_balance = parsed_row.running_balance
             elif _is_balance_snapshot_description(pre_amount_description_parts):
-                last_known_running_balance = parse_pdf_amount(line.text)
+                parsed_balance_snapshot = _build_grouped_opening_balance_transaction(
+                    current_date=current_date,
+                    description_parts=pre_amount_description_parts,
+                    line=line,
+                    transactions=transactions,
+                    opening_balance_inserted=opening_balance_inserted,
+                )
+                if parsed_balance_snapshot is not None:
+                    transactions.append(parsed_balance_snapshot)
+                    last_transaction_index = len(transactions) - 1
+                    last_known_running_balance = parsed_balance_snapshot.transaction.amount
+                    opening_balance_inserted = True
+                else:
+                    last_known_running_balance = parse_pdf_amount(line.text)
             elif _can_attach_grouped_running_balance(description_parts=description_parts, last_transaction_index=last_transaction_index):
                 previous_balance = None
                 if _has_adjacent_previous_running_balance_context(transactions, last_transaction_index):
@@ -1621,6 +1634,29 @@ def _append_grouped_description_part(*, description_parts: list[str], raw_text: 
     if not cleaned_text:
         return description_parts
     return [*description_parts, cleaned_text]
+
+
+def _build_grouped_opening_balance_transaction(
+    *,
+    current_date: str,
+    description_parts: list[str],
+    line: _PdfLine,
+    transactions: list[_ParsedTransaction],
+    opening_balance_inserted: bool,
+) -> _ParsedTransaction | None:
+    if opening_balance_inserted or transactions:
+        return None
+    if not _is_balance_snapshot_description(description_parts):
+        return None
+
+    return _build_parsed_transaction(
+        date=current_date,
+        description="SALDO ANTERIOR",
+        amount=parse_pdf_amount(line.text),
+        source_page=line.page_number,
+        source_line=line.line_number,
+        has_explicit_amount_sign=has_explicit_amount_sign(line.text),
+    )
 
 
 def _prepare_grouped_amount_only_description_parts(
