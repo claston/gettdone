@@ -1,0 +1,113 @@
+layout_profile:
+  profile_name: santander_simples_conferencia_extrato_conta_v1
+  bank: Santander
+  layout_family: simples_conferencia_uso_interno
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Santander"
+      - "Extrato de Conta para Simples Conferencia - USO INTERNO"
+      - "Mes Referencia"
+      - "Tipo Consolidacao"
+      - "Dt. Contabil"
+      - "Descricao historico"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    optional_keywords:
+      - "Historico"
+      - "N documento"
+      - "SALDO INICIAL"
+      - "PIX RECEBIDO OUTRA INST"
+      - "PIX ENVIADO OUTRA INST"
+      - "Cliente"
+      - "Conta"
+    negative_keywords:
+      - "INTERNET BANKING EMPRESARIAL"
+      - "EXTRATO MENSAL CONSOLIDADO"
+      - "APLICATIVO SANTANDER EMPRESAS"
+      - "NEGOCIOS & EMPRESAS"
+      - "Busque por um periodo"
+    min_score_hint: 0.72
+  table_detection:
+    header_keywords:
+      - "Dt. Contabil"
+      - "Descricao historico"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - document
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Dt. Contabil"
+        - "Data"
+      description:
+        - "Descricao historico"
+        - "Historico"
+      document:
+        - "N documento"
+        - "Documento"
+      amount:
+        - "Valor (R$)"
+        - "Valor"
+      balance:
+        - "Saldo (R$)"
+        - "Saldo"
+    table_starts_after:
+      - "Cliente :"
+      - "Dt. Contabil"
+      - "Descricao historico"
+    row_separator_hint: "grid table with accounting date, code/document fragments, description, amount and running balance"
+  parsing:
+    date_format: "dd/MM"
+    date_year_source: "Mes Referencia"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+      - "- {amount}"
+    positive_patterns:
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "Data:"
+      - "Hora:"
+      - "Local:"
+      - "Tipo Consolidacao"
+      - "Conta :"
+      - "Cliente :"
+    opening_balance_rows:
+      - "SALDO INICIAL"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - description
+      - amount
+    optional_transaction_fields:
+      - date
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "running_balance_consistency"
+      - "description_based_hint"
+    cautions:
+      - "Dates appear as dd/MM and must inherit the year from Mes Referencia."
+      - "SALDO INICIAL is an opening balance row, not a normal transaction."
+      - "Document/code fragments can spill into continuation lines."
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "Dt. Contabil"
+      - "Descricao historico"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    balance_consistency_check:
+      enabled: true
+      method: "use running balance column when present"
+      tolerance: "0.01"
