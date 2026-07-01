@@ -9,7 +9,7 @@ AMOUNT_PATTERN = re.compile(
     rf"^(?:{SIGN_TOKEN}\s*)?(?:R\$\s*)?\d+(?:\.\d{{3}})*,\d{{2}}(?:\s*{SIGN_TOKEN})?(?:\s*[CD])?$"
 )
 
-DATE_SLASH_TOKEN = r"\d{1,2}/\d{1,2}(?:/\d{2,4})?"
+DATE_SLASH_TOKEN = rf"\d{{1,2}}\s*/\s*(?:\d{{1,2}}|(?:{MONTH_PATTERN}))(?:\s*/\s*\d{{2,4}})?"
 DATE_MONTH_TOKEN = rf"\d{{1,2}}\s+(?:{MONTH_PATTERN})(?:\s+\d{{4}})?"
 DATE_TOKEN = rf"(?:{DATE_SLASH_TOKEN}|{DATE_MONTH_TOKEN})"
 INLINE_ROW_PATTERN = re.compile(rf"^(?P<date>{DATE_TOKEN})\s+(?P<rest>.+)$", re.IGNORECASE)

@@ -1354,6 +1354,10 @@ def _classify_tabular_statement_line(
     if not raw_description or should_skip_transaction_description(raw_description):
         return None, True
     normalized_description = _normalize_text(raw_description)
+    if tabular_profile is not None and (
+        normalized_description.startswith("SALDO ANTERIOR") or normalized_description.startswith("SALDO INICIAL")
+    ):
+        return None, True
     if normalized_description.endswith(" SALDO"):
         return None, True
 

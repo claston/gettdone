@@ -23,6 +23,10 @@ def test_parse_statement_date_supports_month_abbrev_with_fallback() -> None:
     assert parse_statement_date("1 ABR", fallback_year=2024) == "2024-04-01"
 
 
+def test_parse_statement_date_supports_month_abbrev_with_slash_spacing() -> None:
+    assert parse_statement_date("01 / jul", fallback_year=2021) == "2021-07-01"
+
+
 def test_parse_statement_date_uses_current_year_when_fallback_missing() -> None:
     expected_year = datetime.now(timezone.utc).year
     parsed = parse_statement_date("1/4", fallback_year=None)
