@@ -92,6 +92,12 @@ def infer_default_statement_year(lines: list[str]) -> int | None:
     year_counts: dict[int, int] = {}
 
     for line in lines:
+        normalized_line = normalize_upper_text(line)
+        for raw in re.findall(r"\b(?:MES\s+REFERENCIA|PERIODO)\s*:\s*\d{1,2}/(\d{4})\b", normalized_line):
+            year = int(raw)
+            if not 1900 <= year <= 2100:
+                continue
+            year_counts[year] = year_counts.get(year, 0) + 1
         for raw in re.findall(r"\b\d{2}/\d{2}/(\d{4})\b", line):
             year = int(raw)
             if not 1900 <= year <= 2100:
@@ -102,7 +108,6 @@ def infer_default_statement_year(lines: list[str]) -> int | None:
             if not 1900 <= year <= 2100:
                 continue
             year_counts[year] = year_counts.get(year, 0) + 1
-        normalized_line = normalize_upper_text(line)
         for raw in re.findall(rf"\b\d{{1,2}}\s+(?:{MONTH_PATTERN})\s+(\d{{4}})\b", normalized_line):
             year = int(raw)
             if not 1900 <= year <= 2100:

@@ -196,6 +196,28 @@ def test_infer_pdf_layout_prefers_santander_empresarial_a4_date_history_value_pr
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_prefers_santander_simples_conferencia_profile() -> None:
+    text = """
+    Data: Hora: Local:
+    Santander
+    Extrato de Conta para Simples Conferencia - USO INTERNO
+    Mes Referencia: 05/2022
+    Tipo Consolidacao :
+    Conta :
+    Cliente :
+    Dt. Contabil Historico Descricao historico N documento Valor (R$) Saldo (R$)
+    SALDO INICIAL 0,00
+    06/05 398 PIX RECEBIDO OUTRA INST -MESMA TIT 10.000,00 10.000,00
+    22948445
+    398 PIX ENVIADO OUTRA INST - DIF TIT -1.468,90 8.531,10
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "santander_simples_conferencia_extrato_conta_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_santander_monthly_landscape_consolidated_profile() -> None:
     text = """
     Santander
