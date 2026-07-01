@@ -63,6 +63,16 @@ def test_infer_default_statement_year_supports_two_digit_years() -> None:
     assert infer_default_statement_year(lines) == 2021
 
 
+def test_infer_default_statement_year_supports_reference_month_header() -> None:
+    lines = [
+        "Extrato de Conta para Simples Conferencia - USO INTERNO",
+        "Mes Referencia: 05/2022",
+        "06/05 PIX RECEBIDO 10.000,00",
+    ]
+
+    assert infer_default_statement_year(lines) == 2022
+
+
 def test_infer_default_statement_year_returns_none_when_absent() -> None:
     assert infer_default_statement_year(["SEM DATA", "PIX RECEBIDO"]) is None
 
