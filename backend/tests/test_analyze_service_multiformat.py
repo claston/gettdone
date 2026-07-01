@@ -102,9 +102,45 @@ VERSION:102
     assert result.total_inflows == 2500.00
     assert result.total_outflows == -58.90
     assert result.net_total == 2441.10
+    assert result.ofx_account_type == "bank"
     assert result.preview_transactions[0].description == "IFOOD"
     assert result.preview_transactions[1].description == "SALARIO"
     assert result.pdf_processing_metrics is None
+
+
+def test_analyze_service_detects_credit_card_ofx_content(tmp_path) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    raw = """OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+
+<OFX>
+  <CREDITCARDMSGSRSV1>
+    <CCSTMTTRNRS>
+      <CCSTMTRS>
+        <CCACCTFROM>
+          <ACCTID>9999000011112222
+        </CCACCTFROM>
+        <BANKTRANLIST>
+          <STMTTRN>
+            <DTPOSTED>20260401120000[-3:BRT]
+            <TRNAMT>-39.90
+            <MEMO>ASSINATURA STREAMING
+            <TRNTYPE>DEBIT
+          </STMTTRN>
+        </BANKTRANLIST>
+      </CCSTMTRS>
+    </CCSTMTTRNRS>
+  </CREDITCARDMSGSRSV1>
+</OFX>
+""".encode("utf-8")
+
+    result = _run_analysis_with_storage(storage=storage, filename="card.ofx", raw_bytes=raw)
+
+    assert result.file_type == "ofx"
+    assert result.ofx_account_type == "credit_card"
+    assert result.transactions_total == 1
+    assert result.preview_transactions[0].description == "ASSINATURA STREAMING"
 
 
 def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkeypatch) -> None:
