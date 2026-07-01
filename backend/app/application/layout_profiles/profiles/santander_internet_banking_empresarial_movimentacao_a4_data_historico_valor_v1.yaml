@@ -1,0 +1,111 @@
+layout_profile:
+  profile_name: santander_internet_banking_empresarial_movimentacao_a4_data_historico_valor_v1
+  bank: Santander
+  layout_family: internet_banking_empresarial_simple_value_list
+  statement_type: conta_corrente_movimentacao
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Santander"
+      - "Internet Banking Empresarial"
+      - "Agencia"
+      - "Conta"
+      - "Data"
+      - "Historico"
+      - "Valor"
+      - "Saldo do dia"
+    optional_keywords:
+      - "Saldo do dia Cc"
+      - "Resgate"
+      - "Pix Enviado"
+      - "Pix Recebido"
+      - "Pagamento De Boleto Outros Bancos"
+      - "Aplicacao"
+    negative_keywords:
+      - "Documento"
+      - "Saldo (R$)"
+      - "Busque por um periodo"
+      - "Todos"
+      - "Creditos"
+      - "Debitos"
+      - "UYLS0001"
+      - "EXTRATO MENSAL CONSOLIDADO"
+    min_score_hint: 0.72
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Historico"
+      - "Valor"
+    expected_column_order:
+      - date
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Historico"
+        - "Saldo do dia Cc"
+      document:
+        - "04827261"
+      amount:
+        - "Valor"
+        - "R$"
+        - "- R$"
+      balance:
+        - "Saldo do dia"
+        - "Saldo do dia Cc"
+    table_starts_after:
+      - "Internet Banking Empresarial"
+      - "Agencia:"
+      - "Conta:"
+    row_separator_hint: "one row per movement with repeated dd/MM/yyyy date and a single right-aligned value column"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "- R$ {amount}"
+      - "-R$ {amount}"
+      - "- {amount}"
+    positive_patterns:
+      - "R$ {amount}"
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "Santander"
+      - "Internet Banking Empresarial"
+      - "Agencia:"
+      - "Conta:"
+      - "Saldo do dia"
+      - "Saldo do dia Cc"
+    opening_balance_rows:
+      - "Saldo anterior"
+      - "SALDO ANTERIOR"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "balance_consistency_when_daily_balance_is_available"
+      - "description_based_hint"
+    cautions:
+      - "Rows are printed in descending date order."
+      - "Saldo do dia Cc is balance context, not a transaction."
+      - "Do not infer debit only from words when the sign is explicit."
+  validation:
+    expected_min_columns: 3
+    reject_if_missing_headers:
+      - "Data"
+      - "Historico"
+      - "Valor"
+    balance_consistency_check:
+      enabled: true
+      method: "descending_daily_balance_context"
+      tolerance: "0.01"

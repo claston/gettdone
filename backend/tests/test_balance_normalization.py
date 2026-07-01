@@ -1,5 +1,5 @@
 from app.application.models import CanonicalTransaction
-from app.application.normalization.balance import annotate_balance_consistency
+from app.application.normalization.balance import annotate_balance_consistency, uses_descending_running_balance
 
 
 def test_annotate_balance_consistency_marks_only_inconsistent_rows() -> None:
@@ -103,3 +103,12 @@ def test_annotate_balance_consistency_supports_descending_stone_layout() -> None
     assert failed_count == 0
     assert canonical_transactions[1].warnings == []
     assert canonical_transactions[2].warnings == []
+
+
+def test_uses_descending_running_balance_for_new_santander_empresarial_a4_layout() -> None:
+    assert (
+        uses_descending_running_balance(
+            "santander_internet_banking_empresarial_movimentacao_a4_data_historico_valor_v1"
+        )
+        is True
+    )
