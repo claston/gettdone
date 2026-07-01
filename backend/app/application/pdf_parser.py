@@ -447,7 +447,7 @@ def _parse_pdf_transactions_from_page_texts(
     layout_profile = get_layout_profile(layout.layout_name)
     lines = _flatten_statement_lines(page_texts, preserve_layout_spacing=preserve_layout_spacing)
     lines, invalid_date_candidates_skipped = _filter_invalid_leading_date_candidate_lines(lines)
-    grouped_rows = _parse_grouped_statement_lines(lines)
+    grouped_rows = _parse_grouped_statement_lines(lines, layout_profile=layout_profile)
     selection = select_parsed_rows(
         lines=lines,
         grouped_rows=grouped_rows,
@@ -718,7 +718,9 @@ def _extract_leading_date_candidate(raw_line: str) -> str | None:
     return match.group("date")
 
 
-def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransaction]:
+def _parse_grouped_statement_lines(
+    lines: list[_PdfLine], *, layout_profile: DeclarativeLayoutProfile | None = None
+) -> list[_ParsedTransaction]:
     transactions: list[_ParsedTransaction] = []
     current_date: str | None = None
     current_section_hint: str | None = None
@@ -735,6 +737,12 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
 
     for line in lines:
         if current_page_number is None:
+            description_parts = _flush_grouped_description_continuation(
+                transactions=transactions,
+                last_transaction_index=last_transaction_index,
+                description_parts=description_parts,
+                current_date=current_date,
+            )
             current_page_number = line.page_number
         elif line.page_number != current_page_number:
             # Do not carry grouped parsing context across pages; page headers can contain
@@ -765,6 +773,12 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
 
         grouped_date_match = parse_grouped_date_line(normalized_line, inferred_year=inferred_year)
         if grouped_date_match is not None:
+            description_parts = _flush_grouped_description_continuation(
+                transactions=transactions,
+                last_transaction_index=last_transaction_index,
+                description_parts=description_parts,
+                current_date=current_date,
+            )
             current_date, current_section_hint, description_parts, inline_transaction = _parse_grouped_date_line_state(
                 line=line,
                 grouped_date=grouped_date_match.date,
@@ -813,7 +827,34 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
         if should_continue:
             continue
 
+        inherited_date_transaction = _parse_grouped_inherited_date_line(
+            current_date=current_date,
+            line=line,
+            section_hint=current_section_hint,
+            layout_profile=layout_profile,
+        )
+        if inherited_date_transaction is not None:
+            description_parts = _flush_grouped_description_continuation(
+                transactions=transactions,
+                last_transaction_index=last_transaction_index,
+                description_parts=description_parts,
+                current_date=current_date,
+            )
+            transactions.append(inherited_date_transaction)
+            last_transaction_index = len(transactions) - 1
+            description_parts = []
+            if inherited_date_transaction.running_balance is not None:
+                last_known_running_balance = inherited_date_transaction.running_balance
+            continue
+
         pre_amount_description_parts = description_parts
+        description_parts = _prepare_grouped_amount_only_description_parts(
+            transactions=transactions,
+            last_transaction_index=last_transaction_index,
+            description_parts=description_parts,
+            current_date=current_date,
+            layout_profile=layout_profile,
+        )
         parsed_row, description_parts, should_continue = _handle_grouped_amount_only_line(
             current_date=current_date,
             description_parts=description_parts,
@@ -866,6 +907,12 @@ def _parse_grouped_statement_lines(lines: list[_PdfLine]) -> list[_ParsedTransac
             raw_text=line.text,
         )
 
+    _flush_grouped_description_continuation(
+        transactions=transactions,
+        last_transaction_index=last_transaction_index,
+        description_parts=description_parts,
+        current_date=current_date,
+    )
     return transactions
 
 
@@ -1574,6 +1621,136 @@ def _append_grouped_description_part(*, description_parts: list[str], raw_text: 
     if not cleaned_text:
         return description_parts
     return [*description_parts, cleaned_text]
+
+
+def _prepare_grouped_amount_only_description_parts(
+    *,
+    transactions: list[_ParsedTransaction],
+    last_transaction_index: int | None,
+    description_parts: list[str],
+    current_date: str,
+    layout_profile: DeclarativeLayoutProfile | None,
+) -> list[str]:
+    if not _should_split_vangogh_grouped_amount_only_description_parts(
+        transactions=transactions,
+        last_transaction_index=last_transaction_index,
+        description_parts=description_parts,
+        current_date=current_date,
+        layout_profile=layout_profile,
+    ):
+        return description_parts
+
+    _flush_grouped_description_continuation(
+        transactions=transactions,
+        last_transaction_index=last_transaction_index,
+        description_parts=description_parts[:-1],
+        current_date=current_date,
+    )
+    return [description_parts[-1]]
+
+
+def _parse_grouped_inherited_date_line(
+    *,
+    current_date: str,
+    line: _PdfLine,
+    section_hint: str | None,
+    layout_profile: DeclarativeLayoutProfile | None,
+) -> _ParsedTransaction | None:
+    if is_amount_only_row(line.text):
+        return None
+
+    raw_text = line.text.strip()
+    amount_tokens = find_amount_tokens(raw_text)
+    if not amount_tokens:
+        return None
+
+    selected_amount = select_tabular_amount_token(amount_tokens, layout_profile=layout_profile)
+    if selected_amount is None:
+        return None
+
+    raw_description = " ".join(raw_text[: selected_amount.description_end].split())
+    if not raw_description or should_skip_transaction_description(raw_description):
+        return None
+
+    normalized_description = _normalize_text(raw_description)
+    if normalized_description.startswith("SALDO ANTERIOR") or normalized_description.startswith("SALDO INICIAL"):
+        return None
+    if normalized_description == "SALDO" or normalized_description.startswith("SALDO "):
+        return None
+
+    amount_details = _build_tabular_amount_details(
+        amount_token_value=selected_amount.token.value,
+        selected_role=selected_amount.role or "amount",
+        raw_description=raw_description,
+        balance_token_value=selected_amount.balance_token.value if selected_amount.balance_token else None,
+    )
+    return _build_parsed_transaction(
+        date=current_date,
+        description=raw_description,
+        amount=amount_details["signed_amount"],
+        source_page=line.page_number,
+        source_line=line.line_number,
+        running_balance=amount_details["running_balance"],
+        has_explicit_amount_sign=has_explicit_amount_sign(selected_amount.token.value),
+    )
+
+
+def _should_split_vangogh_grouped_amount_only_description_parts(
+    *,
+    transactions: list[_ParsedTransaction],
+    last_transaction_index: int | None,
+    description_parts: list[str],
+    current_date: str,
+    layout_profile: DeclarativeLayoutProfile | None,
+) -> bool:
+    if layout_profile is None or layout_profile.profile_name != "santander_vangogh_resumo_consolidado_conta_corrente_v1":
+        return False
+    if len(description_parts) < 2 or last_transaction_index is None:
+        return False
+    if last_transaction_index < 0 or last_transaction_index >= len(transactions):
+        return False
+
+    last_transaction = transactions[last_transaction_index]
+    return last_transaction.transaction.date == current_date
+
+
+def _flush_grouped_description_continuation(
+    *,
+    transactions: list[_ParsedTransaction],
+    last_transaction_index: int | None,
+    description_parts: list[str],
+    current_date: str | None,
+) -> list[str]:
+    if not description_parts or last_transaction_index is None or current_date is None:
+        return description_parts
+    if last_transaction_index < 0 or last_transaction_index >= len(transactions):
+        return description_parts
+    if _is_balance_snapshot_description(description_parts):
+        return []
+
+    continuation = " ".join(part for part in description_parts if part).strip()
+    if not continuation or should_skip_transaction_description(continuation):
+        return []
+
+    last_transaction = transactions[last_transaction_index]
+    if last_transaction.transaction.date != current_date:
+        return description_parts
+
+    updated_transaction = NormalizedTransaction(
+        date=last_transaction.transaction.date,
+        description=f"{last_transaction.transaction.description} {continuation}".strip(),
+        amount=last_transaction.transaction.amount,
+        type=last_transaction.transaction.type,
+    )
+    transactions[last_transaction_index] = _ParsedTransaction(
+        transaction=updated_transaction,
+        source_page=last_transaction.source_page,
+        source_line=last_transaction.source_line,
+        running_balance=last_transaction.running_balance,
+        external_reference_id=last_transaction.external_reference_id,
+        has_explicit_amount_sign=last_transaction.has_explicit_amount_sign,
+    )
+    return []
 
 
 def _build_grouped_amount_only_transaction(
