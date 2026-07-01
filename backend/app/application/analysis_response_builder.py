@@ -120,6 +120,7 @@ def build_analyze_response(
         layout_inference_name=analysis_data.layout_inference_name,
         layout_inference_confidence=analysis_data.layout_inference_confidence,
         pdf_processing_metrics=analysis_data.pdf_processing_metrics,
+        ofx_account_type=analysis_data.ofx_account_type,
         opening_balance=analysis_data.opening_balance,
         closing_balance=analysis_data.closing_balance,
         bank_name=analysis_data.bank_name,

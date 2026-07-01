@@ -1230,6 +1230,10 @@
     return inferBankCodeFromLayout((analysis && analysis.layout_inference_name) || "");
   }
 
+  function resolveOfxAccountType(analysis) {
+    return String((analysis && analysis.ofx_account_type) || "").trim().toLowerCase();
+  }
+
   function renderKpis(analysis) {
     const hasPreviewRows = Array.isArray(state.previewRows) && state.previewRows.length > 0;
     const derived = hasPreviewRows
@@ -1258,6 +1262,7 @@
     const openingBalanceValue = toMoneyInputValue(openingBalance);
     const closingBalanceValue = toMoneyInputValue(closingBalance);
     const isOfxFlow = outputFormat === "ofx";
+    const isCreditCardFlow = isOfxFlow && resolveOfxAccountType(analysis) === "credit_card";
     const bankBranchValue = normalizeBankBranchDisplay(state.bankBranchOverride);
     const accountNumberValue = normalizeAccountDisplay(state.accountNumberOverride);
     const bankCodeValue = String(state.bankCodeOverride || "").trim();
@@ -1307,6 +1312,105 @@
       </article>
       <article class="kpi">
         <p class="kpi-label">Saldo final</p>
+        ${
+          isOfxFlow
+            ? `<p class="kpi-value-editable"><input id="closing-balance-input" class="kpi-edit-input" type="text" inputmode="decimal" value="${closingBalanceValue}" /></p>`
+            : `<p class="kpi-value">${formatCurrency(closingBalance)}</p>`
+        }
+      </article>
+    `;
+  }
+
+  function renderKpisLegacy(analysis) {
+    const hasPreviewRows = Array.isArray(state.previewRows) && state.previewRows.length > 0;
+    const derived = hasPreviewRows
+      ? buildDerivedSummaryFromRows(state.previewRows)
+      : {
+          transactionsTotal: Number((analysis && analysis.transactions_total) || 0),
+          totalInflows: Number((analysis && analysis.total_inflows) || 0),
+          totalOutflows: Number((analysis && analysis.total_outflows) || 0),
+          netTotal: Number((analysis && analysis.net_total) || 0),
+        };
+    const pagesConverted = resolveConvertedPages(analysis);
+    const analysisOpeningBalance = Number((analysis && analysis.opening_balance) || 0);
+    const analysisClosingBalance = Number(
+      (analysis && analysis.closing_balance != null ? analysis.closing_balance : derived.netTotal) || 0
+    );
+    const openingBalance = Number.isFinite(Number(state.openingBalanceOverride))
+      ? Number(state.openingBalanceOverride)
+      : analysisOpeningBalance;
+    const closingBalance = Number.isFinite(Number(state.closingBalanceOverride))
+      ? Number(state.closingBalanceOverride)
+      : analysisClosingBalance;
+    const reviewWarningsMarkup = buildReviewWarningsMarkup(analysis);
+    const inflows = formatCurrency(derived.totalInflows);
+    const outflows = formatCurrency(derived.totalOutflows);
+    const openingBalanceValue = toMoneyInputValue(openingBalance);
+    const closingBalanceValue = toMoneyInputValue(closingBalance);
+    const isOfxFlow = outputFormat === "ofx";
+    const isCreditCardFlow = isOfxFlow && resolveOfxAccountType(analysis) === "credit_card";
+    const bankBranchValue = normalizeBankBranchDisplay(state.bankBranchOverride);
+    const accountNumberValue = normalizeAccountDisplay(state.accountNumberOverride);
+    const bankCodeValue = String(state.bankCodeOverride || "").trim();
+    const bankOptionsMarkup = bankCodeOptions.map((item) => {
+      const selected = item.code === bankCodeValue ? " selected" : "";
+      return `<option value="${item.code}"${selected}>${item.label}</option>`;
+    }).join("");
+    const ofxMetaRow = isCreditCardFlow
+      ? `
+      <div class="ofx-meta-row">
+        <p class="kpi-hint">Fatura de cartao detectada</p>
+        <div class="ofx-meta-fields">
+          <p class="kpi-hint">OFX de cartao nao precisa de banco, agencia ou conta para exportacao.</p>
+        </div>
+      </div>
+      `
+      : isOfxFlow
+        ? `
+        <div class="ofx-meta-row">
+          <p class="kpi-hint">Banco, Agencia e Conta</p>
+          <div class="ofx-meta-fields">
+            <select id="bank-code-select" class="kpi-edit-input">${bankOptionsMarkup}</select>
+            <input id="bank-branch-input" class="kpi-edit-input" type="text" inputmode="numeric" placeholder="Agencia (ex: 1234-5)" value="${bankBranchValue}" />
+            <input id="account-number-input" class="kpi-edit-input" type="text" inputmode="numeric" placeholder="Conta (ex: 123456-7)" value="${accountNumberValue}" />
+          </div>
+        </div>
+        `
+        : "";
+    const inflowsLabel = isCreditCardFlow ? "Pagamentos e creditos" : "Entradas";
+    const outflowsLabel = isCreditCardFlow ? "Despesas" : "Saidas";
+    const openingBalanceLabel = isCreditCardFlow ? "Saldo anterior da fatura" : "Saldo anterior";
+    const closingBalanceLabel = isCreditCardFlow ? "Valor final da fatura" : "Saldo final";
+
+    kpis.innerHTML = `
+      ${reviewWarningsMarkup}
+      ${ofxMetaRow}
+      <article class="kpi">
+        <p class="kpi-label">Transacoes</p>
+        <p class="kpi-value">${derived.transactionsTotal}</p>
+      </article>
+      <article class="kpi">
+        <p class="kpi-label">Paginas convertidas</p>
+        <p class="kpi-value">${pagesConverted}</p>
+      </article>
+      <article class="kpi">
+        <p class="kpi-label">${inflowsLabel}</p>
+        <p class="kpi-value">${inflows}</p>
+      </article>
+      <article class="kpi">
+        <p class="kpi-label">${outflowsLabel}</p>
+        <p class="kpi-value">${outflows}</p>
+      </article>
+      <article class="kpi">
+        <p class="kpi-label">${openingBalanceLabel}</p>
+        ${
+          isOfxFlow
+            ? `<p class="kpi-value-editable"><input id="opening-balance-input" class="kpi-edit-input" type="text" inputmode="decimal" value="${openingBalanceValue}" /></p>`
+            : `<p class="kpi-value">${formatCurrency(openingBalance)}</p>`
+        }
+      </article>
+      <article class="kpi">
+        <p class="kpi-label">${closingBalanceLabel}</p>
         ${
           isOfxFlow
             ? `<p class="kpi-value-editable"><input id="closing-balance-input" class="kpi-edit-input" type="text" inputmode="decimal" value="${closingBalanceValue}" /></p>`
@@ -2357,9 +2461,10 @@
       if (requestedFormat === "ofx") {
         const openingBalance = Number(state.openingBalanceOverride);
         const closingBalance = Number(state.closingBalanceOverride);
-        const bankBranch = normalizeDigits(state.bankBranchOverride);
-        const accountNumber = normalizeDigits(state.accountNumberOverride);
-        const bankCode = normalizeDigits(state.bankCodeOverride || "").slice(0, 3);
+        const isCreditCardFlow = resolveOfxAccountType(state.analysisSnapshot) === "credit_card";
+        const bankBranch = isCreditCardFlow ? "" : normalizeDigits(state.bankBranchOverride);
+        const accountNumber = isCreditCardFlow ? "" : normalizeDigits(state.accountNumberOverride);
+        const bankCode = isCreditCardFlow ? "" : normalizeDigits(state.bankCodeOverride || "").slice(0, 3);
         const settingsQuery = buildIdentityQueryParams();
         const settingsResponse = await fetch(`${apiBase}/convert-edits/${downloadConfig.targetId}?${settingsQuery.toString()}`, {
           method: "POST",

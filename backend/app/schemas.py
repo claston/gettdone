@@ -136,6 +136,7 @@ class AnalyzeResponse(BaseModel):
     layout_inference_name: str | None = None
     layout_inference_confidence: float | None = None
     pdf_processing_metrics: PdfProcessingMetrics | None = None
+    ofx_account_type: str | None = None
     opening_balance: float | None = None
     closing_balance: float | None = None
     bank_name: str | None = None
