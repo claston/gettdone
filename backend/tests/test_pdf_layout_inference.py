@@ -175,6 +175,27 @@ def test_infer_pdf_layout_prefers_new_santander_empresarial_grouped_period_profi
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_prefers_santander_empresarial_a4_date_history_value_profile() -> None:
+    text = """
+    Santander
+    Internet Banking Empresarial
+    Agencia:
+    Conta:
+    Data Historico Valor
+    26/05/2025 Saldo do dia Cc R$ 0,00
+    26/05/2025 Resgate R$ 737,67
+    26/05/2025 Pix Enviado - R$ 737,67
+    21/05/2025 Saldo do dia Cc R$ 0,00
+    21/05/2025 Pix Recebido 04827261 R$ 178,90
+    21/05/2025 Pagamento De Boleto Outros Bancos - R$ 759,44
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "santander_internet_banking_empresarial_movimentacao_a4_data_historico_valor_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_santander_monthly_landscape_consolidated_profile() -> None:
     text = """
     Santander
