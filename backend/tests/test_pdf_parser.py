@@ -157,6 +157,87 @@ def test_parse_pdf_transactions_skips_invalid_inline_date_candidate_and_keeps_va
     assert result.parse_metrics["invalid_date_candidates_skipped"] == 1
 
 
+def test_parse_pdf_transactions_handles_itau_spaced_month_slash_lines() -> None:
+    text = """
+    Itaú
+    Empresas
+    Itaú
+    agência
+    conta corrente
+    Saldo resumido
+    descrição
+    saldo (R$)
+    saldo em conta corrente
+    13.043,86
+    total para saque
+    13.043,86
+    Extrato conta corrente / Lançamentos
+    período: 01/07/2021 até 31/07/2021
+    data
+    lançamentos
+    ag/origem
+    valor (R$)
+    saldo (R$)
+    01 / jul
+    SALDO INICIAL
+    10,00
+    01 / jul
+    TRANSF TITUL TED
+    4015
+    -109,50
+    -99,50
+    02 / jul
+    CREDITO TED
+    2371
+    5.250,00
+    5.150,50
+    05 / jul
+    PIX RECEBIDO CLIENTE
+    0000
+    3.750,20
+    8.900,70
+    08 / jul
+    SISPAG FORNECEDOR
+    4015
+    -680,00
+    8.220,70
+    12 / jul
+    RECEBIMENTO CARTAO
+    9999
+    2.416,45
+    10.637,15
+    16 / jul
+    TARIFA PACOTE SERVICOS
+    4015
+    -43,29
+    10.593,86
+    23 / jul
+    CREDITO COBRANCA
+    2371
+    2.450,00
+    13.043,86
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert result.layout.layout_name == "itau_empresas_extrato_lancamentos_conta_corrente_v1"
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert len(result.transactions) == 7
+    assert result.transactions[0] == pdf_parser_module.NormalizedTransaction(
+        date="2021-07-01",
+        description="TRANSF TITUL TED 4015",
+        amount=-109.5,
+        type="outflow",
+    )
+    assert result.transactions[-1] == pdf_parser_module.NormalizedTransaction(
+        date="2021-07-23",
+        description="CREDITO COBRANCA 2371",
+        amount=2450.0,
+        type="inflow",
+    )
+    assert all("SALDO INICIAL" not in tx.description for tx in result.transactions)
+
+
 def test_parse_pdf_transactions_skips_invalid_date_only_candidate_and_keeps_grouped_rows() -> None:
     result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
         ["00/00/0000\nLINHA INVALIDA\n10/04/2026\nPIX RECEBIDO\n25,00"]

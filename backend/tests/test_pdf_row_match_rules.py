@@ -19,6 +19,13 @@ def test_match_tabular_date_prefix_returns_date_and_rest() -> None:
     assert match.group("date") == "2 out"
 
 
+def test_match_tabular_date_prefix_accepts_spaced_month_slash_format() -> None:
+    match = match_tabular_date_prefix("01 / jul TRANSF TITUL TED 4015 -109,50 -99,50")
+    assert match is not None
+    assert match.group("date") == "01 / jul"
+    assert match.group("rest").startswith("TRANSF TITUL TED")
+
+
 def test_match_tabular_date_prefix_accepts_leading_ocr_symbol() -> None:
     match = match_tabular_date_prefix("(24/04/2024 TRANSFERENCIA 6.250,00C 6.428,50 C")
     assert match is not None

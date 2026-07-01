@@ -24,22 +24,36 @@ MONTH_PATTERN = "|".join(MONTH_TO_NUMBER)
 def parse_statement_date(raw: str, fallback_year: int | None) -> str:
     value = raw.strip()
     upper_value = normalize_upper_text(value)
-    if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{4}", value):
-        return _parse_slash_date(value)
+    compact_value = re.sub(r"\s*/\s*", "/", value)
+    compact_upper_value = re.sub(r"\s*/\s*", "/", upper_value)
+    if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{4}", compact_value):
+        return _parse_slash_date(compact_value)
 
-    if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{2}", value):
-        day, month, year = value.split("/")
+    if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{2}", compact_value):
+        day, month, year = compact_value.split("/")
         return _parse_slash_date(f"{day}/{month}/20{year}")
 
-    if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{3}", value):
-        day, month, year_prefix = value.split("/")
+    if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{3}", compact_value):
+        day, month, year_prefix = compact_value.split("/")
         resolved_year = _resolve_truncated_year_prefix(year_prefix, fallback_year=fallback_year)
         return _parse_slash_date(f"{day}/{month}/{resolved_year}")
 
-    if re.fullmatch(r"\d{1,2}/\d{1,2}", value):
+    if re.fullmatch(r"\d{1,2}/\d{1,2}", compact_value):
         if fallback_year is None:
             fallback_year = datetime.now(timezone.utc).year
-        return _parse_slash_date(f"{value}/{fallback_year}")
+        return _parse_slash_date(f"{compact_value}/{fallback_year}")
+
+    month_slash_match = re.fullmatch(rf"(?P<day>\d{{1,2}})/(?P<month>{MONTH_PATTERN})(?:/(?P<year>\d{{3,4}}))?", compact_upper_value)
+    if month_slash_match:
+        year_raw = month_slash_match.group("year")
+        if year_raw:
+            if len(year_raw) == 3:
+                year_value = _resolve_truncated_year_prefix(year_raw, fallback_year=fallback_year)
+            else:
+                year_value = int(year_raw)
+        else:
+            year_value = fallback_year if fallback_year is not None else datetime.now(timezone.utc).year
+        return build_iso_date(year=str(year_value), month_abbrev=month_slash_match.group("month"), day=month_slash_match.group("day"))
 
     month_match = re.fullmatch(rf"(?P<day>\d{{1,2}})\s+(?P<month>{MONTH_PATTERN})(?:\s+(?P<year>\d{{3,4}}))?", upper_value)
     if month_match:
