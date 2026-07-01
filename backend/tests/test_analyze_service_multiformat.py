@@ -509,8 +509,6 @@ def test_analyze_service_uses_grouped_saldo_em_snapshot_as_opening_balance(tmp_p
     assert result.transactions_total == 2
     assert len(result.preview_transactions) == 2
     assert result.preview_transactions[0].description == "PIX RECEBIDO RG FAMILY OFFICE ASSESSOR"
-    assert result.transactions_total == 1
-    assert result.preview_transactions[0].description == "PAGAMENTO BOLETO"
 
 
 def test_analyze_service_filters_opening_balance_row_even_when_description_contains_date_and_amount(
