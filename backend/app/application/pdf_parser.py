@@ -43,6 +43,7 @@ from app.application.textract_gateway import TextractGateway
 from app.application.textract_transaction_adapter import adapt_textract_extraction_to_transactions
 
 _SANTANDER_CREDIT_CARD_INVOICE_LAYOUT = "santander_cartao_credito_detalhamento_fatura_paisagem_v1"
+_SANTANDER_IB_EMPRESARIAL_365_MOBILE_GROUPED_LAYOUT = "santander_empresarial_extrato_365_dias_mobile_grouped_v1"
 _SANTANDER_CREDIT_CARD_INVOICE_SECTION_HEADERS = {
     "PAGAMENTO E DEMAIS CREDITOS",
     "PARCELAMENTOS",
@@ -557,7 +558,7 @@ def _parse_santander_credit_card_invoice_sections(lines: list[_PdfLine]) -> list
     expense_lines: list[_PdfLine] = []
     current_section: str | None = None
 
-    for line in lines:
+    for index, line in enumerate(lines):
         normalized = _normalize_text(line.text)
         if normalized in _SANTANDER_CREDIT_CARD_INVOICE_SECTION_HEADERS:
             current_section = normalized
@@ -746,6 +747,31 @@ def _is_santander_credit_card_invoice_noise_line(raw_text: str) -> bool:
     if normalized in _SANTANDER_CREDIT_CARD_INVOICE_NOISE_LINES:
         return True
     return not normalized
+
+
+def _should_treat_grouped_date_line_as_description_continuation(
+    *,
+    lines: list[_PdfLine],
+    index: int,
+    grouped_date_match: object,
+    current_date: str | None,
+    description_parts: list[str],
+    layout_profile: DeclarativeLayoutProfile | None,
+) -> bool:
+    if current_date is None or not description_parts or layout_profile is None:
+        return False
+    if layout_profile.profile_name != _SANTANDER_IB_EMPRESARIAL_365_MOBILE_GROUPED_LAYOUT:
+        return False
+    if getattr(grouped_date_match, "rest", "").strip():
+        return False
+    if not is_date_only_row(lines[index].text):
+        return False
+    if index + 1 >= len(lines):
+        return False
+    next_line = lines[index + 1]
+    if next_line.page_number != lines[index].page_number:
+        return False
+    return is_amount_only_row(next_line.text)
 
 
 def _should_try_ocr_reparse(result: PdfParseResult, *, page_count: int) -> bool:
@@ -949,7 +975,7 @@ def _filter_invalid_leading_date_candidate_lines(lines: list[_PdfLine]) -> tuple
     skipped = 0
     inferred_year = _infer_default_statement_year_from_lines(lines)
 
-    for line in lines:
+    for index, line in enumerate(lines):
         raw_date = _extract_leading_date_candidate(line.text)
         if raw_date is None:
             filtered_lines.append(line)
@@ -991,7 +1017,7 @@ def _parse_grouped_statement_lines(
     opening_balance_inserted = False
     current_page_number: int | None = None
 
-    for line in lines:
+    for index, line in enumerate(lines):
         if current_page_number is None:
             description_parts = _flush_grouped_description_continuation(
                 transactions=transactions,
@@ -1029,6 +1055,19 @@ def _parse_grouped_statement_lines(
 
         grouped_date_match = parse_grouped_date_line(normalized_line, inferred_year=inferred_year)
         if grouped_date_match is not None:
+            if _should_treat_grouped_date_line_as_description_continuation(
+                lines=lines,
+                index=index,
+                grouped_date_match=grouped_date_match,
+                current_date=current_date,
+                description_parts=description_parts,
+                layout_profile=layout_profile,
+            ):
+                description_parts = _append_grouped_description_part(
+                    description_parts=description_parts,
+                    raw_text=line.text,
+                )
+                continue
             description_parts = _flush_grouped_description_continuation(
                 transactions=transactions,
                 last_transaction_index=last_transaction_index,

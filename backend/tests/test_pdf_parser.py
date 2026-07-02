@@ -1531,6 +1531,90 @@ def test_parse_pdf_transactions_includes_opening_balance_without_date_on_first_t
     assert result.transactions[1].amount == 8450.0
 
 
+def test_parse_pdf_transactions_supports_santander_mobile_grouped_dates_and_inline_transaction_date_details(
+    monkeypatch,
+) -> None:
+    sample_text = "\n".join(
+        [
+            "Santander",
+            "Internet Banking Empresarial",
+            "Agência:",
+            "Conta:",
+            "17 de outubro de 2023, terça-feira",
+            "Saldo do dia",
+            "R$ 0,00",
+            "↓",
+            "Resgate",
+            "R$ 12,00",
+            "↑",
+            "Tarifa ted",
+            "16/10/2023",
+            "- R$ 12,00",
+            "16 de outubro de 2023, segunda-feira",
+            "Saldo do dia",
+            "R$ 0,00",
+            "↑",
+            "Aplicacao",
+            "- R$ 25.000,00",
+            "↑",
+            "Ted enviada",
+            "02971354000109",
+            "- R$ 26.000,00",
+            "↑",
+            "Transf valor p/ conta dif titular",
+            "304",
+            "- R$ 49.000,00",
+        ]
+    )
+    monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [sample_text])
+    monkeypatch.setattr(
+        pdf_parser_module,
+        "infer_pdf_layout",
+        lambda text: pdf_parser_module.PdfLayoutInference(
+            layout_name="santander_empresarial_extrato_365_dias_mobile_grouped_v1",
+            confidence=0.87,
+            used_fallback=False,
+        ),
+    )
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "santander_empresarial_extrato_365_dias_mobile_grouped_v1"
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert result.transactions == [
+        pdf_parser_module.NormalizedTransaction(
+            date="2023-10-17",
+            description="Resgate",
+            amount=12.0,
+            type="inflow",
+        ),
+        pdf_parser_module.NormalizedTransaction(
+            date="2023-10-17",
+            description="Tarifa ted 16/10/2023",
+            amount=-12.0,
+            type="outflow",
+        ),
+        pdf_parser_module.NormalizedTransaction(
+            date="2023-10-16",
+            description="Aplicacao",
+            amount=-25000.0,
+            type="outflow",
+        ),
+        pdf_parser_module.NormalizedTransaction(
+            date="2023-10-16",
+            description="Ted enviada 02971354000109",
+            amount=-26000.0,
+            type="outflow",
+        ),
+        pdf_parser_module.NormalizedTransaction(
+            date="2023-10-16",
+            description="Transf valor p/ conta dif titular 304",
+            amount=-49000.0,
+            type="outflow",
+        ),
+    ]
+
+
 def test_parse_columnar_statement_blocks_skips_incomplete_rows_and_parses_valid_block(monkeypatch) -> None:
     lines = [
         pdf_parser_module._PdfLine(text="15/04", page_number=1, line_number=1),
