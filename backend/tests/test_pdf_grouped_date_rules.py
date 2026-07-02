@@ -35,3 +35,11 @@ def test_parse_grouped_date_line_supports_weekday_and_full_month_in_portuguese()
     assert result is not None
     assert result.date == "2022-02-02"
     assert result.rest.strip() == ""
+
+
+def test_parse_grouped_date_line_supports_leading_full_month_with_trailing_weekday() -> None:
+    result = parse_grouped_date_line("17 de outubro de 2023, terça-feira", inferred_year=2026)
+
+    assert result is not None
+    assert result.date == "2023-10-17"
+    assert result.rest.strip() == ""
