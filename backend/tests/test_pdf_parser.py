@@ -1068,6 +1068,96 @@ def test_parse_pdf_transactions_keeps_vangogh_grouped_multiline_descriptions_wit
     assert result.canonical_transactions[7].running_balance == 4174.56
 
 
+def test_parse_pdf_transactions_parses_santander_credit_card_invoice_sections_without_mixing_headers() -> None:
+    text = """
+    Data: 05/01/2026
+    Detalhamento da Fatura
+    Pagamento e Demais Creditos
+    Compra
+    Data
+    Descricao
+    Parcela
+    R$
+    US$
+    02/01
+    PAGAMENTO DE FATURA-INTERNET
+    -20.000,00
+    Parcelamentos
+    Compra
+    Data
+    Descricao
+    Parcela
+    R$
+    US$
+    )))
+    13/11
+    .
+    MEDICAMENTOS
+    03/04
+    852,50
+    )))
+    05/01
+    .
+    DROGASIL
+    01/02
+    210,38
+    Despesas
+    Compra
+    Data
+    Descricao
+    Parcela
+    R$
+    US$
+    )))
+    23/12
+    SUPERMERCADO
+    112,76
+    )))
+    02/01
+    SAM
+    1.580,37
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert result.layout.layout_name == "santander_cartao_credito_detalhamento_fatura_paisagem_v1"
+    assert result.parse_metrics["selected_parser"] == "sectioned_credit_card_invoice"
+    assert result.transactions == [
+        pdf_parser_module.NormalizedTransaction(
+            date="2026-01-02",
+            description="PAGAMENTO DE FATURA-INTERNET",
+            amount=20000.0,
+            type="inflow",
+        ),
+        pdf_parser_module.NormalizedTransaction(
+            date="2025-11-13",
+            description="MEDICAMENTOS PARCELA 03/04",
+            amount=-852.5,
+            type="outflow",
+        ),
+        pdf_parser_module.NormalizedTransaction(
+            date="2026-01-05",
+            description="DROGASIL PARCELA 01/02",
+            amount=-210.38,
+            type="outflow",
+        ),
+        pdf_parser_module.NormalizedTransaction(
+            date="2025-12-23",
+            description="SUPERMERCADO",
+            amount=-112.76,
+            type="outflow",
+        ),
+        pdf_parser_module.NormalizedTransaction(
+            date="2026-01-02",
+            description="SAM",
+            amount=-1580.37,
+            type="outflow",
+        ),
+    ]
+    assert all("Compra Data" not in item.description for item in result.transactions)
+    assert all(")))" not in item.description for item in result.transactions)
+
+
 def test_parse_pdf_transactions_prefers_layout_text_for_sicredi_matricial_paisagem(monkeypatch) -> None:
     native_text = """
     ======================================================================================================================

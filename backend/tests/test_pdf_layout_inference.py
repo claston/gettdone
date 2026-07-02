@@ -287,6 +287,52 @@ def test_infer_pdf_layout_prefers_santander_vangogh_resumo_profile() -> None:
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_prefers_santander_credit_card_invoice_detail_profile() -> None:
+    text = """
+    Data: 05/01/2026
+    Detalhamento da Fatura
+    Pagamento e Demais Creditos
+    Compra
+    Data
+    Descricao
+    Parcela
+    R$
+    US$
+    02/01
+    PAGAMENTO DE FATURA-INTERNET
+    -20.000,00
+    Parcelamentos
+    Compra
+    Data
+    Descricao
+    Parcela
+    R$
+    US$
+    )))
+    13/11
+    .
+    MEDICAMENTOS
+    03/04
+    852,50
+    Despesas
+    Compra
+    Data
+    Descricao
+    Parcela
+    R$
+    US$
+    )))
+    23/12
+    SUPERMERCADO
+    112,76
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "santander_cartao_credito_detalhamento_fatura_paisagem_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_bradesco_profile_when_tokens_match() -> None:
     text = """
     BANCO BRADESCO S.A.
