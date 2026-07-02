@@ -42,6 +42,25 @@ from app.application.textract_extraction_mapper import map_textract_blocks_to_ex
 from app.application.textract_gateway import TextractGateway
 from app.application.textract_transaction_adapter import adapt_textract_extraction_to_transactions
 
+_SANTANDER_CREDIT_CARD_INVOICE_LAYOUT = "santander_cartao_credito_detalhamento_fatura_paisagem_v1"
+_SANTANDER_CREDIT_CARD_INVOICE_SECTION_HEADERS = {
+    "PAGAMENTO E DEMAIS CREDITOS",
+    "PARCELAMENTOS",
+    "DESPESAS",
+}
+_SANTANDER_CREDIT_CARD_INVOICE_NOISE_LINES = {
+    "COMPRA",
+    "DATA",
+    "DESCRICAO",
+    "DESCRIÇÃO",
+    "PARCELA",
+    "R$",
+    "US$",
+    ".",
+    "·",
+    ")))",
+}
+
 
 def _normalize_parse_observability_value(value: object) -> int | float | str:
     if isinstance(value, bool):
@@ -447,6 +466,33 @@ def _parse_pdf_transactions_from_page_texts(
     layout_profile = get_layout_profile(layout.layout_name)
     lines = _flatten_statement_lines(page_texts, preserve_layout_spacing=preserve_layout_spacing)
     lines, invalid_date_candidates_skipped = _filter_invalid_leading_date_candidate_lines(lines)
+    specialized_rows = _parse_layout_specific_statement_rows(lines=lines, layout=layout)
+    if specialized_rows is not None:
+        specialized_rows = _adjust_forward_year_rollover_rows(
+            specialized_rows,
+            line_texts=_extract_line_texts(lines),
+        )
+        return _build_pdf_parse_result(
+            parsed_rows=specialized_rows,
+            layout=layout,
+            layout_profile=layout_profile,
+            selected_parser="sectioned_credit_card_invoice",
+            parser_selection_reason="layout_specific_sectioned_credit_card_invoice",
+            inline_decision="not_applicable_layout_specific",
+            tabular_decision="not_applicable_layout_specific",
+            columnar_decision="not_applicable_layout_specific",
+            joined_text=joined_text,
+            page_count=len(page_texts),
+            flattened_line_count=len(lines),
+            invalid_date_candidates_skipped=invalid_date_candidates_skipped,
+            grouped_transactions_count=0,
+            inline_candidates_count=0,
+            inline_transactions_count=0,
+            tabular_candidates_count=0,
+            tabular_transactions_count=0,
+            columnar_candidates_count=0,
+            columnar_transactions_count=0,
+        )
     grouped_rows = _parse_grouped_statement_lines(lines, layout_profile=layout_profile)
     selection = select_parsed_rows(
         lines=lines,
@@ -490,6 +536,216 @@ def _parse_pdf_transactions_from_page_texts(
         columnar_candidates_count=columnar_candidates_count,
         columnar_transactions_count=columnar_transactions_count,
     )
+
+
+def _parse_layout_specific_statement_rows(
+    *,
+    lines: list[_PdfLine],
+    layout: PdfLayoutInference,
+) -> list[_ParsedTransaction] | None:
+    if layout.layout_name == _SANTANDER_CREDIT_CARD_INVOICE_LAYOUT:
+        parsed_rows = _parse_santander_credit_card_invoice_sections(lines)
+        if parsed_rows:
+            return parsed_rows
+    return None
+
+
+def _parse_santander_credit_card_invoice_sections(lines: list[_PdfLine]) -> list[_ParsedTransaction]:
+    fallback_year = _infer_default_statement_year_from_lines(lines) or datetime.now().year
+    payment_lines: list[_PdfLine] = []
+    installment_lines: list[_PdfLine] = []
+    expense_lines: list[_PdfLine] = []
+    current_section: str | None = None
+
+    for line in lines:
+        normalized = _normalize_text(line.text)
+        if normalized in _SANTANDER_CREDIT_CARD_INVOICE_SECTION_HEADERS:
+            current_section = normalized
+            continue
+        if current_section == "PAGAMENTO E DEMAIS CREDITOS":
+            payment_lines.append(line)
+        elif current_section == "PARCELAMENTOS":
+            installment_lines.append(line)
+        elif current_section == "DESPESAS":
+            expense_lines.append(line)
+
+    parsed_rows = [
+        *_parse_santander_credit_card_payment_rows(payment_lines, fallback_year=fallback_year),
+        *_parse_santander_credit_card_installment_rows(installment_lines, fallback_year=fallback_year),
+        *_parse_santander_credit_card_expense_rows(expense_lines, fallback_year=fallback_year),
+    ]
+    return parsed_rows
+
+
+def _parse_santander_credit_card_payment_rows(
+    lines: list[_PdfLine], *, fallback_year: int
+) -> list[_ParsedTransaction]:
+    staged_rows: list[tuple[str, str, float, int, int]] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if not is_date_only_row(line.text):
+            index += 1
+            continue
+        description_parts: list[str] = []
+        amount_value: float | None = None
+        amount_line_number: int | None = None
+        next_index = index + 1
+        while next_index < len(lines):
+            current = lines[next_index]
+            if is_date_only_row(current.text):
+                break
+            if _is_santander_credit_card_invoice_noise_line(current.text):
+                next_index += 1
+                continue
+            if is_amount_only_row(current.text):
+                amount_value = abs(parse_pdf_amount(current.text))
+                amount_line_number = current.line_number
+                next_index += 1
+                break
+            description_parts.append(current.text.strip())
+            next_index += 1
+        description = " ".join(part for part in description_parts if part).strip()
+        if description and amount_value is not None and amount_line_number is not None:
+            staged_rows.append((line.text, description, amount_value, line.page_number, amount_line_number))
+        index = next_index
+    return _build_santander_credit_card_invoice_rows(staged_rows, fallback_year=fallback_year)
+
+
+def _parse_santander_credit_card_installment_rows(
+    lines: list[_PdfLine], *, fallback_year: int
+) -> list[_ParsedTransaction]:
+    staged_rows: list[tuple[str, str, float, int, int]] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if not is_date_only_row(line.text):
+            index += 1
+            continue
+        description = ""
+        installment = ""
+        amount_value: float | None = None
+        amount_line_number: int | None = None
+        next_index = index + 1
+        while next_index < len(lines):
+            current = lines[next_index]
+            current_text = current.text.strip()
+            if re.fullmatch(r"\d{2}/\d{2}", current_text):
+                if description and not installment:
+                    installment = current_text
+                    next_index += 1
+                    continue
+                break
+            if is_date_only_row(current.text):
+                break
+            if _is_santander_credit_card_invoice_noise_line(current.text):
+                next_index += 1
+                continue
+            if is_amount_only_row(current.text):
+                amount_value = -abs(parse_pdf_amount(current.text))
+                amount_line_number = current.line_number
+                next_index += 1
+                break
+            if not description:
+                description = current_text
+            next_index += 1
+        full_description = description
+        if description and installment:
+            full_description = f"{description} PARCELA {installment}"
+        if full_description and amount_value is not None and amount_line_number is not None:
+            staged_rows.append((line.text, full_description, amount_value, line.page_number, amount_line_number))
+        index = next_index
+    return _build_santander_credit_card_invoice_rows(staged_rows, fallback_year=fallback_year)
+
+
+def _parse_santander_credit_card_expense_rows(
+    lines: list[_PdfLine], *, fallback_year: int
+) -> list[_ParsedTransaction]:
+    staged_rows: list[tuple[str, str, float, int, int]] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if not is_date_only_row(line.text):
+            index += 1
+            continue
+        description = ""
+        amount_value: float | None = None
+        amount_line_number: int | None = None
+        next_index = index + 1
+        while next_index < len(lines):
+            current = lines[next_index]
+            if is_date_only_row(current.text):
+                break
+            if _is_santander_credit_card_invoice_noise_line(current.text):
+                next_index += 1
+                continue
+            if is_amount_only_row(current.text):
+                amount_value = -abs(parse_pdf_amount(current.text))
+                amount_line_number = current.line_number
+                next_index += 1
+                break
+            if not description:
+                description = current.text.strip()
+            next_index += 1
+        if description and amount_value is not None and amount_line_number is not None:
+            staged_rows.append((line.text, description, amount_value, line.page_number, amount_line_number))
+        index = next_index
+    return _build_santander_credit_card_invoice_rows(staged_rows, fallback_year=fallback_year)
+
+
+def _build_santander_credit_card_invoice_rows(
+    staged_rows: list[tuple[str, str, float, int, int]],
+    *,
+    fallback_year: int,
+) -> list[_ParsedTransaction]:
+    if not staged_rows:
+        return []
+    dated_rows = _resolve_santander_credit_card_invoice_section_dates(
+        [row[0] for row in staged_rows],
+        fallback_year=fallback_year,
+    )
+    parsed_rows: list[_ParsedTransaction] = []
+    for (raw_date, description, amount, page_number, source_line), resolved_date in zip(
+        staged_rows,
+        dated_rows,
+        strict=False,
+    ):
+        parsed_rows.append(
+            _build_parsed_transaction(
+                date=resolved_date,
+                description=description,
+                amount=amount,
+                source_page=page_number,
+                source_line=source_line,
+                has_explicit_amount_sign=True,
+            )
+        )
+    return parsed_rows
+
+
+def _resolve_santander_credit_card_invoice_section_dates(raw_dates: list[str], *, fallback_year: int) -> list[str]:
+    if not raw_dates:
+        return []
+    resolved_dates: list[str] = []
+    current_year = fallback_year
+    current_month: int | None = None
+
+    # The invoice sections are printed in ascending day order; walking backwards
+    # lets us map December rows to the previous year when the section ends in January.
+    for raw_date in reversed(raw_dates):
+        day, month = [int(part) for part in raw_date.split("/", 1)]
+        if current_month is not None and month > current_month:
+            current_year -= 1
+        resolved_dates.append(f"{current_year:04d}-{month:02d}-{day:02d}")
+        current_month = month
+    return list(reversed(resolved_dates))
+
+
+def _is_santander_credit_card_invoice_noise_line(raw_text: str) -> bool:
+    normalized = _normalize_text(raw_text)
+    if normalized in _SANTANDER_CREDIT_CARD_INVOICE_NOISE_LINES:
+        return True
+    return not normalized
 
 
 def _should_try_ocr_reparse(result: PdfParseResult, *, page_count: int) -> bool:

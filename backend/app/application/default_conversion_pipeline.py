@@ -402,11 +402,23 @@ def _resolve_ofx_account_type(
             "PAGAMENTOS E FINANCIAMENTOS",
             "CARTAO DE CREDITO",
             "DATA DE VENCIMENTO",
+            "DETALHAMENTO DA FATURA",
+            "PAGAMENTO E DEMAIS CREDITOS",
+            "PARCELAMENTOS",
         )
         card_matches = sum(1 for token in card_indicators if token in normalized)
         has_card_window = "TRANSACOES DE" in normalized and " A " in normalized
+        has_invoice_sections = (
+            "DETALHAMENTO DA FATURA" in normalized
+            and "PAGAMENTO E DEMAIS CREDITOS" in normalized
+            and "DESPESAS" in normalized
+        )
 
-        if card_matches >= 2 and (has_card_window or "TOTAL A PAGAR" in normalized) and not has_bank_indicators:
+        if (
+            card_matches >= 2
+            and (has_card_window or "TOTAL A PAGAR" in normalized or has_invoice_sections)
+            and not has_bank_indicators
+        ):
             return "credit_card"
         return None
 

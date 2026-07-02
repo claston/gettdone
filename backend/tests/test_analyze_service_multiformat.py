@@ -271,6 +271,48 @@ def test_analyze_service_uses_itau_pdf_inline_rows(tmp_path, monkeypatch) -> Non
     )
 
 
+def test_analyze_service_marks_santander_credit_card_invoice_pdf_as_credit_card(tmp_path, monkeypatch) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    monkeypatch.setattr(
+        default_conversion_pipeline_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes: build_pdf_parse_result(
+            transactions=[
+                NormalizedTransaction(
+                    date="2026-01-02",
+                    description="PAGAMENTO DE FATURA-INTERNET",
+                    amount=20000.0,
+                    type="inflow",
+                ),
+                NormalizedTransaction(
+                    date="2026-01-05",
+                    description="ALPHA",
+                    amount=-53.74,
+                    type="outflow",
+                ),
+            ],
+            layout_name="santander_cartao_credito_detalhamento_fatura_paisagem_v1",
+            confidence=0.93,
+            extracted_text=(
+                "Detalhamento da Fatura\n"
+                "Pagamento e Demais Creditos\n"
+                "Parcelamentos\n"
+                "Despesas\n"
+            ),
+            parse_metrics=dict(PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY),
+        ),
+    )
+
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="detalhamento_fatura_a4_paisagem.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
+
+    assert result.file_type == "pdf"
+    assert result.ofx_account_type == "credit_card"
+
+
 def test_analyze_service_keeps_document_review_without_generic_row_badges(tmp_path, monkeypatch) -> None:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     parse_metrics = dict(PDF_PARSE_METRICS_GROUPED_CANONICAL_OK)

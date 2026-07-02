@@ -1,0 +1,51 @@
+layout_profile:
+  profile_name: santander_cartao_credito_detalhamento_fatura_paisagem_v1
+  bank: Santander
+  layout_family: santander_cartao_credito_detalhamento_fatura
+  statement_type: cartao_credito_fatura
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Detalhamento da Fatura"
+      - "Pagamento e Demais Creditos"
+      - "Parcelamentos"
+      - "Despesas"
+      - "Parcela"
+    optional_keywords:
+      - "PAGAMENTO DE FATURA-INTERNET"
+      - "US$"
+      - "R$"
+      - "Compra"
+      - "Data"
+      - "Descricao"
+    negative_keywords:
+      - "EXTRATO DE CONTA CORRENTE"
+      - "Conta Corrente"
+      - "Saldo (R$)"
+      - "Saldo do dia"
+      - "Internet Banking Empresarial"
+      - "Negocios & Empresas"
+    min_score_hint: 0.62
+  table_detection:
+    header_keywords:
+      - "Compra"
+      - "Data"
+      - "Descricao"
+      - "Parcela"
+      - "R$"
+      - "US$"
+    expected_column_order:
+      - date
+      - description
+      - installment
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Descricao"
+      installment:
+        - "Parcela"
+      amount:
+        - "R$"
+        - "US$"
