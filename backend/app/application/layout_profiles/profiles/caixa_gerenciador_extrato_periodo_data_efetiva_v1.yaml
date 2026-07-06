@@ -1,0 +1,64 @@
+layout_profile:
+  profile_name: caixa_gerenciador_extrato_periodo_data_efetiva_v1
+  bank: Caixa Economica Federal
+  confidence: high
+  classifier:
+    required_keywords:
+      - "GERENCIADOR"
+      - "Conta:"
+      - "Agencia:"
+      - "Saldo anterior ao periodo solicitado"
+      - "Extrato no periodo de"
+      - "Data Efetiva"
+      - "Documento"
+      - "Historico"
+      - "Valor"
+      - "Saldo"
+    optional_keywords:
+      - "CNPJ:"
+      - "CRED PIX QR"
+      - "AZCX"
+      - "DEB PIX CHAVE"
+      - "02/12/2025 11:22:20"
+    negative_keywords:
+      - "Via internet"
+      - "Data de lancamento"
+      - "Data de movimento"
+      - "Produto"
+      - "Emitido em"
+      - "SIATR-SISTEMA DE AUTO ATENDIMENTO REESTRUTURADO"
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "Itau"
+    min_score_hint: 0.76
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Data Efetiva"
+      - "Documento"
+      - "Historico"
+      - "Valor"
+      - "Saldo"
+    expected_column_order:
+      - date
+      - effective_date_time
+      - document
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      document:
+        - "Documento"
+        - "Nr. Doc."
+      description:
+        - "Historico"
+        - "Histórico"
+      amount:
+        - "Valor"
+        - "Valor (R$)"
+      balance:
+        - "Saldo"
+        - "Saldo (R$)"

@@ -2323,3 +2323,145 @@ def test_accumulate_tabular_row_keeps_single_token_amount_when_sign_is_explicit(
     assert len(transactions) == 2
     assert transactions[1].transaction.amount == -4670.44
     assert transactions[1].running_balance is None
+
+
+def test_parse_pdf_transactions_prefers_caixa_landscape_datetime_detail_profile(monkeypatch) -> None:
+    native_text = """
+    Cliente:
+    Conta:
+    Data: 08/09/2025
+    Saldo proprio
+    R$ 874,95 C
+    Saldo bloqueado
+    R$ 0,00 C
+    Limite contratado
+    R$ 1.000,00 C
+    Saldo
+    R$ 3.978,14 C
+    4 de agosto de 2025, segunda-feira
+    Data/Hora
+    Nr. Doc.
+    Descricao/Detalhamento
+    Valor (R$)
+    Saldo(R$)
+    02/08/2025
+    03:32:14
+    310725
+    COB INTERN
+    582,18 C
+    522,18 C
+    02/08/2025
+    03:32:14
+    310725
+    COB C BANC
+    1.888,89 C
+    2.411,07 C
+    02/08/2025
+    03:32:14
+    310725
+    COB LOT DH
+    1.084,85 C
+    3.495,92 C
+    02/08/2025
+    03:32:14
+    310725
+    COB COMPE
+    10.197,30 C
+    13.693,22 C
+    02/08/2025
+    03:32:14
+    10825
+    COB INTERN
+    5,16 D
+    13.688,06 C
+    02/08/2025
+    03:32:14
+    10825
+    COB C BANC
+    10,32 D
+    13.677,74 C
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [native_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "caixa_extrato_paisagem_data_hora_detalhamento_v1"
+    assert result.layout.used_fallback is False
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert len(result.transactions) == 6
+    assert result.transactions[0].date == "2025-08-02"
+    assert result.transactions[0].description == "03:32:14 310725 COB INTERN"
+    assert result.transactions[0].amount == 582.18
+    assert result.transactions[-1].description == "03:32:14 10825 COB C BANC"
+    assert result.transactions[-1].amount == -10.32
+
+
+def test_parse_pdf_transactions_prefers_caixa_gerenciador_period_effective_date_profile(monkeypatch) -> None:
+    native_text = """
+    GERENCIADOR
+    C
+    A
+    I
+    X
+    A
+    .
+    CNPJ:
+    Agencia:
+    Conta:
+    02/12/2025 11:22:20
+    Saldo anterior ao periodo solicitado
+    R$ 44.826,29 C
+    Extrato no periodo de 01/11/2025 a 30/11/2025
+    Data
+    Data Efetiva
+    Documento
+    Historico
+    Valor
+    Saldo
+    03/11/2025
+    01/11 22:19
+    012219
+    CRED PIX QR
+    R$ 15,20
+    R$ 44.841,49 C
+    03/11/2025
+    03/11 07:34
+    006703
+    AZCX MC CC
+    R$ 787,88
+    R$ 45.629,37 C
+    03/11/2025
+    03/11 07:34
+    006704
+    AZCX VS CC
+    R$ 346,76
+    R$ 45.976,13 C
+    03/11/2025
+    03/11 07:34
+    006726
+    AZCX VS CD
+    R$ 114,38
+    R$ 46.090,51 C
+    03/11/2025
+    03/11 11:57
+    031157
+    DEB PIX CHAVE
+    - R$ 140,00
+    R$ 45.950,51 C
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [native_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "caixa_gerenciador_extrato_periodo_data_efetiva_v1"
+    assert result.layout.used_fallback is False
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert len(result.transactions) == 6
+    assert result.transactions[0].description == "SALDO ANTERIOR"
+    assert result.transactions[0].amount == 44826.29
+    assert result.transactions[1].description == "01/11 22:19 012219 CRED PIX QR"
+    assert result.transactions[1].amount == 15.2
+    assert result.transactions[-1].description == "03/11 11:57 031157 DEB PIX CHAVE"
+    assert result.transactions[-1].amount == -140.0

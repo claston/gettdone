@@ -1052,3 +1052,115 @@ def test_analyze_service_extracts_branch_from_split_header_line_without_inventin
     assert result.bank_branch == "1234"
     assert result.account_number is None
 
+
+def test_analyze_service_does_not_infer_account_from_date_after_blank_conta_header(
+    tmp_path, monkeypatch
+) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    monkeypatch.setattr(
+        default_conversion_pipeline_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes: build_pdf_parse_result(
+            transactions=[
+                NormalizedTransaction(
+                    date="2025-08-02",
+                    description="COB INTERN 310725",
+                    amount=582.18,
+                    type="inflow",
+                ),
+            ],
+            layout_name="caixa_extrato_paisagem_data_hora_detalhamento_v1",
+            confidence=0.96,
+            extracted_text=(
+                "Cliente:\n"
+                "Conta:\n"
+                "Data: 08/09/2025\n"
+                "Saldo proprio\n"
+                "R$ 874,95 C\n"
+                "Data/Hora\n"
+                "Nr. Doc.\n"
+                "Descricao/Detalhamento\n"
+                "Valor (R$)\n"
+                "Saldo(R$)\n"
+                "02/08/2025\n"
+                "03:32:14\n"
+                "310725\n"
+                "COB INTERN\n"
+                "582,18 C\n"
+                "522,18 C"
+            ),
+            parse_metrics=PDF_PARSE_METRICS_GROUPED_CANONICAL_OK,
+        ),
+    )
+
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="caixa_paisagem.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
+
+    assert result.account_number is None
+
+
+def test_analyze_service_resolves_caixa_gerenciador_period_effective_date_profile(
+    tmp_path, monkeypatch
+) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    monkeypatch.setattr(
+        default_conversion_pipeline_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes: build_pdf_parse_result(
+            transactions=[
+                NormalizedTransaction(
+                    date="2025-11-03",
+                    description="SALDO ANTERIOR",
+                    amount=44826.29,
+                    type="inflow",
+                ),
+                NormalizedTransaction(
+                    date="2025-11-03",
+                    description="01/11 22:19 012219 CRED PIX QR",
+                    amount=15.2,
+                    type="inflow",
+                ),
+                NormalizedTransaction(
+                    date="2025-11-03",
+                    description="03/11 11:57 031157 DEB PIX CHAVE",
+                    amount=-140.0,
+                    type="outflow",
+                ),
+            ],
+            layout_name="caixa_gerenciador_extrato_periodo_data_efetiva_v1",
+            confidence=0.98,
+            extracted_text=(
+                "GERENCIADOR\n"
+                "CNPJ:\n"
+                "Agencia:\n"
+                "Conta:\n"
+                "02/12/2025 11:22:20\n"
+                "Saldo anterior ao periodo solicitado\n"
+                "R$ 44.826,29 C\n"
+                "Extrato no periodo de 01/11/2025 a 30/11/2025\n"
+                "Data\n"
+                "Data Efetiva\n"
+                "Documento\n"
+                "Historico\n"
+                "Valor\n"
+                "Saldo"
+            ),
+            parse_metrics=PDF_PARSE_METRICS_GROUPED_CANONICAL_OK,
+        ),
+    )
+
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="caixa_gerenciador_nov2025.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
+
+    assert result.bank_name == "Caixa Economica Federal"
+    assert result.bank_code == "104"
+    assert result.opening_balance == 44826.29
+    assert result.transactions_total == 2
+    assert result.account_number is None
+
