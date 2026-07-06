@@ -1,0 +1,61 @@
+layout_profile:
+  profile_name: caixa_extrato_paisagem_data_hora_detalhamento_v1
+  bank: Caixa Economica Federal
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Cliente:"
+      - "Conta:"
+      - "Data:"
+      - "Data/Hora"
+      - "Descricao/Detalhamento"
+      - "Saldo(R$)"
+    optional_keywords:
+      - "Nr. Doc."
+      - "Valor (R$)"
+      - "Saldo proprio"
+      - "Saldo bloqueado"
+      - "Limite contratado"
+      - "segunda-feira"
+      - "COB INTERN"
+    negative_keywords:
+      - "GERENCIADOR CAIXA"
+      - "EXTRATO POR PERIODO"
+      - "SIATR-SISTEMA DE AUTO ATENDIMENTO REESTRUTURADO"
+      - "Data de lancamento"
+      - "Data de movimento"
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "Itau"
+    min_score_hint: 0.78
+  table_detection:
+    header_keywords:
+      - "Data/Hora"
+      - "Nr. Doc."
+      - "Descricao/Detalhamento"
+      - "Valor (R$)"
+      - "Saldo(R$)"
+    expected_column_order:
+      - date
+      - time
+      - document
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data/Hora"
+        - "Data"
+      document:
+        - "Nr. Doc."
+        - "Documento"
+      description:
+        - "Descricao/Detalhamento"
+        - "Descricao"
+      amount:
+        - "Valor (R$)"
+        - "Valor"
+      balance:
+        - "Saldo(R$)"
+        - "Saldo"

@@ -322,7 +322,11 @@ def _extract_bank_account_metadata_from_header(raw_lines: list[str]) -> tuple[st
                 label_pattern=r"\bAGENCIA\b",
             )
             if candidate is None and idx + 1 < len(normalized_lines):
-                candidate = _extract_value_from_line(normalized_lines[idx + 1], min_len=3, max_len=8)
+                candidate = _extract_header_identifier_from_next_line(
+                    normalized_lines[idx + 1],
+                    min_len=3,
+                    max_len=8,
+                )
             if candidate:
                 branch = candidate
 
@@ -337,7 +341,11 @@ def _extract_bank_account_metadata_from_header(raw_lines: list[str]) -> tuple[st
                 re.search(r"^\s*(?:CONTA(?:\s+CORRENTE)?|C/C|CC)\s*:?\s*$", line)
             )
             if candidate is None and allow_next_line and idx + 1 < len(normalized_lines):
-                candidate = _extract_value_from_line(normalized_lines[idx + 1], min_len=4, max_len=14)
+                candidate = _extract_header_identifier_from_next_line(
+                    normalized_lines[idx + 1],
+                    min_len=4,
+                    max_len=14,
+                )
             if candidate:
                 account = candidate
 
@@ -345,6 +353,25 @@ def _extract_bank_account_metadata_from_header(raw_lines: list[str]) -> tuple[st
             break
 
     return branch, account
+
+
+def _extract_header_identifier_from_next_line(line: str, *, min_len: int, max_len: int) -> str | None:
+    if not _looks_like_standalone_account_identifier(line, min_len=min_len, max_len=max_len):
+        return None
+    return _normalize_account_identifier(line)
+
+
+def _looks_like_standalone_account_identifier(line: str, *, min_len: int, max_len: int) -> bool:
+    normalized_line = str(line or "").strip()
+    if not normalized_line:
+        return False
+    if ":" in normalized_line:
+        return False
+    if re.search(r"\b\d{1,2}/\d{1,2}/\d{2,4}\b", normalized_line):
+        return False
+    if re.search(r"\b(?:DATA|CLIENTE|CONTA|AGENCIA|OPERACAO|DOCUMENTO|PRODUTO|CPF|CNPJ)\b", normalized_line):
+        return False
+    return bool(re.fullmatch(rf"\d{{{min_len},{max_len}}}(?:[-.]\d)?", normalized_line))
 
 
 def _normalize_account_identifier(value: str | None) -> str | None:

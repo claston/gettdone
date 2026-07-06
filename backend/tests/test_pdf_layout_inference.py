@@ -396,6 +396,74 @@ def test_infer_pdf_layout_prefers_caixa_profile_when_tokens_match() -> None:
     assert result.confidence >= 0.5
 
 
+def test_infer_pdf_layout_prefers_caixa_landscape_datetime_detail_profile_for_real_extracted_text() -> None:
+    text = """
+    Cliente:
+    Conta:
+    Data: 08/09/2025
+    Saldo proprio
+    R$ 874,95 C
+    Saldo bloqueado
+    R$ 0,00 C
+    Limite contratado
+    R$ 1.000,00 C
+    Saldo
+    R$ 3.978,14 C
+    4 de agosto de 2025, segunda-feira
+    Data/Hora
+    Nr. Doc.
+    Descricao/Detalhamento
+    Valor (R$)
+    Saldo(R$)
+    02/08/2025
+    03:32:14
+    310725
+    COB INTERN
+    582,18 C
+    522,18 C
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "caixa_extrato_paisagem_data_hora_detalhamento_v1"
+    assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_prefers_caixa_gerenciador_period_effective_date_profile() -> None:
+    text = """
+    GERENCIADOR
+    C
+    A
+    I
+    X
+    A
+    CNPJ:
+    Agencia:
+    Conta:
+    02/12/2025 11:22:20
+    Saldo anterior ao periodo solicitado
+    R$ 44.826,29 C
+    Extrato no periodo de 01/11/2025 a 30/11/2025
+    Data
+    Data Efetiva
+    Documento
+    Historico
+    Valor
+    Saldo
+    03/11/2025
+    01/11 22:19
+    012219
+    CRED PIX QR
+    R$ 15,20
+    R$ 44.841,49 C
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "caixa_gerenciador_extrato_periodo_data_efetiva_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_inter_profile_when_tokens_match() -> None:
     text = """
     BANCO INTER S.A.
