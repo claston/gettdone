@@ -1534,6 +1534,90 @@ def test_parse_pdf_transactions_prefers_neon_mei_facil_layout_text_profile(monke
     assert result.canonical_transactions[-1].running_balance == 0.0
 
 
+def test_parse_pdf_transactions_supports_banco_do_nordeste_extrato_consolidado_statement(monkeypatch) -> None:
+    native_text = """
+    Banco do
+    Nordeste
+    EXTRATO CONSOLIDADO
+    Informacoes Gerais
+    Titular:
+    Mes:
+    Marco/2023
+    CNPJ:
+    Data de Emissao:
+    Detalhamento do Extrato
+    REFERENCIA: MARCO/2023
+    < RESUMO DAS MOVIMENTACOES NO PERIODO >
+    > CONTA CORRENTE
+    AGENCIA:
+      SALDO CONTA CORRENTE........................
+    2.001,45
+      SALDO POUPANCA CORRENTE ATE 03/05/2012......
+    0,00
+      SALDO POUPANCA CORRENTE A PARTIR DE 04/05/2012....
+    0,00
+      SALDO BLOQUEADO.............................
+    0,00
+      SALDO ATUAL.................................
+    2.001,45
+      SALDO MEDIO DE CONTA CORRENTE...............
+    21.561,56
+      SALDO MEDIO DE POUPANCA CORRENTE............
+    0,00
+    > DEMONSTRATIVO DA MOVIMENTACAO DE CONTA CORRENTE
+    DIA
+    HISTORICO
+    DOCUMENTO
+    VALOR
+    SALDO
+    1
+    SALDO ANTERIOR
+    0,00
+    69,86
+    1
+    TARIFA MANUTENCAO CONTA
+    474
+    53,00-
+    16,86
+    3
+    ESTORNO DE TARIFAS
+    996
+    2.600,00+
+    2.616,86
+    7
+    TARIFA CARTAO
+    996
+    792,75-
+    1.824,11
+    9
+    CREDITO TED
+    104
+    177,34+
+    2.001,45
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [native_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "banco_do_nordeste_extrato_consolidado_v1"
+    assert result.layout.used_fallback is False
+    assert result.parse_metrics["selected_parser"] == "layout_specific_banco_nordeste_consolidado"
+    assert [transaction.date for transaction in result.transactions] == [
+        "2023-03-01",
+        "2023-03-01",
+        "2023-03-03",
+        "2023-03-07",
+        "2023-03-09",
+    ]
+    assert [transaction.amount for transaction in result.transactions] == [69.86, -53.0, 2600.0, -792.75, 177.34]
+    assert result.transactions[0].description == "SALDO ANTERIOR"
+    assert result.transactions[1].description == "TARIFA MANUTENCAO CONTA 474"
+    assert result.transactions[2].description == "ESTORNO DE TARIFAS 996"
+    assert result.transactions[4].description == "CREDITO TED 104"
+    assert [item.running_balance for item in result.canonical_transactions] == [69.86, 16.86, 2616.86, 1824.11, 2001.45]
+
+
 def test_parse_pdf_transactions_resolves_singular_credit_debit_headers_in_tabular_positions() -> None:
     sample_text = "\n".join(
         [

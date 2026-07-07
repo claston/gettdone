@@ -381,6 +381,43 @@ def test_infer_pdf_layout_prefers_bradesco_unificado_poupanca_profile() -> None:
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_prefers_banco_do_nordeste_extrato_consolidado_profile() -> None:
+    text = """
+    Banco do
+    Nordeste
+    EXTRATO CONSOLIDADO
+    Informacoes Gerais
+    Titular:
+    Mes:
+    Marco/2023
+    Data de Emissao:
+    Detalhamento do Extrato
+    REFERENCIA: MARCO/2023
+    < RESUMO DAS MOVIMENTACOES NO PERIODO >
+    > CONTA CORRENTE
+    > DEMONSTRATIVO DA MOVIMENTACAO DE CONTA CORRENTE
+    DIA
+    HISTORICO
+    DOCUMENTO
+    VALOR
+    SALDO
+    1
+    SALDO ANTERIOR
+    0,00
+    69,86
+    1
+    TARIFA MANUTENCAO CONTA
+    474
+    53,00-
+    16,86
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "banco_do_nordeste_extrato_consolidado_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_bb_profile_when_tokens_match() -> None:
     text = """
     BANCO DO BRASIL
