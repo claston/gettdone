@@ -1274,6 +1274,49 @@ def test_parse_pdf_transactions_supports_stone_a4_statement_with_entry_exit_type
     assert result.transactions[4].type == "inflow"
 
 
+def test_parse_pdf_transactions_supports_stone_grouped_lancamento_valor_saldo_statement(monkeypatch) -> None:
+    native_text = """
+    Extrato de conta corrente
+    stone
+    Titular
+    Instituicao
+    Stone Instituicao de Pagamento S.A.
+    Documento
+    Periodo
+    DATA
+    TIPO
+    LANCAMENTO
+    VALOR (R$)
+    SALDO (R$)
+    CONTRAPARTE
+    31/12/2021
+    Debito
+    CENTRAL PLAST
+    Compra com cartao
+    Stone
+    478,26
+    63.173,95
+    31/12/2021
+    Debito
+    ATACADAO 217 AS
+    Compra com cartao
+    Stone
+    681,76
+    63.652,21
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [native_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "stone_extrato_conta_corrente_lancamento_valor_saldo_v1"
+    assert result.layout.used_fallback is False
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert [transaction.amount for transaction in result.transactions] == [-478.26, -681.76]
+    assert result.transactions[0].description == "Debito CENTRAL PLAST Compra com cartao Stone"
+    assert result.transactions[0].type == "outflow"
+
+
 def test_parse_pdf_transactions_resolves_singular_credit_debit_headers_in_tabular_positions() -> None:
     sample_text = "\n".join(
         [

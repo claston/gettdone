@@ -623,6 +623,43 @@ def test_infer_pdf_layout_prefers_stone_a4_profile_for_real_extracted_pdf_text()
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_prefers_stone_grouped_lancamento_valor_saldo_profile() -> None:
+    text = """
+    Extrato de conta corrente
+    stone
+    Titular
+    Instituicao
+    Stone Instituicao de Pagamento S.A.
+    Documento
+    Periodo
+    DATA
+    TIPO
+    LANCAMENTO
+    VALOR (R$)
+    SALDO (R$)
+    CONTRAPARTE
+    31/12/2021
+    Debito
+    CENTRAL PLAST
+    Compra com cartao
+    Stone
+    478,26
+    63.173,95
+    31/12/2021
+    Debito
+    ATACADAO 217 AS
+    Compra com cartao
+    Stone
+    681,76
+    63.652,21
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "stone_extrato_conta_corrente_lancamento_valor_saldo_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_caixa_siatr_saldos_lancamentos_profile() -> None:
     text = """
     SIATR-SISTEMA DE AUTO ATENDIMENTO REESTRUTURADO

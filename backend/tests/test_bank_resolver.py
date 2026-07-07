@@ -21,3 +21,7 @@ def test_resolve_bank_code_falls_back_to_default_for_unknown_layout() -> None:
 
 def test_resolve_bank_code_from_stone_layout_profile() -> None:
     assert resolve_bank_code(layout_inference_name="stone_extrato_conta_corrente_a4_v1") == "197"
+
+
+def test_resolve_bank_code_from_stone_grouped_layout_profile() -> None:
+    assert resolve_bank_code(layout_inference_name="stone_extrato_conta_corrente_lancamento_valor_saldo_v1") == "197"
