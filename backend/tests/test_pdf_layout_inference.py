@@ -348,6 +348,39 @@ def test_infer_pdf_layout_prefers_bradesco_profile_when_tokens_match() -> None:
     assert result.confidence >= 0.5
 
 
+def test_infer_pdf_layout_prefers_bradesco_unificado_poupanca_profile() -> None:
+    text = """
+    Bradesco
+    Extrato Unificado - Pessoa Juridica
+    Invest Facil Bradesco
+    Poupanca Facil
+    Demonstrativo de Saldos e Rendimentos - Depositos a partir de 04/05/2012
+    Em 30/11/2023
+    Demonstrativo da Movimentacao
+    Data
+    Historico
+    Documento
+    Indices
+    Credito
+    Debito
+    Saldo
+    30/10
+    Saldo Anterior
+    8.847,52
+    06/11
+    Rendimentos
+    0406058
+    9,02
+    Poup Facil-depos A Partir 4/5/12
+    8.856,54
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "bradesco_extrato_unificado_pj_poupanca_facil_a4_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_bb_profile_when_tokens_match() -> None:
     text = """
     BANCO DO BRASIL

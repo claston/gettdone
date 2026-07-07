@@ -42,6 +42,7 @@ class ExportArtifactService:
         bank_code: str | None = None,
     ) -> None:
         active_rows = self._active_rows(report_rows)
+        ofx_rows = [item for item in active_rows if not self._is_opening_balance_row(item)]
         normalized_transactions = [
             NormalizedTransaction(
                 date=item.date,
@@ -49,7 +50,7 @@ class ExportArtifactService:
                 amount=item.amount,
                 type="inflow" if item.amount >= 0 else "outflow",
             )
-            for item in active_rows
+            for item in ofx_rows
         ]
 
         resolved_bank_code = resolve_bank_code(
