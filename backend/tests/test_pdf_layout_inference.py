@@ -656,6 +656,40 @@ def test_infer_pdf_layout_prefers_stone_a4_profile_for_real_extracted_pdf_text()
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_prefers_neon_mei_facil_a4_statement_profile() -> None:
+    text = """
+    BANCO MEI FACIL
+    Atualizacao:
+    Nome:
+    Banco 536
+    Neon pagamentos IP
+    Agencia:
+    Conta:
+    Lancamentos
+    data
+    lancamento
+    valor (R$)
+    saldos (R$)
+    lancamentos
+    01/01/2024
+    SALDO ANTERIOR
+    1.902,45
+    02/01/2024
+    PAGAMENTO FATURA CARTAO CRED
+    (453,02)
+    1.449,43
+    02/01/2024
+    PIX ENVIADO PARA ANGELO
+    (1.440,00)
+    9,43
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "neon_banco_mei_facil_extrato_a4_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_stone_grouped_lancamento_valor_saldo_profile() -> None:
     text = """
     Extrato de conta corrente

@@ -32,7 +32,11 @@ from app.application.normalization.pdf_row_match_rules import (
 )
 from app.application.normalization.pdf_signed_amount_rules import compute_hint_signed_amount, compute_tabular_signed_amount
 from app.application.normalization.pdf_tabular_profile_rules import resolve_tabular_profile
-from app.application.normalization.pdf_tabular_rules import extract_document_reference, select_tabular_amount_token
+from app.application.normalization.pdf_tabular_rules import (
+    SelectedTabularAmount,
+    extract_document_reference,
+    select_tabular_amount_token,
+)
 from app.application.normalization.pdf_text_rules import apply_sign_hints, should_ignore_line, should_skip_transaction_description
 from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf import text_extraction
@@ -1879,12 +1883,21 @@ def _classify_tabular_statement_line(
         return None, True
 
     raw_description = " ".join(rest[: selected_amount.description_end].split())
-    if not raw_description or should_skip_transaction_description(raw_description):
-        return None, True
     normalized_description = _normalize_text(raw_description)
     if tabular_profile is not None and (
         normalized_description.startswith("SALDO ANTERIOR") or normalized_description.startswith("SALDO INICIAL")
     ):
+        opening_balance_row = _build_tabular_opening_balance_row(
+            raw_date=match.group("date"),
+            inferred_year=inferred_year,
+            raw_description=raw_description,
+            selected_amount=selected_amount,
+            source_page=line.page_number,
+            source_line=line.line_number,
+        )
+        if opening_balance_row is not None:
+            return opening_balance_row, True
+    if not raw_description or should_skip_transaction_description(raw_description):
         return None, True
     if normalized_description.endswith(" SALDO"):
         return None, True
@@ -2039,6 +2052,39 @@ def _build_tabular_amount_details(
     )
     running_balance = parse_pdf_amount(balance_token_value) if balance_token_value is not None else None
     return {"signed_amount": signed_amount, "running_balance": running_balance}
+
+
+def _build_tabular_opening_balance_row(
+    *,
+    raw_date: str,
+    inferred_year: int | None,
+    raw_description: str,
+    selected_amount: SelectedTabularAmount,
+    source_page: int,
+    source_line: int,
+) -> _ParsedTransaction | None:
+    opening_balance = (
+        parse_pdf_amount(selected_amount.balance_token.value)
+        if selected_amount.balance_token is not None
+        else parse_pdf_amount(selected_amount.token.value)
+    )
+    amount_value = parse_pdf_amount(selected_amount.token.value)
+    if (
+        selected_amount.balance_token is not None
+        and abs(amount_value) > 0.000001
+        and abs(abs(amount_value) - abs(opening_balance)) > 0.01
+    ):
+        return None
+
+    return _build_parsed_transaction(
+        date=parse_row_date(raw_date, fallback_year=inferred_year),
+        description="SALDO ANTERIOR" if "ANTERIOR" in _normalize_text(raw_description) else "SALDO INICIAL",
+        amount=opening_balance,
+        source_page=source_page,
+        source_line=source_line,
+        running_balance=opening_balance,
+        has_explicit_amount_sign=has_explicit_amount_sign(selected_amount.token.value),
+    )
 
 
 def _extract_compact_cd_amount(description: str) -> float | None:
@@ -2536,7 +2582,8 @@ def _should_prefer_layout_text_result(*, candidate: PdfParseResult, baseline: Pd
     if candidate_profile is None:
         return False
     expected_column_order = set(candidate_profile.expected_column_order)
-    if "credit" not in expected_column_order and "debit" not in expected_column_order:
+    has_credit_debit_columns = "credit" in expected_column_order or "debit" in expected_column_order
+    if not has_credit_debit_columns and candidate.layout.layout_name != baseline.layout.layout_name:
         return False
 
     candidate_outflows = sum(1 for transaction in candidate.transactions if transaction.amount < 0)

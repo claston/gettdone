@@ -1379,6 +1379,161 @@ def test_parse_pdf_transactions_supports_bradesco_unificado_poupanca_movimentaca
     assert result.canonical_transactions[2].running_balance == 8897.69
 
 
+def test_parse_pdf_transactions_prefers_neon_mei_facil_layout_text_profile(monkeypatch) -> None:
+    native_text = """
+    BANCO MEI FACIL
+    Atualizacao:
+    Nome:
+    Banco 536
+    Neon pagamentos IP
+    Agencia:
+    Conta:
+    Lancamentos
+    data
+    lancamento
+    valor (R$)
+    saldos (R$)
+    lancamentos
+    01/01/2024
+    SALDO ANTERIOR
+    1.902,45
+    02/01/2024
+    PAGAMENTO FATURA CARTAO CRED
+    (453,02)
+    1.449,43
+    02/01/2024
+    PIX ENVIADO PARA ANGELO
+    (1.440,00)
+    9,43
+    08/01/2024
+    PIX RECEBIDO AILTON AUGUSTO
+    350,00
+    359,43
+    08/01/2024
+    PIX RECEBIDO RODRIGO
+    450,00
+    809,43
+    08/01/2024
+    PIX ENVIADO PARA ANGELO
+    (260,00)
+    549,43
+    09/01/2024
+    PIX ENVIADO PARA ASAAS
+    (200,00)
+    349,43
+    10/01/2024
+    PIX RECEBIDO LUIZ GUSTAVO
+    700,00
+    1.049,43
+    10/01/2024
+    PIX RECEBIDO MONIKY
+    350,00
+    1.399,43
+    10/01/2024
+    PIX ENVIADO ANGELO
+    (1.399,43)
+    0,00
+    --
+    0,00
+    31/01/2024
+    SALDO TOTAL DISPONIVEL DIA
+    0,00
+    0,00
+    """
+    layout_text = "\n".join(
+        [
+            "BANCO MEI FACIL",
+            "Atualizacao:",
+            "Nome:",
+            "",
+            "Banco 536          Neon pagamentos IP",
+            "Agencia:",
+            "Conta:",
+            "Lancamentos",
+            "",
+            (
+                " data                       lancamento"
+                "                                                            valor (R$)            saldos (R$)"
+            ),
+            " lancamentos",
+            "",
+            (
+                " 01/01/2024                 SALDO ANTERIOR"
+                "                                                                                        1.902,45"
+            ),
+            (
+                " 02/01/2024                 PAGAMENTO FATURA CARTAO CRED"
+                "                                                    (453,02)              1.449,43"
+            ),
+            (
+                " 02/01/2024                 PIX ENVIADO PARA ANGELO"
+                "                                                       (1.440,00)                  9,43"
+            ),
+            (
+                " 08/01/2024                 PIX RECEBIDO AILTON AUGUSTO"
+                "                                                      350,00                 359,43"
+            ),
+            (
+                " 08/01/2024                 PIX RECEBIDO RODRIGO"
+                "                                                             450,00                 809,43"
+            ),
+            (
+                " 08/01/2024                 PIX ENVIADO PARA ANGELO"
+                "                                                         (260,00)                549,43"
+            ),
+            (
+                " 09/01/2024                 PIX ENVIADO PARA ASAAS"
+                "                                                          (200,00)                349,43"
+            ),
+            (
+                " 10/01/2024                 PIX RECEBIDO LUIZ GUSTAVO"
+                "                                                        700,00               1.049,43"
+            ),
+            (
+                " 10/01/2024                 PIX RECEBIDO MONIKY"
+                "                                                              350,00               1.399,43"
+            ),
+            (
+                " 10/01/2024                 PIX ENVIADO ANGELO"
+                "                                                            (1.399,43)                  0,00"
+            ),
+            (
+                "                                                                                                                   "
+                "--                 0,00"
+            ),
+            "",
+            (
+                " 31/01/2024                 SALDO TOTAL DISPONIVEL DIA"
+                "                                                          0,00                  0,00"
+            ),
+        ]
+    )
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [layout_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "neon_banco_mei_facil_extrato_a4_v1"
+    assert result.layout.used_fallback is False
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert [transaction.amount for transaction in result.transactions] == [
+        1902.45,
+        -453.02,
+        -1440.0,
+        350.0,
+        450.0,
+        -260.0,
+        -200.0,
+        700.0,
+        350.0,
+        -1399.43,
+    ]
+    assert result.transactions[0].description == "SALDO ANTERIOR"
+    assert result.transactions[-1].description == "PIX ENVIADO ANGELO"
+    assert result.canonical_transactions[0].running_balance == 1902.45
+    assert result.canonical_transactions[-1].running_balance == 0.0
+
+
 def test_parse_pdf_transactions_resolves_singular_credit_debit_headers_in_tabular_positions() -> None:
     sample_text = "\n".join(
         [

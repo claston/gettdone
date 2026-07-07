@@ -1,0 +1,63 @@
+layout_profile:
+  profile_name: neon_banco_mei_facil_extrato_a4_v1
+  bank: Neon
+  layout_family: neon_banco_mei_facil_extrato_a4
+  statement_type: conta_digital_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "BANCO MEI FACIL"
+      - "Neon pagamentos IP"
+      - "Banco 536"
+      - "Lancamentos"
+      - "valor (R$)"
+      - "saldos (R$)"
+    optional_keywords:
+      - "SALDO ANTERIOR"
+      - "PAGAMENTO FATURA CARTAO CRED"
+      - "PIX ENVIADO"
+      - "PIX RECEBIDO"
+      - "Agencia"
+      - "Conta"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itau"
+      - "Sicredi"
+      - "Stone"
+      - "C6 BANK"
+      - "PagBank"
+      - "Mercado Pago"
+    min_score_hint: 0.76
+  table_detection:
+    header_keywords:
+      - "data"
+      - "lancamento"
+      - "valor (R$)"
+      - "saldos (R$)"
+    expected_column_order:
+      - date
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "data"
+        - "Data"
+      description:
+        - "lancamento"
+        - "lancamentos"
+        - "Lancamento"
+        - "Lancamentos"
+      amount:
+        - "valor (R$)"
+        - "valor"
+        - "Valor (R$)"
+        - "Valor"
+      balance:
+        - "saldos (R$)"
+        - "saldo (R$)"
+        - "saldos"
+        - "saldo"
