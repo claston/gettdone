@@ -99,3 +99,38 @@ def test_write_analysis_report_workbook_creates_transacoes_and_conciliacao(tmp_p
     assert conciliacao.cell(row=2, column=1).value == "matched_groups"
     assert conciliacao.cell(row=2, column=2).value == 1
     assert conciliacao.cell(row=7, column=2).value == "TARIFA"
+
+
+def test_write_convert_artifacts_excludes_opening_balance_from_ofx_transactions(tmp_path) -> None:
+    service = ExportArtifactService()
+    rows = [
+        TransactionRow(
+            date="2026-04-01",
+            description="SALDO ANTERIOR",
+            amount=50.0,
+            category="Outros",
+            reconciliation_status="unmatched",
+            running_balance=50.0,
+        ),
+        TransactionRow(
+            date="2026-04-02",
+            description="DEPOSITO",
+            amount=25.0,
+            category="Outros",
+            reconciliation_status="unmatched",
+            running_balance=75.0,
+        ),
+    ]
+
+    service.write_convert_artifacts(
+        tmp_path,
+        report_rows=rows,
+        layout_inference_name="bradesco_extrato_unificado_pj_poupanca_facil_a4_v1",
+        opening_balance=50.0,
+        closing_balance=75.0,
+    )
+
+    ofx_text = (tmp_path / "converted.ofx").read_text(encoding="utf-8")
+
+    assert "SALDO ANTERIOR" not in ofx_text
+    assert "DEPOSITO" in ofx_text

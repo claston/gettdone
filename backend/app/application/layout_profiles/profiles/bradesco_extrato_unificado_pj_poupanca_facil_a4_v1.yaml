@@ -1,0 +1,63 @@
+layout_profile:
+  profile_name: bradesco_extrato_unificado_pj_poupanca_facil_a4_v1
+  bank: Bradesco
+  layout_family: bradesco_extrato_unificado_pj_poupanca_facil
+  statement_type: poupanca_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Bradesco"
+      - "Extrato Unificado - Pessoa Juridica"
+      - "Poupanca Facil"
+      - "Demonstrativo da Movimentacao"
+      - "Historico"
+      - "Documento"
+      - "Indices"
+      - "Credito"
+      - "Debito"
+      - "Saldo"
+    optional_keywords:
+      - "Invest Facil Bradesco"
+      - "Demonstrativo de Saldos e Rendimentos"
+      - "Data do Aniversario"
+      - "Rendimentos"
+      - "Saldo Anterior"
+      - "Poup Facil-depos A Partir 4/5/12"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Itaú"
+      - "CAIXA"
+      - "SICOOB"
+      - "Sicredi"
+      - "Nubank"
+      - "net empresa"
+      - "Extrato Mensal / Por Periodo"
+    min_score_hint: 0.82
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Historico"
+      - "Documento"
+      - "Indices"
+      - "Credito"
+      - "Debito"
+      - "Saldo"
+    expected_column_order:
+      - date
+      - description
+      - document
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Historico"
+      document:
+        - "Documento"
+      amount:
+        - "Credito"
+        - "Debito"
+      balance:
+        - "Saldo"

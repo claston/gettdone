@@ -1317,6 +1317,68 @@ def test_parse_pdf_transactions_supports_stone_grouped_lancamento_valor_saldo_st
     assert result.transactions[0].type == "outflow"
 
 
+def test_parse_pdf_transactions_supports_bradesco_unificado_poupanca_movimentacao_section(monkeypatch) -> None:
+    native_text = """
+    Bradesco
+    Extrato Unificado - Pessoa Juridica
+    Invest Facil Bradesco
+    Poupanca Facil
+    Demonstrativo de Saldos e Rendimentos - Depositos a partir de 04/05/2012
+    Em 30/11/2023
+    Base para Calculo dos Rendimentos
+    01/11
+    600,00
+    0,00
+    0,0000%
+    0,00
+    04/11
+    1.496,54
+    1.487,52
+    0,6058%
+    9,02
+    Total
+    14.365,69
+    Demonstrativo da Movimentacao
+    Data
+    Historico
+    Documento
+    Indices
+    Credito
+    Debito
+    Saldo
+    30/10
+    Saldo Anterior
+    8.847,52
+    06/11
+    Rendimentos
+    0406058
+    9,02
+    Poup Facil-depos A Partir 4/5/12
+    8.856,54
+    09/11
+    Rendimentos
+    0906087
+    41,15
+    Poup Facil-depos A Partir 4/5/12
+    8.897,69
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [native_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "bradesco_extrato_unificado_pj_poupanca_facil_a4_v1"
+    assert result.layout.used_fallback is False
+    assert result.parse_metrics["selected_parser"] == "layout_specific_bradesco_unificado_movimentacao"
+    assert [transaction.date for transaction in result.transactions] == ["2023-10-30", "2023-11-06", "2023-11-09"]
+    assert [transaction.amount for transaction in result.transactions] == [8847.52, 9.02, 41.15]
+    assert result.transactions[0].description == "SALDO ANTERIOR"
+    assert result.transactions[1].description == "Rendimentos Poup Facil-depos A Partir 4/5/12 0406058"
+    assert result.transactions[2].description == "Rendimentos Poup Facil-depos A Partir 4/5/12 0906087"
+    assert result.canonical_transactions[1].running_balance == 8856.54
+    assert result.canonical_transactions[2].running_balance == 8897.69
+
+
 def test_parse_pdf_transactions_resolves_singular_credit_debit_headers_in_tabular_positions() -> None:
     sample_text = "\n".join(
         [

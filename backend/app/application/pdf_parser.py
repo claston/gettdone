@@ -1,5 +1,6 @@
 import os
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable
 
@@ -10,7 +11,7 @@ from app.application.models import NormalizedTransaction
 from app.application.normalization.balance import annotate_balance_consistency
 from app.application.normalization.canonical import build_canonical_transactions
 from app.application.normalization.canonical_metrics import build_canonical_quality_metrics
-from app.application.normalization.date import infer_default_statement_year
+from app.application.normalization.date import infer_default_statement_year, parse_statement_date
 from app.application.normalization.pdf_amount_tokens import find_amount_tokens, has_explicit_amount_sign, parse_pdf_amount
 from app.application.normalization.pdf_columnar_block_rules import next_columnar_block_index
 from app.application.normalization.pdf_columnar_row_rules import is_valid_columnar_transaction_row
@@ -32,7 +33,7 @@ from app.application.normalization.pdf_row_match_rules import (
 from app.application.normalization.pdf_signed_amount_rules import compute_hint_signed_amount, compute_tabular_signed_amount
 from app.application.normalization.pdf_tabular_profile_rules import resolve_tabular_profile
 from app.application.normalization.pdf_tabular_rules import extract_document_reference, select_tabular_amount_token
-from app.application.normalization.pdf_text_rules import should_ignore_line, should_skip_transaction_description
+from app.application.normalization.pdf_text_rules import apply_sign_hints, should_ignore_line, should_skip_transaction_description
 from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf import text_extraction
 from app.application.parsers.pdf.models import PdfParseResult, _ParsedTransaction, _PdfLine, _TabularColumnPositions
@@ -44,11 +45,19 @@ from app.application.textract_transaction_adapter import adapt_textract_extracti
 
 _SANTANDER_CREDIT_CARD_INVOICE_LAYOUT = "santander_cartao_credito_detalhamento_fatura_paisagem_v1"
 _SANTANDER_IB_EMPRESARIAL_365_MOBILE_GROUPED_LAYOUT = "santander_empresarial_extrato_365_dias_mobile_grouped_v1"
+_BRADESCO_UNIFICADO_POUPANCA_LAYOUT = "bradesco_extrato_unificado_pj_poupanca_facil_a4_v1"
 _SANTANDER_CREDIT_CARD_INVOICE_SECTION_HEADERS = {
     "PAGAMENTO E DEMAIS CREDITOS",
     "PARCELAMENTOS",
     "DESPESAS",
 }
+
+
+@dataclass(frozen=True)
+class _LayoutSpecificParseRows:
+    rows: list[_ParsedTransaction]
+    selected_parser: str
+    selection_reason: str
 _SANTANDER_CREDIT_CARD_INVOICE_NOISE_LINES = {
     "COMPRA",
     "DATA",
@@ -467,18 +476,18 @@ def _parse_pdf_transactions_from_page_texts(
     layout_profile = get_layout_profile(layout.layout_name)
     lines = _flatten_statement_lines(page_texts, preserve_layout_spacing=preserve_layout_spacing)
     lines, invalid_date_candidates_skipped = _filter_invalid_leading_date_candidate_lines(lines)
-    specialized_rows = _parse_layout_specific_statement_rows(lines=lines, layout=layout)
-    if specialized_rows is not None:
+    specialized_selection = _parse_layout_specific_statement_rows(lines=lines, layout=layout)
+    if specialized_selection is not None:
         specialized_rows = _adjust_forward_year_rollover_rows(
-            specialized_rows,
+            specialized_selection.rows,
             line_texts=_extract_line_texts(lines),
         )
         return _build_pdf_parse_result(
             parsed_rows=specialized_rows,
             layout=layout,
             layout_profile=layout_profile,
-            selected_parser="sectioned_credit_card_invoice",
-            parser_selection_reason="layout_specific_sectioned_credit_card_invoice",
+            selected_parser=specialized_selection.selected_parser,
+            parser_selection_reason=specialized_selection.selection_reason,
             inline_decision="not_applicable_layout_specific",
             tabular_decision="not_applicable_layout_specific",
             columnar_decision="not_applicable_layout_specific",
@@ -543,12 +552,176 @@ def _parse_layout_specific_statement_rows(
     *,
     lines: list[_PdfLine],
     layout: PdfLayoutInference,
-) -> list[_ParsedTransaction] | None:
+) -> _LayoutSpecificParseRows | None:
     if layout.layout_name == _SANTANDER_CREDIT_CARD_INVOICE_LAYOUT:
         parsed_rows = _parse_santander_credit_card_invoice_sections(lines)
         if parsed_rows:
-            return parsed_rows
+            return _LayoutSpecificParseRows(
+                rows=parsed_rows,
+                selected_parser="sectioned_credit_card_invoice",
+                selection_reason="layout_specific_sectioned_credit_card_invoice",
+            )
+    if layout.layout_name == _BRADESCO_UNIFICADO_POUPANCA_LAYOUT:
+        parsed_rows = _parse_bradesco_unificado_poupanca_movimentacao_rows(lines)
+        if parsed_rows:
+            return _LayoutSpecificParseRows(
+                rows=parsed_rows,
+                selected_parser="layout_specific_bradesco_unificado_movimentacao",
+                selection_reason="layout_specific_bradesco_unificado_movimentacao",
+            )
     return None
+
+
+def _parse_bradesco_unificado_poupanca_movimentacao_rows(lines: list[_PdfLine]) -> list[_ParsedTransaction]:
+    movement_lines = _slice_bradesco_unificado_movimentacao_lines(lines)
+    if not movement_lines:
+        return []
+
+    fallback_year = _infer_bradesco_unificado_reference_year(lines) or datetime.now().year
+    parsed_rows: list[_ParsedTransaction] = []
+    previous_running_balance: float | None = None
+    index = 0
+
+    while index < len(movement_lines):
+        line = movement_lines[index]
+        if not is_date_only_row(line.text):
+            index += 1
+            continue
+
+        current_date = parse_statement_date(line.text.strip(), fallback_year)
+        next_index = index + 1
+        description_parts: list[str] = []
+        document_value: str | None = None
+        amount_value: float | None = None
+        running_balance: float | None = None
+
+        while next_index < len(movement_lines):
+            current = movement_lines[next_index]
+            normalized_current = _normalize_text(current.text)
+            if normalized_current in {
+                "DATA",
+                "HISTORICO",
+                "HISTÓRICO",
+                "DOCUMENTO",
+                "INDICES",
+                "ÍNDICES",
+                "CREDITO",
+                "CRÉDITO",
+                "DEBITO",
+                "DÉBITO",
+                "SALDO",
+            }:
+                next_index += 1
+                continue
+            if is_date_only_row(current.text):
+                break
+            if is_amount_only_row(current.text):
+                parsed_amount = parse_pdf_amount(current.text)
+                if amount_value is None:
+                    amount_value = abs(parsed_amount)
+                else:
+                    running_balance = parsed_amount
+                    next_index += 1
+                    break
+                next_index += 1
+                continue
+
+            digits_only = re.sub(r"\D", "", current.text)
+            if document_value is None and amount_value is None and re.fullmatch(r"\d{6,8}", digits_only):
+                document_value = digits_only
+            else:
+                description_parts.append(current.text.strip())
+            next_index += 1
+
+        description = " ".join(part for part in description_parts if part).strip()
+        normalized_description = _normalize_text(description)
+        if normalized_description.startswith("SALDO ANTERIOR") or normalized_description.startswith("SALDO INICIAL"):
+            opening_balance = running_balance if running_balance is not None else amount_value
+            if opening_balance is not None:
+                parsed_rows.append(
+                    _build_parsed_transaction(
+                        date=current_date,
+                        description="SALDO ANTERIOR",
+                        amount=opening_balance,
+                        source_page=line.page_number,
+                        source_line=line.line_number,
+                        running_balance=opening_balance,
+                        has_explicit_amount_sign=has_explicit_amount_sign(str(opening_balance)),
+                    )
+                )
+                previous_running_balance = opening_balance
+            index = next_index
+            continue
+
+        if description and amount_value is not None:
+            full_description = description
+            if document_value:
+                full_description = f"{full_description} {document_value}".strip()
+            signed_amount = _resolve_bradesco_unificado_signed_amount(
+                raw_amount=amount_value,
+                description=full_description,
+                previous_running_balance=previous_running_balance,
+                running_balance=running_balance,
+            )
+            parsed_rows.append(
+                _build_parsed_transaction(
+                    date=current_date,
+                    description=full_description,
+                    amount=signed_amount,
+                    source_page=line.page_number,
+                    source_line=line.line_number,
+                    running_balance=running_balance,
+                    external_reference_id=document_value,
+                    has_explicit_amount_sign=amount_value < 0,
+                )
+            )
+            if running_balance is not None:
+                previous_running_balance = running_balance
+            elif previous_running_balance is not None:
+                previous_running_balance = round(previous_running_balance + signed_amount, 2)
+
+        index = next_index
+
+    return parsed_rows
+
+
+def _slice_bradesco_unificado_movimentacao_lines(lines: list[_PdfLine]) -> list[_PdfLine]:
+    start_index: int | None = None
+    for index, line in enumerate(lines):
+        if _normalize_text(line.text) == "DEMONSTRATIVO DA MOVIMENTACAO":
+            start_index = index + 1
+            break
+    if start_index is None:
+        return []
+    return lines[start_index:]
+
+
+def _infer_bradesco_unificado_reference_year(lines: list[_PdfLine]) -> int | None:
+    years: list[int] = []
+    for line in lines:
+        for raw in re.findall(r"\b\d{2}/\d{2}/(\d{4})\b", line.text):
+            year = int(raw)
+            if 1900 <= year <= 2100:
+                years.append(year)
+    if years:
+        return max(years)
+    return _infer_default_statement_year_from_lines(lines)
+
+
+def _resolve_bradesco_unificado_signed_amount(
+    *,
+    raw_amount: float,
+    description: str,
+    previous_running_balance: float | None,
+    running_balance: float | None,
+) -> float:
+    amount = abs(raw_amount)
+    if previous_running_balance is not None and running_balance is not None:
+        if abs((previous_running_balance + amount) - running_balance) <= 0.02:
+            return amount
+        if abs((previous_running_balance - amount) - running_balance) <= 0.02:
+            return -amount
+    return apply_sign_hints(amount, description, None)
 
 
 def _parse_santander_credit_card_invoice_sections(lines: list[_PdfLine]) -> list[_ParsedTransaction]:
