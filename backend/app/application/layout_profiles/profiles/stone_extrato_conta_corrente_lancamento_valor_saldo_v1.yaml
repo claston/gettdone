@@ -1,0 +1,67 @@
+layout_profile:
+  profile_name: stone_extrato_conta_corrente_lancamento_valor_saldo_v1
+  bank: Stone
+  layout_family: stone_extrato_conta_corrente_tipo_valor_saldo_contraparte
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "stone"
+      - "Extrato de conta corrente"
+      - "Instituicao"
+      - "Stone Instituicao de Pagamento S.A."
+      - "DATA"
+      - "TIPO"
+      - "LANCAMENTO"
+      - "VALOR (R$)"
+      - "SALDO (R$)"
+    optional_keywords:
+      - "Titular"
+      - "Documento"
+      - "Periodo"
+      - "CONTRAPARTE"
+      - "Debito"
+      - "Credito"
+      - "Compra com cartao"
+      - "Stone"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itau"
+      - "SICOOB"
+      - "Sicredi"
+      - "Nubank"
+    min_score_hint: 0.82
+  table_detection:
+    header_keywords:
+      - "DATA"
+      - "TIPO"
+      - "LANCAMENTO"
+      - "VALOR (R$)"
+      - "SALDO (R$)"
+    expected_column_order:
+      - date
+      - type
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "DATA"
+        - "Data"
+      type:
+        - "TIPO"
+        - "Tipo"
+      description:
+        - "LANCAMENTO"
+        - "Lancamento"
+      amount:
+        - "VALOR (R$)"
+        - "VALOR"
+        - "Valor"
+      balance:
+        - "SALDO (R$)"
+        - "SALDO"
+        - "Saldo"
