@@ -381,6 +381,43 @@ def test_infer_pdf_layout_prefers_bradesco_unificado_poupanca_profile() -> None:
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_prefers_banco_do_nordeste_extrato_consolidado_profile() -> None:
+    text = """
+    Banco do
+    Nordeste
+    EXTRATO CONSOLIDADO
+    Informacoes Gerais
+    Titular:
+    Mes:
+    Marco/2023
+    Data de Emissao:
+    Detalhamento do Extrato
+    REFERENCIA: MARCO/2023
+    < RESUMO DAS MOVIMENTACOES NO PERIODO >
+    > CONTA CORRENTE
+    > DEMONSTRATIVO DA MOVIMENTACAO DE CONTA CORRENTE
+    DIA
+    HISTORICO
+    DOCUMENTO
+    VALOR
+    SALDO
+    1
+    SALDO ANTERIOR
+    0,00
+    69,86
+    1
+    TARIFA MANUTENCAO CONTA
+    474
+    53,00-
+    16,86
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "banco_do_nordeste_extrato_consolidado_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_bb_profile_when_tokens_match() -> None:
     text = """
     BANCO DO BRASIL
@@ -653,6 +690,40 @@ def test_infer_pdf_layout_prefers_stone_a4_profile_for_real_extracted_pdf_text()
     result = infer_pdf_layout(text)
 
     assert result.layout_name == "stone_extrato_conta_corrente_a4_v1"
+    assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_prefers_neon_mei_facil_a4_statement_profile() -> None:
+    text = """
+    BANCO MEI FACIL
+    Atualizacao:
+    Nome:
+    Banco 536
+    Neon pagamentos IP
+    Agencia:
+    Conta:
+    Lancamentos
+    data
+    lancamento
+    valor (R$)
+    saldos (R$)
+    lancamentos
+    01/01/2024
+    SALDO ANTERIOR
+    1.902,45
+    02/01/2024
+    PAGAMENTO FATURA CARTAO CRED
+    (453,02)
+    1.449,43
+    02/01/2024
+    PIX ENVIADO PARA ANGELO
+    (1.440,00)
+    9,43
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "neon_banco_mei_facil_extrato_a4_v1"
     assert result.used_fallback is False
 
 

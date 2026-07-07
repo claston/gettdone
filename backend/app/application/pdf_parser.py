@@ -32,7 +32,11 @@ from app.application.normalization.pdf_row_match_rules import (
 )
 from app.application.normalization.pdf_signed_amount_rules import compute_hint_signed_amount, compute_tabular_signed_amount
 from app.application.normalization.pdf_tabular_profile_rules import resolve_tabular_profile
-from app.application.normalization.pdf_tabular_rules import extract_document_reference, select_tabular_amount_token
+from app.application.normalization.pdf_tabular_rules import (
+    SelectedTabularAmount,
+    extract_document_reference,
+    select_tabular_amount_token,
+)
 from app.application.normalization.pdf_text_rules import apply_sign_hints, should_ignore_line, should_skip_transaction_description
 from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf import text_extraction
@@ -46,10 +50,25 @@ from app.application.textract_transaction_adapter import adapt_textract_extracti
 _SANTANDER_CREDIT_CARD_INVOICE_LAYOUT = "santander_cartao_credito_detalhamento_fatura_paisagem_v1"
 _SANTANDER_IB_EMPRESARIAL_365_MOBILE_GROUPED_LAYOUT = "santander_empresarial_extrato_365_dias_mobile_grouped_v1"
 _BRADESCO_UNIFICADO_POUPANCA_LAYOUT = "bradesco_extrato_unificado_pj_poupanca_facil_a4_v1"
+_BANCO_NORDESTE_EXTRATO_CONSOLIDADO_LAYOUT = "banco_do_nordeste_extrato_consolidado_v1"
 _SANTANDER_CREDIT_CARD_INVOICE_SECTION_HEADERS = {
     "PAGAMENTO E DEMAIS CREDITOS",
     "PARCELAMENTOS",
     "DESPESAS",
+}
+_PT_BR_FULL_MONTHS = {
+    "JANEIRO": 1,
+    "FEVEREIRO": 2,
+    "MARCO": 3,
+    "ABRIL": 4,
+    "MAIO": 5,
+    "JUNHO": 6,
+    "JULHO": 7,
+    "AGOSTO": 8,
+    "SETEMBRO": 9,
+    "OUTUBRO": 10,
+    "NOVEMBRO": 11,
+    "DEZEMBRO": 12,
 }
 
 
@@ -569,6 +588,14 @@ def _parse_layout_specific_statement_rows(
                 selected_parser="layout_specific_bradesco_unificado_movimentacao",
                 selection_reason="layout_specific_bradesco_unificado_movimentacao",
             )
+    if layout.layout_name == _BANCO_NORDESTE_EXTRATO_CONSOLIDADO_LAYOUT:
+        parsed_rows = _parse_banco_do_nordeste_extrato_consolidado_rows(lines)
+        if parsed_rows:
+            return _LayoutSpecificParseRows(
+                rows=parsed_rows,
+                selected_parser="layout_specific_banco_nordeste_consolidado",
+                selection_reason="layout_specific_banco_nordeste_consolidado",
+            )
     return None
 
 
@@ -721,6 +748,173 @@ def _resolve_bradesco_unificado_signed_amount(
             return amount
         if abs((previous_running_balance - amount) - running_balance) <= 0.02:
             return -amount
+    return apply_sign_hints(amount, description, None)
+
+
+def _parse_banco_do_nordeste_extrato_consolidado_rows(lines: list[_PdfLine]) -> list[_ParsedTransaction]:
+    movement_lines = _slice_banco_do_nordeste_movimentacao_lines(lines)
+    statement_month_year = _infer_banco_do_nordeste_month_year(lines)
+    if not movement_lines or statement_month_year is None:
+        return []
+
+    statement_month, statement_year = statement_month_year
+    parsed_rows: list[_ParsedTransaction] = []
+    previous_running_balance: float | None = None
+    index = 0
+
+    while index < len(movement_lines):
+        line = movement_lines[index]
+        if not _is_banco_do_nordeste_day_line(line.text):
+            index += 1
+            continue
+
+        current_date = _build_banco_do_nordeste_iso_date(
+            day=line.text.strip(),
+            month=statement_month,
+            year=statement_year,
+        )
+        next_index = index + 1
+        if next_index >= len(movement_lines):
+            break
+
+        description = movement_lines[next_index].text.strip()
+        normalized_description = _normalize_text(description)
+        next_index += 1
+        if not description or _is_banco_do_nordeste_day_line(description):
+            index += 1
+            continue
+
+        document_value: str | None = None
+        amount_value: float | None = None
+        running_balance: float | None = None
+
+        if next_index < len(movement_lines) and is_amount_only_row(movement_lines[next_index].text.strip()):
+            amount_value = parse_pdf_amount(movement_lines[next_index].text.strip())
+            next_index += 1
+        elif next_index + 1 < len(movement_lines):
+            candidate_document = movement_lines[next_index].text.strip()
+            candidate_amount = movement_lines[next_index + 1].text.strip()
+            if re.fullmatch(r"\d{1,12}", re.sub(r"\D", "", candidate_document)) and is_amount_only_row(candidate_amount):
+                document_value = re.sub(r"\D", "", candidate_document)
+                amount_value = parse_pdf_amount(candidate_amount)
+                next_index += 2
+
+        if amount_value is None or next_index >= len(movement_lines):
+            index += 1
+            continue
+        if not is_amount_only_row(movement_lines[next_index].text.strip()):
+            index += 1
+            continue
+
+        running_balance = parse_pdf_amount(movement_lines[next_index].text.strip())
+        next_index += 1
+
+        if normalized_description.startswith("SALDO ANTERIOR") or normalized_description.startswith("SALDO INICIAL"):
+            opening_balance = running_balance
+            parsed_rows.append(
+                _build_parsed_transaction(
+                    date=current_date,
+                    description="SALDO ANTERIOR" if "ANTERIOR" in normalized_description else "SALDO INICIAL",
+                    amount=opening_balance,
+                    source_page=line.page_number,
+                    source_line=line.line_number,
+                    running_balance=opening_balance,
+                    has_explicit_amount_sign=has_explicit_amount_sign(str(amount_value)),
+                )
+            )
+            previous_running_balance = opening_balance
+            index = next_index
+            continue
+
+        full_description = description if not document_value else f"{description} {document_value}".strip()
+        signed_amount = _resolve_banco_do_nordeste_signed_amount(
+            raw_amount=amount_value,
+            description=full_description,
+            previous_running_balance=previous_running_balance,
+            running_balance=running_balance,
+        )
+        parsed_rows.append(
+            _build_parsed_transaction(
+                date=current_date,
+                description=full_description,
+                amount=signed_amount,
+                source_page=line.page_number,
+                source_line=line.line_number,
+                running_balance=running_balance,
+                external_reference_id=document_value,
+                has_explicit_amount_sign=has_explicit_amount_sign(str(amount_value)),
+            )
+        )
+        previous_running_balance = running_balance
+        index = next_index
+
+    return parsed_rows
+
+
+def _slice_banco_do_nordeste_movimentacao_lines(lines: list[_PdfLine]) -> list[_PdfLine]:
+    start_index: int | None = None
+    for index, line in enumerate(lines):
+        normalized_line = _normalize_text(line.text)
+        if normalized_line.endswith("DEMONSTRATIVO DA MOVIMENTACAO DE CONTA CORRENTE"):
+            start_index = index + 1
+            break
+    if start_index is None:
+        return []
+    return [
+        line
+        for line in lines[start_index:]
+        if _normalize_text(line.text)
+        not in {
+            "DIA",
+            "HISTORICO",
+            "HISTORICO",
+            "DOCUMENTO",
+            "VALOR",
+            "SALDO",
+        }
+    ]
+
+
+def _infer_banco_do_nordeste_month_year(lines: list[_PdfLine]) -> tuple[int, int] | None:
+    for line in lines:
+        normalized = _normalize_text(line.text)
+        match = re.search(
+            r"\b(JANEIRO|FEVEREIRO|MARCO|ABRIL|MAIO|JUNHO|JULHO|AGOSTO|SETEMBRO|OUTUBRO|NOVEMBRO|DEZEMBRO)/(\d{4})\b",
+            normalized,
+        )
+        if not match:
+            continue
+        month = _PT_BR_FULL_MONTHS.get(match.group(1))
+        year = int(match.group(2))
+        if month is None:
+            continue
+        return month, year
+    return None
+
+
+def _build_banco_do_nordeste_iso_date(*, day: str, month: int, year: int) -> str:
+    return datetime(year, month, int(day)).strftime("%Y-%m-%d")
+
+
+def _is_banco_do_nordeste_day_line(raw: str) -> bool:
+    return bool(re.fullmatch(r"\d{1,2}", raw.strip()))
+
+
+def _resolve_banco_do_nordeste_signed_amount(
+    *,
+    raw_amount: float,
+    description: str,
+    previous_running_balance: float | None,
+    running_balance: float,
+) -> float:
+    amount = raw_amount
+    if previous_running_balance is not None:
+        if abs((previous_running_balance + amount) - running_balance) <= 0.02:
+            return amount
+        if abs((previous_running_balance - abs(amount)) - running_balance) <= 0.02:
+            return -abs(amount)
+        if abs((previous_running_balance + abs(amount)) - running_balance) <= 0.02:
+            return abs(amount)
     return apply_sign_hints(amount, description, None)
 
 
@@ -1879,12 +2073,21 @@ def _classify_tabular_statement_line(
         return None, True
 
     raw_description = " ".join(rest[: selected_amount.description_end].split())
-    if not raw_description or should_skip_transaction_description(raw_description):
-        return None, True
     normalized_description = _normalize_text(raw_description)
     if tabular_profile is not None and (
         normalized_description.startswith("SALDO ANTERIOR") or normalized_description.startswith("SALDO INICIAL")
     ):
+        opening_balance_row = _build_tabular_opening_balance_row(
+            raw_date=match.group("date"),
+            inferred_year=inferred_year,
+            raw_description=raw_description,
+            selected_amount=selected_amount,
+            source_page=line.page_number,
+            source_line=line.line_number,
+        )
+        if opening_balance_row is not None:
+            return opening_balance_row, True
+    if not raw_description or should_skip_transaction_description(raw_description):
         return None, True
     if normalized_description.endswith(" SALDO"):
         return None, True
@@ -2039,6 +2242,39 @@ def _build_tabular_amount_details(
     )
     running_balance = parse_pdf_amount(balance_token_value) if balance_token_value is not None else None
     return {"signed_amount": signed_amount, "running_balance": running_balance}
+
+
+def _build_tabular_opening_balance_row(
+    *,
+    raw_date: str,
+    inferred_year: int | None,
+    raw_description: str,
+    selected_amount: SelectedTabularAmount,
+    source_page: int,
+    source_line: int,
+) -> _ParsedTransaction | None:
+    opening_balance = (
+        parse_pdf_amount(selected_amount.balance_token.value)
+        if selected_amount.balance_token is not None
+        else parse_pdf_amount(selected_amount.token.value)
+    )
+    amount_value = parse_pdf_amount(selected_amount.token.value)
+    if (
+        selected_amount.balance_token is not None
+        and abs(amount_value) > 0.000001
+        and abs(abs(amount_value) - abs(opening_balance)) > 0.01
+    ):
+        return None
+
+    return _build_parsed_transaction(
+        date=parse_row_date(raw_date, fallback_year=inferred_year),
+        description="SALDO ANTERIOR" if "ANTERIOR" in _normalize_text(raw_description) else "SALDO INICIAL",
+        amount=opening_balance,
+        source_page=source_page,
+        source_line=source_line,
+        running_balance=opening_balance,
+        has_explicit_amount_sign=has_explicit_amount_sign(selected_amount.token.value),
+    )
 
 
 def _extract_compact_cd_amount(description: str) -> float | None:
@@ -2536,7 +2772,8 @@ def _should_prefer_layout_text_result(*, candidate: PdfParseResult, baseline: Pd
     if candidate_profile is None:
         return False
     expected_column_order = set(candidate_profile.expected_column_order)
-    if "credit" not in expected_column_order and "debit" not in expected_column_order:
+    has_credit_debit_columns = "credit" in expected_column_order or "debit" in expected_column_order
+    if not has_credit_debit_columns and candidate.layout.layout_name != baseline.layout.layout_name:
         return False
 
     candidate_outflows = sum(1 for transaction in candidate.transactions if transaction.amount < 0)
