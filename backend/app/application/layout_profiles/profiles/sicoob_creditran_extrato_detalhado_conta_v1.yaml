@@ -1,0 +1,65 @@
+layout_profile:
+  profile_name: sicoob_creditran_extrato_detalhado_conta_v1
+  bank: Sicoob
+  layout_family: sicoob_creditran_extrato_detalhado_conta
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "SICOOB"
+      - "Creditran"
+      - "Conta Corrente"
+      - "EXTRATO DETALHADO CONTA"
+      - "PERIODO DE"
+      - "Saldo anterior"
+      - "Data"
+      - "Historico"
+      - "Documento"
+      - "Valor"
+      - "Saldo"
+    optional_keywords:
+      - "Banco"
+      - "Agencia"
+      - "Conta Corrente:"
+      - "DEB.SEGURO EMPRESTIMO"
+      - "JUROS ADIANT.DEPOSITANTE"
+      - "JUROS CONTA GARANTIDA"
+      - "OUTROS CREDITOS"
+      - "TRANSFERENCIA RECEBIDA"
+    negative_keywords:
+      - "SISBR"
+      - "Sistema de Cooperativas de Credito do Brasil"
+      - "PLATAFORMA DE SERVICOS FINANCEIROS DO SICOOB"
+      - "CAIXA"
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "Itau"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Historico"
+      - "Documento"
+      - "Valor"
+      - "Saldo"
+    expected_column_order:
+      - date
+      - description
+      - document
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Historico"
+      document:
+        - "Documento"
+        - "Nr. Doc."
+      amount:
+        - "Valor"
+      balance:
+        - "Saldo"

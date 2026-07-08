@@ -2299,6 +2299,8 @@ def _classify_tabular_statement_line(
     if tabular_profile is not None and (
         normalized_description.startswith("SALDO ANTERIOR") or normalized_description.startswith("SALDO INICIAL")
     ):
+        if _should_skip_tabular_opening_balance_import(tabular_profile=tabular_profile):
+            return None, True
         opening_balance_row = _build_tabular_opening_balance_row(
             raw_date=match.group("date"),
             inferred_year=inferred_year,
@@ -2351,6 +2353,13 @@ def _classify_tabular_statement_line(
         ),
         True,
     )
+
+
+def _should_skip_tabular_opening_balance_import(*, tabular_profile: DeclarativeLayoutProfile) -> bool:
+    return tabular_profile.profile_name in {
+        "sicoob_extrato_apropriacao_diaria_v1",
+        "sicoob_extrato_poupanca_cooperada_v1",
+    }
 
 
 def _accumulate_tabular_row(

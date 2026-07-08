@@ -3137,3 +3137,223 @@ def test_parse_pdf_transactions_prefers_caixa_historico_conta_tabular_profile(mo
     assert result.transactions[-1].amount == 150.0
     assert result.canonical_transactions[0].running_balance == 344505.05
     assert result.canonical_transactions[-1].running_balance == 344736.57
+
+
+def test_parse_pdf_transactions_prefers_sicoob_creditran_extrato_detalhado_conta_profile(monkeypatch) -> None:
+    native_text = """
+    SICOOB
+    Creditran
+    Conta Corrente
+    06/02/2025 15:46:18
+    Banco:
+    - Agencia:
+    - Conta Corrente:
+    EXTRATO DETALHADO CONTA
+    PERIODO DE 01/01/2025 A 31/01/2025
+    Ultimos Lancamentos Saldo anterior:
+    -3.317,19
+    Data
+    Historico
+    Documento
+    Valor
+    Saldo
+    31/12/2024
+    DEB.SEGURO EMPRESTIMO
+    0009731610
+    -45,41
+    -3.362,60
+    31/12/2024
+    JUROS ADIANT.DEPOSITANTE
+    AD/31-12
+    -3,75
+    -3.366,35
+    31/12/2024
+    JUROS CONTA GARANTIDA
+    LC-202411
+    -80,76
+    -3.447,11
+    31/12/2024
+    MANUTENCAO SOFTWARE
+    11/2024
+    -179,20
+    -3.626,31
+    31/12/2024
+    OUTROS CREDITOS
+    11/2024
+    224,00
+    -3.402,31
+    02/01/2025
+    DEB.SEGURO EMPRESTIMO
+    0009974607
+    -47,93
+    -3.450,24
+    03/01/2025
+    TRANSFERENCIA RECEBIDA
+    PIX030125
+    650,00
+    -2.800,24
+    04/01/2025
+    PAGAMENTO BOLETO
+    BLT-0104
+    -125,50
+    -2.925,74
+    06/01/2025
+    TARIFA CESTA EMPRESARIAL
+    CESTA01
+    -32,10
+    -2.957,84
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [native_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "sicoob_creditran_extrato_detalhado_conta_v1"
+    assert result.layout.used_fallback is False
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert len(result.transactions) == 9
+    assert result.transactions[0].date == "2024-12-31"
+    assert result.transactions[0].description == "DEB.SEGURO EMPRESTIMO 0009731610"
+    assert result.transactions[0].amount == -45.41
+    assert result.transactions[4].description == "OUTROS CREDITOS"
+    assert result.transactions[4].amount == 224.0
+    assert result.transactions[-1].description == "TARIFA CESTA EMPRESARIAL CESTA01"
+    assert result.transactions[-1].amount == -32.1
+
+
+def test_parse_pdf_transactions_prefers_sicoob_poupanca_cooperada_tabular_profile(monkeypatch) -> None:
+    native_text = """
+    SICOOB - Sistema de Cooperativas de Credito do Brasil
+    Plataforma de Servicos Financeiros do Sicoob - SISBR
+    Extrato Poupanca Cooperada
+    Agencia:
+    Conta:
+    Data
+    Documento
+    Historico
+    Debito
+    Credito
+    Saldo
+    01/10/2022
+    SALDO ANTERIOR
+    338,38+
+    11/10/2022
+    CORRECAO MONETARIA
+    - SELIC
+    0,24+
+    338,62+
+    11/10/2022
+    JUROS - SELIC
+    0,66+
+    339,28+
+    11/10/2022
+    I.R.R.F APL. FIN - SELIC
+    0,20-
+    339,08+
+    25/10/2022
+    CORRECAO MONETARIA
+    - SELIC
+    0,31+
+    339,39+
+    25/10/2022
+    JUROS - SELIC
+    1,03+
+    340,42+
+    25/10/2022
+    I.R.R.F APL. FIN - SELIC
+    0,30-
+    340,12+
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [native_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "sicoob_extrato_poupanca_cooperada_v1"
+    assert result.layout.used_fallback is False
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert len(result.transactions) == 6
+    assert all(transaction.description != "SALDO ANTERIOR" for transaction in result.transactions)
+    assert result.transactions[0].date == "2022-10-11"
+    assert result.transactions[0].description == "CORRECAO MONETARIA - SELIC"
+    assert result.transactions[0].amount == 0.24
+    assert result.transactions[2].description == "I.R.R.F APL. FIN - SELIC"
+    assert result.transactions[2].amount == -0.2
+    assert result.transactions[-1].description == "I.R.R.F APL. FIN - SELIC"
+    assert result.transactions[-1].amount == -0.3
+    assert result.canonical_transactions[0].running_balance == 338.62
+    assert result.canonical_transactions[-1].running_balance == 340.12
+
+
+def test_parse_pdf_transactions_prefers_sicoob_apropriacao_diaria_tabular_profile(monkeypatch) -> None:
+    native_text = """
+    - SICOOB -
+    Sistema de Cooperativas de Credito do Brasil
+    Plataforma de Servicos Financeiros do Sicoob - SISBR
+    Extrato de Apropriacao Diaria
+    01/08/2023
+    10:38:02
+    MODALIDADE:
+    RDC - LONGO POS CDI
+    CONTA:
+    NOME:
+    N APPLICACAO:
+    DATA FIM DA CARENCIA/VENC.:
+    DATA DA APLICACAO:
+    Data
+    Historico
+    Valor
+    30/06/2023
+    SALDO ANTERIOR
+    R$ 7,49C
+    04/07/2023
+    APROPRIACAO DE CM
+    R$ 0,01C
+    06/07/2023
+    APROPRIACAO DE CM
+    R$ 0,01C
+    11/07/2023
+    APROPRIACAO DE CM
+    R$ 0,01C
+    13/07/2023
+    APROPRIACAO DE CM
+    R$ 0,01C
+    18/07/2023
+    APROPRIACAO DE CM
+    R$ 0,01C
+    21/07/2023
+    APROPRIACAO DE CM
+    R$ 0,01C
+    25/07/2023
+    APROPRIACAO DE CM
+    R$ 0,01C
+    27/07/2023
+    RESGATE DE APLICACAO FINANCEIRA
+    R$ 5,02D
+    27/07/2023
+    RETENCAO DE IRRF
+    R$ 0,15D
+    28/07/2023
+    APROPRIACAO DE CM
+    R$ 0,01C
+    RESUMO
+    SALDO BRUTO EM 28/07/2023 : R$ 2,40
+    SALDO DISPONIVEL EM 28/07/2023 : R$ 2,33
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [native_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "sicoob_extrato_apropriacao_diaria_v1"
+    assert result.layout.used_fallback is False
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert len(result.transactions) == 10
+    assert all(transaction.description != "SALDO ANTERIOR" for transaction in result.transactions)
+    assert result.transactions[0].date == "2023-07-04"
+    assert result.transactions[0].description == "APROPRIACAO DE CM"
+    assert result.transactions[0].amount == 0.01
+    assert result.transactions[7].description == "RESGATE DE APLICACAO FINANCEIRA"
+    assert result.transactions[7].amount == -5.02
+    assert result.transactions[-1].description == "APROPRIACAO DE CM"
+    assert result.transactions[-1].amount == 0.01

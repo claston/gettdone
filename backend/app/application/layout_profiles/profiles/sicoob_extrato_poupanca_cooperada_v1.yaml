@@ -1,0 +1,64 @@
+layout_profile:
+  profile_name: sicoob_extrato_poupanca_cooperada_v1
+  bank: Sicoob
+  layout_family: sicoob_extrato_poupanca_cooperada
+  statement_type: poupanca_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "SICOOB"
+      - "Sistema de Cooperativas de Credito do Brasil"
+      - "SISBR"
+      - "Extrato Poupanca Cooperada"
+      - "Agencia"
+      - "Conta"
+      - "Data"
+      - "Documento"
+      - "Historico"
+      - "Debito"
+      - "Credito"
+      - "Saldo"
+    optional_keywords:
+      - "SALDO ANTERIOR"
+      - "CORRECAO MONETARIA"
+      - "JUROS - SELIC"
+      - "I.R.R.F APL. FIN - SELIC"
+    negative_keywords:
+      - "Conta Corrente"
+      - "EXTRATO DETALHADO CONTA"
+      - "CAIXA"
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "Itau"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Documento"
+      - "Historico"
+      - "Debito"
+      - "Credito"
+      - "Saldo"
+    expected_column_order:
+      - date
+      - document
+      - description
+      - debit
+      - credit
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      document:
+        - "Documento"
+      description:
+        - "Historico"
+      debit:
+        - "Debito"
+      credit:
+        - "Credito"
+      balance:
+        - "Saldo"
