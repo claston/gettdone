@@ -1,0 +1,71 @@
+layout_profile:
+  profile_name: caixa_extrato_historico_conta_v1
+  bank: Caixa Economica Federal
+  layout_family: caixa_extrato_historico_conta
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Extrato Historico da Conta"
+      - "Periodo"
+      - "Unidade"
+      - "Nome da Unidade"
+      - "Conta"
+      - "Nome do produto"
+      - "CPF/CNPJ do Titular"
+      - "Titular"
+      - "Data Mov."
+      - "Data e Hora"
+      - "Nr.Doc."
+      - "Historico"
+      - "Taxa (%)"
+      - "Valor"
+      - "Saldo"
+    optional_keywords:
+      - "SALDO ANTERIOR"
+      - "CRED CM SALDO PROPRIO MP"
+      - "CRED JUROS SALD PROPRIO M"
+      - "CRED PAG INST PIX"
+    negative_keywords:
+      - "GERENCIADOR CAIXA"
+      - "SIHEX"
+      - "Extrato por periodo"
+      - "Data Efetiva"
+      - "Data de movimento"
+      - "Cartao de Credito"
+      - "Fatura"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data Mov."
+      - "Data e Hora"
+      - "Nr.Doc."
+      - "Historico"
+      - "Taxa (%)"
+      - "Valor"
+      - "Saldo"
+    expected_column_order:
+      - date
+      - effective_date_time
+      - document
+      - description
+      - fee_rate
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data Mov."
+        - "Data"
+      document:
+        - "Nr.Doc."
+        - "Nr. Doc."
+        - "Documento"
+      description:
+        - "Historico"
+        - "Historico do lancamento"
+      amount:
+        - "Valor"
+        - "Valor R$"
+      balance:
+        - "Saldo"
+        - "Saldo R$"

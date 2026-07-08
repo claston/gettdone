@@ -1,0 +1,65 @@
+layout_profile:
+  profile_name: caixa_sihex_historico_extratos_v1
+  bank: Caixa Economica Federal
+  layout_family: caixa_sihex_historico_extratos
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "SIHEX"
+      - "Sistema de Historico de Extratos"
+      - "Periodo de solicitacao do Extrato"
+      - "Operacao"
+      - "Data Mov."
+      - "Nr. Doc."
+      - "Historico"
+      - "Valor"
+      - "Saldo"
+      - "SALDO ANTERIOR"
+    optional_keywords:
+      - "Cliente"
+      - "Agencia"
+      - "CPF/CNPJ"
+      - "Conta"
+      - "Data"
+      - "Pagina"
+      - "CR VD CART"
+      - "SAQUE ATM"
+    negative_keywords:
+      - "GERENCIADOR CAIXA"
+      - "Extrato por periodo"
+      - "Grau de sigilo"
+      - "Data Efetiva"
+      - "Cartao de Credito"
+      - "Fatura"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data Mov."
+      - "Nr. Doc."
+      - "Historico"
+      - "Valor"
+      - "Saldo"
+    expected_column_order:
+      - date
+      - document
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data Mov."
+        - "Data"
+      document:
+        - "Nr. Doc."
+        - "Documento"
+        - "Doc."
+      description:
+        - "Historico"
+        - "Historico do lancamento"
+      amount:
+        - "Valor"
+        - "Valor R$"
+      balance:
+        - "Saldo"
+        - "Saldo R$"
