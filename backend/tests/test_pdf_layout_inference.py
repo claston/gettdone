@@ -534,6 +534,76 @@ def test_infer_pdf_layout_prefers_caixa_gerenciador_period_effective_date_profil
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_prefers_caixa_sihex_historico_extratos_profile() -> None:
+    text = """
+    CAI
+    X
+    A
+    SIHEX
+    Sistema de Historico de Extratos
+    Data:
+    Pagina:
+    Cliente:
+    Agencia:
+    Periodo de solicitacao do Extrato:
+    CPF/CNPJ:
+    Operacao:
+    Conta:
+    Data Mov.
+    Nr. Doc.
+    Historico
+    Valor
+    Saldo
+    SALDO ANTERIOR
+    140,63 C
+    03/01/2022
+    093303
+    CR VD CART
+    4,93 C
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "caixa_sihex_historico_extratos_v1"
+    assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_prefers_caixa_historico_conta_profile() -> None:
+    text = """
+    CAI
+    X
+    A
+    Extrato Historico da Conta
+    Periodo
+    Unidade
+    Nome da Unidade
+    Conta
+    Nome do produto
+    CPF/CNPJ do Titular
+    Titular
+    Data Mov.
+    Data e Hora
+    Nr.Doc.
+    Historico
+    Taxa (%)
+    Valor
+    Saldo
+    SALDO ANTERIOR
+    344.503,88 C
+    24/01/2023
+    24/01 05:36
+    000000000
+    CRED CM SALDO PROPRIO MP
+    0,177300
+    1,17 C
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "caixa_extrato_historico_conta_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_inter_profile_when_tokens_match() -> None:
     text = """
     BANCO INTER S.A.

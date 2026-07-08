@@ -2940,11 +2940,200 @@ def test_parse_pdf_transactions_prefers_caixa_gerenciador_period_effective_date_
 
     assert result.layout.layout_name == "caixa_gerenciador_extrato_periodo_data_efetiva_v1"
     assert result.layout.used_fallback is False
-    assert result.parse_metrics["selected_parser"] == "grouped"
-    assert len(result.transactions) == 6
-    assert result.transactions[0].description == "SALDO ANTERIOR"
-    assert result.transactions[0].amount == 44826.29
-    assert result.transactions[1].description == "01/11 22:19 012219 CRED PIX QR"
-    assert result.transactions[1].amount == 15.2
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert len(result.transactions) == 5
+    assert all(transaction.description != "SALDO ANTERIOR" for transaction in result.transactions)
+    assert result.transactions[0].description == "01/11 22:19 012219 CRED PIX QR"
+    assert result.transactions[0].amount == 15.2
     assert result.transactions[-1].description == "03/11 11:57 031157 DEB PIX CHAVE"
     assert result.transactions[-1].amount == -140.0
+    assert result.canonical_transactions[0].running_balance == 44841.49
+
+
+def test_parse_pdf_transactions_prefers_caixa_sihex_tabular_profile(monkeypatch) -> None:
+    native_text = """
+    CAI
+    X
+    A
+    SIHEX
+    Sistema de Historico de Extratos
+    Data:
+    Pagina:
+    Cliente:
+    Agencia:
+    Periodo de solicitacao do Extrato:
+    CPF/CNPJ:
+    Operacao:
+    Conta:
+    Data Mov.
+    Nr. Doc.
+    Historico
+    Valor
+    Saldo
+    SALDO ANTERIOR
+    140,63 C
+    03/01/2022
+    093303
+    CR VD CART
+    4,93 C
+    03/01/2022
+    093304
+    CR VD CART
+    304,30 C
+    03/01/2022
+    104285
+    CR VD CART
+    187,05 C
+    03/01/2022
+    324288
+    CR VD CART
+    539,90 C
+    03/01/2022
+    445723
+    CR VD CART
+    203,60 C
+    03/01/2022
+    445724
+    CR VD CART
+    147,24 C
+    03/01/2022
+    671303
+    CR VD CART
+    492,63 C
+    2.160,91 C
+    Data Mov.
+    Nr. Doc.
+    Historico
+    Valor
+    Saldo
+    21/01/2022
+    141740
+    CR VD CART
+    300,00 C
+    21/01/2022
+    141741
+    CR VD CART
+    284,66 C
+    21/01/2022
+    365495
+    CR VD CART
+    221,74 C
+    21/01/2022
+    211209
+    SAQUE ATM
+    801,81 D
+    2.165,50 C
+    24/01/2022
+    175264
+    CR VD CART
+    486,33 C
+    24/01/2022
+    175265
+    CR VD CART
+    12,05 C
+    24/01/2022
+    175266
+    CR VD CART
+    397,36 C
+    24/01/2022
+    875653
+    CR VD CART
+    14,75 C
+    3.075,99 C
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [native_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "caixa_sihex_historico_extratos_v1"
+    assert result.layout.used_fallback is False
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert len(result.transactions) == 15
+    assert all(transaction.description != "SALDO ANTERIOR" for transaction in result.transactions)
+    assert result.transactions[0].date == "2022-01-03"
+    assert result.transactions[0].description == "093303 CR VD CART"
+    assert result.transactions[0].amount == 4.93
+    assert result.transactions[6].description == "671303 CR VD CART"
+    assert result.transactions[10].description == "211209 SAQUE ATM"
+    assert result.transactions[10].amount == -801.81
+    assert result.transactions[-1].description == "875653 CR VD CART"
+    assert result.canonical_transactions[6].running_balance == 2160.91
+    assert result.canonical_transactions[-1].running_balance == 3075.99
+
+
+def test_parse_pdf_transactions_prefers_caixa_historico_conta_tabular_profile(monkeypatch) -> None:
+    native_text = """
+    CAI
+    X
+    A
+    Extrato Historico da Conta
+    .
+    Periodo
+    Unidade
+    Nome da Unidade
+    Conta
+    Nome do produto
+    CPF/CNPJ do Titular
+    Titular
+    Data Mov.
+    Data e Hora
+    Nr.Doc.
+    Historico
+    Taxa (%)
+    Valor
+    Saldo
+    SALDO ANTERIOR
+    344.503,88 C
+    24/01/2023
+    24/01 05:36
+    000000000
+    CRED CM SALDO PROPRIO MP
+    0,177300
+    1,17 C
+    344.505,05 C
+    24/01/2023
+    24/01 05:36
+    000000000
+    CRED JUROS SALD PROPRIO M
+    0,500000
+    3,30 C
+    344.508,35 C
+    25/01/2023
+    25/01 05:02
+    000000000
+    CRED CM SALDO PROPRIO MP
+    0,214500
+    23,45 C
+    344.531,80 C
+    25/01/2023
+    25/01 05:02
+    000000000
+    CRED JUROS SALD PROPRIO M
+    0,500000
+    54,77 C
+    344.586,57 C
+    25/01/2023
+    25/01 09:41
+    000250941
+    CRED PAG INST PIX
+    150,00 C
+    344.736,57 C
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [native_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "caixa_extrato_historico_conta_v1"
+    assert result.layout.used_fallback is False
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert len(result.transactions) == 5
+    assert all(transaction.description != "SALDO ANTERIOR" for transaction in result.transactions)
+    assert result.transactions[0].date == "2023-01-24"
+    assert result.transactions[0].description == "24/01 05:36 000000000 CRED CM SALDO PROPRIO MP 0,177300"
+    assert result.transactions[0].amount == 1.17
+    assert result.transactions[-1].description == "25/01 09:41 000250941 CRED PAG INST PIX"
+    assert result.transactions[-1].amount == 150.0
+    assert result.canonical_transactions[0].running_balance == 344505.05
+    assert result.canonical_transactions[-1].running_balance == 344736.57

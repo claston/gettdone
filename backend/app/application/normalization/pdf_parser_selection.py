@@ -121,6 +121,56 @@ def _should_prefer_tabular_over_grouped_on_credit_debit_columns(
     )
 
 
+def _should_prefer_tabular_over_grouped_on_opening_balance_noise(
+    *, grouped_rows: list[Any], tabular_rows: list[Any], layout_profile: Any | None
+) -> bool:
+    if layout_profile is None or not grouped_rows or not tabular_rows:
+        return False
+    if len(grouped_rows) != len(tabular_rows) + 1:
+        return False
+
+    grouped_descriptions = [
+        str(getattr(getattr(item, "transaction", None), "description", "")).strip().upper() for item in grouped_rows
+    ]
+    tabular_descriptions = [
+        str(getattr(getattr(item, "transaction", None), "description", "")).strip().upper() for item in tabular_rows
+    ]
+
+    grouped_has_opening_balance = any(
+        description.startswith("SALDO ANTERIOR") or description.startswith("SALDO INICIAL")
+        for description in grouped_descriptions
+    )
+    tabular_has_opening_balance = any(
+        description.startswith("SALDO ANTERIOR") or description.startswith("SALDO INICIAL")
+        for description in tabular_descriptions
+    )
+    grouped_has_repeated_header_noise = any(
+        "DATA MOV." in description and "NR. DOC." in description and "VALOR" in description and "SALDO" in description
+        for description in grouped_descriptions
+    )
+    tabular_has_repeated_header_noise = any(
+        "DATA MOV." in description and "NR. DOC." in description and "VALOR" in description and "SALDO" in description
+        for description in tabular_descriptions
+    )
+
+    return (
+        grouped_has_opening_balance
+        and not tabular_has_opening_balance
+        and (
+            grouped_has_repeated_header_noise
+            or all(
+                grouped_description == tabular_description
+                for grouped_description, tabular_description in zip(
+                    grouped_descriptions[1:],
+                    tabular_descriptions,
+                    strict=False,
+                )
+            )
+        )
+        and not tabular_has_repeated_header_noise
+    )
+
+
 def select_parsed_rows(
     *,
     lines: list[Any],
@@ -144,6 +194,11 @@ def select_parsed_rows(
             tabular_rows=tabular_rows,
             layout_profile=layout_profile,
         )
+        tabular_avoids_opening_balance_noise = _should_prefer_tabular_over_grouped_on_opening_balance_noise(
+            grouped_rows=grouped_rows,
+            tabular_rows=tabular_rows,
+            layout_profile=layout_profile,
+        )
         tabular_preserves_better_traceability_than_grouped = _should_prefer_tabular_over_grouped_on_traceability(
             grouped_rows=grouped_rows,
             tabular_rows=tabular_rows,
@@ -154,6 +209,7 @@ def select_parsed_rows(
         if tabular_rows and (
             tabular_is_clearly_better_than_grouped
             or tabular_preserves_credit_debit_signals
+            or tabular_avoids_opening_balance_noise
             or tabular_preserves_better_traceability_than_grouped
         ):
             return SelectedParserRows(
@@ -170,6 +226,8 @@ def select_parsed_rows(
                     if tabular_is_clearly_better_than_grouped
                     else "tabular_preferred_over_grouped_on_credit_debit_columns"
                     if tabular_preserves_credit_debit_signals
+                    else "tabular_preferred_over_grouped_opening_balance_noise"
+                    if tabular_avoids_opening_balance_noise
                     else "tabular_preferred_over_grouped_on_traceability"
                 ),
                 inline_decision="not_selected_grouped_overridden",
@@ -178,6 +236,8 @@ def select_parsed_rows(
                     if tabular_is_clearly_better_than_grouped
                     else "selected_on_grouped_override_credit_debit_columns"
                     if tabular_preserves_credit_debit_signals
+                    else "selected_on_grouped_override_opening_balance_noise"
+                    if tabular_avoids_opening_balance_noise
                     else "selected_on_grouped_override_traceability"
                 ),
                 columnar_decision="no_rows" if not columnar_rows else "not_selected_tabular_priority",

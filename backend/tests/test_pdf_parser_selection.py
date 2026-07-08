@@ -119,6 +119,45 @@ def test_select_parsed_rows_prefers_tabular_on_conflict_when_layout_profile_pres
     assert result.columnar_decision == "no_rows"
 
 
+def test_select_parsed_rows_prefers_tabular_when_grouped_only_adds_opening_balance_noise() -> None:
+    class _Transaction:
+        def __init__(self, description: str, date: str = "2022-01-03", amount: float = 1.0) -> None:
+            self.description = description
+            self.date = date
+            self.amount = amount
+
+    class _Row:
+        def __init__(self, description: str, *, source_line: int, amount: float = 1.0) -> None:
+            self.transaction = _Transaction(description=description, amount=amount)
+            self.source_line = source_line
+
+    grouped_rows = [
+        _Row("SALDO ANTERIOR", source_line=20, amount=140.63),
+        _Row("093303 CR VD CART", source_line=24, amount=4.93),
+        _Row("671303 CR VD CART Data Mov. Nr. Doc. Historico Valor Saldo", source_line=48, amount=492.63),
+    ]
+    tabular_rows = [
+        _Row("093303 CR VD CART", source_line=24, amount=4.93),
+        _Row("671303 CR VD CART", source_line=48, amount=492.63),
+    ]
+
+    result = select_parsed_rows(
+        lines=["line"],
+        grouped_rows=grouped_rows,
+        layout_profile=object(),
+        parse_inline_rows=lambda _: ([], 0),
+        parse_tabular_rows=lambda _lines, _profile: (tabular_rows, 2),
+        parse_columnar_rows=lambda _: ([], 0),
+    )
+
+    assert result.selected_parser == "tabular"
+    assert result.rows == tabular_rows
+    assert result.selection_reason == "tabular_preferred_over_grouped_opening_balance_noise"
+    assert result.inline_decision == "not_selected_grouped_overridden"
+    assert result.tabular_decision == "selected_on_grouped_override_opening_balance_noise"
+    assert result.columnar_decision == "no_rows"
+
+
 def test_select_parsed_rows_keeps_inline_on_conflict_without_layout_profile() -> None:
     result = select_parsed_rows(
         lines=["line"],
