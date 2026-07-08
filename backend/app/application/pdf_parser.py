@@ -51,6 +51,7 @@ _SANTANDER_CREDIT_CARD_INVOICE_LAYOUT = "santander_cartao_credito_detalhamento_f
 _SANTANDER_IB_EMPRESARIAL_365_MOBILE_GROUPED_LAYOUT = "santander_empresarial_extrato_365_dias_mobile_grouped_v1"
 _BRADESCO_UNIFICADO_POUPANCA_LAYOUT = "bradesco_extrato_unificado_pj_poupanca_facil_a4_v1"
 _BANCO_NORDESTE_EXTRATO_CONSOLIDADO_LAYOUT = "banco_do_nordeste_extrato_consolidado_v1"
+_BANCO_NORDESTE_FUNDOS_RENTABILIDADE_LAYOUT = "banco_do_nordeste_fundos_investimentos_rentabilidade_v1"
 _SANTANDER_CREDIT_CARD_INVOICE_SECTION_HEADERS = {
     "PAGAMENTO E DEMAIS CREDITOS",
     "PARCELAMENTOS",
@@ -70,6 +71,7 @@ _PT_BR_FULL_MONTHS = {
     "NOVEMBRO": 11,
     "DEZEMBRO": 12,
 }
+_REFERENCE_MONTH_YEAR_CONTEXT: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -125,11 +127,35 @@ def _attach_parse_observability(exc: Exception, **values: object) -> Exception:
     return exc
 
 
+def _should_skip_ocr_retry_for_native_parse_error(exc: InvalidFileContentError) -> bool:
+    detail = str(exc)
+    missing_signals_match = re.search(r"missing_signals=([a-z_,-]+)", detail)
+    if missing_signals_match is None:
+        return False
+    missing_signals = {
+        item.strip()
+        for item in missing_signals_match.group(1).split(",")
+        if item.strip()
+    }
+    if "date_pattern" not in missing_signals:
+        return False
+    if "amount_pattern" in missing_signals:
+        return False
+    if "transaction_row_pattern" not in missing_signals:
+        return False
+    has_amount_like_match = re.search(r"has_amount_like=(\d)", detail)
+    return has_amount_like_match is not None and has_amount_like_match.group(1) == "1"
+
+
 def parse_pdf_transactions(
     raw_bytes: bytes,
     on_ocr_progress: Callable[[int, int], None] | None = None,
     max_ocr_pages: int | None = None,
 ) -> PdfParseResult:
+    try:
+        reference_month_year = text_extraction.read_pdf_creation_month_year(raw_bytes)
+    except InvalidFileContentError:
+        reference_month_year = None
     native_read_error: InvalidFileContentError | None = None
     try:
         native_pages = _read_native_pdf_page_texts(raw_bytes)
@@ -200,7 +226,12 @@ def parse_pdf_transactions(
         page_texts = _extract_pdf_page_texts(raw_bytes, on_ocr_progress)
     using_native_text = bool(native_pages) and page_texts == native_pages
     try:
-        primary_result = _parse_pdf_transactions_from_page_texts(page_texts)
+        previous_reference_month_year = _REFERENCE_MONTH_YEAR_CONTEXT
+        globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = reference_month_year
+        try:
+            primary_result = _parse_pdf_transactions_from_page_texts(page_texts)
+        finally:
+            globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = previous_reference_month_year
     except InvalidFileContentError as native_parse_error:
         if not using_native_text:
             raise _attach_parse_observability(
@@ -216,6 +247,7 @@ def parse_pdf_transactions(
             max_ocr_pages=max_ocr_pages,
             textract_attempted=textract_attempted,
             native_text_detected=native_text_detected,
+            reference_month_year=reference_month_year,
         )
     if using_native_text:
         primary_result = _maybe_upgrade_native_parse_with_layout_text(raw_bytes=raw_bytes, baseline_result=primary_result)
@@ -238,7 +270,12 @@ def parse_pdf_transactions(
         return primary_result
 
     try:
-        ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
+        previous_reference_month_year = _REFERENCE_MONTH_YEAR_CONTEXT
+        globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = reference_month_year
+        try:
+            ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
+        finally:
+            globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = previous_reference_month_year
     except InvalidFileContentError as ocr_error:
         raise _attach_parse_observability(
             ocr_error,
@@ -281,7 +318,13 @@ def _retry_insufficient_native_text_with_ocr(
         )
 
     try:
-        ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
+        reference_month_year = text_extraction.read_pdf_creation_month_year(raw_bytes)
+        previous_reference_month_year = _REFERENCE_MONTH_YEAR_CONTEXT
+        globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = reference_month_year
+        try:
+            ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
+        finally:
+            globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = previous_reference_month_year
     except InvalidFileContentError as ocr_error:
         raise _attach_parse_observability(
             ocr_error,
@@ -312,12 +355,21 @@ def _retry_native_parse_failure_with_ocr(
     max_ocr_pages: int | None,
     textract_attempted: bool,
     native_text_detected: bool,
+    reference_month_year: tuple[int, int] | None,
 ) -> PdfParseResult:
     if not is_pdf_ocr_enabled():
         raise _attach_parse_observability(
             native_parse_error,
             textract_attempted=textract_attempted,
             native_text_detected=native_text_detected,
+        )
+    if _should_skip_ocr_retry_for_native_parse_error(native_parse_error):
+        raise _attach_parse_observability(
+            native_parse_error,
+            textract_attempted=textract_attempted,
+            native_text_detected=native_text_detected,
+            ocr_retry_skipped=1,
+            ocr_retry_skip_reason="native_date_pattern_only",
         )
     _enforce_ocr_page_limit(page_count=len(native_pages), max_ocr_pages=max_ocr_pages)
 
@@ -330,7 +382,12 @@ def _retry_native_parse_failure_with_ocr(
         )
 
     try:
-        ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
+        previous_reference_month_year = _REFERENCE_MONTH_YEAR_CONTEXT
+        globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = reference_month_year
+        try:
+            ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
+        finally:
+            globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = previous_reference_month_year
     except InvalidFileContentError as ocr_error:
         raise _attach_parse_observability(
             ocr_error,
@@ -495,7 +552,10 @@ def _parse_pdf_transactions_from_page_texts(
     layout_profile = get_layout_profile(layout.layout_name)
     lines = _flatten_statement_lines(page_texts, preserve_layout_spacing=preserve_layout_spacing)
     lines, invalid_date_candidates_skipped = _filter_invalid_leading_date_candidate_lines(lines)
-    specialized_selection = _parse_layout_specific_statement_rows(lines=lines, layout=layout)
+    specialized_selection = _parse_layout_specific_statement_rows(
+        lines=lines,
+        layout=layout,
+    )
     if specialized_selection is not None:
         specialized_rows = _adjust_forward_year_rollover_rows(
             specialized_selection.rows,
@@ -595,6 +655,17 @@ def _parse_layout_specific_statement_rows(
                 rows=parsed_rows,
                 selected_parser="layout_specific_banco_nordeste_consolidado",
                 selection_reason="layout_specific_banco_nordeste_consolidado",
+            )
+    if layout.layout_name == _BANCO_NORDESTE_FUNDOS_RENTABILIDADE_LAYOUT:
+        parsed_rows = _parse_banco_do_nordeste_fundos_rentabilidade_rows(
+            lines,
+            reference_month_year=_REFERENCE_MONTH_YEAR_CONTEXT,
+        )
+        if parsed_rows:
+            return _LayoutSpecificParseRows(
+                rows=parsed_rows,
+                selected_parser="layout_specific_banco_nordeste_fundos_rentabilidade",
+                selection_reason="layout_specific_banco_nordeste_fundos_rentabilidade",
             )
     return None
 
@@ -851,6 +922,69 @@ def _parse_banco_do_nordeste_extrato_consolidado_rows(lines: list[_PdfLine]) -> 
     return parsed_rows
 
 
+def _parse_banco_do_nordeste_fundos_rentabilidade_rows(
+    lines: list[_PdfLine],
+    *,
+    reference_month_year: tuple[int, int] | None,
+) -> list[_ParsedTransaction]:
+    movement_lines = _slice_banco_do_nordeste_fundos_rentabilidade_lines(lines)
+    statement_month_year = _infer_banco_do_nordeste_month_year(lines) or reference_month_year
+    if not movement_lines or statement_month_year is None:
+        return []
+
+    statement_month, statement_year = statement_month_year
+    parsed_rows: list[_ParsedTransaction] = []
+    index = 0
+
+    while index < len(movement_lines):
+        line = movement_lines[index]
+        inline_row = _parse_banco_do_nordeste_fundos_rentabilidade_line(
+            line,
+            month=statement_month,
+            year=statement_year,
+        )
+        if inline_row is not None:
+            parsed_rows.append(inline_row)
+            index += 1
+            continue
+
+        if not _is_banco_do_nordeste_day_line(line.text):
+            index += 1
+            continue
+
+        next_index = index + 1
+        if next_index >= len(movement_lines):
+            break
+
+        description = re.sub(r"\s+", " ", movement_lines[next_index].text).strip()
+        if not description or _is_banco_do_nordeste_day_line(description):
+            index += 1
+            continue
+        next_index += 1
+
+        while next_index < len(movement_lines) and _is_banco_do_nordeste_quantity_or_unit_line(movement_lines[next_index].text):
+            next_index += 1
+
+        if next_index >= len(movement_lines) or not is_amount_only_row(movement_lines[next_index].text.strip()):
+            index += 1
+            continue
+
+        amount_value = abs(parse_pdf_amount(movement_lines[next_index].text.strip()))
+        parsed_rows.append(
+            _build_parsed_transaction(
+                date=_build_banco_do_nordeste_iso_date(day=line.text.strip(), month=statement_month, year=statement_year),
+                description=_normalize_banco_do_nordeste_fundos_description(description),
+                amount=_resolve_banco_do_nordeste_fundos_signed_amount(amount=amount_value, description=description),
+                source_page=line.page_number,
+                source_line=line.line_number,
+                has_explicit_amount_sign=False,
+            )
+        )
+        index = next_index + 1
+
+    return parsed_rows
+
+
 def _slice_banco_do_nordeste_movimentacao_lines(lines: list[_PdfLine]) -> list[_PdfLine]:
     start_index: int | None = None
     for index, line in enumerate(lines):
@@ -875,6 +1009,36 @@ def _slice_banco_do_nordeste_movimentacao_lines(lines: list[_PdfLine]) -> list[_
     ]
 
 
+def _slice_banco_do_nordeste_fundos_rentabilidade_lines(lines: list[_PdfLine]) -> list[_PdfLine]:
+    start_index: int | None = None
+    for index, line in enumerate(lines):
+        normalized_line = _normalize_text(line.text)
+        if "MOVIMENTACOES BNB" in normalized_line:
+            start_index = index + 1
+            break
+    if start_index is None:
+        return []
+
+    movement_lines: list[_PdfLine] = []
+    for line in lines[start_index:]:
+        normalized_line = _normalize_text(line.text)
+        if normalized_line in {
+            "DIA HISTORICO QUANT. COTAS VALOR COTA VALOR EM R$",
+            "DIA HISTORICO QUANT. COTAS VALOR COTA VALOR EM R $",
+            "DIA",
+            "HISTORICO",
+            "QUANT. COTAS",
+            "VALOR COTA",
+            "VALOR EM R$",
+            "VALOR EM R $",
+        }:
+            continue
+        if not normalized_line:
+            continue
+        movement_lines.append(line)
+    return movement_lines
+
+
 def _infer_banco_do_nordeste_month_year(lines: list[_PdfLine]) -> tuple[int, int] | None:
     for line in lines:
         normalized = _normalize_text(line.text)
@@ -890,6 +1054,64 @@ def _infer_banco_do_nordeste_month_year(lines: list[_PdfLine]) -> tuple[int, int
             continue
         return month, year
     return None
+
+
+def _parse_banco_do_nordeste_fundos_rentabilidade_line(
+    line: _PdfLine,
+    *,
+    month: int,
+    year: int,
+) -> _ParsedTransaction | None:
+    match = re.match(
+        r"^(?P<day>\d{1,2})\s+(?P<rest>.+?)\s+(?P<amount>\d+(?:\.\d{3})*,\d{2})$",
+        line.text.strip(),
+    )
+    if match is None:
+        return None
+
+    description = re.sub(r"\s+\d[\d\.,]*\s+\d[\d\.,]*\s*$", "", match.group("rest")).strip()
+    if not description:
+        return None
+
+    amount_value = abs(parse_pdf_amount(match.group("amount")))
+
+    return _build_parsed_transaction(
+        date=_build_banco_do_nordeste_iso_date(day=match.group("day"), month=month, year=year),
+        description=_normalize_banco_do_nordeste_fundos_description(description),
+        amount=_resolve_banco_do_nordeste_fundos_signed_amount(amount=amount_value, description=description),
+        source_page=line.page_number,
+        source_line=line.line_number,
+        has_explicit_amount_sign=False,
+    )
+
+
+def _resolve_banco_do_nordeste_fundos_signed_amount(*, amount: float, description: str) -> float:
+    normalized_description = _normalize_text(description)
+    normalized_sign_description = normalized_description.replace(".", "")
+    if normalized_description.startswith("SALDO INICIAL") or normalized_description.startswith("SALDO ANTERIOR"):
+        return amount
+    if normalized_description.startswith("APLICACAO"):
+        return -amount
+    if (
+        "RESGATE" in normalized_sign_description
+        and "IOF" not in normalized_sign_description
+        and "IR FEDERAL" not in normalized_sign_description
+    ):
+        return amount
+    if "IOF" in normalized_sign_description or "IR FEDERAL" in normalized_sign_description:
+        return -amount
+    return apply_sign_hints(amount, description, None)
+
+
+def _normalize_banco_do_nordeste_fundos_description(description: str) -> str:
+    normalized_description = _normalize_text(description)
+    if normalized_description.startswith("SALDO INICIAL"):
+        return "SALDO INICIAL"
+    return re.sub(r"\s+", " ", description).strip()
+
+
+def _is_banco_do_nordeste_quantity_or_unit_line(raw: str) -> bool:
+    return bool(re.fullmatch(r"\d+(?:\.\d{3})*,\d{3,6}", raw.strip()))
 
 
 def _build_banco_do_nordeste_iso_date(*, day: str, month: int, year: int) -> str:
@@ -2748,8 +2970,18 @@ def _maybe_upgrade_native_parse_with_layout_text(*, raw_bytes: bytes, baseline_r
     if "\n".join(layout_pages).strip() == baseline_result.extracted_text.strip():
         return baseline_result
 
+    reference_month_year = text_extraction.read_pdf_creation_month_year(raw_bytes)
+
     try:
-        candidate_result = _parse_pdf_transactions_from_page_texts(layout_pages, preserve_layout_spacing=True)
+        previous_reference_month_year = _REFERENCE_MONTH_YEAR_CONTEXT
+        globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = reference_month_year
+        try:
+            candidate_result = _parse_pdf_transactions_from_page_texts(
+                layout_pages,
+                preserve_layout_spacing=True,
+            )
+        finally:
+            globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = previous_reference_month_year
     except InvalidFileContentError:
         return baseline_result
 

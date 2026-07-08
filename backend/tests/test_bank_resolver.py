@@ -29,3 +29,11 @@ def test_resolve_bank_code_from_stone_grouped_layout_profile() -> None:
 
 def test_resolve_bank_code_from_bradesco_unificado_poupanca_layout_profile() -> None:
     assert resolve_bank_code(layout_inference_name="bradesco_extrato_unificado_pj_poupanca_facil_a4_v1") == "237"
+
+
+def test_resolve_bank_code_from_banco_nordeste_periodo_a4_layout_profile() -> None:
+    assert resolve_bank_code(layout_inference_name="banco_do_nordeste_extrato_periodo_a4_v1") == "004"
+
+
+def test_resolve_bank_code_from_banco_nordeste_fundos_rentabilidade_layout_profile() -> None:
+    assert resolve_bank_code(layout_inference_name="banco_do_nordeste_fundos_investimentos_rentabilidade_v1") == "004"
