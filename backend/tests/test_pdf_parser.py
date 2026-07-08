@@ -715,6 +715,32 @@ def test_parse_pdf_transactions_keeps_native_parse_error_when_failure_ocr_retry_
         parse_pdf_transactions(b"%PDF synthetic")
 
 
+def test_parse_pdf_transactions_skips_ocr_when_native_failure_is_date_pattern_only(monkeypatch) -> None:
+    native_pages = ["native page 1", "native page 2"]
+    native_error = InvalidFileContentError(
+        "PDF text was extracted, but no recognizable transaction row pattern was found."
+        " diagnostics: has_date_like=0 has_amount_like=1 inline_candidates=0"
+        " tabular_candidates=0 columnar_candidates=0 missing_signals=date_pattern,transaction_row_pattern"
+    )
+    calls = {"ocr": 0}
+
+    def _ocr_stub(raw_bytes):
+        calls["ocr"] += 1
+        return ["01/04/2026 PIX RECEBIDO 10,00"]
+
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: native_pages)
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: True)
+    monkeypatch.setattr(pdf_parser_module, "extract_pdf_page_texts_with_ocr", _ocr_stub)
+    monkeypatch.setattr(pdf_parser_module, "_parse_pdf_transactions_from_page_texts", lambda pages: (_ for _ in ()).throw(native_error))
+
+    with pytest.raises(InvalidFileContentError, match="missing_signals=date_pattern,transaction_row_pattern") as exc_info:
+        parse_pdf_transactions(b"%PDF synthetic")
+
+    assert calls["ocr"] == 0
+    assert getattr(exc_info.value, "_parse_observability", {}).get("ocr_retry_skipped") == 1
+    assert getattr(exc_info.value, "_parse_observability", {}).get("ocr_retry_skip_reason") == "native_date_pattern_only"
+
+
 def test_parse_pdf_transactions_keeps_native_when_coverage_is_healthy(monkeypatch) -> None:
     native_pages = ["native page 1", "native page 2", "native page 3"]
     native_result = pdf_parser_module.PdfParseResult(
@@ -1616,6 +1642,119 @@ def test_parse_pdf_transactions_supports_banco_do_nordeste_extrato_consolidado_s
     assert result.transactions[2].description == "ESTORNO DE TARIFAS 996"
     assert result.transactions[4].description == "CREDITO TED 104"
     assert [item.running_balance for item in result.canonical_transactions] == [69.86, 16.86, 2616.86, 1824.11, 2001.45]
+
+
+def test_parse_pdf_transactions_supports_banco_do_nordeste_fundos_rentabilidade_statement(monkeypatch) -> None:
+    native_text = """
+    FUNDOS DE INVESTIMENTOS - RENTABILIDADE ( % )
+    ADMINISTRADOR FIDUCIARIO:
+    PRODUTO
+    REND. MENSAL
+    REND. ANUAL
+    ULT. 12 MESES
+    BNB AUTOMATICO FI RF CURTO PRAZO
+    0,6345
+    1,4101
+    10,1181
+    MOVIMENTACOES BNB AUTOMATICO
+    DIA
+    HISTORICO
+    QUANT. COTAS
+    VALOR COTA
+    VALOR EM R$
+    01
+    SALDO INICIAL
+    4.983,898
+    11,448227
+    57.056,80
+    03
+    APLICACAO
+    5.617,694
+    11,452214
+    64.335,03
+    05
+    APLICACAO
+    380,345
+    11,456059
+    4.357,25
+    09
+    APLICACAO
+    3.288,032
+    11,459957
+    37.680,71
+    15
+    RESGATE
+    5.592,692
+    11,463803
+    64.113,52
+    15
+    I.O.F.  S/RESGATE
+    96,44
+    15
+    I.R. FEDERAL
+    11,34
+    22
+    RESGATE
+    1.052,419
+    11,467650
+    12.068,77
+    22
+    I.O.F.  S/RESGATE
+    12,99
+    22
+    I.R. FEDERAL
+    0,72
+    27
+    APLICACAO
+    4.288,512
+    11,471437
+    49.195,40
+    29
+    RESGATE
+    4.517,971
+    11,475314
+    51.845,14
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module.text_extraction, "read_pdf_creation_month_year", lambda raw_bytes: (4, 2021))
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "banco_do_nordeste_fundos_investimentos_rentabilidade_v1"
+    assert result.layout.used_fallback is False
+    assert result.parse_metrics["selected_parser"] == "layout_specific_banco_nordeste_fundos_rentabilidade"
+    assert [transaction.date for transaction in result.transactions] == [
+        "2021-04-01",
+        "2021-04-03",
+        "2021-04-05",
+        "2021-04-09",
+        "2021-04-15",
+        "2021-04-15",
+        "2021-04-15",
+        "2021-04-22",
+        "2021-04-22",
+        "2021-04-22",
+        "2021-04-27",
+        "2021-04-29",
+    ]
+    assert [transaction.amount for transaction in result.transactions] == [
+        57056.8,
+        -64335.03,
+        -4357.25,
+        -37680.71,
+        64113.52,
+        -96.44,
+        -11.34,
+        12068.77,
+        -12.99,
+        -0.72,
+        -49195.4,
+        51845.14,
+    ]
+    assert result.transactions[0].description == "SALDO INICIAL"
+    assert result.transactions[5].description == "I.O.F. S/RESGATE"
+    assert result.transactions[6].description == "I.R. FEDERAL"
 
 
 def test_parse_pdf_transactions_resolves_singular_credit_debit_headers_in_tabular_positions() -> None:

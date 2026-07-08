@@ -1,0 +1,56 @@
+layout_profile:
+  profile_name: banco_do_nordeste_fundos_investimentos_rentabilidade_v1
+  bank: Banco do Nordeste
+  layout_family: banco_do_nordeste_fundos_investimentos_rentabilidade
+  statement_type: investimentos_rentabilidade
+  confidence: high
+  classifier:
+    required_keywords:
+      - "FUNDOS DE INVESTIMENTOS - RENTABILIDADE"
+      - "BNB AUTOMATICO FI RF CURTO PRAZO"
+      - "MOVIMENTACOES BNB AUTOMATICO"
+      - "DIA"
+      - "HISTORICO"
+      - "QUANT. COTAS"
+      - "VALOR COTA"
+      - "VALOR EM R$"
+    optional_keywords:
+      - "SALDO INICIAL"
+      - "APLICACAO"
+      - "RESGATE"
+      - "I.O.F. S/RESGATE"
+      - "I.R. FEDERAL"
+      - "REND. MENSAL"
+      - "REND. ANUAL"
+    negative_keywords:
+      - "Santander"
+      - "Internet Banking Empresarial"
+      - "Banco Santander Pessoa Juridica"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itau"
+      - "Sicredi"
+      - "Stone"
+      - "C6 BANK"
+    min_score_hint: 0.76
+  table_detection:
+    header_keywords:
+      - "DIA"
+      - "HISTORICO"
+      - "QUANT. COTAS"
+      - "VALOR COTA"
+      - "VALOR EM R$"
+    expected_column_order:
+      - date
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "DIA"
+      description:
+        - "HISTORICO"
+        - "HISTÓRICO"
+      amount:
+        - "VALOR EM R$"
+        - "VALOR EM R $"

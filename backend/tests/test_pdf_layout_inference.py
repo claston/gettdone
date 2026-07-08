@@ -727,6 +727,61 @@ def test_infer_pdf_layout_prefers_neon_mei_facil_a4_statement_profile() -> None:
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_prefers_banco_nordeste_periodo_a4_profile() -> None:
+    text = """
+    Banco do
+    Nordeste
+    Extrato de Conta Corrente - no
+    período
+    Titular:
+    Agência/Conta Corrente:
+    Saldo Anterior:
+    Período: 01/04/2021 até 30/04/2021
+    636,44
+    Detalhamento do Extrato
+    Data
+    Histórico
+    Documento
+    Valor R $
+    Saldo R $
+    01/04/2021
+    LIQUIDO COBRANCA
+    SIMPLES
+    1308
+    2.637,26
+    3.273,70
+    01/04/2021
+    TARIFA COBRANCA
+    1304
+    - 1,76
+    4.406,16
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "banco_do_nordeste_extrato_periodo_a4_v1"
+    assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_prefers_banco_nordeste_fundos_rentabilidade_profile() -> None:
+    text = """
+    FUNDOS DE INVESTIMENTOS - RENTABILIDADE ( % )
+    PRODUTO REND. MENSAL REND. ANUAL ULT. 12 MESES
+    BNB AUTOMATICO FI RF CURTO PRAZO 0,6345 1,4101 10,1181
+    MOVIMENTACOES BNB AUTOMATICO
+    DIA HISTORICO QUANT. COTAS VALOR COTA VALOR EM R$
+    01 SALDO INICIAL 4.983,898 11,448227 57.056,80
+    03 APLICACAO 5.617,694 11,452214 64.335,03
+    15 RESGATE 5.592,692 11,463803 64.113,52
+    15 I.O.F. S/RESGATE 96,44
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "banco_do_nordeste_fundos_investimentos_rentabilidade_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_stone_grouped_lancamento_valor_saldo_profile() -> None:
     text = """
     Extrato de conta corrente
