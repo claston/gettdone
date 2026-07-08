@@ -916,3 +916,93 @@ def test_infer_pdf_layout_prefers_caixa_siatr_saldos_lancamentos_profile() -> No
 
     assert result.layout_name == "caixa_siatr_saldos_lancamentos_a4_v1"
     assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_prefers_sicoob_creditran_extrato_detalhado_conta_profile() -> None:
+    text = """
+    SICOOB
+    Creditran
+    Conta Corrente
+    06/02/2025 15:46:18
+    Banco:
+    Agencia:
+    Conta Corrente:
+    EXTRATO DETALHADO CONTA
+    PERIODO DE 01/01/2025 A 31/01/2025
+    Ultimos Lancamentos Saldo anterior:
+    -3.317,19
+    Data
+    Historico
+    Documento
+    Valor
+    Saldo
+    31/12/2024
+    DEB.SEGURO EMPRESTIMO
+    0009731610
+    -45,41
+    -3.362,60
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "sicoob_creditran_extrato_detalhado_conta_v1"
+    assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_prefers_sicoob_poupanca_cooperada_profile() -> None:
+    text = """
+    SICOOB - Sistema de Cooperativas de Credito do Brasil
+    Plataforma de Servicos Financeiros do Sicoob - SISBR
+    Extrato Poupanca Cooperada
+    Agencia:
+    Conta:
+    Data
+    Documento
+    Historico
+    Debito
+    Credito
+    Saldo
+    01/10/2022
+    SALDO ANTERIOR
+    338,38+
+    11/10/2022
+    CORRECAO MONETARIA
+    - SELIC
+    0,24+
+    338,62+
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "sicoob_extrato_poupanca_cooperada_v1"
+    assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_prefers_sicoob_apropriacao_diaria_profile() -> None:
+    text = """
+    - SICOOB -
+    Sistema de Cooperativas de Credito do Brasil
+    Plataforma de Servicos Financeiros do Sicoob - SISBR
+    Extrato de Apropriacao Diaria
+    01/08/2023
+    10:38:02
+    MODALIDADE:
+    RDC - LONGO POS CDI
+    N APPLICACAO:
+    DATA FIM DA CARENCIA/VENC.:
+    DATA DA APLICACAO:
+    Data
+    Historico
+    Valor
+    30/06/2023
+    SALDO ANTERIOR
+    R$ 7,49C
+    04/07/2023
+    APROPRIACAO DE CM
+    R$ 0,01C
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "sicoob_extrato_apropriacao_diaria_v1"
+    assert result.used_fallback is False

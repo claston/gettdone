@@ -1,0 +1,54 @@
+layout_profile:
+  profile_name: sicoob_extrato_apropriacao_diaria_v1
+  bank: Sicoob
+  layout_family: sicoob_extrato_apropriacao_diaria
+  statement_type: investimento_apropriacao_diaria
+  confidence: high
+  classifier:
+    required_keywords:
+      - "SICOOB"
+      - "Sistema de Cooperativas de Credito do Brasil"
+      - "SISBR"
+      - "Extrato de Apropriacao Diaria"
+      - "MODALIDADE"
+      - "N APLICACAO"
+      - "DATA DA APLICACAO"
+      - "Data"
+      - "Historico"
+      - "Valor"
+    optional_keywords:
+      - "RDC - LONGO POS CDI"
+      - "SALDO ANTERIOR"
+      - "APROPRIACAO DE CM"
+      - "RESGATE DE APLICACAO FINANCEIRA"
+      - "RETENCAO DE IRRF"
+      - "SALDO BRUTO EM"
+      - "SALDO DISPONIVEL EM"
+    negative_keywords:
+      - "Extrato Poupanca Cooperada"
+      - "Conta Corrente"
+      - "EXTRATO DETALHADO CONTA"
+      - "CAIXA"
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "Itau"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Historico"
+      - "Valor"
+    expected_column_order:
+      - date
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Historico"
+      amount:
+        - "Valor"

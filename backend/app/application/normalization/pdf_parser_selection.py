@@ -171,6 +171,45 @@ def _should_prefer_tabular_over_grouped_on_opening_balance_noise(
     )
 
 
+def _should_prefer_tabular_over_inline_on_opening_balance_noise(
+    *, inline_rows: list[Any], tabular_rows: list[Any], layout_profile: Any | None
+) -> bool:
+    if layout_profile is None or not inline_rows or not tabular_rows:
+        return False
+    if len(inline_rows) != len(tabular_rows) + 1:
+        return False
+
+    inline_descriptions = [
+        str(getattr(item, "description", getattr(getattr(item, "transaction", None), "description", ""))).strip().upper()
+        for item in inline_rows
+    ]
+    tabular_descriptions = [
+        str(getattr(getattr(item, "transaction", None), "description", "")).strip().upper() for item in tabular_rows
+    ]
+
+    inline_has_opening_balance = any(
+        description.startswith("SALDO ANTERIOR") or description.startswith("SALDO INICIAL")
+        for description in inline_descriptions
+    )
+    tabular_has_opening_balance = any(
+        description.startswith("SALDO ANTERIOR") or description.startswith("SALDO INICIAL")
+        for description in tabular_descriptions
+    )
+
+    return (
+        inline_has_opening_balance
+        and not tabular_has_opening_balance
+        and all(
+            inline_description == tabular_description
+            for inline_description, tabular_description in zip(
+                inline_descriptions[1:],
+                tabular_descriptions,
+                strict=False,
+            )
+        )
+    )
+
+
 def select_parsed_rows(
     *,
     lines: list[Any],
@@ -265,8 +304,13 @@ def select_parsed_rows(
     columnar_rows, columnar_candidates = parse_columnar_rows(lines)
     columnar_transactions_count = len(columnar_rows)
     tabular_is_clearly_better_than_inline = tabular_transactions_count >= inline_transactions_count + 3
+    tabular_avoids_inline_opening_balance_noise = _should_prefer_tabular_over_inline_on_opening_balance_noise(
+        inline_rows=inline_rows,
+        tabular_rows=tabular_rows,
+        layout_profile=layout_profile,
+    )
 
-    if inline_rows and tabular_rows and tabular_is_clearly_better_than_inline:
+    if inline_rows and tabular_rows and (tabular_is_clearly_better_than_inline or tabular_avoids_inline_opening_balance_noise):
         return SelectedParserRows(
             selected_parser="tabular",
             rows=tabular_rows,
@@ -276,9 +320,21 @@ def select_parsed_rows(
             columnar_candidates=columnar_candidates,
             tabular_transactions_count=tabular_transactions_count,
             columnar_transactions_count=columnar_transactions_count,
-            selection_reason="tabular_preferred_on_row_count_gap",
-            inline_decision="not_selected_row_count_gap",
-            tabular_decision="selected_on_row_count_gap",
+            selection_reason=(
+                "tabular_preferred_on_row_count_gap"
+                if tabular_is_clearly_better_than_inline
+                else "tabular_preferred_over_inline_opening_balance_noise"
+            ),
+            inline_decision=(
+                "not_selected_row_count_gap"
+                if tabular_is_clearly_better_than_inline
+                else "not_selected_opening_balance_noise"
+            ),
+            tabular_decision=(
+                "selected_on_row_count_gap"
+                if tabular_is_clearly_better_than_inline
+                else "selected_on_inline_opening_balance_noise"
+            ),
             columnar_decision="no_rows" if not columnar_rows else "not_selected_tabular_priority",
         )
 
