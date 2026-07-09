@@ -20,7 +20,6 @@ from app.application.conversion.document_preflight_service import (
 
 logger = logging.getLogger(__name__)
 CORRUPTED_PDF_USER_MESSAGE = "Parece que seu arquivo PDF está corrompido."
-TEMPORARY_BACKEND_UNAVAILABLE_CODE = "temporary_backend_unavailable"
 
 
 def _build_pages_limit_user_message(exc: MaxPagesPerFileExceededError) -> str:
@@ -106,39 +105,9 @@ def _is_likely_corrupted_pdf_detail(detail: str) -> bool:
     return any(marker in normalized for marker in corrupted_markers)
 
 
-def _is_temporary_backend_unavailable_error(exc: Exception) -> bool:
-    detail = str(exc or "").strip().lower()
-    if not detail:
-        return False
-    retryable_hints = (
-        "failed to acquire permit to connect",
-        "too many database connection attempts",
-        "connection timeout",
-        "network is unreachable",
-        "control plane request failed",
-        "timeout expired",
-        "could not connect",
-        "connection refused",
-        "consuming input failed",
-        "ssl connection has been closed unexpectedly",
-        "server closed the connection unexpectedly",
-        "connection is closed",
-    )
-    return any(token in detail for token in retryable_hints)
-
-
 def _raise_http_convert_error(exc: Exception, *, identity, access_control_service: AccessControlService) -> None:
     if identity is None:
         identity = getattr(exc, "_convert_identity", None)
-    if _is_temporary_backend_unavailable_error(exc):
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code": TEMPORARY_BACKEND_UNAVAILABLE_CODE,
-                "message": "Servico temporariamente indisponivel. Tente novamente em instantes.",
-                "retryable": True,
-            },
-        )
     if isinstance(exc, FileTooLargeError):
         max_bytes = int(
             getattr(
