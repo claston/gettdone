@@ -18,10 +18,6 @@ class AccessControlDbComponent:
     def connect(self) -> AbstractContextManager[Any]:
         return self._connect()
 
-    def configure_postgres_connection(self, conn) -> None:
-        with conn.cursor() as cur:
-            cur.execute(f'SET search_path TO "{self._service.database_schema}", public')
-
     @contextmanager
     def _connect(self) -> Iterator[Any]:
         service = self._service
@@ -32,6 +28,8 @@ class AccessControlDbComponent:
                 try:
                     if service._postgres_pool is not None:
                         with service._postgres_pool.connection(timeout=service.db_pool_timeout_seconds) as conn:
+                            with conn.cursor() as cur:
+                                cur.execute(f'SET search_path TO "{service.database_schema}", public')
                             yield conn
                             return
 
@@ -39,14 +37,14 @@ class AccessControlDbComponent:
                         service.database_url,
                         row_factory=service._postgres_dict_row,
                     ) as conn:
-                        self.configure_postgres_connection(conn)
+                        with conn.cursor() as cur:
+                            cur.execute(f'SET search_path TO "{service.database_schema}", public')
                         yield conn
                         return
                 except Exception as exc:  # pragma: no cover - exercised in postgres environments
                     last_exc = exc
                     if attempt >= service.db_connect_retry_attempts or not self.is_retryable_db_exception(exc):
                         raise
-                    self.refresh_postgres_pool()
                     sleep_seconds = (service.db_connect_retry_base_ms / 1000.0) * (2 ** (attempt - 1))
                     time.sleep(min(sleep_seconds, 2.0))
 
@@ -119,14 +117,3 @@ class AccessControlDbComponent:
             "connection is closed",
         )
         return any(token in message for token in retryable_hints)
-
-    def refresh_postgres_pool(self) -> None:
-        pool = self._service._postgres_pool
-        if pool is None:
-            return
-        try:
-            pool.check()
-        except Exception:
-            # If pool health verification fails, the next retry still attempts
-            # to reacquire a fresh connection through the pool.
-            return

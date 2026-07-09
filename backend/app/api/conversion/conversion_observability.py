@@ -3,11 +3,7 @@ import logging
 import os
 import re
 
-from app.api.conversion.conversion_error_mapper import (
-    TEMPORARY_BACKEND_UNAVAILABLE_CODE,
-    _is_likely_corrupted_pdf_detail,
-    _is_temporary_backend_unavailable_error,
-)
+from app.api.conversion.conversion_error_mapper import _is_likely_corrupted_pdf_detail
 from app.application import (
     AccessControlService,
     FileTooLargeError,
@@ -27,8 +23,6 @@ TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = document_preflight_service_module.TEXT_PDF_MAX_
 
 
 def _resolve_failed_conversion_code(exc: Exception) -> str:
-    if _is_temporary_backend_unavailable_error(exc):
-        return TEMPORARY_BACKEND_UNAVAILABLE_CODE
     if isinstance(exc, FileTooLargeError):
         return "file_too_large"
     if isinstance(exc, MaxPagesPerFileExceededError):
@@ -256,8 +250,6 @@ def _resolve_effective_ocr_observability(
 
 def _resolve_error_observability(exc: Exception) -> tuple[str | None, str | None, str]:
     exception_class = exc.__class__.__name__
-    if _is_temporary_backend_unavailable_error(exc):
-        return "database", "temporary_backend_unavailable", exception_class
     if isinstance(exc, FileTooLargeError):
         return "upload_validation", "upload_size_limit_exceeded", exception_class
     if isinstance(exc, MaxPagesPerFileExceededError):

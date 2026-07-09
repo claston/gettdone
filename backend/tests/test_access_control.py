@@ -411,39 +411,3 @@ def test_retryable_db_exception_includes_unexpected_ssl_close(tmp_path) -> None:
     exc = Exception("consuming input failed: SSL connection has been closed unexpectedly")
     assert service._is_retryable_db_exception(exc) is True
 
-
-def test_refresh_postgres_pool_checks_connections_when_pool_exists(tmp_path) -> None:
-    service = AccessControlService(
-        state_file=tmp_path / "state.json",
-        token_secret="test-secret",
-    )
-
-    class FakePool:
-        def __init__(self) -> None:
-            self.checked = False
-
-        def check(self) -> None:
-            self.checked = True
-
-    pool = FakePool()
-    service._postgres_pool = pool
-
-    service.db.refresh_postgres_pool()
-
-    assert pool.checked is True
-
-
-def test_refresh_postgres_pool_swallows_health_check_failures(tmp_path) -> None:
-    service = AccessControlService(
-        state_file=tmp_path / "state.json",
-        token_secret="test-secret",
-    )
-
-    class FakePool:
-        def check(self) -> None:
-            raise RuntimeError("pool check failed")
-
-    service._postgres_pool = FakePool()
-
-    service.db.refresh_postgres_pool()
-

@@ -45,7 +45,6 @@ from app.application.report_service import ReportService
 from app.application.repositories import AnalysisRepository
 
 logger = logging.getLogger(__name__)
-TEMPORARY_BACKEND_UNAVAILABLE_CODE = "temporary_backend_unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -714,8 +713,6 @@ def _apply_ocr_limit_context(
 
 
 def _resolve_failed_conversion_code(exc: Exception) -> str:
-    if _is_temporary_backend_unavailable_error(exc):
-        return TEMPORARY_BACKEND_UNAVAILABLE_CODE
     if isinstance(exc, FileTooLargeError):
         return "file_too_large"
     if isinstance(exc, MaxPagesPerFileExceededError):
@@ -890,8 +887,6 @@ def _resolve_effective_ocr_observability(
 
 def _resolve_error_observability(exc: Exception) -> tuple[str | None, str | None, str]:
     exception_class = exc.__class__.__name__
-    if _is_temporary_backend_unavailable_error(exc):
-        return "database", "temporary_backend_unavailable", exception_class
     if isinstance(exc, FileTooLargeError):
         return "upload_validation", "upload_size_limit_exceeded", exception_class
     if isinstance(exc, MaxPagesPerFileExceededError):
@@ -961,27 +956,6 @@ def _build_failure_diagnostics(exc: Exception) -> dict[str, str | int | bool | l
     if textract_error_type:
         diagnostics["textract_error_type"] = textract_error_type
     return diagnostics
-
-
-def _is_temporary_backend_unavailable_error(exc: Exception) -> bool:
-    detail = str(exc or "").strip().lower()
-    if not detail:
-        return False
-    retryable_hints = (
-        "failed to acquire permit to connect",
-        "too many database connection attempts",
-        "connection timeout",
-        "network is unreachable",
-        "control plane request failed",
-        "timeout expired",
-        "could not connect",
-        "connection refused",
-        "consuming input failed",
-        "ssl connection has been closed unexpectedly",
-        "server closed the connection unexpectedly",
-        "connection is closed",
-    )
-    return any(token in detail for token in retryable_hints)
 
 
 def _resolve_conversion_type_from_filename(filename: str) -> str:
