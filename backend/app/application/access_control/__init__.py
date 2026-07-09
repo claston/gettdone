@@ -130,7 +130,6 @@ class AccessControlService:
         self._postgres_pool = None
         self._postgres_module = psycopg
         self._postgres_dict_row = dict_row
-        self.db = AccessControlDbComponent(self)
         if not self._use_postgres:
             self.db_file.parent.mkdir(parents=True, exist_ok=True)
         elif psycopg is None:
@@ -148,6 +147,7 @@ class AccessControlService:
                 max_idle=self.db_pool_max_idle_seconds,
                 open=True,
             )
+        self.db = AccessControlDbComponent(self)
         self.helpers = AccessControlHelpersComponent(self)
         self.auth = AccessControlAuthComponent(self)
         self.schema = AccessControlSchemaComponent(self)
