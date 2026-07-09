@@ -11,9 +11,11 @@ from starlette.background import BackgroundTask
 
 from app.api.conversion.conversion_error_mapper import (
     CORRUPTED_PDF_USER_MESSAGE,
+    TEMPORARY_BACKEND_UNAVAILABLE_CODE,
     _build_pages_limit_detail,
     _build_quota_exceeded_detail,
     _is_likely_corrupted_pdf_detail,
+    _is_temporary_backend_unavailable_error,
 )
 from app.api.conversion.upload_staging import StagedUpload, _cleanup_staged_upload
 from app.application import (
@@ -50,11 +52,16 @@ def _build_failed_upload_streaming_response(exc: Exception) -> StreamingResponse
     def failed_stream(error: Exception = exc) -> Iterator[str]:
         code = "processing_failed"
         message = "Não foi possível ler este PDF."
+        retryable = False
         if isinstance(error, FileTooLargeError):
             code = "file_too_large"
             max_bytes = int(getattr(error, "_max_upload_size_bytes", TEXT_PDF_MAX_UPLOAD_SIZE_BYTES))
             max_mb = max(1, int(max_bytes // (1024 * 1024)))
             message = f"Arquivo excede o tamanho máximo de {max_mb} MB."
+        elif _is_temporary_backend_unavailable_error(error):
+            code = TEMPORARY_BACKEND_UNAVAILABLE_CODE
+            message = "Servico temporariamente indisponivel. Tente novamente em instantes."
+            retryable = True
         yield _sse_event(
             "processing_status",
             {
@@ -62,7 +69,7 @@ def _build_failed_upload_streaming_response(exc: Exception) -> StreamingResponse
                 "progress": 5,
                 "message": message,
                 "code": code,
-                "retryable": False,
+                "retryable": retryable,
             },
         )
 
@@ -315,6 +322,10 @@ class _ConversionUploadSseMachine:
         elif isinstance(error, UnsupportedFileTypeError):
             code = "unsupported_type"
             message = "Formato não suportado. Envie um PDF."
+        elif _is_temporary_backend_unavailable_error(error):
+            code = TEMPORARY_BACKEND_UNAVAILABLE_CODE
+            message = "Servico temporariamente indisponivel. Tente novamente em instantes."
+            retryable = True
         failed_event_payload["message"] = message
         failed_event_payload["code"] = code
         failed_event_payload["retryable"] = retryable
