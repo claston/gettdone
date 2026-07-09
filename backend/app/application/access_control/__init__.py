@@ -40,6 +40,8 @@ DEFAULT_DB_CONNECT_RETRY_BASE_MS = 200
 DEFAULT_DB_POOL_MIN_SIZE = 1
 DEFAULT_DB_POOL_MAX_SIZE = 3
 DEFAULT_DB_POOL_TIMEOUT_SECONDS = 5.0
+DEFAULT_DB_POOL_MAX_LIFETIME_SECONDS = 300.0
+DEFAULT_DB_POOL_MAX_IDLE_SECONDS = 60.0
 
 
 @dataclass(frozen=True)
@@ -93,6 +95,8 @@ class AccessControlService:
         db_pool_min_size: int = DEFAULT_DB_POOL_MIN_SIZE,
         db_pool_max_size: int = DEFAULT_DB_POOL_MAX_SIZE,
         db_pool_timeout_seconds: float = DEFAULT_DB_POOL_TIMEOUT_SECONDS,
+        db_pool_max_lifetime_seconds: float = DEFAULT_DB_POOL_MAX_LIFETIME_SECONDS,
+        db_pool_max_idle_seconds: float = DEFAULT_DB_POOL_MAX_IDLE_SECONDS,
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         self.state_file = state_file
@@ -115,6 +119,8 @@ class AccessControlService:
         self.db_pool_min_size = max(1, int(db_pool_min_size))
         self.db_pool_max_size = max(self.db_pool_min_size, int(db_pool_max_size))
         self.db_pool_timeout_seconds = max(1.0, float(db_pool_timeout_seconds))
+        self.db_pool_max_lifetime_seconds = max(30.0, float(db_pool_max_lifetime_seconds))
+        self.db_pool_max_idle_seconds = max(5.0, float(db_pool_max_idle_seconds))
         self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
         self._lock = RLock()
         self._identity_context_factory = IdentityContext
@@ -134,7 +140,11 @@ class AccessControlService:
                 kwargs={"row_factory": dict_row},
                 min_size=self.db_pool_min_size,
                 max_size=self.db_pool_max_size,
+                configure=self.db.configure_postgres_connection,
+                check=ConnectionPool.check_connection,
                 timeout=self.db_pool_timeout_seconds,
+                max_lifetime=self.db_pool_max_lifetime_seconds,
+                max_idle=self.db_pool_max_idle_seconds,
                 open=True,
             )
         self.db = AccessControlDbComponent(self)

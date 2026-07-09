@@ -97,6 +97,8 @@ def get_access_control_service() -> AccessControlService:
             db_pool_min_size=int(os.getenv("DB_POOL_MIN_SIZE", "1")),
             db_pool_max_size=int(os.getenv("DB_POOL_MAX_SIZE", "3")),
             db_pool_timeout_seconds=float(os.getenv("DB_POOL_TIMEOUT_SECONDS", "5")),
+            db_pool_max_lifetime_seconds=float(os.getenv("DB_POOL_MAX_LIFETIME_SECONDS", "300")),
+            db_pool_max_idle_seconds=float(os.getenv("DB_POOL_MAX_IDLE_SECONDS", "60")),
         )
     return _access_control_service
 

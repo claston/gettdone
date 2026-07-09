@@ -171,6 +171,12 @@ class RegisteredFreeQuotaExceededAccessControlService(FakeAccessControlService):
         raise QuotaExceededError()
 
 
+class RetryableDbFailureAccessControlService(FakeAccessControlService):
+    def resolve_identity(self, anonymous_fingerprint: str | None, user_token: str | None):
+        _ = (anonymous_fingerprint, user_token)
+        raise RuntimeError("consuming input failed: SSL connection has been closed unexpectedly")
+
+
 def _resolve_pipeline_raw_bytes(*, staged_upload, raw_bytes: bytes | None) -> bytes:
     if raw_bytes is not None:
         return raw_bytes
@@ -440,6 +446,20 @@ def test_streaming_upload_emits_upgrade_links_for_registered_free_user_at_weekly
     assert failed["quota_mode"] == "conversion"
     assert failed["upgrade_url"] == "./planos.html?reason=quota"
     assert failed["support_url"] == "./contato.html?reason=quota"
+
+
+def test_streaming_upload_marks_retryable_backend_unavailability() -> None:
+    client = _build_client_with_access_control(RetryableDbFailureAccessControlService())
+    response = client.post(
+        "/api/conversions/upload",
+        headers={"accept": "text/event-stream"},
+        data={"anonymous_fingerprint": "fp-db-retry"},
+        files={"file": ("sample.pdf", _blank_pdf_bytes(), "application/pdf")},
+    )
+    payloads = _parse_sse_payloads(response.text)
+    failed = next(item for item in payloads if item.get("stage") == "failed")
+    assert failed["code"] == "temporary_backend_unavailable"
+    assert failed["retryable"] is True
 
 
 def test_streaming_upload_rejects_obviously_large_request_before_analyze() -> None:

@@ -5,6 +5,10 @@ from fastapi import UploadFile
 from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
+from app.api.conversion.conversion_error_mapper import (
+    TEMPORARY_BACKEND_UNAVAILABLE_CODE,
+    _raise_http_convert_error,
+)
 from app.api.conversion.conversion_observability import _resolve_error_observability
 from app.api.conversion.conversion_response_mapper import _result_to_convert_response
 from app.api.conversion.upload_staging import _cleanup_staged_upload, _stage_upload_to_temp_file
@@ -763,6 +767,39 @@ def test_ocr_pages_limit_observability_uses_ocr_stage() -> None:
         "ocr_pages_limit_exceeded",
         "MaxPagesPerFileExceededError",
     )
+
+
+def test_temporary_backend_unavailable_observability_uses_database_stage() -> None:
+    error = RuntimeError("consuming input failed: SSL connection has been closed unexpectedly")
+
+    assert _resolve_error_observability(error) == (
+        "database",
+        "temporary_backend_unavailable",
+        "RuntimeError",
+    )
+
+
+def test_convert_returns_503_for_temporary_backend_unavailability(tmp_path) -> None:
+    access_control = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+    )
+
+    try:
+        _raise_http_convert_error(
+            RuntimeError("consuming input failed: SSL connection has been closed unexpectedly"),
+            identity=None,
+            access_control_service=access_control,
+        )
+    except Exception as exc:
+        from fastapi import HTTPException
+
+        assert isinstance(exc, HTTPException)
+        assert exc.status_code == 503
+        assert exc.detail["code"] == TEMPORARY_BACKEND_UNAVAILABLE_CODE
+        assert exc.detail["retryable"] is True
+    else:
+        raise AssertionError("Expected HTTPException")
 
 
 def test_convert_returns_friendly_message_for_likely_corrupted_pdf(tmp_path) -> None:
