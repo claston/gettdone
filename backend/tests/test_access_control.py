@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
+import app.application.access_control as access_control_module
 from app.application.access_control import (
     ANONYMOUS_QUOTA_LIMIT,
     REGISTERED_QUOTA_LIMIT,
@@ -446,4 +447,32 @@ def test_refresh_postgres_pool_swallows_health_check_failures(tmp_path) -> None:
     service._postgres_pool = FakePool()
 
     service.db.refresh_postgres_pool()
+
+
+def test_postgres_pool_bootstrap_initializes_db_component_before_pool(tmp_path, monkeypatch) -> None:
+    class FakePsycopg:
+        pass
+
+    class FakeConnectionPool:
+        check_connection = staticmethod(lambda _conn: None)
+        instances = []
+
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+            FakeConnectionPool.instances.append(self)
+
+    monkeypatch.setattr(access_control_module, "psycopg", FakePsycopg())
+    monkeypatch.setattr(access_control_module, "dict_row", object())
+    monkeypatch.setattr(access_control_module, "ConnectionPool", FakeConnectionPool)
+    monkeypatch.setattr(AccessControlService, "_init_db", lambda self: None)
+
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+        database_url="postgresql://db.example.test/gettdone",
+    )
+
+    assert service.db is not None
+    assert len(FakeConnectionPool.instances) == 1
+    assert FakeConnectionPool.instances[0].kwargs["configure"] == service.db.configure_postgres_connection
 
