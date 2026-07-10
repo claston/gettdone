@@ -12,7 +12,11 @@ from app.application.normalization.balance import annotate_balance_consistency
 from app.application.normalization.canonical import build_canonical_transactions
 from app.application.normalization.canonical_metrics import build_canonical_quality_metrics
 from app.application.normalization.date import infer_default_statement_year, parse_statement_date
-from app.application.normalization.pdf_amount_tokens import find_amount_tokens, has_explicit_amount_sign, parse_pdf_amount
+from app.application.normalization.pdf_amount_tokens import (
+    has_amount_token_explicit_sign,
+    has_explicit_amount_sign,
+    parse_pdf_amount,
+)
 from app.application.normalization.pdf_columnar_block_rules import next_columnar_block_index
 from app.application.normalization.pdf_columnar_row_rules import is_valid_columnar_transaction_row
 from app.application.normalization.pdf_columnar_rules import apply_type_sign_hint
@@ -33,7 +37,9 @@ from app.application.normalization.pdf_row_match_rules import (
 )
 from app.application.normalization.pdf_signed_amount_rules import compute_hint_signed_amount, compute_tabular_signed_amount
 from app.application.normalization.pdf_tabular_profile_rules import (
+    find_profile_tabular_amount_tokens,
     is_profile_opening_balance_description,
+    profile_date_formats,
     resolve_tabular_profile,
     should_ignore_profile_transaction_description,
     should_import_profile_opening_balance,
@@ -2000,6 +2006,7 @@ def _parse_tabular_statement_rows(
                 lines=lines,
                 start_index=index,
                 inferred_year=inferred_year,
+                tabular_profile=tabular_profile,
             )
             if recovered_row is not None:
                 parsed_row = recovered_row
@@ -2113,9 +2120,11 @@ def _recover_tabular_multiline_row(
     lines: list[_PdfLine],
     start_index: int,
     inferred_year: int | None,
+    tabular_profile: DeclarativeLayoutProfile | None = None,
 ) -> tuple[_ParsedTransaction | None, bool, int]:
     date_line = lines[start_index]
-    if not is_date_only_row(date_line.text):
+    date_formats = profile_date_formats(tabular_profile)
+    if not is_date_only_row(date_line.text, date_formats=date_formats):
         return None, False, 1
 
     description_parts: list[str] = []
@@ -2128,7 +2137,7 @@ def _recover_tabular_multiline_row(
         if current.page_number != date_line.page_number:
             break
         normalized_line = _normalize_text(current.text)
-        if is_date_only_row(current.text):
+        if is_date_only_row(current.text, date_formats=date_formats):
             break
 
         if is_amount_only_row(current.text):
@@ -2160,7 +2169,7 @@ def _recover_tabular_multiline_row(
         description=raw_description,
     )
     parsed_row = _build_parsed_transaction(
-        date=parse_row_date(date_line.text, fallback_year=inferred_year),
+        date=parse_row_date(date_line.text, fallback_year=inferred_year, date_formats=date_formats),
         description=raw_description,
         amount=signed_amount,
         source_page=date_line.page_number,
@@ -2287,7 +2296,8 @@ def _classify_tabular_statement_line(
     tabular_profile: DeclarativeLayoutProfile | None,
     column_positions: _TabularColumnPositions | None = None,
 ) -> tuple[_ParsedTransaction | None, bool]:
-    match = match_tabular_date_prefix(line.text)
+    date_formats = profile_date_formats(tabular_profile)
+    match = match_tabular_date_prefix(line.text, date_formats=date_formats)
     if not match:
         return None, False
 
@@ -2295,7 +2305,7 @@ def _classify_tabular_statement_line(
     if not rest:
         return None, False
 
-    amount_tokens = find_amount_tokens(rest)
+    amount_tokens = find_profile_tabular_amount_tokens(rest, tabular_profile)
     if not amount_tokens:
         return None, False
 
@@ -2317,6 +2327,7 @@ def _classify_tabular_statement_line(
         opening_balance_row = _build_tabular_opening_balance_row(
             raw_date=match.group("date"),
             inferred_year=inferred_year,
+            date_formats=date_formats,
             raw_description=raw_description,
             selected_amount=selected_amount,
             source_page=line.page_number,
@@ -2339,15 +2350,17 @@ def _classify_tabular_statement_line(
         rest_start=match.start("rest"),
         amount_start=selected_amount.token.start,
         amount_token_value=selected_amount.token.value,
-        fallback_role=selected_amount.role,
+        fallback_role=selected_amount.token.role_hint or selected_amount.role,
         column_positions=column_positions,
         has_balance_token=selected_amount.balance_token is not None,
     )
     amount_details = _build_tabular_amount_details(
         amount_token_value=selected_amount.token.value,
         selected_role=selected_role,
+        amount_role_hint=selected_amount.token.role_hint,
         raw_description=raw_description,
         balance_token_value=selected_amount.balance_token.value if selected_amount.balance_token else None,
+        balance_role_hint=selected_amount.balance_token.role_hint if selected_amount.balance_token else None,
     )
     compact_amount = _extract_compact_cd_amount(raw_description)
     if (
@@ -2359,14 +2372,14 @@ def _classify_tabular_statement_line(
         amount_details["signed_amount"] = compact_amount
     return (
         _build_parsed_transaction(
-            date=parse_row_date(match.group("date"), fallback_year=inferred_year),
+            date=parse_row_date(match.group("date"), fallback_year=inferred_year, date_formats=date_formats),
             description=raw_description,
             amount=amount_details["signed_amount"],
             source_page=line.page_number,
             source_line=line.line_number,
             running_balance=amount_details["running_balance"],
             external_reference_id=external_reference_id,
-            has_explicit_amount_sign=has_explicit_amount_sign(selected_amount.token.value),
+            has_explicit_amount_sign=has_amount_token_explicit_sign(selected_amount.token),
         ),
         True,
     )
@@ -2482,15 +2495,26 @@ def _build_tabular_amount_details(
     *,
     amount_token_value: str,
     selected_role: str,
+    amount_role_hint: str | None = None,
     raw_description: str,
     balance_token_value: str | None,
+    balance_role_hint: str | None = None,
 ) -> dict[str, float | None]:
+    raw_amount = parse_pdf_amount(amount_token_value)
+    if amount_role_hint == "credit":
+        raw_amount = abs(raw_amount)
+    elif amount_role_hint == "debit":
+        raw_amount = -abs(raw_amount)
     signed_amount = compute_tabular_signed_amount(
-        raw_amount=parse_pdf_amount(amount_token_value),
-        role=selected_role,
+        raw_amount=raw_amount,
+        role=amount_role_hint or selected_role,
         description=raw_description,
     )
     running_balance = parse_pdf_amount(balance_token_value) if balance_token_value is not None else None
+    if running_balance is not None and balance_role_hint == "credit":
+        running_balance = abs(running_balance)
+    elif running_balance is not None and balance_role_hint == "debit":
+        running_balance = -abs(running_balance)
     return {"signed_amount": signed_amount, "running_balance": running_balance}
 
 
@@ -2498,6 +2522,7 @@ def _build_tabular_opening_balance_row(
     *,
     raw_date: str,
     inferred_year: int | None,
+    date_formats: tuple[str, ...] = (),
     raw_description: str,
     selected_amount: SelectedTabularAmount,
     source_page: int,
@@ -2517,7 +2542,7 @@ def _build_tabular_opening_balance_row(
         return None
 
     return _build_parsed_transaction(
-        date=parse_row_date(raw_date, fallback_year=inferred_year),
+        date=parse_row_date(raw_date, fallback_year=inferred_year, date_formats=date_formats),
         description="SALDO ANTERIOR" if "ANTERIOR" in _normalize_text(raw_description) else "SALDO INICIAL",
         amount=opening_balance,
         source_page=source_page,
@@ -2650,7 +2675,7 @@ def _parse_grouped_inherited_date_line(
         return None
 
     raw_text = line.text.strip()
-    amount_tokens = find_amount_tokens(raw_text)
+    amount_tokens = find_profile_tabular_amount_tokens(raw_text, layout_profile)
     if not amount_tokens:
         return None
 
@@ -2670,9 +2695,11 @@ def _parse_grouped_inherited_date_line(
 
     amount_details = _build_tabular_amount_details(
         amount_token_value=selected_amount.token.value,
-        selected_role=selected_amount.role or "amount",
+        selected_role=selected_amount.token.role_hint or selected_amount.role or "amount",
+        amount_role_hint=selected_amount.token.role_hint,
         raw_description=raw_description,
         balance_token_value=selected_amount.balance_token.value if selected_amount.balance_token else None,
+        balance_role_hint=selected_amount.balance_token.role_hint if selected_amount.balance_token else None,
     )
     return _build_parsed_transaction(
         date=current_date,
@@ -2681,7 +2708,7 @@ def _parse_grouped_inherited_date_line(
         source_page=line.page_number,
         source_line=line.line_number,
         running_balance=amount_details["running_balance"],
-        has_explicit_amount_sign=has_explicit_amount_sign(selected_amount.token.value),
+        has_explicit_amount_sign=has_amount_token_explicit_sign(selected_amount.token),
     )
 
 
