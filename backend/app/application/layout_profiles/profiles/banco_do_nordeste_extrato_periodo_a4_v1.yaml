@@ -1,4 +1,5 @@
 layout_profile:
+  schema_version: 2
   profile_name: banco_do_nordeste_extrato_periodo_a4_v1
   bank: Banco do Nordeste
   layout_family: banco_do_nordeste_extrato_periodo_a4
@@ -66,3 +67,32 @@ layout_profile:
         - "Saldo R $"
         - "Saldo R$"
         - "Saldo"
+  parsing:
+    date_formats:
+      - "dd/MM/yyyy"
+      - "dd/MM/yy"
+      - "dd/MM"
+    date_year_source: "period"
+    month_language: "pt-BR"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+      - "{amount} D"
+    positive_patterns:
+      - "{amount}"
+      - "{amount} C"
+    ignore_rows:
+      - "Detalhamento do Extrato"
+      - "Data HistÃ³rico Documento Valor R $ Saldo R $"
+    opening_balance_rows:
+      - "Saldo Anterior"
+    opening_balance_policy: "import"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance

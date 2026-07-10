@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
@@ -9,6 +9,23 @@ from app.application.normalization.text import normalize_upper_text
 
 _PROFILE_DIR = Path(__file__).with_name("profiles")
 _TEMPLATE_FILENAME = "template_prompt_meta_modelo.yaml"
+
+
+@dataclass(frozen=True)
+class LayoutParsingRules:
+    date_formats: tuple[str, ...] = ()
+    date_year_source: str = ""
+    month_language: str = ""
+    amount_locale: str = ""
+    decimal_separator: str = ""
+    thousands_separator: str = ""
+    negative_patterns: tuple[str, ...] = ()
+    positive_patterns: tuple[str, ...] = ()
+    ignore_rows: tuple[str, ...] = ()
+    opening_balance_rows: tuple[str, ...] = ()
+    opening_balance_policy: str = "import"
+    required_transaction_fields: tuple[str, ...] = ()
+    optional_transaction_fields: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -24,6 +41,8 @@ class DeclarativeLayoutProfile:
     expected_column_order: tuple[str, ...]
     column_aliases: dict[str, tuple[str, ...]]
     source_path: str
+    schema_version: int = 1
+    parsing: LayoutParsingRules = field(default_factory=LayoutParsingRules)
 
 
 @lru_cache(maxsize=1)
@@ -86,6 +105,10 @@ def _load_profile(path: Path) -> DeclarativeLayoutProfile | None:
     if not profile_name:
         return None
 
+    schema_version = _int_value(_scalar_value(layout_lines, "schema_version"), default=1)
+    parsing = _load_parsing_rules(layout_lines) if schema_version >= 2 else LayoutParsingRules()
+    _validate_profile_schema(path=path, schema_version=schema_version, parsing=parsing)
+
     return DeclarativeLayoutProfile(
         profile_name=profile_name,
         bank=_scalar_value(layout_lines, "bank"),
@@ -98,7 +121,53 @@ def _load_profile(path: Path) -> DeclarativeLayoutProfile | None:
         expected_column_order=tuple(_nested_list_values(layout_lines, "table_detection", "expected_column_order")),
         column_aliases=_nested_mapping_list_values(layout_lines, "table_detection", "column_aliases"),
         source_path=path.name,
+        schema_version=schema_version,
+        parsing=parsing,
     )
+
+
+def _load_parsing_rules(layout_lines: list[str]) -> LayoutParsingRules:
+    date_formats = _nested_list_values(layout_lines, "parsing", "date_formats")
+    if not date_formats:
+        date_format = _nested_scalar_value(layout_lines, "parsing", "date_format")
+        date_formats = [date_format] if date_format else []
+    return LayoutParsingRules(
+        date_formats=tuple(date_formats),
+        date_year_source=_nested_scalar_value(layout_lines, "parsing", "date_year_source"),
+        month_language=_nested_scalar_value(layout_lines, "parsing", "month_language"),
+        amount_locale=_nested_scalar_value(layout_lines, "parsing", "amount_locale"),
+        decimal_separator=_nested_scalar_value(layout_lines, "parsing", "decimal_separator"),
+        thousands_separator=_nested_scalar_value(layout_lines, "parsing", "thousands_separator"),
+        negative_patterns=tuple(_nested_list_values(layout_lines, "parsing", "negative_patterns")),
+        positive_patterns=tuple(_nested_list_values(layout_lines, "parsing", "positive_patterns")),
+        ignore_rows=tuple(_nested_list_values(layout_lines, "parsing", "ignore_rows")),
+        opening_balance_rows=tuple(_nested_list_values(layout_lines, "parsing", "opening_balance_rows")),
+        opening_balance_policy=(
+            _nested_scalar_value(layout_lines, "parsing", "opening_balance_policy") or "import"
+        ),
+        required_transaction_fields=tuple(
+            _nested_list_values(layout_lines, "parsing", "required_transaction_fields")
+        ),
+        optional_transaction_fields=tuple(
+            _nested_list_values(layout_lines, "parsing", "optional_transaction_fields")
+        ),
+    )
+
+
+def _validate_profile_schema(*, path: Path, schema_version: int, parsing: LayoutParsingRules) -> None:
+    if schema_version not in {1, 2}:
+        raise ValueError(f"Unsupported layout profile schema_version={schema_version} in {path.name}.")
+    if schema_version < 2:
+        return
+    if not parsing.date_formats:
+        raise ValueError(f"Layout profile v2 requires parsing.date_formats in {path.name}.")
+    if not parsing.amount_locale:
+        raise ValueError(f"Layout profile v2 requires parsing.amount_locale in {path.name}.")
+    if parsing.opening_balance_policy not in {"import", "skip"}:
+        raise ValueError(
+            "Layout profile v2 parsing.opening_balance_policy must be 'import' or 'skip' "
+            f"in {path.name}."
+        )
 
 
 def _layout_profile_lines(lines: list[str]) -> list[str]:
@@ -214,6 +283,13 @@ def _clean_scalar(raw: str) -> str:
 def _float_value(raw: str, *, default: float) -> float:
     try:
         return float(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _int_value(raw: str, *, default: int) -> int:
+    try:
+        return int(raw)
     except (TypeError, ValueError):
         return default
 
