@@ -51,6 +51,7 @@ instructions: |
   A secao layout_profile deve ser mais objetiva e implementavel, neste formato:
 
   layout_profile:
+    schema_version: 2
     profile_name:
     bank:
     layout_family:
@@ -73,7 +74,7 @@ instructions: |
       table_starts_after:
       row_separator_hint:
     parsing:
-      date_format:
+      date_formats:
       amount_locale:
       decimal_separator:
       thousands_separator:
@@ -81,6 +82,7 @@ instructions: |
       positive_patterns:
       ignore_rows:
       opening_balance_rows:
+      opening_balance_policy: import/skip
       required_transaction_fields:
       optional_transaction_fields:
     sign_rules:

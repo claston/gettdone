@@ -32,7 +32,12 @@ from app.application.normalization.pdf_row_match_rules import (
     match_tabular_date_prefix,
 )
 from app.application.normalization.pdf_signed_amount_rules import compute_hint_signed_amount, compute_tabular_signed_amount
-from app.application.normalization.pdf_tabular_profile_rules import resolve_tabular_profile
+from app.application.normalization.pdf_tabular_profile_rules import (
+    is_profile_opening_balance_description,
+    resolve_tabular_profile,
+    should_ignore_profile_transaction_description,
+    should_import_profile_opening_balance,
+)
 from app.application.normalization.pdf_tabular_rules import (
     SelectedTabularAmount,
     extract_document_reference,
@@ -2300,8 +2305,12 @@ def _classify_tabular_statement_line(
 
     raw_description = " ".join(rest[: selected_amount.description_end].split())
     normalized_description = _normalize_text(raw_description)
+    is_legacy_opening_balance = normalized_description.startswith("SALDO ANTERIOR") or normalized_description.startswith(
+        "SALDO INICIAL"
+    )
     if tabular_profile is not None and (
-        normalized_description.startswith("SALDO ANTERIOR") or normalized_description.startswith("SALDO INICIAL")
+        is_legacy_opening_balance
+        or is_profile_opening_balance_description(raw_description, tabular_profile)
     ):
         if _should_skip_tabular_opening_balance_import(tabular_profile=tabular_profile):
             return None, True
@@ -2315,7 +2324,11 @@ def _classify_tabular_statement_line(
         )
         if opening_balance_row is not None:
             return opening_balance_row, True
-    if not raw_description or should_skip_transaction_description(raw_description):
+    if (
+        not raw_description
+        or should_ignore_profile_transaction_description(raw_description, tabular_profile)
+        or should_skip_transaction_description(raw_description)
+    ):
         return None, True
     if normalized_description.endswith(" SALDO"):
         return None, True
@@ -2360,6 +2373,8 @@ def _classify_tabular_statement_line(
 
 
 def _should_skip_tabular_opening_balance_import(*, tabular_profile: DeclarativeLayoutProfile) -> bool:
+    if tabular_profile.schema_version >= 2:
+        return not should_import_profile_opening_balance(tabular_profile)
     return tabular_profile.profile_name in {
         "sicoob_extrato_apropriacao_diaria_v1",
         "sicoob_extrato_poupanca_cooperada_v1",

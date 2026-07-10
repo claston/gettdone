@@ -2448,6 +2448,25 @@ def test_parse_tabular_statement_line_builds_transaction_with_metadata() -> None
     assert parsed_row.source_line == 12
 
 
+def test_parse_tabular_statement_line_uses_profile_v2_ignored_rows() -> None:
+    profile = pdf_parser_module.get_layout_profile("banco_do_nordeste_extrato_periodo_a4_v1")
+    assert profile is not None
+    line = pdf_parser_module._PdfLine(
+        text="10/04/2021 Detalhamento do Extrato 1.000,00",
+        page_number=1,
+        line_number=12,
+    )
+
+    parsed_row, is_candidate = pdf_parser_module._classify_tabular_statement_line(
+        line=line,
+        inferred_year=2021,
+        tabular_profile=profile,
+    )
+
+    assert is_candidate is True
+    assert parsed_row is None
+
+
 def test_parse_tabular_statement_rows_recovers_multiline_ocr_row() -> None:
     lines = [
         pdf_parser_module._PdfLine(text="03/03/2024", page_number=1, line_number=10),
