@@ -4,13 +4,23 @@ from dataclasses import dataclass
 from app.application.normalization.amount import parse_amount
 
 SIGN_TOKEN = r"[+\-\u2212]"
-MONEY_TOKEN = r"(?:R\$\s*)?\d+(?:\.\d{3})*,\d{2}"
+CURRENCY_TOKEN = r"(?:(?:US|R)\$)"
+BR_GROUPED_NUMBER_TOKEN = r"\d{1,3}(?:\.\d{3})+,\d{2}"
+INTERNATIONAL_GROUPED_NUMBER_TOKEN = r"\d{1,3}(?:,\d{3})+\.\d{2}"
+SPACED_GROUPED_NUMBER_TOKEN = r"\d{1,3}(?:[ \u00a0]\d{3})+[,.]\d{2}"
+UNGROUPED_DECIMAL_NUMBER_TOKEN = r"\d+[,.]\d{2}"
+NUMBER_TOKEN = (
+    rf"(?:{BR_GROUPED_NUMBER_TOKEN}|{INTERNATIONAL_GROUPED_NUMBER_TOKEN}|"
+    rf"{SPACED_GROUPED_NUMBER_TOKEN}|{UNGROUPED_DECIMAL_NUMBER_TOKEN})"
+)
+AMOUNT_PREFIX_TOKEN = rf"(?:(?:{SIGN_TOKEN}\s*)?(?:{CURRENCY_TOKEN}\s*)?|{CURRENCY_TOKEN}\s*{SIGN_TOKEN}\s*)"
+AMOUNT_SUFFIX_TOKEN = rf"(?:{SIGN_TOKEN}|\s+{SIGN_TOKEN}(?!\s*\d)|\s*[CD])?"
+AMOUNT_VALUE_TOKEN = rf"\(?{AMOUNT_PREFIX_TOKEN}{NUMBER_TOKEN}{AMOUNT_SUFFIX_TOKEN}\)?"
 AMOUNT_TOKEN_PATTERN = re.compile(
-    rf"(?P<amount>\(?(?:{SIGN_TOKEN}\s*)?{MONEY_TOKEN}(?:{SIGN_TOKEN}|\s+{SIGN_TOKEN}(?!\s*\d))?(?:\s*[CD])?\)?)"
+    rf"(?<![\d,.])(?P<amount>{AMOUNT_VALUE_TOKEN})(?![\d,.])",
+    flags=re.IGNORECASE,
 )
-LOOSE_AMOUNT_PATTERN = re.compile(
-    rf"^\(?(?:{SIGN_TOKEN})?(?:\d{{1,3}}(?:\.\d{{3}})+|\d+)(?:[.,]\d{{2}})(?:\s*{SIGN_TOKEN})?\)?$"
-)
+LOOSE_AMOUNT_PATTERN = re.compile(rf"^{AMOUNT_VALUE_TOKEN}$", flags=re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -53,6 +63,9 @@ def has_explicit_amount_sign(raw: str) -> bool:
 
 
 def is_amount_like(raw: str) -> bool:
-    value = raw.replace("\u2212", "-")
-    value = re.sub(r"(?i)R\$", "", value).strip()
+    value = raw.replace("\u2212", "-").strip()
     return bool(LOOSE_AMOUNT_PATTERN.fullmatch(value))
+
+
+def contains_amount_like(raw: str) -> bool:
+    return AMOUNT_TOKEN_PATTERN.search(raw) is not None

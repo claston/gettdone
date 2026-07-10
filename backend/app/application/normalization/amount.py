@@ -6,10 +6,11 @@ from app.application.errors import InvalidFileContentError
 def parse_amount(raw: object) -> float:
     original = raw
     value = str(raw).strip().replace("\u2212", "-")
-    value = re.sub(r"[^\d,.\-+()Rr$\s]", "", value)
+    value = re.sub(r"(?i)(?:US|R)\$", "", value)
+    value = re.sub(r"[^\d,.\-+()\s]", "", value)
     negative = value.startswith("(") and value.endswith(")")
     value = value.replace("(", "").replace(")", "")
-    value = value.replace("R$", "").replace("r$", "").replace(" ", "")
+    value = value.replace(" ", "")
 
     if value.endswith("-"):
         negative = True

@@ -27,6 +27,19 @@ def test_parse_statement_date_supports_month_abbrev_with_slash_spacing() -> None
     assert parse_statement_date("01 / jul", fallback_year=2021) == "2021-07-01"
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("01-07-2026", "2026-07-01"),
+        ("02.07.2026", "2026-07-02"),
+        ("2026-07-03", "2026-07-03"),
+        ("4 de julho de 2026", "2026-07-04"),
+    ],
+)
+def test_parse_statement_date_supports_common_statement_formats(raw: str, expected: str) -> None:
+    assert parse_statement_date(raw, fallback_year=None) == expected
+
+
 def test_parse_statement_date_uses_current_year_when_fallback_missing() -> None:
     expected_year = datetime.now(timezone.utc).year
     parsed = parse_statement_date("1/4", fallback_year=None)
@@ -61,6 +74,16 @@ def test_infer_default_statement_year_supports_two_digit_years() -> None:
     ]
 
     assert infer_default_statement_year(lines) == 2021
+
+
+def test_infer_default_statement_year_supports_new_numeric_and_full_month_formats() -> None:
+    lines = [
+        "saldo em 30.06.2025",
+        "periodo iniciado em 2025-07-01",
+        "4 de julho de 2025 PIX RECEBIDO 10,00",
+    ]
+
+    assert infer_default_statement_year(lines) == 2025
 
 
 def test_infer_default_statement_year_supports_reference_month_header() -> None:

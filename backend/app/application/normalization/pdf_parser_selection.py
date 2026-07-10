@@ -1,15 +1,12 @@
-import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
 from app.application.errors import InvalidFileContentError
+from app.application.normalization.pdf_amount_tokens import contains_amount_like
+from app.application.normalization.pdf_row_match_rules import contains_date_like
 
 RowsParser = Callable[[list[Any]], tuple[list[Any], int]]
 TabularRowsParser = Callable[[list[Any], Any | None], tuple[list[Any], int]]
-
-_DATE_PATTERN = re.compile(r"\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b")
-_AMOUNT_PATTERN = re.compile(r"[\-+]?\d{1,3}(?:[.\s]\d{3})*,\d{2}\b|[\-+]?\d+\.\d{2}\b")
-
 
 @dataclass(frozen=True)
 class SelectedParserRows:
@@ -49,8 +46,8 @@ def _build_pdf_pattern_failure_detail(
 ) -> str:
     line_texts = _resolve_line_texts(lines)
     joined = "\n".join(line_texts)
-    has_date_like = bool(_DATE_PATTERN.search(joined))
-    has_amount_like = bool(_AMOUNT_PATTERN.search(joined))
+    has_date_like = contains_date_like(joined)
+    has_amount_like = contains_amount_like(joined)
     missing_signals: list[str] = []
     if not has_date_like:
         missing_signals.append("date_pattern")

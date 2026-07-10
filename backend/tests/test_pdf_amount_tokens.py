@@ -35,15 +35,33 @@ def test_find_amount_tokens_keeps_immediate_trailing_minus_with_amount_before_ba
     assert tokens[1].value == "4.629,72"
 
 
+def test_find_amount_tokens_keeps_international_and_spaced_thousands_complete() -> None:
+    text = "PIX RECEBIDO 1,234.56 SALDO 2 345,67"
+
+    tokens = find_amount_tokens(text)
+
+    assert [token.value for token in tokens] == ["1,234.56", "2 345,67"]
+    assert [parse_pdf_amount(token.value) for token in tokens] == [1234.56, 2345.67]
+
+
+def test_find_amount_tokens_rejects_partial_numeric_matches() -> None:
+    assert find_amount_tokens("VALOR OCR 1.234,5G") == []
+    assert find_amount_tokens("VALOR COM TRES DECIMAIS 1234.567") == []
+
+
 def test_parse_pdf_amount_handles_currency_and_unicode_minus() -> None:
     assert parse_pdf_amount("R$ 1.234,56") == 1234.56
+    assert parse_pdf_amount("US$ 1,234.56") == 1234.56
     assert parse_pdf_amount("-10,00") == -10.0
 
 
 def test_is_amount_like_accepts_supported_shapes() -> None:
     assert is_amount_like("R$ 1.234,56")
+    assert is_amount_like("US$ 1,234.56")
+    assert is_amount_like("2 345,67")
     assert is_amount_like("-12,34")
     assert is_amount_like("−12,34")
+    assert not is_amount_like("1.234,5G")
     assert not is_amount_like("VALOR INDEFINIDO")
 
 

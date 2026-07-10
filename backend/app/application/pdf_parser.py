@@ -25,6 +25,7 @@ from app.application.normalization.pdf_parse_metrics import build_pdf_parse_metr
 from app.application.normalization.pdf_parser_selection import select_parsed_rows
 from app.application.normalization.pdf_row_date_rules import parse_row_date
 from app.application.normalization.pdf_row_match_rules import (
+    extract_leading_date_candidate,
     is_amount_only_row,
     is_date_only_row,
     match_inline_row,
@@ -1581,12 +1582,15 @@ def _filter_invalid_leading_date_candidate_lines(lines: list[_PdfLine]) -> tuple
 
 def _extract_leading_date_candidate(raw_line: str) -> str | None:
     stripped_line = raw_line.strip()
+    numeric_candidate = extract_leading_date_candidate(stripped_line)
+    if numeric_candidate is not None:
+        return numeric_candidate
     if is_date_only_row(stripped_line):
         return stripped_line
     match = match_tabular_date_prefix(stripped_line)
-    if match is None:
-        return None
-    return match.group("date")
+    if match is not None:
+        return match.group("date")
+    return None
 
 
 def _parse_grouped_statement_lines(
