@@ -1,4 +1,5 @@
 from app.application.layout_profiles.registry import DeclarativeLayoutProfile
+from app.application.normalization.pdf_amount_tokens import AmountToken, find_amount_tokens, find_profile_amount_tokens
 from app.application.normalization.pdf_tabular_rules import has_declarative_table_header
 from app.application.normalization.text import normalize_upper_text
 
@@ -33,6 +34,25 @@ def should_import_profile_opening_balance(layout_profile: DeclarativeLayoutProfi
     if layout_profile is None or layout_profile.schema_version < 2:
         return True
     return layout_profile.parsing.opening_balance_policy == "import"
+
+
+def profile_date_formats(layout_profile: DeclarativeLayoutProfile | None) -> tuple[str, ...]:
+    if layout_profile is None or layout_profile.schema_version < 2:
+        return ()
+    return layout_profile.parsing.date_formats
+
+
+def find_profile_tabular_amount_tokens(
+    text: str,
+    layout_profile: DeclarativeLayoutProfile | None,
+) -> list[AmountToken]:
+    if layout_profile is None or layout_profile.schema_version < 2:
+        return find_amount_tokens(text)
+    return find_profile_amount_tokens(
+        text,
+        positive_patterns=layout_profile.parsing.positive_patterns,
+        negative_patterns=layout_profile.parsing.negative_patterns,
+    )
 
 
 def _matches_declared_row(description: str, declared_rows: tuple[str, ...]) -> bool:

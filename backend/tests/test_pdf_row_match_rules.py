@@ -39,6 +39,28 @@ def test_match_tabular_date_prefix_accepts_common_numeric_date_separators() -> N
         assert match.group("date") == expected_date
 
 
+def test_match_tabular_date_prefix_accepts_profile_compact_date_format() -> None:
+    match = match_tabular_date_prefix(
+        "10042021 LIQUIDO COBRANCA 100,00",
+        date_formats=("ddMMyyyy",),
+    )
+
+    assert match is not None
+    assert match.group("date") == "10042021"
+    assert match.group("rest") == "LIQUIDO COBRANCA 100,00"
+
+
+def test_match_tabular_date_prefix_consumes_profile_timestamp() -> None:
+    match = match_tabular_date_prefix(
+        "10/04/2021 14:35 PIX RECEBIDO 100,00",
+        date_formats=("dd/MM/yyyy HH:mm",),
+    )
+
+    assert match is not None
+    assert match.group("date") == "10/04/2021 14:35"
+    assert match.group("rest") == "PIX RECEBIDO 100,00"
+
+
 def test_match_inline_row_accepts_full_portuguese_month() -> None:
     match = match_inline_row("4 de julho de 2026 PIX RECEBIDO 10,00")
 

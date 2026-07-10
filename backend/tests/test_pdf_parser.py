@@ -2467,6 +2467,56 @@ def test_parse_tabular_statement_line_uses_profile_v2_ignored_rows() -> None:
     assert parsed_row is None
 
 
+def test_parse_tabular_statement_line_uses_profile_date_and_amount_candidates() -> None:
+    profile = pdf_parser_module.get_layout_profile("banco_do_nordeste_extrato_periodo_a4_v1")
+    assert profile is not None
+    line = pdf_parser_module._PdfLine(
+        text="10042021 TARIFA COBRANCA 125,40 DB 1.000,00",
+        page_number=1,
+        line_number=13,
+    )
+
+    parsed_row, is_candidate = pdf_parser_module._classify_tabular_statement_line(
+        line=line,
+        inferred_year=2021,
+        tabular_profile=profile,
+    )
+
+    assert is_candidate is True
+    assert parsed_row is not None
+    assert parsed_row.transaction.date == "2021-04-10"
+    assert parsed_row.transaction.description == "TARIFA COBRANCA"
+    assert parsed_row.transaction.amount == -125.4
+    assert parsed_row.running_balance == 1000.0
+
+
+def test_parse_tabular_statement_rows_activates_profile_candidates_after_header_match() -> None:
+    profile = pdf_parser_module.get_layout_profile("banco_do_nordeste_extrato_periodo_a4_v1")
+    assert profile is not None
+    lines = [
+        pdf_parser_module._PdfLine(
+            text="Data Historico Documento Valor R $ Saldo R $",
+            page_number=1,
+            line_number=10,
+        ),
+        pdf_parser_module._PdfLine(
+            text="10042021 TARIFA COBRANCA 125,40 DB 1.000,00",
+            page_number=1,
+            line_number=11,
+        ),
+    ]
+
+    parsed_rows, candidates = pdf_parser_module._parse_tabular_statement_rows(
+        lines,
+        layout_profile=profile,
+    )
+
+    assert candidates == 1
+    assert len(parsed_rows) == 1
+    assert parsed_rows[0].transaction.date == "2021-04-10"
+    assert parsed_rows[0].transaction.amount == -125.4
+
+
 def test_parse_tabular_statement_rows_recovers_multiline_ocr_row() -> None:
     lines = [
         pdf_parser_module._PdfLine(text="03/03/2024", page_number=1, line_number=10),

@@ -1,7 +1,10 @@
 ﻿from app.application.normalization.pdf_amount_tokens import (
     find_amount_tokens,
+    find_profile_amount_tokens,
+    has_amount_token_explicit_sign,
     has_explicit_amount_sign,
     is_amount_like,
+    parse_amount_token,
     parse_pdf_amount,
 )
 
@@ -77,3 +80,29 @@ def test_has_explicit_amount_sign_detects_supported_sign_forms() -> None:
     assert has_explicit_amount_sign("10,00 D")
     assert has_explicit_amount_sign("10,00 C")
     assert not has_explicit_amount_sign("10,00")
+
+
+def test_find_profile_amount_tokens_applies_declared_debit_suffix() -> None:
+    tokens = find_profile_amount_tokens(
+        "PAGAMENTO 125,40 DB",
+        positive_patterns=("{amount} CR",),
+        negative_patterns=("{amount} DB",),
+    )
+
+    assert len(tokens) == 1
+    assert tokens[0].value == "125,40"
+    assert tokens[0].role_hint == "debit"
+    assert parse_amount_token(tokens[0]) == -125.4
+    assert has_amount_token_explicit_sign(tokens[0]) is True
+
+
+def test_find_profile_amount_tokens_applies_declared_credit_suffix() -> None:
+    tokens = find_profile_amount_tokens(
+        "RECEBIMENTO 125,40 CR",
+        positive_patterns=("{amount} CR",),
+        negative_patterns=("{amount} DB",),
+    )
+
+    assert len(tokens) == 1
+    assert tokens[0].role_hint == "credit"
+    assert parse_amount_token(tokens[0]) == 125.4

@@ -72,6 +72,7 @@ layout_profile:
       - "dd/MM/yyyy"
       - "dd/MM/yy"
       - "dd/MM"
+      - "ddMMyyyy"
     date_year_source: "period"
     month_language: "pt-BR"
     amount_locale: "pt-BR"
@@ -80,9 +81,11 @@ layout_profile:
     negative_patterns:
       - "-{amount}"
       - "{amount} D"
+      - "{amount} DB"
     positive_patterns:
       - "{amount}"
       - "{amount} C"
+      - "{amount} CR"
     ignore_rows:
       - "Detalhamento do Extrato"
       - "Data HistÃ³rico Documento Valor R $ Saldo R $"

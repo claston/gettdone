@@ -4,7 +4,11 @@ import re
 from dataclasses import dataclass
 
 from app.application.layout_profiles.registry import DeclarativeLayoutProfile
-from app.application.normalization.pdf_amount_tokens import AmountToken, has_explicit_amount_sign, parse_pdf_amount
+from app.application.normalization.pdf_amount_tokens import (
+    AmountToken,
+    has_amount_token_explicit_sign,
+    parse_amount_token,
+)
 from app.application.normalization.text import normalize_upper_text
 
 
@@ -56,8 +60,8 @@ def select_declarative_tabular_amount(
     if {"credit", "debit", "balance"}.issubset(set(amount_roles)) and len(aligned_tokens) == 2 and balance_token is not None:
         transaction_token = aligned_tokens[0]
         preferred_role = next((role for role in amount_roles if role in {"credit", "debit"}), None)
-        if has_explicit_amount_sign(transaction_token.value):
-            preferred_role = "debit" if parse_pdf_amount(transaction_token.value) < 0 else "credit"
+        if has_amount_token_explicit_sign(transaction_token):
+            preferred_role = "debit" if parse_amount_token(transaction_token) < 0 else "credit"
         return SelectedTabularAmount(
             token=transaction_token,
             role=preferred_role,
@@ -68,18 +72,23 @@ def select_declarative_tabular_amount(
         for role, token in transaction_role_tokens:
             if role != preferred_role:
                 continue
-            amount = parse_pdf_amount(token.value)
+            amount = parse_amount_token(token)
             if preferred_role in {"credit", "debit"} and abs(amount) < 0.000001:
                 continue
             return SelectedTabularAmount(
                 token=token,
-                role=role,
+                role=token.role_hint or role,
                 description_end=description_end,
                 balance_token=balance_token,
             )
 
     role, token = transaction_role_tokens[0]
-    return SelectedTabularAmount(token=token, role=role, description_end=description_end, balance_token=balance_token)
+    return SelectedTabularAmount(
+        token=token,
+        role=token.role_hint or role,
+        description_end=description_end,
+        balance_token=balance_token,
+    )
 
 
 def extract_document_reference(raw_description: str, *, layout_profile: DeclarativeLayoutProfile | None) -> str | None:

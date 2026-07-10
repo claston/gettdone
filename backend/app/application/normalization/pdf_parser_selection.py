@@ -4,6 +4,10 @@ from typing import Any, Callable
 from app.application.errors import InvalidFileContentError
 from app.application.normalization.pdf_amount_tokens import contains_amount_like
 from app.application.normalization.pdf_row_match_rules import contains_date_like
+from app.application.normalization.pdf_tabular_profile_rules import (
+    find_profile_tabular_amount_tokens,
+    profile_date_formats,
+)
 
 RowsParser = Callable[[list[Any]], tuple[list[Any], int]]
 TabularRowsParser = Callable[[list[Any], Any | None], tuple[list[Any], int]]
@@ -43,11 +47,14 @@ def _build_pdf_pattern_failure_detail(
     inline_candidates: int,
     tabular_candidates: int,
     columnar_candidates: int,
+    layout_profile: Any | None,
 ) -> str:
     line_texts = _resolve_line_texts(lines)
     joined = "\n".join(line_texts)
-    has_date_like = contains_date_like(joined)
-    has_amount_like = contains_amount_like(joined)
+    has_date_like = contains_date_like(joined, date_formats=profile_date_formats(layout_profile))
+    has_amount_like = contains_amount_like(joined) or bool(
+        find_profile_tabular_amount_tokens(joined, layout_profile)
+    )
     missing_signals: list[str] = []
     if not has_date_like:
         missing_signals.append("date_pattern")
@@ -409,6 +416,7 @@ def select_parsed_rows(
                 inline_candidates=inline_candidates,
                 tabular_candidates=tabular_candidates,
                 columnar_candidates=columnar_candidates,
+                layout_profile=layout_profile,
             )
         )
     raise InvalidFileContentError(
@@ -418,5 +426,6 @@ def select_parsed_rows(
             inline_candidates=inline_candidates,
             tabular_candidates=tabular_candidates,
             columnar_candidates=columnar_candidates,
+            layout_profile=layout_profile,
         )
     )

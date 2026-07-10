@@ -25,8 +25,10 @@ def test_load_layout_profile_v2_executable_parsing_rules() -> None:
 
     assert profile is not None
     assert profile.schema_version == 2
-    assert profile.parsing.date_formats == ("dd/MM/yyyy", "dd/MM/yy", "dd/MM")
+    assert profile.parsing.date_formats == ("dd/MM/yyyy", "dd/MM/yy", "dd/MM", "ddMMyyyy")
     assert profile.parsing.amount_locale == "pt-BR"
     assert "Detalhamento do Extrato" in profile.parsing.ignore_rows
     assert profile.parsing.opening_balance_rows == ("Saldo Anterior",)
     assert profile.parsing.opening_balance_policy == "import"
+    assert "{amount} DB" in profile.parsing.negative_patterns
+    assert "{amount} CR" in profile.parsing.positive_patterns

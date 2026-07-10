@@ -1,6 +1,7 @@
 import pytest
 
 from app.application.errors import InvalidFileContentError
+from app.application.layout_profiles.registry import get_layout_profile
 from app.application.normalization.pdf_parser_selection import select_parsed_rows
 
 
@@ -279,6 +280,25 @@ def test_select_parsed_rows_diagnostics_use_the_same_spaced_month_date_shape_as_
             lines=["01 / jul TRANSFERENCIA 1.234,56"],
             grouped_rows=[],
             layout_profile=None,
+            parse_inline_rows=lambda _: ([], 0),
+            parse_tabular_rows=lambda _lines, _profile: ([], 0),
+            parse_columnar_rows=lambda _: ([], 0),
+        )
+
+    detail = str(exc_info.value)
+    assert "has_date_like=1" in detail
+    assert "has_amount_like=1" in detail
+    assert "missing_signals=transaction_row_pattern" in detail
+
+
+def test_select_parsed_rows_diagnostics_use_profile_date_candidates() -> None:
+    profile = get_layout_profile("banco_do_nordeste_extrato_periodo_a4_v1")
+    assert profile is not None
+    with pytest.raises(InvalidFileContentError) as exc_info:
+        select_parsed_rows(
+            lines=["10042021 TARIFA COBRANCA 125,40 DB"],
+            grouped_rows=[],
+            layout_profile=profile,
             parse_inline_rows=lambda _: ([], 0),
             parse_tabular_rows=lambda _lines, _profile: ([], 0),
             parse_columnar_rows=lambda _: ([], 0),
