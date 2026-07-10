@@ -13,6 +13,28 @@ from tests.fixtures.pdf_golden_samples import (
 )
 
 
+@pytest.mark.parametrize(
+    ("raw_line", "expected_date", "expected_description", "expected_amount"),
+    [
+        ("01-07-2026 TESTE BR 1.234,56", "2026-07-01", "TESTE BR", 1234.56),
+        ("2026-07-02 TESTE US 1,234.56", "2026-07-02", "TESTE US", 1234.56),
+        ("03.07.2026 TESTE SPACE 1 234,56", "2026-07-03", "TESTE SPACE", 1234.56),
+    ],
+)
+def test_parse_pdf_transactions_preserves_complete_date_and_amount_candidates(
+    raw_line: str,
+    expected_date: str,
+    expected_description: str,
+    expected_amount: float,
+) -> None:
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([raw_line])
+
+    assert len(result.transactions) == 1
+    assert result.transactions[0].date == expected_date
+    assert result.transactions[0].description == expected_description
+    assert result.transactions[0].amount == expected_amount
+
+
 def test_parse_pdf_transactions_handles_inline_and_multiline_amount_rows(monkeypatch) -> None:
     monkeypatch.setattr(
         pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [GROUPED_INLINE_MULTILINE_SAMPLE]

@@ -26,6 +26,27 @@ def test_match_tabular_date_prefix_accepts_spaced_month_slash_format() -> None:
     assert match.group("rest").startswith("TRANSF TITUL TED")
 
 
+def test_match_tabular_date_prefix_accepts_common_numeric_date_separators() -> None:
+    expected_dates = {
+        "01-07-2026 TRANSFERENCIA 10,00": "01-07-2026",
+        "02.07.2026 PIX RECEBIDO 20,00": "02.07.2026",
+        "2026-07-03 TARIFA 5,00": "2026-07-03",
+    }
+
+    for raw_line, expected_date in expected_dates.items():
+        match = match_tabular_date_prefix(raw_line)
+        assert match is not None
+        assert match.group("date") == expected_date
+
+
+def test_match_inline_row_accepts_full_portuguese_month() -> None:
+    match = match_inline_row("4 de julho de 2026 PIX RECEBIDO 10,00")
+
+    assert match is not None
+    assert match.group("date") == "4 de julho de 2026"
+    assert match.group("rest") == "PIX RECEBIDO 10,00"
+
+
 def test_match_tabular_date_prefix_accepts_leading_ocr_symbol() -> None:
     match = match_tabular_date_prefix("(24/04/2024 TRANSFERENCIA 6.250,00C 6.428,50 C")
     assert match is not None
@@ -48,6 +69,8 @@ def test_match_tabular_date_prefix_accepts_leading_ocr_noise_prefix() -> None:
 
 def test_is_date_only_row_and_amount_only_row() -> None:
     assert is_date_only_row("2 out") is True
+    assert is_date_only_row("01-07-2026") is True
+    assert is_date_only_row("2026-07-01") is True
     assert is_date_only_row("2 out COMPRA") is False
     assert is_amount_only_row("R$ 10,00") is True
     assert is_amount_only_row("2.150,00 D") is True
