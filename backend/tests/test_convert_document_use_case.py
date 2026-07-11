@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from app.application.conversion.conversion_job import ConversionExecutionHooks, ConversionJob
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult
 from app.application.conversion.convert_document_result import ConvertDocumentStatus
 from app.application.conversion.convert_document_use_case import ConvertDocumentUseCase
@@ -17,9 +18,19 @@ from app.schemas import (
 )
 
 
-class FakeDocumentConversionPipeline:
-    def run(self, **kwargs) -> ConversionPipelineResult:
-        _ = kwargs
+class FakeConversionJobExecutor:
+    def __init__(self) -> None:
+        self.jobs: list[ConversionJob] = []
+        self.hooks: list[ConversionExecutionHooks] = []
+
+    def execute(
+        self,
+        *,
+        job: ConversionJob,
+        hooks: ConversionExecutionHooks,
+    ) -> ConversionPipelineResult:
+        self.jobs.append(job)
+        self.hooks.append(hooks)
         analysis = AnalyzeResponse(
             analysis_id="an_use_case_001",
             file_type="pdf",
@@ -83,7 +94,8 @@ class FakeDocumentConversionPipeline:
 
 
 def test_convert_document_use_case_returns_application_result() -> None:
-    use_case = ConvertDocumentUseCase(document_conversion_pipeline=FakeDocumentConversionPipeline())
+    executor = FakeConversionJobExecutor()
+    use_case = ConvertDocumentUseCase(conversion_job_executor=executor)
     staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
 
     result = use_case.execute(
@@ -108,19 +120,22 @@ def test_convert_document_use_case_returns_application_result() -> None:
     assert result.payload is not None
     assert result.payload["processing_id"] == "an_use_case_001"
     assert result.payload["identity_type"] == "anonymous"
+    assert executor.jobs[0].document.filename == "statement.csv"
+    assert executor.jobs[0].anonymous_fingerprint == "anon-fp"
+    assert executor.hooks[0].on_ocr_progress is None
 
 
 def test_convert_document_use_case_maps_rejected_pipeline_result() -> None:
-    class RejectedDocumentConversionPipeline:
-        def run(self, **kwargs) -> ConversionPipelineResult:
-            _ = kwargs
+    class RejectedConversionJobExecutor:
+        def execute(self, *, job: ConversionJob, hooks: ConversionExecutionHooks) -> ConversionPipelineResult:
+            _ = job, hooks
             return ConversionPipelineResult.rejected(
                 reason="quota_unavailable",
                 message="Quota not available.",
                 metadata={"required_quota": 1},
             )
 
-    use_case = ConvertDocumentUseCase(document_conversion_pipeline=RejectedDocumentConversionPipeline())
+    use_case = ConvertDocumentUseCase(conversion_job_executor=RejectedConversionJobExecutor())
     staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
 
     result = use_case.execute(

@@ -1,3 +1,5 @@
+from app.application.conversion.conversion_job import ConversionExecutionHooks, ConversionJob
+from app.application.conversion.conversion_job_executor import ConversionJobExecutor, InlineConversionJobExecutor
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult, ConversionPipelineStatus
 from app.application.conversion.convert_document_result import ConvertDocumentResult, ConvertDocumentStatus
 from app.application.conversion.document_extractor import DocumentExtractor, ExtractedDocument
@@ -12,10 +14,14 @@ from app.application.conversion.uploaded_document import (
 __all__ = [
     "ConversionPipelineResult",
     "ConversionPipelineStatus",
+    "ConversionExecutionHooks",
+    "ConversionJob",
+    "ConversionJobExecutor",
     "ConvertDocumentResult",
     "ConvertDocumentStatus",
     "DocumentExtractor",
     "ExtractedDocument",
+    "InlineConversionJobExecutor",
     "ParsedBankStatement",
     "ParsedTransaction",
     "SUPPORTED_DOCUMENT_EXTENSIONS",

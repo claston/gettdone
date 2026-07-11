@@ -2,7 +2,6 @@ import json
 import logging
 import os
 import re
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
@@ -11,6 +10,7 @@ from uuid import uuid4
 from app.application.access_control import AccessControlService
 from app.application.analysis_response_builder import build_convert_response_payload, persist_conversion_result
 from app.application.bank_identity import resolve_conversion_model_label
+from app.application.conversion.conversion_job import ConversionExecutionHooks, ConversionJob
 from app.application.conversion.conversion_pipeline_result import (
     ConversionPipelineResult,
 )
@@ -20,7 +20,6 @@ from app.application.conversion.document_extractor import (
 )
 from app.application.conversion.document_preflight_service import (
     DocumentPreflightPolicy,
-    DocumentPreflightResult,
     DocumentPreflightService,
 )
 from app.application.conversion.persisted_conversion_result import PersistedConversionResult
@@ -47,43 +46,6 @@ from app.application.repositories import AnalysisRepository
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True, slots=True)
-class DocumentConversionRequest:
-    document: UploadedDocument
-    anonymous_fingerprint: str | None
-    user_token: str | None
-    authorization: str | None
-    access_cookie_token: str | None
-    on_ocr_progress: Callable[[int, int], None] | None
-    preflight_result: DocumentPreflightResult
-
-    @classmethod
-    def from_inputs(
-        cls,
-        *,
-        document: UploadedDocument,
-        anonymous_fingerprint: str | None,
-        user_token: str | None,
-        authorization: str | None,
-        access_cookie_token: str | None,
-        on_ocr_progress=None,
-        scanned_likely: bool | None = None,
-        estimated_pages_count: int | None = None,
-    ) -> "DocumentConversionRequest":
-        return cls(
-            document=document,
-            anonymous_fingerprint=anonymous_fingerprint,
-            user_token=user_token,
-            authorization=authorization,
-            access_cookie_token=access_cookie_token,
-            on_ocr_progress=on_ocr_progress,
-            preflight_result=DocumentPreflightResult(
-                scanned_likely=bool(scanned_likely),
-                estimated_pages_count=estimated_pages_count,
-            ),
-        )
-
-
 @dataclass(slots=True)
 class DocumentConversionRuntime:
     started_at: float
@@ -96,20 +58,25 @@ class DocumentConversionRuntime:
     attempt_anonymous_event_id: str | None = None
 
     @classmethod
-    def from_request(cls, request: DocumentConversionRequest) -> "DocumentConversionRuntime":
+    def from_job(cls, job: ConversionJob) -> "DocumentConversionRuntime":
         return cls(
             started_at=monotonic(),
-            file_digest=(request.document.staging.sha256_hex if request.document.staging is not None else None) or None,
+            file_digest=(job.document.staging.sha256_hex if job.document.staging is not None else None) or None,
             ocr_engine=os.getenv("PDF_OCR_ENGINE", "").strip().lower() or "tesseract",
         )
 
-    def build_ocr_progress_callback(self, *, request: DocumentConversionRequest):
+    def build_ocr_progress_callback(
+        self,
+        *,
+        job: ConversionJob,
+        hooks: ConversionExecutionHooks,
+    ):
         def telemetry_ocr_progress(current_page: int, total_page_count: int) -> None:
             if not self.ocr_started_logged:
                 logger.info(
                     "conversion_ocr_started filename=%s estimated_pages_count=%s ocr_engine=%s",
-                    request.document.filename or "unknown.pdf",
-                    request.preflight_result.estimated_pages_count,
+                    job.document.filename or "unknown.pdf",
+                    job.preflight_result.estimated_pages_count,
                     self.ocr_engine,
                 )
                 self.ocr_started_logged = True
@@ -117,8 +84,8 @@ class DocumentConversionRuntime:
                 self.ocr_pages_processed,
                 max(1, min(int(current_page or 1), max(1, int(total_page_count or 0)))),
             )
-            if request.on_ocr_progress is not None:
-                request.on_ocr_progress(current_page, total_page_count)
+            if hooks.on_ocr_progress is not None:
+                hooks.on_ocr_progress(current_page, total_page_count)
 
         return telemetry_ocr_progress
 
@@ -128,7 +95,7 @@ class DocumentConversionRuntime:
 
 @dataclass(frozen=True, slots=True)
 class PreparedDocumentConversion:
-    request: DocumentConversionRequest
+    job: ConversionJob
     identity: object
     preflight_policy: DocumentPreflightPolicy
 
@@ -173,20 +140,31 @@ class DocumentConversionPipeline:
         scanned_likely: bool | None = None,
         estimated_pages_count: int | None = None,
     ) -> ConversionPipelineResult:
-        request = DocumentConversionRequest.from_inputs(
+        job = ConversionJob.from_inputs(
             document=document,
             anonymous_fingerprint=anonymous_fingerprint,
             user_token=user_token,
             authorization=authorization,
             access_cookie_token=access_cookie_token,
-            on_ocr_progress=on_ocr_progress,
             scanned_likely=scanned_likely,
             estimated_pages_count=estimated_pages_count,
         )
-        runtime = DocumentConversionRuntime.from_request(request)
+        return self.run_job(
+            job=job,
+            hooks=ConversionExecutionHooks(on_ocr_progress=on_ocr_progress),
+        )
+
+    def run_job(
+        self,
+        *,
+        job: ConversionJob,
+        hooks: ConversionExecutionHooks,
+    ) -> ConversionPipelineResult:
+        request = job
+        runtime = DocumentConversionRuntime.from_job(job)
         try:
             prepared = self._prepare_conversion(request=request, runtime=runtime)
-            request = prepared.request
+            request = prepared.job
             ocr_max_pages = prepared.preflight_policy.ocr_max_pages
             logger.info(
                 (
@@ -204,7 +182,7 @@ class DocumentConversionPipeline:
                 conversion_response = self.legacy_conversion_runner(
                     filename=request.document.filename,
                     raw_bytes=request.document.raw_bytes,
-                    on_ocr_progress=runtime.build_ocr_progress_callback(request=request),
+                    on_ocr_progress=runtime.build_ocr_progress_callback(job=request, hooks=hooks),
                     max_ocr_pages=ocr_max_pages,
                     analysis_id=runtime.attempt_processing_id,
                 )
@@ -224,7 +202,7 @@ class DocumentConversionPipeline:
                 parse_started_at = monotonic()
                 extracted_document = self.document_extractor.extract(
                     document=document,
-                    on_ocr_progress=runtime.build_ocr_progress_callback(request=request),
+                    on_ocr_progress=runtime.build_ocr_progress_callback(job=request, hooks=hooks),
                     max_ocr_pages=ocr_max_pages,
                 )
                 parsed_statement = self.statement_parser.parse(extracted_document=extracted_document)
@@ -296,7 +274,7 @@ class DocumentConversionPipeline:
     def _prepare_conversion(
         self,
         *,
-        request: DocumentConversionRequest,
+        request: ConversionJob,
         runtime: DocumentConversionRuntime,
     ) -> PreparedDocumentConversion:
         resolved_user_token = _resolve_user_token_with_session(
@@ -337,7 +315,7 @@ class DocumentConversionPipeline:
         self.quota_validator_service.ensure_conversion_quota_available(identity=identity)
         self._record_processing_started(request=request, runtime=runtime, identity=identity)
         return PreparedDocumentConversion(
-            request=request,
+            job=request,
             identity=identity,
             preflight_policy=preflight_policy,
         )
@@ -345,7 +323,7 @@ class DocumentConversionPipeline:
     def _record_processing_started(
         self,
         *,
-        request: DocumentConversionRequest,
+        request: ConversionJob,
         runtime: DocumentConversionRuntime,
         identity,
     ) -> None:
@@ -422,7 +400,7 @@ class DocumentConversionPipeline:
         runtime: DocumentConversionRuntime,
         conversion_response,
     ) -> ConversionPipelineResult:
-        request = prepared.request
+        request = prepared.job
         identity = prepared.identity
         if isinstance(conversion_response, PersistedConversionResult):
             persisted_result = conversion_response
@@ -553,7 +531,7 @@ class DocumentConversionPipeline:
     def _finalize_failure(
         self,
         *,
-        request: DocumentConversionRequest,
+        request: ConversionJob,
         runtime: DocumentConversionRuntime,
         exc: Exception,
     ) -> None:
