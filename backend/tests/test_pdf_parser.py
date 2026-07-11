@@ -260,6 +260,49 @@ def test_parse_pdf_transactions_handles_itau_spaced_month_slash_lines() -> None:
     assert all("SALDO INICIAL" not in tx.description for tx in result.transactions)
 
 
+def test_itau_v2_profile_recovers_compact_ocr_month_date() -> None:
+    profile = pdf_parser_module.get_layout_profile("itau_empresas_extrato_lancamentos_conta_corrente_v1")
+    assert profile is not None
+    line = pdf_parser_module._PdfLine(
+        text="01jul TRANSF TITUL TED 4015 -109,50 -99,50",
+        page_number=1,
+        line_number=20,
+    )
+
+    parsed_row, is_candidate = pdf_parser_module._classify_tabular_statement_line(
+        line=line,
+        inferred_year=2021,
+        tabular_profile=profile,
+    )
+
+    assert is_candidate is True
+    assert parsed_row is not None
+    assert parsed_row.transaction.date == "2021-07-01"
+    assert parsed_row.transaction.amount == -109.5
+
+
+def test_caixa_v2_profile_recovers_compact_ocr_numeric_date() -> None:
+    profile = pdf_parser_module.get_layout_profile("caixa_siatr_saldos_lancamentos_a4_v1")
+    assert profile is not None
+    line = pdf_parser_module._PdfLine(
+        text="070825 071553 PAG BOLETO IBC 6.328,90D 1.117,39C",
+        page_number=1,
+        line_number=20,
+    )
+
+    parsed_row, is_candidate = pdf_parser_module._classify_tabular_statement_line(
+        line=line,
+        inferred_year=2025,
+        tabular_profile=profile,
+    )
+
+    assert is_candidate is True
+    assert parsed_row is not None
+    assert parsed_row.transaction.date == "2025-08-07"
+    assert parsed_row.transaction.amount == -6328.9
+    assert parsed_row.running_balance == 1117.39
+
+
 def test_parse_pdf_transactions_skips_invalid_date_only_candidate_and_keeps_grouped_rows() -> None:
     result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
         ["00/00/0000\nLINHA INVALIDA\n10/04/2026\nPIX RECEBIDO\n25,00"]

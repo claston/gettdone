@@ -31,3 +31,11 @@ def test_parse_row_date_removes_profile_timestamp() -> None:
         fallback_year=None,
         date_formats=("dd/MM/yyyy HH:mm",),
     ) == "2021-04-10"
+
+
+def test_parse_row_date_normalizes_compact_portuguese_month() -> None:
+    assert parse_row_date(
+        "01jul",
+        fallback_year=2021,
+        date_formats=("ddMMM",),
+    ) == "2021-07-01"
