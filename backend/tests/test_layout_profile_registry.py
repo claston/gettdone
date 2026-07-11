@@ -32,3 +32,20 @@ def test_load_layout_profile_v2_executable_parsing_rules() -> None:
     assert profile.parsing.opening_balance_policy == "import"
     assert "{amount} DB" in profile.parsing.negative_patterns
     assert "{amount} CR" in profile.parsing.positive_patterns
+
+
+def test_load_migrated_itau_and_caixa_v2_parsing_rules() -> None:
+    itau = get_layout_profile("itau_empresas_extrato_lancamentos_conta_corrente_v1")
+    caixa = get_layout_profile("caixa_siatr_saldos_lancamentos_a4_v1")
+
+    assert itau is not None
+    assert itau.schema_version == 2
+    assert itau.parsing.date_formats == ("dd/MMM", "ddMMM")
+    assert itau.parsing.ignore_rows == ("SALDO DO DIA",)
+    assert itau.parsing.opening_balance_policy == "skip"
+
+    assert caixa is not None
+    assert caixa.schema_version == 2
+    assert caixa.parsing.date_formats == ("dd/MM/yy", "dd/MM/yyyy", "ddMMyy")
+    assert caixa.parsing.ignore_rows == ("SALDO DIA",)
+    assert caixa.parsing.opening_balance_policy == "import"

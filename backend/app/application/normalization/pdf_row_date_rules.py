@@ -21,4 +21,6 @@ def _normalize_profile_date(raw_date: str, *, date_formats: tuple[str, ...]) -> 
         return f"{value[:2]}/{value[2:4]}/{value[4:]}"
     if "ddMMyy" in date_formats and re.fullmatch(r"\d{6}", value):
         return f"{value[:2]}/{value[2:4]}/{value[4:]}"
+    if "ddMMM" in date_formats and (compact_month_match := re.fullmatch(r"(\d{1,2})([A-Za-z]{3})", value)):
+        return f"{compact_month_match.group(1)}/{compact_month_match.group(2)}"
     return value

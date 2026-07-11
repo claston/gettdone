@@ -175,6 +175,7 @@ meta_model:
       - "Como são exibidos estornos, tarifas, TED, DOC, boletos, rendimentos e aplicações."
 
 layout_profile:
+  schema_version: 2
   profile_name: itau_empresas_extrato_lancamentos_conta_corrente_v1
   bank: Itaú
   layout_family: itau_empresas_lancamentos_conta_corrente
@@ -254,7 +255,9 @@ layout_profile:
       - "data lançamentos ag/origem valor (R$) saldo (R$)"
     row_separator_hint: "transaction starts when first column has date in dd/mmm format; month separator rows contain month and year"
   parsing:
-    date_format: "dd/MMM"
+    date_formats:
+      - "dd/MMM"
+      - "ddMMM"
     date_year_source: "period"
     month_language: "pt-BR"
     amount_locale: "pt-BR"
@@ -265,33 +268,11 @@ layout_profile:
     positive_patterns:
       - "{amount_without_minus}"
     ignore_rows:
-      - "Itaú Empresas"
-      - "Itaú"
-      - "agência"
-      - "conta corrente"
-      - "saldo disponível em conta"
-      - "lançamentos"
-      - "período"
-      - "data"
-      - "ag/origem"
-      - "valor (R$)"
-      - "saldo (R$)"
-      - "SALDO ANTERIOR"
       - "SALDO DO DIA"
-      - "janeiro"
-      - "fevereiro"
-      - "março"
-      - "abril"
-      - "maio"
-      - "junho"
-      - "julho"
-      - "agosto"
-      - "setembro"
-      - "outubro"
-      - "novembro"
-      - "dezembro"
     opening_balance_rows:
       - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    opening_balance_policy: "skip"
     required_transaction_fields:
       - date
       - description

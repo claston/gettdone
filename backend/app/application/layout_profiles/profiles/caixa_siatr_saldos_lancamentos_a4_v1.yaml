@@ -1,4 +1,5 @@
 layout_profile:
+  schema_version: 2
   profile_name: caixa_siatr_saldos_lancamentos_a4_v1
   bank: Caixa
   confidence: high
@@ -59,3 +60,34 @@ layout_profile:
       balance:
         - "SALDO"
         - "SALDO(R$)"
+  parsing:
+    date_formats:
+      - "dd/MM/yy"
+      - "dd/MM/yyyy"
+      - "ddMMyy"
+    date_year_source: "row"
+    month_language: "pt-BR"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount}D"
+      - "{amount} D"
+      - "-{amount}"
+    positive_patterns:
+      - "{amount}C"
+      - "{amount} C"
+      - "{amount}"
+    ignore_rows:
+      - "SALDO DIA"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    opening_balance_policy: "import"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
