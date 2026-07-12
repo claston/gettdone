@@ -1,21 +1,22 @@
+from app.application.conversion.conversion_job import ConversionExecutionHooks, ConversionJob
+from app.application.conversion.conversion_job_executor import ConversionJobExecutor
 from app.application.conversion.conversion_pipeline_result import (
     ConversionPipelineResult,
     ConversionPipelineStatus,
 )
 from app.application.conversion.convert_document_result import ConvertDocumentResult
-from app.application.conversion.document_conversion_pipeline import DocumentConversionPipeline
 from app.application.conversion.uploaded_document import UploadedDocument
 
 
 class ConvertDocumentUseCase:
     """Application entrypoint for the document conversion flow.
 
-    This incremental version delegates to the application conversion pipeline
-    while keeping the existing endpoint contract stable.
+    It builds an immutable job and delegates execution behind an executor
+    boundary while keeping the existing endpoint contract stable.
     """
 
-    def __init__(self, *, document_conversion_pipeline: DocumentConversionPipeline) -> None:
-        self.document_conversion_pipeline = document_conversion_pipeline
+    def __init__(self, *, conversion_job_executor: ConversionJobExecutor) -> None:
+        self.conversion_job_executor = conversion_job_executor
 
     def execute(
         self,
@@ -29,15 +30,18 @@ class ConvertDocumentUseCase:
         scanned_likely: bool | None = None,
         estimated_pages_count: int | None = None,
     ) -> ConvertDocumentResult:
-        pipeline_result = self.document_conversion_pipeline.run(
+        job = ConversionJob.from_inputs(
             document=document,
             anonymous_fingerprint=anonymous_fingerprint,
             user_token=user_token,
             authorization=authorization,
             access_cookie_token=access_cookie_token,
-            on_ocr_progress=on_ocr_progress,
             scanned_likely=scanned_likely,
             estimated_pages_count=estimated_pages_count,
+        )
+        pipeline_result = self.conversion_job_executor.execute(
+            job=job,
+            hooks=ConversionExecutionHooks(on_ocr_progress=on_ocr_progress),
         )
         return self._to_convert_document_result(pipeline_result)
 

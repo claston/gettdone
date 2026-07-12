@@ -6,11 +6,13 @@ from fastapi import Depends
 from app.application import (
     AccessControlService,
     ContactService,
+    ConversionJobExecutor,
     ConvertDocumentUseCase,
     DocumentConversionPipeline,
     DocumentPreflightService,
     GoogleOAuthConfig,
     GoogleOAuthService,
+    InlineConversionJobExecutor,
     QuotaValidatorService,
     ReportService,
     TempAnalysisStorage,
@@ -134,11 +136,19 @@ def get_document_conversion_pipeline(
     )
 
 
-def get_convert_document_use_case(
+def get_conversion_job_executor(
     document_conversion_pipeline: DocumentConversionPipeline = Depends(get_document_conversion_pipeline),
+) -> ConversionJobExecutor:
+    return InlineConversionJobExecutor(
+        document_conversion_pipeline=document_conversion_pipeline,
+    )
+
+
+def get_convert_document_use_case(
+    conversion_job_executor: ConversionJobExecutor = Depends(get_conversion_job_executor),
 ) -> ConvertDocumentUseCase:
     return ConvertDocumentUseCase(
-        document_conversion_pipeline=document_conversion_pipeline
+        conversion_job_executor=conversion_job_executor
     )
 
 

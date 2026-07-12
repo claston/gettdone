@@ -1,10 +1,10 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+from app.application.conversion.conversion_job import ConversionExecutionHooks, ConversionJob
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineStatus
 from app.application.conversion.document_conversion_pipeline import (
     DocumentConversionPipeline,
-    DocumentConversionRequest,
     DocumentConversionRuntime,
 )
 from app.application.conversion.document_extractor import ExtractedDocument
@@ -224,10 +224,10 @@ class FakeStatementParser:
         )
 
 
-def test_document_conversion_request_captures_preflight_flags() -> None:
+def test_conversion_job_captures_preflight_flags() -> None:
     staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
 
-    request = DocumentConversionRequest.from_inputs(
+    request = ConversionJob.from_inputs(
         document=UploadedDocument.from_staged_upload(
             filename="statement.pdf",
             staged_upload=UploadedDocumentStage(
@@ -240,7 +240,6 @@ def test_document_conversion_request_captures_preflight_flags() -> None:
         user_token="user-token",
         authorization="Bearer auth-token",
         access_cookie_token="cookie-token",
-        on_ocr_progress=None,
         scanned_likely=True,
         estimated_pages_count=4,
     )
@@ -255,7 +254,7 @@ def test_document_conversion_request_captures_preflight_flags() -> None:
 def test_document_conversion_runtime_tracks_ocr_progress_and_forwards_callback() -> None:
     staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
     observed_progress: list[tuple[int, int]] = []
-    request = DocumentConversionRequest.from_inputs(
+    request = ConversionJob.from_inputs(
         document=UploadedDocument.from_staged_upload(
             filename="statement.pdf",
             staged_upload=UploadedDocumentStage(
@@ -268,15 +267,19 @@ def test_document_conversion_runtime_tracks_ocr_progress_and_forwards_callback()
         user_token="user-token",
         authorization=None,
         access_cookie_token=None,
-        on_ocr_progress=lambda current_page, total_page_count: observed_progress.append(
-            (current_page, total_page_count)
-        ),
         scanned_likely=True,
         estimated_pages_count=3,
     )
 
-    runtime = DocumentConversionRuntime.from_request(request)
-    callback = runtime.build_ocr_progress_callback(request=request)
+    runtime = DocumentConversionRuntime.from_job(request)
+    callback = runtime.build_ocr_progress_callback(
+        job=request,
+        hooks=ConversionExecutionHooks(
+            on_ocr_progress=lambda current_page, total_page_count: observed_progress.append(
+                (current_page, total_page_count)
+            )
+        ),
+    )
     callback(2, 3)
     callback(1, 3)
 

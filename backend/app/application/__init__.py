@@ -6,6 +6,8 @@ from app.application.analysis_response_builder import (
     persist_conversion_result,
 )
 from app.application.contact_service import ContactAttachment, ContactDeliveryResult, ContactMessage, ContactService
+from app.application.conversion.conversion_job import ConversionExecutionHooks, ConversionJob
+from app.application.conversion.conversion_job_executor import ConversionJobExecutor, InlineConversionJobExecutor
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult, ConversionPipelineStatus
 from app.application.conversion.convert_document_result import ConvertDocumentResult, ConvertDocumentStatus
 from app.application.conversion.convert_document_use_case import ConvertDocumentUseCase
@@ -78,6 +80,9 @@ __all__ = [
     "ContactService",
     "ConversionPipelineResult",
     "ConversionPipelineStatus",
+    "ConversionExecutionHooks",
+    "ConversionJob",
+    "ConversionJobExecutor",
     "ConvertDocumentUseCase",
     "ConvertDocumentResult",
     "ConvertDocumentStatus",
@@ -105,6 +110,7 @@ __all__ = [
     "InvalidFileContentError",
     "InvalidSessionTokenError",
     "InvalidUserTokenError",
+    "InlineConversionJobExecutor",
     "MaxPagesPerFileExceededError",
     "ReusedSessionTokenError",
     "build_ofx_statement",
