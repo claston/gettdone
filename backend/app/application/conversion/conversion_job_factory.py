@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from app.application.access_control import AccessControlService
 from app.application.conversion.conversion_document_store import ConversionDocumentStore
 from app.application.conversion.conversion_job import ConversionJob
+from app.application.conversion.conversion_job_cleanup_service import ConversionJobCleanupService
+from app.application.conversion.conversion_job_repository import ConversionJobRepository
 from app.application.conversion.uploaded_document import UploadedDocument
 from app.application.errors import InvalidSessionTokenError, InvalidUserTokenError
 
@@ -13,6 +15,8 @@ from app.application.errors import InvalidSessionTokenError, InvalidUserTokenErr
 class ConversionJobFactory:
     access_control_service: AccessControlService
     document_store: ConversionDocumentStore
+    job_repository: ConversionJobRepository
+    cleanup_service: ConversionJobCleanupService | None = None
 
     def create(
         self,
@@ -24,6 +28,7 @@ class ConversionJobFactory:
         access_cookie_token: str | None,
         scanned_likely: bool | None = None,
         estimated_pages_count: int | None = None,
+        idempotency_key: str | None = None,
     ) -> ConversionJob:
         identity = resolve_conversion_identity(
             access_control_service=self.access_control_service,
@@ -32,14 +37,21 @@ class ConversionJobFactory:
             authorization=authorization,
             access_cookie_token=access_cookie_token,
         )
+        if self.cleanup_service is not None:
+            self.cleanup_service.cleanup_expired()
         document_reference = self.document_store.store(document)
         try:
-            return ConversionJob.create(
+            job = ConversionJob.create(
                 document=document_reference,
                 identity=identity,
                 scanned_likely=scanned_likely,
                 estimated_pages_count=estimated_pages_count,
+                idempotency_key=idempotency_key,
             )
+            submission = self.job_repository.submit(job)
+            if not submission.created:
+                self.document_store.delete(document_reference)
+            return submission.record.job
         except Exception:
             self.document_store.delete(document_reference)
             raise

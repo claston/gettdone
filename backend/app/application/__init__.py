@@ -12,8 +12,18 @@ from app.application.conversion.conversion_document_store import (
     FilesystemConversionDocumentStore,
 )
 from app.application.conversion.conversion_job import ConversionExecutionHooks, ConversionJob
+from app.application.conversion.conversion_job_cleanup_service import ConversionJobCleanupService
 from app.application.conversion.conversion_job_executor import ConversionJobExecutor, InlineConversionJobExecutor
 from app.application.conversion.conversion_job_factory import ConversionJobFactory
+from app.application.conversion.conversion_job_repository import (
+    ConversionJobFailure,
+    ConversionJobRecord,
+    ConversionJobRepository,
+    ConversionJobResultReference,
+    ConversionJobStatus,
+    ConversionJobSubmission,
+    FilesystemConversionJobRepository,
+)
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult, ConversionPipelineStatus
 from app.application.conversion.convert_document_result import ConvertDocumentResult, ConvertDocumentStatus
 from app.application.conversion.convert_document_use_case import ConvertDocumentUseCase
@@ -92,6 +102,13 @@ __all__ = [
     "ConversionJob",
     "ConversionJobExecutor",
     "ConversionJobFactory",
+    "ConversionJobCleanupService",
+    "ConversionJobFailure",
+    "ConversionJobRecord",
+    "ConversionJobRepository",
+    "ConversionJobResultReference",
+    "ConversionJobStatus",
+    "ConversionJobSubmission",
     "ConvertDocumentUseCase",
     "ConvertDocumentResult",
     "ConvertDocumentStatus",
@@ -110,6 +127,7 @@ __all__ = [
     "ConversionService",
     "FileTooLargeError",
     "FilesystemConversionDocumentStore",
+    "FilesystemConversionJobRepository",
     "GoogleOAuthAccountNotFoundError",
     "GoogleOAuthConfig",
     "GoogleOAuthExchangeError",

@@ -21,6 +21,7 @@ class ConversionJob:
     """
 
     job_id: str
+    idempotency_key: str
     document: ConversionDocumentReference
     identity: IdentityContext
     preflight_result: DocumentPreflightResult
@@ -34,9 +35,12 @@ class ConversionJob:
         scanned_likely: bool | None = None,
         estimated_pages_count: int | None = None,
         job_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> ConversionJob:
+        resolved_job_id = (job_id or "").strip() or f"job_{uuid4().hex[:24]}"
         return cls(
-            job_id=(job_id or "").strip() or f"job_{uuid4().hex[:24]}",
+            job_id=resolved_job_id,
+            idempotency_key=(idempotency_key or "").strip() or resolved_job_id,
             document=document,
             identity=identity,
             preflight_result=DocumentPreflightResult(

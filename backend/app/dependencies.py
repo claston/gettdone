@@ -7,12 +7,15 @@ from app.application import (
     AccessControlService,
     ContactService,
     ConversionDocumentStore,
+    ConversionJobCleanupService,
     ConversionJobExecutor,
     ConversionJobFactory,
+    ConversionJobRepository,
     ConvertDocumentUseCase,
     DocumentConversionPipeline,
     DocumentPreflightService,
     FilesystemConversionDocumentStore,
+    FilesystemConversionJobRepository,
     GoogleOAuthConfig,
     GoogleOAuthService,
     InlineConversionJobExecutor,
@@ -35,6 +38,15 @@ _report_service = ReportService(storage=_storage)
 _document_preflight_service = DocumentPreflightService()
 _conversion_document_store = FilesystemConversionDocumentStore(
     root_dir=_backend_root / "tmp" / "conversion_jobs" / "documents",
+)
+_conversion_job_repository = FilesystemConversionJobRepository(
+    root_dir=_backend_root / "tmp" / "conversion_jobs" / "registry",
+    active_ttl_seconds=int(os.getenv("CONVERSION_JOB_ACTIVE_TTL_SECONDS", "86400")),
+    terminal_ttl_seconds=int(os.getenv("CONVERSION_JOB_TERMINAL_TTL_SECONDS", "86400")),
+)
+_conversion_job_cleanup_service = ConversionJobCleanupService(
+    job_repository=_conversion_job_repository,
+    document_store=_conversion_document_store,
 )
 _access_control_service: AccessControlService | None = None
 _contact_service: ContactService | None = None
@@ -74,6 +86,14 @@ def get_document_preflight_service() -> DocumentPreflightService:
 
 def get_conversion_document_store() -> ConversionDocumentStore:
     return _conversion_document_store
+
+
+def get_conversion_job_repository() -> ConversionJobRepository:
+    return _conversion_job_repository
+
+
+def get_conversion_job_cleanup_service() -> ConversionJobCleanupService:
+    return _conversion_job_cleanup_service
 
 
 def get_access_control_service() -> AccessControlService:
@@ -149,20 +169,26 @@ def get_document_conversion_pipeline(
 def get_conversion_job_executor(
     document_conversion_pipeline: DocumentConversionPipeline = Depends(get_document_conversion_pipeline),
     document_store: ConversionDocumentStore = Depends(get_conversion_document_store),
+    job_repository: ConversionJobRepository = Depends(get_conversion_job_repository),
 ) -> ConversionJobExecutor:
     return InlineConversionJobExecutor(
         document_conversion_pipeline=document_conversion_pipeline,
         document_store=document_store,
+        job_repository=job_repository,
     )
 
 
 def get_conversion_job_factory(
     access_control_service: AccessControlService = Depends(get_access_control_service),
     document_store: ConversionDocumentStore = Depends(get_conversion_document_store),
+    job_repository: ConversionJobRepository = Depends(get_conversion_job_repository),
+    cleanup_service: ConversionJobCleanupService = Depends(get_conversion_job_cleanup_service),
 ) -> ConversionJobFactory:
     return ConversionJobFactory(
         access_control_service=access_control_service,
         document_store=document_store,
+        job_repository=job_repository,
+        cleanup_service=cleanup_service,
     )
 
 
