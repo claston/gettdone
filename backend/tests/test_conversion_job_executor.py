@@ -8,6 +8,10 @@ from app.application.access_control import IdentityContext
 from app.application.conversion.conversion_document_store import FilesystemConversionDocumentStore
 from app.application.conversion.conversion_job import ConversionExecutionHooks, ConversionJob
 from app.application.conversion.conversion_job_executor import InlineConversionJobExecutor
+from app.application.conversion.conversion_job_repository import (
+    ConversionJobStatus,
+    FilesystemConversionJobRepository,
+)
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult
 from app.application.conversion.uploaded_document import UploadedDocument, UploadedDocumentStage
 
@@ -62,9 +66,11 @@ def test_inline_conversion_job_executor_materializes_and_deletes_document(tmp_pa
 
     pipeline = FakePipeline()
     store = FilesystemConversionDocumentStore(root_dir=tmp_path / "jobs")
+    repository = FilesystemConversionJobRepository(root_dir=tmp_path / "records")
     executor = InlineConversionJobExecutor(
         document_conversion_pipeline=pipeline,
         document_store=store,
+        job_repository=repository,
     )
 
     def callback(current: int, total: int) -> None:
@@ -75,6 +81,7 @@ def test_inline_conversion_job_executor_materializes_and_deletes_document(tmp_pa
         document=store.store(_document()),
         identity=IdentityContext(identity_type="anonymous", identity_id="anon_123", quota_limit=3),
     )
+    repository.submit(job)
 
     result = executor.execute(job=job, hooks=hooks)
 
@@ -82,5 +89,67 @@ def test_inline_conversion_job_executor_materializes_and_deletes_document(tmp_pa
     assert pipeline.calls[0][0] == job
     assert pipeline.calls[0][1].raw_bytes == _document().raw_bytes
     assert pipeline.calls[0][2] == hooks
+    record = repository.get(job.job_id)
+    assert record is not None
+    assert record.status == ConversionJobStatus.FAILED
+    assert record.failure is not None
+    assert record.failure.code == "test"
+    with pytest.raises(FileNotFoundError):
+        store.load(job.document)
+
+
+def test_inline_executor_persists_completed_result_reference(tmp_path: Path) -> None:
+    class FakePipeline:
+        def run_job(self, **_kwargs) -> ConversionPipelineResult:
+            return ConversionPipelineResult.completed(payload={"processing_id": "an_123"})
+
+    store = FilesystemConversionDocumentStore(root_dir=tmp_path / "jobs")
+    repository = FilesystemConversionJobRepository(root_dir=tmp_path / "records")
+    job = ConversionJob.create(
+        document=store.store(_document()),
+        identity=IdentityContext(identity_type="anonymous", identity_id="anon_123", quota_limit=3),
+    )
+    repository.submit(job)
+    executor = InlineConversionJobExecutor(
+        document_conversion_pipeline=FakePipeline(),
+        document_store=store,
+        job_repository=repository,
+    )
+
+    executor.execute(job=job, hooks=ConversionExecutionHooks())
+
+    record = repository.get(job.job_id)
+    assert record is not None
+    assert record.status == ConversionJobStatus.COMPLETED
+    assert record.result is not None
+    assert record.result.analysis_id == "an_123"
+
+
+def test_inline_executor_marks_unexpected_exception_as_failed_and_deletes_document(tmp_path: Path) -> None:
+    class FailingPipeline:
+        def run_job(self, **_kwargs) -> ConversionPipelineResult:
+            raise RuntimeError("parser exploded")
+
+    store = FilesystemConversionDocumentStore(root_dir=tmp_path / "jobs")
+    repository = FilesystemConversionJobRepository(root_dir=tmp_path / "records")
+    job = ConversionJob.create(
+        document=store.store(_document()),
+        identity=IdentityContext(identity_type="anonymous", identity_id="anon_123", quota_limit=3),
+    )
+    repository.submit(job)
+    executor = InlineConversionJobExecutor(
+        document_conversion_pipeline=FailingPipeline(),
+        document_store=store,
+        job_repository=repository,
+    )
+
+    with pytest.raises(RuntimeError, match="parser exploded"):
+        executor.execute(job=job, hooks=ConversionExecutionHooks())
+
+    record = repository.get(job.job_id)
+    assert record is not None
+    assert record.status == ConversionJobStatus.FAILED
+    assert record.failure is not None
+    assert record.failure.code == "RuntimeError"
     with pytest.raises(FileNotFoundError):
         store.load(job.document)

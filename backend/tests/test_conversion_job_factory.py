@@ -4,6 +4,10 @@ from types import SimpleNamespace
 from app.application.access_control import IdentityContext
 from app.application.conversion.conversion_document_store import FilesystemConversionDocumentStore
 from app.application.conversion.conversion_job_factory import ConversionJobFactory
+from app.application.conversion.conversion_job_repository import (
+    ConversionJobStatus,
+    FilesystemConversionJobRepository,
+)
 from app.application.conversion.uploaded_document import ingest_uploaded_document
 
 
@@ -28,9 +32,11 @@ class FakeAccessControlService:
 def test_conversion_job_factory_resolves_identity_and_stores_document_reference(tmp_path: Path) -> None:
     access_control = FakeAccessControlService()
     document_store = FilesystemConversionDocumentStore(root_dir=tmp_path / "jobs")
+    job_repository = FilesystemConversionJobRepository(root_dir=tmp_path / "records")
     factory = ConversionJobFactory(
         access_control_service=access_control,
         document_store=document_store,
+        job_repository=job_repository,
     )
 
     job = factory.create(
@@ -47,6 +53,9 @@ def test_conversion_job_factory_resolves_identity_and_stores_document_reference(
     assert job.identity == access_control.identity
     assert job.document.filename == "statement.csv"
     assert job.document.storage_key.startswith("doc_")
+    record = job_repository.get(job.job_id)
+    assert record is not None
+    assert record.status == ConversionJobStatus.SUBMITTED
     assert access_control.resolved == [(None, "resolved-user-token")]
     assert not hasattr(job, "authorization")
     assert not hasattr(job, "access_cookie_token")
