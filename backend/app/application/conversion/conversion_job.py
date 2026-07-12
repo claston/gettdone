@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from uuid import uuid4
 
+from app.application.access_control import IdentityContext
+from app.application.conversion.conversion_document_store import ConversionDocumentReference
 from app.application.conversion.document_preflight_service import DocumentPreflightResult
-from app.application.conversion.uploaded_document import UploadedDocument
 
 OcrProgressCallback = Callable[[int, int], None]
 
@@ -18,31 +20,25 @@ class ConversionJob:
     process-local callables.
     """
 
-    document: UploadedDocument
-    anonymous_fingerprint: str | None
-    user_token: str | None
-    authorization: str | None
-    access_cookie_token: str | None
+    job_id: str
+    document: ConversionDocumentReference
+    identity: IdentityContext
     preflight_result: DocumentPreflightResult
 
     @classmethod
-    def from_inputs(
+    def create(
         cls,
         *,
-        document: UploadedDocument,
-        anonymous_fingerprint: str | None,
-        user_token: str | None,
-        authorization: str | None,
-        access_cookie_token: str | None,
+        document: ConversionDocumentReference,
+        identity: IdentityContext,
         scanned_likely: bool | None = None,
         estimated_pages_count: int | None = None,
+        job_id: str | None = None,
     ) -> ConversionJob:
         return cls(
+            job_id=(job_id or "").strip() or f"job_{uuid4().hex[:24]}",
             document=document,
-            anonymous_fingerprint=anonymous_fingerprint,
-            user_token=user_token,
-            authorization=authorization,
-            access_cookie_token=access_cookie_token,
+            identity=identity,
             preflight_result=DocumentPreflightResult(
                 scanned_likely=bool(scanned_likely),
                 estimated_pages_count=estimated_pages_count,

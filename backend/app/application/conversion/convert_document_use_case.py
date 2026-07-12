@@ -1,5 +1,6 @@
-from app.application.conversion.conversion_job import ConversionExecutionHooks, ConversionJob
+from app.application.conversion.conversion_job import ConversionExecutionHooks
 from app.application.conversion.conversion_job_executor import ConversionJobExecutor
+from app.application.conversion.conversion_job_factory import ConversionJobFactory
 from app.application.conversion.conversion_pipeline_result import (
     ConversionPipelineResult,
     ConversionPipelineStatus,
@@ -15,7 +16,13 @@ class ConvertDocumentUseCase:
     boundary while keeping the existing endpoint contract stable.
     """
 
-    def __init__(self, *, conversion_job_executor: ConversionJobExecutor) -> None:
+    def __init__(
+        self,
+        *,
+        conversion_job_factory: ConversionJobFactory,
+        conversion_job_executor: ConversionJobExecutor,
+    ) -> None:
+        self.conversion_job_factory = conversion_job_factory
         self.conversion_job_executor = conversion_job_executor
 
     def execute(
@@ -30,7 +37,7 @@ class ConvertDocumentUseCase:
         scanned_likely: bool | None = None,
         estimated_pages_count: int | None = None,
     ) -> ConvertDocumentResult:
-        job = ConversionJob.from_inputs(
+        job = self.conversion_job_factory.create(
             document=document,
             anonymous_fingerprint=anonymous_fingerprint,
             user_token=user_token,
