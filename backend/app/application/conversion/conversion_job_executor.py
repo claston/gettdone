@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.application.conversion.conversion_document_store import ConversionDocumentStore
 from app.application.conversion.conversion_job import ConversionExecutionHooks, ConversionJob
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult
+from app.application.conversion.uploaded_document import UploadedDocument
 
 
 class ConversionJobExecutor(Protocol):
@@ -12,6 +14,7 @@ class ConversionJobExecutor(Protocol):
         self,
         *,
         job: ConversionJob,
+        document: UploadedDocument,
         hooks: ConversionExecutionHooks,
     ) -> ConversionPipelineResult: ...
 
@@ -28,6 +31,7 @@ class ConversionJobRunner(Protocol):
 @dataclass(frozen=True, slots=True)
 class InlineConversionJobExecutor:
     document_conversion_pipeline: ConversionJobRunner
+    document_store: ConversionDocumentStore
 
     def execute(
         self,
@@ -35,4 +39,12 @@ class InlineConversionJobExecutor:
         job: ConversionJob,
         hooks: ConversionExecutionHooks,
     ) -> ConversionPipelineResult:
-        return self.document_conversion_pipeline.run_job(job=job, hooks=hooks)
+        try:
+            document = self.document_store.load(job.document)
+            return self.document_conversion_pipeline.run_job(
+                job=job,
+                document=document,
+                hooks=hooks,
+            )
+        finally:
+            self.document_store.delete(job.document)

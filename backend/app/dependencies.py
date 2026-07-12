@@ -6,10 +6,13 @@ from fastapi import Depends
 from app.application import (
     AccessControlService,
     ContactService,
+    ConversionDocumentStore,
     ConversionJobExecutor,
+    ConversionJobFactory,
     ConvertDocumentUseCase,
     DocumentConversionPipeline,
     DocumentPreflightService,
+    FilesystemConversionDocumentStore,
     GoogleOAuthConfig,
     GoogleOAuthService,
     InlineConversionJobExecutor,
@@ -30,6 +33,9 @@ _storage = TempAnalysisStorage(
 _conversion_processing_pipeline = build_default_conversion_pipeline()
 _report_service = ReportService(storage=_storage)
 _document_preflight_service = DocumentPreflightService()
+_conversion_document_store = FilesystemConversionDocumentStore(
+    root_dir=_backend_root / "tmp" / "conversion_jobs" / "documents",
+)
 _access_control_service: AccessControlService | None = None
 _contact_service: ContactService | None = None
 _google_oauth_service: GoogleOAuthService | None = None
@@ -64,6 +70,10 @@ def get_analysis_repository() -> AnalysisRepository:
 
 def get_document_preflight_service() -> DocumentPreflightService:
     return _document_preflight_service
+
+
+def get_conversion_document_store() -> ConversionDocumentStore:
+    return _conversion_document_store
 
 
 def get_access_control_service() -> AccessControlService:
@@ -138,16 +148,30 @@ def get_document_conversion_pipeline(
 
 def get_conversion_job_executor(
     document_conversion_pipeline: DocumentConversionPipeline = Depends(get_document_conversion_pipeline),
+    document_store: ConversionDocumentStore = Depends(get_conversion_document_store),
 ) -> ConversionJobExecutor:
     return InlineConversionJobExecutor(
         document_conversion_pipeline=document_conversion_pipeline,
+        document_store=document_store,
+    )
+
+
+def get_conversion_job_factory(
+    access_control_service: AccessControlService = Depends(get_access_control_service),
+    document_store: ConversionDocumentStore = Depends(get_conversion_document_store),
+) -> ConversionJobFactory:
+    return ConversionJobFactory(
+        access_control_service=access_control_service,
+        document_store=document_store,
     )
 
 
 def get_convert_document_use_case(
+    conversion_job_factory: ConversionJobFactory = Depends(get_conversion_job_factory),
     conversion_job_executor: ConversionJobExecutor = Depends(get_conversion_job_executor),
 ) -> ConvertDocumentUseCase:
     return ConvertDocumentUseCase(
+        conversion_job_factory=conversion_job_factory,
         conversion_job_executor=conversion_job_executor
     )
 

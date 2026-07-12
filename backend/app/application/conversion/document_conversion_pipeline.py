@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -10,7 +12,9 @@ from uuid import uuid4
 from app.application.access_control import AccessControlService
 from app.application.analysis_response_builder import build_convert_response_payload, persist_conversion_result
 from app.application.bank_identity import resolve_conversion_model_label
+from app.application.conversion.conversion_document_store import ConversionDocumentReference
 from app.application.conversion.conversion_job import ConversionExecutionHooks, ConversionJob
+from app.application.conversion.conversion_job_factory import resolve_conversion_identity
 from app.application.conversion.conversion_pipeline_result import (
     ConversionPipelineResult,
 )
@@ -34,7 +38,6 @@ from app.application.conversion_pipeline import ConversionPipeline
 from app.application.errors import (
     FileTooLargeError,
     InvalidFileContentError,
-    InvalidSessionTokenError,
     InvalidUserTokenError,
     MaxPagesPerFileExceededError,
     QuotaExceededError,
@@ -61,7 +64,7 @@ class DocumentConversionRuntime:
     def from_job(cls, job: ConversionJob) -> "DocumentConversionRuntime":
         return cls(
             started_at=monotonic(),
-            file_digest=(job.document.staging.sha256_hex if job.document.staging is not None else None) or None,
+            file_digest=job.document.sha256_hex or None,
             ocr_engine=os.getenv("PDF_OCR_ENGINE", "").strip().lower() or "tesseract",
         )
 
@@ -95,9 +98,23 @@ class DocumentConversionRuntime:
 
 @dataclass(frozen=True, slots=True)
 class PreparedDocumentConversion:
-    job: ConversionJob
+    job: MaterializedConversionJob
     identity: object
     preflight_policy: DocumentPreflightPolicy
+
+
+@dataclass(frozen=True, slots=True)
+class MaterializedConversionJob:
+    job: ConversionJob
+    document: UploadedDocument
+
+    @property
+    def identity(self):
+        return self.job.identity
+
+    @property
+    def preflight_result(self):
+        return self.job.preflight_result
 
 
 class DocumentConversionPipeline:
@@ -140,17 +157,25 @@ class DocumentConversionPipeline:
         scanned_likely: bool | None = None,
         estimated_pages_count: int | None = None,
     ) -> ConversionPipelineResult:
-        job = ConversionJob.from_inputs(
-            document=document,
+        identity = resolve_conversion_identity(
+            access_control_service=self.access_control_service,
             anonymous_fingerprint=anonymous_fingerprint,
             user_token=user_token,
             authorization=authorization,
             access_cookie_token=access_cookie_token,
+        )
+        job = ConversionJob.create(
+            document=ConversionDocumentReference.from_document(
+                document,
+                storage_key=f"doc_{uuid4().hex[:24]}",
+            ),
+            identity=identity,
             scanned_likely=scanned_likely,
             estimated_pages_count=estimated_pages_count,
         )
         return self.run_job(
             job=job,
+            document=document,
             hooks=ConversionExecutionHooks(on_ocr_progress=on_ocr_progress),
         )
 
@@ -158,9 +183,10 @@ class DocumentConversionPipeline:
         self,
         *,
         job: ConversionJob,
+        document: UploadedDocument,
         hooks: ConversionExecutionHooks,
     ) -> ConversionPipelineResult:
-        request = job
+        request = MaterializedConversionJob(job=job, document=document)
         runtime = DocumentConversionRuntime.from_job(job)
         try:
             prepared = self._prepare_conversion(request=request, runtime=runtime)
@@ -274,19 +300,10 @@ class DocumentConversionPipeline:
     def _prepare_conversion(
         self,
         *,
-        request: ConversionJob,
+        request: MaterializedConversionJob,
         runtime: DocumentConversionRuntime,
     ) -> PreparedDocumentConversion:
-        resolved_user_token = _resolve_user_token_with_session(
-            access_control_service=self.access_control_service,
-            authorization=request.authorization,
-            explicit_user_token=request.user_token,
-            access_cookie_token=request.access_cookie_token,
-        )
-        identity = self.access_control_service.resolve_identity(
-            anonymous_fingerprint=request.anonymous_fingerprint,
-            user_token=resolved_user_token,
-        )
+        identity = request.identity
         runtime.identity = identity
         logger.info(
             "conversion_analyze_precheck filename=%s identity_type=%s scanned_likely=%s estimated_pages_count=%s",
@@ -323,7 +340,7 @@ class DocumentConversionPipeline:
     def _record_processing_started(
         self,
         *,
-        request: ConversionJob,
+        request: MaterializedConversionJob,
         runtime: DocumentConversionRuntime,
         identity,
     ) -> None:
@@ -531,7 +548,7 @@ class DocumentConversionPipeline:
     def _finalize_failure(
         self,
         *,
-        request: ConversionJob,
+        request: MaterializedConversionJob,
         runtime: DocumentConversionRuntime,
         exc: Exception,
     ) -> None:
@@ -645,39 +662,6 @@ def _resolve_processed_pages(analysis) -> int | None:
         else int(getattr(metrics, "page_count", 0) or 0)
     )
     return max(1, page_count)
-
-
-def _resolve_header_or_query_token(*, authorization: str | None, query_token: str | None) -> str:
-    auth_header = (authorization or "").strip()
-    if auth_header.lower().startswith("bearer "):
-        bearer = auth_header[7:].strip()
-        if bearer:
-            return bearer
-    return (query_token or "").strip()
-
-
-def _resolve_user_token_with_session(
-    *,
-    access_control_service: AccessControlService,
-    authorization: str | None,
-    explicit_user_token: str | None,
-    access_cookie_token: str | None,
-) -> str:
-    resolved_token = _resolve_header_or_query_token(
-        authorization=authorization,
-        query_token=explicit_user_token,
-    )
-    if resolved_token:
-        return resolved_token
-
-    cookie_token = (access_cookie_token or "").strip()
-    if not cookie_token:
-        return ""
-    try:
-        user = access_control_service.get_user_by_session_access_token(cookie_token)
-        return user.token
-    except InvalidSessionTokenError:
-        raise InvalidUserTokenError from None
 
 
 def _apply_ocr_limit_context(

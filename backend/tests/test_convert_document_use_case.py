@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from app.application.access_control import IdentityContext
+from app.application.conversion.conversion_document_store import ConversionDocumentReference
 from app.application.conversion.conversion_job import ConversionExecutionHooks, ConversionJob
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult
 from app.application.conversion.convert_document_result import ConvertDocumentStatus
@@ -93,9 +95,23 @@ class FakeConversionJobExecutor:
         )
 
 
+class FakeConversionJobFactory:
+    def create(self, **kwargs) -> ConversionJob:
+        document = kwargs["document"]
+        return ConversionJob.create(
+            document=ConversionDocumentReference.from_document(document, storage_key="doc_1234567890abcdef12345678"),
+            identity=IdentityContext(identity_type="anonymous", identity_id="anon_123", quota_limit=3),
+            scanned_likely=kwargs.get("scanned_likely"),
+            estimated_pages_count=kwargs.get("estimated_pages_count"),
+        )
+
+
 def test_convert_document_use_case_returns_application_result() -> None:
     executor = FakeConversionJobExecutor()
-    use_case = ConvertDocumentUseCase(conversion_job_executor=executor)
+    use_case = ConvertDocumentUseCase(
+        conversion_job_factory=FakeConversionJobFactory(),
+        conversion_job_executor=executor,
+    )
     staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
 
     result = use_case.execute(
@@ -121,7 +137,7 @@ def test_convert_document_use_case_returns_application_result() -> None:
     assert result.payload["processing_id"] == "an_use_case_001"
     assert result.payload["identity_type"] == "anonymous"
     assert executor.jobs[0].document.filename == "statement.csv"
-    assert executor.jobs[0].anonymous_fingerprint == "anon-fp"
+    assert executor.jobs[0].identity.identity_id == "anon_123"
     assert executor.hooks[0].on_ocr_progress is None
 
 
@@ -135,7 +151,10 @@ def test_convert_document_use_case_maps_rejected_pipeline_result() -> None:
                 metadata={"required_quota": 1},
             )
 
-    use_case = ConvertDocumentUseCase(conversion_job_executor=RejectedConversionJobExecutor())
+    use_case = ConvertDocumentUseCase(
+        conversion_job_factory=FakeConversionJobFactory(),
+        conversion_job_executor=RejectedConversionJobExecutor(),
+    )
     staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
 
     result = use_case.execute(

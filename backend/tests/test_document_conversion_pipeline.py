@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+from app.application.access_control import IdentityContext
+from app.application.conversion.conversion_document_store import ConversionDocumentReference
 from app.application.conversion.conversion_job import ConversionExecutionHooks, ConversionJob
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineStatus
 from app.application.conversion.document_conversion_pipeline import (
@@ -226,20 +228,20 @@ class FakeStatementParser:
 
 def test_conversion_job_captures_preflight_flags() -> None:
     staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
-
-    request = ConversionJob.from_inputs(
-        document=UploadedDocument.from_staged_upload(
-            filename="statement.pdf",
-            staged_upload=UploadedDocumentStage(
-                path=staged_path,
-                size_bytes=staged_path.stat().st_size,
-                sha256_hex="abc123",
-            ),
+    document = UploadedDocument.from_staged_upload(
+        filename="statement.pdf",
+        staged_upload=UploadedDocumentStage(
+            path=staged_path,
+            size_bytes=staged_path.stat().st_size,
+            sha256_hex="abc123",
         ),
-        anonymous_fingerprint="anon-123",
-        user_token="user-token",
-        authorization="Bearer auth-token",
-        access_cookie_token="cookie-token",
+    )
+    request = ConversionJob.create(
+        document=ConversionDocumentReference.from_document(
+            document,
+            storage_key="doc_1234567890abcdef12345678",
+        ),
+        identity=IdentityContext(identity_type="user", identity_id="usr_123", quota_limit=10),
         scanned_likely=True,
         estimated_pages_count=4,
     )
@@ -254,19 +256,20 @@ def test_conversion_job_captures_preflight_flags() -> None:
 def test_document_conversion_runtime_tracks_ocr_progress_and_forwards_callback() -> None:
     staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
     observed_progress: list[tuple[int, int]] = []
-    request = ConversionJob.from_inputs(
-        document=UploadedDocument.from_staged_upload(
-            filename="statement.pdf",
-            staged_upload=UploadedDocumentStage(
-                path=staged_path,
-                size_bytes=staged_path.stat().st_size,
-                sha256_hex="abc123",
-            ),
+    document = UploadedDocument.from_staged_upload(
+        filename="statement.pdf",
+        staged_upload=UploadedDocumentStage(
+            path=staged_path,
+            size_bytes=staged_path.stat().st_size,
+            sha256_hex="abc123",
         ),
-        anonymous_fingerprint=None,
-        user_token="user-token",
-        authorization=None,
-        access_cookie_token=None,
+    )
+    request = ConversionJob.create(
+        document=ConversionDocumentReference.from_document(
+            document,
+            storage_key="doc_1234567890abcdef12345678",
+        ),
+        identity=IdentityContext(identity_type="user", identity_id="usr_123", quota_limit=10),
         scanned_likely=True,
         estimated_pages_count=3,
     )
