@@ -28,6 +28,7 @@ def build_canonical_quality_metrics(canonical_transactions: list[CanonicalTransa
         "inline": sum(1 for item in canonical_transactions if item.source_parser == "inline"),
         "tabular": sum(1 for item in canonical_transactions if item.source_parser == "tabular"),
         "columnar": sum(1 for item in canonical_transactions if item.source_parser == "columnar"),
+        "multiline": sum(1 for item in canonical_transactions if item.source_parser == "multiline"),
     }
     parser_types = sorted(
         {
@@ -59,6 +60,7 @@ def build_canonical_quality_metrics(canonical_transactions: list[CanonicalTransa
         "canonical_source_parser_inline_count": parser_counts["inline"],
         "canonical_source_parser_tabular_count": parser_counts["tabular"],
         "canonical_source_parser_columnar_count": parser_counts["columnar"],
+        "canonical_source_parser_multiline_count": parser_counts["multiline"],
         "canonical_source_parser_types_count": len(parser_types),
         "canonical_source_parser_types": ",".join(parser_types),
         "canonical_source_parser_types_list": "|".join(parser_types),

@@ -57,6 +57,7 @@ from app.application.parsers.pdf.layout_specific.contract import (
 )
 from app.application.parsers.pdf.layout_specific.registry import DEFAULT_PDF_LAYOUT_PARSER_REGISTRY
 from app.application.parsers.pdf.models import PdfParseResult, _ParsedTransaction, _PdfLine, _TabularColumnPositions
+from app.application.parsers.pdf.multiline_transaction_assembler import parse_multiline_transaction_rows
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
 from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE, extract_pdf_page_texts_with_ocr, is_pdf_ocr_enabled
 from app.application.textract_extraction_mapper import map_textract_blocks_to_extraction
@@ -564,6 +565,10 @@ def _parse_pdf_transactions_from_page_texts(
         parse_inline_rows=_parse_inline_statement_rows,
         parse_tabular_rows=lambda all_lines, profile: _parse_tabular_statement_rows(all_lines, layout_profile=profile),
         parse_columnar_rows=_parse_columnar_statement_blocks,
+        parse_multiline_rows=lambda all_lines, profile: parse_multiline_transaction_rows(
+            all_lines,
+            layout_profile=profile,
+        ),
     )
     parsed_rows = selection.rows
     parsed_rows = _adjust_forward_year_rollover_rows(parsed_rows, line_texts=_extract_line_texts(lines))
@@ -574,10 +579,13 @@ def _parse_pdf_transactions_from_page_texts(
     tabular_transactions_count = selection.tabular_transactions_count
     columnar_candidates_count = selection.columnar_candidates
     columnar_transactions_count = selection.columnar_transactions_count
+    multiline_candidates_count = selection.multiline_candidates
+    multiline_transactions_count = selection.multiline_transactions_count
     parser_selection_reason = selection.selection_reason
     inline_decision = selection.inline_decision
     tabular_decision = selection.tabular_decision
     columnar_decision = selection.columnar_decision
+    multiline_decision = selection.multiline_decision
     return _build_pdf_parse_result(
         parsed_rows=parsed_rows,
         layout=layout,
@@ -598,6 +606,9 @@ def _parse_pdf_transactions_from_page_texts(
         tabular_transactions_count=tabular_transactions_count,
         columnar_candidates_count=columnar_candidates_count,
         columnar_transactions_count=columnar_transactions_count,
+        multiline_candidates_count=multiline_candidates_count,
+        multiline_transactions_count=multiline_transactions_count,
+        multiline_decision=multiline_decision,
     )
 
 
@@ -752,6 +763,9 @@ def _build_pdf_parse_result(
     tabular_transactions_count: int,
     columnar_candidates_count: int,
     columnar_transactions_count: int,
+    multiline_candidates_count: int = 0,
+    multiline_transactions_count: int = 0,
+    multiline_decision: str = "not_evaluated",
 ) -> PdfParseResult:
     transactions = [item.transaction for item in parsed_rows]
     canonical_transactions = build_canonical_transactions(
@@ -764,33 +778,37 @@ def _build_pdf_parse_result(
     )
     balance_checked_count, balance_failed_count = annotate_balance_consistency(canonical_transactions)
     canonical_quality_metrics = build_canonical_quality_metrics(canonical_transactions)
+    parse_metrics = build_pdf_parse_metrics(
+        page_count=page_count,
+        extracted_char_count=len(joined_text),
+        flattened_line_count=flattened_line_count,
+        invalid_date_candidates_skipped=invalid_date_candidates_skipped,
+        grouped_transactions_count=grouped_transactions_count,
+        inline_candidates_count=inline_candidates_count,
+        inline_transactions_count=inline_transactions_count,
+        tabular_candidates_count=tabular_candidates_count,
+        tabular_transactions_count=tabular_transactions_count,
+        columnar_candidates_count=columnar_candidates_count,
+        columnar_transactions_count=columnar_transactions_count,
+        selected_parser=selected_parser,
+        parser_selection_reason=parser_selection_reason,
+        inline_decision=inline_decision,
+        tabular_decision=tabular_decision,
+        columnar_decision=columnar_decision,
+        layout_used_fallback=layout.used_fallback,
+        balance_consistency_checked=balance_checked_count,
+        balance_consistency_failed=balance_failed_count,
+        canonical_quality_metrics=canonical_quality_metrics,
+    )
+    parse_metrics["multiline_candidates_count"] = multiline_candidates_count
+    parse_metrics["multiline_transactions_count"] = multiline_transactions_count
+    parse_metrics["multiline_decision"] = multiline_decision
     return PdfParseResult(
         transactions=transactions,
         canonical_transactions=canonical_transactions,
         layout=layout,
         extracted_text=joined_text,
-        parse_metrics=build_pdf_parse_metrics(
-            page_count=page_count,
-            extracted_char_count=len(joined_text),
-            flattened_line_count=flattened_line_count,
-            invalid_date_candidates_skipped=invalid_date_candidates_skipped,
-            grouped_transactions_count=grouped_transactions_count,
-            inline_candidates_count=inline_candidates_count,
-            inline_transactions_count=inline_transactions_count,
-            tabular_candidates_count=tabular_candidates_count,
-            tabular_transactions_count=tabular_transactions_count,
-            columnar_candidates_count=columnar_candidates_count,
-            columnar_transactions_count=columnar_transactions_count,
-            selected_parser=selected_parser,
-            parser_selection_reason=parser_selection_reason,
-            inline_decision=inline_decision,
-            tabular_decision=tabular_decision,
-            columnar_decision=columnar_decision,
-            layout_used_fallback=layout.used_fallback,
-            balance_consistency_checked=balance_checked_count,
-            balance_consistency_failed=balance_failed_count,
-            canonical_quality_metrics=canonical_quality_metrics,
-        ),
+        parse_metrics=parse_metrics,
     )
 
 

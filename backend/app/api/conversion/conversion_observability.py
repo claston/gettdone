@@ -311,7 +311,7 @@ def _build_failure_diagnostics(exc: Exception) -> dict[str, str | int | bool | l
         missing_signals.append("date_pattern")
 
     parser_metrics: dict[str, int] = {}
-    for key in ("inline_candidates", "tabular_candidates", "columnar_candidates"):
+    for key in ("inline_candidates", "tabular_candidates", "columnar_candidates", "multiline_candidates"):
         match = re.search(rf"{key}=(\d+)", detail_lower)
         if match:
             parser_metrics[key] = int(match.group(1))
@@ -336,6 +336,7 @@ def _build_failure_diagnostics(exc: Exception) -> dict[str, str | int | bool | l
         diagnostics["inline_candidates"] = parser_metrics.get("inline_candidates", 0)
         diagnostics["tabular_candidates"] = parser_metrics.get("tabular_candidates", 0)
         diagnostics["columnar_candidates"] = parser_metrics.get("columnar_candidates", 0)
+        diagnostics["multiline_candidates"] = parser_metrics.get("multiline_candidates", 0)
     for key in ("textract_attempted", "textract_used", "native_text_detected"):
         if key in parse_observability:
             diagnostics[key] = int(parse_observability.get(key) or 0)

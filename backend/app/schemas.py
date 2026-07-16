@@ -77,6 +77,8 @@ class PdfProcessingMetrics(BaseModel):
     tabular_transactions_count: int = 0
     columnar_candidates_count: int = 0
     columnar_transactions_count: int = 0
+    multiline_candidates_count: int = 0
+    multiline_transactions_count: int = 0
     selected_parser: str
     parser_selection_reason: str = ""
     extraction_provider: str = ""
@@ -88,6 +90,7 @@ class PdfProcessingMetrics(BaseModel):
     inline_decision: str = ""
     tabular_decision: str = ""
     columnar_decision: str = ""
+    multiline_decision: str = ""
     confidence_band: str = ""
     export_recommendation: str = ""
     export_recommendation_reason: str = ""
@@ -109,6 +112,7 @@ class PdfProcessingMetrics(BaseModel):
     canonical_source_parser_inline_count: int = 0
     canonical_source_parser_tabular_count: int = 0
     canonical_source_parser_columnar_count: int = 0
+    canonical_source_parser_multiline_count: int = 0
     canonical_source_parser_types_count: int = 0
     canonical_source_parser_types: str = ""
     canonical_source_parser_types_list: list[str] = []

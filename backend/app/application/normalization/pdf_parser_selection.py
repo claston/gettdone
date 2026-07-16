@@ -11,6 +11,7 @@ from app.application.normalization.pdf_tabular_profile_rules import (
 
 RowsParser = Callable[[list[Any]], tuple[list[Any], int]]
 TabularRowsParser = Callable[[list[Any], Any | None], tuple[list[Any], int]]
+MultilineRowsParser = Callable[[list[Any], Any | None], tuple[list[Any], int]]
 
 @dataclass(frozen=True)
 class SelectedParserRows:
@@ -26,6 +27,9 @@ class SelectedParserRows:
     inline_decision: str
     tabular_decision: str
     columnar_decision: str
+    multiline_candidates: int = 0
+    multiline_transactions_count: int = 0
+    multiline_decision: str = "not_evaluated"
 
 
 def _resolve_line_texts(lines: list[Any]) -> list[str]:
@@ -47,6 +51,7 @@ def _build_pdf_pattern_failure_detail(
     inline_candidates: int,
     tabular_candidates: int,
     columnar_candidates: int,
+    multiline_candidates: int,
     layout_profile: Any | None,
 ) -> str:
     line_texts = _resolve_line_texts(lines)
@@ -60,7 +65,12 @@ def _build_pdf_pattern_failure_detail(
         missing_signals.append("date_pattern")
     if not has_amount_like:
         missing_signals.append("amount_pattern")
-    if inline_candidates == 0 and tabular_candidates == 0 and columnar_candidates == 0:
+    if (
+        inline_candidates == 0
+        and tabular_candidates == 0
+        and columnar_candidates == 0
+        and multiline_candidates == 0
+    ):
         missing_signals.append("transaction_row_pattern")
     detail_suffix = (
         " diagnostics:"
@@ -69,6 +79,7 @@ def _build_pdf_pattern_failure_detail(
         f" inline_candidates={inline_candidates}"
         f" tabular_candidates={tabular_candidates}"
         f" columnar_candidates={columnar_candidates}"
+        f" multiline_candidates={multiline_candidates}"
         f" missing_signals={','.join(sorted(set(missing_signals)))}"
     )
     return base_message + detail_suffix
@@ -222,6 +233,7 @@ def select_parsed_rows(
     parse_inline_rows: RowsParser,
     parse_tabular_rows: TabularRowsParser,
     parse_columnar_rows: RowsParser,
+    parse_multiline_rows: MultilineRowsParser | None = None,
 ) -> SelectedParserRows:
     if grouped_rows:
         inline_rows, inline_candidates = parse_inline_rows(lines)
@@ -408,7 +420,30 @@ def select_parsed_rows(
             columnar_decision="selected",
         )
 
-    if inline_candidates > 0 or tabular_candidates > 0 or columnar_candidates > 0:
+    multiline_rows: list[Any] = []
+    multiline_candidates = 0
+    if parse_multiline_rows is not None:
+        multiline_rows, multiline_candidates = parse_multiline_rows(lines, layout_profile)
+    if multiline_rows:
+        return SelectedParserRows(
+            selected_parser="multiline",
+            rows=multiline_rows,
+            inline_candidates=inline_candidates,
+            inline_transactions_count=inline_transactions_count,
+            tabular_candidates=tabular_candidates,
+            columnar_candidates=columnar_candidates,
+            tabular_transactions_count=tabular_transactions_count,
+            columnar_transactions_count=columnar_transactions_count,
+            selection_reason="multiline_rows_available_after_existing_parsers_empty",
+            inline_decision="no_rows",
+            tabular_decision="no_rows",
+            columnar_decision="no_rows",
+            multiline_candidates=multiline_candidates,
+            multiline_transactions_count=len(multiline_rows),
+            multiline_decision="selected_after_existing_parsers_empty",
+        )
+
+    if inline_candidates > 0 or tabular_candidates > 0 or columnar_candidates > 0 or multiline_candidates > 0:
         raise InvalidFileContentError(
             _build_pdf_pattern_failure_detail(
                 base_message="PDF text was extracted, but transactions are in an unsupported table layout.",
@@ -416,6 +451,7 @@ def select_parsed_rows(
                 inline_candidates=inline_candidates,
                 tabular_candidates=tabular_candidates,
                 columnar_candidates=columnar_candidates,
+                multiline_candidates=multiline_candidates,
                 layout_profile=layout_profile,
             )
         )
@@ -426,6 +462,7 @@ def select_parsed_rows(
             inline_candidates=inline_candidates,
             tabular_candidates=tabular_candidates,
             columnar_candidates=columnar_candidates,
+            multiline_candidates=multiline_candidates,
             layout_profile=layout_profile,
         )
     )
