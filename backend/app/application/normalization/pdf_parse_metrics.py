@@ -80,6 +80,10 @@ def build_pdf_parse_metrics(
         "canonical_source_parser_inline_count": canonical_quality_metrics["canonical_source_parser_inline_count"],
         "canonical_source_parser_tabular_count": canonical_quality_metrics["canonical_source_parser_tabular_count"],
         "canonical_source_parser_columnar_count": canonical_quality_metrics["canonical_source_parser_columnar_count"],
+        "canonical_source_parser_multiline_count": canonical_quality_metrics.get(
+            "canonical_source_parser_multiline_count",
+            0,
+        ),
         "canonical_source_parser_types_count": canonical_quality_metrics["canonical_source_parser_types_count"],
         "canonical_source_parser_types": canonical_quality_metrics["canonical_source_parser_types"],
         "canonical_source_parser_types_list": canonical_quality_metrics["canonical_source_parser_types_list"],

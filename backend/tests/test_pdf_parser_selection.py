@@ -274,6 +274,44 @@ def test_select_parsed_rows_raises_no_pattern_when_no_candidates_exist() -> None
     assert "transaction_row_pattern" in str(exc_info.value)
 
 
+def test_select_parsed_rows_uses_multiline_only_after_existing_parsers_are_empty() -> None:
+    recovered_row = object()
+
+    selection = select_parsed_rows(
+        lines=["15/07/2026", "PIX RECEBIDO", "10,00 C"],
+        grouped_rows=[],
+        layout_profile=None,
+        parse_inline_rows=lambda _: ([], 0),
+        parse_tabular_rows=lambda _lines, _profile: ([], 0),
+        parse_columnar_rows=lambda _: ([], 0),
+        parse_multiline_rows=lambda _lines, _profile: ([recovered_row], 1),
+    )
+
+    assert selection.selected_parser == "multiline"
+    assert selection.rows == [recovered_row]
+    assert selection.multiline_candidates == 1
+    assert selection.multiline_transactions_count == 1
+    assert selection.multiline_decision == "selected_after_existing_parsers_empty"
+
+
+def test_select_parsed_rows_does_not_run_multiline_when_inline_succeeds() -> None:
+    inline_row = object()
+    multiline_calls = []
+
+    selection = select_parsed_rows(
+        lines=["15/07/2026 PIX RECEBIDO 10,00 C"],
+        grouped_rows=[],
+        layout_profile=None,
+        parse_inline_rows=lambda _: ([inline_row], 1),
+        parse_tabular_rows=lambda _lines, _profile: ([], 0),
+        parse_columnar_rows=lambda _: ([], 0),
+        parse_multiline_rows=lambda _lines, _profile: multiline_calls.append(True) or ([], 0),
+    )
+
+    assert selection.selected_parser == "inline"
+    assert multiline_calls == []
+
+
 def test_select_parsed_rows_diagnostics_use_the_same_spaced_month_date_shape_as_parser() -> None:
     with pytest.raises(InvalidFileContentError) as exc_info:
         select_parsed_rows(

@@ -191,6 +191,8 @@ def _build_pdf_processing_metrics(
         "tabular_transactions_count": int(parse_metrics.get("tabular_transactions_count", 0)),
         "columnar_candidates_count": int(parse_metrics.get("columnar_candidates_count", 0)),
         "columnar_transactions_count": int(parse_metrics.get("columnar_transactions_count", 0)),
+        "multiline_candidates_count": int(parse_metrics.get("multiline_candidates_count", 0)),
+        "multiline_transactions_count": int(parse_metrics.get("multiline_transactions_count", 0)),
         "selected_parser": str(parse_metrics.get("selected_parser", "unknown")),
         "parser_selection_reason": str(parse_metrics.get("parser_selection_reason", "")),
         "extraction_provider": str(parse_metrics.get("extraction_provider", "")),
@@ -202,6 +204,7 @@ def _build_pdf_processing_metrics(
         "inline_decision": str(parse_metrics.get("inline_decision", "")),
         "tabular_decision": str(parse_metrics.get("tabular_decision", "")),
         "columnar_decision": str(parse_metrics.get("columnar_decision", "")),
+        "multiline_decision": str(parse_metrics.get("multiline_decision", "")),
         "confidence_band": str(parse_metrics.get("confidence_band", "")),
         "export_recommendation": str(parse_metrics.get("export_recommendation", "")),
         "export_recommendation_reason": str(parse_metrics.get("export_recommendation_reason", "")),
@@ -234,6 +237,9 @@ def _build_pdf_processing_metrics(
         "canonical_source_parser_tabular_count": int(parse_metrics.get("canonical_source_parser_tabular_count", 0)),
         "canonical_source_parser_columnar_count": int(
             parse_metrics.get("canonical_source_parser_columnar_count", 0)
+        ),
+        "canonical_source_parser_multiline_count": int(
+            parse_metrics.get("canonical_source_parser_multiline_count", 0)
         ),
         "canonical_source_parser_types_count": int(parse_metrics.get("canonical_source_parser_types_count", 0)),
         "canonical_source_parser_types": str(parse_metrics.get("canonical_source_parser_types", "")),
