@@ -1,4 +1,6 @@
-from dataclasses import dataclass
+import math
+import re
+from dataclasses import dataclass, replace
 from typing import Any, Callable
 
 from app.application.errors import InvalidFileContentError
@@ -8,6 +10,7 @@ from app.application.normalization.pdf_tabular_profile_rules import (
     find_profile_tabular_amount_tokens,
     profile_date_formats,
 )
+from app.application.normalization.text import normalize_upper_text
 
 RowsParser = Callable[[list[Any]], tuple[list[Any], int]]
 TabularRowsParser = Callable[[list[Any], Any | None], tuple[list[Any], int]]
@@ -30,6 +33,182 @@ class SelectedParserRows:
     multiline_candidates: int = 0
     multiline_transactions_count: int = 0
     multiline_decision: str = "not_evaluated"
+    multiline_overlap_count: int = 0
+    multiline_coverage_gain: int = 0
+    multiline_conflict_count: int = 0
+
+
+@dataclass(frozen=True)
+class _MultilineCoverageAssessment:
+    overlap_count: int
+    coverage_gain: int
+    conflict_count: int
+    should_select: bool
+    decision: str
+
+
+def _row_transaction(row: Any) -> Any | None:
+    transaction = getattr(row, "transaction", None)
+    if transaction is None:
+        return None
+    if not str(getattr(transaction, "date", "")).strip():
+        return None
+    if getattr(transaction, "amount", None) is None:
+        return None
+    return transaction
+
+
+def _normalized_description_tokens(row: Any) -> set[str]:
+    transaction = _row_transaction(row)
+    if transaction is None:
+        return set()
+    normalized = normalize_upper_text(str(getattr(transaction, "description", "")))
+    return {token for token in re.findall(r"[A-Z0-9]+", normalized) if len(token) >= 2}
+
+
+def _descriptions_are_compatible(left: Any, right: Any) -> bool:
+    left_tokens = _normalized_description_tokens(left)
+    right_tokens = _normalized_description_tokens(right)
+    if not left_tokens or not right_tokens:
+        return False
+    shared_count = len(left_tokens & right_tokens)
+    return shared_count / min(len(left_tokens), len(right_tokens)) >= 0.6
+
+
+def _same_source_position(left: Any, right: Any) -> bool:
+    left_page = getattr(left, "source_page", None)
+    right_page = getattr(right, "source_page", None)
+    left_line = getattr(left, "source_line", None)
+    right_line = getattr(right, "source_line", None)
+    return (
+        left_page is not None
+        and right_page is not None
+        and left_line is not None
+        and right_line is not None
+        and left_page == right_page
+        and left_line == right_line
+    )
+
+
+def _rows_share_identity(left: Any, right: Any) -> bool:
+    left_transaction = _row_transaction(left)
+    right_transaction = _row_transaction(right)
+    if left_transaction is None or right_transaction is None:
+        return False
+    if getattr(left_transaction, "date") != getattr(right_transaction, "date"):
+        return False
+    return _same_source_position(left, right) or _descriptions_are_compatible(left, right)
+
+
+def _rows_match(left: Any, right: Any) -> bool:
+    if not _rows_share_identity(left, right):
+        return False
+    left_amount = float(getattr(_row_transaction(left), "amount"))
+    right_amount = float(getattr(_row_transaction(right), "amount"))
+    return abs(left_amount - right_amount) <= 0.02
+
+
+def _rows_conflict(left: Any, right: Any) -> bool:
+    if not _rows_share_identity(left, right):
+        return False
+    left_amount = float(getattr(_row_transaction(left), "amount"))
+    right_amount = float(getattr(_row_transaction(right), "amount"))
+    return abs(left_amount - right_amount) > 0.02
+
+
+def _assess_multiline_coverage(
+    *,
+    primary_rows: list[Any],
+    multiline_rows: list[Any],
+) -> _MultilineCoverageAssessment:
+    coverage_gain = max(0, len(multiline_rows) - len(primary_rows))
+    conflict_count = sum(
+        1
+        for primary_row in primary_rows
+        if any(_rows_conflict(primary_row, multiline_row) for multiline_row in multiline_rows)
+    )
+
+    available_indexes = set(range(len(multiline_rows)))
+    overlap_count = 0
+    for primary_row in primary_rows:
+        matching_index = next(
+            (
+                index
+                for index in sorted(available_indexes)
+                if _rows_match(primary_row, multiline_rows[index])
+            ),
+            None,
+        )
+        if matching_index is None:
+            continue
+        available_indexes.remove(matching_index)
+        overlap_count += 1
+
+    required_gain = max(2, math.ceil(len(primary_rows) * 0.5))
+    if conflict_count:
+        decision = "not_selected_conflicting_primary_rows"
+    elif coverage_gain == 0:
+        decision = "not_selected_no_coverage_gain"
+    elif overlap_count < len(primary_rows):
+        decision = "not_selected_primary_rows_not_covered"
+    elif coverage_gain < required_gain:
+        decision = "not_selected_insufficient_coverage_gain"
+    else:
+        decision = "selected_on_clear_coverage_gain"
+
+    return _MultilineCoverageAssessment(
+        overlap_count=overlap_count,
+        coverage_gain=coverage_gain,
+        conflict_count=conflict_count,
+        should_select=decision == "selected_on_clear_coverage_gain",
+        decision=decision,
+    )
+
+
+def _apply_multiline_coverage_selection(
+    selection: SelectedParserRows,
+    *,
+    multiline_rows: list[Any],
+    multiline_candidates: int,
+) -> SelectedParserRows:
+    if not multiline_rows:
+        return replace(
+            selection,
+            multiline_candidates=multiline_candidates,
+            multiline_decision="no_rows",
+        )
+
+    assessment = _assess_multiline_coverage(
+        primary_rows=selection.rows,
+        multiline_rows=multiline_rows,
+    )
+    metrics = {
+        "multiline_candidates": multiline_candidates,
+        "multiline_transactions_count": len(multiline_rows),
+        "multiline_decision": assessment.decision,
+        "multiline_overlap_count": assessment.overlap_count,
+        "multiline_coverage_gain": assessment.coverage_gain,
+        "multiline_conflict_count": assessment.conflict_count,
+    }
+    if not assessment.should_select:
+        return replace(selection, **metrics)
+
+    decision_updates: dict[str, str] = {}
+    primary_decision_field = {
+        "inline": "inline_decision",
+        "tabular": "tabular_decision",
+        "columnar": "columnar_decision",
+    }.get(selection.selected_parser)
+    if primary_decision_field is not None:
+        decision_updates[primary_decision_field] = "not_selected_multiline_coverage_gain"
+    return replace(
+        selection,
+        selected_parser="multiline",
+        rows=multiline_rows,
+        selection_reason=f"multiline_preferred_over_{selection.selected_parser}_on_coverage_gain",
+        **metrics,
+        **decision_updates,
+    )
 
 
 def _resolve_line_texts(lines: list[Any]) -> list[str]:
@@ -235,6 +414,26 @@ def select_parsed_rows(
     parse_columnar_rows: RowsParser,
     parse_multiline_rows: MultilineRowsParser | None = None,
 ) -> SelectedParserRows:
+    multiline_rows: list[Any] = []
+    multiline_candidates = 0
+    multiline_error: InvalidFileContentError | None = None
+    if parse_multiline_rows is not None:
+        try:
+            multiline_rows, multiline_candidates = parse_multiline_rows(lines, layout_profile)
+        except InvalidFileContentError as exc:
+            multiline_error = exc
+
+    def finalize_primary_selection(selection: SelectedParserRows) -> SelectedParserRows:
+        if parse_multiline_rows is None:
+            return selection
+        if multiline_error is not None:
+            return replace(selection, multiline_decision="evaluation_failed_primary_preserved")
+        return _apply_multiline_coverage_selection(
+            selection,
+            multiline_rows=multiline_rows,
+            multiline_candidates=multiline_candidates,
+        )
+
     if grouped_rows:
         inline_rows, inline_candidates = parse_inline_rows(lines)
         inline_transactions_count = len(inline_rows)
@@ -267,7 +466,7 @@ def select_parsed_rows(
             or tabular_avoids_opening_balance_noise
             or tabular_preserves_better_traceability_than_grouped
         ):
-            return SelectedParserRows(
+            return finalize_primary_selection(SelectedParserRows(
                 selected_parser="tabular",
                 rows=tabular_rows,
                 inline_candidates=inline_candidates,
@@ -296,9 +495,9 @@ def select_parsed_rows(
                     else "selected_on_grouped_override_traceability"
                 ),
                 columnar_decision="no_rows" if not columnar_rows else "not_selected_tabular_priority",
-            )
+            ))
 
-        return SelectedParserRows(
+        return finalize_primary_selection(SelectedParserRows(
             selected_parser="grouped",
             rows=grouped_rows,
             inline_candidates=inline_candidates,
@@ -311,7 +510,7 @@ def select_parsed_rows(
             inline_decision="not_selected_grouped_priority" if inline_rows else "no_rows",
             tabular_decision="not_selected_grouped_priority" if tabular_rows else "no_rows",
             columnar_decision="not_selected_grouped_priority" if columnar_rows else "no_rows",
-        )
+        ))
 
     inline_rows, inline_candidates = parse_inline_rows(lines)
     inline_transactions_count = len(inline_rows)
@@ -327,7 +526,7 @@ def select_parsed_rows(
     )
 
     if inline_rows and tabular_rows and (tabular_is_clearly_better_than_inline or tabular_avoids_inline_opening_balance_noise):
-        return SelectedParserRows(
+        return finalize_primary_selection(SelectedParserRows(
             selected_parser="tabular",
             rows=tabular_rows,
             inline_candidates=inline_candidates,
@@ -352,12 +551,12 @@ def select_parsed_rows(
                 else "selected_on_inline_opening_balance_noise"
             ),
             columnar_decision="no_rows" if not columnar_rows else "not_selected_tabular_priority",
-        )
+        ))
 
     if inline_rows and not (
         layout_profile is not None and tabular_transactions_count >= inline_transactions_count and tabular_rows
     ):
-        return SelectedParserRows(
+        return finalize_primary_selection(SelectedParserRows(
             selected_parser="inline",
             rows=inline_rows,
             inline_candidates=inline_candidates,
@@ -370,10 +569,10 @@ def select_parsed_rows(
             inline_decision="selected",
             tabular_decision="not_selected_inline_priority" if tabular_rows else "no_rows",
             columnar_decision="not_selected_inline_priority" if columnar_rows else "no_rows",
-        )
+        ))
 
     if inline_rows and layout_profile is not None and tabular_transactions_count >= inline_transactions_count and tabular_rows:
-        return SelectedParserRows(
+        return finalize_primary_selection(SelectedParserRows(
             selected_parser="tabular",
             rows=tabular_rows,
             inline_candidates=inline_candidates,
@@ -386,10 +585,10 @@ def select_parsed_rows(
             inline_decision="not_selected_conflict_lost_to_tabular",
             tabular_decision="selected_on_conflict",
             columnar_decision="no_rows" if not columnar_rows else "not_selected_tabular_priority",
-        )
+        ))
 
     if tabular_rows:
-        return SelectedParserRows(
+        return finalize_primary_selection(SelectedParserRows(
             selected_parser="tabular",
             rows=tabular_rows,
             inline_candidates=inline_candidates,
@@ -402,10 +601,10 @@ def select_parsed_rows(
             inline_decision="no_rows",
             tabular_decision="selected",
             columnar_decision="no_rows" if not columnar_rows else "not_selected_tabular_priority",
-        )
+        ))
 
     if columnar_rows:
-        return SelectedParserRows(
+        return finalize_primary_selection(SelectedParserRows(
             selected_parser="columnar",
             rows=columnar_rows,
             inline_candidates=inline_candidates,
@@ -418,12 +617,8 @@ def select_parsed_rows(
             inline_decision="no_rows",
             tabular_decision="no_rows",
             columnar_decision="selected",
-        )
+        ))
 
-    multiline_rows: list[Any] = []
-    multiline_candidates = 0
-    if parse_multiline_rows is not None:
-        multiline_rows, multiline_candidates = parse_multiline_rows(lines, layout_profile)
     if multiline_rows:
         return SelectedParserRows(
             selected_parser="multiline",
@@ -442,6 +637,9 @@ def select_parsed_rows(
             multiline_transactions_count=len(multiline_rows),
             multiline_decision="selected_after_existing_parsers_empty",
         )
+
+    if multiline_error is not None:
+        raise multiline_error
 
     if inline_candidates > 0 or tabular_candidates > 0 or columnar_candidates > 0 or multiline_candidates > 0:
         raise InvalidFileContentError(
