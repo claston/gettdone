@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "scenario_id": "inline_signed_values",
+  "description": "Inline transactions with explicit credit and debit suffixes.",
+  "pages": [[
+    "BANCO EXEMPLO S.A.",
+    "EXTRATO CONTA CORRENTE - PERIODO 01/07/2026 A 31/07/2026",
+    "15/07/2026 PIX RECEBIDO CLIENTE ACME 1.250,00 C",
+    "16/07/2026 PAGAMENTO FORNECEDOR BETA 200,00 D"
+  ]],
+  "variants": ["native_text", "scanned"],
+  "expected": {
+    "max_false_positives": 0,
+    "transactions": [
+      {"date": "2026-07-15", "description_contains": "PIX RECEBIDO", "amount": 1250.0, "type": "inflow"},
+      {"date": "2026-07-16", "description_contains": "PAGAMENTO FORNECEDOR", "amount": -200.0, "type": "outflow"}
+    ]
+  }
+}

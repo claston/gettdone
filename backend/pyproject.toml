@@ -9,4 +9,5 @@ select = ["E", "F", "I"]
 testpaths = ["tests"]
 markers = [
     "pdf_golden: regression tests for the minimal PDF golden dataset",
+    "pdf_ocr: optional real OCR tests that require a local Tesseract binary",
 ]
