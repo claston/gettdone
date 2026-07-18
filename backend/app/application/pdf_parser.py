@@ -581,6 +581,9 @@ def _parse_pdf_transactions_from_page_texts(
     columnar_transactions_count = selection.columnar_transactions_count
     multiline_candidates_count = selection.multiline_candidates
     multiline_transactions_count = selection.multiline_transactions_count
+    multiline_overlap_count = selection.multiline_overlap_count
+    multiline_coverage_gain = selection.multiline_coverage_gain
+    multiline_conflict_count = selection.multiline_conflict_count
     parser_selection_reason = selection.selection_reason
     inline_decision = selection.inline_decision
     tabular_decision = selection.tabular_decision
@@ -609,6 +612,9 @@ def _parse_pdf_transactions_from_page_texts(
         multiline_candidates_count=multiline_candidates_count,
         multiline_transactions_count=multiline_transactions_count,
         multiline_decision=multiline_decision,
+        multiline_overlap_count=multiline_overlap_count,
+        multiline_coverage_gain=multiline_coverage_gain,
+        multiline_conflict_count=multiline_conflict_count,
     )
 
 
@@ -766,6 +772,9 @@ def _build_pdf_parse_result(
     multiline_candidates_count: int = 0,
     multiline_transactions_count: int = 0,
     multiline_decision: str = "not_evaluated",
+    multiline_overlap_count: int = 0,
+    multiline_coverage_gain: int = 0,
+    multiline_conflict_count: int = 0,
 ) -> PdfParseResult:
     transactions = [item.transaction for item in parsed_rows]
     canonical_transactions = build_canonical_transactions(
@@ -803,6 +812,9 @@ def _build_pdf_parse_result(
     parse_metrics["multiline_candidates_count"] = multiline_candidates_count
     parse_metrics["multiline_transactions_count"] = multiline_transactions_count
     parse_metrics["multiline_decision"] = multiline_decision
+    parse_metrics["multiline_overlap_count"] = multiline_overlap_count
+    parse_metrics["multiline_coverage_gain"] = multiline_coverage_gain
+    parse_metrics["multiline_conflict_count"] = multiline_conflict_count
     return PdfParseResult(
         transactions=transactions,
         canonical_transactions=canonical_transactions,

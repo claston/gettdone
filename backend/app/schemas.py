@@ -79,6 +79,9 @@ class PdfProcessingMetrics(BaseModel):
     columnar_transactions_count: int = 0
     multiline_candidates_count: int = 0
     multiline_transactions_count: int = 0
+    multiline_overlap_count: int = 0
+    multiline_coverage_gain: int = 0
+    multiline_conflict_count: int = 0
     selected_parser: str
     parser_selection_reason: str = ""
     extraction_provider: str = ""

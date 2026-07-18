@@ -1,8 +1,28 @@
+from types import SimpleNamespace
+
 import pytest
 
 from app.application.errors import InvalidFileContentError
 from app.application.layout_profiles.registry import get_layout_profile
 from app.application.normalization.pdf_parser_selection import select_parsed_rows
+
+
+def _parsed_row(
+    date: str,
+    description: str,
+    amount: float,
+    *,
+    source_line: int,
+    source_page: int = 1,
+):
+    return SimpleNamespace(
+        transaction=SimpleNamespace(date=date, description=description, amount=amount),
+        source_page=source_page,
+        source_line=source_line,
+        running_balance=None,
+        external_reference_id=None,
+        has_explicit_amount_sign=True,
+    )
 
 
 def test_select_parsed_rows_prioritizes_grouped_when_available() -> None:
@@ -27,6 +47,7 @@ def test_select_parsed_rows_prioritizes_grouped_when_available() -> None:
     assert result.inline_decision == "not_selected_grouped_priority"
     assert result.tabular_decision == "not_selected_grouped_priority"
     assert result.columnar_decision == "not_selected_grouped_priority"
+    assert result.multiline_decision == "not_evaluated"
 
 
 def test_select_parsed_rows_overrides_grouped_when_tabular_has_large_row_count_gap() -> None:
@@ -294,8 +315,8 @@ def test_select_parsed_rows_uses_multiline_only_after_existing_parsers_are_empty
     assert selection.multiline_decision == "selected_after_existing_parsers_empty"
 
 
-def test_select_parsed_rows_does_not_run_multiline_when_inline_succeeds() -> None:
-    inline_row = object()
+def test_select_parsed_rows_evaluates_multiline_but_keeps_inline_without_coverage_gain() -> None:
+    inline_row = _parsed_row("2026-07-15", "PIX RECEBIDO", 10.0, source_line=1)
     multiline_calls = []
 
     selection = select_parsed_rows(
@@ -305,11 +326,177 @@ def test_select_parsed_rows_does_not_run_multiline_when_inline_succeeds() -> Non
         parse_inline_rows=lambda _: ([inline_row], 1),
         parse_tabular_rows=lambda _lines, _profile: ([], 0),
         parse_columnar_rows=lambda _: ([], 0),
-        parse_multiline_rows=lambda _lines, _profile: multiline_calls.append(True) or ([], 0),
+        parse_multiline_rows=lambda _lines, _profile: multiline_calls.append(True) or ([inline_row], 1),
     )
 
     assert selection.selected_parser == "inline"
-    assert multiline_calls == []
+    assert multiline_calls == [True]
+    assert selection.multiline_candidates == 1
+    assert selection.multiline_transactions_count == 1
+    assert selection.multiline_overlap_count == 1
+    assert selection.multiline_coverage_gain == 0
+    assert selection.multiline_conflict_count == 0
+    assert selection.multiline_decision == "not_selected_no_coverage_gain"
+
+
+def test_select_parsed_rows_prefers_multiline_on_clear_compatible_coverage_gain() -> None:
+    inline_row = _parsed_row("2026-07-15", "PIX RECEBIDO CLIENTE", 10.0, source_line=1)
+    multiline_rows = [
+        _parsed_row("2026-07-15", "PIX RECEBIDO CLIENTE ACME", 10.0, source_line=1),
+        _parsed_row("2026-07-16", "PAGAMENTO FORNECEDOR", -20.0, source_line=4),
+        _parsed_row("2026-07-17", "TARIFA BANCARIA", -5.0, source_line=7),
+    ]
+
+    selection = select_parsed_rows(
+        lines=["line"],
+        grouped_rows=[],
+        layout_profile=None,
+        parse_inline_rows=lambda _: ([inline_row], 1),
+        parse_tabular_rows=lambda _lines, _profile: ([], 0),
+        parse_columnar_rows=lambda _: ([], 0),
+        parse_multiline_rows=lambda _lines, _profile: (multiline_rows, 3),
+    )
+
+    assert selection.selected_parser == "multiline"
+    assert selection.rows == multiline_rows
+    assert selection.selection_reason == "multiline_preferred_over_inline_on_coverage_gain"
+    assert selection.inline_decision == "not_selected_multiline_coverage_gain"
+    assert selection.multiline_overlap_count == 1
+    assert selection.multiline_coverage_gain == 2
+    assert selection.multiline_conflict_count == 0
+    assert selection.multiline_decision == "selected_on_clear_coverage_gain"
+
+
+def test_select_parsed_rows_can_override_grouped_on_clear_compatible_coverage_gain() -> None:
+    grouped_row = _parsed_row("2026-07-15", "PIX RECEBIDO CLIENTE", 10.0, source_line=1)
+    multiline_rows = [
+        _parsed_row("2026-07-15", "PIX RECEBIDO CLIENTE ACME", 10.0, source_line=1),
+        _parsed_row("2026-07-16", "PAGAMENTO FORNECEDOR", -20.0, source_line=4),
+        _parsed_row("2026-07-17", "TARIFA BANCARIA", -5.0, source_line=7),
+    ]
+
+    selection = select_parsed_rows(
+        lines=["line"],
+        grouped_rows=[grouped_row],
+        layout_profile=None,
+        parse_inline_rows=lambda _: ([], 0),
+        parse_tabular_rows=lambda _lines, _profile: ([], 0),
+        parse_columnar_rows=lambda _: ([], 0),
+        parse_multiline_rows=lambda _lines, _profile: (multiline_rows, 3),
+    )
+
+    assert selection.selected_parser == "multiline"
+    assert selection.selection_reason == "multiline_preferred_over_grouped_on_coverage_gain"
+    assert selection.multiline_overlap_count == 1
+    assert selection.multiline_coverage_gain == 2
+    assert selection.multiline_decision == "selected_on_clear_coverage_gain"
+
+
+def test_select_parsed_rows_keeps_primary_when_multiline_gain_is_too_small() -> None:
+    inline_row = _parsed_row("2026-07-15", "PIX RECEBIDO", 10.0, source_line=1)
+    multiline_rows = [
+        inline_row,
+        _parsed_row("2026-07-16", "PAGAMENTO FORNECEDOR", -20.0, source_line=4),
+    ]
+
+    selection = select_parsed_rows(
+        lines=["line"],
+        grouped_rows=[],
+        layout_profile=None,
+        parse_inline_rows=lambda _: ([inline_row], 1),
+        parse_tabular_rows=lambda _lines, _profile: ([], 0),
+        parse_columnar_rows=lambda _: ([], 0),
+        parse_multiline_rows=lambda _lines, _profile: (multiline_rows, 2),
+    )
+
+    assert selection.selected_parser == "inline"
+    assert selection.multiline_overlap_count == 1
+    assert selection.multiline_coverage_gain == 1
+    assert selection.multiline_decision == "not_selected_insufficient_coverage_gain"
+
+
+def test_select_parsed_rows_keeps_primary_when_multiline_does_not_cover_existing_rows() -> None:
+    inline_row = _parsed_row("2026-07-15", "PIX RECEBIDO", 10.0, source_line=1)
+    multiline_rows = [
+        _parsed_row("2026-07-16", "PAGAMENTO FORNECEDOR", -20.0, source_line=4),
+        _parsed_row("2026-07-17", "TARIFA BANCARIA", -5.0, source_line=7),
+        _parsed_row("2026-07-18", "COMPRA CARTAO", -30.0, source_line=10),
+    ]
+
+    selection = select_parsed_rows(
+        lines=["line"],
+        grouped_rows=[],
+        layout_profile=None,
+        parse_inline_rows=lambda _: ([inline_row], 1),
+        parse_tabular_rows=lambda _lines, _profile: ([], 0),
+        parse_columnar_rows=lambda _: ([], 0),
+        parse_multiline_rows=lambda _lines, _profile: (multiline_rows, 3),
+    )
+
+    assert selection.selected_parser == "inline"
+    assert selection.multiline_overlap_count == 0
+    assert selection.multiline_coverage_gain == 2
+    assert selection.multiline_decision == "not_selected_primary_rows_not_covered"
+
+
+def test_select_parsed_rows_keeps_primary_when_multiline_conflicts_on_amount() -> None:
+    inline_row = _parsed_row("2026-07-15", "PIX RECEBIDO CLIENTE", 10.0, source_line=1)
+    multiline_rows = [
+        _parsed_row("2026-07-15", "PIX RECEBIDO CLIENTE ACME", 100.0, source_line=1),
+        _parsed_row("2026-07-16", "PAGAMENTO FORNECEDOR", -20.0, source_line=4),
+        _parsed_row("2026-07-17", "TARIFA BANCARIA", -5.0, source_line=7),
+    ]
+
+    selection = select_parsed_rows(
+        lines=["line"],
+        grouped_rows=[],
+        layout_profile=None,
+        parse_inline_rows=lambda _: ([inline_row], 1),
+        parse_tabular_rows=lambda _lines, _profile: ([], 0),
+        parse_columnar_rows=lambda _: ([], 0),
+        parse_multiline_rows=lambda _lines, _profile: (multiline_rows, 3),
+    )
+
+    assert selection.selected_parser == "inline"
+    assert selection.multiline_overlap_count == 0
+    assert selection.multiline_conflict_count == 1
+    assert selection.multiline_decision == "not_selected_conflicting_primary_rows"
+
+
+def test_select_parsed_rows_preserves_primary_when_multiline_evaluation_fails() -> None:
+    inline_row = _parsed_row("2026-07-15", "PIX RECEBIDO", 10.0, source_line=1)
+
+    def fail_multiline(_lines, _profile):
+        raise InvalidFileContentError("Invalid date value in PDF statement")
+
+    selection = select_parsed_rows(
+        lines=["line"],
+        grouped_rows=[],
+        layout_profile=None,
+        parse_inline_rows=lambda _: ([inline_row], 1),
+        parse_tabular_rows=lambda _lines, _profile: ([], 0),
+        parse_columnar_rows=lambda _: ([], 0),
+        parse_multiline_rows=fail_multiline,
+    )
+
+    assert selection.selected_parser == "inline"
+    assert selection.multiline_decision == "evaluation_failed_primary_preserved"
+
+
+def test_select_parsed_rows_keeps_multiline_error_when_no_primary_parser_succeeds() -> None:
+    def fail_multiline(_lines, _profile):
+        raise InvalidFileContentError("Invalid date value in PDF statement")
+
+    with pytest.raises(InvalidFileContentError, match="Invalid date value"):
+        select_parsed_rows(
+            lines=["line"],
+            grouped_rows=[],
+            layout_profile=None,
+            parse_inline_rows=lambda _: ([], 0),
+            parse_tabular_rows=lambda _lines, _profile: ([], 0),
+            parse_columnar_rows=lambda _: ([], 0),
+            parse_multiline_rows=fail_multiline,
+        )
 
 
 def test_select_parsed_rows_diagnostics_use_the_same_spaced_month_date_shape_as_parser() -> None:
