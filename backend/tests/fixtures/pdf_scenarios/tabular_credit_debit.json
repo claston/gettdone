@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "scenario_id": "tabular_credit_debit",
+  "description": "Tabular statement with separate credit, debit, and running balance columns.",
+  "pages": [[
+    "VIACREDI COOPERATIVA AILOS",
+    "DATA DESCRICAO DOCUMENTO CREDITO (R$) DEBITO (R$) SALDO (R$)",
+    "01/10/2024 PIX RECEBIDO CLIENTE 123 1.000,00 0,00 1.500,00",
+    "02/10/2024 TARIFA PACOTE SERVICOS 456 0,00 12,34 1.487,66"
+  ]],
+  "variants": ["native_text", "scanned"],
+  "expected": {
+    "enforce_success": false,
+    "known_gap": "Unforced layout inference can select the zero-valued debit column.",
+    "selected_parser": "tabular",
+    "max_false_positives": 0,
+    "transactions": [
+      {"date": "2024-10-01", "description_contains": "PIX RECEBIDO", "amount": 1000.0, "type": "inflow"},
+      {"date": "2024-10-02", "description_contains": "TARIFA PACOTE", "amount": -12.34, "type": "outflow"}
+    ]
+  }
+}

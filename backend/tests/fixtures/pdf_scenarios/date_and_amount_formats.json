@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "scenario_id": "date_and_amount_formats",
+  "description": "Supported ISO, abbreviated month, and full Portuguese month date formats.",
+  "pages": [[
+    "EXTRATO CONTA CORRENTE - PERIODO JULHO DE 2026",
+    "2026-07-15 PIX RECEBIDO CLIENTE +R$ 100,00",
+    "16 JUL 2026 PAGAMENTO SERVICO -R$ 25,50",
+    "17 DE JULHO DE 2026 ESTORNO TARIFA +R$ 5,00"
+  ]],
+  "variants": ["native_text", "scanned"],
+  "expected": {
+    "enforce_success": false,
+    "known_gap": "Generic inline rows do not yet recognize ISO date prefixes.",
+    "max_false_positives": 0,
+    "transactions": [
+      {"date": "2026-07-15", "description_contains": "PIX RECEBIDO", "amount": 100.0, "type": "inflow"},
+      {"date": "2026-07-16", "description_contains": "PAGAMENTO SERVICO", "amount": -25.5, "type": "outflow"},
+      {"date": "2026-07-17", "description_contains": "ESTORNO TARIFA", "amount": 5.0, "type": "inflow"}
+    ]
+  }
+}

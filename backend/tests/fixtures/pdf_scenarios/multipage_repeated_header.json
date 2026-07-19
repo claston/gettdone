@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "scenario_id": "multipage_repeated_header",
+  "description": "Multi-page inline statement with a repeated table header.",
+  "pages": [
+    [
+      "BANCO EXEMPLO S.A.",
+      "EXTRATO CONTA CORRENTE - PERIODO 01/05/2026 A 31/05/2026",
+      "09/05/2026 PAGAMENTO FORNECEDOR ALFA 150,25 D",
+      "10/05/2026 PIX RECEBIDO CLIENTE BETA 500,00 C"
+    ],
+    [
+      "DATA DESCRICAO DOCUMENTO VALOR SALDO",
+      "11/05/2026 TARIFA PROCESSAMENTO 35,50 D"
+    ]
+  ],
+  "variants": ["native_text", "scanned"],
+  "expected": {
+    "max_false_positives": 0,
+    "transactions": [
+      {"date": "2026-05-09", "description_contains": "PAGAMENTO FORNECEDOR", "amount": -150.25, "type": "outflow"},
+      {"date": "2026-05-10", "description_contains": "PIX RECEBIDO", "amount": 500.0, "type": "inflow"},
+      {"date": "2026-05-11", "description_contains": "TARIFA PROCESSAMENTO", "amount": -35.5, "type": "outflow"}
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "scenario_id": "multiline_split_fields",
+  "description": "Transactions split across date, description, document, amount, and balance lines.",
+  "pages": [[
+    "EXTRATO CONTA CORRENTE",
+    "15/07/2026",
+    "PIX RECEBIDO CLIENTE ACME",
+    "123456",
+    "1.250,00 C",
+    "8.430,20",
+    "16/07/2026",
+    "PAGAMENTO FORNECEDOR BETA",
+    "654321",
+    "200,00 D",
+    "8.230,20"
+  ]],
+  "variants": ["native_text", "scanned"],
+  "expected": {
+    "max_false_positives": 0,
+    "transactions": [
+      {"date": "2026-07-15", "description_contains": "PIX RECEBIDO", "amount": 1250.0, "type": "inflow"},
+      {"date": "2026-07-16", "description_contains": "PAGAMENTO FORNECEDOR", "amount": -200.0, "type": "outflow"}
+    ]
+  }
+}
