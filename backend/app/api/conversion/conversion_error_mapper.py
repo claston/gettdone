@@ -99,6 +99,7 @@ def _is_likely_corrupted_pdf_detail(detail: str) -> bool:
         "eof marker",
         "malformed pdf",
         "invalid pdf",
+        "unable to extract native pdf text",
         "corrupt",
         "corrompid",
     )

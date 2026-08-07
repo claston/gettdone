@@ -195,6 +195,8 @@ def parse_pdf_transactions(
             native_text_detected=native_text_detected,
         )
 
+    if native_read_error is not None and max_ocr_pages is not None:
+        _enforce_ocr_page_limit(page_count=_read_pdf_page_count(raw_bytes), max_ocr_pages=max_ocr_pages)
     if on_ocr_progress is None:
         page_texts = _extract_pdf_page_texts(raw_bytes)
     else:
@@ -230,6 +232,7 @@ def parse_pdf_transactions(
         primary_result,
         textract_attempted=textract_attempted,
         native_text_detected=native_text_detected,
+        ocr_retry_reason="native_text_extraction_failed" if native_read_error is not None else None,
     )
 
     if not using_native_text:
@@ -828,7 +831,14 @@ def _extract_pdf_page_texts(
     raw_bytes: bytes,
     on_ocr_progress: Callable[[int, int], None] | None = None,
 ) -> list[str]:
-    pages = _read_native_pdf_page_texts(raw_bytes)
+    native_read_error: InvalidFileContentError | None = None
+    try:
+        pages = _read_native_pdf_page_texts(raw_bytes)
+    except InvalidFileContentError as exc:
+        if getattr(exc, "_pdf_structure_read_ok", None) is not True:
+            raise
+        pages = []
+        native_read_error = exc
     if pages:
         return pages
     if is_pdf_ocr_enabled():
@@ -839,6 +849,8 @@ def _extract_pdf_page_texts(
         if ocr_pages:
             return ocr_pages
 
+    if native_read_error is not None:
+        raise native_read_error
     raise InvalidFileContentError(PDF_OCR_DISABLED_MESSAGE)
 
 

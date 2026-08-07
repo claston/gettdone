@@ -49,6 +49,20 @@ def test_conversion_job_is_immutable_and_keeps_execution_hooks_outside_payload(t
         job.job_id = "changed"  # type: ignore[misc]
 
 
+def test_conversion_job_preserves_unknown_scan_detection(tmp_path: Path) -> None:
+    store = FilesystemConversionDocumentStore(root_dir=tmp_path / "jobs")
+
+    job = ConversionJob.create(
+        document=store.store(_document()),
+        identity=IdentityContext(identity_type="anonymous", identity_id="anon_unknown", quota_limit=3),
+        scanned_likely=None,
+        estimated_pages_count=1,
+    )
+
+    assert job.preflight_result.scanned_likely is None
+    assert job.preflight_result.estimated_pages_count == 1
+
+
 def test_inline_conversion_job_executor_materializes_and_deletes_document(tmp_path: Path) -> None:
     class FakePipeline:
         def __init__(self) -> None:

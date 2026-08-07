@@ -61,12 +61,12 @@ def _is_sse_request(accept: str | None) -> bool:
     return "text/event-stream" in str(accept or "").lower()
 
 
-def _inspect_pdf_scan_likely(filename: str, raw_bytes: bytes) -> tuple[bool, int | None]:
+def _inspect_pdf_scan_likely(filename: str, raw_bytes: bytes) -> tuple[bool | None, int | None]:
     preflight = DocumentPreflightService().inspect_raw_bytes(filename=filename, raw_bytes=raw_bytes)
     return preflight.scanned_likely, preflight.estimated_pages_count
 
 
-def _inspect_pdf_scan_likely_from_path(filename: str, staged_path: Path) -> tuple[bool, int | None]:
+def _inspect_pdf_scan_likely_from_path(filename: str, staged_path: Path) -> tuple[bool | None, int | None]:
     preflight = DocumentPreflightService().inspect_staged_upload(filename=filename, staged_path=staged_path)
     return preflight.scanned_likely, preflight.estimated_pages_count
 

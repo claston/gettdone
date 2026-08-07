@@ -3,12 +3,14 @@ from shutil import which
 
 import pytest
 
+from app.application.errors import InvalidFileContentError
 from app.application.parsers.pdf.text_extraction import read_native_pdf_page_texts, read_pdf_page_count
 from app.application.pdf_parser import parse_pdf_transactions
 from synthetic_pdf_corpus.catalog import load_scenarios
 from synthetic_pdf_corpus.evaluator import evaluate_transactions
 from synthetic_pdf_corpus.generator import generate_pdf
 from synthetic_pdf_corpus.models import ExpectedTransaction
+from synthetic_pdf_corpus.native_text_pdf import generate_null_font_pdf
 from synthetic_pdf_corpus.runner import evaluate_pdf, summarize_results
 
 _SCENARIOS_DIR = Path(__file__).parent / "fixtures" / "pdf_scenarios"
@@ -50,6 +52,18 @@ def test_scanned_pdf_generator_has_pages_without_native_text(scenario) -> None:
     assert raw_pdf.startswith(b"%PDF")
     assert read_pdf_page_count(raw_pdf) == len(scenario.pages)
     assert read_native_pdf_page_texts(raw_pdf) == []
+
+
+def test_native_text_reader_maps_null_font_failure_to_domain_error() -> None:
+    raw_pdf = generate_null_font_pdf()
+
+    with pytest.raises(InvalidFileContentError, match="Unable to extract native PDF text") as exc_info:
+        read_native_pdf_page_texts(raw_pdf)
+
+    assert isinstance(exc_info.value.__cause__, TypeError)
+    assert getattr(exc_info.value, "_pdf_structure_read_ok") is True
+    assert getattr(exc_info.value, "_native_text_extraction_ok") is False
+    assert getattr(exc_info.value, "_native_text_error_type") == "TypeError"
 
 
 def test_transaction_evaluator_reports_recall_precision_and_differences() -> None:

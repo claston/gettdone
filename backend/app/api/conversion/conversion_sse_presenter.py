@@ -83,7 +83,7 @@ class _ConversionUploadSseMachine:
     access_cookie_token: str | None
     use_case: ConvertDocumentUseCase
     access_control_service: AccessControlService
-    scanned_likely: bool
+    scanned_likely: bool | None
     total_pages: int | None
     execute_conversion_and_build_response: Callable[..., ConvertResponse]
 
@@ -279,6 +279,9 @@ class _ConversionUploadSseMachine:
             if "password" in detail or "senha" in detail:
                 code = "password_protected_pdf"
                 message = "O arquivo parece estar protegido por senha."
+            elif _is_likely_corrupted_pdf_detail(detail):
+                code = "invalid_pdf_content"
+                message = CORRUPTED_PDF_USER_MESSAGE
             elif "text" in detail or "ocr" in detail:
                 code = "insufficient_text"
                 message = "Não encontramos texto suficiente para converter este documento."

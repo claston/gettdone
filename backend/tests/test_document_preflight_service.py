@@ -8,6 +8,7 @@ from app.application.conversion.document_preflight_service import (
     DocumentPreflightService,
 )
 from app.application.errors import MaxPagesPerFileExceededError
+from synthetic_pdf_corpus.native_text_pdf import generate_null_font_pdf
 
 
 def _build_pdf_with_pages(page_count: int) -> bytes:
@@ -25,6 +26,14 @@ def test_inspect_raw_bytes_flags_blank_pdf_as_scanned_and_counts_pages() -> None
     result = service.inspect_raw_bytes(filename="statement.pdf", raw_bytes=_build_pdf_with_pages(2))
 
     assert result == DocumentPreflightResult(scanned_likely=True, estimated_pages_count=2)
+
+
+def test_inspect_raw_bytes_keeps_page_count_and_marks_scan_detection_unknown_on_text_failure() -> None:
+    service = DocumentPreflightService()
+
+    result = service.inspect_raw_bytes(filename="statement.pdf", raw_bytes=generate_null_font_pdf())
+
+    assert result == DocumentPreflightResult(scanned_likely=None, estimated_pages_count=1)
 
 
 def test_build_policy_rejects_pdf_above_scanned_pages_limit(tmp_path) -> None:

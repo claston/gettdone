@@ -37,6 +37,8 @@ def _resolve_failed_conversion_code(exc: Exception) -> str:
         detail = str(exc).lower()
         if "password" in detail or "senha" in detail:
             return "password_protected_pdf"
+        if _is_likely_corrupted_pdf_detail(detail):
+            return "invalid_pdf_content"
         if "text" in detail or "ocr" in detail:
             return "insufficient_text"
         return "invalid_pdf_content"
@@ -293,8 +295,18 @@ def _build_failure_diagnostics(exc: Exception) -> dict[str, str | int | bool | l
     detail_lower = detail.lower()
     parse_observability = dict(getattr(exc, "_parse_observability", {}) or {})
     missing_signals: list[str] = []
-    pdf_read_ok = "unable to read pdf bytes" not in detail_lower
+    pdf_structure_read_ok = getattr(exc, "_pdf_structure_read_ok", None)
+    native_text_extraction_ok = getattr(exc, "_native_text_extraction_ok", None)
+    native_text_error_type = str(getattr(exc, "_native_text_error_type", "") or "").strip()
+    pdf_read_ok = (
+        bool(pdf_structure_read_ok) and native_text_extraction_ok is not False
+        if pdf_structure_read_ok is not None
+        else "unable to read pdf bytes" not in detail_lower
+    )
     text_extracted = "text was extracted" in detail_lower or "transa" in detail_lower
+
+    if native_text_extraction_ok is False:
+        missing_signals.append("native_text_extraction")
 
     if "no recognizable transaction row pattern" in detail_lower:
         missing_signals.append("transaction_row_pattern")
@@ -328,6 +340,12 @@ def _build_failure_diagnostics(exc: Exception) -> dict[str, str | int | bool | l
         "missing_signals": sorted(set(missing_signals)),
         "error_detail_excerpt": detail[:240],
     }
+    if pdf_structure_read_ok is not None:
+        diagnostics["pdf_structure_read_ok"] = bool(pdf_structure_read_ok)
+    if native_text_extraction_ok is not None:
+        diagnostics["native_text_extraction_ok"] = bool(native_text_extraction_ok)
+    if native_text_error_type:
+        diagnostics["native_text_error_type"] = native_text_error_type
     if has_date_like_match:
         diagnostics["has_date_like"] = bool(int(has_date_like_match.group(1)))
     if has_amount_like_match:

@@ -193,6 +193,8 @@ class FakeAnalyzeService:
         on_ocr_progress = kwargs.get("on_ocr_progress")
         if "fail_ocr" in filename:
             raise InvalidFileContentError("OCR failed while processing PDF pages.")
+        if "null_font" in filename:
+            raise InvalidFileContentError("Unable to extract native PDF text.")
         if "corrupted" in filename:
             raise InvalidFileContentError("Ignoring wrong pointing object 9 0 (offset 0)")
         if on_ocr_progress is not None:
@@ -334,6 +336,22 @@ def test_streaming_upload_emits_friendly_message_for_corrupted_pdf() -> None:
     failed = next(item for item in payloads if item.get("stage") == "failed")
     assert failed["code"] == "invalid_pdf_content"
     assert failed["message"] == "Parece que seu arquivo PDF está corrompido."
+
+
+def test_streaming_upload_emits_friendly_message_for_native_text_extraction_failure() -> None:
+    client = _build_client()
+    response = client.post(
+        "/api/conversions/upload",
+        headers={"accept": "text/event-stream"},
+        data={"anonymous_fingerprint": "fp-null-font"},
+        files={"file": ("null_font.pdf", _blank_pdf_bytes(), "application/pdf")},
+    )
+
+    payloads = _parse_sse_payloads(response.text)
+    failed = next(item for item in payloads if item.get("stage") == "failed")
+    assert failed["code"] == "invalid_pdf_content"
+    assert failed["message"] == "Parece que seu arquivo PDF está corrompido."
+    assert failed["retryable"] is False
 
 
 def test_upload_without_sse_accept_keeps_json_fallback() -> None:

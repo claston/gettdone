@@ -5,6 +5,7 @@ from app.application.document_extraction_models import RawDocumentExtraction
 from app.application.errors import InvalidFileContentError
 from app.application.pdf_parser import parse_pdf_transactions
 from app.application.textract_transaction_adapter import TextractTransactionExtractionResult
+from synthetic_pdf_corpus.native_text_pdf import generate_null_font_pdf
 from tests.fixtures.pdf_golden_samples import (
     GROUPED_INLINE_MULTILINE_SAMPLE,
     UNICODE_MINUS_SINGLE_ROW_SAMPLE,
@@ -395,6 +396,21 @@ def test_parse_pdf_transactions_retries_with_ocr_when_native_text_is_empty(monke
     assert result.transactions[0].amount == 50.0
     assert result.parse_metrics["ocr_retry_reason"] == "insufficient_native_text"
     assert progress == [(6, 6)]
+
+
+def test_parse_pdf_transactions_retries_with_ocr_when_native_font_resource_is_null(monkeypatch) -> None:
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: True)
+    monkeypatch.setattr(
+        pdf_parser_module,
+        "extract_pdf_page_texts_with_ocr",
+        lambda raw_bytes: ["10/04/2026 PIX RECEBIDO 50,00"],
+    )
+
+    result = parse_pdf_transactions(generate_null_font_pdf(), max_ocr_pages=1)
+
+    assert len(result.transactions) == 1
+    assert result.transactions[0].amount == 50.0
+    assert result.parse_metrics["ocr_retry_reason"] == "native_text_extraction_failed"
 
 
 def test_parse_pdf_transactions_enforces_page_limit_before_empty_native_text_ocr_retry(monkeypatch) -> None:

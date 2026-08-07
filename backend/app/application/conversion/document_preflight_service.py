@@ -20,7 +20,7 @@ OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK = "unidentified_model_fallback"
 
 @dataclass(frozen=True, slots=True)
 class DocumentPreflightResult:
-    scanned_likely: bool
+    scanned_likely: bool | None
     estimated_pages_count: int | None
 
 
@@ -39,7 +39,7 @@ class DocumentPreflightService:
             reader = PdfReader(BytesIO(raw_bytes))
             return _build_pdf_preflight_result(reader)
         except Exception:
-            return DocumentPreflightResult(scanned_likely=False, estimated_pages_count=None)
+            return DocumentPreflightResult(scanned_likely=None, estimated_pages_count=None)
 
     def inspect_staged_upload(self, *, filename: str, staged_path: Path) -> DocumentPreflightResult:
         if Path(filename or "").suffix.lower() != ".pdf":
@@ -48,7 +48,7 @@ class DocumentPreflightService:
             reader = PdfReader(str(staged_path))
             return _build_pdf_preflight_result(reader)
         except Exception:
-            return DocumentPreflightResult(scanned_likely=False, estimated_pages_count=None)
+            return DocumentPreflightResult(scanned_likely=None, estimated_pages_count=None)
 
     def build_policy(
         self,
@@ -171,8 +171,16 @@ class DocumentPreflightService:
 def _build_pdf_preflight_result(reader: PdfReader) -> DocumentPreflightResult:
     total_pages = len(reader.pages)
     extracted_chars = 0
-    for page in reader.pages:
-        extracted_chars += len((page.extract_text() or "").strip())
+    try:
+        for page in reader.pages:
+            extracted_chars += len((page.extract_text() or "").strip())
+    except Exception as exc:
+        logger.warning(
+            "pdf_preflight_text_detection_failed exception_class=%s pages_count=%s",
+            exc.__class__.__name__,
+            total_pages,
+        )
+        return DocumentPreflightResult(scanned_likely=None, estimated_pages_count=total_pages)
     return DocumentPreflightResult(
         scanned_likely=extracted_chars < 40,
         estimated_pages_count=total_pages,
