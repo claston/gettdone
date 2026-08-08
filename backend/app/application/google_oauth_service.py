@@ -13,6 +13,7 @@ from app.application.errors import (
     GoogleOAuthNotConfiguredError,
     GoogleOAuthStateError,
 )
+from app.application.login_tracking import record_successful_login_safely
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -117,6 +118,13 @@ class GoogleOAuthService:
                 }
             )
             return f"{self.config.frontend_base_url}/signup.html?{params}"
+
+        if flow_mode == "login":
+            record_successful_login_safely(
+                self.access_control_service,
+                user_id=user.user_id,
+                auth_method="google_oauth",
+            )
 
         params = urlencode(
             {

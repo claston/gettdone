@@ -16,6 +16,7 @@ from app.application import (
     ReusedSessionTokenError,
     UserAlreadyExistsError,
 )
+from app.application.login_tracking import record_successful_login_safely
 from app.dependencies import get_access_control_service, get_google_oauth_service
 from app.routers.access_control_common import (
     SESSION_ACCESS_COOKIE_NAME,
@@ -108,6 +109,12 @@ def login(
     except InvalidCredentialsError:
         raise HTTPException(status_code=401, detail="Invalid email or password.")
 
+    record_successful_login_safely(
+        service,
+        user_id=user.user_id,
+        auth_method="local_password",
+    )
+
     identity = service.resolve_identity(anonymous_fingerprint=None, user_token=user.token)
     return LoginResponse(
         user_id=user.user_id,
@@ -177,6 +184,11 @@ def session_login(
         user_id=user.user_id,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
+    )
+    record_successful_login_safely(
+        service,
+        user_id=user.user_id,
+        auth_method="local_password",
     )
     identity = service.resolve_identity(anonymous_fingerprint=None, user_token=session_bundle.user.token)
     payload_model = SessionAuthResponse(

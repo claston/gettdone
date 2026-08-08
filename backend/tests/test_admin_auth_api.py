@@ -108,6 +108,7 @@ def test_admin_can_list_users_and_filter_admins(tmp_path) -> None:
         assert payload["total"] >= 1
         assert payload["items"]
         assert all(item["is_admin"] for item in payload["items"])
+        assert all(item["login_count"] == 0 for item in payload["items"])
     finally:
         app.dependency_overrides.clear()
 
@@ -186,6 +187,48 @@ def test_admin_user_role_history_tracks_actor_and_transitions(tmp_path) -> None:
         assert "ADMIN_ROLE_GRANTED" in event_types
         assert "ADMIN_ROLE_REVOKED" in event_types
         assert any(item["actor_email"] == "admin@example.com" for item in payload["items"])
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_admin_can_see_login_counts_and_history_by_auth_method(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+        admin_emails={"admin@example.com"},
+    )
+    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    user = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
+    service.record_successful_login(user_id=user.user_id, auth_method="local_password")
+    service.record_successful_login(user_id=user.user_id, auth_method="google_oauth")
+    service.record_successful_login(user_id=user.user_id, auth_method="google_oauth")
+    app.dependency_overrides[get_access_control_service] = lambda: service
+    client = TestClient(app)
+
+    try:
+        login = client.post(
+            "/admin/auth/login",
+            json={"email": "admin@example.com", "password": "admin-pass"},
+        )
+        assert login.status_code == 200
+
+        response = client.get("/admin/users", params={"query": "erica@example.com"})
+        assert response.status_code == 200
+        item = response.json()["items"][0]
+        assert item["login_count"] == 3
+        assert item["local_login_count"] == 1
+        assert item["google_login_count"] == 2
+        assert item["last_login_at"]
+
+        history = client.get(f"/admin/users/{user.user_id}/login-history")
+        assert history.status_code == 200
+        history_payload = history.json()
+        assert history_payload["user_id"] == user.user_id
+        assert [event["auth_method"] for event in history_payload["items"]] == [
+            "google_oauth",
+            "google_oauth",
+            "local_password",
+        ]
     finally:
         app.dependency_overrides.clear()
 

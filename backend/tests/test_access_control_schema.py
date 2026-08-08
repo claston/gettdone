@@ -44,7 +44,7 @@ def test_postgres_schema_missing_objects_raises_actionable_error(monkeypatch) ->
     monkeypatch.setattr(
         schema,
         "_postgres_table_exists",
-        lambda conn, table_name: table_name != "user_sessions",
+        lambda conn, table_name: table_name not in {"user_sessions", "user_login_events"},
     )
     monkeypatch.setattr(
         schema,
@@ -59,7 +59,7 @@ def test_postgres_schema_missing_objects_raises_actionable_error(monkeypatch) ->
         message = str(exc)
         assert "alembic upgrade head" in message
         assert "alembic stamp 20260508_01" in message
-        assert "missing tables: user_sessions" in message
+        assert "missing tables: user_login_events, user_sessions" in message
         assert "missing columns: checkout_intents.released_at" in message
 
 

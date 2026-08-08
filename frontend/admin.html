@@ -12,15 +12,15 @@
     <header class="admin-header">
       <div>
         <p class="kicker">Painel</p>
-        <h1>Administracao de pedidos</h1>
-        <p class="subtitle">Versao inicial para acompanhar checkout e liberar planos.</p>
+        <h1>Administração de pedidos</h1>
+        <p class="subtitle">Versão inicial para acompanhar checkout e liberar planos.</p>
       </div>
       <a class="back-link" href="./index.html">Voltar ao site</a>
     </header>
 
     <section id="admin-login-card" class="card">
       <h2>Login admin</h2>
-      <p class="muted">Use um usuario marcado como admin.</p>
+      <p class="muted">Use um usuário marcado como admin.</p>
       <form id="admin-login-form" class="stack">
         <label>
           E-mail
@@ -39,7 +39,7 @@
       <div class="panel-top">
         <div>
           <h2>Pedidos</h2>
-          <p class="muted">Visualize pedidos e execute os proximos passos.</p>
+          <p class="muted">Visualize pedidos e execute os próximos passos.</p>
         </div>
         <div class="actions">
           <label>
@@ -66,20 +66,20 @@
       <div id="orders-list" class="orders-list"></div>
       <div class="pager">
         <button id="orders-prev-btn" class="ghost" type="button">Anterior</button>
-        <span id="orders-page-label">Pagina 1</span>
-        <button id="orders-next-btn" class="ghost" type="button">Proxima</button>
+        <span id="orders-page-label">Página 1</span>
+        <button id="orders-next-btn" class="ghost" type="button">Próxima</button>
       </div>
     </section>
 
     <section id="admin-users-card" class="card hidden">
       <div class="panel-top">
         <div>
-          <h2>Controle de acesso admin</h2>
-          <p class="muted">Promocao e revogacao de usuarios administradores.</p>
+          <h2>Usuários e acessos</h2>
+          <p class="muted">Os retornos contam logins por senha ou Google a partir do início deste monitoramento. Permissões de administrador possuem histórico separado.</p>
         </div>
         <div class="actions">
           <label>
-            Busca usuario
+            Busca usuário
             <input id="users-query" type="text" placeholder="nome, email ou user id" />
           </label>
           <label>
@@ -87,7 +87,7 @@
             <select id="users-filter">
               <option value="all">Todos</option>
               <option value="admin">Apenas admins</option>
-              <option value="non_admin">Nao admins</option>
+              <option value="non_admin">Não admins</option>
             </select>
           </label>
           <button id="users-refresh-btn" type="button">Atualizar</button>
@@ -97,6 +97,6 @@
       <div id="users-list" class="orders-list"></div>
     </section>
   </main>
-  <script src="./admin.js?v=2"></script>
+  <script src="./admin.js?v=3"></script>
 </body>
 </html>
