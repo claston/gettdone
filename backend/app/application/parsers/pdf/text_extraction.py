@@ -9,9 +9,20 @@ def read_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
     try:
         reader = PdfReader(BytesIO(raw_bytes))
     except Exception as exc:  # pragma: no cover - defensive guard for parser internals
-        raise InvalidFileContentError("Unable to read PDF bytes.") from exc
+        raise _build_native_text_error(
+            "Unable to read PDF bytes.",
+            exc=exc,
+            pdf_structure_read_ok=False,
+        ) from exc
 
-    pages = [(page.extract_text() or "").strip() for page in reader.pages]
+    try:
+        pages = [(page.extract_text() or "").strip() for page in reader.pages]
+    except Exception as exc:
+        raise _build_native_text_error(
+            "Unable to extract native PDF text.",
+            exc=exc,
+            pdf_structure_read_ok=True,
+        ) from exc
     return [item for item in pages if item]
 
 
@@ -19,10 +30,34 @@ def read_layout_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
     try:
         reader = PdfReader(BytesIO(raw_bytes))
     except Exception as exc:  # pragma: no cover - defensive guard for parser internals
-        raise InvalidFileContentError("Unable to read PDF bytes.") from exc
+        raise _build_native_text_error(
+            "Unable to read PDF bytes.",
+            exc=exc,
+            pdf_structure_read_ok=False,
+        ) from exc
 
-    pages = [(page.extract_text(extraction_mode="layout") or "").strip() for page in reader.pages]
+    try:
+        pages = [(page.extract_text(extraction_mode="layout") or "").strip() for page in reader.pages]
+    except Exception as exc:
+        raise _build_native_text_error(
+            "Unable to extract native PDF text in layout mode.",
+            exc=exc,
+            pdf_structure_read_ok=True,
+        ) from exc
     return [item for item in pages if item]
+
+
+def _build_native_text_error(
+    message: str,
+    *,
+    exc: Exception,
+    pdf_structure_read_ok: bool,
+) -> InvalidFileContentError:
+    error = InvalidFileContentError(message)
+    setattr(error, "_pdf_structure_read_ok", pdf_structure_read_ok)
+    setattr(error, "_native_text_extraction_ok", False)
+    setattr(error, "_native_text_error_type", exc.__class__.__name__)
+    return error
 
 
 def read_pdf_page_count(raw_bytes: bytes) -> int:

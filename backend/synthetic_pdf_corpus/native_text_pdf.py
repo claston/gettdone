@@ -3,7 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 
 from pypdf import PdfWriter
-from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject, NullObject
 
 _PAGE_WIDTH = 595
 _PAGE_HEIGHT = 842
@@ -36,6 +36,24 @@ def generate_native_text_pdf(pages: tuple[tuple[str, ...], ...]) -> bytes:
         stream = DecodedStreamObject()
         stream.set_data(content)
         page[NameObject("/Contents")] = writer._add_object(stream)  # noqa: SLF001
+
+    output = BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+def generate_null_font_pdf() -> bytes:
+    """Build a privacy-safe PDF reproducing a font resource resolved as null."""
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=_PAGE_WIDTH, height=_PAGE_HEIGHT)
+    page[NameObject("/Resources")] = DictionaryObject(
+        {
+            NameObject("/Font"): DictionaryObject({NameObject("/F1"): NullObject()}),
+        }
+    )
+    stream = DecodedStreamObject()
+    stream.set_data(b"BT /F1 10 Tf 48 790 Td (synthetic statement) Tj ET")
+    page[NameObject("/Contents")] = writer._add_object(stream)  # noqa: SLF001
 
     output = BytesIO()
     writer.write(output)

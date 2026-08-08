@@ -44,7 +44,7 @@ class ConversionJob:
             document=document,
             identity=identity,
             preflight_result=DocumentPreflightResult(
-                scanned_likely=bool(scanned_likely),
+                scanned_likely=None if scanned_likely is None else bool(scanned_likely),
                 estimated_pages_count=estimated_pages_count,
             ),
         )
