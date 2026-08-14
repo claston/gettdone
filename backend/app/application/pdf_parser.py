@@ -129,7 +129,9 @@ def parse_pdf_transactions(
 ) -> PdfParseResult:
     try:
         reference_month_year = text_extraction.read_pdf_creation_month_year(raw_bytes)
-    except InvalidFileContentError:
+    except InvalidFileContentError as exc:
+        if "password" in str(exc).lower():
+            raise
         reference_month_year = None
     native_read_error: InvalidFileContentError | None = None
     try:
