@@ -1,13 +1,14 @@
 from io import BytesIO
 
-from pypdf import PdfReader
-
 from app.application.errors import InvalidFileContentError
+from app.application.parsers.pdf.reader import open_pdf_reader
 
 
 def read_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
     try:
-        reader = PdfReader(BytesIO(raw_bytes))
+        reader = open_pdf_reader(BytesIO(raw_bytes))
+    except InvalidFileContentError:
+        raise
     except Exception as exc:  # pragma: no cover - defensive guard for parser internals
         raise _build_native_text_error(
             "Unable to read PDF bytes.",
@@ -28,7 +29,9 @@ def read_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
 
 def read_layout_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
     try:
-        reader = PdfReader(BytesIO(raw_bytes))
+        reader = open_pdf_reader(BytesIO(raw_bytes))
+    except InvalidFileContentError:
+        raise
     except Exception as exc:  # pragma: no cover - defensive guard for parser internals
         raise _build_native_text_error(
             "Unable to read PDF bytes.",
@@ -62,19 +65,23 @@ def _build_native_text_error(
 
 def read_pdf_page_count(raw_bytes: bytes) -> int:
     try:
-        reader = PdfReader(BytesIO(raw_bytes))
+        reader = open_pdf_reader(BytesIO(raw_bytes))
         return len(reader.pages)
+    except InvalidFileContentError:
+        raise
     except Exception as exc:  # pragma: no cover - defensive guard for parser internals
         raise InvalidFileContentError("Unable to read PDF bytes.") from exc
 
 
 def read_pdf_creation_month_year(raw_bytes: bytes) -> tuple[int, int] | None:
     try:
-        reader = PdfReader(BytesIO(raw_bytes))
+        reader = open_pdf_reader(BytesIO(raw_bytes))
+        metadata = reader.metadata or {}
+    except InvalidFileContentError:
+        raise
     except Exception:  # pragma: no cover - best-effort metadata lookup
         return None
 
-    metadata = reader.metadata or {}
     for field_name in ("/ModDate", "/CreationDate"):
         raw_value = str(metadata.get(field_name) or "").strip()
         parsed = _parse_pdf_metadata_month_year(raw_value)

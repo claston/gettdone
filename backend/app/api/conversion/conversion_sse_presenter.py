@@ -11,6 +11,7 @@ from starlette.background import BackgroundTask
 
 from app.api.conversion.conversion_error_mapper import (
     CORRUPTED_PDF_USER_MESSAGE,
+    PASSWORD_PROTECTED_PDF_USER_MESSAGE,
     _build_pages_limit_detail,
     _build_quota_exceeded_detail,
     _is_likely_corrupted_pdf_detail,
@@ -278,7 +279,7 @@ class _ConversionUploadSseMachine:
             detail = str(error).lower()
             if "password" in detail or "senha" in detail:
                 code = "password_protected_pdf"
-                message = "O arquivo parece estar protegido por senha."
+                message = PASSWORD_PROTECTED_PDF_USER_MESSAGE
             elif _is_likely_corrupted_pdf_detail(detail):
                 code = "invalid_pdf_content"
                 message = CORRUPTED_PDF_USER_MESSAGE

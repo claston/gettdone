@@ -7,6 +7,7 @@ from pathlib import Path
 from pypdf import PdfReader
 
 from app.application.errors import FileTooLargeError, MaxPagesPerFileExceededError
+from app.application.parsers.pdf.reader import open_pdf_reader
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ class DocumentPreflightService:
         if Path(filename or "").suffix.lower() != ".pdf":
             return DocumentPreflightResult(scanned_likely=False, estimated_pages_count=None)
         try:
-            reader = PdfReader(BytesIO(raw_bytes))
+            reader = open_pdf_reader(BytesIO(raw_bytes))
             return _build_pdf_preflight_result(reader)
         except Exception:
             return DocumentPreflightResult(scanned_likely=None, estimated_pages_count=None)
@@ -45,7 +46,7 @@ class DocumentPreflightService:
         if Path(filename or "").suffix.lower() != ".pdf":
             return DocumentPreflightResult(scanned_likely=False, estimated_pages_count=None)
         try:
-            reader = PdfReader(str(staged_path))
+            reader = open_pdf_reader(staged_path)
             return _build_pdf_preflight_result(reader)
         except Exception:
             return DocumentPreflightResult(scanned_likely=None, estimated_pages_count=None)

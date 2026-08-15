@@ -193,6 +193,8 @@ class FakeAnalyzeService:
         on_ocr_progress = kwargs.get("on_ocr_progress")
         if "fail_ocr" in filename:
             raise InvalidFileContentError("OCR failed while processing PDF pages.")
+        if "password_protected" in filename:
+            raise InvalidFileContentError("PDF is password protected. Remove the password and try again.")
         if "null_font" in filename:
             raise InvalidFileContentError("Unable to extract native PDF text.")
         if "corrupted" in filename:
@@ -322,6 +324,22 @@ def test_streaming_upload_emits_failed_event_for_ocr_failure() -> None:
     failed = next(item for item in payloads if item.get("stage") == "failed")
     assert failed["code"] in {"insufficient_text", "invalid_pdf_content"}
     assert isinstance(failed["retryable"], bool)
+
+
+def test_streaming_upload_emits_password_protected_pdf_error() -> None:
+    client = _build_client()
+    response = client.post(
+        "/api/conversions/upload",
+        headers={"accept": "text/event-stream"},
+        data={"anonymous_fingerprint": "fp-password"},
+        files={"file": ("password_protected.pdf", _blank_pdf_bytes(), "application/pdf")},
+    )
+
+    payloads = _parse_sse_payloads(response.text)
+    failed = next(item for item in payloads if item.get("stage") == "failed")
+    assert failed["code"] == "password_protected_pdf"
+    assert failed["message"] == "O arquivo parece estar protegido por senha."
+    assert failed["retryable"] is False
 
 
 def test_streaming_upload_emits_friendly_message_for_corrupted_pdf() -> None:
