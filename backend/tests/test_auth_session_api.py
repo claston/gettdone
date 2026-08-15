@@ -43,7 +43,7 @@ def _build_client(state_dir: Path) -> tuple[TestClient, AccessControlService]:
 
 def test_session_login_sets_http_only_cookies_and_me_works_without_bearer() -> None:
     state_dir = Path(mkdtemp(prefix="auth-session-api-"))
-    client, _service = _build_client(state_dir)
+    client, service = _build_client(state_dir)
     try:
         register = client.post(
             "/auth/register",
@@ -69,6 +69,9 @@ def test_session_login_sets_http_only_cookies_and_me_works_without_bearer() -> N
         payload = me.json()
         assert payload["email"] == "erica@example.com"
         assert payload["name"] == "Erica"
+        events = service.list_user_login_events_for_admin(user_id=payload["user_id"])
+        assert len(events) == 1
+        assert events[0]["auth_method"] == "local_password"
     finally:
         app.dependency_overrides.clear()
         shutil.rmtree(state_dir, ignore_errors=True)
@@ -76,7 +79,7 @@ def test_session_login_sets_http_only_cookies_and_me_works_without_bearer() -> N
 
 def test_session_refresh_rotates_token_and_detects_reuse() -> None:
     state_dir = Path(mkdtemp(prefix="auth-session-api-"))
-    client, _service = _build_client(state_dir)
+    client, service = _build_client(state_dir)
     try:
         register = client.post(
             "/auth/register",
@@ -102,6 +105,8 @@ def test_session_refresh_rotates_token_and_detects_reuse() -> None:
         new_refresh = refreshed.cookies.get(SESSION_REFRESH_COOKIE_NAME)
         assert new_refresh
         assert new_refresh != old_refresh
+        events = service.list_user_login_events_for_admin(user_id=register.json()["user_id"])
+        assert len(events) == 1
 
         client.cookies.set(SESSION_REFRESH_COOKIE_NAME, old_refresh, path="/auth/session/refresh")
         reuse = client.post("/auth/session/refresh")

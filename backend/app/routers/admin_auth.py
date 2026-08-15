@@ -16,6 +16,8 @@ from app.schemas import (
     AdminSetUserRoleRequest,
     AdminUserItem,
     AdminUserListResponse,
+    AdminUserLoginEventItem,
+    AdminUserLoginHistoryResponse,
     AdminUserRoleEventItem,
     AdminUserRoleHistoryResponse,
 )
@@ -173,4 +175,32 @@ def list_user_role_history_for_admin(
     return AdminUserRoleHistoryResponse(
         user_id=clean_user_id,
         items=[AdminUserRoleEventItem(**item) for item in items],
+    )
+
+
+@router.get("/admin/users/{user_id}/login-history", response_model=AdminUserLoginHistoryResponse)
+def list_user_login_history_for_admin(
+    user_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    x_admin_token: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
+) -> AdminUserLoginHistoryResponse:
+    require_admin_user(
+        x_admin_token=x_admin_token,
+        authorization=authorization,
+        access_cookie_token=access_cookie_token,
+        access_control_service=access_control_service,
+    )
+    clean_user_id = user_id.strip()
+    if not clean_user_id:
+        raise HTTPException(status_code=400, detail="user_id is required.")
+    items = access_control_service.list_user_login_events_for_admin(
+        user_id=clean_user_id,
+        limit=limit,
+    )
+    return AdminUserLoginHistoryResponse(
+        user_id=clean_user_id,
+        items=[AdminUserLoginEventItem(**item) for item in items],
     )

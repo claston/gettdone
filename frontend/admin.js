@@ -132,7 +132,7 @@
       setAuthenticatedView(true);
       await Promise.all([loadOrders(), loadUsers()]);
     } catch (_error) {
-      setStatus("Falha de rede ao validar sessao admin.", "error");
+      setStatus("Falha de rede ao validar sessão admin.", "error");
       setAuthenticatedView(false);
     }
   }
@@ -141,7 +141,7 @@
     if (pageLabelNode) {
       const currentPage = Math.floor(ordersOffset / ORDER_PAGE_SIZE) + 1;
       const totalPages = Math.max(1, Math.ceil(ordersTotal / ORDER_PAGE_SIZE));
-      pageLabelNode.textContent = `Pagina ${currentPage} de ${totalPages}`;
+      pageLabelNode.textContent = `Página ${currentPage} de ${totalPages}`;
     }
     if (prevBtn) prevBtn.disabled = ordersOffset <= 0;
     if (nextBtn) nextBtn.disabled = ordersOffset + ORDER_PAGE_SIZE >= ordersTotal;
@@ -160,7 +160,7 @@
         if (response.status === 401 || response.status === 403) {
           setAuthenticatedView(false);
         }
-        setStatus(String(payload.detail || "Nao foi possivel carregar os pedidos."), "error");
+        setStatus(String(payload.detail || "Não foi possível carregar os pedidos."), "error");
         return;
       }
       const items = Array.isArray(payload.items) ? payload.items : [];
@@ -179,20 +179,20 @@
     const rawFilter = String(usersFilterNode?.value || "all");
     const onlyAdminParam =
       rawFilter === "admin" ? "&only_admin=true" : rawFilter === "non_admin" ? "&only_admin=false" : "";
-    setUsersStatus("Carregando usuarios...", null);
+    setUsersStatus("Carregando usuários...", null);
     try {
       const { response, payload } = await apiRequest(
         `/admin/users?query=${encodeURIComponent(query)}${onlyAdminParam}&limit=${USER_PAGE_SIZE}&offset=${usersOffset}`,
       );
       if (!response.ok) {
-        setUsersStatus(String(payload.detail || "Nao foi possivel carregar usuarios."), "error");
+        setUsersStatus(String(payload.detail || "Não foi possível carregar usuários."), "error");
         return;
       }
       const items = Array.isArray(payload.items) ? payload.items : [];
       renderUsers(items);
-      setUsersStatus(`Usuarios carregados: ${items.length} de ${Number(payload.total || 0)}.`, "ok");
+      setUsersStatus(`Usuários carregados: ${items.length} de ${Number(payload.total || 0)}.`, "ok");
     } catch (_error) {
-      setUsersStatus("Falha de rede ao carregar usuarios.", "error");
+      setUsersStatus("Falha de rede ao carregar usuários.", "error");
     }
   }
 
@@ -232,7 +232,7 @@
       `    <button data-action="release" data-intent-id="${String(order.intent_id || "")}" class="ghost" ${
         canRelease ? "" : "disabled"
       }>Liberar plano</button>`,
-      `    <button data-action="history" data-intent-id="${String(order.intent_id || "")}" class="ghost">Ver historico</button>`,
+      `    <button data-action="history" data-intent-id="${String(order.intent_id || "")}" class="ghost">Ver histórico</button>`,
       `  </div>`,
       `  <div class="history hidden" data-role="history"></div>`,
       `</div>`,
@@ -266,20 +266,26 @@
         `    <h3 class="order-title">${String(user.name || "-")}</h3>`,
         `    <p class="order-meta">${String(user.email || "-")}</p>`,
         `  </div>`,
-        `  <span class="badge ${isAdmin ? "released" : ""}">${isAdmin ? "Admin" : "Usuario"}</span>`,
+        `  <span class="badge ${isAdmin ? "released" : ""}">${isAdmin ? "Admin" : "Usuário"}</span>`,
         `</div>`,
         `<div class="grid">`,
         `  <p><strong>User ID:</strong> ${String(user.user_id || "-")}</p>`,
         `  <p><strong>Criado:</strong> ${formatDateTime(user.created_at)}</p>`,
         `  <p><strong>Atualizado:</strong> ${formatDateTime(user.updated_at)}</p>`,
+        `  <p><strong>Retornos registrados:</strong> ${Number(user.login_count || 0)}</p>`,
+        `  <p><strong>Login com senha:</strong> ${Number(user.local_login_count || 0)}</p>`,
+        `  <p><strong>Login com Google:</strong> ${Number(user.google_login_count || 0)}</p>`,
+        `  <p><strong>Último login:</strong> ${formatDateTime(user.last_login_at)}</p>`,
         `</div>`,
         `<div class="pill-row">`,
         `  <button data-action="toggle-role" data-user-id="${String(user.user_id || "")}" data-is-admin="${isAdmin ? "1" : "0"}" class="ghost">${
           isAdmin ? "Revogar admin" : "Promover a admin"
         }</button>`,
-        `  <button data-action="user-role-history" data-user-id="${String(user.user_id || "")}" class="ghost">Ver historico de acesso</button>`,
+        `  <button data-action="user-login-history" data-user-id="${String(user.user_id || "")}" class="ghost">Ver histórico de logins</button>`,
+        `  <button data-action="user-role-history" data-user-id="${String(user.user_id || "")}" class="ghost">Ver histórico de permissões</button>`,
         `</div>`,
-        `<div class="history hidden" data-role="user-history"></div>`,
+        `<div class="history hidden" data-role="user-login-history"></div>`,
+        `<div class="history hidden" data-role="user-role-history"></div>`,
       ].join("");
       usersListNode.appendChild(card);
     });
@@ -299,7 +305,7 @@
         body: JSON.stringify({ payment_link: link }),
       });
       if (!response.ok) {
-        setStatus(String(payload.detail || "Nao foi possivel salvar o link de pagamento."), "error");
+        setStatus(String(payload.detail || "Não foi possível salvar o link de pagamento."), "error");
         return;
       }
       setStatus("Link enviado e pedido atualizado.", "ok");
@@ -316,7 +322,7 @@
         method: "POST",
       });
       if (!response.ok) {
-        setStatus(String(payload.detail || "Nao foi possivel liberar o plano."), "error");
+        setStatus(String(payload.detail || "Não foi possível liberar o plano."), "error");
         return;
       }
       setStatus("Plano liberado com sucesso.", "ok");
@@ -329,13 +335,13 @@
   async function loadOrderHistory(intentId, historyNode) {
     if (!historyNode) return;
     historyNode.classList.remove("hidden");
-    historyNode.innerHTML = "<p>Carregando historico...</p>";
+    historyNode.innerHTML = "<p>Carregando histórico...</p>";
     try {
       const { response, payload } = await apiRequest(
         `/admin/checkout/intents/${encodeURIComponent(intentId)}/history?limit=20`,
       );
       if (!response.ok) {
-        historyNode.innerHTML = `<p>${String(payload.detail || "Falha ao carregar historico.")}</p>`;
+        historyNode.innerHTML = `<p>${String(payload.detail || "Falha ao carregar histórico.")}</p>`;
         return;
       }
       const items = Array.isArray(payload.items) ? payload.items : [];
@@ -352,13 +358,13 @@
         })
         .join("");
     } catch (_error) {
-      historyNode.innerHTML = "<p>Falha de rede ao carregar historico.</p>";
+      historyNode.innerHTML = "<p>Falha de rede ao carregar histórico.</p>";
     }
   }
 
   async function toggleUserRole(userId, currentIsAdmin) {
     const targetState = !currentIsAdmin;
-    setUsersStatus(targetState ? "Promovendo usuario..." : "Revogando acesso admin...", null);
+    setUsersStatus(targetState ? "Promovendo usuário..." : "Revogando acesso admin...", null);
     try {
       const { response, payload } = await apiRequest("/admin/users/role", {
         method: "POST",
@@ -366,7 +372,7 @@
         body: JSON.stringify({ user_id: userId, is_admin: targetState }),
       });
       if (!response.ok) {
-        setUsersStatus(String(payload.detail || "Nao foi possivel atualizar o acesso."), "error");
+        setUsersStatus(String(payload.detail || "Não foi possível atualizar o acesso."), "error");
         return;
       }
       setUsersStatus("Acesso atualizado.", "ok");
@@ -379,18 +385,18 @@
   async function loadUserRoleHistory(userId, historyNode) {
     if (!historyNode) return;
     historyNode.classList.remove("hidden");
-    historyNode.innerHTML = "<p>Carregando historico...</p>";
+    historyNode.innerHTML = "<p>Carregando histórico de permissões...</p>";
     try {
       const { response, payload } = await apiRequest(
         `/admin/users/${encodeURIComponent(userId)}/history?limit=20`,
       );
       if (!response.ok) {
-        historyNode.innerHTML = `<p>${String(payload.detail || "Falha ao carregar historico.")}</p>`;
+        historyNode.innerHTML = `<p>${String(payload.detail || "Falha ao carregar histórico de permissões.")}</p>`;
         return;
       }
       const items = Array.isArray(payload.items) ? payload.items : [];
       if (!items.length) {
-        historyNode.innerHTML = "<p>Nenhuma alteracao registrada.</p>";
+        historyNode.innerHTML = "<p>Nenhuma alteração de permissão registrada.</p>";
         return;
       }
       historyNode.innerHTML = items
@@ -402,7 +408,36 @@
         })
         .join("");
     } catch (_error) {
-      historyNode.innerHTML = "<p>Falha de rede ao carregar historico.</p>";
+      historyNode.innerHTML = "<p>Falha de rede ao carregar histórico de permissões.</p>";
+    }
+  }
+
+  async function loadUserLoginHistory(userId, historyNode) {
+    if (!historyNode) return;
+    historyNode.classList.remove("hidden");
+    historyNode.innerHTML = "<p>Carregando histórico de logins...</p>";
+    try {
+      const { response, payload } = await apiRequest(
+        `/admin/users/${encodeURIComponent(userId)}/login-history?limit=20`,
+      );
+      if (!response.ok) {
+        historyNode.innerHTML = `<p>${String(payload.detail || "Falha ao carregar histórico de logins.")}</p>`;
+        return;
+      }
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      if (!items.length) {
+        historyNode.innerHTML = "<p>Nenhum retorno registrado desde o início do monitoramento.</p>";
+        return;
+      }
+      historyNode.innerHTML = items
+        .map(function (item) {
+          const when = formatDateTime(item.created_at);
+          const method = String(item.auth_method || "") === "google_oauth" ? "Google" : "Senha";
+          return `<p><strong>${when}</strong> via ${method}</p>`;
+        })
+        .join("");
+    } catch (_error) {
+      historyNode.innerHTML = "<p>Falha de rede ao carregar histórico de logins.</p>";
     }
   }
 
@@ -426,7 +461,7 @@
           return {};
         });
         if (!response.ok) {
-          setStatus(String(payload.detail || "Login admin invalido."), "error");
+          setStatus(String(payload.detail || "Login admin inválido."), "error");
           return;
         }
         setAuthenticatedView(true);
@@ -556,9 +591,17 @@
       }
       if (action === "user-role-history") {
         const wrapper = target.closest(".order-card");
-        const historyNode = wrapper ? wrapper.querySelector("[data-role='user-history']") : null;
+        const historyNode = wrapper ? wrapper.querySelector("[data-role='user-role-history']") : null;
         if (historyNode instanceof HTMLElement) {
           void loadUserRoleHistory(userId, historyNode);
+        }
+        return;
+      }
+      if (action === "user-login-history") {
+        const wrapper = target.closest(".order-card");
+        const historyNode = wrapper ? wrapper.querySelector("[data-role='user-login-history']") : null;
+        if (historyNode instanceof HTMLElement) {
+          void loadUserLoginHistory(userId, historyNode);
         }
       }
     });

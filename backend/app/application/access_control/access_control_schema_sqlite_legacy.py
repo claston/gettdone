@@ -217,6 +217,14 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
             FOREIGN KEY(target_user_id) REFERENCES users(id),
             FOREIGN KEY(actor_user_id) REFERENCES users(id)
         );
+
+        CREATE TABLE IF NOT EXISTS user_login_events (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            auth_method TEXT NOT NULL CHECK (auth_method IN ('local_password', 'google_oauth')),
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        );
         """
     )
 
@@ -281,6 +289,12 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
         """
         CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at
         ON user_sessions(expires_at)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_user_login_events_user_created_at
+        ON user_login_events(user_id, created_at DESC)
         """
     )
 

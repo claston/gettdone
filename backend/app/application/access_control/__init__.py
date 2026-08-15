@@ -22,6 +22,7 @@ from app.application.access_control.access_control_checkout import AccessControl
 from app.application.access_control.access_control_db import AccessControlDbComponent
 from app.application.access_control.access_control_helpers import AccessControlHelpersComponent
 from app.application.access_control.access_control_identity import AccessControlIdentityComponent
+from app.application.access_control.access_control_login_events import AccessControlLoginEventsComponent
 from app.application.access_control.access_control_quota import AccessControlQuotaComponent
 from app.application.access_control.access_control_schema import AccessControlSchemaComponent
 from app.application.access_control.access_control_session import AccessControlSessionComponent
@@ -146,6 +147,7 @@ class AccessControlService:
         self.session = AccessControlSessionComponent(self)
         self.quota = AccessControlQuotaComponent(self)
         self.admin = AccessControlAdminComponent(self)
+        self.login_events = AccessControlLoginEventsComponent(self)
         self.checkout = AccessControlCheckoutComponent(self)
         self._init_db()
 
@@ -188,6 +190,23 @@ class AccessControlService:
 
     def authenticate_user(self, email: str, password: str) -> RegisteredUser:
         return self.auth.authenticate_user(email=email, password=password)
+
+    def record_successful_login(self, *, user_id: str, auth_method: str) -> str:
+        return self.login_events.record_successful_login(
+            user_id=user_id,
+            auth_method=auth_method,
+        )
+
+    def list_user_login_events_for_admin(
+        self,
+        *,
+        user_id: str,
+        limit: int = 100,
+    ) -> list[dict[str, str]]:
+        return self.login_events.list_user_login_events_for_admin(
+            user_id=user_id,
+            limit=limit,
+        )
 
     def get_user_by_token(self, user_token: str) -> RegisteredUser:
         return self.auth.get_user_by_token(user_token)
@@ -547,7 +566,7 @@ class AccessControlService:
         only_admin: bool | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> tuple[list[dict[str, str | bool]], int]:
+    ) -> tuple[list[dict[str, str | bool | int | None]], int]:
         return self.admin.list_users_for_admin(
             query=query,
             only_admin=only_admin,

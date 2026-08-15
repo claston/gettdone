@@ -69,7 +69,7 @@ class AccessControlAdminComponent:
         only_admin: bool | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> tuple[list[dict[str, str | bool]], int]:
+    ) -> tuple[list[dict[str, str | bool | int | None]], int]:
         normalized_limit = max(1, min(int(limit), 200))
         normalized_offset = max(0, int(offset))
         normalized_query = str(query or "").strip().lower()
@@ -79,13 +79,15 @@ class AccessControlAdminComponent:
                 where: list[str] = []
                 params: list[str | int] = []
                 if only_admin is True:
-                    where.append("is_admin = ?")
+                    where.append("users.is_admin = ?")
                     params.append(self._service._true_value())
                 elif only_admin is False:
-                    where.append("is_admin = ?")
+                    where.append("users.is_admin = ?")
                     params.append(self._service._false_value())
                 if normalized_query:
-                    where.append("(lower(name) LIKE ? OR lower(email) LIKE ? OR lower(id) LIKE ?)")
+                    where.append(
+                        "(lower(users.name) LIKE ? OR lower(users.email) LIKE ? OR lower(users.id) LIKE ?)"
+                    )
                     like = f"%{normalized_query}%"
                     params.extend([like, like, like])
 
@@ -97,11 +99,51 @@ class AccessControlAdminComponent:
                 total = int(total_row["total"]) if total_row is not None else 0
                 rows = self._service._fetchall(
                     conn,
-                    f"SELECT id, name, email, is_admin, created_at, updated_at {base} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    f"""
+                    SELECT
+                        users.id,
+                        users.name,
+                        users.email,
+                        users.is_admin,
+                        users.created_at,
+                        users.updated_at
+                    {base}
+                    ORDER BY users.created_at DESC
+                    LIMIT ? OFFSET ?
+                    """,
                     tuple(params + [normalized_limit, normalized_offset]),
                 )
-                items: list[dict[str, str | bool]] = []
+                login_stats_by_user_id: dict[str, dict[str, int | str | None]] = {}
+                user_ids = [str(row["id"]) for row in rows]
+                if user_ids:
+                    placeholders = ", ".join("?" for _ in user_ids)
+                    stats_rows = self._service._fetchall(
+                        conn,
+                        f"""
+                        SELECT
+                            user_id,
+                            COUNT(1) AS login_count,
+                            SUM(CASE WHEN auth_method = 'local_password' THEN 1 ELSE 0 END) AS local_login_count,
+                            SUM(CASE WHEN auth_method = 'google_oauth' THEN 1 ELSE 0 END) AS google_login_count,
+                            MAX(created_at) AS last_login_at
+                        FROM user_login_events
+                        WHERE user_id IN ({placeholders})
+                        GROUP BY user_id
+                        """,
+                        tuple(user_ids),
+                    )
+                    login_stats_by_user_id = {
+                        str(stats_row["user_id"]): {
+                            "login_count": int(stats_row["login_count"] or 0),
+                            "local_login_count": int(stats_row["local_login_count"] or 0),
+                            "google_login_count": int(stats_row["google_login_count"] or 0),
+                            "last_login_at": str(stats_row["last_login_at"] or "") or None,
+                        }
+                        for stats_row in stats_rows
+                    }
+                items: list[dict[str, str | bool | int | None]] = []
                 for row in rows:
+                    login_stats = login_stats_by_user_id.get(str(row["id"]), {})
                     items.append(
                         {
                             "user_id": str(row["id"]),
@@ -110,6 +152,10 @@ class AccessControlAdminComponent:
                             "is_admin": self.row_is_admin(row),
                             "created_at": str(row["created_at"] or ""),
                             "updated_at": str(row["updated_at"] or ""),
+                            "login_count": int(login_stats.get("login_count") or 0),
+                            "local_login_count": int(login_stats.get("local_login_count") or 0),
+                            "google_login_count": int(login_stats.get("google_login_count") or 0),
+                            "last_login_at": login_stats.get("last_login_at"),
                         }
                     )
                 return items, total

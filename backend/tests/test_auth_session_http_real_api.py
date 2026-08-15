@@ -75,7 +75,7 @@ def _run_http_server():
             raise RuntimeError("HTTP test server did not start in time")
 
     try:
-        yield base_url
+        yield base_url, access_control
     finally:
         server.should_exit = True
         thread.join(timeout=5.0)
@@ -83,7 +83,7 @@ def _run_http_server():
 
 
 def test_http_auth_session_login_sets_cookies_and_me_works_without_bearer() -> None:
-    with _run_http_server() as base_url:
+    with _run_http_server() as (base_url, access_control):
         with httpx.Client(timeout=5.0) as client:
             register = client.post(
                 f"{base_url}/auth/register",
@@ -106,12 +106,16 @@ def test_http_auth_session_login_sets_cookies_and_me_works_without_bearer() -> N
 
             me = client.get(f"{base_url}/auth/me")
 
+        events = access_control.list_user_login_events_for_admin(user_id=register.json()["user_id"])
+
     assert me.status_code == 200
     assert me.json()["email"] == "erica@example.com"
+    assert len(events) == 1
+    assert events[0]["auth_method"] == "local_password"
 
 
 def test_http_auth_session_refresh_rotates_cookie_and_detects_reuse() -> None:
-    with _run_http_server() as base_url:
+    with _run_http_server() as (base_url, access_control):
         with httpx.Client(timeout=5.0) as client:
             register = client.post(
                 f"{base_url}/auth/register",
@@ -137,6 +141,8 @@ def test_http_auth_session_refresh_rotates_cookie_and_detects_reuse() -> None:
             new_refresh = client.cookies.get(SESSION_REFRESH_COOKIE_NAME)
             assert new_refresh
             assert new_refresh != old_refresh
+            events = access_control.list_user_login_events_for_admin(user_id=register.json()["user_id"])
+            assert len(events) == 1
 
             client.cookies.set(SESSION_REFRESH_COOKIE_NAME, old_refresh, path="/auth/session/refresh")
             reuse = client.post(f"{base_url}/auth/session/refresh")
@@ -146,7 +152,7 @@ def test_http_auth_session_refresh_rotates_cookie_and_detects_reuse() -> None:
 
 
 def test_http_auth_session_logout_revokes_session_cookie() -> None:
-    with _run_http_server() as base_url:
+    with _run_http_server() as (base_url, _access_control):
         with httpx.Client(timeout=5.0) as client:
             register = client.post(
                 f"{base_url}/auth/register",

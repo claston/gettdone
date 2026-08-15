@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
-from app.application import GoogleOAuthStateError
+from app.application import GoogleOAuthConfig, GoogleOAuthService, GoogleOAuthStateError
+from app.application.access_control import AccessControlService
 from app.dependencies import get_google_oauth_service
 from app.main import app
 
@@ -35,6 +36,28 @@ class FakeGoogleOAuthServiceWithError(FakeGoogleOAuthService):
     def build_callback_redirect_url(self, *, code: str, state: str) -> str:
         _ = (code, state)
         raise GoogleOAuthStateError
+
+
+class StubGoogleOAuthService(GoogleOAuthService):
+    def __init__(self, *, access_control_service: AccessControlService, profile: dict) -> None:
+        super().__init__(
+            config=GoogleOAuthConfig(
+                client_id="test-client",
+                client_secret="test-secret",
+                redirect_uri="http://testserver/auth/google/callback",
+                frontend_base_url="http://localhost:3000",
+            ),
+            access_control_service=access_control_service,
+        )
+        self._profile = profile
+
+    def _exchange_code_for_token(self, *, code: str, code_verifier: str) -> dict:
+        _ = (code, code_verifier)
+        return {"access_token": "google-access-token"}
+
+    def _fetch_google_profile(self, *, access_token: str) -> dict:
+        _ = access_token
+        return self._profile
 
 
 def test_google_auth_start_redirects_to_google() -> None:
@@ -86,3 +109,37 @@ def test_google_auth_start_requires_terms_for_signup_flow() -> None:
     assert "Termos de Uso" in response.json()["detail"]
 
     app.dependency_overrides.clear()
+
+
+def test_google_login_records_return_but_signup_does_not(tmp_path) -> None:
+    access_control = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    profile = {
+        "sub": "google-user-123",
+        "email": "erica@example.com",
+        "name": "Erica",
+        "email_verified": True,
+    }
+    oauth = StubGoogleOAuthService(access_control_service=access_control, profile=profile)
+
+    signup_state, _ = access_control.create_google_oauth_state(
+        next_path="/client-area.html",
+        flow_mode="signup",
+        terms_accepted=True,
+    )
+    signup_redirect = oauth.build_callback_redirect_url(code="signup-code", state=signup_state)
+    assert "auth-callback.html" in signup_redirect
+    user = access_control.get_user_by_email("erica@example.com")
+    assert access_control.list_user_login_events_for_admin(user_id=user.user_id) == []
+
+    login_state, _ = access_control.create_google_oauth_state(
+        next_path="/client-area.html",
+        flow_mode="login",
+    )
+    login_redirect = oauth.build_callback_redirect_url(code="login-code", state=login_state)
+    assert "auth-callback.html" in login_redirect
+    events = access_control.list_user_login_events_for_admin(user_id=user.user_id)
+    assert len(events) == 1
+    assert events[0]["auth_method"] == "google_oauth"

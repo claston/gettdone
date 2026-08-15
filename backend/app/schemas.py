@@ -458,6 +458,10 @@ class AdminUserItem(BaseModel):
     is_admin: bool
     created_at: str
     updated_at: str
+    login_count: int = 0
+    local_login_count: int = 0
+    google_login_count: int = 0
+    last_login_at: str | None = None
 
 
 class AdminUserListResponse(BaseModel):
@@ -487,6 +491,18 @@ class AdminUserRoleEventItem(BaseModel):
 class AdminUserRoleHistoryResponse(BaseModel):
     user_id: str
     items: list[AdminUserRoleEventItem]
+
+
+class AdminUserLoginEventItem(BaseModel):
+    event_id: str
+    user_id: str
+    auth_method: str
+    created_at: str
+
+
+class AdminUserLoginHistoryResponse(BaseModel):
+    user_id: str
+    items: list[AdminUserLoginEventItem]
 
 
 class ClientConversionItem(BaseModel):
