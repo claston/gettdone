@@ -20,6 +20,7 @@ from app.application.conversion.document_preflight_service import (
 
 logger = logging.getLogger(__name__)
 CORRUPTED_PDF_USER_MESSAGE = "Parece que seu arquivo PDF está corrompido."
+PASSWORD_PROTECTED_PDF_USER_MESSAGE = "O arquivo parece estar protegido por senha."
 
 
 def _build_pages_limit_user_message(exc: MaxPagesPerFileExceededError) -> str:
@@ -138,6 +139,14 @@ def _raise_http_convert_error(exc: Exception, *, identity, access_control_servic
         raise HTTPException(status_code=400, detail="Unsupported file type. Use CSV, XLSX, OFX, or PDF.")
     if isinstance(exc, InvalidFileContentError):
         detail = str(exc)
+        if "password" in detail.lower() or "senha" in detail.lower():
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "password_protected_pdf",
+                    "message": PASSWORD_PROTECTED_PDF_USER_MESSAGE,
+                },
+            )
         if _is_likely_corrupted_pdf_detail(detail):
             logger.warning("conversion_invalid_pdf_content_likely_corrupted detail=%s", detail)
             raise HTTPException(
