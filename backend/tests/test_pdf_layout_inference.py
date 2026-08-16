@@ -451,6 +451,25 @@ def test_infer_pdf_layout_prefers_generic_when_specific_signal_is_weak() -> None
     assert result.used_fallback is True
 
 
+def test_infer_pdf_layout_recognizes_banrisul_monospace_statement_with_spaced_labels() -> None:
+    text = """
+    B A N R I S U L
+    AGENCIA:
+    CONTA..:
+    NOME...:
+    DIA HISTORICO DOCUMENTO V A L O R
+    MOVIMENTOS DA CONTA CORRENTE
+    SALDO ANT EM 29/10/2021 991,65
+    MOVIMENTOS NOV/2021
+    01 TED - SPB 024059 700,14
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "banrisul_extrato_texto_movimentos_conta_corrente_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_caixa_profile_when_tokens_match() -> None:
     text = """
     CAIXA ECONOMICA FEDERAL

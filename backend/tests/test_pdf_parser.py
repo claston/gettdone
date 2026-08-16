@@ -36,6 +36,123 @@ def test_parse_pdf_transactions_preserves_complete_date_and_amount_candidates(
     assert result.transactions[0].amount == expected_amount
 
 
+def test_parse_pdf_transactions_handles_banrisul_columnar_native_text() -> None:
+    text = """
+    B A N R I S U L
+    AGENCIA:
+    CONTA..:
+    NOME...:
+    IDENTIFICACAO:
+    DIA HISTORICO
+    DOCUMENTO
+    V A L O R
+    MOVIMENTOS DA CONTA CORRENTE
+    SALDO ANT EM 29/10/2021
+    .991,65
+    MOVIMENTOS NOV/2021
+    01
+    TED - SPB
+    024059
+    700,14
+    VERO BANRICARD ALIMENTACAO
+    314485
+    25,92
+    VERO BANRICOMPRAS A PRAZO
+    231105
+    14,12
+    VERO CARTAO CREDITO
+    780615
+    6,00
+    PIX
+    746325
+    0,00
+    PIX
+    769405
+    9,00
+    PAGAMENTO TITULO
+    116635
+    47,00-
+    PAGAMENTO TITULO
+    116636
+    .02,38-
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert result.layout.layout_name == "banrisul_extrato_texto_movimentos_conta_corrente_v1"
+    assert result.parse_metrics["selected_parser"] == "layout_specific_banrisul_monospace"
+    assert [transaction.date for transaction in result.transactions] == ["2021-11-01"] * 8
+    assert [transaction.description for transaction in result.transactions] == [
+        "TED - SPB",
+        "VERO BANRICARD ALIMENTACAO",
+        "VERO BANRICOMPRAS A PRAZO",
+        "VERO CARTAO CREDITO",
+        "PIX",
+        "PIX",
+        "PAGAMENTO TITULO",
+        "PAGAMENTO TITULO",
+    ]
+    assert [transaction.amount for transaction in result.transactions] == [
+        700.14,
+        25.92,
+        14.12,
+        6.0,
+        0.0,
+        9.0,
+        -47.0,
+        -2.38,
+    ]
+    assert [transaction.type for transaction in result.transactions] == [
+        "inflow",
+        "inflow",
+        "inflow",
+        "inflow",
+        "inflow",
+        "inflow",
+        "outflow",
+        "outflow",
+    ]
+    assert [transaction.external_reference_id for transaction in result.canonical_transactions] == [
+        "024059",
+        "314485",
+        "231105",
+        "780615",
+        "746325",
+        "769405",
+        "116635",
+        "116636",
+    ]
+
+
+def test_parse_pdf_transactions_handles_banrisul_fixed_width_rows_with_inherited_day() -> None:
+    text = """
+    B A N R I S U L
+    AGENCIA: 0001
+    CONTA..: 12345
+    NOME...: TESTE
+    DIA HISTORICO                         DOCUMENTO        V A L O R
+    MOVIMENTOS DA CONTA CORRENTE
+    SALDO ANT EM 29/10/2021                                  991,65
+    MOVIMENTOS NOV/2021
+    01   TED - SPB                        024059              700,14
+         PAGAMENTO TITULO                 116635              47,00-
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        [text],
+        preserve_layout_spacing=True,
+    )
+
+    assert [(transaction.date, transaction.amount) for transaction in result.transactions] == [
+        ("2021-11-01", 700.14),
+        ("2021-11-01", -47.0),
+    ]
+    assert [transaction.external_reference_id for transaction in result.canonical_transactions] == [
+        "024059",
+        "116635",
+    ]
+
+
 def test_parse_pdf_transactions_handles_inline_and_multiline_amount_rows(monkeypatch) -> None:
     monkeypatch.setattr(
         pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [GROUPED_INLINE_MULTILINE_SAMPLE]

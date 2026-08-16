@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.application.parsers.pdf.layout_specific.banco_do_nordeste import BancoDoNordesteLayoutParser
+from app.application.parsers.pdf.layout_specific.banrisul import BanrisulLayoutParser
 from app.application.parsers.pdf.layout_specific.bradesco_unificado import BradescoUnificadoLayoutParser
 from app.application.parsers.pdf.layout_specific.contract import (
     LayoutSpecificParseContext,
@@ -49,5 +50,6 @@ DEFAULT_PDF_LAYOUT_PARSER_REGISTRY = PdfLayoutParserRegistry(
         SantanderCreditCardLayoutParser(),
         BradescoUnificadoLayoutParser(),
         BancoDoNordesteLayoutParser(),
+        BanrisulLayoutParser(),
     )
 )

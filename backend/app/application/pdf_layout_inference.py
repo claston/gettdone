@@ -9,6 +9,7 @@ DATE_HEADER_PATTERN = re.compile(rf"\b\d{{2}}\s+{MONTH_PATTERN}\s+\d{{4}}\b")
 SLASH_DATE_PATTERN = re.compile(r"\b\d{2}/\d{2}(?:/\d{2,4})?\b")
 AMOUNT_PATTERN = re.compile(r"\b[+-]?\d+(?:\.\d{3})*,\d{2}[+-]?\b")
 TABLE_HEADER_PATTERN = re.compile(r"\bDATA\b.*\bVALOR\b.*\bSALDO\b")
+SPACED_UPPERCASE_TOKEN_PATTERN = re.compile(r"(?<![A-Z0-9])(?:[A-Z][ \t]+){2,}[A-Z](?![A-Z0-9])")
 SPECIFIC_PROFILE_MIN_SCORE = 0.5
 SPECIFIC_PROFILE_MIN_MARGIN = 0.05
 SPECIFIC_PROFILE_HIGH_CONFIDENCE = 0.7
@@ -192,4 +193,8 @@ def _should_use_specific_profile(*, specific_best_score: float, generic_score: f
 
 
 def _normalize_text(value: str) -> str:
-    return normalize_upper_text(value)
+    normalized = normalize_upper_text(value)
+    return SPACED_UPPERCASE_TOKEN_PATTERN.sub(
+        lambda match: re.sub(r"[ \t]+", "", match.group(0)),
+        normalized,
+    )

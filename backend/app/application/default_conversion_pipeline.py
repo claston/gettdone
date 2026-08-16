@@ -71,27 +71,36 @@ def _resolve_opening_balance(
         if _is_opening_balance_description(normalized_description):
             return round(float(row.amount), 2)
 
-    amount_pattern = r"([\-+]?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})|[\-+]?\d+(?:,\d{2})?)"
+    amount_pattern = r"([\-+]?(?:\.?\d{1,3}(?:[.\s]\d{3})*|\d+),\d{2})"
     opening_label_pattern = re.compile(
         r"S\s*A\s*L\s*D\s*O\s+(?:A\s*N\s*T\s*E\s*R\s*I\s*O\s*R|I\s*N\s*I\s*C\s*I\s*A\s*L)",
         flags=re.IGNORECASE,
     )
-    for raw_line in (extracted_text or "").splitlines():
+    extracted_lines = (extracted_text or "").splitlines()
+    for line_index, raw_line in enumerate(extracted_lines):
         normalized_line = _normalize_text_for_profile(raw_line)
         if (
             "SALDO ANTERIOR" not in normalized_line
             and "SALDO INICIAL" not in normalized_line
+            and re.search(r"\bSALDO ANT\b", normalized_line) is None
             and not opening_label_pattern.search(raw_line)
         ):
             continue
-        match = re.search(amount_pattern, raw_line)
-        if not match:
-            continue
-        try:
-            raw_amount = match.group(1).replace(" ", "").replace(".", "").replace(",", ".")
-            return round(float(raw_amount), 2)
-        except ValueError:
-            continue
+        candidate_lines = [raw_line]
+        if (
+            layout_name == "banrisul_extrato_texto_movimentos_conta_corrente_v1"
+            and line_index + 1 < len(extracted_lines)
+        ):
+            candidate_lines.append(extracted_lines[line_index + 1])
+        for candidate_line in candidate_lines:
+            match = re.search(amount_pattern, candidate_line)
+            if not match:
+                continue
+            try:
+                raw_amount = match.group(1).replace(" ", "").replace(".", "").replace(",", ".")
+                return round(float(raw_amount), 2)
+            except ValueError:
+                continue
     if uses_descending_running_balance(layout_name):
         return None
     balance_rows = reversed(rows) if uses_descending_running_balance(layout_name) else rows
