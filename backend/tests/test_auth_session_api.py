@@ -70,7 +70,7 @@ def test_session_login_sets_http_only_cookies_and_me_works_without_bearer() -> N
         assert payload["email"] == "erica@example.com"
         assert payload["name"] == "Erica"
         events = service.list_user_login_events_for_admin(user_id=payload["user_id"])
-        assert len(events) == 1
+        assert len(events) == 2
         assert events[0]["auth_method"] == "local_password"
     finally:
         app.dependency_overrides.clear()
@@ -106,7 +106,7 @@ def test_session_refresh_rotates_token_and_detects_reuse() -> None:
         assert new_refresh
         assert new_refresh != old_refresh
         events = service.list_user_login_events_for_admin(user_id=register.json()["user_id"])
-        assert len(events) == 1
+        assert len(events) == 2
 
         client.cookies.set(SESSION_REFRESH_COOKIE_NAME, old_refresh, path="/auth/session/refresh")
         reuse = client.post("/auth/session/refresh")

@@ -83,6 +83,12 @@ def register(
     except UserAlreadyExistsError:
         raise HTTPException(status_code=409, detail="Email already registered.")
 
+    record_successful_login_safely(
+        service,
+        user_id=user.user_id,
+        auth_method="local_password",
+    )
+
     identity = service.resolve_identity(anonymous_fingerprint=None, user_token=user.token)
     return RegisterResponse(
         user_id=user.user_id,
