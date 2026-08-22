@@ -40,6 +40,30 @@ def build_client(state_dir: Path) -> tuple[TestClient, AccessControlService]:
     return TestClient(app), access_control
 
 
+def test_register_records_initial_user_access() -> None:
+    state_dir = Path(mkdtemp(prefix="auth-api-"))
+    client, service = build_client(state_dir)
+
+    try:
+        response = client.post(
+            "/auth/register",
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
+        )
+
+        assert response.status_code == 200
+        events = service.list_user_login_events_for_admin(user_id=response.json()["user_id"])
+        assert len(events) == 1
+        assert events[0]["auth_method"] == "local_password"
+    finally:
+        app.dependency_overrides.clear()
+        shutil.rmtree(state_dir, ignore_errors=True)
+
+
 def test_login_returns_user_token_and_registered_quota() -> None:
     state_dir = Path(mkdtemp(prefix="auth-api-"))
     client, _service = build_client(state_dir)
@@ -72,7 +96,7 @@ def test_login_returns_user_token_and_registered_quota() -> None:
         assert payload["max_pages_per_file"] == 10
 
         events = _service.list_user_login_events_for_admin(user_id=payload["user_id"])
-        assert len(events) == 1
+        assert len(events) == 2
         assert events[0]["auth_method"] == "local_password"
     finally:
         app.dependency_overrides.clear()
@@ -101,7 +125,9 @@ def test_login_rejects_invalid_credentials() -> None:
 
         assert response.status_code == 401
         assert "Invalid email or password" in response.json()["detail"]
-        assert _service.list_user_login_events_for_admin(user_id=register.json()["user_id"]) == []
+        events = _service.list_user_login_events_for_admin(user_id=register.json()["user_id"])
+        assert len(events) == 1
+        assert events[0]["auth_method"] == "local_password"
     finally:
         app.dependency_overrides.clear()
         shutil.rmtree(state_dir, ignore_errors=True)
@@ -253,6 +279,34 @@ def test_login_still_succeeds_when_tracking_is_temporarily_unavailable(monkeypat
 
         assert response.status_code == 200
         assert response.json()["user_id"] == register.json()["user_id"]
+    finally:
+        app.dependency_overrides.clear()
+        shutil.rmtree(state_dir, ignore_errors=True)
+
+
+def test_register_still_succeeds_when_tracking_is_temporarily_unavailable(monkeypatch) -> None:
+    state_dir = Path(mkdtemp(prefix="auth-api-"))
+    client, service = build_client(state_dir)
+
+    try:
+        def _raise_tracking_error(*, user_id: str, auth_method: str) -> str:
+            _ = (user_id, auth_method)
+            raise RuntimeError("tracking unavailable")
+
+        monkeypatch.setattr(service, "record_successful_login", _raise_tracking_error)
+
+        response = client.post(
+            "/auth/register",
+            json={
+                "name": "Erica",
+                "email": "erica@example.com",
+                "password": "strong-pass",
+                "accepted_terms": True,
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["email"] == "erica@example.com"
     finally:
         app.dependency_overrides.clear()
         shutil.rmtree(state_dir, ignore_errors=True)

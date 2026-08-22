@@ -110,7 +110,7 @@ def test_http_auth_session_login_sets_cookies_and_me_works_without_bearer() -> N
 
     assert me.status_code == 200
     assert me.json()["email"] == "erica@example.com"
-    assert len(events) == 1
+    assert len(events) == 2
     assert events[0]["auth_method"] == "local_password"
 
 
@@ -142,7 +142,7 @@ def test_http_auth_session_refresh_rotates_cookie_and_detects_reuse() -> None:
             assert new_refresh
             assert new_refresh != old_refresh
             events = access_control.list_user_login_events_for_admin(user_id=register.json()["user_id"])
-            assert len(events) == 1
+            assert len(events) == 2
 
             client.cookies.set(SESSION_REFRESH_COOKIE_NAME, old_refresh, path="/auth/session/refresh")
             reuse = client.post(f"{base_url}/auth/session/refresh")

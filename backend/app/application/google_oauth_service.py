@@ -119,12 +119,11 @@ class GoogleOAuthService:
             )
             return f"{self.config.frontend_base_url}/signup.html?{params}"
 
-        if flow_mode == "login":
-            record_successful_login_safely(
-                self.access_control_service,
-                user_id=user.user_id,
-                auth_method="google_oauth",
-            )
+        record_successful_login_safely(
+            self.access_control_service,
+            user_id=user.user_id,
+            auth_method="google_oauth",
+        )
 
         params = urlencode(
             {

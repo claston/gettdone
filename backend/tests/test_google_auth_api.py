@@ -111,7 +111,7 @@ def test_google_auth_start_requires_terms_for_signup_flow() -> None:
     app.dependency_overrides.clear()
 
 
-def test_google_login_records_return_but_signup_does_not(tmp_path) -> None:
+def test_google_signup_records_initial_access_and_login_records_return(tmp_path) -> None:
     access_control = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
         token_secret="test-secret",
@@ -132,7 +132,9 @@ def test_google_login_records_return_but_signup_does_not(tmp_path) -> None:
     signup_redirect = oauth.build_callback_redirect_url(code="signup-code", state=signup_state)
     assert "auth-callback.html" in signup_redirect
     user = access_control.get_user_by_email("erica@example.com")
-    assert access_control.list_user_login_events_for_admin(user_id=user.user_id) == []
+    signup_events = access_control.list_user_login_events_for_admin(user_id=user.user_id)
+    assert len(signup_events) == 1
+    assert signup_events[0]["auth_method"] == "google_oauth"
 
     login_state, _ = access_control.create_google_oauth_state(
         next_path="/client-area.html",
@@ -141,5 +143,5 @@ def test_google_login_records_return_but_signup_does_not(tmp_path) -> None:
     login_redirect = oauth.build_callback_redirect_url(code="login-code", state=login_state)
     assert "auth-callback.html" in login_redirect
     events = access_control.list_user_login_events_for_admin(user_id=user.user_id)
-    assert len(events) == 1
+    assert len(events) == 2
     assert events[0]["auth_method"] == "google_oauth"
