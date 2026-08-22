@@ -209,7 +209,7 @@ layout_profile:
       - "VIACREDI"
       - "Cartão de Crédito"
       - "Fatura"
-    min_score_hint: 0.85
+    min_score_hint: 0.75
   table_detection:
     header_keywords:
       - "DIA"

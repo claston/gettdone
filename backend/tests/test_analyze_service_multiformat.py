@@ -727,6 +727,45 @@ def test_analyze_service_resolves_opening_balance_from_extracted_text_when_outsi
     assert result.opening_balance == 10000.0
 
 
+def test_analyze_service_resolves_banrisul_opening_balance_from_following_line(
+    tmp_path, monkeypatch
+) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    monkeypatch.setattr(
+        default_conversion_pipeline_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes: build_pdf_parse_result(
+            transactions=[
+                NormalizedTransaction(
+                    date="2021-11-01",
+                    description="TED - SPB",
+                    amount=700.14,
+                    type="inflow",
+                ),
+            ],
+            layout_name="banrisul_extrato_texto_movimentos_conta_corrente_v1",
+            confidence=0.774,
+            extracted_text=(
+                "MOVIMENTOS DA CONTA CORRENTE\n"
+                "SALDO ANT EM 29/10/2021\n"
+                ".991,65\n"
+                "MOVIMENTOS NOV/2021"
+            ),
+            parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+        ),
+    )
+
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="banrisul.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
+
+    assert result.transactions_total == 1
+    assert result.opening_balance == 991.65
+    assert result.closing_balance == 1691.79
+
+
 def test_analyze_service_resolves_opening_balance_from_spaced_saldo_anterior_text(
     tmp_path, monkeypatch
 ) -> None:
