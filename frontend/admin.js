@@ -3,12 +3,23 @@
   const USER_PAGE_SIZE = 20;
 
   const loginCard = document.getElementById("admin-login-card");
-  const panelCard = document.getElementById("admin-panel-card");
-  const usersCard = document.getElementById("admin-users-card");
+  const navigationNode = document.getElementById("admin-navigation");
   const loginForm = document.getElementById("admin-login-form");
   const loginBtn = document.getElementById("admin-login-btn");
   const loginStatusNode = document.getElementById("admin-login-status");
   const logoutBtn = document.getElementById("admin-logout-btn");
+
+  const dashboardPeriodNode = document.getElementById("dashboard-period");
+  const dashboardIdentityTypeNode = document.getElementById("dashboard-identity-type");
+  const dashboardRefreshBtn = document.getElementById("dashboard-refresh-btn");
+  const dashboardStatusNode = document.getElementById("dashboard-status");
+  const dashboardSummaryNode = document.getElementById("dashboard-summary");
+  const dashboardDailyChartNode = document.getElementById("dashboard-daily-chart");
+  const dashboardIdentitiesNode = document.getElementById("dashboard-identities");
+  const dashboardTopErrorsNode = document.getElementById("dashboard-top-errors");
+  const dashboardRecentAttentionNode = document.getElementById("dashboard-recent-attention");
+  const adminSectionButtons = document.querySelectorAll("[data-admin-section]");
+  const adminPanelNodes = document.querySelectorAll("[data-admin-panel]");
 
   const refreshBtn = document.getElementById("orders-refresh-btn");
   const filterNode = document.getElementById("orders-filter");
@@ -29,6 +40,8 @@
   let ordersOffset = 0;
   let ordersTotal = 0;
   let usersOffset = 0;
+  let activeAdminSection = "dashboard";
+  let isAdminAuthenticated = false;
 
   function resolveApiBase() {
     const host = window.location.hostname;
@@ -58,10 +71,32 @@
     if (kind) usersStatusNode.classList.add(kind);
   }
 
+  function setDashboardStatus(message, kind) {
+    if (!dashboardStatusNode) return;
+    dashboardStatusNode.textContent = String(message || "");
+    dashboardStatusNode.className = "status";
+    if (kind) dashboardStatusNode.classList.add(kind);
+  }
+
+  function setActiveAdminSection(section) {
+    const normalizedSection = ["dashboard", "orders", "users"].includes(section) ? section : "dashboard";
+    activeAdminSection = normalizedSection;
+    adminSectionButtons.forEach(function (button) {
+      const isActive = String(button.dataset.adminSection || "") === normalizedSection;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+    adminPanelNodes.forEach(function (panel) {
+      const isActive = String(panel.dataset.adminPanel || "") === normalizedSection;
+      panel.classList.toggle("hidden", !isAdminAuthenticated || !isActive);
+    });
+  }
+
   function setAuthenticatedView(isAuthenticated) {
+    isAdminAuthenticated = isAuthenticated;
     if (loginCard) loginCard.classList.toggle("hidden", isAuthenticated);
-    if (panelCard) panelCard.classList.toggle("hidden", !isAuthenticated);
-    if (usersCard) usersCard.classList.toggle("hidden", !isAuthenticated);
+    if (navigationNode) navigationNode.classList.toggle("hidden", !isAuthenticated);
+    setActiveAdminSection(activeAdminSection);
   }
 
   function mapStatusLabel(status) {
@@ -91,6 +126,32 @@
   function formatPriceBRL(priceCents) {
     const amount = Number(priceCents || 0) / 100;
     return amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  }
+
+  function formatInteger(value) {
+    return Math.max(0, Number(value || 0)).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+  }
+
+  function formatPercent(value) {
+    return `${Number(value || 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+  }
+
+  function formatCountLabel(value, singular, plural) {
+    const count = Math.max(0, Number(value || 0));
+    return `${formatInteger(count)} ${count === 1 ? singular : plural}`;
+  }
+
+  function formatDuration(durationMs) {
+    const value = Math.max(0, Number(durationMs || 0));
+    if (!value) return "-";
+    if (value < 1000) return `${formatInteger(value)} ms`;
+    return `${(value / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} s`;
+  }
+
+  function formatShortDate(value) {
+    const parsed = new Date(`${String(value || "")}T12:00:00`);
+    if (Number.isNaN(parsed.getTime())) return String(value || "-");
+    return parsed.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   }
 
   function badgeClass(status) {
@@ -134,6 +195,231 @@
     historyNode.appendChild(paragraph);
   }
 
+  function appendMetricCard(parent, label, value, detail, tone) {
+    const card = document.createElement("article");
+    card.className = `metric-card${tone ? ` ${tone}` : ""}`;
+    card.appendChild(createTextElement("p", "metric-label", label));
+    card.appendChild(createTextElement("strong", "metric-value", value));
+    card.appendChild(createTextElement("p", "metric-detail", detail));
+    parent.appendChild(card);
+  }
+
+  function renderDashboardSummary(summary) {
+    if (!dashboardSummaryNode) return;
+    dashboardSummaryNode.replaceChildren();
+    const total = Number(summary.conversions_total || 0);
+    const successCount = Number(summary.technical_success_count || 0);
+    const cleanCount = Number(summary.clean_conversion_count || 0);
+    const reviewCount = Math.max(0, successCount - cleanCount);
+    appendMetricCard(dashboardSummaryNode, "Conversões", formatInteger(total), "tentativas no período", "");
+    appendMetricCard(
+      dashboardSummaryNode,
+      "Sucesso técnico",
+      formatPercent(summary.technical_success_rate),
+      formatCountLabel(successCount, "concluída", "concluídas"),
+      "clean",
+    );
+    appendMetricCard(
+      dashboardSummaryNode,
+      "Sem alertas técnicos",
+      formatPercent(summary.clean_conversion_rate),
+      formatCountLabel(cleanCount, "conversão", "conversões"),
+      "clean",
+    );
+    appendMetricCard(
+      dashboardSummaryNode,
+      "Revisar",
+      formatInteger(reviewCount),
+      "concluídas com sinal de atenção",
+      "review",
+    );
+    appendMetricCard(
+      dashboardSummaryNode,
+      "Falhas",
+      formatInteger(summary.failure_count),
+      "tentativas não concluídas",
+      Number(summary.failure_count || 0) > 0 ? "failure" : "",
+    );
+    appendMetricCard(
+      dashboardSummaryNode,
+      "Pessoas ativas",
+      formatInteger(summary.active_people_count),
+      "pessoas que converteram",
+      "",
+    );
+    appendMetricCard(
+      dashboardSummaryNode,
+      "Voltaram a converter",
+      formatInteger(summary.returning_people_count),
+      "atividade em um dia posterior",
+      "",
+    );
+    appendMetricCard(
+      dashboardSummaryNode,
+      "Tempo mediano",
+      formatDuration(summary.median_duration_ms),
+      "metade concluiu até esse tempo",
+      "",
+    );
+  }
+
+  function renderDashboardChart(items) {
+    if (!dashboardDailyChartNode) return;
+    dashboardDailyChartNode.replaceChildren();
+    const dailyItems = Array.isArray(items) ? items : [];
+    const total = dailyItems.reduce(function (sum, item) {
+      return sum + Number(item.conversions || 0);
+    }, 0);
+    if (!dailyItems.length || total === 0) {
+      dashboardDailyChartNode.appendChild(
+        createTextElement("p", "empty dashboard-empty", "Ainda não há conversões neste período."),
+      );
+      return;
+    }
+
+    const maxDaily = Math.max(
+      1,
+      ...dailyItems.map(function (item) {
+        return Number(item.conversions || 0);
+      }),
+    );
+    const bars = document.createElement("div");
+    bars.className = "chart-bars";
+    dailyItems.forEach(function (item) {
+      const conversions = Number(item.conversions || 0);
+      const clean = Number(item.clean || 0);
+      const review = Number(item.review || 0);
+      const failures = Number(item.failures || 0);
+      const day = document.createElement("div");
+      day.className = "chart-day";
+      day.setAttribute(
+        "aria-label",
+        `${formatShortDate(item.date)}: ${formatInteger(conversions)} conversões, ${formatInteger(clean)} sem alertas, ${formatInteger(review)} para revisar e ${formatInteger(failures)} falhas.`,
+      );
+      day.appendChild(createTextElement("span", "chart-total", formatInteger(conversions)));
+
+      const stack = document.createElement("div");
+      stack.className = "chart-stack";
+      [
+        ["clean", clean],
+        ["review", review],
+        ["failure", failures],
+      ].forEach(function (entry) {
+        const segment = document.createElement("span");
+        segment.className = `chart-segment ${entry[0]}`;
+        segment.style.height = `${(Number(entry[1]) / maxDaily) * 140}px`;
+        stack.appendChild(segment);
+      });
+      day.appendChild(stack);
+      day.appendChild(createTextElement("span", "chart-day-label", formatShortDate(item.date)));
+      bars.appendChild(day);
+    });
+    dashboardDailyChartNode.appendChild(bars);
+    dashboardDailyChartNode.scrollLeft = dashboardDailyChartNode.scrollWidth;
+  }
+
+  function appendIdentityRow(parent, label, conversions, people) {
+    const row = document.createElement("div");
+    row.className = "identity-row";
+    const text = document.createElement("div");
+    text.appendChild(createTextElement("p", "", label));
+    text.appendChild(createTextElement("p", "muted compact", formatCountLabel(people, "pessoa", "pessoas")));
+    row.appendChild(text);
+    row.appendChild(createTextElement("strong", "", formatCountLabel(conversions, "conversão", "conversões")));
+    parent.appendChild(row);
+  }
+
+  function renderDashboardIdentities(identities) {
+    if (!dashboardIdentitiesNode) return;
+    dashboardIdentitiesNode.replaceChildren();
+    appendIdentityRow(
+      dashboardIdentitiesNode,
+      "Pessoas cadastradas",
+      identities.registered_conversions,
+      identities.registered_people,
+    );
+    appendIdentityRow(
+      dashboardIdentitiesNode,
+      "Pessoas anônimas",
+      identities.anonymous_conversions,
+      identities.anonymous_people,
+    );
+  }
+
+  function renderDashboardErrors(items) {
+    if (!dashboardTopErrorsNode) return;
+    dashboardTopErrorsNode.replaceChildren();
+    const errors = Array.isArray(items) ? items : [];
+    if (!errors.length) {
+      dashboardTopErrorsNode.appendChild(
+        createTextElement("p", "empty dashboard-empty", "Nenhuma falha registrada neste período."),
+      );
+      return;
+    }
+    errors.forEach(function (item) {
+      const row = document.createElement("div");
+      row.className = "compact-list-item";
+      const text = document.createElement("div");
+      const errorCode = String(item.error_code || "unknown") === "unknown" ? "Código não informado" : item.error_code;
+      const errorStage = String(item.error_stage || "unknown") === "unknown" ? "etapa não informada" : item.error_stage;
+      text.appendChild(createTextElement("p", "", errorCode));
+      text.appendChild(createTextElement("p", "muted compact", errorStage));
+      row.appendChild(text);
+      row.appendChild(createTextElement("strong", "", formatInteger(item.count)));
+      dashboardTopErrorsNode.appendChild(row);
+    });
+  }
+
+  function appendTableCell(row, text, tagName) {
+    const cell = createTextElement(tagName || "td", "", text);
+    row.appendChild(cell);
+    return cell;
+  }
+
+  function renderDashboardAttention(items) {
+    if (!dashboardRecentAttentionNode) return;
+    dashboardRecentAttentionNode.replaceChildren();
+    const attentionItems = Array.isArray(items) ? items : [];
+    if (!attentionItems.length) {
+      dashboardRecentAttentionNode.appendChild(
+        createTextElement("p", "empty dashboard-empty", "Nenhuma conversão precisa de atenção neste período."),
+      );
+      return;
+    }
+
+    const table = document.createElement("table");
+    table.className = "dashboard-table";
+    const head = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    ["Data", "Pessoa", "Banco/modelo", "Resultado", "Motivo", "Identificador"].forEach(function (label) {
+      appendTableCell(headRow, label, "th");
+    });
+    head.appendChild(headRow);
+    table.appendChild(head);
+
+    const body = document.createElement("tbody");
+    attentionItems.forEach(function (item) {
+      const row = document.createElement("tr");
+      appendTableCell(row, formatDateTime(item.created_at));
+      appendTableCell(row, String(item.identity_type || "") === "registered" ? "Cadastrada" : "Anônima");
+      appendTableCell(row, item.model || "Não identificado");
+      appendTableCell(row, item.status || "Não informado");
+      appendTableCell(row, item.issue_reason || "Revisão recomendada");
+      appendTableCell(row, item.processing_id || "-");
+      body.appendChild(row);
+    });
+    table.appendChild(body);
+    dashboardRecentAttentionNode.appendChild(table);
+  }
+
+  function renderDashboard(payload) {
+    renderDashboardSummary(payload.summary || {});
+    renderDashboardChart(payload.daily || []);
+    renderDashboardIdentities(payload.identities || {});
+    renderDashboardErrors(payload.top_errors || []);
+    renderDashboardAttention(payload.recent_attention || []);
+  }
+
   async function tryRefreshAdminSession() {
     const response = await fetch(`${resolveApiBase()}/auth/session/refresh`, {
       method: "POST",
@@ -156,6 +442,32 @@
     return { response, payload };
   }
 
+  async function loadDashboard() {
+    if (!dashboardPeriodNode || !dashboardIdentityTypeNode) return;
+    const days = String(dashboardPeriodNode.value || "30");
+    const identityType = String(dashboardIdentityTypeNode.value || "all");
+    setDashboardStatus("Carregando indicadores...", null);
+    if (dashboardRefreshBtn) dashboardRefreshBtn.disabled = true;
+    try {
+      const { response, payload } = await apiRequest(
+        `/admin/dashboard?days=${encodeURIComponent(days)}&identity_type=${encodeURIComponent(identityType)}`,
+      );
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          setAuthenticatedView(false);
+        }
+        setDashboardStatus(String(payload.detail || "Não foi possível carregar os indicadores."), "error");
+        return;
+      }
+      renderDashboard(payload);
+      setDashboardStatus(`Indicadores atualizados em ${formatDateTime(payload.end_at)}.`, "ok");
+    } catch (_error) {
+      setDashboardStatus("Falha de rede ao carregar os indicadores.", "error");
+    } finally {
+      if (dashboardRefreshBtn) dashboardRefreshBtn.disabled = false;
+    }
+  }
+
   async function verifyAdminSession() {
     try {
       const { response } = await apiRequest("/admin/me");
@@ -164,7 +476,7 @@
         return;
       }
       setAuthenticatedView(true);
-      await Promise.all([loadOrders(), loadUsers()]);
+      await loadDashboard();
     } catch (_error) {
       setStatus("Falha de rede ao validar sessão admin.", "error");
       setAuthenticatedView(false);
@@ -597,12 +909,44 @@
         }
         setAuthenticatedView(true);
         setStatus("Login admin realizado.", "ok");
-        await Promise.all([loadOrders(), loadUsers()]);
+        await loadDashboard();
       } catch (_error) {
         setStatus("Falha de rede no login admin.", "error");
       } finally {
         loginBtn.disabled = false;
       }
+    });
+  }
+
+  adminSectionButtons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      const section = String(button.dataset.adminSection || "dashboard");
+      setActiveAdminSection(section);
+      if (section === "dashboard") {
+        void loadDashboard();
+      } else if (section === "orders") {
+        void loadOrders();
+      } else if (section === "users") {
+        void loadUsers();
+      }
+    });
+  });
+
+  if (dashboardRefreshBtn) {
+    dashboardRefreshBtn.addEventListener("click", function () {
+      void loadDashboard();
+    });
+  }
+
+  if (dashboardPeriodNode) {
+    dashboardPeriodNode.addEventListener("change", function () {
+      void loadDashboard();
+    });
+  }
+
+  if (dashboardIdentityTypeNode) {
+    dashboardIdentityTypeNode.addEventListener("change", function () {
+      void loadDashboard();
     });
   }
 
@@ -674,7 +1018,13 @@
       }
       setAuthenticatedView(false);
       setStatus("Sessão encerrada.", "ok");
+      setDashboardStatus("", null);
       setUsersStatus("", null);
+      if (dashboardSummaryNode) dashboardSummaryNode.replaceChildren();
+      if (dashboardDailyChartNode) dashboardDailyChartNode.replaceChildren();
+      if (dashboardIdentitiesNode) dashboardIdentitiesNode.replaceChildren();
+      if (dashboardTopErrorsNode) dashboardTopErrorsNode.replaceChildren();
+      if (dashboardRecentAttentionNode) dashboardRecentAttentionNode.replaceChildren();
       if (ordersListNode) ordersListNode.replaceChildren();
       if (usersListNode) usersListNode.replaceChildren();
     });

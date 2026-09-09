@@ -4,16 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OFX Simples | Admin</title>
-  <link rel="stylesheet" href="./admin.css?v=1" />
-  <script src="/privacy-consent.js?v=2" defer></script>
+  <link rel="stylesheet" href="./admin.css?v=2" />
 </head>
 <body>
   <main class="admin-page">
     <header class="admin-header">
       <div>
         <p class="kicker">Painel</p>
-        <h1>Administração de pedidos</h1>
-        <p class="subtitle">Versão inicial para acompanhar checkout e liberar planos.</p>
+        <h1>Administração do OFX Simples</h1>
+        <p class="subtitle">Acompanhe conversões, recorrência, qualidade técnica e pedidos.</p>
       </div>
       <a class="back-link" href="./index.html">Voltar ao site</a>
     </header>
@@ -35,7 +34,92 @@
       <p id="admin-login-status" class="status" aria-live="polite"></p>
     </section>
 
-    <section id="admin-panel-card" class="card hidden">
+    <nav id="admin-navigation" class="admin-navigation hidden" aria-label="Seções do painel administrativo">
+      <div class="admin-tabs" role="tablist" aria-label="Seções">
+        <button class="admin-tab active" type="button" role="tab" aria-selected="true" data-admin-section="dashboard">
+          Visão geral
+        </button>
+        <button class="admin-tab" type="button" role="tab" aria-selected="false" data-admin-section="orders">
+          Pedidos
+        </button>
+        <button class="admin-tab" type="button" role="tab" aria-selected="false" data-admin-section="users">
+          Usuários
+        </button>
+      </div>
+      <button id="admin-logout-btn" type="button" class="ghost">Sair</button>
+    </nav>
+
+    <section id="admin-dashboard-card" class="card hidden" data-admin-panel="dashboard">
+      <div class="panel-top dashboard-heading">
+        <div>
+          <p class="kicker">Saúde do produto</p>
+          <h2>Visão geral das conversões</h2>
+          <p class="muted">Indicadores consolidados sem depender da execução do worker.</p>
+        </div>
+        <div class="actions dashboard-filters">
+          <label>
+            Período
+            <select id="dashboard-period">
+              <option value="1">Hoje</option>
+              <option value="7">Últimos 7 dias</option>
+              <option value="30" selected>Últimos 30 dias</option>
+              <option value="90">Últimos 90 dias</option>
+            </select>
+          </label>
+          <label>
+            Pessoas
+            <select id="dashboard-identity-type">
+              <option value="all">Todas</option>
+              <option value="registered">Cadastradas</option>
+              <option value="anonymous">Anônimas</option>
+            </select>
+          </label>
+          <button id="dashboard-refresh-btn" type="button">Atualizar</button>
+        </div>
+      </div>
+
+      <p id="dashboard-status" class="status" aria-live="polite"></p>
+      <div id="dashboard-summary" class="dashboard-summary" aria-label="Resumo das conversões"></div>
+
+      <section class="dashboard-block" aria-labelledby="dashboard-chart-title">
+        <div class="dashboard-block-heading">
+          <div>
+            <h3 id="dashboard-chart-title">Volume e qualidade técnica</h3>
+            <p class="muted compact">“Sem alertas” é uma verificação automática e não equivale à aprovação do usuário.</p>
+          </div>
+          <div class="chart-legend" aria-label="Legenda do gráfico">
+            <span><i class="legend-dot clean"></i>Sem alertas</span>
+            <span><i class="legend-dot review"></i>Revisar</span>
+            <span><i class="legend-dot failure"></i>Falhas</span>
+          </div>
+        </div>
+        <div id="dashboard-daily-chart" class="dashboard-chart" aria-live="polite"></div>
+      </section>
+
+      <div class="dashboard-details">
+        <section class="dashboard-block" aria-labelledby="dashboard-identities-title">
+          <h3 id="dashboard-identities-title">Quem está convertendo</h3>
+          <div id="dashboard-identities" class="identity-breakdown"></div>
+        </section>
+
+        <section class="dashboard-block" aria-labelledby="dashboard-errors-title">
+          <h3 id="dashboard-errors-title">Principais falhas</h3>
+          <div id="dashboard-top-errors" class="compact-list"></div>
+        </section>
+      </div>
+
+      <section class="dashboard-block" aria-labelledby="dashboard-attention-title">
+        <div class="dashboard-block-heading">
+          <div>
+            <h3 id="dashboard-attention-title">Precisa de atenção</h3>
+            <p class="muted compact">Conversões recentes com falha ou sinal técnico de revisão.</p>
+          </div>
+        </div>
+        <div id="dashboard-recent-attention" class="dashboard-table-wrap"></div>
+      </section>
+    </section>
+
+    <section id="admin-panel-card" class="card hidden" data-admin-panel="orders">
       <div class="panel-top">
         <div>
           <h2>Pedidos</h2>
@@ -57,7 +141,6 @@
             </select>
           </label>
           <button id="orders-refresh-btn" type="button">Atualizar</button>
-          <button id="admin-logout-btn" type="button" class="ghost">Sair</button>
         </div>
       </div>
 
@@ -71,7 +154,7 @@
       </div>
     </section>
 
-    <section id="admin-users-card" class="card hidden">
+    <section id="admin-users-card" class="card hidden" data-admin-panel="users">
       <div class="panel-top">
         <div>
           <h2>Usuários e acessos</h2>
@@ -99,6 +182,6 @@
       <div id="users-list" class="orders-list"></div>
     </section>
   </main>
-  <script src="./admin.js?v=6"></script>
+  <script src="./admin.js?v=7"></script>
 </body>
 </html>

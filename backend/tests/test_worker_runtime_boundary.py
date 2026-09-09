@@ -8,6 +8,7 @@ BACKEND_ROOT = ROOT / "backend"
 DOCKERFILE_PATH = ROOT / "Dockerfile.lambda"
 DOCKERIGNORE_PATH = ROOT / "Dockerfile.lambda.dockerignore"
 WORKER_REQUIREMENTS_PATH = BACKEND_ROOT / "requirements-worker.txt"
+WORKER_CONTRACT_PATH = BACKEND_ROOT / "app" / "workers" / "worker_image_contract.py"
 
 
 def _imported_app_modules() -> set[str]:
@@ -32,6 +33,7 @@ def test_worker_import_does_not_load_web_or_administrative_modules() -> None:
         "app.api",
         "app.main",
         "app.routers",
+        "app.application.admin_dashboard_service",
         "app.application.access_control",
         "app.application.checkout_management",
         "app.application.contact_service",
@@ -51,16 +53,20 @@ def test_worker_import_does_not_load_web_or_administrative_modules() -> None:
 
 def test_worker_image_uses_a_dedicated_runtime_contract() -> None:
     dockerfile = DOCKERFILE_PATH.read_text(encoding="utf-8")
+    worker_contract = WORKER_CONTRACT_PATH.read_text(encoding="utf-8")
 
     assert "backend/requirements-worker.txt" in dockerfile
     assert "backend/requirements.txt backend/requirements-lambda.txt" not in dockerfile
     assert "COPY backend/app /var/task/app" not in dockerfile
     assert "python -m app.workers.worker_image_contract" in dockerfile
+    assert '"app/application/admin_dashboard_service.py"' in worker_contract
+    assert '"app.application.admin_dashboard_service"' in worker_contract
 
 
 def test_worker_build_context_excludes_web_and_administrative_sources() -> None:
     dockerignore = DOCKERIGNORE_PATH.read_text(encoding="utf-8").replace("\\", "/")
     excluded = {
+        "backend/app/application/admin_dashboard_service.py",
         "backend/app/application/access_control/",
         "backend/app/application/checkout_management.py",
         "backend/app/application/contact_service.py",

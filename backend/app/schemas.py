@@ -351,6 +351,65 @@ class AdminMeResponse(BaseModel):
     role: str = "admin"
 
 
+class AdminDashboardSummary(BaseModel):
+    conversions_total: int
+    technical_success_count: int
+    technical_success_rate: float
+    clean_conversion_count: int
+    clean_conversion_rate: float
+    failure_count: int
+    active_people_count: int
+    returning_people_count: int
+    median_duration_ms: int
+
+
+class AdminDashboardIdentityBreakdown(BaseModel):
+    registered_conversions: int
+    registered_people: int
+    anonymous_conversions: int
+    anonymous_people: int
+
+
+class AdminDashboardDailyItem(BaseModel):
+    date: str
+    conversions: int
+    clean: int
+    review: int
+    failures: int
+
+
+class AdminDashboardErrorItem(BaseModel):
+    error_code: str
+    error_stage: str
+    count: int
+
+
+class AdminDashboardAttentionItem(BaseModel):
+    processing_id: str
+    identity_type: str
+    created_at: str
+    model: str
+    conversion_type: str
+    status: str
+    transactions_count: int
+    duration_ms: int
+    error_code: str | None = None
+    error_stage: str | None = None
+    issue_reason: str
+
+
+class AdminDashboardResponse(BaseModel):
+    days: int
+    start_at: str
+    end_at: str
+    timezone: str
+    summary: AdminDashboardSummary
+    identities: AdminDashboardIdentityBreakdown
+    daily: list[AdminDashboardDailyItem]
+    top_errors: list[AdminDashboardErrorItem]
+    recent_attention: list[AdminDashboardAttentionItem]
+
+
 class PlanCatalogItem(BaseModel):
     id: str
     code: str

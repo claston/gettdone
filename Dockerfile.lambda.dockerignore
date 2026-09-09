@@ -14,6 +14,7 @@
 
 backend/app/application/access_control/
 backend/app/application/access_control/**
+backend/app/application/admin_dashboard_service.py
 backend/app/application/checkout_management.py
 backend/app/application/contact_service.py
 backend/app/application/conversion_service.py

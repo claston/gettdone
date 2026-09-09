@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
 
 from app.application import (
@@ -7,6 +7,7 @@ from app.application import (
     InvalidCredentialsError,
     InvalidUserTokenError,
 )
+from app.application.admin_dashboard_service import AdminDashboardService
 from app.dependencies import get_access_control_service
 from app.routers.access_control_common import (
     SESSION_ACCESS_COOKIE_NAME,
@@ -15,6 +16,7 @@ from app.routers.access_control_common import (
     set_session_cookies,
 )
 from app.schemas import (
+    AdminDashboardResponse,
     AdminLoginRequest,
     AdminLoginResponse,
     AdminMeResponse,
@@ -87,6 +89,30 @@ def admin_me(
         name=user.name,
         email=user.email,
     )
+
+
+@router.get("/admin/dashboard", response_model=AdminDashboardResponse)
+def get_admin_dashboard(
+    response: Response,
+    days: int = Query(default=30, ge=1, le=90),
+    identity_type: str = Query(default="all", pattern="^(all|registered|anonymous)$"),
+    x_admin_token: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
+) -> AdminDashboardResponse:
+    require_admin_user(
+        x_admin_token=x_admin_token,
+        authorization=authorization,
+        access_cookie_token=access_cookie_token,
+        access_control_service=access_control_service,
+    )
+    payload = AdminDashboardService(access_control_service).get_dashboard(
+        days=days,
+        identity_type=identity_type,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return AdminDashboardResponse(**payload)
 
 
 @router.post("/admin/auth/logout")
