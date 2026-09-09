@@ -1,116 +1,79 @@
-from app.application.conversion.conversion_batch import (
-    MAX_CONVERSION_BATCH_FILES,
-    ConversionBatch,
-    ConversionBatchStatus,
-    resolve_conversion_batch_status,
-)
-from app.application.conversion.conversion_batch_repository import (
-    ConversionBatchRepository,
-    ConversionBatchSnapshot,
-    ConversionBatchSubmission,
-    ConversionOutboxEvent,
-    InMemoryConversionBatchRepository,
-)
-from app.application.conversion.conversion_batch_service import (
-    ConversionBatchFile,
-    ConversionBatchService,
-    PreparedConversionBatch,
-    PreparedConversionBatchUpload,
-    dispatch_conversion_outbox,
-)
-from app.application.conversion.conversion_capacity import ConversionCapacityController, ConversionCapacityLease
-from app.application.conversion.conversion_document_store import (
-    ConversionDocumentReference,
-    ConversionDocumentStore,
-    FilesystemConversionDocumentStore,
-    S3ConversionDocumentStore,
-)
-from app.application.conversion.conversion_job import ConversionExecutionHooks, ConversionJob
-from app.application.conversion.conversion_job_cleanup_service import ConversionJobCleanupService
-from app.application.conversion.conversion_job_executor import ConversionJobExecutor, InlineConversionJobExecutor
-from app.application.conversion.conversion_job_factory import ConversionJobFactory
-from app.application.conversion.conversion_job_repository import (
-    ConversionJobFailure,
-    ConversionJobRecord,
-    ConversionJobRepository,
-    ConversionJobResultReference,
-    ConversionJobStatus,
-    ConversionJobSubmission,
-    FilesystemConversionJobRepository,
-)
-from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult, ConversionPipelineStatus
-from app.application.conversion.conversion_runtime_config import (
-    ConversionArchitectureMode,
-    ConversionExecutionMode,
-    ConversionRuntimeConfig,
-    ConversionUploadMode,
-)
-from app.application.conversion.convert_document_result import ConvertDocumentResult, ConvertDocumentStatus
-from app.application.conversion.document_extractor import DocumentExtractor, ExtractedDocument
-from app.application.conversion.postgres_conversion_batch_repository import PostgresConversionBatchRepository
-from app.application.conversion.s3_direct_upload_service import PreparedS3Upload, S3DirectUploadService
-from app.application.conversion.sqs_conversion_queue import SqsConversionQueuePublisher
-from app.application.conversion.statement_parser import ParsedBankStatement, ParsedTransaction, StatementParser
-from app.application.conversion.uploaded_document import (
-    SUPPORTED_DOCUMENT_EXTENSIONS,
-    UploadedDocument,
-    UploadedDocumentStage,
-    ingest_uploaded_document,
-)
+"""Compatibility exports loaded on demand, without initializing sibling services."""
 
-__all__ = [
-    "ConversionPipelineResult",
-    "ConversionPipelineStatus",
-    "ConversionArchitectureMode",
-    "ConversionBatch",
-    "ConversionBatchStatus",
-    "ConversionBatchRepository",
-    "ConversionBatchSnapshot",
-    "ConversionBatchSubmission",
-    "ConversionOutboxEvent",
-    "ConversionBatchFile",
-    "ConversionBatchService",
-    "ConversionDocumentReference",
-    "ConversionDocumentStore",
-    "ConversionExecutionHooks",
-    "ConversionJob",
-    "ConversionJobExecutor",
-    "ConversionJobFactory",
-    "ConversionJobCleanupService",
-    "ConversionCapacityController",
-    "ConversionCapacityLease",
-    "ConversionJobFailure",
-    "ConversionJobRecord",
-    "ConversionJobRepository",
-    "ConversionJobResultReference",
-    "ConversionJobStatus",
-    "ConversionJobSubmission",
-    "ConversionExecutionMode",
-    "ConversionRuntimeConfig",
-    "ConversionUploadMode",
-    "ConvertDocumentResult",
-    "ConvertDocumentStatus",
-    "DocumentExtractor",
-    "ExtractedDocument",
-    "FilesystemConversionDocumentStore",
-    "FilesystemConversionJobRepository",
-    "InlineConversionJobExecutor",
-    "InMemoryConversionBatchRepository",
-    "MAX_CONVERSION_BATCH_FILES",
-    "S3ConversionDocumentStore",
-    "S3DirectUploadService",
-    "ParsedBankStatement",
-    "ParsedTransaction",
-    "PostgresConversionBatchRepository",
-    "PreparedS3Upload",
-    "PreparedConversionBatch",
-    "PreparedConversionBatchUpload",
-    "dispatch_conversion_outbox",
-    "SUPPORTED_DOCUMENT_EXTENSIONS",
-    "StatementParser",
-    "SqsConversionQueuePublisher",
-    "UploadedDocument",
-    "UploadedDocumentStage",
-    "ingest_uploaded_document",
-    "resolve_conversion_batch_status",
-]
+from importlib import import_module
+
+_EXPORTS: dict[str, tuple[str, str]] = {
+    "ConversionArchitectureMode": ("app.application.conversion.conversion_runtime_config", "ConversionArchitectureMode"),
+    "ConversionBatch": ("app.application.conversion.conversion_batch", "ConversionBatch"),
+    "ConversionBatchFile": ("app.application.conversion.conversion_batch_service", "ConversionBatchFile"),
+    "ConversionBatchRepository": ("app.application.conversion.conversion_batch_repository", "ConversionBatchRepository"),
+    "ConversionBatchService": ("app.application.conversion.conversion_batch_service", "ConversionBatchService"),
+    "ConversionBatchSnapshot": ("app.application.conversion.conversion_batch_repository", "ConversionBatchSnapshot"),
+    "ConversionBatchStatus": ("app.application.conversion.conversion_batch", "ConversionBatchStatus"),
+    "ConversionBatchSubmission": ("app.application.conversion.conversion_batch_repository", "ConversionBatchSubmission"),
+    "ConversionCapacityController": ("app.application.conversion.conversion_capacity", "ConversionCapacityController"),
+    "ConversionCapacityLease": ("app.application.conversion.conversion_capacity", "ConversionCapacityLease"),
+    "ConversionDocumentReference": ("app.application.conversion.conversion_document_store", "ConversionDocumentReference"),
+    "ConversionDocumentStore": ("app.application.conversion.conversion_document_store", "ConversionDocumentStore"),
+    "ConversionExecutionHooks": ("app.application.conversion.conversion_job", "ConversionExecutionHooks"),
+    "ConversionExecutionMode": ("app.application.conversion.conversion_runtime_config", "ConversionExecutionMode"),
+    "ConversionJob": ("app.application.conversion.conversion_job", "ConversionJob"),
+    "ConversionJobCleanupService": ("app.application.conversion.conversion_job_cleanup_service", "ConversionJobCleanupService"),
+    "ConversionJobExecutor": ("app.application.conversion.conversion_job_executor", "ConversionJobExecutor"),
+    "ConversionJobFactory": ("app.application.conversion.conversion_job_factory", "ConversionJobFactory"),
+    "ConversionJobFailure": ("app.application.conversion.conversion_job_repository", "ConversionJobFailure"),
+    "ConversionJobRecord": ("app.application.conversion.conversion_job_repository", "ConversionJobRecord"),
+    "ConversionJobRepository": ("app.application.conversion.conversion_job_repository", "ConversionJobRepository"),
+    "ConversionJobResultReference": ("app.application.conversion.conversion_job_repository", "ConversionJobResultReference"),
+    "ConversionJobStatus": ("app.application.conversion.conversion_job_repository", "ConversionJobStatus"),
+    "ConversionJobSubmission": ("app.application.conversion.conversion_job_repository", "ConversionJobSubmission"),
+    "ConversionOutboxEvent": ("app.application.conversion.conversion_batch_repository", "ConversionOutboxEvent"),
+    "ConversionPipelineResult": ("app.application.conversion.conversion_pipeline_result", "ConversionPipelineResult"),
+    "ConversionPipelineStatus": ("app.application.conversion.conversion_pipeline_result", "ConversionPipelineStatus"),
+    "ConversionRuntimeConfig": ("app.application.conversion.conversion_runtime_config", "ConversionRuntimeConfig"),
+    "ConversionUploadMode": ("app.application.conversion.conversion_runtime_config", "ConversionUploadMode"),
+    "ConvertDocumentResult": ("app.application.conversion.convert_document_result", "ConvertDocumentResult"),
+    "ConvertDocumentStatus": ("app.application.conversion.convert_document_result", "ConvertDocumentStatus"),
+    "DocumentExtractor": ("app.application.conversion.document_extractor", "DocumentExtractor"),
+    "ExtractedDocument": ("app.application.conversion.document_extractor", "ExtractedDocument"),
+    "FilesystemConversionDocumentStore": ("app.application.conversion.conversion_document_store", "FilesystemConversionDocumentStore"),
+    "FilesystemConversionJobRepository": ("app.application.conversion.conversion_job_repository", "FilesystemConversionJobRepository"),
+    "InMemoryConversionBatchRepository": ("app.application.conversion.conversion_batch_repository", "InMemoryConversionBatchRepository"),
+    "InlineConversionJobExecutor": ("app.application.conversion.conversion_job_executor", "InlineConversionJobExecutor"),
+    "MAX_CONVERSION_BATCH_FILES": ("app.application.conversion.conversion_batch", "MAX_CONVERSION_BATCH_FILES"),
+    "ParsedBankStatement": ("app.application.conversion.statement_parser", "ParsedBankStatement"),
+    "ParsedTransaction": ("app.application.conversion.statement_parser", "ParsedTransaction"),
+    "PostgresConversionBatchRepository": (
+        "app.application.conversion.postgres_conversion_batch_repository",
+        "PostgresConversionBatchRepository",
+    ),
+    "PreparedConversionBatch": ("app.application.conversion.conversion_batch_service", "PreparedConversionBatch"),
+    "PreparedConversionBatchUpload": ("app.application.conversion.conversion_batch_service", "PreparedConversionBatchUpload"),
+    "PreparedS3Upload": ("app.application.conversion.s3_direct_upload_service", "PreparedS3Upload"),
+    "S3ConversionDocumentStore": ("app.application.conversion.conversion_document_store", "S3ConversionDocumentStore"),
+    "S3DirectUploadService": ("app.application.conversion.s3_direct_upload_service", "S3DirectUploadService"),
+    "SUPPORTED_DOCUMENT_EXTENSIONS": ("app.application.conversion.uploaded_document", "SUPPORTED_DOCUMENT_EXTENSIONS"),
+    "SqsConversionQueuePublisher": ("app.application.conversion.sqs_conversion_queue", "SqsConversionQueuePublisher"),
+    "StatementParser": ("app.application.conversion.statement_parser", "StatementParser"),
+    "UploadedDocument": ("app.application.conversion.uploaded_document", "UploadedDocument"),
+    "UploadedDocumentStage": ("app.application.conversion.uploaded_document", "UploadedDocumentStage"),
+    "dispatch_conversion_outbox": ("app.application.conversion.conversion_batch_service", "dispatch_conversion_outbox"),
+    "ingest_uploaded_document": ("app.application.conversion.uploaded_document", "ingest_uploaded_document"),
+    "resolve_conversion_batch_status": ("app.application.conversion.conversion_batch", "resolve_conversion_batch_status"),
+}
+
+__all__ = sorted(_EXPORTS)
+
+
+def __getattr__(name: str):
+    export = _EXPORTS.get(name)
+    if export is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attribute_name = export
+    value = getattr(import_module(module_name), attribute_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *_EXPORTS})
