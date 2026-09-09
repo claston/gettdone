@@ -825,7 +825,7 @@ def test_parse_pdf_transactions_retries_with_ocr_when_native_is_generic_low_cove
     monkeypatch.setattr(
         pdf_parser_module,
         "_parse_pdf_transactions_from_page_texts",
-        lambda pages: native_result if pages == native_pages else ocr_result,
+        lambda pages, **kwargs: native_result if pages == native_pages else ocr_result,
     )
 
     result = parse_pdf_transactions(b"%PDF synthetic")
@@ -853,10 +853,10 @@ def test_parse_pdf_transactions_retries_with_ocr_when_native_parse_fails(monkeyp
     monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: True)
     monkeypatch.setattr(pdf_parser_module, "extract_pdf_page_texts_with_ocr", _ocr_stub)
 
-    def _parse_pages(pages):
+    def _parse_pages(pages, **kwargs):
         if pages == native_pages:
             raise native_error
-        return parse_pages(ocr_pages)
+        return parse_pages(ocr_pages, **kwargs)
 
     monkeypatch.setattr(pdf_parser_module, "_parse_pdf_transactions_from_page_texts", _parse_pages)
 
@@ -874,7 +874,10 @@ def test_parse_pdf_transactions_keeps_native_parse_error_when_ocr_is_disabled(mo
 
     monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: native_pages)
     monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: False)
-    monkeypatch.setattr(pdf_parser_module, "_parse_pdf_transactions_from_page_texts", lambda pages: (_ for _ in ()).throw(native_error))
+    monkeypatch.setattr(
+        pdf_parser_module, "_parse_pdf_transactions_from_page_texts",
+        lambda pages, **kwargs: (_ for _ in ()).throw(native_error),
+    )
 
     with pytest.raises(InvalidFileContentError, match="native parse failed"):
         parse_pdf_transactions(b"%PDF synthetic")
@@ -892,7 +895,10 @@ def test_parse_pdf_transactions_enforces_page_limit_before_native_failure_ocr_re
     monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: native_pages)
     monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: True)
     monkeypatch.setattr(pdf_parser_module, "extract_pdf_page_texts_with_ocr", _ocr_stub)
-    monkeypatch.setattr(pdf_parser_module, "_parse_pdf_transactions_from_page_texts", lambda pages: (_ for _ in ()).throw(native_error))
+    monkeypatch.setattr(
+        pdf_parser_module, "_parse_pdf_transactions_from_page_texts",
+        lambda pages, **kwargs: (_ for _ in ()).throw(native_error),
+    )
 
     with pytest.raises(pdf_parser_module.MaxPagesPerFileExceededError):
         parse_pdf_transactions(b"%PDF synthetic", max_ocr_pages=2)
@@ -907,7 +913,10 @@ def test_parse_pdf_transactions_keeps_native_parse_error_when_failure_ocr_retry_
     monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: native_pages)
     monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: True)
     monkeypatch.setattr(pdf_parser_module, "extract_pdf_page_texts_with_ocr", lambda raw_bytes: [])
-    monkeypatch.setattr(pdf_parser_module, "_parse_pdf_transactions_from_page_texts", lambda pages: (_ for _ in ()).throw(native_error))
+    monkeypatch.setattr(
+        pdf_parser_module, "_parse_pdf_transactions_from_page_texts",
+        lambda pages, **kwargs: (_ for _ in ()).throw(native_error),
+    )
 
     with pytest.raises(InvalidFileContentError, match="native parse failed"):
         parse_pdf_transactions(b"%PDF synthetic")
@@ -929,7 +938,10 @@ def test_parse_pdf_transactions_skips_ocr_when_native_failure_is_date_pattern_on
     monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: native_pages)
     monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: True)
     monkeypatch.setattr(pdf_parser_module, "extract_pdf_page_texts_with_ocr", _ocr_stub)
-    monkeypatch.setattr(pdf_parser_module, "_parse_pdf_transactions_from_page_texts", lambda pages: (_ for _ in ()).throw(native_error))
+    monkeypatch.setattr(
+        pdf_parser_module, "_parse_pdf_transactions_from_page_texts",
+        lambda pages, **kwargs: (_ for _ in ()).throw(native_error),
+    )
 
     with pytest.raises(InvalidFileContentError, match="missing_signals=date_pattern,transaction_row_pattern") as exc_info:
         parse_pdf_transactions(b"%PDF synthetic")
@@ -966,7 +978,7 @@ def test_parse_pdf_transactions_keeps_native_when_coverage_is_healthy(monkeypatc
     monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: native_pages)
     monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: True)
     monkeypatch.setattr(pdf_parser_module, "extract_pdf_page_texts_with_ocr", _ocr_stub)
-    monkeypatch.setattr(pdf_parser_module, "_parse_pdf_transactions_from_page_texts", lambda pages: native_result)
+    monkeypatch.setattr(pdf_parser_module, "_parse_pdf_transactions_from_page_texts", lambda pages, **kwargs: native_result)
 
     result = parse_pdf_transactions(b"%PDF synthetic")
 

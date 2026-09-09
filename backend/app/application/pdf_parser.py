@@ -65,7 +65,6 @@ from app.application.textract_gateway import TextractGateway
 from app.application.textract_transaction_adapter import adapt_textract_extraction_to_transactions
 
 _SANTANDER_IB_EMPRESARIAL_365_MOBILE_GROUPED_LAYOUT = "santander_empresarial_extrato_365_dias_mobile_grouped_v1"
-_REFERENCE_MONTH_YEAR_CONTEXT: tuple[int, int] | None = None
 
 
 def _normalize_parse_observability_value(value: object) -> int | float | str:
@@ -205,12 +204,9 @@ def parse_pdf_transactions(
         page_texts = _extract_pdf_page_texts(raw_bytes, on_ocr_progress)
     using_native_text = bool(native_pages) and page_texts == native_pages
     try:
-        previous_reference_month_year = _REFERENCE_MONTH_YEAR_CONTEXT
-        globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = reference_month_year
-        try:
-            primary_result = _parse_pdf_transactions_from_page_texts(page_texts)
-        finally:
-            globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = previous_reference_month_year
+        primary_result = _parse_pdf_transactions_from_page_texts(
+            page_texts, context=LayoutSpecificParseContext(reference_month_year=reference_month_year)
+        )
     except InvalidFileContentError as native_parse_error:
         if not using_native_text:
             raise _attach_parse_observability(
@@ -250,12 +246,9 @@ def parse_pdf_transactions(
         return primary_result
 
     try:
-        previous_reference_month_year = _REFERENCE_MONTH_YEAR_CONTEXT
-        globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = reference_month_year
-        try:
-            ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
-        finally:
-            globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = previous_reference_month_year
+        ocr_result = _parse_pdf_transactions_from_page_texts(
+            ocr_pages, context=LayoutSpecificParseContext(reference_month_year=reference_month_year)
+        )
     except InvalidFileContentError as ocr_error:
         raise _attach_parse_observability(
             ocr_error,
@@ -299,12 +292,9 @@ def _retry_insufficient_native_text_with_ocr(
 
     try:
         reference_month_year = text_extraction.read_pdf_creation_month_year(raw_bytes)
-        previous_reference_month_year = _REFERENCE_MONTH_YEAR_CONTEXT
-        globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = reference_month_year
-        try:
-            ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
-        finally:
-            globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = previous_reference_month_year
+        ocr_result = _parse_pdf_transactions_from_page_texts(
+            ocr_pages, context=LayoutSpecificParseContext(reference_month_year=reference_month_year)
+        )
     except InvalidFileContentError as ocr_error:
         raise _attach_parse_observability(
             ocr_error,
@@ -362,12 +352,9 @@ def _retry_native_parse_failure_with_ocr(
         )
 
     try:
-        previous_reference_month_year = _REFERENCE_MONTH_YEAR_CONTEXT
-        globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = reference_month_year
-        try:
-            ocr_result = _parse_pdf_transactions_from_page_texts(ocr_pages)
-        finally:
-            globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = previous_reference_month_year
+        ocr_result = _parse_pdf_transactions_from_page_texts(
+            ocr_pages, context=LayoutSpecificParseContext(reference_month_year=reference_month_year)
+        )
     except InvalidFileContentError as ocr_error:
         raise _attach_parse_observability(
             ocr_error,
@@ -525,7 +512,10 @@ def _parse_scanned_pdf_with_local_ocr_adapter(
 
 
 def _parse_pdf_transactions_from_page_texts(
-    page_texts: list[str], *, preserve_layout_spacing: bool = False
+    page_texts: list[str],
+    *,
+    preserve_layout_spacing: bool = False,
+    context: LayoutSpecificParseContext | None = None,
 ) -> PdfParseResult:
     joined_text = "\n".join(page_texts)
     layout = infer_pdf_layout(joined_text)
@@ -535,6 +525,7 @@ def _parse_pdf_transactions_from_page_texts(
     specialized_selection = _parse_layout_specific_statement_rows(
         lines=lines,
         layout=layout,
+        context=context or LayoutSpecificParseContext(),
     )
     if specialized_selection is not None:
         specialized_rows = _adjust_forward_year_rollover_rows(
@@ -627,11 +618,12 @@ def _parse_layout_specific_statement_rows(
     *,
     lines: list[_PdfLine],
     layout: PdfLayoutInference,
+    context: LayoutSpecificParseContext,
 ) -> LayoutSpecificParseResult | None:
     return DEFAULT_PDF_LAYOUT_PARSER_REGISTRY.parse(
         layout_name=layout.layout_name,
         lines=lines,
-        context=LayoutSpecificParseContext(reference_month_year=_REFERENCE_MONTH_YEAR_CONTEXT),
+        context=context,
     )
 
 
@@ -2335,15 +2327,11 @@ def _maybe_upgrade_native_parse_with_layout_text(*, raw_bytes: bytes, baseline_r
     reference_month_year = text_extraction.read_pdf_creation_month_year(raw_bytes)
 
     try:
-        previous_reference_month_year = _REFERENCE_MONTH_YEAR_CONTEXT
-        globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = reference_month_year
-        try:
-            candidate_result = _parse_pdf_transactions_from_page_texts(
-                layout_pages,
-                preserve_layout_spacing=True,
-            )
-        finally:
-            globals()["_REFERENCE_MONTH_YEAR_CONTEXT"] = previous_reference_month_year
+        candidate_result = _parse_pdf_transactions_from_page_texts(
+            layout_pages,
+            preserve_layout_spacing=True,
+            context=LayoutSpecificParseContext(reference_month_year=reference_month_year),
+        )
     except InvalidFileContentError:
         return baseline_result
 
