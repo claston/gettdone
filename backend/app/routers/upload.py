@@ -28,6 +28,7 @@ from app.application import (
 )
 from app.application import conversion_service as conversion_service_module
 from app.application.conversion import document_preflight_service as document_preflight_service_module
+from app.application.conversion.contracts.payloads import ConvertResponse
 from app.application.conversion.document_preflight_service import (
     OCR_CONTEXT_SCANNED_PDF,
     OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK,
@@ -43,7 +44,6 @@ from app.routers.auth_session import (
     SESSION_ACCESS_COOKIE_NAME,
     resolve_anonymous_fingerprint_with_cookie,
 )
-from app.schemas import ConvertResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

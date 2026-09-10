@@ -44,7 +44,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
         "app.application.conversion.conversion_job_repository",
         "ConversionJobFailure",
     ),
-    "ConversionJobRecord": ("app.application.conversion.conversion_job_repository", "ConversionJobRecord"),
+    "ConversionJobRecord": ("app.application.conversion.contracts.jobs", "ConversionJobRecord"),
     "ConversionJobRepository": (
         "app.application.conversion.conversion_job_repository",
         "ConversionJobRepository",
@@ -53,7 +53,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
         "app.application.conversion.conversion_job_repository",
         "ConversionJobResultReference",
     ),
-    "ConversionJobStatus": ("app.application.conversion.conversion_job_repository", "ConversionJobStatus"),
+    "ConversionJobStatus": ("app.application.conversion.contracts.jobs", "ConversionJobStatus"),
     "ConversionJobSubmission": (
         "app.application.conversion.conversion_job_repository",
         "ConversionJobSubmission",
@@ -150,7 +150,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "UploadedDocument": ("app.application.conversion.uploaded_document", "UploadedDocument"),
     "UploadedDocumentStage": ("app.application.conversion.uploaded_document", "UploadedDocumentStage"),
     "UserAlreadyExistsError": ("app.application.errors", "UserAlreadyExistsError"),
-    "build_analyze_response": ("app.application.analysis_response_builder", "build_analyze_response"),
+    "build_analyze_response": ("app.application.conversion.result_payload", "build_analyze_response"),
     "build_convert_response_payload": (
         "app.application.analysis_response_builder",
         "build_convert_response_payload",
@@ -179,7 +179,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
         "app.application.analysis_response_builder",
         "persist_and_build_analyze_response",
     ),
-    "persist_conversion_result": ("app.application.analysis_response_builder", "persist_conversion_result"),
+    "persist_conversion_result": ("app.application.conversion.result_persistence", "persist_conversion_result"),
 }
 
 __all__ = sorted(_EXPORTS)

@@ -7,6 +7,7 @@ from pathlib import Path
 FORBIDDEN_MODULE_PREFIXES = (
     "app.api",
     "app.main",
+    "app.schemas",
     "app.routers",
     "app.application.admin_dashboard_service",
     "app.application.access_control",
@@ -21,6 +22,7 @@ FORBIDDEN_IMAGE_PATHS = (
     "app/api",
     "app/routers",
     "app/main.py",
+    "app/schemas.py",
     "app/dependencies.py",
     "app/security_baseline.py",
     "app/application/admin_dashboard_service.py",

@@ -1,45 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
 
+from app.application.conversion.contracts.batches import ConversionBatchRepository, ConversionBatchSnapshot, ConversionOutboxEvent
+from app.application.conversion.contracts.documents import ConversionDocumentReference
+from app.application.conversion.contracts.jobs import ConversionJobStatus
+from app.application.conversion.contracts.uploads import DirectUploadService, QueuePublisher, canonical_document_content_type
 from app.application.conversion.conversion_batch import ConversionBatch
-from app.application.conversion.conversion_batch_repository import (
-    ConversionBatchRepository,
-    ConversionBatchSnapshot,
-    ConversionOutboxEvent,
-)
-from app.application.conversion.conversion_document_store import ConversionDocumentReference
 from app.application.conversion.conversion_job import ConversionJob
-from app.application.conversion.conversion_job_repository import ConversionJobStatus
 from app.application.conversion.identity import IdentityContext
-from app.application.conversion.s3_direct_upload_service import PreparedS3Upload, S3DirectUploadService
-
-
-class DirectUploadService(Protocol):
-    def prepare(
-        self,
-        *,
-        filename: str,
-        content_type: str,
-        size_bytes: int,
-        sha256_hex: str,
-        max_size_bytes: int,
-    ) -> PreparedS3Upload: ...
-
-    def prepare_reference(
-        self,
-        *,
-        document: ConversionDocumentReference,
-        content_type: str,
-        max_size_bytes: int,
-    ) -> PreparedS3Upload: ...
-
-    def verify_uploaded(self, document: ConversionDocumentReference) -> None: ...
-
-
-class QueuePublisher(Protocol):
-    def publish(self, *, job_id: str, batch_id: str, trace_id: str) -> str: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,7 +87,7 @@ class ConversionBatchService:
             initially_prepared = [
                 self.direct_upload_service.prepare_reference(
                     document=record.job.document,
-                    content_type=S3DirectUploadService.canonical_content_type(record.job.document.file_type),
+                    content_type=canonical_document_content_type(record.job.document.file_type),
                     max_size_bytes=identity.max_upload_size_bytes,
                 )
                 for record in submission.snapshot.jobs

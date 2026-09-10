@@ -3,10 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from app.application.conversion.conversion_document_store import ConversionDocumentStore
+from app.application.conversion.contracts.documents import ConversionDocumentStore
+from app.application.conversion.contracts.jobs import ConversionJobRepository
 from app.application.conversion.conversion_job import ConversionJob
 from app.application.conversion.conversion_job_cleanup_service import ConversionJobCleanupService
-from app.application.conversion.conversion_job_repository import ConversionJobRepository
 from app.application.conversion.uploaded_document import UploadedDocument
 from app.application.errors import InvalidSessionTokenError, InvalidUserTokenError
 

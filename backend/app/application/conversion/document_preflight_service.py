@@ -1,35 +1,33 @@
 import logging
 import os
-from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 
 from pypdf import PdfReader
 
+from app.application.conversion.contracts.preflight import DocumentPreflightPolicy, DocumentPreflightResult
 from app.application.errors import FileTooLargeError, MaxPagesPerFileExceededError
 from app.application.parsers.pdf.reader import open_pdf_reader
 
 logger = logging.getLogger(__name__)
 
+
 TEXT_PDF_MAX_PAGES_PER_FILE = 250
+
+
 TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
+
+
 OCR_PDF_MAX_PAGES_PER_FILE = 10
+
+
 OCR_PDF_MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024
+
+
 OCR_CONTEXT_SCANNED_PDF = "scanned_pdf"
+
+
 OCR_CONTEXT_UNIDENTIFIED_MODEL_FALLBACK = "unidentified_model_fallback"
-
-
-@dataclass(frozen=True, slots=True)
-class DocumentPreflightResult:
-    scanned_likely: bool | None
-    estimated_pages_count: int | None
-
-
-@dataclass(frozen=True, slots=True)
-class DocumentPreflightPolicy:
-    max_upload_size_bytes: int
-    max_pages_per_file: int | None
-    ocr_max_pages: int
 
 
 class DocumentPreflightService:

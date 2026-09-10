@@ -8,22 +8,17 @@ from pathlib import Path
 from time import monotonic, time
 from typing import Protocol
 
-from app.application.conversion.conversion_access import PostgresConversionAccessService
-from app.application.conversion.conversion_batch_repository import ConversionBatchRepository
+from app.adapters.conversion.access import PostgresConversionAccessService
+from app.adapters.conversion.document_store import S3ConversionDocumentStore
+from app.adapters.conversion.postgres_batches import PostgresConversionBatchRepository
+from app.adapters.conversion.sqs_queue import SqsConversionQueuePublisher
+from app.application.conversion.contracts.batches import ConversionBatchRepository
+from app.application.conversion.contracts.documents import ConversionDocumentStore
+from app.application.conversion.contracts.jobs import ConversionJobResultReference, ConversionJobStatus
 from app.application.conversion.conversion_batch_service import dispatch_conversion_outbox
-from app.application.conversion.conversion_document_store import (
-    ConversionDocumentStore,
-    S3ConversionDocumentStore,
-)
 from app.application.conversion.conversion_job import ConversionExecutionHooks
-from app.application.conversion.conversion_job_repository import (
-    ConversionJobResultReference,
-    ConversionJobStatus,
-)
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineStatus
 from app.application.conversion.document_conversion_pipeline import DocumentConversionPipeline
-from app.application.conversion.postgres_conversion_batch_repository import PostgresConversionBatchRepository
-from app.application.conversion.sqs_conversion_queue import SqsConversionQueuePublisher
 from app.application.default_conversion_pipeline import build_default_conversion_pipeline
 from app.application.report_service import ReportService
 from app.application.s3_analysis_storage import S3AnalysisStorage

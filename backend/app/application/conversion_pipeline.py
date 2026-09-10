@@ -32,7 +32,7 @@ class OperationalPipelineSummary:
 
 
 @dataclass(frozen=True)
-class ConversionPipelineResult:
+class ProcessingResult:
     analysis_data: AnalysisData
     document: UploadedDocument
     parsed_document: ParsedDocument
@@ -82,7 +82,7 @@ class ConversionPipeline:
         on_ocr_progress: OcrProgressCallback | None = None,
         max_ocr_pages: int | None = None,
         pdf_parser: PdfParser = parse_pdf_transactions,
-    ) -> ConversionPipelineResult:
+    ) -> ProcessingResult:
         document = ingest_uploaded_document(filename=filename, raw_bytes=raw_bytes)
         return self.run_document(
             document=document,
@@ -100,7 +100,7 @@ class ConversionPipeline:
         on_ocr_progress: OcrProgressCallback | None = None,
         max_ocr_pages: int | None = None,
         pdf_parser: PdfParser = parse_pdf_transactions,
-    ) -> ConversionPipelineResult:
+    ) -> ProcessingResult:
         parse_start = perf_counter()
         parsed_document = self.parser.parse(
             document,
@@ -123,7 +123,7 @@ class ConversionPipeline:
         parsed_document: ParsedDocument,
         analysis_id: str,
         parse_ms: float,
-    ) -> ConversionPipelineResult:
+    ) -> ProcessingResult:
         total_start = perf_counter()
         filename = document.filename
         raw_bytes = document.raw_bytes
@@ -270,7 +270,7 @@ class ConversionPipeline:
             bank_code=inferred_bank_code,
         )
 
-        return ConversionPipelineResult(
+        return ProcessingResult(
             analysis_data=analysis_data,
             document=document,
             parsed_document=parsed_document,
@@ -360,3 +360,7 @@ def _default_resolve_ofx_account_type(
     _layout_inference_name: str | None,
 ) -> str | None:
     return None
+
+
+# Compatibility name for existing callers; wire payloads are unchanged.
+ConversionPipelineResult = ProcessingResult

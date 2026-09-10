@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from uuid import uuid4
 
-from app.application.conversion.conversion_job_repository import ConversionJobStatus
+from app.application.conversion.contracts.jobs import ConversionJobStatus
 
 MAX_CONVERSION_BATCH_FILES = 12
 

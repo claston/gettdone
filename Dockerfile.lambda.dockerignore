@@ -4,7 +4,8 @@
 !backend/requirements-worker.txt
 !backend/app/
 !backend/app/__init__.py
-!backend/app/schemas.py
+!backend/app/adapters/
+!backend/app/adapters/**
 !backend/app/application/
 !backend/app/application/**
 !backend/app/data/

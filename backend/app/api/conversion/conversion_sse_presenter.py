@@ -1,4 +1,4 @@
-﻿import json
+import json
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future
 from dataclasses import dataclass
@@ -28,7 +28,7 @@ from app.application import (
     UnsupportedFileTypeError,
 )
 from app.application.conversion import document_preflight_service as document_preflight_service_module
-from app.schemas import ConvertResponse
+from app.application.conversion.contracts.payloads import ConvertResponse
 
 TEXT_PDF_MAX_UPLOAD_SIZE_BYTES = document_preflight_service_module.TEXT_PDF_MAX_UPLOAD_SIZE_BYTES
 OCR_PDF_MAX_UPLOAD_SIZE_BYTES = document_preflight_service_module.OCR_PDF_MAX_UPLOAD_SIZE_BYTES

@@ -10,10 +10,10 @@ from pathlib import Path
 from time import monotonic
 from uuid import uuid4
 
-from app.application.analysis_response_builder import build_convert_response_payload, persist_conversion_result
 from app.application.bank_identity import resolve_conversion_model_label
-from app.application.conversion.conversion_access import ConversionAccessPort
-from app.application.conversion.conversion_document_store import ConversionDocumentReference
+from app.application.conversion.contracts.access import ConversionAccessPort
+from app.application.conversion.contracts.documents import ConversionDocumentReference
+from app.application.conversion.contracts.preflight import DocumentPreflightPolicy, DocumentPreflightResult
 from app.application.conversion.conversion_job import ConversionExecutionHooks, ConversionJob
 from app.application.conversion.conversion_job_factory import resolve_conversion_identity
 from app.application.conversion.conversion_pipeline_result import (
@@ -23,13 +23,11 @@ from app.application.conversion.document_extractor import (
     DocumentExtractor,
     LegacyParsingServiceDocumentExtractor,
 )
-from app.application.conversion.document_preflight_service import (
-    DocumentPreflightPolicy,
-    DocumentPreflightResult,
-    DocumentPreflightService,
-)
+from app.application.conversion.document_preflight_service import DocumentPreflightService
 from app.application.conversion.persisted_conversion_result import PersistedConversionResult
 from app.application.conversion.quota_validator_service import QuotaValidatorService
+from app.application.conversion.result_payload import build_convert_response_payload
+from app.application.conversion.result_persistence import persist_conversion_result
 from app.application.conversion.statement_parser import (
     LegacyExtractedDocumentStatementParser,
     StatementParser,
