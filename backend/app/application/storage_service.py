@@ -839,6 +839,9 @@ class TempAnalysisStorage:
                 if isinstance(content.get("pdf_processing_metrics"), dict)
                 else None
             ),
+            quality_issues=[dict(item) for item in content.get("quality_issues", []) if isinstance(item, dict)]
+            if isinstance(content.get("quality_issues"), list)
+            else [],
             ofx_account_type=str(content.get("ofx_account_type") or "").strip() or None,
             opening_balance=float(content["opening_balance"]) if content.get("opening_balance") is not None else None,
             closing_balance=float(content["closing_balance"]) if content.get("closing_balance") is not None else None,

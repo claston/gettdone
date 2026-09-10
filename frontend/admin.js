@@ -17,6 +17,8 @@
   const dashboardDailyChartNode = document.getElementById("dashboard-daily-chart");
   const dashboardIdentitiesNode = document.getElementById("dashboard-identities");
   const dashboardTopErrorsNode = document.getElementById("dashboard-top-errors");
+  const dashboardTopQualityIssuesNode = document.getElementById("dashboard-top-quality-issues");
+  const dashboardLayoutsNode = document.getElementById("dashboard-layouts");
   const dashboardRecentAttentionNode = document.getElementById("dashboard-recent-attention");
   const adminSectionButtons = document.querySelectorAll("[data-admin-section]");
   const adminPanelNodes = document.querySelectorAll("[data-admin-panel]");
@@ -209,8 +211,8 @@
     dashboardSummaryNode.replaceChildren();
     const total = Number(summary.conversions_total || 0);
     const successCount = Number(summary.technical_success_count || 0);
-    const cleanCount = Number(summary.clean_conversion_count || 0);
-    const reviewCount = Math.max(0, successCount - cleanCount);
+    const cleanCount = Number(summary.clean_high_confidence_count || summary.clean_conversion_count || 0);
+    const reviewCount = Number(summary.review_count ?? Math.max(0, successCount - cleanCount));
     appendMetricCard(dashboardSummaryNode, "Conversões", formatInteger(total), "tentativas no período", "");
     appendMetricCard(
       dashboardSummaryNode,
@@ -221,8 +223,8 @@
     );
     appendMetricCard(
       dashboardSummaryNode,
-      "Sem alertas técnicos",
-      formatPercent(summary.clean_conversion_rate),
+      "Limpa com score ≥ 95%",
+      formatPercent(summary.clean_high_confidence_rate),
       formatCountLabel(cleanCount, "conversão", "conversões"),
       "clean",
     );
@@ -294,7 +296,7 @@
       day.className = "chart-day";
       day.setAttribute(
         "aria-label",
-        `${formatShortDate(item.date)}: ${formatInteger(conversions)} conversões, ${formatInteger(clean)} sem alertas, ${formatInteger(review)} para revisar e ${formatInteger(failures)} falhas.`,
+        `${formatShortDate(item.date)}: ${formatInteger(conversions)} conversões, ${formatInteger(clean)} limpas com score mínimo, ${formatInteger(review)} para revisar e ${formatInteger(failures)} falhas.`,
       );
       day.appendChild(createTextElement("span", "chart-total", formatInteger(conversions)));
 
@@ -370,6 +372,60 @@
     });
   }
 
+  function renderDashboardQualityIssues(items) {
+    if (!dashboardTopQualityIssuesNode) return;
+    dashboardTopQualityIssuesNode.replaceChildren();
+    const issues = Array.isArray(items) ? items : [];
+    if (!issues.length) {
+      dashboardTopQualityIssuesNode.appendChild(
+        createTextElement("p", "empty dashboard-empty", "Nenhuma inconsistência registrada neste período."),
+      );
+      return;
+    }
+    issues.forEach(function (item) {
+      const row = document.createElement("div");
+      row.className = "compact-list-item";
+      const text = document.createElement("div");
+      text.appendChild(createTextElement("p", "", item.issue_code || "não informada"));
+      text.appendChild(createTextElement("p", "muted compact", item.severity === "error" ? "Erro" : "Alerta"));
+      row.appendChild(text);
+      row.appendChild(createTextElement("strong", "", formatInteger(item.count)));
+      dashboardTopQualityIssuesNode.appendChild(row);
+    });
+  }
+
+  function renderDashboardLayouts(items) {
+    if (!dashboardLayoutsNode) return;
+    dashboardLayoutsNode.replaceChildren();
+    const layouts = Array.isArray(items) ? items : [];
+    if (!layouts.length) {
+      dashboardLayoutsNode.appendChild(createTextElement("p", "empty dashboard-empty", "Nenhum layout no período."));
+      return;
+    }
+    const table = document.createElement("table");
+    table.className = "dashboard-table";
+    const head = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    ["Layout", "Conversões", "Limpas ≥ 95%", "Revisar", "Falhas", "Score médio"].forEach(function (label) {
+      appendTableCell(headRow, label, "th");
+    });
+    head.appendChild(headRow);
+    table.appendChild(head);
+    const body = document.createElement("tbody");
+    layouts.forEach(function (item) {
+      const row = document.createElement("tr");
+      appendTableCell(row, item.layout_name || "Não identificado");
+      appendTableCell(row, formatInteger(item.conversions));
+      appendTableCell(row, `${formatInteger(item.clean_high_confidence)} (${formatPercent(item.clean_high_confidence_rate)})`);
+      appendTableCell(row, formatInteger(item.review));
+      appendTableCell(row, formatInteger(item.failures));
+      appendTableCell(row, item.average_confidence == null ? "-" : formatPercent(Number(item.average_confidence) * 100));
+      body.appendChild(row);
+    });
+    table.appendChild(body);
+    dashboardLayoutsNode.appendChild(table);
+  }
+
   function appendTableCell(row, text, tagName) {
     const cell = createTextElement(tagName || "td", "", text);
     row.appendChild(cell);
@@ -417,6 +473,8 @@
     renderDashboardChart(payload.daily || []);
     renderDashboardIdentities(payload.identities || {});
     renderDashboardErrors(payload.top_errors || []);
+    renderDashboardQualityIssues(payload.top_quality_issues || []);
+    renderDashboardLayouts(payload.layouts || []);
     renderDashboardAttention(payload.recent_attention || []);
   }
 

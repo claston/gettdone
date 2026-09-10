@@ -111,6 +111,14 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
             file_sha256 TEXT,
             canonical_warning_transactions_count INTEGER NOT NULL DEFAULT 0,
             balance_consistency_failed INTEGER NOT NULL DEFAULT 0,
+            quality_status TEXT,
+            quality_score REAL,
+            quality_rule_version TEXT,
+            quality_reason_codes_json TEXT,
+            parser_confidence_band TEXT,
+            parser_coverage_rate REAL,
+            warning_types_json TEXT,
+            failure_diagnostics_json TEXT,
             FOREIGN KEY(user_id) REFERENCES users(id)
         );
 
@@ -142,8 +150,38 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
             extracted_char_count INTEGER,
             ocr_attempted INTEGER NOT NULL DEFAULT 0,
             ocr_engine TEXT,
-            file_sha256 TEXT
+            file_sha256 TEXT,
+            quality_status TEXT,
+            quality_score REAL,
+            quality_rule_version TEXT,
+            quality_reason_codes_json TEXT,
+            parser_confidence_band TEXT,
+            parser_coverage_rate REAL,
+            warning_types_json TEXT,
+            failure_diagnostics_json TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS conversion_quality_issues (
+            conversion_id TEXT NOT NULL,
+            identity_type TEXT NOT NULL CHECK (identity_type IN ('registered', 'anonymous')),
+            issue_index INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            issue_code TEXT NOT NULL,
+            transaction_index INTEGER,
+            source_page INTEGER,
+            source_line INTEGER,
+            source_parser TEXT,
+            details_json TEXT,
+            PRIMARY KEY (conversion_id, identity_type, issue_index)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conversion_quality_issues_created_at
+        ON conversion_quality_issues(created_at);
+
+        CREATE INDEX IF NOT EXISTS idx_conversion_quality_issues_issue_code
+        ON conversion_quality_issues(issue_code);
 
         CREATE TABLE IF NOT EXISTS google_oauth_states (
             state TEXT PRIMARY KEY,
@@ -400,6 +438,18 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
         )
     if "balance_consistency_failed" not in user_conversions_columns:
         conn.execute("ALTER TABLE user_conversions ADD COLUMN balance_consistency_failed INTEGER NOT NULL DEFAULT 0")
+    for column_name, column_type in (
+        ("quality_status", "TEXT"),
+        ("quality_score", "REAL"),
+        ("quality_rule_version", "TEXT"),
+        ("quality_reason_codes_json", "TEXT"),
+        ("parser_confidence_band", "TEXT"),
+        ("parser_coverage_rate", "REAL"),
+        ("warning_types_json", "TEXT"),
+        ("failure_diagnostics_json", "TEXT"),
+    ):
+        if column_name not in user_conversions_columns:
+            conn.execute(f"ALTER TABLE user_conversions ADD COLUMN {column_name} {column_type}")
     anonymous_conversion_event_columns = {
         str(row["name"])
         for row in conn.execute("PRAGMA table_info(anonymous_conversion_events)").fetchall()
@@ -436,6 +486,18 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
         conn.execute("ALTER TABLE anonymous_conversion_events ADD COLUMN ocr_engine TEXT")
     if "file_sha256" not in anonymous_conversion_event_columns:
         conn.execute("ALTER TABLE anonymous_conversion_events ADD COLUMN file_sha256 TEXT")
+    for column_name, column_type in (
+        ("quality_status", "TEXT"),
+        ("quality_score", "REAL"),
+        ("quality_rule_version", "TEXT"),
+        ("quality_reason_codes_json", "TEXT"),
+        ("parser_confidence_band", "TEXT"),
+        ("parser_coverage_rate", "REAL"),
+        ("warning_types_json", "TEXT"),
+        ("failure_diagnostics_json", "TEXT"),
+    ):
+        if column_name not in anonymous_conversion_event_columns:
+            conn.execute(f"ALTER TABLE anonymous_conversion_events ADD COLUMN {column_name} {column_type}")
     plan_versions_columns = {
         str(row["name"])
         for row in conn.execute("PRAGMA table_info(plan_versions)").fetchall()

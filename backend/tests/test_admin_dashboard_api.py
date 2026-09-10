@@ -22,6 +22,8 @@ def _record_user_conversion(
     balance_failed: int = 0,
     error_code: str | None = None,
     error_stage: str | None = None,
+    layout_name: str = "nubank_statement_ptbr",
+    layout_confidence: float = 0.98,
 ) -> None:
     service.record_user_conversion(
         user_id=user_id,
@@ -36,6 +38,9 @@ def _record_user_conversion(
         balance_consistency_failed=balance_failed,
         error_code=error_code,
         error_stage=error_stage,
+        layout_inference_name=layout_name,
+        layout_inference_confidence=layout_confidence,
+        selected_parser="inline",
         created_at=created_at.isoformat(),
     )
 
@@ -54,6 +59,8 @@ def _record_anonymous_conversion(
     balance_failed: int = 0,
     error_code: str | None = None,
     error_stage: str | None = None,
+    layout_name: str = "itau_statement_ptbr",
+    layout_confidence: float = 0.97,
 ) -> None:
     clock["now"] = created_at
     service.record_anonymous_conversion_event(
@@ -73,6 +80,9 @@ def _record_anonymous_conversion(
         balance_consistency_failed=balance_failed,
         error_code=error_code,
         error_stage=error_stage,
+        layout_inference_name=layout_name,
+        layout_inference_confidence=layout_confidence,
+        selected_parser="inline",
     )
 
 
@@ -164,6 +174,9 @@ def test_admin_dashboard_aggregates_quality_failures_and_returning_people(tmp_pa
             "technical_success_rate": 80.0,
             "clean_conversion_count": 3,
             "clean_conversion_rate": 60.0,
+            "clean_high_confidence_count": 3,
+            "clean_high_confidence_rate": 60.0,
+            "review_count": 1,
             "failure_count": 1,
             "active_people_count": 3,
             "returning_people_count": 2,
@@ -187,6 +200,13 @@ def test_admin_dashboard_aggregates_quality_failures_and_returning_people(tmp_pa
         assert payload["top_errors"] == [
             {"error_code": "parse_failed", "error_stage": "extraction", "count": 1}
         ]
+        assert payload["top_quality_issues"] == [
+            {"issue_code": "parse_failed", "severity": "error", "count": 1},
+            {"issue_code": "row_warnings", "severity": "warning", "count": 1},
+            {"issue_code": "technical_failure", "severity": "warning", "count": 1},
+        ]
+        assert payload["layouts"][0]["layout_name"] == "itau_statement_ptbr"
+        assert payload["layouts"][0]["clean_high_confidence"] == 2
         assert [item["processing_id"] for item in payload["recent_attention"]] == [
             "an_user_review",
             "ace_failed",

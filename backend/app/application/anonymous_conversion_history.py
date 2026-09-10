@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Callable
 
+from app.application.conversion_quality_history import prepare_quality_record, replace_quality_issues
+
 
 def record_anonymous_conversion_event(
     conn,
@@ -35,7 +37,26 @@ def record_anonymous_conversion_event(
     ocr_attempted: bool = False,
     ocr_engine: str | None = None,
     file_sha256: str | None = None,
+    parser_confidence_band: str | None = None,
+    parser_coverage_rate: float | None = None,
+    warning_types: list[str] | None = None,
+    failure_diagnostics: dict[str, object] | None = None,
+    quality_issues: list[dict[str, object]] | None = None,
 ) -> None:
+    assessment, reason_codes_json, warning_types_json, failure_diagnostics_json = prepare_quality_record(
+        status=status,
+        conversion_type=conversion_type,
+        transactions_count=transactions_count,
+        layout_name=layout_inference_name,
+        layout_confidence=layout_inference_confidence,
+        selected_parser=selected_parser,
+        warning_count=canonical_warning_transactions_count,
+        balance_failed=balance_consistency_failed,
+        parser_confidence_band=parser_confidence_band,
+        parser_coverage_rate=parser_coverage_rate,
+        warning_types=warning_types,
+        failure_diagnostics=failure_diagnostics,
+    )
     execute(
         conn,
         """
@@ -67,9 +88,17 @@ def record_anonymous_conversion_event(
           extracted_char_count,
           ocr_attempted,
           ocr_engine,
-          file_sha256
+          file_sha256,
+          quality_status,
+          quality_score,
+          quality_rule_version,
+          quality_reason_codes_json,
+          parser_confidence_band,
+          parser_coverage_rate,
+          warning_types_json,
+          failure_diagnostics_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id)
         DO UPDATE SET
           created_at=excluded.created_at,
@@ -98,7 +127,15 @@ def record_anonymous_conversion_event(
           extracted_char_count=excluded.extracted_char_count,
           ocr_attempted=excluded.ocr_attempted,
           ocr_engine=excluded.ocr_engine,
-          file_sha256=excluded.file_sha256
+          file_sha256=excluded.file_sha256,
+          quality_status=excluded.quality_status,
+          quality_score=excluded.quality_score,
+          quality_rule_version=excluded.quality_rule_version,
+          quality_reason_codes_json=excluded.quality_reason_codes_json,
+          parser_confidence_band=excluded.parser_confidence_band,
+          parser_coverage_rate=excluded.parser_coverage_rate,
+          warning_types_json=excluded.warning_types_json,
+          failure_diagnostics_json=excluded.failure_diagnostics_json
         """,
         (
             event_id,
@@ -129,5 +166,23 @@ def record_anonymous_conversion_event(
             bool(ocr_attempted),
             (ocr_engine or "").strip() or None,
             (file_sha256 or "").strip() or None,
+            assessment.status,
+            assessment.score,
+            assessment.rule_version,
+            reason_codes_json,
+            (parser_confidence_band or "").strip() or None,
+            float(parser_coverage_rate) if parser_coverage_rate is not None else None,
+            warning_types_json,
+            failure_diagnostics_json,
         ),
+    )
+    replace_quality_issues(
+        conn,
+        execute=execute,
+        conversion_id=event_id,
+        identity_type="anonymous",
+        created_at=created_at,
+        quality_reason_codes=assessment.reason_codes,
+        quality_issues=quality_issues,
+        error_code=(error_code or "").strip() or None,
     )

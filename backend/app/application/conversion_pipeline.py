@@ -6,6 +6,7 @@ from time import perf_counter
 from typing import Callable, Protocol
 
 from app.application.conversion.uploaded_document import UploadedDocument, ingest_uploaded_document
+from app.application.conversion_quality import build_line_quality_issues
 from app.application.document_classifier import DocumentClassification, classify_document
 from app.application.models import AnalysisData, BeforeAfterRow, NormalizedTransaction, TransactionRow
 from app.application.normalization.transaction_normalizer import normalize_transactions as default_normalize_transactions
@@ -136,6 +137,7 @@ class ConversionPipeline:
         parse_metrics = parsed_document.parse_metrics
         transaction_warning_types = parsed_document.warning_types or [[] for _ in parsed_transactions]
         transaction_running_balances = parsed_document.running_balances or [None for _ in parsed_transactions]
+        canonical_transactions = list(parsed_document.canonical_transactions or [])
 
         classify_start = perf_counter()
         classification_result = self.classifier(
@@ -177,6 +179,11 @@ class ConversionPipeline:
         transaction_running_balances = [
             transaction_running_balances[idx] if idx < len(transaction_running_balances) else None
             for idx in kept_indices
+        ]
+        selected_canonical_transactions = [
+            canonical_transactions[idx]
+            for idx in kept_indices
+            if idx < len(canonical_transactions)
         ]
 
         reconcile_start = perf_counter()
@@ -261,6 +268,7 @@ class ConversionPipeline:
             layout_inference_name=layout_inference_name,
             layout_inference_confidence=layout_inference_confidence,
             pdf_processing_metrics=pdf_processing_metrics,
+            quality_issues=build_line_quality_issues(selected_canonical_transactions),
             ofx_account_type=ofx_account_type,
             opening_balance=opening_balance,
             closing_balance=closing_balance,

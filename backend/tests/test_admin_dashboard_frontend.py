@@ -13,6 +13,8 @@ def test_admin_dashboard_frontend_exposes_summary_filters_and_attention_sections
     assert 'id="dashboard-summary"' in html
     assert 'id="dashboard-daily-chart"' in html
     assert 'id="dashboard-top-errors"' in html
+    assert 'id="dashboard-top-quality-issues"' in html
+    assert 'id="dashboard-layouts"' in html
     assert 'id="dashboard-recent-attention"' in html
     assert 'data-admin-section="dashboard"' in html
     assert 'data-admin-section="orders"' in html
@@ -22,5 +24,7 @@ def test_admin_dashboard_frontend_exposes_summary_filters_and_attention_sections
     assert "/admin/dashboard?" in javascript
     assert "loadDashboard" in javascript
     assert "renderDashboard" in javascript
+    assert "renderDashboardLayouts" in javascript
+    assert "clean_high_confidence_rate" in javascript
     assert "textContent" in javascript
     assert "innerHTML" not in javascript

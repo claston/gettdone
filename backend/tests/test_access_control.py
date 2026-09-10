@@ -583,6 +583,23 @@ def test_record_user_conversion_persists_warning_metrics(tmp_path) -> None:
         pages_count=5,
         canonical_warning_transactions_count=2,
         balance_consistency_failed=1,
+        layout_inference_name="nubank_statement_ptbr",
+        layout_inference_confidence=0.98,
+        selected_parser="tabular",
+        parser_confidence_band="low",
+        parser_coverage_rate=0.9,
+        warning_types=["balance_consistency_failed", "amount_sign_inferred"],
+        quality_issues=[
+            {
+                "scope": "transaction",
+                "severity": "error",
+                "issue_code": "balance_consistency_failed",
+                "transaction_index": 3,
+                "source_page": 2,
+                "source_line": 17,
+                "source_parser": "tabular",
+            }
+        ],
     )
 
     with service._connect() as conn:
@@ -591,7 +608,13 @@ def test_record_user_conversion_persists_warning_metrics(tmp_path) -> None:
             """
             SELECT
               canonical_warning_transactions_count,
-              balance_consistency_failed
+              balance_consistency_failed,
+              quality_status,
+              quality_rule_version,
+              quality_reason_codes_json,
+              parser_confidence_band,
+              parser_coverage_rate,
+              warning_types_json
             FROM user_conversions
             WHERE analysis_id = ?
             """,
@@ -601,6 +624,30 @@ def test_record_user_conversion_persists_warning_metrics(tmp_path) -> None:
     assert row is not None
     assert int(row["canonical_warning_transactions_count"]) == 2
     assert int(row["balance_consistency_failed"]) == 1
+    assert str(row["quality_status"]) == "review"
+    assert str(row["quality_rule_version"])
+    assert "row_warnings" in str(row["quality_reason_codes_json"])
+    assert str(row["parser_confidence_band"]) == "low"
+    assert float(row["parser_coverage_rate"]) == 0.9
+    assert "amount_sign_inferred" in str(row["warning_types_json"])
+
+    with service._connect() as conn:
+        issue = service._fetchone(
+            conn,
+            """
+            SELECT issue_code, transaction_index, source_page, source_line, source_parser
+            FROM conversion_quality_issues
+            WHERE conversion_id = ? AND identity_type = ?
+            """,
+            ("an_metrics_user_001", "registered"),
+        )
+
+    assert issue is not None
+    assert str(issue["issue_code"]) == "balance_consistency_failed"
+    assert int(issue["transaction_index"]) == 3
+    assert int(issue["source_page"]) == 2
+    assert int(issue["source_line"]) == 17
+    assert str(issue["source_parser"]) == "tabular"
 
 
 def test_create_checkout_intent_persists_pending_order(tmp_path) -> None:

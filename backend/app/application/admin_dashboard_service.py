@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 from collections import Counter, defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from statistics import median
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
+
+from app.application.conversion_quality import assess_conversion_quality
 
 if TYPE_CHECKING:
     from app.application.access_control import AccessControlService
@@ -46,6 +49,12 @@ class AdminDashboardService:
                     before=start_utc.isoformat(),
                     identity_type=normalized_identity_type,
                 )
+                top_quality_issues = self._load_top_quality_issues(
+                    conn,
+                    start_at=start_utc.isoformat(),
+                    end_at=now_utc.isoformat(),
+                    identity_type=normalized_identity_type,
+                )
 
         return _build_dashboard_payload(
             events=events,
@@ -54,7 +63,29 @@ class AdminDashboardService:
             start_date=start_date,
             start_at=start_utc,
             end_at=now_utc,
+            top_quality_issues=top_quality_issues,
         )
+
+    def _load_top_quality_issues(self, conn, *, start_at: str, end_at: str, identity_type: str) -> list[dict[str, object]]:
+        sql = """
+            SELECT issue_code, severity, COUNT(*) AS issue_count
+            FROM conversion_quality_issues
+            WHERE created_at >= ? AND created_at <= ?
+        """
+        params: tuple[object, ...] = (start_at, end_at)
+        if identity_type != "all":
+            sql += " AND identity_type = ?"
+            params += (identity_type,)
+        sql += " GROUP BY issue_code, severity ORDER BY issue_count DESC, issue_code ASC LIMIT 10"
+        rows = self._service._fetchall(conn, sql, params)
+        return [
+            {
+                "issue_code": str(row["issue_code"]),
+                "severity": str(row["severity"]),
+                "count": int(row["issue_count"]),
+            }
+            for row in rows
+        ]
 
     def _load_period_events(
         self,
@@ -81,7 +112,14 @@ class AdminDashboardService:
                     error_code,
                     error_stage,
                     canonical_warning_transactions_count,
-                    balance_consistency_failed
+                    balance_consistency_failed,
+                    layout_inference_name,
+                    layout_inference_confidence,
+                    selected_parser,
+                    quality_status,
+                    quality_score,
+                    quality_rule_version,
+                    quality_reason_codes_json
                 FROM user_conversions
                 WHERE created_at >= ? AND created_at <= ?
                 """,
@@ -105,7 +143,14 @@ class AdminDashboardService:
                     error_code,
                     error_stage,
                     canonical_warning_transactions_count,
-                    balance_consistency_failed
+                    balance_consistency_failed,
+                    layout_inference_name,
+                    layout_inference_confidence,
+                    selected_parser,
+                    quality_status,
+                    quality_score,
+                    quality_rule_version,
+                    quality_reason_codes_json
                 FROM anonymous_conversion_events
                 WHERE created_at >= ? AND created_at <= ?
                 """,
@@ -151,6 +196,18 @@ class AdminDashboardService:
 
 def _row_to_event(row, *, identity_type: str) -> dict[str, object]:
     identity_id = str(row["identity_id"] or "")
+    assessment = assess_conversion_quality(
+        status=str(row["status"] or ""),
+        conversion_type=str(row["conversion_type"] or ""),
+        transactions_count=_as_non_negative_int(row["transactions_count"]),
+        layout_name=str(row["layout_inference_name"] or "") or None,
+        layout_confidence=_as_optional_float(row["layout_inference_confidence"]),
+        selected_parser=str(row["selected_parser"] or "") or None,
+        warning_count=_as_non_negative_int(row["canonical_warning_transactions_count"]),
+        balance_failed=_as_non_negative_int(row["balance_consistency_failed"]),
+    )
+    stored_quality_status = str(row["quality_status"] or "").strip()
+    stored_reasons = _json_string_list(row["quality_reason_codes_json"])
     return {
         "processing_id": str(row["processing_id"] or ""),
         "identity_type": identity_type,
@@ -165,6 +222,15 @@ def _row_to_event(row, *, identity_type: str) -> dict[str, object]:
         "error_stage": str(row["error_stage"] or "").strip() or None,
         "warning_count": _as_non_negative_int(row["canonical_warning_transactions_count"]),
         "balance_failed": _as_non_negative_int(row["balance_consistency_failed"]),
+        "layout_name": str(row["layout_inference_name"] or "").strip() or None,
+        "layout_confidence": _as_optional_float(row["layout_inference_confidence"]),
+        "selected_parser": str(row["selected_parser"] or "").strip() or None,
+        "quality_status": stored_quality_status or assessment.status,
+        "quality_score": _as_optional_float(row["quality_score"])
+        if row["quality_score"] is not None
+        else assessment.score,
+        "quality_rule_version": str(row["quality_rule_version"] or assessment.rule_version),
+        "quality_reason_codes": stored_reasons or list(assessment.reason_codes),
     }
 
 
@@ -176,6 +242,7 @@ def _build_dashboard_payload(
     start_date: date,
     start_at: datetime,
     end_at: datetime,
+    top_quality_issues: list[dict[str, object]],
 ) -> dict[str, object]:
     daily_by_date = {
         (start_date + timedelta(days=offset)).isoformat(): {
@@ -198,6 +265,8 @@ def _build_dashboard_payload(
     recent_attention: list[dict[str, object]] = []
     success_count = 0
     clean_count = 0
+    review_count = 0
+    layouts: dict[str, dict[str, object]] = {}
 
     for event in events:
         identity_key = str(event["identity_key"])
@@ -211,7 +280,7 @@ def _build_dashboard_payload(
             identity_dates[identity_key].add(local_date)
 
         is_success = _is_success_status(str(event["status"]))
-        is_clean = is_success and _is_clean_event(event)
+        is_clean = is_success and str(event["quality_status"]) == "clean"
         if is_success:
             success_count += 1
             duration_ms = int(event["duration_ms"])
@@ -219,6 +288,33 @@ def _build_dashboard_payload(
                 durations.append(duration_ms)
         if is_clean:
             clean_count += 1
+        elif is_success:
+            review_count += 1
+
+        layout_name = str(event.get("layout_name") or "Não identificado")
+        layout = layouts.setdefault(
+            layout_name,
+            {
+                "layout_name": layout_name,
+                "conversions": 0,
+                "successes": 0,
+                "clean_high_confidence": 0,
+                "review": 0,
+                "failures": 0,
+                "confidence_sum": 0.0,
+                "confidence_count": 0,
+            },
+        )
+        layout["conversions"] = int(layout["conversions"]) + 1
+        if is_success:
+            layout["successes"] = int(layout["successes"]) + 1
+            key = "clean_high_confidence" if is_clean else "review"
+            layout[key] = int(layout[key]) + 1
+        else:
+            layout["failures"] = int(layout["failures"]) + 1
+        if event.get("layout_confidence") is not None:
+            layout["confidence_sum"] = float(layout["confidence_sum"]) + float(event["layout_confidence"])
+            layout["confidence_count"] = int(layout["confidence_count"]) + 1
 
         daily_item = daily_by_date.get(local_date or "")
         if daily_item is not None:
@@ -255,6 +351,13 @@ def _build_dashboard_payload(
             key=lambda item: (-item[1], item[0][0], item[0][1]),
         )[:5]
     ]
+    layout_items = []
+    for item in sorted(layouts.values(), key=lambda value: (-int(value["conversions"]), str(value["layout_name"])))[:10]:
+        confidence_count = int(item.pop("confidence_count"))
+        confidence_sum = float(item.pop("confidence_sum"))
+        item["average_confidence"] = round(confidence_sum / confidence_count, 4) if confidence_count else None
+        item["clean_high_confidence_rate"] = _percentage(int(item["clean_high_confidence"]), int(item["conversions"]))
+        layout_items.append(item)
 
     return {
         "days": days,
@@ -267,6 +370,9 @@ def _build_dashboard_payload(
             "technical_success_rate": _percentage(success_count, total),
             "clean_conversion_count": clean_count,
             "clean_conversion_rate": _percentage(clean_count, total),
+            "clean_high_confidence_count": clean_count,
+            "clean_high_confidence_rate": _percentage(clean_count, total),
+            "review_count": review_count,
             "failure_count": failure_count,
             "active_people_count": len(active_identity_keys),
             "returning_people_count": len(returning_identity_keys),
@@ -280,6 +386,8 @@ def _build_dashboard_payload(
         },
         "daily": list(daily_by_date.values()),
         "top_errors": top_errors,
+        "top_quality_issues": top_quality_issues,
+        "layouts": layout_items,
         "recent_attention": recent_attention[:10],
     }
 
@@ -296,6 +404,20 @@ def _attention_item(event: dict[str, object], *, is_success: bool) -> dict[str, 
     balance_failed = int(event["balance_failed"])
     if balance_failed > 0:
         reasons.append(_count_label(balance_failed, "inconsistência de saldo", "inconsistências de saldo"))
+    reason_labels = {
+        "generic_layout": "Layout genérico ou não identificado",
+        "layout_confidence_missing": "Score de reconhecimento ausente",
+        "layout_confidence_below_95": "Score de reconhecimento abaixo de 95%",
+        "parser_missing": "Parser não identificado",
+        "row_warnings": "Linhas com alerta",
+        "balance_inconsistency": "Inconsistência de saldo",
+        "no_transactions": "Nenhuma transação encontrada",
+        "technical_failure": "Falha técnica",
+    }
+    for code in event.get("quality_reason_codes", []):
+        label = reason_labels.get(str(code), str(code))
+        if label not in reasons:
+            reasons.append(label)
 
     return {
         "processing_id": str(event["processing_id"]),
@@ -308,16 +430,13 @@ def _attention_item(event: dict[str, object], *, is_success: bool) -> dict[str, 
         "duration_ms": int(event["duration_ms"]),
         "error_code": event["error_code"],
         "error_stage": event["error_stage"],
+        "layout_name": event.get("layout_name"),
+        "layout_confidence": event.get("layout_confidence"),
+        "selected_parser": event.get("selected_parser"),
+        "quality_status": event.get("quality_status"),
+        "quality_reason_codes": event.get("quality_reason_codes", []),
         "issue_reason": "; ".join(reasons) or "Revisão recomendada",
     }
-
-
-def _is_clean_event(event: dict[str, object]) -> bool:
-    return (
-        int(event["transactions_count"]) > 0
-        and int(event["warning_count"]) == 0
-        and int(event["balance_failed"]) == 0
-    )
 
 
 def _is_success_status(status: str) -> bool:
@@ -339,6 +458,25 @@ def _as_non_negative_int(value: object) -> int:
         return max(0, int(value or 0))
     except (TypeError, ValueError):
         return 0
+
+
+def _as_optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _json_string_list(value: object) -> list[str]:
+    try:
+        parsed = json.loads(str(value or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item) for item in parsed if str(item).strip()]
 
 
 def _as_aware_utc(value: datetime) -> datetime:

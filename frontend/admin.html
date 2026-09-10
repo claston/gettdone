@@ -84,11 +84,11 @@
       <section class="dashboard-block" aria-labelledby="dashboard-chart-title">
         <div class="dashboard-block-heading">
           <div>
-            <h3 id="dashboard-chart-title">Volume e qualidade técnica</h3>
-            <p class="muted compact">“Sem alertas” é uma verificação automática e não equivale à aprovação do usuário.</p>
+          <h3 id="dashboard-chart-title">Volume e qualidade observada</h3>
+            <p class="muted compact">“Limpa ≥ 95%” exige layout específico, score de reconhecimento mínimo e ausência de inconsistências conhecidas.</p>
           </div>
           <div class="chart-legend" aria-label="Legenda do gráfico">
-            <span><i class="legend-dot clean"></i>Sem alertas</span>
+            <span><i class="legend-dot clean"></i>Limpa ≥ 95%</span>
             <span><i class="legend-dot review"></i>Revisar</span>
             <span><i class="legend-dot failure"></i>Falhas</span>
           </div>
@@ -106,7 +106,22 @@
           <h3 id="dashboard-errors-title">Principais falhas</h3>
           <div id="dashboard-top-errors" class="compact-list"></div>
         </section>
+
+        <section class="dashboard-block" aria-labelledby="dashboard-quality-issues-title">
+          <h3 id="dashboard-quality-issues-title">Principais inconsistências</h3>
+          <div id="dashboard-top-quality-issues" class="compact-list"></div>
+        </section>
       </div>
+
+      <section class="dashboard-block" aria-labelledby="dashboard-layouts-title">
+        <div class="dashboard-block-heading">
+          <div>
+            <h3 id="dashboard-layouts-title">Qualidade por layout reconhecido</h3>
+            <p class="muted compact">O score é heurístico e não representa uma acurácia estatística validada.</p>
+          </div>
+        </div>
+        <div id="dashboard-layouts" class="dashboard-table-wrap"></div>
+      </section>
 
       <section class="dashboard-block" aria-labelledby="dashboard-attention-title">
         <div class="dashboard-block-heading">
@@ -182,6 +197,6 @@
       <div id="users-list" class="orders-list"></div>
     </section>
   </main>
-  <script src="./admin.js?v=7"></script>
+  <script src="./admin.js?v=8"></script>
 </body>
 </html>
