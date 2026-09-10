@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Callable
 
+from app.application.conversion_quality_history import prepare_quality_record, replace_quality_issues
+
 
 def record_user_conversion(
     conn,
@@ -36,9 +38,29 @@ def record_user_conversion(
     file_sha256: str | None = None,
     canonical_warning_transactions_count: int = 0,
     balance_consistency_failed: int = 0,
+    parser_confidence_band: str | None = None,
+    parser_coverage_rate: float | None = None,
+    warning_types: list[str] | None = None,
+    failure_diagnostics: dict[str, object] | None = None,
+    quality_issues: list[dict[str, object]] | None = None,
     created_at: str | None = None,
     expires_at: str | None = None,
 ) -> None:
+    effective_created_at = created_at or now_iso
+    assessment, reason_codes_json, warning_types_json, failure_diagnostics_json = prepare_quality_record(
+        status=status,
+        conversion_type=conversion_type,
+        transactions_count=transactions_count,
+        layout_name=layout_inference_name,
+        layout_confidence=layout_inference_confidence,
+        selected_parser=selected_parser,
+        warning_count=canonical_warning_transactions_count,
+        balance_failed=balance_consistency_failed,
+        parser_confidence_band=parser_confidence_band,
+        parser_coverage_rate=parser_coverage_rate,
+        warning_types=warning_types,
+        failure_diagnostics=failure_diagnostics,
+    )
     execute(
         conn,
         """
@@ -71,9 +93,17 @@ def record_user_conversion(
           ocr_engine,
           file_sha256,
           canonical_warning_transactions_count,
-          balance_consistency_failed
+          balance_consistency_failed,
+          quality_status,
+          quality_score,
+          quality_rule_version,
+          quality_reason_codes_json,
+          parser_confidence_band,
+          parser_coverage_rate,
+          warning_types_json,
+          failure_diagnostics_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(analysis_id)
         DO UPDATE SET
           user_id=excluded.user_id,
@@ -103,12 +133,20 @@ def record_user_conversion(
           ocr_engine=excluded.ocr_engine,
           file_sha256=excluded.file_sha256,
           canonical_warning_transactions_count=excluded.canonical_warning_transactions_count,
-          balance_consistency_failed=excluded.balance_consistency_failed
+          balance_consistency_failed=excluded.balance_consistency_failed,
+          quality_status=excluded.quality_status,
+          quality_score=excluded.quality_score,
+          quality_rule_version=excluded.quality_rule_version,
+          quality_reason_codes_json=excluded.quality_reason_codes_json,
+          parser_confidence_band=excluded.parser_confidence_band,
+          parser_coverage_rate=excluded.parser_coverage_rate,
+          warning_types_json=excluded.warning_types_json,
+          failure_diagnostics_json=excluded.failure_diagnostics_json
         """,
         (
             processing_id,
             user_id,
-            created_at or now_iso,
+            effective_created_at,
             expires_at,
             filename.strip() or f"{processing_id}.pdf",
             model.strip() or "Nao identificado",
@@ -135,7 +173,25 @@ def record_user_conversion(
             (file_sha256 or "").strip() or None,
             max(0, int(canonical_warning_transactions_count or 0)),
             max(0, int(balance_consistency_failed or 0)),
+            assessment.status,
+            assessment.score,
+            assessment.rule_version,
+            reason_codes_json,
+            (parser_confidence_band or "").strip() or None,
+            float(parser_coverage_rate) if parser_coverage_rate is not None else None,
+            warning_types_json,
+            failure_diagnostics_json,
         ),
+    )
+    replace_quality_issues(
+        conn,
+        execute=execute,
+        conversion_id=processing_id,
+        identity_type="registered",
+        created_at=effective_created_at,
+        quality_reason_codes=assessment.reason_codes,
+        quality_issues=quality_issues,
+        error_code=(error_code or "").strip() or None,
     )
 
 

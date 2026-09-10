@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.application.conversion.contracts.payloads import (
     AnalyzeResponse as AnalyzeResponse,
@@ -236,6 +236,9 @@ class AdminDashboardSummary(BaseModel):
     technical_success_rate: float
     clean_conversion_count: int
     clean_conversion_rate: float
+    clean_high_confidence_count: int
+    clean_high_confidence_rate: float
+    review_count: int
     failure_count: int
     active_people_count: int
     returning_people_count: int
@@ -263,6 +266,23 @@ class AdminDashboardErrorItem(BaseModel):
     count: int
 
 
+class AdminDashboardQualityIssueItem(BaseModel):
+    issue_code: str
+    severity: str
+    count: int
+
+
+class AdminDashboardLayoutItem(BaseModel):
+    layout_name: str
+    conversions: int
+    successes: int
+    clean_high_confidence: int
+    review: int
+    failures: int
+    average_confidence: float | None = None
+    clean_high_confidence_rate: float
+
+
 class AdminDashboardAttentionItem(BaseModel):
     processing_id: str
     identity_type: str
@@ -274,6 +294,11 @@ class AdminDashboardAttentionItem(BaseModel):
     duration_ms: int
     error_code: str | None = None
     error_stage: str | None = None
+    layout_name: str | None = None
+    layout_confidence: float | None = None
+    selected_parser: str | None = None
+    quality_status: str | None = None
+    quality_reason_codes: list[str] = Field(default_factory=list)
     issue_reason: str
 
 
@@ -286,6 +311,8 @@ class AdminDashboardResponse(BaseModel):
     identities: AdminDashboardIdentityBreakdown
     daily: list[AdminDashboardDailyItem]
     top_errors: list[AdminDashboardErrorItem]
+    top_quality_issues: list[AdminDashboardQualityIssueItem]
+    layouts: list[AdminDashboardLayoutItem]
     recent_attention: list[AdminDashboardAttentionItem]
 
 

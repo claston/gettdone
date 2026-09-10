@@ -523,6 +523,10 @@ class DocumentConversionPipeline:
                 file_sha256=runtime.file_digest,
                 canonical_warning_transactions_count=warning_rows_count,
                 balance_consistency_failed=balance_failed_count,
+                parser_confidence_band=parse_meta["parser_confidence_band"],
+                parser_coverage_rate=parse_meta["parser_coverage_rate"],
+                warning_types=parse_meta["warning_types"],
+                quality_issues=list(getattr(analysis, "quality_issues", []) or []),
                 expires_at=(persisted_result.expires_at if persisted_result is not None else getattr(analysis, "expires_at", None)),
             )
         elif identity.identity_type == "anonymous":
@@ -555,6 +559,10 @@ class DocumentConversionPipeline:
                 ocr_attempted=effective_ocr_attempted,
                 ocr_engine=effective_ocr_engine,
                 file_sha256=runtime.file_digest,
+                parser_confidence_band=parse_meta["parser_confidence_band"],
+                parser_coverage_rate=parse_meta["parser_coverage_rate"],
+                warning_types=parse_meta["warning_types"],
+                quality_issues=list(getattr(analysis, "quality_issues", []) or []),
             )
         if persisted_result is not None:
             payload = build_convert_response_payload(
@@ -643,6 +651,7 @@ class DocumentConversionPipeline:
                 file_sha256=runtime.file_digest,
                 canonical_warning_transactions_count=0,
                 balance_consistency_failed=0,
+                failure_diagnostics=failure_diagnostics,
             )
         elif identity is not None and identity.identity_type == "user":
             _safe_record_user_conversion(
@@ -674,6 +683,7 @@ class DocumentConversionPipeline:
                 file_sha256=runtime.file_digest,
                 canonical_warning_transactions_count=0,
                 balance_consistency_failed=0,
+                failure_diagnostics=failure_diagnostics,
                 expires_at=None,
             )
         _log_conversion_failure(
@@ -829,7 +839,7 @@ def _resolve_warning_metrics(analysis) -> tuple[int, int]:
     return max(0, warning_rows), max(0, balance_failed)
 
 
-def _resolve_parse_observability_metrics(analysis) -> dict[str, str | int | float | None]:
+def _resolve_parse_observability_metrics(analysis) -> dict[str, object]:
     metrics = getattr(analysis, "pdf_processing_metrics", None)
     if metrics is None:
         return {
@@ -844,6 +854,9 @@ def _resolve_parse_observability_metrics(analysis) -> dict[str, str | int | floa
             "textract_attempted": 0,
             "textract_error_type": None,
             "native_text_detected": 0,
+            "parser_confidence_band": None,
+            "parser_coverage_rate": None,
+            "warning_types": [],
         }
     if isinstance(metrics, dict):
         selected_parser = metrics.get("selected_parser")
@@ -855,6 +868,8 @@ def _resolve_parse_observability_metrics(analysis) -> dict[str, str | int | floa
         textract_attempted = metrics.get("textract_attempted")
         textract_error_type = metrics.get("textract_error_type")
         native_text_detected = metrics.get("native_text_detected")
+        parser_confidence_band = metrics.get("confidence_band")
+        warning_types = metrics.get("canonical_warning_types_list")
     else:
         selected_parser = getattr(metrics, "selected_parser", None)
         parser_selection_reason = getattr(metrics, "parser_selection_reason", None)
@@ -865,6 +880,8 @@ def _resolve_parse_observability_metrics(analysis) -> dict[str, str | int | floa
         textract_attempted = getattr(metrics, "textract_attempted", None)
         textract_error_type = getattr(metrics, "textract_error_type", None)
         native_text_detected = getattr(metrics, "native_text_detected", None)
+        parser_confidence_band = getattr(metrics, "confidence_band", None)
+        warning_types = getattr(metrics, "canonical_warning_types_list", None)
     return {
         "layout_inference_name": getattr(analysis, "layout_inference_name", None) or None,
         "layout_inference_confidence": getattr(analysis, "layout_inference_confidence", None),
@@ -877,12 +894,39 @@ def _resolve_parse_observability_metrics(analysis) -> dict[str, str | int | floa
         "textract_attempted": int(textract_attempted or 0),
         "textract_error_type": str(textract_error_type).strip() if textract_error_type is not None else None,
         "native_text_detected": int(native_text_detected or 0),
+        "parser_confidence_band": str(parser_confidence_band).strip() if parser_confidence_band else None,
+        "parser_coverage_rate": _resolve_selected_parser_coverage(metrics, selected_parser),
+        "warning_types": [str(item).strip() for item in warning_types or [] if str(item).strip()]
+        if isinstance(warning_types, (list, tuple))
+        else [],
     }
+
+
+def _resolve_selected_parser_coverage(metrics: object, selected_parser: object) -> float | None:
+    parser = str(selected_parser or "").strip()
+    if not parser:
+        return None
+    if parser == "grouped":
+        count = _metrics_value(metrics, "grouped_transactions_count")
+        return 1.0 if count > 0 else None
+    candidates = _metrics_value(metrics, f"{parser}_candidates_count")
+    transactions = _metrics_value(metrics, f"{parser}_transactions_count")
+    if candidates <= 0:
+        return None
+    return round(max(0.0, min(1.0, transactions / candidates)), 4)
+
+
+def _metrics_value(metrics: object, key: str) -> int:
+    raw = metrics.get(key, 0) if isinstance(metrics, dict) else getattr(metrics, key, 0)
+    try:
+        return max(0, int(raw or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _resolve_effective_ocr_observability(
     *,
-    parse_meta: dict[str, str | int | float | None],
+    parse_meta: dict[str, object],
     ocr_pages_processed: int,
     default_ocr_engine: str,
 ) -> tuple[bool, bool, str]:

@@ -435,6 +435,11 @@ class AccessControlService:
         file_sha256: str | None = None,
         canonical_warning_transactions_count: int = 0,
         balance_consistency_failed: int = 0,
+        parser_confidence_band: str | None = None,
+        parser_coverage_rate: float | None = None,
+        warning_types: list[str] | None = None,
+        failure_diagnostics: dict[str, object] | None = None,
+        quality_issues: list[dict[str, object]] | None = None,
         created_at: str | None = None,
         expires_at: str | None = None,
     ) -> None:
@@ -466,6 +471,11 @@ class AccessControlService:
             file_sha256=file_sha256,
             canonical_warning_transactions_count=canonical_warning_transactions_count,
             balance_consistency_failed=balance_consistency_failed,
+            parser_confidence_band=parser_confidence_band,
+            parser_coverage_rate=parser_coverage_rate,
+            warning_types=warning_types,
+            failure_diagnostics=failure_diagnostics,
+            quality_issues=quality_issues,
             created_at=created_at,
             expires_at=expires_at,
         )
@@ -503,6 +513,11 @@ class AccessControlService:
         ocr_attempted: bool = False,
         ocr_engine: str | None = None,
         file_sha256: str | None = None,
+        parser_confidence_band: str | None = None,
+        parser_coverage_rate: float | None = None,
+        warning_types: list[str] | None = None,
+        failure_diagnostics: dict[str, object] | None = None,
+        quality_issues: list[dict[str, object]] | None = None,
     ) -> None:
         self.checkout.record_anonymous_conversion_event(
             event_id=event_id,
@@ -532,6 +547,11 @@ class AccessControlService:
             ocr_attempted=ocr_attempted,
             ocr_engine=ocr_engine,
             file_sha256=file_sha256,
+            parser_confidence_band=parser_confidence_band,
+            parser_coverage_rate=parser_coverage_rate,
+            warning_types=warning_types,
+            failure_diagnostics=failure_diagnostics,
+            quality_issues=quality_issues,
         )
 
     def list_public_plans(self) -> list[dict[str, str | int]]:
