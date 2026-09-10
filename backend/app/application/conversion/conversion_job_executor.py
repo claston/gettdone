@@ -3,12 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from app.application.conversion.conversion_document_store import ConversionDocumentStore
+from app.application.conversion.contracts.documents import ConversionDocumentStore
+from app.application.conversion.contracts.jobs import ConversionJobRepository, ConversionJobResultReference
 from app.application.conversion.conversion_job import ConversionExecutionHooks, ConversionJob
-from app.application.conversion.conversion_job_repository import (
-    ConversionJobRepository,
-    ConversionJobResultReference,
-)
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult, ConversionPipelineStatus
 
 

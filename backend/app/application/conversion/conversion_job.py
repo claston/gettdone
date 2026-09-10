@@ -4,8 +4,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from uuid import uuid4
 
-from app.application.conversion.conversion_document_store import ConversionDocumentReference
-from app.application.conversion.document_preflight_service import DocumentPreflightResult
+from app.application.conversion.contracts.documents import ConversionDocumentReference
+from app.application.conversion.contracts.preflight import DocumentPreflightResult
 from app.application.conversion.identity import IdentityContext
 
 OcrProgressCallback = Callable[[int, int], None]

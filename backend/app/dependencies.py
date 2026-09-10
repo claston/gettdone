@@ -3,6 +3,10 @@ from pathlib import Path
 
 from fastapi import Depends
 
+from app.adapters.conversion.direct_upload import S3DirectUploadService
+from app.adapters.conversion.memory_batches import InMemoryConversionBatchRepository
+from app.adapters.conversion.postgres_batches import PostgresConversionBatchRepository
+from app.adapters.conversion.sqs_queue import SqsConversionQueuePublisher
 from app.application import (
     AccessControlService,
     ContactService,
@@ -28,19 +32,13 @@ from app.application import (
     TempAnalysisStorage,
 )
 from app.application.conversion.async_conversion_rollout import AsyncConversionRolloutPolicy
-from app.application.conversion.conversion_batch_repository import (
-    ConversionBatchRepository,
-    InMemoryConversionBatchRepository,
-)
+from app.application.conversion.contracts.batches import ConversionBatchRepository
 from app.application.conversion.conversion_batch_service import ConversionBatchService
 from app.application.conversion.conversion_runtime_config import (
     ConversionArchitectureMode,
     ConversionExecutionMode,
     ConversionRuntimeConfig,
 )
-from app.application.conversion.postgres_conversion_batch_repository import PostgresConversionBatchRepository
-from app.application.conversion.s3_direct_upload_service import S3DirectUploadService
-from app.application.conversion.sqs_conversion_queue import SqsConversionQueuePublisher
 from app.application.conversion_pipeline import ConversionPipeline
 from app.application.default_conversion_pipeline import build_default_conversion_pipeline
 from app.application.repositories import AnalysisRepository

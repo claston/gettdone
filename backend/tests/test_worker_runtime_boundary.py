@@ -32,6 +32,7 @@ def test_worker_import_does_not_load_web_or_administrative_modules() -> None:
     forbidden_prefixes = (
         "app.api",
         "app.main",
+        "app.schemas",
         "app.routers",
         "app.application.admin_dashboard_service",
         "app.application.access_control",

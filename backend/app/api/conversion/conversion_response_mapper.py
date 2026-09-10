@@ -1,5 +1,5 @@
 from app.application import ConvertDocumentResult, ConvertDocumentStatus
-from app.schemas import ConvertResponse
+from app.application.conversion.contracts.payloads import ConvertResponse
 
 
 def _result_to_convert_response(result: ConvertDocumentResult) -> ConvertResponse:

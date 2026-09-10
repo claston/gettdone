@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 
 from fastapi import APIRouter, Cookie, Depends, File, Form, Header, HTTPException, UploadFile
 

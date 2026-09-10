@@ -10,7 +10,7 @@ class ConversionPipelineStatus(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
-class ConversionPipelineResult:
+class JobExecutionResult:
     status: ConversionPipelineStatus
     payload: dict[str, Any] | None = None
     rejection_reason: str | None = None
@@ -22,7 +22,7 @@ class ConversionPipelineResult:
         cls,
         payload: dict[str, Any],
         metadata: dict[str, Any] | None = None,
-    ) -> "ConversionPipelineResult":
+    ) -> "JobExecutionResult":
         return cls(
             status=ConversionPipelineStatus.COMPLETED,
             payload=dict(payload),
@@ -35,7 +35,7 @@ class ConversionPipelineResult:
         reason: str,
         message: str | None = None,
         metadata: dict[str, Any] | None = None,
-    ) -> "ConversionPipelineResult":
+    ) -> "JobExecutionResult":
         return cls(
             status=ConversionPipelineStatus.REJECTED,
             rejection_reason=reason,
@@ -48,9 +48,13 @@ class ConversionPipelineResult:
         cls,
         message: str | None = None,
         metadata: dict[str, Any] | None = None,
-    ) -> "ConversionPipelineResult":
+    ) -> "JobExecutionResult":
         return cls(
             status=ConversionPipelineStatus.FAILED,
             message=message,
             metadata=dict(metadata) if metadata is not None else None,
         )
+
+
+# Compatibility name for existing callers; wire payloads are unchanged.
+ConversionPipelineResult = JobExecutionResult

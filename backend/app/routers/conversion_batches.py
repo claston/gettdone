@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.application import AccessControlService, InvalidUserTokenError, QuotaExceededError
 from app.application.conversion.async_conversion_rollout import AsyncConversionRolloutPolicy
-from app.application.conversion.conversion_batch_repository import ConversionBatchSnapshot
+from app.application.conversion.contracts.batches import ConversionBatchSnapshot
 from app.application.conversion.conversion_batch_service import (
     ConversionBatchFile,
     ConversionBatchService,

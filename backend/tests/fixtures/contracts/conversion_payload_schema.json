@@ -1,0 +1,827 @@
+{
+  "$defs": {
+    "AnalyzeResponse": {
+      "properties": {
+        "analysis_id": {
+          "title": "Analysis Id",
+          "type": "string"
+        },
+        "file_type": {
+          "title": "File Type",
+          "type": "string"
+        },
+        "semantic_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Semantic Type"
+        },
+        "semantic_confidence": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Semantic Confidence"
+        },
+        "semantic_evidence": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Semantic Evidence"
+        },
+        "transactions_total": {
+          "title": "Transactions Total",
+          "type": "integer"
+        },
+        "total_inflows": {
+          "title": "Total Inflows",
+          "type": "number"
+        },
+        "total_outflows": {
+          "title": "Total Outflows",
+          "type": "number"
+        },
+        "net_total": {
+          "title": "Net Total",
+          "type": "number"
+        },
+        "operational_summary": {
+          "$ref": "#/$defs/OperationalSummary"
+        },
+        "reconciliation": {
+          "$ref": "#/$defs/ReconciliationSummary"
+        },
+        "categories": {
+          "items": {
+            "$ref": "#/$defs/CategorySummary"
+          },
+          "title": "Categories",
+          "type": "array"
+        },
+        "top_expenses": {
+          "items": {
+            "$ref": "#/$defs/TopExpense"
+          },
+          "title": "Top Expenses",
+          "type": "array"
+        },
+        "insights": {
+          "items": {
+            "$ref": "#/$defs/Insight"
+          },
+          "title": "Insights",
+          "type": "array"
+        },
+        "preview_transactions": {
+          "items": {
+            "$ref": "#/$defs/TransactionPreview"
+          },
+          "title": "Preview Transactions",
+          "type": "array"
+        },
+        "preview_before_after": {
+          "items": {
+            "$ref": "#/$defs/BeforeAfterPreview"
+          },
+          "title": "Preview Before After",
+          "type": "array"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Expires At"
+        },
+        "updated_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Updated At"
+        },
+        "layout_inference_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layout Inference Name"
+        },
+        "layout_inference_confidence": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layout Inference Confidence"
+        },
+        "pdf_processing_metrics": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PdfProcessingMetrics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ofx_account_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ofx Account Type"
+        },
+        "opening_balance": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Opening Balance"
+        },
+        "closing_balance": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Closing Balance"
+        },
+        "bank_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bank Name"
+        },
+        "bank_branch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bank Branch"
+        },
+        "account_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Account Number"
+        },
+        "bank_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bank Code"
+        }
+      },
+      "required": [
+        "analysis_id",
+        "file_type",
+        "transactions_total",
+        "total_inflows",
+        "total_outflows",
+        "net_total",
+        "operational_summary",
+        "reconciliation",
+        "categories",
+        "top_expenses",
+        "insights",
+        "preview_transactions",
+        "preview_before_after",
+        "expires_at"
+      ],
+      "title": "AnalyzeResponse",
+      "type": "object"
+    },
+    "BeforeAfterPreview": {
+      "properties": {
+        "date": {
+          "title": "Date",
+          "type": "string"
+        },
+        "description_before": {
+          "title": "Description Before",
+          "type": "string"
+        },
+        "description_after": {
+          "title": "Description After",
+          "type": "string"
+        },
+        "amount_before": {
+          "title": "Amount Before",
+          "type": "number"
+        },
+        "amount_after": {
+          "title": "Amount After",
+          "type": "number"
+        }
+      },
+      "required": [
+        "date",
+        "description_before",
+        "description_after",
+        "amount_before",
+        "amount_after"
+      ],
+      "title": "BeforeAfterPreview",
+      "type": "object"
+    },
+    "CategorySummary": {
+      "properties": {
+        "category": {
+          "title": "Category",
+          "type": "string"
+        },
+        "total": {
+          "title": "Total",
+          "type": "number"
+        },
+        "count": {
+          "title": "Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "category",
+        "total",
+        "count"
+      ],
+      "title": "CategorySummary",
+      "type": "object"
+    },
+    "Insight": {
+      "properties": {
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "title",
+        "description"
+      ],
+      "title": "Insight",
+      "type": "object"
+    },
+    "OperationalSummary": {
+      "properties": {
+        "total_volume": {
+          "title": "Total Volume",
+          "type": "number"
+        },
+        "inflow_count": {
+          "title": "Inflow Count",
+          "type": "integer"
+        },
+        "outflow_count": {
+          "title": "Outflow Count",
+          "type": "integer"
+        },
+        "reconciled_entries": {
+          "title": "Reconciled Entries",
+          "type": "integer"
+        },
+        "unmatched_entries": {
+          "title": "Unmatched Entries",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total_volume",
+        "inflow_count",
+        "outflow_count",
+        "reconciled_entries",
+        "unmatched_entries"
+      ],
+      "title": "OperationalSummary",
+      "type": "object"
+    },
+    "PdfProcessingMetrics": {
+      "properties": {
+        "total_ms": {
+          "title": "Total Ms",
+          "type": "number"
+        },
+        "parse_ms": {
+          "title": "Parse Ms",
+          "type": "number"
+        },
+        "classify_ms": {
+          "title": "Classify Ms",
+          "type": "number"
+        },
+        "normalize_ms": {
+          "title": "Normalize Ms",
+          "type": "number"
+        },
+        "reconcile_ms": {
+          "title": "Reconcile Ms",
+          "type": "number"
+        },
+        "page_count": {
+          "title": "Page Count",
+          "type": "integer"
+        },
+        "extracted_char_count": {
+          "title": "Extracted Char Count",
+          "type": "integer"
+        },
+        "flattened_line_count": {
+          "title": "Flattened Line Count",
+          "type": "integer"
+        },
+        "grouped_transactions_count": {
+          "title": "Grouped Transactions Count",
+          "type": "integer"
+        },
+        "inline_candidates_count": {
+          "title": "Inline Candidates Count",
+          "type": "integer"
+        },
+        "inline_transactions_count": {
+          "title": "Inline Transactions Count",
+          "type": "integer"
+        },
+        "tabular_candidates_count": {
+          "default": 0,
+          "title": "Tabular Candidates Count",
+          "type": "integer"
+        },
+        "tabular_transactions_count": {
+          "default": 0,
+          "title": "Tabular Transactions Count",
+          "type": "integer"
+        },
+        "columnar_candidates_count": {
+          "default": 0,
+          "title": "Columnar Candidates Count",
+          "type": "integer"
+        },
+        "columnar_transactions_count": {
+          "default": 0,
+          "title": "Columnar Transactions Count",
+          "type": "integer"
+        },
+        "multiline_candidates_count": {
+          "default": 0,
+          "title": "Multiline Candidates Count",
+          "type": "integer"
+        },
+        "multiline_transactions_count": {
+          "default": 0,
+          "title": "Multiline Transactions Count",
+          "type": "integer"
+        },
+        "multiline_overlap_count": {
+          "default": 0,
+          "title": "Multiline Overlap Count",
+          "type": "integer"
+        },
+        "multiline_coverage_gain": {
+          "default": 0,
+          "title": "Multiline Coverage Gain",
+          "type": "integer"
+        },
+        "multiline_conflict_count": {
+          "default": 0,
+          "title": "Multiline Conflict Count",
+          "type": "integer"
+        },
+        "selected_parser": {
+          "title": "Selected Parser",
+          "type": "string"
+        },
+        "parser_selection_reason": {
+          "default": "",
+          "title": "Parser Selection Reason",
+          "type": "string"
+        },
+        "extraction_provider": {
+          "default": "",
+          "title": "Extraction Provider",
+          "type": "string"
+        },
+        "textract_used": {
+          "default": 0,
+          "title": "Textract Used",
+          "type": "integer"
+        },
+        "textract_enabled": {
+          "default": 0,
+          "title": "Textract Enabled",
+          "type": "integer"
+        },
+        "textract_attempted": {
+          "default": 0,
+          "title": "Textract Attempted",
+          "type": "integer"
+        },
+        "textract_error_type": {
+          "default": "",
+          "title": "Textract Error Type",
+          "type": "string"
+        },
+        "native_text_detected": {
+          "default": 0,
+          "title": "Native Text Detected",
+          "type": "integer"
+        },
+        "inline_decision": {
+          "default": "",
+          "title": "Inline Decision",
+          "type": "string"
+        },
+        "tabular_decision": {
+          "default": "",
+          "title": "Tabular Decision",
+          "type": "string"
+        },
+        "columnar_decision": {
+          "default": "",
+          "title": "Columnar Decision",
+          "type": "string"
+        },
+        "multiline_decision": {
+          "default": "",
+          "title": "Multiline Decision",
+          "type": "string"
+        },
+        "confidence_band": {
+          "default": "",
+          "title": "Confidence Band",
+          "type": "string"
+        },
+        "export_recommendation": {
+          "default": "",
+          "title": "Export Recommendation",
+          "type": "string"
+        },
+        "export_recommendation_reason": {
+          "default": "",
+          "title": "Export Recommendation Reason",
+          "type": "string"
+        },
+        "balance_consistency_checked": {
+          "default": 0,
+          "title": "Balance Consistency Checked",
+          "type": "integer"
+        },
+        "balance_consistency_failed": {
+          "default": 0,
+          "title": "Balance Consistency Failed",
+          "type": "integer"
+        },
+        "canonical_transactions_count": {
+          "default": 0,
+          "title": "Canonical Transactions Count",
+          "type": "integer"
+        },
+        "canonical_with_running_balance_count": {
+          "default": 0,
+          "title": "Canonical With Running Balance Count",
+          "type": "integer"
+        },
+        "canonical_with_external_reference_count": {
+          "default": 0,
+          "title": "Canonical With External Reference Count",
+          "type": "integer"
+        },
+        "canonical_warning_count": {
+          "default": 0,
+          "title": "Canonical Warning Count",
+          "type": "integer"
+        },
+        "canonical_balance_warning_count": {
+          "default": 0,
+          "title": "Canonical Balance Warning Count",
+          "type": "integer"
+        },
+        "canonical_warning_transactions_count": {
+          "default": 0,
+          "title": "Canonical Warning Transactions Count",
+          "type": "integer"
+        },
+        "canonical_warning_types_count": {
+          "default": 0,
+          "title": "Canonical Warning Types Count",
+          "type": "integer"
+        },
+        "canonical_warning_types": {
+          "default": "",
+          "title": "Canonical Warning Types",
+          "type": "string"
+        },
+        "canonical_warning_types_list": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Canonical Warning Types List",
+          "type": "array"
+        },
+        "canonical_running_balance_coverage_rate": {
+          "default": 0.0,
+          "title": "Canonical Running Balance Coverage Rate",
+          "type": "number"
+        },
+        "canonical_external_reference_coverage_rate": {
+          "default": 0.0,
+          "title": "Canonical External Reference Coverage Rate",
+          "type": "number"
+        },
+        "canonical_warning_transaction_rate": {
+          "default": 0.0,
+          "title": "Canonical Warning Transaction Rate",
+          "type": "number"
+        },
+        "canonical_source_parser_grouped_count": {
+          "default": 0,
+          "title": "Canonical Source Parser Grouped Count",
+          "type": "integer"
+        },
+        "canonical_source_parser_inline_count": {
+          "default": 0,
+          "title": "Canonical Source Parser Inline Count",
+          "type": "integer"
+        },
+        "canonical_source_parser_tabular_count": {
+          "default": 0,
+          "title": "Canonical Source Parser Tabular Count",
+          "type": "integer"
+        },
+        "canonical_source_parser_columnar_count": {
+          "default": 0,
+          "title": "Canonical Source Parser Columnar Count",
+          "type": "integer"
+        },
+        "canonical_source_parser_multiline_count": {
+          "default": 0,
+          "title": "Canonical Source Parser Multiline Count",
+          "type": "integer"
+        },
+        "canonical_source_parser_types_count": {
+          "default": 0,
+          "title": "Canonical Source Parser Types Count",
+          "type": "integer"
+        },
+        "canonical_source_parser_types": {
+          "default": "",
+          "title": "Canonical Source Parser Types",
+          "type": "string"
+        },
+        "canonical_source_parser_types_list": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Canonical Source Parser Types List",
+          "type": "array"
+        }
+      },
+      "required": [
+        "total_ms",
+        "parse_ms",
+        "classify_ms",
+        "normalize_ms",
+        "reconcile_ms",
+        "page_count",
+        "extracted_char_count",
+        "flattened_line_count",
+        "grouped_transactions_count",
+        "inline_candidates_count",
+        "inline_transactions_count",
+        "selected_parser"
+      ],
+      "title": "PdfProcessingMetrics",
+      "type": "object"
+    },
+    "ReconciliationSummary": {
+      "properties": {
+        "matched_groups": {
+          "title": "Matched Groups",
+          "type": "integer"
+        },
+        "reversed_entries": {
+          "title": "Reversed Entries",
+          "type": "integer"
+        },
+        "potential_duplicates": {
+          "title": "Potential Duplicates",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "matched_groups",
+        "reversed_entries",
+        "potential_duplicates"
+      ],
+      "title": "ReconciliationSummary",
+      "type": "object"
+    },
+    "TopExpense": {
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "amount": {
+          "title": "Amount",
+          "type": "number"
+        },
+        "date": {
+          "title": "Date",
+          "type": "string"
+        },
+        "category": {
+          "title": "Category",
+          "type": "string"
+        }
+      },
+      "required": [
+        "description",
+        "amount",
+        "date",
+        "category"
+      ],
+      "title": "TopExpense",
+      "type": "object"
+    },
+    "TransactionPreview": {
+      "properties": {
+        "date": {
+          "title": "Date",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "amount": {
+          "title": "Amount",
+          "type": "number"
+        },
+        "running_balance": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Running Balance"
+        },
+        "category": {
+          "title": "Category",
+          "type": "string"
+        },
+        "reconciliation_status": {
+          "title": "Reconciliation Status",
+          "type": "string"
+        },
+        "is_deleted": {
+          "default": false,
+          "title": "Is Deleted",
+          "type": "boolean"
+        },
+        "warning_types": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Warning Types",
+          "type": "array"
+        }
+      },
+      "required": [
+        "date",
+        "description",
+        "amount",
+        "category",
+        "reconciliation_status"
+      ],
+      "title": "TransactionPreview",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "processing_id": {
+      "title": "Processing Id",
+      "type": "string"
+    },
+    "quota_remaining": {
+      "title": "Quota Remaining",
+      "type": "integer"
+    },
+    "quota_limit": {
+      "title": "Quota Limit",
+      "type": "integer"
+    },
+    "quota_mode": {
+      "default": "conversion",
+      "title": "Quota Mode",
+      "type": "string"
+    },
+    "identity_type": {
+      "title": "Identity Type",
+      "type": "string"
+    },
+    "analysis": {
+      "$ref": "#/$defs/AnalyzeResponse"
+    }
+  },
+  "required": [
+    "processing_id",
+    "quota_remaining",
+    "quota_limit",
+    "identity_type",
+    "analysis"
+  ],
+  "title": "ConvertResponse",
+  "type": "object"
+}
