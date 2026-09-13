@@ -46,6 +46,23 @@ def test_validate_baseline_accepts_secure_production_config(monkeypatch: pytest.
     validate_production_security_baseline()
 
 
+def test_validate_baseline_requires_bucket_when_canonical_capture_is_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("ACCESS_CONTROL_TOKEN_SECRET", "a" * 40)
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://ofxsimples.com.br")
+    monkeypatch.setenv("ENABLE_API_DOCS", "false")
+    monkeypatch.setenv("UNLIMITED_ANON_QUOTA", "false")
+    monkeypatch.setenv("CANONICAL_LAYOUT_CAPTURE_ENABLED", "true")
+    monkeypatch.delenv("CONVERSION_S3_BUCKET", raising=False)
+
+    with pytest.raises(RuntimeError) as exc:
+        validate_production_security_baseline()
+
+    assert "CONVERSION_S3_BUCKET must be configured for canonical layout capture" in str(exc.value)
+
+
 def test_validate_baseline_rejects_incomplete_async_aws_cutover(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("ACCESS_CONTROL_TOKEN_SECRET", "a" * 40)

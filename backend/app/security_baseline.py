@@ -80,6 +80,10 @@ def validate_production_security_baseline() -> None:
     if not read_bool_env("ANONYMOUS_IDENTITY_COOKIE_SECURE", default=True):
         issues.append("ANONYMOUS_IDENTITY_COOKIE_SECURE must be true in production.")
 
+    if read_bool_env("CANONICAL_LAYOUT_CAPTURE_ENABLED", default=False):
+        if not os.getenv("CONVERSION_S3_BUCKET", "").strip():
+            issues.append("CONVERSION_S3_BUCKET must be configured for canonical layout capture.")
+
     contact_provider = os.getenv("CONTACT_DELIVERY_PROVIDER", "resend").strip().lower()
     if contact_provider not in {"resend", "smtp", "hostinger_smtp"}:
         issues.append("CONTACT_DELIVERY_PROVIDER must be 'resend' or 'hostinger_smtp'.")
