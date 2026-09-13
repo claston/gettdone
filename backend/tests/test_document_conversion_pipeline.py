@@ -236,6 +236,18 @@ class RecordingDocumentPreflightService(DocumentPreflightService):
         return DocumentPreflightResult(scanned_likely=True, estimated_pages_count=4)
 
 
+class RecordingCanonicalLayoutCapture:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.calls: list[dict[str, object]] = []
+
+    def capture(self, *, document, **quality_values):
+        self.calls.append({"document": document, **quality_values})
+        if self.fail:
+            raise RuntimeError("capture must not fail conversion")
+        return SimpleNamespace(status="stored", reason=None)
+
+
 def test_conversion_job_captures_preflight_flags() -> None:
     staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
     document = UploadedDocument.from_staged_upload(
@@ -352,6 +364,77 @@ def test_document_conversion_pipeline_uses_processing_pipeline_when_available() 
     assert response.metadata["page_count"] == 1
     assert report_service.owners == [(response.payload["processing_id"], "user", "user_123")]
     assert access_control_service.consumed_units == [1]
+
+
+def test_non_clean_pdf_is_forwarded_to_best_effort_canonical_capture() -> None:
+    staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
+    capture = RecordingCanonicalLayoutCapture()
+    pipeline = DocumentConversionPipeline(
+        report_service=FakeReportService(),
+        access_control_service=FakeAccessControlService(),
+        processing_pipeline=FakeProcessingPipeline(),
+        analysis_repository=FakeAnalysisRepository(),
+        document_extractor=FakeDocumentExtractor(),
+        statement_parser=FakeStatementParser(),
+        canonical_layout_capture_service=capture,
+    )
+
+    response = pipeline.run(
+        document=UploadedDocument.from_staged_upload(
+            filename="statement.pdf",
+            staged_upload=UploadedDocumentStage(
+                path=staged_path,
+                size_bytes=staged_path.stat().st_size,
+                sha256_hex="abc123",
+            ),
+        ),
+        anonymous_fingerprint=None,
+        user_token="user-token",
+        authorization=None,
+        access_cookie_token=None,
+        scanned_likely=False,
+        estimated_pages_count=1,
+    )
+
+    assert response.status == ConversionPipelineStatus.COMPLETED
+    assert len(capture.calls) == 1
+    assert capture.calls[0]["document"].filename == "statement.pdf"
+    assert capture.calls[0]["status"] == "Sucesso"
+    assert capture.calls[0]["layout_name"] is None
+    assert capture.calls[0]["selected_parser"] == "grouped"
+    assert "identity" not in capture.calls[0]
+
+
+def test_canonical_capture_exception_does_not_fail_conversion() -> None:
+    staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
+    pipeline = DocumentConversionPipeline(
+        report_service=FakeReportService(),
+        access_control_service=FakeAccessControlService(),
+        processing_pipeline=FakeProcessingPipeline(),
+        analysis_repository=FakeAnalysisRepository(),
+        document_extractor=FakeDocumentExtractor(),
+        statement_parser=FakeStatementParser(),
+        canonical_layout_capture_service=RecordingCanonicalLayoutCapture(fail=True),
+    )
+
+    response = pipeline.run(
+        document=UploadedDocument.from_staged_upload(
+            filename="statement.pdf",
+            staged_upload=UploadedDocumentStage(
+                path=staged_path,
+                size_bytes=staged_path.stat().st_size,
+                sha256_hex="abc123",
+            ),
+        ),
+        anonymous_fingerprint=None,
+        user_token="user-token",
+        authorization=None,
+        access_cookie_token=None,
+        scanned_likely=False,
+        estimated_pages_count=1,
+    )
+
+    assert response.status == ConversionPipelineStatus.COMPLETED
 
 
 def test_async_job_materializes_missing_preflight_before_recording_conversion() -> None:

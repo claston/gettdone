@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi import Depends
 
+from app.adapters.conversion.canonical_layout_store import build_s3_canonical_layout_capture_service
 from app.adapters.conversion.direct_upload import S3DirectUploadService
 from app.adapters.conversion.memory_batches import InMemoryConversionBatchRepository
 from app.adapters.conversion.postgres_batches import PostgresConversionBatchRepository
@@ -32,6 +33,7 @@ from app.application import (
     TempAnalysisStorage,
 )
 from app.application.conversion.async_conversion_rollout import AsyncConversionRolloutPolicy
+from app.application.conversion.canonical_layout_capture import CanonicalLayoutCaptureService
 from app.application.conversion.contracts.batches import ConversionBatchRepository
 from app.application.conversion.conversion_batch_service import ConversionBatchService
 from app.application.conversion.conversion_runtime_config import (
@@ -100,6 +102,7 @@ _conversion_capacity_controller: ConversionCapacityController | None = None
 _conversion_batch_repository: ConversionBatchRepository | None = None
 _conversion_batch_service: ConversionBatchService | None = None
 _async_conversion_report_service: ReportService | None = None
+_canonical_layout_capture_service: CanonicalLayoutCaptureService | None = None
 
 
 class _DisabledConversionQueuePublisher:
@@ -329,6 +332,25 @@ def get_quota_validator_service(
     return QuotaValidatorService(access_control_service=access_control_service)
 
 
+def get_canonical_layout_capture_service() -> CanonicalLayoutCaptureService:
+    global _canonical_layout_capture_service
+    if _canonical_layout_capture_service is None:
+        _canonical_layout_capture_service = build_s3_canonical_layout_capture_service(
+            enabled=read_bool_env("CANONICAL_LAYOUT_CAPTURE_ENABLED", default=False),
+            bucket=os.getenv("CONVERSION_S3_BUCKET", ""),
+            prefix=os.getenv(
+                "CANONICAL_LAYOUT_CAPTURE_S3_PREFIX",
+                "conversion/canonical-layouts/candidates/v1",
+            ),
+            region=os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION"),
+            max_pages=int(os.getenv("CANONICAL_LAYOUT_CAPTURE_MAX_PAGES", "20")),
+            max_extracted_chars=int(
+                os.getenv("CANONICAL_LAYOUT_CAPTURE_MAX_EXTRACTED_CHARS", "250000")
+            ),
+        )
+    return _canonical_layout_capture_service
+
+
 def get_document_conversion_pipeline(
     processing_pipeline: ConversionPipeline = Depends(get_conversion_processing_pipeline),
     legacy_conversion_runner=Depends(get_legacy_conversion_runner),
@@ -337,6 +359,9 @@ def get_document_conversion_pipeline(
     quota_validator_service: QuotaValidatorService = Depends(get_quota_validator_service),
     access_control_service: AccessControlService = Depends(get_access_control_service),
     analysis_repository: AnalysisRepository = Depends(get_analysis_repository),
+    canonical_layout_capture_service: CanonicalLayoutCaptureService = Depends(
+        get_canonical_layout_capture_service
+    ),
 ) -> DocumentConversionPipeline:
     return DocumentConversionPipeline(
         report_service=report_service,
@@ -345,6 +370,7 @@ def get_document_conversion_pipeline(
         quota_validator_service=quota_validator_service,
         processing_pipeline=processing_pipeline,
         analysis_repository=analysis_repository,
+        canonical_layout_capture_service=canonical_layout_capture_service,
         legacy_conversion_runner=legacy_conversion_runner,
     )
 

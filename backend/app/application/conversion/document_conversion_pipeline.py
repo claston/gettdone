@@ -11,6 +11,7 @@ from time import monotonic
 from uuid import uuid4
 
 from app.application.bank_identity import resolve_conversion_model_label
+from app.application.conversion.canonical_layout_capture import CanonicalLayoutCaptureService
 from app.application.conversion.contracts.access import ConversionAccessPort
 from app.application.conversion.contracts.documents import ConversionDocumentReference
 from app.application.conversion.contracts.preflight import DocumentPreflightPolicy, DocumentPreflightResult
@@ -136,6 +137,7 @@ class DocumentConversionPipeline:
         analysis_repository: AnalysisRepository | None = None,
         document_extractor: DocumentExtractor | None = None,
         statement_parser: StatementParser | None = None,
+        canonical_layout_capture_service: CanonicalLayoutCaptureService | None = None,
         legacy_conversion_runner=None,
     ) -> None:
         self.report_service = report_service
@@ -150,6 +152,9 @@ class DocumentConversionPipeline:
             parsing_service=getattr(processing_pipeline, "parser", None)
         )
         self.statement_parser = statement_parser or LegacyExtractedDocumentStatementParser()
+        self.canonical_layout_capture_service = canonical_layout_capture_service or CanonicalLayoutCaptureService(
+            enabled=False
+        )
         self.legacy_conversion_runner = legacy_conversion_runner
 
     def run(
@@ -475,6 +480,17 @@ class DocumentConversionPipeline:
             ocr_pages_processed=runtime.ocr_pages_processed,
             default_ocr_engine=runtime.ocr_engine,
         )
+        self._capture_canonical_layout(
+            document=request.document,
+            status="Sucesso",
+            conversion_type=_resolve_conversion_type_from_filename(request.document.filename),
+            transactions_count=int(analysis.transactions_total),
+            layout_name=parse_meta["layout_inference_name"],
+            layout_confidence=parse_meta["layout_inference_confidence"],
+            selected_parser=parse_meta["selected_parser"],
+            warning_count=warning_rows_count,
+            balance_failed=balance_failed_count,
+        )
         conversion_model_label = resolve_conversion_model_label(
             layout_inference_name=getattr(analysis, "layout_inference_name", None),
             bank_name=getattr(analysis, "bank_name", None),
@@ -611,6 +627,19 @@ class DocumentConversionPipeline:
                 failure_diagnostics["ocr_max_pages"] = exc.max_pages_per_file
         duration_ms = runtime.duration_ms()
         ocr_attempted = runtime.ocr_pages_processed > 0 or bool(ocr_context)
+        parse_observability = dict(getattr(exc, "_parse_observability", {}) or {})
+        if parse_observability:
+            self._capture_canonical_layout(
+                document=request.document,
+                status="Falha",
+                conversion_type=_resolve_conversion_type_from_filename(request.document.filename),
+                transactions_count=0,
+                layout_name=parse_observability.get("layout_inference_name"),
+                layout_confidence=parse_observability.get("layout_inference_confidence"),
+                selected_parser=parse_observability.get("selected_parser"),
+                warning_count=0,
+                balance_failed=0,
+            )
         failed_event_id: str | None = None
         logger.info(
             "conversion_result_persist_started job_id=%s batch_id=%s identity_type=%s status=Falha error_code=%s error_stage=%s",
@@ -702,6 +731,22 @@ class DocumentConversionPipeline:
             failure_diagnostics=failure_diagnostics,
         )
         setattr(exc, "_convert_identity", identity)
+
+    def _capture_canonical_layout(self, *, document: UploadedDocument, **quality_values: object) -> None:
+        try:
+            result = self.canonical_layout_capture_service.capture(
+                document=document,
+                **quality_values,
+            )
+        except Exception as exc:  # defensive boundary: auxiliary capture cannot fail conversion
+            logger.warning("canonical_layout_capture_boundary_failed error_type=%s", exc.__class__.__name__)
+            return
+        logger.info(
+            "canonical_layout_capture_result status=%s reason=%s",
+            str(getattr(result, "status", "unknown")),
+            str(getattr(result, "reason", "") or ""),
+        )
+
 
 def _resolve_processed_pages(analysis) -> int | None:
     metrics = getattr(analysis, "pdf_processing_metrics", None)

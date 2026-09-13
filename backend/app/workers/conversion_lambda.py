@@ -9,6 +9,7 @@ from time import monotonic, time
 from typing import Protocol
 
 from app.adapters.conversion.access import PostgresConversionAccessService
+from app.adapters.conversion.canonical_layout_store import build_s3_canonical_layout_capture_service
 from app.adapters.conversion.document_store import S3ConversionDocumentStore
 from app.adapters.conversion.postgres_batches import PostgresConversionBatchRepository
 from app.adapters.conversion.sqs_queue import SqsConversionQueuePublisher
@@ -22,6 +23,7 @@ from app.application.conversion.document_conversion_pipeline import DocumentConv
 from app.application.default_conversion_pipeline import build_default_conversion_pipeline
 from app.application.report_service import ReportService
 from app.application.s3_analysis_storage import S3AnalysisStorage
+from app.security_baseline import read_bool_env
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -273,6 +275,19 @@ def build_lambda_processor() -> ConversionLambdaProcessor:
         access_control_service=access_control_service,
         processing_pipeline=build_default_conversion_pipeline(),
         analysis_repository=analysis_storage,
+        canonical_layout_capture_service=build_s3_canonical_layout_capture_service(
+            enabled=read_bool_env("CANONICAL_LAYOUT_CAPTURE_ENABLED", default=False),
+            bucket=bucket,
+            prefix=os.getenv(
+                "CANONICAL_LAYOUT_CAPTURE_S3_PREFIX",
+                "conversion/canonical-layouts/candidates/v1",
+            ),
+            region=region,
+            max_pages=int(os.getenv("CANONICAL_LAYOUT_CAPTURE_MAX_PAGES", "20")),
+            max_extracted_chars=int(
+                os.getenv("CANONICAL_LAYOUT_CAPTURE_MAX_EXTRACTED_CHARS", "250000")
+            ),
+        ),
     )
     return ConversionLambdaProcessor(
         repository=repository,
