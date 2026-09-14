@@ -30,6 +30,49 @@ _TEXT_BANK_HINTS = (
     ("INTER", "Banco Inter"),
     ("SICREDI", "Sicredi"),
 )
+_UNLISTED_INSTITUTION_MARKERS = (
+    "BANCO",
+    "COOPERATIVA DE CREDITO",
+    "COOPERATIVA DE CRÉDITO",
+    "BANCO COOPERATIVO",
+    "INSTITUICAO DE PAGAMENTO",
+    "INSTITUIÇÃO DE PAGAMENTO",
+    "SOCIEDADE DE CREDITO",
+    "SOCIEDADE DE CRÉDITO",
+    "FINANCEIRA",
+)
+_PRIVATE_HEADER_MARKERS = (
+    "CLIENTE",
+    "TITULAR",
+    "NOME",
+    "CPF",
+    "CNPJ",
+    "AGENCIA",
+    "AGÊNCIA",
+    "CONTA",
+    "DOCUMENTO",
+)
+_GENERIC_INSTITUTION_WORDS = frozenset(
+    {
+        "A",
+        "BANCO",
+        "COOPERATIVA",
+        "COOPERATIVO",
+        "CREDITO",
+        "DA",
+        "DAS",
+        "DE",
+        "DO",
+        "DOS",
+        "FINANCEIRA",
+        "INSTITUICAO",
+        "LTDA",
+        "PAGAMENTO",
+        "S",
+        "SA",
+        "SOCIEDADE",
+    }
+)
 
 
 def resolve_bank_name(
@@ -70,6 +113,14 @@ def _match_bank_name_in_text(extracted_text: str | None) -> str | None:
     if not normalized_text:
         return None
 
+    header_candidate = _match_unlisted_institution_header(extracted_text)
+    if header_candidate is not None:
+        return _match_known_bank_name(header_candidate) or header_candidate
+    return _match_known_bank_name(normalized_text)
+
+
+def _match_known_bank_name(normalized_text: str) -> str | None:
+
     best_name = ""
     best_score = -1
     for token, bank_name in _TEXT_BANK_HINTS:
@@ -97,6 +148,43 @@ def _match_bank_name_in_text(extracted_text: str | None) -> str | None:
                 best_score = score
 
     return best_name or None
+
+
+def _match_unlisted_institution_header(extracted_text: str | None) -> str | None:
+    lines = [normalize_upper_text(line) for line in str(extracted_text or "").splitlines() if line.strip()]
+    for line in lines[:12]:
+        if _is_transaction_table_header(line):
+            break
+        candidate = _institution_candidate_from_line(line)
+        if candidate is not None:
+            return candidate
+    return None
+
+
+def _institution_candidate_from_line(line: str) -> str | None:
+    candidate = line
+    for marker in _PRIVATE_HEADER_MARKERS:
+        candidate = re.split(rf"\b{re.escape(normalize_upper_text(marker))}\b", candidate, maxsplit=1)[0]
+    candidate = re.sub(r"^EXTRATO(?: BANCARIO)?(?: DA| DE| DO)?[\s:|-]*", "", candidate).strip(" -:|")
+    candidate = re.sub(r"[^A-Z0-9 .,&()'/-]+", " ", candidate)
+    candidate = re.sub(r"\s+", " ", candidate).strip(" .,:;|-/")
+    if not candidate or len(candidate) > 120 or re.search(r"\d{4,}", candidate):
+        return None
+    if not any(
+        re.search(rf"(?<![A-Z0-9]){re.escape(normalize_upper_text(marker))}(?![A-Z0-9])", candidate)
+        for marker in _UNLISTED_INSTITUTION_MARKERS
+    ):
+        return None
+    distinctive_words = {
+        word
+        for word in re.findall(r"[A-Z0-9]+", candidate)
+        if word not in _GENERIC_INSTITUTION_WORDS and len(word) >= 2
+    }
+    return candidate if distinctive_words else None
+
+
+def _is_transaction_table_header(line: str) -> bool:
+    return "DATA" in line and any(marker in line for marker in ("HISTORICO", "DESCRICAO", "VALOR", "LANCAMENTO"))
 
 
 def _contains_token(text: str, token: str) -> bool:

@@ -1,11 +1,14 @@
 from io import BytesIO
 
+import pytest
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
+from app.application.conversion import canonical_layout_capture
 from app.application.conversion.canonical_layout_capture import (
     CanonicalLayoutCaptureService,
     CanonicalLayoutGenerator,
+    CanonicalLayoutPrivacyError,
 )
 from app.application.conversion.uploaded_document import ingest_uploaded_document
 
@@ -63,6 +66,8 @@ def _capture_kwargs(**overrides) -> dict[str, object]:
         "selected_parser": "tabular",
         "warning_count": 0,
         "balance_failed": 0,
+        "bank_name": None,
+        "bank_code": None,
     }
     values.update(overrides)
     return values
@@ -98,6 +103,114 @@ def test_generator_builds_new_pdf_without_source_identity_or_numbers() -> None:
         "layout_confidence_below_95",
     ]
     assert "extrato-maria" not in str(artifact.manifest).lower()
+
+
+def test_generator_preserves_catalog_bank_as_explicit_manifest_identity() -> None:
+    source = _text_pdf(
+        "ITAU",
+        "CLIENTE MARIA SILVA",
+        "DATA HISTORICO VALOR",
+        "10/09/2026 PIX 10,00",
+    )
+    document = ingest_uploaded_document("statement.pdf", source)
+    generator = CanonicalLayoutGenerator(capture_id_provider=lambda: "cap_0123456789abcdef01234567")
+
+    artifact = generator.generate(
+        document=document,
+        **_capture_kwargs(bank_name="Itau", bank_code="341"),
+    )
+
+    assert artifact.manifest["bank"] == {
+        "code": "341",
+        "name": "Itaú",
+        "catalog_match": True,
+        "detection_source": "conversion",
+    }
+
+
+def test_generator_preserves_unlisted_cooperative_identity_but_not_holder() -> None:
+    source = _text_pdf(
+        "COOPERATIVA DE CREDITO VALE VERDE",
+        "CLIENTE MARIA SILVA CPF 123.456.789-09",
+        "AGENCIA 4321 CONTA 98765-4",
+        "DATA HISTORICO VALOR",
+        "10/09/2026 PIX PARA JOAO 10,00",
+    )
+    document = ingest_uploaded_document("statement.pdf", source)
+    generator = CanonicalLayoutGenerator(capture_id_provider=lambda: "cap_0123456789abcdef01234567")
+
+    artifact = generator.generate(document=document, **_capture_kwargs())
+
+    assert artifact.manifest["bank"] == {
+        "code": None,
+        "name": "COOPERATIVA DE CREDITO VALE VERDE",
+        "catalog_match": False,
+        "detection_source": "header",
+    }
+    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(artifact.pdf_bytes)).pages)
+    assert "COOPERATIVA" in extracted
+    assert "VALE" in extracted
+    assert "VERDE" in extracted
+    assert "MARIA" not in extracted
+    assert "JOAO" not in extracted
+    assert "98765" not in extracted
+
+
+def test_institution_tokens_are_preserved_only_on_the_bank_header_line() -> None:
+    source = _text_pdf(
+        "BANCO VALE SEGURO",
+        "CLIENTE MARIA VALE",
+        "DATA HISTORICO VALOR",
+        "10/09/2026 PIX 10,00",
+    )
+    document = ingest_uploaded_document("statement.pdf", source)
+    generator = CanonicalLayoutGenerator(capture_id_provider=lambda: "cap_0123456789abcdef01234567")
+
+    artifact = generator.generate(document=document, **_capture_kwargs())
+
+    extracted_lines = [
+        line.strip()
+        for page in PdfReader(BytesIO(artifact.pdf_bytes)).pages
+        for line in (page.extract_text() or "").splitlines()
+        if line.strip()
+    ]
+    assert "BANCO VALE SEGURO" in extracted_lines
+    client_line = next(line for line in extracted_lines if line.startswith("CLIENTE"))
+    assert client_line == "CLIENTE DADO DADO"
+
+
+def test_privacy_validation_does_not_treat_manifest_keys_as_source_leaks() -> None:
+    source = _text_pdf(
+        "STATUS DATA VALOR",
+        "10/09/2026 PIX 10,00",
+    )
+    document = ingest_uploaded_document("statement.pdf", source)
+    generator = CanonicalLayoutGenerator(capture_id_provider=lambda: "cap_0123456789abcdef01234567")
+
+    artifact = generator.generate(document=document, **_capture_kwargs())
+
+    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(artifact.pdf_bytes)).pages)
+    assert "STATUS" not in extracted
+    assert "DADO" in extracted
+
+
+def test_privacy_validation_still_blocks_actual_source_text_leak(monkeypatch) -> None:
+    source = _text_pdf(
+        "CLIENTE MARIA SILVA",
+        "DATA VALOR",
+        "10/09/2026 10,00",
+    )
+    document = ingest_uploaded_document("statement.pdf", source)
+    generator = CanonicalLayoutGenerator(capture_id_provider=lambda: "cap_0123456789abcdef01234567")
+
+    monkeypatch.setattr(
+        canonical_layout_capture,
+        "_sanitize_token",
+        lambda raw_token, *, number_index, institution_tokens: (raw_token, "unsafe-test", number_index),
+    )
+
+    with pytest.raises(CanonicalLayoutPrivacyError, match="source_text_leak_detected"):
+        generator.generate(document=document, **_capture_kwargs())
 
 
 def test_generator_changes_even_single_digit_values_and_the_default_synthetic_date() -> None:

@@ -11,13 +11,28 @@ from uuid import uuid4
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
+from app.application.bank_catalog import load_bank_catalog, normalize_bank_code, resolve_bank_code_from_name
+from app.application.bank_identity import resolve_bank_name
 from app.application.conversion.uploaded_document import UploadedDocument
 from app.application.conversion_quality import ConversionQualityAssessment, assess_conversion_quality
 
 logger = logging.getLogger(__name__)
 
 CANONICAL_LAYOUT_SCHEMA_VERSION = "1"
-CANONICAL_PRIVACY_VALIDATION_VERSION = "1"
+CANONICAL_PRIVACY_VALIDATION_VERSION = "2"
+_CANONICAL_TEXT_PLACEHOLDER = "DADO"
+_QUALITY_ASSESSMENT_FIELDS = (
+    "status",
+    "conversion_type",
+    "transactions_count",
+    "layout_name",
+    "layout_confidence",
+    "selected_parser",
+    "warning_count",
+    "balance_failed",
+    "parser_confidence_band",
+    "parser_coverage_rate",
+)
 _SAFE_LABELS = frozenset(
     {
         "A",
@@ -137,6 +152,8 @@ class CanonicalLayoutGenerator:
         selected_parser: str | None,
         warning_count: int,
         balance_failed: int,
+        bank_name: str | None = None,
+        bank_code: str | None = None,
     ) -> CanonicalLayoutArtifact:
         if document.file_type != "pdf":
             raise CanonicalLayoutUnsupportedError("non_pdf")
@@ -154,6 +171,13 @@ class CanonicalLayoutGenerator:
         source_text = "\n".join(page["source_text"] for page in pages)
         if len(source_text) > self.max_extracted_chars:
             raise CanonicalLayoutUnsupportedError("native_text_too_large")
+        bank = _bank_manifest(
+            bank_name=bank_name,
+            bank_code=bank_code,
+            layout_name=layout_name,
+            source_text=source_text,
+        )
+        institution_tokens = _institution_tokens(bank)
 
         manifest_pages: list[dict[str, object]] = []
         render_pages: list[dict[str, object]] = []
@@ -164,8 +188,17 @@ class CanonicalLayoutGenerator:
             max_columns = max((len(line) for line in source_lines), default=1)
             line_count = max(1, len(source_lines))
             for line_index, line in enumerate(source_lines):
+                line_institution_tokens = _institution_tokens_for_line(
+                    line=line,
+                    bank=bank,
+                    institution_tokens=institution_tokens,
+                )
                 for match in _TOKEN_PATTERN.finditer(line):
-                    safe_text, role, number_index = _sanitize_token(match.group(0), number_index=number_index)
+                    safe_text, role, number_index = _sanitize_token(
+                        match.group(0),
+                        number_index=number_index,
+                        institution_tokens=line_institution_tokens,
+                    )
                     elements.append(
                         {
                             "line": line_index,
@@ -193,11 +226,16 @@ class CanonicalLayoutGenerator:
         manifest: dict[str, object] = {
             "schema_version": CANONICAL_LAYOUT_SCHEMA_VERSION,
             "privacy_validation_version": CANONICAL_PRIVACY_VALIDATION_VERSION,
+            "bank": bank,
             "quality": _quality_manifest(assessment, layout_name=layout_name, selected_parser=selected_parser),
             "pages": manifest_pages,
         }
         pdf_bytes = _render_pdf(render_pages)
-        _validate_privacy(source_text=source_text, pdf_bytes=pdf_bytes, manifest=manifest)
+        _validate_privacy(
+            source_text=source_text,
+            pdf_bytes=pdf_bytes,
+            institution_tokens=institution_tokens,
+        )
         return CanonicalLayoutArtifact(
             capture_id=capture_id,
             pdf_bytes=pdf_bytes,
@@ -253,7 +291,9 @@ class CanonicalLayoutCaptureService:
             return CanonicalLayoutCaptureResult("disabled", "feature_disabled")
         if document.file_type != "pdf":
             return CanonicalLayoutCaptureResult("not_eligible", "non_pdf")
-        assessment = assess_conversion_quality(**quality_values)
+        assessment = assess_conversion_quality(
+            **{key: value for key, value in quality_values.items() if key in _QUALITY_ASSESSMENT_FIELDS}
+        )
         if assessment.status == "clean":
             return CanonicalLayoutCaptureResult("not_eligible", "clean_conversion")
         if assessment.status == "processing":
@@ -287,9 +327,17 @@ class CanonicalLayoutCaptureService:
         return CanonicalLayoutCaptureResult("stored")
 
 
-def _sanitize_token(raw_token: str, *, number_index: int) -> tuple[str, str, int]:
+def _sanitize_token(
+    raw_token: str,
+    *,
+    number_index: int,
+    institution_tokens: frozenset[str] = frozenset(),
+) -> tuple[str, str, int]:
     normalized = _ascii_upper(raw_token)
     core = "".join(character for character in normalized if character.isalpha())
+    institution_key = _institution_token_key(normalized)
+    if institution_key is not None and institution_key in institution_tokens:
+        return _safe_institution_token(normalized) or institution_key, "institution", number_index
     if not any(character.isdigit() for character in normalized) and core in _SAFE_LABELS:
         return core, "label", number_index
     if _DATE_DMY_PATTERN.fullmatch(normalized):
@@ -306,7 +354,7 @@ def _sanitize_token(raw_token: str, *, number_index: int) -> tuple[str, str, int
         return replacement, "date", number_index + 1
     if any(character.isdigit() for character in normalized):
         return _replace_digits(normalized, offset=number_index), "number", number_index + 1
-    return "DADO", "text", number_index
+    return _CANONICAL_TEXT_PLACEHOLDER, "text", number_index
 
 
 def _replace_digits(value: str, *, offset: int) -> str:
@@ -327,6 +375,125 @@ def _replace_digits(value: str, *, offset: int) -> str:
 def _ascii_upper(value: str) -> str:
     decomposed = unicodedata.normalize("NFKD", str(value or ""))
     return "".join(character for character in decomposed if not unicodedata.combining(character)).upper()
+
+
+def _bank_manifest(
+    *,
+    bank_name: str | None,
+    bank_code: str | None,
+    layout_name: str | None,
+    source_text: str,
+) -> dict[str, object]:
+    detection_source = "conversion"
+    resolved_name = _safe_institution_name(bank_name)
+    resolved_code = _safe_bank_code(bank_code)
+    if resolved_name is None and resolved_code is None:
+        resolved_name = _safe_institution_name(
+            resolve_bank_name(layout_inference_name=layout_name, extracted_text=None)
+        )
+        detection_source = "layout"
+    if resolved_name is None and resolved_code is None:
+        resolved_name = _safe_institution_name(
+            resolve_bank_name(layout_inference_name=None, extracted_text=source_text)
+        )
+        detection_source = "header"
+    if resolved_name is None and resolved_code is None:
+        return {
+            "code": None,
+            "name": "unknown",
+            "catalog_match": False,
+            "detection_source": "unresolved",
+        }
+
+    catalog_code = resolve_bank_code_from_name(resolved_name) or resolved_code
+    catalog_record = next(
+        (record for record in load_bank_catalog() if record.code == catalog_code),
+        None,
+    )
+    if catalog_record is not None:
+        return {
+            "code": catalog_record.code,
+            "name": catalog_record.short_name or catalog_record.name,
+            "catalog_match": True,
+            "detection_source": detection_source,
+        }
+    return {
+        "code": resolved_code,
+        "name": resolved_name or "unknown",
+        "catalog_match": False,
+        "detection_source": detection_source,
+    }
+
+
+def _safe_bank_code(value: object) -> str | None:
+    normalized = normalize_bank_code(str(value or ""))
+    return normalized if normalized is not None and re.fullmatch(r"\d{3}", normalized) else None
+
+
+def _safe_institution_name(value: object) -> str | None:
+    normalized = _ascii_upper(str(value or ""))
+    normalized = re.sub(r"[^A-Z0-9 .,&()'/-]+", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip(" .,:;|-/")
+    if not normalized or len(normalized) > 120 or re.search(r"\d{4,}", normalized):
+        return None
+    return normalized
+
+
+def _institution_tokens(bank: dict[str, object]) -> frozenset[str]:
+    if str(bank.get("detection_source") or "") == "unresolved":
+        return frozenset()
+    return frozenset(
+        token
+        for raw_token in _TOKEN_PATTERN.findall(_ascii_upper(str(bank.get("name") or "")))
+        if (token := _institution_token_key(raw_token)) is not None
+    )
+
+
+def _institution_tokens_for_line(
+    *,
+    line: str,
+    bank: dict[str, object],
+    institution_tokens: frozenset[str],
+) -> frozenset[str]:
+    if not institution_tokens:
+        return frozenset()
+    name_tokens = [
+        token
+        for raw_token in _TOKEN_PATTERN.findall(_ascii_upper(str(bank.get("name") or "")))
+        if (token := _institution_token_key(raw_token)) is not None
+    ]
+    line_tokens = [
+        token
+        for raw_token in _TOKEN_PATTERN.findall(_ascii_upper(line))
+        if (token := _institution_token_key(raw_token)) is not None
+    ]
+    if not name_tokens or len(line_tokens) < len(name_tokens):
+        return frozenset()
+    window_size = len(name_tokens)
+    has_name = any(
+        line_tokens[index : index + window_size] == name_tokens
+        for index in range(len(line_tokens) - window_size + 1)
+    )
+    return institution_tokens if has_name else frozenset()
+
+
+def _institution_token_key(value: object) -> str | None:
+    token = "".join(character for character in _ascii_upper(str(value or "")) if character.isalnum())
+    if not token or len(token) > 40 or re.search(r"\d{4,}", token):
+        return None
+    return token
+
+
+def _safe_institution_token(value: object) -> str | None:
+    key = _institution_token_key(value)
+    if key is None:
+        return None
+    display = "".join(
+        character
+        for character in _ascii_upper(str(value or ""))
+        if character.isalnum() or character in ".,&'/-"
+    ).strip(".,&'/-")
+    return display or key
 
 
 def _quality_manifest(
@@ -421,20 +588,29 @@ def _escape_pdf_text(value: str) -> str:
     return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
-def _validate_privacy(*, source_text: str, pdf_bytes: bytes, manifest: dict[str, object]) -> None:
+def _validate_privacy(
+    *,
+    source_text: str,
+    pdf_bytes: bytes,
+    institution_tokens: frozenset[str],
+) -> None:
     try:
         reader = PdfReader(BytesIO(pdf_bytes))
         output_text = "\n".join(page.extract_text() or "" for page in reader.pages)
     except Exception as exc:
         raise CanonicalLayoutPrivacyError("canonical_pdf_unreadable") from exc
-    serialized_output = _ascii_upper(f"{output_text}\n{manifest}")
+    output_text_tokens = {
+        "".join(character for character in token if character.isalpha())
+        for token in _TOKEN_PATTERN.findall(_ascii_upper(output_text))
+    }
+    allowed_output_tokens = _SAFE_LABELS | {_CANONICAL_TEXT_PLACEHOLDER} | institution_tokens
     output_digit_tokens = {
         "".join(character for character in token if character.isdigit())
         for token in _TOKEN_PATTERN.findall(_ascii_upper(output_text))
     }
     for raw_token in _TOKEN_PATTERN.findall(_ascii_upper(source_text)):
         core = "".join(character for character in raw_token if character.isalpha())
-        if len(core) >= 4 and core not in _SAFE_LABELS and core in serialized_output:
+        if len(core) >= 4 and core not in allowed_output_tokens and core in output_text_tokens:
             raise CanonicalLayoutPrivacyError("source_text_leak_detected")
         digits = "".join(character for character in raw_token if character.isdigit())
         if len(digits) >= 4 and digits in output_digit_tokens:

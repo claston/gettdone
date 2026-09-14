@@ -493,6 +493,8 @@ class DocumentConversionPipeline:
             selected_parser=parse_meta["selected_parser"],
             warning_count=warning_rows_count,
             balance_failed=balance_failed_count,
+            bank_name=getattr(analysis, "bank_name", None),
+            bank_code=getattr(analysis, "bank_code", None),
         )
         conversion_model_label = resolve_conversion_model_label(
             layout_inference_name=getattr(analysis, "layout_inference_name", None),
