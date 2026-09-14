@@ -24,7 +24,16 @@ def _artifact(*, validated: bool = True) -> CanonicalLayoutArtifact:
     return CanonicalLayoutArtifact(
         capture_id="cap_0123456789abcdef01234567",
         pdf_bytes=b"%PDF canonical",
-        manifest={"schema_version": "1", "privacy_validation_version": "1"},
+        manifest={
+            "schema_version": "1",
+            "privacy_validation_version": "2",
+            "bank": {
+                "code": "341",
+                "name": "Itaú",
+                "catalog_match": True,
+                "detection_source": "conversion",
+            },
+        },
         privacy_validated=validated,
     )
 
@@ -41,17 +50,57 @@ def test_s3_store_uploads_only_canonical_artifact_with_aes256() -> None:
     store.store(_artifact())
 
     assert [call["Key"] for call in client.put_calls] == [
-        "conversion/canonical-layouts/candidates/v1/cap_0123456789abcdef01234567/canonical.pdf",
-        "conversion/canonical-layouts/candidates/v1/cap_0123456789abcdef01234567/layout.json",
+        "conversion/canonical-layouts/candidates/v1/bank=341/cap_0123456789abcdef01234567/canonical.pdf",
+        "conversion/canonical-layouts/candidates/v1/bank=341/cap_0123456789abcdef01234567/layout.json",
     ]
     assert all(call["Bucket"] == "private-conversions" for call in client.put_calls)
     assert all(call["ServerSideEncryption"] == "AES256" for call in client.put_calls)
     assert all("SSEKMSKeyId" not in call for call in client.put_calls)
     assert client.put_calls[0]["ContentType"] == "application/pdf"
     assert client.put_calls[1]["ContentType"] == "application/json"
-    assert set(client.put_calls[0]["Metadata"]) == {"schema-version", "privacy-validation-version"}
+    assert set(client.put_calls[0]["Metadata"]) == {
+        "schema-version",
+        "privacy-validation-version",
+        "bank-partition",
+    }
     assert b"analysis_id" not in client.put_calls[1]["Body"]
     assert b"filename" not in client.put_calls[1]["Body"]
+
+
+def test_s3_store_partitions_unlisted_institution_by_safe_name() -> None:
+    client = _FakeS3Client()
+    store = S3CanonicalLayoutStore(bucket="private-conversions", s3_client=client)
+    artifact = _artifact()
+    artifact.manifest["bank"] = {
+        "code": None,
+        "name": "COOPERATIVA DE CREDITO VALE VERDE",
+        "catalog_match": False,
+        "detection_source": "header",
+    }
+
+    store.store(artifact)
+
+    assert all(
+        "/bank=cooperativa-de-credito-vale-verde/" in f"/{call['Key']}"
+        for call in client.put_calls
+    )
+    assert all(call["Metadata"]["bank-partition"] == "cooperativa-de-credito-vale-verde" for call in client.put_calls)
+
+
+def test_s3_store_uses_unknown_partition_when_bank_is_unresolved() -> None:
+    client = _FakeS3Client()
+    store = S3CanonicalLayoutStore(bucket="private-conversions", s3_client=client)
+    artifact = _artifact()
+    artifact.manifest["bank"] = {
+        "code": None,
+        "name": "unknown",
+        "catalog_match": False,
+        "detection_source": "unresolved",
+    }
+
+    store.store(artifact)
+
+    assert all("/bank=unknown/" in f"/{call['Key']}" for call in client.put_calls)
 
 
 def test_s3_store_rejects_artifact_that_did_not_pass_privacy_validation() -> None:

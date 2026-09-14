@@ -427,6 +427,8 @@ def test_non_clean_pdf_is_forwarded_to_best_effort_canonical_capture(caplog) -> 
     assert capture.calls[0]["status"] == "Sucesso"
     assert capture.calls[0]["layout_name"] is None
     assert capture.calls[0]["selected_parser"] == "grouped"
+    assert capture.calls[0]["bank_name"] == "Itau"
+    assert capture.calls[0]["bank_code"] == "341"
     assert "identity" not in capture.calls[0]
     assert pipeline.access_control_service.recorded_user_conversions[-1]["canonical_capture_status"] == "stored"
     assert pipeline.access_control_service.recorded_user_conversions[-1]["canonical_capture_reason"] is None
