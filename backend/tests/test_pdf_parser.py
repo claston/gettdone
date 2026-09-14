@@ -1192,6 +1192,31 @@ def test_parse_pdf_transactions_supports_santander_grouped_period_with_weekday_h
     assert result.transactions[2].amount == 9325.9
 
 
+def test_parse_pdf_transactions_supports_descending_santander_app_statement_without_false_warnings() -> None:
+    text = """
+    Aplicativo Santander Empresas
+    Santander
+    Agência 1234 Conta 123456
+    Períodos 01/01/2024 a 31/01/2024
+    Data/Hora 01/02/2024 10:00
+    Saldo disponível para uso R$ 1.100,00
+    Data Histórico Documento Valor (R$) Saldo (R$)
+    31/01/2024 PIX RECEBIDO CLIENTE 000001 100,00 1.100,00
+    30/01/2024 PAGAMENTO DE BOLETO OUTROS BANCOS 000002 -50,00 1.000,00
+    29/01/2024 RESGATE CONTAMAX AUTOMATICO 000003 200,00 1.050,00
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert result.layout.layout_name == "santander_aplicativo_empresas_conta_corrente_extrato_v1"
+    assert result.layout.confidence >= 0.95
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert [transaction.amount for transaction in result.transactions] == [100.0, -50.0, 200.0]
+    assert result.parse_metrics["balance_consistency_checked"] == 2
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert result.parse_metrics["canonical_warning_count"] == 0
+
+
 def test_parse_pdf_transactions_keeps_vangogh_grouped_multiline_descriptions_with_the_correct_rows() -> None:
     text = """
     Santander Van Gogh EXTRATO CONSOLIDADO
