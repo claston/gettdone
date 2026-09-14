@@ -24,6 +24,8 @@ def _record_user_conversion(
     error_stage: str | None = None,
     layout_name: str = "nubank_statement_ptbr",
     layout_confidence: float = 0.98,
+    canonical_capture_status: str = "not_eligible",
+    canonical_capture_reason: str | None = "clean_conversion",
 ) -> None:
     service.record_user_conversion(
         user_id=user_id,
@@ -41,6 +43,8 @@ def _record_user_conversion(
         layout_inference_name=layout_name,
         layout_inference_confidence=layout_confidence,
         selected_parser="inline",
+        canonical_capture_status=canonical_capture_status,
+        canonical_capture_reason=canonical_capture_reason,
         created_at=created_at.isoformat(),
     )
 
@@ -61,6 +65,8 @@ def _record_anonymous_conversion(
     error_stage: str | None = None,
     layout_name: str = "itau_statement_ptbr",
     layout_confidence: float = 0.97,
+    canonical_capture_status: str = "not_eligible",
+    canonical_capture_reason: str | None = "clean_conversion",
 ) -> None:
     clock["now"] = created_at
     service.record_anonymous_conversion_event(
@@ -83,6 +89,8 @@ def _record_anonymous_conversion(
         layout_inference_name=layout_name,
         layout_inference_confidence=layout_confidence,
         selected_parser="inline",
+        canonical_capture_status=canonical_capture_status,
+        canonical_capture_reason=canonical_capture_reason,
     )
 
 
@@ -123,6 +131,8 @@ def test_admin_dashboard_aggregates_quality_failures_and_returning_people(tmp_pa
         created_at=datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc),
         duration_ms=3000,
         warning_count=2,
+        canonical_capture_status="stored",
+        canonical_capture_reason=None,
     )
     _record_anonymous_conversion(
         service,
@@ -135,6 +145,8 @@ def test_admin_dashboard_aggregates_quality_failures_and_returning_people(tmp_pa
         duration_ms=5000,
         error_code="parse_failed",
         error_stage="extraction",
+        canonical_capture_status="upload_failed",
+        canonical_capture_reason="ClientError",
     )
     _record_anonymous_conversion(
         service,
@@ -188,6 +200,24 @@ def test_admin_dashboard_aggregates_quality_failures_and_returning_people(tmp_pa
             "anonymous_conversions": 3,
             "anonymous_people": 2,
         }
+        assert payload["canonical_capture"] == {
+            "candidate_count": 2,
+            "stored_count": 1,
+            "failure_count": 1,
+            "skipped_count": 0,
+            "not_eligible_count": 3,
+            "disabled_count": 0,
+            "not_recorded_count": 0,
+            "by_status": [
+                {"status": "stored", "count": 1},
+                {"status": "upload_failed", "count": 1},
+                {"status": "not_eligible", "count": 3},
+            ],
+            "by_reason": [
+                {"status": "not_eligible", "reason": "clean_conversion", "count": 3},
+                {"status": "upload_failed", "reason": "ClientError", "count": 1},
+            ],
+        }
         assert len(payload["daily"]) == 30
         september_fourth = next(item for item in payload["daily"] if item["date"] == "2026-09-04")
         assert september_fourth == {
@@ -211,6 +241,13 @@ def test_admin_dashboard_aggregates_quality_failures_and_returning_people(tmp_pa
             "an_user_review",
             "ace_failed",
         ]
+        assert [item["canonical_capture_status"] for item in payload["recent_attention"]] == [
+            "stored",
+            "upload_failed",
+        ]
+        assert payload["recent_attention"][1]["canonical_capture_reason"] == "ClientError"
+        assert "capture_id" not in str(payload)
+        assert "s3_key" not in str(payload)
         assert "anonymous_fingerprint" not in str(payload)
         assert "filename" not in str(payload)
     finally:

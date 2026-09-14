@@ -589,6 +589,8 @@ def test_record_user_conversion_persists_warning_metrics(tmp_path) -> None:
         parser_confidence_band="low",
         parser_coverage_rate=0.9,
         warning_types=["balance_consistency_failed", "amount_sign_inferred"],
+        canonical_capture_status="stored",
+        canonical_capture_reason=None,
         quality_issues=[
             {
                 "scope": "transaction",
@@ -614,7 +616,9 @@ def test_record_user_conversion_persists_warning_metrics(tmp_path) -> None:
               quality_reason_codes_json,
               parser_confidence_band,
               parser_coverage_rate,
-              warning_types_json
+              warning_types_json,
+              canonical_capture_status,
+              canonical_capture_reason
             FROM user_conversions
             WHERE analysis_id = ?
             """,
@@ -630,6 +634,8 @@ def test_record_user_conversion_persists_warning_metrics(tmp_path) -> None:
     assert str(row["parser_confidence_band"]) == "low"
     assert float(row["parser_coverage_rate"]) == 0.9
     assert "amount_sign_inferred" in str(row["warning_types_json"])
+    assert str(row["canonical_capture_status"]) == "stored"
+    assert row["canonical_capture_reason"] is None
 
     with service._connect() as conn:
         issue = service._fetchone(
@@ -693,6 +699,8 @@ def test_record_anonymous_conversion_event_persists_metrics(tmp_path) -> None:
         canonical_warning_transactions_count=2,
         balance_consistency_failed=1,
         error_code=None,
+        canonical_capture_status="upload_failed",
+        canonical_capture_reason="ClientError",
     )
 
     with service._connect() as conn:
@@ -712,7 +720,9 @@ def test_record_anonymous_conversion_event_persists_metrics(tmp_path) -> None:
               ocr_pages_processed,
               duration_ms,
               canonical_warning_transactions_count,
-              balance_consistency_failed
+              balance_consistency_failed,
+              canonical_capture_status,
+              canonical_capture_reason
             FROM anonymous_conversion_events
             WHERE id = ?
             """,
@@ -731,6 +741,8 @@ def test_record_anonymous_conversion_event_persists_metrics(tmp_path) -> None:
     assert int(row["duration_ms"]) == 1842
     assert int(row["canonical_warning_transactions_count"]) == 2
     assert int(row["balance_consistency_failed"]) == 1
+    assert str(row["canonical_capture_status"]) == "upload_failed"
+    assert str(row["canonical_capture_reason"]) == "ClientError"
 
 
 def test_retryable_db_exception_includes_unexpected_ssl_close(tmp_path) -> None:

@@ -89,6 +89,8 @@ class AccessControlCheckoutComponent:
         warning_types: list[str] | None = None,
         failure_diagnostics: dict[str, object] | None = None,
         quality_issues: list[dict[str, object]] | None = None,
+        canonical_capture_status: str | None = None,
+        canonical_capture_reason: str | None = None,
         created_at: str | None = None,
         expires_at: str | None = None,
     ) -> None:
@@ -130,6 +132,8 @@ class AccessControlCheckoutComponent:
                     warning_types=warning_types,
                     failure_diagnostics=failure_diagnostics,
                     quality_issues=quality_issues,
+                    canonical_capture_status=canonical_capture_status,
+                    canonical_capture_reason=canonical_capture_reason,
                     created_at=created_at,
                     expires_at=expires_at,
                 )
@@ -181,6 +185,8 @@ class AccessControlCheckoutComponent:
         warning_types: list[str] | None = None,
         failure_diagnostics: dict[str, object] | None = None,
         quality_issues: list[dict[str, object]] | None = None,
+        canonical_capture_status: str | None = None,
+        canonical_capture_reason: str | None = None,
     ) -> None:
         with self._service._lock:
             with self._service._connect() as conn:
@@ -220,6 +226,8 @@ class AccessControlCheckoutComponent:
                     warning_types=warning_types,
                     failure_diagnostics=failure_diagnostics,
                     quality_issues=quality_issues,
+                    canonical_capture_status=canonical_capture_status,
+                    canonical_capture_reason=canonical_capture_reason,
                 )
                 conn.commit()
 

@@ -97,6 +97,8 @@ class AccessControlSchemaComponent:
                 "parser_coverage_rate",
                 "warning_types_json",
                 "failure_diagnostics_json",
+                "canonical_capture_status",
+                "canonical_capture_reason",
             ),
             "anonymous_conversion_events": (
                 "canonical_warning_transactions_count",
@@ -121,6 +123,8 @@ class AccessControlSchemaComponent:
                 "parser_coverage_rate",
                 "warning_types_json",
                 "failure_diagnostics_json",
+                "canonical_capture_status",
+                "canonical_capture_reason",
             ),
             "plan_versions": ("max_pages_per_file_ocr",),
             "checkout_intents": ("user_id", "payment_link", "payment_link_sent_at", "released_at"),

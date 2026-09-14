@@ -272,6 +272,29 @@ class AdminDashboardQualityIssueItem(BaseModel):
     count: int
 
 
+class AdminDashboardCanonicalCaptureStatusItem(BaseModel):
+    status: str
+    count: int
+
+
+class AdminDashboardCanonicalCaptureReasonItem(BaseModel):
+    status: str
+    reason: str
+    count: int
+
+
+class AdminDashboardCanonicalCaptureSummary(BaseModel):
+    candidate_count: int
+    stored_count: int
+    failure_count: int
+    skipped_count: int
+    not_eligible_count: int
+    disabled_count: int
+    not_recorded_count: int
+    by_status: list[AdminDashboardCanonicalCaptureStatusItem]
+    by_reason: list[AdminDashboardCanonicalCaptureReasonItem]
+
+
 class AdminDashboardLayoutItem(BaseModel):
     layout_name: str
     conversions: int
@@ -299,6 +322,8 @@ class AdminDashboardAttentionItem(BaseModel):
     selected_parser: str | None = None
     quality_status: str | None = None
     quality_reason_codes: list[str] = Field(default_factory=list)
+    canonical_capture_status: str | None = None
+    canonical_capture_reason: str | None = None
     issue_reason: str
 
 
@@ -312,6 +337,7 @@ class AdminDashboardResponse(BaseModel):
     daily: list[AdminDashboardDailyItem]
     top_errors: list[AdminDashboardErrorItem]
     top_quality_issues: list[AdminDashboardQualityIssueItem]
+    canonical_capture: AdminDashboardCanonicalCaptureSummary
     layouts: list[AdminDashboardLayoutItem]
     recent_attention: list[AdminDashboardAttentionItem]
 

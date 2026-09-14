@@ -43,6 +43,8 @@ def record_user_conversion(
     warning_types: list[str] | None = None,
     failure_diagnostics: dict[str, object] | None = None,
     quality_issues: list[dict[str, object]] | None = None,
+    canonical_capture_status: str | None = None,
+    canonical_capture_reason: str | None = None,
     created_at: str | None = None,
     expires_at: str | None = None,
 ) -> None:
@@ -101,9 +103,11 @@ def record_user_conversion(
           parser_confidence_band,
           parser_coverage_rate,
           warning_types_json,
-          failure_diagnostics_json
+          failure_diagnostics_json,
+          canonical_capture_status,
+          canonical_capture_reason
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(analysis_id)
         DO UPDATE SET
           user_id=excluded.user_id,
@@ -141,7 +145,9 @@ def record_user_conversion(
           parser_confidence_band=excluded.parser_confidence_band,
           parser_coverage_rate=excluded.parser_coverage_rate,
           warning_types_json=excluded.warning_types_json,
-          failure_diagnostics_json=excluded.failure_diagnostics_json
+          failure_diagnostics_json=excluded.failure_diagnostics_json,
+          canonical_capture_status=excluded.canonical_capture_status,
+          canonical_capture_reason=excluded.canonical_capture_reason
         """,
         (
             processing_id,
@@ -181,6 +187,8 @@ def record_user_conversion(
             float(parser_coverage_rate) if parser_coverage_rate is not None else None,
             warning_types_json,
             failure_diagnostics_json,
+            (canonical_capture_status or "").strip() or None,
+            (canonical_capture_reason or "").strip() or None,
         ),
     )
     replace_quality_issues(
