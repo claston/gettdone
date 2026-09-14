@@ -190,7 +190,6 @@ layout_profile:
       - "Cartão de Crédito"
       - "Fatura"
       - "Comprovante"
-      - "Boleto"
     min_score_hint: 0.8
   table_detection:
     header_keywords:

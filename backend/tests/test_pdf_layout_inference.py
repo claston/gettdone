@@ -144,6 +144,26 @@ def test_infer_pdf_layout_prefers_santander_profile_when_tokens_match() -> None:
     assert result.confidence >= 0.55
 
 
+def test_infer_pdf_layout_does_not_penalize_santander_app_statement_with_boleto_rows() -> None:
+    text = """
+    Aplicativo Santander Empresas
+    Santander
+    Agência 1234 Conta 123456
+    Períodos 01/01/2024 a 31/01/2024
+    Data/Hora 01/02/2024 10:00
+    Saldo disponível para uso R$ 1.100,00
+    Data Histórico Documento Valor (R$) Saldo (R$)
+    31/01/2024 PIX RECEBIDO CLIENTE 000001 100,00 1.100,00
+    30/01/2024 PAGAMENTO DE BOLETO OUTROS BANCOS 000002 -50,00 1.000,00
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "santander_aplicativo_empresas_conta_corrente_extrato_v1"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_santander_negocios_profile_with_credit_debit_table() -> None:
     text = """
     Extrato Santander Negócios & Empresas - Saldo Coerente
