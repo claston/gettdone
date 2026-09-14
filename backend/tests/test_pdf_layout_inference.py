@@ -93,6 +93,26 @@ def test_infer_pdf_layout_prefers_itau_historico_lancamentos_orig_profile() -> N
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_marks_real_itau_complete_table_signature_as_high_confidence() -> None:
+    text = """
+    Itaú
+    Agência Conta Saldo total Limite da conta Utilizado Disponível
+    Lançamentos do período: 01/08/2025 até 31/08/2025
+    Data Lançamentos Razão Social CNPJ/CPF Valor (R$) Saldo (R$)
+    31/07/2025 SALDO ANTERIOR 14.600,37
+    01/08/2025 PIX RECEBIDO EMPRESA ALFA 12.345.678/0001-90 419,69 15.020,06
+    02/08/2025 PIX ENVIADO EMPRESA BETA 98.765.432/0001-10 -43,96 14.976,10
+    Saldo da conta corrente
+    Descrição Valor (R$) Saldo (R$)
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "itau_empresas_extrato_completo_tabela_v1"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_falls_back_to_generic_profile() -> None:
     text = """
     01 JAN 2026
