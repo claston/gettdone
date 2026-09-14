@@ -11,7 +11,10 @@ from time import monotonic
 from uuid import uuid4
 
 from app.application.bank_identity import resolve_conversion_model_label
-from app.application.conversion.canonical_layout_capture import CanonicalLayoutCaptureService
+from app.application.conversion.canonical_layout_capture import (
+    CanonicalLayoutCaptureResult,
+    CanonicalLayoutCaptureService,
+)
 from app.application.conversion.contracts.access import ConversionAccessPort
 from app.application.conversion.contracts.documents import ConversionDocumentReference
 from app.application.conversion.contracts.preflight import DocumentPreflightPolicy, DocumentPreflightResult
@@ -480,7 +483,7 @@ class DocumentConversionPipeline:
             ocr_pages_processed=runtime.ocr_pages_processed,
             default_ocr_engine=runtime.ocr_engine,
         )
-        self._capture_canonical_layout(
+        canonical_capture_result = self._capture_canonical_layout(
             document=request.document,
             status="Sucesso",
             conversion_type=_resolve_conversion_type_from_filename(request.document.filename),
@@ -543,6 +546,8 @@ class DocumentConversionPipeline:
                 parser_coverage_rate=parse_meta["parser_coverage_rate"],
                 warning_types=parse_meta["warning_types"],
                 quality_issues=list(getattr(analysis, "quality_issues", []) or []),
+                canonical_capture_status=canonical_capture_result.status,
+                canonical_capture_reason=canonical_capture_result.reason,
                 expires_at=(persisted_result.expires_at if persisted_result is not None else getattr(analysis, "expires_at", None)),
             )
         elif identity.identity_type == "anonymous":
@@ -579,6 +584,8 @@ class DocumentConversionPipeline:
                 parser_coverage_rate=parse_meta["parser_coverage_rate"],
                 warning_types=parse_meta["warning_types"],
                 quality_issues=list(getattr(analysis, "quality_issues", []) or []),
+                canonical_capture_status=canonical_capture_result.status,
+                canonical_capture_reason=canonical_capture_result.reason,
             )
         if persisted_result is not None:
             payload = build_convert_response_payload(
@@ -628,8 +635,12 @@ class DocumentConversionPipeline:
         duration_ms = runtime.duration_ms()
         ocr_attempted = runtime.ocr_pages_processed > 0 or bool(ocr_context)
         parse_observability = dict(getattr(exc, "_parse_observability", {}) or {})
+        canonical_capture_result = CanonicalLayoutCaptureResult(
+            "not_attempted",
+            "pre_parser_failure",
+        )
         if parse_observability:
-            self._capture_canonical_layout(
+            canonical_capture_result = self._capture_canonical_layout(
                 document=request.document,
                 status="Falha",
                 conversion_type=_resolve_conversion_type_from_filename(request.document.filename),
@@ -681,6 +692,8 @@ class DocumentConversionPipeline:
                 canonical_warning_transactions_count=0,
                 balance_consistency_failed=0,
                 failure_diagnostics=failure_diagnostics,
+                canonical_capture_status=canonical_capture_result.status,
+                canonical_capture_reason=canonical_capture_result.reason,
             )
         elif identity is not None and identity.identity_type == "user":
             _safe_record_user_conversion(
@@ -713,6 +726,8 @@ class DocumentConversionPipeline:
                 canonical_warning_transactions_count=0,
                 balance_consistency_failed=0,
                 failure_diagnostics=failure_diagnostics,
+                canonical_capture_status=canonical_capture_result.status,
+                canonical_capture_reason=canonical_capture_result.reason,
                 expires_at=None,
             )
         _log_conversion_failure(
@@ -732,7 +747,12 @@ class DocumentConversionPipeline:
         )
         setattr(exc, "_convert_identity", identity)
 
-    def _capture_canonical_layout(self, *, document: UploadedDocument, **quality_values: object) -> None:
+    def _capture_canonical_layout(
+        self,
+        *,
+        document: UploadedDocument,
+        **quality_values: object,
+    ) -> CanonicalLayoutCaptureResult:
         try:
             result = self.canonical_layout_capture_service.capture(
                 document=document,
@@ -740,12 +760,17 @@ class DocumentConversionPipeline:
             )
         except Exception as exc:  # defensive boundary: auxiliary capture cannot fail conversion
             logger.warning("canonical_layout_capture_boundary_failed error_type=%s", exc.__class__.__name__)
-            return
-        logger.info(
-            "canonical_layout_capture_result status=%s reason=%s",
-            str(getattr(result, "status", "unknown")),
-            str(getattr(result, "reason", "") or ""),
+            result = CanonicalLayoutCaptureResult("boundary_failed", exc.__class__.__name__)
+        status = str(result.status or "unknown")
+        reason = str(result.reason or "")
+        log_level = logging.WARNING if status.endswith("failed") or status == "skipped_privacy" else logging.INFO
+        logger.log(
+            log_level,
+            "canonical_layout_capture_result status=%s reason=%s storage=s3 sse=AES256",
+            status,
+            reason,
         )
+        return result
 
 
 def _resolve_processed_pages(analysis) -> int | None:

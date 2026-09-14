@@ -250,12 +250,14 @@ class CanonicalLayoutCaptureService:
 
     def capture(self, *, document: UploadedDocument, **quality_values: object) -> CanonicalLayoutCaptureResult:
         if not self.enabled:
-            return CanonicalLayoutCaptureResult("disabled")
+            return CanonicalLayoutCaptureResult("disabled", "feature_disabled")
         if document.file_type != "pdf":
-            return CanonicalLayoutCaptureResult("not_eligible")
+            return CanonicalLayoutCaptureResult("not_eligible", "non_pdf")
         assessment = assess_conversion_quality(**quality_values)
-        if assessment.status in {"clean", "processing"}:
-            return CanonicalLayoutCaptureResult("not_eligible")
+        if assessment.status == "clean":
+            return CanonicalLayoutCaptureResult("not_eligible", "clean_conversion")
+        if assessment.status == "processing":
+            return CanonicalLayoutCaptureResult("not_eligible", "processing_conversion")
         assert self.generator is not None
         assert self.store is not None
         try:
@@ -265,13 +267,23 @@ class CanonicalLayoutCaptureService:
         except CanonicalLayoutPrivacyError as exc:
             return CanonicalLayoutCaptureResult("skipped_privacy", str(exc))
         except Exception as exc:  # fail closed without exposing source/error text
-            logger.warning("canonical_layout_generation_failed error_type=%s", exc.__class__.__name__)
-            return CanonicalLayoutCaptureResult("generation_failed", exc.__class__.__name__)
+            reason = _safe_exception_reason(exc)
+            logger.warning(
+                "canonical_layout_generation_failed error_type=%s reason=%s",
+                exc.__class__.__name__,
+                reason,
+            )
+            return CanonicalLayoutCaptureResult("generation_failed", reason)
         try:
             self.store.store(artifact)
         except Exception as exc:  # capture is best effort and must never fail a conversion
-            logger.warning("canonical_layout_upload_failed error_type=%s", exc.__class__.__name__)
-            return CanonicalLayoutCaptureResult("upload_failed", exc.__class__.__name__)
+            reason = _safe_exception_reason(exc)
+            logger.warning(
+                "canonical_layout_upload_failed error_type=%s reason=%s",
+                exc.__class__.__name__,
+                reason,
+            )
+            return CanonicalLayoutCaptureResult("upload_failed", reason)
         return CanonicalLayoutCaptureResult("stored")
 
 
@@ -340,6 +352,17 @@ def _safe_code(value: object) -> str | None:
     if re.fullmatch(r"[A-Za-z0-9_.:-]{1,100}", normalized) is None:
         return None
     return normalized
+
+
+def _safe_exception_reason(exc: Exception) -> str:
+    response = getattr(exc, "response", None)
+    if isinstance(response, dict):
+        error = response.get("Error")
+        if isinstance(error, dict):
+            safe_aws_code = _safe_code(error.get("Code"))
+            if safe_aws_code is not None:
+                return safe_aws_code
+    return _safe_code(exc.__class__.__name__) or "unknown_error"
 
 
 def _render_pdf(pages: list[dict[str, object]]) -> bytes:

@@ -18,6 +18,7 @@
   const dashboardIdentitiesNode = document.getElementById("dashboard-identities");
   const dashboardTopErrorsNode = document.getElementById("dashboard-top-errors");
   const dashboardTopQualityIssuesNode = document.getElementById("dashboard-top-quality-issues");
+  const dashboardCanonicalCaptureNode = document.getElementById("dashboard-canonical-capture");
   const dashboardLayoutsNode = document.getElementById("dashboard-layouts");
   const dashboardRecentAttentionNode = document.getElementById("dashboard-recent-attention");
   const adminSectionButtons = document.querySelectorAll("[data-admin-section]");
@@ -394,6 +395,65 @@
     });
   }
 
+  function canonicalCaptureLabel(status) {
+    const labels = {
+      stored: "Gravados no S3",
+      upload_failed: "Falha de escrita no S3",
+      generation_failed: "Falha na geração canônica",
+      boundary_failed: "Falha inesperada da captura",
+      skipped_privacy: "Recusados pela validação de privacidade",
+      skipped_unsupported: "PDF sem suporte para captura",
+      not_eligible: "Não elegíveis",
+      not_attempted: "Captura não tentada",
+      disabled: "Recurso desativado",
+      not_recorded: "Sem telemetria de captura",
+    };
+    return labels[String(status || "")] || String(status || "Status desconhecido");
+  }
+
+  function canonicalCaptureDescription(status, reason) {
+    const label = canonicalCaptureLabel(status);
+    const safeReason = String(reason || "").trim();
+    return safeReason ? `${label} (${safeReason})` : label;
+  }
+
+  function renderDashboardCanonicalCapture(summary) {
+    if (!dashboardCanonicalCaptureNode) return;
+    dashboardCanonicalCaptureNode.replaceChildren();
+    const items = Array.isArray(summary.by_status) ? summary.by_status : [];
+    if (!items.length) {
+      dashboardCanonicalCaptureNode.appendChild(
+        createTextElement("p", "empty dashboard-empty", "Nenhuma captura registrada neste período."),
+      );
+      return;
+    }
+
+    const overview = createTextElement(
+      "p",
+      "muted compact",
+      `${formatInteger(summary.stored_count)} de ${formatInteger(summary.candidate_count)} candidatos gravados.`,
+    );
+    dashboardCanonicalCaptureNode.appendChild(overview);
+    items.forEach(function (item) {
+      const row = document.createElement("div");
+      row.className = "compact-list-item";
+      row.appendChild(createTextElement("p", "", canonicalCaptureLabel(item.status)));
+      row.appendChild(createTextElement("strong", "", formatInteger(item.count)));
+      dashboardCanonicalCaptureNode.appendChild(row);
+    });
+    const reasons = Array.isArray(summary.by_reason) ? summary.by_reason : [];
+    if (reasons.length) {
+      dashboardCanonicalCaptureNode.appendChild(createTextElement("p", "muted compact", "Motivos observados"));
+      reasons.forEach(function (item) {
+        const row = document.createElement("div");
+        row.className = "compact-list-item";
+        row.appendChild(createTextElement("p", "", canonicalCaptureDescription(item.status, item.reason)));
+        row.appendChild(createTextElement("strong", "", formatInteger(item.count)));
+        dashboardCanonicalCaptureNode.appendChild(row);
+      });
+    }
+  }
+
   function renderDashboardLayouts(items) {
     if (!dashboardLayoutsNode) return;
     dashboardLayoutsNode.replaceChildren();
@@ -447,7 +507,7 @@
     table.className = "dashboard-table";
     const head = document.createElement("thead");
     const headRow = document.createElement("tr");
-    ["Data", "Pessoa", "Banco/modelo", "Resultado", "Motivo", "Identificador"].forEach(function (label) {
+    ["Data", "Pessoa", "Banco/modelo", "Resultado", "Motivo", "Coleta canônica", "Identificador"].forEach(function (label) {
       appendTableCell(headRow, label, "th");
     });
     head.appendChild(headRow);
@@ -461,6 +521,10 @@
       appendTableCell(row, item.model || "Não identificado");
       appendTableCell(row, item.status || "Não informado");
       appendTableCell(row, item.issue_reason || "Revisão recomendada");
+      appendTableCell(
+        row,
+        canonicalCaptureDescription(item.canonical_capture_status, item.canonical_capture_reason),
+      );
       appendTableCell(row, item.processing_id || "-");
       body.appendChild(row);
     });
@@ -474,6 +538,7 @@
     renderDashboardIdentities(payload.identities || {});
     renderDashboardErrors(payload.top_errors || []);
     renderDashboardQualityIssues(payload.top_quality_issues || []);
+    renderDashboardCanonicalCapture(payload.canonical_capture || {});
     renderDashboardLayouts(payload.layouts || []);
     renderDashboardAttention(payload.recent_attention || []);
   }

@@ -42,6 +42,8 @@ def record_anonymous_conversion_event(
     warning_types: list[str] | None = None,
     failure_diagnostics: dict[str, object] | None = None,
     quality_issues: list[dict[str, object]] | None = None,
+    canonical_capture_status: str | None = None,
+    canonical_capture_reason: str | None = None,
 ) -> None:
     assessment, reason_codes_json, warning_types_json, failure_diagnostics_json = prepare_quality_record(
         status=status,
@@ -96,9 +98,11 @@ def record_anonymous_conversion_event(
           parser_confidence_band,
           parser_coverage_rate,
           warning_types_json,
-          failure_diagnostics_json
+          failure_diagnostics_json,
+          canonical_capture_status,
+          canonical_capture_reason
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id)
         DO UPDATE SET
           created_at=excluded.created_at,
@@ -135,7 +139,9 @@ def record_anonymous_conversion_event(
           parser_confidence_band=excluded.parser_confidence_band,
           parser_coverage_rate=excluded.parser_coverage_rate,
           warning_types_json=excluded.warning_types_json,
-          failure_diagnostics_json=excluded.failure_diagnostics_json
+          failure_diagnostics_json=excluded.failure_diagnostics_json,
+          canonical_capture_status=excluded.canonical_capture_status,
+          canonical_capture_reason=excluded.canonical_capture_reason
         """,
         (
             event_id,
@@ -174,6 +180,8 @@ def record_anonymous_conversion_event(
             float(parser_coverage_rate) if parser_coverage_rate is not None else None,
             warning_types_json,
             failure_diagnostics_json,
+            (canonical_capture_status or "").strip() or None,
+            (canonical_capture_reason or "").strip() or None,
         ),
     )
     replace_quality_issues(

@@ -440,6 +440,8 @@ class AccessControlService:
         warning_types: list[str] | None = None,
         failure_diagnostics: dict[str, object] | None = None,
         quality_issues: list[dict[str, object]] | None = None,
+        canonical_capture_status: str | None = None,
+        canonical_capture_reason: str | None = None,
         created_at: str | None = None,
         expires_at: str | None = None,
     ) -> None:
@@ -476,6 +478,8 @@ class AccessControlService:
             warning_types=warning_types,
             failure_diagnostics=failure_diagnostics,
             quality_issues=quality_issues,
+            canonical_capture_status=canonical_capture_status,
+            canonical_capture_reason=canonical_capture_reason,
             created_at=created_at,
             expires_at=expires_at,
         )
@@ -518,6 +522,8 @@ class AccessControlService:
         warning_types: list[str] | None = None,
         failure_diagnostics: dict[str, object] | None = None,
         quality_issues: list[dict[str, object]] | None = None,
+        canonical_capture_status: str | None = None,
+        canonical_capture_reason: str | None = None,
     ) -> None:
         self.checkout.record_anonymous_conversion_event(
             event_id=event_id,
@@ -552,6 +558,8 @@ class AccessControlService:
             warning_types=warning_types,
             failure_diagnostics=failure_diagnostics,
             quality_issues=quality_issues,
+            canonical_capture_status=canonical_capture_status,
+            canonical_capture_reason=canonical_capture_reason,
         )
 
     def list_public_plans(self) -> list[dict[str, str | int]]:

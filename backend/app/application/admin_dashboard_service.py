@@ -16,6 +16,32 @@ if TYPE_CHECKING:
 DASHBOARD_TIMEZONE_NAME = "America/Sao_Paulo"
 DASHBOARD_TIMEZONE = ZoneInfo(DASHBOARD_TIMEZONE_NAME)
 SUPPORTED_IDENTITY_TYPES = frozenset({"all", "registered", "anonymous"})
+CANONICAL_CAPTURE_STATUS_ORDER = (
+    "stored",
+    "upload_failed",
+    "generation_failed",
+    "boundary_failed",
+    "skipped_privacy",
+    "skipped_unsupported",
+    "not_eligible",
+    "not_attempted",
+    "disabled",
+    "not_recorded",
+)
+CANONICAL_CAPTURE_CANDIDATE_STATUSES = frozenset(
+    {
+        "stored",
+        "upload_failed",
+        "generation_failed",
+        "boundary_failed",
+        "skipped_privacy",
+        "skipped_unsupported",
+    }
+)
+CANONICAL_CAPTURE_FAILURE_STATUSES = frozenset(
+    {"upload_failed", "generation_failed", "boundary_failed"}
+)
+CANONICAL_CAPTURE_SKIPPED_STATUSES = frozenset({"skipped_privacy", "skipped_unsupported"})
 
 
 class AdminDashboardService:
@@ -119,7 +145,9 @@ class AdminDashboardService:
                     quality_status,
                     quality_score,
                     quality_rule_version,
-                    quality_reason_codes_json
+                    quality_reason_codes_json,
+                    canonical_capture_status,
+                    canonical_capture_reason
                 FROM user_conversions
                 WHERE created_at >= ? AND created_at <= ?
                 """,
@@ -150,7 +178,9 @@ class AdminDashboardService:
                     quality_status,
                     quality_score,
                     quality_rule_version,
-                    quality_reason_codes_json
+                    quality_reason_codes_json,
+                    canonical_capture_status,
+                    canonical_capture_reason
                 FROM anonymous_conversion_events
                 WHERE created_at >= ? AND created_at <= ?
                 """,
@@ -231,6 +261,8 @@ def _row_to_event(row, *, identity_type: str) -> dict[str, object]:
         else assessment.score,
         "quality_rule_version": str(row["quality_rule_version"] or assessment.rule_version),
         "quality_reason_codes": stored_reasons or list(assessment.reason_codes),
+        "canonical_capture_status": str(row["canonical_capture_status"] or "").strip() or "not_recorded",
+        "canonical_capture_reason": str(row["canonical_capture_reason"] or "").strip() or None,
     }
 
 
@@ -387,6 +419,7 @@ def _build_dashboard_payload(
         "daily": list(daily_by_date.values()),
         "top_errors": top_errors,
         "top_quality_issues": top_quality_issues,
+        "canonical_capture": _build_canonical_capture_summary(events),
         "layouts": layout_items,
         "recent_attention": recent_attention[:10],
     }
@@ -435,7 +468,41 @@ def _attention_item(event: dict[str, object], *, is_success: bool) -> dict[str, 
         "selected_parser": event.get("selected_parser"),
         "quality_status": event.get("quality_status"),
         "quality_reason_codes": event.get("quality_reason_codes", []),
+        "canonical_capture_status": event.get("canonical_capture_status"),
+        "canonical_capture_reason": event.get("canonical_capture_reason"),
         "issue_reason": "; ".join(reasons) or "Revisão recomendada",
+    }
+
+
+def _build_canonical_capture_summary(events: list[dict[str, object]]) -> dict[str, object]:
+    counts = Counter(str(event.get("canonical_capture_status") or "not_recorded") for event in events)
+    reason_counts = Counter(
+        (
+            str(event.get("canonical_capture_status") or "not_recorded"),
+            str(event.get("canonical_capture_reason") or "").strip(),
+        )
+        for event in events
+        if str(event.get("canonical_capture_reason") or "").strip()
+    )
+    known_statuses = set(CANONICAL_CAPTURE_STATUS_ORDER)
+    ordered_statuses = [status for status in CANONICAL_CAPTURE_STATUS_ORDER if counts[status] > 0]
+    ordered_statuses.extend(sorted(status for status in counts if status not in known_statuses))
+    return {
+        "candidate_count": sum(counts[status] for status in CANONICAL_CAPTURE_CANDIDATE_STATUSES),
+        "stored_count": counts["stored"],
+        "failure_count": sum(counts[status] for status in CANONICAL_CAPTURE_FAILURE_STATUSES),
+        "skipped_count": sum(counts[status] for status in CANONICAL_CAPTURE_SKIPPED_STATUSES),
+        "not_eligible_count": counts["not_eligible"] + counts["not_attempted"],
+        "disabled_count": counts["disabled"],
+        "not_recorded_count": counts["not_recorded"],
+        "by_status": [{"status": status, "count": counts[status]} for status in ordered_statuses],
+        "by_reason": [
+            {"status": status, "reason": reason, "count": count}
+            for (status, reason), count in sorted(
+                reason_counts.items(),
+                key=lambda item: (-item[1], item[0][0], item[0][1]),
+            )
+        ],
     }
 
 

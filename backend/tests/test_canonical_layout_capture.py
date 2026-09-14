@@ -11,11 +11,14 @@ from app.application.conversion.uploaded_document import ingest_uploaded_documen
 
 
 class _RecordingStore:
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(self, *, fail: bool = False, failure: Exception | None = None) -> None:
         self.fail = fail
+        self.failure = failure
         self.artifacts = []
 
     def store(self, artifact) -> None:
+        if self.failure is not None:
+            raise self.failure
         if self.fail:
             raise RuntimeError("simulated S3 failure")
         self.artifacts.append(artifact)
@@ -133,6 +136,7 @@ def test_capture_stores_review_but_never_clean_pdf() -> None:
 
     assert review.status == "stored"
     assert clean.status == "not_eligible"
+    assert clean.reason == "clean_conversion"
     assert len(store.artifacts) == 1
 
 
@@ -149,6 +153,32 @@ def test_capture_failure_is_best_effort_and_contains_no_error_detail() -> None:
     assert result.status == "upload_failed"
     assert result.reason == "RuntimeError"
     assert "simulated" not in str(result)
+
+
+def test_capture_reports_safe_aws_error_code_without_error_message(caplog) -> None:
+    class S3ClientError(Exception):
+        response = {
+            "Error": {
+                "Code": "AccessDenied",
+                "Message": "secret bucket and object details must not be logged",
+            }
+        }
+
+    caplog.set_level("WARNING", logger="app.application.conversion.canonical_layout_capture")
+    service = CanonicalLayoutCaptureService(
+        enabled=True,
+        generator=CanonicalLayoutGenerator(capture_id_provider=lambda: "cap_0123456789abcdef01234567"),
+        store=_RecordingStore(failure=S3ClientError()),
+    )
+    document = ingest_uploaded_document("statement.pdf", _text_pdf("DATA VALOR", "10/09/2026 10,00"))
+
+    result = service.capture(document=document, **_capture_kwargs())
+
+    assert result.status == "upload_failed"
+    assert result.reason == "AccessDenied"
+    assert "secret" not in str(result)
+    assert "canonical_layout_upload_failed error_type=S3ClientError reason=AccessDenied" in caplog.text
+    assert "secret" not in caplog.text
 
 
 def test_capture_skips_pdf_without_native_text() -> None:
@@ -180,3 +210,4 @@ def test_disabled_capture_does_not_inspect_document() -> None:
     )
 
     assert result.status == "disabled"
+    assert result.reason == "feature_disabled"

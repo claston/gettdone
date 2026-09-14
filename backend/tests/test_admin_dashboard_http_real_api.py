@@ -96,3 +96,14 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
     assert dashboard.status_code == 200
     assert dashboard.headers["cache-control"] == "no-store"
     assert dashboard.json()["summary"]["conversions_total"] == 1
+    assert dashboard.json()["canonical_capture"] == {
+        "candidate_count": 0,
+        "stored_count": 0,
+        "failure_count": 0,
+        "skipped_count": 0,
+        "not_eligible_count": 0,
+        "disabled_count": 0,
+        "not_recorded_count": 1,
+        "by_status": [{"status": "not_recorded", "count": 1}],
+        "by_reason": [],
+    }
