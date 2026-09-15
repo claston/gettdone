@@ -698,6 +698,28 @@ def test_infer_pdf_layout_prefers_inter_profile_when_tokens_match() -> None:
     assert result.confidence >= 0.5
 
 
+def test_infer_pdf_layout_marks_inter_running_balance_operation_variant_as_high_confidence() -> None:
+    text = """
+    SOLICITADO EM 03/09/2025
+    BANCO INTER AGÊNCIA 1234 CONTA 123456-7
+    CPF/CNPJ 12.345.678/0001-90
+    PERÍODO 01/08/2025 A 31/08/2025
+    SALDO TOTAL R$ 1.000,00 SALDO DISPONÍVEL R$ 1.000,00 SALDO BLOQUEADO R$ 0,00
+    4 DE AGOSTO DE 2025 SALDO DO DIA R$ 900,00
+    TRANSFERÊNCIA ENTRE CONTAS R$ 100,00 R$ 1.000,00
+    CRÉDITO EM CONTA R$ 50,00 R$ 1.050,00
+    PAGAMENTO EFETUADO -R$ 25,00 R$ 1.025,00
+    PIX ENVIADO -R$ 25,00 R$ 1.000,00
+    VALOR SALDO POR TRANSAÇÃO
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "banco_inter_extrato_conta_corrente_saldo_transacao_v1"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_sicredi_profile_when_tokens_match() -> None:
     text = """
     SICREDI
