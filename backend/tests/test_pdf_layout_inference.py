@@ -113,6 +113,106 @@ def test_infer_pdf_layout_marks_real_itau_complete_table_signature_as_high_confi
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_ignores_negative_keyword_inside_itau_transaction_body() -> None:
+    text = """
+    Itaú
+    Agência Conta Saldo total Limite da conta Utilizado Disponível
+    Lançamentos do período: 01/08/2025 até 31/08/2025
+    Data Lançamentos Razão Social CNPJ/CPF Valor (R$) Saldo (R$)
+    31/07/2025 SALDO ANTERIOR 14.600,37
+    01/08/2025 PAGAMENTO COMPROVANTE FORNECEDOR 12.345.678/0001-90 -419,69 14.180,68
+    02/08/2025 PIX RECEBIDO EMPRESA BETA 98.765.432/0001-10 43,96 14.224,64
+    Saldo da conta corrente
+    Descrição Valor (R$) Saldo (R$)
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "itau_empresas_extrato_completo_tabela_v1"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_keeps_negative_penalty_when_keyword_is_in_document_header() -> None:
+    text = """
+    Itaú Comprovante
+    Agência Conta Saldo total Limite da conta Utilizado Disponível
+    Lançamentos do período: 01/08/2025 até 31/08/2025
+    Data Lançamentos Razão Social CNPJ/CPF Valor (R$) Saldo (R$)
+    31/07/2025 SALDO ANTERIOR 14.600,37
+    01/08/2025 PIX RECEBIDO EMPRESA ALFA 12.345.678/0001-90 419,69 15.020,06
+    02/08/2025 PIX ENVIADO EMPRESA BETA 98.765.432/0001-10 -43,96 14.976,10
+    Saldo da conta corrente
+    Descrição Valor (R$) Saldo (R$)
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "itau_empresas_extrato_completo_tabela_v1"
+    assert 0.8 <= result.confidence < 0.9
+    assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_keeps_real_itau_transfer_receipt_profile() -> None:
+    text = """
+    Itaú 30 horas Comprovante de Transferência
+    dados do pagador nome do pagador CPF / CNPJ do pagador agência/conta
+    dados do recebedor nome do recebedor chave CPF / CNPJ do recebedor instituição
+    dados da transação
+    valor: R$ 4.000,00
+    data da transferência: 01/08/2025
+    tipo de pagamento: PIX TRANSFERENCIA
+    identificação no comprovante autenticação no comprovante
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "itau_comprovante_transferencia_pix_v1"
+    assert result.confidence >= 0.9
+    assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_ignores_counterparty_bank_name_inside_transaction_body() -> None:
+    text = """
+    Banco Itau S/A
+    ItauEmpresas
+    30 horas
+    Extrato de conta corrente
+    Nome:
+    Agencia:
+    Conta:
+    Posicao da Conta Corrente
+    01/10/2022 a 31/10/2022
+    Data Lancamento Valor (R$) Saldo (R$)
+    03/10 SALDO ANTERIOR 10,00
+    04/10 PIX PARA SANTANDER 9773 2.436,50
+    04/10 TAR 6381 122,00-
+    04/10 SDO 7.593,74
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "itau_empresas_extrato_30_horas_posicao_conta_corrente_v1"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_limits_negative_scope_when_extracted_text_has_no_line_breaks() -> None:
+    text = (
+        "Itaú Agência Conta Saldo total Limite da conta Utilizado Disponível "
+        "Lançamentos do período: 01/08/2025 até 31/08/2025 "
+        "Data Lançamentos Razão Social CNPJ/CPF Valor (R$) Saldo (R$) "
+        "31/07/2025 SALDO ANTERIOR 14.600,37 "
+        "01/08/2025 PAGAMENTO COMPROVANTE FORNECEDOR 12.345.678/0001-90 -419,69 14.180,68"
+    )
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "itau_empresas_extrato_completo_tabela_v1"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_falls_back_to_generic_profile() -> None:
     text = """
     01 JAN 2026
