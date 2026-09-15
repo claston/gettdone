@@ -17,6 +17,10 @@ layout_profile:
       - "Valor"
       - "Saldo por transação"
     optional_keywords:
+      - "Solicitado em"
+      - "Banco Inter"
+      - "Agência"
+      - "Conta"
       - "TED RECEBIDA"
       - "PIX RECEBIDO"
       - "PAGAMENTO DE TITULO"
