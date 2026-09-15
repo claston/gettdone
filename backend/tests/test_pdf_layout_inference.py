@@ -735,6 +735,29 @@ def test_infer_pdf_layout_prefers_sicredi_profile_when_tokens_match() -> None:
     assert result.confidence >= 0.5
 
 
+def test_infer_pdf_layout_prefers_sicredi_table_profile_with_counterparty_banks() -> None:
+    text = """
+    SICREDI
+    Associado EMPRESA EXEMPLO
+    Cooperativa 0101
+    Conta 12345-6
+    Extrato
+    Período de 01/04/2024 a 30/04/2024
+    Data Descrição Documento Valor (R$) Saldo (R$)
+    SALDO ANTERIOR 1.000,00
+    01/04/2024 RECEBIMENTO PIX PIX_CRED 100,00 1.100,00
+    02/04/2024 TRANSFERENCIA BANCO BRADESCO 50,00 1.150,00
+    03/04/2024 TRANSFERENCIA CAIXA 25,00 1.175,00
+    04/04/2024 TRANSFERENCIA BANCO INTER 10,00 1.185,00
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "sicredi_extrato_tabela_pix_cred_saldo_v1"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_sicredi_matricial_paisagem_profile() -> None:
     text = """
     COOP CRED, POUP E INV VALOR SUSTENTAVEL EXTRATO DE CONTA CORRENTE

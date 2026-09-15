@@ -1299,6 +1299,11 @@ def _parse_tabular_statement_rows(
     tabular_profile = resolve_tabular_profile(line_texts, layout_profile=layout_profile)
     column_positions = _resolve_tabular_column_positions(line_texts) if tabular_profile is not None else None
     opening_balance_anchor_index = _resolve_opening_balance_anchor_index(lines)
+    opening_running_balance = _resolve_tabular_opening_running_balance(
+        lines=lines,
+        anchor_index=opening_balance_anchor_index,
+        tabular_profile=tabular_profile,
+    )
     index = 0
     while index < len(lines):
         line = lines[index]
@@ -1331,6 +1336,7 @@ def _parse_tabular_statement_rows(
             parsed_row=parsed_row,
             is_candidate=is_candidate,
             candidates=candidates,
+            initial_running_balance=opening_running_balance,
         )
         index += max(1, consumed)
 
@@ -1348,6 +1354,29 @@ def _resolve_opening_balance_anchor_index(lines: list[_PdfLine]) -> int | None:
         ):
             return index
     return None
+
+
+def _resolve_tabular_opening_running_balance(
+    *,
+    lines: list[_PdfLine],
+    anchor_index: int | None,
+    tabular_profile: DeclarativeLayoutProfile | None,
+) -> float | None:
+    if anchor_index is None:
+        return None
+
+    anchor = lines[anchor_index]
+    amount_tokens = find_profile_tabular_amount_tokens(anchor.text, tabular_profile)
+    if amount_tokens:
+        return parse_pdf_amount(amount_tokens[-1].value)
+
+    following_index = anchor_index + 1
+    if following_index >= len(lines):
+        return None
+    following = lines[following_index]
+    if following.page_number != anchor.page_number or not is_amount_only_row(following.text):
+        return None
+    return parse_pdf_amount(following.text)
 
 
 def _resolve_tabular_column_role(
@@ -1714,17 +1743,29 @@ def _accumulate_tabular_row(
     parsed_row: _ParsedTransaction | None,
     is_candidate: bool,
     candidates: int,
+    initial_running_balance: float | None = None,
 ) -> int:
     next_candidates = candidates + 1 if is_candidate else candidates
     if parsed_row is not None:
-        transactions.append(_reconcile_tabular_amount_from_running_balance(parsed_row=parsed_row, transactions=transactions))
+        transactions.append(
+            _reconcile_tabular_amount_from_running_balance(
+                parsed_row=parsed_row,
+                transactions=transactions,
+                initial_running_balance=initial_running_balance if not transactions else None,
+            )
+        )
     return next_candidates
 
 
 def _reconcile_tabular_amount_from_running_balance(
-    *, parsed_row: _ParsedTransaction, transactions: list[_ParsedTransaction]
+    *,
+    parsed_row: _ParsedTransaction,
+    transactions: list[_ParsedTransaction],
+    initial_running_balance: float | None = None,
 ) -> _ParsedTransaction:
     previous_running_balance = _resolve_latest_running_balance(transactions)
+    if previous_running_balance is None:
+        previous_running_balance = initial_running_balance
     if previous_running_balance is None:
         return parsed_row
 
@@ -1744,15 +1785,25 @@ def _reconcile_tabular_amount_from_running_balance(
     if current_error <= 0.02:
         return parsed_row
 
+    amount_matches_balance_delta = abs(abs(current_amount) - abs(delta)) <= 0.02
+    if not parsed_row.has_explicit_amount_sign and amount_matches_balance_delta:
+        return _replace_parsed_transaction_amount(parsed_row=parsed_row, amount=delta)
+
     amount_looks_like_balance = abs(abs(current_amount) - abs(parsed_row.running_balance)) <= 0.05
     if not amount_looks_like_balance:
         return parsed_row
 
+    return _replace_parsed_transaction_amount(parsed_row=parsed_row, amount=delta)
+
+
+def _replace_parsed_transaction_amount(
+    *, parsed_row: _ParsedTransaction, amount: float
+) -> _ParsedTransaction:
     normalized_transaction = NormalizedTransaction(
         date=parsed_row.transaction.date,
         description=parsed_row.transaction.description,
-        amount=delta,
-        type="inflow" if delta >= 0 else "outflow",
+        amount=amount,
+        type="inflow" if amount >= 0 else "outflow",
     )
     return _ParsedTransaction(
         transaction=normalized_transaction,
