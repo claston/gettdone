@@ -20,6 +20,7 @@ class ParsedDocument:
     layout_inference_name: str | None = None
     layout_inference_confidence: float | None = None
     extracted_text: str | None = None
+    source_page_texts: tuple[str, ...] | None = None
     parse_metrics: dict[str, int | float | str] | None = None
     canonical_transactions: list[CanonicalTransaction] | None = None
     warning_types: list[list[str]] | None = None
@@ -97,6 +98,7 @@ class ParsingService:
                 layout_inference_name=result.layout.layout_name,
                 layout_inference_confidence=result.layout.confidence,
                 extracted_text=result.extracted_text,
+                source_page_texts=getattr(result, "source_page_texts", None),
                 parse_metrics=result.parse_metrics,
                 canonical_transactions=result.canonical_transactions,
             )

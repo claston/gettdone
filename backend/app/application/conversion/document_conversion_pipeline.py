@@ -220,6 +220,7 @@ class DocumentConversionPipeline:
                 prepared.preflight_policy.max_upload_size_bytes,
                 ocr_max_pages,
             )
+            page_texts: tuple[str, ...] | None = None
             if self.legacy_conversion_runner is not None:
                 conversion_response = self.legacy_conversion_runner(
                     filename=request.document.filename,
@@ -250,9 +251,11 @@ class DocumentConversionPipeline:
                 )
                 parsed_statement = self.statement_parser.parse(extracted_document=extracted_document)
                 parse_ms = round((monotonic() - parse_started_at) * 1000, 3)
+                parsed_document = resolve_legacy_parsed_statement(parsed_statement)
+                page_texts = parsed_document.source_page_texts
                 legacy_pipeline_result = self.processing_pipeline.run_parsed_document(
                     document=document,
-                    parsed_document=resolve_legacy_parsed_statement(parsed_statement),
+                    parsed_document=parsed_document,
                     analysis_id=resolved_analysis_id,
                     parse_ms=parse_ms,
                 )
@@ -276,6 +279,7 @@ class DocumentConversionPipeline:
                 prepared=prepared,
                 runtime=runtime,
                 conversion_response=conversion_response,
+                page_texts=page_texts,
             )
         except MaxPagesPerFileExceededError as exc:
             _apply_ocr_limit_context(
@@ -461,6 +465,7 @@ class DocumentConversionPipeline:
         prepared: PreparedDocumentConversion,
         runtime: DocumentConversionRuntime,
         conversion_response,
+        page_texts: tuple[str, ...] | None,
     ) -> ConversionPipelineResult:
         request = prepared.job
         identity = prepared.identity
@@ -495,6 +500,8 @@ class DocumentConversionPipeline:
             balance_failed=balance_failed_count,
             bank_name=getattr(analysis, "bank_name", None),
             bank_code=getattr(analysis, "bank_code", None),
+            page_texts=page_texts,
+            page_text_source="ocr" if effective_ocr_used else "parser",
         )
         conversion_model_label = resolve_conversion_model_label(
             layout_inference_name=getattr(analysis, "layout_inference_name", None),

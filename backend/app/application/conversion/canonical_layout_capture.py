@@ -15,6 +15,7 @@ from app.application.bank_catalog import load_bank_catalog, normalize_bank_code,
 from app.application.bank_identity import resolve_bank_name
 from app.application.conversion.uploaded_document import UploadedDocument
 from app.application.conversion_quality import ConversionQualityAssessment, assess_conversion_quality
+from app.application.errors import InvalidFileContentError
 
 logger = logging.getLogger(__name__)
 
@@ -135,10 +136,12 @@ class CanonicalLayoutGenerator:
         max_pages: int = 20,
         max_extracted_chars: int = 250_000,
         capture_id_provider: Callable[[], str] | None = None,
+        ocr_page_text_extractor: Callable[[bytes], list[str]] | None = None,
     ) -> None:
         self.max_pages = max(1, int(max_pages))
         self.max_extracted_chars = max(1, int(max_extracted_chars))
         self.capture_id_provider = capture_id_provider or (lambda: f"cap_{uuid4().hex[:24]}")
+        self.ocr_page_text_extractor = ocr_page_text_extractor
 
     def generate(
         self,
@@ -154,6 +157,8 @@ class CanonicalLayoutGenerator:
         balance_failed: int,
         bank_name: str | None = None,
         bank_code: str | None = None,
+        page_texts: tuple[str, ...] | list[str] | None = None,
+        page_text_source: str | None = None,
     ) -> CanonicalLayoutArtifact:
         if document.file_type != "pdf":
             raise CanonicalLayoutUnsupportedError("non_pdf")
@@ -167,7 +172,11 @@ class CanonicalLayoutGenerator:
             warning_count=warning_count,
             balance_failed=balance_failed,
         )
-        pages = self._read_pages(document.raw_bytes)
+        pages, text_source = self._read_pages(
+            document.raw_bytes,
+            page_texts=page_texts,
+            page_text_source=page_text_source,
+        )
         source_text = "\n".join(page["source_text"] for page in pages)
         if len(source_text) > self.max_extracted_chars:
             raise CanonicalLayoutUnsupportedError("native_text_too_large")
@@ -226,6 +235,7 @@ class CanonicalLayoutGenerator:
         manifest: dict[str, object] = {
             "schema_version": CANONICAL_LAYOUT_SCHEMA_VERSION,
             "privacy_validation_version": CANONICAL_PRIVACY_VALIDATION_VERSION,
+            "text_source": text_source,
             "bank": bank,
             "quality": _quality_manifest(assessment, layout_name=layout_name, selected_parser=selected_parser),
             "pages": manifest_pages,
@@ -243,7 +253,13 @@ class CanonicalLayoutGenerator:
             privacy_validated=True,
         )
 
-    def _read_pages(self, raw_bytes: bytes) -> list[dict[str, object]]:
+    def _read_pages(
+        self,
+        raw_bytes: bytes,
+        *,
+        page_texts: tuple[str, ...] | list[str] | None,
+        page_text_source: str | None,
+    ) -> tuple[list[dict[str, object]], str]:
         try:
             reader = PdfReader(BytesIO(raw_bytes))
             if reader.is_encrypted:
@@ -267,9 +283,29 @@ class CanonicalLayoutGenerator:
             raise
         except Exception as exc:
             raise CanonicalLayoutUnsupportedError("invalid_pdf") from exc
-        if not pages or not has_native_text:
+        if not pages:
             raise CanonicalLayoutUnsupportedError("native_text_unavailable")
-        return pages
+        if has_native_text:
+            return pages, "native"
+
+        fallback_page_texts = tuple(str(value or "") for value in (page_texts or ()))
+        fallback_source = "ocr" if str(page_text_source or "").strip().casefold() == "ocr" else "parser"
+        if not any(value.strip() for value in fallback_page_texts) and self.ocr_page_text_extractor is not None:
+            try:
+                fallback_page_texts = tuple(
+                    str(value or "") for value in self.ocr_page_text_extractor(raw_bytes)
+                )
+            except InvalidFileContentError:
+                fallback_page_texts = ()
+            fallback_source = "ocr"
+        if not any(value.strip() for value in fallback_page_texts):
+            raise CanonicalLayoutUnsupportedError("native_text_unavailable")
+        if len(fallback_page_texts) > len(pages):
+            raise CanonicalLayoutUnsupportedError("ocr_page_count_mismatch")
+        padded_page_texts = fallback_page_texts + ("",) * (len(pages) - len(fallback_page_texts))
+        for page, fallback_text in zip(pages, padded_page_texts, strict=True):
+            page["source_text"] = fallback_text
+        return pages, fallback_source
 
 
 class CanonicalLayoutCaptureService:

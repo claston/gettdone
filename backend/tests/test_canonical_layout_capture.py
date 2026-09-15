@@ -11,6 +11,7 @@ from app.application.conversion.canonical_layout_capture import (
     CanonicalLayoutPrivacyError,
 )
 from app.application.conversion.uploaded_document import ingest_uploaded_document
+from app.application.errors import InvalidFileContentError
 
 
 class _RecordingStore:
@@ -98,6 +99,7 @@ def test_generator_builds_new_pdf_without_source_identity_or_numbers() -> None:
     assert "SALDO" in extracted
     assert "DADO" in extracted
     assert artifact.manifest["schema_version"] == "1"
+    assert artifact.manifest["text_source"] == "native"
     assert artifact.manifest["quality"]["reason_codes"] == [
         "generic_layout",
         "layout_confidence_below_95",
@@ -308,6 +310,89 @@ def test_capture_skips_pdf_without_native_text() -> None:
     result = service.capture(
         document=ingest_uploaded_document("scanned.pdf", output.getvalue()),
         **_capture_kwargs(status="Falha", transactions_count=0, selected_parser=None),
+    )
+
+    assert result.status == "skipped_unsupported"
+    assert result.reason == "native_text_unavailable"
+
+
+def test_capture_reuses_ocr_page_texts_when_pdf_has_no_native_text() -> None:
+    writer = PdfWriter()
+    writer.add_blank_page(width=595, height=842)
+    output = BytesIO()
+    writer.write(output)
+    store = _RecordingStore()
+    generator = CanonicalLayoutGenerator(
+        capture_id_provider=lambda: "cap_0123456789abcdef01234567",
+        ocr_page_text_extractor=lambda _raw_bytes: pytest.fail("reused OCR text must avoid a second OCR pass"),
+    )
+    service = CanonicalLayoutCaptureService(enabled=True, generator=generator, store=store)
+
+    result = service.capture(
+        document=ingest_uploaded_document("scanned.pdf", output.getvalue()),
+        page_texts=("ITAU\nCLIENTE MARIA SILVA\nDATA HISTORICO VALOR\n10/09/2026 PIX 10,00",),
+        page_text_source="ocr",
+        **_capture_kwargs(),
+    )
+
+    assert result.status == "stored"
+    assert len(store.artifacts) == 1
+    artifact = store.artifacts[0]
+    assert artifact.manifest["text_source"] == "ocr"
+    assert len(artifact.manifest["pages"]) == 1
+    serialized = str(artifact.manifest).upper()
+    assert "MARIA" not in serialized
+    assert "SILVA" not in serialized
+    assert "10/09/2026" not in serialized
+    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(artifact.pdf_bytes)).pages)
+    assert "MARIA" not in extracted
+    assert "SILVA" not in extracted
+
+
+def test_generator_runs_second_ocr_pass_when_reused_page_texts_are_unavailable() -> None:
+    writer = PdfWriter()
+    writer.add_blank_page(width=595, height=842)
+    output = BytesIO()
+    writer.write(output)
+    calls: list[bytes] = []
+
+    def extract_with_ocr(raw_bytes: bytes) -> list[str]:
+        calls.append(raw_bytes)
+        return ["SANTANDER\nDATA HISTORICO VALOR\n10/09/2026 PIX 10,00"]
+
+    generator = CanonicalLayoutGenerator(
+        capture_id_provider=lambda: "cap_0123456789abcdef01234567",
+        ocr_page_text_extractor=extract_with_ocr,
+    )
+
+    artifact = generator.generate(
+        document=ingest_uploaded_document("scanned.pdf", output.getvalue()),
+        **_capture_kwargs(bank_name="Santander", bank_code="033"),
+    )
+
+    assert calls == [output.getvalue()]
+    assert artifact.manifest["text_source"] == "ocr"
+    assert artifact.manifest["bank"]["code"] == "033"
+
+
+def test_capture_keeps_native_text_unavailable_when_second_ocr_pass_cannot_run() -> None:
+    writer = PdfWriter()
+    writer.add_blank_page(width=595, height=842)
+    output = BytesIO()
+    writer.write(output)
+
+    def unavailable_ocr(_raw_bytes: bytes) -> list[str]:
+        raise InvalidFileContentError("OCR disabled")
+
+    service = CanonicalLayoutCaptureService(
+        enabled=True,
+        generator=CanonicalLayoutGenerator(ocr_page_text_extractor=unavailable_ocr),
+        store=_RecordingStore(),
+    )
+
+    result = service.capture(
+        document=ingest_uploaded_document("scanned.pdf", output.getvalue()),
+        **_capture_kwargs(),
     )
 
     assert result.status == "skipped_unsupported"

@@ -211,6 +211,7 @@ class FakeDocumentExtractor:
         return ExtractedDocument(
             source_document=document,
             extracted_text="2026-06-18 PIX RECEBIDO 150,00",
+            source_page_texts=("2026-06-18 PIX RECEBIDO 150,00",),
             metadata={
                 "legacy_parsed_document": ParsedDocument(
                     file_type=document.file_type,
@@ -223,10 +224,20 @@ class FakeDocumentExtractor:
                         )
                     ],
                     extracted_text="2026-06-18 PIX RECEBIDO 150,00",
+                    source_page_texts=("2026-06-18 PIX RECEBIDO 150,00",),
                     parse_metrics={"page_count": 1, "selected_parser": "grouped"},
                 )
             },
         )
+
+
+class FakeOcrDocumentExtractor(FakeDocumentExtractor):
+    def extract(self, **kwargs) -> ExtractedDocument:
+        result = super().extract(**kwargs)
+        on_ocr_progress = kwargs.get("on_ocr_progress")
+        assert on_ocr_progress is not None
+        on_ocr_progress(1, 1)
+        return result
 
 
 class FakeStatementParser:
@@ -247,6 +258,7 @@ class FakeStatementParser:
             ],
             extracted_document=extracted_document,
             extracted_text=extracted_document.extracted_text,
+            source_page_texts=extracted_document.source_page_texts,
             metadata=dict(extracted_document.metadata or {}),
         )
 
@@ -429,10 +441,47 @@ def test_non_clean_pdf_is_forwarded_to_best_effort_canonical_capture(caplog) -> 
     assert capture.calls[0]["selected_parser"] == "grouped"
     assert capture.calls[0]["bank_name"] == "Itau"
     assert capture.calls[0]["bank_code"] == "341"
+    assert capture.calls[0]["page_texts"] == ("2026-06-18 PIX RECEBIDO 150,00",)
+    assert capture.calls[0]["page_text_source"] == "parser"
     assert "identity" not in capture.calls[0]
     assert pipeline.access_control_service.recorded_user_conversions[-1]["canonical_capture_status"] == "stored"
     assert pipeline.access_control_service.recorded_user_conversions[-1]["canonical_capture_reason"] is None
     assert "canonical_layout_capture_result status=stored reason= storage=s3 sse=AES256" in caplog.text
+
+
+def test_ocr_page_texts_are_forwarded_to_canonical_capture_with_ocr_source() -> None:
+    staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
+    capture = RecordingCanonicalLayoutCapture()
+    pipeline = DocumentConversionPipeline(
+        report_service=FakeReportService(),
+        access_control_service=FakeAccessControlService(),
+        processing_pipeline=FakeProcessingPipeline(),
+        analysis_repository=FakeAnalysisRepository(),
+        document_extractor=FakeOcrDocumentExtractor(),
+        statement_parser=FakeStatementParser(),
+        canonical_layout_capture_service=capture,
+    )
+
+    response = pipeline.run(
+        document=UploadedDocument.from_staged_upload(
+            filename="scanned-statement.pdf",
+            staged_upload=UploadedDocumentStage(
+                path=staged_path,
+                size_bytes=staged_path.stat().st_size,
+                sha256_hex="abc123",
+            ),
+        ),
+        anonymous_fingerprint=None,
+        user_token="user-token",
+        authorization=None,
+        access_cookie_token=None,
+        scanned_likely=True,
+        estimated_pages_count=1,
+    )
+
+    assert response.status == ConversionPipelineStatus.COMPLETED
+    assert capture.calls[0]["page_texts"] == ("2026-06-18 PIX RECEBIDO 150,00",)
+    assert capture.calls[0]["page_text_source"] == "ocr"
 
 
 def test_free_inline_conversion_persists_canonical_capture_result() -> None:

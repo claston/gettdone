@@ -89,6 +89,7 @@ def _with_parse_observability(
         layout=result.layout,
         extracted_text=result.extracted_text,
         parse_metrics=parse_metrics,
+        source_page_texts=result.source_page_texts,
     )
 
 
@@ -182,6 +183,7 @@ def parse_pdf_transactions(
                     layout=fallback_result.layout,
                     extracted_text=fallback_result.extracted_text,
                     parse_metrics=fallback_metrics,
+                    source_page_texts=fallback_result.source_page_texts,
                 ),
                 textract_attempted=textract_attempted,
                 native_text_detected=native_text_detected,
@@ -310,6 +312,7 @@ def _retry_insufficient_native_text_with_ocr(
             layout=ocr_result.layout,
             extracted_text=ocr_result.extracted_text,
             parse_metrics=parse_metrics,
+            source_page_texts=ocr_result.source_page_texts,
         ),
         textract_attempted=textract_attempted,
         native_text_detected=native_text_detected,
@@ -370,6 +373,7 @@ def _retry_native_parse_failure_with_ocr(
             layout=ocr_result.layout,
             extracted_text=ocr_result.extracted_text,
             parse_metrics=parse_metrics,
+            source_page_texts=ocr_result.source_page_texts,
         ),
         textract_attempted=textract_attempted,
         native_text_detected=native_text_detected,
@@ -429,6 +433,7 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
             layout=text_mode_result.layout,
             extracted_text=text_mode_result.extracted_text,
             parse_metrics=text_mode_metrics,
+            source_page_texts=text_mode_result.source_page_texts,
         )
     adapted = adapt_textract_extraction_to_transactions(extraction)
     inferred_layout = infer_pdf_layout(adapted.extracted_text)
@@ -468,18 +473,23 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
         layout=inferred_layout,
         extracted_text=adapted.extracted_text,
         parse_metrics=parse_metrics,
+        source_page_texts=_textract_page_texts(extraction),
     )
 
 
-def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
-    page_texts = [
+def _textract_page_texts(extraction) -> tuple[str, ...]:
+    return tuple(
         "\n".join(
             line.text
             for line in sorted(page.lines, key=lambda value: value.line_index)
             if line.text
         )
         for page in extraction.pages
-    ]
+    )
+
+
+def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
+    page_texts = list(_textract_page_texts(extraction))
     if not any(page_texts):
         raise InvalidFileContentError("Nao foi possivel extrair transacoes do OCR para revisao.")
     try:
@@ -496,6 +506,7 @@ def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
                 "selected_parser": str(adapted.parse_metrics.get("selected_parser") or "textract_line_window"),
                 "parser_selection_reason": "textract_text_fallback",
             },
+            source_page_texts=tuple(page_texts),
         )
 
 
@@ -542,6 +553,7 @@ def _parse_pdf_transactions_from_page_texts(
             tabular_decision="not_applicable_layout_specific",
             columnar_decision="not_applicable_layout_specific",
             joined_text=joined_text,
+            source_page_texts=tuple(page_texts),
             page_count=len(page_texts),
             flattened_line_count=len(lines),
             invalid_date_candidates_skipped=invalid_date_candidates_skipped,
@@ -595,6 +607,7 @@ def _parse_pdf_transactions_from_page_texts(
         tabular_decision=tabular_decision,
         columnar_decision=columnar_decision,
         joined_text=joined_text,
+        source_page_texts=tuple(page_texts),
         page_count=len(page_texts),
         flattened_line_count=len(lines),
         invalid_date_candidates_skipped=invalid_date_candidates_skipped,
@@ -756,6 +769,7 @@ def _build_pdf_parse_result(
     tabular_decision: str,
     columnar_decision: str,
     joined_text: str,
+    source_page_texts: tuple[str, ...],
     page_count: int,
     flattened_line_count: int,
     invalid_date_candidates_skipped: int,
@@ -818,6 +832,7 @@ def _build_pdf_parse_result(
         layout=layout,
         extracted_text=joined_text,
         parse_metrics=parse_metrics,
+        source_page_texts=source_page_texts,
     )
 
 

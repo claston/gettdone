@@ -15,6 +15,7 @@ PdfParser = Callable[..., object]
 class ExtractedDocument:
     source_document: UploadedDocument
     extracted_text: str | None = None
+    source_page_texts: tuple[str, ...] | None = None
     layout_inference_name: str | None = None
     layout_inference_confidence: float | None = None
     metadata: dict[str, Any] | None = None
@@ -54,6 +55,7 @@ class LegacyParsingServiceDocumentExtractor:
         return ExtractedDocument(
             source_document=document,
             extracted_text=parsed_document.extracted_text,
+            source_page_texts=parsed_document.source_page_texts,
             layout_inference_name=parsed_document.layout_inference_name,
             layout_inference_confidence=parsed_document.layout_inference_confidence,
             metadata={

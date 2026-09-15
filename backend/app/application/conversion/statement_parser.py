@@ -24,6 +24,7 @@ class ParsedBankStatement:
     transactions: list[ParsedTransaction]
     extracted_document: ExtractedDocument
     extracted_text: str | None = None
+    source_page_texts: tuple[str, ...] | None = None
     layout_inference_name: str | None = None
     layout_inference_confidence: float | None = None
     metadata: dict[str, Any] | None = None
@@ -59,6 +60,7 @@ class LegacyExtractedDocumentStatementParser:
             transactions=transactions,
             extracted_document=extracted_document,
             extracted_text=parsed_document.extracted_text,
+            source_page_texts=parsed_document.source_page_texts,
             layout_inference_name=parsed_document.layout_inference_name,
             layout_inference_confidence=parsed_document.layout_inference_confidence,
             metadata={
@@ -94,6 +96,7 @@ def resolve_legacy_parsed_statement(parsed_statement: ParsedBankStatement) -> Pa
         layout_inference_name=parsed_statement.layout_inference_name,
         layout_inference_confidence=parsed_statement.layout_inference_confidence,
         extracted_text=parsed_statement.extracted_text,
+        source_page_texts=parsed_statement.source_page_texts,
         parse_metrics=metadata.get("parse_metrics"),
         canonical_transactions=canonical_transactions if isinstance(canonical_transactions, list) else None,
         warning_types=warning_types if isinstance(warning_types, list) else None,

@@ -34,6 +34,7 @@ def test_parse_pdf_transactions_preserves_complete_date_and_amount_candidates(
     assert result.transactions[0].date == expected_date
     assert result.transactions[0].description == expected_description
     assert result.transactions[0].amount == expected_amount
+    assert result.source_page_texts == (raw_line,)
 
 
 def test_parse_pdf_transactions_handles_banrisul_columnar_native_text() -> None:
@@ -476,12 +477,13 @@ def test_parse_pdf_transactions_skips_invalid_date_candidate_from_native_text(mo
 
 
 def test_parse_pdf_transactions_uses_ocr_fallback_when_enabled(monkeypatch) -> None:
+    ocr_text = "00/00/0000 LANCAMENTO INVALIDO 10,00\n10/04 PIX 10,00"
     monkeypatch.setenv("PDF_OCR_ENABLED", "true")
     monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [])
     monkeypatch.setattr(
         pdf_parser_module,
         "extract_pdf_page_texts_with_ocr",
-        lambda raw_bytes: ["00/00/0000 LANCAMENTO INVALIDO 10,00\n10/04 PIX 10,00"],
+        lambda raw_bytes: [ocr_text],
     )
 
     result = parse_pdf_transactions(b"%PDF synthetic")
@@ -489,6 +491,7 @@ def test_parse_pdf_transactions_uses_ocr_fallback_when_enabled(monkeypatch) -> N
     assert result.transactions[0].date == "2026-04-10"
     assert result.transactions[0].amount == 10.0
     assert result.parse_metrics["invalid_date_candidates_skipped"] == 1
+    assert result.source_page_texts == (ocr_text,)
 
 
 def test_parse_pdf_transactions_retries_with_ocr_when_native_text_is_empty(monkeypatch) -> None:
