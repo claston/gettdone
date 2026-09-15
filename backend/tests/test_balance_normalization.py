@@ -114,6 +114,47 @@ def test_uses_descending_running_balance_for_new_santander_empresarial_a4_layout
     )
 
 
+def test_annotate_balance_consistency_accumulates_transactions_between_sparse_balances() -> None:
+    canonical_transactions = [
+        CanonicalTransaction(
+            date="2024-01-02",
+            description="PIX RECEBIDO",
+            amount=100.0,
+            type="inflow",
+            layout_name="santander_statement_ptbr",
+            running_balance=1100.0,
+        ),
+        CanonicalTransaction(
+            date="2024-01-03",
+            description="PAGAMENTO",
+            amount=-20.0,
+            type="outflow",
+            layout_name="santander_statement_ptbr",
+        ),
+        CanonicalTransaction(
+            date="2024-01-03",
+            description="PIX RECEBIDO",
+            amount=50.0,
+            type="inflow",
+            layout_name="santander_statement_ptbr",
+        ),
+        CanonicalTransaction(
+            date="2024-01-03",
+            description="TARIFA",
+            amount=-10.0,
+            type="outflow",
+            layout_name="santander_statement_ptbr",
+            running_balance=1120.0,
+        ),
+    ]
+
+    checked_count, failed_count = annotate_balance_consistency(canonical_transactions)
+
+    assert checked_count == 1
+    assert failed_count == 0
+    assert canonical_transactions[-1].warnings == []
+
+
 def test_annotate_balance_consistency_supports_descending_santander_app_layout() -> None:
     layout_name = "santander_aplicativo_empresas_conta_corrente_extrato_v1"
     canonical_transactions = [

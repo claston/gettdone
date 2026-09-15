@@ -37,6 +37,8 @@ BR_PROFILE_TERMS: dict[str, tuple[tuple[str, float], ...]] = {
         ("BANCO SANTANDER", 0.3),
         ("EXTRATO DE CONTA CORRENTE", 0.22),
         ("HISTORICO DOCUMENTO VALOR", 0.16),
+        ("DATA DESCRICAO", 0.15),
+        ("MOVIMENTACAO", 0.12),
         ("CONTA CORRENTE", 0.12),
         ("AGENCIA", 0.08),
     ),

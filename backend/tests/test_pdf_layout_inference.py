@@ -144,6 +144,26 @@ def test_infer_pdf_layout_prefers_santander_profile_when_tokens_match() -> None:
     assert result.confidence >= 0.55
 
 
+def test_infer_pdf_layout_recognizes_santander_grouped_movement_header_with_high_confidence() -> None:
+    text = """
+    BANCO SANTANDER BRASIL S.A.
+    EXTRATO
+    AGÊNCIA 1234 CONTA CORRENTE 123456-7
+    MOVIMENTAÇÃO
+    DATA DESCRIÇÃO Nº DOCUMENTO VALOR R$ SALDO R$
+    SALDO EM 01/01 1.000,00
+    02/01 PIX RECEBIDO CLIENTE 123456 100,00
+    PAGAMENTO DE BOLETO 654321 40,00-
+    RESGATE AUTOMÁTICO 60,00 1.060,00
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "santander_statement_ptbr"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_does_not_penalize_santander_app_statement_with_boleto_rows() -> None:
     text = """
     Aplicativo Santander Empresas
