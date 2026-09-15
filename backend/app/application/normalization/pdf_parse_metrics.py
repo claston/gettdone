@@ -1,3 +1,8 @@
+_HIGH_CONFIDENCE_LAYOUT_SPECIFIC_PARSERS = {
+    "layout_specific_santander_statement",
+}
+
+
 def build_pdf_parse_metrics(
     *,
     page_count: int,
@@ -124,6 +129,8 @@ def _resolve_confidence_band(
             return "medium"
     if layout_used_fallback:
         return "medium"
+    if selected_parser in _HIGH_CONFIDENCE_LAYOUT_SPECIFIC_PARSERS:
+        return "high"
     if selected_parser != "inline":
         return "medium"
     if "conflict" in parser_selection_reason:

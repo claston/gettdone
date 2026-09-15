@@ -1217,6 +1217,76 @@ def test_parse_pdf_transactions_supports_descending_santander_app_statement_with
     assert result.parse_metrics["canonical_warning_count"] == 0
 
 
+def test_parse_pdf_transactions_supports_santander_grouped_daily_movements_with_sparse_balances() -> None:
+    text = """
+    BANCO SANTANDER BRASIL S.A.
+    EXTRATO
+    AGÊNCIA 1234 CONTA CORRENTE 123456-7
+    PERÍODO 01/01/2024 A 31/01/2024
+    MOVIMENTAÇÃO
+    DATA DESCRIÇÃO Nº DOCUMENTO VALOR R$ SALDO R$
+    SALDO EM 01/01 1.000,00
+    02/01 PIX RECEBIDO CLIENTE 123456 100,00
+    CLIENTE COMPLEMENTO
+    PAGAMENTO DE BOLETO 654321 40,00-
+    RESGATE AUTOMÁTICO 60,00 1.120,00
+    03/01 TARIFA BANCÁRIA 999999 10,00-
+    APLICAÇÃO AUTOMÁTICA 60,00- 1.050,00
+    SALDO EM 03/01 1.050,00
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert result.layout.layout_name == "santander_statement_ptbr"
+    assert result.layout.confidence >= 0.95
+    assert result.parse_metrics["selected_parser"] == "layout_specific_santander_statement"
+    assert [transaction.amount for transaction in result.transactions] == [100.0, -40.0, 60.0, -10.0, -60.0]
+    assert result.transactions[0].description == "PIX RECEBIDO CLIENTE CLIENTE COMPLEMENTO"
+    assert [row.running_balance for row in result.canonical_transactions] == [None, None, 1120.0, None, 1050.0]
+    assert result.parse_metrics["balance_consistency_checked"] == 1
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert result.parse_metrics["canonical_warning_count"] == 0
+    assert result.parse_metrics["confidence_band"] == "high"
+    assert result.parse_metrics["export_recommendation"] == "safe_to_export"
+
+
+def test_parse_pdf_transactions_upgrades_santander_grouped_statement_to_layout_text(monkeypatch) -> None:
+    native_text = """
+    BANCO SANTANDER BRASIL S.A.
+    EXTRATO
+    AGÊNCIA 1234 CONTA CORRENTE 123456-7
+    MOVIMENTAÇÃO
+    DATA DESCRIÇÃO Nº DOCUMENTO VALOR R$ SALDO R$
+    02/01 RESGATE AUTOMÁTICO 60,00 1.120,00
+    03/01 APLICAÇÃO AUTOMÁTICA 60,00- 1.050,00
+    SALDO EM 03/01 1.050,00
+    """
+    layout_text = """
+    BANCO SANTANDER BRASIL S.A.
+    EXTRATO
+    AGÊNCIA 1234 CONTA CORRENTE 123456-7
+    MOVIMENTAÇÃO
+    DATA DESCRIÇÃO Nº DOCUMENTO VALOR R$ SALDO R$
+    SALDO EM 01/01 1.000,00
+    02/01 PIX RECEBIDO CLIENTE 123456 100,00
+    PAGAMENTO DE BOLETO 654321 40,00-
+    RESGATE AUTOMÁTICO 60,00 1.120,00
+    03/01 TARIFA BANCÁRIA 999999 10,00-
+    APLICAÇÃO AUTOMÁTICA 60,00- 1.050,00
+    SALDO EM 03/01 1.050,00
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [layout_text])
+    monkeypatch.setattr(pdf_parser_module.text_extraction, "read_pdf_creation_month_year", lambda raw_bytes: (1, 2024))
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.parse_metrics["selected_parser"] == "layout_specific_santander_statement"
+    assert [transaction.amount for transaction in result.transactions] == [100.0, -40.0, 60.0, -10.0, -60.0]
+    assert result.parse_metrics["balance_consistency_checked"] == 1
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
 def test_parse_pdf_transactions_keeps_vangogh_grouped_multiline_descriptions_with_the_correct_rows() -> None:
     text = """
     Santander Van Gogh EXTRATO CONSOLIDADO
