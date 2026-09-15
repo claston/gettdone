@@ -151,6 +151,7 @@ def test_capture_factory_builds_aes256_s3_service_when_enabled() -> None:
     assert service.generator is not None
     assert service.generator.max_pages == 12
     assert service.generator.max_extracted_chars == 120_000
+    assert callable(service.generator.ocr_page_text_extractor)
     assert isinstance(service.store, S3CanonicalLayoutStore)
     assert service.store.bucket == "private-conversions"
     assert service.store.prefix == "canonical/candidates"

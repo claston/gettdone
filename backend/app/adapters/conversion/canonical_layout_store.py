@@ -10,6 +10,7 @@ from app.application.conversion.canonical_layout_capture import (
     CanonicalLayoutCaptureService,
     CanonicalLayoutGenerator,
 )
+from app.application.pdf_ocr import extract_pdf_page_texts_with_ocr
 
 _CAPTURE_ID_PATTERN = re.compile(r"^cap_[a-f0-9]{24}$")
 
@@ -109,6 +110,7 @@ def build_s3_canonical_layout_capture_service(
         generator=CanonicalLayoutGenerator(
             max_pages=max_pages,
             max_extracted_chars=max_extracted_chars,
+            ocr_page_text_extractor=extract_pdf_page_texts_with_ocr,
         ),
         store=S3CanonicalLayoutStore(
             bucket=bucket,

@@ -11,6 +11,7 @@ class PdfParseResult:
     extracted_text: str
     parse_metrics: dict[str, int | float | str]
     canonical_transactions: list[CanonicalTransaction] | None = None
+    source_page_texts: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
