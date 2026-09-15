@@ -24,7 +24,30 @@ def extract_pdf_page_texts_with_ocr(
     raw_bytes: bytes,
     on_progress: Callable[[int, int], None] | None = None,
 ) -> list[str]:
-    if not is_pdf_ocr_enabled():
+    return _extract_pdf_page_texts_with_ocr(raw_bytes, on_progress=on_progress)
+
+
+def extract_pdf_first_page_header_text_with_ocr(raw_bytes: bytes) -> str:
+    texts = _extract_pdf_page_texts_with_ocr(
+        raw_bytes,
+        page_indexes=(0,),
+        crop_top_ratio=_get_bank_header_ocr_crop_ratio(),
+        enforce_document_page_limit=False,
+        require_pdf_ocr_enabled=False,
+    )
+    return texts[0] if texts else ""
+
+
+def _extract_pdf_page_texts_with_ocr(
+    raw_bytes: bytes,
+    *,
+    on_progress: Callable[[int, int], None] | None = None,
+    page_indexes: tuple[int, ...] | None = None,
+    crop_top_ratio: float | None = None,
+    enforce_document_page_limit: bool = True,
+    require_pdf_ocr_enabled: bool = True,
+) -> list[str]:
+    if require_pdf_ocr_enabled and not is_pdf_ocr_enabled():
         raise InvalidFileContentError(PDF_OCR_DISABLED_MESSAGE)
     _enforce_pdf_ocr_file_size_limit(raw_bytes)
     _acquire_ocr_slot_or_raise()
@@ -68,7 +91,7 @@ def extract_pdf_page_texts_with_ocr(
 
     try:
         max_pages = _get_pdf_ocr_max_pages()
-        if len(document) > max_pages:
+        if enforce_document_page_limit and len(document) > max_pages:
             raise InvalidFileContentError(
                 f"OCR fallback is limited to {max_pages} pages to protect memory usage. "
                 "Try a smaller PDF or disable OCR fallback."
@@ -76,8 +99,11 @@ def extract_pdf_page_texts_with_ocr(
 
         texts: list[str] = []
         render_dpi = _get_pdf_ocr_render_dpi()
-        total_pages = len(document)
-        for page_index in range(total_pages):
+        selected_page_indexes = page_indexes if page_indexes is not None else tuple(range(len(document)))
+        if any(page_index < 0 or page_index >= len(document) for page_index in selected_page_indexes):
+            return []
+        total_pages = len(selected_page_indexes)
+        for progress_index, page_index in enumerate(selected_page_indexes, start=1):
             page = None
             bitmap = None
             image = None
@@ -85,6 +111,17 @@ def extract_pdf_page_texts_with_ocr(
                 page = document[page_index]
                 bitmap = page.render(scale=render_dpi / 72)
                 image = bitmap.to_pil()
+                if crop_top_ratio is not None:
+                    cropped_image = image.crop(
+                        (
+                            0,
+                            0,
+                            image.width,
+                            max(1, int(image.height * crop_top_ratio)),
+                        )
+                    )
+                    image.close()
+                    image = cropped_image
                 if engine == "tesseract":
                     text = (
                         _image_to_string_with_timeout(
@@ -105,9 +142,8 @@ def extract_pdf_page_texts_with_ocr(
                         or ""
                     ).strip()
                 if on_progress is not None:
-                    on_progress(page_index + 1, total_pages)
-                if text:
-                    texts.append(text)
+                    on_progress(progress_index, total_pages)
+                texts.append(text)
             except Exception as exc:
                 raise InvalidFileContentError(f"OCR failed while processing PDF pages: {exc}") from exc
             finally:
@@ -130,6 +166,17 @@ def extract_pdf_page_texts_with_ocr(
         except Exception:
             pass
         _get_ocr_semaphore().release()
+
+
+def _get_bank_header_ocr_crop_ratio() -> float:
+    raw = os.getenv("CANONICAL_LAYOUT_BANK_OCR_HEADER_RATIO", "").strip()
+    if not raw:
+        return 0.35
+    try:
+        value = float(raw)
+    except ValueError:
+        return 0.35
+    return max(0.15, min(0.60, value))
 
 
 def _get_pdf_ocr_max_pages() -> int:

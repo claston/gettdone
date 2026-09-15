@@ -648,7 +648,16 @@ class DocumentConversionPipeline:
             "not_attempted",
             "pre_parser_failure",
         )
-        if parse_observability:
+        failure_capture_enabled = bool(
+            getattr(self.canonical_layout_capture_service, "failure_capture_enabled", False)
+        )
+        if parse_observability or (
+            failure_capture_enabled
+            and _is_canonical_failure_capture_eligible(
+                document=request.document,
+                error_stage=error_stage,
+            )
+        ):
             canonical_capture_result = self._capture_canonical_layout(
                 document=request.document,
                 status="Falha",
@@ -828,6 +837,14 @@ def _resolve_failed_conversion_code(exc: Exception) -> str:
     if "text" in detail or "ocr" in detail:
         return "insufficient_text"
     return "processing_failed"
+
+
+def _is_canonical_failure_capture_eligible(
+    *,
+    document: UploadedDocument,
+    error_stage: str | None,
+) -> bool:
+    return document.file_type == "pdf" and str(error_stage or "").strip().casefold() in {"parse", "ocr"}
 
 
 def _is_likely_corrupted_pdf_detail(detail: str) -> bool:

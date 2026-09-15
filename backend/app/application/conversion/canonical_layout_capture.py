@@ -137,11 +137,15 @@ class CanonicalLayoutGenerator:
         max_extracted_chars: int = 250_000,
         capture_id_provider: Callable[[], str] | None = None,
         ocr_page_text_extractor: Callable[[bytes], list[str]] | None = None,
+        bank_header_ocr_enabled: bool = False,
+        bank_header_ocr_extractor: Callable[[bytes], str] | None = None,
     ) -> None:
         self.max_pages = max(1, int(max_pages))
         self.max_extracted_chars = max(1, int(max_extracted_chars))
         self.capture_id_provider = capture_id_provider or (lambda: f"cap_{uuid4().hex[:24]}")
         self.ocr_page_text_extractor = ocr_page_text_extractor
+        self.bank_header_ocr_enabled = bool(bank_header_ocr_enabled)
+        self.bank_header_ocr_extractor = bank_header_ocr_extractor
 
     def generate(
         self,
@@ -186,6 +190,27 @@ class CanonicalLayoutGenerator:
             layout_name=layout_name,
             source_text=source_text,
         )
+        if (
+            str(bank.get("detection_source") or "") == "unresolved"
+            and text_source != "ocr"
+            and self.bank_header_ocr_enabled
+            and self.bank_header_ocr_extractor is not None
+        ):
+            try:
+                header_text = str(self.bank_header_ocr_extractor(document.raw_bytes) or "")
+            except Exception as exc:  # identity OCR is best effort and must not discard a native capture
+                logger.info(
+                    "canonical_layout_bank_header_ocr_failed error_type=%s",
+                    exc.__class__.__name__,
+                )
+            else:
+                bank = _bank_manifest(
+                    bank_name=None,
+                    bank_code=None,
+                    layout_name=None,
+                    source_text=header_text,
+                    text_detection_source="ocr_first_page_header",
+                )
         institution_tokens = _institution_tokens(bank)
 
         manifest_pages: list[dict[str, object]] = []
@@ -315,10 +340,12 @@ class CanonicalLayoutCaptureService:
         enabled: bool,
         generator: CanonicalLayoutGenerator | None = None,
         store: CanonicalLayoutStore | None = None,
+        failure_capture_enabled: bool = False,
     ) -> None:
         self.enabled = bool(enabled)
         self.generator = generator
         self.store = store
+        self.failure_capture_enabled = bool(failure_capture_enabled)
         if self.enabled and (self.generator is None or self.store is None):
             raise ValueError("Enabled canonical layout capture requires a generator and store.")
 
@@ -419,6 +446,7 @@ def _bank_manifest(
     bank_code: str | None,
     layout_name: str | None,
     source_text: str,
+    text_detection_source: str = "header",
 ) -> dict[str, object]:
     detection_source = "conversion"
     resolved_name = _safe_institution_name(bank_name)
@@ -432,7 +460,7 @@ def _bank_manifest(
         resolved_name = _safe_institution_name(
             resolve_bank_name(layout_inference_name=None, extracted_text=source_text)
         )
-        detection_source = "header"
+        detection_source = text_detection_source
     if resolved_name is None and resolved_code is None:
         return {
             "code": None,
