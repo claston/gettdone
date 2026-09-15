@@ -37,3 +37,7 @@ def test_resolve_bank_code_from_banco_nordeste_periodo_a4_layout_profile() -> No
 
 def test_resolve_bank_code_from_banco_nordeste_fundos_rentabilidade_layout_profile() -> None:
     assert resolve_bank_code(layout_inference_name="banco_do_nordeste_fundos_investimentos_rentabilidade_v1") == "004"
+
+
+def test_resolve_bank_code_from_banco_pan_statement_layout_profile() -> None:
+    assert resolve_bank_code(layout_inference_name="banco_pan_extrato_conta_pix_saldo_v1") == "623"

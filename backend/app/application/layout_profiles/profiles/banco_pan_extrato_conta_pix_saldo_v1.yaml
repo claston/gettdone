@@ -1,0 +1,111 @@
+layout_profile:
+  schema_version: 2
+  profile_name: banco_pan_extrato_conta_pix_saldo_v1
+  bank: Banco Pan
+  layout_family: banco_pan_extrato_conta_pix_saldo
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Período do extrato"
+      - "Saldo nesse período"
+      - "Entrou na sua conta"
+      - "Saiu da sua conta"
+      - "Agência"
+      - "Conta"
+      - "Extrato de"
+      - "Suas movimentações"
+      - "Crédito Pix"
+      - "Débito Pix"
+      - "Pix recebido"
+      - "Pix enviado"
+    optional_keywords:
+      - "Esse é o seu extrato"
+      - "da sua conta Pan"
+      - "Pagamentos feitos"
+      - "Transferências feitas"
+      - "Saques feitos"
+      - "Total em tarifas"
+      - "Extrato emitido em"
+      - "Página"
+    negative_keywords:
+      - "Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA"
+      - "Itaú"
+      - "Nubank"
+      - "Banco Inter"
+      - "SICOOB"
+      - "Sicredi"
+    min_score_hint: 0.9
+  table_detection:
+    header_keywords:
+      - "Agência"
+      - "Conta"
+      - "Extrato de"
+      - "Suas movimentações"
+      - "Extrato emitido em"
+    expected_column_order:
+      - date
+      - transaction_id
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Crédito Pix"
+        - "Débito Pix"
+        - "Pix recebido"
+        - "Pix enviado"
+      document:
+        - "ID"
+        - "Identificador"
+      amount:
+        - "Valor"
+        - "R$"
+      balance:
+        - "Saldo"
+    table_starts_after:
+      - "Suas movimentações"
+    row_separator_hint: "transaction row starts with dd/MM and a numeric transaction id; amount and running balance are right-aligned"
+  parsing:
+    date_formats:
+      - "dd/MM/yyyy"
+      - "dd/MM"
+    date_year_source: "statement_period"
+    month_language: "pt-BR"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "- R$ {amount}"
+      - "-R$ {amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "+ R$ {amount}"
+      - "+R$ {amount}"
+      - "+{amount}"
+    ignore_rows:
+      - "Período do extrato"
+      - "Saldo nesse período"
+      - "Entrou na sua conta"
+      - "Saiu da sua conta"
+      - "Pagamentos feitos"
+      - "Transferências feitas"
+      - "Saques feitos"
+      - "Total em tarifas"
+      - "Suas movimentações"
+      - "Extrato emitido em"
+      - "Esse é o resumo"
+    opening_balance_rows: []
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - balance
+      - transaction_id

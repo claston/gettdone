@@ -1,6 +1,7 @@
 from app.application.models import CanonicalTransaction
 
 _DESCENDING_RUNNING_BALANCE_LAYOUTS = {
+    "banco_pan_extrato_conta_pix_saldo_v1",
     "stone_extrato_conta_corrente_a4_v1",
     "santander_aplicativo_empresas_conta_corrente_extrato_v1",
     "santander_internet_banking_empresarial_movimentacao_a4_data_historico_valor_v1",

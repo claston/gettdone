@@ -114,6 +114,10 @@ def test_uses_descending_running_balance_for_new_santander_empresarial_a4_layout
     )
 
 
+def test_uses_descending_running_balance_for_banco_pan_statement_layout() -> None:
+    assert uses_descending_running_balance("banco_pan_extrato_conta_pix_saldo_v1") is True
+
+
 def test_annotate_balance_consistency_accumulates_transactions_between_sparse_balances() -> None:
     canonical_transactions = [
         CanonicalTransaction(
