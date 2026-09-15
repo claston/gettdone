@@ -2,6 +2,8 @@ import logging
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from app.application.access_control import IdentityContext
 from app.application.conversion.conversion_document_store import ConversionDocumentReference
 from app.application.conversion.conversion_job import ConversionExecutionHooks, ConversionJob
@@ -15,6 +17,7 @@ from app.application.conversion.document_preflight_service import DocumentPrefli
 from app.application.conversion.statement_parser import ParsedBankStatement, ParsedTransaction
 from app.application.conversion.uploaded_document import UploadedDocument, UploadedDocumentStage
 from app.application.conversion_pipeline import ConversionPipelineResult, OperationalPipelineSummary
+from app.application.errors import InvalidFileContentError
 from app.application.models import AnalysisData, NormalizedTransaction, TransactionRow
 from app.application.parsers.service import ParsedDocument
 
@@ -273,8 +276,9 @@ class RecordingDocumentPreflightService(DocumentPreflightService):
 
 
 class RecordingCanonicalLayoutCapture:
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(self, *, fail: bool = False, failure_capture_enabled: bool = False) -> None:
         self.fail = fail
+        self.failure_capture_enabled = failure_capture_enabled
         self.calls: list[dict[str, object]] = []
 
     def capture(self, *, document, **quality_values):
@@ -282,6 +286,13 @@ class RecordingCanonicalLayoutCapture:
         if self.fail:
             raise RuntimeError("capture must not fail conversion")
         return SimpleNamespace(status="stored", reason=None)
+
+
+class FailingDocumentExtractor:
+    def extract(self, **_kwargs) -> ExtractedDocument:
+        raise InvalidFileContentError(
+            "No recognizable transaction row pattern. missing_signals=transaction_row_pattern"
+        )
 
 
 def test_conversion_job_captures_preflight_flags() -> None:
@@ -556,6 +567,48 @@ def test_canonical_capture_exception_does_not_fail_conversion() -> None:
     assert response.status == ConversionPipelineStatus.COMPLETED
     assert access_control_service.recorded_user_conversions[-1]["canonical_capture_status"] == "boundary_failed"
     assert access_control_service.recorded_user_conversions[-1]["canonical_capture_reason"] == "RuntimeError"
+
+
+def test_parser_failure_without_observability_is_forwarded_to_canonical_capture() -> None:
+    staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
+    capture = RecordingCanonicalLayoutCapture(failure_capture_enabled=True)
+    access_control_service = FakeAccessControlService()
+    pipeline = DocumentConversionPipeline(
+        report_service=FakeReportService(),
+        access_control_service=access_control_service,
+        processing_pipeline=FakeProcessingPipeline(),
+        analysis_repository=FakeAnalysisRepository(),
+        document_extractor=FailingDocumentExtractor(),
+        statement_parser=FakeStatementParser(),
+        canonical_layout_capture_service=capture,
+    )
+
+    with pytest.raises(InvalidFileContentError, match="No recognizable transaction row pattern"):
+        pipeline.run(
+            document=UploadedDocument.from_staged_upload(
+                filename="statement.pdf",
+                staged_upload=UploadedDocumentStage(
+                    path=staged_path,
+                    size_bytes=staged_path.stat().st_size,
+                    sha256_hex="abc123",
+                ),
+            ),
+            anonymous_fingerprint=None,
+            user_token="user-token",
+            authorization=None,
+            access_cookie_token=None,
+            scanned_likely=False,
+            estimated_pages_count=1,
+        )
+
+    assert len(capture.calls) == 1
+    assert capture.calls[0]["status"] == "Falha"
+    assert capture.calls[0]["transactions_count"] == 0
+    assert capture.calls[0]["layout_name"] is None
+    assert capture.calls[0]["selected_parser"] is None
+    recorded = access_control_service.recorded_user_conversions[-1]
+    assert recorded["canonical_capture_status"] == "stored"
+    assert recorded["canonical_capture_reason"] is None
 
 
 def test_async_job_materializes_missing_preflight_before_recording_conversion() -> None:

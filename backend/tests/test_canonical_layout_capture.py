@@ -130,6 +130,114 @@ def test_generator_preserves_catalog_bank_as_explicit_manifest_identity() -> Non
     }
 
 
+def test_generator_uses_first_page_header_ocr_when_native_text_does_not_identify_bank() -> None:
+    source = _text_pdf(
+        "CONTA CORRENTE",
+        "CLIENTE MARIA SILVA",
+        "DATA HISTORICO VALOR",
+        "10/09/2026 PIX 10,00",
+    )
+    calls: list[bytes] = []
+
+    def extract_header(raw_bytes: bytes) -> str:
+        calls.append(raw_bytes)
+        return "SANTANDER\nCONTA CORRENTE"
+
+    generator = CanonicalLayoutGenerator(
+        capture_id_provider=lambda: "cap_0123456789abcdef01234567",
+        bank_header_ocr_enabled=True,
+        bank_header_ocr_extractor=extract_header,
+    )
+
+    artifact = generator.generate(
+        document=ingest_uploaded_document("statement.pdf", source),
+        **_capture_kwargs(),
+    )
+
+    assert calls == [source]
+    assert artifact.manifest["text_source"] == "native"
+    assert artifact.manifest["bank"] == {
+        "code": "033",
+        "name": "Santander",
+        "catalog_match": True,
+        "detection_source": "ocr_first_page_header",
+    }
+
+
+def test_generator_does_not_run_header_ocr_when_native_text_identifies_bank() -> None:
+    source = _text_pdf(
+        "ITAU",
+        "DATA HISTORICO VALOR",
+        "10/09/2026 PIX 10,00",
+    )
+    generator = CanonicalLayoutGenerator(
+        capture_id_provider=lambda: "cap_0123456789abcdef01234567",
+        bank_header_ocr_enabled=True,
+        bank_header_ocr_extractor=lambda _raw_bytes: pytest.fail("known bank must not trigger header OCR"),
+    )
+
+    artifact = generator.generate(
+        document=ingest_uploaded_document("statement.pdf", source),
+        **_capture_kwargs(),
+    )
+
+    assert artifact.manifest["bank"]["code"] == "341"
+    assert artifact.manifest["bank"]["detection_source"] == "header"
+
+
+def test_generator_keeps_native_capture_when_header_ocr_fails() -> None:
+    source = _text_pdf(
+        "CONTA CORRENTE",
+        "DATA HISTORICO VALOR",
+        "10/09/2026 PIX 10,00",
+    )
+
+    def unavailable_header_ocr(_raw_bytes: bytes) -> str:
+        raise InvalidFileContentError("OCR unavailable")
+
+    generator = CanonicalLayoutGenerator(
+        capture_id_provider=lambda: "cap_0123456789abcdef01234567",
+        bank_header_ocr_enabled=True,
+        bank_header_ocr_extractor=unavailable_header_ocr,
+    )
+
+    artifact = generator.generate(
+        document=ingest_uploaded_document("statement.pdf", source),
+        **_capture_kwargs(),
+    )
+
+    assert artifact.manifest["text_source"] == "native"
+    assert artifact.manifest["bank"] == {
+        "code": None,
+        "name": "unknown",
+        "catalog_match": False,
+        "detection_source": "unresolved",
+    }
+
+
+def test_generator_does_not_persist_unrecognized_header_ocr_text() -> None:
+    source = _text_pdf(
+        "CONTA CORRENTE",
+        "DATA HISTORICO VALOR",
+        "10/09/2026 PIX 10,00",
+    )
+    generator = CanonicalLayoutGenerator(
+        capture_id_provider=lambda: "cap_0123456789abcdef01234567",
+        bank_header_ocr_enabled=True,
+        bank_header_ocr_extractor=lambda _raw_bytes: "MARIA SILVA",
+    )
+
+    artifact = generator.generate(
+        document=ingest_uploaded_document("statement.pdf", source),
+        **_capture_kwargs(),
+    )
+
+    serialized = str(artifact.manifest).upper()
+    assert artifact.manifest["bank"]["detection_source"] == "unresolved"
+    assert "MARIA" not in serialized
+    assert "SILVA" not in serialized
+
+
 def test_generator_preserves_unlisted_cooperative_identity_but_not_holder() -> None:
     source = _text_pdf(
         "COOPERATIVA DE CREDITO VALE VERDE",
@@ -296,6 +404,40 @@ def test_capture_reports_safe_aws_error_code_without_error_message(caplog) -> No
     assert "secret" not in caplog.text
 
 
+def test_capture_stores_valid_pdf_when_parser_found_no_transactions() -> None:
+    source = _text_pdf(
+        "CONTA CORRENTE",
+        "DATA HISTORICO VALOR SALDO",
+        "MOVIMENTACAO EM FORMATO DESCONHECIDO",
+    )
+    store = _RecordingStore()
+    service = CanonicalLayoutCaptureService(
+        enabled=True,
+        generator=CanonicalLayoutGenerator(
+            capture_id_provider=lambda: "cap_0123456789abcdef01234567"
+        ),
+        store=store,
+        failure_capture_enabled=True,
+    )
+
+    result = service.capture(
+        document=ingest_uploaded_document("statement.pdf", source),
+        **_capture_kwargs(
+            status="Falha",
+            transactions_count=0,
+            layout_name=None,
+            layout_confidence=None,
+            selected_parser=None,
+        ),
+    )
+
+    assert result.status == "stored"
+    assert len(store.artifacts) == 1
+    artifact = store.artifacts[0]
+    assert artifact.manifest["quality"]["status"] == "failed"
+    assert artifact.manifest["quality"]["reason_codes"] == ["technical_failure"]
+
+
 def test_capture_skips_pdf_without_native_text() -> None:
     writer = PdfWriter()
     writer.add_blank_page(width=595, height=842)
@@ -363,11 +505,15 @@ def test_generator_runs_second_ocr_pass_when_reused_page_texts_are_unavailable()
     generator = CanonicalLayoutGenerator(
         capture_id_provider=lambda: "cap_0123456789abcdef01234567",
         ocr_page_text_extractor=extract_with_ocr,
+        bank_header_ocr_enabled=True,
+        bank_header_ocr_extractor=lambda _raw_bytes: pytest.fail(
+            "full-page OCR text must be reused for bank detection"
+        ),
     )
 
     artifact = generator.generate(
         document=ingest_uploaded_document("scanned.pdf", output.getvalue()),
-        **_capture_kwargs(bank_name="Santander", bank_code="033"),
+        **_capture_kwargs(),
     )
 
     assert calls == [output.getvalue()]

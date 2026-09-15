@@ -145,6 +145,8 @@ def test_capture_factory_builds_aes256_s3_service_when_enabled() -> None:
         region="sa-east-1",
         max_pages=12,
         max_extracted_chars=120_000,
+        bank_header_ocr_enabled=True,
+        failure_capture_enabled=True,
     )
 
     assert service.enabled is True
@@ -152,6 +154,9 @@ def test_capture_factory_builds_aes256_s3_service_when_enabled() -> None:
     assert service.generator.max_pages == 12
     assert service.generator.max_extracted_chars == 120_000
     assert callable(service.generator.ocr_page_text_extractor)
+    assert service.generator.bank_header_ocr_enabled is True
+    assert callable(service.generator.bank_header_ocr_extractor)
+    assert service.failure_capture_enabled is True
     assert isinstance(service.store, S3CanonicalLayoutStore)
     assert service.store.bucket == "private-conversions"
     assert service.store.prefix == "canonical/candidates"

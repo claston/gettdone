@@ -10,7 +10,10 @@ from app.application.conversion.canonical_layout_capture import (
     CanonicalLayoutCaptureService,
     CanonicalLayoutGenerator,
 )
-from app.application.pdf_ocr import extract_pdf_page_texts_with_ocr
+from app.application.pdf_ocr import (
+    extract_pdf_first_page_header_text_with_ocr,
+    extract_pdf_page_texts_with_ocr,
+)
 
 _CAPTURE_ID_PATTERN = re.compile(r"^cap_[a-f0-9]{24}$")
 
@@ -102,6 +105,8 @@ def build_s3_canonical_layout_capture_service(
     region: str | None = None,
     max_pages: int = 20,
     max_extracted_chars: int = 250_000,
+    bank_header_ocr_enabled: bool = False,
+    failure_capture_enabled: bool = False,
 ) -> CanonicalLayoutCaptureService:
     if not enabled:
         return CanonicalLayoutCaptureService(enabled=False)
@@ -111,10 +116,13 @@ def build_s3_canonical_layout_capture_service(
             max_pages=max_pages,
             max_extracted_chars=max_extracted_chars,
             ocr_page_text_extractor=extract_pdf_page_texts_with_ocr,
+            bank_header_ocr_enabled=bank_header_ocr_enabled,
+            bank_header_ocr_extractor=extract_pdf_first_page_header_text_with_ocr,
         ),
         store=S3CanonicalLayoutStore(
             bucket=bucket,
             prefix=prefix,
             region=region,
         ),
+        failure_capture_enabled=failure_capture_enabled,
     )

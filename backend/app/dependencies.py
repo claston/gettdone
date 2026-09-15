@@ -347,6 +347,14 @@ def get_canonical_layout_capture_service() -> CanonicalLayoutCaptureService:
             max_extracted_chars=int(
                 os.getenv("CANONICAL_LAYOUT_CAPTURE_MAX_EXTRACTED_CHARS", "250000")
             ),
+            bank_header_ocr_enabled=read_bool_env(
+                "CANONICAL_LAYOUT_BANK_OCR_ENABLED",
+                default=False,
+            ),
+            failure_capture_enabled=read_bool_env(
+                "CANONICAL_LAYOUT_FAILURE_CAPTURE_ENABLED",
+                default=False,
+            ),
         )
     return _canonical_layout_capture_service
 

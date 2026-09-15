@@ -28,6 +28,8 @@ def test_dependency_uses_existing_conversion_bucket_and_dedicated_prefix(
     monkeypatch.setenv("CANONICAL_LAYOUT_CAPTURE_ENABLED", "true")
     monkeypatch.setenv("CONVERSION_S3_BUCKET", "gettdone-conversions")
     monkeypatch.setenv("CANONICAL_LAYOUT_CAPTURE_S3_PREFIX", "private/canonical/v1")
+    monkeypatch.setenv("CANONICAL_LAYOUT_BANK_OCR_ENABLED", "true")
+    monkeypatch.setenv("CANONICAL_LAYOUT_FAILURE_CAPTURE_ENABLED", "true")
     monkeypatch.setenv("AWS_REGION", "sa-east-1")
 
     service = dependencies.get_canonical_layout_capture_service()
@@ -37,3 +39,6 @@ def test_dependency_uses_existing_conversion_bucket_and_dedicated_prefix(
     assert service.store.bucket == "gettdone-conversions"
     assert service.store.prefix == "private/canonical/v1"
     assert service.store.region == "sa-east-1"
+    assert service.generator is not None
+    assert service.generator.bank_header_ocr_enabled is True
+    assert service.failure_capture_enabled is True
