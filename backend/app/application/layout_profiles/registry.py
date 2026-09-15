@@ -70,11 +70,20 @@ def get_layout_profile(profile_name: str | None) -> DeclarativeLayoutProfile | N
     return None
 
 
-def score_layout_profile(profile: DeclarativeLayoutProfile, normalized_text: str, *, structure_score: float = 0.0) -> float:
+def score_layout_profile(
+    profile: DeclarativeLayoutProfile,
+    normalized_text: str,
+    *,
+    structure_score: float = 0.0,
+    negative_evidence_text: str | None = None,
+) -> float:
     required_hits, required_ratio = _keyword_hits(profile.required_keywords, normalized_text)
     optional_hits, optional_ratio = _keyword_hits(profile.optional_keywords, normalized_text)
     header_hits, header_ratio = _keyword_hits(profile.header_keywords, normalized_text)
-    negative_hits, _negative_ratio = _keyword_hits(profile.negative_keywords, normalized_text)
+    negative_hits, _negative_ratio = _keyword_hits(
+        profile.negative_keywords,
+        normalized_text if negative_evidence_text is None else negative_evidence_text,
+    )
 
     if required_hits == 0 and header_hits == 0:
         return 0.0

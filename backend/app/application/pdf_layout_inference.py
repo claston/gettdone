@@ -14,6 +14,11 @@ SPECIFIC_PROFILE_MIN_SCORE = 0.5
 SPECIFIC_PROFILE_MIN_MARGIN = 0.05
 SPECIFIC_PROFILE_HIGH_CONFIDENCE = 0.7
 ANCHOR_MISS_MULTIPLIER = 0.45
+NEGATIVE_EVIDENCE_MAX_LINES = 20
+NEGATIVE_EVIDENCE_FLAT_MAX_CHARS = 2_000
+TRANSACTION_LINE_START_PATTERN = re.compile(
+    rf"^(?:\d{{2}}/\d{{2}}(?:/\d{{2,4}})?|\d{{2}}\s+{MONTH_PATTERN}(?:\s+\d{{4}})?)\b"
+)
 BR_PROFILE_TERMS: dict[str, tuple[tuple[str, float], ...]] = {
     "nubank_statement_ptbr": (
         ("NUBANK", 0.7),
@@ -106,13 +111,23 @@ class PdfLayoutInference:
 
 def infer_pdf_layout(text: str) -> PdfLayoutInference:
     normalized = _normalize_text(text)
+    normalized_lines = _normalize_non_empty_lines(text)
     specific_scores = {
         layout_name: _score_layout_profile(layout_name, normalized, terms)
         for layout_name, terms in BR_PROFILE_TERMS.items()
     }
     structure_score = _score_statement_structure(normalized)
     declarative_scores = {
-        profile.profile_name: _score_declarative_layout_profile(profile, normalized, structure_score)
+        profile.profile_name: _score_declarative_layout_profile(
+            profile,
+            normalized,
+            structure_score,
+            negative_evidence_text=_profile_negative_evidence_text(
+                profile,
+                normalized_text=normalized,
+                normalized_lines=normalized_lines,
+            ),
+        )
         for profile in load_layout_profiles()
     }
     specific_scores.update(declarative_scores)
@@ -148,9 +163,18 @@ def _score_layout_profile(layout_name: str, normalized_text: str, terms: tuple[t
 
 
 def _score_declarative_layout_profile(
-    profile: DeclarativeLayoutProfile, normalized_text: str, structure_score: float
+    profile: DeclarativeLayoutProfile,
+    normalized_text: str,
+    structure_score: float,
+    *,
+    negative_evidence_text: str,
 ) -> float:
-    score = score_layout_profile(profile, normalized_text, structure_score=structure_score)
+    score = score_layout_profile(
+        profile,
+        normalized_text,
+        structure_score=structure_score,
+        negative_evidence_text=negative_evidence_text,
+    )
     if score < profile.min_score_hint:
         return 0.0
     return score
@@ -200,3 +224,60 @@ def _normalize_text(value: str) -> str:
         lambda match: re.sub(r"[ \t]+", "", match.group(0)),
         normalized,
     )
+
+
+def _normalize_non_empty_lines(value: str) -> tuple[str, ...]:
+    return tuple(
+        normalized_line
+        for raw_line in str(value or "").splitlines()
+        if (normalized_line := _normalize_text(raw_line))
+    )
+
+
+def _profile_negative_evidence_text(
+    profile: DeclarativeLayoutProfile,
+    *,
+    normalized_text: str,
+    normalized_lines: tuple[str, ...],
+) -> str:
+    if len(normalized_lines) <= 1:
+        return _flat_profile_header_text(profile, normalized_text)
+
+    header_lines: list[str] = []
+    for line in normalized_lines[:NEGATIVE_EVIDENCE_MAX_LINES]:
+        if _looks_like_transaction_line(line):
+            break
+        header_lines.append(line)
+        if _looks_like_profile_table_header(profile, line):
+            break
+    return " ".join(header_lines)
+
+
+def _flat_profile_header_text(profile: DeclarativeLayoutProfile, normalized_text: str) -> str:
+    header_positions = sorted(
+        (position, position + len(keyword))
+        for raw_keyword in profile.header_keywords
+        if (keyword := normalize_upper_text(raw_keyword))
+        if (position := normalized_text.find(keyword)) >= 0
+    )
+    required_positions = 1 if len(profile.header_keywords) == 1 else 2
+    if len(header_positions) >= required_positions:
+        boundary = max(end for _position, end in header_positions[:required_positions])
+        return normalized_text[:boundary]
+    return normalized_text[:NEGATIVE_EVIDENCE_FLAT_MAX_CHARS]
+
+
+def _looks_like_profile_table_header(profile: DeclarativeLayoutProfile, line: str) -> bool:
+    keywords = tuple(
+        keyword
+        for raw_keyword in profile.header_keywords
+        if (keyword := normalize_upper_text(raw_keyword))
+    )
+    if not keywords:
+        return False
+    minimum_hits = 1 if len(keywords) == 1 else 2
+    return sum(1 for keyword in keywords if keyword in line) >= minimum_hits
+
+
+def _looks_like_transaction_line(line: str) -> bool:
+    return TRANSACTION_LINE_START_PATTERN.search(line) is not None and AMOUNT_PATTERN.search(line) is not None
