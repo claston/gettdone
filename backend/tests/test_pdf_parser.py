@@ -3106,6 +3106,70 @@ def test_accumulate_tabular_row_reconciles_amount_when_value_matches_balance_by_
     assert transactions[1].transaction.type == "outflow"
 
 
+def test_accumulate_tabular_row_reconciles_implicit_sign_from_running_balance() -> None:
+    transactions: list[pdf_parser_module._ParsedTransaction] = [
+        pdf_parser_module._ParsedTransaction(
+            transaction=pdf_parser_module.NormalizedTransaction(
+                date="2024-04-01",
+                description="Linha anterior",
+                amount=100.0,
+                type="inflow",
+            ),
+            source_page=1,
+            source_line=1,
+            running_balance=1100.0,
+        )
+    ]
+    parsed_row = pdf_parser_module._ParsedTransaction(
+        transaction=pdf_parser_module.NormalizedTransaction(
+            date="2024-04-02",
+            description="SICREDI DEBITO",
+            amount=-50.0,
+            type="outflow",
+        ),
+        source_page=1,
+        source_line=2,
+        running_balance=1150.0,
+        has_explicit_amount_sign=False,
+    )
+
+    next_candidates = pdf_parser_module._accumulate_tabular_row(
+        transactions=transactions,
+        parsed_row=parsed_row,
+        is_candidate=True,
+        candidates=1,
+    )
+
+    assert next_candidates == 2
+    assert transactions[1].transaction.amount == 50.0
+    assert transactions[1].transaction.type == "inflow"
+
+
+def test_parse_sicredi_table_uses_opening_balance_to_reconcile_first_implicit_sign() -> None:
+    text = """
+    SICREDI
+    Associado EMPRESA EXEMPLO
+    Cooperativa 0101
+    Conta 12345-6
+    Extrato
+    Período de 01/04/2024 a 30/04/2024
+    Data Descrição Documento Valor (R$) Saldo (R$)
+    SALDO ANTERIOR 1.000,00
+    01/04/2024 SICREDI DÉBITO 100001 100,00 1.100,00
+    02/04/2024 SICREDI DÉBITO 100002 50,00 1.150,00
+    03/04/2024 PAGAMENTO PIX BRADESCO 100003 -20,00 1.130,00
+    04/04/2024 RECEBIMENTO PIX PIX_CRED 100004 70,00 1.200,00
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert result.layout.layout_name == "sicredi_extrato_tabela_pix_cred_saldo_v1"
+    assert result.layout.confidence >= 0.95
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert [transaction.amount for transaction in result.transactions] == [100.0, 50.0, -20.0, 70.0]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
 def test_accumulate_tabular_row_reconciles_single_token_balance_noise_when_sign_is_implicit() -> None:
     transactions: list[pdf_parser_module._ParsedTransaction] = [
         pdf_parser_module._ParsedTransaction(

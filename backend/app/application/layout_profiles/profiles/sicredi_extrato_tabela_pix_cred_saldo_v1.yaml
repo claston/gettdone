@@ -208,38 +208,9 @@ layout_profile:
       - "PIX_CRED"
       - "PIX_DEB"
       - "Saldo"
-    negative_keywords:
-      - "Santander"
-      - "Banco do Brasil"
-      - "Bradesco"
-      - "CAIXA"
-      - "Itaú"
-      - "SICOOB"
-      - "ASAAS"
-      - "VIACREDI"
-      - "BANRISUL"
-      - "Banco da Amazônia"
-      - "Banco do Nordeste"
-      - "Banpará"
-      - "Banco Mercantil"
-      - "Safra"
-      - "Banco Sorisa"
-      - "Banco Topázio"
-      - "tribanco"
-      - "UNICRED"
-      - "IUGU"
-      - "iFood"
-      - "C6 BANK"
-      - "contasimples"
-      - "CRESOL"
-      - "infinitepay"
-      - "inter"
-      - "GRAFENO"
-      - "mercado pago"
-      - "PagBank"
-      - "PicPay"
-      - "Fatura"
-      - "Comprovante"
+    # Bank names are common transaction counterparties and must not disqualify
+    # an otherwise exact Sicredi statement signature.
+    negative_keywords: []
     min_score_hint: 0.9
   table_detection:
     header_keywords:
