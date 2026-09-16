@@ -139,6 +139,7 @@ class CanonicalLayoutGenerator:
         ocr_page_text_extractor: Callable[[bytes], list[str]] | None = None,
         bank_header_ocr_enabled: bool = False,
         bank_header_ocr_extractor: Callable[[bytes], str] | None = None,
+        bank_header_ocr_provider: str | None = None,
     ) -> None:
         self.max_pages = max(1, int(max_pages))
         self.max_extracted_chars = max(1, int(max_extracted_chars))
@@ -146,6 +147,7 @@ class CanonicalLayoutGenerator:
         self.ocr_page_text_extractor = ocr_page_text_extractor
         self.bank_header_ocr_enabled = bool(bank_header_ocr_enabled)
         self.bank_header_ocr_extractor = bank_header_ocr_extractor
+        self.bank_header_ocr_provider = bank_header_ocr_provider
 
     def generate(
         self,
@@ -191,6 +193,7 @@ class CanonicalLayoutGenerator:
             source_text=source_text,
         )
         bank_header_ocr_status = "not_needed"
+        bank_header_ocr_provider = None
         if str(bank.get("detection_source") or "") == "unresolved":
             if text_source == "ocr":
                 bank_header_ocr_status = "already_ocr"
@@ -199,12 +202,14 @@ class CanonicalLayoutGenerator:
             elif self.bank_header_ocr_extractor is None:
                 bank_header_ocr_status = "unavailable"
             else:
+                bank_header_ocr_provider = self.bank_header_ocr_provider
                 try:
                     header_text = str(self.bank_header_ocr_extractor(document.raw_bytes) or "")
                 except Exception as exc:  # identity OCR is best effort and must not discard a native capture
                     bank_header_ocr_status = "failed"
                     logger.info(
-                        "canonical_layout_bank_header_ocr_failed error_type=%s",
+                        "canonical_layout_bank_header_ocr_failed provider=%s error_type=%s",
+                        bank_header_ocr_provider,
                         exc.__class__.__name__,
                     )
                 else:
@@ -270,6 +275,7 @@ class CanonicalLayoutGenerator:
             "text_source": text_source,
             "bank": bank,
             "bank_header_ocr_status": bank_header_ocr_status,
+            "bank_header_ocr_provider": bank_header_ocr_provider,
             "quality": _quality_manifest(assessment, layout_name=layout_name, selected_parser=selected_parser),
             "pages": manifest_pages,
         }

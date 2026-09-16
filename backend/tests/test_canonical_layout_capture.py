@@ -147,6 +147,7 @@ def test_generator_uses_first_page_header_ocr_when_native_text_does_not_identify
         capture_id_provider=lambda: "cap_0123456789abcdef01234567",
         bank_header_ocr_enabled=True,
         bank_header_ocr_extractor=extract_header,
+        bank_header_ocr_provider="aws_textract",
     )
 
     artifact = generator.generate(
@@ -163,6 +164,7 @@ def test_generator_uses_first_page_header_ocr_when_native_text_does_not_identify
         "detection_source": "ocr_first_page_header",
     }
     assert artifact.manifest["bank_header_ocr_status"] == "identified"
+    assert artifact.manifest["bank_header_ocr_provider"] == "aws_textract"
 
 
 def test_generator_does_not_run_header_ocr_when_native_text_identifies_bank() -> None:
@@ -185,6 +187,7 @@ def test_generator_does_not_run_header_ocr_when_native_text_identifies_bank() ->
     assert artifact.manifest["bank"]["code"] == "341"
     assert artifact.manifest["bank"]["detection_source"] == "header"
     assert artifact.manifest["bank_header_ocr_status"] == "not_needed"
+    assert artifact.manifest["bank_header_ocr_provider"] is None
 
 
 def test_generator_keeps_native_capture_when_header_ocr_fails() -> None:
