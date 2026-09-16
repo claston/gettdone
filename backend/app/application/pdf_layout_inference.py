@@ -19,6 +19,11 @@ NEGATIVE_EVIDENCE_FLAT_MAX_CHARS = 2_000
 TRANSACTION_LINE_START_PATTERN = re.compile(
     rf"^(?:\d{{2}}/\d{{2}}(?:/\d{{2,4}})?|\d{{2}}\s+{MONTH_PATTERN}(?:\s+\d{{4}})?)\b"
 )
+BANK_AGENCY_HEADER_PATTERN = re.compile(r"\bBANCO\s+AGENCIA\b")
+BANK_AGENCY_TABLE_PATTERN = re.compile(
+    r"\bLANCAMENTOS?\b.*\bDEBITO\s*R?\b.*\bCREDITO\s*R?\b.*\bSALDO\s*R?\b"
+)
+BANK_AGENCY_LAYOUT_NAME = "bank_agency_debit_credit_statement_v1"
 BR_PROFILE_TERMS: dict[str, tuple[tuple[str, float], ...]] = {
     "nubank_statement_ptbr": (
         ("NUBANK", 0.7),
@@ -131,6 +136,7 @@ def infer_pdf_layout(text: str) -> PdfLayoutInference:
         for profile in load_layout_profiles()
     }
     specific_scores.update(declarative_scores)
+    specific_scores[BANK_AGENCY_LAYOUT_NAME] = _score_bank_agency_debit_credit_statement(normalized_lines)
     generic_score = _score_generic_statement(normalized)
     specific_best_name, specific_best_score = max(specific_scores.items(), key=lambda item: item[1])
 
@@ -146,6 +152,22 @@ def infer_pdf_layout(text: str) -> PdfLayoutInference:
         confidence=round(generic_score, 3),
         used_fallback=True,
     )
+
+
+def _score_bank_agency_debit_credit_statement(normalized_lines: tuple[str, ...]) -> float:
+    header_lines: list[str] = []
+    for line in normalized_lines[:NEGATIVE_EVIDENCE_MAX_LINES]:
+        if _looks_like_transaction_line(line):
+            break
+        header_lines.append(line)
+    if not any(BANK_AGENCY_HEADER_PATTERN.search(line) for line in header_lines):
+        return 0.0
+    if not any(BANK_AGENCY_TABLE_PATTERN.search(line) for line in header_lines):
+        return 0.0
+    text = "\n".join(normalized_lines)
+    if not re.search(r"\bSALDO\s*ANTERIOR\b", text):
+        return 0.0
+    return 0.78 if re.search(r"\bSALDO\s*FINAL\b", text) else 0.72
 
 
 def _score_layout_profile(layout_name: str, normalized_text: str, terms: tuple[tuple[str, float], ...]) -> float:
