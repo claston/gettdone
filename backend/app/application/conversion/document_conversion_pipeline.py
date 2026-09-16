@@ -221,6 +221,7 @@ class DocumentConversionPipeline:
                 ocr_max_pages,
             )
             page_texts: tuple[str, ...] | None = None
+            source_layout_lines = None
             if self.legacy_conversion_runner is not None:
                 conversion_response = self.legacy_conversion_runner(
                     filename=request.document.filename,
@@ -253,6 +254,7 @@ class DocumentConversionPipeline:
                 parse_ms = round((monotonic() - parse_started_at) * 1000, 3)
                 parsed_document = resolve_legacy_parsed_statement(parsed_statement)
                 page_texts = parsed_document.source_page_texts
+                source_layout_lines = parsed_document.source_layout_lines
                 legacy_pipeline_result = self.processing_pipeline.run_parsed_document(
                     document=document,
                     parsed_document=parsed_document,
@@ -280,6 +282,7 @@ class DocumentConversionPipeline:
                 runtime=runtime,
                 conversion_response=conversion_response,
                 page_texts=page_texts,
+                source_layout_lines=source_layout_lines,
             )
         except MaxPagesPerFileExceededError as exc:
             _apply_ocr_limit_context(
@@ -466,6 +469,7 @@ class DocumentConversionPipeline:
         runtime: DocumentConversionRuntime,
         conversion_response,
         page_texts: tuple[str, ...] | None,
+        source_layout_lines=None,
     ) -> ConversionPipelineResult:
         request = prepared.job
         identity = prepared.identity
@@ -502,6 +506,7 @@ class DocumentConversionPipeline:
             bank_code=getattr(analysis, "bank_code", None),
             page_texts=page_texts,
             page_text_source="ocr" if effective_ocr_used else "parser",
+            source_layout_lines=source_layout_lines,
         )
         conversion_model_label = resolve_conversion_model_label(
             layout_inference_name=getattr(analysis, "layout_inference_name", None),

@@ -206,3 +206,19 @@ def test_capture_factory_keeps_local_header_ocr_without_textract(monkeypatch) ->
     assert service.generator is not None
     assert service.generator.bank_header_ocr_provider == "local"
     assert service.generator.bank_header_ocr_extractor(b"%PDF sample") == "SANTANDER"
+
+
+def test_capture_factory_can_write_v2_to_separate_prefix(monkeypatch) -> None:
+    monkeypatch.setenv("TEXTRACT_ENABLED", "true")
+    service = build_s3_canonical_layout_capture_service(
+        enabled=True,
+        bucket="private-conversions",
+        prefix="conversion/canonical-layouts/candidates/v1",
+        v2_enabled=True,
+    )
+
+    assert service.generator is not None
+    assert service.generator.schema_version == "2"
+    assert service.generator.layout_preview_extractor is canonical_layout_store.extract_pdf_layout_preview_with_textract
+    assert service.store is not None
+    assert service.store.prefix == "conversion/canonical-layouts/candidates/v2"

@@ -68,3 +68,18 @@ def test_dependency_respects_explicit_header_ocr_disable(
 
     assert service.generator is not None
     assert service.generator.bank_header_ocr_enabled is False
+
+
+def test_dependency_enables_v2_only_with_explicit_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CANONICAL_LAYOUT_CAPTURE_ENABLED", "true")
+    monkeypatch.setenv("CONVERSION_S3_BUCKET", "gettdone-conversions")
+    monkeypatch.setenv("CANONICAL_LAYOUT_V2_ENABLED", "true")
+    monkeypatch.setenv("TEXTRACT_ENABLED", "true")
+
+    service = dependencies.get_canonical_layout_capture_service()
+
+    assert service.generator is not None
+    assert service.generator.schema_version == "2"
+    assert service.generator.layout_preview_extractor is not None
+    assert service.store is not None
+    assert service.store.prefix.endswith("/v2")

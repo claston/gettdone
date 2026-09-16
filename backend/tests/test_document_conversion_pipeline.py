@@ -17,7 +17,8 @@ from app.application.conversion.document_preflight_service import DocumentPrefli
 from app.application.conversion.statement_parser import ParsedBankStatement, ParsedTransaction
 from app.application.conversion.uploaded_document import UploadedDocument, UploadedDocumentStage
 from app.application.conversion_pipeline import ConversionPipelineResult, OperationalPipelineSummary
-from app.application.errors import InvalidFileContentError
+from app.application.document_extraction_models import ExtractedLine
+from app.application.errors import InvalidFileContentError, MaxPagesPerFileExceededError
 from app.application.models import AnalysisData, NormalizedTransaction, TransactionRow
 from app.application.parsers.service import ParsedDocument
 
@@ -228,6 +229,10 @@ class FakeDocumentExtractor:
                     ],
                     extracted_text="2026-06-18 PIX RECEBIDO 150,00",
                     source_page_texts=("2026-06-18 PIX RECEBIDO 150,00",),
+                    source_layout_lines=((ExtractedLine(
+                        id="line-1", page_number=1, line_index=1,
+                        text="PIX RECEBIDO", bbox={"left": 0.12, "top": 0.2, "width": 0.3, "height": 0.03},
+                    ),),),
                     parse_metrics={"page_count": 1, "selected_parser": "grouped"},
                 )
             },
@@ -454,6 +459,7 @@ def test_non_clean_pdf_is_forwarded_to_best_effort_canonical_capture(caplog) -> 
     assert capture.calls[0]["bank_code"] == "341"
     assert capture.calls[0]["page_texts"] == ("2026-06-18 PIX RECEBIDO 150,00",)
     assert capture.calls[0]["page_text_source"] == "parser"
+    assert capture.calls[0]["source_layout_lines"][0][0].bbox["left"] == 0.12
     assert "identity" not in capture.calls[0]
     assert pipeline.access_control_service.recorded_user_conversions[-1]["canonical_capture_status"] == "stored"
     assert pipeline.access_control_service.recorded_user_conversions[-1]["canonical_capture_reason"] is None
@@ -609,6 +615,44 @@ def test_parser_failure_without_observability_is_forwarded_to_canonical_capture(
     recorded = access_control_service.recorded_user_conversions[-1]
     assert recorded["canonical_capture_status"] == "stored"
     assert recorded["canonical_capture_reason"] is None
+
+
+def test_scanned_ocr_page_limit_still_triggers_canonical_preview_capture() -> None:
+    class PageLimitedExtractor:
+        def extract(self, **_kwargs):
+            raise MaxPagesPerFileExceededError(pages_count=24, max_pages_per_file=10)
+
+    staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
+    capture = RecordingCanonicalLayoutCapture(failure_capture_enabled=True)
+    pipeline = DocumentConversionPipeline(
+        report_service=FakeReportService(),
+        access_control_service=FakeAccessControlService(),
+        processing_pipeline=FakeProcessingPipeline(),
+        analysis_repository=FakeAnalysisRepository(),
+        document_extractor=PageLimitedExtractor(),
+        statement_parser=FakeStatementParser(),
+        canonical_layout_capture_service=capture,
+    )
+
+    with pytest.raises(MaxPagesPerFileExceededError):
+        pipeline.run(
+            document=UploadedDocument.from_staged_upload(
+                filename="large-scan.pdf",
+                staged_upload=UploadedDocumentStage(
+                    path=staged_path, size_bytes=staged_path.stat().st_size, sha256_hex="abc123",
+                ),
+            ),
+            anonymous_fingerprint=None,
+            user_token="user-token",
+            authorization=None,
+            access_cookie_token=None,
+            scanned_likely=True,
+            estimated_pages_count=24,
+        )
+
+    assert len(capture.calls) == 1
+    assert capture.calls[0]["status"] == "Falha"
+    assert capture.calls[0]["transactions_count"] == 0
 
 
 def test_async_job_materializes_missing_preflight_before_recording_conversion() -> None:
