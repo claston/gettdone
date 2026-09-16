@@ -42,3 +42,29 @@ def test_dependency_uses_existing_conversion_bucket_and_dedicated_prefix(
     assert service.generator is not None
     assert service.generator.bank_header_ocr_enabled is True
     assert service.failure_capture_enabled is True
+
+
+def test_dependency_enables_header_ocr_by_default_when_capture_is_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CANONICAL_LAYOUT_CAPTURE_ENABLED", "true")
+    monkeypatch.setenv("CONVERSION_S3_BUCKET", "gettdone-conversions")
+    monkeypatch.delenv("CANONICAL_LAYOUT_BANK_OCR_ENABLED", raising=False)
+
+    service = dependencies.get_canonical_layout_capture_service()
+
+    assert service.generator is not None
+    assert service.generator.bank_header_ocr_enabled is True
+
+
+def test_dependency_respects_explicit_header_ocr_disable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CANONICAL_LAYOUT_CAPTURE_ENABLED", "true")
+    monkeypatch.setenv("CONVERSION_S3_BUCKET", "gettdone-conversions")
+    monkeypatch.setenv("CANONICAL_LAYOUT_BANK_OCR_ENABLED", "false")
+
+    service = dependencies.get_canonical_layout_capture_service()
+
+    assert service.generator is not None
+    assert service.generator.bank_header_ocr_enabled is False

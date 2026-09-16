@@ -162,6 +162,7 @@ def test_generator_uses_first_page_header_ocr_when_native_text_does_not_identify
         "catalog_match": True,
         "detection_source": "ocr_first_page_header",
     }
+    assert artifact.manifest["bank_header_ocr_status"] == "identified"
 
 
 def test_generator_does_not_run_header_ocr_when_native_text_identifies_bank() -> None:
@@ -183,6 +184,7 @@ def test_generator_does_not_run_header_ocr_when_native_text_identifies_bank() ->
 
     assert artifact.manifest["bank"]["code"] == "341"
     assert artifact.manifest["bank"]["detection_source"] == "header"
+    assert artifact.manifest["bank_header_ocr_status"] == "not_needed"
 
 
 def test_generator_keeps_native_capture_when_header_ocr_fails() -> None:
@@ -213,6 +215,7 @@ def test_generator_keeps_native_capture_when_header_ocr_fails() -> None:
         "catalog_match": False,
         "detection_source": "unresolved",
     }
+    assert artifact.manifest["bank_header_ocr_status"] == "failed"
 
 
 def test_generator_does_not_persist_unrecognized_header_ocr_text() -> None:
@@ -234,8 +237,30 @@ def test_generator_does_not_persist_unrecognized_header_ocr_text() -> None:
 
     serialized = str(artifact.manifest).upper()
     assert artifact.manifest["bank"]["detection_source"] == "unresolved"
+    assert artifact.manifest["bank_header_ocr_status"] == "unresolved"
     assert "MARIA" not in serialized
     assert "SILVA" not in serialized
+
+
+def test_generator_records_when_header_ocr_is_disabled() -> None:
+    source = _text_pdf(
+        "CONTA CORRENTE",
+        "DATA HISTORICO VALOR",
+        "10/09/2026 PIX 10,00",
+    )
+    generator = CanonicalLayoutGenerator(
+        capture_id_provider=lambda: "cap_0123456789abcdef01234567",
+        bank_header_ocr_enabled=False,
+        bank_header_ocr_extractor=lambda _raw_bytes: pytest.fail("disabled header OCR must not run"),
+    )
+
+    artifact = generator.generate(
+        document=ingest_uploaded_document("statement.pdf", source),
+        **_capture_kwargs(),
+    )
+
+    assert artifact.manifest["bank_header_ocr_status"] == "disabled"
+    assert artifact.manifest["bank"]["detection_source"] == "unresolved"
 
 
 def test_generator_preserves_unlisted_cooperative_identity_but_not_holder() -> None:
