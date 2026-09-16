@@ -11,6 +11,7 @@ PDF_OCR_DISABLED_MESSAGE = (
     "PDF does not contain extractable text. OCR fallback is disabled for this release."
 )
 _OCR_SEMAPHORE: BoundedSemaphore | None = None
+FIRST_PAGE_HEADER_OCR_MAX_FILE_BYTES = 10 * 1024 * 1024
 
 
 def is_pdf_ocr_enabled() -> bool:
@@ -28,11 +29,14 @@ def extract_pdf_page_texts_with_ocr(
 
 
 def extract_pdf_first_page_header_text_with_ocr(raw_bytes: bytes) -> str:
+    if len(raw_bytes) > FIRST_PAGE_HEADER_OCR_MAX_FILE_BYTES:
+        raise InvalidFileContentError("first-page header OCR supports files up to 10 MB.")
     texts = _extract_pdf_page_texts_with_ocr(
         raw_bytes,
         page_indexes=(0,),
         crop_top_ratio=_get_bank_header_ocr_crop_ratio(),
         enforce_document_page_limit=False,
+        enforce_file_size_limit=False,
         require_pdf_ocr_enabled=False,
     )
     return texts[0] if texts else ""
@@ -45,11 +49,13 @@ def _extract_pdf_page_texts_with_ocr(
     page_indexes: tuple[int, ...] | None = None,
     crop_top_ratio: float | None = None,
     enforce_document_page_limit: bool = True,
+    enforce_file_size_limit: bool = True,
     require_pdf_ocr_enabled: bool = True,
 ) -> list[str]:
     if require_pdf_ocr_enabled and not is_pdf_ocr_enabled():
         raise InvalidFileContentError(PDF_OCR_DISABLED_MESSAGE)
-    _enforce_pdf_ocr_file_size_limit(raw_bytes)
+    if enforce_file_size_limit:
+        _enforce_pdf_ocr_file_size_limit(raw_bytes)
     _acquire_ocr_slot_or_raise()
 
     engine = _resolve_pdf_ocr_engine()

@@ -349,7 +349,7 @@ def get_canonical_layout_capture_service() -> CanonicalLayoutCaptureService:
             ),
             bank_header_ocr_enabled=read_bool_env(
                 "CANONICAL_LAYOUT_BANK_OCR_ENABLED",
-                default=False,
+                default=True,
             ),
             failure_capture_enabled=read_bool_env(
                 "CANONICAL_LAYOUT_FAILURE_CAPTURE_ENABLED",

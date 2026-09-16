@@ -139,6 +139,7 @@ class CanonicalLayoutGenerator:
         ocr_page_text_extractor: Callable[[bytes], list[str]] | None = None,
         bank_header_ocr_enabled: bool = False,
         bank_header_ocr_extractor: Callable[[bytes], str] | None = None,
+        bank_header_ocr_provider: str | None = None,
     ) -> None:
         self.max_pages = max(1, int(max_pages))
         self.max_extracted_chars = max(1, int(max_extracted_chars))
@@ -146,6 +147,7 @@ class CanonicalLayoutGenerator:
         self.ocr_page_text_extractor = ocr_page_text_extractor
         self.bank_header_ocr_enabled = bool(bank_header_ocr_enabled)
         self.bank_header_ocr_extractor = bank_header_ocr_extractor
+        self.bank_header_ocr_provider = bank_header_ocr_provider
 
     def generate(
         self,
@@ -190,27 +192,37 @@ class CanonicalLayoutGenerator:
             layout_name=layout_name,
             source_text=source_text,
         )
-        if (
-            str(bank.get("detection_source") or "") == "unresolved"
-            and text_source != "ocr"
-            and self.bank_header_ocr_enabled
-            and self.bank_header_ocr_extractor is not None
-        ):
-            try:
-                header_text = str(self.bank_header_ocr_extractor(document.raw_bytes) or "")
-            except Exception as exc:  # identity OCR is best effort and must not discard a native capture
-                logger.info(
-                    "canonical_layout_bank_header_ocr_failed error_type=%s",
-                    exc.__class__.__name__,
-                )
+        bank_header_ocr_status = "not_needed"
+        bank_header_ocr_provider = None
+        if str(bank.get("detection_source") or "") == "unresolved":
+            if text_source == "ocr":
+                bank_header_ocr_status = "already_ocr"
+            elif not self.bank_header_ocr_enabled:
+                bank_header_ocr_status = "disabled"
+            elif self.bank_header_ocr_extractor is None:
+                bank_header_ocr_status = "unavailable"
             else:
-                bank = _bank_manifest(
-                    bank_name=None,
-                    bank_code=None,
-                    layout_name=None,
-                    source_text=header_text,
-                    text_detection_source="ocr_first_page_header",
-                )
+                bank_header_ocr_provider = self.bank_header_ocr_provider
+                try:
+                    header_text = str(self.bank_header_ocr_extractor(document.raw_bytes) or "")
+                except Exception as exc:  # identity OCR is best effort and must not discard a native capture
+                    bank_header_ocr_status = "failed"
+                    logger.info(
+                        "canonical_layout_bank_header_ocr_failed provider=%s error_type=%s",
+                        bank_header_ocr_provider,
+                        exc.__class__.__name__,
+                    )
+                else:
+                    bank = _bank_manifest(
+                        bank_name=None,
+                        bank_code=None,
+                        layout_name=None,
+                        source_text=header_text,
+                        text_detection_source="ocr_first_page_header",
+                    )
+                    bank_header_ocr_status = (
+                        "unresolved" if str(bank.get("detection_source") or "") == "unresolved" else "identified"
+                    )
         institution_tokens = _institution_tokens(bank)
 
         manifest_pages: list[dict[str, object]] = []
@@ -262,6 +274,8 @@ class CanonicalLayoutGenerator:
             "privacy_validation_version": CANONICAL_PRIVACY_VALIDATION_VERSION,
             "text_source": text_source,
             "bank": bank,
+            "bank_header_ocr_status": bank_header_ocr_status,
+            "bank_header_ocr_provider": bank_header_ocr_provider,
             "quality": _quality_manifest(assessment, layout_name=layout_name, selected_parser=selected_parser),
             "pages": manifest_pages,
         }

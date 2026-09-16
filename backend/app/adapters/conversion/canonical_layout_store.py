@@ -14,6 +14,8 @@ from app.application.pdf_ocr import (
     extract_pdf_first_page_header_text_with_ocr,
     extract_pdf_page_texts_with_ocr,
 )
+from app.application.pdf_parser import is_textract_enabled
+from app.application.textract_header_ocr import extract_pdf_first_page_header_text_with_textract
 
 _CAPTURE_ID_PATTERN = re.compile(r"^cap_[a-f0-9]{24}$")
 
@@ -110,6 +112,7 @@ def build_s3_canonical_layout_capture_service(
 ) -> CanonicalLayoutCaptureService:
     if not enabled:
         return CanonicalLayoutCaptureService(enabled=False)
+    textract_enabled = is_textract_enabled()
     return CanonicalLayoutCaptureService(
         enabled=True,
         generator=CanonicalLayoutGenerator(
@@ -117,7 +120,12 @@ def build_s3_canonical_layout_capture_service(
             max_extracted_chars=max_extracted_chars,
             ocr_page_text_extractor=extract_pdf_page_texts_with_ocr,
             bank_header_ocr_enabled=bank_header_ocr_enabled,
-            bank_header_ocr_extractor=extract_pdf_first_page_header_text_with_ocr,
+            bank_header_ocr_extractor=(
+                extract_pdf_first_page_header_text_with_textract
+                if textract_enabled
+                else extract_pdf_first_page_header_text_with_ocr
+            ),
+            bank_header_ocr_provider="aws_textract" if textract_enabled else "local",
         ),
         store=S3CanonicalLayoutStore(
             bucket=bucket,

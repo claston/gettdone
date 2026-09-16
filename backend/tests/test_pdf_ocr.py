@@ -1,7 +1,10 @@
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from app.application import pdf_ocr
+from app.application.errors import InvalidFileContentError
 
 
 def test_first_page_header_ocr_crops_page_and_ignores_total_document_page_limit(monkeypatch) -> None:
@@ -51,7 +54,11 @@ def test_first_page_header_ocr_crops_page_and_ignores_total_document_page_limit(
             observed["semaphore_released"] = True
 
     monkeypatch.setattr(pdf_ocr, "is_pdf_ocr_enabled", lambda: False)
-    monkeypatch.setattr(pdf_ocr, "_enforce_pdf_ocr_file_size_limit", lambda _raw_bytes: None)
+    monkeypatch.setattr(
+        pdf_ocr,
+        "_enforce_pdf_ocr_file_size_limit",
+        lambda _raw_bytes: pytest.fail("header-only OCR must not use the full-document OCR size limit"),
+    )
     monkeypatch.setattr(pdf_ocr, "_acquire_ocr_slot_or_raise", lambda: None)
     monkeypatch.setattr(pdf_ocr, "_get_ocr_semaphore", lambda: FakeSemaphore())
     monkeypatch.setattr(pdf_ocr, "_configure_tesseract_command", lambda _pytesseract: None)
@@ -83,3 +90,8 @@ def test_first_page_header_ocr_crops_page_and_ignores_total_document_page_limit(
     assert observed["render_scale"] == 3
     assert observed["document_closed"] is True
     assert observed["semaphore_released"] is True
+
+
+def test_first_page_header_ocr_rejects_source_above_upload_limit() -> None:
+    with pytest.raises(InvalidFileContentError, match="first-page header OCR supports files up to"):
+        pdf_ocr.extract_pdf_first_page_header_text_with_ocr(b"x" * ((10 * 1024 * 1024) + 1))

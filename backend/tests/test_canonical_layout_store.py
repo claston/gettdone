@@ -2,6 +2,7 @@ from typing import Any
 
 import pytest
 
+from app.adapters.conversion import canonical_layout_store
 from app.adapters.conversion.canonical_layout_store import (
     S3CanonicalLayoutStore,
     build_s3_canonical_layout_capture_service,
@@ -161,3 +162,47 @@ def test_capture_factory_builds_aes256_s3_service_when_enabled() -> None:
     assert service.store.bucket == "private-conversions"
     assert service.store.prefix == "canonical/candidates"
     assert service.store.region == "sa-east-1"
+
+
+def test_capture_factory_uses_textract_for_header_when_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("TEXTRACT_ENABLED", "true")
+    monkeypatch.setattr(
+        canonical_layout_store,
+        "extract_pdf_first_page_header_text_with_ocr",
+        lambda _raw_bytes: pytest.fail("local OCR must not run when Textract is enabled"),
+    )
+    monkeypatch.setattr(
+        canonical_layout_store,
+        "extract_pdf_first_page_header_text_with_textract",
+        lambda _raw_bytes: "CAIXA ECONÔMICA FEDERAL",
+        raising=False,
+    )
+
+    service = build_s3_canonical_layout_capture_service(
+        enabled=True,
+        bucket="private-conversions",
+        bank_header_ocr_enabled=True,
+    )
+
+    assert service.generator is not None
+    assert service.generator.bank_header_ocr_provider == "aws_textract"
+    assert service.generator.bank_header_ocr_extractor(b"%PDF sample") == "CAIXA ECONÔMICA FEDERAL"
+
+
+def test_capture_factory_keeps_local_header_ocr_without_textract(monkeypatch) -> None:
+    monkeypatch.delenv("TEXTRACT_ENABLED", raising=False)
+    monkeypatch.setattr(
+        canonical_layout_store,
+        "extract_pdf_first_page_header_text_with_ocr",
+        lambda _raw_bytes: "SANTANDER",
+    )
+
+    service = build_s3_canonical_layout_capture_service(
+        enabled=True,
+        bucket="private-conversions",
+        bank_header_ocr_enabled=True,
+    )
+
+    assert service.generator is not None
+    assert service.generator.bank_header_ocr_provider == "local"
+    assert service.generator.bank_header_ocr_extractor(b"%PDF sample") == "SANTANDER"

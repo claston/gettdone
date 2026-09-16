@@ -1230,3 +1230,33 @@ def test_infer_pdf_layout_prefers_sicoob_apropriacao_diaria_profile() -> None:
 
     assert result.layout_name == "sicoob_extrato_apropriacao_diaria_v1"
     assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_recognizes_unbranded_bank_agency_debit_credit_statement() -> None:
+    text = """
+    EXTRATODADO DADODADO
+    CLIENTE DADO
+    BANCO AGENCIA DADO
+    999 0001 DADO CONTADADO
+    DADODADO LANCAMENTO DEBITOR CREDITOR SALDOR
+    SALDOANTERIOR 4,56
+    03/01/2001 03/01/2001 TEDDADO182DADO9DADO5735340DADO 1,23 5.345,67 6.456,78
+    03/01/2001 03/01/2001 TEDDADO916DADO1502DADO177578DADO 1,23 3.845,67 7.956,78
+    SALDOFINAL 9,09
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "bank_agency_debit_credit_statement_v1"
+    assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_does_not_assign_bank_agency_layout_from_common_table_columns() -> None:
+    text = """
+    EXTRATO DE CONTA CORRENTE
+    DATA DOCUMENTO HISTORICO DEBITO CREDITO SALDO
+    03/01/2001 TED 1,23 6.456,78
+    04/01/2001 PIX -3,45 6.453,33
+    """
+
+    assert infer_pdf_layout(text).layout_name != "bank_agency_debit_credit_statement_v1"
