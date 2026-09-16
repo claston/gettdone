@@ -13,8 +13,16 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from app.application.bank_catalog import load_bank_catalog, normalize_bank_code, resolve_bank_code_from_name
 from app.application.bank_identity import resolve_bank_name
+from app.application.conversion.canonical_layout_v2 import (
+    PLACEHOLDERS,
+    PUBLIC_LAYOUT_PHRASES,
+    PUBLIC_SINGLE_LABELS,
+    build_safe_layout_pages,
+    match_layout_candidates,
+)
 from app.application.conversion.uploaded_document import UploadedDocument
 from app.application.conversion_quality import ConversionQualityAssessment, assess_conversion_quality
+from app.application.document_extraction_models import ExtractedLine
 from app.application.errors import InvalidFileContentError
 
 logger = logging.getLogger(__name__)
@@ -137,17 +145,25 @@ class CanonicalLayoutGenerator:
         max_extracted_chars: int = 250_000,
         capture_id_provider: Callable[[], str] | None = None,
         ocr_page_text_extractor: Callable[[bytes], list[str]] | None = None,
+        layout_preview_extractor: Callable[
+            [bytes], tuple[tuple[str, ...], tuple[tuple[ExtractedLine, ...], ...]]
+        ] | None = None,
         bank_header_ocr_enabled: bool = False,
         bank_header_ocr_extractor: Callable[[bytes], str] | None = None,
         bank_header_ocr_provider: str | None = None,
+        schema_version: str = CANONICAL_LAYOUT_SCHEMA_VERSION,
     ) -> None:
         self.max_pages = max(1, int(max_pages))
         self.max_extracted_chars = max(1, int(max_extracted_chars))
         self.capture_id_provider = capture_id_provider or (lambda: f"cap_{uuid4().hex[:24]}")
         self.ocr_page_text_extractor = ocr_page_text_extractor
+        self.layout_preview_extractor = layout_preview_extractor
         self.bank_header_ocr_enabled = bool(bank_header_ocr_enabled)
         self.bank_header_ocr_extractor = bank_header_ocr_extractor
         self.bank_header_ocr_provider = bank_header_ocr_provider
+        if schema_version not in {"1", "2"}:
+            raise ValueError("Unsupported canonical layout schema version.")
+        self.schema_version = schema_version
 
     def generate(
         self,
@@ -165,6 +181,7 @@ class CanonicalLayoutGenerator:
         bank_code: str | None = None,
         page_texts: tuple[str, ...] | list[str] | None = None,
         page_text_source: str | None = None,
+        source_layout_lines: tuple[tuple[ExtractedLine, ...], ...] | None = None,
     ) -> CanonicalLayoutArtifact:
         if document.file_type != "pdf":
             raise CanonicalLayoutUnsupportedError("non_pdf")
@@ -178,10 +195,15 @@ class CanonicalLayoutGenerator:
             warning_count=warning_count,
             balance_failed=balance_failed,
         )
-        pages, text_source = self._read_pages(
+        pages, text_source, preview_layout_lines, source_page_count = self._read_pages(
             document.raw_bytes,
             page_texts=page_texts,
             page_text_source=page_text_source,
+            prefer_supplied_ocr=(
+                self.schema_version == "2"
+                and source_layout_lines is not None
+                and page_text_source == "ocr"
+            ),
         )
         source_text = "\n".join(page["source_text"] for page in pages)
         if len(source_text) > self.max_extracted_chars:
@@ -223,55 +245,66 @@ class CanonicalLayoutGenerator:
                     bank_header_ocr_status = (
                         "unresolved" if str(bank.get("detection_source") or "") == "unresolved" else "identified"
                     )
+        if self.schema_version == "2" and not bank.get("catalog_match"):
+            bank = {**bank, "name": "unknown"}
         institution_tokens = _institution_tokens(bank)
 
         manifest_pages: list[dict[str, object]] = []
         render_pages: list[dict[str, object]] = []
-        number_index = 0
-        for page in pages:
-            source_lines = str(page["source_text"]).splitlines()
-            elements: list[dict[str, object]] = []
-            max_columns = max((len(line) for line in source_lines), default=1)
-            line_count = max(1, len(source_lines))
-            for line_index, line in enumerate(source_lines):
-                line_institution_tokens = _institution_tokens_for_line(
-                    line=line,
-                    bank=bank,
-                    institution_tokens=institution_tokens,
-                )
-                for match in _TOKEN_PATTERN.finditer(line):
-                    safe_text, role, number_index = _sanitize_token(
-                        match.group(0),
-                        number_index=number_index,
-                        institution_tokens=line_institution_tokens,
-                    )
-                    elements.append(
-                        {
-                            "line": line_index,
-                            "column": match.start(),
-                            "x": round(match.start() / max(1, max_columns), 6),
-                            "y": round(line_index / line_count, 6),
-                            "role": role,
-                            "text": safe_text,
-                        }
-                    )
-            manifest_pages.append(
-                {
-                    "width": round(float(page["width"]), 3),
-                    "height": round(float(page["height"]), 3),
-                    "line_count": line_count,
-                    "max_columns": max_columns,
-                    "elements": elements,
-                }
+        layout_signals = None
+        layout_match = None
+        if self.schema_version == "2":
+            manifest_pages, layout_signals = build_safe_layout_pages(
+                pages, source_layout_lines=source_layout_lines or preview_layout_lines
             )
-            render_pages.append({**page, "line_count": line_count, "max_columns": max_columns, "elements": elements})
+            layout_match = match_layout_candidates(signals=layout_signals, bank_code=str(bank.get("code") or ""))
+            render_pages = manifest_pages
+        else:
+            number_index = 0
+            for page in pages:
+                source_lines = str(page["source_text"]).splitlines()
+                elements: list[dict[str, object]] = []
+                max_columns = max((len(line) for line in source_lines), default=1)
+                line_count = max(1, len(source_lines))
+                for line_index, line in enumerate(source_lines):
+                    line_institution_tokens = _institution_tokens_for_line(
+                        line=line,
+                        bank=bank,
+                        institution_tokens=institution_tokens,
+                    )
+                    for match in _TOKEN_PATTERN.finditer(line):
+                        safe_text, role, number_index = _sanitize_token(
+                            match.group(0),
+                            number_index=number_index,
+                            institution_tokens=line_institution_tokens,
+                        )
+                        elements.append(
+                            {
+                                "line": line_index,
+                                "column": match.start(),
+                                "x": round(match.start() / max(1, max_columns), 6),
+                                "y": round(line_index / line_count, 6),
+                                "role": role,
+                                "text": safe_text,
+                            }
+                        )
+                manifest_pages.append(
+                    {
+                        "width": round(float(page["width"]), 3),
+                        "height": round(float(page["height"]), 3),
+                        "line_count": line_count,
+                        "max_columns": max_columns,
+                        "elements": elements,
+                    }
+                )
+                render_pages.append({**page, "line_count": line_count, "max_columns": max_columns, "elements": elements})
 
         capture_id = self.capture_id_provider()
         if _CAPTURE_ID_PATTERN.fullmatch(capture_id) is None:
             raise ValueError("Invalid canonical capture id.")
         manifest: dict[str, object] = {
-            "schema_version": CANONICAL_LAYOUT_SCHEMA_VERSION,
-            "privacy_validation_version": CANONICAL_PRIVACY_VALIDATION_VERSION,
+            "schema_version": self.schema_version,
+            "privacy_validation_version": "3" if self.schema_version == "2" else CANONICAL_PRIVACY_VALIDATION_VERSION,
             "text_source": text_source,
             "bank": bank,
             "bank_header_ocr_status": bank_header_ocr_status,
@@ -279,12 +312,20 @@ class CanonicalLayoutGenerator:
             "quality": _quality_manifest(assessment, layout_name=layout_name, selected_parser=selected_parser),
             "pages": manifest_pages,
         }
+        if self.schema_version == "2":
+            manifest["source_page_count"] = source_page_count
+            manifest["sampled_page_count"] = len(manifest_pages)
+            manifest["layout_signals"] = layout_signals
+            manifest["layout_match"] = layout_match
         pdf_bytes = _render_pdf(render_pages)
         _validate_privacy(
             source_text=source_text,
             pdf_bytes=pdf_bytes,
             institution_tokens=institution_tokens,
+            schema_version=self.schema_version,
         )
+        if self.schema_version == "2":
+            _validate_v2_manifest(manifest)
         return CanonicalLayoutArtifact(
             capture_id=capture_id,
             pdf_bytes=pdf_bytes,
@@ -298,16 +339,19 @@ class CanonicalLayoutGenerator:
         *,
         page_texts: tuple[str, ...] | list[str] | None,
         page_text_source: str | None,
-    ) -> tuple[list[dict[str, object]], str]:
+        prefer_supplied_ocr: bool = False,
+    ) -> tuple[list[dict[str, object]], str, tuple[tuple[ExtractedLine, ...], ...] | None, int]:
         try:
             reader = PdfReader(BytesIO(raw_bytes))
             if reader.is_encrypted:
                 raise CanonicalLayoutUnsupportedError("encrypted_pdf")
-            if len(reader.pages) > self.max_pages:
+            source_page_count = len(reader.pages)
+            if source_page_count > self.max_pages and self.schema_version == "1":
                 raise CanonicalLayoutUnsupportedError("page_limit_exceeded")
             pages: list[dict[str, object]] = []
             has_native_text = False
-            for page in reader.pages:
+            page_limit = min(5, self.max_pages) if self.schema_version == "2" else self.max_pages
+            for page in reader.pages[:page_limit]:
                 if "/Contents" not in page:
                     text = ""
                 else:
@@ -324,12 +368,34 @@ class CanonicalLayoutGenerator:
             raise CanonicalLayoutUnsupportedError("invalid_pdf") from exc
         if not pages:
             raise CanonicalLayoutUnsupportedError("native_text_unavailable")
-        if has_native_text:
-            return pages, "native"
+        if has_native_text and not (prefer_supplied_ocr and page_texts and any(text.strip() for text in page_texts)):
+            return pages, "native", None, source_page_count
 
         fallback_page_texts = tuple(str(value or "") for value in (page_texts or ()))
+        if self.schema_version == "2":
+            fallback_page_texts = fallback_page_texts[:len(pages)]
         fallback_source = "ocr" if str(page_text_source or "").strip().casefold() == "ocr" else "parser"
-        if not any(value.strip() for value in fallback_page_texts) and self.ocr_page_text_extractor is not None:
+        preview_layout_lines = None
+        if (
+            not any(value.strip() for value in fallback_page_texts)
+            and self.schema_version == "2"
+            and self.layout_preview_extractor is not None
+        ):
+            try:
+                preview_writer = PdfWriter()
+                for page in reader.pages[:len(pages)]:
+                    preview_writer.add_page(page)
+                preview_pdf = BytesIO()
+                preview_writer.write(preview_pdf)
+                fallback_page_texts, preview_layout_lines = self.layout_preview_extractor(preview_pdf.getvalue())
+            except InvalidFileContentError:
+                fallback_page_texts = ()
+            fallback_source = "ocr"
+        if (
+            not any(value.strip() for value in fallback_page_texts)
+            and self.schema_version == "1"
+            and self.ocr_page_text_extractor is not None
+        ):
             try:
                 fallback_page_texts = tuple(
                     str(value or "") for value in self.ocr_page_text_extractor(raw_bytes)
@@ -344,7 +410,7 @@ class CanonicalLayoutGenerator:
         padded_page_texts = fallback_page_texts + ("",) * (len(pages) - len(fallback_page_texts))
         for page, fallback_text in zip(pages, padded_page_texts, strict=True):
             page["source_text"] = fallback_text
-        return pages, fallback_source
+        return pages, fallback_source, preview_layout_lines, source_page_count
 
 
 class CanonicalLayoutCaptureService:
@@ -634,7 +700,7 @@ def _render_pdf(pages: list[dict[str, object]]) -> bytes:
             {NameObject("/Font"): DictionaryObject({NameObject("/F1"): font_ref})}
         )
         line_count = max(1, int(source_page["line_count"]))
-        max_columns = max(1, int(source_page["max_columns"]))
+        max_columns = max(1, int(source_page.get("max_columns") or 80))
         horizontal_margin = 24.0
         vertical_margin = 28.0
         column_width = max(2.5, (width - (2 * horizontal_margin)) / max_columns)
@@ -642,13 +708,21 @@ def _render_pdf(pages: list[dict[str, object]]) -> bytes:
         line_height = min(font_size * 1.5, max(6.0, (height - (2 * vertical_margin)) / line_count))
         commands: list[str] = []
         for element in source_page["elements"]:
-            x = horizontal_margin + (int(element["column"]) * column_width)
-            y = height - vertical_margin - (int(element["line"]) * line_height)
+            if "width" in element:
+                x = horizontal_margin + (float(element["x"]) * (width - 2 * horizontal_margin))
+                y = height - vertical_margin - (float(element["y"]) * (height - 2 * vertical_margin))
+                available_width = max(10.0, float(element["width"]) * (width - 2 * horizontal_margin))
+                element_font_size = min(font_size, available_width / max(1.0, len(str(element["text"])) * 0.6))
+                element_font_size = max(3.0, element_font_size)
+            else:
+                x = horizontal_margin + (int(element["column"]) * column_width)
+                y = height - vertical_margin - (int(element["line"]) * line_height)
+                element_font_size = font_size
             safe_text = _escape_pdf_text(str(element["text"]))
             commands.extend(
                 [
                     "BT",
-                    f"/F1 {font_size:.3f} Tf",
+                    f"/F1 {element_font_size:.3f} Tf",
                     f"1 0 0 1 {x:.3f} {y:.3f} Tm",
                     f"({safe_text}) Tj",
                     "ET",
@@ -671,6 +745,7 @@ def _validate_privacy(
     source_text: str,
     pdf_bytes: bytes,
     institution_tokens: frozenset[str],
+    schema_version: str = "1",
 ) -> None:
     try:
         reader = PdfReader(BytesIO(pdf_bytes))
@@ -681,7 +756,14 @@ def _validate_privacy(
         "".join(character for character in token if character.isalpha())
         for token in _TOKEN_PATTERN.findall(_ascii_upper(output_text))
     }
-    allowed_output_tokens = _SAFE_LABELS | {_CANONICAL_TEXT_PLACEHOLDER} | institution_tokens
+    if schema_version == "2":
+        allowed_output_tokens = _v2_safe_word_cores()
+        if any(character.isdigit() for character in output_text):
+            raise CanonicalLayoutPrivacyError("v2_numeric_text_detected")
+        if output_text_tokens - allowed_output_tokens:
+            raise CanonicalLayoutPrivacyError("v2_unapproved_text_detected")
+    else:
+        allowed_output_tokens = _SAFE_LABELS | {_CANONICAL_TEXT_PLACEHOLDER} | institution_tokens
     output_digit_tokens = {
         "".join(character for character in token if character.isdigit())
         for token in _TOKEN_PATTERN.findall(_ascii_upper(output_text))
@@ -702,3 +784,25 @@ def _validate_privacy(
         resources = page.get("/Resources") or {}
         if "/XObject" in resources:
             raise CanonicalLayoutPrivacyError("image_or_xobject_detected")
+
+
+def _v2_safe_word_cores() -> frozenset[str]:
+    phrases = " ".join(PUBLIC_LAYOUT_PHRASES)
+    return frozenset(_TOKEN_PATTERN.findall(phrases)) | PUBLIC_SINGLE_LABELS | frozenset(
+        "".join(character for character in token if character.isalpha()) for token in PLACEHOLDERS
+    )
+
+
+def _validate_v2_manifest(manifest: dict[str, object]) -> None:
+    allowed = _v2_safe_word_cores()
+    for page in manifest["pages"]:
+        for element in page["elements"]:
+            value = str(element["text"])
+            if any(character.isdigit() for character in value):
+                raise CanonicalLayoutPrivacyError("v2_manifest_numeric_text_detected")
+            cores = {
+                "".join(character for character in token if character.isalpha())
+                for token in _TOKEN_PATTERN.findall(value)
+            }
+            if cores - allowed:
+                raise CanonicalLayoutPrivacyError("v2_manifest_unapproved_text_detected")

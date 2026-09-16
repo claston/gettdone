@@ -3,6 +3,7 @@ from typing import Callable
 
 from app.application.canonization import build_transaction_metadata
 from app.application.conversion.uploaded_document import UploadedDocument
+from app.application.document_extraction_models import ExtractedLine
 from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.parsers.csv import parse_csv_transactions
 from app.application.parsers.ofx import parse_ofx_transactions
@@ -21,6 +22,7 @@ class ParsedDocument:
     layout_inference_confidence: float | None = None
     extracted_text: str | None = None
     source_page_texts: tuple[str, ...] | None = None
+    source_layout_lines: tuple[tuple[ExtractedLine, ...], ...] | None = None
     parse_metrics: dict[str, int | float | str] | None = None
     canonical_transactions: list[CanonicalTransaction] | None = None
     warning_types: list[list[str]] | None = None
@@ -99,6 +101,7 @@ class ParsingService:
                 layout_inference_confidence=result.layout.confidence,
                 extracted_text=result.extracted_text,
                 source_page_texts=getattr(result, "source_page_texts", None),
+                source_layout_lines=getattr(result, "source_layout_lines", None),
                 parse_metrics=result.parse_metrics,
                 canonical_transactions=result.canonical_transactions,
             )

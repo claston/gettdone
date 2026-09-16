@@ -355,6 +355,7 @@ def get_canonical_layout_capture_service() -> CanonicalLayoutCaptureService:
                 "CANONICAL_LAYOUT_FAILURE_CAPTURE_ENABLED",
                 default=False,
             ),
+            v2_enabled=read_bool_env("CANONICAL_LAYOUT_V2_ENABLED", default=False),
         )
     return _canonical_layout_capture_service
 

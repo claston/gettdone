@@ -16,6 +16,7 @@ from app.application.pdf_ocr import (
 )
 from app.application.pdf_parser import is_textract_enabled
 from app.application.textract_header_ocr import extract_pdf_first_page_header_text_with_textract
+from app.application.textract_layout_preview import extract_pdf_layout_preview_with_textract
 
 _CAPTURE_ID_PATTERN = re.compile(r"^cap_[a-f0-9]{24}$")
 
@@ -109,6 +110,7 @@ def build_s3_canonical_layout_capture_service(
     max_extracted_chars: int = 250_000,
     bank_header_ocr_enabled: bool = False,
     failure_capture_enabled: bool = False,
+    v2_enabled: bool = False,
 ) -> CanonicalLayoutCaptureService:
     if not enabled:
         return CanonicalLayoutCaptureService(enabled=False)
@@ -119,6 +121,7 @@ def build_s3_canonical_layout_capture_service(
             max_pages=max_pages,
             max_extracted_chars=max_extracted_chars,
             ocr_page_text_extractor=extract_pdf_page_texts_with_ocr,
+            layout_preview_extractor=(extract_pdf_layout_preview_with_textract if v2_enabled and textract_enabled else None),
             bank_header_ocr_enabled=bank_header_ocr_enabled,
             bank_header_ocr_extractor=(
                 extract_pdf_first_page_header_text_with_textract
@@ -126,11 +129,21 @@ def build_s3_canonical_layout_capture_service(
                 else extract_pdf_first_page_header_text_with_ocr
             ),
             bank_header_ocr_provider="aws_textract" if textract_enabled else "local",
+            schema_version="2" if v2_enabled else "1",
         ),
         store=S3CanonicalLayoutStore(
             bucket=bucket,
-            prefix=prefix,
+            prefix=_v2_prefix(prefix) if v2_enabled else prefix,
             region=region,
         ),
         failure_capture_enabled=failure_capture_enabled,
     )
+
+
+def _v2_prefix(prefix: str) -> str:
+    clean_prefix = str(prefix or "").strip().strip("/")
+    if clean_prefix.endswith("/v2"):
+        return clean_prefix
+    if clean_prefix.endswith("/v1"):
+        return f"{clean_prefix[:-3]}/v2"
+    return f"{clean_prefix}/v2" if clean_prefix else "v2"

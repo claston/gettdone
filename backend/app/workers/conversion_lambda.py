@@ -295,6 +295,7 @@ def build_lambda_processor() -> ConversionLambdaProcessor:
                 "CANONICAL_LAYOUT_FAILURE_CAPTURE_ENABLED",
                 default=False,
             ),
+            v2_enabled=read_bool_env("CANONICAL_LAYOUT_V2_ENABLED", default=False),
         ),
     )
     return ConversionLambdaProcessor(

@@ -90,6 +90,7 @@ def _with_parse_observability(
         extracted_text=result.extracted_text,
         parse_metrics=parse_metrics,
         source_page_texts=result.source_page_texts,
+        source_layout_lines=result.source_layout_lines,
     )
 
 
@@ -434,6 +435,7 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
             extracted_text=text_mode_result.extracted_text,
             parse_metrics=text_mode_metrics,
             source_page_texts=text_mode_result.source_page_texts,
+            source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages),
         )
     adapted = adapt_textract_extraction_to_transactions(extraction)
     inferred_layout = infer_pdf_layout(adapted.extracted_text)
@@ -474,6 +476,7 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
         extracted_text=adapted.extracted_text,
         parse_metrics=parse_metrics,
         source_page_texts=_textract_page_texts(extraction),
+        source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages),
     )
 
 

@@ -611,6 +611,7 @@ def test_parse_pdf_transactions_uses_standard_pdf_parser_for_textract_text_mode(
                         "Page": 1,
                         "Text": "Data Historico Documento Valor Saldo",
                         "Confidence": 99.0,
+                        "Geometry": {"BoundingBox": {"Left": 0.18, "Top": 0.12, "Width": 0.7, "Height": 0.03}},
                     },
                     {
                         "BlockType": "LINE",
@@ -642,6 +643,10 @@ def test_parse_pdf_transactions_uses_standard_pdf_parser_for_textract_text_mode(
     assert result.parse_metrics.get("selected_parser") == "tabular"
     assert result.parse_metrics.get("extraction_provider") == "aws_textract"
     assert result.parse_metrics.get("textract_mode") == "text"
+    assert result.source_layout_lines is not None
+    assert result.source_layout_lines[0][0].bbox == {
+        "left": 0.18, "top": 0.12, "width": 0.7, "height": 0.03,
+    }
     assert result.canonical_transactions[0].warnings == []
     assert result.canonical_transactions[1].warnings == []
 
