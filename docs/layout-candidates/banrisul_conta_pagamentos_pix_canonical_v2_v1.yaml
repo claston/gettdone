@@ -1,0 +1,79 @@
+# Candidato de layout extraído apenas de artefatos canônicos v2.
+# Este arquivo não é carregado pelo classificador nem habilita um parser.
+meta_model:
+  layout_id: banrisul_conta_pagamentos_pix_canonical_v2_v1
+  bank: Banrisul
+  bank_code: "041"
+  channel: unknown
+  statement_type: unknown
+  source_quality: canonical_v2_redacted_native_text
+  confidence: low
+  evidence:
+    source_page_count: 2
+    sampled_page_count: 2
+    page_dimensions_points: [624.0, 876.96]
+    source_line_counts: [75, 18]
+    safe_element_counts: [69, 14]
+    geometry_source: estimated
+    public_labels:
+      - AGENCIA
+      - CONTA
+      - DATA
+      - PAGAMENTO
+      - PIX ENVIADO
+      - PIX RECEBIDO
+      - SALDO
+    line_shape_counts:
+      amount: 2
+      amount+number: 15
+      number: 42
+      text: 22
+      time+number: 2
+    date_placeholder_count: 0
+    source_conversion:
+      error_stage: parse
+      error_subcode: unsupported_table_layout
+      exception_class: InvalidFileContentError
+    current_layout_match:
+      status: new_candidate
+      nearest_profile: banrisul_extrato_texto_movimentos_conta_corrente_v1
+      nearest_score: 0.145
+  page_structure:
+    first_page:
+      header_labels: [AGENCIA, CONTA]
+      body_labels: [PAGAMENTO, DATA, SALDO]
+      amount_and_number_line_count: 14
+    second_page:
+      body_labels: [PIX ENVIADO, PIX RECEBIDO, DATA, SALDO]
+      amount_and_number_line_count: 1
+  unresolved:
+    - Título original e tipo do documento.
+    - Formato e posição das datas das transações.
+    - Limites entre transações, saldos e comprovantes.
+    - Ordem das colunas e associação entre descrição, data e valor.
+    - Regras de sinal e identificação de estornos.
+    - Se a segunda página continua o extrato ou contém comprovantes anexos.
+    - Se o parser tentou Textract ou OCR local na conversão original.
+
+layout_profile:
+  profile_name: banrisul_conta_pagamentos_pix_canonical_v2_v1
+  status: candidate_only
+  activation: requires_another_redacted_sample_and_parser_validation
+  bank: Banrisul
+  bank_code: "041"
+  classifier_evidence:
+    # Sinais observados, não uma regra pronta para classificação automática.
+    public_labels: [AGENCIA, CONTA, PAGAMENTO, SALDO, PIX ENVIADO, PIX RECEBIDO]
+    useful_structure: multiple_amount_and_number_lines
+    avoid_using_alone: [DATA, SALDO, PIX ENVIADO, PIX RECEBIDO]
+  parsing:
+    date_formats: unknown
+    amount_locale: unknown
+    row_boundaries: unknown
+    opening_balance_policy: unknown
+    debit_credit_rules: unknown
+  next_capture_review:
+    - Comparar rótulos e ordem dos blocos nas páginas, sem exigir a mesma quantidade de linhas.
+    - Verificar se datas e valores aparecem na mesma linha ou em linhas separadas.
+    - Confirmar cabeçalho, tipo de extrato e repetição entre páginas com exemplar editado.
+    - Validar transações e saldos antes de registrar um parser ou ativar classificação.
