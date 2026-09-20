@@ -21,6 +21,8 @@ from app.application.conversion.canonical_layout_v2 import (
     match_layout_candidates,
 )
 from app.application.conversion.uploaded_document import UploadedDocument
+from app.application.conversion.v3.layout import build_semantic_layout_pages
+from app.application.conversion.v3.privacy import validate_v3_manifest, validate_v3_output
 from app.application.conversion_quality import ConversionQualityAssessment, assess_conversion_quality
 from app.application.document_extraction_models import ExtractedLine
 from app.application.errors import InvalidFileContentError
@@ -161,7 +163,7 @@ class CanonicalLayoutGenerator:
         self.bank_header_ocr_enabled = bool(bank_header_ocr_enabled)
         self.bank_header_ocr_extractor = bank_header_ocr_extractor
         self.bank_header_ocr_provider = bank_header_ocr_provider
-        if schema_version not in {"1", "2"}:
+        if schema_version not in {"1", "2", "3"}:
             raise ValueError("Unsupported canonical layout schema version.")
         self.schema_version = schema_version
 
@@ -200,7 +202,7 @@ class CanonicalLayoutGenerator:
             page_texts=page_texts,
             page_text_source=page_text_source,
             prefer_supplied_ocr=(
-                self.schema_version == "2"
+                self.schema_version in {"2", "3"}
                 and source_layout_lines is not None
                 and page_text_source == "ocr"
             ),
@@ -245,7 +247,7 @@ class CanonicalLayoutGenerator:
                     bank_header_ocr_status = (
                         "unresolved" if str(bank.get("detection_source") or "") == "unresolved" else "identified"
                     )
-        if self.schema_version == "2" and not bank.get("catalog_match"):
+        if self.schema_version in {"2", "3"} and not bank.get("catalog_match"):
             bank = {**bank, "name": "unknown"}
         institution_tokens = _institution_tokens(bank)
 
@@ -253,7 +255,13 @@ class CanonicalLayoutGenerator:
         render_pages: list[dict[str, object]] = []
         layout_signals = None
         layout_match = None
-        if self.schema_version == "2":
+        if self.schema_version == "3":
+            manifest_pages, layout_signals = build_semantic_layout_pages(
+                pages, source_layout_lines=source_layout_lines or preview_layout_lines
+            )
+            layout_match = match_layout_candidates(signals=layout_signals, bank_code=str(bank.get("code") or ""))
+            render_pages = manifest_pages
+        elif self.schema_version == "2":
             manifest_pages, layout_signals = build_safe_layout_pages(
                 pages, source_layout_lines=source_layout_lines or preview_layout_lines
             )
@@ -304,7 +312,13 @@ class CanonicalLayoutGenerator:
             raise ValueError("Invalid canonical capture id.")
         manifest: dict[str, object] = {
             "schema_version": self.schema_version,
-            "privacy_validation_version": "3" if self.schema_version == "2" else CANONICAL_PRIVACY_VALIDATION_VERSION,
+            "privacy_validation_version": (
+                "4"
+                if self.schema_version == "3"
+                else "3"
+                if self.schema_version == "2"
+                else CANONICAL_PRIVACY_VALIDATION_VERSION
+            ),
             "text_source": text_source,
             "bank": bank,
             "bank_header_ocr_status": bank_header_ocr_status,
@@ -312,7 +326,7 @@ class CanonicalLayoutGenerator:
             "quality": _quality_manifest(assessment, layout_name=layout_name, selected_parser=selected_parser),
             "pages": manifest_pages,
         }
-        if self.schema_version == "2":
+        if self.schema_version in {"2", "3"}:
             manifest["source_page_count"] = source_page_count
             manifest["sampled_page_count"] = len(manifest_pages)
             manifest["layout_signals"] = layout_signals
@@ -326,6 +340,11 @@ class CanonicalLayoutGenerator:
         )
         if self.schema_version == "2":
             _validate_v2_manifest(manifest)
+        elif self.schema_version == "3":
+            try:
+                validate_v3_manifest(manifest, source_text=source_text)
+            except ValueError as exc:
+                raise CanonicalLayoutPrivacyError(str(exc)) from exc
         return CanonicalLayoutArtifact(
             capture_id=capture_id,
             pdf_bytes=pdf_bytes,
@@ -372,13 +391,13 @@ class CanonicalLayoutGenerator:
             return pages, "native", None, source_page_count
 
         fallback_page_texts = tuple(str(value or "") for value in (page_texts or ()))
-        if self.schema_version == "2":
+        if self.schema_version in {"2", "3"}:
             fallback_page_texts = fallback_page_texts[:len(pages)]
         fallback_source = "ocr" if str(page_text_source or "").strip().casefold() == "ocr" else "parser"
         preview_layout_lines = None
         if (
             not any(value.strip() for value in fallback_page_texts)
-            and self.schema_version == "2"
+            and self.schema_version in {"2", "3"}
             and self.layout_preview_extractor is not None
         ):
             try:
@@ -756,7 +775,13 @@ def _validate_privacy(
         "".join(character for character in token if character.isalpha())
         for token in _TOKEN_PATTERN.findall(_ascii_upper(output_text))
     }
-    if schema_version == "2":
+    if schema_version == "3":
+        try:
+            validate_v3_output(source_text=source_text, output_text=output_text)
+        except ValueError as exc:
+            raise CanonicalLayoutPrivacyError(str(exc)) from exc
+        allowed_output_tokens = frozenset()
+    elif schema_version == "2":
         allowed_output_tokens = _v2_safe_word_cores()
         if any(character.isdigit() for character in output_text):
             raise CanonicalLayoutPrivacyError("v2_numeric_text_detected")
@@ -768,13 +793,14 @@ def _validate_privacy(
         "".join(character for character in token if character.isdigit())
         for token in _TOKEN_PATTERN.findall(_ascii_upper(output_text))
     }
-    for raw_token in _TOKEN_PATTERN.findall(_ascii_upper(source_text)):
-        core = "".join(character for character in raw_token if character.isalpha())
-        if len(core) >= 4 and core not in allowed_output_tokens and core in output_text_tokens:
-            raise CanonicalLayoutPrivacyError("source_text_leak_detected")
-        digits = "".join(character for character in raw_token if character.isdigit())
-        if len(digits) >= 4 and digits in output_digit_tokens:
-            raise CanonicalLayoutPrivacyError("source_number_leak_detected")
+    if schema_version != "3":
+        for raw_token in _TOKEN_PATTERN.findall(_ascii_upper(source_text)):
+            core = "".join(character for character in raw_token if character.isalpha())
+            if len(core) >= 4 and core not in allowed_output_tokens and core in output_text_tokens:
+                raise CanonicalLayoutPrivacyError("source_text_leak_detected")
+            digits = "".join(character for character in raw_token if character.isdigit())
+            if len(digits) >= 4 and digits in output_digit_tokens:
+                raise CanonicalLayoutPrivacyError("source_number_leak_detected")
     root = reader.trailer["/Root"]
     if any(name in root for name in ("/AcroForm", "/EmbeddedFiles", "/JavaScript")):
         raise CanonicalLayoutPrivacyError("active_content_detected")

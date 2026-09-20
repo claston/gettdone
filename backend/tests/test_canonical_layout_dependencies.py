@@ -83,3 +83,19 @@ def test_dependency_enables_v2_only_with_explicit_flag(monkeypatch: pytest.Monke
     assert service.generator.layout_preview_extractor is not None
     assert service.store is not None
     assert service.store.prefix.endswith("/v2")
+
+
+def test_dependency_prefers_v3_when_explicitly_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CANONICAL_LAYOUT_CAPTURE_ENABLED", "true")
+    monkeypatch.setenv("CONVERSION_S3_BUCKET", "gettdone-conversions")
+    monkeypatch.setenv("CANONICAL_LAYOUT_V2_ENABLED", "true")
+    monkeypatch.setenv("CANONICAL_LAYOUT_V3_ENABLED", "true")
+    monkeypatch.setenv("TEXTRACT_ENABLED", "true")
+
+    service = dependencies.get_canonical_layout_capture_service()
+
+    assert service.generator is not None
+    assert service.generator.schema_version == "3"
+    assert service.generator.layout_preview_extractor is not None
+    assert service.store is not None
+    assert service.store.prefix.endswith("/v3")
