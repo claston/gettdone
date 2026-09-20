@@ -1,3 +1,5 @@
+import csv
+import io
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -308,6 +310,170 @@ def test_admin_dashboard_filters_registered_conversions(tmp_path: Path) -> None:
         app.dependency_overrides.clear()
 
 
+def test_admin_dashboard_exports_all_attention_items_from_last_seven_days(tmp_path: Path) -> None:
+    client, service, clock, user_id = _build_dashboard_client(tmp_path)
+    for index in range(11):
+        _record_user_conversion(
+            service,
+            user_id=user_id,
+            processing_id=f"an_review_{index:02d}",
+            created_at=datetime(2026, 9, 8, 12 + index, 0, tzinfo=timezone.utc),
+            warning_count=1,
+            pages_count=index + 1,
+        )
+    _record_anonymous_conversion(
+        service,
+        clock,
+        fingerprint="secret-fingerprint",
+        event_id="ace_failed_export",
+        created_at=datetime(2026, 9, 7, 12, 0, tzinfo=timezone.utc),
+        status="Falha",
+        transactions_count=0,
+        pages_count=4,
+        ocr_used=True,
+        error_code="parse_failed",
+        error_stage="extraction",
+    )
+    _record_user_conversion(
+        service,
+        user_id=user_id,
+        processing_id="an_clean_not_exported",
+        created_at=datetime(2026, 9, 8, 14, 0, tzinfo=timezone.utc),
+    )
+    _record_user_conversion(
+        service,
+        user_id=user_id,
+        processing_id="an_old_review",
+        created_at=datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc),
+        warning_count=1,
+    )
+    clock["now"] = datetime(2026, 9, 9, 15, 0, tzinfo=timezone.utc)
+
+    try:
+        login = client.post(
+            "/admin/auth/login",
+            json={"email": "admin@example.com", "password": "admin-pass"},
+        )
+        assert login.status_code == 200
+
+        response = client.get(
+            "/admin/dashboard/attention.csv",
+            params={"identity_type": "all"},
+        )
+
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["content-type"].startswith("text/csv")
+        assert response.headers["content-disposition"] == (
+            'attachment; filename="conversoes-atencao-ultimos-7-dias.csv"'
+        )
+        decoded = response.content.decode("utf-8-sig")
+        rows = list(csv.DictReader(io.StringIO(decoded), delimiter=";"))
+        assert len(rows) == 12
+        assert rows[0]["identificador"] == "an_review_10"
+        assert rows[-1]["identificador"] == "ace_failed_export"
+        assert rows[-1]["paginas"] == "4"
+        assert rows[-1]["usa_ocr"] == "sim"
+        assert rows[-1]["codigo_erro"] == "parse_failed"
+        assert rows[-1]["motivo_atencao"]
+        assert "an_clean_not_exported" not in decoded
+        assert "an_old_review" not in decoded
+        assert "secret-fingerprint" not in decoded
+        assert ".pdf" not in decoded
+
+        registered_only = client.get(
+            "/admin/dashboard/attention.csv",
+            params={"identity_type": "registered"},
+        )
+        registered_rows = list(
+            csv.DictReader(
+                io.StringIO(registered_only.content.decode("utf-8-sig")),
+                delimiter=";",
+            )
+        )
+        assert len(registered_rows) == 11
+        assert {row["tipo_pessoa"] for row in registered_rows} == {"cadastrada"}
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_admin_dashboard_ranks_heavy_users_for_selected_period(tmp_path: Path) -> None:
+    client, service, clock, user_id = _build_dashboard_client(tmp_path)
+    highest_user = service.register_user(
+        name="Usuária Heavy",
+        email="heavy@example.com",
+        password="strong-pass",
+    )
+    for index in range(2):
+        _record_user_conversion(
+            service,
+            user_id=user_id,
+            processing_id=f"an_regular_{index}",
+            created_at=datetime(2026, 9, 8, 10 + index, 0, tzinfo=timezone.utc),
+            pages_count=2,
+        )
+    _record_user_conversion(
+        service,
+        user_id=highest_user.user_id,
+        processing_id="an_highest_pages",
+        created_at=datetime(2026, 9, 8, 14, 0, tzinfo=timezone.utc),
+        pages_count=20,
+        ocr_used=True,
+        warning_count=1,
+    )
+    for index in range(2):
+        _record_anonymous_conversion(
+            service,
+            clock,
+            fingerprint="private-heavy-fingerprint",
+            event_id=f"ace_heavy_{index}",
+            created_at=datetime(2026, 9, 8, 12 + index, 0, tzinfo=timezone.utc),
+            pages_count=6,
+            ocr_used=True,
+        )
+    _record_user_conversion(
+        service,
+        user_id=highest_user.user_id,
+        processing_id="an_old_heavy",
+        created_at=datetime(2026, 8, 20, 12, 0, tzinfo=timezone.utc),
+        pages_count=50,
+    )
+    clock["now"] = datetime(2026, 9, 9, 15, 0, tzinfo=timezone.utc)
+
+    try:
+        login = client.post(
+            "/admin/auth/login",
+            json={"email": "admin@example.com", "password": "admin-pass"},
+        )
+        assert login.status_code == 200
+
+        response = client.get(
+            "/admin/dashboard",
+            params={"days": 7, "identity_type": "all"},
+        )
+
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        payload = response.json()
+        rows = payload["heavy_users"]
+        assert len(rows) == 3
+        assert [row["pages"] for row in rows] == [20, 12, 4]
+        assert rows[0]["rank"] == 1
+        assert rows[0]["display_name"] == "Usuária Heavy"
+        assert rows[0]["email"] == "heavy@example.com"
+        assert rows[0]["ocr_conversions"] == 1
+        assert rows[0]["review"] == 1
+        assert rows[1]["identity_type"] == "anonymous"
+        assert rows[1]["identity_reference"].startswith("anon_")
+        assert rows[1]["conversions"] == 2
+        assert rows[1]["ocr_pages"] == 12
+        assert rows[2]["pdf_conversions"] == 2
+        assert "private-heavy-fingerprint" not in str(payload)
+        assert "an_old_heavy" not in str(payload)
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_admin_dashboard_requires_admin_access(tmp_path: Path) -> None:
     service = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
@@ -320,6 +486,8 @@ def test_admin_dashboard_requires_admin_access(tmp_path: Path) -> None:
     try:
         response = client.get("/admin/dashboard")
         assert response.status_code == 401
+        export_response = client.get("/admin/dashboard/attention.csv")
+        assert export_response.status_code == 401
     finally:
         app.dependency_overrides.clear()
 

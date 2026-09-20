@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections import Counter, defaultdict
 from datetime import date, datetime, time, timedelta, timezone
+from hashlib import sha256
 from statistics import median
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -81,6 +82,7 @@ class AdminDashboardService:
                     end_at=now_utc.isoformat(),
                     identity_type=normalized_identity_type,
                 )
+                registered_profiles = self._load_registered_profiles(conn, events=events)
 
         return _build_dashboard_payload(
             events=events,
@@ -90,7 +92,71 @@ class AdminDashboardService:
             start_at=start_utc,
             end_at=now_utc,
             top_quality_issues=top_quality_issues,
+            registered_profiles=registered_profiles,
         )
+
+    def get_attention_export_rows(
+        self,
+        *,
+        days: int = 7,
+        identity_type: str = "all",
+    ) -> list[dict[str, object]]:
+        normalized_days = max(1, min(int(days), 90))
+        normalized_identity_type = str(identity_type or "all").strip().lower()
+        if normalized_identity_type not in SUPPORTED_IDENTITY_TYPES:
+            raise ValueError("Unsupported identity_type")
+
+        now_utc = _as_aware_utc(self._service.now_provider())
+        now_local = now_utc.astimezone(DASHBOARD_TIMEZONE)
+        start_date = now_local.date() - timedelta(days=normalized_days - 1)
+        start_local = datetime.combine(start_date, time.min, tzinfo=DASHBOARD_TIMEZONE)
+        start_utc = start_local.astimezone(timezone.utc)
+
+        with self._service._lock:
+            with self._service._connect() as conn:
+                events = self._load_period_events(
+                    conn,
+                    start_at=start_utc.isoformat(),
+                    end_at=now_utc.isoformat(),
+                    identity_type=normalized_identity_type,
+                )
+
+        export_rows: list[dict[str, object]] = []
+        for event in events:
+            is_success = _is_success_status(str(event["status"]))
+            is_clean = is_success and str(event["quality_status"]) == "clean"
+            if is_clean:
+                continue
+            attention = _attention_item(event, is_success=is_success)
+            created_at = _parse_datetime(str(event["created_at"]))
+            export_rows.append(
+                {
+                    "created_at": created_at.astimezone(DASHBOARD_TIMEZONE).isoformat()
+                    if created_at
+                    else str(event["created_at"]),
+                    "processing_id": str(event["processing_id"]),
+                    "identity_type": str(event["identity_type"]),
+                    "model": str(event["model"]),
+                    "conversion_type": str(event["conversion_type"]),
+                    "status": str(event["status"]),
+                    "pages_count": int(event["pages_count"]),
+                    "ocr_used": bool(event["ocr_used"]),
+                    "transactions_count": int(event["transactions_count"]),
+                    "layout_name": event.get("layout_name"),
+                    "layout_confidence": event.get("layout_confidence"),
+                    "selected_parser": event.get("selected_parser"),
+                    "error_code": event.get("error_code"),
+                    "error_stage": event.get("error_stage"),
+                    "quality_status": event.get("quality_status"),
+                    "quality_reason_codes": event.get("quality_reason_codes", []),
+                    "issue_reason": attention["issue_reason"],
+                    "canonical_capture_status": event.get("canonical_capture_status"),
+                    "canonical_capture_reason": event.get("canonical_capture_reason"),
+                }
+            )
+
+        export_rows.sort(key=lambda item: str(item["created_at"]), reverse=True)
+        return export_rows
 
     def _load_top_quality_issues(self, conn, *, start_at: str, end_at: str, identity_type: str) -> list[dict[str, object]]:
         sql = """
@@ -227,6 +293,35 @@ class AdminDashboardService:
             identity_keys.update(f"anonymous:{row['identity_id']}" for row in rows)
         return identity_keys
 
+    def _load_registered_profiles(
+        self,
+        conn,
+        *,
+        events: list[dict[str, object]],
+    ) -> dict[str, dict[str, str]]:
+        user_ids = sorted(
+            {
+                str(event["identity_id"])
+                for event in events
+                if event["identity_type"] == "registered" and str(event["identity_id"])
+            }
+        )
+        if not user_ids:
+            return {}
+        placeholders = ", ".join("?" for _ in user_ids)
+        rows = self._service._fetchall(
+            conn,
+            f"SELECT id, name, email FROM users WHERE id IN ({placeholders})",
+            tuple(user_ids),
+        )
+        return {
+            str(row["id"]): {
+                "name": str(row["name"] or ""),
+                "email": str(row["email"] or ""),
+            }
+            for row in rows
+        }
+
 
 def _row_to_event(row, *, identity_type: str) -> dict[str, object]:
     identity_id = str(row["identity_id"] or "")
@@ -245,6 +340,7 @@ def _row_to_event(row, *, identity_type: str) -> dict[str, object]:
     return {
         "processing_id": str(row["processing_id"] or ""),
         "identity_type": identity_type,
+        "identity_id": identity_id,
         "identity_key": f"{identity_type}:{identity_id}",
         "created_at": str(row["created_at"] or ""),
         "model": str(row["model"] or "Não identificado"),
@@ -281,6 +377,7 @@ def _build_dashboard_payload(
     start_at: datetime,
     end_at: datetime,
     top_quality_issues: list[dict[str, object]],
+    registered_profiles: dict[str, dict[str, str]],
 ) -> dict[str, object]:
     daily_by_date = {
         (start_date + timedelta(days=offset)).isoformat(): {
@@ -444,9 +541,89 @@ def _build_dashboard_payload(
         "top_errors": top_errors,
         "top_quality_issues": top_quality_issues,
         "canonical_capture": _build_canonical_capture_summary(events),
+        "heavy_users": _build_heavy_users(events, registered_profiles=registered_profiles),
         "layouts": layout_items,
         "recent_attention": recent_attention[:10],
     }
+
+
+def _build_heavy_users(
+    events: list[dict[str, object]],
+    *,
+    registered_profiles: dict[str, dict[str, str]],
+) -> list[dict[str, object]]:
+    grouped: dict[str, dict[str, object]] = {}
+    for event in events:
+        identity_key = str(event["identity_key"])
+        identity_type = str(event["identity_type"])
+        identity_id = str(event["identity_id"])
+        profile = registered_profiles.get(identity_id, {}) if identity_type == "registered" else {}
+        if identity_type == "registered":
+            identity_reference = identity_id
+            display_name = profile.get("name") or "Pessoa cadastrada"
+            email = profile.get("email") or None
+        else:
+            identity_reference = f"anon_{sha256(identity_id.encode('utf-8')).hexdigest()[:12]}"
+            display_name = f"Anônima {identity_reference[-6:]}"
+            email = None
+
+        item = grouped.setdefault(
+            identity_key,
+            {
+                "rank": 0,
+                "identity_type": identity_type,
+                "identity_reference": identity_reference,
+                "display_name": display_name,
+                "email": email,
+                "conversions": 0,
+                "pages": 0,
+                "pdf_conversions": 0,
+                "pdf_pages": 0,
+                "ocr_conversions": 0,
+                "ocr_pages": 0,
+                "successes": 0,
+                "review": 0,
+                "failures": 0,
+                "transactions": 0,
+                "last_activity_at": None,
+            },
+        )
+        pages_count = int(event["pages_count"])
+        item["conversions"] = int(item["conversions"]) + 1
+        item["pages"] = int(item["pages"]) + pages_count
+        item["transactions"] = int(item["transactions"]) + int(event["transactions_count"])
+        if bool(event["ocr_used"]):
+            item["ocr_conversions"] = int(item["ocr_conversions"]) + 1
+            item["ocr_pages"] = int(item["ocr_pages"]) + pages_count
+        else:
+            item["pdf_conversions"] = int(item["pdf_conversions"]) + 1
+            item["pdf_pages"] = int(item["pdf_pages"]) + pages_count
+
+        is_success = _is_success_status(str(event["status"]))
+        if is_success:
+            item["successes"] = int(item["successes"]) + 1
+            if str(event["quality_status"]) != "clean":
+                item["review"] = int(item["review"]) + 1
+        else:
+            item["failures"] = int(item["failures"]) + 1
+
+        created_at = _parse_datetime(str(event["created_at"]))
+        if created_at:
+            local_created_at = created_at.astimezone(DASHBOARD_TIMEZONE).isoformat()
+            if not item["last_activity_at"] or local_created_at > str(item["last_activity_at"]):
+                item["last_activity_at"] = local_created_at
+
+    ranked = sorted(
+        grouped.values(),
+        key=lambda item: (
+            -int(item["pages"]),
+            -int(item["conversions"]),
+            str(item["identity_reference"]),
+        ),
+    )[:10]
+    for rank, item in enumerate(ranked, start=1):
+        item["rank"] = rank
+    return ranked
 
 
 def _attention_item(event: dict[str, object], *, is_success: bool) -> dict[str, object]:

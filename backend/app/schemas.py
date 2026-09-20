@@ -300,6 +300,25 @@ class AdminDashboardCanonicalCaptureSummary(BaseModel):
     by_reason: list[AdminDashboardCanonicalCaptureReasonItem]
 
 
+class AdminDashboardHeavyUserItem(BaseModel):
+    rank: int
+    identity_type: str
+    identity_reference: str
+    display_name: str
+    email: str | None = None
+    conversions: int
+    pages: int
+    pdf_conversions: int
+    pdf_pages: int
+    ocr_conversions: int
+    ocr_pages: int
+    successes: int
+    review: int
+    failures: int
+    transactions: int
+    last_activity_at: str | None = None
+
+
 class AdminDashboardLayoutItem(BaseModel):
     layout_name: str
     conversions: int
@@ -343,6 +362,7 @@ class AdminDashboardResponse(BaseModel):
     top_errors: list[AdminDashboardErrorItem]
     top_quality_issues: list[AdminDashboardQualityIssueItem]
     canonical_capture: AdminDashboardCanonicalCaptureSummary
+    heavy_users: list[AdminDashboardHeavyUserItem]
     layouts: list[AdminDashboardLayoutItem]
     recent_attention: list[AdminDashboardAttentionItem]
 
