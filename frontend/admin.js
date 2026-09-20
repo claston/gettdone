@@ -217,6 +217,27 @@
     appendMetricCard(dashboardSummaryNode, "Conversões", formatInteger(total), "tentativas no período", "");
     appendMetricCard(
       dashboardSummaryNode,
+      "Páginas processadas",
+      formatInteger(summary.pages_total),
+      "em todas as tentativas",
+      "",
+    );
+    appendMetricCard(
+      dashboardSummaryNode,
+      "PDF (texto)",
+      formatCountLabel(summary.pdf_conversions_count, "conversão", "conversões"),
+      formatCountLabel(summary.pdf_pages_count, "página sem OCR", "páginas sem OCR"),
+      "",
+    );
+    appendMetricCard(
+      dashboardSummaryNode,
+      "OCR",
+      formatCountLabel(summary.ocr_conversions_count, "conversão", "conversões"),
+      formatCountLabel(summary.ocr_pages_count, "página com OCR", "páginas com OCR"),
+      "",
+    );
+    appendMetricCard(
+      dashboardSummaryNode,
       "Sucesso técnico",
       formatPercent(summary.technical_success_rate),
       formatCountLabel(successCount, "concluída", "concluídas"),

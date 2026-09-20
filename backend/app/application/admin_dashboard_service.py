@@ -134,6 +134,8 @@ class AdminDashboardService:
                     conversion_type,
                     status,
                     transactions_count,
+                    pages_count,
+                    ocr_used,
                     duration_ms,
                     error_code,
                     error_stage,
@@ -167,6 +169,8 @@ class AdminDashboardService:
                     conversion_type,
                     status,
                     transactions_count,
+                    pages_count,
+                    ocr_used,
                     duration_ms,
                     error_code,
                     error_stage,
@@ -247,6 +251,8 @@ def _row_to_event(row, *, identity_type: str) -> dict[str, object]:
         "conversion_type": str(row["conversion_type"] or "Não identificado"),
         "status": str(row["status"] or ""),
         "transactions_count": _as_non_negative_int(row["transactions_count"]),
+        "pages_count": _as_non_negative_int(row["pages_count"]),
+        "ocr_used": _as_bool(row["ocr_used"]),
         "duration_ms": _as_non_negative_int(row["duration_ms"]),
         "error_code": str(row["error_code"] or "").strip() or None,
         "error_stage": str(row["error_stage"] or "").strip() or None,
@@ -298,6 +304,11 @@ def _build_dashboard_payload(
     success_count = 0
     clean_count = 0
     review_count = 0
+    pages_total = 0
+    pdf_conversions_count = 0
+    pdf_pages_count = 0
+    ocr_conversions_count = 0
+    ocr_pages_count = 0
     layouts: dict[str, dict[str, object]] = {}
 
     for event in events:
@@ -305,6 +316,14 @@ def _build_dashboard_payload(
         event_identity_type = str(event["identity_type"])
         identity_keys_by_type[event_identity_type].add(identity_key)
         conversion_counts_by_type[event_identity_type] += 1
+        pages_count = int(event["pages_count"])
+        pages_total += pages_count
+        if bool(event["ocr_used"]):
+            ocr_conversions_count += 1
+            ocr_pages_count += pages_count
+        else:
+            pdf_conversions_count += 1
+            pdf_pages_count += pages_count
 
         created_at = _parse_datetime(str(event["created_at"]))
         local_date = created_at.astimezone(DASHBOARD_TIMEZONE).date().isoformat() if created_at else None
@@ -398,6 +417,11 @@ def _build_dashboard_payload(
         "timezone": DASHBOARD_TIMEZONE_NAME,
         "summary": {
             "conversions_total": total,
+            "pages_total": pages_total,
+            "pdf_conversions_count": pdf_conversions_count,
+            "pdf_pages_count": pdf_pages_count,
+            "ocr_conversions_count": ocr_conversions_count,
+            "ocr_pages_count": ocr_pages_count,
             "technical_success_count": success_count,
             "technical_success_rate": _percentage(success_count, total),
             "clean_conversion_count": clean_count,
@@ -525,6 +549,14 @@ def _as_non_negative_int(value: object) -> int:
         return max(0, int(value or 0))
     except (TypeError, ValueError):
         return 0
+
+
+def _as_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value or "").strip().casefold() in {"1", "true", "yes", "on"}
 
 
 def _as_optional_float(value: object) -> float | None:

@@ -42,6 +42,10 @@ def _run_http_server(tmp_path: Path):
         conversion_type="pdf-ofx",
         status="Sucesso",
         transactions_count=12,
+        pages_count=3,
+        scanned_likely=False,
+        ocr_used=False,
+        ocr_pages_processed=0,
         duration_ms=1400,
         created_at=datetime(2026, 9, 9, 12, 0, tzinfo=timezone.utc).isoformat(),
     )
@@ -96,6 +100,11 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
     assert dashboard.status_code == 200
     assert dashboard.headers["cache-control"] == "no-store"
     assert dashboard.json()["summary"]["conversions_total"] == 1
+    assert dashboard.json()["summary"]["pages_total"] == 3
+    assert dashboard.json()["summary"]["pdf_conversions_count"] == 1
+    assert dashboard.json()["summary"]["pdf_pages_count"] == 3
+    assert dashboard.json()["summary"]["ocr_conversions_count"] == 0
+    assert dashboard.json()["summary"]["ocr_pages_count"] == 0
     assert dashboard.json()["canonical_capture"] == {
         "candidate_count": 0,
         "stored_count": 0,

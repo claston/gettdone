@@ -29,5 +29,12 @@ def test_admin_dashboard_frontend_exposes_summary_filters_and_attention_sections
     assert "renderDashboardCanonicalCapture" in javascript
     assert "canonical_capture_status" in javascript
     assert "clean_high_confidence_rate" in javascript
+    assert '"Páginas processadas"' in javascript
+    assert '"PDF (texto)"' in javascript
+    assert '"OCR"' in javascript
+    assert "pdf_conversions_count" in javascript
+    assert "pdf_pages_count" in javascript
+    assert "ocr_conversions_count" in javascript
+    assert "ocr_pages_count" in javascript
     assert "textContent" in javascript
     assert "innerHTML" not in javascript
