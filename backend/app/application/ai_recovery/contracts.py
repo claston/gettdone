@@ -19,6 +19,7 @@ class AIExtractionResult:
     prompt_version: str
     provider_request_id: str | None = None
     usage: AIExtractionUsage | None = None
+    latency_ms: float = 0.0
 
 
 class DocumentAIExtractor(Protocol):

@@ -8,8 +8,10 @@ def test_ai_recovery_config_is_off_by_default() -> None:
 
     assert config.mode == AIRecoveryMode.OFF
     assert config.model_id == "us.amazon.nova-2-lite-v1:0"
+    assert config.region_name == "us-east-1"
     assert config.max_pages == 15
     assert config.timeout_seconds == 25
+    assert config.max_output_tokens == 16000
 
 
 @pytest.mark.parametrize("mode", ["off", "shadow", "active"])
@@ -27,7 +29,10 @@ def test_ai_recovery_config_accepts_supported_modes(mode: str) -> None:
         ({"AI_RECOVERY_MAX_PAGES": "16"}, "AI_RECOVERY_MAX_PAGES"),
         ({"AI_RECOVERY_TIMEOUT_SECONDS": "0"}, "AI_RECOVERY_TIMEOUT_SECONDS"),
         ({"AI_RECOVERY_TIMEOUT_SECONDS": "31"}, "AI_RECOVERY_TIMEOUT_SECONDS"),
+        ({"AI_RECOVERY_MAX_OUTPUT_TOKENS": "255"}, "AI_RECOVERY_MAX_OUTPUT_TOKENS"),
+        ({"AI_RECOVERY_MAX_OUTPUT_TOKENS": "64001"}, "AI_RECOVERY_MAX_OUTPUT_TOKENS"),
         ({"AI_RECOVERY_MODEL_ID": ""}, "AI_RECOVERY_MODEL_ID"),
+        ({"AI_RECOVERY_AWS_REGION": ""}, "AI_RECOVERY_AWS_REGION"),
     ],
 )
 def test_ai_recovery_config_rejects_unsafe_values(environment: dict[str, str], message: str) -> None:
@@ -42,6 +47,8 @@ def test_ai_recovery_config_allows_lower_emergency_limits() -> None:
             "AI_RECOVERY_MAX_PAGES": "8",
             "AI_RECOVERY_TIMEOUT_SECONDS": "12",
             "AI_RECOVERY_MODEL_ID": "global.amazon.nova-2-lite-v1:0",
+            "AI_RECOVERY_AWS_REGION": "us-west-2",
+            "AI_RECOVERY_MAX_OUTPUT_TOKENS": "8000",
         }
     )
 
@@ -49,3 +56,5 @@ def test_ai_recovery_config_allows_lower_emergency_limits() -> None:
     assert config.max_pages == 8
     assert config.timeout_seconds == 12
     assert config.model_id == "global.amazon.nova-2-lite-v1:0"
+    assert config.region_name == "us-west-2"
+    assert config.max_output_tokens == 8000
