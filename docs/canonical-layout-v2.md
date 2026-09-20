@@ -24,4 +24,6 @@ Para voltar ao v1, desative `CANONICAL_LAYOUT_V2_ENABLED`. Os artefatos v1 e v2 
 2. Compare os rótulos e as posições do PDF com os perfis sugeridos em `layout_match`.
 3. Se os títulos, as colunas ou a ordem das linhas divergirem, use esses sinais para procurar um exemplar público e criar um perfil novo. `new_candidate` não prova, por si só, que o layout é novo.
 
+O [candidato Banrisul 041 com pagamentos e Pix](layout-candidates/banrisul_conta_pagamentos_pix_canonical_v2_v1.yaml) registra os sinais disponíveis em uma captura v2 que falhou na leitura da tabela. Ele serve para comparar outra captura semelhante; ainda não define regras de extração nem é carregado pelo classificador.
+
 Os artefatos v1 já gerados não podem ser enriquecidos com os dados que foram descartados na anonimização. Para avaliar um caso antigo, é necessária uma nova conversão do documento pelo cliente.
