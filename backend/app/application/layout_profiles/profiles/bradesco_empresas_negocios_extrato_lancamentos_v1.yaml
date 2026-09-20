@@ -1,0 +1,76 @@
+layout_profile:
+  schema_version: 2
+  profile_name: bradesco_empresas_negocios_extrato_lancamentos_v1
+  bank: Bradesco
+  layout_family: bradesco_empresas_negocios_extrato_lancamentos
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Bradesco"
+      - "empresas e negócios"
+      - "Extrato"
+      - "Data e hora"
+      - "Busca de lançamentos"
+      - "Dados da empresa"
+      - "Lançamentos"
+    optional_keywords:
+      - "Agência"
+      - "Conta"
+      - "PIX QR CODE"
+      - "Crédito"
+      - "Débito"
+    negative_keywords:
+      - "Fatura"
+      - "Cartão selecionado"
+    min_score_hint: 0.72
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Descrição"
+      - "Documento"
+      - "Tipo"
+      - "Valor"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - description
+      - document
+      - type
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Descrição"
+      document:
+        - "Documento"
+      amount:
+        - "Valor"
+      balance:
+        - "Saldo (R$)"
+  parsing:
+    date_formats:
+      - "dd/MM/yyyy"
+    date_year_source: transaction
+    amount_locale: pt-BR
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "Débito {amount}"
+    positive_patterns:
+      - "Crédito {amount}"
+    ignore_rows:
+      - "Saldo do dia"
+      - "Total"
+    opening_balance_rows:
+      - "Saldo anterior"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance

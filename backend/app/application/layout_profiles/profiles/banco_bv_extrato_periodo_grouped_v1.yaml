@@ -1,0 +1,60 @@
+layout_profile:
+  schema_version: 2
+  profile_name: banco_bv_extrato_periodo_grouped_v1
+  bank: Banco BV
+  layout_family: banco_bv_extrato_periodo_grouped
+  statement_type: conta_digital_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Banco BV S.A."
+      - "esse é o extrato do período"
+      - "Banco: 0413"
+      - "Agência"
+      - "Conta"
+      - "CPF"
+    optional_keywords:
+      - "Pix recebido"
+      - "Pix enviado"
+      - "Aplicação em CDB"
+      - "Resgate de CDB"
+    negative_keywords:
+      - "Fatura"
+      - "Cartão"
+    min_score_hint: 0.72
+  table_detection:
+    header_keywords:
+    expected_column_order:
+      - date_group
+      - time
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "Data do agrupamento"
+      description:
+        - "Descrição"
+      amount:
+        - "Valor"
+  parsing:
+    date_formats:
+      - "dd 'de' MMMM 'de' yyyy"
+    date_year_source: transaction
+    month_language: pt-BR
+    amount_locale: pt-BR
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-R$ {amount}"
+      - "- R$ {amount}"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+    ignore_rows:
+      - "esse é o extrato do período"
+    opening_balance_rows:
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
