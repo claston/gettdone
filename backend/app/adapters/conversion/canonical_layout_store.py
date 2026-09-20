@@ -111,6 +111,7 @@ def build_s3_canonical_layout_capture_service(
     bank_header_ocr_enabled: bool = False,
     failure_capture_enabled: bool = False,
     v2_enabled: bool = False,
+    v3_enabled: bool = False,
 ) -> CanonicalLayoutCaptureService:
     if not enabled:
         return CanonicalLayoutCaptureService(enabled=False)
@@ -121,7 +122,11 @@ def build_s3_canonical_layout_capture_service(
             max_pages=max_pages,
             max_extracted_chars=max_extracted_chars,
             ocr_page_text_extractor=extract_pdf_page_texts_with_ocr,
-            layout_preview_extractor=(extract_pdf_layout_preview_with_textract if v2_enabled and textract_enabled else None),
+            layout_preview_extractor=(
+                extract_pdf_layout_preview_with_textract
+                if (v2_enabled or v3_enabled) and textract_enabled
+                else None
+            ),
             bank_header_ocr_enabled=bank_header_ocr_enabled,
             bank_header_ocr_extractor=(
                 extract_pdf_first_page_header_text_with_textract
@@ -129,11 +134,11 @@ def build_s3_canonical_layout_capture_service(
                 else extract_pdf_first_page_header_text_with_ocr
             ),
             bank_header_ocr_provider="aws_textract" if textract_enabled else "local",
-            schema_version="2" if v2_enabled else "1",
+            schema_version="3" if v3_enabled else "2" if v2_enabled else "1",
         ),
         store=S3CanonicalLayoutStore(
             bucket=bucket,
-            prefix=_v2_prefix(prefix) if v2_enabled else prefix,
+            prefix=_versioned_prefix(prefix, version="3") if v3_enabled else _v2_prefix(prefix) if v2_enabled else prefix,
             region=region,
         ),
         failure_capture_enabled=failure_capture_enabled,
@@ -141,9 +146,14 @@ def build_s3_canonical_layout_capture_service(
 
 
 def _v2_prefix(prefix: str) -> str:
+    return _versioned_prefix(prefix, version="2")
+
+
+def _versioned_prefix(prefix: str, *, version: str) -> str:
     clean_prefix = str(prefix or "").strip().strip("/")
-    if clean_prefix.endswith("/v2"):
+    target_suffix = f"/v{version}"
+    if clean_prefix.endswith(target_suffix):
         return clean_prefix
-    if clean_prefix.endswith("/v1"):
-        return f"{clean_prefix[:-3]}/v2"
-    return f"{clean_prefix}/v2" if clean_prefix else "v2"
+    if re.search(r"/v[123]$", clean_prefix):
+        return f"{clean_prefix[:-3]}{target_suffix}"
+    return f"{clean_prefix}{target_suffix}" if clean_prefix else f"v{version}"

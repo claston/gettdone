@@ -296,6 +296,7 @@ def build_lambda_processor() -> ConversionLambdaProcessor:
                 default=False,
             ),
             v2_enabled=read_bool_env("CANONICAL_LAYOUT_V2_ENABLED", default=False),
+            v3_enabled=read_bool_env("CANONICAL_LAYOUT_V3_ENABLED", default=False),
         ),
     )
     return ConversionLambdaProcessor(
