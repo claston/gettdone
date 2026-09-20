@@ -1048,14 +1048,9 @@ def _parse_grouped_statement_lines(
             line=line,
             section_hint=current_section_hint,
             layout_profile=layout_profile,
+            description_parts=description_parts,
         )
         if inherited_date_transaction is not None:
-            description_parts = _flush_grouped_description_continuation(
-                transactions=transactions,
-                last_transaction_index=last_transaction_index,
-                description_parts=description_parts,
-                current_date=current_date,
-            )
             transactions.append(inherited_date_transaction)
             last_transaction_index = len(transactions) - 1
             description_parts = []
@@ -2038,6 +2033,7 @@ def _parse_grouped_inherited_date_line(
     line: _PdfLine,
     section_hint: str | None,
     layout_profile: DeclarativeLayoutProfile | None,
+    description_parts: list[str],
 ) -> _ParsedTransaction | None:
     if is_amount_only_row(line.text):
         return None
@@ -2051,7 +2047,10 @@ def _parse_grouped_inherited_date_line(
     if selected_amount is None:
         return None
 
-    raw_description = " ".join(raw_text[: selected_amount.description_end].split())
+    inline_description = " ".join(raw_text[: selected_amount.description_end].split())
+    raw_description = " ".join(
+        part for part in [*description_parts, inline_description] if part
+    ).strip()
     if not raw_description or should_skip_transaction_description(raw_description):
         return None
 

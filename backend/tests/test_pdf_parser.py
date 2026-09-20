@@ -3396,6 +3396,49 @@ def test_parse_pdf_transactions_prefers_caixa_gerenciador_period_effective_date_
     assert result.canonical_transactions[0].running_balance == 44841.49
 
 
+def test_parse_pdf_transactions_keeps_caixa_multiline_rows_with_value_and_balance_only() -> None:
+    native_text = """
+    GERENCIADOR CAIXA
+    EMPRESA TESTE
+    CNPJ: 00.000.000/0001-00
+    Agencia: 00001 Conta: 000000000001-0
+    Saldo anterior ao periodo solicitado R$ 0,00 C
+    Extrato no periodo de 01/03/2026 a 31/03/2026
+    Data
+    Data Efetiva
+    Documento Historico Valor Saldo
+    06/03/2026
+    06/03 10:33
+    061033
+    CREDITO TRANSF INTERNET
+    CLIENTE TESTE
+    95-PAGAMENTO PRESTADOR M
+    R$ 340.000,00 R$ 340.000,00 C
+    06/03/2026
+    06/03 10:51
+    000001 RECEBIMENTO TED R$ 212.636,59 R$ 552.636,59 C
+    06/03/2026
+    06/03 13:48
+    061348
+    DEB PIX CHAVE
+    FORNECEDOR TESTE
+    E00360305202603061646TESTE
+    - R$ 524,00 R$ 552.112,59 C
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([native_text])
+
+    assert result.layout.layout_name == "caixa_gerenciador_extrato_periodo_data_efetiva_v1"
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert [transaction.amount for transaction in result.transactions] == [340000.0, 212636.59, -524.0]
+    assert result.transactions[0].description == (
+        "06/03 10:33 061033 CREDITO TRANSF INTERNET CLIENTE TESTE 95-PAGAMENTO PRESTADOR M"
+    )
+    assert result.canonical_transactions[0].running_balance == 340000.0
+    assert result.canonical_transactions[-1].running_balance == 552112.59
+
+
 def test_parse_pdf_transactions_prefers_caixa_sihex_tabular_profile(monkeypatch) -> None:
     native_text = """
     CAI
