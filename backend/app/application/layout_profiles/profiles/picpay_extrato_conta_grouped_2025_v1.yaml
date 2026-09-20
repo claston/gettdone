@@ -1,0 +1,70 @@
+layout_profile:
+  schema_version: 2
+  profile_name: picpay_extrato_conta_grouped_2025_v1
+  bank: PicPay
+  layout_family: picpay_extrato_conta_grouped_daily_2025
+  statement_type: conta_digital_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "PicPay"
+      - "Extrato de conta"
+      - "Período"
+      - "Saldo final do período"
+      - "Saldo ao final do dia"
+      - "Origem / Destino"
+      - "Forma de pagamento"
+    optional_keywords:
+      - "Pix enviado"
+      - "Pix recebido"
+      - "Com saldo"
+      - "Agência"
+      - "Conta"
+    negative_keywords:
+      - "Saldo Sacável"
+      - "Cliente desde"
+    min_score_hint: 0.76
+  table_detection:
+    header_keywords:
+      - "Hora"
+      - "Tipo"
+      - "Origem / Destino"
+      - "Forma de pagamento"
+      - "Valor"
+    expected_column_order:
+      - time
+      - description
+      - counterparty
+      - payment_method
+      - amount
+    column_aliases:
+      description:
+        - "Tipo"
+        - "Origem / Destino"
+      amount:
+        - "Valor"
+  parsing:
+    date_formats:
+      - "dd 'de' MMMM 'de' yyyy"
+    date_year_source: transaction
+    month_language: pt-BR
+    amount_locale: pt-BR
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-R$ {amount}"
+      - "- R$ {amount}"
+    positive_patterns:
+      - "+R$ {amount}"
+      - "+ R$ {amount}"
+    ignore_rows:
+      - "Saldo final do período"
+      - "Saldo ao final do dia"
+    opening_balance_rows:
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - counterparty

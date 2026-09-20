@@ -98,5 +98,10 @@ def test_default_layout_parser_registry_contains_current_specific_families() -> 
             "banrisul_demonstrativo_cdb_automatico_v1",
             "banrisul_fatura_cartao_historico_transacoes_v1",
             "banrisul_extrato_cartao_credito_simples_v1",
+            "bradesco_empresas_negocios_extrato_lancamentos_v1",
+            "sicredi_extrato_conta_corrente_moderno_movimentacoes_v1",
+            "picpay_extrato_conta_grouped_2025_v1",
+            "neon_extrato_por_periodo_moderno_v1",
+            "banco_bv_extrato_periodo_grouped_v1",
         }
     )

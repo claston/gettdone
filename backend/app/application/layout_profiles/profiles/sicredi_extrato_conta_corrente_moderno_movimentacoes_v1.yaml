@@ -1,0 +1,68 @@
+layout_profile:
+  schema_version: 2
+  profile_name: sicredi_extrato_conta_corrente_moderno_movimentacoes_v1
+  bank: Sicredi
+  layout_family: sicredi_conta_corrente_moderno_movimentacoes
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Sicredi"
+      - "Momento de emissão"
+      - "Período das movimentações"
+      - "Extrato de conta corrente"
+      - "Dados da conta"
+      - "Saldo em conta"
+      - "Lançamentos futuros"
+      - "Movimentações de"
+    optional_keywords:
+      - "Titular - CPF"
+      - "Cooperativa"
+      - "Saldo bloqueado"
+      - "Lançamento a conferir"
+      - "Bloqueio judicial"
+    negative_keywords:
+      - "Cartão Sicredi"
+      - "Histórico de Despesas"
+    min_score_hint: 0.78
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Descrição"
+      - "Valor"
+    expected_column_order:
+      - date
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Descrição"
+      amount:
+        - "Valor"
+  parsing:
+    date_formats:
+      - "dd/MM/yyyy"
+    date_year_source: transaction
+    amount_locale: pt-BR
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "- R$ {amount}"
+      - "-R$ {amount}"
+    positive_patterns:
+      - "+ R$ {amount}"
+      - "+R$ {amount}"
+    ignore_rows:
+      - "Lançamentos futuros"
+      - "Saldo do dia"
+      - "Fim desse extrato"
+    opening_balance_rows:
+      - "Saldo anterior"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
