@@ -1,3 +1,6 @@
+import csv
+import io
+
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
 
@@ -31,6 +34,28 @@ from app.schemas import (
 )
 
 router = APIRouter()
+
+ATTENTION_EXPORT_COLUMNS = (
+    ("data_hora", "created_at"),
+    ("identificador", "processing_id"),
+    ("tipo_pessoa", "identity_type"),
+    ("banco_modelo", "model"),
+    ("tipo_conversao", "conversion_type"),
+    ("status", "status"),
+    ("paginas", "pages_count"),
+    ("usa_ocr", "ocr_used"),
+    ("transacoes", "transactions_count"),
+    ("layout_reconhecido", "layout_name"),
+    ("confianca_layout", "layout_confidence"),
+    ("parser", "selected_parser"),
+    ("codigo_erro", "error_code"),
+    ("etapa_erro", "error_stage"),
+    ("status_qualidade", "quality_status"),
+    ("motivos_qualidade", "quality_reason_codes"),
+    ("motivo_atencao", "issue_reason"),
+    ("status_coleta_canonica", "canonical_capture_status"),
+    ("motivo_coleta_canonica", "canonical_capture_reason"),
+)
 
 
 @router.post("/admin/auth/login", response_model=AdminLoginResponse)
@@ -113,6 +138,57 @@ def get_admin_dashboard(
     )
     response.headers["Cache-Control"] = "no-store"
     return AdminDashboardResponse(**payload)
+
+
+@router.get("/admin/dashboard/attention.csv")
+def download_admin_dashboard_attention(
+    identity_type: str = Query(default="all", pattern="^(all|registered|anonymous)$"),
+    x_admin_token: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
+) -> Response:
+    require_admin_user(
+        x_admin_token=x_admin_token,
+        authorization=authorization,
+        access_cookie_token=access_cookie_token,
+        access_control_service=access_control_service,
+    )
+    rows = AdminDashboardService(access_control_service).get_attention_export_rows(
+        days=7,
+        identity_type=identity_type,
+    )
+    output = io.StringIO(newline="")
+    writer = csv.writer(output, delimiter=";", lineterminator="\n")
+    writer.writerow(column_name for column_name, _key in ATTENTION_EXPORT_COLUMNS)
+    for row in rows:
+        writer.writerow(
+            _attention_csv_value(key, row.get(key))
+            for _column_name, key in ATTENTION_EXPORT_COLUMNS
+        )
+
+    return Response(
+        content=output.getvalue().encode("utf-8-sig"),
+        media_type="text/csv",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": 'attachment; filename="conversoes-atencao-ultimos-7-dias.csv"',
+        },
+    )
+
+
+def _attention_csv_value(key: str, value: object) -> str:
+    if key == "identity_type":
+        text = "cadastrada" if value == "registered" else "anônima"
+    elif key == "ocr_used":
+        text = "sim" if value else "não"
+    elif key == "quality_reason_codes":
+        text = " | ".join(str(item) for item in value) if isinstance(value, list) else ""
+    elif key == "layout_confidence" and value is not None:
+        text = f"{float(value) * 100:.1f}%"
+    else:
+        text = str(value) if value is not None else ""
+    return f"'{text}" if text.lstrip().startswith(("=", "+", "-", "@", "\t", "\r")) else text
 
 
 @router.post("/admin/auth/logout")

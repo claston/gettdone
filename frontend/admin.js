@@ -19,8 +19,10 @@
   const dashboardTopErrorsNode = document.getElementById("dashboard-top-errors");
   const dashboardTopQualityIssuesNode = document.getElementById("dashboard-top-quality-issues");
   const dashboardCanonicalCaptureNode = document.getElementById("dashboard-canonical-capture");
+  const dashboardHeavyUsersNode = document.getElementById("dashboard-heavy-users");
   const dashboardLayoutsNode = document.getElementById("dashboard-layouts");
   const dashboardRecentAttentionNode = document.getElementById("dashboard-recent-attention");
+  const dashboardAttentionExportBtn = document.getElementById("dashboard-attention-export-btn");
   const adminSectionButtons = document.querySelectorAll("[data-admin-section]");
   const adminPanelNodes = document.querySelectorAll("[data-admin-panel]");
 
@@ -507,6 +509,49 @@
     dashboardLayoutsNode.appendChild(table);
   }
 
+  function renderDashboardHeavyUsers(items) {
+    if (!dashboardHeavyUsersNode) return;
+    dashboardHeavyUsersNode.replaceChildren();
+    const heavyUsers = Array.isArray(items) ? items : [];
+    if (!heavyUsers.length) {
+      dashboardHeavyUsersNode.appendChild(
+        createTextElement("p", "empty dashboard-empty", "Nenhum usuário ativo neste período."),
+      );
+      return;
+    }
+
+    const table = document.createElement("table");
+    table.className = "dashboard-table";
+    const head = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    ["#", "Pessoa", "Tipo", "Conversões", "Páginas", "PDF", "OCR", "Revisar", "Falhas", "Última atividade"].forEach(
+      function (label) {
+        appendTableCell(headRow, label, "th");
+      },
+    );
+    head.appendChild(headRow);
+    table.appendChild(head);
+
+    const body = document.createElement("tbody");
+    heavyUsers.forEach(function (item) {
+      const row = document.createElement("tr");
+      const person = item.email ? `${item.display_name || "Pessoa cadastrada"} (${item.email})` : item.display_name;
+      appendTableCell(row, formatInteger(item.rank));
+      appendTableCell(row, person || item.identity_reference || "Não identificada");
+      appendTableCell(row, String(item.identity_type || "") === "registered" ? "Cadastrada" : "Anônima");
+      appendTableCell(row, formatInteger(item.conversions));
+      appendTableCell(row, formatInteger(item.pages));
+      appendTableCell(row, `${formatInteger(item.pdf_conversions)} / ${formatInteger(item.pdf_pages)} pág.`);
+      appendTableCell(row, `${formatInteger(item.ocr_conversions)} / ${formatInteger(item.ocr_pages)} pág.`);
+      appendTableCell(row, formatInteger(item.review));
+      appendTableCell(row, formatInteger(item.failures));
+      appendTableCell(row, formatDateTime(item.last_activity_at));
+      body.appendChild(row);
+    });
+    table.appendChild(body);
+    dashboardHeavyUsersNode.appendChild(table);
+  }
+
   function appendTableCell(row, text, tagName) {
     const cell = createTextElement(tagName || "td", "", text);
     row.appendChild(cell);
@@ -560,6 +605,7 @@
     renderDashboardErrors(payload.top_errors || []);
     renderDashboardQualityIssues(payload.top_quality_issues || []);
     renderDashboardCanonicalCapture(payload.canonical_capture || {});
+    renderDashboardHeavyUsers(payload.heavy_users || []);
     renderDashboardLayouts(payload.layouts || []);
     renderDashboardAttention(payload.recent_attention || []);
   }
@@ -609,6 +655,44 @@
       setDashboardStatus("Falha de rede ao carregar os indicadores.", "error");
     } finally {
       if (dashboardRefreshBtn) dashboardRefreshBtn.disabled = false;
+    }
+  }
+
+  async function downloadAttentionExport(allowRetry) {
+    if (!dashboardIdentityTypeNode || !dashboardAttentionExportBtn) return;
+    const identityType = String(dashboardIdentityTypeNode.value || "all");
+    dashboardAttentionExportBtn.disabled = true;
+    setDashboardStatus("Preparando a lista dos últimos 7 dias...", null);
+    try {
+      const response = await fetch(
+        `${resolveApiBase()}/admin/dashboard/attention.csv?identity_type=${encodeURIComponent(identityType)}`,
+        { credentials: "include" },
+      );
+      if (response.status === 401 && allowRetry !== false && (await tryRefreshAdminSession())) {
+        await downloadAttentionExport(false);
+        return;
+      }
+      if (!response.ok) {
+        const payload = await response.json().catch(function () {
+          return {};
+        });
+        if (response.status === 401 || response.status === 403) setAuthenticatedView(false);
+        setDashboardStatus(String(payload.detail || "Não foi possível baixar a lista."), "error");
+        return;
+      }
+      const blobUrl = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = "conversoes-atencao-ultimos-7-dias.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+      setDashboardStatus("Lista dos últimos 7 dias baixada.", "ok");
+    } catch (_error) {
+      setDashboardStatus("Falha de rede ao baixar a lista.", "error");
+    } finally {
+      dashboardAttentionExportBtn.disabled = false;
     }
   }
 
@@ -1082,6 +1166,12 @@
     });
   }
 
+  if (dashboardAttentionExportBtn) {
+    dashboardAttentionExportBtn.addEventListener("click", function () {
+      void downloadAttentionExport(true);
+    });
+  }
+
   if (dashboardPeriodNode) {
     dashboardPeriodNode.addEventListener("change", function () {
       void loadDashboard();
@@ -1169,6 +1259,7 @@
       if (dashboardIdentitiesNode) dashboardIdentitiesNode.replaceChildren();
       if (dashboardTopErrorsNode) dashboardTopErrorsNode.replaceChildren();
       if (dashboardRecentAttentionNode) dashboardRecentAttentionNode.replaceChildren();
+      if (dashboardHeavyUsersNode) dashboardHeavyUsersNode.replaceChildren();
       if (ordersListNode) ordersListNode.replaceChildren();
       if (usersListNode) usersListNode.replaceChildren();
     });

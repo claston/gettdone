@@ -42,6 +42,7 @@ def _run_http_server(tmp_path: Path):
         conversion_type="pdf-ofx",
         status="Sucesso",
         transactions_count=12,
+        canonical_warning_transactions_count=1,
         pages_count=3,
         scanned_likely=False,
         ocr_used=False,
@@ -94,6 +95,10 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
                 f"{base_url}/admin/dashboard",
                 params={"days": 7, "identity_type": "registered"},
             )
+            attention_export = client.get(
+                f"{base_url}/admin/dashboard/attention.csv",
+                params={"identity_type": "registered"},
+            )
 
     assert unauthorized.status_code == 401
     assert login.status_code == 200
@@ -105,6 +110,10 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
     assert dashboard.json()["summary"]["pdf_pages_count"] == 3
     assert dashboard.json()["summary"]["ocr_conversions_count"] == 0
     assert dashboard.json()["summary"]["ocr_pages_count"] == 0
+    assert attention_export.status_code == 200
+    assert attention_export.headers["content-type"].startswith("text/csv")
+    assert "an_http_dashboard" in attention_export.content.decode("utf-8-sig")
+    assert dashboard.json()["heavy_users"][0]["pages"] == 3
     assert dashboard.json()["canonical_capture"] == {
         "candidate_count": 0,
         "stored_count": 0,
