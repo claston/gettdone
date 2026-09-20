@@ -30,6 +30,7 @@ def _run_in_fresh_process(source: str) -> None:
         "app.application.conversion.document_extractor",
         "app.application.conversion.document_conversion_pipeline",
         "app.application.conversion_pipeline",
+        "app.adapters.ai_recovery.bedrock_nova",
         "app.workers.conversion_lambda",
     ],
 )
