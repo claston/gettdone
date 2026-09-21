@@ -22,6 +22,8 @@ from app.schemas import (
     AdminDashboardResponse,
     AdminLoginRequest,
     AdminLoginResponse,
+    AdminMarketingContactItem,
+    AdminMarketingContactListResponse,
     AdminMeResponse,
     AdminSetUserRoleRequest,
     AdminSetUserStatusRequest,
@@ -226,6 +228,37 @@ def list_users_for_admin(
     )
     return AdminUserListResponse(
         items=[AdminUserItem(**item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/admin/marketing-contacts", response_model=AdminMarketingContactListResponse)
+def list_marketing_contacts_for_admin(
+    response: Response,
+    query: str = Query(default=""),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    x_admin_token: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
+) -> AdminMarketingContactListResponse:
+    require_admin_user(
+        x_admin_token=x_admin_token,
+        authorization=authorization,
+        access_cookie_token=access_cookie_token,
+        access_control_service=access_control_service,
+    )
+    items, total = access_control_service.list_marketing_contacts_for_admin(
+        query=query,
+        limit=limit,
+        offset=offset,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return AdminMarketingContactListResponse(
+        items=[AdminMarketingContactItem(**item) for item in items],
         total=total,
         limit=limit,
         offset=offset,

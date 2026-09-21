@@ -120,6 +120,39 @@ def test_http_auth_session_login_sets_cookies_and_me_works_without_bearer() -> N
     assert events[0]["auth_method"] == "local_password"
 
 
+def test_http_admin_lists_marketing_contacts_with_session_cookie() -> None:
+    with _run_http_server(admin_emails={"admin@example.com"}) as (base_url, access_control):
+        access_control.register_user(
+            name="Admin",
+            email="admin@example.com",
+            password="admin-pass",
+        )
+        opted_in_user = access_control.register_user(
+            name="Contato Marketing",
+            email="marketing@example.com",
+            password="strong-pass",
+            product_updates_opt_in=True,
+            product_updates_opted_in_at="2026-09-20T12:00:00+00:00",
+        )
+        access_control.register_user(
+            name="Sem Consentimento",
+            email="sem-consentimento@example.com",
+            password="strong-pass",
+        )
+
+        with httpx.Client(timeout=5.0) as client:
+            login = client.post(
+                f"{base_url}/admin/auth/login",
+                json={"email": "admin@example.com", "password": "admin-pass"},
+            )
+            assert login.status_code == 200
+
+            response = client.get(f"{base_url}/admin/marketing-contacts")
+            assert response.status_code == 200
+            assert response.json()["total"] == 1
+            assert response.json()["items"][0]["user_id"] == opted_in_user.user_id
+
+
 def test_http_local_account_is_blocked_until_email_confirmation() -> None:
     with _run_http_server(email_verification_required=True) as (base_url, access_control):
         with httpx.Client(timeout=5.0) as client:

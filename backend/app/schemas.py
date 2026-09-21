@@ -519,6 +519,23 @@ class AdminUserListResponse(BaseModel):
     offset: int
 
 
+class AdminMarketingContactItem(BaseModel):
+    user_id: str
+    name: str
+    email: str
+    is_active: bool
+    email_verification_status: str = "verified"
+    product_updates_opted_in_at: str | None = None
+    created_at: str
+
+
+class AdminMarketingContactListResponse(BaseModel):
+    items: list[AdminMarketingContactItem]
+    total: int
+    limit: int
+    offset: int
+
+
 class AdminSetUserRoleRequest(BaseModel):
     user_id: str
     is_admin: bool

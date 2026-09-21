@@ -114,6 +114,74 @@ def test_admin_can_list_users_and_filter_admins(tmp_path) -> None:
         app.dependency_overrides.clear()
 
 
+def test_admin_can_list_only_marketing_contacts_with_consent_date(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+        admin_emails={"admin@example.com"},
+    )
+    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    opted_in_user = service.register_user(
+        name="Erica Marketing",
+        email="erica.marketing@example.com",
+        password="strong-pass",
+        product_updates_opt_in=True,
+        product_updates_opted_in_at="2026-09-20T12:00:00+00:00",
+    )
+    service.register_user(
+        name="Sem consentimento",
+        email="no-marketing@example.com",
+        password="strong-pass",
+    )
+    app.dependency_overrides[get_access_control_service] = lambda: service
+    client = TestClient(app)
+
+    try:
+        login = client.post(
+            "/admin/auth/login",
+            json={"email": "admin@example.com", "password": "admin-pass"},
+        )
+        assert login.status_code == 200
+
+        response = client.get(
+            "/admin/marketing-contacts",
+            params={"query": "marketing", "limit": 10, "offset": 0},
+        )
+
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        payload = response.json()
+        assert payload["total"] == 1
+        assert payload["limit"] == 10
+        assert payload["offset"] == 0
+        assert len(payload["items"]) == 1
+        item = payload["items"][0]
+        assert item["user_id"] == opted_in_user.user_id
+        assert item["name"] == "Erica Marketing"
+        assert item["email"] == "erica.marketing@example.com"
+        assert item["is_active"] is True
+        assert item["email_verification_status"] == "verified"
+        assert item["product_updates_opted_in_at"] == "2026-09-20T12:00:00+00:00"
+        assert item["created_at"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_marketing_contacts_list_requires_admin_session(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    app.dependency_overrides[get_access_control_service] = lambda: service
+    client = TestClient(app)
+
+    try:
+        response = client.get("/admin/marketing-contacts")
+        assert response.status_code == 401
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_admin_can_deactivate_and_reactivate_another_user(tmp_path) -> None:
     service = AccessControlService(
         state_file=tmp_path / "access-control-state.json",

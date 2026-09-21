@@ -187,6 +187,73 @@ class AccessControlAdminComponent:
                     )
                 return items, total
 
+    def list_marketing_contacts_for_admin(
+        self,
+        *,
+        query: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, str | bool | None]], int]:
+        normalized_limit = max(1, min(int(limit), 200))
+        normalized_offset = max(0, int(offset))
+        normalized_query = str(query or "").strip().lower()
+
+        with self._service._lock:
+            with self._service._connect() as conn:
+                where = ["users.product_updates_opt_in = ?"]
+                params: list[str | int] = [self._service._true_value()]
+                if normalized_query:
+                    where.append("(lower(users.name) LIKE ? OR lower(users.email) LIKE ?)")
+                    like = f"%{normalized_query}%"
+                    params.extend([like, like])
+
+                base = "FROM users WHERE " + " AND ".join(where)
+                total_row = self._service._fetchone(
+                    conn,
+                    f"SELECT COUNT(1) AS total {base}",
+                    tuple(params),
+                )
+                total = int(total_row["total"]) if total_row is not None else 0
+                rows = self._service._fetchall(
+                    conn,
+                    f"""
+                    SELECT
+                        users.id,
+                        users.name,
+                        users.email,
+                        users.is_active,
+                        users.email_verification_status,
+                        users.product_updates_opted_in_at,
+                        users.created_at
+                    {base}
+                    ORDER BY
+                        users.product_updates_opted_in_at DESC,
+                        users.created_at DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    tuple(params + [normalized_limit, normalized_offset]),
+                )
+                return (
+                    [
+                        {
+                            "user_id": str(row["id"]),
+                            "name": str(row["name"] or ""),
+                            "email": str(row["email"] or ""),
+                            "is_active": self.row_is_active(row),
+                            "email_verification_status": str(
+                                row["email_verification_status"] or "verified"
+                            ),
+                            "product_updates_opted_in_at": str(
+                                row["product_updates_opted_in_at"] or ""
+                            )
+                            or None,
+                            "created_at": str(row["created_at"] or ""),
+                        }
+                        for row in rows
+                    ],
+                    total,
+                )
+
     def set_user_admin_role(self, *, user_id: str, is_admin: bool) -> dict[str, str | bool]:
         return self.set_user_admin_role_with_actor(
             user_id=user_id,
