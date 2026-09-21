@@ -43,6 +43,15 @@ CANONICAL_CAPTURE_FAILURE_STATUSES = frozenset(
     {"upload_failed", "generation_failed", "boundary_failed"}
 )
 CANONICAL_CAPTURE_SKIPPED_STATUSES = frozenset({"skipped_privacy", "skipped_unsupported"})
+NON_CONVERSION_ERROR_CODES = frozenset(
+    {
+        "file_too_large",
+        "monthly_pages_quota_exceeded",
+        "pages_limit_exceeded",
+        "quota_exceeded",
+        "weekly_quota_exceeded",
+    }
+)
 
 
 class AdminDashboardService:
@@ -123,6 +132,8 @@ class AdminDashboardService:
 
         export_rows: list[dict[str, object]] = []
         for event in events:
+            if _is_non_conversion_event(event):
+                continue
             is_success = _is_success_status(str(event["status"]))
             is_clean = is_success and str(event["quality_status"]) == "clean"
             if is_clean:
@@ -159,16 +170,28 @@ class AdminDashboardService:
         return export_rows
 
     def _load_top_quality_issues(self, conn, *, start_at: str, end_at: str, identity_type: str) -> list[dict[str, object]]:
-        sql = """
-            SELECT issue_code, severity, COUNT(*) AS issue_count
-            FROM conversion_quality_issues
-            WHERE created_at >= ? AND created_at <= ?
+        placeholders = ", ".join("?" for _ in NON_CONVERSION_ERROR_CODES)
+        excluded_codes = tuple(sorted(NON_CONVERSION_ERROR_CODES))
+        sql = f"""
+            SELECT issues.issue_code, issues.severity, COUNT(*) AS issue_count
+            FROM conversion_quality_issues AS issues
+            LEFT JOIN user_conversions AS registered
+              ON issues.identity_type = 'registered'
+             AND issues.conversion_id = registered.analysis_id
+            LEFT JOIN anonymous_conversion_events AS anonymous
+              ON issues.identity_type = 'anonymous'
+             AND issues.conversion_id = anonymous.id
+            WHERE issues.created_at >= ? AND issues.created_at <= ?
+              AND COALESCE(registered.error_code, anonymous.error_code, '') NOT IN ({placeholders})
         """
-        params: tuple[object, ...] = (start_at, end_at)
+        params: tuple[object, ...] = (start_at, end_at, *excluded_codes)
         if identity_type != "all":
-            sql += " AND identity_type = ?"
+            sql += " AND issues.identity_type = ?"
             params += (identity_type,)
-        sql += " GROUP BY issue_code, severity ORDER BY issue_count DESC, issue_code ASC LIMIT 10"
+        sql += (
+            " GROUP BY issues.issue_code, issues.severity"
+            " ORDER BY issue_count DESC, issues.issue_code ASC LIMIT 10"
+        )
         rows = self._service._fetchall(conn, sql, params)
         return [
             {
@@ -269,26 +292,30 @@ class AdminDashboardService:
     ) -> set[str]:
         identity_keys: set[str] = set()
         if identity_type in {"all", "registered"}:
+            placeholders = ", ".join("?" for _ in NON_CONVERSION_ERROR_CODES)
             rows = self._service._fetchall(
                 conn,
-                """
+                f"""
                 SELECT DISTINCT user_id AS identity_id
                 FROM user_conversions
                 WHERE created_at < ?
+                  AND COALESCE(error_code, '') NOT IN ({placeholders})
                 """,
-                (before,),
+                (before, *sorted(NON_CONVERSION_ERROR_CODES)),
             )
             identity_keys.update(f"registered:{row['identity_id']}" for row in rows)
 
         if identity_type in {"all", "anonymous"}:
+            placeholders = ", ".join("?" for _ in NON_CONVERSION_ERROR_CODES)
             rows = self._service._fetchall(
                 conn,
-                """
+                f"""
                 SELECT DISTINCT anonymous_fingerprint AS identity_id
                 FROM anonymous_conversion_events
                 WHERE created_at < ?
+                  AND COALESCE(error_code, '') NOT IN ({placeholders})
                 """,
-                (before,),
+                (before, *sorted(NON_CONVERSION_ERROR_CODES)),
             )
             identity_keys.update(f"anonymous:{row['identity_id']}" for row in rows)
         return identity_keys
@@ -379,6 +406,8 @@ def _build_dashboard_payload(
     top_quality_issues: list[dict[str, object]],
     registered_profiles: dict[str, dict[str, str]],
 ) -> dict[str, object]:
+    non_conversion_count = sum(1 for event in events if _is_non_conversion_event(event))
+    events = [event for event in events if not _is_non_conversion_event(event)]
     daily_by_date = {
         (start_date + timedelta(days=offset)).isoformat(): {
             "date": (start_date + timedelta(days=offset)).isoformat(),
@@ -514,6 +543,7 @@ def _build_dashboard_payload(
         "timezone": DASHBOARD_TIMEZONE_NAME,
         "summary": {
             "conversions_total": total,
+            "non_conversion_count": non_conversion_count,
             "pages_total": pages_total,
             "pdf_conversions_count": pdf_conversions_count,
             "pdf_pages_count": pdf_pages_count,
@@ -709,6 +739,10 @@ def _build_canonical_capture_summary(events: list[dict[str, object]]) -> dict[st
 
 def _is_success_status(status: str) -> bool:
     return status.strip().casefold() in {"sucesso", "success", "completed"}
+
+
+def _is_non_conversion_event(event: dict[str, object]) -> bool:
+    return str(event.get("error_code") or "").strip().casefold() in NON_CONVERSION_ERROR_CODES
 
 
 def _percentage(count: int, total: int) -> float:

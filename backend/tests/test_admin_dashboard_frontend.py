@@ -44,6 +44,8 @@ def test_admin_dashboard_frontend_exposes_summary_filters_and_attention_sections
     assert "pdf_pages_count" in javascript
     assert "ocr_conversions_count" in javascript
     assert "ocr_pages_count" in javascript
+    assert '"Não conversões"' in javascript
+    assert "non_conversion_count" in javascript
     assert "/admin/dashboard/attention.csv?identity_type=" in javascript
     assert "downloadAttentionExport" in javascript
     assert "conversoes-atencao-ultimos-7-dias.csv" in javascript

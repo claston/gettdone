@@ -288,6 +288,13 @@
     );
     appendMetricCard(
       dashboardSummaryNode,
+      "Não conversões",
+      formatInteger(summary.non_conversion_count),
+      "bloqueadas por quota ou limite do arquivo",
+      "",
+    );
+    appendMetricCard(
+      dashboardSummaryNode,
       "Pessoas ativas",
       formatInteger(summary.active_people_count),
       "pessoas que converteram",

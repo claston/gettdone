@@ -232,6 +232,7 @@ class AdminMeResponse(BaseModel):
 
 class AdminDashboardSummary(BaseModel):
     conversions_total: int
+    non_conversion_count: int
     pages_total: int
     pdf_conversions_count: int
     pdf_pages_count: int

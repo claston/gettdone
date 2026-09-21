@@ -105,6 +105,7 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
     assert dashboard.status_code == 200
     assert dashboard.headers["cache-control"] == "no-store"
     assert dashboard.json()["summary"]["conversions_total"] == 1
+    assert dashboard.json()["summary"]["non_conversion_count"] == 0
     assert dashboard.json()["summary"]["pages_total"] == 3
     assert dashboard.json()["summary"]["pdf_conversions_count"] == 1
     assert dashboard.json()["summary"]["pdf_pages_count"] == 3
