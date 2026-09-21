@@ -196,6 +196,7 @@ def test_admin_dashboard_aggregates_quality_failures_and_returning_people(tmp_pa
         assert payload["timezone"] == "America/Sao_Paulo"
         assert payload["summary"] == {
             "conversions_total": 5,
+            "non_conversion_count": 0,
             "pages_total": 13,
             "pdf_conversions_count": 3,
             "pdf_pages_count": 7,
@@ -306,6 +307,112 @@ def test_admin_dashboard_filters_registered_conversions(tmp_path: Path) -> None:
         assert payload["summary"]["conversions_total"] == 1
         assert payload["identities"]["registered_conversions"] == 1
         assert payload["identities"]["anonymous_conversions"] == 0
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_admin_dashboard_separates_limit_rejections_from_converter_failures(tmp_path: Path) -> None:
+    client, service, clock, user_id = _build_dashboard_client(tmp_path)
+    _record_user_conversion(
+        service,
+        user_id=user_id,
+        processing_id="an_success",
+        created_at=datetime(2026, 9, 8, 10, 0, tzinfo=timezone.utc),
+    )
+    _record_user_conversion(
+        service,
+        user_id=user_id,
+        processing_id="an_file_too_large",
+        created_at=datetime(2026, 9, 8, 11, 0, tzinfo=timezone.utc),
+        status="Falha",
+        transactions_count=0,
+        pages_count=0,
+        error_code="file_too_large",
+        error_stage="upload_validation",
+        canonical_capture_status="not_attempted",
+        canonical_capture_reason="pre_parser_failure",
+    )
+    _record_anonymous_conversion(
+        service,
+        clock,
+        fingerprint="anon-limits",
+        event_id="ace_quota_exceeded",
+        created_at=datetime(2026, 9, 8, 12, 0, tzinfo=timezone.utc),
+        status="Falha",
+        transactions_count=0,
+        pages_count=0,
+        error_code="quota_exceeded",
+        error_stage="quota_check",
+        canonical_capture_status="not_attempted",
+        canonical_capture_reason="pre_parser_failure",
+    )
+    _record_anonymous_conversion(
+        service,
+        clock,
+        fingerprint="anon-parser",
+        event_id="ace_parse_failed",
+        created_at=datetime(2026, 9, 8, 13, 0, tzinfo=timezone.utc),
+        status="Falha",
+        transactions_count=0,
+        pages_count=1,
+        error_code="parse_failed",
+        error_stage="parse",
+        canonical_capture_status="not_attempted",
+        canonical_capture_reason="pre_parser_failure",
+    )
+    clock["now"] = datetime(2026, 9, 9, 15, 0, tzinfo=timezone.utc)
+
+    try:
+        login = client.post(
+            "/admin/auth/login",
+            json={"email": "admin@example.com", "password": "admin-pass"},
+        )
+        assert login.status_code == 200
+
+        response = client.get("/admin/dashboard", params={"days": 7, "identity_type": "all"})
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["summary"]["conversions_total"] == 2
+        assert payload["summary"]["non_conversion_count"] == 2
+        assert payload["summary"]["technical_success_count"] == 1
+        assert payload["summary"]["technical_success_rate"] == 50.0
+        assert payload["summary"]["failure_count"] == 1
+        assert payload["top_errors"] == [
+            {"error_code": "parse_failed", "error_stage": "parse", "count": 1}
+        ]
+        assert payload["top_quality_issues"] == [
+            {"issue_code": "parse_failed", "severity": "error", "count": 1},
+            {"issue_code": "technical_failure", "severity": "warning", "count": 1},
+        ]
+        assert [item["processing_id"] for item in payload["recent_attention"]] == [
+            "ace_parse_failed"
+        ]
+        assert payload["identities"] == {
+            "registered_conversions": 1,
+            "registered_people": 1,
+            "anonymous_conversions": 1,
+            "anonymous_people": 1,
+        }
+        assert payload["canonical_capture"]["not_eligible_count"] == 2
+
+        daily = next(item for item in payload["daily"] if item["date"] == "2026-09-08")
+        assert daily == {
+            "date": "2026-09-08",
+            "conversions": 2,
+            "clean": 1,
+            "review": 0,
+            "failures": 1,
+        }
+
+        export_response = client.get(
+            "/admin/dashboard/attention.csv",
+            params={"identity_type": "all"},
+        )
+        exported = export_response.content.decode("utf-8-sig")
+        assert "ace_parse_failed" in exported
+        assert "an_file_too_large" not in exported
+        assert "ace_quota_exceeded" not in exported
     finally:
         app.dependency_overrides.clear()
 
