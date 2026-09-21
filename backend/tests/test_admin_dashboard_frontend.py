@@ -24,6 +24,10 @@ def test_admin_dashboard_frontend_exposes_summary_filters_and_attention_sections
     assert 'data-admin-section="dashboard"' in html
     assert 'data-admin-section="orders"' in html
     assert 'data-admin-section="users"' in html
+    assert 'data-admin-section="marketing"' in html
+    assert 'data-admin-panel="marketing"' in html
+    assert 'id="marketing-total"' in html
+    assert 'id="marketing-contacts-list"' in html
     assert "privacy-consent.js" not in html
 
     assert "/admin/dashboard?" in javascript
@@ -45,5 +49,8 @@ def test_admin_dashboard_frontend_exposes_summary_filters_and_attention_sections
     assert "conversoes-atencao-ultimos-7-dias.csv" in javascript
     assert "renderDashboardHeavyUsers" in javascript
     assert "payload.heavy_users" in javascript
+    assert "/admin/marketing-contacts?" in javascript
+    assert "product_updates_opted_in_at" in javascript
+    assert "loadMarketingContacts" in javascript
     assert "textContent" in javascript
     assert "innerHTML" not in javascript

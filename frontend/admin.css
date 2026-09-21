@@ -518,6 +518,26 @@ button.ghost {
   gap: 0.55rem;
 }
 
+.marketing-summary {
+  width: fit-content;
+  min-width: 190px;
+  margin: 1rem 0;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid #a6e7c5;
+  border-radius: 12px;
+  background: var(--clean-soft);
+  display: grid;
+  gap: 0.2rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.marketing-summary strong {
+  color: var(--text);
+  font-size: 1.65rem;
+  line-height: 1;
+}
+
 .history {
   background: #f7f9fd;
   border: 1px solid var(--line);
@@ -552,7 +572,7 @@ button.ghost {
 
   .admin-tabs {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .dashboard-summary {

@@ -699,6 +699,19 @@ class AccessControlService:
             offset=offset,
         )
 
+    def list_marketing_contacts_for_admin(
+        self,
+        *,
+        query: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, str | bool | None]], int]:
+        return self.admin.list_marketing_contacts_for_admin(
+            query=query,
+            limit=limit,
+            offset=offset,
+        )
+
     def set_user_admin_role(self, *, user_id: str, is_admin: bool) -> dict[str, str | bool]:
         return self.admin.set_user_admin_role(user_id=user_id, is_admin=is_admin)
 

@@ -1,6 +1,7 @@
 (function () {
   const ORDER_PAGE_SIZE = 10;
   const USER_PAGE_SIZE = 20;
+  const MARKETING_PAGE_SIZE = 50;
 
   const loginCard = document.getElementById("admin-login-card");
   const navigationNode = document.getElementById("admin-navigation");
@@ -42,9 +43,21 @@
   const usersStatusNode = document.getElementById("users-status");
   const usersListNode = document.getElementById("users-list");
 
+  const marketingRefreshBtn = document.getElementById("marketing-refresh-btn");
+  const marketingQueryNode = document.getElementById("marketing-query");
+  const marketingStatusNode = document.getElementById("marketing-status");
+  const marketingTotalNode = document.getElementById("marketing-total");
+  const marketingEmptyNode = document.getElementById("marketing-empty");
+  const marketingContactsListNode = document.getElementById("marketing-contacts-list");
+  const marketingPrevBtn = document.getElementById("marketing-prev-btn");
+  const marketingNextBtn = document.getElementById("marketing-next-btn");
+  const marketingPageLabelNode = document.getElementById("marketing-page-label");
+
   let ordersOffset = 0;
   let ordersTotal = 0;
   let usersOffset = 0;
+  let marketingOffset = 0;
+  let marketingTotal = 0;
   let activeAdminSection = "dashboard";
   let isAdminAuthenticated = false;
 
@@ -76,6 +89,13 @@
     if (kind) usersStatusNode.classList.add(kind);
   }
 
+  function setMarketingStatus(message, kind) {
+    if (!marketingStatusNode) return;
+    marketingStatusNode.textContent = String(message || "");
+    marketingStatusNode.className = "status";
+    if (kind) marketingStatusNode.classList.add(kind);
+  }
+
   function setDashboardStatus(message, kind) {
     if (!dashboardStatusNode) return;
     dashboardStatusNode.textContent = String(message || "");
@@ -84,7 +104,7 @@
   }
 
   function setActiveAdminSection(section) {
-    const normalizedSection = ["dashboard", "orders", "users"].includes(section) ? section : "dashboard";
+    const normalizedSection = ["dashboard", "orders", "users", "marketing"].includes(section) ? section : "dashboard";
     activeAdminSection = normalizedSection;
     adminSectionButtons.forEach(function (button) {
       const isActive = String(button.dataset.adminSection || "") === normalizedSection;
@@ -778,6 +798,45 @@
     }
   }
 
+  function updateMarketingPager() {
+    const currentPage = Math.floor(marketingOffset / MARKETING_PAGE_SIZE) + 1;
+    const totalPages = Math.max(1, Math.ceil(marketingTotal / MARKETING_PAGE_SIZE));
+    if (marketingPageLabelNode) {
+      marketingPageLabelNode.textContent = `Página ${currentPage} de ${totalPages}`;
+    }
+    if (marketingPrevBtn) marketingPrevBtn.disabled = marketingOffset <= 0;
+    if (marketingNextBtn) {
+      marketingNextBtn.disabled = marketingOffset + MARKETING_PAGE_SIZE >= marketingTotal;
+    }
+  }
+
+  async function loadMarketingContacts() {
+    if (!marketingContactsListNode || !marketingEmptyNode) return;
+    const query = String(marketingQueryNode?.value || "").trim();
+    setMarketingStatus("Carregando contatos...", null);
+    try {
+      const { response, payload } = await apiRequest(
+        `/admin/marketing-contacts?query=${encodeURIComponent(query)}&limit=${MARKETING_PAGE_SIZE}&offset=${marketingOffset}`,
+      );
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) setAuthenticatedView(false);
+        setMarketingStatus(String(payload.detail || "Não foi possível carregar os contatos."), "error");
+        return;
+      }
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      marketingTotal = Number(payload.total || 0);
+      if (marketingTotalNode) marketingTotalNode.textContent = formatInteger(marketingTotal);
+      renderMarketingContacts(items);
+      updateMarketingPager();
+      setMarketingStatus(
+        `Contatos carregados: ${items.length} de ${marketingTotal}.`,
+        "ok",
+      );
+    } catch (_error) {
+      setMarketingStatus("Falha de rede ao carregar os contatos.", "error");
+    }
+  }
+
   function buildOrderCard(order) {
     const container = document.createElement("article");
     container.className = "order-card";
@@ -936,6 +995,55 @@
       roleHistory.dataset.role = "user-role-history";
       card.appendChild(roleHistory);
       usersListNode.appendChild(card);
+    });
+  }
+
+  function renderMarketingContacts(items) {
+    if (!marketingContactsListNode || !marketingEmptyNode) return;
+    marketingContactsListNode.replaceChildren();
+    marketingEmptyNode.classList.toggle("hidden", items.length > 0);
+    items.forEach(function (contact) {
+      const isActive = contact.is_active !== false;
+      const isEmailVerified = String(contact.email_verification_status || "verified") === "verified";
+      const card = document.createElement("article");
+      card.className = "order-card";
+
+      const head = document.createElement("div");
+      head.className = "order-head";
+      const identity = document.createElement("div");
+      identity.appendChild(createTextElement("h3", "order-title", contact.name || "-"));
+      identity.appendChild(createTextElement("p", "order-meta", contact.email || "-"));
+      head.appendChild(identity);
+      const badges = document.createElement("div");
+      badges.className = "pill-row";
+      badges.appendChild(createTextElement("span", "badge released", "Consentimento ativo"));
+      badges.appendChild(
+        createTextElement(
+          "span",
+          `badge ${isActive ? "released" : "awaiting"}`,
+          isActive ? "Usuário ativo" : "Usuário inativo",
+        ),
+      );
+      badges.appendChild(
+        createTextElement(
+          "span",
+          `badge ${isEmailVerified ? "released" : "awaiting"}`,
+          isEmailVerified ? "E-mail confirmado" : "E-mail pendente",
+        ),
+      );
+      head.appendChild(badges);
+      card.appendChild(head);
+
+      const grid = document.createElement("div");
+      grid.className = "grid";
+      appendLabeledParagraph(
+        grid,
+        "Consentimento registrado em",
+        formatDateTime(contact.product_updates_opted_in_at),
+      );
+      appendLabeledParagraph(grid, "Cadastro criado em", formatDateTime(contact.created_at));
+      card.appendChild(grid);
+      marketingContactsListNode.appendChild(card);
     });
   }
 
@@ -1156,6 +1264,8 @@
         void loadOrders();
       } else if (section === "users") {
         void loadUsers();
+      } else if (section === "marketing") {
+        void loadMarketingContacts();
       }
     });
   });
@@ -1197,6 +1307,13 @@
     });
   }
 
+  if (marketingRefreshBtn) {
+    marketingRefreshBtn.addEventListener("click", function () {
+      marketingOffset = 0;
+      void loadMarketingContacts();
+    });
+  }
+
   if (filterNode) {
     filterNode.addEventListener("change", function () {
       ordersOffset = 0;
@@ -1225,6 +1342,14 @@
     });
   }
 
+
+  if (marketingQueryNode) {
+    marketingQueryNode.addEventListener("change", function () {
+      marketingOffset = 0;
+      void loadMarketingContacts();
+    });
+  }
+
   if (prevBtn) {
     prevBtn.addEventListener("click", function () {
       if (ordersOffset <= 0) return;
@@ -1241,6 +1366,23 @@
     });
   }
 
+
+  if (marketingPrevBtn) {
+    marketingPrevBtn.addEventListener("click", function () {
+      if (marketingOffset <= 0) return;
+      marketingOffset = Math.max(0, marketingOffset - MARKETING_PAGE_SIZE);
+      void loadMarketingContacts();
+    });
+  }
+
+  if (marketingNextBtn) {
+    marketingNextBtn.addEventListener("click", function () {
+      if (marketingOffset + MARKETING_PAGE_SIZE >= marketingTotal) return;
+      marketingOffset += MARKETING_PAGE_SIZE;
+      void loadMarketingContacts();
+    });
+  }
+
   if (logoutBtn) {
     logoutBtn.addEventListener("click", async function () {
       try {
@@ -1254,6 +1396,7 @@
       setStatus("Sessão encerrada.", "ok");
       setDashboardStatus("", null);
       setUsersStatus("", null);
+      setMarketingStatus("", null);
       if (dashboardSummaryNode) dashboardSummaryNode.replaceChildren();
       if (dashboardDailyChartNode) dashboardDailyChartNode.replaceChildren();
       if (dashboardIdentitiesNode) dashboardIdentitiesNode.replaceChildren();
@@ -1262,6 +1405,8 @@
       if (dashboardHeavyUsersNode) dashboardHeavyUsersNode.replaceChildren();
       if (ordersListNode) ordersListNode.replaceChildren();
       if (usersListNode) usersListNode.replaceChildren();
+      if (marketingContactsListNode) marketingContactsListNode.replaceChildren();
+      if (marketingTotalNode) marketingTotalNode.textContent = "0";
     });
   }
 
