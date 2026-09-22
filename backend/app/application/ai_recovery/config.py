@@ -19,6 +19,7 @@ class AIRecoveryConfig:
     model_id: str
     region_name: str
     max_pages: int
+    max_input_bytes: int
     timeout_seconds: int
     max_output_tokens: int
 
@@ -40,6 +41,11 @@ class AIRecoveryConfig:
             variable_name="AI_RECOVERY_MAX_PAGES",
             maximum=15,
         )
+        max_input_bytes = cls._parse_bounded_int(
+            values.get("AI_RECOVERY_MAX_INPUT_BYTES", str(25 * 1024 * 1024)),
+            variable_name="AI_RECOVERY_MAX_INPUT_BYTES",
+            maximum=25 * 1024 * 1024,
+        )
         timeout_seconds = cls._parse_bounded_int(
             values.get("AI_RECOVERY_TIMEOUT_SECONDS", "25"),
             variable_name="AI_RECOVERY_TIMEOUT_SECONDS",
@@ -56,6 +62,7 @@ class AIRecoveryConfig:
             model_id=model_id,
             region_name=region_name,
             max_pages=max_pages,
+            max_input_bytes=max_input_bytes,
             timeout_seconds=timeout_seconds,
             max_output_tokens=max_output_tokens,
         )

@@ -2,6 +2,7 @@
 
 from app.application.ai_recovery.config import AIRecoveryConfig, AIRecoveryMode
 from app.application.ai_recovery.eligibility import (
+    AIRecoveryEligibilityCase,
     AIRecoveryEligibilityContext,
     AIRecoveryEligibilityDecision,
     AIRecoveryEligibilityReason,
@@ -15,18 +16,22 @@ from app.application.ai_recovery.models import (
     FinancialValidationResult,
     TransactionDirection,
 )
+from app.application.ai_recovery.schemas import AIRecoveryRequestManifest, NovaStatementV2
 
 __all__ = [
     "AIRecoveryConfig",
+    "AIRecoveryEligibilityCase",
     "AIRecoveryEligibilityContext",
     "AIRecoveryEligibilityDecision",
     "AIRecoveryEligibilityReason",
     "AIRecoveryMode",
+    "AIRecoveryRequestManifest",
     "AIStatement",
     "AITransaction",
     "FinancialValidationDisposition",
     "FinancialValidationResult",
     "FinancialValidator",
+    "NovaStatementV2",
     "TransactionDirection",
     "assess_ai_recovery_eligibility",
 ]
