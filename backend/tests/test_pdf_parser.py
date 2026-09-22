@@ -3326,6 +3326,31 @@ def test_parse_pdf_transactions_prefers_caixa_landscape_datetime_detail_profile(
     assert result.transactions[-1].amount == -10.32
 
 
+def test_parse_pdf_transactions_supports_caixa_app_ocr_headerless_profile(monkeypatch) -> None:
+    ocr_text = """
+    CAIXA
+    Conta: [TITULAR]
+    Saldo 42.335,28 C
+    PIX RECEBIDO
+    24/01/2026 15:29:36 241529 PIX RECEBIDO [TITULAR] 70,00 D 42.335,28 C
+    24/01/2026 15:26:30 241526 TARIFA PIX 5,34 D 42.405,28 C
+    24/01/2026 15:26:30 241526 PIX RECEBIDO [TITULAR] 600,00 C 42.410,62 C
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [ocr_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [ocr_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "caixa_app_extrato_ocr_sem_cabecalho_v1"
+    assert result.layout.used_fallback is False
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert len(result.transactions) == 3
+    assert result.transactions[0].date == "2026-01-24"
+    assert result.transactions[0].amount == -70.0
+    assert result.transactions[0].description == "15:29:36 241529 PIX RECEBIDO [TITULAR]"
+    assert result.transactions[-1].amount == 600.0
+
+
 def test_parse_pdf_transactions_prefers_caixa_gerenciador_period_effective_date_profile(monkeypatch) -> None:
     native_text = """
     GERENCIADOR

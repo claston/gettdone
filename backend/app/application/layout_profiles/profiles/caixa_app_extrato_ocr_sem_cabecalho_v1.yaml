@@ -1,0 +1,88 @@
+# Experimental profile reconstructed from an anonymized canonical capture and
+# matching public CAIXA statement examples. Reassess after more observations.
+layout_profile:
+  schema_version: 2
+  profile_name: caixa_app_extrato_ocr_sem_cabecalho_v1
+  bank: Caixa
+  layout_family: caixa_app_extrato_data_hora_ocr_sem_cabecalho
+  statement_type: conta_corrente_extrato
+  confidence: medium
+  classifier:
+    required_keywords:
+      - "CAIXA"
+      - "CONTA"
+      - "PIX"
+      - "SALDO"
+    optional_keywords:
+      - "PIX RECEBIDO"
+      - "PIX ENVIADO"
+      - "TARIFA PIX"
+      - "PIX DEVOLVIDO"
+    negative_keywords:
+      - "GERENCIADOR CAIXA"
+      - "SIATR-SISTEMA DE AUTO ATENDIMENTO REESTRUTURADO"
+      - "EXTRATO HISTORICO DA CONTA"
+      - "EXTRATO POR PERIODO"
+      - "DATA/HORA"
+      - "DESCRICAO/DETALHAMENTO"
+      - "DATA MOV."
+      - "DATA EFETIVA"
+      - "DATA DE LANCAMENTO"
+      - "DATA DE MOVIMENTO"
+    min_score_hint: 0.74
+  table_detection:
+    header_keywords: []
+    expected_column_order:
+      - date
+      - time
+      - document
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+        - "Data/Hora"
+      document:
+        - "Documento"
+        - "Nr. Doc."
+      description:
+        - "Historico"
+        - "Descricao/Detalhamento"
+      amount:
+        - "Valor"
+        - "Valor (R$)"
+      balance:
+        - "Saldo"
+        - "Saldo(R$)"
+  parsing:
+    date_formats:
+      - "dd/MM/yyyy"
+      - "dd/MM/yy"
+    date_year_source: "row"
+    month_language: "pt-BR"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "{amount}D"
+      - "{amount} D"
+      - "-{amount}"
+    positive_patterns:
+      - "{amount}C"
+      - "{amount} C"
+      - "{amount}"
+    ignore_rows:
+      - "SALDO DIA"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO INICIAL"
+    opening_balance_policy: "skip"
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - time
+      - document
+      - balance

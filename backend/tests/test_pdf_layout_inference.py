@@ -678,6 +678,24 @@ def test_infer_pdf_layout_prefers_caixa_landscape_datetime_detail_profile_for_re
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_identifies_caixa_app_ocr_headerless_profile() -> None:
+    text = """
+    CAIXA
+    Conta: [TITULAR]
+    Saldo 42.335,28 C
+    PIX RECEBIDO
+    24/01/2026 15:29:36 241529 PIX RECEBIDO [TITULAR] 70,00 D 42.335,28 C
+    24/01/2026 15:26:30 241526 TARIFA PIX 5,34 D 42.405,28 C
+    24/01/2026 15:26:30 241526 PIX RECEBIDO [TITULAR] 600,00 C 42.410,62 C
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "caixa_app_extrato_ocr_sem_cabecalho_v1"
+    assert result.confidence >= 0.7
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_caixa_gerenciador_period_effective_date_profile() -> None:
     text = """
     GERENCIADOR
