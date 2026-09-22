@@ -99,6 +99,27 @@ def test_v2_ranks_pan_profile_without_changing_conversion_label() -> None:
     assert result["candidates"][0]["matched_labels"]
 
 
+def test_v2_matches_caixa_period_statement_when_ocr_splits_table_headers() -> None:
+    source = "\n".join((
+        "CAIXA",
+        "EXTRATO POR PERIODO",
+        "EXTRATO",
+        "DATA M OV. NR. HISTORICO VALOR",
+        "DOC.",
+        "04/05/2026 123456 DEB IOF 26,54 D",
+        "SALDO 10.026,54 D",
+        "15/05/2026 654321 CRED TED 3.000,00 C",
+        "SALDO 7.026,54 D",
+    ))
+    _, signals = build_safe_layout_pages([{"width": 595.0, "height": 842.0, "source_text": source}])
+
+    result = match_layout_candidates(signals=signals, bank_code="104")
+
+    assert result["status"] == "existing_candidate"
+    assert result["candidates"][0]["layout_name"] == "caixa_extrato_por_periodo_web_v1"
+    assert result["candidates"][0]["score"] >= 0.85
+
+
 def test_v2_marks_unmatched_public_structure_for_new_layout_review() -> None:
     _, signals = build_safe_layout_pages([{
         "width": 595.0, "height": 842.0,
