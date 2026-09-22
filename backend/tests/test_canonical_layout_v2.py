@@ -120,6 +120,25 @@ def test_v2_matches_caixa_period_statement_when_ocr_splits_table_headers() -> No
     assert result["candidates"][0]["score"] >= 0.85
 
 
+def test_v2_matches_bradesco_period_statement_from_public_transaction_fingerprint() -> None:
+    source = "\n".join((
+        "EXTRATO DE: AGENCIA 1234 CONTA 56789-0",
+        "31/12/2025 SALDO ANTERIOR",
+        "21/01/2026 TED-TRANSF ELET DISPON REMET: CLIENTE 165,74",
+        "21/01/2026 PIX QR CODE DINAMIC REM: CLIENTE 60,62",
+        "21/01/2026 RENTAB.INVEST FACILCRED* 0,01",
+        "21/01/2026 PAGTO ELETRON COBRANCA DOCUMENTO 123 -200,00",
+    ))
+    _, signals = build_safe_layout_pages([{"width": 595.0, "height": 842.0, "source_text": source}])
+
+    result = match_layout_candidates(signals=signals, bank_code=None)
+
+    assert "RENTAB.INVEST FACILCRED" in signals["labels"]
+    assert result["status"] == "existing_candidate"
+    assert result["candidates"][0]["layout_name"] == "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
+    assert result["candidates"][0]["score"] >= 0.8
+
+
 def test_v2_marks_unmatched_public_structure_for_new_layout_review() -> None:
     _, signals = build_safe_layout_pages([{
         "width": 595.0, "height": 842.0,
