@@ -7,6 +7,8 @@ def test_load_layout_profiles_from_versioned_models() -> None:
     assert len(profiles) >= 58
     assert any(profile.profile_name == "c6_bank_extrato_mensal_tabela_tipo_descricao_valor_v1" for profile in profiles)
     assert all(profile.required_keywords for profile in profiles)
+    assert all(profile.layout_family for profile in profiles)
+    assert all(profile.statement_type for profile in profiles)
     assert all(0.0 < profile.min_score_hint <= 1.0 for profile in profiles)
 
 
@@ -14,10 +16,25 @@ def test_load_layout_profile_table_detection_metadata() -> None:
     profile = get_layout_profile("viacredi_ailos_extrato_conta_corrente_v1")
 
     assert profile is not None
+    assert profile.layout_family == "viacredi_ailos_extrato_tabela_credito_debito"
+    assert profile.statement_type == "conta_corrente_extrato"
     assert profile.expected_column_order == ("date", "description", "document", "credit", "debit", "balance")
     assert "CREDITO (R$)" in profile.column_aliases["credit"]
     assert "Credito" in profile.column_aliases["credit"]
     assert "SALDO (R$)" in profile.column_aliases["balance"]
+
+
+def test_load_layout_profile_exposes_non_statement_document_types() -> None:
+    receipt = get_layout_profile("banrisul_recibo_pagamento_v1")
+    credit_card_bill = get_layout_profile("banco_inter_fatura_cartao_despesas_v1")
+
+    assert receipt is not None
+    assert receipt.layout_family == "banrisul_recibo_pagamento"
+    assert receipt.statement_type == "comprovante_pagamento"
+
+    assert credit_card_bill is not None
+    assert credit_card_bill.layout_family == "banco_inter_fatura_cartao_despesas"
+    assert credit_card_bill.statement_type == "cartao_credito_fatura"
 
 
 def test_load_layout_profile_v2_executable_parsing_rules() -> None:

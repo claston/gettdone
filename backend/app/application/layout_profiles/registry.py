@@ -41,6 +41,8 @@ class DeclarativeLayoutProfile:
     expected_column_order: tuple[str, ...]
     column_aliases: dict[str, tuple[str, ...]]
     source_path: str
+    layout_family: str = ""
+    statement_type: str = ""
     schema_version: int = 1
     parsing: LayoutParsingRules = field(default_factory=LayoutParsingRules)
 
@@ -130,6 +132,8 @@ def _load_profile(path: Path) -> DeclarativeLayoutProfile | None:
         expected_column_order=tuple(_nested_list_values(layout_lines, "table_detection", "expected_column_order")),
         column_aliases=_nested_mapping_list_values(layout_lines, "table_detection", "column_aliases"),
         source_path=path.name,
+        layout_family=_scalar_value(layout_lines, "layout_family"),
+        statement_type=_scalar_value(layout_lines, "statement_type"),
         schema_version=schema_version,
         parsing=parsing,
     )

@@ -1,6 +1,8 @@
 layout_profile:
   profile_name: caixa_gerenciador_extrato_periodo_data_efetiva_v1
   bank: Caixa Economica Federal
+  layout_family: caixa_gerenciador_extrato_periodo_data_efetiva
+  statement_type: conta_corrente_extrato
   confidence: high
   classifier:
     required_keywords:

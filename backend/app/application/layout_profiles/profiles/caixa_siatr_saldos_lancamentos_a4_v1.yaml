@@ -2,6 +2,8 @@ layout_profile:
   schema_version: 2
   profile_name: caixa_siatr_saldos_lancamentos_a4_v1
   bank: Caixa
+  layout_family: caixa_siatr_saldos_lancamentos_a4
+  statement_type: conta_corrente_extrato
   confidence: high
   classifier:
     required_keywords:

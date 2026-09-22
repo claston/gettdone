@@ -1,6 +1,8 @@
 layout_profile:
   profile_name: caixa_extrato_paisagem_data_hora_detalhamento_v1
   bank: Caixa Economica Federal
+  layout_family: caixa_extrato_paisagem_data_hora_detalhamento
+  statement_type: conta_corrente_extrato
   confidence: high
   classifier:
     required_keywords:
