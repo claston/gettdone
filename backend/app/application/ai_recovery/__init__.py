@@ -1,5 +1,13 @@
 """Safety-first contracts for AI-assisted statement recovery."""
 
+from app.application.ai_recovery.comparator import (
+    ComparisonLedger,
+    ComparisonTransaction,
+    RecoveryComparisonResult,
+    RecoveryDiagnosis,
+    RecoveryDiagnosisCode,
+    compare_recovery_ledgers,
+)
 from app.application.ai_recovery.config import AIRecoveryConfig, AIRecoveryMode
 from app.application.ai_recovery.eligibility import (
     AIRecoveryEligibilityCase,
@@ -28,10 +36,16 @@ __all__ = [
     "AIRecoveryRequestManifest",
     "AIStatement",
     "AITransaction",
+    "ComparisonLedger",
+    "ComparisonTransaction",
     "FinancialValidationDisposition",
     "FinancialValidationResult",
     "FinancialValidator",
     "NovaStatementV2",
+    "RecoveryComparisonResult",
+    "RecoveryDiagnosis",
+    "RecoveryDiagnosisCode",
     "TransactionDirection",
     "assess_ai_recovery_eligibility",
+    "compare_recovery_ledgers",
 ]
