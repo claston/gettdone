@@ -19,6 +19,9 @@ def test_admin_dashboard_frontend_exposes_summary_filters_and_attention_sections
     assert 'id="dashboard-recent-attention"' in html
     assert 'id="dashboard-attention-export-btn"' in html
     assert 'id="dashboard-heavy-users"' in html
+    assert 'id="dashboard-returning-heavy-users"' in html
+    assert 'id="dashboard-ocr-heavy-users"' in html
+    assert 'id="dashboard-checkout-funnel"' in html
     assert "Baixar últimos 7 dias (CSV)" in html
     assert "Heavy users" in html
     assert 'data-admin-section="dashboard"' in html
@@ -51,6 +54,10 @@ def test_admin_dashboard_frontend_exposes_summary_filters_and_attention_sections
     assert "conversoes-atencao-ultimos-7-dias.csv" in javascript
     assert "renderDashboardHeavyUsers" in javascript
     assert "payload.heavy_users" in javascript
+    assert "renderDashboardCheckoutFunnel" in javascript
+    assert "payload.checkout_funnel" in javascript
+    assert "payload.returning_heavy_users" in javascript
+    assert "payload.ocr_heavy_users" in javascript
     assert "/admin/marketing-contacts?" in javascript
     assert "product_updates_opted_in_at" in javascript
     assert "loadMarketingContacts" in javascript

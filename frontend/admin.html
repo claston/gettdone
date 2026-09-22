@@ -84,6 +84,16 @@
       <p id="dashboard-status" class="status" aria-live="polite"></p>
       <div id="dashboard-summary" class="dashboard-summary" aria-label="Resumo das conversões"></div>
 
+      <section class="dashboard-block" aria-labelledby="dashboard-checkout-title">
+        <div class="dashboard-block-heading">
+          <div>
+            <h3 id="dashboard-checkout-title">Funil de checkout</h3>
+            <p class="muted compact">Mostra pedidos enviados no período. Aberturas da página ainda não são rastreadas.</p>
+          </div>
+        </div>
+        <div id="dashboard-checkout-funnel" class="dashboard-summary" aria-label="Funil de pedidos enviados"></div>
+      </section>
+
       <section class="dashboard-block" aria-labelledby="dashboard-chart-title">
         <div class="dashboard-block-heading">
           <div>
@@ -129,6 +139,26 @@
           </div>
         </div>
         <div id="dashboard-heavy-users" class="dashboard-table-wrap"></div>
+      </section>
+
+      <section class="dashboard-block" aria-labelledby="dashboard-returning-heavy-users-title">
+        <div class="dashboard-block-heading">
+          <div>
+            <h3 id="dashboard-returning-heavy-users-title">Heavy users recorrentes</h3>
+            <p class="muted compact">Pessoas que já converteram antes do período ou em mais de um dia dentro dele.</p>
+          </div>
+        </div>
+        <div id="dashboard-returning-heavy-users" class="dashboard-table-wrap"></div>
+      </section>
+
+      <section class="dashboard-block" aria-labelledby="dashboard-ocr-heavy-users-title">
+        <div class="dashboard-block-heading">
+          <div>
+            <h3 id="dashboard-ocr-heavy-users-title">Maiores usuários de OCR</h3>
+            <p class="muted compact">Ranking por páginas processadas com OCR no período.</p>
+          </div>
+        </div>
+        <div id="dashboard-ocr-heavy-users" class="dashboard-table-wrap"></div>
       </section>
 
       <section class="dashboard-block" aria-labelledby="dashboard-layouts-title">
@@ -244,6 +274,6 @@
       </div>
     </section>
   </main>
-  <script src="./admin.js?v=11"></script>
+  <script src="./admin.js?v=12"></script>
 </body>
 </html>
