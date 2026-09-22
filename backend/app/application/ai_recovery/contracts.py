@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.application.ai_recovery.models import AIStatement
+from app.application.ai_recovery.request_publishing import AIRecoveryPublication, AIRecoveryRequestArtifacts
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,3 +33,7 @@ class DocumentAIExtractor(Protocol):
         raw_bytes: bytes,
         page_count: int,
     ) -> AIExtractionResult: ...
+
+
+class AIRecoveryRequestPublisher(Protocol):
+    def publish(self, artifacts: AIRecoveryRequestArtifacts) -> AIRecoveryPublication: ...

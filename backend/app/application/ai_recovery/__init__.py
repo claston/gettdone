@@ -24,6 +24,14 @@ from app.application.ai_recovery.models import (
     FinancialValidationResult,
     TransactionDirection,
 )
+from app.application.ai_recovery.request_publishing import (
+    AIRecoveryObjectCollisionError,
+    AIRecoveryPublication,
+    AIRecoveryRequestArtifacts,
+    AIRecoveryRequestIntegrityError,
+    build_ai_recovery_idempotency_key,
+    build_ai_recovery_request_artifacts,
+)
 from app.application.ai_recovery.schemas import AIRecoveryRequestManifest, NovaStatementV2
 
 __all__ = [
@@ -33,7 +41,11 @@ __all__ = [
     "AIRecoveryEligibilityDecision",
     "AIRecoveryEligibilityReason",
     "AIRecoveryMode",
+    "AIRecoveryObjectCollisionError",
+    "AIRecoveryPublication",
     "AIRecoveryRequestManifest",
+    "AIRecoveryRequestArtifacts",
+    "AIRecoveryRequestIntegrityError",
     "AIStatement",
     "AITransaction",
     "ComparisonLedger",
@@ -47,5 +59,7 @@ __all__ = [
     "RecoveryDiagnosisCode",
     "TransactionDirection",
     "assess_ai_recovery_eligibility",
+    "build_ai_recovery_idempotency_key",
+    "build_ai_recovery_request_artifacts",
     "compare_recovery_ledgers",
 ]
