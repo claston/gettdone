@@ -92,6 +92,15 @@ class AdminDashboardService:
                     identity_type=normalized_identity_type,
                 )
                 registered_profiles = self._load_registered_profiles(conn, events=events)
+                checkout_intents = (
+                    self._load_checkout_intents(
+                        conn,
+                        start_at=start_utc.isoformat(),
+                        end_at=now_utc.isoformat(),
+                    )
+                    if normalized_identity_type in {"all", "registered"}
+                    else []
+                )
 
         return _build_dashboard_payload(
             events=events,
@@ -102,6 +111,7 @@ class AdminDashboardService:
             end_at=now_utc,
             top_quality_issues=top_quality_issues,
             registered_profiles=registered_profiles,
+            checkout_intents=checkout_intents,
         )
 
     def get_attention_export_rows(
@@ -349,6 +359,32 @@ class AdminDashboardService:
             for row in rows
         }
 
+    def _load_checkout_intents(
+        self,
+        conn,
+        *,
+        start_at: str,
+        end_at: str,
+    ) -> list[dict[str, str]]:
+        rows = self._service._fetchall(
+            conn,
+            """
+            SELECT id, user_id, customer_email, status
+            FROM checkout_intents
+            WHERE created_at >= ? AND created_at <= ?
+            """,
+            (start_at, end_at),
+        )
+        return [
+            {
+                "id": str(row["id"] or ""),
+                "user_id": str(row["user_id"] or ""),
+                "customer_email": str(row["customer_email"] or "").strip().lower(),
+                "status": str(row["status"] or "").strip().upper(),
+            }
+            for row in rows
+        ]
+
 
 def _row_to_event(row, *, identity_type: str) -> dict[str, object]:
     identity_id = str(row["identity_id"] or "")
@@ -405,6 +441,7 @@ def _build_dashboard_payload(
     end_at: datetime,
     top_quality_issues: list[dict[str, object]],
     registered_profiles: dict[str, dict[str, str]],
+    checkout_intents: list[dict[str, str]],
 ) -> dict[str, object]:
     non_conversion_count = sum(1 for event in events if _is_non_conversion_event(event))
     events = [event for event in events if not _is_non_conversion_event(event)]
@@ -536,6 +573,12 @@ def _build_dashboard_payload(
         item["clean_high_confidence_rate"] = _percentage(int(item["clean_high_confidence"]), int(item["conversions"]))
         layout_items.append(item)
 
+    user_usage = _build_user_usage(
+        events,
+        prior_identity_keys=prior_identity_keys,
+        registered_profiles=registered_profiles,
+    )
+
     return {
         "days": days,
         "start_at": start_at.isoformat(),
@@ -571,15 +614,25 @@ def _build_dashboard_payload(
         "top_errors": top_errors,
         "top_quality_issues": top_quality_issues,
         "canonical_capture": _build_canonical_capture_summary(events),
-        "heavy_users": _build_heavy_users(events, registered_profiles=registered_profiles),
+        "checkout_funnel": _build_checkout_funnel(checkout_intents),
+        "heavy_users": _rank_user_usage(user_usage, sort_field="pages"),
+        "returning_heavy_users": _rank_user_usage(
+            [item for item in user_usage if bool(item["is_returning"])],
+            sort_field="pages",
+        ),
+        "ocr_heavy_users": _rank_user_usage(
+            [item for item in user_usage if int(item["ocr_pages"]) > 0],
+            sort_field="ocr_pages",
+        ),
         "layouts": layout_items,
         "recent_attention": recent_attention[:10],
     }
 
 
-def _build_heavy_users(
+def _build_user_usage(
     events: list[dict[str, object]],
     *,
+    prior_identity_keys: set[str],
     registered_profiles: dict[str, dict[str, str]],
 ) -> list[dict[str, object]]:
     grouped: dict[str, dict[str, object]] = {}
@@ -615,6 +668,7 @@ def _build_heavy_users(
                 "review": 0,
                 "failures": 0,
                 "transactions": 0,
+                "activity_dates": set(),
                 "last_activity_at": None,
             },
         )
@@ -640,20 +694,72 @@ def _build_heavy_users(
         created_at = _parse_datetime(str(event["created_at"]))
         if created_at:
             local_created_at = created_at.astimezone(DASHBOARD_TIMEZONE).isoformat()
+            activity_dates = item["activity_dates"]
+            if isinstance(activity_dates, set):
+                activity_dates.add(local_created_at[:10])
             if not item["last_activity_at"] or local_created_at > str(item["last_activity_at"]):
                 item["last_activity_at"] = local_created_at
 
+    usage_items: list[dict[str, object]] = []
+    for identity_key, item in grouped.items():
+        activity_dates = item.pop("activity_dates")
+        active_days = len(activity_dates) if isinstance(activity_dates, set) else 0
+        item["active_days"] = active_days
+        item["is_returning"] = identity_key in prior_identity_keys or active_days > 1
+        item["ocr_share_rate"] = _percentage(int(item["ocr_pages"]), int(item["pages"]))
+        usage_items.append(item)
+    return usage_items
+
+
+def _rank_user_usage(
+    items: list[dict[str, object]],
+    *,
+    sort_field: str,
+) -> list[dict[str, object]]:
     ranked = sorted(
-        grouped.values(),
+        items,
         key=lambda item: (
+            -int(item[sort_field]),
             -int(item["pages"]),
             -int(item["conversions"]),
             str(item["identity_reference"]),
         ),
     )[:10]
     for rank, item in enumerate(ranked, start=1):
+        item = dict(item)
         item["rank"] = rank
+        ranked[rank - 1] = item
     return ranked
+
+
+def _build_checkout_funnel(checkout_intents: list[dict[str, str]]) -> dict[str, int | float]:
+    requested_statuses = {"REQUESTED", "PENDING"}
+    awaiting_status = "AWAITING_PAYMENT"
+    released_status = "RELEASED_FOR_USE"
+
+    def person_key(item: dict[str, str]) -> str:
+        user_id = str(item.get("user_id") or "").strip()
+        if user_id:
+            return f"user:{user_id}"
+        return f"email:{str(item.get('customer_email') or '').strip().lower()}"
+
+    people = {person_key(item) for item in checkout_intents if person_key(item) != "email:"}
+    released_people = {
+        person_key(item)
+        for item in checkout_intents
+        if item.get("status") == released_status and person_key(item) != "email:"
+    }
+    return {
+        "checkout_intents_count": len(checkout_intents),
+        "checkout_people_count": len(people),
+        "requested_intents_count": sum(1 for item in checkout_intents if item.get("status") in requested_statuses),
+        "awaiting_payment_intents_count": sum(
+            1 for item in checkout_intents if item.get("status") == awaiting_status
+        ),
+        "released_intents_count": sum(1 for item in checkout_intents if item.get("status") == released_status),
+        "released_people_count": len(released_people),
+        "checkout_to_release_rate": _percentage(len(released_people), len(people)),
+    }
 
 
 def _attention_item(event: dict[str, object], *, is_success: bool) -> dict[str, object]:

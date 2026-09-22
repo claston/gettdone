@@ -214,6 +214,15 @@ def test_admin_dashboard_aggregates_quality_failures_and_returning_people(tmp_pa
             "returning_people_count": 2,
             "median_duration_ms": 5000,
         }
+        assert payload["checkout_funnel"] == {
+            "checkout_intents_count": 0,
+            "checkout_people_count": 0,
+            "requested_intents_count": 0,
+            "awaiting_payment_intents_count": 0,
+            "released_intents_count": 0,
+            "released_people_count": 0,
+            "checkout_to_release_rate": 0.0,
+        }
         assert payload["identities"] == {
             "registered_conversions": 2,
             "registered_people": 1,
@@ -569,14 +578,105 @@ def test_admin_dashboard_ranks_heavy_users_for_selected_period(tmp_path: Path) -
         assert rows[0]["display_name"] == "Usuária Heavy"
         assert rows[0]["email"] == "heavy@example.com"
         assert rows[0]["ocr_conversions"] == 1
+        assert rows[0]["ocr_share_rate"] == 100.0
+        assert rows[0]["active_days"] == 1
+        assert rows[0]["is_returning"] is True
         assert rows[0]["review"] == 1
         assert rows[1]["identity_type"] == "anonymous"
         assert rows[1]["identity_reference"].startswith("anon_")
         assert rows[1]["conversions"] == 2
         assert rows[1]["ocr_pages"] == 12
+        assert rows[1]["active_days"] == 1
+        assert rows[1]["is_returning"] is False
         assert rows[2]["pdf_conversions"] == 2
+        assert rows[2]["active_days"] == 1
+        assert rows[2]["is_returning"] is False
+
+        returning_rows = payload["returning_heavy_users"]
+        assert len(returning_rows) == 1
+        assert returning_rows[0]["display_name"] == rows[0]["display_name"]
+        assert returning_rows[0]["rank"] == 1
+
+        ocr_rows = payload["ocr_heavy_users"]
+        assert [row["ocr_pages"] for row in ocr_rows] == [20, 12]
+        assert [row["rank"] for row in ocr_rows] == [1, 2]
         assert "private-heavy-fingerprint" not in str(payload)
         assert "an_old_heavy" not in str(payload)
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_admin_dashboard_counts_submitted_checkout_funnel_without_new_tracking_table(tmp_path: Path) -> None:
+    client, service, clock, user_id = _build_dashboard_client(tmp_path)
+    second_user = service.register_user(
+        name="Cliente Dois",
+        email="cliente2@example.com",
+        password="strong-pass",
+    )
+    third_user = service.register_user(
+        name="Cliente Três",
+        email="cliente3@example.com",
+        password="strong-pass",
+    )
+
+    clock["now"] = datetime(2026, 9, 7, 12, 0, tzinfo=timezone.utc)
+    requested = service.create_checkout_intent(
+        user_id=user_id,
+        plan_code="profissional",
+        customer_name="Erica",
+        customer_email="erica@example.com",
+        customer_whatsapp="+55 11 99999-1111",
+    )
+    clock["now"] = datetime(2026, 9, 8, 12, 0, tzinfo=timezone.utc)
+    awaiting = service.create_checkout_intent(
+        user_id=second_user.user_id,
+        plan_code="profissional",
+        customer_name="Cliente Dois",
+        customer_email="cliente2@example.com",
+        customer_whatsapp="+55 11 99999-2222",
+    )
+    service.mark_checkout_intent_awaiting_payment(
+        intent_id=str(awaiting["id"]),
+        payment_link="https://example.com/pay",
+    )
+    clock["now"] = datetime(2026, 9, 9, 12, 0, tzinfo=timezone.utc)
+    released = service.create_checkout_intent(
+        user_id=third_user.user_id,
+        plan_code="profissional",
+        customer_name="Cliente Três",
+        customer_email="cliente3@example.com",
+        customer_whatsapp="+55 11 99999-3333",
+    )
+    service.mark_checkout_intent_released_by_id(intent_id=str(released["id"]))
+    clock["now"] = datetime(2026, 9, 9, 15, 0, tzinfo=timezone.utc)
+
+    try:
+        login = client.post(
+            "/admin/auth/login",
+            json={"email": "admin@example.com", "password": "admin-pass"},
+        )
+        assert login.status_code == 200
+
+        response = client.get("/admin/dashboard", params={"days": 7, "identity_type": "all"})
+
+        assert response.status_code == 200
+        assert response.json()["checkout_funnel"] == {
+            "checkout_intents_count": 3,
+            "checkout_people_count": 3,
+            "requested_intents_count": 1,
+            "awaiting_payment_intents_count": 1,
+            "released_intents_count": 1,
+            "released_people_count": 1,
+            "checkout_to_release_rate": 33.3,
+        }
+
+        anonymous_response = client.get(
+            "/admin/dashboard",
+            params={"days": 7, "identity_type": "anonymous"},
+        )
+        assert anonymous_response.status_code == 200
+        assert anonymous_response.json()["checkout_funnel"]["checkout_intents_count"] == 0
+        assert requested["status"] == "REQUESTED"
     finally:
         app.dependency_overrides.clear()
 

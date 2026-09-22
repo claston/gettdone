@@ -20,7 +20,10 @@
   const dashboardTopErrorsNode = document.getElementById("dashboard-top-errors");
   const dashboardTopQualityIssuesNode = document.getElementById("dashboard-top-quality-issues");
   const dashboardCanonicalCaptureNode = document.getElementById("dashboard-canonical-capture");
+  const dashboardCheckoutFunnelNode = document.getElementById("dashboard-checkout-funnel");
   const dashboardHeavyUsersNode = document.getElementById("dashboard-heavy-users");
+  const dashboardReturningHeavyUsersNode = document.getElementById("dashboard-returning-heavy-users");
+  const dashboardOcrHeavyUsersNode = document.getElementById("dashboard-ocr-heavy-users");
   const dashboardLayoutsNode = document.getElementById("dashboard-layouts");
   const dashboardRecentAttentionNode = document.getElementById("dashboard-recent-attention");
   const dashboardAttentionExportBtn = document.getElementById("dashboard-attention-export-btn");
@@ -536,13 +539,51 @@
     dashboardLayoutsNode.appendChild(table);
   }
 
-  function renderDashboardHeavyUsers(items) {
-    if (!dashboardHeavyUsersNode) return;
-    dashboardHeavyUsersNode.replaceChildren();
+  function renderDashboardCheckoutFunnel(funnel) {
+    if (!dashboardCheckoutFunnelNode) return;
+    dashboardCheckoutFunnelNode.replaceChildren();
+    appendMetricCard(
+      dashboardCheckoutFunnelNode,
+      "Pedidos enviados",
+      formatInteger(funnel.checkout_people_count),
+      formatCountLabel(funnel.checkout_intents_count, "pedido", "pedidos"),
+      "",
+    );
+    appendMetricCard(
+      dashboardCheckoutFunnelNode,
+      "Aguardando link",
+      formatInteger(funnel.requested_intents_count),
+      "pedidos recebidos",
+      "review",
+    );
+    appendMetricCard(
+      dashboardCheckoutFunnelNode,
+      "Aguardando pagamento",
+      formatInteger(funnel.awaiting_payment_intents_count),
+      "links de pagamento enviados",
+      "review",
+    );
+    appendMetricCard(
+      dashboardCheckoutFunnelNode,
+      "Planos liberados",
+      formatInteger(funnel.released_people_count),
+      `${formatPercent(funnel.checkout_to_release_rate)} dos clientes com pedido`,
+      "clean",
+    );
+  }
+
+  function renderDashboardHeavyUsers(items, targetNode, emptyMessage) {
+    const container = targetNode || dashboardHeavyUsersNode;
+    if (!container) return;
+    container.replaceChildren();
     const heavyUsers = Array.isArray(items) ? items : [];
     if (!heavyUsers.length) {
-      dashboardHeavyUsersNode.appendChild(
-        createTextElement("p", "empty dashboard-empty", "Nenhum usuário ativo neste período."),
+      container.appendChild(
+        createTextElement(
+          "p",
+          "empty dashboard-empty",
+          emptyMessage || "Nenhum usuário ativo neste período.",
+        ),
       );
       return;
     }
@@ -551,7 +592,7 @@
     table.className = "dashboard-table";
     const head = document.createElement("thead");
     const headRow = document.createElement("tr");
-    ["#", "Pessoa", "Tipo", "Conversões", "Páginas", "PDF", "OCR", "Revisar", "Falhas", "Última atividade"].forEach(
+    ["#", "Pessoa", "Tipo", "Conversões", "Dias ativos", "Páginas", "PDF", "OCR", "% OCR", "Recorrente", "Revisar", "Falhas", "Última atividade"].forEach(
       function (label) {
         appendTableCell(headRow, label, "th");
       },
@@ -567,16 +608,19 @@
       appendTableCell(row, person || item.identity_reference || "Não identificada");
       appendTableCell(row, String(item.identity_type || "") === "registered" ? "Cadastrada" : "Anônima");
       appendTableCell(row, formatInteger(item.conversions));
+      appendTableCell(row, formatInteger(item.active_days));
       appendTableCell(row, formatInteger(item.pages));
       appendTableCell(row, `${formatInteger(item.pdf_conversions)} / ${formatInteger(item.pdf_pages)} pág.`);
       appendTableCell(row, `${formatInteger(item.ocr_conversions)} / ${formatInteger(item.ocr_pages)} pág.`);
+      appendTableCell(row, formatPercent(item.ocr_share_rate));
+      appendTableCell(row, item.is_returning ? "Sim" : "Não");
       appendTableCell(row, formatInteger(item.review));
       appendTableCell(row, formatInteger(item.failures));
       appendTableCell(row, formatDateTime(item.last_activity_at));
       body.appendChild(row);
     });
     table.appendChild(body);
-    dashboardHeavyUsersNode.appendChild(table);
+    container.appendChild(table);
   }
 
   function appendTableCell(row, text, tagName) {
@@ -632,7 +676,18 @@
     renderDashboardErrors(payload.top_errors || []);
     renderDashboardQualityIssues(payload.top_quality_issues || []);
     renderDashboardCanonicalCapture(payload.canonical_capture || {});
+    renderDashboardCheckoutFunnel(payload.checkout_funnel || {});
     renderDashboardHeavyUsers(payload.heavy_users || []);
+    renderDashboardHeavyUsers(
+      payload.returning_heavy_users || [],
+      dashboardReturningHeavyUsersNode,
+      "Nenhum heavy user recorrente neste período.",
+    );
+    renderDashboardHeavyUsers(
+      payload.ocr_heavy_users || [],
+      dashboardOcrHeavyUsersNode,
+      "Nenhum uso de OCR neste período.",
+    );
     renderDashboardLayouts(payload.layouts || []);
     renderDashboardAttention(payload.recent_attention || []);
   }
@@ -1410,6 +1465,9 @@
       if (dashboardTopErrorsNode) dashboardTopErrorsNode.replaceChildren();
       if (dashboardRecentAttentionNode) dashboardRecentAttentionNode.replaceChildren();
       if (dashboardHeavyUsersNode) dashboardHeavyUsersNode.replaceChildren();
+      if (dashboardReturningHeavyUsersNode) dashboardReturningHeavyUsersNode.replaceChildren();
+      if (dashboardOcrHeavyUsersNode) dashboardOcrHeavyUsersNode.replaceChildren();
+      if (dashboardCheckoutFunnelNode) dashboardCheckoutFunnelNode.replaceChildren();
       if (ordersListNode) ordersListNode.replaceChildren();
       if (usersListNode) usersListNode.replaceChildren();
       if (marketingContactsListNode) marketingContactsListNode.replaceChildren();

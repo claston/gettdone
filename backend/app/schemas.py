@@ -317,7 +317,20 @@ class AdminDashboardHeavyUserItem(BaseModel):
     review: int
     failures: int
     transactions: int
+    active_days: int
+    is_returning: bool
+    ocr_share_rate: float
     last_activity_at: str | None = None
+
+
+class AdminDashboardCheckoutFunnel(BaseModel):
+    checkout_intents_count: int
+    checkout_people_count: int
+    requested_intents_count: int
+    awaiting_payment_intents_count: int
+    released_intents_count: int
+    released_people_count: int
+    checkout_to_release_rate: float
 
 
 class AdminDashboardLayoutItem(BaseModel):
@@ -363,7 +376,10 @@ class AdminDashboardResponse(BaseModel):
     top_errors: list[AdminDashboardErrorItem]
     top_quality_issues: list[AdminDashboardQualityIssueItem]
     canonical_capture: AdminDashboardCanonicalCaptureSummary
+    checkout_funnel: AdminDashboardCheckoutFunnel
     heavy_users: list[AdminDashboardHeavyUserItem]
+    returning_heavy_users: list[AdminDashboardHeavyUserItem]
+    ocr_heavy_users: list[AdminDashboardHeavyUserItem]
     layouts: list[AdminDashboardLayoutItem]
     recent_attention: list[AdminDashboardAttentionItem]
 
