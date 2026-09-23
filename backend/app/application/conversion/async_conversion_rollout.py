@@ -52,9 +52,9 @@ class AsyncConversionRolloutPolicy:
         ) is not None
 
     def batch_max_files(self, *, identity, access_control_service, configured_max: int) -> int | None:
-        if not self.enabled or identity is None or identity.identity_type != "user":
+        if not self.enabled or identity is None or identity.identity_type not in {"user", "anonymous"}:
             return None
-        if self.allowed_user_emails:
+        if self.allowed_user_emails and identity.identity_type == "user":
             try:
                 user = access_control_service.get_user_by_id(identity.identity_id)
             except (InvalidSessionTokenError, InvalidUserTokenError):
@@ -64,7 +64,7 @@ class AsyncConversionRolloutPolicy:
         if not self.percentage_rollout_enabled or self.rollout_percentage <= 0:
             return None
         bucket = int.from_bytes(
-            sha256(f"user:{identity.identity_id}".encode("utf-8")).digest()[:8],
+            sha256(f"{identity.identity_type}:{identity.identity_id}".encode("utf-8")).digest()[:8],
             byteorder="big",
         ) % 10_000
         return 1 if bucket < self.rollout_percentage * 100 else None

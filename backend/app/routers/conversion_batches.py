@@ -96,14 +96,16 @@ class ConversionRuntimeResponse(BaseModel):
 def conversion_runtime(
     authorization: str | None = Header(default=None),
     access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    anonymous_cookie_token: str | None = Cookie(default=None, alias=ANONYMOUS_IDENTITY_COOKIE_NAME),
     runtime: ConversionRuntimeConfig = Depends(get_conversion_runtime_config),
     rollout_policy: AsyncConversionRolloutPolicy = Depends(get_async_conversion_rollout_policy),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> ConversionRuntimeResponse:
-    identity = _resolve_optional_registered_identity(
+    identity = _resolve_optional_identity(
         access_control_service=access_control_service,
         authorization=authorization,
         access_cookie_token=access_cookie_token,
+        anonymous_cookie_token=anonymous_cookie_token,
     )
     effective_runtime = _effective_runtime(
         runtime=runtime,
@@ -320,11 +322,12 @@ def _direct_batch_enabled(runtime: ConversionRuntimeConfig) -> bool:
     )
 
 
-def _resolve_optional_registered_identity(
+def _resolve_optional_identity(
     *,
     access_control_service: AccessControlService,
     authorization: str | None,
     access_cookie_token: str | None,
+    anonymous_cookie_token: str | None,
 ):
     try:
         user_token = resolve_user_token_with_session(
@@ -333,12 +336,22 @@ def _resolve_optional_registered_identity(
             explicit_user_token=None,
             access_cookie_token=access_cookie_token,
         )
-        if not user_token:
-            return None
-        return access_control_service.resolve_identity(
-            anonymous_fingerprint=None,
-            user_token=user_token,
+        if user_token:
+            return access_control_service.resolve_identity(
+                anonymous_fingerprint=None,
+                user_token=user_token,
+            )
+        anonymous_fingerprint = resolve_anonymous_fingerprint_with_cookie(
+            access_control_service=access_control_service,
+            anonymous_cookie_token=anonymous_cookie_token,
+            legacy_fingerprint=None,
         )
+        if anonymous_fingerprint:
+            return access_control_service.resolve_identity(
+                anonymous_fingerprint=anonymous_fingerprint,
+                user_token=None,
+            )
+        return None
     except InvalidUserTokenError:
         return None
 

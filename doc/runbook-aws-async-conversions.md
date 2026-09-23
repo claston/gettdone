@@ -65,14 +65,14 @@ Rollback imediato: esvaziar `CONVERSION_ASYNC_USER_EMAIL_ALLOWLIST` e reiniciar 
 ## Rollout percentual com o perfil global legado
 
 O canário da allowlist continua sempre elegível. Para ampliar gradualmente aos
-demais usuários autenticados, configure:
+demais identidades (usuários autenticados e sessões anônimas), configure:
 
 ```text
 CONVERSION_ASYNC_PERCENTAGE_ROLLOUT_ENABLED=true
 CONVERSION_ASYNC_ROLLOUT_PERCENTAGE=30
 ```
 
-A seleção é determinística por `user_id`: o mesmo usuário permanece no mesmo
+A seleção é determinística por identidade: o mesmo usuário ou sessão anônima permanece no mesmo
 fluxo enquanto a configuração não mudar. Para rollback imediato dos 30%, altere
 somente `CONVERSION_ASYNC_PERCENTAGE_ROLLOUT_ENABLED=false` e reinicie o Render;
 a allowlist permanece ativa. O percentual deve ficar entre 0 e 100. Usuários
