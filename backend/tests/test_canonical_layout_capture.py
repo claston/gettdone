@@ -190,6 +190,40 @@ def test_generator_does_not_run_header_ocr_when_native_text_identifies_bank() ->
     assert artifact.manifest["bank_header_ocr_provider"] is None
 
 
+def test_generator_identifies_bradesco_from_transaction_fingerprint_without_header() -> None:
+    source = _text_pdf(
+        "EXTRATO DE: AGENCIA 1234 CONTA 56789-0",
+        "31/12/2025 SALDO ANTERIOR",
+        "21/01/2026 TED-TRANSF ELET DISPON REMET: CLIENTE 165,74",
+        "21/01/2026 PIX QR CODE DINAMIC REM: CLIENTE 60,62",
+        "21/01/2026 RENTAB.INVEST FACILCRED* 0,01",
+        "21/01/2026 PAGTO ELETRON COBRANCA DOCUMENTO 123 -200,00",
+    )
+    generator = CanonicalLayoutGenerator(
+        schema_version="3",
+        capture_id_provider=lambda: "cap_0123456789abcdef01234567",
+        bank_header_ocr_enabled=True,
+        bank_header_ocr_extractor=lambda _raw_bytes: pytest.fail("fingerprint must avoid header OCR"),
+    )
+
+    artifact = generator.generate(
+        document=ingest_uploaded_document("statement.pdf", source),
+        **_capture_kwargs(),
+    )
+
+    assert artifact.manifest["bank"] == {
+        "code": "237",
+        "name": "Bradesco",
+        "catalog_match": True,
+        "detection_source": "header",
+    }
+    assert artifact.manifest["bank_header_ocr_status"] == "not_needed"
+    assert artifact.manifest["layout_match"]["status"] == "existing_candidate"
+    assert artifact.manifest["layout_match"]["candidates"][0]["layout_name"] == (
+        "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
+    )
+
+
 def test_generator_keeps_native_capture_when_header_ocr_fails() -> None:
     source = _text_pdf(
         "CONTA CORRENTE",

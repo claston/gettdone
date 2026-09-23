@@ -508,6 +508,45 @@ def test_infer_pdf_layout_prefers_bradesco_profile_when_tokens_match() -> None:
     assert result.confidence >= 0.5
 
 
+def test_infer_pdf_layout_identifies_bradesco_period_statement_without_bank_header() -> None:
+    text = """
+    EXTRATO DE: AGENCIA [AGENCIA] CONTA [CONTA]
+    31/12/2025 SALDO ANTERIOR
+    21/01/2026 TED-TRANSF ELET DISPON REMET: [TITULAR] 165,74
+    21/01/2026 CIELO VDA DEBITO MASTER CIELO S.A 315,35
+    21/01/2026 PIX QR CODE DINAMIC REM: [TITULAR] 60,62
+    21/01/2026 RENTAB.INVEST FACILCRED* 0,01
+    21/01/2026 PAGTO ELETRON COBRANCA [IDENTIFICADOR] -200,00
+    21/01/2026 TARIFA BANCARIA LIQUIDACAO QRCODE PIX -0,90
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
+    assert result.confidence >= 0.7
+    assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_keeps_bradesco_period_statement_with_full_header() -> None:
+    text = """
+    Bradesco net empresa
+    Extrato Mensal / Por Período
+    Data da operação: 03/06/2022 - 07h35
+    Agência | Conta
+    Total Disponível (R$)
+    Extrato de: Ag: 895 | CC: 0154000-9 | Entre 01/05/2022 e 31/05/2022
+    Data Lançamento Dcto. Crédito (R$) Débito (R$) Saldo (R$)
+    27/04/2022 SALDO ANTERIOR 0,00
+    09/05/2022 TED-TRANSF ELET DISPON REMET: CLIENTE 165,74 165,74
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
+    assert result.confidence >= 0.7
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_bradesco_unificado_poupanca_profile() -> None:
     text = """
     Bradesco
