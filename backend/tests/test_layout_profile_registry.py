@@ -66,3 +66,18 @@ def test_load_migrated_itau_and_caixa_v2_parsing_rules() -> None:
     assert caixa.parsing.date_formats == ("dd/MM/yy", "dd/MM/yyyy", "ddMMyy")
     assert caixa.parsing.ignore_rows == ("SALDO DIA",)
     assert caixa.parsing.opening_balance_policy == "import"
+
+
+def test_load_caixa_gerenciador_pagamentos_efetuados_profile() -> None:
+    profile = get_layout_profile("caixa_gerenciador_pagamentos_efetuados_boleto_v1")
+
+    assert profile is not None
+    assert profile.bank == "Caixa Economica Federal"
+    assert profile.layout_family == "caixa_gerenciador_pagamentos_efetuados_grouped_list"
+    assert profile.statement_type == "pagamentos_efetuados"
+    assert profile.confidence_label == "medium"
+    assert profile.schema_version == 2
+    assert profile.parsing.date_formats == ("MMM dd, yyyy", "MMM dd, yy")
+    assert profile.parsing.month_language == "en-US"
+    assert profile.parsing.negative_patterns == ("-{amount}", "-R$ {amount}", "R$ -{amount}")
+    assert profile.expected_column_order == ("date_group", "time", "payment_type", "counterparty", "status", "amount")

@@ -1,0 +1,290 @@
+meta_model:
+  layout_id: caixa_gerenciador_pagamentos_efetuados_boleto_v1
+  bank: Caixa Economica Federal
+  channel: Gerenciador CAIXA Empresas
+  statement_type: pagamentos_efetuados
+  source_quality: canonical_and_public_reference_inferred
+  confidence: medium
+  detection_signals:
+    strong:
+      - "Cabeçalho de conta empresarial com CNPJ"
+      - "Movimentações agrupadas por data abreviada em inglês, como 'MAY 27, 2026'"
+      - "Cada movimentação começa com horário em formato de 12 horas, usando AM ou PM"
+      - "Tipo da movimentação em caixa alta: 'BOLETO'"
+      - "Status repetido após o favorecido: 'PAGAMENTO EFETUADO'"
+      - "Débitos usam sinal negativo explícito e vírgula decimal"
+    weak:
+      - "Logotipo e nome da instituição não estão presentes no canônico"
+      - "A associação com a CAIXA depende da semelhança com a consulta pública de pagamentos efetuados do Gerenciador CAIXA Empresas"
+      - "O idioma inglês na data e no horário pode depender da configuração regional usada na impressão"
+    table_headers: []
+  page_structure:
+    header:
+      bank_logo: unknown
+      channel_title: unknown
+      account_identifiers:
+        holder: unknown
+        cnpj: unknown
+    transactions_table:
+      representation: grouped_payment_list
+      group_by: date
+      visible_group:
+        date_label: "MAY 27, 2026"
+        rows:
+          - type: boleto_payment
+            time: "4:00 PM"
+            payment_type: "BOLETO"
+            counterparty: "DARE SANTA CATARINA"
+            status: "PAGAMENTO EFETUADO"
+            amount: "-18,44"
+          - type: boleto_payment
+            time: "4:21 PM"
+            payment_type: "BOLETO"
+            counterparty: "CELESC DISTRIBUICAO S.A"
+            status: "PAGAMENTO EFETUADO"
+            amount: "-442,42"
+          - type: boleto_payment
+            time: "5:14 PM"
+            payment_type: "BOLETO"
+            counterparty: "OCL COMERCIO E IMPORTACAO LTDA"
+            status: "PAGAMENTO EFETUADO"
+            amount: "-486,76"
+  transaction_rules:
+    normal_transaction:
+      row_has_date_context: true
+      row_has_time: true
+      row_has_payment_type: true
+      row_has_counterparty: true
+      row_has_status: true
+      row_has_amount: true
+      should_import_as_transaction: true
+    amount_sign:
+      negative_when:
+        - "Valor possui sinal negativo explícito"
+      positive_when:
+        - "Valor possui sinal positivo explícito ou representa entrada confirmada"
+      inferred: false
+    balance_column:
+      exists: false
+  normalization_hints:
+    likely_debit_patterns:
+      - pattern: "BOLETO * PAGAMENTO EFETUADO"
+        reason: "As linhas observadas possuem sinal negativo explícito"
+        inferred: false
+    caution:
+      - "Não usar 'PAGAMENTO EFETUADO' isoladamente para identificar a CAIXA."
+      - "Exigir também CNPJ, BOLETO, data agrupadora em inglês e horário AM/PM quando a marca estiver ausente."
+      - "A data do agrupador deve ser propagada para as transações seguintes até o próximo agrupador."
+      - "O favorecido fica entre o tipo BOLETO e o status PAGAMENTO EFETUADO."
+      - "Não interpretar o horário como parte do favorecido."
+  visual_model:
+    table_anchor:
+      starts_after_text: "CNPJ"
+      group_anchor: english_abbreviated_month_date
+      header_keywords: []
+    column_order:
+      - date_group
+      - time
+      - payment_type
+      - counterparty
+      - status
+      - amount
+    row_behavior:
+      date_group_may_share_first_transaction_line: true
+      date_group_format: "MMM dd, yyyy"
+      time_format: "h:mm a"
+      payment_type_uppercase: true
+      counterparty_uppercase: true
+      status_uppercase: true
+      amount_right_aligned: true
+      debit_uses_explicit_minus: true
+  parser_risks:
+    ambiguities:
+      - "Sem logotipo ou nome da instituição, o banco não pode ser confirmado apenas pela frase genérica 'PAGAMENTO EFETUADO'."
+      - "O ano foi mascarado como identificador no canônico recebido."
+      - "Ainda não há exemplos de crédito, estorno, agendamento, falha ou cancelamento."
+      - "Ainda não há amostra com AM nem com mudança de data dentro da mesma página."
+      - "Não há saldo por transação para validação aritmética."
+    fields_that_may_be_missing:
+      - bank_name
+      - account
+      - agency
+      - transaction_id
+      - balance
+      - original_year_after_privacy_masking
+    cases_that_need_real_pdf_validation:
+      - "Confirmar a presença de marca CAIXA no documento original não anonimizado."
+      - "Confirmar formatos de todos os meses e datas em viradas de ano."
+      - "Confirmar como descrições longas quebram em múltiplas linhas."
+      - "Confirmar como entradas e pagamentos não efetivados são representados."
+
+layout_profile:
+  profile_name: caixa_gerenciador_pagamentos_efetuados_boleto_v1
+  bank: Caixa Economica Federal
+  layout_family: caixa_gerenciador_pagamentos_efetuados_grouped_list
+  statement_type: pagamentos_efetuados
+  confidence: medium
+  schema_version: 2
+  classifier:
+    required_keywords:
+      - "CNPJ"
+      - "BOLETO"
+      - "PAGAMENTO EFETUADO"
+    optional_keywords:
+      - "MAY"
+      - "AM"
+      - "PM"
+    negative_keywords:
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "Banco Inter"
+      - "Santander"
+      - "Itau"
+      - "Itaú"
+      - "Cora"
+      - "Conta Simples"
+      - "Mercado Pago"
+      - "PagBank"
+      - "Sicoob"
+      - "Sicredi"
+      - "Comprovante de pagamento"
+    min_score_hint: 0.72
+  table_detection:
+    header_keywords:
+      - "BOLETO"
+      - "PAGAMENTO EFETUADO"
+    expected_column_order:
+      - date_group
+      - time
+      - payment_type
+      - counterparty
+      - status
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+        - "date_group"
+      time:
+        - "Hora"
+        - "Horário"
+        - "time"
+      description:
+        - "Favorecido"
+        - "Beneficiário"
+        - "Descrição"
+        - "counterparty"
+      amount:
+        - "Valor"
+        - "amount"
+      status:
+        - "Status"
+        - "PAGAMENTO EFETUADO"
+    table_starts_after:
+      - "CNPJ"
+    row_separator_hint: "date group uses an English abbreviated month; each transaction starts with h:mm AM/PM and ends with a signed pt-BR amount"
+  parsing:
+    date_formats:
+      - "MMM dd, yyyy"
+      - "MMM dd, yy"
+    date_year_source: date_group
+    month_language: en-US
+    amount_locale: pt-BR
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+      - "-R$ {amount}"
+      - "R$ -{amount}"
+    positive_patterns:
+      - "+{amount}"
+      - "R$ {amount_without_minus}"
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "CNPJ"
+      - "TOTAL"
+    opening_balance_rows: []
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - time
+      - payment_type
+      - counterparty
+      - status
+      - transaction_id
+      - balance
+  sign_rules:
+    priority_order:
+      - "explicit_negative_sign"
+      - "explicit_positive_sign"
+      - "payment_type_and_status_hint"
+    description_based_overrides:
+      - pattern: "BOLETO * PAGAMENTO EFETUADO"
+        sign: negative
+        confidence: medium
+        inferred: true
+        reason: "Os exemplos observados são pagamentos concluídos com valor negativo"
+    cautions:
+      - "O sinal explícito deve prevalecer sobre o texto da descrição."
+      - "Não assumir que toda ocorrência de BOLETO seja débito sem validar sinal ou status."
+  normalization:
+    description_cleanup:
+      - "trim_whitespace"
+      - "collapse_multiple_spaces"
+      - "preserve_original_description"
+      - "remove_payment_type_prefix_after_capturing_it"
+      - "remove_status_suffix_after_capturing_it"
+      - "merge_wrapped_counterparty_lines"
+    preserve_original_description: true
+    category_hints:
+      - pattern: "BOLETO * PAGAMENTO EFETUADO"
+        category: pagamento_boleto
+        inferred: false
+    transfer_hints: []
+    fee_hints: []
+  validation:
+    expected_min_columns: 5
+    reject_if_missing_headers:
+      - "BOLETO"
+      - "PAGAMENTO EFETUADO"
+    balance_consistency_check:
+      enabled: false
+      method: unavailable_without_balance
+      tolerance: "0.01"
+    needs_manual_review_when:
+      - "date_group_missing"
+      - "time_missing"
+      - "amount_without_explicit_sign"
+      - "payment_status_is_not_pagamento_efetuado"
+      - "counterparty_empty"
+      - "explicit_other_bank_name_present"
+      - "ocr_confidence_low_on_amount_or_time"
+  examples_from_image:
+    sample_rows:
+      - raw_date: "MAY 27, 2026"
+        raw_description: "BOLETO DARE SANTA CATARINA PAGAMENTO EFETUADO"
+        raw_amount: "-18,44"
+        normalized_amount: "-18.44"
+        should_import_as_transaction: true
+        notes: "Horário 4:00 PM; ano estava mascarado no canônico original"
+      - raw_date: "MAY 27, 2026"
+        raw_description: "BOLETO CELESC DISTRIBUICAO S.A PAGAMENTO EFETUADO"
+        raw_amount: "-442,42"
+        normalized_amount: "-442.42"
+        should_import_as_transaction: true
+        notes: "Horário 4:21 PM"
+      - raw_date: "MAY 27, 2026"
+        raw_description: "BOLETO OCL COMERCIO E IMPORTACAO LTDA PAGAMENTO EFETUADO"
+        raw_amount: "-486,76"
+        normalized_amount: "-486.76"
+        should_import_as_transaction: true
+        notes: "Horário 5:14 PM"
+  implementation_notes:
+    - "Classificar esta variação apenas quando CNPJ, BOLETO e PAGAMENTO EFETUADO ocorrerem em conjunto."
+    - "Usar data em inglês e horário AM/PM como sinais de reforço, não como únicos identificadores."
+    - "Propagar a data do agrupador para todas as transações até o próximo agrupador."
+    - "Capturar o favorecido entre BOLETO e PAGAMENTO EFETUADO."
+    - "Usar o sinal explícito do valor como fonte primária para débito ou crédito."
+    - "Manter confiança média até que uma amostra original confirme a marca CAIXA."

@@ -770,6 +770,22 @@ def test_infer_pdf_layout_prefers_caixa_gerenciador_period_effective_date_profil
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_identifies_caixa_gerenciador_pagamentos_efetuados_profile() -> None:
+    text = """
+    EMPRESA EXEMPLO CNPJ 12.345.678/0001-90
+    MAY 27, 2026
+    4:00 PM BOLETO DARE SANTA CATARINA PAGAMENTO EFETUADO -18,44
+    4:21 PM BOLETO CELESC DISTRIBUICAO S.A PAGAMENTO EFETUADO -442,42
+    5:14 PM BOLETO OCL COMERCIO E IMPORTACAO LTDA PAGAMENTO EFETUADO -486,76
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "caixa_gerenciador_pagamentos_efetuados_boleto_v1"
+    assert result.confidence >= 0.7
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_caixa_sihex_historico_extratos_profile() -> None:
     text = """
     CAI
