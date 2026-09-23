@@ -51,6 +51,9 @@ PUBLIC_SINGLE_LABELS = frozenset(
         "TED", "TOTAL", "TRANSFERENCIA", "TRANSFERENCIAS", "VALOR",
     }
 )
+PUBLIC_LAYOUT_FINGERPRINTS = (
+    "RENTAB.INVEST FACILCRED",
+)
 PLACEHOLDERS = frozenset(
     {"[TEXTO]", "[NUMERO]", "[DATA]", "[HORA]", "[VALOR]", "[VALOR_C]", "[VALOR_D]", "[VALOR_POS]", "[VALOR_NEG]", "[MOEDA]"}
 )
@@ -83,6 +86,7 @@ def build_safe_layout_pages(
             if not safe_text:
                 continue
             labels.update(line_labels)
+            labels.update(public_layout_fingerprint_labels(raw_text))
             row_shapes[_line_shape(safe_text)] += 1
             geometry = _safe_bbox(bbox)
             if geometry is None:
@@ -123,6 +127,11 @@ def build_safe_layout_pages(
         "line_shape_counts": dict(sorted(row_shapes.items())),
     }
     return safe_pages, signals
+
+
+def public_layout_fingerprint_labels(raw_text: str) -> tuple[str, ...]:
+    normalized = _ascii_upper(raw_text)
+    return tuple(fingerprint for fingerprint in PUBLIC_LAYOUT_FINGERPRINTS if fingerprint in normalized)
 
 
 def sanitize_layout_line(raw_text: str) -> tuple[str, tuple[str, ...]]:

@@ -6,7 +6,10 @@ from collections import Counter
 from functools import lru_cache
 
 from app.application.bank_catalog import load_bank_catalog
-from app.application.conversion.canonical_layout_v2 import sanitize_layout_line
+from app.application.conversion.canonical_layout_v2 import (
+    public_layout_fingerprint_labels,
+    sanitize_layout_line,
+)
 from app.application.document_extraction_models import ExtractedLine
 
 _TABLE_HEADER_TERMS = ("DATA", "HISTORICO", "VALOR", "SALDO")
@@ -133,6 +136,7 @@ def build_semantic_layout_pages(
                 continue
             _, line_labels = sanitize_layout_line(raw_text)
             labels.update(line_labels)
+            labels.update(public_layout_fingerprint_labels(raw_text))
             row_shapes[_line_shape(safe_text)] += 1
             geometry = _safe_bbox(bbox)
             if geometry is None:

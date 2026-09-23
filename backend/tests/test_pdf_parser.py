@@ -1656,6 +1656,35 @@ def test_parse_pdf_transactions_supports_stone_grouped_lancamento_valor_saldo_st
     assert result.transactions[0].type == "outflow"
 
 
+def test_parse_pdf_transactions_supports_bradesco_period_statement_without_bank_header(monkeypatch) -> None:
+    native_text = """
+    EXTRATO DE: AGENCIA [AGENCIA] CONTA [CONTA]
+    31/12/2025 SALDO ANTERIOR
+    21/01/2026 TED-TRANSF ELET DISPON REMET: [TITULAR] 165,74
+    21/01/2026 CIELO VDA DEBITO MASTER CIELO S.A 315,35
+    21/01/2026 PIX QR CODE DINAMIC REM: [TITULAR] 60,62
+    21/01/2026 RENTAB.INVEST FACILCRED* 0,01
+    21/01/2026 PAGTO ELETRON COBRANCA [IDENTIFICADOR] -200,00
+    21/01/2026 TARIFA BANCARIA LIQUIDACAO QRCODE PIX -0,90
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [native_text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [native_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
+    assert result.layout.used_fallback is False
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert [transaction.amount for transaction in result.transactions] == [
+        165.74,
+        315.35,
+        60.62,
+        0.01,
+        -200.0,
+        -0.9,
+    ]
+
+
 def test_parse_pdf_transactions_supports_bradesco_unificado_poupanca_movimentacao_section(monkeypatch) -> None:
     native_text = """
     Bradesco

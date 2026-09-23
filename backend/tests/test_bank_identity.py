@@ -14,6 +14,29 @@ def test_resolve_bank_name_from_pdf_text_when_layout_is_generic() -> None:
     assert resolve_bank_name(layout_inference_name="generic_statement_ptbr", extracted_text=text) == "Santander"
 
 
+def test_resolve_bank_name_from_bradesco_transaction_fingerprint_without_header() -> None:
+    text = """
+    EXTRATO DE: AGENCIA [AGENCIA] CONTA [CONTA]
+    31/12/2025 SALDO ANTERIOR
+    21/01/2026 TED-TRANSF ELET DISPON REMET: [TITULAR] 165,74
+    21/01/2026 PIX QR CODE DINAMIC REM: [TITULAR] 60,62
+    21/01/2026 RENTAB.INVEST FACILCRED* 0,01
+    21/01/2026 PAGTO ELETRON COBRANCA [IDENTIFICADOR] -200,00
+    """
+
+    assert resolve_bank_name(layout_inference_name="generic_statement_ptbr", extracted_text=text) == "Bradesco"
+
+
+def test_bradesco_transaction_anchor_alone_does_not_identify_bank() -> None:
+    text = """
+    EXTRATO DE: AGENCIA [AGENCIA] CONTA [CONTA]
+    31/12/2025 SALDO ANTERIOR
+    21/01/2026 RENTAB.INVEST FACILCRED* 0,01
+    """
+
+    assert resolve_bank_name(layout_inference_name="generic_statement_ptbr", extracted_text=text) is None
+
+
 def test_resolve_bank_name_from_unlisted_cooperative_header() -> None:
     text = """
     COOPERATIVA DE CREDITO VALE VERDE

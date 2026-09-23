@@ -30,6 +30,14 @@ _TEXT_BANK_HINTS = (
     ("INTER", "Banco Inter"),
     ("SICREDI", "Sicredi"),
 )
+_BRADESCO_TRANSACTION_ANCHOR = "RENTAB.INVEST FACILCRED"
+_BRADESCO_TRANSACTION_SUPPORTING_HINTS = (
+    "TED-TRANSF ELET DISPON",
+    "PIX QR CODE DINAMIC",
+    "PAGTO ELETRON COBRANCA",
+    "TARIFA BANCARIA LIQUIDACAO QRCODE PIX",
+    "CIELO VDA DEBITO MASTER",
+)
 _UNLISTED_INSTITUTION_MARKERS = (
     "BANCO",
     "COOPERATIVA DE CREDITO",
@@ -116,7 +124,17 @@ def _match_bank_name_in_text(extracted_text: str | None) -> str | None:
     header_candidate = _match_unlisted_institution_header(extracted_text)
     if header_candidate is not None:
         return _match_known_bank_name(header_candidate) or header_candidate
+    transaction_fingerprint = _match_bank_transaction_fingerprint(normalized_text)
+    if transaction_fingerprint is not None:
+        return transaction_fingerprint
     return _match_known_bank_name(normalized_text)
+
+
+def _match_bank_transaction_fingerprint(normalized_text: str) -> str | None:
+    if _BRADESCO_TRANSACTION_ANCHOR not in normalized_text:
+        return None
+    supporting_hits = sum(hint in normalized_text for hint in _BRADESCO_TRANSACTION_SUPPORTING_HINTS)
+    return "Bradesco" if supporting_hits >= 2 else None
 
 
 def _match_known_bank_name(normalized_text: str) -> str | None:

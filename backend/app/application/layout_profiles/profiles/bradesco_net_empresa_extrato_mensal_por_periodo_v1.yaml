@@ -198,26 +198,32 @@ layout_profile:
   confidence: high
   classifier:
     required_keywords:
+      - "Extrato de"
+      - "SALDO ANTERIOR"
+      - "RENTAB.INVEST FACILCRED"
+    optional_keywords:
       - "bradesco"
       - "net empresa"
       - "Extrato Mensal / Por Período"
       - "Data da operação"
       - "Agência | Conta"
       - "Total Disponível (R$)"
-      - "Extrato de"
       - "Data"
       - "Lançamento"
       - "Crédito (R$)"
       - "Débito (R$)"
       - "Saldo (R$)"
-    optional_keywords:
       - "Folha"
       - "Dcto."
       - "Total (R$)"
-      - "SALDO ANTERIOR"
       - "Entre"
       - "Ag:"
       - "CC:"
+      - "TED-TRANSF ELET DISPON"
+      - "PIX QR CODE DINAMIC"
+      - "PAGTO ELETRON COBRANCA"
+      - "TARIFA BANCARIA"
+      - "CIELO VDA DEBITO MASTER"
     negative_keywords:
       - "Santander"
       - "Banco do Brasil"
@@ -225,7 +231,7 @@ layout_profile:
       - "Fatura"
       - "Cartão de Crédito"
       - "Comprovante"
-    min_score_hint: 0.85
+    min_score_hint: 0.72
   table_detection:
     header_keywords:
       - "Data"
