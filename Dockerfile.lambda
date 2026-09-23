@@ -21,6 +21,7 @@ ENV APP_RELEASE=${APP_RELEASE}
 WORKDIR /var/task
 COPY --from=build /build/site-packages /var/task
 COPY backend/app/__init__.py /var/task/app/__init__.py
+COPY backend/app/security_baseline.py /var/task/app/security_baseline.py
 COPY backend/app/adapters /var/task/app/adapters
 COPY backend/app/application /var/task/app/application
 COPY backend/app/data /var/task/app/data
