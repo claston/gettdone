@@ -59,8 +59,11 @@ def test_worker_image_uses_a_dedicated_runtime_contract() -> None:
     assert "backend/requirements-worker.txt" in dockerfile
     assert "backend/requirements.txt backend/requirements-lambda.txt" not in dockerfile
     assert "COPY backend/app /var/task/app" not in dockerfile
-    assert "COPY backend/app/security_baseline.py /var/task/app/security_baseline.py" in dockerfile
+    assert "COPY backend/app/security_baseline.py /var/task/app/security_baseline.py" not in dockerfile
     assert "python -m app.workers.worker_image_contract" in dockerfile
+    assert "from app.security_baseline" not in (BACKEND_ROOT / "app" / "workers" / "conversion_lambda.py").read_text(
+        encoding="utf-8"
+    )
     assert '"app/application/admin_dashboard_service.py"' in worker_contract
     assert '"app.application.admin_dashboard_service"' in worker_contract
 
@@ -78,7 +81,6 @@ def test_worker_build_context_excludes_web_and_administrative_sources() -> None:
     }
 
     assert "**" in dockerignore.splitlines()
-    assert "!backend/app/security_baseline.py" in dockerignore.splitlines()
     assert excluded.issubset(set(dockerignore.splitlines()))
     assert {"**/__pycache__/", "**/*.pyc", "**/*.pyo"}.issubset(set(dockerignore.splitlines()))
 
