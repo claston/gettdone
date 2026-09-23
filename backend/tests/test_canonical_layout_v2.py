@@ -120,6 +120,24 @@ def test_v2_matches_caixa_period_statement_when_ocr_splits_table_headers() -> No
     assert result["candidates"][0]["score"] >= 0.85
 
 
+def test_v2_matches_caixa_payments_list_without_bank_header() -> None:
+    source = "\n".join((
+        "EMPRESA EXEMPLO CNPJ 12.345.678/0001-90",
+        "MAY 27, 2026 4:00 PM BOLETO DARE SANTA CATARINA PAGAMENTO EFETUADO -18,44",
+        "4:21 PM BOLETO CELESC DISTRIBUICAO S.A PAGAMENTO EFETUADO -442,42",
+        "5:14 PM BOLETO OCL COMERCIO E IMPORTACAO LTDA PAGAMENTO EFETUADO -486,76",
+    ))
+    _, signals = build_safe_layout_pages([{"width": 841.89, "height": 595.276, "source_text": source}])
+
+    result = match_layout_candidates(signals=signals, bank_code="")
+
+    assert "BOLETO" in signals["labels"]
+    assert "PAGAMENTO EFETUADO" in signals["labels"]
+    assert result["status"] == "existing_candidate"
+    assert result["candidates"][0]["layout_name"] == "caixa_gerenciador_pagamentos_efetuados_boleto_v1"
+    assert result["candidates"][0]["score"] == 1.0
+
+
 def test_v2_marks_unmatched_public_structure_for_new_layout_review() -> None:
     _, signals = build_safe_layout_pages([{
         "width": 595.0, "height": 842.0,
