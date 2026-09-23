@@ -62,6 +62,28 @@ Sequência do primeiro teste:
 
 Rollback imediato: esvaziar `CONVERSION_ASYNC_USER_EMAIL_ALLOWLIST` e reiniciar o Render. Isso impede novos lotes AWS sem mudar o perfil dos demais usuários. Jobs já enfileirados podem terminar; se também for necessário interrompê-los, desabilite o event source mapping depois de retirar a allowlist. Não apague S3, filas ou tabelas durante a investigação.
 
+## Rollout percentual com o perfil global legado
+
+O canário da allowlist continua sempre elegível. Para ampliar gradualmente aos
+demais usuários autenticados, configure:
+
+```text
+CONVERSION_ASYNC_PERCENTAGE_ROLLOUT_ENABLED=true
+CONVERSION_ASYNC_ROLLOUT_PERCENTAGE=30
+```
+
+A seleção é determinística por `user_id`: o mesmo usuário permanece no mesmo
+fluxo enquanto a configuração não mudar. Para rollback imediato dos 30%, altere
+somente `CONVERSION_ASYNC_PERCENTAGE_ROLLOUT_ENABLED=false` e reinicie o Render;
+a allowlist permanece ativa. O percentual deve ficar entre 0 e 100. Usuários
+selecionados pelo percentual podem enviar somente um arquivo por conversão; o
+usuário da allowlist mantém o limite configurado de até 12 arquivos por lote.
+
+O event source mapping da SQS deve estar habilitado para consumir os jobs. O
+dispatcher periódico do outbox via EventBridge deve permanecer desabilitado
+(`EnableOutboxDispatcher=false`): a submissão do lote já publica o evento
+pendente de forma síncrona. Não habilite a regra de um minuto neste rollout.
+
 ## Infraestrutura mínima no repositório privado
 
 - Um bucket S3 privado, Block Public Access ativo, SSE-S3 e sem versionamento inicialmente.

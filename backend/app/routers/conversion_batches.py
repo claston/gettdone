@@ -147,6 +147,7 @@ def create_conversion_batch(
         rollout_policy=rollout_policy,
         identity=identity,
         access_control_service=access_control_service,
+        files_count=len(request.files),
     )
     try:
         required_units = len(request.files) if identity.quota_mode == "conversion" else 1
@@ -351,12 +352,17 @@ def _effective_runtime(
 ) -> ConversionRuntimeConfig:
     if _direct_batch_enabled(runtime):
         return runtime
-    if rollout_policy.allows(identity=identity, access_control_service=access_control_service):
+    rollout_batch_max_files = rollout_policy.batch_max_files(
+        identity=identity,
+        access_control_service=access_control_service,
+        configured_max=runtime.batch_max_files,
+    )
+    if rollout_batch_max_files is not None:
         return ConversionRuntimeConfig(
             architecture_mode=ConversionArchitectureMode.ASYNC_AWS,
             upload_mode=ConversionUploadMode.DIRECT_S3,
             execution_mode=ConversionExecutionMode.SQS_LAMBDA,
-            batch_max_files=runtime.batch_max_files,
+            batch_max_files=rollout_batch_max_files,
         )
     return runtime
 
@@ -368,6 +374,7 @@ def _require_direct_batch(
     rollout_policy: AsyncConversionRolloutPolicy,
     identity,
     access_control_service: AccessControlService,
+    files_count: int | None = None,
 ) -> ConversionBatchService:
     effective_runtime = _effective_runtime(
         runtime=runtime,
@@ -383,6 +390,11 @@ def _require_direct_batch(
                 "message": "A conversão assíncrona está desativada; use o fluxo atual.",
                 "fallback_endpoint": "/api/conversions/upload",
             },
+        )
+    if files_count is not None and files_count > effective_runtime.batch_max_files:
+        raise HTTPException(
+            status_code=400,
+            detail="Percentage rollout conversions accept only one file per batch.",
         )
     return service
 
