@@ -18,6 +18,7 @@ from app.dependencies import (
     get_conversion_runtime_config,
 )
 from app.main import app
+from app.routers.auth_session import ANONYMOUS_IDENTITY_COOKIE_NAME
 
 
 class FakeAccessControlService:
@@ -34,6 +35,10 @@ class FakeAccessControlService:
             quota_limit=20,
             max_upload_size_bytes=5 * 1024 * 1024,
         )
+
+    def decode_anonymous_identity_token(self, *, token: str) -> str:
+        assert token == "anonymous-cookie"
+        return "browser-fingerprint"
 
 
 class FakeRegisteredAccessControlService:
@@ -198,6 +203,29 @@ def test_conversion_runtime_endpoint_exposes_safe_fallback_contract() -> None:
     }
 
 
+def test_percentage_rollout_includes_anonymous_traffic_with_one_file_limit() -> None:
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping({})
+    app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
+    app.dependency_overrides[get_async_conversion_rollout_policy] = lambda: (
+        AsyncConversionRolloutPolicy.from_mapping(
+            {
+                "CONVERSION_ASYNC_PERCENTAGE_ROLLOUT_ENABLED": "true",
+                "CONVERSION_ASYNC_ROLLOUT_PERCENTAGE": "100",
+            }
+        )
+    )
+    client = TestClient(app)
+    client.cookies.set(ANONYMOUS_IDENTITY_COOKIE_NAME, "anonymous-cookie")
+    try:
+        response = client.get("/api/conversion-runtime")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["direct_batch_enabled"] is True
+    assert response.json()["batch_max_files"] == 1
+
+
 def test_allowlisted_user_gets_async_runtime_while_global_mode_stays_legacy() -> None:
     app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping({})
     app.dependency_overrides[get_access_control_service] = lambda: FakeRegisteredAccessControlService(
@@ -263,6 +291,49 @@ def test_allowlisted_user_can_create_batch_while_global_mode_stays_legacy() -> N
 
     assert response.status_code == 201
     assert response.json()["status"] == "uploading"
+
+
+def test_percentage_user_is_limited_to_one_file_while_global_mode_stays_legacy() -> None:
+    service = ConversionBatchService(
+        repository=InMemoryConversionBatchRepository(),
+        direct_upload_service=FakeDirectUploadService(),
+        queue_publisher=FakePublisher(calls=[]),
+    )
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping({})
+    app.dependency_overrides[get_conversion_batch_service] = lambda: service
+    app.dependency_overrides[get_access_control_service] = lambda: FakeRegisteredAccessControlService(
+        email="other@example.com"
+    )
+    app.dependency_overrides[get_async_conversion_rollout_policy] = lambda: (
+        AsyncConversionRolloutPolicy.from_mapping(
+            {
+                "CONVERSION_ASYNC_PERCENTAGE_ROLLOUT_ENABLED": "true",
+                "CONVERSION_ASYNC_ROLLOUT_PERCENTAGE": "100",
+            }
+        )
+    )
+    client = TestClient(app)
+    try:
+        runtime = client.get(
+            "/api/conversion-runtime",
+            headers={"Authorization": "Bearer allowed-token"},
+        )
+        response = client.post(
+            "/api/conversion-batches",
+            headers={
+                "Authorization": "Bearer allowed-token",
+                "Idempotency-Key": "percentage-request",
+            },
+            json={"files": _request_payload(2)["files"]},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert runtime.status_code == 200
+    assert runtime.json()["direct_batch_enabled"] is True
+    assert runtime.json()["batch_max_files"] == 1
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Percentage rollout conversions accept only one file per batch."
 
 
 def test_non_allowlisted_user_cannot_create_batch_in_legacy_mode() -> None:

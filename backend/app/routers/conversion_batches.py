@@ -96,14 +96,16 @@ class ConversionRuntimeResponse(BaseModel):
 def conversion_runtime(
     authorization: str | None = Header(default=None),
     access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    anonymous_cookie_token: str | None = Cookie(default=None, alias=ANONYMOUS_IDENTITY_COOKIE_NAME),
     runtime: ConversionRuntimeConfig = Depends(get_conversion_runtime_config),
     rollout_policy: AsyncConversionRolloutPolicy = Depends(get_async_conversion_rollout_policy),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> ConversionRuntimeResponse:
-    identity = _resolve_optional_registered_identity(
+    identity = _resolve_optional_identity(
         access_control_service=access_control_service,
         authorization=authorization,
         access_cookie_token=access_cookie_token,
+        anonymous_cookie_token=anonymous_cookie_token,
     )
     effective_runtime = _effective_runtime(
         runtime=runtime,
@@ -147,6 +149,7 @@ def create_conversion_batch(
         rollout_policy=rollout_policy,
         identity=identity,
         access_control_service=access_control_service,
+        files_count=len(request.files),
     )
     try:
         required_units = len(request.files) if identity.quota_mode == "conversion" else 1
@@ -319,11 +322,12 @@ def _direct_batch_enabled(runtime: ConversionRuntimeConfig) -> bool:
     )
 
 
-def _resolve_optional_registered_identity(
+def _resolve_optional_identity(
     *,
     access_control_service: AccessControlService,
     authorization: str | None,
     access_cookie_token: str | None,
+    anonymous_cookie_token: str | None,
 ):
     try:
         user_token = resolve_user_token_with_session(
@@ -332,12 +336,22 @@ def _resolve_optional_registered_identity(
             explicit_user_token=None,
             access_cookie_token=access_cookie_token,
         )
-        if not user_token:
-            return None
-        return access_control_service.resolve_identity(
-            anonymous_fingerprint=None,
-            user_token=user_token,
+        if user_token:
+            return access_control_service.resolve_identity(
+                anonymous_fingerprint=None,
+                user_token=user_token,
+            )
+        anonymous_fingerprint = resolve_anonymous_fingerprint_with_cookie(
+            access_control_service=access_control_service,
+            anonymous_cookie_token=anonymous_cookie_token,
+            legacy_fingerprint=None,
         )
+        if anonymous_fingerprint:
+            return access_control_service.resolve_identity(
+                anonymous_fingerprint=anonymous_fingerprint,
+                user_token=None,
+            )
+        return None
     except InvalidUserTokenError:
         return None
 
@@ -351,12 +365,17 @@ def _effective_runtime(
 ) -> ConversionRuntimeConfig:
     if _direct_batch_enabled(runtime):
         return runtime
-    if rollout_policy.allows(identity=identity, access_control_service=access_control_service):
+    rollout_batch_max_files = rollout_policy.batch_max_files(
+        identity=identity,
+        access_control_service=access_control_service,
+        configured_max=runtime.batch_max_files,
+    )
+    if rollout_batch_max_files is not None:
         return ConversionRuntimeConfig(
             architecture_mode=ConversionArchitectureMode.ASYNC_AWS,
             upload_mode=ConversionUploadMode.DIRECT_S3,
             execution_mode=ConversionExecutionMode.SQS_LAMBDA,
-            batch_max_files=runtime.batch_max_files,
+            batch_max_files=rollout_batch_max_files,
         )
     return runtime
 
@@ -368,6 +387,7 @@ def _require_direct_batch(
     rollout_policy: AsyncConversionRolloutPolicy,
     identity,
     access_control_service: AccessControlService,
+    files_count: int | None = None,
 ) -> ConversionBatchService:
     effective_runtime = _effective_runtime(
         runtime=runtime,
@@ -383,6 +403,11 @@ def _require_direct_batch(
                 "message": "A conversão assíncrona está desativada; use o fluxo atual.",
                 "fallback_endpoint": "/api/conversions/upload",
             },
+        )
+    if files_count is not None and files_count > effective_runtime.batch_max_files:
+        raise HTTPException(
+            status_code=400,
+            detail="Percentage rollout conversions accept only one file per batch.",
         )
     return service
 

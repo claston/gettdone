@@ -23,7 +23,6 @@ from app.application.conversion.document_conversion_pipeline import DocumentConv
 from app.application.default_conversion_pipeline import build_default_conversion_pipeline
 from app.application.report_service import ReportService
 from app.application.s3_analysis_storage import S3AnalysisStorage
-from app.security_baseline import read_bool_env
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -276,7 +275,7 @@ def build_lambda_processor() -> ConversionLambdaProcessor:
         processing_pipeline=build_default_conversion_pipeline(),
         analysis_repository=analysis_storage,
         canonical_layout_capture_service=build_s3_canonical_layout_capture_service(
-            enabled=read_bool_env("CANONICAL_LAYOUT_CAPTURE_ENABLED", default=False),
+            enabled=_read_bool_env("CANONICAL_LAYOUT_CAPTURE_ENABLED", default=False),
             bucket=bucket,
             prefix=os.getenv(
                 "CANONICAL_LAYOUT_CAPTURE_S3_PREFIX",
@@ -287,16 +286,16 @@ def build_lambda_processor() -> ConversionLambdaProcessor:
             max_extracted_chars=int(
                 os.getenv("CANONICAL_LAYOUT_CAPTURE_MAX_EXTRACTED_CHARS", "250000")
             ),
-            bank_header_ocr_enabled=read_bool_env(
+            bank_header_ocr_enabled=_read_bool_env(
                 "CANONICAL_LAYOUT_BANK_OCR_ENABLED",
                 default=False,
             ),
-            failure_capture_enabled=read_bool_env(
+            failure_capture_enabled=_read_bool_env(
                 "CANONICAL_LAYOUT_FAILURE_CAPTURE_ENABLED",
                 default=False,
             ),
-            v2_enabled=read_bool_env("CANONICAL_LAYOUT_V2_ENABLED", default=False),
-            v3_enabled=read_bool_env("CANONICAL_LAYOUT_V3_ENABLED", default=False),
+            v2_enabled=_read_bool_env("CANONICAL_LAYOUT_V2_ENABLED", default=False),
+            v3_enabled=_read_bool_env("CANONICAL_LAYOUT_V3_ENABLED", default=False),
         ),
     )
     return ConversionLambdaProcessor(
@@ -335,6 +334,18 @@ def _required_env(name: str) -> str:
     if not value:
         raise RuntimeError(f"{name} is required by the conversion Lambda.")
     return value
+
+
+def _read_bool_env(name: str, *, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
 
 
 def _log_json(event: str, **fields: object) -> None:
