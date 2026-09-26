@@ -167,6 +167,22 @@ backend\venv\Scripts\python.exe -m playwright install chromium
 backend\venv\Scripts\python.exe scripts\smoke_playwright_navigation.py
 ```
 
+## Testes de backend durante o desenvolvimento
+
+Para executar a suíte completa em quatro processos, com um diretório temporário isolado:
+
+```powershell
+.\scripts\test-backend.ps1
+```
+
+O script aceita argumentos adicionais do pytest. Por exemplo, para rodar apenas um arquivo:
+
+```powershell
+.\scripts\test-backend.ps1 backend/tests/test_access_control.py
+```
+
+Defina `PYTEST_WORKERS` para alterar a quantidade de processos. O padrão validado localmente é `4`.
+
 ## CI no GitHub
 
 Workflows configurados:
@@ -186,10 +202,10 @@ cd backend
 venv\Scripts\python.exe -m pytest -m pdf_golden -q --basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-pdf-golden
 ```
 
-Opcao equivalente executando da raiz do repositorio (sem warning de marker):
+Opcao equivalente executando da raiz do repositorio:
 
 ```powershell
-backend\venv\Scripts\python.exe -m pytest -c backend\pyproject.toml -m pdf_golden -q --basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-pdf-golden
+backend\venv\Scripts\python.exe -m pytest -m pdf_golden -q --basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-pdf-golden
 ```
 
 Arquivos principais desse pacote:

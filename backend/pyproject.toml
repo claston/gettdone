@@ -4,10 +4,3 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-markers = [
-    "pdf_golden: regression tests for the minimal PDF golden dataset",
-    "pdf_ocr: optional real OCR tests that require a local Tesseract binary",
-]

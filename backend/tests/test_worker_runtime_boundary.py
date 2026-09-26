@@ -3,12 +3,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = ROOT / "backend"
 DOCKERFILE_PATH = ROOT / "Dockerfile.lambda"
 DOCKERIGNORE_PATH = ROOT / "Dockerfile.lambda.dockerignore"
 WORKER_REQUIREMENTS_PATH = BACKEND_ROOT / "requirements-worker.txt"
 WORKER_CONTRACT_PATH = BACKEND_ROOT / "app" / "workers" / "worker_image_contract.py"
+pytestmark = pytest.mark.architecture
 
 
 def _imported_app_modules() -> set[str]:

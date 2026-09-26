@@ -9,11 +9,14 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import httpx
+import pytest
 import uvicorn
 
 from app.application import AccessControlService
 from app.dependencies import get_access_control_service, get_report_service
 from app.main import app
+
+pytestmark = pytest.mark.real_http
 
 
 class _InMemoryConnCtx:

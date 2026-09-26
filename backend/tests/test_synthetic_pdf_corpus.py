@@ -159,7 +159,12 @@ def test_native_text_synthetic_corpus_runs_through_real_pdf_pipeline(scenario) -
         max_false_positives=scenario.expected.max_false_positives,
     )
 
-    if not report.success and not scenario.expected.enforce_success:
+    if not scenario.expected.enforce_success:
+        if report.success:
+            pytest.fail(
+                f"known gap now passes and must be promoted to an enforced scenario: "
+                f"{scenario.expected.known_gap}"
+            )
         pytest.xfail(f"known gap: {scenario.expected.known_gap}; {report.summary}")
     assert report.success, report.summary
     if scenario.expected.selected_parser:
