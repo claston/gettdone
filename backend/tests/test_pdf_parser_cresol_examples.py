@@ -92,6 +92,43 @@ CRESOL_EXAMPLE_CASES: dict[str, dict[str, Any]] = {
         PIX CRÉDITO DE: + R$ 15.000,00
         """,
     },
+    "ofx_simples_posicao_consolidada": {
+        "profile": "cresol_ofx_simples_posicao_consolidada_v1",
+        "amounts": [-1430.00, 2000.00, -50.00, -5.00, -500.00, 1045.00],
+        "dates": [
+            "2026-08-28",
+            "2026-08-28",
+            "2026-08-10",
+            "2026-08-10",
+            "2026-08-06",
+            "2026-08-04",
+        ],
+        "descriptions": [
+            "PIX DEBITO PARA: CONTRAPARTE A",
+            "PIX CREDITO DE: CONTRAPARTE B",
+            "INTEGRALIZACAO PROGRAMA",
+            "PIX DEVOLUCAO ENVIADA PARA: MANUELLY DOS SANTOS - 09/08",
+            "PIX DEBITO INTERCOOPERATIVO PARA",
+            "CREDITO TITULOS COBRANCA PROPRIA(F)",
+        ],
+        "text": """
+        [TITULAR]
+        AGENCIA [AGENCIA] CONTA [CONTA]
+        SALDO EM CONTA [CONTA] DE CREDITO SALDO DISPONIVEL
+        R$ 1.716,47 R$ 0,00 R$ 1.716,47
+        28/08/2026 SALDO DO DIA: + R$ 1.716,47
+        28/08/2026 PIX DEBITO PARA: CONTRAPARTE A - R$ 1.430,00
+        28/08/2026 PIX CREDITO DE: CONTRAPARTE B + R$ 2.000,00
+        10/08/2026 INTEGRALIZACAO PROGRAMA - R$ 50,00
+        10/08/2026 PIX DEVOLUCAO ENVIADA PARA: MANUELLY - R$ 5,00
+        DOS SANTOS - 09/08
+        06/08/2026 PIX DEBITO INTERCOOPERATIVO PARA: - R$ 500,00
+        04/08/2026 CREDITO TITULOS COBRANCA PROPRIA(F) + R$ 1.045,00
+        CONSULTA POSICAO CONSOLIDADA EM 14/09/2026 AS 21:28:47
+        PERIODO DE 01/08/2026 A 31/08/2026
+        PAGINA 1 DE 1
+        """,
+    },
 }
 
 
@@ -107,6 +144,8 @@ def test_parse_pdf_transactions_supports_cresol_visual_examples(case_name: str, 
     assert result.parse_metrics["selected_parser"] == "layout_specific_cresol"
     assert [transaction.amount for transaction in result.transactions] == case["amounts"]
     assert [transaction.date for transaction in result.transactions] == case["dates"]
+    if "descriptions" in case:
+        assert [transaction.description for transaction in result.transactions] == case["descriptions"]
     assert all("SALDO" not in transaction.description.upper() for transaction in result.transactions)
 
     ofx = build_ofx_statement(result.transactions)

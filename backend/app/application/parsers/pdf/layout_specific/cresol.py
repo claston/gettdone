@@ -27,12 +27,14 @@ CRESOL_CONSOLIDATED_CURRENT_LAYOUT = "cresol_extrato_consolidado_conta_corrente_
 CRESOL_DAILY_LIST_LAYOUT = "cresol_extrato_lancamentos_saldo_dia_pix_credito_v1"
 CRESOL_RDC_LAYOUT = "cresol_extrato_rdc_renda_fixa_v1"
 CRESOL_PIX_DAILY_LIST_LAYOUT = "cresol_extrato_conta_corrente_moderno_pix_v1"
+CRESOL_OFX_SIMPLES_LAYOUT = "cresol_ofx_simples_posicao_consolidada_v1"
 
 _DATED_TABLE_LAYOUTS = frozenset(
     {
         CRESOL_LEGACY_CURRENT_LAYOUT,
         CRESOL_CONSOLIDATED_CURRENT_LAYOUT,
         CRESOL_RDC_LAYOUT,
+        CRESOL_OFX_SIMPLES_LAYOUT,
     }
 )
 _GROUPED_LIST_LAYOUTS = frozenset({CRESOL_DAILY_LIST_LAYOUT, CRESOL_PIX_DAILY_LIST_LAYOUT})
@@ -41,6 +43,7 @@ _DATE_ROW_PATTERN = re.compile(
     r"^\s*(?P<date>\d{1,2}/\d{1,2}(?:/\d{2,4})?)\s+(?P<rest>.+)$",
     flags=re.IGNORECASE,
 )
+_DATE_CONTINUATION_PATTERN = re.compile(r"(?:^|\s)(?:-\s*)?\d{1,2}/\d{1,2}\s*$")
 _BALANCE_TOKENS = (
     "SALDO ANTERIOR",
     "SALDO INICIAL",
@@ -63,7 +66,11 @@ class CresolLayoutParser:
     ) -> LayoutSpecificParseResult | None:
         fallback_year = _resolve_fallback_year(lines, context=context)
         if layout_name in _DATED_TABLE_LAYOUTS:
-            rows = _parse_dated_table_rows(lines, fallback_year=fallback_year)
+            rows = _parse_dated_table_rows(
+                lines,
+                fallback_year=fallback_year,
+                merge_date_continuations=layout_name == CRESOL_OFX_SIMPLES_LAYOUT,
+            )
         elif layout_name in _GROUPED_LIST_LAYOUTS:
             rows = _parse_grouped_list_rows(lines, fallback_year=fallback_year)
         else:
@@ -78,11 +85,25 @@ class CresolLayoutParser:
         )
 
 
-def _parse_dated_table_rows(lines: list[_PdfLine], *, fallback_year: int) -> list[_ParsedTransaction]:
+def _parse_dated_table_rows(
+    lines: list[_PdfLine],
+    *,
+    fallback_year: int,
+    merge_date_continuations: bool = False,
+) -> list[_ParsedTransaction]:
     rows: list[_ParsedTransaction] = []
+    last_transaction_line: _PdfLine | None = None
     for line in lines:
         match = _DATE_ROW_PATTERN.match(line.text)
         if match is None:
+            if (
+                merge_date_continuations
+                and rows
+                and last_transaction_line is not None
+                and _is_date_description_continuation(line, previous_line=last_transaction_line)
+            ):
+                rows[-1] = _append_description(rows[-1], line.text)
+                last_transaction_line = line
             continue
         amount_tokens = tuple(find_amount_tokens(match.group("rest")))
         if not amount_tokens:
@@ -99,7 +120,27 @@ def _parse_dated_table_rows(lines: list[_PdfLine], *, fallback_year: int) -> lis
                 source=line,
             )
         )
+        last_transaction_line = line
     return rows
+
+
+def _is_date_description_continuation(line: _PdfLine, *, previous_line: _PdfLine) -> bool:
+    if line.page_number != previous_line.page_number or line.line_number != previous_line.line_number + 1:
+        return False
+    return _DATE_CONTINUATION_PATTERN.search(line.text.strip()) is not None
+
+
+def _append_description(row: _ParsedTransaction, continuation: str) -> _ParsedTransaction:
+    return build_parsed_transaction(
+        date=row.transaction.date,
+        description=" ".join(f"{row.transaction.description} {continuation}".split()),
+        amount=row.transaction.amount,
+        source_page=row.source_page,
+        source_line=row.source_line,
+        running_balance=row.running_balance,
+        external_reference_id=row.external_reference_id,
+        has_explicit_amount_sign=row.has_explicit_amount_sign,
+    )
 
 
 def _parse_grouped_list_rows(lines: list[_PdfLine], *, fallback_year: int) -> list[_ParsedTransaction]:

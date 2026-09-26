@@ -1,0 +1,165 @@
+meta_model:
+  layout_id: cresol_ofx_simples_posicao_consolidada_v1
+  bank: Cresol
+  channel: OFX Simples
+  statement_type: conta_corrente_extrato
+  source_quality: native_text
+  confidence: high
+  detection_signals:
+    strong:
+      - "CONSULTA POSICAO CONSOLIDADA"
+      - "PIX DEBITO INTERCOOPERATIVO"
+      - "INTEGRALIZACAO PROGRAMA"
+      - "CREDITO TITULOS COBRANCA PROPRIA"
+    weak:
+      - "SALDO DO DIA"
+      - "SALDO EM CONTA"
+      - "SALDO DISPONIVEL"
+      - "PIX DEBITO PARA:"
+      - "PIX CREDITO DE:"
+      - "PACOTE DE SERVICOS PADRONIZADO"
+    table_headers: []
+  page_structure:
+    header:
+      account_identifiers:
+        agency: "AGENCIA"
+        account: "CONTA"
+    metadata:
+      period: "PERIODO DE dd/MM/yyyy A dd/MM/yyyy"
+      generated_at: "CONSULTA POSICAO CONSOLIDADA EM dd/MM/yyyy AS HH:mm:ss"
+      pagination: "PAGINA n DE total"
+    transactions_table:
+      representation: dated_list_without_header
+      row_shape: "dd/MM/yyyy descricao [+|-] R$ valor"
+  transaction_rules:
+    opening_balance:
+      label_patterns:
+        - "SALDO ANTERIOR"
+        - "SALDO DO DIA"
+        - "SALDO EM CONTA"
+        - "SALDO DISPONIVEL"
+      should_import_as_transaction: false
+    normal_transaction:
+      row_has_date: true
+      row_has_description: true
+      row_has_amount: true
+      should_import_as_transaction: true
+    amount_sign:
+      positive_when:
+        - "Valor possui prefixo + R$"
+      negative_when:
+        - "Valor possui prefixo - R$"
+    balance_column:
+      exists: false
+      daily_balance_rows_exist: true
+  normalization_hints:
+    caution:
+      - "Nao importar SALDO DO DIA nem SALDO ANTERIOR."
+      - "Usar exclusivamente o sinal explicito do valor."
+      - "Nao identificar o layout apenas por rotulos genericos de PIX."
+  parser_risks:
+    ambiguities:
+      - "Descricoes longas podem continuar na linha seguinte sem repetir data e valor."
+      - "Cabecalhos e rodapes se repetem entre paginas."
+    fields_that_may_be_missing:
+      - document
+      - transaction_id
+      - running_balance
+
+layout_profile:
+  schema_version: 2
+  profile_name: cresol_ofx_simples_posicao_consolidada_v1
+  bank: Cresol
+  layout_family: cresol_ofx_simples_dated_list
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "CONSULTA POSICAO CONSOLIDADA"
+      - "PIX DEBITO INTERCOOPERATIVO"
+      - "INTEGRALIZACAO PROGRAMA"
+      - "CREDITO TITULOS COBRANCA PROPRIA"
+    optional_keywords:
+      - "SALDO DO DIA"
+      - "SALDO EM CONTA"
+      - "SALDO DISPONIVEL"
+      - "PIX DEBITO PARA:"
+      - "PIX CREDITO DE:"
+      - "PACOTE DE SERVICOS PADRONIZADO"
+      - "AGENCIA"
+      - "PERIODO DE"
+      - "PAGINA"
+    negative_keywords:
+      - "Extrato de RDC"
+      - "Extrato Consolidado de Conta Corrente"
+      - "Data Movimento Lancamento Identificacao Valor"
+    min_score_hint: 0.78
+  table_detection:
+    header_keywords: []
+    expected_column_order:
+      - date
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Historico"
+        - "Lancamento"
+      amount:
+        - "+ R$"
+        - "- R$"
+    row_separator_hint: "Cada transacao inicia com dd/MM/yyyy e termina com valor de sinal explicito."
+  parsing:
+    date_formats:
+      - "dd/MM/yyyy"
+    amount_locale: pt-BR
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "- R$ {amount}"
+    positive_patterns:
+      - "+ R$ {amount}"
+    ignore_rows:
+      - "SALDO DO DIA"
+      - "SALDO EM CONTA"
+      - "SALDO DISPONIVEL"
+      - "CONSULTA POSICAO CONSOLIDADA"
+      - "PERIODO DE"
+      - "PAGINA"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO DO DIA"
+      - "SALDO EM CONTA"
+      - "SALDO DISPONIVEL"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - complement
+  sign_rules:
+    priority_order:
+      - explicit_positive_or_negative_currency_prefix
+    cautions:
+      - "Nao inferir sinal pela descricao; o sinal monetario e obrigatorio."
+  normalization:
+    description_cleanup:
+      - trim_whitespace
+      - collapse_multiple_spaces
+      - preserve_original_description
+    preserve_original_description: true
+  validation:
+    expected_min_columns: 3
+    reject_if_missing_headers:
+      - "CONSULTA POSICAO CONSOLIDADA"
+      - "PERIODO DE"
+      - "PAGINA"
+    needs_manual_review_when:
+      - amount_without_explicit_sign
+      - transaction_date_missing
+  implementation_notes:
+    - "Usar somente a camada de texto nativa; OCR nao e necessario para este layout."
+    - "Reutilizar o parser Cresol de linhas datadas com sinal monetario explicito."
+    - "Filtrar linhas de saldo e rodapes antes de exportar transacoes."

@@ -47,6 +47,8 @@ This document defines the default execution rules for the `gettdone` repository.
 1. Always run test suite before finalizing work.
 2. Always run lint checks when configured.
 3. For API changes, run the app and validate endpoints with real HTTP requests.
+4. In the Codex Windows environment, run every `pytest` command outside the filesystem sandbox on the first attempt (`sandbox_permissions: require_escalated`); do not first run the same command sandboxed. Pytest temporary-directory creation and enumeration can fail with `WinError 5` inside the sandbox, including when `--basetemp` points into the workspace.
+5. For full-suite runs, use an explicit task-specific `--basetemp` under the user's local temporary directory (for example, `C:\Users\<user>\AppData\Local\Temp\gettdone-pytest-<task>`) and remove that exact temporary directory after validation.
 
 Minimum API validation for V1:
 

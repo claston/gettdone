@@ -229,6 +229,18 @@ def test_infer_pdf_layout_falls_back_to_generic_profile() -> None:
     assert result.confidence >= 0.2
 
 
+def test_infer_pdf_layout_does_not_identify_cresol_ofx_simples_from_generic_pix_labels() -> None:
+    text = """
+    28/08/2026 PIX DEBITO PARA: CONTRAPARTE A - R$ 100,00
+    28/08/2026 PIX CREDITO DE: CONTRAPARTE B + R$ 200,00
+    SALDO DO DIA: + R$ 300,00
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name != "cresol_ofx_simples_posicao_consolidada_v1"
+
+
 def test_infer_pdf_layout_prefers_santander_profile_when_tokens_match() -> None:
     text = """
     BANCO SANTANDER BRASIL S.A.

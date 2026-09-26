@@ -81,6 +81,7 @@ def test_default_layout_parser_registry_contains_current_specific_families() -> 
             "cresol_extrato_lancamentos_saldo_dia_pix_credito_v1",
             "cresol_extrato_conta_corrente_moderno_pix_v1",
             "cresol_extrato_rdc_renda_fixa_v1",
+            "cresol_ofx_simples_posicao_consolidada_v1",
             "sicoob_fatura_cartao_credito_movimentos_v1",
             "sicoob_sisbr_extrato_conta_corrente_historico_movimentacao_v1",
             "sicoob_sisbr_extrato_conta_corrente_monospace_valor_dc_v1",
