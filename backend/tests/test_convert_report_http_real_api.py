@@ -9,6 +9,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile, mkdtemp
 
 import httpx
+import pytest
 import uvicorn
 
 from app.application import AccessControlService
@@ -26,6 +27,8 @@ from app.schemas import (
     TopExpense,
     TransactionPreview,
 )
+
+pytestmark = pytest.mark.real_http
 
 
 def _build_conversion_result(analysis: AnalyzeResponse) -> ConversionPipelineResult:

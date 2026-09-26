@@ -24,7 +24,8 @@ from app.application.quota_management import (
 if TYPE_CHECKING:
     from app.application.access_control import AccessControlService, IdentityContext
 
-PASSWORD_HASH_ITERATIONS = 390_000
+PRODUCTION_PASSWORD_HASH_ITERATIONS = 390_000
+PASSWORD_HASH_ITERATIONS = PRODUCTION_PASSWORD_HASH_ITERATIONS
 
 
 class AccessControlHelpersComponent:

@@ -8,11 +8,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
+import pytest
 import uvicorn
 
 from app.application.access_control import AccessControlService
 from app.dependencies import get_access_control_service
 from app.main import app
+
+pytestmark = pytest.mark.real_http
 
 
 def _find_free_port() -> int:

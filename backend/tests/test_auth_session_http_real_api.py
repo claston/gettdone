@@ -8,12 +8,15 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
+import pytest
 import uvicorn
 
 from app.application import AccessControlService
 from app.dependencies import get_access_control_service
 from app.main import app
 from app.routers.auth import SESSION_ACCESS_COOKIE_NAME, SESSION_REFRESH_COOKIE_NAME
+
+pytestmark = pytest.mark.real_http
 
 
 class _InMemoryConnCtx:

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
+pytestmark = pytest.mark.architecture
 
 
 def _run_in_fresh_process(source: str) -> None:
