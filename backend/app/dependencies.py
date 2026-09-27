@@ -176,7 +176,14 @@ def get_conversion_runtime_config() -> ConversionRuntimeConfig:
 
 
 def get_async_conversion_rollout_policy() -> AsyncConversionRolloutPolicy:
-    return AsyncConversionRolloutPolicy.from_mapping(os.environ)
+    configured_policy = AsyncConversionRolloutPolicy.from_mapping(os.environ)
+    if not read_bool_env("NEON_ECONOMY_MODE", default=False):
+        return configured_policy
+    return AsyncConversionRolloutPolicy(
+        allowed_user_emails=frozenset(),
+        percentage_rollout_enabled=False,
+        rollout_percentage=0,
+    )
 
 
 def get_async_conversion_report_service() -> ReportService | None:
@@ -265,6 +272,7 @@ def get_conversion_batch_service() -> ConversionBatchService | None:
 def get_access_control_service() -> AccessControlService:
     global _access_control_service
     if _access_control_service is None:
+        neon_economy_mode = read_bool_env("NEON_ECONOMY_MODE", default=False)
         token_secret = os.getenv("ACCESS_CONTROL_TOKEN_SECRET", "").strip() or "dev-access-control-secret"
         anonymous_quota_limit = int(os.getenv("ANONYMOUS_QUOTA_LIMIT", "3"))
         unlimited_anon_quota = read_bool_env("UNLIMITED_ANON_QUOTA", default=False)
@@ -290,11 +298,21 @@ def get_access_control_service() -> AccessControlService:
             session_access_token_ttl_seconds=int(os.getenv("SESSION_ACCESS_TOKEN_TTL_SECONDS", "900")),
             session_refresh_token_ttl_seconds=int(os.getenv("SESSION_REFRESH_TOKEN_TTL_SECONDS", "1209600")),
             active_plan_cache_ttl_seconds=int(os.getenv("ACTIVE_PLAN_CACHE_TTL_SECONDS", "20")),
+            public_plans_cache_ttl_seconds=(
+                max(86400, int(os.getenv("PUBLIC_PLANS_CACHE_TTL_SECONDS", "86400")))
+                if neon_economy_mode
+                else int(os.getenv("PUBLIC_PLANS_CACHE_TTL_SECONDS", "300"))
+            ),
             db_connect_retry_attempts=int(os.getenv("DB_CONNECT_RETRY_ATTEMPTS", "3")),
             db_connect_retry_base_ms=int(os.getenv("DB_CONNECT_RETRY_BASE_MS", "200")),
-            db_pool_min_size=int(os.getenv("DB_POOL_MIN_SIZE", "1")),
-            db_pool_max_size=int(os.getenv("DB_POOL_MAX_SIZE", "3")),
+            db_pool_min_size=0 if neon_economy_mode else int(os.getenv("DB_POOL_MIN_SIZE", "1")),
+            db_pool_max_size=1 if neon_economy_mode else int(os.getenv("DB_POOL_MAX_SIZE", "3")),
             db_pool_timeout_seconds=float(os.getenv("DB_POOL_TIMEOUT_SECONDS", "5")),
+            db_pool_max_idle_seconds=(
+                60.0
+                if neon_economy_mode
+                else float(os.getenv("DB_POOL_MAX_IDLE_SECONDS", "600"))
+            ),
             email_verification_required=read_bool_env("AUTH_EMAIL_VERIFICATION_REQUIRED", default=False),
             email_verification_ttl_seconds=int(os.getenv("AUTH_EMAIL_VERIFICATION_TTL_SECONDS", "3600")),
             email_verification_resend_cooldown_seconds=int(

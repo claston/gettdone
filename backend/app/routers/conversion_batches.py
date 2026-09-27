@@ -92,6 +92,15 @@ class ConversionRuntimeResponse(BaseModel):
     fallback_endpoint: str
 
 
+def get_runtime_access_control_service(
+    runtime: ConversionRuntimeConfig = Depends(get_conversion_runtime_config),
+    rollout_policy: AsyncConversionRolloutPolicy = Depends(get_async_conversion_rollout_policy),
+) -> AccessControlService | None:
+    if _direct_batch_enabled(runtime) or not rollout_policy.enabled:
+        return None
+    return get_access_control_service()
+
+
 @router.get("/api/conversion-runtime", response_model=ConversionRuntimeResponse)
 def conversion_runtime(
     authorization: str | None = Header(default=None),
@@ -99,20 +108,22 @@ def conversion_runtime(
     anonymous_cookie_token: str | None = Cookie(default=None, alias=ANONYMOUS_IDENTITY_COOKIE_NAME),
     runtime: ConversionRuntimeConfig = Depends(get_conversion_runtime_config),
     rollout_policy: AsyncConversionRolloutPolicy = Depends(get_async_conversion_rollout_policy),
-    access_control_service: AccessControlService = Depends(get_access_control_service),
+    access_control_service: AccessControlService | None = Depends(get_runtime_access_control_service),
 ) -> ConversionRuntimeResponse:
-    identity = _resolve_optional_identity(
-        access_control_service=access_control_service,
-        authorization=authorization,
-        access_cookie_token=access_cookie_token,
-        anonymous_cookie_token=anonymous_cookie_token,
-    )
-    effective_runtime = _effective_runtime(
-        runtime=runtime,
-        rollout_policy=rollout_policy,
-        identity=identity,
-        access_control_service=access_control_service,
-    )
+    effective_runtime = runtime
+    if access_control_service is not None:
+        identity = _resolve_optional_identity(
+            access_control_service=access_control_service,
+            authorization=authorization,
+            access_cookie_token=access_cookie_token,
+            anonymous_cookie_token=anonymous_cookie_token,
+        )
+        effective_runtime = _effective_runtime(
+            runtime=runtime,
+            rollout_policy=rollout_policy,
+            identity=identity,
+            access_control_service=access_control_service,
+        )
     return ConversionRuntimeResponse(
         architecture_mode=effective_runtime.architecture_mode.value,
         upload_mode=effective_runtime.upload_mode.value,

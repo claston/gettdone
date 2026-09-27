@@ -4,8 +4,16 @@
   const LEGACY_TOKEN_KEY = "ofxsimples_user_token";
   const LEGACY_PROFILE_KEY = "ofxsimples_profile_hint";
   const LEGACY_TOKEN_COOKIE = "ofxsimples_user_token";
+  const CURRENT_USER_CACHE_TTL_MS = 30 * 1000;
   let migrationPromise = null;
   let refreshPromise = null;
+  let currentUserPromise = null;
+  let currentUserCacheExpiresAt = 0;
+
+  function clearCurrentUserCache() {
+    currentUserPromise = null;
+    currentUserCacheExpiresAt = 0;
+  }
 
   function resolveApiBase() {
     const host = global.location.hostname;
@@ -121,14 +129,27 @@
   }
 
   async function getCurrentUser() {
-    const response = await request(`${resolveApiBase()}/auth/me`);
-    if (!response.ok) return null;
-    return response.json().catch(function () {
-      return null;
-    });
+    const now = Date.now();
+    if (currentUserPromise && currentUserCacheExpiresAt > now) {
+      return currentUserPromise;
+    }
+    currentUserCacheExpiresAt = now + CURRENT_USER_CACHE_TTL_MS;
+    currentUserPromise = request(`${resolveApiBase()}/auth/me`)
+      .then(function (response) {
+        if (!response.ok) return null;
+        return response.json().catch(function () {
+          return null;
+        });
+      })
+      .catch(function (error) {
+        clearCurrentUserCache();
+        throw error;
+      });
+    return currentUserPromise;
   }
 
   async function login(payload) {
+    clearCurrentUserCache();
     await ready();
     return global.fetch(`${resolveApiBase()}/auth/session/login`, {
       method: "POST",
@@ -139,6 +160,7 @@
   }
 
   async function logout() {
+    clearCurrentUserCache();
     await ready();
     try {
       return await global.fetch(`${resolveApiBase()}/auth/session/logout`, {

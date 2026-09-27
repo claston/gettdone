@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -233,12 +234,20 @@ class AccessControlCheckoutComponent:
 
     def list_public_plans(self) -> list[dict[str, str | int]]:
         with self._service._lock:
+            cache = self._service._public_plans_cache
+            now_monotonic = time.monotonic()
+            if cache is not None and cache[0] > now_monotonic:
+                return [dict(item) for item in cache[1]]
             with self._service._connect() as conn:
-                return list_public_plans_query(
+                plans = list_public_plans_query(
                     conn,
                     fetchall=self._service._fetchall,
                     true_value=self._service._true_value(),
                 )
+            if self._service.public_plans_cache_ttl_seconds > 0:
+                expires_at = now_monotonic + float(self._service.public_plans_cache_ttl_seconds)
+                self._service._public_plans_cache = (expires_at, tuple(dict(item) for item in plans))
+            return plans
 
     def activate_user_plan(
         self,

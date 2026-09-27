@@ -252,6 +252,6 @@ def test_build_lambda_processor_uses_worker_access_without_token_secret(monkeypa
     assert captured == {
         "database_url": "postgresql://worker:test@database.example/gettdone",
         "database_schema": "public",
-        "db_pool_min_size": 1,
+        "db_pool_min_size": 0,
         "db_pool_max_size": 1,
     }

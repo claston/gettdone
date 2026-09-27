@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response
 
 from app.application import AccessControlService, InvalidUserTokenError
 from app.dependencies import get_access_control_service
@@ -15,9 +15,12 @@ router = APIRouter()
 
 @router.get("/plans", response_model=PlanCatalogResponse)
 def list_plans(
+    response: Response,
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> PlanCatalogResponse:
     items = access_control_service.list_public_plans()
+    max_age = min(86400, max(0, access_control_service.public_plans_cache_ttl_seconds))
+    response.headers["Cache-Control"] = f"public, max-age={max_age}, stale-while-revalidate=60"
     return PlanCatalogResponse(items=[PlanCatalogItem(**item) for item in items])
 
 @router.post("/admin/plans/activate", response_model=AdminActivatePlanResponse)

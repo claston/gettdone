@@ -6,6 +6,7 @@ import pytest
 
 from app.application.access_control import IdentityContext, RegisteredUser
 from app.application.conversion.async_conversion_rollout import AsyncConversionRolloutPolicy
+from app.dependencies import get_async_conversion_rollout_policy
 
 
 @dataclass
@@ -150,3 +151,16 @@ def test_rollout_policy_percentage_flag_can_disable_percentage_traffic() -> None
 def test_rollout_policy_rejects_invalid_percentage_configuration(name: str, value: str) -> None:
     with pytest.raises(ValueError, match="CONVERSION_ASYNC"):
         AsyncConversionRolloutPolicy.from_mapping({name: value})
+
+
+def test_neon_economy_mode_disables_user_scoped_async_rollout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NEON_ECONOMY_MODE", "true")
+    monkeypatch.setenv("CONVERSION_ASYNC_USER_EMAIL_ALLOWLIST", "canary@example.com")
+    monkeypatch.setenv("CONVERSION_ASYNC_PERCENTAGE_ROLLOUT_ENABLED", "true")
+    monkeypatch.setenv("CONVERSION_ASYNC_ROLLOUT_PERCENTAGE", "100")
+
+    policy = get_async_conversion_rollout_policy()
+
+    assert policy.enabled is False
+    assert policy.allowed_user_emails == frozenset()
+    assert policy.rollout_percentage == 0

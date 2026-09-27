@@ -78,6 +78,14 @@ def test_session_client_only_reads_legacy_token_for_one_way_migration() -> None:
     assert "localStorage.removeItem" in source
 
 
+def test_session_client_deduplicates_short_lived_current_user_requests() -> None:
+    source = (FRONTEND_DIR / "auth-session.js").read_text(encoding="utf-8")
+
+    assert "CURRENT_USER_CACHE_TTL_MS" in source
+    assert "currentUserPromise" in source
+    assert "clearCurrentUserCache" in source
+
+
 def test_frontend_never_writes_new_data_to_local_storage() -> None:
     for path in FRONTEND_DIR.rglob("*"):
         if path.suffix.lower() not in {".html", ".js"}:
