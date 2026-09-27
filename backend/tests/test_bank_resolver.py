@@ -45,3 +45,7 @@ def test_resolve_bank_code_from_banco_pan_statement_layout_profile() -> None:
 
 def test_resolve_bank_code_from_cresol_position_statement_layout_profile() -> None:
     assert resolve_bank_code(layout_inference_name="cresol_ofx_simples_posicao_consolidada_v1") == "133"
+
+
+def test_resolve_bank_code_from_topazio_statement_layout_profile() -> None:
+    assert resolve_bank_code(layout_inference_name="banco_topazio_extrato_conta_corrente_lista_v1") == "082"

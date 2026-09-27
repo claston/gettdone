@@ -175,18 +175,19 @@ layout_profile:
   confidence: high
   classifier:
     required_keywords:
-      - "BANCO topázio"
-      - "Banco Topazio S.A"
-      - "EXTRATO DE CONTA CORRENTE"
       - "Extrato emitido em"
-      - "Período"
-      - "CLIENTE"
       - "AG/CONTA"
+      - "TRANSF. INTERNA C/C MESMA TITULAR"
     optional_keywords:
+      - "BANCO TOPAZIO"
+      - "BANC O TOPAZ IO"
+      - "BANC OTOPAZ IO.C OM.BR"
+      - "EXTRATO DE CONTA CORRENTE"
+      - "EXTRATO DE CONTA [CONTA]"
+      - "PERIODO"
       - "Saldo do dia"
       - "Saldo final"
-      - "TRANSF. INTERNA C/C MESMA TITULARIDADE"
-      - "TARIFA TRANSFERÊNCIA TED"
+      - "TARIFA TRANSFERENCIA TED"
       - "R$"
       - "-R$"
     negative_keywords:
@@ -206,7 +207,7 @@ layout_profile:
       - "Banco Sorisa"
       - "Fatura"
       - "Comprovante"
-    min_score_hint: 0.85
+    min_score_hint: 0.80
   table_detection:
     header_keywords: []
     expected_column_order:
