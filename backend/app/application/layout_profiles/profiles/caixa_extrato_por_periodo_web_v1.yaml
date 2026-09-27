@@ -185,12 +185,10 @@ layout_profile:
       - "VALOR"
     optional_keywords:
       - "DATA MOV."
-      - "DATA M OV."
       - "NR. DOC."
       - "SALDO ANTERIOR"
       - "Saldo"
       - "SALDO DIA"
-      - "ENVIO PIX"
     negative_keywords:
       - "GERENCIADOR CAIXA"
       - "Santander"
@@ -215,6 +213,7 @@ layout_profile:
     column_aliases:
       date:
         - "DATA MOV."
+        - "DATA M OV."
         - "Data Mov."
         - "Data Movimento"
         - "Data"
@@ -236,6 +235,7 @@ layout_profile:
     table_starts_after:
       - "Extrato"
       - "DATA MOV. NR. DOC. HISTÓRICO VALOR"
+      - "DATA M OV. NR. DOC. HISTÓRICO VALOR"
     row_separator_hint: "transaction row starts with dd/MM/yyyy in DATA MOV.; balance rows may have blank date and description 'Saldo'"
   parsing:
     date_format: "dd/MM/yyyy"

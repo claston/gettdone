@@ -81,3 +81,12 @@ def test_load_caixa_gerenciador_pagamentos_efetuados_profile() -> None:
     assert profile.parsing.month_language == "en-US"
     assert profile.parsing.negative_patterns == ("-{amount}", "-R$ {amount}", "R$ -{amount}")
     assert profile.expected_column_order == ("date_group", "time", "payment_type", "counterparty", "status", "amount")
+
+
+def test_caixa_web_profile_keeps_fragmented_date_header_as_column_alias() -> None:
+    profile = get_layout_profile("caixa_extrato_por_periodo_web_v1")
+
+    assert profile is not None
+    assert "DATA M OV." in profile.column_aliases["date"]
+    assert "DATA M OV." not in profile.optional_keywords
+    assert "ENVIO PIX" not in profile.optional_keywords

@@ -1385,3 +1385,25 @@ def test_infer_pdf_layout_does_not_assign_bank_agency_layout_from_common_table_c
     """
 
     assert infer_pdf_layout(text).layout_name != "bank_agency_debit_credit_statement_v1"
+
+
+def test_infer_pdf_layout_marks_caixa_web_statement_without_optional_transactions_as_high_confidence() -> None:
+    text = """
+    EXTRATO POR PERIODO
+    [TITULAR]
+    CONTA [CONTA]
+    EXTRATO
+    DATA MOV. NR. DOC. HISTORICO VALOR SALDO
+    01/10/2024 [IDENTIFICADOR] CRED PIX 3.500,00 C 1.460,44 C
+    01/10/2024 [IDENTIFICADOR] DEB.IOF 4,29 D 1.456,15 C
+    01/10/2024 [IDENTIFICADOR] DEB.JUROS 158,44 D 1.297,71 C
+    01/10/2024 [IDENTIFICADOR] PREST EMP 3.593,66 D 2.295,95 D
+    01/10/2024 [IDENTIFICADOR] SALDO DIA 0,00 D 2.295,95 D
+    SAC CAIXA: [IDENTIFICADOR]
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "caixa_extrato_por_periodo_web_v1"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
