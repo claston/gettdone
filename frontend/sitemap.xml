@@ -50,7 +50,7 @@
   </url>
   <url>
     <loc>https://www.ofxsimples.com.br/blog/</loc>
-    <lastmod>2026-05-11</lastmod>
+    <lastmod>2026-09-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
@@ -75,6 +75,12 @@
   <url>
     <loc>https://www.ofxsimples.com.br/blog/como-validar-ofx-antes-de-importar-no-erp/</loc>
     <lastmod>2026-05-11</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.ofxsimples.com.br/blog/extrato-caixa-como-consultar-converter/</loc>
+    <lastmod>2026-09-27</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>

@@ -34,6 +34,7 @@ def test_sitemap_xml_lists_public_indexable_pages() -> None:
         "https://www.ofxsimples.com.br/",
         "https://www.ofxsimples.com.br/convert.html",
         "https://www.ofxsimples.com.br/converter-pdf-para-ofx.html",
+        "https://www.ofxsimples.com.br/blog/extrato-caixa-como-consultar-converter/",
         "https://www.ofxsimples.com.br/blog/o-que-e-ofx-e-como-usar/",
     }
     blocked_urls = {"https://www.ofxsimples.com.br/ofx-convert.html"}
