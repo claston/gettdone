@@ -90,6 +90,7 @@ def test_default_layout_parser_registry_contains_current_specific_families() -> 
             "sicoob_extrato_pix_lista_v1",
             "sicoob_extrato_conta_corrente_moderno_v1",
             "sicoob_comprovante_pagamento_boleto_v1",
+            "unicred_extrato_conta_corrente_moderno_v1",
             "pagbank_extrato_conta_corrente_simples_v1",
             "pagseguro_relatorio_conta_bloqueada_v1",
             "pagbank_extrato_transacoes_operacionais_v1",

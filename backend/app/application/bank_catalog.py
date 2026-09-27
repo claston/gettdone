@@ -21,6 +21,18 @@ class BankRecord:
 
 _EXTRA_BANK_RECORDS = (
     BankRecord(
+        code="136",
+        name="Cooperativa Central de Credito Unicred do Brasil - Unicred do Brasil",
+        short_name="Unicred",
+        aliases=(
+            "Unicred",
+            "Unicred do Brasil",
+            "Cooperativa Central de Credito Unicred do Brasil",
+            "Cooperativa Central de Crédito Unicred do Brasil",
+        ),
+        active=True,
+    ),
+    BankRecord(
         code="197",
         name="Stone Instituicao de Pagamento S.A.",
         short_name="Stone",

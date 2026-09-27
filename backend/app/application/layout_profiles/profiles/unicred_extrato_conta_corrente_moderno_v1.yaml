@@ -1,0 +1,95 @@
+layout_profile:
+  schema_version: 2
+  profile_name: unicred_extrato_conta_corrente_moderno_v1
+  bank: Unicred
+  layout_family: unicred_extrato_conta_corrente_moderno
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "PERIODO DE"
+      - "COOP:"
+      - "AG:"
+      - "SALDO ATUAL"
+      - "TOTAL DISPONIVEL"
+      - "LIMITE DE CHEQUE ESPECIAL"
+      - "DATA LANCAMENTOS VALOR (R$) SALDO (R$)"
+      - "LANCAMENTOS FUTUROS"
+    optional_keywords:
+      - "UNICRED"
+      - "CREDITO RECEBIMENTO DE PIX"
+      - "DOC.: CRED PIX"
+      - "JUROS CHEQUE ESPECIAL - PJ"
+      - "SALDO BLOQUEADO JUDICIALMENTE"
+      - "SALDO BLOQUEADO CAUTELAR"
+      - "CENTRAL DE RELACIONAMENTO"
+      - "OUVIDORIA"
+    negative_keywords:
+      - "SICOOB"
+      - "SISBR"
+      - "SICREDI"
+      - "CAIXA ECONOMICA FEDERAL"
+      - "BANCO DO BRASIL"
+      - "BRADESCO"
+      - "ITAU"
+      - "SANTANDER"
+      - "CRESOL"
+    min_score_hint: 0.75
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Lancamentos"
+      - "Valor (R$)"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Lancamentos"
+        - "Lançamentos"
+      amount:
+        - "Valor (R$)"
+        - "Valor"
+      balance:
+        - "Saldo (R$)"
+        - "Saldo"
+    table_starts_after:
+      - "DATA LANCAMENTOS VALOR (R$) SALDO (R$)"
+    row_separator_hint: "uma transacao por linha, iniciada por dd/MM/yyyy, seguida por valor e saldo"
+  parsing:
+    date_formats:
+      - "dd/MM/yyyy"
+    date_year_source: transaction
+    amount_locale: pt-BR
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+      - "- R$ {amount}"
+      - "R$ -{amount}"
+    positive_patterns:
+      - "+{amount}"
+      - "R$ {amount}"
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "SALDO NO FINAL DO PERIODO"
+      - "SALDO ATUAL"
+      - "TOTAL DISPONIVEL"
+      - "SALDO BLOQUEADO"
+      - "LIMITE DE CHEQUE ESPECIAL"
+      - "LANCAMENTOS FUTUROS"
+    opening_balance_rows:
+      - "SALDO EM"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - balance
+      - document
