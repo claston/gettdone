@@ -129,6 +129,29 @@ CRESOL_EXAMPLE_CASES: dict[str, dict[str, Any]] = {
         PAGINA 1 DE 1
         """,
     },
+    "ofx_simples_posicao_consolidada_curto": {
+        "profile": "cresol_ofx_simples_posicao_consolidada_v1",
+        "amounts": [2500.00, -444.80, -35.00, -85.14, -20.33],
+        "dates": ["2026-04-15", "2026-04-06", "2026-04-06", "2026-04-02", "2026-04-02"],
+        "text": """
+        [TITULAR]
+        AGENCIA [AGENCIA] CONTA [CONTA]
+        SALDO EM CONTA [CONTA] DE CREDITO SALDO DISPONIVEL
+        - R$ 3.612,19 R$ 4.000,00 R$ 387,81
+        15/04/2026 SALDO DO DIA: + R$ 163,58
+        15/04/2026 PIX CREDITO DE: CONTRAPARTE A + R$ 2.500,00
+        06/04/2026 SALDO DO DIA: - R$ 1.929,10
+        06/04/2026 PIX DEBITO PARA: CONTRAPARTE B - R$ 444,80
+        06/04/2026 INTEGRALIZACAO PROGRAMA - R$ 35,00
+        02/04/2026 SALDO DO DIA: - R$ 22,90
+        02/04/2026 JUROS DE CHEQUE ESPECIAL - R$ 85,14
+        02/04/2026 IOF SOBRE SALDO DEVEDOR - R$ 20,33
+        SALDO ANTERIOR: + R$ 82,57
+        CONSULTA POSICAO CONSOLIDADA EM 24/09/2026 AS 12:04:17
+        PERIODO DE 01/04/2026 A 30/04/2026
+        PAGINA 1 DE 1
+        """,
+    },
 }
 
 
@@ -146,7 +169,16 @@ def test_parse_pdf_transactions_supports_cresol_visual_examples(case_name: str, 
     assert [transaction.date for transaction in result.transactions] == case["dates"]
     if "descriptions" in case:
         assert [transaction.description for transaction in result.transactions] == case["descriptions"]
-    assert all("SALDO" not in transaction.description.upper() for transaction in result.transactions)
+    non_transaction_balance_labels = (
+        "SALDO DO DIA",
+        "SALDO ANTERIOR",
+        "SALDO EM CONTA",
+        "SALDO DISPONIVEL",
+    )
+    assert all(
+        not any(label in transaction.description.upper() for label in non_transaction_balance_labels)
+        for transaction in result.transactions
+    )
 
     ofx = build_ofx_statement(result.transactions)
     assert ofx.count("<STMTTRN>") == len(case["amounts"])

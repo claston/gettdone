@@ -41,3 +41,7 @@ def test_resolve_bank_code_from_banco_nordeste_fundos_rentabilidade_layout_profi
 
 def test_resolve_bank_code_from_banco_pan_statement_layout_profile() -> None:
     assert resolve_bank_code(layout_inference_name="banco_pan_extrato_conta_pix_saldo_v1") == "623"
+
+
+def test_resolve_bank_code_from_cresol_position_statement_layout_profile() -> None:
+    assert resolve_bank_code(layout_inference_name="cresol_ofx_simples_posicao_consolidada_v1") == "133"

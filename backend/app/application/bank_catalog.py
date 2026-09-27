@@ -21,6 +21,21 @@ class BankRecord:
 
 _EXTRA_BANK_RECORDS = (
     BankRecord(
+        code="133",
+        name=(
+            "Confederação Nacional das Cooperativas Centrais de Crédito e Economia Familiar e Solidária "
+            "- Cresol Confederação"
+        ),
+        short_name="Cresol",
+        aliases=(
+            "Cresol",
+            "Cresol Confederação",
+            "Cresol Confederacao",
+            "Confederacao Nacional das Cooperativas Centrais de Credito e Economia Familiar e Solidaria",
+        ),
+        active=True,
+    ),
+    BankRecord(
         code="136",
         name="Cooperativa Central de Credito Unicred do Brasil - Unicred do Brasil",
         short_name="Unicred",
