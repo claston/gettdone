@@ -76,10 +76,10 @@ layout_profile:
   classifier:
     required_keywords:
       - "CONSULTA POSICAO CONSOLIDADA"
-      - "PIX DEBITO INTERCOOPERATIVO"
       - "INTEGRALIZACAO PROGRAMA"
-      - "CREDITO TITULOS COBRANCA PROPRIA"
     optional_keywords:
+      - "PIX DEBITO INTERCOOPERATIVO"
+      - "CREDITO TITULOS COBRANCA PROPRIA"
       - "SALDO DO DIA"
       - "SALDO EM CONTA"
       - "SALDO DISPONIVEL"

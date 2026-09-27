@@ -241,6 +241,46 @@ def test_infer_pdf_layout_does_not_identify_cresol_ofx_simples_from_generic_pix_
     assert result.layout_name != "cresol_ofx_simples_posicao_consolidada_v1"
 
 
+def test_infer_pdf_layout_recognizes_short_cresol_ofx_simples_statement() -> None:
+    text = """
+    [TITULAR]
+    AGENCIA [AGENCIA] CONTA [CONTA]
+    SALDO EM CONTA [CONTA] DE CREDITO SALDO DISPONIVEL
+    - R$ 3.612,19 R$ 4.000,00 R$ 387,81
+    15/04/2026 SALDO DO DIA: + R$ 163,58
+    15/04/2026 PIX CREDITO DE: CONTRAPARTE A + R$ 2.500,00
+    06/04/2026 SALDO DO DIA: - R$ 1.929,10
+    06/04/2026 PIX DEBITO PARA: CONTRAPARTE B - R$ 444,80
+    06/04/2026 INTEGRALIZACAO PROGRAMA - R$ 35,00
+    SALDO ANTERIOR: + R$ 82,57
+    CONSULTA POSICAO CONSOLIDADA EM 24/09/2026 AS 12:04:17
+    PERIODO DE 01/04/2026 A 30/04/2026
+    PAGINA 1 DE 1
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "cresol_ofx_simples_posicao_consolidada_v1"
+    assert result.confidence >= 0.78
+    assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_does_not_identify_cresol_from_position_footer_without_integralization() -> None:
+    text = """
+    AGENCIA [AGENCIA] CONTA [CONTA]
+    15/04/2026 SALDO DO DIA: + R$ 163,58
+    15/04/2026 PIX CREDITO DE: CONTRAPARTE A + R$ 2.500,00
+    06/04/2026 PIX DEBITO PARA: CONTRAPARTE B - R$ 444,80
+    CONSULTA POSICAO CONSOLIDADA EM 24/09/2026 AS 12:04:17
+    PERIODO DE 01/04/2026 A 30/04/2026
+    PAGINA 1 DE 1
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name != "cresol_ofx_simples_posicao_consolidada_v1"
+
+
 def test_infer_pdf_layout_prefers_santander_profile_when_tokens_match() -> None:
     text = """
     BANCO SANTANDER BRASIL S.A.
