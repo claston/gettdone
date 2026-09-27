@@ -129,3 +129,24 @@ def test_worker_access_rejects_invalid_database_schema_before_opening_pool() -> 
             database_url="postgresql://worker:test@database.example/gettdone",
             database_schema="public; DROP SCHEMA public",
         )
+
+
+def test_worker_access_allows_pool_to_start_with_zero_connections(monkeypatch: pytest.MonkeyPatch) -> None:
+    import psycopg_pool
+
+    captured: dict[str, object] = {}
+
+    class CapturingPool:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(psycopg_pool, "ConnectionPool", CapturingPool)
+
+    PostgresConversionAccessService(
+        database_url="postgresql://worker:test@database.example/gettdone",
+        db_pool_min_size=0,
+        db_pool_max_size=1,
+    )
+
+    assert captured["min_size"] == 0
+    assert captured["max_size"] == 1

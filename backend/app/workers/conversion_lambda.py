@@ -266,7 +266,7 @@ def build_lambda_processor() -> ConversionLambdaProcessor:
     access_control_service = PostgresConversionAccessService(
         database_url=database_url,
         database_schema=database_schema,
-        db_pool_min_size=1,
+        db_pool_min_size=int(os.getenv("CONVERSION_LAMBDA_DB_POOL_MIN_SIZE", "0")),
         db_pool_max_size=int(os.getenv("CONVERSION_LAMBDA_DB_POOL_MAX_SIZE", "1")),
     )
     pipeline = DocumentConversionPipeline(

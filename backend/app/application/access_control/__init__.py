@@ -39,11 +39,13 @@ QUOTA_WINDOW_DAYS = 7
 SESSION_ACCESS_TOKEN_TTL_SECONDS = 15 * 60
 SESSION_REFRESH_TOKEN_TTL_SECONDS = 14 * 24 * 60 * 60
 DEFAULT_ACTIVE_PLAN_CACHE_TTL_SECONDS = 20
+DEFAULT_PUBLIC_PLANS_CACHE_TTL_SECONDS = 300
 DEFAULT_DB_CONNECT_RETRY_ATTEMPTS = 3
 DEFAULT_DB_CONNECT_RETRY_BASE_MS = 200
 DEFAULT_DB_POOL_MIN_SIZE = 1
 DEFAULT_DB_POOL_MAX_SIZE = 3
 DEFAULT_DB_POOL_TIMEOUT_SECONDS = 5.0
+DEFAULT_DB_POOL_MAX_IDLE_SECONDS = 600.0
 
 
 @dataclass(frozen=True)
@@ -91,11 +93,13 @@ class AccessControlService:
         session_access_token_ttl_seconds: int = SESSION_ACCESS_TOKEN_TTL_SECONDS,
         session_refresh_token_ttl_seconds: int = SESSION_REFRESH_TOKEN_TTL_SECONDS,
         active_plan_cache_ttl_seconds: int = DEFAULT_ACTIVE_PLAN_CACHE_TTL_SECONDS,
+        public_plans_cache_ttl_seconds: int = DEFAULT_PUBLIC_PLANS_CACHE_TTL_SECONDS,
         db_connect_retry_attempts: int = DEFAULT_DB_CONNECT_RETRY_ATTEMPTS,
         db_connect_retry_base_ms: int = DEFAULT_DB_CONNECT_RETRY_BASE_MS,
         db_pool_min_size: int = DEFAULT_DB_POOL_MIN_SIZE,
         db_pool_max_size: int = DEFAULT_DB_POOL_MAX_SIZE,
         db_pool_timeout_seconds: float = DEFAULT_DB_POOL_TIMEOUT_SECONDS,
+        db_pool_max_idle_seconds: float = DEFAULT_DB_POOL_MAX_IDLE_SECONDS,
         email_verification_required: bool = False,
         email_verification_ttl_seconds: int = 3600,
         email_verification_resend_cooldown_seconds: int = 60,
@@ -117,11 +121,13 @@ class AccessControlService:
         self.session_access_token_ttl_seconds = max(60, int(session_access_token_ttl_seconds))
         self.session_refresh_token_ttl_seconds = max(300, int(session_refresh_token_ttl_seconds))
         self.active_plan_cache_ttl_seconds = max(0, int(active_plan_cache_ttl_seconds))
+        self.public_plans_cache_ttl_seconds = max(0, int(public_plans_cache_ttl_seconds))
         self.db_connect_retry_attempts = max(1, int(db_connect_retry_attempts))
         self.db_connect_retry_base_ms = max(50, int(db_connect_retry_base_ms))
-        self.db_pool_min_size = max(1, int(db_pool_min_size))
-        self.db_pool_max_size = max(self.db_pool_min_size, int(db_pool_max_size))
+        self.db_pool_min_size = max(0, int(db_pool_min_size))
+        self.db_pool_max_size = max(1, self.db_pool_min_size, int(db_pool_max_size))
         self.db_pool_timeout_seconds = max(1.0, float(db_pool_timeout_seconds))
+        self.db_pool_max_idle_seconds = max(5.0, float(db_pool_max_idle_seconds))
         self.email_verification_required = bool(email_verification_required)
         self.email_verification_ttl_seconds = max(300, int(email_verification_ttl_seconds))
         self.email_verification_resend_cooldown_seconds = max(
@@ -135,6 +141,7 @@ class AccessControlService:
         self._email_verification_token_factory = EmailVerificationToken
         self._session_token_bundle_factory = SessionTokenBundle
         self._active_plan_cache: dict[str, tuple[float, dict[str, str | int] | None]] = {}
+        self._public_plans_cache: tuple[float, tuple[dict[str, str | int], ...]] | None = None
         self._postgres_pool = None
         self._postgres_module = psycopg
         self._postgres_dict_row = dict_row
@@ -149,6 +156,7 @@ class AccessControlService:
                 min_size=self.db_pool_min_size,
                 max_size=self.db_pool_max_size,
                 timeout=self.db_pool_timeout_seconds,
+                max_idle=self.db_pool_max_idle_seconds,
                 open=True,
             )
         self.db = AccessControlDbComponent(self)

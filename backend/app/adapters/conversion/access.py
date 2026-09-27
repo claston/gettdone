@@ -52,8 +52,8 @@ class PostgresConversionAccessService:
         self.db_pool_timeout_seconds = max(1.0, float(db_pool_timeout_seconds))
         self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
         self._lock = RLock()
-        min_size = max(1, int(db_pool_min_size))
-        max_size = max(min_size, int(db_pool_max_size))
+        min_size = max(0, int(db_pool_min_size))
+        max_size = max(1, min_size, int(db_pool_max_size))
         self._pool = ConnectionPool(
             conninfo=normalized_url,
             kwargs={"row_factory": dict_row},

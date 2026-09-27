@@ -19,6 +19,7 @@ from app.dependencies import (
 )
 from app.main import app
 from app.routers.auth_session import ANONYMOUS_IDENTITY_COOKIE_NAME
+from app.routers.conversion_batches import get_runtime_access_control_service
 
 
 class FakeAccessControlService:
@@ -185,7 +186,9 @@ def test_batch_api_stays_disabled_in_legacy_fallback_mode() -> None:
 
 def test_conversion_runtime_endpoint_exposes_safe_fallback_contract() -> None:
     app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping({})
-    app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
+    app.dependency_overrides[get_access_control_service] = lambda: pytest.fail(
+        "legacy runtime must not initialize access control"
+    )
     client = TestClient(app)
     try:
         response = client.get("/api/conversion-runtime")
@@ -203,9 +206,31 @@ def test_conversion_runtime_endpoint_exposes_safe_fallback_contract() -> None:
     }
 
 
+def test_conversion_runtime_uses_access_control_only_for_identity_scoped_rollout() -> None:
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping({})
+    app.dependency_overrides[get_async_conversion_rollout_policy] = lambda: (
+        AsyncConversionRolloutPolicy.from_mapping(
+            {
+                "CONVERSION_ASYNC_PERCENTAGE_ROLLOUT_ENABLED": "true",
+                "CONVERSION_ASYNC_ROLLOUT_PERCENTAGE": "100",
+            }
+        )
+    )
+    app.dependency_overrides[get_runtime_access_control_service] = lambda: FakeAccessControlService()
+    client = TestClient(app)
+    client.cookies.set(ANONYMOUS_IDENTITY_COOKIE_NAME, "anonymous-cookie")
+    try:
+        response = client.get("/api/conversion-runtime")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["direct_batch_enabled"] is True
+
+
 def test_percentage_rollout_includes_anonymous_traffic_with_one_file_limit() -> None:
     app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping({})
-    app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
+    app.dependency_overrides[get_runtime_access_control_service] = lambda: FakeAccessControlService()
     app.dependency_overrides[get_async_conversion_rollout_policy] = lambda: (
         AsyncConversionRolloutPolicy.from_mapping(
             {
@@ -228,7 +253,7 @@ def test_percentage_rollout_includes_anonymous_traffic_with_one_file_limit() -> 
 
 def test_allowlisted_user_gets_async_runtime_while_global_mode_stays_legacy() -> None:
     app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping({})
-    app.dependency_overrides[get_access_control_service] = lambda: FakeRegisteredAccessControlService(
+    app.dependency_overrides[get_runtime_access_control_service] = lambda: FakeRegisteredAccessControlService(
         email="a@a.com.br"
     )
     app.dependency_overrides[get_async_conversion_rollout_policy] = lambda: (
@@ -302,6 +327,9 @@ def test_percentage_user_is_limited_to_one_file_while_global_mode_stays_legacy()
     app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping({})
     app.dependency_overrides[get_conversion_batch_service] = lambda: service
     app.dependency_overrides[get_access_control_service] = lambda: FakeRegisteredAccessControlService(
+        email="other@example.com"
+    )
+    app.dependency_overrides[get_runtime_access_control_service] = lambda: FakeRegisteredAccessControlService(
         email="other@example.com"
     )
     app.dependency_overrides[get_async_conversion_rollout_policy] = lambda: (

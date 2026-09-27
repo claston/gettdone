@@ -502,6 +502,43 @@ def test_public_plans_are_seeded_with_versions(tmp_path) -> None:
     assert prices["escritorio"] == 4990
 
 
+def test_public_plans_cache_avoids_repeated_database_reads(tmp_path, monkeypatch) -> None:
+    from app.application.access_control import access_control_checkout
+
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+        public_plans_cache_ttl_seconds=3600,
+    )
+    original_query = access_control_checkout.list_public_plans_query
+    calls = 0
+
+    def counted_query(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original_query(*args, **kwargs)
+
+    monkeypatch.setattr(access_control_checkout, "list_public_plans_query", counted_query)
+
+    first = service.list_public_plans()
+    second = service.list_public_plans()
+
+    assert first == second
+    assert calls == 1
+
+
+def test_access_control_accepts_zero_minimum_postgres_pool_size(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+        db_pool_min_size=0,
+        db_pool_max_size=1,
+    )
+
+    assert service.db_pool_min_size == 0
+    assert service.db_pool_max_size == 1
+
+
 def test_public_plan_seed_recovers_missing_default_rows(tmp_path) -> None:
     service = AccessControlService(
         state_file=tmp_path / "state.json",

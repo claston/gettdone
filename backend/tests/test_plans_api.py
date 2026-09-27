@@ -31,6 +31,7 @@ def test_plans_returns_public_versioned_catalog(tmp_path) -> None:
         assert {"essencial", "profissional", "escritorio"}.issubset(codes)
         assert all(int(item["version"]) >= 1 for item in payload["items"])
         assert all(int(item["max_pages_per_file_ocr"]) == 6 for item in payload["items"])
+        assert response.headers["cache-control"] == "public, max-age=300, stale-while-revalidate=60"
     finally:
         app.dependency_overrides.clear()
 
