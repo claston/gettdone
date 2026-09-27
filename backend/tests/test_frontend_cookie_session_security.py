@@ -35,6 +35,7 @@ SESSION_PAGES = (
     "blog/7-erros-comuns-na-conciliacao-bancaria/index.html",
     "blog/checklist-fechamento-financeiro-com-ofx/index.html",
     "blog/como-validar-ofx-antes-de-importar-no-erp/index.html",
+    "blog/extrato-caixa-como-consultar-converter/index.html",
     "blog/o-que-e-ofx-e-como-usar/index.html",
 )
 

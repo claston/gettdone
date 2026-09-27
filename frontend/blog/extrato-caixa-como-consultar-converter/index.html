@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+
+  <link rel="icon" type="image/png" href="/assets/favicon.png" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Extrato da Caixa: como consultar, conferir e converter</title>
+  <meta name="description" content="Veja como consultar e entender o extrato da Caixa, conferir créditos, débitos e saldos e preparar o PDF para conversão em OFX ou Excel." />
+  <link rel="canonical" href="https://www.ofxsimples.com.br/blog/extrato-caixa-como-consultar-converter/" />
+  <meta property="og:title" content="Extrato da Caixa: como consultar, conferir e converter" />
+  <meta property="og:description" content="Guia prático para entender os campos do extrato da Caixa e revisar a conversão do PDF para OFX ou Excel." />
+  <meta property="og:url" content="https://www.ofxsimples.com.br/blog/extrato-caixa-como-consultar-converter/" />
+  <meta property="og:site_name" content="OFX Simples" />
+  <meta property="og:type" content="article" />
+  <meta property="article:published_time" content="2026-09-27" />
+  <meta property="article:modified_time" content="2026-09-27" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Extrato da Caixa: como consultar, conferir e converter" />
+  <meta name="twitter:description" content="Entenda créditos, débitos, saldos e os cuidados ao converter um extrato da Caixa." />
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "BlogPosting",
+          "headline": "Extrato da Caixa: como consultar, entender e converter o arquivo",
+          "description": "Veja como consultar e entender o extrato da Caixa, conferir créditos, débitos e saldos e preparar o PDF para conversão em OFX ou Excel.",
+          "datePublished": "2026-09-27",
+          "dateModified": "2026-09-27",
+          "inLanguage": "pt-BR",
+          "author": {"@type": "Organization", "name": "OFX Simples"},
+          "publisher": {
+            "@type": "Organization",
+            "name": "OFX Simples",
+            "logo": {"@type": "ImageObject", "url": "https://www.ofxsimples.com.br/assets/favicon.png"}
+          },
+          "mainEntityOfPage": "https://www.ofxsimples.com.br/blog/extrato-caixa-como-consultar-converter/"
+        },
+        {
+          "@type": "BreadcrumbList",
+          "itemListElement": [
+            {
+              "@type": "ListItem",
+              "position": 1,
+              "name": "Início",
+              "item": "https://www.ofxsimples.com.br/"
+            },
+            {
+              "@type": "ListItem",
+              "position": 2,
+              "name": "Blog",
+              "item": "https://www.ofxsimples.com.br/blog/"
+            },
+            {
+              "@type": "ListItem",
+              "position": 3,
+              "name": "Extrato da Caixa",
+              "item": "https://www.ofxsimples.com.br/blog/extrato-caixa-como-consultar-converter/"
+            }
+          ]
+        }
+      ]
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../topbar-unified.css?v=1" />
+  <link rel="stylesheet" href="../blog.css?v=1" />
+  <script src="/privacy-consent.js?v=2" defer></script>
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="../../index.html">OFX Simples</a>
+      <button id="menu-toggle" class="menu-toggle" type="button" aria-expanded="false" aria-controls="top-links">Menu</button>
+      <nav id="top-links" class="top-links" aria-label="Navegação principal">
+        <a href="../../index.html#como-funciona">Como funciona</a>
+        <a href="../../index.html#faq">FAQ</a>
+        <a href="../" aria-current="page">Blog</a>
+        <a href="../../planos.html">Planos</a>
+        <a href="../../contato.html">Contato</a>
+      </nav>
+      <div class="top-actions">
+        <a id="top-auth-login-link" class="link-plain" href="../../login.html?next=%2Fconvert.html">Entrar</a>
+        <a id="top-auth-primary-link" class="btn btn-primary" href="../../convert.html">Converter agora</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="blog-layout">
+    <article class="article-card">
+      <p class="article-kicker">Blog OFX Simples</p>
+      <h1>Extrato da Caixa: como consultar, entender e converter o arquivo</h1>
+      <p class="article-meta">Publicado em 27 de setembro de 2026 - Leitura de 10 minutos</p>
+      <p class="lead">
+        O extrato da Caixa pode mudar conforme a conta e o canal usado. Entender datas, indicadores C/D,
+        linhas de saldo e diferenças entre os documentos ajuda a evitar erros ao transformar um PDF em OFX
+        ou Excel.
+      </p>
+
+      <nav class="toc" aria-label="Sumário do artigo">
+        <p>Neste artigo:</p>
+        <a href="#onde-consultar">Onde consultar o extrato da Caixa</a>
+        <a href="#formatos">Por que os extratos têm aparências diferentes</a>
+        <a href="#campos">Como entender os principais campos</a>
+        <a href="#antes-de-converter">Checklist antes da conversão</a>
+        <a href="#ofx-ou-excel">Quando escolher OFX ou Excel</a>
+        <a href="#validar">Como validar o arquivo convertido</a>
+        <a href="#perguntas">Perguntas frequentes</a>
+      </nav>
+
+      <section>
+        <h2>Resposta rápida</h2>
+        <p>
+          Consulte o extrato pelos canais oficiais da Caixa, selecione a conta e o período corretos e salve
+          o arquivo disponível. Antes de importar ou converter, confira se todas as páginas estão presentes,
+          identifique créditos e débitos e compare os saldos inicial e final.
+        </p>
+      </section>
+
+      <section id="onde-consultar">
+        <h2>Onde consultar o extrato da Caixa</h2>
+        <p>
+          A Caixa informa que o <strong>App CAIXA</strong> e o <strong>Internet Banking CAIXA</strong> permitem
+          consultar saldo e extrato. Para empresas, alguns serviços também ficam disponíveis no
+          <strong>Gerenciador CAIXA Empresas</strong>. O <strong>CAIXA Tem</strong> possui uma área própria de
+          extrato no menu inicial.
+        </p>
+        <p>
+          Os nomes e a posição dos comandos podem mudar ao longo do tempo. Acesse sempre o aplicativo ou o
+          endereço oficial da Caixa e procure opções como “Extrato”, “Minha Conta” ou “Extrato por período”.
+          Evite links recebidos por mensagens e nunca informe sua senha bancária em uma ferramenta de conversão.
+        </p>
+
+        <h3>App CAIXA e Internet Banking</h3>
+        <p>
+          São canais comuns para consultar movimentações de conta corrente e poupança. Quando houver escolha
+          de período, use exatamente as datas necessárias para a conciliação. Isso reduz arquivos muito longos
+          e facilita a conferência posterior.
+        </p>
+
+        <h3>Gerenciador CAIXA Empresas</h3>
+        <p>
+          Contas empresariais podem apresentar extratos com mais campos ou organização diferente da versão
+          voltada à pessoa física. É possível encontrar informações de agência, conta, documento, histórico,
+          data efetiva, valor e saldo.
+        </p>
+
+        <h3>CAIXA Tem</h3>
+        <p>
+          O CAIXA Tem tem fluxo e apresentação próprios. A Caixa orienta acessar a opção “Extrato” no menu
+          inicial para acompanhar movimentações recentes e consultar meses anteriores. Um arquivo desse canal
+          não deve ser tratado automaticamente como se tivesse a mesma estrutura de um extrato do Internet Banking.
+        </p>
+      </section>
+
+      <section id="formatos">
+        <h2>Por que existem extratos da Caixa com aparências diferentes</h2>
+        <p>
+          “Extrato da Caixa” não identifica um único documento. A aparência pode variar conforme:
+        </p>
+        <ul>
+          <li>pessoa física ou empresa;</li>
+          <li>conta corrente, poupança ou conta digital;</li>
+          <li>App CAIXA, Internet Banking, CAIXA Tem ou Gerenciador CAIXA Empresas;</li>
+          <li>extrato resumido, mensal ou por período;</li>
+          <li>PDF com texto selecionável, impressão virtual ou imagem digitalizada;</li>
+          <li>versão do canal usada no momento da emissão.</li>
+        </ul>
+        <p>
+          Essa diferença importa porque um documento pode apresentar uma coluna de saldo, enquanto outro usa
+          linhas separadas para indicar a posição da conta. Em alguns arquivos, o cabeçalho se repete a cada
+          página; em outros, uma descrição longa ocupa mais de uma linha.
+        </p>
+      </section>
+
+      <section id="campos">
+        <h2>Como entender os campos do extrato da Caixa</h2>
+        <p>
+          A Caixa explica que o extrato registra entradas e saídas da conta e permite identificar informações
+          como data, descrição, detalhamento, valor e saldo. Dependendo do modelo, os nomes podem aparecer de
+          forma abreviada.
+        </p>
+
+        <h3>Data ou Data Mov.</h3>
+        <p>
+          Indica a data associada ao movimento. Em alguns extratos empresariais também pode existir uma
+          <strong>data efetiva</strong>, que ajuda a distinguir quando a operação foi apresentada de quando
+          produziu efeito no saldo. Para conciliação, a data adequada depende do critério adotado pelo ERP ou
+          pela contabilidade.
+        </p>
+
+        <h3>Nr. Doc. ou Documento</h3>
+        <p>
+          É uma referência da movimentação. Pode ajudar na conferência, mas nem toda operação tem um identificador
+          útil para conciliação. Também não é seguro presumir que todo número presente no histórico seja o documento
+          da transação.
+        </p>
+
+        <h3>Histórico ou Descrição</h3>
+        <p>
+          Resume a natureza do lançamento: Pix, pagamento de boleto, transferência, tarifa, depósito, venda por
+          cartão ou outra movimentação. Abreviações variam e podem ocupar mais de uma linha. Ao converter, confira
+          se a descrição permaneceu ligada ao valor correto, principalmente em PDFs com colunas próximas.
+        </p>
+
+        <h3>Valor e indicadores C/D</h3>
+        <p>Alguns extratos da Caixa usam sufixos para indicar o efeito do lançamento:</p>
+        <ul>
+          <li><strong>C:</strong> crédito ou saldo credor;</li>
+          <li><strong>D:</strong> débito ou saldo devedor.</li>
+        </ul>
+        <p>
+          O número pode aparecer sem um sinal de menos visível. Nesse caso, ignorar a letra D transformaria uma
+          saída em entrada. Essa é uma das verificações mais importantes depois da conversão.
+        </p>
+
+        <h3>Saldo</h3>
+        <p>
+          Mostra a posição da conta depois de uma movimentação ou em determinado ponto do período. O saldo pode
+          ser positivo ou devedor e também pode usar C/D. Em certos extratos aparecem linhas como
+          <strong>SALDO ANTERIOR</strong> e <strong>SALDO DIA</strong>. Elas funcionam como pontos de controle e
+          não devem ser duplicadas como se fossem compras, recebimentos ou pagamentos.
+        </p>
+      </section>
+
+      <section id="linhas-de-saldo">
+        <h2>Linhas de saldo não são novas transações</h2>
+        <p>Considere esta sequência simplificada:</p>
+        <ul>
+          <li>Saldo anterior: R$ 1.000,00 credor;</li>
+          <li>Pix recebido: R$ 250,00;</li>
+          <li>Pagamento de boleto: R$ 80,00;</li>
+          <li>Saldo do dia: R$ 1.170,00 credor.</li>
+        </ul>
+        <p>
+          As movimentações são o crédito de R$ 250,00 e o débito de R$ 80,00. Os valores de saldo anterior e
+          saldo do dia servem para validar a sequência; não são duas transações adicionais. A conferência é:
+          R$ 1.000,00 + R$ 250,00 - R$ 80,00 = R$ 1.170,00.
+        </p>
+        <p>
+          Esse cálculo ajuda a encontrar sinal invertido, valor deslocado para a coluna errada ou uma linha ausente.
+        </p>
+      </section>
+
+      <section>
+        <h2>Por que um extrato em PDF exige revisão</h2>
+        <p>
+          PDF foi criado para preservar a apresentação visual, não para transportar uma tabela financeira
+          padronizada. O documento pode parecer perfeito para uma pessoa e, ainda assim, armazenar o texto em uma
+          ordem diferente.
+        </p>
+        <p>Nos extratos da Caixa, alguns pontos merecem atenção:</p>
+        <ul>
+          <li>cabeçalhos repetidos entre páginas;</li>
+          <li>descrições e números de documento muito próximos;</li>
+          <li>valores acompanhados de C ou D;</li>
+          <li>linhas de saldo misturadas às movimentações;</li>
+          <li>descrições longas quebradas;</li>
+          <li>datas de movimento e datas efetivas no mesmo documento;</li>
+          <li>páginas digitalizadas, sem texto selecionável;</li>
+          <li>valores negativos representados pelo indicador D, não por “-”.</li>
+        </ul>
+        <p>
+          Por isso, uma conversão deve produzir uma prévia revisável. Automatizar a digitação é útil; eliminar a
+          conferência não é.
+        </p>
+      </section>
+
+      <section id="antes-de-converter">
+        <h2>Checklist antes de converter o extrato</h2>
+        <ol>
+          <li><strong>Conta correta:</strong> confira agência e conta quando essas informações estiverem visíveis.</li>
+          <li><strong>Período correto:</strong> evite misturar meses sem necessidade.</li>
+          <li><strong>Arquivo completo:</strong> verifique se todas as páginas foram salvas.</li>
+          <li><strong>Legibilidade:</strong> texto e valores precisam estar nítidos.</li>
+          <li><strong>Saldo inicial e final:</strong> anote-os para validar o resultado.</li>
+          <li><strong>Tipo de documento:</strong> extrato não é o mesmo que comprovante, fatura ou relatório de cobrança.</li>
+          <li><strong>Ausência de cortes:</strong> impressão parcial da tela pode esconder colunas ou saldos.</li>
+          <li><strong>Proteção do PDF:</strong> arquivos bloqueados por senha podem impedir o processamento.</li>
+        </ol>
+      </section>
+
+      <section id="ofx-ou-excel">
+        <h2>Converter extrato da Caixa para OFX ou Excel?</h2>
+        <p>A melhor saída depende do que você fará depois.</p>
+
+        <h3>PDF para OFX</h3>
+        <p>
+          Escolha OFX quando o objetivo for importar as movimentações em um ERP, sistema contábil ou ferramenta
+          de conciliação que aceite esse formato. Veja também nosso guia sobre
+          <a href="../o-que-e-ofx-e-como-usar/">o que é OFX e como usá-lo</a>.
+        </p>
+
+        <h3>PDF para Excel</h3>
+        <p>
+          Excel é mais adequado para filtrar, classificar, fazer auditoria, criar relatórios ou complementar
+          informações manualmente. Também facilita localizar descrições específicas e comparar lançamentos com
+          outra base.
+        </p>
+        <p>
+          Se o destino final exigir OFX, evite usar uma planilha intermediária sem necessidade: cada edição manual
+          aumenta a chance de alterar datas, sinais ou casas decimais.
+        </p>
+        <a class="cta-link" href="../../convert.html">Converter extrato da Caixa</a>
+      </section>
+
+      <section>
+        <h2>Como converter um extrato da Caixa no OFX Simples</h2>
+        <ol>
+          <li>Obtenha o extrato em um canal oficial da Caixa.</li>
+          <li>Salve o PDF completo no dispositivo.</li>
+          <li>Acesse a <a href="../../convert.html">tela de conversões</a>.</li>
+          <li>Escolha entre PDF para OFX e PDF para Excel.</li>
+          <li>Envie o arquivo e aguarde o processamento.</li>
+          <li>Revise período, descrições, valores, créditos, débitos e saldos apresentados.</li>
+          <li>Faça o download e mantenha o PDF original para conferência.</li>
+        </ol>
+        <p>
+          A compatibilidade pode variar conforme o canal, a qualidade do PDF e a estrutura do documento. Se a
+          prévia indicar necessidade de revisão, compare-a com o extrato antes de importar o resultado em outro sistema.
+        </p>
+      </section>
+
+      <section id="validar">
+        <h2>Como validar o resultado da conversão</h2>
+
+        <h3>1. Confira os extremos do período</h3>
+        <p>Compare a primeira e a última data do resultado com o período solicitado na Caixa.</p>
+
+        <h3>2. Revise os sinais</h3>
+        <p>Selecione algumas linhas com C e D no PDF e confirme se apareceram como entrada e saída.</p>
+
+        <h3>3. Refaça uma sequência de saldo</h3>
+        <p>Escolha um bloco curto e valide se saldo anterior + créditos - débitos corresponde ao saldo seguinte.</p>
+
+        <h3>4. Procure linhas que não são movimentações</h3>
+        <p>Saldo anterior, saldo do dia, títulos, cabeçalhos e totais não devem aparecer como pagamentos ou recebimentos.</p>
+
+        <h3>5. Confira valores altos e descrições numéricas</h3>
+        <p>
+          Revise transações relevantes e descrições que terminam com números. Em tabelas de PDF, um número pertencente
+          ao histórico pode ficar visualmente próximo do valor da operação.
+        </p>
+
+        <h3>6. Verifique duplicidades</h3>
+        <p>
+          Se o período foi convertido mais de uma vez ou os PDFs se sobrepõem, o mesmo lançamento pode entrar novamente
+          no sistema de destino. Para uma revisão mais completa, consulte o
+          <a href="../como-validar-ofx-antes-de-importar-no-erp/">checklist de validação antes de importar no ERP</a>.
+        </p>
+      </section>
+
+      <section>
+        <h2>Problemas comuns e o que fazer</h2>
+
+        <h3>O PDF é apenas uma imagem</h3>
+        <p>
+          Arquivos digitalizados dependem de reconhecimento de texto e exigem revisão mais cuidadosa. Quando possível,
+          prefira o arquivo gerado diretamente pelo canal oficial.
+        </p>
+
+        <h3>O extrato tem várias páginas</h3>
+        <p>
+          Não separe páginas sem necessidade. Cabeçalhos repetidos e continuidade de saldo ajudam na conferência do
+          período completo.
+        </p>
+
+        <h3>A descrição ficou diferente da tela</h3>
+        <p>
+          Alguns canais abreviam históricos ou quebram informações em mais de uma linha. Verifique se data, valor,
+          sinal e descrição principal continuam associados corretamente.
+        </p>
+
+        <h3>O saldo ficou negativo</h3>
+        <p>
+          Um saldo devedor pode ser legítimo. Confira o indicador D e não transforme o saldo em positivo apenas
+          removendo o sinal.
+        </p>
+
+        <h3>O arquivo é de outro produto Caixa</h3>
+        <p>
+          Extrato bancário, fatura de cartão, relatório de cobrança, extrato de FGTS e demonstrativo habitacional são
+          documentos diferentes. Use um fluxo de conversão compatível com o conteúdo real do arquivo.
+        </p>
+      </section>
+
+      <section id="perguntas">
+        <h2>Perguntas frequentes</h2>
+
+        <h3>Posso consultar o extrato da Caixa pelo celular?</h3>
+        <p>
+          Sim. A Caixa informa que o App CAIXA permite consultar saldos e extratos. O CAIXA Tem também possui uma
+          opção de extrato, mas sua apresentação e abrangência podem ser diferentes.
+        </p>
+
+        <h3>Extrato da Caixa em PDF é igual em todas as contas?</h3>
+        <p>
+          Não. A estrutura pode variar conforme o tipo de conta, canal, período e versão do documento. Contas
+          empresariais e extratos do Gerenciador CAIXA Empresas podem apresentar mais campos.
+        </p>
+
+        <h3>O que significam C e D no extrato?</h3>
+        <p>
+          Em geral, C indica crédito ou saldo credor, enquanto D indica débito ou saldo devedor. Interprete o indicador
+          junto do contexto da linha.
+        </p>
+
+        <h3>Saldo anterior e saldo do dia entram no OFX?</h3>
+        <p>
+          Essas linhas são referências de saldo, não novas movimentações. Elas devem ser usadas para conferência e não
+          duplicadas como transações.
+        </p>
+
+        <h3>É melhor converter o extrato para OFX ou Excel?</h3>
+        <p>
+          OFX costuma ser mais adequado para importação em sistemas financeiros. Excel é útil para análise, filtros e
+          ajustes controlados. A escolha depende do destino do arquivo.
+        </p>
+
+        <h3>Se a Caixa disponibilizar OFX diretamente, ainda preciso converter o PDF?</h3>
+        <p>
+          Não. Se o canal da sua conta oferecer um OFX nativo compatível com o sistema de destino, prefira esse arquivo.
+          A conversão é útil quando o documento disponível é PDF ou quando você precisa de uma planilha para análise.
+        </p>
+
+        <h3>O OFX Simples é um serviço da Caixa?</h3>
+        <p>
+          Não. O OFX Simples é uma ferramenta independente e não possui vínculo institucional com a Caixa Econômica
+          Federal. Os nomes e marcas citados pertencem aos seus respectivos titulares.
+        </p>
+      </section>
+
+      <section>
+        <h2>Fontes oficiais consultadas</h2>
+        <ul>
+          <li><a href="https://www.caixa.gov.br/atendimento/canais-digitais/app-caixa-internet-banking/paginas/default.aspx">App CAIXA e Internet Banking CAIXA</a></li>
+          <li><a href="https://www.caixa.gov.br/voce/contas/conta-corrente/paginas/default.aspx">Conta Corrente CAIXA</a></li>
+          <li><a href="https://www.caixa.gov.br/voce/entendendo-minha-conta/Paginas/default.aspx">Entendendo minha conta</a></li>
+          <li><a href="https://www.caixa.gov.br/empresa/extrato-eletronico/Paginas/default.aspx">Extrato Eletrônico para empresas</a></li>
+          <li><a href="https://www.caixa.gov.br/caixatem/perguntas-frequentes/Paginas/default.aspx">Perguntas frequentes do CAIXA Tem</a></li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Conclusão</h2>
+        <p>
+          Um bom processo com extratos da Caixa tem três etapas: obter o documento no canal oficial, interpretar
+          corretamente movimentações e saldos e revisar o arquivo antes de importá-lo.
+        </p>
+        <p>
+          As letras C/D, as linhas de saldo e as diferenças entre App CAIXA, Internet Banking, CAIXA Tem e Gerenciador
+          CAIXA Empresas merecem atenção. Quando o PDF precisa virar OFX ou Excel, a prévia e a conferência dos saldos
+          ajudam a reduzir retrabalho.
+        </p>
+        <a class="cta-link" href="../../convert.html">Abrir a tela de conversões</a>
+      </section>
+    </article>
+
+    <aside class="side-card" aria-label="Próximos conteúdos">
+      <h2>Continue aprendendo</h2>
+      <ul>
+        <li><a href="../o-que-e-ofx-e-como-usar/">O que é OFX e como usar</a></li>
+        <li><a href="../como-validar-ofx-antes-de-importar-no-erp/">Como validar OFX antes de importar no ERP</a></li>
+        <li><a href="../7-erros-comuns-na-conciliacao-bancaria/">7 erros comuns na conciliação bancária</a></li>
+      </ul>
+      <a class="cta-link" href="../../convert.html">Converter extrato da Caixa</a>
+      <a class="cta-link secondary" href="../">Ver todos os artigos</a>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <p>OFX Simples</p>
+    <p><a href="../../politica-de-privacidade.html">Política de Privacidade</a></p>
+    <p><a href="../../termos-de-uso.html">Termos de Uso</a></p>
+    <p id="footer-year"></p>
+  </footer>
+
+  <script src="/auth-session.js?v=1"></script>
+  <script src="../../ofx-landing.js?v=2"></script>
+</body>
+</html>
