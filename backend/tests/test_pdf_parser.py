@@ -3450,6 +3450,28 @@ def test_parse_pdf_transactions_prefers_caixa_gerenciador_period_effective_date_
     assert result.canonical_transactions[0].running_balance == 44841.49
 
 
+def test_parse_pdf_transactions_keeps_trailing_description_number_out_of_spaced_amount() -> None:
+    native_text = """
+    CAIXA
+    EXTRATO POR PERIODO
+    EXTRATO
+    DATA MOV. NR. DOC. HISTORICO VALOR SALDO
+    24/08/2026 000001 CR PIX QRD 98,10 C 98,10 C
+    25/08/2026 000002 M VALOR 3 349,00 D 250,90 D
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([native_text])
+
+    assert result.layout.layout_name == "caixa_extrato_por_periodo_web_v1"
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert len(result.transactions) == 2
+    assert result.transactions[1].description == "000002 M VALOR 3"
+    assert result.transactions[1].amount == -349.0
+    assert result.canonical_transactions[1].running_balance == -250.9
+    assert result.canonical_transactions[1].warnings == []
+
+
 def test_parse_pdf_transactions_keeps_caixa_multiline_rows_with_value_and_balance_only() -> None:
     native_text = """
     GERENCIADOR CAIXA

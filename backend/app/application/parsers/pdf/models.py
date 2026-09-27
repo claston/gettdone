@@ -40,3 +40,4 @@ class _ParsedTransaction:
     running_balance: float | None = None
     external_reference_id: str | None = None
     has_explicit_amount_sign: bool = False
+    raw_amount_token: str | None = None
