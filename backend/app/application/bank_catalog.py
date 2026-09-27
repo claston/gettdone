@@ -21,6 +21,17 @@ class BankRecord:
 
 _EXTRA_BANK_RECORDS = (
     BankRecord(
+        code="082",
+        name="Banco Topázio S.A.",
+        short_name="Banco Topázio",
+        aliases=(
+            "Banco Topázio",
+            "Banco Topazio",
+            "Banco Topazio S.A.",
+        ),
+        active=True,
+    ),
+    BankRecord(
         code="133",
         name=(
             "Confederação Nacional das Cooperativas Centrais de Crédito e Economia Familiar e Solidária "
