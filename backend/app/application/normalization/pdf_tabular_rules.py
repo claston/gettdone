@@ -91,6 +91,38 @@ def select_declarative_tabular_amount(
     )
 
 
+def split_spaced_grouped_amount_prefix(
+    raw_amount_token: str,
+    *,
+    expected_amount: float,
+) -> str | None:
+    """Return a description prefix swallowed by an ambiguous space-grouped amount.
+
+    A row such as ``M VALOR 3 349,00 D`` can mean description ``M VALOR 3``
+    followed by ``349,00 D``. Only accept that interpretation when the remaining
+    amount exactly matches the independently calculated running-balance delta.
+    """
+
+    match = re.fullmatch(
+        r"\s*(?P<prefix>\d{1,3})[ \u00a0]+"
+        r"(?P<amount>\d{1,3}(?:(?:\.|[ \u00a0])\d{3})*,\d{2}\s*[CD])\s*",
+        raw_amount_token,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    recovered_amount = parse_amount_token(
+        AmountToken(
+            value=match.group("amount"),
+            start=match.start("amount"),
+            end=match.end("amount"),
+        )
+    )
+    if abs(recovered_amount - expected_amount) > 0.02:
+        return None
+    return match.group("prefix")
+
+
 def extract_document_reference(raw_description: str, *, layout_profile: DeclarativeLayoutProfile | None) -> str | None:
     if layout_profile is None:
         return None

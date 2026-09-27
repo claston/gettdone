@@ -47,6 +47,7 @@ from app.application.normalization.pdf_tabular_rules import (
     SelectedTabularAmount,
     extract_document_reference,
     select_tabular_amount_token,
+    split_spaced_grouped_amount_prefix,
 )
 from app.application.normalization.pdf_text_rules import should_ignore_line, should_skip_transaction_description
 from app.application.normalization.text import normalize_upper_text
@@ -1721,6 +1722,7 @@ def _classify_tabular_statement_line(
             running_balance=amount_details["running_balance"],
             external_reference_id=external_reference_id,
             has_explicit_amount_sign=has_amount_token_explicit_sign(selected_amount.token),
+            raw_amount_token=selected_amount.token.value,
         ),
         True,
     )
@@ -1783,6 +1785,18 @@ def _reconcile_tabular_amount_from_running_balance(
     if current_error <= 0.02:
         return parsed_row
 
+    swallowed_description_prefix = (
+        split_spaced_grouped_amount_prefix(parsed_row.raw_amount_token, expected_amount=delta)
+        if parsed_row.raw_amount_token is not None
+        else None
+    )
+    if swallowed_description_prefix is not None:
+        return _replace_parsed_transaction_amount(
+            parsed_row=parsed_row,
+            amount=delta,
+            description=f"{parsed_row.transaction.description} {swallowed_description_prefix}",
+        )
+
     amount_matches_balance_delta = abs(abs(current_amount) - abs(delta)) <= 0.02
     if not parsed_row.has_explicit_amount_sign and amount_matches_balance_delta:
         return _replace_parsed_transaction_amount(parsed_row=parsed_row, amount=delta)
@@ -1795,11 +1809,14 @@ def _reconcile_tabular_amount_from_running_balance(
 
 
 def _replace_parsed_transaction_amount(
-    *, parsed_row: _ParsedTransaction, amount: float
+    *,
+    parsed_row: _ParsedTransaction,
+    amount: float,
+    description: str | None = None,
 ) -> _ParsedTransaction:
     normalized_transaction = NormalizedTransaction(
         date=parsed_row.transaction.date,
-        description=parsed_row.transaction.description,
+        description=description or parsed_row.transaction.description,
         amount=amount,
         type="inflow" if amount >= 0 else "outflow",
     )
@@ -1810,6 +1827,7 @@ def _replace_parsed_transaction_amount(
         running_balance=parsed_row.running_balance,
         external_reference_id=parsed_row.external_reference_id,
         has_explicit_amount_sign=parsed_row.has_explicit_amount_sign,
+        raw_amount_token=parsed_row.raw_amount_token,
     )
 
 
@@ -2219,6 +2237,7 @@ def _build_parsed_transaction(
     running_balance: float | None = None,
     external_reference_id: str | None = None,
     has_explicit_amount_sign: bool = False,
+    raw_amount_token: str | None = None,
 ) -> _ParsedTransaction:
     return _ParsedTransaction(
         transaction=NormalizedTransaction(
@@ -2232,6 +2251,7 @@ def _build_parsed_transaction(
         running_balance=running_balance,
         external_reference_id=external_reference_id,
         has_explicit_amount_sign=has_explicit_amount_sign,
+        raw_amount_token=raw_amount_token,
     )
 
 
@@ -2468,4 +2488,3 @@ def _is_inline_columnar_amount_header(normalized_line: str) -> bool:
 
 def _is_inline_columnar_balance_header(normalized_line: str) -> bool:
     return normalized_line == "SALDO"
-
