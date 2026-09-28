@@ -1,3 +1,5 @@
+from urllib.parse import parse_qs, urlparse
+
 from fastapi.testclient import TestClient
 
 from app.application import GoogleOAuthCallbackResult, GoogleOAuthConfig, GoogleOAuthService, GoogleOAuthStateError
@@ -112,6 +114,43 @@ def test_google_auth_start_requires_terms_for_signup_flow() -> None:
     assert "Termos de Uso" in response.json()["detail"]
 
     app.dependency_overrides.clear()
+
+
+def test_google_signup_authorization_marks_current_marketing_consent_version(tmp_path) -> None:
+    access_control = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="test-secret",
+    )
+    oauth = StubGoogleOAuthService(
+        access_control_service=access_control,
+        profile={
+            "sub": "google-marketing-v2",
+            "email": "marketing-v2@example.com",
+            "name": "Marketing V2",
+            "email_verified": True,
+        },
+    )
+
+    authorization_url = oauth.build_authorization_url(
+        next_path="/client-area.html",
+        flow_mode="signup",
+        terms_accepted=True,
+        product_updates_opt_in=True,
+    )
+    state = parse_qs(urlparse(authorization_url).query)["state"][0]
+
+    result = oauth.complete_callback(code="signup-code", state=state)
+    assert result.user is not None
+    with access_control._connect() as conn:
+        stored = access_control._fetchone(
+            conn,
+            "SELECT product_updates_opt_in, product_updates_consent_version FROM users WHERE id = ?",
+            (result.user.user_id,),
+        )
+
+    assert stored is not None
+    assert bool(stored["product_updates_opt_in"]) is True
+    assert stored["product_updates_consent_version"] == 2
 
 
 def test_google_signup_records_initial_access_and_login_records_return(tmp_path) -> None:

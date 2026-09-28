@@ -26,6 +26,7 @@ from app.application import (
 )
 from app.application.access_control import DEFAULT_MAX_PAGES_PER_FILE, MAX_UPLOAD_SIZE_BYTES, SessionTokenBundle
 from app.application.login_tracking import record_successful_login_safely
+from app.application.marketing_consent import CURRENT_PRODUCT_UPDATES_CONSENT_VERSION
 from app.dependencies import get_access_control_service, get_contact_service, get_google_oauth_service
 from app.routers.access_control_common import (
     ANONYMOUS_IDENTITY_COOKIE_NAME,
@@ -243,6 +244,11 @@ async def register(
             privacy_accepted_at=accepted_at,
             product_updates_opt_in=payload.product_updates_opt_in,
             product_updates_opted_in_at=product_updates_opted_in_at,
+            product_updates_consent_version=(
+                CURRENT_PRODUCT_UPDATES_CONSENT_VERSION
+                if payload.product_updates_opt_in
+                else None
+            ),
         )
     except UserAlreadyExistsError:
         raise HTTPException(status_code=409, detail="Email already registered.")

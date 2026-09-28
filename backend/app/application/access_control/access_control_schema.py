@@ -64,6 +64,7 @@ class AccessControlSchemaComponent:
                 "privacy_accepted_at",
                 "product_updates_opt_in",
                 "product_updates_opted_in_at",
+                "product_updates_consent_version",
                 "email_verification_status",
                 "email_verified_at",
             ),

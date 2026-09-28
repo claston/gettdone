@@ -12,6 +12,7 @@ from app.application.errors import (
     InvalidUserTokenError,
     UserAlreadyExistsError,
 )
+from app.application.marketing_consent import normalize_product_updates_consent_version
 
 if TYPE_CHECKING:
     from app.application.access_control import AccessControlService, RegisteredUser
@@ -31,6 +32,7 @@ class AccessControlAuthComponent:
         privacy_accepted_at: str | None = None,
         product_updates_opt_in: bool = False,
         product_updates_opted_in_at: str | None = None,
+        product_updates_consent_version: int | None = None,
     ) -> RegisteredUser:
         normalized_email = email.strip().lower()
         is_admin = normalized_email in self._service.admin_emails
@@ -40,6 +42,10 @@ class AccessControlAuthComponent:
         password_hash = self._service._hash_password(password=password, salt=salt)
         email_verification_status = "pending" if self._service.email_verification_required else "verified"
         email_verified_at = None if email_verification_status == "pending" else now
+        normalized_consent_version = normalize_product_updates_consent_version(
+            opted_in=product_updates_opt_in,
+            consent_version=product_updates_consent_version,
+        )
         with self._service._lock:
             with self._service._connect() as conn:
                 existing = self._service._fetchone(conn, "SELECT id FROM users WHERE email = ?", (normalized_email,))
@@ -62,12 +68,13 @@ class AccessControlAuthComponent:
                         privacy_accepted_at,
                         product_updates_opt_in,
                         product_updates_opted_in_at,
+                        product_updates_consent_version,
                         email_verification_status,
                         email_verified_at,
                         created_at,
                         updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user_id,
@@ -83,6 +90,7 @@ class AccessControlAuthComponent:
                         privacy_accepted_at,
                         self._service._true_value() if product_updates_opt_in else self._service._false_value(),
                         product_updates_opted_in_at,
+                        normalized_consent_version,
                         email_verification_status,
                         email_verified_at,
                         now,
@@ -210,12 +218,17 @@ class AccessControlAuthComponent:
         privacy_accepted_at: str | None = None,
         product_updates_opt_in: bool = False,
         product_updates_opted_in_at: str | None = None,
+        product_updates_consent_version: int | None = None,
     ) -> RegisteredUser:
         normalized_email = email.strip().lower()
         provider_user_id = provider_user_id.strip()
         display_name = name.strip() or normalized_email.split("@", 1)[0]
         now = self._service.now_provider().isoformat()
         true_value = self._service._true_value()
+        normalized_consent_version = normalize_product_updates_consent_version(
+            opted_in=product_updates_opt_in,
+            consent_version=product_updates_consent_version,
+        )
 
         with self._service._lock:
             with self._service._connect() as conn:
@@ -249,6 +262,10 @@ class AccessControlAuthComponent:
                                 ELSE product_updates_opt_in
                             END,
                             product_updates_opted_in_at = COALESCE(?, product_updates_opted_in_at),
+                            product_updates_consent_version = CASE
+                                WHEN ? THEN ?
+                                ELSE product_updates_consent_version
+                            END,
                             updated_at = ?
                         WHERE id = ?
                         """,
@@ -261,6 +278,8 @@ class AccessControlAuthComponent:
                             product_updates_opt_in,
                             true_value,
                             product_updates_opted_in_at,
+                            product_updates_opt_in,
+                            normalized_consent_version,
                             now,
                             user_id,
                         ),
@@ -307,6 +326,10 @@ class AccessControlAuthComponent:
                                 ELSE product_updates_opt_in
                             END,
                             product_updates_opted_in_at = COALESCE(?, product_updates_opted_in_at),
+                            product_updates_consent_version = CASE
+                                WHEN ? THEN ?
+                                ELSE product_updates_consent_version
+                            END,
                             updated_at = ?
                         WHERE id = ?
                         """,
@@ -319,6 +342,8 @@ class AccessControlAuthComponent:
                             product_updates_opt_in,
                             true_value,
                             product_updates_opted_in_at,
+                            product_updates_opt_in,
+                            normalized_consent_version,
                             now,
                             user_id,
                         ),
@@ -357,12 +382,13 @@ class AccessControlAuthComponent:
                         privacy_accepted_at,
                         product_updates_opt_in,
                         product_updates_opted_in_at,
+                        product_updates_consent_version,
                         email_verification_status,
                         email_verified_at,
                         created_at,
                         updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user_id,
@@ -378,6 +404,7 @@ class AccessControlAuthComponent:
                         privacy_accepted_at,
                         true_value if product_updates_opt_in else self._service._false_value(),
                         product_updates_opted_in_at,
+                        normalized_consent_version,
                         "verified",
                         now,
                         now,

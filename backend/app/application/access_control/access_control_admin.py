@@ -224,6 +224,12 @@ class AccessControlAdminComponent:
                         users.is_active,
                         users.email_verification_status,
                         users.product_updates_opted_in_at,
+                        CASE
+                            WHEN users.product_updates_opt_in = ?
+                                 AND users.product_updates_consent_version IS NULL
+                            THEN 1
+                            ELSE users.product_updates_consent_version
+                        END AS product_updates_consent_version,
                         users.created_at
                     {base}
                     ORDER BY
@@ -231,7 +237,7 @@ class AccessControlAdminComponent:
                         users.created_at DESC
                     LIMIT ? OFFSET ?
                     """,
-                    tuple(params + [normalized_limit, normalized_offset]),
+                    tuple([self._service._true_value()] + params + [normalized_limit, normalized_offset]),
                 )
                 return (
                     [
@@ -247,6 +253,11 @@ class AccessControlAdminComponent:
                                 row["product_updates_opted_in_at"] or ""
                             )
                             or None,
+                            "product_updates_consent_version": (
+                                int(row["product_updates_consent_version"])
+                                if row["product_updates_consent_version"] is not None
+                                else None
+                            ),
                             "created_at": str(row["created_at"] or ""),
                         }
                         for row in rows
