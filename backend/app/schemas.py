@@ -543,6 +543,7 @@ class AdminMarketingContactItem(BaseModel):
     is_active: bool
     email_verification_status: str = "verified"
     product_updates_opted_in_at: str | None = None
+    product_updates_consent_version: int | None = None
     created_at: str
 
 

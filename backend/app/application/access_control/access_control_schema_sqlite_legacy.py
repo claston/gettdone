@@ -32,6 +32,7 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
             privacy_accepted_at TEXT,
             product_updates_opt_in INTEGER NOT NULL DEFAULT 0,
             product_updates_opted_in_at TEXT,
+            product_updates_consent_version INTEGER,
             email_verification_status TEXT NOT NULL DEFAULT 'verified',
             email_verified_at TEXT,
             created_at TEXT NOT NULL,
@@ -319,6 +320,16 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
         conn.execute("ALTER TABLE users ADD COLUMN product_updates_opt_in INTEGER NOT NULL DEFAULT 0")
     if "product_updates_opted_in_at" not in user_columns:
         conn.execute("ALTER TABLE users ADD COLUMN product_updates_opted_in_at TEXT")
+    if "product_updates_consent_version" not in user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN product_updates_consent_version INTEGER")
+    conn.execute(
+        """
+        UPDATE users
+        SET product_updates_consent_version = 1
+        WHERE product_updates_opt_in = 1
+          AND product_updates_consent_version IS NULL
+        """
+    )
     if "email_verification_status" not in user_columns:
         conn.execute("ALTER TABLE users ADD COLUMN email_verification_status TEXT NOT NULL DEFAULT 'verified'")
     if "email_verified_at" not in user_columns:

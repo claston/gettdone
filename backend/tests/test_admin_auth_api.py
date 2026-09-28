@@ -127,6 +127,7 @@ def test_admin_can_list_only_marketing_contacts_with_consent_date(tmp_path) -> N
         password="strong-pass",
         product_updates_opt_in=True,
         product_updates_opted_in_at="2026-09-20T12:00:00+00:00",
+        product_updates_consent_version=1,
     )
     service.register_user(
         name="Sem consentimento",
@@ -162,6 +163,7 @@ def test_admin_can_list_only_marketing_contacts_with_consent_date(tmp_path) -> N
         assert item["is_active"] is True
         assert item["email_verification_status"] == "verified"
         assert item["product_updates_opted_in_at"] == "2026-09-20T12:00:00+00:00"
+        assert item["product_updates_consent_version"] == 1
         assert item["created_at"]
     finally:
         app.dependency_overrides.clear()

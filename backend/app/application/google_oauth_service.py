@@ -14,6 +14,7 @@ from app.application.errors import (
     GoogleOAuthStateError,
 )
 from app.application.login_tracking import record_successful_login_safely
+from app.application.marketing_consent import CURRENT_PRODUCT_UPDATES_CONSENT_VERSION
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -61,6 +62,9 @@ class GoogleOAuthService:
             flow_mode=flow_mode,
             terms_accepted=terms_accepted,
             product_updates_opt_in=product_updates_opt_in,
+            product_updates_consent_version=(
+                CURRENT_PRODUCT_UPDATES_CONSENT_VERSION if product_updates_opt_in else None
+            ),
         )
         code_challenge = self._build_code_challenge(code_verifier)
         params = {
@@ -87,7 +91,7 @@ class GoogleOAuthService:
 
         token_payload = self._exchange_code_for_token(
             code=code,
-            code_verifier=oauth_state["code_verifier"],
+            code_verifier=str(oauth_state["code_verifier"]),
         )
         access_token = str(token_payload.get("access_token") or "").strip()
         if not access_token:
@@ -101,6 +105,11 @@ class GoogleOAuthService:
         flow_mode = "signup" if bool(oauth_state.get("flow_mode") == "signup") else "login"
         terms_accepted = bool(oauth_state.get("terms_accepted"))
         product_updates_opt_in = bool(oauth_state.get("product_updates_opt_in"))
+        product_updates_consent_version = (
+            int(oauth_state.get("product_updates_consent_version") or 1)
+            if product_updates_opt_in
+            else None
+        )
 
         if not provider_user_id or not email or not email_verified:
             raise GoogleOAuthExchangeError("Google profile is missing required verified identity fields.")
@@ -117,6 +126,7 @@ class GoogleOAuthService:
                 privacy_accepted_at=accepted_at,
                 product_updates_opt_in=product_updates_opt_in,
                 product_updates_opted_in_at=product_updates_opted_in_at,
+                product_updates_consent_version=product_updates_consent_version,
             )
         except GoogleOAuthAccountNotFoundError:
             params = urlencode(

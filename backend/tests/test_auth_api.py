@@ -416,7 +416,8 @@ def test_register_defaults_product_updates_opt_in_to_false() -> None:
             row = service._fetchone(
                 conn,
                 """
-                SELECT product_updates_opt_in, product_updates_opted_in_at
+                SELECT product_updates_opt_in, product_updates_opted_in_at,
+                       product_updates_consent_version
                 FROM users
                 WHERE id = ?
                 """,
@@ -426,6 +427,7 @@ def test_register_defaults_product_updates_opt_in_to_false() -> None:
         assert row is not None
         assert bool(row["product_updates_opt_in"]) is False
         assert row["product_updates_opted_in_at"] is None
+        assert row["product_updates_consent_version"] is None
     finally:
         app.dependency_overrides.clear()
         shutil.rmtree(state_dir, ignore_errors=True)
@@ -454,7 +456,8 @@ def test_register_persists_product_updates_opt_in_when_checked() -> None:
             row = service._fetchone(
                 conn,
                 """
-                SELECT product_updates_opt_in, product_updates_opted_in_at
+                SELECT product_updates_opt_in, product_updates_opted_in_at,
+                       product_updates_consent_version
                 FROM users
                 WHERE id = ?
                 """,
@@ -464,6 +467,7 @@ def test_register_persists_product_updates_opt_in_when_checked() -> None:
         assert row is not None
         assert bool(row["product_updates_opt_in"]) is True
         assert row["product_updates_opted_in_at"]
+        assert row["product_updates_consent_version"] == 2
     finally:
         app.dependency_overrides.clear()
         shutil.rmtree(state_dir, ignore_errors=True)

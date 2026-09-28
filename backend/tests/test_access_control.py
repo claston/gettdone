@@ -486,6 +486,45 @@ def test_google_oauth_state_can_be_consumed_once(tmp_path) -> None:
     assert consumed_again is None
 
 
+def test_google_oauth_state_preserves_marketing_consent_version(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+    )
+    state, _ = service.create_google_oauth_state(
+        next_path="/client-area.html",
+        flow_mode="signup",
+        terms_accepted=True,
+        product_updates_opt_in=True,
+        product_updates_consent_version=2,
+    )
+
+    consumed = service.consume_google_oauth_state(state=state)
+
+    assert consumed is not None
+    assert consumed["product_updates_opt_in"] is True
+    assert consumed["product_updates_consent_version"] == 2
+
+
+def test_legacy_google_oauth_state_maps_marketing_consent_to_version_one(tmp_path) -> None:
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+    )
+    state, _ = service.create_google_oauth_state(
+        next_path="/client-area.html",
+        flow_mode="signup",
+        terms_accepted=True,
+        product_updates_opt_in=True,
+    )
+
+    consumed = service.consume_google_oauth_state(state=state)
+
+    assert consumed is not None
+    assert consumed["product_updates_opt_in"] is True
+    assert consumed["product_updates_consent_version"] == 1
+
+
 def test_public_plans_are_seeded_with_versions(tmp_path) -> None:
     service = AccessControlService(
         state_file=tmp_path / "state.json",

@@ -67,12 +67,19 @@ class AccessControlIdentityComponent:
         flow_mode: str = "login",
         terms_accepted: bool = False,
         product_updates_opt_in: bool = False,
+        product_updates_consent_version: int | None = None,
     ) -> tuple[str, str]:
         normalized_flow = "signup" if str(flow_mode or "").strip().lower() == "signup" else "login"
         flow_marker = "s" if normalized_flow == "signup" else "l"
         terms_marker = "1" if terms_accepted else "0"
         opt_in_marker = "1" if product_updates_opt_in else "0"
-        state = f"gst_{flow_marker}{terms_marker}{opt_in_marker}_{secrets.token_urlsafe(24)}"
+        consent_version_marker = ""
+        if product_updates_opt_in and product_updates_consent_version is not None:
+            consent_version_marker = f"v{max(1, int(product_updates_consent_version))}"
+        state = (
+            f"gst_{flow_marker}{terms_marker}{opt_in_marker}{consent_version_marker}_"
+            f"{secrets.token_urlsafe(24)}"
+        )
         code_verifier = secrets.token_urlsafe(64)
         now = self._service.now_provider()
         expires_at = (now + timedelta(seconds=max(60, int(ttl_seconds)))).isoformat()
@@ -101,7 +108,7 @@ class AccessControlIdentityComponent:
                 conn.commit()
         return state, code_verifier
 
-    def consume_google_oauth_state(self, *, state: str) -> dict[str, str] | None:
+    def consume_google_oauth_state(self, *, state: str) -> dict[str, str | bool | int | None] | None:
         normalized_state = state.strip()
         if not normalized_state:
             return None
@@ -136,30 +143,39 @@ class AccessControlIdentityComponent:
         if expires_at < now:
             return None
 
+        metadata = self._parse_google_oauth_state(str(row["state"]))
         return {
             "state": str(row["state"]),
             "code_verifier": str(row["code_verifier"]),
             "next_path": self._service._normalize_next_path(str(row["next_path"])),
-            "flow_mode": self._parse_google_oauth_state(str(row["state"])).get("flow_mode", "login"),
-            "terms_accepted": self._parse_google_oauth_state(str(row["state"])).get("terms_accepted", False),
-            "product_updates_opt_in": self._parse_google_oauth_state(str(row["state"])).get("product_updates_opt_in", False),
+            "flow_mode": metadata.get("flow_mode", "login"),
+            "terms_accepted": metadata.get("terms_accepted", False),
+            "product_updates_opt_in": metadata.get("product_updates_opt_in", False),
+            "product_updates_consent_version": metadata.get("product_updates_consent_version"),
         }
 
-    def _parse_google_oauth_state(self, state: str) -> dict[str, str | bool]:
+    def _parse_google_oauth_state(self, state: str) -> dict[str, str | bool | int | None]:
         raw = str(state or "").strip()
         if raw.startswith("gst_") and len(raw) >= 10:
-            metadata = raw[4:7]
-            if len(metadata) == 3:
+            metadata = raw[4:].split("_", 1)[0]
+            if len(metadata) >= 3:
                 flow_mode = "signup" if metadata[0] == "s" else "login"
+                opted_in = metadata[2] == "1"
+                consent_version = 1 if opted_in else None
+                version_marker = metadata[3:]
+                if opted_in and version_marker.startswith("v") and version_marker[1:].isdigit():
+                    consent_version = max(1, int(version_marker[1:]))
                 return {
                     "flow_mode": flow_mode,
                     "terms_accepted": metadata[1] == "1",
-                    "product_updates_opt_in": metadata[2] == "1",
+                    "product_updates_opt_in": opted_in,
+                    "product_updates_consent_version": consent_version,
                 }
         return {
             "flow_mode": "login",
             "terms_accepted": False,
             "product_updates_opt_in": False,
+            "product_updates_consent_version": None,
         }
 
     def ensure_anonymous_identity(self, fingerprint: str) -> str:

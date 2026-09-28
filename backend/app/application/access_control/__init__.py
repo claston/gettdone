@@ -237,6 +237,7 @@ class AccessControlService:
         privacy_accepted_at: str | None = None,
         product_updates_opt_in: bool = False,
         product_updates_opted_in_at: str | None = None,
+        product_updates_consent_version: int | None = None,
     ) -> RegisteredUser:
         return self.auth.register_user(
             name=name,
@@ -246,6 +247,7 @@ class AccessControlService:
             privacy_accepted_at=privacy_accepted_at,
             product_updates_opt_in=product_updates_opt_in,
             product_updates_opted_in_at=product_updates_opted_in_at,
+            product_updates_consent_version=product_updates_consent_version,
         )
 
     def authenticate_user(self, email: str, password: str) -> RegisteredUser:
@@ -356,6 +358,7 @@ class AccessControlService:
         privacy_accepted_at: str | None = None,
         product_updates_opt_in: bool = False,
         product_updates_opted_in_at: str | None = None,
+        product_updates_consent_version: int | None = None,
     ) -> RegisteredUser:
         return self.auth.register_or_authenticate_google_user(
             provider_user_id=provider_user_id,
@@ -366,6 +369,7 @@ class AccessControlService:
             privacy_accepted_at=privacy_accepted_at,
             product_updates_opt_in=product_updates_opt_in,
             product_updates_opted_in_at=product_updates_opted_in_at,
+            product_updates_consent_version=product_updates_consent_version,
         )
 
     def create_google_oauth_state(
@@ -376,6 +380,7 @@ class AccessControlService:
         flow_mode: str = "login",
         terms_accepted: bool = False,
         product_updates_opt_in: bool = False,
+        product_updates_consent_version: int | None = None,
     ) -> tuple[str, str]:
         return self.identity.create_google_oauth_state(
             next_path=next_path,
@@ -383,9 +388,10 @@ class AccessControlService:
             flow_mode=flow_mode,
             terms_accepted=terms_accepted,
             product_updates_opt_in=product_updates_opt_in,
+            product_updates_consent_version=product_updates_consent_version,
         )
 
-    def consume_google_oauth_state(self, *, state: str) -> dict[str, str] | None:
+    def consume_google_oauth_state(self, *, state: str) -> dict[str, str | bool | int | None] | None:
         return self.identity.consume_google_oauth_state(state=state)
 
     def assert_upload_size(self, raw_bytes: bytes, max_upload_size_bytes: int = MAX_UPLOAD_SIZE_BYTES) -> None:
