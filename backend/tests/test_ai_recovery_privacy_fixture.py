@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from types import SimpleNamespace
 
@@ -7,7 +8,79 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from app.application.ai_recovery.privacy_fixture import CanonicalV3PrivacyFixtureBuilder
-from backend.tests.test_ai_recovery_diagnostic_processing import _diagnostic, _request_objects
+from app.application.ai_recovery.request_publishing import build_ai_recovery_request_artifacts
+from app.application.ai_recovery.schemas import AIRecoveryVersionSet, NovaDiagnosticV1
+
+
+def _diagnostic() -> NovaDiagnosticV1:
+    return NovaDiagnosticV1.model_validate(
+        {
+            "schema_version": "nova_diagnostic_v1",
+            "statement": {
+                "schema_version": "nova_statement_v2",
+                "document": {
+                    "pages_examined": 1,
+                    "all_pages_examined": True,
+                    "transcription_truncated": False,
+                    "visible_period": {"start_text": "01/09/2026", "end_text": "30/09/2026"},
+                },
+                "opening_balance": None,
+                "closing_balance": None,
+                "transactions": [
+                    {
+                        "visual_order": 1,
+                        "page": 1,
+                        "visual_line_start": 4,
+                        "visual_line_end": 4,
+                        "date_text": "01/09/2026",
+                        "description_lines": ["PIX RECEBIDO"],
+                        "amount_text": "125,50",
+                        "direction": "credit",
+                        "running_balance_text": "1.125,50",
+                        "ambiguities": [],
+                    }
+                ],
+                "unresolved_rows": [],
+                "pages": [
+                    {
+                        "page": 1,
+                        "transactions_observed": 1,
+                        "repeated_header_observed": False,
+                        "unresolved_rows_observed": 0,
+                    }
+                ],
+                "warnings": [],
+            },
+            "conclusion": "parser_defect",
+            "findings": [],
+        }
+    )
+
+
+def _manifest():
+    now = datetime(2026, 9, 28, tzinfo=UTC)
+    return build_ai_recovery_request_artifacts(
+        bucket="private-ai-recovery",
+        analysis_id="an_fixture123",
+        pdf_bytes=b"%PDF placeholder",
+        page_count=1,
+        deterministic_artifact={"transactions": []},
+        source_evidence={"pages": []},
+        parser_release="release-123",
+        layout_profile="nubank_statement_ptbr",
+        layout_family="nubank_conta_digital",
+        statement_type="conta_digital_extrato",
+        layout_confidence=0.98,
+        issue_codes=("balance_consistency_failed",),
+        ai=AIRecoveryVersionSet(
+            model_id="us.amazon.nova-2-lite-v1:0",
+            prompt_version="nova_transaction_diagnosis_v1",
+            output_schema_version="nova_diagnostic_v1",
+            comparator_version="statement_comparator_v1",
+        ),
+        created_at=now,
+        expires_at=now + timedelta(days=1),
+    ).manifest
 
 
 def _pdf(*lines: str) -> bytes:
@@ -39,7 +112,7 @@ def _pdf(*lines: str) -> bytes:
 
 
 def test_fixture_is_built_only_from_privacy_validated_canonical_output() -> None:
-    artifacts, _ = _request_objects()
+    manifest = _manifest()
     original = _pdf(
         "NUBANK",
         "CLIENTE FAR ENGENHARIA LTDA",
@@ -70,7 +143,7 @@ def test_fixture_is_built_only_from_privacy_validated_canonical_output() -> None
     )
     fixture = CanonicalV3PrivacyFixtureBuilder().build(
         original_pdf=original,
-        manifest=artifacts.manifest,
+        manifest=manifest,
         deterministic_artifact={"selected_parser": "grouped", "transactions": [{}]},
         source_evidence={
             "schema_version": "source_evidence_v1",
