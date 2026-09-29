@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from app.adapters.ai_recovery.bedrock_nova_diagnostic import BedrockNovaDiagnosticAnalyzer
+from app.application.ai_recovery.errors import AIExtractionError, AIExtractionErrorCode
 
 
 def _statement() -> dict[str, object]:
@@ -44,8 +47,9 @@ def _statement() -> dict[str, object]:
 
 
 class _Bedrock:
-    def __init__(self) -> None:
+    def __init__(self, *, response_wrapper: str = "{payload}") -> None:
         self.request = None
+        self.response_wrapper = response_wrapper
 
     def converse(self, **kwargs):
         self.request = kwargs
@@ -68,7 +72,11 @@ class _Bedrock:
         }
         return {
             "stopReason": "end_turn",
-            "output": {"message": {"content": [{"text": json.dumps(payload)}]}},
+            "output": {
+                "message": {
+                    "content": [{"text": self.response_wrapper.format(payload=json.dumps(payload))}]
+                }
+            },
             "usage": {"inputTokens": 1200, "outputTokens": 450},
             "ResponseMetadata": {"RequestId": "request-1"},
         }
@@ -103,3 +111,46 @@ def test_diagnostic_analyzer_sends_original_pdf_and_parser_output_to_nova() -> N
     assert content[1]["document"]["source"]["bytes"] == original
     assert deterministic["selected_parser"] in content[0]["text"]
     assert client.request["inferenceConfig"]["temperature"] == 0
+
+
+def test_diagnostic_analyzer_accepts_a_single_json_markdown_fence() -> None:
+    client = _Bedrock(response_wrapper="```json\n{payload}\n```")
+    analyzer = BedrockNovaDiagnosticAnalyzer(
+        client=client,
+        model_id="us.amazon.nova-2-lite-v1:0",
+        timeout_seconds=25,
+        max_pages=15,
+        max_output_tokens=16000,
+        prompt="Return JSON only.",
+    )
+
+    result = analyzer.analyze(
+        filename="statement.pdf",
+        raw_bytes=b"%PDF-1.7 synthetic",
+        page_count=1,
+        deterministic_artifact={"transactions": []},
+    )
+
+    assert result.diagnostic.schema_version == "nova_diagnostic_v1"
+
+
+def test_diagnostic_analyzer_rejects_json_surrounded_by_prose() -> None:
+    client = _Bedrock(response_wrapper="Here is the JSON:\n{payload}")
+    analyzer = BedrockNovaDiagnosticAnalyzer(
+        client=client,
+        model_id="us.amazon.nova-2-lite-v1:0",
+        timeout_seconds=25,
+        max_pages=15,
+        max_output_tokens=16000,
+        prompt="Return JSON only.",
+    )
+
+    with pytest.raises(AIExtractionError) as exc_info:
+        analyzer.analyze(
+            filename="statement.pdf",
+            raw_bytes=b"%PDF-1.7 synthetic",
+            page_count=1,
+            deterministic_artifact={"transactions": []},
+        )
+
+    assert exc_info.value.code == AIExtractionErrorCode.INVALID_RESPONSE_JSON

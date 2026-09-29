@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
@@ -159,14 +160,22 @@ def _parse_response(response: object) -> NovaDiagnosticV1:
         block.get("text") for block in content or []
         if isinstance(block, dict) and isinstance(block.get("text"), str)
     ).strip()
-    try:
-        payload = json.loads(text)
-    except (TypeError, ValueError):
-        raise AIExtractionError(AIExtractionErrorCode.INVALID_RESPONSE_JSON) from None
+    payload = _load_strict_json(text)
     try:
         return NovaDiagnosticV1.model_validate(payload)
     except ValidationError:
         raise AIExtractionError(AIExtractionErrorCode.INVALID_RESPONSE_SCHEMA) from None
+
+
+def _load_strict_json(text: str) -> object:
+    candidate = text.strip()
+    fenced = re.fullmatch(r"```(?:json)?\s*\r?\n(?P<payload>.*)\r?\n```", candidate, flags=re.DOTALL | re.IGNORECASE)
+    if fenced is not None:
+        candidate = fenced.group("payload").strip()
+    try:
+        return json.loads(candidate)
+    except (TypeError, ValueError):
+        raise AIExtractionError(AIExtractionErrorCode.INVALID_RESPONSE_JSON) from None
 
 
 def _parse_usage(response: dict[str, object]) -> AIExtractionUsage | None:
