@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+from app.application.ai_recovery.errors import AIExtractionError, AIExtractionErrorCode
 from app.application.ai_recovery.queue import AIRecoveryQueueMessage
 from app.workers import ai_recovery_lambda
 
@@ -39,3 +40,17 @@ def test_ai_recovery_lambda_returns_partial_batch_failures(monkeypatch) -> None:
 
     assert response == {"batchItemFailures": [{"itemIdentifier": "retry"}]}
     assert len(processor.calls) == 2
+
+
+def test_ai_recovery_lambda_logs_only_sanitized_error_codes() -> None:
+    assert (
+        ai_recovery_lambda._safe_error_code(
+            AIExtractionError(AIExtractionErrorCode.INVALID_RESPONSE_SCHEMA)
+        )
+        == "invalid_response_schema"
+    )
+    provider_error = RuntimeError("must not be logged")
+    provider_error.response = {"Error": {"Code": "AccessDeniedException"}}  # type: ignore[attr-defined]
+    assert ai_recovery_lambda._safe_error_code(provider_error) == "AccessDeniedException"
+    provider_error.response = {"Error": {"Code": "unsafe value with spaces"}}  # type: ignore[attr-defined]
+    assert ai_recovery_lambda._safe_error_code(provider_error) == "unclassified"

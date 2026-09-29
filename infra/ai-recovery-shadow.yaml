@@ -108,6 +108,9 @@ Resources:
                   - sqs:GetQueueAttributes
                 Resource: !GetAtt RecoveryQueue.Arn
               - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt RecoveryBucket.Arn
+              - Effect: Allow
                 Action: s3:GetObject
                 Resource:
                   - !Sub ${RecoveryBucket.Arn}/ai-recovery/requests/v1/*
