@@ -52,7 +52,7 @@ def verify_worker_image(root: Path | None = None) -> None:
     if present_paths:
         raise RuntimeError(f"Worker image contains forbidden application paths: {present_paths}")
 
-    from app.workers import conversion_lambda  # noqa: F401
+    from app.workers import ai_recovery_lambda, conversion_lambda  # noqa: F401
 
     imported_forbidden = sorted(
         module

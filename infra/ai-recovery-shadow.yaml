@@ -1,0 +1,192 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Dedicated shadow diagnostics for transaction warnings using Amazon Nova on Bedrock.
+
+Parameters:
+  WorkerImageUri:
+    Type: String
+    Description: Immutable ECR image URI already validated for the conversion worker.
+  NovaModelId:
+    Type: String
+    Default: us.amazon.nova-2-lite-v1:0
+  EnableQueueTrigger:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "false"
+  RequestRetentionDays:
+    Type: Number
+    Default: 2
+    MinValue: 1
+  RestrictedResultRetentionDays:
+    Type: Number
+    Default: 8
+    MinValue: 1
+  FixtureRetentionDays:
+    Type: Number
+    Default: 90
+    MinValue: 1
+
+Conditions:
+  QueueTriggerEnabled: !Equals [!Ref EnableQueueTrigger, "true"]
+
+Resources:
+  RecoveryBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOriginalRequests
+            Status: Enabled
+            Prefix: ai-recovery/requests/v1/
+            ExpirationInDays: !Ref RequestRetentionDays
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 1
+          - Id: ExpireRestrictedResults
+            Status: Enabled
+            Prefix: ai-recovery/results/restricted/v1/
+            ExpirationInDays: !Ref RestrictedResultRetentionDays
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 1
+          - Id: ExpireShareableFixtures
+            Status: Enabled
+            Prefix: ai-recovery/fixtures/v1/
+            ExpirationInDays: !Ref FixtureRetentionDays
+      VersioningConfiguration:
+        Status: Enabled
+
+  RecoveryDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  RecoveryQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 180
+      MessageRetentionPeriod: 345600
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt RecoveryDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  RecoveryLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: RecoveryRuntime
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt RecoveryQueue.Arn
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource:
+                  - !Sub ${RecoveryBucket.Arn}/ai-recovery/requests/v1/*
+                  - !Sub ${RecoveryBucket.Arn}/ai-recovery/results/restricted/v1/*
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource:
+                  - !Sub ${RecoveryBucket.Arn}/ai-recovery/results/restricted/v1/*
+                  - !Sub ${RecoveryBucket.Arn}/ai-recovery/fixtures/v1/*
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${NovaModelId}
+                  - !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0
+
+  RecoveryFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      PackageType: Image
+      Code:
+        ImageUri: !Ref WorkerImageUri
+      ImageConfig:
+        Command: [app.workers.ai_recovery_lambda.lambda_handler]
+      Role: !GetAtt RecoveryLambdaRole.Arn
+      Architectures: [x86_64]
+      MemorySize: 2048
+      Timeout: 120
+      ReservedConcurrentExecutions: 1
+      Environment:
+        Variables:
+          AI_RECOVERY_MODE: shadow
+          AI_RECOVERY_MODEL_ID: !Ref NovaModelId
+          AI_RECOVERY_AWS_REGION: !Ref AWS::Region
+          AI_RECOVERY_S3_BUCKET: !Ref RecoveryBucket
+          AI_RECOVERY_RESULT_S3_PREFIX: ai-recovery/results/restricted/v1
+          AI_RECOVERY_FIXTURE_S3_PREFIX: ai-recovery/fixtures/v1
+          AI_RECOVERY_TIMEOUT_SECONDS: "25"
+          AI_RECOVERY_MAX_PAGES: "15"
+          AI_RECOVERY_MAX_INPUT_BYTES: "26214400"
+          AI_RECOVERY_MAX_OUTPUT_TOKENS: "16000"
+
+  RecoveryEventSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Condition: QueueTriggerEnabled
+    Properties:
+      EventSourceArn: !GetAtt RecoveryQueue.Arn
+      FunctionName: !Ref RecoveryFunction
+      BatchSize: 1
+      FunctionResponseTypes: [ReportBatchItemFailures]
+      Enabled: true
+
+  ProducerAccessPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Allows conversion runtimes to publish immutable AI recovery requests.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+            Resource: !Sub ${RecoveryBucket.Arn}/ai-recovery/requests/v1/*
+          - Effect: Allow
+            Action: sqs:SendMessage
+            Resource: !GetAtt RecoveryQueue.Arn
+
+Outputs:
+  RecoveryBucketName:
+    Value: !Ref RecoveryBucket
+  RecoveryQueueUrl:
+    Value: !Ref RecoveryQueue
+  RecoveryQueueArn:
+    Value: !GetAtt RecoveryQueue.Arn
+  RecoveryDeadLetterQueueUrl:
+    Value: !Ref RecoveryDeadLetterQueue
+  RecoveryFunctionName:
+    Value: !Ref RecoveryFunction
+  ProducerAccessPolicyArn:
+    Value: !Ref ProducerAccessPolicy

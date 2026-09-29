@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from enum import Enum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictStr, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictStr, StringConstraints, field_validator, model_validator
 
 MAX_AI_RECOVERY_PDF_BYTES = 25 * 1024 * 1024
 
@@ -166,6 +167,43 @@ class NovaStatementV2(StrictContractModel):
         return self
 
 
+class NovaDiagnosticEvidence(StrictContractModel):
+    page: int = Field(ge=1, le=15)
+    visual_line_start: int = Field(ge=1)
+    visual_line_end: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def validate_line_range(self) -> NovaDiagnosticEvidence:
+        if self.visual_line_end < self.visual_line_start:
+            raise ValueError("visual_line_end must be greater than or equal to visual_line_start.")
+        return self
+
+
+class NovaDiagnosticFinding(StrictContractModel):
+    code: ShortIdentifier
+    confidence: Decimal = Field(ge=Decimal("0"), le=Decimal("1"))
+    explanation: Annotated[StrictStr, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    likely_parser_cause: Annotated[StrictStr, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    suggested_fix: Annotated[StrictStr, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    deterministic_indexes: list[int] = Field(default_factory=list)
+    nova_visual_orders: list[int] = Field(default_factory=list)
+    evidence: list[NovaDiagnosticEvidence] = Field(min_length=1)
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def reject_binary_confidence(cls, value: object) -> object:
+        if isinstance(value, bool) or isinstance(value, (int, float)):
+            raise ValueError("confidence must be a decimal string.")
+        return value
+
+
+class NovaDiagnosticV1(StrictContractModel):
+    schema_version: Literal["nova_diagnostic_v1"]
+    statement: NovaStatementV2
+    conclusion: Literal["parser_defect", "deterministic_warning_false_positive", "inconclusive"]
+    findings: list[NovaDiagnosticFinding]
+
+
 class AIRecoveryDocumentReference(StrictContractModel):
     bucket: ShortIdentifier
     key: ObjectKey
@@ -178,6 +216,8 @@ class AIRecoveryDocumentReference(StrictContractModel):
 class DeterministicArtifactReference(StrictContractModel):
     key: ObjectKey
     source_evidence_key: ObjectKey
+    sha256: Sha256Hex | None = None
+    source_evidence_sha256: Sha256Hex | None = None
     parser_release: ShortIdentifier
     layout_profile: ShortIdentifier
     layout_family: ShortIdentifier
@@ -189,7 +229,7 @@ class DeterministicArtifactReference(StrictContractModel):
 class AIRecoveryVersionSet(StrictContractModel):
     model_id: ShortIdentifier
     prompt_version: ShortIdentifier
-    output_schema_version: Literal["nova_statement_v2"]
+    output_schema_version: Literal["nova_statement_v2", "nova_diagnostic_v1"]
     comparator_version: ShortIdentifier
 
 

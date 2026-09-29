@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi import Depends
 
+from app.adapters.ai_recovery.runtime import build_ai_recovery_shadow_dispatcher
 from app.adapters.conversion.canonical_layout_store import build_s3_canonical_layout_capture_service
 from app.adapters.conversion.direct_upload import S3DirectUploadService
 from app.adapters.conversion.memory_batches import InMemoryConversionBatchRepository
@@ -103,6 +104,8 @@ _conversion_batch_repository: ConversionBatchRepository | None = None
 _conversion_batch_service: ConversionBatchService | None = None
 _async_conversion_report_service: ReportService | None = None
 _canonical_layout_capture_service: CanonicalLayoutCaptureService | None = None
+_ai_recovery_dispatcher = None
+_ai_recovery_dispatcher_initialized = False
 
 
 class _DisabledConversionQueuePublisher:
@@ -379,6 +382,14 @@ def get_canonical_layout_capture_service() -> CanonicalLayoutCaptureService:
     return _canonical_layout_capture_service
 
 
+def get_ai_recovery_dispatcher():
+    global _ai_recovery_dispatcher, _ai_recovery_dispatcher_initialized
+    if not _ai_recovery_dispatcher_initialized:
+        _ai_recovery_dispatcher = build_ai_recovery_shadow_dispatcher()
+        _ai_recovery_dispatcher_initialized = True
+    return _ai_recovery_dispatcher
+
+
 def get_document_conversion_pipeline(
     processing_pipeline: ConversionPipeline = Depends(get_conversion_processing_pipeline),
     legacy_conversion_runner=Depends(get_legacy_conversion_runner),
@@ -390,6 +401,7 @@ def get_document_conversion_pipeline(
     canonical_layout_capture_service: CanonicalLayoutCaptureService = Depends(
         get_canonical_layout_capture_service
     ),
+    ai_recovery_dispatcher=Depends(get_ai_recovery_dispatcher),
 ) -> DocumentConversionPipeline:
     return DocumentConversionPipeline(
         report_service=report_service,
@@ -399,6 +411,7 @@ def get_document_conversion_pipeline(
         processing_pipeline=processing_pipeline,
         analysis_repository=analysis_repository,
         canonical_layout_capture_service=canonical_layout_capture_service,
+        ai_recovery_dispatcher=ai_recovery_dispatcher,
         legacy_conversion_runner=legacy_conversion_runner,
     )
 

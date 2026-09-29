@@ -82,6 +82,7 @@ class S3AIRecoveryRequestPublisher:
             "sha256": sha256,
             "artifact-type": artifact_type,
             "idempotency-key": idempotency_key,
+            "classification": "restricted",
         }
         try:
             self._client().put_object(

@@ -293,6 +293,18 @@ class RecordingCanonicalLayoutCapture:
         return SimpleNamespace(status="stored", reason=None)
 
 
+class RecordingAIRecoveryDispatcher:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.calls: list[dict[str, object]] = []
+
+    def dispatch(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.fail:
+            raise RuntimeError("shadow dispatch must not fail conversion")
+        return SimpleNamespace(status="queued", reason="eligible", idempotency_key="a" * 64)
+
+
 class FailingDocumentExtractor:
     def extract(self, **_kwargs) -> ExtractedDocument:
         raise InvalidFileContentError(
@@ -421,6 +433,7 @@ def test_document_conversion_pipeline_uses_processing_pipeline_when_available() 
 def test_non_clean_pdf_is_forwarded_to_best_effort_canonical_capture(caplog) -> None:
     staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
     capture = RecordingCanonicalLayoutCapture()
+    ai_dispatch = RecordingAIRecoveryDispatcher()
     caplog.set_level(logging.INFO, logger="app.application.conversion.document_conversion_pipeline")
     pipeline = DocumentConversionPipeline(
         report_service=FakeReportService(),
@@ -430,6 +443,7 @@ def test_non_clean_pdf_is_forwarded_to_best_effort_canonical_capture(caplog) -> 
         document_extractor=FakeDocumentExtractor(),
         statement_parser=FakeStatementParser(),
         canonical_layout_capture_service=capture,
+        ai_recovery_dispatcher=ai_dispatch,
     )
 
     response = pipeline.run(
@@ -464,6 +478,44 @@ def test_non_clean_pdf_is_forwarded_to_best_effort_canonical_capture(caplog) -> 
     assert pipeline.access_control_service.recorded_user_conversions[-1]["canonical_capture_status"] == "stored"
     assert pipeline.access_control_service.recorded_user_conversions[-1]["canonical_capture_reason"] is None
     assert "canonical_layout_capture_result status=stored reason= storage=s3 sse=AES256" in caplog.text
+    assert len(ai_dispatch.calls) == 1
+    assert ai_dispatch.calls[0]["document"].raw_bytes == staged_path.read_bytes()
+    assert ai_dispatch.calls[0]["page_texts"] == ("2026-06-18 PIX RECEBIDO 150,00",)
+    assert "ai_recovery_dispatch_result status=queued reason=eligible" in caplog.text
+
+
+def test_ai_recovery_dispatch_failure_does_not_fail_conversion(caplog) -> None:
+    staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
+    caplog.set_level(logging.WARNING, logger="app.application.conversion.document_conversion_pipeline")
+    pipeline = DocumentConversionPipeline(
+        report_service=FakeReportService(),
+        access_control_service=FakeAccessControlService(),
+        processing_pipeline=FakeProcessingPipeline(),
+        analysis_repository=FakeAnalysisRepository(),
+        document_extractor=FakeDocumentExtractor(),
+        statement_parser=FakeStatementParser(),
+        ai_recovery_dispatcher=RecordingAIRecoveryDispatcher(fail=True),
+    )
+
+    response = pipeline.run(
+        document=UploadedDocument.from_staged_upload(
+            filename="statement.pdf",
+            staged_upload=UploadedDocumentStage(
+                path=staged_path,
+                size_bytes=staged_path.stat().st_size,
+                sha256_hex="abc123",
+            ),
+        ),
+        anonymous_fingerprint=None,
+        user_token="user-token",
+        authorization=None,
+        access_cookie_token=None,
+        scanned_likely=False,
+        estimated_pages_count=1,
+    )
+
+    assert response.status == ConversionPipelineStatus.COMPLETED
+    assert "ai_recovery_dispatch_failed error_type=RuntimeError" in caplog.text
 
 
 def test_ocr_page_texts_are_forwarded_to_canonical_capture_with_ocr_source() -> None:

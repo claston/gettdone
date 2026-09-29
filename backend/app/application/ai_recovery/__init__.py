@@ -32,7 +32,7 @@ from app.application.ai_recovery.request_publishing import (
     build_ai_recovery_idempotency_key,
     build_ai_recovery_request_artifacts,
 )
-from app.application.ai_recovery.schemas import AIRecoveryRequestManifest, NovaStatementV2
+from app.application.ai_recovery.schemas import AIRecoveryRequestManifest, NovaDiagnosticV1, NovaStatementV2
 
 __all__ = [
     "AIRecoveryConfig",
@@ -54,6 +54,7 @@ __all__ = [
     "FinancialValidationResult",
     "FinancialValidator",
     "NovaStatementV2",
+    "NovaDiagnosticV1",
     "RecoveryComparisonResult",
     "RecoveryDiagnosis",
     "RecoveryDiagnosisCode",
