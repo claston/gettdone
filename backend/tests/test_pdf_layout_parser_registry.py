@@ -53,6 +53,7 @@ def test_layout_parser_registry_rejects_duplicate_layout_registration() -> None:
 def test_default_layout_parser_registry_contains_current_specific_families() -> None:
     assert DEFAULT_PDF_LAYOUT_PARSER_REGISTRY.registered_layout_names == frozenset(
         {
+            "banco_do_brasil_cdb_rdb_bb_reaplic_v1",
             "santander_cartao_credito_detalhamento_fatura_paisagem_v1",
             "santander_statement_ptbr",
             "bradesco_extrato_unificado_pj_poupanca_facil_a4_v1",

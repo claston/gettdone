@@ -1,0 +1,70 @@
+layout_profile:
+  schema_version: 2
+  profile_name: banco_do_brasil_cdb_rdb_bb_reaplic_v1
+  bank: Banco do Brasil
+  layout_family: banco_do_brasil_cdb_rdb_bb_reaplic
+  statement_type: investimento_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Extratos - CDB / RDB e BB Reaplic"
+      - "Data"
+      - "Dt.proc"
+      - "Histórico"
+      - "Nr.depósito"
+      - "Valor"
+    optional_keywords:
+      - "BB CDB DI"
+      - "Aplicação"
+      - "Resgate"
+      - "Rendimento mensal"
+      - "valor capital"
+      - "valor líquido"
+      - "RENDIMENTO BRUTO NO PERIODO POR DEPOSITO"
+    negative_keywords:
+      - "EXTRATO CONTA CORRENTE"
+      - "CLIENTE - CONTA ATUAL"
+      - "FATURA DE CARTAO"
+    min_score_hint: 0.78
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Dt.proc"
+      - "Histórico"
+      - "Nr.depósito"
+      - "Valor"
+    expected_column_order:
+      - date
+      - processing_date
+      - description
+      - external_reference_id
+      - amount
+  parsing:
+    date_format: "dd/MM"
+    date_year_source: "period"
+    amount_locale: "pt-BR"
+    negative_patterns:
+      - "APLICACAO"
+    positive_patterns:
+      - "RESGATE"
+      - "RENDIMENTO MENSAL"
+    ignore_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO FINAL"
+      - "SALDO NOS ULTIMOS 6 MESES"
+      - "RESUMO DOS DEPOSITOS EM SER"
+      - "RENDIMENTO BRUTO NO PERIODO POR DEPOSITO"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - external_reference_id
+      - capital_amount
+      - interest_amount
+      - income_tax_amount
+      - iof_amount
+      - net_amount
