@@ -120,6 +120,8 @@ def test_request_builder_uses_utc_partition_and_content_addressed_references() -
     assert manifest.document.size_bytes == len(artifacts.pdf_bytes)
     assert manifest.deterministic_artifact.key == f"{base_key}/deterministic.json"
     assert manifest.deterministic_artifact.source_evidence_key == f"{base_key}/source-evidence.json"
+    assert manifest.deterministic_artifact.sha256 == hashlib.sha256(artifacts.deterministic_artifact).hexdigest()
+    assert manifest.deterministic_artifact.source_evidence_sha256 == hashlib.sha256(artifacts.source_evidence).hexdigest()
 
 
 def test_publisher_writes_ready_manifest_last_with_conditional_aes256_uploads() -> None:
@@ -145,6 +147,7 @@ def test_publisher_writes_ready_manifest_last_with_conditional_aes256_uploads() 
     assert all(call["ServerSideEncryption"] == "AES256" for call in client.put_calls)
     assert all("SSEKMSKeyId" not in call for call in client.put_calls)
     assert all(call["Metadata"]["sha256"] == hashlib.sha256(call["Body"]).hexdigest() for call in client.put_calls)
+    assert all(call["Metadata"]["classification"] == "restricted" for call in client.put_calls)
     assert [call["ContentType"] for call in client.put_calls] == [
         "application/pdf",
         "application/json",

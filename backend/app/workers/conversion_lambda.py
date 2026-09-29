@@ -8,6 +8,7 @@ from pathlib import Path
 from time import monotonic, time
 from typing import Protocol
 
+from app.adapters.ai_recovery.runtime import build_ai_recovery_shadow_dispatcher
 from app.adapters.conversion.access import PostgresConversionAccessService
 from app.adapters.conversion.canonical_layout_store import build_s3_canonical_layout_capture_service
 from app.adapters.conversion.document_store import S3ConversionDocumentStore
@@ -297,6 +298,7 @@ def build_lambda_processor() -> ConversionLambdaProcessor:
             v2_enabled=_read_bool_env("CANONICAL_LAYOUT_V2_ENABLED", default=False),
             v3_enabled=_read_bool_env("CANONICAL_LAYOUT_V3_ENABLED", default=False),
         ),
+        ai_recovery_dispatcher=build_ai_recovery_shadow_dispatcher(),
     )
     return ConversionLambdaProcessor(
         repository=repository,

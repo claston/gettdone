@@ -141,6 +141,7 @@ class DocumentConversionPipeline:
         document_extractor: DocumentExtractor | None = None,
         statement_parser: StatementParser | None = None,
         canonical_layout_capture_service: CanonicalLayoutCaptureService | None = None,
+        ai_recovery_dispatcher=None,
         legacy_conversion_runner=None,
     ) -> None:
         self.report_service = report_service
@@ -158,6 +159,7 @@ class DocumentConversionPipeline:
         self.canonical_layout_capture_service = canonical_layout_capture_service or CanonicalLayoutCaptureService(
             enabled=False
         )
+        self.ai_recovery_dispatcher = ai_recovery_dispatcher
         self.legacy_conversion_runner = legacy_conversion_runner
 
     def run(
@@ -508,6 +510,12 @@ class DocumentConversionPipeline:
             page_text_source="ocr" if effective_ocr_used else "parser",
             source_layout_lines=source_layout_lines,
         )
+        self._dispatch_ai_recovery(
+            document=request.document,
+            analysis=analysis,
+            page_texts=page_texts,
+            source_layout_lines=source_layout_lines,
+        )
         conversion_model_label = resolve_conversion_model_label(
             layout_inference_name=getattr(analysis, "layout_inference_name", None),
             bank_name=getattr(analysis, "bank_name", None),
@@ -794,6 +802,33 @@ class DocumentConversionPipeline:
             reason,
         )
         return result
+
+    def _dispatch_ai_recovery(
+        self,
+        *,
+        document: UploadedDocument,
+        analysis,
+        page_texts: tuple[str, ...] | None,
+        source_layout_lines,
+    ) -> None:
+        if self.ai_recovery_dispatcher is None:
+            return
+        try:
+            result = self.ai_recovery_dispatcher.dispatch(
+                document=document,
+                analysis=analysis,
+                page_texts=page_texts,
+                source_layout_lines=source_layout_lines,
+            )
+        except Exception as exc:  # shadow analysis must never change the conversion result
+            logger.warning("ai_recovery_dispatch_failed error_type=%s", exc.__class__.__name__)
+            return
+        logger.info(
+            "ai_recovery_dispatch_result status=%s reason=%s idempotency_key=%s",
+            result.status,
+            result.reason,
+            result.idempotency_key or "",
+        )
 
 
 def _resolve_processed_pages(analysis) -> int | None:

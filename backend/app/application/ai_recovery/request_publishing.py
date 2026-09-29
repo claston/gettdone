@@ -113,6 +113,8 @@ def build_ai_recovery_request_artifacts(
     normalized_analysis_id = str(analysis_id or "").strip()
     normalized_parser_release = str(parser_release or "").strip()
     immutable_pdf = bytes(pdf_bytes)
+    deterministic_bytes = _canonical_json_bytes(deterministic_artifact)
+    source_evidence_bytes = _canonical_json_bytes(source_evidence)
     document_sha256 = hashlib.sha256(immutable_pdf).hexdigest()
     idempotency_key = build_ai_recovery_idempotency_key(
         analysis_id=normalized_analysis_id,
@@ -143,6 +145,8 @@ def build_ai_recovery_request_artifacts(
         deterministic_artifact=DeterministicArtifactReference(
             key=keys.deterministic_artifact,
             source_evidence_key=keys.source_evidence,
+            sha256=hashlib.sha256(deterministic_bytes).hexdigest(),
+            source_evidence_sha256=hashlib.sha256(source_evidence_bytes).hexdigest(),
             parser_release=normalized_parser_release,
             layout_profile=layout_profile,
             layout_family=layout_family,
@@ -157,8 +161,8 @@ def build_ai_recovery_request_artifacts(
     return AIRecoveryRequestArtifacts(
         manifest=manifest,
         pdf_bytes=immutable_pdf,
-        deterministic_artifact=_canonical_json_bytes(deterministic_artifact),
-        source_evidence=_canonical_json_bytes(source_evidence),
+        deterministic_artifact=deterministic_bytes,
+        source_evidence=source_evidence_bytes,
     )
 
 
@@ -176,6 +180,18 @@ def validate_ai_recovery_request_artifacts(
     document_sha256 = hashlib.sha256(artifacts.pdf_bytes).hexdigest()
     if document_sha256 != manifest.document.sha256:
         raise AIRecoveryRequestIntegrityError("AI recovery PDF digest does not match its manifest.")
+    deterministic_sha256 = hashlib.sha256(artifacts.deterministic_artifact).hexdigest()
+    if (
+        manifest.deterministic_artifact.sha256 is not None
+        and deterministic_sha256 != manifest.deterministic_artifact.sha256
+    ):
+        raise AIRecoveryRequestIntegrityError("AI recovery deterministic artifact digest does not match its manifest.")
+    source_evidence_sha256 = hashlib.sha256(artifacts.source_evidence).hexdigest()
+    if (
+        manifest.deterministic_artifact.source_evidence_sha256 is not None
+        and source_evidence_sha256 != manifest.deterministic_artifact.source_evidence_sha256
+    ):
+        raise AIRecoveryRequestIntegrityError("AI recovery source evidence digest does not match its manifest.")
 
     expected_idempotency_key = build_ai_recovery_idempotency_key(
         analysis_id=manifest.analysis_id,
