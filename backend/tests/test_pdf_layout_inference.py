@@ -281,6 +281,31 @@ def test_infer_pdf_layout_does_not_identify_cresol_from_position_footer_without_
     assert result.layout_name != "cresol_ofx_simples_posicao_consolidada_v1"
 
 
+def test_infer_pdf_layout_marks_public_cresol_modern_statement_as_high_confidence() -> None:
+    text = """
+    CRESOL INTERNET BANKING
+    EXTRATO DE CONTA CORRENTE
+    CONTA CORRENTE R$ 3.180,89
+    LIMITE DE CREDITO R$ 0,00
+    DISPONIVEL R$ 3.180,89
+    CONSULTA POSICAO CONSOLIDADA EM 16/09/2026
+    PERIODO DE 01/06/2026 A 30/06/2026
+    LANCAMENTOS
+    30/06/2026 SALDO DO DIA: + R$ 3.180,89
+    PIX CREDITO DE: CONTRAPARTE + R$ 2.686,72
+    TARIFA SERVICOS COBRANCA - R$ 2,40
+    SALDO ANTERIOR: + R$ 580,92
+    TOTALIZADORES
+    SALDO DA CONTA CORRENTE + R$ 3.180,89
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "cresol_extrato_conta_corrente_moderno_pix_v1"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_santander_profile_when_tokens_match() -> None:
     text = """
     BANCO SANTANDER BRASIL S.A.

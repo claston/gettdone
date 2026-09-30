@@ -26,7 +26,8 @@ layout_profile:
       - "Saldo em Conta"
     min_score_hint: 0.75
   table_detection:
-    header_keywords: []
+    header_keywords:
+      - "Lançamentos"
     expected_column_order:
       - date_group
       - description
@@ -51,9 +52,13 @@ layout_profile:
       - "+ R$ {amount}"
     ignore_rows:
       - "Saldo do dia"
+      - "Saldo anterior"
+      - "Saldo da Conta"
       - "Conta Corrente"
       - "Limite de crédito"
       - "Disponível"
+      - "Lançamentos Futuros"
+      - "Totalizadores"
     opening_balance_rows:
       - "Saldo do dia"
       - "Conta Corrente"

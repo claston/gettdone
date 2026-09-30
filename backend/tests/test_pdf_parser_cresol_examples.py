@@ -90,6 +90,11 @@ CRESOL_EXAMPLE_CASES: dict[str, dict[str, Any]] = {
         PIX DÉBITO PARA: - R$ 13,90
         PIX DÉBITO PARA: - R$ 97,00
         PIX CRÉDITO DE: + R$ 15.000,00
+        Saldo Anterior: + R$ 150.401,51
+        Lançamentos Futuros
+        Nenhum lançamento futuro encontrado.
+        Totalizadores
+        Saldo da Conta Corrente + R$ 164.206,51
         """,
     },
     "ofx_simples_posicao_consolidada": {
