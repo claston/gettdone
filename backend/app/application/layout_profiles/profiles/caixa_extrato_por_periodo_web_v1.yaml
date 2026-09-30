@@ -184,8 +184,8 @@ layout_profile:
       - "HISTÓRICO"
       - "VALOR"
     optional_keywords:
-      - "DATA MOV."
-      - "NR. DOC."
+      - "DATA"
+      - "DOC"
       - "SALDO ANTERIOR"
       - "Saldo"
       - "SALDO DIA"
@@ -201,8 +201,8 @@ layout_profile:
     min_score_hint: 0.8
   table_detection:
     header_keywords:
-      - "DATA MOV."
-      - "NR. DOC."
+      - "DATA"
+      - "DOC"
       - "HISTÓRICO"
       - "VALOR"
     expected_column_order:

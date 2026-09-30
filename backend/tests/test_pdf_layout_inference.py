@@ -1407,3 +1407,25 @@ def test_infer_pdf_layout_marks_caixa_web_statement_without_optional_transaction
     assert result.layout_name == "caixa_extrato_por_periodo_web_v1"
     assert result.confidence >= 0.95
     assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_accepts_caixa_web_spaced_native_header_with_clean_confidence() -> None:
+    text = """
+    CAIXA
+    EXTRATO POR PERIODO
+    EXTRATO
+    DATA M OV. N R. DOC. HISTORICO VALOR
+    SALDO ANTERIOR 0,00
+    SALDO 4.757,65 C
+    02/03/2026 123456 PAG BOLETO 1.118,00 D
+    SALDO 3.639,65 C
+    02/03/2026 654321 CRE PIX CH 500,00 C
+    SALDO 4.139,65 C
+    02/03/2026 000000 SALDO DIA 4.139,65 C
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "caixa_extrato_por_periodo_web_v1"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
