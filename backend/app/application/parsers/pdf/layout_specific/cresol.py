@@ -50,6 +50,7 @@ _BALANCE_TOKENS = (
     "SALDO FINAL",
     "SALDO DO DIA",
     "SALDO EM CONTA",
+    "SALDO DA CONTA",
 )
 
 
