@@ -130,6 +130,33 @@ def test_generator_preserves_catalog_bank_as_explicit_manifest_identity() -> Non
     }
 
 
+def test_generator_resolves_btg_layout_when_conversion_bank_is_unknown() -> None:
+    source = _text_pdf(
+        "CONTA CORRENTE - PJ",
+        "BANCO 208",
+        "DATA LANCAMENTO DESCRICAO DO LANCAMENTO ENTRADAS SAIDAS SALDO",
+        "10/09/2026 PIX RECEBIDO 10,00 110,00",
+    )
+    generator = CanonicalLayoutGenerator(capture_id_provider=lambda: "cap_0123456789abcdef01234567")
+
+    artifact = generator.generate(
+        document=ingest_uploaded_document("statement.pdf", source),
+        **_capture_kwargs(
+            layout_name="btg_pactual_conta_corrente_pj_v1",
+            layout_confidence=0.98,
+            selected_parser="layout_specific_btg_pactual",
+            bank_name="unknown",
+        ),
+    )
+
+    assert artifact.manifest["bank"] == {
+        "code": "208",
+        "name": "BTG Pactual",
+        "catalog_match": True,
+        "detection_source": "layout",
+    }
+
+
 def test_generator_uses_first_page_header_ocr_when_native_text_does_not_identify_bank() -> None:
     source = _text_pdf(
         "CONTA CORRENTE",

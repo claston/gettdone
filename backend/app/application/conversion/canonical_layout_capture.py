@@ -597,6 +597,8 @@ def _safe_institution_name(value: object) -> str | None:
     normalized = _ascii_upper(str(value or ""))
     normalized = re.sub(r"[^A-Z0-9 .,&()'/-]+", " ", normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip(" .,:;|-/")
+    if normalized in {"UNKNOWN", "DESCONHECIDO", "NAO IDENTIFICADO"}:
+        return None
     if not normalized or len(normalized) > 120 or re.search(r"\d{4,}", normalized):
         return None
     return normalized

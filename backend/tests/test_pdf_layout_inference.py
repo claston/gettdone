@@ -1454,3 +1454,57 @@ def test_infer_pdf_layout_accepts_caixa_web_spaced_native_header_with_clean_conf
     assert result.layout_name == "caixa_extrato_por_periodo_web_v1"
     assert result.confidence >= 0.95
     assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_prefers_btg_pactual_pj_statement_over_pagbank() -> None:
+    text = """
+    BTG Pactual
+    CONTA CORRENTE - PJ PDF GERADO EM: 04/09/2026 - 09:26:11
+    RAZÃO SOCIAL CNPJ BANCO AGÊNCIA CONTA
+    EMPRESA EXEMPLO 00.000.000/0001-00 208 50 012345678
+    PERÍODO DO EXTRATO: 01/07/2026 - 31/07/2026
+    SALDO DE ABERTURA EM 01/07/2026: R$ 0,91
+    SALDO DE FECHAMENTO EM 31/07/2026: R$ 146.404,22
+    SALDO BLOQUEADO EM 04/09/2026: R$ 0,00
+    TOTAL DE ENTRADAS R$ 685.022,61
+    TOTAL DE SAÍDAS R$ 538.619,30
+    DATA LANÇAMENTO DESCRIÇÃO DO LANÇAMENTO ENTRADAS / SAÍDAS (R$) SALDO (R$)
+    10/07/2026 APLICAÇÃO CONTA REMUNERADA 254.733,94 254.734,85
+    10/07/2026 DÉBITO NA CONTA CORRENTE -254.733,94 0,91
+    31/07/2026 VALOR DE RENDIMENTO REMUNERA+ 2,03 146.404,22
+    FALE COM NOSSA CENTRAL DE ATENDIMENTO
+    3003-6299 0800-777-6299 SAC: 0800-772-2827
+    OUVIDORIA: 0800-722-0048
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "btg_pactual_conta_corrente_pj_v1"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_keeps_high_btg_confidence_without_extractable_branding() -> None:
+    text = """
+    CONTA CORRENTE - PJ PDF GERADO EM: 04/09/2026 - 09:26:11
+    RAZÃO SOCIAL CNPJ BANCO AGÊNCIA CONTA
+    EMPRESA EXEMPLO 00.000.000/0001-00 208 50 012345678
+    PERÍODO DO EXTRATO: 01/07/2026 - 31/07/2026
+    SALDO DE ABERTURA EM 01/07/2026: R$ 0,91
+    SALDO DE FECHAMENTO EM 31/07/2026: R$ 146.404,22
+    SALDO BLOQUEADO EM 04/09/2026: R$ 0,00
+    TOTAL DE ENTRADAS R$ 685.022,61
+    TOTAL DE SAÍDAS R$ 538.619,30
+    DATA LANÇAMENTO DESCRIÇÃO DO LANÇAMENTO ENTRADAS / SAÍDAS (R$) SALDO (R$)
+    10/07/2026 APLICAÇÃO CONTA REMUNERADA 254.733,94 254.734,85
+    10/07/2026 DÉBITO NA CONTA CORRENTE -254.733,94 0,91
+    13/07/2026 RESGATE CONTA REMUNERADA -1.500,00 254.734,85
+    13/07/2026 CRÉDITO NA CONTA CORRENTE 1.500,00 256.234,85
+    31/07/2026 VALOR DE RENDIMENTO REMUNERA+ 2,03 146.404,22
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "btg_pactual_conta_corrente_pj_v1"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
