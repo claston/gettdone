@@ -1,0 +1,81 @@
+layout_profile:
+  schema_version: 2
+  profile_name: btg_pactual_conta_corrente_pj_v1
+  bank: BTG Pactual
+  layout_family: btg_pactual_conta_corrente_pj
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Conta Corrente - PJ"
+      - "PDF gerado em"
+      - "Período do extrato"
+      - "Saldo de abertura em"
+      - "Saldo de fechamento em"
+      - "Saldo bloqueado em"
+      - "Total de entradas"
+      - "Total de saídas"
+      - "Data lançamento"
+      - "Descrição do lançamento"
+      - "Entradas / Saídas (R$)"
+      - "Saldo (R$)"
+    optional_keywords:
+      - "Aplicação Conta Remunerada"
+      - "Resgate Conta Remunerada"
+      - "Débito na Conta Corrente"
+      - "Crédito na Conta Corrente"
+      - "Valor de Rendimento Remunera+"
+    negative_keywords:
+      - "PagBank"
+      - "PagSeguro Internet S/A"
+      - "Banco Santander"
+      - "Banco do Brasil"
+      - "Bradesco"
+      - "CAIXA ECONÔMICA FEDERAL"
+    min_score_hint: 0.78
+  table_detection:
+    header_keywords:
+      - "Data lançamento"
+      - "Descrição do lançamento"
+      - "Entradas / Saídas (R$)"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data lançamento"
+      description:
+        - "Descrição do lançamento"
+      amount:
+        - "Entradas / Saídas (R$)"
+      balance:
+        - "Saldo (R$)"
+  parsing:
+    date_formats:
+      - "dd/MM/yyyy"
+    amount_locale: pt-BR
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+    positive_patterns:
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "Saldo de abertura"
+      - "Saldo de fechamento"
+      - "Saldo bloqueado"
+      - "Total de entradas"
+      - "Total de saídas"
+    opening_balance_rows:
+      - "Saldo de abertura"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+      - balance
+    optional_transaction_fields:
+      - counterparty

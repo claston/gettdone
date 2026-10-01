@@ -6,6 +6,7 @@ from app.application.parsers.pdf.layout_specific.banco_do_brasil_cdb import Banc
 from app.application.parsers.pdf.layout_specific.banco_do_nordeste import BancoDoNordesteLayoutParser
 from app.application.parsers.pdf.layout_specific.banrisul import BanrisulLayoutParser
 from app.application.parsers.pdf.layout_specific.bradesco_unificado import BradescoUnificadoLayoutParser
+from app.application.parsers.pdf.layout_specific.btg_pactual import BtgPactualLayoutParser
 from app.application.parsers.pdf.layout_specific.contract import (
     LayoutSpecificParseContext,
     LayoutSpecificParseResult,
@@ -69,6 +70,7 @@ DEFAULT_PDF_LAYOUT_PARSER_REGISTRY = PdfLayoutParserRegistry(
         SicoobLayoutParser(),
         UnicredLayoutParser(),
         TopazioLayoutParser(),
+        BtgPactualLayoutParser(),
         PagBankLayoutParser(),
         ModernAccountLayoutParser(),
     )
