@@ -147,6 +147,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     ),
     "TempAnalysisStorage": ("app.application.storage_service", "TempAnalysisStorage"),
     "UnsupportedFileTypeError": ("app.application.errors", "UnsupportedFileTypeError"),
+    "UnsupportedDocumentContentError": ("app.application.errors", "UnsupportedDocumentContentError"),
     "UploadedDocument": ("app.application.conversion.uploaded_document", "UploadedDocument"),
     "UploadedDocumentStage": ("app.application.conversion.uploaded_document", "UploadedDocumentStage"),
     "UserAlreadyExistsError": ("app.application.errors", "UserAlreadyExistsError"),

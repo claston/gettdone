@@ -45,6 +45,7 @@ from app.application.errors import (
     InvalidUserTokenError,
     MaxPagesPerFileExceededError,
     QuotaExceededError,
+    UnsupportedDocumentContentError,
     UnsupportedFileTypeError,
 )
 from app.application.report_service import ReportService
@@ -864,6 +865,8 @@ def _resolve_failed_conversion_code(exc: Exception) -> str:
         return "quota_exceeded"
     if isinstance(exc, UnsupportedFileTypeError):
         return "unsupported_type"
+    if isinstance(exc, UnsupportedDocumentContentError):
+        return "unsupported_document_type"
     if isinstance(exc, InvalidFileContentError):
         detail = str(exc).lower()
         if "password" in detail or "senha" in detail:
@@ -1083,6 +1086,8 @@ def _resolve_error_observability(exc: Exception) -> tuple[str | None, str | None
         if getattr(exc, "ocr_context", None):
             return "ocr", "ocr_pages_limit_exceeded", exception_class
         return "upload_validation", "pdf_page_limit_exceeded", exception_class
+    if isinstance(exc, UnsupportedDocumentContentError):
+        return "parse", "unsupported_document_type", exception_class
     detail = str(exc).lower()
     if "password" in detail or "senha" in detail:
         return "native_pdf_read", "password_protected_pdf", exception_class
@@ -1118,7 +1123,11 @@ def _build_failure_diagnostics(exc: Exception) -> dict[str, str | int | bool | l
         if pdf_structure_read_ok is not None
         else "unable to read pdf bytes" not in detail_lower
     )
-    text_extracted = "text was extracted" in detail_lower or "transa" in detail_lower
+    text_extracted = (
+        isinstance(exc, UnsupportedDocumentContentError)
+        or "text was extracted" in detail_lower
+        or "transa" in detail_lower
+    )
     if native_text_extraction_ok is False:
         missing_signals.append("native_text_extraction")
     if "no recognizable transaction row pattern" in detail_lower:
@@ -1144,6 +1153,8 @@ def _build_failure_diagnostics(exc: Exception) -> dict[str, str | int | bool | l
         "missing_signals": sorted(set(missing_signals)),
         "error_detail_excerpt": detail[:240],
     }
+    if isinstance(exc, UnsupportedDocumentContentError):
+        diagnostics["unsupported_document_type"] = exc.document_type
     if pdf_structure_read_ok is not None:
         diagnostics["pdf_structure_read_ok"] = bool(pdf_structure_read_ok)
     if native_text_extraction_ok is not None:
