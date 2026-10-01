@@ -3,7 +3,11 @@ import re
 from datetime import datetime
 from typing import Callable
 
-from app.application.errors import InvalidFileContentError, MaxPagesPerFileExceededError
+from app.application.errors import (
+    InvalidFileContentError,
+    MaxPagesPerFileExceededError,
+    UnsupportedDocumentContentError,
+)
 from app.application.layout_profiles.registry import DeclarativeLayoutProfile, get_layout_profile
 from app.application.models import CanonicalTransaction as CanonicalTransaction
 from app.application.models import NormalizedTransaction
@@ -64,6 +68,11 @@ from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE, extract_pdf_page_t
 from app.application.textract_extraction_mapper import map_textract_blocks_to_extraction
 from app.application.textract_gateway import TextractGateway
 from app.application.textract_transaction_adapter import adapt_textract_extraction_to_transactions
+from app.application.unsupported_document_detection import (
+    BILLING_REPORT_DOCUMENT_TYPE,
+    BILLING_REPORT_USER_MESSAGE,
+    detect_unsupported_document_type,
+)
 
 _SANTANDER_IB_EMPRESARIAL_365_MOBILE_GROUPED_LAYOUT = "santander_empresarial_extrato_365_dias_mobile_grouped_v1"
 
@@ -212,6 +221,14 @@ def parse_pdf_transactions(
             page_texts, context=LayoutSpecificParseContext(reference_month_year=reference_month_year)
         )
     except InvalidFileContentError as native_parse_error:
+        if isinstance(native_parse_error, UnsupportedDocumentContentError):
+            raise _attach_parse_observability(
+                native_parse_error,
+                textract_attempted=textract_attempted,
+                native_text_detected=native_text_detected,
+                ocr_retry_skipped=1,
+                ocr_retry_skip_reason="unsupported_document_type",
+            )
         if not using_native_text:
             raise _attach_parse_observability(
                 native_parse_error,
@@ -533,6 +550,12 @@ def _parse_pdf_transactions_from_page_texts(
     context: LayoutSpecificParseContext | None = None,
 ) -> PdfParseResult:
     joined_text = "\n".join(page_texts)
+    unsupported_document_type = detect_unsupported_document_type(joined_text)
+    if unsupported_document_type == BILLING_REPORT_DOCUMENT_TYPE:
+        raise UnsupportedDocumentContentError(
+            document_type=unsupported_document_type,
+            message=BILLING_REPORT_USER_MESSAGE,
+        )
     layout = infer_pdf_layout(joined_text)
     layout_profile = get_layout_profile(layout.layout_name)
     lines = _flatten_statement_lines(page_texts, preserve_layout_spacing=preserve_layout_spacing)

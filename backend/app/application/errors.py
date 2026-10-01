@@ -10,6 +10,14 @@ class InvalidFileContentError(Exception):
     """Raised when a supported file has invalid or unreadable content."""
 
 
+class UnsupportedDocumentContentError(InvalidFileContentError):
+    """Raised when readable content is not a supported financial document."""
+
+    def __init__(self, *, document_type: str, message: str) -> None:
+        self.document_type = str(document_type or "unknown").strip() or "unknown"
+        super().__init__(message)
+
+
 class MaxPagesPerFileExceededError(Exception):
     """Raised when a PDF exceeds the maximum allowed pages for current identity."""
 

@@ -11,6 +11,7 @@ from app.application import (
     InvalidUserTokenError,
     MaxPagesPerFileExceededError,
     QuotaExceededError,
+    UnsupportedDocumentContentError,
     UnsupportedFileTypeError,
 )
 from app.application.conversion.document_preflight_service import (
@@ -137,6 +138,15 @@ def _raise_http_convert_error(exc: Exception, *, identity, access_control_servic
         )
     if isinstance(exc, UnsupportedFileTypeError):
         raise HTTPException(status_code=400, detail="Unsupported file type. Use CSV, XLSX, OFX, or PDF.")
+    if isinstance(exc, UnsupportedDocumentContentError):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "unsupported_document_type",
+                "document_type": exc.document_type,
+                "message": str(exc),
+            },
+        )
     if isinstance(exc, InvalidFileContentError):
         detail = str(exc)
         if "password" in detail.lower() or "senha" in detail.lower():

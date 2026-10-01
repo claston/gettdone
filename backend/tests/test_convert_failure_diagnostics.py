@@ -3,7 +3,16 @@ from app.api.conversion.conversion_observability import (
     _resolve_error_observability,
     _resolve_failed_conversion_code,
 )
-from app.application import InvalidFileContentError
+from app.application import InvalidFileContentError, UnsupportedDocumentContentError
+from app.application.conversion.document_conversion_pipeline import (
+    _build_failure_diagnostics as _build_pipeline_failure_diagnostics,
+)
+from app.application.conversion.document_conversion_pipeline import (
+    _resolve_error_observability as _resolve_pipeline_error_observability,
+)
+from app.application.conversion.document_conversion_pipeline import (
+    _resolve_failed_conversion_code as _resolve_pipeline_failed_conversion_code,
+)
 
 
 def test_failure_diagnostics_marks_pdf_read_failure() -> None:
@@ -92,3 +101,24 @@ def test_failure_diagnostics_includes_attached_parse_observability() -> None:
     assert diagnostics["textract_used"] == 0
     assert diagnostics["textract_error_type"] == "InvalidFileContentError"
     assert diagnostics["native_text_detected"] == 0
+
+
+def test_unsupported_document_type_has_distinct_observability() -> None:
+    error = UnsupportedDocumentContentError(document_type="billing_report", message="unsupported billing report")
+
+    assert _resolve_failed_conversion_code(error) == "unsupported_document_type"
+    assert _resolve_pipeline_failed_conversion_code(error) == "unsupported_document_type"
+    assert _resolve_error_observability(error) == (
+        "parse",
+        "unsupported_document_type",
+        "UnsupportedDocumentContentError",
+    )
+    assert _resolve_pipeline_error_observability(error) == (
+        "parse",
+        "unsupported_document_type",
+        "UnsupportedDocumentContentError",
+    )
+    assert _build_failure_diagnostics(error)["unsupported_document_type"] == "billing_report"
+    assert _build_pipeline_failure_diagnostics(error)["unsupported_document_type"] == "billing_report"
+    assert _build_failure_diagnostics(error)["text_extracted_likely"] is True
+    assert _build_pipeline_failure_diagnostics(error)["text_extracted_likely"] is True

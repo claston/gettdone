@@ -13,7 +13,7 @@ from app.api.conversion.conversion_observability import (
 from app.application.conversion.document_conversion_pipeline import (
     _build_failure_diagnostics as _build_pipeline_failure_diagnostics,
 )
-from app.application.errors import InvalidFileContentError
+from app.application.errors import InvalidFileContentError, UnsupportedDocumentContentError
 from app.application.parsers.pdf.text_extraction import read_pdf_creation_month_year
 from app.application.pdf_parser import parse_pdf_transactions
 
@@ -75,4 +75,24 @@ def test_json_error_mapper_returns_password_protected_pdf_detail() -> None:
     assert exc_info.value.detail == {
         "code": "password_protected_pdf",
         "message": "O arquivo parece estar protegido por senha.",
+    }
+
+
+def test_json_error_mapper_returns_unsupported_document_type_detail() -> None:
+    error = UnsupportedDocumentContentError(
+        document_type="billing_report",
+        message=(
+            "Este arquivo é um relatório de faturamento, não um extrato bancário. "
+            "Envie o extrato da conta em PDF, CSV, XLSX ou OFX."
+        ),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        _raise_http_convert_error(error, identity=None, access_control_service=None)
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == {
+        "code": "unsupported_document_type",
+        "document_type": "billing_report",
+        "message": str(error),
     }

@@ -25,6 +25,7 @@ from app.application import (
     InvalidFileContentError,
     MaxPagesPerFileExceededError,
     QuotaExceededError,
+    UnsupportedDocumentContentError,
     UnsupportedFileTypeError,
 )
 from app.application.conversion import document_preflight_service as document_preflight_service_module
@@ -285,6 +286,10 @@ class _ConversionUploadSseMachine:
             )
             max_mb = max(1, int(max_bytes // (1024 * 1024)))
             message = f"Arquivo excede o tamanho máximo de {max_mb} MB."
+        elif isinstance(error, UnsupportedDocumentContentError):
+            code = "unsupported_document_type"
+            message = str(error)
+            failed_event_payload["document_type"] = error.document_type
         elif isinstance(error, InvalidFileContentError):
             detail = str(error).lower()
             if "password" in detail or "senha" in detail:

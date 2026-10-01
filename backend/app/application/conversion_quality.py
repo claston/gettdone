@@ -110,6 +110,7 @@ def sanitize_failure_diagnostics(value: object) -> dict[str, object]:
         "textract_error_type",
         "ocr_fallback_attempted",
         "ocr_max_pages",
+        "unsupported_document_type",
     }
     return {key: value[key] for key in allowed if key in value and _is_safe_diagnostic_value(value[key])}
 
