@@ -166,6 +166,27 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
             canonical_capture_reason TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS product_events (
+            id TEXT PRIMARY KEY,
+            event_type TEXT NOT NULL,
+            identity_type TEXT NOT NULL CHECK (identity_type IN ('registered', 'anonymous')),
+            identity_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            page_path TEXT,
+            plan_code TEXT,
+            processing_id TEXT,
+            download_format TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_product_events_created_at
+        ON product_events(created_at);
+
+        CREATE INDEX IF NOT EXISTS idx_product_events_identity_created_at
+        ON product_events(identity_type, identity_id, created_at);
+
+        CREATE INDEX IF NOT EXISTS idx_product_events_type_created_at
+        ON product_events(event_type, created_at);
+
         CREATE TABLE IF NOT EXISTS conversion_quality_issues (
             conversion_id TEXT NOT NULL,
             identity_type TEXT NOT NULL CHECK (identity_type IN ('registered', 'anonymous')),

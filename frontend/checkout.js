@@ -52,6 +52,42 @@
     });
   }
 
+  async function ensureTelemetryIdentity() {
+    if (!session) return false;
+    await session.ready();
+    const currentUser = await session.getCurrentUser().catch(function () {
+      return null;
+    });
+    if (currentUser) return true;
+    const response = await fetch(`${session.apiBase}/auth/anonymous-session`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: "{}",
+    });
+    return response.ok;
+  }
+
+  async function recordCheckoutEntry() {
+    try {
+      if (!(await ensureTelemetryIdentity())) return;
+      const planCode = String(new URL(window.location.href).searchParams.get("plan") || "").trim();
+      await fetch(`${session.apiBase}/telemetry/events`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        keepalive: true,
+        body: JSON.stringify({
+          event_type: "checkout_view",
+          page_path: "/checkout.html",
+          plan_code: planCode || null,
+        }),
+      });
+    } catch (_error) {
+      // Telemetria nunca deve impedir o checkout.
+    }
+  }
+
   function isRetryableStatus(statusCode) {
     return RETRYABLE_STATUS.has(Number(statusCode || 0));
   }
@@ -422,6 +458,7 @@
 
   void loadPlanCatalog();
   void syncTopAuthBySession();
+  void recordCheckoutEntry();
   if (currentIntentId) {
     enterOrderReviewMode();
   } else {

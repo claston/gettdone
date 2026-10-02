@@ -27,6 +27,7 @@ from app.routers import (
     plans_router,
     reconcile_router,
     report_router,
+    telemetry_router,
 )
 from app.security_baseline import (
     is_production_env,
@@ -104,6 +105,7 @@ app.include_router(contact_router)
 app.include_router(conversion_batches_router)
 app.include_router(reconcile_router)
 app.include_router(report_router)
+app.include_router(telemetry_router)
 
 frontend_dir = Path(__file__).resolve().parents[2] / "frontend"
 if frontend_dir.exists():

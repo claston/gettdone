@@ -22,12 +22,18 @@ def test_admin_dashboard_frontend_exposes_summary_filters_and_attention_sections
     assert 'id="dashboard-returning-heavy-users"' in html
     assert 'id="dashboard-ocr-heavy-users"' in html
     assert 'id="dashboard-checkout-funnel"' in html
+    assert 'id="dashboard-commercial-interest"' in html
     assert "Baixar últimos 7 dias (CSV)" in html
     assert "Heavy users" in html
     assert 'data-admin-section="dashboard"' in html
     assert 'data-admin-section="orders"' in html
     assert 'data-admin-section="users"' in html
     assert 'data-admin-section="marketing"' in html
+    assert 'data-admin-section="active-users"' in html
+    assert 'data-admin-panel="active-users"' in html
+    assert 'id="active-users-list"' in html
+    assert 'id="active-users-identity-type"' in html
+    assert 'id="active-users-prospect-only"' in html
     assert 'data-admin-panel="marketing"' in html
     assert 'id="marketing-total"' in html
     assert 'id="marketing-contacts-list"' in html
@@ -56,10 +62,16 @@ def test_admin_dashboard_frontend_exposes_summary_filters_and_attention_sections
     assert "payload.heavy_users" in javascript
     assert "renderDashboardCheckoutFunnel" in javascript
     assert "payload.checkout_funnel" in javascript
+    assert "payload.commercial_interest" in javascript
     assert "payload.returning_heavy_users" in javascript
     assert "payload.ocr_heavy_users" in javascript
     assert "/admin/marketing-contacts?" in javascript
     assert "product_updates_opted_in_at" in javascript
     assert "loadMarketingContacts" in javascript
+    assert "loadActiveUsers" in javascript
+    assert "/admin/active-users?" in javascript
+    assert "purchase_profile" in javascript
+    assert "top_models" in javascript
+    assert "download_formats" in javascript
     assert "textContent" in javascript
     assert "innerHTML" not in javascript

@@ -19,6 +19,7 @@ from app.routers.access_control_common import (
     set_session_cookies,
 )
 from app.schemas import (
+    AdminActiveUserListResponse,
     AdminDashboardResponse,
     AdminLoginRequest,
     AdminLoginResponse,
@@ -177,6 +178,36 @@ def download_admin_dashboard_attention(
             "Content-Disposition": 'attachment; filename="conversoes-atencao-ultimos-7-dias.csv"',
         },
     )
+
+
+@router.get("/admin/active-users", response_model=AdminActiveUserListResponse)
+def list_active_users_for_admin(
+    response: Response,
+    days: int = Query(default=30, ge=1, le=90),
+    identity_type: str = Query(default="all", pattern="^(all|registered|anonymous)$"),
+    prospect_only: bool = Query(default=False),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    x_admin_token: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
+) -> AdminActiveUserListResponse:
+    require_admin_user(
+        x_admin_token=x_admin_token,
+        authorization=authorization,
+        access_cookie_token=access_cookie_token,
+        access_control_service=access_control_service,
+    )
+    payload = AdminDashboardService(access_control_service).get_active_users(
+        days=days,
+        identity_type=identity_type,
+        prospect_only=prospect_only,
+        limit=limit,
+        offset=offset,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return AdminActiveUserListResponse(**payload)
 
 
 def _attention_csv_value(key: str, value: object) -> str:

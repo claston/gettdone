@@ -30,6 +30,7 @@ from app.application.access_control.access_control_session import AccessControlS
 from app.application.access_control.access_control_session_core import AccessControlSessionCoreComponent
 from app.application.conversion.identity import IdentityContext
 from app.application.errors import InvalidUserTokenError
+from app.application.product_telemetry import record_product_event as record_product_event_query
 
 ANONYMOUS_QUOTA_LIMIT = 3
 REGISTERED_QUOTA_LIMIT = 10
@@ -418,6 +419,26 @@ class AccessControlService:
 
     def get_quota_reset_at(self, identity: IdentityContext) -> str:
         return self.quota.get_quota_reset_at(identity)
+
+    def record_product_event(
+        self,
+        *,
+        identity: IdentityContext,
+        event_type: str,
+        page_path: str | None = None,
+        plan_code: str | None = None,
+        processing_id: str | None = None,
+        download_format: str | None = None,
+    ) -> str:
+        return record_product_event_query(
+            self,
+            identity=identity,
+            event_type=event_type,
+            page_path=page_path,
+            plan_code=plan_code,
+            processing_id=processing_id,
+            download_format=download_format,
+        )
 
     def record_user_conversion(
         self,

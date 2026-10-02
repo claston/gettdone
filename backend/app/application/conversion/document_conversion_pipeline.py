@@ -536,7 +536,7 @@ class DocumentConversionPipeline:
         quota_remaining = quota_result.quota_remaining
         if identity.identity_type == "user":
             file_type = str(analysis.file_type or "").strip().lower()
-            conversion_type = f"{file_type}-ofx" if file_type else "pdf-ofx"
+            conversion_type = f"{file_type}-conversion" if file_type else "pdf-conversion"
             self.access_control_service.record_user_conversion(
                 user_id=identity.identity_id,
                 processing_id=runtime.attempt_processing_id or analysis.analysis_id,
@@ -1177,7 +1177,7 @@ def _build_failure_diagnostics(exc: Exception) -> dict[str, str | int | bool | l
 
 def _resolve_conversion_type_from_filename(filename: str) -> str:
     extension = Path(filename or "").suffix.lower().strip(".")
-    return f"{extension}-ofx" if extension else "pdf-ofx"
+    return f"{extension}-conversion" if extension else "pdf-conversion"
 
 
 def _build_conversion_pipeline_metadata(

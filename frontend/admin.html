@@ -45,6 +45,9 @@
         <button class="admin-tab" type="button" role="tab" aria-selected="false" data-admin-section="users">
           Usuários
         </button>
+        <button class="admin-tab" type="button" role="tab" aria-selected="false" data-admin-section="active-users">
+          Usuários ativos
+        </button>
         <button class="admin-tab" type="button" role="tab" aria-selected="false" data-admin-section="marketing">
           Marketing
         </button>
@@ -88,10 +91,17 @@
         <div class="dashboard-block-heading">
           <div>
             <h3 id="dashboard-checkout-title">Funil de checkout</h3>
-            <p class="muted compact">Mostra pedidos enviados no período. Aberturas da página ainda não são rastreadas.</p>
+            <p class="muted compact">Acompanha visita aos planos, clique, entrada no checkout, download e pedido enviado.</p>
           </div>
         </div>
         <div id="dashboard-checkout-funnel" class="dashboard-summary" aria-label="Funil de pedidos enviados"></div>
+        <div class="dashboard-block-heading commercial-interest-heading">
+          <div>
+            <h4>Quem demonstrou interesse</h4>
+            <p class="muted compact">Contas são identificadas; visitantes anônimos recebem apenas uma referência protegida.</p>
+          </div>
+        </div>
+        <div id="dashboard-commercial-interest" class="dashboard-table-wrap"></div>
       </section>
 
       <section class="dashboard-block" aria-labelledby="dashboard-chart-title">
@@ -246,6 +256,48 @@
       <div id="users-list" class="orders-list"></div>
     </section>
 
+    <section id="admin-active-users-card" class="card hidden" data-admin-panel="active-users">
+      <div class="panel-top">
+        <div>
+          <h2>Usuários ativos e potencial de compra</h2>
+          <p class="muted">Pessoas que fizeram ao menos uma conversão no período. O perfil é um sinal operacional, não uma garantia de compra.</p>
+        </div>
+        <div class="actions">
+          <label>
+            Período
+            <select id="active-users-period">
+              <option value="7">Últimos 7 dias</option>
+              <option value="30" selected>Últimos 30 dias</option>
+              <option value="90">Últimos 90 dias</option>
+            </select>
+          </label>
+          <label>
+            Pessoas
+            <select id="active-users-identity-type">
+              <option value="all">Todas</option>
+              <option value="registered">Cadastradas</option>
+              <option value="anonymous">Anônimas</option>
+            </select>
+          </label>
+          <label class="checkbox-filter">
+            <input id="active-users-prospect-only" type="checkbox" />
+            Apenas sem plano pago
+          </label>
+          <button id="active-users-refresh-btn" type="button">Atualizar</button>
+        </div>
+      </div>
+      <p class="muted compact">Contato comercial só deve ser feito quando “Contato autorizado” estiver indicado. Pessoas anônimas não possuem canal de contato.</p>
+      <div id="active-users-summary" class="dashboard-summary" aria-label="Resumo de usuários ativos"></div>
+      <p id="active-users-status" class="status" aria-live="polite"></p>
+      <div id="active-users-empty" class="empty hidden">Nenhum usuário ativo encontrado para estes filtros.</div>
+      <div id="active-users-list" class="orders-list"></div>
+      <div class="pager">
+        <button id="active-users-prev-btn" class="ghost" type="button">Anterior</button>
+        <span id="active-users-page-label">Página 1</span>
+        <button id="active-users-next-btn" class="ghost" type="button">Próxima</button>
+      </div>
+    </section>
+
     <section id="admin-marketing-card" class="card hidden" data-admin-panel="marketing">
       <div class="panel-top">
         <div>
@@ -274,6 +326,6 @@
       </div>
     </section>
   </main>
-  <script src="./admin.js?v=12"></script>
+  <script src="./admin.js?v=13"></script>
 </body>
 </html>

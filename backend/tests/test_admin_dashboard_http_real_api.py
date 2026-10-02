@@ -94,6 +94,10 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
                 f"{base_url}/admin/auth/login",
                 json={"email": "admin@example.com", "password": "admin-pass"},
             )
+            telemetry = client.post(
+                f"{base_url}/telemetry/events",
+                json={"event_type": "plans_view", "page_path": "/planos.html"},
+            )
             dashboard = client.get(
                 f"{base_url}/admin/dashboard",
                 params={"days": 7, "identity_type": "registered"},
@@ -102,9 +106,14 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
                 f"{base_url}/admin/dashboard/attention.csv",
                 params={"identity_type": "registered"},
             )
+            active_users = client.get(
+                f"{base_url}/admin/active-users",
+                params={"days": 7, "identity_type": "registered"},
+            )
 
     assert unauthorized.status_code == 401
     assert login.status_code == 200
+    assert telemetry.status_code == 202
     assert dashboard.status_code == 200
     assert dashboard.headers["cache-control"] == "no-store"
     assert dashboard.json()["summary"]["conversions_total"] == 1
@@ -118,6 +127,9 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
     assert attention_export.headers["content-type"].startswith("text/csv")
     assert "an_http_dashboard" in attention_export.content.decode("utf-8-sig")
     assert dashboard.json()["heavy_users"][0]["pages"] == 3
+    assert dashboard.json()["checkout_funnel"]["plans_page_people_count"] == 1
+    assert active_users.status_code == 200
+    assert active_users.json()["items"][0]["plans_page_views"] == 1
     assert dashboard.json()["canonical_capture"] == {
         "candidate_count": 0,
         "stored_count": 0,

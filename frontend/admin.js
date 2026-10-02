@@ -2,6 +2,7 @@
   const ORDER_PAGE_SIZE = 10;
   const USER_PAGE_SIZE = 20;
   const MARKETING_PAGE_SIZE = 50;
+  const ACTIVE_USERS_PAGE_SIZE = 50;
 
   const loginCard = document.getElementById("admin-login-card");
   const navigationNode = document.getElementById("admin-navigation");
@@ -21,6 +22,7 @@
   const dashboardTopQualityIssuesNode = document.getElementById("dashboard-top-quality-issues");
   const dashboardCanonicalCaptureNode = document.getElementById("dashboard-canonical-capture");
   const dashboardCheckoutFunnelNode = document.getElementById("dashboard-checkout-funnel");
+  const dashboardCommercialInterestNode = document.getElementById("dashboard-commercial-interest");
   const dashboardHeavyUsersNode = document.getElementById("dashboard-heavy-users");
   const dashboardReturningHeavyUsersNode = document.getElementById("dashboard-returning-heavy-users");
   const dashboardOcrHeavyUsersNode = document.getElementById("dashboard-ocr-heavy-users");
@@ -55,12 +57,25 @@
   const marketingPrevBtn = document.getElementById("marketing-prev-btn");
   const marketingNextBtn = document.getElementById("marketing-next-btn");
   const marketingPageLabelNode = document.getElementById("marketing-page-label");
+  const activeUsersPeriodNode = document.getElementById("active-users-period");
+  const activeUsersIdentityTypeNode = document.getElementById("active-users-identity-type");
+  const activeUsersProspectOnlyNode = document.getElementById("active-users-prospect-only");
+  const activeUsersRefreshBtn = document.getElementById("active-users-refresh-btn");
+  const activeUsersSummaryNode = document.getElementById("active-users-summary");
+  const activeUsersStatusNode = document.getElementById("active-users-status");
+  const activeUsersEmptyNode = document.getElementById("active-users-empty");
+  const activeUsersListNode = document.getElementById("active-users-list");
+  const activeUsersPrevBtn = document.getElementById("active-users-prev-btn");
+  const activeUsersNextBtn = document.getElementById("active-users-next-btn");
+  const activeUsersPageLabelNode = document.getElementById("active-users-page-label");
 
   let ordersOffset = 0;
   let ordersTotal = 0;
   let usersOffset = 0;
   let marketingOffset = 0;
   let marketingTotal = 0;
+  let activeUsersOffset = 0;
+  let activeUsersTotal = 0;
   let activeAdminSection = "dashboard";
   let isAdminAuthenticated = false;
 
@@ -99,6 +114,13 @@
     if (kind) marketingStatusNode.classList.add(kind);
   }
 
+  function setActiveUsersStatus(message, kind) {
+    if (!activeUsersStatusNode) return;
+    activeUsersStatusNode.textContent = String(message || "");
+    activeUsersStatusNode.className = "status";
+    if (kind) activeUsersStatusNode.classList.add(kind);
+  }
+
   function setDashboardStatus(message, kind) {
     if (!dashboardStatusNode) return;
     dashboardStatusNode.textContent = String(message || "");
@@ -107,7 +129,7 @@
   }
 
   function setActiveAdminSection(section) {
-    const normalizedSection = ["dashboard", "orders", "users", "marketing"].includes(section) ? section : "dashboard";
+    const normalizedSection = ["dashboard", "orders", "users", "active-users", "marketing"].includes(section) ? section : "dashboard";
     activeAdminSection = normalizedSection;
     adminSectionButtons.forEach(function (button) {
       const isActive = String(button.dataset.adminSection || "") === normalizedSection;
@@ -544,6 +566,34 @@
     dashboardCheckoutFunnelNode.replaceChildren();
     appendMetricCard(
       dashboardCheckoutFunnelNode,
+      "Visitaram planos",
+      formatInteger(funnel.plans_page_people_count),
+      formatCountLabel(funnel.plans_page_views_count, "visita", "visitas"),
+      "",
+    );
+    appendMetricCard(
+      dashboardCheckoutFunnelNode,
+      "Clicaram em um plano",
+      formatInteger(funnel.plan_cta_people_count),
+      formatCountLabel(funnel.plan_cta_clicks_count, "clique", "cliques"),
+      "review",
+    );
+    appendMetricCard(
+      dashboardCheckoutFunnelNode,
+      "Entraram no checkout",
+      formatInteger(funnel.checkout_entry_people_count),
+      formatCountLabel(funnel.checkout_entries_count, "entrada", "entradas"),
+      "review",
+    );
+    appendMetricCard(
+      dashboardCheckoutFunnelNode,
+      "Baixaram arquivo",
+      formatInteger(funnel.download_people_count),
+      `${formatInteger(funnel.downloads_count)} downloads — ${formatDownloadFormats(funnel.download_formats)}`,
+      "clean",
+    );
+    appendMetricCard(
+      dashboardCheckoutFunnelNode,
       "Pedidos enviados",
       formatInteger(funnel.checkout_people_count),
       formatCountLabel(funnel.checkout_intents_count, "pedido", "pedidos"),
@@ -570,6 +620,49 @@
       `${formatPercent(funnel.checkout_to_release_rate)} dos clientes com pedido`,
       "clean",
     );
+  }
+
+  function renderDashboardCommercialInterest(items) {
+    if (!dashboardCommercialInterestNode) return;
+    dashboardCommercialInterestNode.replaceChildren();
+    const people = Array.isArray(items) ? items : [];
+    if (!people.length) {
+      dashboardCommercialInterestNode.appendChild(
+        createTextElement("p", "empty dashboard-empty", "Nenhum interesse registrado no período."),
+      );
+      return;
+    }
+    const table = document.createElement("table");
+    table.className = "dashboard-table";
+    const head = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    ["Pessoa", "Tipo", "Planos", "Cliques", "Checkout", "Plano", "Último interesse", "Contato"].forEach(function (label) {
+      appendTableCell(headRow, label, "th");
+    });
+    head.appendChild(headRow);
+    table.appendChild(head);
+    const body = document.createElement("tbody");
+    people.forEach(function (item) {
+      const row = document.createElement("tr");
+      appendTableCell(row, item.email || item.display_name || item.identity_reference || "-");
+      appendTableCell(row, String(item.identity_type || "") === "registered" ? "Cadastrada" : "Anônima");
+      appendTableCell(row, formatInteger(item.plans_page_views));
+      appendTableCell(row, formatInteger(item.plan_cta_clicks));
+      appendTableCell(row, formatInteger(item.checkout_entries));
+      appendTableCell(row, Array.isArray(item.plan_codes) && item.plan_codes.length ? item.plan_codes.join(", ") : "-");
+      appendTableCell(row, formatDateTime(item.last_interest_at));
+      appendTableCell(
+        row,
+        String(item.identity_type || "") !== "registered"
+          ? "Sem identificação"
+          : item.marketing_contact_allowed
+            ? "Autorizado"
+            : "Sem consentimento",
+      );
+      body.appendChild(row);
+    });
+    table.appendChild(body);
+    dashboardCommercialInterestNode.appendChild(table);
   }
 
   function renderDashboardHeavyUsers(items, targetNode, emptyMessage) {
@@ -677,6 +770,7 @@
     renderDashboardQualityIssues(payload.top_quality_issues || []);
     renderDashboardCanonicalCapture(payload.canonical_capture || {});
     renderDashboardCheckoutFunnel(payload.checkout_funnel || {});
+    renderDashboardCommercialInterest(payload.commercial_interest || []);
     renderDashboardHeavyUsers(payload.heavy_users || []);
     renderDashboardHeavyUsers(
       payload.returning_heavy_users || [],
@@ -899,6 +993,47 @@
     }
   }
 
+  function updateActiveUsersPager() {
+    const currentPage = Math.floor(activeUsersOffset / ACTIVE_USERS_PAGE_SIZE) + 1;
+    const totalPages = Math.max(1, Math.ceil(activeUsersTotal / ACTIVE_USERS_PAGE_SIZE));
+    if (activeUsersPageLabelNode) {
+      activeUsersPageLabelNode.textContent = `Página ${currentPage} de ${totalPages}`;
+    }
+    if (activeUsersPrevBtn) activeUsersPrevBtn.disabled = activeUsersOffset <= 0;
+    if (activeUsersNextBtn) {
+      activeUsersNextBtn.disabled = activeUsersOffset + ACTIVE_USERS_PAGE_SIZE >= activeUsersTotal;
+    }
+  }
+
+  async function loadActiveUsers() {
+    if (!activeUsersListNode || !activeUsersEmptyNode) return;
+    const days = String(activeUsersPeriodNode?.value || "30");
+    const identityType = String(activeUsersIdentityTypeNode?.value || "all");
+    const prospectOnly = activeUsersProspectOnlyNode?.checked ? "true" : "false";
+    setActiveUsersStatus("Carregando usuários ativos...", null);
+    if (activeUsersRefreshBtn) activeUsersRefreshBtn.disabled = true;
+    try {
+      const { response, payload } = await apiRequest(
+        `/admin/active-users?days=${encodeURIComponent(days)}&identity_type=${encodeURIComponent(identityType)}&prospect_only=${prospectOnly}&limit=${ACTIVE_USERS_PAGE_SIZE}&offset=${activeUsersOffset}`,
+      );
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) setAuthenticatedView(false);
+        setActiveUsersStatus(String(payload.detail || "Não foi possível carregar os usuários ativos."), "error");
+        return;
+      }
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      activeUsersTotal = Number(payload.total || 0);
+      renderActiveUsersSummary(payload.summary || {});
+      renderActiveUsers(items);
+      updateActiveUsersPager();
+      setActiveUsersStatus(`Usuários carregados: ${items.length} de ${activeUsersTotal}.`, "ok");
+    } catch (_error) {
+      setActiveUsersStatus("Falha de rede ao carregar os usuários ativos.", "error");
+    } finally {
+      if (activeUsersRefreshBtn) activeUsersRefreshBtn.disabled = false;
+    }
+  }
+
   function buildOrderCard(order) {
     const container = document.createElement("article");
     container.className = "order-card";
@@ -1106,6 +1241,108 @@
       appendLabeledParagraph(grid, "Cadastro criado em", formatDateTime(contact.created_at));
       card.appendChild(grid);
       marketingContactsListNode.appendChild(card);
+    });
+  }
+
+  function formatActiveUserModels(items) {
+    const models = Array.isArray(items) ? items : [];
+    return models.length
+      ? models.map(function (item) {
+          return `${String(item.model || "Não identificado")} (${formatInteger(item.count)})`;
+        }).join(", ")
+      : "-";
+  }
+
+  function formatDownloadFormats(items) {
+    const formats = Array.isArray(items) ? items : [];
+    return formats.length
+      ? formats.map(function (item) {
+          return `${String(item.format || "-").toUpperCase()} (${formatInteger(item.count)})`;
+        }).join(", ")
+      : "Nenhum";
+  }
+
+  function renderActiveUsersSummary(summary) {
+    if (!activeUsersSummaryNode) return;
+    activeUsersSummaryNode.replaceChildren();
+    appendMetricCard(activeUsersSummaryNode, "Pessoas ativas", formatInteger(summary.active_people), "com conversão no período", "");
+    appendMetricCard(activeUsersSummaryNode, "Cadastradas", formatInteger(summary.registered_people), "identificadas por conta", "clean");
+    appendMetricCard(activeUsersSummaryNode, "Anônimas", formatInteger(summary.anonymous_people), "identificadas de forma protegida", "");
+    appendMetricCard(activeUsersSummaryNode, "Páginas", formatInteger(summary.pages_total), "processadas no período", "");
+    appendMetricCard(activeUsersSummaryNode, "Sucessos", formatInteger(summary.successes), "conversões concluídas", "clean");
+    appendMetricCard(activeUsersSummaryNode, "Falhas", formatInteger(summary.failures), "conversões com falha", "failure");
+    appendMetricCard(activeUsersSummaryNode, "Perfis quentes", formatInteger(summary.hot_prospects), "sem plano pago", "review");
+    appendMetricCard(activeUsersSummaryNode, "Entraram no checkout", formatInteger(summary.checkout_people), "pessoas distintas", "");
+    appendMetricCard(activeUsersSummaryNode, "Baixaram arquivo", formatInteger(summary.download_people), "pessoas distintas", "");
+  }
+
+  function renderActiveUsers(items) {
+    if (!activeUsersListNode || !activeUsersEmptyNode) return;
+    activeUsersListNode.replaceChildren();
+    activeUsersEmptyNode.classList.toggle("hidden", items.length > 0);
+    items.forEach(function (user) {
+      const isRegistered = String(user.identity_type || "") === "registered";
+      const canContact = !!user.marketing_contact_allowed;
+      const card = document.createElement("article");
+      card.className = "order-card";
+
+      const head = document.createElement("div");
+      head.className = "order-head";
+      const identity = document.createElement("div");
+      identity.appendChild(createTextElement("h3", "order-title", user.display_name || "-"));
+      identity.appendChild(
+        createTextElement(
+          "p",
+          "order-meta",
+          user.email || user.identity_reference || "-",
+        ),
+      );
+      head.appendChild(identity);
+      const badges = document.createElement("div");
+      badges.className = "pill-row";
+      badges.appendChild(createTextElement("span", "badge", isRegistered ? "Cadastrada" : "Anônima"));
+      badges.appendChild(
+        createTextElement(
+          "span",
+          `badge ${String(user.purchase_profile || "") === "quente" ? "awaiting" : ""}`,
+          `Perfil ${String(user.purchase_profile || "acompanhar")}`,
+        ),
+      );
+      if (isRegistered) {
+        badges.appendChild(
+          createTextElement(
+            "span",
+            `badge ${canContact ? "released" : ""}`,
+            canContact ? "Contato autorizado" : "Sem consentimento de marketing",
+          ),
+        );
+      }
+      head.appendChild(badges);
+      card.appendChild(head);
+
+      const grid = document.createElement("div");
+      grid.className = "grid";
+      appendLabeledParagraph(grid, "Plano", user.plan_code || "free");
+      appendLabeledParagraph(grid, "Pontuação de compra", `${formatInteger(user.purchase_score)}/100`);
+      appendLabeledParagraph(grid, "Conversões", formatInteger(user.conversions));
+      appendLabeledParagraph(grid, "Páginas", formatInteger(user.pages));
+      appendLabeledParagraph(grid, "Sucessos", formatInteger(user.successes));
+      appendLabeledParagraph(grid, "Falhas", formatInteger(user.failures));
+      appendLabeledParagraph(grid, "Dias ativos", formatInteger(user.active_days));
+      appendLabeledParagraph(grid, "Última atividade", formatDateTime(user.last_activity_at));
+      appendLabeledParagraph(grid, "Modelos mais usados", formatActiveUserModels(user.top_models));
+      appendLabeledParagraph(grid, "Downloads", `${formatInteger(user.downloads_total)} — ${formatDownloadFormats(user.download_formats)}`);
+      appendLabeledParagraph(grid, "Visitas a planos", formatInteger(user.plans_page_views));
+      appendLabeledParagraph(grid, "Cliques em plano", formatInteger(user.plan_cta_clicks));
+      appendLabeledParagraph(grid, "Entradas no checkout", formatInteger(user.checkout_entries));
+      appendLabeledParagraph(grid, "Recorrente", user.is_returning ? "Sim" : "Não");
+      card.appendChild(grid);
+      appendLabeledParagraph(
+        card,
+        "Sinais",
+        Array.isArray(user.purchase_reasons) ? user.purchase_reasons.join("; ") : "-",
+      );
+      activeUsersListNode.appendChild(card);
     });
   }
 
@@ -1326,6 +1563,8 @@
         void loadOrders();
       } else if (section === "users") {
         void loadUsers();
+      } else if (section === "active-users") {
+        void loadActiveUsers();
       } else if (section === "marketing") {
         void loadMarketingContacts();
       }
@@ -1375,6 +1614,21 @@
       void loadMarketingContacts();
     });
   }
+
+  if (activeUsersRefreshBtn) {
+    activeUsersRefreshBtn.addEventListener("click", function () {
+      activeUsersOffset = 0;
+      void loadActiveUsers();
+    });
+  }
+
+  [activeUsersPeriodNode, activeUsersIdentityTypeNode, activeUsersProspectOnlyNode].forEach(function (node) {
+    if (!node) return;
+    node.addEventListener("change", function () {
+      activeUsersOffset = 0;
+      void loadActiveUsers();
+    });
+  });
 
   if (filterNode) {
     filterNode.addEventListener("change", function () {
@@ -1445,6 +1699,22 @@
     });
   }
 
+  if (activeUsersPrevBtn) {
+    activeUsersPrevBtn.addEventListener("click", function () {
+      if (activeUsersOffset <= 0) return;
+      activeUsersOffset = Math.max(0, activeUsersOffset - ACTIVE_USERS_PAGE_SIZE);
+      void loadActiveUsers();
+    });
+  }
+
+  if (activeUsersNextBtn) {
+    activeUsersNextBtn.addEventListener("click", function () {
+      if (activeUsersOffset + ACTIVE_USERS_PAGE_SIZE >= activeUsersTotal) return;
+      activeUsersOffset += ACTIVE_USERS_PAGE_SIZE;
+      void loadActiveUsers();
+    });
+  }
+
   if (logoutBtn) {
     logoutBtn.addEventListener("click", async function () {
       try {
@@ -1459,6 +1729,7 @@
       setDashboardStatus("", null);
       setUsersStatus("", null);
       setMarketingStatus("", null);
+      setActiveUsersStatus("", null);
       if (dashboardSummaryNode) dashboardSummaryNode.replaceChildren();
       if (dashboardDailyChartNode) dashboardDailyChartNode.replaceChildren();
       if (dashboardIdentitiesNode) dashboardIdentitiesNode.replaceChildren();
@@ -1468,6 +1739,9 @@
       if (dashboardReturningHeavyUsersNode) dashboardReturningHeavyUsersNode.replaceChildren();
       if (dashboardOcrHeavyUsersNode) dashboardOcrHeavyUsersNode.replaceChildren();
       if (dashboardCheckoutFunnelNode) dashboardCheckoutFunnelNode.replaceChildren();
+      if (dashboardCommercialInterestNode) dashboardCommercialInterestNode.replaceChildren();
+      if (activeUsersSummaryNode) activeUsersSummaryNode.replaceChildren();
+      if (activeUsersListNode) activeUsersListNode.replaceChildren();
       if (ordersListNode) ordersListNode.replaceChildren();
       if (usersListNode) usersListNode.replaceChildren();
       if (marketingContactsListNode) marketingContactsListNode.replaceChildren();

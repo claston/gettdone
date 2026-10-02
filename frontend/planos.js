@@ -57,6 +57,41 @@
     return RETRYABLE_STATUS.has(Number(statusCode || 0));
   }
 
+  async function ensureTelemetryIdentity() {
+    if (!session) return false;
+    await session.ready();
+    const currentUser = await session.getCurrentUser().catch(function () {
+      return null;
+    });
+    if (currentUser) return true;
+    const response = await fetch(`${session.apiBase}/auth/anonymous-session`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: "{}",
+    });
+    return response.ok;
+  }
+
+  async function recordProductEvent(eventType, planCode) {
+    try {
+      if (!(await ensureTelemetryIdentity())) return;
+      await fetch(`${session.apiBase}/telemetry/events`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        keepalive: true,
+        body: JSON.stringify({
+          event_type: eventType,
+          page_path: "/planos.html",
+          plan_code: planCode || null,
+        }),
+      });
+    } catch (_error) {
+      // Telemetria nunca deve impedir a navegação ou a compra.
+    }
+  }
+
   async function fetchJsonWithRetry(url, init, attempts) {
     const maxAttempts = Math.max(1, Number(attempts || 1));
     let lastError = null;
@@ -107,7 +142,7 @@
         "<h2>Planos indisponíveis</h2>",
         '<p class="price">Consulte suporte</p>',
         "<ul><li>Tente novamente em instantes</li></ul>",
-        '<a class="btn btn-outline" href="./checkout.html">Ir para checkout</a>',
+        '<a class="btn btn-outline" data-product-event="plan_cta_click" href="./checkout.html">Ir para checkout</a>',
         "</article>",
       ].join("");
       return;
@@ -134,7 +169,7 @@
           `<li>Tamanho máximo: ${Math.round(Number(plan.max_upload_size_bytes || 0) / (1024 * 1024))} MB por arquivo</li>`,
           "<li>Suporte por contato</li>",
           "</ul>",
-          `<a class="${ctaClass}" href="./checkout.html?plan=${encodeURIComponent(code)}">Quero este plano</a>`,
+          `<a class="${ctaClass}" data-product-event="plan_cta_click" data-plan-code="${code}" href="./checkout.html?plan=${encodeURIComponent(code)}">Quero este plano</a>`,
           "</article>",
         ].join("");
       })
@@ -169,6 +204,13 @@
     });
   }
 
+  document.addEventListener("click", function (event) {
+    const target = event.target instanceof Element ? event.target.closest('[data-product-event="plan_cta_click"]') : null;
+    if (!target) return;
+    void recordProductEvent("plan_cta_click", String(target.getAttribute("data-plan-code") || ""));
+  });
+
   void loadPlansCatalog();
   void syncTopAuthBySession();
+  void recordProductEvent("plans_view", null);
 })();

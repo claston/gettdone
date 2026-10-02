@@ -414,6 +414,17 @@ button.ghost {
   flex-wrap: wrap;
 }
 
+.checkbox-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.45rem;
+}
+
+.checkbox-filter input {
+  margin: 0;
+}
+
 .status {
   min-height: 1.25rem;
   margin: 0.7rem 0;
