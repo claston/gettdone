@@ -59,6 +59,20 @@ def build_client(tmp_path: Path, *, owner_fingerprint: str = "fp-owner") -> Test
     return TestClient(app)
 
 
+def _read_product_events(client: TestClient) -> list[dict[str, object]]:
+    service = app.dependency_overrides[get_access_control_service]()
+    with service._connect() as conn:
+        rows = service._fetchall(
+            conn,
+            """
+            SELECT event_type, identity_type, processing_id, download_format
+            FROM product_events
+            ORDER BY created_at, id
+            """,
+        )
+    return [dict(row) for row in rows]
+
+
 def build_client_with_user_owner(tmp_path: Path) -> tuple[TestClient, str]:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
     storage.save_analysis(_build_analysis_data("an_user_owned"))
@@ -86,6 +100,14 @@ def test_convert_report_download_happy_path(tmp_path: Path) -> None:
     assert response.headers["content-type"].startswith("application/x-ofx")
     assert "extrato_nubank.ofx" in response.headers["content-disposition"]
     assert "<STMTTRN>" in response.text
+    assert _read_product_events(client) == [
+        {
+            "event_type": "download",
+            "identity_type": "anonymous",
+            "processing_id": "an_convert123",
+            "download_format": "ofx",
+        }
+    ]
     app.dependency_overrides.clear()
 
 
@@ -136,6 +158,7 @@ def test_convert_report_download_xlsx_matches_conversion_review_layout(tmp_path:
     assert sheet.cell(row=2, column=2).value == "TEST"
     assert sheet.cell(row=2, column=3).value is None
     assert sheet.cell(row=2, column=4).value == 20
+    assert _read_product_events(client)[0]["download_format"] == "xlsx"
     app.dependency_overrides.clear()
 
 

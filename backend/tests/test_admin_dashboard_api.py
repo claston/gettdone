@@ -215,6 +215,15 @@ def test_admin_dashboard_aggregates_quality_failures_and_returning_people(tmp_pa
             "median_duration_ms": 5000,
         }
         assert payload["checkout_funnel"] == {
+            "plans_page_views_count": 0,
+            "plans_page_people_count": 0,
+            "plan_cta_clicks_count": 0,
+            "plan_cta_people_count": 0,
+            "checkout_entries_count": 0,
+            "checkout_entry_people_count": 0,
+            "downloads_count": 0,
+            "download_people_count": 0,
+            "download_formats": [],
             "checkout_intents_count": 0,
             "checkout_people_count": 0,
             "requested_intents_count": 0,
@@ -661,6 +670,15 @@ def test_admin_dashboard_counts_submitted_checkout_funnel_without_new_tracking_t
 
         assert response.status_code == 200
         assert response.json()["checkout_funnel"] == {
+            "plans_page_views_count": 0,
+            "plans_page_people_count": 0,
+            "plan_cta_clicks_count": 0,
+            "plan_cta_people_count": 0,
+            "checkout_entries_count": 0,
+            "checkout_entry_people_count": 0,
+            "downloads_count": 0,
+            "download_people_count": 0,
+            "download_formats": [],
             "checkout_intents_count": 3,
             "checkout_people_count": 3,
             "requested_intents_count": 1,

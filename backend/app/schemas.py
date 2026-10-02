@@ -230,6 +230,12 @@ class AdminMeResponse(BaseModel):
     role: str = "admin"
 
 
+class ProductEventRequest(BaseModel):
+    event_type: str = Field(min_length=1, max_length=50)
+    page_path: str | None = Field(default=None, max_length=200)
+    plan_code: str | None = Field(default=None, max_length=80)
+
+
 class AdminDashboardSummary(BaseModel):
     conversions_total: int
     non_conversion_count: int
@@ -324,6 +330,15 @@ class AdminDashboardHeavyUserItem(BaseModel):
 
 
 class AdminDashboardCheckoutFunnel(BaseModel):
+    plans_page_views_count: int = 0
+    plans_page_people_count: int = 0
+    plan_cta_clicks_count: int = 0
+    plan_cta_people_count: int = 0
+    checkout_entries_count: int = 0
+    checkout_entry_people_count: int = 0
+    downloads_count: int = 0
+    download_people_count: int = 0
+    download_formats: list[dict[str, str | int]] = Field(default_factory=list)
     checkout_intents_count: int
     checkout_people_count: int
     requested_intents_count: int
@@ -365,6 +380,19 @@ class AdminDashboardAttentionItem(BaseModel):
     issue_reason: str
 
 
+class AdminDashboardCommercialInterestItem(BaseModel):
+    identity_type: str
+    identity_reference: str
+    display_name: str
+    email: str | None = None
+    marketing_contact_allowed: bool
+    plans_page_views: int
+    plan_cta_clicks: int
+    checkout_entries: int
+    plan_codes: list[str]
+    last_interest_at: str | None = None
+
+
 class AdminDashboardResponse(BaseModel):
     days: int
     start_at: str
@@ -377,11 +405,73 @@ class AdminDashboardResponse(BaseModel):
     top_quality_issues: list[AdminDashboardQualityIssueItem]
     canonical_capture: AdminDashboardCanonicalCaptureSummary
     checkout_funnel: AdminDashboardCheckoutFunnel
+    commercial_interest: list[AdminDashboardCommercialInterestItem]
     heavy_users: list[AdminDashboardHeavyUserItem]
     returning_heavy_users: list[AdminDashboardHeavyUserItem]
     ocr_heavy_users: list[AdminDashboardHeavyUserItem]
     layouts: list[AdminDashboardLayoutItem]
     recent_attention: list[AdminDashboardAttentionItem]
+
+
+class AdminActiveUserTopModel(BaseModel):
+    model: str
+    count: int
+
+
+class AdminActiveUserDownloadFormat(BaseModel):
+    format: str
+    count: int
+
+
+class AdminActiveUserItem(BaseModel):
+    identity_type: str
+    identity_reference: str
+    display_name: str
+    email: str | None = None
+    plan_code: str
+    marketing_contact_allowed: bool
+    conversions: int
+    pages: int
+    successes: int
+    review: int
+    failures: int
+    transactions: int
+    active_days: int
+    is_returning: bool
+    last_activity_at: str | None = None
+    top_models: list[AdminActiveUserTopModel]
+    plans_page_views: int
+    plan_cta_clicks: int
+    checkout_entries: int
+    downloads_total: int
+    download_formats: list[AdminActiveUserDownloadFormat]
+    purchase_score: int
+    purchase_profile: str
+    purchase_reasons: list[str]
+
+
+class AdminActiveUsersSummary(BaseModel):
+    active_people: int
+    registered_people: int
+    anonymous_people: int
+    pages_total: int
+    successes: int
+    failures: int
+    hot_prospects: int
+    checkout_people: int
+    download_people: int
+
+
+class AdminActiveUserListResponse(BaseModel):
+    days: int
+    start_at: str
+    end_at: str
+    timezone: str
+    summary: AdminActiveUsersSummary
+    items: list[AdminActiveUserItem]
+    total: int
+    limit: int
+    offset: int
 
 
 class PlanCatalogItem(BaseModel):

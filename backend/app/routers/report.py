@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Literal
 
@@ -33,6 +34,30 @@ from app.routers.auth_session import (
 from app.schemas import ConvertEditsRequest, ConvertEditsResponse
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+def _record_download_safely(
+    access_control_service: AccessControlService,
+    *,
+    identity,
+    processing_id: str,
+    download_format: str,
+) -> None:
+    try:
+        access_control_service.record_product_event(
+            identity=identity,
+            event_type="download",
+            processing_id=processing_id,
+            download_format=download_format,
+        )
+    except Exception:
+        logger.warning(
+            "product_download_telemetry_failed processing_id=%s format=%s",
+            processing_id,
+            download_format,
+            exc_info=True,
+        )
 
 @router.get("/report/{analysis_id}")
 def get_report(
@@ -78,6 +103,12 @@ def get_report(
             detail="Missing or invalid identity context. Start an anonymous session or authenticate.",
         )
 
+    _record_download_safely(
+        access_control_service,
+        identity=identity,
+        processing_id=analysis_id,
+        download_format="xlsx",
+    )
     return FileResponse(
         path=report_path,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -136,6 +167,12 @@ def get_reconcile_report(
         else "text/csv; charset=utf-8"
     )
     filename = f"ofxsimples_reconcile_{analysis_id}.{file_format}"
+    _record_download_safely(
+        access_control_service,
+        identity=identity,
+        processing_id=analysis_id,
+        download_format=file_format,
+    )
     return FileResponse(path=report_path, media_type=media_type, filename=filename)
 
 
@@ -212,6 +249,12 @@ def get_convert_report(
         analysis_id=processing_id,
         upload_filename=upload_filename,
         file_format=file_format,
+    )
+    _record_download_safely(
+        access_control_service,
+        identity=identity,
+        processing_id=processing_id,
+        download_format=file_format,
     )
     return FileResponse(
         path=report_path,

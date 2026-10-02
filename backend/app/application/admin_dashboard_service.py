@@ -91,7 +91,17 @@ class AdminDashboardService:
                     end_at=now_utc.isoformat(),
                     identity_type=normalized_identity_type,
                 )
-                registered_profiles = self._load_registered_profiles(conn, events=events)
+                product_events = self._load_product_events(
+                    conn,
+                    start_at=start_utc.isoformat(),
+                    end_at=now_utc.isoformat(),
+                    identity_type=normalized_identity_type,
+                )
+                registered_profiles = self._load_registered_profiles(
+                    conn,
+                    events=events,
+                    extra_registered_ids=_registered_product_identity_ids(product_events),
+                )
                 checkout_intents = (
                     self._load_checkout_intents(
                         conn,
@@ -112,6 +122,7 @@ class AdminDashboardService:
             top_quality_issues=top_quality_issues,
             registered_profiles=registered_profiles,
             checkout_intents=checkout_intents,
+            product_events=product_events,
         )
 
     def get_attention_export_rows(
@@ -178,6 +189,89 @@ class AdminDashboardService:
 
         export_rows.sort(key=lambda item: str(item["created_at"]), reverse=True)
         return export_rows
+
+    def get_active_users(
+        self,
+        *,
+        days: int = 30,
+        identity_type: str = "all",
+        prospect_only: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, object]:
+        normalized_days = max(1, min(int(days), 90))
+        normalized_identity_type = str(identity_type or "all").strip().lower()
+        if normalized_identity_type not in SUPPORTED_IDENTITY_TYPES:
+            raise ValueError("Unsupported identity_type")
+        normalized_limit = max(1, min(int(limit), 200))
+        normalized_offset = max(0, int(offset))
+
+        now_utc = _as_aware_utc(self._service.now_provider())
+        now_local = now_utc.astimezone(DASHBOARD_TIMEZONE)
+        start_date = now_local.date() - timedelta(days=normalized_days - 1)
+        start_utc = datetime.combine(start_date, time.min, tzinfo=DASHBOARD_TIMEZONE).astimezone(timezone.utc)
+
+        with self._service._lock:
+            with self._service._connect() as conn:
+                conversion_events = self._load_period_events(
+                    conn,
+                    start_at=start_utc.isoformat(),
+                    end_at=now_utc.isoformat(),
+                    identity_type=normalized_identity_type,
+                )
+                prior_identity_keys = self._load_prior_identity_keys(
+                    conn,
+                    before=start_utc.isoformat(),
+                    identity_type=normalized_identity_type,
+                )
+                product_events = self._load_product_events(
+                    conn,
+                    start_at=start_utc.isoformat(),
+                    end_at=now_utc.isoformat(),
+                    identity_type=normalized_identity_type,
+                )
+                registered_profiles = self._load_registered_profiles(
+                    conn,
+                    events=conversion_events,
+                    extra_registered_ids=_registered_product_identity_ids(product_events),
+                )
+
+        conversion_events = [
+            event for event in conversion_events if not _is_non_conversion_event(event)
+        ]
+        items = _build_user_usage(
+            conversion_events,
+            prior_identity_keys=prior_identity_keys,
+            registered_profiles=registered_profiles,
+        )
+        items = _enrich_active_users(
+            items,
+            product_events=product_events,
+            registered_profiles=registered_profiles,
+        )
+        if prospect_only:
+            items = [item for item in items if item["plan_code"] == "free"]
+        items.sort(
+            key=lambda item: (
+                -int(item["purchase_score"]),
+                -int(item["pages"]),
+                -int(item["conversions"]),
+                str(item["identity_reference"]),
+            )
+        )
+        summary_items = items
+        page_items = items[normalized_offset : normalized_offset + normalized_limit]
+        return {
+            "days": normalized_days,
+            "start_at": start_utc.isoformat(),
+            "end_at": now_utc.isoformat(),
+            "timezone": DASHBOARD_TIMEZONE_NAME,
+            "summary": _build_active_users_summary(summary_items),
+            "items": page_items,
+            "total": len(items),
+            "limit": normalized_limit,
+            "offset": normalized_offset,
+        }
 
     def _load_top_quality_issues(self, conn, *, start_at: str, end_at: str, identity_type: str) -> list[dict[str, object]]:
         placeholders = ", ".join("?" for _ in NON_CONVERSION_ERROR_CODES)
@@ -335,29 +429,82 @@ class AdminDashboardService:
         conn,
         *,
         events: list[dict[str, object]],
-    ) -> dict[str, dict[str, str]]:
-        user_ids = sorted(
-            {
-                str(event["identity_id"])
-                for event in events
-                if event["identity_type"] == "registered" and str(event["identity_id"])
-            }
-        )
+        extra_registered_ids: set[str] | None = None,
+    ) -> dict[str, dict[str, object]]:
+        registered_ids = {
+            str(event["identity_id"])
+            for event in events
+            if event["identity_type"] == "registered" and str(event["identity_id"])
+        }
+        registered_ids.update(extra_registered_ids or set())
+        user_ids = sorted(registered_ids)
         if not user_ids:
             return {}
         placeholders = ", ".join("?" for _ in user_ids)
         rows = self._service._fetchall(
             conn,
-            f"SELECT id, name, email FROM users WHERE id IN ({placeholders})",
+            f"""
+            SELECT
+                users.id,
+                users.name,
+                users.email,
+                users.product_updates_opt_in,
+                COALESCE((
+                    SELECT plan_versions.code
+                    FROM user_plan_subscriptions
+                    JOIN plan_versions ON plan_versions.id = user_plan_subscriptions.plan_version_id
+                    WHERE user_plan_subscriptions.user_id = users.id
+                      AND user_plan_subscriptions.status = 'active'
+                    ORDER BY user_plan_subscriptions.started_at DESC
+                    LIMIT 1
+                ), 'free') AS plan_code
+            FROM users
+            WHERE users.id IN ({placeholders})
+            """,
             tuple(user_ids),
         )
         return {
             str(row["id"]): {
                 "name": str(row["name"] or ""),
                 "email": str(row["email"] or ""),
+                "marketing_contact_allowed": _as_bool(row["product_updates_opt_in"]),
+                "plan_code": str(row["plan_code"] or "free").strip().lower() or "free",
             }
             for row in rows
         }
+
+    def _load_product_events(
+        self,
+        conn,
+        *,
+        start_at: str,
+        end_at: str,
+        identity_type: str,
+    ) -> list[dict[str, str]]:
+        sql = """
+            SELECT event_type, identity_type, identity_id, created_at,
+                   page_path, plan_code, processing_id, download_format
+            FROM product_events
+            WHERE created_at >= ? AND created_at <= ?
+        """
+        params: tuple[object, ...] = (start_at, end_at)
+        if identity_type != "all":
+            sql += " AND identity_type = ?"
+            params += (identity_type,)
+        rows = self._service._fetchall(conn, sql, params)
+        return [
+            {
+                "event_type": str(row["event_type"] or ""),
+                "identity_type": str(row["identity_type"] or ""),
+                "identity_id": str(row["identity_id"] or ""),
+                "created_at": str(row["created_at"] or ""),
+                "page_path": str(row["page_path"] or ""),
+                "plan_code": str(row["plan_code"] or ""),
+                "processing_id": str(row["processing_id"] or ""),
+                "download_format": str(row["download_format"] or ""),
+            }
+            for row in rows
+        ]
 
     def _load_checkout_intents(
         self,
@@ -440,8 +587,9 @@ def _build_dashboard_payload(
     start_at: datetime,
     end_at: datetime,
     top_quality_issues: list[dict[str, object]],
-    registered_profiles: dict[str, dict[str, str]],
+    registered_profiles: dict[str, dict[str, object]],
     checkout_intents: list[dict[str, str]],
+    product_events: list[dict[str, str]],
 ) -> dict[str, object]:
     non_conversion_count = sum(1 for event in events if _is_non_conversion_event(event))
     events = [event for event in events if not _is_non_conversion_event(event)]
@@ -614,7 +762,8 @@ def _build_dashboard_payload(
         "top_errors": top_errors,
         "top_quality_issues": top_quality_issues,
         "canonical_capture": _build_canonical_capture_summary(events),
-        "checkout_funnel": _build_checkout_funnel(checkout_intents),
+        "checkout_funnel": _build_checkout_funnel(checkout_intents, product_events),
+        "commercial_interest": _build_commercial_interest(product_events, registered_profiles),
         "heavy_users": _rank_user_usage(user_usage, sort_field="pages"),
         "returning_heavy_users": _rank_user_usage(
             [item for item in user_usage if bool(item["is_returning"])],
@@ -633,7 +782,7 @@ def _build_user_usage(
     events: list[dict[str, object]],
     *,
     prior_identity_keys: set[str],
-    registered_profiles: dict[str, dict[str, str]],
+    registered_profiles: dict[str, dict[str, object]],
 ) -> list[dict[str, object]]:
     grouped: dict[str, dict[str, object]] = {}
     for event in events:
@@ -654,6 +803,7 @@ def _build_user_usage(
             identity_key,
             {
                 "rank": 0,
+                "raw_identity_key": identity_key,
                 "identity_type": identity_type,
                 "identity_reference": identity_reference,
                 "display_name": display_name,
@@ -670,12 +820,16 @@ def _build_user_usage(
                 "transactions": 0,
                 "activity_dates": set(),
                 "last_activity_at": None,
+                "model_counts": Counter(),
             },
         )
         pages_count = int(event["pages_count"])
         item["conversions"] = int(item["conversions"]) + 1
         item["pages"] = int(item["pages"]) + pages_count
         item["transactions"] = int(item["transactions"]) + int(event["transactions_count"])
+        model_counts = item["model_counts"]
+        if isinstance(model_counts, Counter):
+            model_counts[str(event["model"] or "Não identificado")] += 1
         if bool(event["ocr_used"]):
             item["ocr_conversions"] = int(item["ocr_conversions"]) + 1
             item["ocr_pages"] = int(item["ocr_pages"]) + pages_count
@@ -707,8 +861,114 @@ def _build_user_usage(
         item["active_days"] = active_days
         item["is_returning"] = identity_key in prior_identity_keys or active_days > 1
         item["ocr_share_rate"] = _percentage(int(item["ocr_pages"]), int(item["pages"]))
+        model_counts = item.pop("model_counts")
+        item["top_models"] = [
+            {"model": model, "count": count}
+            for model, count in sorted(
+                model_counts.items(),
+                key=lambda value: (-int(value[1]), str(value[0])),
+            )[:3]
+        ] if isinstance(model_counts, Counter) else []
         usage_items.append(item)
     return usage_items
+
+
+def _enrich_active_users(
+    items: list[dict[str, object]],
+    *,
+    product_events: list[dict[str, str]],
+    registered_profiles: dict[str, dict[str, object]],
+) -> list[dict[str, object]]:
+    product_by_identity: dict[str, Counter[str]] = defaultdict(Counter)
+    formats_by_identity: dict[str, Counter[str]] = defaultdict(Counter)
+    for event in product_events:
+        identity_key = f"{event['identity_type']}:{event['identity_id']}"
+        product_by_identity[identity_key][event["event_type"]] += 1
+        if event["event_type"] == "download" and event["download_format"]:
+            formats_by_identity[identity_key][event["download_format"]] += 1
+
+    enriched: list[dict[str, object]] = []
+    for original in items:
+        item = dict(original)
+        identity_type = str(item["identity_type"])
+        identity_id = str(item["identity_reference"])
+        raw_key = str(item.pop("raw_identity_key", ""))
+        counters = product_by_identity.get(raw_key, Counter())
+        profile = registered_profiles.get(identity_id, {}) if identity_type == "registered" else {}
+        item["plan_code"] = str(profile.get("plan_code") or "free")
+        item["marketing_contact_allowed"] = bool(profile.get("marketing_contact_allowed", False))
+        item["plans_page_views"] = int(counters["plans_view"])
+        item["plan_cta_clicks"] = int(counters["plan_cta_click"])
+        item["checkout_entries"] = int(counters["checkout_view"])
+        item["downloads_total"] = int(counters["download"])
+        item["download_formats"] = [
+            {"format": download_format, "count": count}
+            for download_format, count in sorted(
+                formats_by_identity.get(raw_key, Counter()).items(),
+                key=lambda value: (-int(value[1]), str(value[0])),
+            )
+        ]
+        score, profile_label, reasons = _score_purchase_profile(item)
+        item["purchase_score"] = score
+        item["purchase_profile"] = profile_label
+        item["purchase_reasons"] = reasons
+        enriched.append(item)
+    return enriched
+
+
+def _score_purchase_profile(item: dict[str, object]) -> tuple[int, str, list[str]]:
+    if str(item.get("plan_code") or "free") != "free":
+        return 0, "cliente", ["já possui plano pago"]
+    score = 0
+    reasons: list[str] = []
+    pages = int(item.get("pages") or 0)
+    if pages >= 100:
+        score += 40
+        reasons.append("alto volume de páginas")
+    elif pages >= 50:
+        score += 30
+        reasons.append("volume relevante de páginas")
+    elif pages >= 20:
+        score += 20
+        reasons.append("volume crescente de páginas")
+    elif pages >= 10:
+        score += 10
+        reasons.append("uso acima do básico")
+    if bool(item.get("is_returning")):
+        score += 15
+        reasons.append("uso recorrente")
+    if int(item.get("conversions") or 0) >= 5:
+        score += 10
+        reasons.append("múltiplas conversões")
+    if int(item.get("downloads_total") or 0) > 0:
+        score += 10
+        reasons.append("baixou resultado")
+    if int(item.get("plans_page_views") or 0) > 0:
+        score += 5
+        reasons.append("visitou planos")
+    if int(item.get("plan_cta_clicks") or 0) > 0:
+        score += 15
+        reasons.append("clicou em um plano")
+    if int(item.get("checkout_entries") or 0) > 0:
+        score += 25
+        reasons.append("entrou no checkout")
+    score = min(score, 100)
+    label = "quente" if score >= 60 else "morno" if score >= 35 else "acompanhar"
+    return score, label, reasons or ["atividade recente"]
+
+
+def _build_active_users_summary(items: list[dict[str, object]]) -> dict[str, int]:
+    return {
+        "active_people": len(items),
+        "registered_people": sum(1 for item in items if item["identity_type"] == "registered"),
+        "anonymous_people": sum(1 for item in items if item["identity_type"] == "anonymous"),
+        "pages_total": sum(int(item["pages"]) for item in items),
+        "successes": sum(int(item["successes"]) for item in items),
+        "failures": sum(int(item["failures"]) for item in items),
+        "hot_prospects": sum(1 for item in items if item["purchase_profile"] == "quente"),
+        "checkout_people": sum(1 for item in items if int(item["checkout_entries"]) > 0),
+        "download_people": sum(1 for item in items if int(item["downloads_total"]) > 0),
+    }
 
 
 def _rank_user_usage(
@@ -727,12 +987,16 @@ def _rank_user_usage(
     )[:10]
     for rank, item in enumerate(ranked, start=1):
         item = dict(item)
+        item.pop("raw_identity_key", None)
         item["rank"] = rank
         ranked[rank - 1] = item
     return ranked
 
 
-def _build_checkout_funnel(checkout_intents: list[dict[str, str]]) -> dict[str, int | float]:
+def _build_checkout_funnel(
+    checkout_intents: list[dict[str, str]],
+    product_events: list[dict[str, str]],
+) -> dict[str, object]:
     requested_statuses = {"REQUESTED", "PENDING"}
     awaiting_status = "AWAITING_PAYMENT"
     released_status = "RELEASED_FOR_USE"
@@ -749,7 +1013,38 @@ def _build_checkout_funnel(checkout_intents: list[dict[str, str]]) -> dict[str, 
         for item in checkout_intents
         if item.get("status") == released_status and person_key(item) != "email:"
     }
+    product_counts = Counter(event["event_type"] for event in product_events)
+
+    def product_people(event_type: str) -> int:
+        return len(
+            {
+                f"{event['identity_type']}:{event['identity_id']}"
+                for event in product_events
+                if event["event_type"] == event_type
+            }
+        )
+
+    download_formats = Counter(
+        event["download_format"]
+        for event in product_events
+        if event["event_type"] == "download" and event["download_format"]
+    )
     return {
+        "plans_page_views_count": int(product_counts["plans_view"]),
+        "plans_page_people_count": product_people("plans_view"),
+        "plan_cta_clicks_count": int(product_counts["plan_cta_click"]),
+        "plan_cta_people_count": product_people("plan_cta_click"),
+        "checkout_entries_count": int(product_counts["checkout_view"]),
+        "checkout_entry_people_count": product_people("checkout_view"),
+        "downloads_count": int(product_counts["download"]),
+        "download_people_count": product_people("download"),
+        "download_formats": [
+            {"format": download_format, "count": count}
+            for download_format, count in sorted(
+                download_formats.items(),
+                key=lambda value: (-int(value[1]), str(value[0])),
+            )
+        ],
         "checkout_intents_count": len(checkout_intents),
         "checkout_people_count": len(people),
         "requested_intents_count": sum(1 for item in checkout_intents if item.get("status") in requested_statuses),
@@ -760,6 +1055,76 @@ def _build_checkout_funnel(checkout_intents: list[dict[str, str]]) -> dict[str, 
         "released_people_count": len(released_people),
         "checkout_to_release_rate": _percentage(len(released_people), len(people)),
     }
+
+
+def _registered_product_identity_ids(product_events: list[dict[str, str]]) -> set[str]:
+    return {
+        event["identity_id"]
+        for event in product_events
+        if event["identity_type"] == "registered" and event["identity_id"]
+    }
+
+
+def _build_commercial_interest(
+    product_events: list[dict[str, str]],
+    registered_profiles: dict[str, dict[str, object]],
+) -> list[dict[str, object]]:
+    grouped: dict[str, dict[str, object]] = {}
+    for event in product_events:
+        if event["event_type"] not in {"plans_view", "plan_cta_click", "checkout_view"}:
+            continue
+        identity_type = event["identity_type"]
+        identity_id = event["identity_id"]
+        identity_key = f"{identity_type}:{identity_id}"
+        profile = registered_profiles.get(identity_id, {}) if identity_type == "registered" else {}
+        identity_reference = (
+            identity_id
+            if identity_type == "registered"
+            else f"anon_{sha256(identity_id.encode('utf-8')).hexdigest()[:12]}"
+        )
+        item = grouped.setdefault(
+            identity_key,
+            {
+                "identity_type": identity_type,
+                "identity_reference": identity_reference,
+                "display_name": profile.get("name") or (
+                    "Pessoa cadastrada" if identity_type == "registered" else f"Anônima {identity_reference[-6:]}"
+                ),
+                "email": profile.get("email") or None,
+                "marketing_contact_allowed": bool(profile.get("marketing_contact_allowed", False)),
+                "plans_page_views": 0,
+                "plan_cta_clicks": 0,
+                "checkout_entries": 0,
+                "plan_codes": set(),
+                "last_interest_at": None,
+            },
+        )
+        metric = {
+            "plans_view": "plans_page_views",
+            "plan_cta_click": "plan_cta_clicks",
+            "checkout_view": "checkout_entries",
+        }[event["event_type"]]
+        item[metric] = int(item[metric]) + 1
+        plan_codes = item["plan_codes"]
+        if event["plan_code"] and isinstance(plan_codes, set):
+            plan_codes.add(event["plan_code"])
+        if not item["last_interest_at"] or event["created_at"] > str(item["last_interest_at"]):
+            item["last_interest_at"] = event["created_at"]
+
+    result: list[dict[str, object]] = []
+    for item in grouped.values():
+        plan_codes = item["plan_codes"]
+        item["plan_codes"] = sorted(plan_codes) if isinstance(plan_codes, set) else []
+        result.append(item)
+    result.sort(
+        key=lambda item: (
+            -int(item["checkout_entries"]),
+            -int(item["plan_cta_clicks"]),
+            -int(item["plans_page_views"]),
+            -(_parse_datetime(str(item["last_interest_at"] or "")).timestamp() if item["last_interest_at"] else 0.0),
+        ),
+    )
+    return result[:20]
 
 
 def _attention_item(event: dict[str, object], *, is_success: bool) -> dict[str, object]:

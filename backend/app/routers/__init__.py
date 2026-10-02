@@ -9,6 +9,7 @@ from app.routers.health import router as health_router
 from app.routers.plans import router as plans_router
 from app.routers.reconcile import router as reconcile_router
 from app.routers.report import router as report_router
+from app.routers.telemetry import router as telemetry_router
 from app.routers.upload import router as convert_router
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "plans_router",
     "reconcile_router",
     "report_router",
+    "telemetry_router",
 ]

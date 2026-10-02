@@ -23,6 +23,13 @@ from app.application.models import AnalysisData, NormalizedTransaction, Transact
 from app.application.parsers.service import ParsedDocument
 
 
+def test_conversion_type_describes_processing_not_assumed_download_format() -> None:
+    from app.application.conversion.document_conversion_pipeline import _resolve_conversion_type_from_filename
+
+    assert _resolve_conversion_type_from_filename("extrato.pdf") == "pdf-conversion"
+    assert _resolve_conversion_type_from_filename("extrato.xlsx") == "xlsx-conversion"
+
+
 class FakeAccessControlService:
     def __init__(self) -> None:
         self.identity = SimpleNamespace(
