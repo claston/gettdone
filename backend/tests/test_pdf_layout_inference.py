@@ -524,6 +524,30 @@ def test_infer_pdf_layout_prefers_santander_vangogh_resumo_profile() -> None:
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_recognizes_santander_consolidated_basic_without_treating_fluxo_de_caixa_as_bank() -> None:
+    text = """
+    EXTRATO CONSOLIDADO
+    março/2026
+    O Santander oferece soluções para o fluxo de caixa da sua empresa.
+    Extrato_PJ_A4_Basico - 2/4/2024
+    Resumo - março/2026
+    Agencia Conta Corrente
+    Conta Corrente
+    Movimentacao
+    Data Descricao N Documento Movimento (R$) Saldo (R$)
+    SALDO EM 28/02 0,00
+    02/03 PIX RECEBIDO 123456 - 500,00 500,00
+    PREST. DE EMPREST. FINANCIAMENTO 654321 500,00- 0,00
+    SALDO EM 31/03 0,00
+    Saldos por Periodo
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "santander_extrato_consolidado_basico_conta_corrente_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_santander_credit_card_invoice_detail_profile() -> None:
     text = """
     Data: 05/01/2026

@@ -191,6 +191,7 @@ meta_model:
       - "Se descrição multilinha preserva ordem correta"
 
 layout_profile:
+  schema_version: 2
   profile_name: bradesco_net_empresa_extrato_mensal_por_periodo_v1
   bank: Bradesco
   layout_family: bradesco_net_empresa_extrato_mensal_por_periodo
@@ -261,6 +262,10 @@ layout_profile:
       amount:
         - "Crédito (R$)"
         - "Débito (R$)"
+      credit:
+        - "Crédito (R$)"
+      debit:
+        - "Débito (R$)"
       balance:
         - "Saldo (R$)"
         - "Saldo"
@@ -303,6 +308,7 @@ layout_profile:
       - "TOTAL"
     opening_balance_rows:
       - "SALDO ANTERIOR"
+    opening_balance_policy: "skip"
     required_transaction_fields:
       - description
       - amount

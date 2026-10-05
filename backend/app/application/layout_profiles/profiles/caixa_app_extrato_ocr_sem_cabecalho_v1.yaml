@@ -19,6 +19,7 @@ layout_profile:
       - "TARIFA PIX"
       - "PIX DEVOLVIDO"
     negative_keywords:
+      - "SANTANDER"
       - "GERENCIADOR CAIXA"
       - "SIATR-SISTEMA DE AUTO ATENDIMENTO REESTRUTURADO"
       - "EXTRATO HISTORICO DA CONTA"
