@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Dedicated shadow diagnostics for transaction warnings using Amazon Nova on Bedrock.
+Description: Capture-only storage for transaction-warning diagnostics; Bedrock invocation is disabled.
 
 Parameters:
   WorkerImageUri:
@@ -12,10 +12,12 @@ Parameters:
     Type: String
     AllowedValues: ["true", "false"]
     Default: "false"
+    Description: Retained for stack compatibility; the queue trigger is intentionally not provisioned.
   RequestRetentionDays:
     Type: Number
-    Default: 2
+    Default: 1
     MinValue: 1
+    Description: Retained for stack compatibility; request retention is fixed at one day.
   RestrictedResultRetentionDays:
     Type: Number
     Default: 8
@@ -24,9 +26,6 @@ Parameters:
     Type: Number
     Default: 90
     MinValue: 1
-
-Conditions:
-  QueueTriggerEnabled: !Equals [!Ref EnableQueueTrigger, "true"]
 
 Resources:
   RecoveryBucket:
@@ -48,7 +47,7 @@ Resources:
           - Id: ExpireOriginalRequests
             Status: Enabled
             Prefix: ai-recovery/requests/v1/
-            ExpirationInDays: !Ref RequestRetentionDays
+            ExpirationInDays: 1
             NoncurrentVersionExpiration:
               NoncurrentDays: 1
           - Id: ExpireRestrictedResults
@@ -120,13 +119,6 @@ Resources:
                 Resource:
                   - !Sub ${RecoveryBucket.Arn}/ai-recovery/results/restricted/v1/*
                   - !Sub ${RecoveryBucket.Arn}/ai-recovery/fixtures/v1/*
-              - Effect: Allow
-                Action:
-                  - bedrock:InvokeModel
-                  - bedrock:InvokeModelWithResponseStream
-                Resource:
-                  - !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${NovaModelId}
-                  - !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0
 
   RecoveryFunction:
     Type: AWS::Lambda::Function
@@ -143,7 +135,8 @@ Resources:
       ReservedConcurrentExecutions: 1
       Environment:
         Variables:
-          AI_RECOVERY_MODE: shadow
+          AI_RECOVERY_MODE: off
+          AI_RECOVERY_BEDROCK_ENABLED: "false"
           AI_RECOVERY_MODEL_ID: !Ref NovaModelId
           AI_RECOVERY_AWS_REGION: !Ref AWS::Region
           AI_RECOVERY_S3_BUCKET: !Ref RecoveryBucket
@@ -153,16 +146,6 @@ Resources:
           AI_RECOVERY_MAX_PAGES: "15"
           AI_RECOVERY_MAX_INPUT_BYTES: "26214400"
           AI_RECOVERY_MAX_OUTPUT_TOKENS: "16000"
-
-  RecoveryEventSource:
-    Type: AWS::Lambda::EventSourceMapping
-    Condition: QueueTriggerEnabled
-    Properties:
-      EventSourceArn: !GetAtt RecoveryQueue.Arn
-      FunctionName: !Ref RecoveryFunction
-      BatchSize: 1
-      FunctionResponseTypes: [ReportBatchItemFailures]
-      Enabled: true
 
   ProducerAccessPolicy:
     Type: AWS::IAM::ManagedPolicy
@@ -176,9 +159,6 @@ Resources:
               - s3:PutObject
               - s3:GetObject
             Resource: !Sub ${RecoveryBucket.Arn}/ai-recovery/requests/v1/*
-          - Effect: Allow
-            Action: sqs:SendMessage
-            Resource: !GetAtt RecoveryQueue.Arn
 
 Outputs:
   RecoveryBucketName:

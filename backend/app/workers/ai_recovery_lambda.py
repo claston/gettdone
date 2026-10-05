@@ -45,7 +45,9 @@ def lambda_handler(event, context):
 
 def build_processor() -> AIRecoveryDiagnosticProcessor:
     config = AIRecoveryConfig.from_mapping(os.environ)
-    if config.mode.value == "off":
+    if not config.bedrock_invocation_enabled:
+        raise RuntimeError("AI_RECOVERY_BEDROCK_ENABLED must be true for the diagnostic Lambda.")
+    if config.mode.value not in {"shadow", "active"}:
         raise RuntimeError("AI_RECOVERY_MODE must be shadow or active for the diagnostic Lambda.")
     bucket = _required_env("AI_RECOVERY_S3_BUCKET")
     region = config.region_name

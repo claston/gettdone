@@ -18,10 +18,10 @@ def build_ai_recovery_shadow_dispatcher(
         return None
     bucket = str(environment.get("AI_RECOVERY_S3_BUCKET") or "").strip()
     queue_url = str(environment.get("AI_RECOVERY_SQS_QUEUE_URL") or "").strip()
-    if not bucket or not queue_url:
-        raise RuntimeError(
-            "AI_RECOVERY_S3_BUCKET and AI_RECOVERY_SQS_QUEUE_URL are required when AI recovery is enabled."
-        )
+    if not bucket:
+        raise RuntimeError("AI_RECOVERY_S3_BUCKET is required when AI recovery capture is enabled.")
+    if config.bedrock_invocation_enabled and not queue_url:
+        raise RuntimeError("AI_RECOVERY_SQS_QUEUE_URL is required when Bedrock invocation is enabled.")
     prefix = str(environment.get("AI_RECOVERY_REQUEST_S3_PREFIX") or "ai-recovery/requests/v1").strip()
     return AIRecoveryShadowDispatcher(
         config=config,
@@ -31,9 +31,13 @@ def build_ai_recovery_shadow_dispatcher(
             prefix=prefix,
             region=config.region_name,
         ),
-        queue_publisher=SqsAIRecoveryQueuePublisher(
-            queue_url=queue_url,
-            region=config.region_name,
+        queue_publisher=(
+            SqsAIRecoveryQueuePublisher(
+                queue_url=queue_url,
+                region=config.region_name,
+            )
+            if config.bedrock_invocation_enabled
+            else None
         ),
         parser_release=str(environment.get("APP_RELEASE") or "local"),
         request_prefix=prefix,

@@ -50,7 +50,7 @@ class AIRecoveryShadowDispatcher:
         config: AIRecoveryConfig,
         bucket: str,
         request_publisher: AIRecoveryRequestPublisher,
-        queue_publisher: AIRecoveryQueuePublisher,
+        queue_publisher: AIRecoveryQueuePublisher | None,
         parser_release: str,
         request_prefix: str = "ai-recovery/requests/v1",
         request_ttl_seconds: int = DEFAULT_REQUEST_TTL_SECONDS,
@@ -62,7 +62,10 @@ class AIRecoveryShadowDispatcher:
         self.queue_publisher = queue_publisher
         self.parser_release = str(parser_release or "").strip() or "unknown"
         self.request_prefix = request_prefix
-        self.request_ttl_seconds = max(300, int(request_ttl_seconds))
+        self.request_ttl_seconds = min(
+            DEFAULT_REQUEST_TTL_SECONDS,
+            max(300, int(request_ttl_seconds)),
+        )
         self.clock = clock or (lambda: datetime.now(UTC))
 
     def dispatch(
@@ -125,6 +128,15 @@ class AIRecoveryShadowDispatcher:
             prefix=self.request_prefix,
         )
         publication = self.request_publisher.publish(artifacts)
+        if not self.config.bedrock_invocation_enabled:
+            return AIRecoveryDispatchResult(
+                status="stored",
+                reason="bedrock_disabled",
+                idempotency_key=artifacts.manifest.idempotency_key,
+                ready_key=publication.ready_key,
+            )
+        if self.queue_publisher is None:
+            raise RuntimeError("AI recovery queue publisher is required when Bedrock invocation is enabled.")
         message = AIRecoveryQueueMessage(
             idempotency_key=artifacts.manifest.idempotency_key,
             bucket=self.bucket,
