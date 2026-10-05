@@ -147,14 +147,30 @@ def build_iso_date(year: str, month_abbrev: str, day: str) -> str:
 
 
 def infer_default_statement_year(lines: list[str]) -> int | None:
+    preferred_year_counts: dict[int, int] = {}
     year_counts: dict[int, int] = {}
+    has_consolidated_basic_marker = any(
+        "EXTRATO_PJ_A4_BASICO" in normalize_upper_text(line) for line in lines
+    )
 
     for line in lines:
         normalized_line = normalize_upper_text(line)
-        for raw in re.findall(r"\b(?:MES\s+REFERENCIA|PERIODO)\s*:\s*\d{1,2}/(\d{4})\b", normalized_line):
+        preferred_years = []
+        if has_consolidated_basic_marker:
+            preferred_years.extend(
+                re.findall(
+                    rf"\bRESUMO\s*-\s*(?:{FULL_MONTH_PATTERN})\s*/\s*(\d{{4}})\b",
+                    normalized_line,
+                )
+            )
+        preferred_years.extend(
+            re.findall(r"\b(?:MES\s+REFERENCIA|PERIODO)\s*:\s*\d{1,2}/(\d{4})\b", normalized_line)
+        )
+        for raw in preferred_years:
             year = int(raw)
             if not 1900 <= year <= 2100:
                 continue
+            preferred_year_counts[year] = preferred_year_counts.get(year, 0) + 1
             year_counts[year] = year_counts.get(year, 0) + 1
         for raw in re.findall(r"\b\d{1,2}[./-]\d{1,2}[./-](\d{4})\b", line):
             year = int(raw)
@@ -185,6 +201,8 @@ def infer_default_statement_year(lines: list[str]) -> int | None:
                 continue
             year_counts[year] = year_counts.get(year, 0) + 1
 
+    if preferred_year_counts:
+        return max(preferred_year_counts.items(), key=lambda item: item[1])[0]
     if not year_counts:
         return None
     return max(year_counts.items(), key=lambda item: item[1])[0]

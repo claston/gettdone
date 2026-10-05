@@ -75,6 +75,11 @@ from app.application.unsupported_document_detection import (
 )
 
 _SANTANDER_IB_EMPRESARIAL_365_MOBILE_GROUPED_LAYOUT = "santander_empresarial_extrato_365_dias_mobile_grouped_v1"
+_SANTANDER_CONSOLIDATED_BASIC_LAYOUT = "santander_extrato_consolidado_basico_conta_corrente_v1"
+_INHERITED_TABULAR_DATE_LAYOUTS = {
+    "bradesco_net_empresa_extrato_mensal_por_periodo_v1",
+    _SANTANDER_CONSOLIDATED_BASIC_LAYOUT,
+}
 
 
 def _normalize_parse_observability_value(value: object) -> int | float | str:
@@ -560,6 +565,8 @@ def _parse_pdf_transactions_from_page_texts(
     layout_profile = get_layout_profile(layout.layout_name)
     lines = _flatten_statement_lines(page_texts, preserve_layout_spacing=preserve_layout_spacing)
     lines, invalid_date_candidates_skipped = _filter_invalid_leading_date_candidate_lines(lines)
+    flattened_line_count = len(lines)
+    lines = _scope_profile_transaction_lines(lines, layout_profile=layout_profile)
     specialized_selection = _parse_layout_specific_statement_rows(
         lines=lines,
         layout=layout,
@@ -582,7 +589,7 @@ def _parse_pdf_transactions_from_page_texts(
             joined_text=joined_text,
             source_page_texts=tuple(page_texts),
             page_count=len(page_texts),
-            flattened_line_count=len(lines),
+            flattened_line_count=flattened_line_count,
             invalid_date_candidates_skipped=invalid_date_candidates_skipped,
             grouped_transactions_count=0,
             inline_candidates_count=0,
@@ -636,7 +643,7 @@ def _parse_pdf_transactions_from_page_texts(
         joined_text=joined_text,
         source_page_texts=tuple(page_texts),
         page_count=len(page_texts),
-        flattened_line_count=len(lines),
+        flattened_line_count=flattened_line_count,
         invalid_date_candidates_skipped=invalid_date_candidates_skipped,
         grouped_transactions_count=len(grouped_rows),
         inline_candidates_count=inline_candidates,
@@ -665,6 +672,39 @@ def _parse_layout_specific_statement_rows(
         lines=lines,
         context=context,
     )
+
+
+def _scope_profile_transaction_lines(
+    lines: list[_PdfLine], *, layout_profile: DeclarativeLayoutProfile | None
+) -> list[_PdfLine]:
+    if layout_profile is None or layout_profile.profile_name != _SANTANDER_CONSOLIDATED_BASIC_LAYOUT:
+        return lines
+
+    start_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if _normalize_text(line.text).startswith("RESUMO -")
+        ),
+        None,
+    )
+    if start_index is None:
+        return lines
+
+    end_index = next(
+        (
+            index
+            for index in range(start_index + 1, len(lines))
+            if _normalize_text(lines[index].text).startswith("SALDOS POR PERIODO")
+        ),
+        len(lines),
+    )
+    classifier_markers = [
+        line
+        for line in lines[:start_index]
+        if "EXTRATO_PJ_A4_BASICO" in _normalize_text(line.text)
+    ]
+    return [*classifier_markers[-1:], *lines[start_index:end_index]]
 
 
 def _should_treat_grouped_date_line_as_description_continuation(
@@ -1319,6 +1359,12 @@ def _parse_tabular_statement_rows(
     inferred_year = _infer_default_statement_year_from_lines(lines)
     line_texts = _extract_line_texts(lines)
     tabular_profile = resolve_tabular_profile(line_texts, layout_profile=layout_profile)
+    if (
+        tabular_profile is None
+        and layout_profile is not None
+        and layout_profile.profile_name == _SANTANDER_CONSOLIDATED_BASIC_LAYOUT
+    ):
+        tabular_profile = layout_profile
     column_positions = _resolve_tabular_column_positions(line_texts) if tabular_profile is not None else None
     opening_balance_anchor_index = _resolve_opening_balance_anchor_index(lines)
     opening_running_balance = _resolve_tabular_opening_running_balance(
@@ -1326,12 +1372,25 @@ def _parse_tabular_statement_rows(
         anchor_index=opening_balance_anchor_index,
         tabular_profile=tabular_profile,
     )
+    current_date: str | None = None
+    date_formats = profile_date_formats(tabular_profile)
     index = 0
     while index < len(lines):
         line = lines[index]
         if opening_balance_anchor_index is not None and index < opening_balance_anchor_index:
             index += 1
             continue
+        if _is_terminal_tabular_section_boundary(line.text, tabular_profile=tabular_profile):
+            break
+        if _is_tabular_date_group_boundary(line.text):
+            current_date = None
+        date_match = match_tabular_date_prefix(line.text, date_formats=date_formats)
+        if date_match is not None:
+            current_date = parse_row_date(
+                date_match.group("date"),
+                fallback_year=inferred_year,
+                date_formats=date_formats,
+            )
         if _maybe_attach_tabular_running_balance_line(transactions=transactions, line=line):
             index += 1
             continue
@@ -1353,6 +1412,18 @@ def _parse_tabular_statement_rows(
                 parsed_row = recovered_row
                 is_candidate = recovered_candidate
                 consumed = recovered_consumed
+        if (
+            parsed_row is None
+            and date_match is None
+            and current_date is not None
+            and _supports_inherited_tabular_dates(tabular_profile)
+        ):
+            parsed_row, is_candidate = _classify_inherited_tabular_statement_line(
+                line=line,
+                inherited_date=current_date,
+                tabular_profile=tabular_profile,
+                column_positions=column_positions,
+            )
         candidates = _accumulate_tabular_row(
             transactions=transactions,
             parsed_row=parsed_row,
@@ -1363,6 +1434,84 @@ def _parse_tabular_statement_rows(
         index += max(1, consumed)
 
     return transactions, candidates
+
+
+def _supports_inherited_tabular_dates(tabular_profile: DeclarativeLayoutProfile | None) -> bool:
+    return tabular_profile is not None and tabular_profile.profile_name in _INHERITED_TABULAR_DATE_LAYOUTS
+
+
+def _is_tabular_date_group_boundary(line_text: str) -> bool:
+    normalized_line = _normalize_text(line_text)
+    return normalized_line == "TOTAL" or normalized_line.startswith("ULTIMOS LANCAMENTOS")
+
+
+def _is_terminal_tabular_section_boundary(
+    line_text: str, *, tabular_profile: DeclarativeLayoutProfile | None
+) -> bool:
+    if tabular_profile is None or tabular_profile.profile_name != "bradesco_net_empresa_extrato_mensal_por_periodo_v1":
+        return False
+    return _normalize_text(line_text).startswith("SALDOS INVEST")
+
+
+def _classify_inherited_tabular_statement_line(
+    *,
+    line: _PdfLine,
+    inherited_date: str,
+    tabular_profile: DeclarativeLayoutProfile,
+    column_positions: _TabularColumnPositions | None,
+) -> tuple[_ParsedTransaction | None, bool]:
+    if is_amount_only_row(line.text):
+        return None, False
+
+    amount_tokens = find_profile_tabular_amount_tokens(line.text, tabular_profile)
+    if not amount_tokens:
+        return None, False
+    selected_amount = select_tabular_amount_token(amount_tokens, layout_profile=tabular_profile)
+    if selected_amount is None:
+        return None, True
+
+    raw_description = " ".join(line.text[: selected_amount.description_end].split())
+    normalized_description = _normalize_text(raw_description)
+    if (
+        not raw_description
+        or is_profile_opening_balance_description(raw_description, tabular_profile)
+        or should_ignore_profile_transaction_description(raw_description, tabular_profile)
+        or should_skip_transaction_description(raw_description)
+        or normalized_description.endswith(" SALDO")
+    ):
+        return None, True
+
+    selected_role = _resolve_tabular_column_role(
+        line_text=line.text,
+        rest_start=0,
+        amount_start=selected_amount.token.start,
+        amount_token_value=selected_amount.token.value,
+        fallback_role=selected_amount.token.role_hint or selected_amount.role,
+        column_positions=column_positions,
+        has_balance_token=selected_amount.balance_token is not None,
+    )
+    amount_details = _build_tabular_amount_details(
+        amount_token_value=selected_amount.token.value,
+        selected_role=selected_role,
+        amount_role_hint=selected_amount.token.role_hint,
+        raw_description=raw_description,
+        balance_token_value=selected_amount.balance_token.value if selected_amount.balance_token else None,
+        balance_role_hint=selected_amount.balance_token.role_hint if selected_amount.balance_token else None,
+    )
+    return (
+        _build_parsed_transaction(
+            date=inherited_date,
+            description=raw_description,
+            amount=amount_details["signed_amount"],
+            source_page=line.page_number,
+            source_line=line.line_number,
+            running_balance=amount_details["running_balance"],
+            external_reference_id=extract_document_reference(raw_description, layout_profile=tabular_profile),
+            has_explicit_amount_sign=has_amount_token_explicit_sign(selected_amount.token),
+            raw_amount_token=selected_amount.token.value,
+        ),
+        True,
+    )
 
 
 def _resolve_opening_balance_anchor_index(lines: list[_PdfLine]) -> int | None:

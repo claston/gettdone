@@ -96,6 +96,16 @@ def test_infer_default_statement_year_supports_reference_month_header() -> None:
     assert infer_default_statement_year(lines) == 2022
 
 
+def test_infer_default_statement_year_prefers_consolidated_summary_over_repeated_template_footer() -> None:
+    lines = [
+        "Resumo - março/2026",
+        "02/03 PIX RECEBIDO 500,00",
+        *("Extrato_PJ_A4_Basico - 2/4/2024" for _ in range(5)),
+    ]
+
+    assert infer_default_statement_year(lines) == 2026
+
+
 def test_infer_default_statement_year_returns_none_when_absent() -> None:
     assert infer_default_statement_year(["SEM DATA", "PIX RECEBIDO"]) is None
 

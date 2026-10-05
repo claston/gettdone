@@ -3380,6 +3380,108 @@ def test_parse_pdf_transactions_supports_caixa_app_ocr_headerless_profile(monkey
     assert result.transactions[-1].amount == 600.0
 
 
+def test_parse_pdf_transactions_scopes_santander_consolidated_rows_and_inherits_dates() -> None:
+    pages = [
+        """
+        EXTRATO CONSOLIDADO
+        março/2026
+        O Santander oferece soluções para o fluxo de caixa da sua empresa.
+        Extrato_PJ_A4_Basico - 2/4/2024
+        """,
+        """
+        Resumo - março/2026
+        Agencia                         Conta Corrente
+        Conta Corrente
+        Movimentacao
+        Data
+        Descricao
+        N Documento
+        Movimento (R$)
+        Saldo (R$)
+                        SALDO EM 28/02                                                                  0,00
+        02/03           PIX RECEBIDO 123456                    -                     500,00           500,00
+                        PREST. DE EMPREST. FINANCIAMENTO       654321                500,00-            0,00
+        03/03           PIX RECEBIDO 789012                    -                   1.500,00         1.500,00
+                        APLICACAO CONTAMAX                     -                   1.500,00-            0,00
+                        SALDO EM 31/03                                                                  0,00
+        Saldos por Periodo
+        Dia             Saldo
+        03/MAR/26       03/MAR/26                              998877              1.500,00             0,00
+        """,
+    ]
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        pages,
+        preserve_layout_spacing=True,
+    )
+
+    assert result.layout.layout_name == "santander_extrato_consolidado_basico_conta_corrente_v1"
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert [transaction.date for transaction in result.transactions] == [
+        "2026-03-02",
+        "2026-03-02",
+        "2026-03-03",
+        "2026-03-03",
+    ]
+    assert [transaction.amount for transaction in result.transactions] == [500.0, -500.0, 1500.0, -1500.0]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
+def test_parse_pdf_transactions_inherits_bradesco_dates_across_pages_and_stops_at_section_boundaries() -> None:
+    pages = [
+        """
+        Bradesco Net Empresa
+        Extrato Mensal / Por Periodo
+        Extrato de: Ag: 1234 | CC: 12345-6 | Entre 01/09/2021 e 30/09/2021
+        Data             Lancamento                         Dcto.       Credito (R$)       Debito (R$)       Saldo (R$)
+        31/08/2021       SALDO ANTERIOR                                                                      1,00
+        01/09/2021       BAIXA AUTOMAT POUPANCA             5148              190,74                           191,74
+                         TARIFA REGISTRO COBRANCA            9001                                -2,64          189,10
+                         ENCARGOS LIMITE DE CRED             5341                              -188,10            1,00
+        Total
+        Ultimos Lancamentos
+        Data             Lancamento                         Dcto.       Credito (R$)       Debito (R$)       Saldo (R$)
+        28/09/2021       SALDO ANTERIOR                                                                      1,00
+        01/10/2021       RESG AUTOMATICO INVESTIM           11021             198,18                           199,18
+        """,
+        """
+                         ENCARGOS LIMITE DE CRED             5341                               -52,41          146,77
+                         CONTA DE TELEFONE                   5968                              -145,77            1,00
+        Total
+        Saldos Invest Facil / Plus
+        Data             Historico                                      Valor (R$)
+        02/09/2021       SALDO INVEST FACIL                              9.975,30
+        RENTAB.INVEST FACILCRED
+        """,
+    ]
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        pages,
+        preserve_layout_spacing=True,
+    )
+
+    assert result.layout.layout_name == "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert [transaction.date for transaction in result.transactions] == [
+        "2021-09-01",
+        "2021-09-01",
+        "2021-09-01",
+        "2021-10-01",
+        "2021-10-01",
+        "2021-10-01",
+    ]
+    assert [transaction.amount for transaction in result.transactions] == [
+        190.74,
+        -2.64,
+        -188.10,
+        198.18,
+        -52.41,
+        -145.77,
+    ]
+    assert result.canonical_transactions[-1].running_balance == 1.0
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
 def test_parse_pdf_transactions_prefers_caixa_gerenciador_period_effective_date_profile(monkeypatch) -> None:
     native_text = """
     GERENCIADOR
