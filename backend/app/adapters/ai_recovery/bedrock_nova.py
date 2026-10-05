@@ -39,8 +39,8 @@ class BedrockNovaDocumentAIExtractor:
         self.prompt = prompt if prompt is not None else _load_prompt()
         if not self.model_id or not self.prompt.strip():
             raise ValueError("Bedrock AI extraction requires a model id and prompt.")
-        if not 1 <= self.timeout_seconds <= 30:
-            raise ValueError("Bedrock AI extraction timeout must be between 1 and 30 seconds.")
+        if not 1 <= self.timeout_seconds <= 90:
+            raise ValueError("Bedrock AI extraction timeout must be between 1 and 90 seconds.")
         if not 1 <= self.max_pages <= 15:
             raise ValueError("Bedrock AI extraction page limit must be between 1 and 15.")
         if not 256 <= self.max_output_tokens <= 64000:

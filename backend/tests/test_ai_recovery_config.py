@@ -31,7 +31,7 @@ def test_ai_recovery_config_accepts_supported_modes(mode: str) -> None:
         ({"AI_RECOVERY_MAX_INPUT_BYTES": "0"}, "AI_RECOVERY_MAX_INPUT_BYTES"),
         ({"AI_RECOVERY_MAX_INPUT_BYTES": str((25 * 1024 * 1024) + 1)}, "AI_RECOVERY_MAX_INPUT_BYTES"),
         ({"AI_RECOVERY_TIMEOUT_SECONDS": "0"}, "AI_RECOVERY_TIMEOUT_SECONDS"),
-        ({"AI_RECOVERY_TIMEOUT_SECONDS": "31"}, "AI_RECOVERY_TIMEOUT_SECONDS"),
+        ({"AI_RECOVERY_TIMEOUT_SECONDS": "91"}, "AI_RECOVERY_TIMEOUT_SECONDS"),
         ({"AI_RECOVERY_MAX_OUTPUT_TOKENS": "255"}, "AI_RECOVERY_MAX_OUTPUT_TOKENS"),
         ({"AI_RECOVERY_MAX_OUTPUT_TOKENS": "64001"}, "AI_RECOVERY_MAX_OUTPUT_TOKENS"),
         ({"AI_RECOVERY_MODEL_ID": ""}, "AI_RECOVERY_MODEL_ID"),
@@ -63,3 +63,9 @@ def test_ai_recovery_config_allows_lower_emergency_limits() -> None:
     assert config.model_id == "global.amazon.nova-2-lite-v1:0"
     assert config.region_name == "us-west-2"
     assert config.max_output_tokens == 8000
+
+
+def test_ai_recovery_config_accepts_ninety_second_bedrock_timeout() -> None:
+    config = AIRecoveryConfig.from_mapping({"AI_RECOVERY_TIMEOUT_SECONDS": "90"})
+
+    assert config.timeout_seconds == 90
