@@ -13,6 +13,7 @@ def test_ai_recovery_config_is_off_by_default() -> None:
     assert config.max_input_bytes == 25 * 1024 * 1024
     assert config.timeout_seconds == 25
     assert config.max_output_tokens == 16000
+    assert config.bedrock_invocation_enabled is False
 
 
 @pytest.mark.parametrize("mode", ["off", "shadow", "active"])
@@ -69,3 +70,20 @@ def test_ai_recovery_config_accepts_ninety_second_bedrock_timeout() -> None:
     config = AIRecoveryConfig.from_mapping({"AI_RECOVERY_TIMEOUT_SECONDS": "90"})
 
     assert config.timeout_seconds == 90
+
+
+def test_ai_recovery_config_requires_explicit_opt_in_for_bedrock_invocation() -> None:
+    config = AIRecoveryConfig.from_mapping(
+        {
+            "AI_RECOVERY_MODE": "shadow",
+            "AI_RECOVERY_BEDROCK_ENABLED": "true",
+        }
+    )
+
+    assert config.bedrock_invocation_enabled is True
+
+
+@pytest.mark.parametrize("value", ["1", "yes", "enabled"])
+def test_ai_recovery_config_rejects_ambiguous_bedrock_opt_in(value: str) -> None:
+    with pytest.raises(ValueError, match="AI_RECOVERY_BEDROCK_ENABLED"):
+        AIRecoveryConfig.from_mapping({"AI_RECOVERY_BEDROCK_ENABLED": value})

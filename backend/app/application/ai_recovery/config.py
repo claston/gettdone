@@ -22,6 +22,7 @@ class AIRecoveryConfig:
     max_input_bytes: int
     timeout_seconds: int
     max_output_tokens: int
+    bedrock_invocation_enabled: bool
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, str]) -> AIRecoveryConfig:
@@ -57,6 +58,10 @@ class AIRecoveryConfig:
             minimum=256,
             maximum=64000,
         )
+        bedrock_invocation_enabled = cls._parse_strict_bool(
+            values.get("AI_RECOVERY_BEDROCK_ENABLED", "false"),
+            variable_name="AI_RECOVERY_BEDROCK_ENABLED",
+        )
         return cls(
             mode=mode,
             model_id=model_id,
@@ -65,6 +70,7 @@ class AIRecoveryConfig:
             max_input_bytes=max_input_bytes,
             timeout_seconds=timeout_seconds,
             max_output_tokens=max_output_tokens,
+            bedrock_invocation_enabled=bedrock_invocation_enabled,
         )
 
     @staticmethod
@@ -90,3 +96,12 @@ class AIRecoveryConfig:
         if not minimum <= parsed <= maximum:
             raise ValueError(f"{variable_name} must be between {minimum} and {maximum}.")
         return parsed
+
+    @staticmethod
+    def _parse_strict_bool(value: str, *, variable_name: str) -> bool:
+        normalized = str(value or "").strip().lower()
+        if normalized == "true":
+            return True
+        if normalized == "false":
+            return False
+        raise ValueError(f"{variable_name} must be either true or false.")

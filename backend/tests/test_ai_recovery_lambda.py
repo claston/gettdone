@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from app.application.ai_recovery.errors import AIExtractionError, AIExtractionErrorCode
 from app.application.ai_recovery.queue import AIRecoveryQueueMessage
 from app.workers import ai_recovery_lambda
@@ -54,3 +56,11 @@ def test_ai_recovery_lambda_logs_only_sanitized_error_codes() -> None:
     assert ai_recovery_lambda._safe_error_code(provider_error) == "AccessDeniedException"
     provider_error.response = {"Error": {"Code": "unsafe value with spaces"}}  # type: ignore[attr-defined]
     assert ai_recovery_lambda._safe_error_code(provider_error) == "unclassified"
+
+
+def test_ai_recovery_lambda_refuses_to_build_processor_when_bedrock_is_disabled(monkeypatch) -> None:
+    monkeypatch.setenv("AI_RECOVERY_MODE", "shadow")
+    monkeypatch.setenv("AI_RECOVERY_BEDROCK_ENABLED", "false")
+
+    with pytest.raises(RuntimeError, match="AI_RECOVERY_BEDROCK_ENABLED"):
+        ai_recovery_lambda.build_processor()

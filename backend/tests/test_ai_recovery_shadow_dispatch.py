@@ -77,8 +77,13 @@ def _analysis() -> AnalysisData:
     )
 
 
-def _config(mode: str) -> AIRecoveryConfig:
-    return AIRecoveryConfig.from_mapping({"AI_RECOVERY_MODE": mode})
+def _config(mode: str, *, bedrock_enabled: bool = False) -> AIRecoveryConfig:
+    return AIRecoveryConfig.from_mapping(
+        {
+            "AI_RECOVERY_MODE": mode,
+            "AI_RECOVERY_BEDROCK_ENABLED": str(bedrock_enabled).lower(),
+        }
+    )
 
 
 def test_shadow_dispatch_publishes_original_pdf_before_queue_message() -> None:
@@ -86,7 +91,7 @@ def test_shadow_dispatch_publishes_original_pdf_before_queue_message() -> None:
     publisher = _Publisher(calls)
     queue = _Queue(calls)
     dispatcher = AIRecoveryShadowDispatcher(
-        config=_config("shadow"),
+        config=_config("shadow", bedrock_enabled=True),
         bucket="private-ai-recovery",
         request_publisher=publisher,
         queue_publisher=queue,
@@ -115,6 +120,39 @@ def test_shadow_dispatch_publishes_original_pdf_before_queue_message() -> None:
     assert publisher.artifacts.manifest.deterministic_artifact.statement_type == "conta_digital_extrato"
     assert queue.message.ready_key.endswith("/ready.json")
     assert queue.message.idempotency_key == publisher.artifacts.manifest.idempotency_key
+
+
+def test_shadow_dispatch_stores_request_without_queueing_when_bedrock_is_disabled() -> None:
+    calls: list[str] = []
+    publisher = _Publisher(calls)
+    queue = _Queue(calls)
+    dispatcher = AIRecoveryShadowDispatcher(
+        config=_config("shadow"),
+        bucket="private-ai-recovery",
+        request_publisher=publisher,
+        queue_publisher=queue,
+        parser_release="release-123",
+        request_ttl_seconds=7 * 86_400,
+        clock=lambda: datetime(2026, 9, 28, 12, 0, tzinfo=UTC),
+    )
+
+    result = dispatcher.dispatch(
+        document=UploadedDocument(
+            filename="statement.pdf",
+            raw_bytes=b"%PDF-1.7 original-private-document",
+            file_type="pdf",
+        ),
+        analysis=_analysis(),
+        page_texts=("NUBANK\n01/09/2026 PIX RECEBIDO 125,50",),
+        source_layout_lines=None,
+    )
+
+    assert result.status == "stored"
+    assert result.reason == "bedrock_disabled"
+    assert calls == ["s3"]
+    assert result.ready_key == publisher.artifacts.manifest.document.key.replace("input.pdf", "ready.json")
+    assert result.message_id is None
+    assert publisher.artifacts.manifest.expires_at == datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
 
 
 def test_shadow_dispatch_is_disabled_by_default() -> None:
