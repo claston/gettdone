@@ -149,7 +149,7 @@ Resources:
           AI_RECOVERY_S3_BUCKET: !Ref RecoveryBucket
           AI_RECOVERY_RESULT_S3_PREFIX: ai-recovery/results/restricted/v1
           AI_RECOVERY_FIXTURE_S3_PREFIX: ai-recovery/fixtures/v1
-          AI_RECOVERY_TIMEOUT_SECONDS: "25"
+          AI_RECOVERY_TIMEOUT_SECONDS: "90"
           AI_RECOVERY_MAX_PAGES: "15"
           AI_RECOVERY_MAX_INPUT_BYTES: "26214400"
           AI_RECOVERY_MAX_OUTPUT_TOKENS: "16000"

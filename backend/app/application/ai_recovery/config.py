@@ -49,7 +49,7 @@ class AIRecoveryConfig:
         timeout_seconds = cls._parse_bounded_int(
             values.get("AI_RECOVERY_TIMEOUT_SECONDS", "25"),
             variable_name="AI_RECOVERY_TIMEOUT_SECONDS",
-            maximum=30,
+            maximum=90,
         )
         max_output_tokens = cls._parse_bounded_int(
             values.get("AI_RECOVERY_MAX_OUTPUT_TOKENS", "16000"),

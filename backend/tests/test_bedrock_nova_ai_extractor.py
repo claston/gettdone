@@ -71,7 +71,7 @@ def _extractor(client: _FakeBedrockClient) -> BedrockNovaDocumentAIExtractor:
     )
 
 
-def test_bedrock_extractor_factory_disables_sdk_retries_and_applies_inline_timeout(monkeypatch) -> None:
+def test_bedrock_extractor_factory_disables_sdk_retries_and_applies_configured_timeout(monkeypatch) -> None:
     captured: dict[str, object] = {}
     client = _FakeBedrockClient(response=_response())
 
@@ -84,7 +84,7 @@ def test_bedrock_extractor_factory_disables_sdk_retries_and_applies_inline_timeo
     config = AIRecoveryConfig.from_mapping(
         {
             "AI_RECOVERY_AWS_REGION": "us-west-2",
-            "AI_RECOVERY_TIMEOUT_SECONDS": "12",
+            "AI_RECOVERY_TIMEOUT_SECONDS": "90",
         }
     )
 
@@ -94,7 +94,7 @@ def test_bedrock_extractor_factory_disables_sdk_retries_and_applies_inline_timeo
     assert captured["service_name"] == "bedrock-runtime"
     assert captured["region_name"] == "us-west-2"
     assert sdk_config.connect_timeout == 5
-    assert sdk_config.read_timeout == 12
+    assert sdk_config.read_timeout == 90
     assert sdk_config.retries["total_max_attempts"] == 1
     assert extractor.client is client
 
