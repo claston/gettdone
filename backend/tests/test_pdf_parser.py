@@ -229,6 +229,40 @@ def test_parse_pdf_transactions_respects_credit_column_when_row_has_no_running_b
     ]
 
 
+def test_parse_pdf_transactions_treats_santander_card_debit_settlements_as_credits() -> None:
+    text = """
+    Santander
+    Internet Banking Empresarial
+    Conta Corrente > Extratos >
+    Consultar
+    Saldo disponivel para uso
+    Periodos: 01/04/2021 a 30/04/2021
+    Data Historico Documento Valor (R$) Saldo (R$)
+    01/04/2021 SALDO ANTERIOR 1.000,00
+    05/04/2021 PAGAMENTO CARTAO DE DEBITO CIELO-ELO DEBITO 881183 91,88
+    06/04/2021 PAGAMENTO CARTAO DE DEBITO GETNET-MAESTRO 545314 563,12
+    06/04/2021 PAGAMENTO CARTAO DE DEBITO AJUSTE 000001 -10,00
+    06/04/2021 PAGAMENTO CONTA DE TELEFONE 000000 -50,00 1.595,00
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        [text],
+        preserve_layout_spacing=True,
+    )
+
+    assert result.layout.layout_name == "santander_empresarial_conta_corrente"
+    transactions = {
+        transaction.description: transaction
+        for transaction in result.transactions
+        if transaction.description != "SALDO ANTERIOR"
+    }
+    assert transactions["PAGAMENTO CARTAO DE DEBITO CIELO-ELO DEBITO 881183"].amount == 91.88
+    assert transactions["PAGAMENTO CARTAO DE DEBITO GETNET-MAESTRO 545314"].amount == 563.12
+    assert transactions["PAGAMENTO CARTAO DE DEBITO AJUSTE 000001"].amount == -10.0
+    assert transactions["PAGAMENTO CONTA DE TELEFONE 000000"].amount == -50.0
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
 def test_parse_pdf_transactions_scopes_santander_intelligent_consolidated_movements() -> None:
     pages = [
         """

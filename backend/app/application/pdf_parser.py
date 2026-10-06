@@ -79,6 +79,7 @@ _SANTANDER_CONSOLIDATED_BASIC_LAYOUT = "santander_extrato_consolidado_basico_con
 _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT = (
     "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
 )
+_SANTANDER_EMPRESARIAL_ACCOUNT_LAYOUT = "santander_empresarial_conta_corrente"
 _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT = "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
 _INHERITED_TABULAR_DATE_LAYOUTS = {
     _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT,
@@ -1527,6 +1528,7 @@ def _classify_inherited_tabular_statement_line(
         raw_description=raw_description,
         tabular_profile=tabular_profile,
         default_role=selected_role,
+        amount_token_value=selected_amount.token.value,
     )
     amount_details = _build_tabular_amount_details(
         amount_token_value=selected_amount.token.value,
@@ -1713,14 +1715,23 @@ def _resolve_layout_tabular_role_override(
     raw_description: str,
     tabular_profile: DeclarativeLayoutProfile | None,
     default_role: str | None,
+    amount_token_value: str,
 ) -> str | None:
-    if tabular_profile is None or tabular_profile.profile_name != _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT:
+    if tabular_profile is None:
         return default_role
     normalized_description = _normalize_text(raw_description)
-    if normalized_description.startswith("RESGATE CONTAMAX"):
+    if tabular_profile.profile_name == _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT:
+        if normalized_description.startswith("RESGATE CONTAMAX"):
+            return "credit"
+        if normalized_description.startswith("APLICACAO CONTAMAX"):
+            return "debit"
+    if (
+        tabular_profile.profile_name == _SANTANDER_EMPRESARIAL_ACCOUNT_LAYOUT
+        and default_role not in {"credit", "debit"}
+        and not has_explicit_amount_sign(amount_token_value)
+        and normalized_description.startswith("PAGAMENTO CARTAO DE DEBITO")
+    ):
         return "credit"
-    if normalized_description.startswith("APLICACAO CONTAMAX"):
-        return "debit"
     return default_role
 
 
@@ -1996,6 +2007,7 @@ def _classify_tabular_statement_line(
         raw_description=raw_description,
         tabular_profile=tabular_profile,
         default_role=selected_role,
+        amount_token_value=selected_amount.token.value,
     )
     amount_details = _build_tabular_amount_details(
         amount_token_value=selected_amount.token.value,
