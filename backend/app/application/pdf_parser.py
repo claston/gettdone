@@ -1042,6 +1042,12 @@ def _parse_grouped_statement_lines(
             pending_opening_balance_line = None
 
         normalized_line = _normalize_text(line.text)
+        if _is_terminal_grouped_statement_section_boundary(
+            line.text,
+            layout_profile=layout_profile,
+            has_transactions=bool(transactions),
+        ):
+            break
         if _is_bradesco_grouped_section_boundary(
             line_text=line.text,
             layout_profile=layout_profile,
@@ -1249,6 +1255,22 @@ def _is_bradesco_grouped_section_boundary(
     return normalized_line == "TOTAL" or normalized_line.startswith("ULTIMOS LANCAMENTOS")
 
 
+def _is_terminal_grouped_statement_section_boundary(
+    line_text: str,
+    *,
+    layout_profile: DeclarativeLayoutProfile | None,
+    has_transactions: bool,
+) -> bool:
+    if _is_terminal_statement_section_boundary(line_text, layout_profile=layout_profile):
+        return True
+    if not has_transactions or layout_profile is None:
+        return False
+    return (
+        layout_profile.profile_name == _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT
+        and _normalize_text(line_text).startswith("PERIODO:")
+    )
+
+
 def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTransaction], int]:
     transactions: list[_ParsedTransaction] = []
     candidates = 0
@@ -1429,7 +1451,7 @@ def _parse_tabular_statement_rows(
         if opening_balance_anchor_index is not None and index < opening_balance_anchor_index:
             index += 1
             continue
-        if _is_terminal_tabular_section_boundary(line.text, tabular_profile=tabular_profile):
+        if _is_terminal_statement_section_boundary(line.text, layout_profile=tabular_profile):
             break
         if _is_tabular_date_group_boundary(line.text):
             current_date = None
@@ -1494,15 +1516,15 @@ def _is_tabular_date_group_boundary(line_text: str) -> bool:
     return normalized_line == "TOTAL" or normalized_line.startswith("ULTIMOS LANCAMENTOS")
 
 
-def _is_terminal_tabular_section_boundary(
-    line_text: str, *, tabular_profile: DeclarativeLayoutProfile | None
+def _is_terminal_statement_section_boundary(
+    line_text: str, *, layout_profile: DeclarativeLayoutProfile | None
 ) -> bool:
-    if tabular_profile is None:
+    if layout_profile is None:
         return False
     normalized_line = _normalize_text(line_text)
-    if tabular_profile.profile_name == "bradesco_net_empresa_extrato_mensal_por_periodo_v1":
+    if layout_profile.profile_name == "bradesco_net_empresa_extrato_mensal_por_periodo_v1":
         return normalized_line.startswith("SALDOS INVEST")
-    if tabular_profile.profile_name == _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT:
+    if layout_profile.profile_name == _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT:
         return normalized_line.startswith("SALDOS POR PERIODO")
     return False
 
