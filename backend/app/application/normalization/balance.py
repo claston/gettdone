@@ -12,14 +12,42 @@ def uses_descending_running_balance(layout_name: str | None) -> bool:
     return str(layout_name or "").strip().lower() in _DESCENDING_RUNNING_BALANCE_LAYOUTS
 
 
-def annotate_balance_consistency(canonical_transactions: list[CanonicalTransaction]) -> tuple[int, int]:
+def annotate_balance_consistency(
+    canonical_transactions: list[CanonicalTransaction],
+    *,
+    balance_checkpoints: dict[int, float] | None = None,
+) -> tuple[int, int]:
     checked_count = 0
     failed_count = 0
     previous_balance_row: CanonicalTransaction | None = None
     amounts_since_balance = 0.0
     tolerance = 0.01
 
-    for current in canonical_transactions:
+    for index, current in enumerate(canonical_transactions):
+        checkpoint = (balance_checkpoints or {}).get(index)
+        if checkpoint is not None:
+            if current.running_balance is None:
+                previous_balance_row = CanonicalTransaction(
+                    date=current.date,
+                    description="SALDO ANTERIOR",
+                    amount=0.0,
+                    type="inflow",
+                    layout_name=current.layout_name,
+                    running_balance=checkpoint,
+                )
+                amounts_since_balance = current.amount
+                continue
+
+            checked_count += 1
+            expected_current_balance = checkpoint + current.amount
+            if abs(current.running_balance - expected_current_balance) > tolerance:
+                failed_count += 1
+                if "balance_consistency_failed" not in current.warnings:
+                    current.warnings.append("balance_consistency_failed")
+            previous_balance_row = current
+            amounts_since_balance = current.amount if uses_descending_running_balance(current.layout_name) else 0.0
+            continue
+
         if previous_balance_row is None:
             if current.running_balance is not None:
                 previous_balance_row = current

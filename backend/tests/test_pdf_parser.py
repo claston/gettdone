@@ -3580,6 +3580,35 @@ def test_parse_pdf_transactions_inherits_bradesco_dates_across_pages_and_stops_a
     assert result.parse_metrics["balance_consistency_failed"] == 0
 
 
+def test_parse_pdf_transactions_resets_bradesco_balance_at_latest_transactions_opening_balance() -> None:
+    page = """
+    Bradesco Net Empresa
+    Extrato Mensal / Por Periodo
+    Extrato de: Ag: 1234 | CC: 12345-6 | Entre 01/09/2026 e 30/09/2026
+    Data             Lancamento                         Dcto.       Credito (R$)       Debito (R$)       Saldo (R$)
+    31/08/2026       SALDO ANTERIOR                                                                      1,00
+    30/09/2026       DEPOSITO IDENTIFICADO              300926854          100,00                           101,00
+                     TRANSFERENCIA PIX                  300926855                         -100,00            1,00
+    Total
+    Ultimos Lancamentos
+    Data             Lancamento                         Dcto.       Credito (R$)       Debito (R$)       Saldo (R$)
+    01/10/2026       SALDO ANTERIOR                                                                    942,99
+                     APLIC.INVEST FACIL                 4589428                          -941,99            1,00
+    02/10/2026       LIQUIDACAO DE COBRANCA             9058350          1.935,19                         1.936,19
+    Saldos Invest Facil / Plus
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        [page],
+        preserve_layout_spacing=True,
+    )
+
+    assert result.layout.layout_name == "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
+    assert [transaction.amount for transaction in result.transactions] == [100.0, -100.0, -941.99, 1935.19]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert all(not transaction.warnings for transaction in result.canonical_transactions)
+
+
 def test_parse_pdf_transactions_ignores_bradesco_repeated_account_summary_across_pages() -> None:
     pages = [
         """
