@@ -326,3 +326,41 @@ def test_itau_monthly_keeps_date_across_pages_and_stops_before_investment_detail
         "Sispag Fornecedores",
         "Res Aplic Aut Mais",
     ]
+
+
+def test_itau_monthly_preserves_explicit_sispag_salary_debit_sign() -> None:
+    text = """
+    ItaúEmpresas
+    extrato mensal
+    ago 2026
+    01. Conta Corrente e Aplicações Automáticas
+    saldo em 10/08/2026 R$ 1,00
+    saldo em 11/08/2026 R$ 100.001,00
+    Conta Corrente | Movimentação
+    data descrição entradas R$ (créditos) saídas R$ (débitos) saldo R$
+    10/08
+    Saldo anterior
+    1,00
+    11/08
+    Sispag Salários
+    900,00-
+    Res Aplic Aut Mais
+    900,00
+    1,00
+    SALDO APLIC AUT MAIS
+    100.000,00
+    Saldo final
+    100.001,00
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert result.layout.layout_name == (
+        "itau_empresas_extrato_mensal_conta_corrente_aplicacoes_automaticas_v1"
+    )
+    assert [(transaction.description, transaction.amount) for transaction in result.transactions] == [
+        ("SALDO ANTERIOR", 1.0),
+        ("Sispag Salários", -900.0),
+        ("Res Aplic Aut Mais", 900.0),
+    ]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
