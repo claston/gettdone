@@ -76,8 +76,9 @@ from app.application.unsupported_document_detection import (
 
 _SANTANDER_IB_EMPRESARIAL_365_MOBILE_GROUPED_LAYOUT = "santander_empresarial_extrato_365_dias_mobile_grouped_v1"
 _SANTANDER_CONSOLIDATED_BASIC_LAYOUT = "santander_extrato_consolidado_basico_conta_corrente_v1"
+_BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT = "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
 _INHERITED_TABULAR_DATE_LAYOUTS = {
-    "bradesco_net_empresa_extrato_mensal_por_periodo_v1",
+    _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT,
     _SANTANDER_CONSOLIDATED_BASIC_LAYOUT,
 }
 
@@ -1474,6 +1475,11 @@ def _classify_inherited_tabular_statement_line(
     normalized_description = _normalize_text(raw_description)
     if (
         not raw_description
+        or _is_bradesco_account_summary_value_row(
+            raw_description=raw_description,
+            selected_amount=selected_amount,
+            tabular_profile=tabular_profile,
+        )
         or is_profile_opening_balance_description(raw_description, tabular_profile)
         or should_ignore_profile_transaction_description(raw_description, tabular_profile)
         or should_skip_transaction_description(raw_description)
@@ -1512,6 +1518,27 @@ def _classify_inherited_tabular_statement_line(
         ),
         True,
     )
+
+
+def _is_bradesco_account_summary_value_row(
+    *,
+    raw_description: str,
+    selected_amount: SelectedTabularAmount,
+    tabular_profile: DeclarativeLayoutProfile,
+) -> bool:
+    if tabular_profile.profile_name != _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT:
+        return False
+    if selected_amount.balance_token is None:
+        return False
+    if re.fullmatch(
+        r"\d{1,6}(?:-[0-9X])?\s*\|\s*[0-9.]{1,16}(?:-[0-9X])?",
+        raw_description,
+        flags=re.IGNORECASE,
+    ) is None:
+        return False
+    summary_total = parse_pdf_amount(selected_amount.token.value)
+    balance_total = parse_pdf_amount(selected_amount.balance_token.value)
+    return abs(summary_total - balance_total) <= 0.01
 
 
 def _resolve_opening_balance_anchor_index(lines: list[_PdfLine]) -> int | None:
