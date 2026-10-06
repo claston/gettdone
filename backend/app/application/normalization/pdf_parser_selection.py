@@ -15,6 +15,7 @@ from app.application.normalization.text import normalize_upper_text
 RowsParser = Callable[[list[Any]], tuple[list[Any], int]]
 TabularRowsParser = Callable[[list[Any], Any | None], tuple[list[Any], int]]
 MultilineRowsParser = Callable[[list[Any], Any | None], tuple[list[Any], int]]
+_ITAU_COMPLETE_TABLE_LAYOUT = "itau_empresas_extrato_completo_tabela_v1"
 
 @dataclass(frozen=True)
 class SelectedParserRows:
@@ -346,12 +347,35 @@ def _should_prefer_tabular_over_grouped_on_opening_balance_noise(
         "DATA MOV." in description and "NR. DOC." in description and "VALOR" in description and "SALDO" in description
         for description in tabular_descriptions
     )
+    grouped_transactions_after_opening = [
+        getattr(item, "transaction", None) for item in grouped_rows[1:]
+    ]
+    tabular_transactions = [getattr(item, "transaction", None) for item in tabular_rows]
+    transactions_match_by_date_and_amount = all(
+        grouped_transaction is not None
+        and tabular_transaction is not None
+        and getattr(grouped_transaction, "date", None) == getattr(tabular_transaction, "date", None)
+        and abs(
+            float(getattr(grouped_transaction, "amount", 0.0))
+            - float(getattr(tabular_transaction, "amount", 0.0))
+        )
+        <= 0.01
+        for grouped_transaction, tabular_transaction in zip(
+            grouped_transactions_after_opening,
+            tabular_transactions,
+            strict=True,
+        )
+    )
 
     return (
         grouped_has_opening_balance
         and not tabular_has_opening_balance
         and (
             grouped_has_repeated_header_noise
+            or (
+                getattr(layout_profile, "profile_name", None) == _ITAU_COMPLETE_TABLE_LAYOUT
+                and transactions_match_by_date_and_amount
+            )
             or all(
                 grouped_description == tabular_description
                 for grouped_description, tabular_description in zip(

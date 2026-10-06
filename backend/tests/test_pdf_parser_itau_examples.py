@@ -364,3 +364,58 @@ def test_itau_monthly_preserves_explicit_sispag_salary_debit_sign() -> None:
         ("Res Aplic Aut Mais", 900.0),
     ]
     assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
+def test_itau_complete_table_attaches_vertical_daily_balances_without_importing_them() -> None:
+    text = """
+    Itaú
+    Agência Conta Saldo total Limite da conta Utilizado Disponível
+    Lançamentos do período: 17/12/2025 até 19/12/2025
+    Data Lançamentos Razão Social CNPJ/CPF Valor (R$) Saldo (R$)
+    16/12/2025 SALDO ANTERIOR -4.000,00
+    17/12/2025
+    PIX RECEBIDO
+    100,00
+    17/12/2025
+    SALDO TOTAL DISPONÍVEL DIA
+    -3.900,00
+    RECEBIMENTOS GUIMARAES
+    18/12/2025
+    DEB AUTOR SEGURO
+    -375,11
+    18/12/2025
+    SALDO TOTAL DISPONÍVEL DIA
+    -4.275,11
+    COMPRA NO DÉBITO
+    19/12/2025
+    PIX ENVIADO
+    -442,35
+    19/12/2025
+    SALDO TOTAL DISPONÍVEL DIA
+    -4.717,46
+    """
+
+    profile = pdf_parser_module.get_layout_profile("itau_empresas_extrato_completo_tabela_v1")
+    assert profile is not None
+    lines = [
+        pdf_parser_module._PdfLine(text=value.strip(), page_number=1, line_number=index)
+        for index, value in enumerate(text.splitlines(), start=1)
+        if value.strip()
+    ]
+
+    rows, candidates = pdf_parser_module._parse_tabular_statement_rows(lines, layout_profile=profile)
+
+    assert candidates == 4  # Three transactions plus the skipped opening-balance candidate.
+    assert [
+        (row.transaction.date, row.transaction.description, row.transaction.amount)
+        for row in rows
+    ] == [
+        ("2025-12-17", "PIX RECEBIDO", 100.0),
+        ("2025-12-18", "DEB AUTOR SEGURO", -375.11),
+        ("2025-12-19", "PIX ENVIADO", -442.35),
+    ]
+    assert [row.running_balance for row in rows] == [
+        -3900.0,
+        -4275.11,
+        -4717.46,
+    ]
