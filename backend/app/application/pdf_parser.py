@@ -970,8 +970,8 @@ def _flatten_statement_lines(page_texts: list[str], *, preserve_layout_spacing: 
     lines: list[_PdfLine] = []
     for page_index, page_text in enumerate(page_texts):
         for line_index, line in enumerate(page_text.splitlines()):
-            cleaned = line.strip() if preserve_layout_spacing else " ".join(line.split())
-            if cleaned:
+            cleaned = line.rstrip() if preserve_layout_spacing else " ".join(line.split())
+            if cleaned.strip():
                 lines.append(_PdfLine(text=cleaned, page_number=page_index + 1, line_number=line_index + 1))
     return lines
 

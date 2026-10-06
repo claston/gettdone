@@ -71,6 +71,8 @@ def _parse_movement_rows(
     rows: list[_ParsedTransaction] = []
     last_content_page: int | None = None
     last_content_line: int | None = None
+    credit_column_start: int | None = None
+    debit_column_start: int | None = None
 
     for line in lines:
         normalized_line = normalize_text(line.text)
@@ -79,6 +81,10 @@ def _parse_movement_rows(
             current_date = None
             continue
         if not inside_movements:
+            continue
+        column_positions = _find_credit_and_debit_columns(line.text)
+        if column_positions is not None:
+            credit_column_start, debit_column_start = column_positions
             continue
         if _is_table_header(normalized_line):
             continue
@@ -89,9 +95,11 @@ def _parse_movement_rows(
 
         date_match = _DATE_ROW_PATTERN.match(line.text)
         body = line.text.strip()
+        body_start = len(line.text) - len(line.text.lstrip())
         if date_match is not None:
             current_date = parse_row_date(date_match.group("date"), fallback_year=fallback_year)
             body = date_match.group("rest").strip()
+            body_start = line.text.find(body, date_match.end("date"))
 
         amount_tokens = tuple(find_amount_tokens(body))
         if not amount_tokens:
@@ -117,7 +125,17 @@ def _parse_movement_rows(
             continue
 
         raw_amount = parse_amount_token(amount_token)
-        amount = compute_hint_signed_amount(raw_amount=raw_amount, description=description)
+        amount_role = _resolve_amount_column_role(
+            amount_start=body_start + amount_token.start,
+            credit_column_start=credit_column_start,
+            debit_column_start=debit_column_start,
+        )
+        amount = _resolve_signed_amount(
+            raw_amount=raw_amount,
+            amount_token=amount_token,
+            description=description,
+            amount_role=amount_role,
+        )
         running_balance = parse_amount_token(balance_token) if balance_token is not None else None
         rows.append(
             build_parsed_transaction(
@@ -135,6 +153,53 @@ def _parse_movement_rows(
         last_content_line = line.line_number
 
     return rows
+
+
+def _find_credit_and_debit_columns(line_text: str) -> tuple[int, int] | None:
+    credit_start: int | None = None
+    debit_start: int | None = None
+    for token_match in re.finditer(r"\S+", line_text):
+        normalized_token = normalize_text(token_match.group(0))
+        if normalized_token == "CREDITOS":
+            credit_start = token_match.start()
+        elif normalized_token == "DEBITOS":
+            debit_start = token_match.start()
+    if credit_start is None or debit_start is None:
+        return None
+    if abs(credit_start - debit_start) < 12:
+        return None
+    return credit_start, debit_start
+
+
+def _resolve_amount_column_role(
+    *,
+    amount_start: int,
+    credit_column_start: int | None,
+    debit_column_start: int | None,
+) -> str | None:
+    if credit_column_start is None or debit_column_start is None:
+        return None
+    boundary = (credit_column_start + debit_column_start) / 2
+    if credit_column_start < debit_column_start:
+        return "credit" if amount_start < boundary else "debit"
+    return "debit" if amount_start < boundary else "credit"
+
+
+def _resolve_signed_amount(
+    *,
+    raw_amount: float,
+    amount_token: AmountToken,
+    description: str,
+    amount_role: str | None,
+) -> float:
+    if has_amount_token_explicit_sign(amount_token):
+        return raw_amount
+    if normalize_text(description).startswith("PAGAMENTO A FORNECEDORES"):
+        if amount_role == "credit":
+            return abs(raw_amount)
+        if amount_role == "debit":
+            return -abs(raw_amount)
+    return compute_hint_signed_amount(raw_amount=raw_amount, description=description)
 
 
 def _select_amount_and_balance(amount_tokens: tuple[AmountToken, ...]) -> tuple[AmountToken, AmountToken | None]:
