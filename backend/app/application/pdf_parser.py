@@ -76,9 +76,13 @@ from app.application.unsupported_document_detection import (
 
 _SANTANDER_IB_EMPRESARIAL_365_MOBILE_GROUPED_LAYOUT = "santander_empresarial_extrato_365_dias_mobile_grouped_v1"
 _SANTANDER_CONSOLIDATED_BASIC_LAYOUT = "santander_extrato_consolidado_basico_conta_corrente_v1"
+_SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT = (
+    "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
+)
 _INHERITED_TABULAR_DATE_LAYOUTS = {
     "bradesco_net_empresa_extrato_mensal_por_periodo_v1",
     _SANTANDER_CONSOLIDATED_BASIC_LAYOUT,
+    _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT,
 }
 
 
@@ -1362,7 +1366,11 @@ def _parse_tabular_statement_rows(
     if (
         tabular_profile is None
         and layout_profile is not None
-        and layout_profile.profile_name == _SANTANDER_CONSOLIDATED_BASIC_LAYOUT
+        and layout_profile.profile_name
+        in {
+            _SANTANDER_CONSOLIDATED_BASIC_LAYOUT,
+            _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT,
+        }
     ):
         tabular_profile = layout_profile
     column_positions = _resolve_tabular_column_positions(line_texts) if tabular_profile is not None else None
@@ -1448,9 +1456,14 @@ def _is_tabular_date_group_boundary(line_text: str) -> bool:
 def _is_terminal_tabular_section_boundary(
     line_text: str, *, tabular_profile: DeclarativeLayoutProfile | None
 ) -> bool:
-    if tabular_profile is None or tabular_profile.profile_name != "bradesco_net_empresa_extrato_mensal_por_periodo_v1":
+    if tabular_profile is None:
         return False
-    return _normalize_text(line_text).startswith("SALDOS INVEST")
+    normalized_line = _normalize_text(line_text)
+    if tabular_profile.profile_name == "bradesco_net_empresa_extrato_mensal_por_periodo_v1":
+        return normalized_line.startswith("SALDOS INVEST")
+    if tabular_profile.profile_name == _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT:
+        return normalized_line.startswith("SALDOS POR PERIODO")
+    return False
 
 
 def _classify_inherited_tabular_statement_line(
@@ -1489,6 +1502,11 @@ def _classify_inherited_tabular_statement_line(
         fallback_role=selected_amount.token.role_hint or selected_amount.role,
         column_positions=column_positions,
         has_balance_token=selected_amount.balance_token is not None,
+    )
+    selected_role = _resolve_layout_tabular_role_override(
+        raw_description=raw_description,
+        tabular_profile=tabular_profile,
+        default_role=selected_role,
     )
     amount_details = _build_tabular_amount_details(
         amount_token_value=selected_amount.token.value,
@@ -1598,6 +1616,22 @@ def _resolve_tabular_column_role(
     if absolute_amount_start < second_balance_boundary:
         return second_role
     return fallback_role
+
+
+def _resolve_layout_tabular_role_override(
+    *,
+    raw_description: str,
+    tabular_profile: DeclarativeLayoutProfile | None,
+    default_role: str | None,
+) -> str | None:
+    if tabular_profile is None or tabular_profile.profile_name != _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT:
+        return default_role
+    normalized_description = _normalize_text(raw_description)
+    if normalized_description.startswith("RESGATE CONTAMAX"):
+        return "credit"
+    if normalized_description.startswith("APLICACAO CONTAMAX"):
+        return "debit"
+    return default_role
 
 
 def _maybe_attach_tabular_running_balance_line(
@@ -1867,6 +1901,11 @@ def _classify_tabular_statement_line(
         fallback_role=selected_amount.token.role_hint or selected_amount.role,
         column_positions=column_positions,
         has_balance_token=selected_amount.balance_token is not None,
+    )
+    selected_role = _resolve_layout_tabular_role_override(
+        raw_description=raw_description,
+        tabular_profile=tabular_profile,
+        default_role=selected_role,
     )
     amount_details = _build_tabular_amount_details(
         amount_token_value=selected_amount.token.value,

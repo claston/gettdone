@@ -229,6 +229,104 @@ def test_parse_pdf_transactions_respects_credit_column_when_row_has_no_running_b
     ]
 
 
+def test_parse_pdf_transactions_scopes_santander_intelligent_consolidated_movements() -> None:
+    pages = [
+        """
+        Santander Negocios & Empresas
+        EXTRATO CONSOLIDADO INTELIGENTE
+        Resumo - agosto/2026
+        Extrato_PJ_A4_Inteligente 1.0 - 2/4/2024
+        """,
+        """
+        Conta Corrente
+        Movimentacao
+        Data Descricao No Documento Movimentos (R$) Saldo (R$)
+        Creditos Debitos
+        SALDO EM 31/07 0,00
+        03/08 TARIFA MENSALIDADE PACOTE SERVICOS - 159,00-
+              PAGAMENTO DARF EM CANAIS 000022 244,19-
+              RESGATE CONTAMAX AUTOMATICO - 403,19 0,00
+        04/08 PIX ENVIADO - 400,00-
+              RESGATE CONTAMAX AUTOMATICO - 400,00 0,00
+        05/08 PIX ENVIADO 471579 4.000,00-
+              PIX ENVIADO - 1.000,00-
+              RESGATE CONTAMAX AUTOMATICO - 5.000,00 0,00
+        Extrato_PJ_A4_Inteligente 1.0 - 2/4/2024
+        """,
+        """
+        EXTRATO CONSOLIDADO INTELIGENTE
+        agosto/2026
+        Data Descricao No Documento Movimentos (R$) Saldo (R$)
+        Creditos Debitos
+        11/08 PIX RECEBIDO 510762 2.629,64
+              APLICACAO CONTAMAX - 2.629,64- 0,00
+        12/08 PIX ENVIADO 071949 1.000,00-
+              RESGATE CONTAMAX AUTOMATICO - 1.000,00 0,00
+        20/08 PIX AGENDADO RECEITA FEDERAL - 265,39-
+              RESGATE CONTAMAX AUTOMATICO - 265,39 0,00
+        SALDO EM 31/08 0,00
+        Saldos por Periodo
+        Comprovantes de Pagamento
+        04/08 INTERNET BANKING PIX CONSULTARE 00416968 0000 0000000000000 400,00
+        Extrato_PJ_A4_Inteligente 1.0 - 2/4/2024
+        """,
+        """
+        Investimentos
+        ContaMax Empresarial
+        Movimentacao Mensal
+        Data Movimento Data da Aplicacao No da Aplicacao Valor Liquido Creditado R$
+        03/AGO/26 25/MAI/26 260030537650 0,00 403,11 403,21 0,10 0,00 -0,02 403,19
+        04/AGO/26 25/MAI/26 260030537650 0,00 399,92 400,02 0,10 0,00 -0,02 400,00
+        Extrato_PJ_A4_Inteligente 1.0 - 2/4/2024
+        """,
+    ]
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        pages,
+        preserve_layout_spacing=True,
+    )
+
+    assert result.layout.layout_name == (
+        "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
+    )
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert [transaction.date for transaction in result.transactions] == [
+        "2026-08-03",
+        "2026-08-03",
+        "2026-08-03",
+        "2026-08-04",
+        "2026-08-04",
+        "2026-08-05",
+        "2026-08-05",
+        "2026-08-05",
+        "2026-08-11",
+        "2026-08-11",
+        "2026-08-12",
+        "2026-08-12",
+        "2026-08-20",
+        "2026-08-20",
+    ]
+    assert [transaction.amount for transaction in result.transactions] == [
+        -159.0,
+        -244.19,
+        403.19,
+        -400.0,
+        400.0,
+        -4000.0,
+        -1000.0,
+        5000.0,
+        2629.64,
+        -2629.64,
+        -1000.0,
+        1000.0,
+        -265.39,
+        265.39,
+    ]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert all("INTERNET BANKING" not in transaction.description for transaction in result.transactions)
+    assert all("25 MAI 26" not in transaction.description for transaction in result.transactions)
+
+
 def test_parse_pdf_transactions_keeps_grouped_transaction_when_standalone_minus_sits_between_description_and_amount() -> None:
     text = """
     Santander
