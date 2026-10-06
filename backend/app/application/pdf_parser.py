@@ -1042,6 +1042,20 @@ def _parse_grouped_statement_lines(
             pending_opening_balance_line = None
 
         normalized_line = _normalize_text(line.text)
+        if _is_bradesco_grouped_section_boundary(
+            line_text=line.text,
+            layout_profile=layout_profile,
+        ):
+            _flush_grouped_description_continuation(
+                transactions=transactions,
+                last_transaction_index=last_transaction_index,
+                description_parts=description_parts,
+                current_date=current_date,
+            )
+            current_date = None
+            current_section_hint = None
+            description_parts = []
+            continue
         if normalized_line.startswith("SALDO ANTERIOR") or normalized_line.startswith("SALDO INICIAL"):
             pending_opening_balance_label = "SALDO ANTERIOR" if "ANTERIOR" in normalized_line else "SALDO INICIAL"
             pending_opening_balance_line = line
@@ -1222,6 +1236,17 @@ def _parse_grouped_statement_lines(
         current_date=current_date,
     )
     return transactions
+
+
+def _is_bradesco_grouped_section_boundary(
+    *,
+    line_text: str,
+    layout_profile: DeclarativeLayoutProfile | None,
+) -> bool:
+    if layout_profile is None or layout_profile.profile_name != _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT:
+        return False
+    normalized_line = _normalize_text(line_text)
+    return normalized_line == "TOTAL" or normalized_line.startswith("ULTIMOS LANCAMENTOS")
 
 
 def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTransaction], int]:

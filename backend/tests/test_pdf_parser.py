@@ -3643,6 +3643,48 @@ def test_parse_pdf_transactions_resets_bradesco_balance_at_latest_transactions_o
     assert all(not transaction.warnings for transaction in result.canonical_transactions)
 
 
+def test_parse_pdf_transactions_does_not_import_fragmented_bradesco_total_row() -> None:
+    page = """
+    Bradesco Net Empresa
+    Extrato Mensal / Por Periodo
+    Extrato de: Ag: 1234 | CC: 12345-6 | Entre 01/09/2026 e 30/09/2026
+    Data
+    Lancamento
+    Dcto.
+    Credito (R$)
+    Debito (R$)
+    Saldo (R$)
+    31/08/2026
+    SALDO ANTERIOR
+    100,00
+    28/09/2026
+    PIX ENVIADO
+    1620095
+    -10,00
+    90,00
+    DES: CONTRAPARTE 28/09
+    Total
+    100,00
+    -10,00
+    90,00
+    Os dados acima tem como base 06/10/2026
+    Ultimos Lancamentos
+    Nao ha lancamentos para este tipo de extrato.
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([page])
+
+    assert result.layout.layout_name == "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert [transaction.description for transaction in result.transactions] == [
+        "SALDO ANTERIOR",
+        "PIX ENVIADO 1620095 DES: CONTRAPARTE 28/09",
+    ]
+    assert [transaction.amount for transaction in result.transactions] == [100.0, -10.0]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert all(not transaction.warnings for transaction in result.canonical_transactions)
+
+
 def test_parse_pdf_transactions_ignores_bradesco_repeated_account_summary_across_pages() -> None:
     pages = [
         """
