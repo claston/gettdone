@@ -38,6 +38,45 @@ def test_annotate_balance_consistency_marks_only_inconsistent_rows() -> None:
     assert "balance_consistency_failed" in canonical_transactions[2].warnings
 
 
+def test_annotate_balance_consistency_resets_at_checkpoint_and_keeps_checking() -> None:
+    canonical_transactions = [
+        CanonicalTransaction(
+            date="2026-09-30",
+            description="ULTIMO LANCAMENTO DO PERIODO",
+            amount=-100.0,
+            type="outflow",
+            running_balance=1.0,
+            source_parser="tabular",
+        ),
+        CanonicalTransaction(
+            date="2026-10-01",
+            description="APLIC.INVEST FACIL",
+            amount=-941.99,
+            type="outflow",
+            running_balance=1.0,
+            source_parser="tabular",
+        ),
+        CanonicalTransaction(
+            date="2026-10-02",
+            description="LIQUIDACAO DE COBRANCA",
+            amount=10.0,
+            type="inflow",
+            running_balance=20.0,
+            source_parser="tabular",
+        ),
+    ]
+
+    checked_count, failed_count = annotate_balance_consistency(
+        canonical_transactions,
+        balance_checkpoints={1: 942.99},
+    )
+
+    assert checked_count == 2
+    assert failed_count == 1
+    assert canonical_transactions[1].warnings == []
+    assert "balance_consistency_failed" in canonical_transactions[2].warnings
+
+
 def test_annotate_balance_consistency_ignores_rows_without_running_balance() -> None:
     canonical_transactions = [
         CanonicalTransaction(

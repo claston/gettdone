@@ -620,6 +620,15 @@ def _parse_pdf_transactions_from_page_texts(
     parsed_rows = selection.rows
     parsed_rows = _adjust_forward_year_rollover_rows(parsed_rows, line_texts=_extract_line_texts(lines))
     selected_parser = selection.selected_parser
+    balance_checkpoints = (
+        _resolve_tabular_balance_checkpoints(
+            lines=lines,
+            parsed_rows=parsed_rows,
+            tabular_profile=layout_profile,
+        )
+        if selected_parser == "tabular"
+        else {}
+    )
     inline_candidates = selection.inline_candidates
     inline_transactions_count = selection.inline_transactions_count
     tabular_candidates_count = selection.tabular_candidates
@@ -663,6 +672,7 @@ def _parse_pdf_transactions_from_page_texts(
         multiline_overlap_count=multiline_overlap_count,
         multiline_coverage_gain=multiline_coverage_gain,
         multiline_conflict_count=multiline_conflict_count,
+        balance_checkpoints=balance_checkpoints,
     )
 
 
@@ -858,6 +868,7 @@ def _build_pdf_parse_result(
     multiline_overlap_count: int = 0,
     multiline_coverage_gain: int = 0,
     multiline_conflict_count: int = 0,
+    balance_checkpoints: dict[int, float] | None = None,
 ) -> PdfParseResult:
     transactions = [item.transaction for item in parsed_rows]
     canonical_transactions = build_canonical_transactions(
@@ -868,7 +879,10 @@ def _build_pdf_parse_result(
         layout_confidence=layout.confidence,
         source_parser=selected_parser,
     )
-    balance_checked_count, balance_failed_count = annotate_balance_consistency(canonical_transactions)
+    balance_checked_count, balance_failed_count = annotate_balance_consistency(
+        canonical_transactions,
+        balance_checkpoints=balance_checkpoints,
+    )
     canonical_quality_metrics = build_canonical_quality_metrics(canonical_transactions)
     parse_metrics = build_pdf_parse_metrics(
         page_count=page_count,
@@ -1593,6 +1607,55 @@ def _resolve_tabular_opening_running_balance(
     if following.page_number != anchor.page_number or not is_amount_only_row(following.text):
         return None
     return parse_pdf_amount(following.text)
+
+
+def _resolve_tabular_balance_checkpoints(
+    *,
+    lines: list[_PdfLine],
+    parsed_rows: list[_ParsedTransaction],
+    tabular_profile: DeclarativeLayoutProfile | None,
+) -> dict[int, float]:
+    if (
+        tabular_profile is None
+        or tabular_profile.profile_name != _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT
+        or should_import_profile_opening_balance(tabular_profile)
+    ):
+        return {}
+
+    positioned_rows = [
+        (index, (row.source_page, row.source_line))
+        for index, row in enumerate(parsed_rows)
+        if row.source_page is not None and row.source_line is not None
+    ]
+    checkpoints: dict[int, float] = {}
+    for anchor_index, line in enumerate(lines):
+        normalized = _normalize_text(line.text)
+        if not (
+            normalized.startswith("SALDO ANTERIOR")
+            or normalized.startswith("SALDO INICIAL")
+            or " SALDO ANTERIOR" in normalized
+            or " SALDO INICIAL" in normalized
+        ):
+            continue
+
+        anchor_position = (line.page_number, line.line_number)
+        if not any(position < anchor_position for _, position in positioned_rows):
+            continue
+        next_row_index = next(
+            (row_index for row_index, position in positioned_rows if position > anchor_position),
+            None,
+        )
+        if next_row_index is None:
+            continue
+        opening_balance = _resolve_tabular_opening_running_balance(
+            lines=lines,
+            anchor_index=anchor_index,
+            tabular_profile=tabular_profile,
+        )
+        if opening_balance is not None:
+            checkpoints[next_row_index] = opening_balance
+
+    return checkpoints
 
 
 def _resolve_tabular_column_role(
