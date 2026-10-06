@@ -3482,6 +3482,48 @@ def test_parse_pdf_transactions_inherits_bradesco_dates_across_pages_and_stops_a
     assert result.parse_metrics["balance_consistency_failed"] == 0
 
 
+def test_parse_pdf_transactions_ignores_bradesco_repeated_account_summary_across_pages() -> None:
+    pages = [
+        """
+        Bradesco Net Empresa
+        Extrato Mensal / Por Periodo
+        Agencia | Conta                         Total Disponivel (R$)          Total (R$)
+        1234 | 56789-0                                      150,00               150,00
+        Extrato de: Ag: 1234 | CC: 56789-0 | Entre 01/03/2024 e 31/03/2024
+        Data             Lancamento                         Dcto.       Credito (R$)       Debito (R$)       Saldo (R$)
+        29/02/2024       SALDO ANTERIOR                                                                      0,00
+        01/03/2024       DEPOSITO IDENTIFICADO              010324854          100,00                           100,00
+        """,
+        """
+        Extrato Mensal / Por Periodo
+        Bradesco Net Empresa
+        Folha 2/2
+        Agencia | Conta                         Total Disponivel (R$)          Total (R$)
+        1234 | 56789-0                                      150,00               150,00
+        Extrato de: Ag: 1234 | CC: 56789-0 | Entre 01/03/2024 e 31/03/2024
+        Data             Lancamento                         Dcto.       Credito (R$)       Debito (R$)       Saldo (R$)
+        02/03/2024       LIQUIDACAO DE COBRANCA             020324106           50,00                           150,00
+        Saldos Invest Facil / Plus
+        RENTAB.INVEST FACILCRED
+        """,
+    ]
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        pages,
+        preserve_layout_spacing=True,
+    )
+
+    assert result.layout.layout_name == "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert [transaction.description for transaction in result.transactions] == [
+        "DEPOSITO IDENTIFICADO 010324854",
+        "LIQUIDACAO DE COBRANCA 020324106",
+    ]
+    assert [transaction.amount for transaction in result.transactions] == [100.0, 50.0]
+    assert result.canonical_transactions[-1].running_balance == 150.0
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
 def test_parse_pdf_transactions_prefers_caixa_gerenciador_period_effective_date_profile(monkeypatch) -> None:
     native_text = """
     GERENCIADOR
