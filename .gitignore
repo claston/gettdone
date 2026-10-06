@@ -9,6 +9,7 @@ backend/venv_local/
 
 node_modules/
 .next/
+*.tsbuildinfo
 
 tmp/
 .worktrees/
