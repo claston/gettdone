@@ -361,6 +361,65 @@ def test_parse_pdf_transactions_scopes_santander_intelligent_consolidated_moveme
     assert all("25 MAI 26" not in transaction.description for transaction in result.transactions)
 
 
+def test_parse_pdf_transactions_stops_grouped_santander_at_balances_by_period_section() -> None:
+    page = """
+    Santander Negocios & Empresas
+    EXTRATO CONSOLIDADO INTELIGENTE
+    Resumo - agosto/2026
+    Conta Corrente
+    Movimentacao
+    Data
+    Descricao
+    No Documento
+    Movimentos (R$)
+    Saldo (R$)
+    Creditos
+    Debitos
+    SALDO EM 31/07
+    0,00
+    03/08/2026
+    PIX RECEBIDO CLIENTE
+    123456
+    100,00
+    100,00
+    31/08/2026
+    JUROS SALDO UTILIZ ATE LIMITE
+    157,09-
+    -57,09
+    PERIODO: 30/07 A 29/08/26
+    SALDO EM 31/08
+    -57,09
+    Informativo sobre saldo devedor e encargos.
+    Saldos por Periodo
+    Dia
+    Saldo de Conta Corrente
+    03
+    -2.670,32
+    -2.670,32
+    Comprovantes de Pagamento
+    05/08/2026
+    RESGATE P C C
+    2.620,25
+    111.512,57
+    Investimentos
+    ContaMax Empresarial
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([page])
+
+    assert result.layout.layout_name == (
+        "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
+    )
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert [transaction.description for transaction in result.transactions] == [
+        "PIX RECEBIDO CLIENTE 123456",
+        "JUROS SALDO UTILIZ ATE LIMITE",
+    ]
+    assert [transaction.amount for transaction in result.transactions] == [100.0, -157.09]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert all(not transaction.warnings for transaction in result.canonical_transactions)
+
+
 def test_parse_pdf_transactions_keeps_grouped_transaction_when_standalone_minus_sits_between_description_and_amount() -> None:
     text = """
     Santander
