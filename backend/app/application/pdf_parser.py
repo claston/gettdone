@@ -84,6 +84,7 @@ _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT = "bradesco_net_empresa_extrato_mensal_por_
 _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT = (
     "itau_empresas_extrato_mensal_conta_corrente_aplicacoes_automaticas_v1"
 )
+_SICREDI_MATRIX_LANDSCAPE_LAYOUT = "sicredi_matricial_paisagem_conta_corrente_v1"
 _INHERITED_TABULAR_DATE_LAYOUTS = {
     _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT,
     _SANTANDER_CONSOLIDATED_BASIC_LAYOUT,
@@ -1825,6 +1826,11 @@ def _resolve_layout_tabular_role_override(
         if normalized_description.startswith("RESGATE CONTAMAX"):
             return "credit"
         if normalized_description.startswith("APLICACAO CONTAMAX"):
+            return "debit"
+    if tabular_profile.profile_name == _SICREDI_MATRIX_LANDSCAPE_LAYOUT:
+        if normalized_description.startswith("PIX_CRED "):
+            return "credit"
+        if normalized_description.startswith(("PIX_DEB ", "DEB_FCO ", "CAPTACAO APLIC.")):
             return "debit"
     if (
         tabular_profile.profile_name == _SANTANDER_EMPRESARIAL_ACCOUNT_LAYOUT

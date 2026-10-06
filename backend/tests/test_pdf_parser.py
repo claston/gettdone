@@ -1740,6 +1740,59 @@ def test_parse_pdf_transactions_prefers_layout_text_for_sicredi_matricial_paisag
     assert result.canonical_transactions[2].running_balance == 71304.94
 
 
+def test_parse_sicredi_matricial_pix_cred_with_balance_as_credit() -> None:
+    text = """
+    ======================================================================================================================
+    COOP CRED, POUP E INV VALOR SUSTENTAVEL EXTRATO DE CONTA CORRENTE
+    EMPRESA EXEMPLO
+    PERIODO: DE 01/2026 A 04/2026
+    DATA        DOCUMENTO  HISTORICO                                                       DEBITO      CREDITO        SALDO
+    **/**/****  *********  S A L D O A N T E R I O R                                                               11.198,88
+    08/01/2026  PIX_CRED   RECEBIMENTO PIX 30782987877 SUELEN ALVES BARBOSA                              480,00     11.678,88
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        [text],
+        preserve_layout_spacing=True,
+    )
+
+    assert result.layout.layout_name == "sicredi_matricial_paisagem_conta_corrente_v1"
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert result.transactions == [
+        pdf_parser_module.NormalizedTransaction(
+            date="2026-01-08",
+            description="PIX_CRED RECEBIMENTO PIX 30782987877 SUELEN ALVES BARBOSA",
+            amount=480.0,
+            type="inflow",
+        )
+    ]
+    assert result.canonical_transactions[0].running_balance == 11678.88
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
+def test_parse_sicredi_matricial_financial_application_as_debit() -> None:
+    text = """
+    ======================================================================================================================
+    COOP CRED, POUP E INV VALOR SUSTENTAVEL EXTRATO DE CONTA CORRENTE
+    EMPRESA EXEMPLO
+    PERIODO: DE 01/2026 A 04/2026
+    DATA        DOCUMENTO  HISTORICO                                                       DEBITO      CREDITO        SALDO
+    **/**/****  *********  S A L D O A N T E R I O R                                                              367.124,37
+    27/01/2026  CAPTACAO   APLIC.FINANC.AVISO PREVIO                                 300.000,00
+    27/01/2026  DEB_FCO    APLIC FUNDOS DE INVEST                                     50.000,00
+    27/01/2026  PIX_CRED   RECEBIMENTO PIX 27320708825 Fernando de Carvalho                                30,00     17.154,37
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        [text],
+        preserve_layout_spacing=True,
+    )
+
+    assert result.layout.layout_name == "sicredi_matricial_paisagem_conta_corrente_v1"
+    assert [transaction.amount for transaction in result.transactions] == [-300000.0, -50000.0, 30.0]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
 def test_parse_pdf_transactions_supports_stone_a4_statement_with_entry_exit_type_prefixes(monkeypatch) -> None:
     native_text = """
     Extrato de conta corrente
