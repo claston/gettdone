@@ -1449,6 +1449,44 @@ def test_parse_pdf_transactions_supports_santander_grouped_daily_movements_with_
     assert result.parse_metrics["export_recommendation"] == "safe_to_export"
 
 
+def test_parse_santander_supplier_payments_from_credit_column_as_inflows() -> None:
+    text = """
+    BANCO SANTANDER BRASIL S.A.
+    EXTRATO
+    AGÊNCIA 1234 CONTA CORRENTE 123456-7
+    PERÍODO 01/03/2026 A 31/03/2026
+    MOVIMENTAÇÃO
+    DATA          DESCRIÇÃO                                  Nº DOCUMENTO       MOVIMENTOS (R$)             SALDO (R$)
+                                                                                  Créditos         Débitos
+    SALDO EM 05/03                                                                                               0,00
+    06/03         TARIFA AVULSA ENVIO PIX 05/03/2026                  -                              4,33-
+                  PAGAMENTO A FORNECEDORES                        010306         159.101,00
+                  CPF 000000096059915
+                  PIX ENVIADO                                         -                            222.000,00-
+                  JP COMERCIO CONSTRUCOES E
+                  PAGAMENTO A FORNECEDORES                        010306         281.974,36
+                  CONSTRUTOR 05802590000190
+                  APLICACAO CONTAMAX                                   -                           219.071,03-          0,00
+    SALDO EM 31/03                                                                                               0,00
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        [text],
+        preserve_layout_spacing=True,
+    )
+
+    assert result.layout.layout_name == "santander_statement_ptbr"
+    assert result.parse_metrics["selected_parser"] == "layout_specific_santander_statement"
+    assert [transaction.amount for transaction in result.transactions] == [
+        -4.33,
+        159101.0,
+        -222000.0,
+        281974.36,
+        -219071.03,
+    ]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
 def test_parse_pdf_transactions_upgrades_santander_grouped_statement_to_layout_text(monkeypatch) -> None:
     native_text = """
     BANCO SANTANDER BRASIL S.A.
