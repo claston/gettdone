@@ -209,3 +209,120 @@ def test_parse_pdf_transactions_supports_itau_visual_examples(case_name: str, mo
     ofx = build_ofx_statement(result.transactions)
     assert ofx.count("<STMTTRN>") == len(case["amounts"])
     assert all(f"<TRNAMT>{amount:.2f}" in ofx for amount in case["amounts"])
+
+
+def test_itau_monthly_keeps_date_across_pages_and_stops_before_investment_details() -> None:
+    pages = [
+        """
+        ItaúEmpresas
+        extrato mensal
+        out 2025
+        01. Conta Corrente e Aplicações Automáticas
+        Conta Corrente | Movimentação
+        data descrição entradas R$ saídas R$ saldo R$
+        30/09
+        Saldo anterior
+        1,00
+        01/10
+        PIX TRANSF CLIENTE01/10
+        100,00
+        Apl Aplic Aut Mais
+        100,00-
+        1,00
+        SALDO APLIC AUT MAIS
+        101,00
+        02/10
+        Sispag Fornecedores
+        10,00-
+        """,
+        """
+        extrato
+        mensal
+        ag 0624 cc 20958-1
+        out 2025
+        002|003
+        data
+        descrição
+        entradas R$
+        saídas R$
+        saldo R$
+        (créditos)
+        (débitos)
+        Sispag Fornecedores
+        20,00-
+        Res Aplic Aut Mais
+        30,00
+        1,00
+        SALDO APLIC AUT MAIS
+        71,00
+        03/10
+        PIX TRANSF CLIENTE03/10
+        50,00
+        Apl Aplic Aut Mais
+        50,00-
+        1,00
+        SALDO APLIC AUT MAIS
+        121,00
+        Saldo em C/C
+        1,00
+        Saldo final
+        122,00
+        totalizador de aplicações automáticas
+        entrada R$
+        saída R$
+        (créditos)
+        (débitos)
+        na conta corrente (1)
+        30,00
+        150,00-
+        Conta Corrente | Aplicações Automáticas
+        movimentação - aplicações/resgates antecipados e vencimentos
+        01/10
+        100,00
+        0,00
+        0,00
+        0,00
+        0,00
+        0,00
+        101,00
+        total
+        150,00
+        30,00
+        0,00
+        0,00
+        0,00
+        0,00
+        """,
+        """
+        extrato mensal
+        Conta Corrente | Saques efetuados
+        total R$ 500,00
+        data histórico valor R$
+        02/10/25
+        SAQUE DIN ATM
+        500,00
+        """,
+    ]
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(pages)
+
+    assert result.layout.layout_name == (
+        "itau_empresas_extrato_mensal_conta_corrente_aplicacoes_automaticas_v1"
+    )
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert [(transaction.date, transaction.amount) for transaction in result.transactions] == [
+        ("2025-10-01", 1.0),
+        ("2025-10-01", 100.0),
+        ("2025-10-01", -100.0),
+        ("2025-10-02", -10.0),
+        ("2025-10-02", -20.0),
+        ("2025-10-02", 30.0),
+        ("2025-10-03", 50.0),
+        ("2025-10-03", -50.0),
+    ]
+    assert [transaction.description for transaction in result.transactions[3:6]] == [
+        "Sispag Fornecedores",
+        "Sispag Fornecedores",
+        "Res Aplic Aut Mais",
+    ]

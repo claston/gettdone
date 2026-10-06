@@ -81,6 +81,9 @@ _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT = (
 )
 _SANTANDER_EMPRESARIAL_ACCOUNT_LAYOUT = "santander_empresarial_conta_corrente"
 _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT = "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
+_ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT = (
+    "itau_empresas_extrato_mensal_conta_corrente_aplicacoes_automaticas_v1"
+)
 _INHERITED_TABULAR_DATE_LAYOUTS = {
     _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT,
     _SANTANDER_CONSOLIDATED_BASIC_LAYOUT,
@@ -1021,6 +1024,7 @@ def _parse_grouped_statement_lines(
     opening_balance_amount_line: _PdfLine | None = None
     opening_balance_inserted = False
     current_page_number: int | None = None
+    skipping_repeated_page_header = False
 
     for index, line in enumerate(lines):
         if current_page_number is None:
@@ -1034,14 +1038,24 @@ def _parse_grouped_statement_lines(
         elif line.page_number != current_page_number:
             # Do not carry grouped parsing context across pages; page headers can contain
             # amount-like tokens such as "Total Disponível" that must not attach to prior rows.
+            preserve_current_date = _should_preserve_grouped_date_across_page(
+                layout_profile=layout_profile,
+                current_date=current_date,
+                has_transactions=bool(transactions),
+            )
             current_page_number = line.page_number
-            current_date = None
+            current_date = current_date if preserve_current_date else None
             current_section_hint = None
             description_parts = []
             pending_opening_balance_label = None
             pending_opening_balance_line = None
+            skipping_repeated_page_header = preserve_current_date
 
         normalized_line = _normalize_text(line.text)
+        if skipping_repeated_page_header:
+            if _is_itau_monthly_repeated_page_header_line(normalized_line):
+                continue
+            skipping_repeated_page_header = False
         if _is_terminal_grouped_statement_section_boundary(
             line.text,
             layout_profile=layout_profile,
@@ -1269,6 +1283,44 @@ def _is_terminal_grouped_statement_section_boundary(
         layout_profile.profile_name == _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT
         and _normalize_text(line_text).startswith("PERIODO:")
     )
+
+
+def _should_preserve_grouped_date_across_page(
+    *,
+    layout_profile: DeclarativeLayoutProfile | None,
+    current_date: str | None,
+    has_transactions: bool,
+) -> bool:
+    return bool(
+        current_date
+        and has_transactions
+        and layout_profile is not None
+        and layout_profile.profile_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
+    )
+
+
+def _is_itau_monthly_repeated_page_header_line(normalized_line: str) -> bool:
+    if normalized_line in {
+        "EXTRATO",
+        "MENSAL",
+        "EXTRATO MENSAL",
+        "DATA",
+        "DESCRICAO",
+        "ENTRADAS R$",
+        "SAIDAS R$",
+        "SALDO R$",
+        "(CREDITOS)",
+        "(DEBITOS)",
+    }:
+        return True
+    if normalized_line.startswith("ITAU") or normalized_line.startswith("AG "):
+        return True
+    if re.fullmatch(r"\d{3}\|\d{3}", normalized_line):
+        return True
+    return re.fullmatch(
+        r"(?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+20\d{2}",
+        normalized_line,
+    ) is not None
 
 
 def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTransaction], int]:
@@ -1526,6 +1578,8 @@ def _is_terminal_statement_section_boundary(
         return normalized_line.startswith("SALDOS INVEST")
     if layout_profile.profile_name == _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT:
         return normalized_line.startswith("SALDOS POR PERIODO")
+    if layout_profile.profile_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT:
+        return normalized_line.startswith(("SALDO FINAL", "TOTALIZADOR DE APLICACOES AUTOMATICAS"))
     return False
 
 
