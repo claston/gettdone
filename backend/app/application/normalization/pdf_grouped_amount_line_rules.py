@@ -9,6 +9,8 @@ def parse_grouped_amount_line(
     section_hint: str | None,
 ) -> float:
     amount = parse_pdf_amount(raw_amount_text)
+    if amount < 0:
+        return amount
     return apply_sign_hints(
         amount=amount,
         description=description,
