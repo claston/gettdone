@@ -149,14 +149,15 @@ def build_iso_date(year: str, month_abbrev: str, day: str) -> str:
 def infer_default_statement_year(lines: list[str]) -> int | None:
     preferred_year_counts: dict[int, int] = {}
     year_counts: dict[int, int] = {}
-    has_consolidated_basic_marker = any(
-        "EXTRATO_PJ_A4_BASICO" in normalize_upper_text(line) for line in lines
+    has_consolidated_statement_marker = any(
+        re.search(r"\bEXTRATO_PJ_A4_(?:BASICO|INTELIGENTE)\b", normalize_upper_text(line))
+        for line in lines
     )
 
     for line in lines:
         normalized_line = normalize_upper_text(line)
         preferred_years = []
-        if has_consolidated_basic_marker:
+        if has_consolidated_statement_marker:
             preferred_years.extend(
                 re.findall(
                     rf"\bRESUMO\s*-\s*(?:{FULL_MONTH_PATTERN})\s*/\s*(\d{{4}})\b",
