@@ -180,6 +180,45 @@ def test_select_parsed_rows_prefers_tabular_when_grouped_only_adds_opening_balan
     assert result.columnar_decision == "no_rows"
 
 
+def test_select_parsed_rows_prefers_tabular_when_grouped_opening_balance_contaminates_descriptions() -> None:
+    class _LayoutProfile:
+        profile_name = "itau_empresas_extrato_completo_tabela_v1"
+
+    class _Transaction:
+        def __init__(self, description: str, date: str, amount: float) -> None:
+            self.description = description
+            self.date = date
+            self.amount = amount
+
+    class _Row:
+        def __init__(self, description: str, date: str, amount: float, *, source_line: int) -> None:
+            self.transaction = _Transaction(description, date, amount)
+            self.source_line = source_line
+
+    grouped_rows = [
+        _Row("SALDO ANTERIOR", "2025-12-16", -4000.0, source_line=10),
+        _Row("PIX RECEBIDO RECEBIMENTOS GUIMARAES", "2025-12-17", 100.0, source_line=20),
+        _Row("DEB AUTOR SEGURO COMPRA NO DEBITO", "2025-12-18", -375.11, source_line=30),
+    ]
+    tabular_rows = [
+        _Row("PIX RECEBIDO", "2025-12-17", 100.0, source_line=20),
+        _Row("DEB AUTOR SEGURO", "2025-12-18", -375.11, source_line=30),
+    ]
+
+    result = select_parsed_rows(
+        lines=["line"],
+        grouped_rows=grouped_rows,
+        layout_profile=_LayoutProfile(),
+        parse_inline_rows=lambda _: ([], 0),
+        parse_tabular_rows=lambda _lines, _profile: (tabular_rows, 2),
+        parse_columnar_rows=lambda _: ([], 0),
+    )
+
+    assert result.selected_parser == "tabular"
+    assert result.rows == tabular_rows
+    assert result.selection_reason == "tabular_preferred_over_grouped_opening_balance_noise"
+
+
 def test_select_parsed_rows_prefers_tabular_when_inline_only_adds_opening_balance_noise() -> None:
     class _InlineRow:
         def __init__(self, description: str) -> None:

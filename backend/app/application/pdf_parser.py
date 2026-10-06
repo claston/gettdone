@@ -84,6 +84,7 @@ _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT = "bradesco_net_empresa_extrato_mensal_por_
 _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT = (
     "itau_empresas_extrato_mensal_conta_corrente_aplicacoes_automaticas_v1"
 )
+_ITAU_COMPLETE_TABLE_LAYOUT = "itau_empresas_extrato_completo_tabela_v1"
 _SICREDI_MATRIX_LANDSCAPE_LAYOUT = "sicredi_matricial_paisagem_conta_corrente_v1"
 _INHERITED_TABULAR_DATE_LAYOUTS = {
     _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT,
@@ -1515,6 +1516,16 @@ def _parse_tabular_statement_rows(
                 fallback_year=inferred_year,
                 date_formats=date_formats,
             )
+        dated_balance_consumed = _maybe_attach_tabular_dated_balance_block(
+            transactions=transactions,
+            lines=lines,
+            start_index=index,
+            inferred_year=inferred_year,
+            layout_profile=layout_profile,
+        )
+        if dated_balance_consumed:
+            index += dated_balance_consumed
+            continue
         if _maybe_attach_tabular_running_balance_line(transactions=transactions, line=line):
             index += 1
             continue
@@ -1869,6 +1880,51 @@ def _maybe_attach_tabular_running_balance_line(
         previous_running_balance=previous_running_balance,
     )
     return True
+
+
+def _maybe_attach_tabular_dated_balance_block(
+    *,
+    transactions: list[_ParsedTransaction],
+    lines: list[_PdfLine],
+    start_index: int,
+    inferred_year: int | None,
+    layout_profile: DeclarativeLayoutProfile | None,
+) -> int:
+    if (
+        not transactions
+        or layout_profile is None
+        or layout_profile.profile_name != _ITAU_COMPLETE_TABLE_LAYOUT
+        or start_index + 2 >= len(lines)
+    ):
+        return 0
+
+    date_line, description_line, balance_line = lines[start_index : start_index + 3]
+    date_formats = profile_date_formats(layout_profile)
+    if not is_date_only_row(date_line.text, date_formats=date_formats):
+        return 0
+    if _normalize_text(description_line.text) != "SALDO TOTAL DISPONIVEL DIA":
+        return 0
+    if not is_amount_only_row(balance_line.text):
+        return 0
+    if len({date_line.page_number, description_line.page_number, balance_line.page_number}) != 1:
+        return 0
+
+    balance_date = parse_row_date(
+        date_line.text,
+        fallback_year=inferred_year,
+        date_formats=date_formats,
+    )
+    last_transaction = transactions[-1]
+    if last_transaction.transaction.date != balance_date or last_transaction.source_page != date_line.page_number:
+        return 0
+
+    previous_running_balance = _resolve_latest_running_balance(transactions[:-1])
+    transactions[-1] = _attach_running_balance_and_reconcile_sign(
+        transaction=last_transaction,
+        running_balance=parse_pdf_amount(balance_line.text),
+        previous_running_balance=previous_running_balance,
+    )
+    return 3
 
 
 def _recover_tabular_multiline_row(
