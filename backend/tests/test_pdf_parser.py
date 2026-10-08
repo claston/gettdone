@@ -266,9 +266,19 @@ def test_parse_pdf_transactions_treats_santander_card_debit_settlements_as_credi
 def test_parse_pdf_transactions_scopes_santander_intelligent_consolidated_movements() -> None:
     pages = [
         """
-        Santander Negocios & Empresas
         EXTRATO CONSOLIDADO INTELIGENTE
         Resumo - agosto/2026
+        O Santander oferece solucoes financeiras para sua empresa.
+        Emita boletos pelo app Santander Empresas ou Internet Banking Empresarial.
+        Saldo de Conta Corrente
+        Total de Creditos
+        Depositos / Transferencias
+        Outros Creditos
+        Total de Debitos
+        Pagamentos / Transferencias
+        Outros Debitos
+        Saldo Disponivel
+        Saldo de Investimentos com Resgate Automatico
         Extrato_PJ_A4_Inteligente 1.0 - 2/4/2024
         """,
         """
