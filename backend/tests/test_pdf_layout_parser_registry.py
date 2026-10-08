@@ -110,5 +110,6 @@ def test_default_layout_parser_registry_contains_current_specific_families() -> 
             "picpay_extrato_conta_grouped_2025_v1",
             "neon_extrato_por_periodo_moderno_v1",
             "banco_bv_extrato_periodo_grouped_v1",
+            "trust_srm_bank_extrato_conta_corrente_v1",
         }
     )

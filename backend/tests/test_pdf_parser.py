@@ -1636,6 +1636,141 @@ def test_parse_santander_consolidated_intelligent_multiline_rows_across_pages(
     assert result.parse_metrics["balance_consistency_failed"] == 0
 
 
+def test_parse_trust_srm_multiline_descending_statement_across_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        pdf_parser_module,
+        "infer_pdf_layout",
+        lambda _text: pdf_parser_module.PdfLayoutInference(
+            layout_name="trust_srm_bank_extrato_conta_corrente_v1",
+            confidence=1.0,
+            used_fallback=False,
+        ),
+    )
+    pages = [
+        """
+        Saldo em conta
+        R$ 165.738,04
+        Extrato da conta
+        Movimentacoes
+        Data
+        Lancamento
+        Credito
+        Debito
+        Saldo
+        08/09/2026
+        SALDO
+        165.738,04
+        08/09/2026
+        RECEBIMENTO DE TED
+        14:33:42 341 EMPRESA ALFA
+        25.957,53
+        165.738,04
+        04/09/2026
+        SALDO
+        139.780,51
+        04/09/2026
+        RECEBIMENTO DE TED
+        11:46:25 341 EMPRESA BETA
+        70.968,20
+        139.780,51
+        RECEBIMENTO DE TED
+        10:03:29 033 EMPRESA GAMA
+        34.110,05
+        68.812,31
+        02/09/2026
+        SALDO
+        34.702,26
+        02/09/2026
+        RECEBIMENTO DE TED
+        08:16:31 341 EMPRESA ZETA
+        34.581,48
+        34.702,26
+        24/08/2026
+        SALDO
+        120,78
+        24/08/2026
+        ENVIO DE TRANSF INTERNA
+        00:00:00 533 EMPRESA DELTA
+        218.000,00
+        120,78
+        21/08/2026
+        SALDO
+        218.120,78
+        21/08/2026
+        RECEBIMENTO DE TED
+        09:59:33 376 EMPRESA EPSILON
+        46.876,08
+        218.120,78
+        17/08/2026
+        SALDO
+        171.244,70
+        17/08/2026
+        RECEBIMENTO DE TED
+        12:14:03 341 EMPRESA ETA
+        171.170,56
+        171.244,70
+        10/08/2026
+        SALDO
+        74,14
+        Banco: 533 - SRM Bank
+        Agencia: 0001
+        Conta: 0000000000
+        """,
+        """
+        10/08/2026
+        ENVIO DE TRANSF INTERNA
+        00:00:00 533 EMPRESA DELTA
+        1.000.500,00
+        74,14
+        07/08/2026
+        SALDO
+        1.000.574,14
+        07/08/2026
+        RECEBIMENTO DE TED
+        11:48:56 376 EMPRESA EPSILON
+        46.876,20
+        1.000.574,14
+        SALDO ANTERIOR
+        953.697,94
+        """,
+    ]
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(pages)
+
+    assert result.parse_metrics["selected_parser"] == "layout_specific_trust_srm_statement"
+    assert [transaction.amount for transaction in result.transactions] == [
+        25957.53,
+        70968.2,
+        34110.05,
+        34581.48,
+        -218000.0,
+        46876.08,
+        171170.56,
+        -1000500.0,
+        46876.2,
+    ]
+    assert result.transactions[0].description == (
+        "RECEBIMENTO DE TED 14:33:42 341 EMPRESA ALFA"
+    )
+    assert result.canonical_transactions is not None
+    assert [row.running_balance for row in result.canonical_transactions] == [
+        165738.04,
+        139780.51,
+        68812.31,
+        34702.26,
+        120.78,
+        218120.78,
+        171244.70,
+        74.14,
+        1000574.14,
+    ]
+    assert result.parse_metrics["balance_consistency_checked"] == 8
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert result.parse_metrics["canonical_warning_count"] == 0
+
+
 def test_parse_santander_supplier_payments_from_credit_column_as_inflows() -> None:
     text = """
     BANCO SANTANDER BRASIL S.A.

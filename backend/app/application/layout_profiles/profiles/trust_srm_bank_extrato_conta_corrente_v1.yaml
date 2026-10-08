@@ -1,0 +1,73 @@
+layout_profile:
+  schema_version: 2
+  profile_name: trust_srm_bank_extrato_conta_corrente_v1
+  bank: SRM Bank
+  layout_family: trust_srm_bank_extrato_conta_corrente
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Extrato da conta"
+      - "Movimentacoes"
+      - "533 - SRM Bank"
+      - "RECEBIMENTO DE TED"
+      - "SALDO ANTERIOR"
+    optional_keywords:
+      - "Saldo em conta"
+      - "Saldo bloqueado"
+      - "Saldo disponivel para uso"
+      - "ENVIO DE TRANSF INTERNA"
+      - "Periodo:"
+    negative_keywords:
+      - "Stone Instituicao de Pagamento"
+      - "Banco Santander"
+      - "Bradesco"
+      - "SICOOB"
+    min_score_hint: 0.76
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Lancamento"
+      - "Credito"
+      - "Debito"
+      - "Saldo"
+    expected_column_order:
+      - date
+      - description
+      - credit
+      - debit
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Lancamento"
+      credit:
+        - "Credito"
+      debit:
+        - "Debito"
+      balance:
+        - "Saldo"
+  parsing:
+    date_formats:
+      - "dd/MM/yyyy"
+    date_year_source: transaction
+    amount_locale: pt-BR
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "ENVIO {amount}"
+      - "PAGAMENTO {amount}"
+    positive_patterns:
+      - "RECEBIMENTO {amount}"
+    ignore_rows:
+      - "SALDO"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - balance

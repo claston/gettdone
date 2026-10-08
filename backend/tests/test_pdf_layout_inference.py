@@ -1532,3 +1532,32 @@ def test_infer_pdf_layout_keeps_high_btg_confidence_without_extractable_branding
     assert result.layout_name == "btg_pactual_conta_corrente_pj_v1"
     assert result.confidence >= 0.95
     assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_recognizes_trust_srm_bank_statement() -> None:
+    text = """
+    Saldo em conta
+    Saldo bloqueado
+    Saldo disponivel para uso
+    Extrato da conta
+    Movimentacoes
+    Data Lancamento Credito Debito Saldo
+    08/09/2026
+    RECEBIMENTO DE TED
+    14:33:42 341 EMPRESA EXEMPLO
+    25.957,53
+    165.738,04
+    ENVIO DE TRANSF INTERNA
+    SALDO ANTERIOR
+    121.371,78
+    Banco: 533 - SRM Bank
+    Agencia: 0001
+    Conta: 0000000000
+    Periodo: 01/08/2026 a 11/09/2026
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "trust_srm_bank_extrato_conta_corrente_v1"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False

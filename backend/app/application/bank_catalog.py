@@ -69,6 +69,18 @@ _EXTRA_BANK_RECORDS = (
         ),
         active=True,
     ),
+    BankRecord(
+        code="533",
+        name="SRM Bank Instituicao de Pagamento S.A.",
+        short_name="SRM Bank",
+        aliases=(
+            "SRM Bank",
+            "SRM Bank Instituicao de Pagamento S.A.",
+            "SRM Bank Instituicao de Pagamento S/A",
+            "Trust",
+        ),
+        active=True,
+    ),
 )
 
 
