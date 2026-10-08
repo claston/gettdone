@@ -74,6 +74,8 @@ def should_ignore_line(normalized_line: str) -> bool:
         return True
     if any(token in normalized_line for token in IGNORED_LINE_TOKENS):
         return True
+    if " = USD " in normalized_line and normalized_line.startswith(("BRL ", "CONVERSAO: BRL ")):
+        return True
     return False
 
 

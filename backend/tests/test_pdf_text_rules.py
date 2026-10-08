@@ -19,6 +19,12 @@ def test_should_ignore_line_matches_known_headers() -> None:
     assert not should_ignore_line("PIX RECEBIDO CLIENTE")
 
 
+def test_should_ignore_line_matches_card_currency_conversion_details() -> None:
+    assert should_ignore_line("BRL 550.00 = USD 101.00")
+    assert should_ignore_line("CONVERSAO: BRL 5.61 = USD 1 = R$ 5,61")
+    assert not should_ignore_line("BRL COMERCIO LTDA R$ 550,00")
+
+
 def test_should_skip_transaction_description_filters_balance_and_noise() -> None:
     assert should_skip_transaction_description("SALDO DO DIA")
     assert should_skip_transaction_description("000000 SALDO DIA")
