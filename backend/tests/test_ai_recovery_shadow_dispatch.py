@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -153,6 +155,87 @@ def test_shadow_dispatch_stores_request_without_queueing_when_bedrock_is_disable
     assert result.ready_key == publisher.artifacts.manifest.document.key.replace("input.pdf", "ready.json")
     assert result.message_id is None
     assert publisher.artifacts.manifest.expires_at == datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
+
+
+def test_shadow_dispatch_stores_successful_generic_conversion() -> None:
+    calls: list[str] = []
+    publisher = _Publisher(calls)
+    dispatcher = AIRecoveryShadowDispatcher(
+        config=_config("active"),
+        bucket="private-ai-recovery",
+        request_publisher=publisher,
+        queue_publisher=None,
+        parser_release="release-123",
+    )
+    analysis = replace(
+        _analysis(),
+        layout_inference_name="generic_statement_ptbr",
+        layout_inference_confidence=0.25,
+        quality_issues=[],
+        pdf_processing_metrics={
+            "page_count": 1,
+            "selected_parser": "generic_pdf",
+            "canonical_warning_types_list": [],
+            "balance_consistency_failed": 0,
+        },
+    )
+
+    result = dispatcher.dispatch(
+        document=UploadedDocument(
+            filename="generic.pdf",
+            raw_bytes=b"%PDF generic statement",
+            file_type="pdf",
+        ),
+        analysis=analysis,
+        page_texts=("01/09/2026 PIX RECEBIDO 125,50",),
+        source_layout_lines=None,
+    )
+
+    assert result.status == "stored"
+    assert calls == ["s3"]
+    reference = publisher.artifacts.manifest.deterministic_artifact
+    assert reference.layout_profile == "generic_statement_ptbr"
+    assert reference.issue_codes == ["generic_layout"]
+
+
+def test_shadow_dispatch_stores_allowlisted_conversion_failure() -> None:
+    calls: list[str] = []
+    publisher = _Publisher(calls)
+    dispatcher = AIRecoveryShadowDispatcher(
+        config=_config("active"),
+        bucket="private-ai-recovery",
+        request_publisher=publisher,
+        queue_publisher=None,
+        parser_release="release-123",
+    )
+
+    result = dispatcher.dispatch_failure(
+        document=UploadedDocument(
+            filename="unsupported.pdf",
+            raw_bytes=b"%PDF unsupported statement",
+            file_type="pdf",
+        ),
+        analysis_id="an_failure123",
+        page_count=1,
+        error_stage="parse",
+        error_subcode="no_transaction_row_pattern",
+        exception_class="InvalidFileContentError",
+        parse_observability={},
+    )
+
+    assert result.status == "stored"
+    assert calls == ["s3"]
+    assert publisher.artifacts.manifest.analysis_id == "an_failure123"
+    reference = publisher.artifacts.manifest.deterministic_artifact
+    assert reference.layout_profile == "unknown"
+    assert reference.issue_codes == ["no_transaction_row_pattern"]
+    deterministic = json.loads(publisher.artifacts.deterministic_artifact)
+    assert deterministic["transactions"] == []
+    assert deterministic["failure"] == {
+        "error_stage": "parse",
+        "error_subcode": "no_transaction_row_pattern",
+        "exception_class": "InvalidFileContentError",
+    }
 
 
 def test_shadow_dispatch_is_disabled_by_default() -> None:

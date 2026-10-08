@@ -304,12 +304,19 @@ class RecordingAIRecoveryDispatcher:
     def __init__(self, *, fail: bool = False) -> None:
         self.fail = fail
         self.calls: list[dict[str, object]] = []
+        self.failure_calls: list[dict[str, object]] = []
 
     def dispatch(self, **kwargs):
         self.calls.append(kwargs)
         if self.fail:
             raise RuntimeError("shadow dispatch must not fail conversion")
         return SimpleNamespace(status="queued", reason="eligible", idempotency_key="a" * 64)
+
+    def dispatch_failure(self, **kwargs):
+        self.failure_calls.append(kwargs)
+        if self.fail:
+            raise RuntimeError("shadow dispatch must not fail conversion")
+        return SimpleNamespace(status="stored", reason="bedrock_disabled", idempotency_key="b" * 64)
 
 
 class FailingDocumentExtractor:
@@ -674,6 +681,48 @@ def test_parser_failure_without_observability_is_forwarded_to_canonical_capture(
     recorded = access_control_service.recorded_user_conversions[-1]
     assert recorded["canonical_capture_status"] == "stored"
     assert recorded["canonical_capture_reason"] is None
+
+
+def test_allowlisted_parser_failure_is_forwarded_to_ai_recovery(caplog) -> None:
+    staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
+    ai_dispatch = RecordingAIRecoveryDispatcher()
+    caplog.set_level(logging.INFO, logger="app.application.conversion.document_conversion_pipeline")
+    pipeline = DocumentConversionPipeline(
+        report_service=FakeReportService(),
+        access_control_service=FakeAccessControlService(),
+        processing_pipeline=FakeProcessingPipeline(),
+        analysis_repository=FakeAnalysisRepository(),
+        document_extractor=FailingDocumentExtractor(),
+        statement_parser=FakeStatementParser(),
+        ai_recovery_dispatcher=ai_dispatch,
+    )
+
+    with pytest.raises(InvalidFileContentError, match="No recognizable transaction row pattern"):
+        pipeline.run(
+            document=UploadedDocument.from_staged_upload(
+                filename="statement.pdf",
+                staged_upload=UploadedDocumentStage(
+                    path=staged_path,
+                    size_bytes=staged_path.stat().st_size,
+                    sha256_hex="abc123",
+                ),
+            ),
+            anonymous_fingerprint=None,
+            user_token="user-token",
+            authorization=None,
+            access_cookie_token=None,
+            scanned_likely=False,
+            estimated_pages_count=1,
+        )
+
+    assert len(ai_dispatch.failure_calls) == 1
+    call = ai_dispatch.failure_calls[0]
+    assert call["document"].filename == "statement.pdf"
+    assert call["page_count"] == 1
+    assert call["error_stage"] == "parse"
+    assert call["error_subcode"] == "no_transaction_row_pattern"
+    assert str(call["analysis_id"]).startswith("an_")
+    assert "ai_recovery_failure_dispatch_result status=stored reason=bedrock_disabled" in caplog.text
 
 
 def test_scanned_ocr_page_limit_still_triggers_canonical_preview_capture() -> None:

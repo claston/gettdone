@@ -45,13 +45,14 @@ ELIGIBLE_STATEMENT_TYPES = frozenset(
         "poupanca_extrato",
     }
 )
-GENERIC_LAYOUT_NAMES = frozenset({"generic", "generic_pdf", "unknown"})
+GENERIC_LAYOUT_NAMES = frozenset({"generic", "generic_pdf", "generic_statement_ptbr", "unknown"})
 SHADOW_MIN_LAYOUT_CONFIDENCE = 0.70
 ACTIVE_MIN_LAYOUT_CONFIDENCE = 0.95
 
 
 class AIRecoveryEligibilityCase(str, Enum):
     CONTENT_EXTRACTION_FAILURE = "content_extraction_failure"
+    GENERIC_LAYOUT_CONVERSION = "generic_layout_conversion"
     RECOGNIZED_LAYOUT_DIVERGENCE = "recognized_layout_divergence"
 
 
@@ -68,6 +69,7 @@ class AIRecoveryEligibilityReason(str, Enum):
     DOCUMENT_HASH_MISSING = "document_hash_missing"
     INVALID_DOCUMENT_HASH = "invalid_document_hash"
     TRANSACTIONS_MISSING = "transactions_missing"
+    LAYOUT_NOT_GENERIC = "layout_not_generic"
     LAYOUT_NOT_SPECIFIC = "layout_not_specific"
     LAYOUT_CONFIDENCE_UNKNOWN = "layout_confidence_unknown"
     INVALID_LAYOUT_CONFIDENCE = "invalid_layout_confidence"
@@ -128,6 +130,8 @@ def assess_ai_recovery_eligibility(
 
     if eligibility_case == AIRecoveryEligibilityCase.RECOGNIZED_LAYOUT_DIVERGENCE:
         return _assess_recognized_layout_divergence(config=config, context=context)
+    if eligibility_case == AIRecoveryEligibilityCase.GENERIC_LAYOUT_CONVERSION:
+        return _assess_generic_layout_conversion(config=config, context=context)
 
     error_stage = str(context.error_stage or "").strip().lower()
     error_subcode = str(context.error_subcode or "").strip().lower()
@@ -196,6 +200,52 @@ def _assess_recognized_layout_divergence(
         return _ineligible(AIRecoveryEligibilityReason.SOURCE_EVIDENCE_UNAVAILABLE, eligibility_case)
 
     return AIRecoveryEligibilityDecision(True, AIRecoveryEligibilityReason.ELIGIBLE, eligibility_case)
+
+
+def _assess_generic_layout_conversion(
+    *,
+    config: AIRecoveryConfig,
+    context: AIRecoveryEligibilityContext,
+) -> AIRecoveryEligibilityDecision:
+    eligibility_case = AIRecoveryEligibilityCase.GENERIC_LAYOUT_CONVERSION
+    artifact_gate = _assess_success_artifact_requirements(
+        config,
+        context,
+        eligibility_case=eligibility_case,
+    )
+    if artifact_gate is not None:
+        return artifact_gate
+
+    layout_name = str(context.layout_name or "").strip().lower()
+    if layout_name not in GENERIC_LAYOUT_NAMES:
+        return _ineligible(AIRecoveryEligibilityReason.LAYOUT_NOT_GENERIC, eligibility_case)
+    if not str(context.selected_parser or "").strip():
+        return _ineligible(AIRecoveryEligibilityReason.PARSER_UNKNOWN, eligibility_case)
+    if config.mode == AIRecoveryMode.ACTIVE and not context.source_evidence_available:
+        return _ineligible(AIRecoveryEligibilityReason.SOURCE_EVIDENCE_UNAVAILABLE, eligibility_case)
+    return AIRecoveryEligibilityDecision(True, AIRecoveryEligibilityReason.ELIGIBLE, eligibility_case)
+
+
+def _assess_success_artifact_requirements(
+    config: AIRecoveryConfig,
+    context: AIRecoveryEligibilityContext,
+    *,
+    eligibility_case: AIRecoveryEligibilityCase,
+) -> AIRecoveryEligibilityDecision | None:
+    if context.file_size_bytes is None:
+        return _ineligible(AIRecoveryEligibilityReason.FILE_SIZE_UNKNOWN, eligibility_case)
+    if context.file_size_bytes < 1:
+        return _ineligible(AIRecoveryEligibilityReason.INVALID_FILE_SIZE, eligibility_case)
+    if context.file_size_bytes > config.max_input_bytes:
+        return _ineligible(AIRecoveryEligibilityReason.FILE_SIZE_LIMIT_EXCEEDED, eligibility_case)
+    document_sha256 = str(context.document_sha256 or "").strip().lower()
+    if not document_sha256:
+        return _ineligible(AIRecoveryEligibilityReason.DOCUMENT_HASH_MISSING, eligibility_case)
+    if len(document_sha256) != 64 or any(character not in "0123456789abcdef" for character in document_sha256):
+        return _ineligible(AIRecoveryEligibilityReason.INVALID_DOCUMENT_HASH, eligibility_case)
+    if context.transaction_count is None or context.transaction_count < 1:
+        return _ineligible(AIRecoveryEligibilityReason.TRANSACTIONS_MISSING, eligibility_case)
+    return None
 
 
 def _ineligible(
