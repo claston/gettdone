@@ -25,6 +25,9 @@ from app.application.parsers.pdf.layout_specific.shared import (
 from app.application.parsers.pdf.models import _ParsedTransaction, _PdfLine
 
 SANTANDER_STATEMENT_LAYOUT = "santander_statement_ptbr"
+SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT = (
+    "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
+)
 
 _DATE_ROW_PATTERN = re.compile(
     r"^\s*(?P<date>\d{1,2}/\d{1,2}(?:/\d{2,4})?)\s+(?P<rest>.+)$",
@@ -34,11 +37,17 @@ _FULL_DATE_PATTERN = re.compile(r"\b\d{1,2}/\d{1,2}/\d{2,4}\b")
 _DOCUMENT_PATTERN = re.compile(
     r"(?:^|\s)(?P<document>(?=[A-Za-z0-9./_-]*\d)[A-Za-z0-9./_-]{3,})\s*$"
 )
+_CONSOLIDATED_DOCUMENT_PATTERN = re.compile(r"(?:^|\s)(?P<document>\d{5,})\s*$")
 
 
 @dataclass(frozen=True, slots=True)
 class SantanderStatementLayoutParser:
-    layout_names: frozenset[str] = frozenset({SANTANDER_STATEMENT_LAYOUT})
+    layout_names: frozenset[str] = frozenset(
+        {
+            SANTANDER_STATEMENT_LAYOUT,
+            SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT,
+        }
+    )
 
     def parse(
         self,
@@ -47,8 +56,18 @@ class SantanderStatementLayoutParser:
         lines: list[_PdfLine],
         context: LayoutSpecificParseContext,
     ) -> LayoutSpecificParseResult | None:
-        if layout_name != SANTANDER_STATEMENT_LAYOUT:
+        if layout_name not in self.layout_names:
             return None
+
+        if layout_name == SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT:
+            rows = _parse_consolidated_intelligent_rows(lines, context=context)
+            if not rows:
+                return None
+            return LayoutSpecificParseResult(
+                rows=rows,
+                selected_parser="layout_specific_santander_consolidated_intelligent",
+                selection_reason="layout_specific_santander_consolidated_intelligent:multiline_movements",
+            )
 
         rows = _parse_movement_rows(lines, context=context)
         if not rows:
@@ -58,6 +77,131 @@ class SantanderStatementLayoutParser:
             selected_parser="layout_specific_santander_statement",
             selection_reason="layout_specific_santander_statement:grouped_daily_movements",
         )
+
+
+def _parse_consolidated_intelligent_rows(
+    lines: list[_PdfLine],
+    *,
+    context: LayoutSpecificParseContext,
+) -> list[_ParsedTransaction]:
+    fallback_year = _resolve_fallback_year(lines, context=context)
+    rows: list[_ParsedTransaction] = []
+    inside_movements = False
+    current_date: str | None = None
+    description_parts: list[str] = []
+    description_source: _PdfLine | None = None
+
+    for line in lines:
+        normalized_line = normalize_text(line.text)
+        if _is_movement_heading(normalized_line):
+            inside_movements = True
+            continue
+        if not inside_movements:
+            continue
+        if normalized_line.startswith("SALDO EM"):
+            if rows:
+                break
+            description_parts = []
+            description_source = None
+            continue
+        if _is_consolidated_header_line(normalized_line):
+            continue
+
+        date_match = _DATE_ROW_PATTERN.match(line.text)
+        content = line.text.strip()
+        if date_match is not None:
+            current_date = parse_row_date(date_match.group("date"), fallback_year=fallback_year)
+            content = date_match.group("rest").strip()
+            description_parts = []
+            description_source = line
+        if current_date is None:
+            continue
+        if _is_consolidated_reference_line(content):
+            continue
+
+        amount_tokens = tuple(find_amount_tokens(content))
+        if not amount_tokens:
+            if content and not should_ignore_line(normalized_line):
+                if description_source is None:
+                    description_source = line
+                description_parts.append(content)
+            continue
+
+        amount_token, balance_token = _select_amount_and_balance(amount_tokens)
+        inline_prefix = content[: amount_token.start].strip()
+        inline_description, external_reference_id = _extract_consolidated_description_and_reference(
+            inline_prefix
+        )
+        description = " ".join(
+            part for part in [*description_parts, inline_description] if part
+        ).strip()
+        if _should_skip_row(description):
+            description_parts = []
+            description_source = None
+            continue
+
+        amount = _parse_consolidated_money(amount_token)
+        running_balance = _parse_consolidated_money(balance_token) if balance_token is not None else None
+        source = description_source or line
+        rows.append(
+            build_parsed_transaction(
+                date=current_date,
+                description=" ".join(description.split()),
+                amount=amount,
+                source_page=source.page_number,
+                source_line=source.line_number,
+                running_balance=running_balance,
+                external_reference_id=external_reference_id,
+                has_explicit_amount_sign=_has_consolidated_negative_suffix(amount_token),
+            )
+        )
+        description_parts = []
+        description_source = None
+
+    return rows
+
+
+def _is_consolidated_header_line(normalized_line: str) -> bool:
+    if re.fullmatch(r"\S+/\d{4}", normalized_line):
+        return True
+    if normalized_line.startswith(
+        (
+            "EXTRATO CONSOLIDADO INTELIGENTE",
+            "EXTRATO_PJ_A4_INTELIGENTE",
+            "BALP_",
+            "PAGINA:",
+        )
+    ):
+        return True
+    if normalized_line == "CREDITOS DEBITOS":
+        return True
+    return _is_table_header(normalized_line)
+
+
+def _is_consolidated_reference_line(raw_line: str) -> bool:
+    normalized = normalize_text(raw_line)
+    if normalized.startswith("PERIODO:"):
+        return True
+    return _FULL_DATE_PATTERN.fullmatch(raw_line.strip()) is not None
+
+
+def _extract_consolidated_description_and_reference(raw_prefix: str) -> tuple[str, str | None]:
+    prefix = raw_prefix.strip(" -|:")
+    if not prefix:
+        return "", None
+    document_match = _CONSOLIDATED_DOCUMENT_PATTERN.search(prefix)
+    if document_match is None:
+        return " ".join(prefix.split()), None
+    return " ".join(prefix.split()), document_match.group("document")
+
+
+def _parse_consolidated_money(token: AmountToken) -> float:
+    value = abs(parse_amount_token(token))
+    return -value if _has_consolidated_negative_suffix(token) else value
+
+
+def _has_consolidated_negative_suffix(token: AmountToken) -> bool:
+    return token.value.strip().endswith("-")
 
 
 def _parse_movement_rows(

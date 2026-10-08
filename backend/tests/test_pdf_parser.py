@@ -360,7 +360,9 @@ def test_parse_pdf_transactions_scopes_santander_intelligent_consolidated_moveme
     assert result.layout.layout_name == (
         "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
     )
-    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert result.parse_metrics["selected_parser"] == (
+        "layout_specific_santander_consolidated_intelligent"
+    )
     assert [transaction.date for transaction in result.transactions] == [
         "2026-08-03",
         "2026-08-03",
@@ -1547,6 +1549,91 @@ def test_parse_pdf_transactions_supports_santander_grouped_daily_movements_with_
     assert result.parse_metrics["canonical_warning_count"] == 0
     assert result.parse_metrics["confidence_band"] == "high"
     assert result.parse_metrics["export_recommendation"] == "safe_to_export"
+
+
+def test_parse_santander_consolidated_intelligent_multiline_rows_across_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        pdf_parser_module,
+        "infer_pdf_layout",
+        lambda _text: pdf_parser_module.PdfLayoutInference(
+            layout_name="santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1",
+            confidence=1.0,
+            used_fallback=False,
+        ),
+    )
+    pages = [
+        """
+        EXTRATO CONSOLIDADO INTELIGENTE
+        fevereiro/2026
+        Santander Negocios & Empresas
+        Resumo - fevereiro/2026
+        Conta Corrente
+        Movimentacao
+        Data Descricao No Documento Movimentos (R$) Saldo (R$)
+        Creditos Debitos
+        SALDO EM 31/01 28.857,91-
+        02/02 PIX RECEBIDO 14676023960 - 160,00
+        PAGAMENTO CARTAO DE DEBITO
+        GETNET-VISA ELECTR
+        701376 628,61
+        PAGAMENTO CARTAO DE DEBITO
+        GETNET-MAESTRO
+        701376 368,84
+        ANTECIPACAO GETNET 196333 1.151,14
+        PAGAMENTO DE BOLETO OUTROS BANCOS
+        FORNECEDOR TESTE
+        - 702,33-
+        PIX RECEBIDO 93275340000 - 88,00
+        IOF IMPOSTO OPERACOES FINANCEIRAS
+        PERIODO: 01/01 A 31/01/26
+        - 70,32-
+        IOF ADICIONAL - AUTOMATICO
+        PERIODO: 01/01 A 31/01/26
+        - 109,33-
+        """,
+        """
+        EXTRATO CONSOLIDADO INTELIGENTE
+        fevereiro/2026
+        Pagina: 3/10
+        Data Descricao No Documento Movimentos (R$) Saldo (R$)
+        Creditos Debitos
+        JUROS SALDO UTILIZ ATE LIMITE
+        PERIODO: 01/01 A 31/01/26
+        - 4.716,29- 32.059,59-
+        SALDO EM 28/02 32.059,59-
+        Saldos por Periodo
+        """,
+    ]
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(pages)
+
+    assert result.layout.layout_name == (
+        "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
+    )
+    assert result.parse_metrics["selected_parser"] == (
+        "layout_specific_santander_consolidated_intelligent"
+    )
+    assert [transaction.amount for transaction in result.transactions] == [
+        160.0,
+        628.61,
+        368.84,
+        1151.14,
+        -702.33,
+        88.0,
+        -70.32,
+        -109.33,
+        -4716.29,
+    ]
+    assert result.transactions[0].description == "PIX RECEBIDO 14676023960"
+    assert result.transactions[1].description == (
+        "PAGAMENTO CARTAO DE DEBITO GETNET-VISA ELECTR 701376"
+    )
+    assert result.transactions[-1].description == "JUROS SALDO UTILIZ ATE LIMITE"
+    assert result.canonical_transactions is not None
+    assert result.canonical_transactions[-1].running_balance == -32059.59
+    assert result.parse_metrics["balance_consistency_failed"] == 0
 
 
 def test_parse_santander_supplier_payments_from_credit_column_as_inflows() -> None:
