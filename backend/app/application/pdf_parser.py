@@ -1233,6 +1233,16 @@ def _parse_grouped_statement_lines(
             description_parts=description_parts,
         )
         if inherited_date_transaction is not None:
+            previous_running_balance = _resolve_adjacent_grouped_running_balance(
+                transactions=transactions,
+                last_transaction_index=last_transaction_index,
+            )
+            if inherited_date_transaction.running_balance is not None and previous_running_balance is not None:
+                inherited_date_transaction = _attach_running_balance_and_reconcile_sign(
+                    transaction=inherited_date_transaction,
+                    running_balance=inherited_date_transaction.running_balance,
+                    previous_running_balance=previous_running_balance,
+                )
             transactions.append(inherited_date_transaction)
             last_transaction_index = len(transactions) - 1
             description_parts = []
@@ -2840,6 +2850,22 @@ def _has_adjacent_previous_running_balance_context(
         return True
     previous_description = _normalize_text(previous_item.transaction.description)
     return previous_description.startswith("SALDO ANTERIOR") or previous_description.startswith("SALDO INICIAL")
+
+
+def _resolve_adjacent_grouped_running_balance(
+    *,
+    transactions: list[_ParsedTransaction],
+    last_transaction_index: int | None,
+) -> float | None:
+    if last_transaction_index is None or last_transaction_index < 0 or last_transaction_index >= len(transactions):
+        return None
+    previous_item = transactions[last_transaction_index]
+    if previous_item.running_balance is not None:
+        return previous_item.running_balance
+    previous_description = _normalize_text(previous_item.transaction.description)
+    if previous_description.startswith("SALDO ANTERIOR") or previous_description.startswith("SALDO INICIAL"):
+        return previous_item.transaction.amount
+    return None
 
 
 def _attach_running_balance_and_reconcile_sign(
