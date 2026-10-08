@@ -1,0 +1,85 @@
+layout_profile:
+  schema_version: 2
+  profile_name: banestes_internet_banking_extrato_v1
+  bank: Banestes
+  layout_family: banestes_internet_banking_extrato
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Banestes Internet Banking"
+      - "SALDO TOTAL"
+      - "CHEQUE ESPECIAL DISPONIVEL"
+      - "LANCAMENTOS PREVISTOS"
+      - "ENTRADAS E SAIDAS"
+      - "PERIODO:"
+      - "DATA LANCAMENTO VALOR (R$)"
+      - "SALDO CONTA/RENDE+"
+    optional_keywords:
+      - "AGENCIA:"
+      - "CONTA:"
+      - "CLIENTE:"
+      - "PIX RECEBIDO"
+      - "PIX ENVIADO"
+      - "RENDIMENTO DE RESGATE"
+      - "PAGAMENTO TITULO BANESTES"
+      - "TARIFA PIX ENVIADO"
+    negative_keywords:
+      - "BANRISUL"
+      - "SANTANDER"
+      - "BRADESCO"
+      - "CAIXA ECONOMICA FEDERAL"
+      - "BANCO DO BRASIL"
+      - "ITAU"
+      - "SICOOB"
+      - "SICREDI"
+      - "UNICRED"
+    min_score_hint: 0.75
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Lancamento"
+      - "Valor (R$)"
+    expected_column_order:
+      - date
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Lancamento"
+        - "Lançamento"
+      amount:
+        - "Valor (R$)"
+        - "Valor"
+    table_starts_after:
+      - "DATA LANCAMENTO VALOR (R$)"
+    row_separator_hint: "dia e mes em linhas separadas, seguidos pelos lancamentos daquele dia"
+  parsing:
+    date_formats:
+      - "dd MMM"
+    date_year_source: period
+    month_language: pt-BR
+    amount_locale: pt-BR
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+      - "marcador de saida"
+    positive_patterns:
+      - "{amount_without_minus}"
+      - "marcador de entrada"
+    ignore_rows:
+      - "SALDO ANTERIOR"
+      - "SALDO CONTA/RENDE+"
+      - "SALDO TOTAL"
+      - "CHEQUE ESPECIAL DISPONIVEL"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields: []
