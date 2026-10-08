@@ -11,6 +11,7 @@ _DESCENDING_RUNNING_BALANCE_LAYOUTS = {
 _DYNAMIC_RUNNING_BALANCE_ORDER_LAYOUTS = {
     "stone_extrato_conta_corrente_a4_v1",
 }
+_STONE_RUNNING_BALANCE_LAYOUT = "stone_extrato_conta_corrente_a4_v1"
 
 
 class _BalanceRow(Protocol):
@@ -156,6 +157,27 @@ def uses_descending_running_balance(layout_name: str | None) -> bool:
     return str(layout_name or "").strip().lower() in _DESCENDING_RUNNING_BALANCE_LAYOUTS
 
 
+def _is_stone_fee_credit_pair(
+    fee: CanonicalTransaction,
+    credit: CanonicalTransaction,
+    *,
+    tolerance: float,
+) -> bool:
+    fee_layout = str(fee.layout_name or "").strip().lower()
+    credit_layout = str(credit.layout_name or "").strip().lower()
+    return (
+        fee_layout == _STONE_RUNNING_BALANCE_LAYOUT
+        and credit_layout == _STONE_RUNNING_BALANCE_LAYOUT
+        and fee.date == credit.date
+        and fee.amount < 0
+        and credit.amount > 0
+        and "TARIFA" in fee.description.upper()
+        and fee.running_balance is not None
+        and credit.running_balance is not None
+        and abs(fee.running_balance - credit.running_balance) <= tolerance
+    )
+
+
 def annotate_balance_consistency(
     canonical_transactions: list[CanonicalTransaction],
     *,
@@ -200,6 +222,13 @@ def annotate_balance_consistency(
             continue
 
         if descending:
+            if _is_stone_fee_credit_pair(
+                previous_balance_row,
+                current,
+                tolerance=tolerance,
+            ):
+                amounts_since_balance += current.amount
+                continue
             if current.running_balance is None:
                 amounts_since_balance += current.amount
                 continue
