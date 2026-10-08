@@ -328,6 +328,98 @@ def test_itau_monthly_keeps_date_across_pages_and_stops_before_investment_detail
     ]
 
 
+def test_itau_monthly_handles_sidebar_before_investment_balance_and_split_negative_sign(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        pdf_parser_module,
+        "infer_pdf_layout",
+        lambda _text: pdf_parser_module.PdfLayoutInference(
+            layout_name="itau_empresas_extrato_mensal_conta_corrente_aplicacoes_automaticas_v1",
+            confidence=1.0,
+            used_fallback=False,
+        ),
+    )
+    text = """
+    ItaÃºEmpresas
+    extrato mensal
+    set 2026
+    01. Conta Corrente e AplicaÃ§Ãµes AutomÃ¡ticas
+    saldo em 31/08/26
+    saldo em 30/09/26
+    total entradas
+    total saÃ­das
+    Conta Corrente | MovimentaÃ§Ã£o
+    data
+    descriÃ§Ã£o
+    entradas R$
+    saÃ­das R$
+    saldo R$
+    (crÃ©ditos)
+    (dÃ©bitos)
+    31/08
+    Saldo anterior
+    636,90
+    01/09
+    PIX ENVIADO CLIENTE
+    600,00-
+    G = aplicaÃ§Ã£o programada
+    Res Aplic Aut Mais
+    600,00
+    1,00
+    P = poupanÃ§a automÃ¡tica
+    SALDO APLIC AUT MAIS
+    35,90
+    Para demais siglas, consulte as Notas
+    Explicativas no final do extrato
+    02/09
+    IOF
+    7,76-
+    Tar Plano Adapt
+    98,99-
+    TAR PIX QR LIQ ESTATICO
+    9,10-
+    Res Aplic Aut Mais
+    35,90
+    78,95
+    -
+    03/09
+    PIX TRANSF CLIENTE
+    100,00
+    Apl Aplic Aut Mais
+    20,05-
+    1,00
+    SALDO APLIC AUT MAIS
+    20,05
+    Saldo em C/C
+    1,00
+    Saldo final
+    21,05
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert result.layout.layout_name == (
+        "itau_empresas_extrato_mensal_conta_corrente_aplicacoes_automaticas_v1"
+    )
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert [transaction.description for transaction in result.transactions] == [
+        "SALDO ANTERIOR",
+        "PIX ENVIADO CLIENTE",
+        "Res Aplic Aut Mais",
+        "IOF",
+        "Tar Plano Adapt",
+        "TAR PIX QR LIQ ESTATICO",
+        "Res Aplic Aut Mais",
+        "PIX TRANSF CLIENTE",
+        "Apl Aplic Aut Mais",
+    ]
+    assert result.canonical_transactions is not None
+    assert result.canonical_transactions[6].running_balance == -78.95
+    assert result.canonical_transactions[8].running_balance == 1.0
+
+
 def test_itau_monthly_preserves_explicit_sispag_salary_debit_sign() -> None:
     text = """
     ItaúEmpresas

@@ -1123,6 +1123,7 @@ def _parse_grouped_statement_lines(
     opening_balance_inserted = False
     current_page_number: int | None = None
     skipping_repeated_page_header = False
+    last_attached_running_balance_line: tuple[int, int, int] | None = None
 
     for index, line in enumerate(lines):
         if current_page_number is None:
@@ -1150,10 +1151,35 @@ def _parse_grouped_statement_lines(
             skipping_repeated_page_header = preserve_current_date
 
         normalized_line = _normalize_text(line.text)
+        if (
+            layout_profile is not None
+            and layout_profile.profile_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
+            and normalized_line == "-"
+            and last_attached_running_balance_line
+            == (line.page_number, line.line_number - 1, last_transaction_index)
+            and last_transaction_index is not None
+        ):
+            transaction = transactions[last_transaction_index]
+            if transaction.running_balance is not None:
+                transactions[last_transaction_index] = _attach_running_balance_and_reconcile_sign(
+                    transaction=transaction,
+                    running_balance=-abs(transaction.running_balance),
+                    previous_running_balance=None,
+                )
+                last_known_running_balance = transactions[last_transaction_index].running_balance
+                last_attached_running_balance_line = None
+                continue
         if skipping_repeated_page_header:
             if _is_itau_monthly_repeated_page_header_line(normalized_line):
                 continue
             skipping_repeated_page_header = False
+        if (
+            current_date is not None
+            and layout_profile is not None
+            and layout_profile.profile_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
+            and _is_itau_monthly_sidebar_or_note_line(normalized_line)
+        ):
+            continue
         if _is_terminal_grouped_statement_section_boundary(
             line.text,
             layout_profile=layout_profile,
@@ -1284,6 +1310,12 @@ def _parse_grouped_statement_lines(
                 last_known_running_balance = inherited_date_transaction.running_balance
             continue
 
+        if (
+            layout_profile is not None
+            and layout_profile.profile_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
+            and any(_normalize_text(part).startswith("SALDO APLIC") for part in description_parts)
+        ):
+            description_parts = ["SALDO APLIC"]
         pre_amount_description_parts = description_parts
         description_parts = _prepare_grouped_amount_only_description_parts(
             transactions=transactions,
@@ -1350,6 +1382,11 @@ def _parse_grouped_statement_lines(
                     previous_running_balance=previous_balance,
                 )
                 last_known_running_balance = transactions[last_transaction_index].running_balance
+                last_attached_running_balance_line = (
+                    line.page_number,
+                    line.line_number,
+                    last_transaction_index,
+                )
             continue
 
         description_parts = _append_grouped_description_part(
@@ -1429,6 +1466,18 @@ def _is_itau_monthly_repeated_page_header_line(normalized_line: str) -> bool:
         r"(?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+20\d{2}",
         normalized_line,
     ) is not None
+
+
+def _is_itau_monthly_sidebar_or_note_line(normalized_line: str) -> bool:
+    if normalized_line in {"FINAL DO", "EXTRATO"}:
+        return True
+    if normalized_line.startswith("G =") and normalized_line.endswith("PROGRAMADA"):
+        return True
+    if normalized_line.startswith("P =") and "AUTOM" in normalized_line:
+        return True
+    return normalized_line.startswith(
+        ("PARA DEMAIS SIGLAS, CONSULTE AS NOTAS", "EXPLICATIVAS NO")
+    )
 
 
 def _parse_inline_statement_rows(lines: list[_PdfLine]) -> tuple[list[_ParsedTransaction], int]:
