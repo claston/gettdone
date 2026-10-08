@@ -344,6 +344,8 @@ def test_parse_pdf_transactions_scopes_santander_intelligent_consolidated_moveme
         ContaMax Empresarial
         Movimentacao Mensal
         Data Movimento Data da Aplicacao No da Aplicacao Valor Liquido Creditado R$
+        31/08 SALDO ANTERIOR 35.000,00 35.000,00 1.000,00 34.000,00
+        28/09 RESGATE P C C 35.000,00 35.000,00 1.000,00 34.000,00
         03/AGO/26 25/MAI/26 260030537650 0,00 403,11 403,21 0,10 0,00 -0,02 403,19
         04/AGO/26 25/MAI/26 260030537650 0,00 399,92 400,02 0,10 0,00 -0,02 400,00
         Extrato_PJ_A4_Inteligente 1.0 - 2/4/2024
