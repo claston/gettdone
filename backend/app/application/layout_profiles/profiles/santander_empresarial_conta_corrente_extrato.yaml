@@ -172,7 +172,8 @@ layout_profile:
       - Saldo disponivel para uso
       - Opcao de Pesquisa
       - Periodos
-    negative_keywords: []
+    negative_keywords:
+      - EXTRATO CONSOLIDADO INTELIGENTE
     min_score_hint: 0.78
   table_detection:
     header_keywords:
