@@ -2153,6 +2153,105 @@ def test_parse_sicredi_matricial_financial_application_as_debit() -> None:
     assert result.parse_metrics["balance_consistency_failed"] == 0
 
 
+def test_parse_pdf_transactions_supports_stone_a4_multiline_native_rows_across_pages() -> None:
+    pages = [
+        """
+        Extrato de conta corrente
+        Stone Instituicao de Pagamento S.A.
+        Periodo: de 07/10/2026 a 09/10/2026
+        DATA TIPO DESCRICAO VALOR SALDO CONTRAPARTE
+        08/10/26 Saida CLARO SP DDD 11
+        Pagamento - R$ 45,99 R$ 31.144,47 CLARO SP DDD 11
+        08/10/26 Saida CLARO SP DDD 11
+        Pagamento - R$ 199,96 R$ 31.190,46 CLARO SP DDD 11
+        08/10/26 Entrada
+        PROMAX II CENTRO DE
+        CONDICIONAMENTO FISICO
+        Transferencia | Pix
+        R$ 176,00 R$ 31.390,42 STONE INSTITUICAO DE PAGAMENTO S.A.
+        08/10/26 Entrada PROMAX CENTRO DE CONDICIONAMENTO
+        Transferencia | Pix
+        R$ 10.000,00 R$ 31.214,42 CAIXA ECONOMICA FEDERAL
+        08/10/26 Entrada Recebimento vendas
+        Visa | Credito R$ 557,53 R$ 21.214,42
+        08/10/26 Entrada Recebimento vendas
+        Mastercard | Credito R$ 723,71 R$ 20.656,89
+        07/10/26 Saida Tarifa - R$ 0,94 R$ 19.933,18 BANCO EXEMPLO
+        07/10/26 Entrada CLIENTE EXEMPLO
+        Pix | Maquininha R$ 189,00 R$ 19.933,18 BANCO EXEMPLO
+        07/10/26 Saida FORNECEDOR EXEMPLO
+        Pagamento - R$ 702,42 R$ 19.745,12 FORNECEDOR EXEMPLO
+        07/10/26 Entrada CLIENTE ALFA
+        Transferencia | Pix R$ 20,00 R$ 20.447,54 INSTITUICAO EXEMPLO
+        07/10/26 Entrada CLIENTE BETA
+        Transferencia | Pix R$ 166,00 R$ 20.427,54 STONE
+        07/10/26 Entrada CLIENTE GAMA
+        Transferencia | Pix R$ 6.500,00 R$ 20.261,54 CAIXA ECONOMICA FEDERAL
+        07/10/26 Entrada Recebimento vendas
+        Visa | Credito R$ 547,70 R$ 13.761,54
+        """,
+        """
+        Extrato de conta corrente
+        Periodo: de 07/10/2026 a 09/10/2026
+        DATA TIPO DESCRICAO VALOR SALDO CONTRAPARTE
+        07/10/26 Entrada Recebimento vendas
+        Mastercard | Credito R$ 1.241,91 R$ 13.213,84
+        07/10/26 Saida CLIENTE DELTA
+        Transferencia | Pix - R$ 7.000,00 R$ 11.971,93 CAIXA ECONOMICA FEDERAL
+        07/10/26 Saida CLIENTE EPSILON
+        Transferencia | Pix - R$ 7.000,00 R$ 18.971,93 BANCO EXEMPLO
+        Informacoes do Comprovante
+        """,
+    ]
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(pages)
+
+    assert result.layout.layout_name == "stone_extrato_conta_corrente_a4_v1"
+    assert result.parse_metrics["selected_parser"] == "layout_specific_stone_statement"
+    assert [transaction.amount for transaction in result.transactions] == [
+        -45.99,
+        -199.96,
+        176.0,
+        10000.0,
+        557.53,
+        723.71,
+        -0.94,
+        189.0,
+        -702.42,
+        20.0,
+        166.0,
+        6500.0,
+        547.7,
+        1241.91,
+        -7000.0,
+        -7000.0,
+    ]
+    assert result.transactions[2].description == (
+        "Entrada PROMAX II CENTRO DE CONDICIONAMENTO FISICO Transferencia | Pix"
+    )
+    assert result.canonical_transactions is not None
+    assert [transaction.running_balance for transaction in result.canonical_transactions] == [
+        31144.47,
+        31190.46,
+        31390.42,
+        31214.42,
+        21214.42,
+        20656.89,
+        19933.18,
+        19933.18,
+        19745.12,
+        20447.54,
+        20427.54,
+        20261.54,
+        13761.54,
+        13213.84,
+        11971.93,
+        18971.93,
+    ]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert result.parse_metrics["canonical_warning_count"] == 0
+
+
 def test_parse_pdf_transactions_supports_stone_a4_statement_with_entry_exit_type_prefixes(monkeypatch) -> None:
     native_text = """
     Extrato de conta corrente
@@ -2209,7 +2308,7 @@ def test_parse_pdf_transactions_supports_stone_a4_statement_with_entry_exit_type
 
     assert result.layout.layout_name == "stone_extrato_conta_corrente_a4_v1"
     assert result.layout.used_fallback is False
-    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert result.parse_metrics["selected_parser"] == "layout_specific_stone_statement"
     assert [transaction.amount for transaction in result.transactions] == [-3898.12, 673.87, -10.0, 166.47, 1424.58]
     assert result.parse_metrics["balance_consistency_checked"] == 4
     assert result.parse_metrics["balance_consistency_failed"] == 0
@@ -2239,7 +2338,7 @@ def test_parse_pdf_transactions_reorders_ascending_stone_rows_by_running_balance
     )
 
     assert result.layout.layout_name == "stone_extrato_conta_corrente_a4_v1"
-    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert result.parse_metrics["selected_parser"] == "layout_specific_stone_statement"
     assert [transaction.amount for transaction in result.transactions] == [
         0.33,
         4.67,

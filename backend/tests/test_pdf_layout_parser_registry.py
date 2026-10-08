@@ -111,5 +111,6 @@ def test_default_layout_parser_registry_contains_current_specific_families() -> 
             "neon_extrato_por_periodo_moderno_v1",
             "banco_bv_extrato_periodo_grouped_v1",
             "trust_srm_bank_extrato_conta_corrente_v1",
+            "stone_extrato_conta_corrente_a4_v1",
         }
     )
