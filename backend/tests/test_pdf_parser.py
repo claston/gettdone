@@ -37,6 +37,31 @@ def test_parse_pdf_transactions_preserves_complete_date_and_amount_candidates(
     assert result.source_page_texts == (raw_line,)
 
 
+def test_parse_pdf_transactions_ignores_nubank_currency_conversion_details() -> None:
+    text = """
+    Nubank
+    FATURA 19 JAN 2026 EMISSÃO E ENVIO 11 JAN 2026
+    TRANSAÇÕES DE 11 DEZ A 11 JAN
+    13 DEZ •••• 2715 Claude.Ai Subscription R$ 567,33
+    BRL 550.00 = USD 101.00
+    Conversão: BRL 5.61 = USD 1 = R$ 5,61
+    13 DEZ IOF de "Claude.Ai Subscription" R$ 19,86
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        [text],
+        preserve_layout_spacing=True,
+    )
+
+    assert result.layout.layout_name == "nubank_statement_ptbr"
+    assert [transaction.description for transaction in result.transactions] == [
+        "•••• 2715 CLAUDE.AI SUBSCRIPTION",
+        'IOF DE "CLAUDE.AI SUBSCRIPTION"',
+    ]
+    assert [transaction.amount for transaction in result.transactions] == [567.33, 19.86]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
 def test_parse_pdf_transactions_handles_banrisul_columnar_native_text() -> None:
     text = """
     B A N R I S U L
