@@ -79,6 +79,79 @@ def _score_running_balance_orders(rows: Sequence[_BalanceRow]) -> tuple[int, int
     return ascending_failures, descending_failures, checked_count
 
 
+def resolve_ascending_running_balance_order(rows: Sequence[_BalanceRow]) -> list[int]:
+    resolved_order: list[int] = []
+    previous_running_balance: float | None = None
+    group_start = 0
+
+    while group_start < len(rows):
+        group_date = getattr(rows[group_start], "date", None)
+        group_end = group_start + 1
+        while group_end < len(rows) and getattr(rows[group_end], "date", None) == group_date:
+            group_end += 1
+
+        group_indices = list(range(group_start, group_end))
+        ordered_group = _resolve_ascending_date_group_order(
+            rows,
+            group_indices=group_indices,
+            previous_running_balance=previous_running_balance,
+        )
+        resolved_order.extend(ordered_group)
+        for index in reversed(ordered_group):
+            if rows[index].running_balance is not None:
+                previous_running_balance = float(rows[index].running_balance)
+                break
+        group_start = group_end
+
+    return resolved_order
+
+
+def _resolve_ascending_date_group_order(
+    rows: Sequence[_BalanceRow],
+    *,
+    group_indices: list[int],
+    previous_running_balance: float | None,
+) -> list[int]:
+    if len(group_indices) < 2 or any(rows[index].running_balance is None for index in group_indices):
+        return group_indices
+
+    remaining = list(group_indices)
+    ordered: list[int] = []
+    current_balance = previous_running_balance
+    tolerance = 0.01
+
+    while remaining:
+        matching_previous_balance = [
+            index
+            for index in remaining
+            if current_balance is not None
+            and abs(_required_previous_balance(rows[index]) - current_balance) <= tolerance
+        ]
+        if matching_previous_balance:
+            selected = matching_previous_balance[0]
+        else:
+            remaining_balances = [float(rows[index].running_balance) for index in remaining]
+            roots = [
+                index
+                for index in remaining
+                if not any(
+                    abs(_required_previous_balance(rows[index]) - balance) <= tolerance
+                    for balance in remaining_balances
+                )
+            ]
+            selected = roots[0] if roots else remaining[0]
+
+        ordered.append(selected)
+        remaining.remove(selected)
+        current_balance = float(rows[selected].running_balance)
+
+    return ordered
+
+
+def _required_previous_balance(row: _BalanceRow) -> float:
+    return round(float(row.running_balance) - float(row.amount), 2)
+
+
 def uses_descending_running_balance(layout_name: str | None) -> bool:
     return str(layout_name or "").strip().lower() in _DESCENDING_RUNNING_BALANCE_LAYOUTS
 
