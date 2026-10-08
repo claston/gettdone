@@ -877,6 +877,69 @@ def test_parse_pdf_transactions_uses_standard_pdf_parser_for_textract_text_mode(
     assert result.canonical_transactions[1].warnings == []
 
 
+def test_parse_pdf_transactions_assembles_unicred_textract_rows_from_geometry(monkeypatch) -> None:
+    monkeypatch.setenv("TEXTRACT_ENABLED", "true")
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [])
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: False)
+
+    def line(block_id: str, text: str, *, left: float, top: float) -> dict[str, object]:
+        return {
+            "BlockType": "LINE",
+            "Id": block_id,
+            "Page": 1,
+            "Text": text,
+            "Confidence": 99.0,
+            "Geometry": {
+                "BoundingBox": {
+                    "Left": left,
+                    "Top": top,
+                    "Width": 0.12,
+                    "Height": 0.02,
+                }
+            },
+        }
+
+    class _GatewayStub:
+        def analyze_pdf(self, *, raw_bytes: bytes) -> dict[str, object]:
+            _ = raw_bytes
+            return {
+                "document_hash": "hash",
+                "page_count": 1,
+                "blocks": [
+                    line("h1", "PERIODO DE 01/01/2026 A 31/01/2026", left=0.05, top=0.05),
+                    line("h2", "COOP: 0001 AG: 0001", left=0.05, top=0.07),
+                    line("h3", "DATA LANCAMENTOS VALOR (R$) SALDO (R$)", left=0.05, top=0.10),
+                    line("r1d", "CREDITO RECEBIMENTO DE PIX", left=0.18, top=0.294),
+                    line("r1a", "+R$ 1.000,00", left=0.69, top=0.295),
+                    line("r1b", "R$ 1.000,00", left=0.88, top=0.294),
+                    line("r1t", "01/01/2026", left=0.06, top=0.300),
+                    line("r2d", "DEBITO TRANSFERENCIA PIX", left=0.18, top=0.344),
+                    line("r2a", "-R$ 200,00", left=0.69, top=0.345),
+                    line("r2b", "R$ 800,00", left=0.88, top=0.344),
+                    line("r2t", "02/01/2026", left=0.06, top=0.350),
+                    line("r3d", "CREDITO DE COBRANCA", left=0.18, top=0.394),
+                    line("r3a", "+R$ 50,00", left=0.69, top=0.395),
+                    line("r3b", "R$ 850,00", left=0.88, top=0.394),
+                    line("r3t", "03/01/2026", left=0.06, top=0.400),
+                    line("f1", "SALDO ATUAL R$ 850,00", left=0.05, top=0.80),
+                    line("f2", "TOTAL DISPONIVEL R$ 850,00", left=0.05, top=0.82),
+                    line("f3", "LIMITE DE CHEQUE ESPECIAL R$ 0,00", left=0.05, top=0.84),
+                    line("f4", "LANCAMENTOS FUTUROS R$ 0,00", left=0.05, top=0.86),
+                ],
+                "metrics": {"textract_mode": "text"},
+            }
+
+    monkeypatch.setattr(pdf_parser_module, "TextractGateway", lambda: _GatewayStub())
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "unicred_extrato_conta_corrente_moderno_v1"
+    assert result.parse_metrics["selected_parser"] == "layout_specific_unicred_textract"
+    assert [transaction.amount for transaction in result.transactions] == [1000.0, -200.0, 50.0]
+    assert [transaction.running_balance for transaction in result.canonical_transactions] == [1000.0, 800.0, 850.0]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
 def test_parse_pdf_transactions_uses_textract_when_forced_even_with_native_text(monkeypatch) -> None:
     monkeypatch.setenv("TEXTRACT_ENABLED", "true")
     monkeypatch.setenv("TEXTRACT_FORCE", "true")

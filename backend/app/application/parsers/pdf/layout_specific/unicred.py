@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from app.application.document_extraction_models import ExtractedLine, ExtractedPage
 from app.application.normalization.pdf_amount_tokens import parse_pdf_amount
 from app.application.normalization.pdf_row_date_rules import parse_row_date
 from app.application.parsers.pdf.layout_specific.contract import (
@@ -68,6 +69,92 @@ class UnicredLayoutParser:
             selected_parser="layout_specific_unicred",
             selection_reason=f"layout_specific_unicred:{layout_name}",
         )
+
+
+def parse_unicred_textract_rows(
+    pages: list[ExtractedPage],
+    *,
+    context: LayoutSpecificParseContext,
+) -> list[_ParsedTransaction]:
+    reconstructed_lines = [
+        row
+        for page in pages
+        for row in _reconstruct_unicred_page_rows(page)
+    ]
+    if not reconstructed_lines:
+        return []
+    fallback_year = _resolve_fallback_year(reconstructed_lines, context=context)
+    return _parse_transaction_rows(reconstructed_lines, fallback_year=fallback_year)
+
+
+def _reconstruct_unicred_page_rows(page: ExtractedPage) -> list[_PdfLine]:
+    positioned_lines = [line for line in page.lines if line.text.strip() and _line_position(line) is not None]
+    date_anchors = sorted(
+        (
+            line
+            for line in positioned_lines
+            if re.fullmatch(r"\s*\d{1,2}/\d{1,2}/\d{2,4}\s*", line.text)
+        ),
+        key=lambda line: _line_position(line)[1],
+    )
+    reconstructed: list[_PdfLine] = []
+    for index, anchor in enumerate(date_anchors):
+        anchor_top = _line_position(anchor)[1]
+        previous_top = _line_position(date_anchors[index - 1])[1] if index > 0 else None
+        next_top = _line_position(date_anchors[index + 1])[1] if index + 1 < len(date_anchors) else None
+        lower_bound = (previous_top + anchor_top) / 2 if previous_top is not None else anchor_top - 0.025
+        upper_bound = (anchor_top + next_top) / 2 if next_top is not None else anchor_top + 0.025
+        row_lines = [
+            line
+            for line in positioned_lines
+            if lower_bound <= _line_position(line)[1] < upper_bound
+        ]
+        currency_lines = sorted(
+            (line for line in row_lines if _CURRENCY_AMOUNT_PATTERN.search(line.text)),
+            key=lambda line: _line_position(line)[0],
+        )
+        if len(currency_lines) < 2:
+            continue
+        amount_line, balance_line = currency_lines[-2:]
+        amount_left = _line_position(amount_line)[0]
+        description_lines = sorted(
+            (
+                line
+                for line in row_lines
+                if line.id != anchor.id
+                and line.id not in {amount_line.id, balance_line.id}
+                and _line_position(line)[0] < amount_left
+            ),
+            key=lambda line: (_line_position(line)[1], _line_position(line)[0]),
+        )
+        description = " ".join(line.text.strip() for line in description_lines if line.text.strip())
+        if not description:
+            continue
+        reconstructed.append(
+            _PdfLine(
+                text=" ".join(
+                    (
+                        anchor.text.strip(),
+                        description,
+                        amount_line.text.strip(),
+                        balance_line.text.strip(),
+                    )
+                ),
+                page_number=page.page_number,
+                line_number=anchor.line_index,
+            )
+        )
+    return reconstructed
+
+
+def _line_position(line: ExtractedLine) -> tuple[float, float] | None:
+    if line.bbox is None:
+        return None
+    left = line.bbox.get("left")
+    top = line.bbox.get("top")
+    if left is None or top is None:
+        return None
+    return float(left), float(top)
 
 
 def _parse_transaction_rows(lines: list[_PdfLine], *, fallback_year: int) -> list[_ParsedTransaction]:

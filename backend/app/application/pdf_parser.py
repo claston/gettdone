@@ -65,6 +65,10 @@ from app.application.parsers.pdf.layout_specific.contract import (
     LayoutSpecificParseResult,
 )
 from app.application.parsers.pdf.layout_specific.registry import DEFAULT_PDF_LAYOUT_PARSER_REGISTRY
+from app.application.parsers.pdf.layout_specific.unicred import (
+    UNICRED_MODERN_CURRENT_LAYOUT,
+    parse_unicred_textract_rows,
+)
 from app.application.parsers.pdf.models import PdfParseResult, _ParsedTransaction, _PdfLine, _TabularColumnPositions
 from app.application.parsers.pdf.multiline_transaction_assembler import parse_multiline_transaction_rows
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
@@ -534,6 +538,36 @@ def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
     page_texts = list(_textract_page_texts(extraction))
     if not any(page_texts):
         raise InvalidFileContentError("Nao foi possivel extrair transacoes do OCR para revisao.")
+    joined_text = "\n".join(page_texts)
+    inferred_layout = infer_pdf_layout(joined_text)
+    if inferred_layout.layout_name == UNICRED_MODERN_CURRENT_LAYOUT:
+        geometry_rows = parse_unicred_textract_rows(
+            extraction.pages,
+            context=LayoutSpecificParseContext(),
+        )
+        if geometry_rows:
+            return _build_pdf_parse_result(
+                parsed_rows=geometry_rows,
+                layout=inferred_layout,
+                layout_profile=get_layout_profile(inferred_layout.layout_name),
+                selected_parser="layout_specific_unicred_textract",
+                parser_selection_reason="layout_specific_unicred_textract:geometry_rows",
+                inline_decision="not_applicable_layout_specific",
+                tabular_decision="not_applicable_layout_specific",
+                columnar_decision="not_applicable_layout_specific",
+                joined_text=joined_text,
+                source_page_texts=tuple(page_texts),
+                page_count=len(page_texts),
+                flattened_line_count=sum(len(page.lines) for page in extraction.pages),
+                invalid_date_candidates_skipped=0,
+                grouped_transactions_count=0,
+                inline_candidates_count=0,
+                inline_transactions_count=0,
+                tabular_candidates_count=0,
+                tabular_transactions_count=0,
+                columnar_candidates_count=0,
+                columnar_transactions_count=0,
+            )
     try:
         return _parse_pdf_transactions_from_page_texts(page_texts)
     except InvalidFileContentError:
