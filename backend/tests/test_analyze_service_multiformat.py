@@ -978,6 +978,69 @@ def test_analyze_service_keeps_descending_stone_closing_balance_without_inventin
     assert result.closing_balance == 0.0
 
 
+def test_analyze_service_resolves_ascending_stone_opening_and_closing_balances(tmp_path, monkeypatch) -> None:
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    layout_name = "stone_extrato_conta_corrente_a4_v1"
+    normalized_transactions = [
+        NormalizedTransaction(
+            date="2026-07-01",
+            description="CDB STONE 100 CDI RENDIMENTO BRUTO",
+            amount=10.43,
+            type="inflow",
+        ),
+        NormalizedTransaction(
+            date="2026-07-01",
+            description="CDB STONE 100 CDI IR PROVISAO",
+            amount=-2.08,
+            type="outflow",
+        ),
+        NormalizedTransaction(
+            date="2026-07-01",
+            description="CDB STONE 100 CDI RENDIMENTO BRUTO",
+            amount=3.18,
+            type="inflow",
+        ),
+    ]
+    canonical_transactions = [
+        CanonicalTransaction(
+            date=transaction.date,
+            description=transaction.description,
+            amount=transaction.amount,
+            type=transaction.type,
+            running_balance=running_balance,
+            source_page=1,
+            source_line=index,
+            layout_name=layout_name,
+            confidence=0.98,
+            source_parser="tabular",
+        )
+        for index, (transaction, running_balance) in enumerate(
+            zip(normalized_transactions, (98497.35, 98495.27, 98498.45), strict=True),
+            start=1,
+        )
+    ]
+    monkeypatch.setattr(
+        default_conversion_pipeline_module,
+        "parse_pdf_transactions",
+        lambda raw_bytes, **kwargs: PdfParseResult(
+            transactions=normalized_transactions,
+            layout=PdfLayoutInference(layout_name=layout_name, confidence=0.98, used_fallback=False),
+            extracted_text="Stone Instituição de Pagamento S.A.",
+            parse_metrics=PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY,
+            canonical_transactions=canonical_transactions,
+        ),
+    )
+
+    result = _run_analysis_with_storage(
+        storage=storage,
+        filename="stone-ascending.pdf",
+        raw_bytes=b"%PDF synthetic",
+    )
+
+    assert result.opening_balance == 98486.92
+    assert result.closing_balance == 98498.45
+
+
 def test_analyze_service_does_not_extract_account_from_transaction_body_without_header_label(
     tmp_path, monkeypatch
 ) -> None:

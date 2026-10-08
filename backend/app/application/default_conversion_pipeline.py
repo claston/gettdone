@@ -7,7 +7,7 @@ from app.application.bank_identity import resolve_bank_name
 from app.application.bank_resolver import DEFAULT_BANK_CODE, resolve_bank_code
 from app.application.conversion_pipeline import ConversionPipeline
 from app.application.models import TransactionRow
-from app.application.normalization.balance import uses_descending_running_balance
+from app.application.normalization.balance import resolve_descending_running_balance
 from app.application.parsers.service import ParsingService
 from app.application.pdf_parser import parse_pdf_transactions
 
@@ -101,10 +101,10 @@ def _resolve_opening_balance(
                 return round(float(raw_amount), 2)
             except ValueError:
                 continue
-    if uses_descending_running_balance(layout_name):
+    descending = resolve_descending_running_balance(rows, layout_name=layout_name)
+    if descending:
         return None
-    balance_rows = reversed(rows) if uses_descending_running_balance(layout_name) else rows
-    for row in balance_rows:
+    for row in rows:
         if row.running_balance is None:
             continue
         return round(float(row.running_balance) - float(row.amount), 2)
@@ -117,7 +117,7 @@ def _resolve_closing_balance(
     opening_balance: float | None = None,
     layout_name: str | None = None,
 ) -> float | None:
-    if uses_descending_running_balance(layout_name):
+    if resolve_descending_running_balance(rows, layout_name=layout_name):
         for row in rows:
             if row.running_balance is None:
                 continue

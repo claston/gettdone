@@ -1,5 +1,9 @@
 from app.application.models import CanonicalTransaction
-from app.application.normalization.balance import annotate_balance_consistency, uses_descending_running_balance
+from app.application.normalization.balance import (
+    annotate_balance_consistency,
+    resolve_descending_running_balance,
+    uses_descending_running_balance,
+)
 
 
 def test_annotate_balance_consistency_marks_only_inconsistent_rows() -> None:
@@ -142,6 +146,76 @@ def test_annotate_balance_consistency_supports_descending_stone_layout() -> None
     assert failed_count == 0
     assert canonical_transactions[1].warnings == []
     assert canonical_transactions[2].warnings == []
+
+
+def test_annotate_balance_consistency_supports_ascending_stone_layout() -> None:
+    canonical_transactions = [
+        CanonicalTransaction(
+            date="2026-07-01",
+            description="CDB STONE 100 CDI RENDIMENTO BRUTO",
+            amount=10.43,
+            type="inflow",
+            running_balance=98497.35,
+            source_parser="tabular",
+            layout_name="stone_extrato_conta_corrente_a4_v1",
+        ),
+        CanonicalTransaction(
+            date="2026-07-01",
+            description="CDB STONE 100 CDI IR PROVISAO",
+            amount=-2.08,
+            type="outflow",
+            running_balance=98495.27,
+            source_parser="tabular",
+            layout_name="stone_extrato_conta_corrente_a4_v1",
+        ),
+        CanonicalTransaction(
+            date="2026-07-01",
+            description="CDB STONE 100 CDI RENDIMENTO BRUTO",
+            amount=3.18,
+            type="inflow",
+            running_balance=98498.45,
+            source_parser="tabular",
+            layout_name="stone_extrato_conta_corrente_a4_v1",
+        ),
+    ]
+
+    checked_count, failed_count = annotate_balance_consistency(canonical_transactions)
+
+    assert resolve_descending_running_balance(canonical_transactions) is False
+    assert checked_count == 2
+    assert failed_count == 0
+    assert all(transaction.warnings == [] for transaction in canonical_transactions)
+
+
+def test_resolve_descending_running_balance_keeps_descending_stone_order() -> None:
+    canonical_transactions = [
+        CanonicalTransaction(
+            date="2026-10-07",
+            description="SAIDA PAGAMENTO",
+            amount=-702.42,
+            type="outflow",
+            running_balance=19745.12,
+            layout_name="stone_extrato_conta_corrente_a4_v1",
+        ),
+        CanonicalTransaction(
+            date="2026-10-07",
+            description="ENTRADA PIX",
+            amount=20.0,
+            type="inflow",
+            running_balance=20447.54,
+            layout_name="stone_extrato_conta_corrente_a4_v1",
+        ),
+        CanonicalTransaction(
+            date="2026-10-07",
+            description="ENTRADA PIX",
+            amount=166.0,
+            type="inflow",
+            running_balance=20427.54,
+            layout_name="stone_extrato_conta_corrente_a4_v1",
+        ),
+    ]
+
+    assert resolve_descending_running_balance(canonical_transactions) is True
 
 
 def test_uses_descending_running_balance_for_new_santander_empresarial_a4_layout() -> None:
