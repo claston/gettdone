@@ -32,6 +32,23 @@ def _case_1_context(**overrides: object) -> AIRecoveryEligibilityContext:
     return AIRecoveryEligibilityContext(**values)
 
 
+def _generic_context(**overrides: object) -> AIRecoveryEligibilityContext:
+    values: dict[str, object] = {
+        "file_type": "pdf",
+        "page_count": 2,
+        "case": AIRecoveryEligibilityCase.GENERIC_LAYOUT_CONVERSION,
+        "file_size_bytes": 500_000,
+        "document_sha256": "b" * 64,
+        "transaction_count": 4,
+        "layout_name": "generic_statement_ptbr",
+        "layout_confidence": 0.31,
+        "selected_parser": "generic_pdf",
+        "source_evidence_available": True,
+    }
+    values.update(overrides)
+    return AIRecoveryEligibilityContext(**values)
+
+
 @pytest.mark.parametrize(
     "subcode",
     [
@@ -154,6 +171,38 @@ def test_active_mode_requires_higher_layout_confidence_and_source_evidence() -> 
     assert low_confidence.reason == AIRecoveryEligibilityReason.LAYOUT_CONFIDENCE_TOO_LOW
     assert missing_evidence.reason == AIRecoveryEligibilityReason.SOURCE_EVIDENCE_UNAVAILABLE
     assert eligible.eligible is True
+
+
+def test_active_mode_accepts_successful_generic_layout_conversion() -> None:
+    decision = assess_ai_recovery_eligibility(
+        config=_config("active"),
+        context=_generic_context(),
+    )
+
+    assert decision.eligible is True
+    assert decision.case == AIRecoveryEligibilityCase.GENERIC_LAYOUT_CONVERSION
+
+
+@pytest.mark.parametrize(
+    ("overrides", "reason"),
+    [
+        ({"layout_name": "nubank_statement_ptbr"}, AIRecoveryEligibilityReason.LAYOUT_NOT_GENERIC),
+        ({"transaction_count": 0}, AIRecoveryEligibilityReason.TRANSACTIONS_MISSING),
+        ({"selected_parser": ""}, AIRecoveryEligibilityReason.PARSER_UNKNOWN),
+        ({"source_evidence_available": False}, AIRecoveryEligibilityReason.SOURCE_EVIDENCE_UNAVAILABLE),
+    ],
+)
+def test_generic_conversion_keeps_required_safety_gates(
+    overrides: dict[str, object],
+    reason: AIRecoveryEligibilityReason,
+) -> None:
+    decision = assess_ai_recovery_eligibility(
+        config=_config("active"),
+        context=_generic_context(**overrides),
+    )
+
+    assert decision.eligible is False
+    assert decision.reason == reason
 
 
 @pytest.mark.parametrize(

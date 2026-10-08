@@ -42,7 +42,7 @@ class AIRecoveryDispatchResult:
 
 
 class AIRecoveryShadowDispatcher:
-    """Publish eligible successful conversions for isolated, asynchronous diagnosis."""
+    """Publish eligible conversions and content failures for isolated diagnosis."""
 
     def __init__(
         self,
@@ -82,12 +82,19 @@ class AIRecoveryShadowDispatcher:
         selected_parser = _metric(metrics, "selected_parser")
         page_count = _optional_int(_metric(metrics, "page_count"))
         issue_codes = _issue_codes(analysis)
+        is_generic = _is_generic_layout(layout_name)
+        if is_generic and not issue_codes:
+            issue_codes = ("generic_layout",)
         decision = assess_ai_recovery_eligibility(
             config=self.config,
             context=AIRecoveryEligibilityContext(
                 file_type=document.file_type,
                 page_count=page_count,
-                case=AIRecoveryEligibilityCase.RECOGNIZED_LAYOUT_DIVERGENCE,
+                case=(
+                    AIRecoveryEligibilityCase.GENERIC_LAYOUT_CONVERSION
+                    if is_generic
+                    else AIRecoveryEligibilityCase.RECOGNIZED_LAYOUT_DIVERGENCE
+                ),
                 file_size_bytes=document.size_bytes,
                 document_sha256=hashlib.sha256(document.raw_bytes).hexdigest(),
                 transaction_count=int(getattr(analysis, "transactions_total", 0) or 0),
@@ -102,6 +109,89 @@ class AIRecoveryShadowDispatcher:
         if not decision.eligible:
             return AIRecoveryDispatchResult(status="skipped", reason=decision.reason.value)
 
+        return self._publish(
+            document=document,
+            analysis_id=str(analysis.analysis_id),
+            page_count=int(page_count),
+            deterministic_artifact=_deterministic_artifact(analysis, selected_parser=selected_parser),
+            source_evidence=_source_evidence(page_texts, source_layout_lines),
+            layout_profile=layout_name,
+            layout_family=layout_family,
+            statement_type=statement_type,
+            layout_confidence=_confidence(getattr(analysis, "layout_inference_confidence", None)),
+            issue_codes=issue_codes,
+        )
+
+    def dispatch_failure(
+        self,
+        *,
+        document: UploadedDocument,
+        analysis_id: str,
+        page_count: int | None,
+        error_stage: str | None,
+        error_subcode: str | None,
+        exception_class: str,
+        parse_observability: dict[str, object] | None = None,
+    ) -> AIRecoveryDispatchResult:
+        observability = dict(parse_observability or {})
+        decision = assess_ai_recovery_eligibility(
+            config=self.config,
+            context=AIRecoveryEligibilityContext(
+                file_type=document.file_type,
+                page_count=page_count,
+                case=AIRecoveryEligibilityCase.CONTENT_EXTRACTION_FAILURE,
+                error_stage=error_stage,
+                error_subcode=error_subcode,
+            ),
+        )
+        if not decision.eligible:
+            return AIRecoveryDispatchResult(status="skipped", reason=decision.reason.value)
+
+        layout_name = str(observability.get("layout_inference_name") or "unknown").strip() or "unknown"
+        layout_family, statement_type = _layout_metadata(layout_name)
+        selected_parser = str(observability.get("selected_parser") or "").strip()
+        normalized_subcode = str(error_subcode or "content_extraction_failure").strip().lower()
+        deterministic_artifact = {
+            "schema_version": "deterministic_statement_v1",
+            "analysis_id": analysis_id,
+            "selected_parser": selected_parser,
+            "parser_metrics": {},
+            "opening_balance": None,
+            "closing_balance": None,
+            "transactions": [],
+            "failure": {
+                "error_stage": str(error_stage or ""),
+                "error_subcode": normalized_subcode,
+                "exception_class": str(exception_class or "Exception"),
+            },
+        }
+        return self._publish(
+            document=document,
+            analysis_id=analysis_id,
+            page_count=int(page_count),
+            deterministic_artifact=deterministic_artifact,
+            source_evidence=_source_evidence(None, None),
+            layout_profile=layout_name,
+            layout_family=layout_family or "unknown",
+            statement_type=statement_type or "unknown",
+            layout_confidence=_confidence(observability.get("layout_inference_confidence")),
+            issue_codes=(normalized_subcode,),
+        )
+
+    def _publish(
+        self,
+        *,
+        document: UploadedDocument,
+        analysis_id: str,
+        page_count: int,
+        deterministic_artifact: dict[str, object],
+        source_evidence: dict[str, object],
+        layout_profile: str,
+        layout_family: str,
+        statement_type: str,
+        layout_confidence: float,
+        issue_codes: tuple[str, ...],
+    ) -> AIRecoveryDispatchResult:
         created_at = self.clock()
         versions = AIRecoveryVersionSet(
             model_id=self.config.model_id,
@@ -111,16 +201,16 @@ class AIRecoveryShadowDispatcher:
         )
         artifacts = build_ai_recovery_request_artifacts(
             bucket=self.bucket,
-            analysis_id=str(analysis.analysis_id),
+            analysis_id=analysis_id,
             pdf_bytes=document.raw_bytes,
-            page_count=int(page_count),
-            deterministic_artifact=_deterministic_artifact(analysis, selected_parser=selected_parser),
-            source_evidence=_source_evidence(page_texts, source_layout_lines),
+            page_count=page_count,
+            deterministic_artifact=deterministic_artifact,
+            source_evidence=source_evidence,
             parser_release=self.parser_release,
-            layout_profile=layout_name,
+            layout_profile=layout_profile,
             layout_family=layout_family,
             statement_type=statement_type,
-            layout_confidence=float(analysis.layout_inference_confidence),
+            layout_confidence=layout_confidence,
             issue_codes=issue_codes,
             ai=versions,
             created_at=created_at,
@@ -153,10 +243,21 @@ class AIRecoveryShadowDispatcher:
 
 
 def _layout_metadata(layout_name: str) -> tuple[str, str]:
+    if _is_generic_layout(layout_name):
+        return "generic_statement", "generic_statement"
     profile = get_layout_profile(layout_name)
     if profile is not None:
         return profile.layout_family or profile.profile_name, profile.statement_type
     return _LEGACY_LAYOUT_METADATA.get(layout_name, ("", ""))
+
+
+def _is_generic_layout(layout_name: str) -> bool:
+    return str(layout_name or "").strip().lower() in {
+        "generic",
+        "generic_pdf",
+        "generic_statement_ptbr",
+        "unknown",
+    }
 
 
 def _issue_codes(analysis) -> tuple[str, ...]:
@@ -259,6 +360,14 @@ def _optional_int(value: object) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _confidence(value: object) -> float:
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return min(1.0, max(0.0, confidence))
 
 
 def _money(value: object) -> str:

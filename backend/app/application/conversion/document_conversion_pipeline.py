@@ -683,6 +683,18 @@ class DocumentConversionPipeline:
                 warning_count=0,
                 balance_failed=0,
             )
+        self._dispatch_ai_recovery_failure(
+            document=request.document,
+            analysis_id=(
+                runtime.attempt_processing_id
+                or f"an_{hashlib.sha256(request.document.raw_bytes).hexdigest()[:12]}"
+            ),
+            page_count=request.preflight_result.estimated_pages_count,
+            error_stage=error_stage,
+            error_subcode=error_subcode,
+            exception_class=exception_class,
+            parse_observability=parse_observability,
+        )
         failed_event_id: str | None = None
         logger.info(
             "conversion_result_persist_started job_id=%s batch_id=%s identity_type=%s status=Falha error_code=%s error_stage=%s",
@@ -826,6 +838,39 @@ class DocumentConversionPipeline:
             return
         logger.info(
             "ai_recovery_dispatch_result status=%s reason=%s idempotency_key=%s",
+            result.status,
+            result.reason,
+            result.idempotency_key or "",
+        )
+
+    def _dispatch_ai_recovery_failure(
+        self,
+        *,
+        document: UploadedDocument,
+        analysis_id: str,
+        page_count: int | None,
+        error_stage: str | None,
+        error_subcode: str | None,
+        exception_class: str,
+        parse_observability: dict[str, object],
+    ) -> None:
+        if self.ai_recovery_dispatcher is None:
+            return
+        try:
+            result = self.ai_recovery_dispatcher.dispatch_failure(
+                document=document,
+                analysis_id=analysis_id,
+                page_count=page_count,
+                error_stage=error_stage,
+                error_subcode=error_subcode,
+                exception_class=exception_class,
+                parse_observability=parse_observability,
+            )
+        except Exception as exc:  # recovery capture must never change the conversion failure
+            logger.warning("ai_recovery_failure_dispatch_failed error_type=%s", exc.__class__.__name__)
+            return
+        logger.info(
+            "ai_recovery_failure_dispatch_result status=%s reason=%s idempotency_key=%s",
             result.status,
             result.reason,
             result.idempotency_key or "",
