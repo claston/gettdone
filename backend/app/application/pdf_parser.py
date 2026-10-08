@@ -1585,6 +1585,7 @@ def _parse_tabular_statement_rows(
             is_candidate=is_candidate,
             candidates=candidates,
             initial_running_balance=opening_running_balance,
+            layout_profile=tabular_profile,
         )
         index += max(1, consumed)
 
@@ -2240,6 +2241,7 @@ def _accumulate_tabular_row(
     is_candidate: bool,
     candidates: int,
     initial_running_balance: float | None = None,
+    layout_profile: DeclarativeLayoutProfile | None = None,
 ) -> int:
     next_candidates = candidates + 1 if is_candidate else candidates
     if parsed_row is not None:
@@ -2248,6 +2250,7 @@ def _accumulate_tabular_row(
                 parsed_row=parsed_row,
                 transactions=transactions,
                 initial_running_balance=initial_running_balance if not transactions else None,
+                layout_profile=layout_profile,
             )
         )
     return next_candidates
@@ -2258,7 +2261,12 @@ def _reconcile_tabular_amount_from_running_balance(
     parsed_row: _ParsedTransaction,
     transactions: list[_ParsedTransaction],
     initial_running_balance: float | None = None,
+    layout_profile: DeclarativeLayoutProfile | None = None,
 ) -> _ParsedTransaction:
+    if layout_profile is not None and layout_profile.profile_name == _STONE_CURRENT_ACCOUNT_A4_LAYOUT:
+        # Stone order is detected after parsing; ascending delta reconciliation can corrupt descending rows.
+        return parsed_row
+
     previous_running_balance = _resolve_latest_running_balance(transactions)
     if previous_running_balance is None:
         previous_running_balance = initial_running_balance
