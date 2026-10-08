@@ -344,6 +344,8 @@ def test_parse_pdf_transactions_scopes_santander_intelligent_consolidated_moveme
         ContaMax Empresarial
         Movimentacao Mensal
         Data Movimento Data da Aplicacao No da Aplicacao Valor Liquido Creditado R$
+        31/08 SALDO ANTERIOR 35.000,00 35.000,00 1.000,00 34.000,00
+        28/09 RESGATE P C C 35.000,00 35.000,00 1.000,00 34.000,00
         03/AGO/26 25/MAI/26 260030537650 0,00 403,11 403,21 0,10 0,00 -0,02 403,19
         04/AGO/26 25/MAI/26 260030537650 0,00 399,92 400,02 0,10 0,00 -0,02 400,00
         Extrato_PJ_A4_Inteligente 1.0 - 2/4/2024
@@ -4162,6 +4164,38 @@ def test_parse_pdf_transactions_keeps_trailing_description_number_out_of_spaced_
     assert result.transactions[1].amount == -349.0
     assert result.canonical_transactions[1].running_balance == -250.9
     assert result.canonical_transactions[1].warnings == []
+
+
+def test_parse_pdf_transactions_reconciles_caixa_solucard_credit_from_running_balance() -> None:
+    native_text = """
+    CAIXA
+    Extrato por período
+    Extrato
+    DATA MOV. NR. DOC. HISTÓRICO VALOR
+    SALDO ANTERIOR R$ 328,95 C
+    24/08/2026
+    24/08 10:00 000001 DEPOSITO DINH LOTERICO R$ 5.000,00 R$ 5.328,95 C
+    25/08/2026
+    25/08 04:31 420688
+    CX PROGRAM
+    SOLUCARD ADMINISTRADORA DE CARTOES E CON 06.305.147/0001-76
+    PAGAMENTO POR SERVICO OU VENDA
+    R$ 361,20 R$ 5.690,15 C
+    25/08/2026
+    25/08 07:31 000303 REDE MC CC R$ 83,26 R$ 5.773,41 C
+    25/08/2026 SALDO DIA R$ 5.773,41 C
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([native_text])
+
+    assert result.layout.layout_name == "caixa_extrato_por_periodo_web_v1"
+    assert [transaction.amount for transaction in result.transactions] == [5000.0, 361.2, 83.26]
+    assert [transaction.running_balance for transaction in result.canonical_transactions] == [
+        5328.95,
+        5690.15,
+        5773.41,
+    ]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
 
 
 def test_parse_pdf_transactions_keeps_caixa_multiline_rows_with_value_and_balance_only() -> None:

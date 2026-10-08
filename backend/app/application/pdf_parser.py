@@ -737,7 +737,12 @@ def _parse_layout_specific_statement_rows(
 def _scope_profile_transaction_lines(
     lines: list[_PdfLine], *, layout_profile: DeclarativeLayoutProfile | None
 ) -> list[_PdfLine]:
-    if layout_profile is None or layout_profile.profile_name != _SANTANDER_CONSOLIDATED_BASIC_LAYOUT:
+    if layout_profile is None:
+        return lines
+
+    if layout_profile.profile_name == _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT:
+        return _scope_santander_intelligent_transaction_lines(lines)
+    if layout_profile.profile_name != _SANTANDER_CONSOLIDATED_BASIC_LAYOUT:
         return lines
 
     start_index = next(
@@ -765,6 +770,43 @@ def _scope_profile_transaction_lines(
         if "EXTRATO_PJ_A4_BASICO" in _normalize_text(line.text)
     ]
     return [*classifier_markers[-1:], *lines[start_index:end_index]]
+
+
+def _scope_santander_intelligent_transaction_lines(lines: list[_PdfLine]) -> list[_PdfLine]:
+    start_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if _normalize_text(line.text) == "CONTA CORRENTE"
+        ),
+        None,
+    )
+    if start_index is None:
+        start_index = next(
+            (
+                index
+                for index, line in enumerate(lines)
+                if _normalize_text(line.text) == "MOVIMENTACAO"
+            ),
+            None,
+        )
+    if start_index is None:
+        return lines
+
+    end_index = next(
+        (
+            index
+            for index in range(start_index + 1, len(lines))
+            if _normalize_text(lines[index].text).startswith("SALDOS POR PERIODO")
+        ),
+        len(lines),
+    )
+    reference_markers = [
+        line
+        for line in lines[:start_index]
+        if _normalize_text(line.text).startswith("RESUMO -")
+    ]
+    return [*reference_markers[-1:], *lines[start_index:end_index]]
 
 
 def _should_treat_grouped_date_line_as_description_continuation(
@@ -1225,6 +1267,16 @@ def _parse_grouped_statement_lines(
             description_parts=description_parts,
         )
         if inherited_date_transaction is not None:
+            previous_running_balance = _resolve_adjacent_grouped_running_balance(
+                transactions=transactions,
+                last_transaction_index=last_transaction_index,
+            )
+            if inherited_date_transaction.running_balance is not None and previous_running_balance is not None:
+                inherited_date_transaction = _attach_running_balance_and_reconcile_sign(
+                    transaction=inherited_date_transaction,
+                    running_balance=inherited_date_transaction.running_balance,
+                    previous_running_balance=previous_running_balance,
+                )
             transactions.append(inherited_date_transaction)
             last_transaction_index = len(transactions) - 1
             description_parts = []
@@ -2832,6 +2884,22 @@ def _has_adjacent_previous_running_balance_context(
         return True
     previous_description = _normalize_text(previous_item.transaction.description)
     return previous_description.startswith("SALDO ANTERIOR") or previous_description.startswith("SALDO INICIAL")
+
+
+def _resolve_adjacent_grouped_running_balance(
+    *,
+    transactions: list[_ParsedTransaction],
+    last_transaction_index: int | None,
+) -> float | None:
+    if last_transaction_index is None or last_transaction_index < 0 or last_transaction_index >= len(transactions):
+        return None
+    previous_item = transactions[last_transaction_index]
+    if previous_item.running_balance is not None:
+        return previous_item.running_balance
+    previous_description = _normalize_text(previous_item.transaction.description)
+    if previous_description.startswith("SALDO ANTERIOR") or previous_description.startswith("SALDO INICIAL"):
+        return previous_item.transaction.amount
+    return None
 
 
 def _attach_running_balance_and_reconcile_sign(
