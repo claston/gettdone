@@ -22,6 +22,7 @@ from app.application.parsers.pdf.layout_specific.santander_credit_card import Sa
 from app.application.parsers.pdf.layout_specific.santander_statement import SantanderStatementLayoutParser
 from app.application.parsers.pdf.layout_specific.sicoob import SicoobLayoutParser
 from app.application.parsers.pdf.layout_specific.topazio import TopazioLayoutParser
+from app.application.parsers.pdf.layout_specific.trust_srm import TrustSrmLayoutParser
 from app.application.parsers.pdf.layout_specific.unicred import UnicredLayoutParser
 from app.application.parsers.pdf.models import _PdfLine
 
@@ -75,5 +76,6 @@ DEFAULT_PDF_LAYOUT_PARSER_REGISTRY = PdfLayoutParserRegistry(
         BtgPactualLayoutParser(),
         PagBankLayoutParser(),
         ModernAccountLayoutParser(),
+        TrustSrmLayoutParser(),
     )
 )

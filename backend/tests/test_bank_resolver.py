@@ -49,3 +49,7 @@ def test_resolve_bank_code_from_cresol_position_statement_layout_profile() -> No
 
 def test_resolve_bank_code_from_topazio_statement_layout_profile() -> None:
     assert resolve_bank_code(layout_inference_name="banco_topazio_extrato_conta_corrente_lista_v1") == "082"
+
+
+def test_resolve_bank_code_from_trust_srm_statement_layout_profile() -> None:
+    assert resolve_bank_code(layout_inference_name="trust_srm_bank_extrato_conta_corrente_v1") == "533"
