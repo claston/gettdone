@@ -1895,6 +1895,50 @@ def test_parse_pdf_transactions_supports_stone_a4_statement_with_entry_exit_type
     assert result.transactions[4].type == "inflow"
 
 
+def test_parse_pdf_transactions_reorders_ascending_stone_rows_by_running_balance() -> None:
+    text = """
+    Extrato de conta corrente
+    stone
+    Stone Instituição de Pagamento S.A.
+    Período: de 01/09/2026 a 30/09/2026
+    DATA TIPO DESCRIÇÃO VALOR SALDO CONTRAPARTE
+    01/09/2026 Entrada CDB STONE 100 CDI RENDIMENTO BRUTO R$ 4,67 R$ 100.441,39
+    01/09/2026 Saída CDB STONE 100 CDI IR PROVISÃO - R$ 0,82 R$ 100.440,57
+    01/09/2026 Entrada CDB STONE 100 CDI RENDIMENTO BRUTO R$ 3,15 R$ 100.443,72
+    01/09/2026 Saída CDB STONE 100 CDI IR PROVISÃO - R$ 0,55 R$ 100.443,17
+    01/09/2026 Entrada CDB STONE 100 CDI RENDIMENTO BRUTO R$ 10,41 R$ 100.453,58
+    01/09/2026 Saída CDB STONE 100 CDI IR PROVISÃO - R$ 1,82 R$ 100.451,76
+    01/09/2026 Entrada CDB STONE 100 CDI IR REVERSÃO R$ 0,33 R$ 100.436,72
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        [text],
+        preserve_layout_spacing=True,
+    )
+
+    assert result.layout.layout_name == "stone_extrato_conta_corrente_a4_v1"
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert [transaction.amount for transaction in result.transactions] == [
+        0.33,
+        4.67,
+        -0.82,
+        3.15,
+        -0.55,
+        10.41,
+        -1.82,
+    ]
+    assert [transaction.running_balance for transaction in result.canonical_transactions] == [
+        100436.72,
+        100441.39,
+        100440.57,
+        100443.72,
+        100443.17,
+        100453.58,
+        100451.76,
+    ]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
 def test_parse_pdf_transactions_supports_stone_grouped_lancamento_valor_saldo_statement(monkeypatch) -> None:
     native_text = """
     Extrato de conta corrente

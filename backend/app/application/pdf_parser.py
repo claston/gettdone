@@ -11,7 +11,11 @@ from app.application.errors import (
 from app.application.layout_profiles.registry import DeclarativeLayoutProfile, get_layout_profile
 from app.application.models import CanonicalTransaction as CanonicalTransaction
 from app.application.models import NormalizedTransaction
-from app.application.normalization.balance import annotate_balance_consistency
+from app.application.normalization.balance import (
+    annotate_balance_consistency,
+    resolve_ascending_running_balance_order,
+    resolve_descending_running_balance,
+)
 from app.application.normalization.canonical import build_canonical_transactions
 from app.application.normalization.canonical_metrics import build_canonical_quality_metrics
 from app.application.normalization.date import infer_default_statement_year
@@ -86,6 +90,7 @@ _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT = (
 )
 _ITAU_COMPLETE_TABLE_LAYOUT = "itau_empresas_extrato_completo_tabela_v1"
 _SICREDI_MATRIX_LANDSCAPE_LAYOUT = "sicredi_matricial_paisagem_conta_corrente_v1"
+_STONE_CURRENT_ACCOUNT_A4_LAYOUT = "stone_extrato_conta_corrente_a4_v1"
 _INHERITED_TABULAR_DATE_LAYOUTS = {
     _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT,
     _SANTANDER_CONSOLIDATED_BASIC_LAYOUT,
@@ -876,7 +881,6 @@ def _build_pdf_parse_result(
     multiline_conflict_count: int = 0,
     balance_checkpoints: dict[int, float] | None = None,
 ) -> PdfParseResult:
-    transactions = [item.transaction for item in parsed_rows]
     canonical_transactions = build_canonical_transactions(
         parsed_rows,
         bank_name=layout_profile.bank if layout_profile is not None else None,
@@ -885,6 +889,22 @@ def _build_pdf_parse_result(
         layout_confidence=layout.confidence,
         source_parser=selected_parser,
     )
+    if (
+        layout.layout_name == _STONE_CURRENT_ACCOUNT_A4_LAYOUT
+        and not resolve_descending_running_balance(canonical_transactions)
+    ):
+        running_balance_order = resolve_ascending_running_balance_order(canonical_transactions)
+        if running_balance_order != list(range(len(parsed_rows))):
+            parsed_rows = [parsed_rows[index] for index in running_balance_order]
+            canonical_transactions = build_canonical_transactions(
+                parsed_rows,
+                bank_name=layout_profile.bank if layout_profile is not None else None,
+                layout_name=layout.layout_name,
+                layout_used_fallback=layout.used_fallback,
+                layout_confidence=layout.confidence,
+                source_parser=selected_parser,
+            )
+    transactions = [item.transaction for item in parsed_rows]
     balance_checked_count, balance_failed_count = annotate_balance_consistency(
         canonical_transactions,
         balance_checkpoints=balance_checkpoints,
