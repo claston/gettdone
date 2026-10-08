@@ -1949,6 +1949,59 @@ def test_parse_pdf_transactions_reorders_ascending_stone_rows_by_running_balance
     assert result.parse_metrics["balance_consistency_failed"] == 0
 
 
+def test_parse_pdf_transactions_preserves_stone_descending_amounts_and_balances() -> None:
+    text = """
+    Extrato de conta corrente
+    stone
+    Stone Instituição de Pagamento S.A.
+    Período: de 01/09/2026 a 30/09/2026
+    DATA TIPO DESCRIÇÃO VALOR SALDO CONTRAPARTE
+    24/09/26 Entrada CLIENTE R$ 360,00 R$ 5.407,38 BANCO EXEMPLO
+    21/09/26 Saída DAS - SIMPLES NACIONAL - R$ 1.646,68 R$ 5.047,38 DAS - SIMPLES NACIONAL
+    21/09/26 Saída PROMOCAO DE VENDAS LTDA - R$ 7.398,82 R$ 6.694,06 PAGAMENTO LTDA
+    21/09/26 Entrada Antecipação R$ 605,95 R$ 14.092,88 PAGAMENTO S.A.
+    18/09/26 Entrada Antecipação R$ 12.017,97 R$ 13.486,93 PAGAMENTO S.A.
+    18/09/26 Entrada Antecipação R$ 979,31 R$ 1.468,96 PAGAMENTO S.A.
+    18/09/26 Entrada Valor referente à liquidação R$ 489,65 R$ 489,65 PAGAMENTO S.A.
+    17/09/26 Saída Dinheiro Guardado - R$ 3.843,23 R$ 0,00 STONE
+    17/09/26 Saída DARF - SIMPLES - R$ 2.592,85 R$ 3.843,23 DARF - SIMPLES
+    17/09/26 Entrada Antecipação R$ 426,58 R$ 6.436,08 PAGAMENTO S.A.
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        [text],
+        preserve_layout_spacing=True,
+    )
+
+    assert result.layout.layout_name == "stone_extrato_conta_corrente_a4_v1"
+    assert [transaction.amount for transaction in result.transactions] == [
+        360.0,
+        -1646.68,
+        -7398.82,
+        605.95,
+        12017.97,
+        979.31,
+        489.65,
+        -3843.23,
+        -2592.85,
+        426.58,
+    ]
+    assert [transaction.running_balance for transaction in result.canonical_transactions] == [
+        5407.38,
+        5047.38,
+        6694.06,
+        14092.88,
+        13486.93,
+        1468.96,
+        489.65,
+        0.0,
+        3843.23,
+        6436.08,
+    ]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert all(not transaction.warnings for transaction in result.canonical_transactions)
+
+
 def test_parse_pdf_transactions_supports_stone_grouped_lancamento_valor_saldo_statement(monkeypatch) -> None:
     native_text = """
     Extrato de conta corrente

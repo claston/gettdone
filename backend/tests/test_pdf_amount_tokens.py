@@ -38,6 +38,15 @@ def test_find_amount_tokens_keeps_immediate_trailing_minus_with_amount_before_ba
     assert tokens[1].value == "4.629,72"
 
 
+def test_find_amount_tokens_does_not_consume_counterparty_initial_as_debit_suffix() -> None:
+    text = "SAIDA - R$ 1.646,68 R$ 5.047,38 DAS SIMPLES NACIONAL"
+
+    tokens = find_amount_tokens(text)
+
+    assert [token.value for token in tokens] == ["- R$ 1.646,68", "R$ 5.047,38"]
+    assert [parse_pdf_amount(token.value) for token in tokens] == [-1646.68, 5047.38]
+
+
 def test_find_amount_tokens_keeps_international_and_spaced_thousands_complete() -> None:
     text = "PIX RECEBIDO 1,234.56 SALDO 2 345,67"
 

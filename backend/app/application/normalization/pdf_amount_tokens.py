@@ -17,7 +17,7 @@ NUMBER_TOKEN = (
 AMOUNT_PREFIX_TOKEN = (
     rf"(?:(?:{SIGN_TOKEN}[ \u00a0]?)?(?:{CURRENCY_TOKEN}\s*)?|{CURRENCY_TOKEN}\s*{SIGN_TOKEN}[ \u00a0]?)"
 )
-AMOUNT_SUFFIX_TOKEN = rf"(?:{SIGN_TOKEN}|\s+{SIGN_TOKEN}(?!\s*\d)|\s*[CD])?"
+AMOUNT_SUFFIX_TOKEN = rf"(?:{SIGN_TOKEN}|\s+{SIGN_TOKEN}(?!\s*\d)|\s*[CD](?!\w))?"
 AMOUNT_VALUE_TOKEN = rf"\(?{AMOUNT_PREFIX_TOKEN}{NUMBER_TOKEN}{AMOUNT_SUFFIX_TOKEN}\)?"
 AMOUNT_TOKEN_PATTERN = re.compile(
     rf"(?<![\d,.])(?P<amount>{AMOUNT_VALUE_TOKEN})(?![\d,.])",
