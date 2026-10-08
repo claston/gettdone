@@ -56,6 +56,7 @@ def test_default_layout_parser_registry_contains_current_specific_families() -> 
             "banco_do_brasil_cdb_rdb_bb_reaplic_v1",
             "santander_cartao_credito_detalhamento_fatura_paisagem_v1",
             "santander_statement_ptbr",
+            "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1",
             "bradesco_extrato_unificado_pj_poupanca_facil_a4_v1",
             "banco_do_nordeste_extrato_consolidado_v1",
             "banco_do_nordeste_fundos_investimentos_rentabilidade_v1",
