@@ -703,7 +703,12 @@ def _parse_layout_specific_statement_rows(
 def _scope_profile_transaction_lines(
     lines: list[_PdfLine], *, layout_profile: DeclarativeLayoutProfile | None
 ) -> list[_PdfLine]:
-    if layout_profile is None or layout_profile.profile_name != _SANTANDER_CONSOLIDATED_BASIC_LAYOUT:
+    if layout_profile is None:
+        return lines
+
+    if layout_profile.profile_name == _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT:
+        return _scope_santander_intelligent_transaction_lines(lines)
+    if layout_profile.profile_name != _SANTANDER_CONSOLIDATED_BASIC_LAYOUT:
         return lines
 
     start_index = next(
@@ -731,6 +736,43 @@ def _scope_profile_transaction_lines(
         if "EXTRATO_PJ_A4_BASICO" in _normalize_text(line.text)
     ]
     return [*classifier_markers[-1:], *lines[start_index:end_index]]
+
+
+def _scope_santander_intelligent_transaction_lines(lines: list[_PdfLine]) -> list[_PdfLine]:
+    start_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if _normalize_text(line.text) == "CONTA CORRENTE"
+        ),
+        None,
+    )
+    if start_index is None:
+        start_index = next(
+            (
+                index
+                for index, line in enumerate(lines)
+                if _normalize_text(line.text) == "MOVIMENTACAO"
+            ),
+            None,
+        )
+    if start_index is None:
+        return lines
+
+    end_index = next(
+        (
+            index
+            for index in range(start_index + 1, len(lines))
+            if _normalize_text(lines[index].text).startswith("SALDOS POR PERIODO")
+        ),
+        len(lines),
+    )
+    reference_markers = [
+        line
+        for line in lines[:start_index]
+        if _normalize_text(line.text).startswith("RESUMO -")
+    ]
+    return [*reference_markers[-1:], *lines[start_index:end_index]]
 
 
 def _should_treat_grouped_date_line_as_description_continuation(
