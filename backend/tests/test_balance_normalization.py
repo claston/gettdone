@@ -218,6 +218,123 @@ def test_resolve_descending_running_balance_keeps_descending_stone_order() -> No
     assert resolve_descending_running_balance(canonical_transactions) is True
 
 
+def test_annotate_balance_consistency_groups_stone_fee_with_associated_credit() -> None:
+    layout_name = "stone_extrato_conta_corrente_a4_v1"
+    canonical_transactions = [
+        CanonicalTransaction(
+            date="2026-10-07",
+            description="ENTRADA PIX",
+            amount=10.0,
+            type="inflow",
+            running_balance=70.0,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-10-07",
+            description="SAIDA TARIFA",
+            amount=-0.12,
+            type="outflow",
+            running_balance=60.0,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-10-07",
+            description="ENTRADA VENDA CARTAO",
+            amount=25.0,
+            type="inflow",
+            running_balance=60.0,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-10-06",
+            description="SAIDA PIX",
+            amount=-5.0,
+            type="outflow",
+            running_balance=35.12,
+            layout_name=layout_name,
+        ),
+    ]
+
+    checked_count, failed_count = annotate_balance_consistency(canonical_transactions)
+
+    assert resolve_descending_running_balance(canonical_transactions) is True
+    assert checked_count == 2
+    assert failed_count == 0
+    assert all(transaction.warnings == [] for transaction in canonical_transactions)
+
+
+def test_annotate_balance_consistency_accepts_terminal_stone_fee_pair() -> None:
+    layout_name = "stone_extrato_conta_corrente_a4_v1"
+    canonical_transactions = [
+        CanonicalTransaction(
+            date="2026-10-07",
+            description="ENTRADA PIX",
+            amount=10.0,
+            type="inflow",
+            running_balance=70.0,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-10-07",
+            description="SAIDA TARIFA",
+            amount=-0.12,
+            type="outflow",
+            running_balance=60.0,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-10-07",
+            description="ENTRADA VENDA CARTAO",
+            amount=25.0,
+            type="inflow",
+            running_balance=60.0,
+            layout_name=layout_name,
+        ),
+    ]
+
+    checked_count, failed_count = annotate_balance_consistency(canonical_transactions)
+
+    assert checked_count == 1
+    assert failed_count == 0
+    assert all(transaction.warnings == [] for transaction in canonical_transactions)
+
+
+def test_annotate_balance_consistency_still_warns_on_invalid_stone_fee_pair_total() -> None:
+    layout_name = "stone_extrato_conta_corrente_a4_v1"
+    canonical_transactions = [
+        CanonicalTransaction(
+            date="2026-10-07",
+            description="SAIDA TARIFA",
+            amount=-0.12,
+            type="outflow",
+            running_balance=60.0,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-10-07",
+            description="ENTRADA VENDA CARTAO",
+            amount=25.0,
+            type="inflow",
+            running_balance=60.0,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-10-06",
+            description="SAIDA PIX",
+            amount=-5.0,
+            type="outflow",
+            running_balance=34.0,
+            layout_name=layout_name,
+        ),
+    ]
+
+    checked_count, failed_count = annotate_balance_consistency(canonical_transactions)
+
+    assert checked_count == 1
+    assert failed_count == 1
+    assert canonical_transactions[-1].warnings == ["balance_consistency_failed"]
+
+
 def test_uses_descending_running_balance_for_new_santander_empresarial_a4_layout() -> None:
     assert (
         uses_descending_running_balance(
