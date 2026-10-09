@@ -8,6 +8,22 @@ from app.application import pdf_parser as pdf_parser_module
 from app.application.ofx_writer import build_ofx_statement
 
 PAGBANK_EXAMPLE_CASES: dict[str, dict[str, Any]] = {
+    "conta_com_saldo_diario": {
+        "profile": "pagbank_extrato_conta_corrente_simples_v1",
+        "amounts": [129.61, 226.32, 208.01, -814.0],
+        "text": """
+        PagBank 290 - PagSeguro Internet S/A Agencia 0001 Conta 83130701-2
+        Extrato da conta Emitido em: 08/10/2026 as 14:37
+        Periodo: 01/09/2026 a 30/09/2026
+        Data Descricao Valor
+        01/09/2026 Vendas - Disponivel PIX R$ 129,61
+        01/09/2026 Vendas - Disponivel PIX R$ 226,32
+        01/09/2026 Vendas - Disponivel DEBITO VISA R$ 208,01
+        01/09/2026 Saldo do dia R$ 563,94
+        02/09/2026 Pix enviado - Cliente Exemplo -R$ 814,00
+        02/09/2026 Saldo do dia -R$ 458,07
+        """,
+    },
     "conta_corrente_simples": {
         "profile": "pagbank_extrato_conta_corrente_simples_v1",
         "amounts": [796.94, 3093.52],

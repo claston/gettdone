@@ -175,10 +175,10 @@ layout_profile:
     required_keywords:
       - "PagBank"
       - "PagSeguro Internet S/A"
-      - "Extrato da conta corrente"
+      - "Extrato da conta"
       - "Período"
       - "Agência"
-      - "Conta Corrente"
+      - "Conta"
       - "Data"
       - "Descrição"
       - "Valor"
@@ -188,6 +188,7 @@ layout_profile:
       - "Pix enviado"
       - "Pagamento de conta"
       - "Vendas - Plano de Recebimento"
+      - "Saldo do dia"
       - "-R$"
       - "R$"
     negative_keywords:
