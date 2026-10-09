@@ -490,6 +490,9 @@ class DocumentConversionPipeline:
         pages_count = _resolve_processed_pages(analysis)
         warning_rows_count, balance_failed_count = _resolve_warning_metrics(analysis)
         parse_meta = _resolve_parse_observability_metrics(analysis)
+        native_geometry_shadow = _resolve_native_geometry_shadow_event(
+            getattr(analysis, "pdf_processing_metrics", None)
+        )
         effective_ocr_used, effective_ocr_attempted, effective_ocr_engine = _resolve_effective_ocr_observability(
             parse_meta=parse_meta,
             ocr_pages_processed=runtime.ocr_pages_processed,
@@ -534,12 +537,14 @@ class DocumentConversionPipeline:
             idempotency_key=request.job.job_id,
         )
         quota_remaining = quota_result.quota_remaining
+        shadow_processing_id: str | None = None
         if identity.identity_type == "user":
             file_type = str(analysis.file_type or "").strip().lower()
             conversion_type = f"{file_type}-conversion" if file_type else "pdf-conversion"
+            shadow_processing_id = runtime.attempt_processing_id or analysis.analysis_id
             self.access_control_service.record_user_conversion(
                 user_id=identity.identity_id,
-                processing_id=runtime.attempt_processing_id or analysis.analysis_id,
+                processing_id=shadow_processing_id,
                 filename=request.document.filename or f"{analysis.analysis_id}.pdf",
                 model=conversion_model_label,
                 conversion_type=conversion_type,
@@ -574,9 +579,10 @@ class DocumentConversionPipeline:
                 expires_at=(persisted_result.expires_at if persisted_result is not None else getattr(analysis, "expires_at", None)),
             )
         elif identity.identity_type == "anonymous":
+            shadow_processing_id = runtime.attempt_anonymous_event_id or f"anon_evt_{uuid4().hex[:24]}"
             _safe_record_anonymous_conversion_event(
                 self.access_control_service,
-                event_id=runtime.attempt_anonymous_event_id or f"anon_evt_{uuid4().hex[:24]}",
+                event_id=shadow_processing_id,
                 anonymous_fingerprint=identity.identity_id,
                 filename=request.document.filename or f"{analysis.analysis_id}.pdf",
                 model=conversion_model_label,
@@ -609,6 +615,13 @@ class DocumentConversionPipeline:
                 quality_issues=list(getattr(analysis, "quality_issues", []) or []),
                 canonical_capture_status=canonical_capture_result.status,
                 canonical_capture_reason=canonical_capture_result.reason,
+            )
+        if native_geometry_shadow is not None and shadow_processing_id is not None:
+            _safe_record_pdf_native_geometry_shadow_event(
+                self.access_control_service,
+                processing_id=shadow_processing_id,
+                identity_type="registered" if identity.identity_type == "user" else "anonymous",
+                **native_geometry_shadow,
             )
         if persisted_result is not None:
             payload = build_convert_response_payload(
@@ -658,6 +671,7 @@ class DocumentConversionPipeline:
         duration_ms = runtime.duration_ms()
         ocr_attempted = runtime.ocr_pages_processed > 0 or bool(ocr_context)
         parse_observability = dict(getattr(exc, "_parse_observability", {}) or {})
+        native_geometry_shadow = _resolve_native_geometry_shadow_event(parse_observability)
         canonical_capture_result = CanonicalLayoutCaptureResult(
             "not_attempted",
             "pre_parser_failure",
@@ -696,6 +710,7 @@ class DocumentConversionPipeline:
             parse_observability=parse_observability,
         )
         failed_event_id: str | None = None
+        shadow_processing_id: str | None = None
         logger.info(
             "conversion_result_persist_started job_id=%s batch_id=%s identity_type=%s status=Falha error_code=%s error_stage=%s",
             request.job.job_id,
@@ -706,6 +721,7 @@ class DocumentConversionPipeline:
         )
         if identity is not None and identity.identity_type == "anonymous":
             failed_event_id = runtime.attempt_anonymous_event_id or f"anon_evt_{uuid4().hex[:24]}"
+            shadow_processing_id = failed_event_id
             _safe_record_anonymous_conversion_event(
                 self.access_control_service,
                 event_id=failed_event_id,
@@ -740,10 +756,11 @@ class DocumentConversionPipeline:
                 canonical_capture_reason=canonical_capture_result.reason,
             )
         elif identity is not None and identity.identity_type == "user":
+            shadow_processing_id = runtime.attempt_processing_id or f"an_{uuid4().hex[:12]}"
             _safe_record_user_conversion(
                 self.access_control_service,
                 user_id=identity.identity_id,
-                processing_id=runtime.attempt_processing_id or f"an_{uuid4().hex[:12]}",
+                processing_id=shadow_processing_id,
                 filename=request.document.filename or "unknown.pdf",
                 model="Nao identificado",
                 conversion_type=_resolve_conversion_type_from_filename(request.document.filename),
@@ -773,6 +790,13 @@ class DocumentConversionPipeline:
                 canonical_capture_status=canonical_capture_result.status,
                 canonical_capture_reason=canonical_capture_result.reason,
                 expires_at=None,
+            )
+        if native_geometry_shadow is not None and shadow_processing_id is not None and identity is not None:
+            _safe_record_pdf_native_geometry_shadow_event(
+                self.access_control_service,
+                processing_id=shadow_processing_id,
+                identity_type="registered" if identity.identity_type == "user" else "anonymous",
+                **native_geometry_shadow,
             )
         _log_conversion_failure(
             identity=identity,
@@ -970,6 +994,102 @@ def _safe_record_user_conversion(access_control_service: ConversionAccessPort, *
             "conversion_user_telemetry_persist_failed error_class=%s",
             type(exc).__name__,
         )
+
+
+def _safe_record_pdf_native_geometry_shadow_event(
+    access_control_service: ConversionAccessPort,
+    **kwargs,
+) -> None:
+    try:
+        access_control_service.record_pdf_native_geometry_shadow_event(**kwargs)
+    except Exception as exc:
+        logger.warning(
+            "pdf_native_geometry_shadow_telemetry_persist_failed error_class=%s",
+            type(exc).__name__,
+        )
+
+
+def _resolve_native_geometry_shadow_event(metrics: object) -> dict[str, object] | None:
+    if int(_metrics_get(metrics, "native_geometry_shadow_attempted", 0) or 0) != 1:
+        return None
+    return {
+        "classification": str(
+            _metrics_get(metrics, "native_geometry_shadow_classification", "inconclusive")
+            or "inconclusive"
+        ),
+        "baseline_status": str(
+            _metrics_get(metrics, "native_geometry_shadow_baseline_status", "error") or "error"
+        ),
+        "baseline_layout": _optional_metric_text(
+            _metrics_get(metrics, "native_geometry_shadow_baseline_layout", "")
+        ),
+        "baseline_parser": _optional_metric_text(
+            _metrics_get(metrics, "native_geometry_shadow_baseline_parser", "")
+        ),
+        "baseline_transactions": _non_negative_metric_int(
+            _metrics_get(metrics, "native_geometry_shadow_baseline_transactions", 0)
+        ),
+        "baseline_balance_failed": _non_negative_metric_int(
+            _metrics_get(metrics, "native_geometry_shadow_baseline_balance_failed", 0)
+        ),
+        "geometry_status": str(
+            _metrics_get(metrics, "native_geometry_shadow_status", "error") or "error"
+        ),
+        "geometry_layout": _optional_metric_text(
+            _metrics_get(metrics, "native_geometry_shadow_layout", "")
+        ),
+        "geometry_parser": _optional_metric_text(
+            _metrics_get(metrics, "native_geometry_shadow_parser", "")
+        ),
+        "geometry_transactions": _non_negative_metric_int(
+            _metrics_get(metrics, "native_geometry_shadow_transactions", 0)
+        ),
+        "geometry_balance_failed": _non_negative_metric_int(
+            _metrics_get(metrics, "native_geometry_shadow_balance_failed", 0)
+        ),
+        "geometry_duration_ms": _non_negative_metric_int(
+            _metrics_get(metrics, "native_geometry_shadow_duration_ms", 0)
+        ),
+        "matched_transactions": _non_negative_metric_int(
+            _metrics_get(metrics, "native_geometry_shadow_matched_transactions", 0)
+        ),
+        "date_conflicts": _non_negative_metric_int(
+            _metrics_get(metrics, "native_geometry_shadow_date_conflicts", 0)
+        ),
+        "amount_conflicts": _non_negative_metric_int(
+            _metrics_get(metrics, "native_geometry_shadow_amount_conflicts", 0)
+        ),
+        "sign_conflicts": _non_negative_metric_int(
+            _metrics_get(metrics, "native_geometry_shadow_sign_conflicts", 0)
+        ),
+        "geometry_error_type": _optional_metric_text(
+            _metrics_get(metrics, "native_geometry_shadow_error_type", "")
+        ),
+        "word_count": _non_negative_metric_int(
+            _metrics_get(metrics, "native_geometry_shadow_word_count", 0)
+        ),
+        "line_count": _non_negative_metric_int(
+            _metrics_get(metrics, "native_geometry_shadow_line_count", 0)
+        ),
+        "duplicate_characters_removed": _non_negative_metric_int(
+            _metrics_get(metrics, "native_geometry_shadow_duplicate_characters_removed", 0)
+        ),
+        "fragment_merges": _non_negative_metric_int(
+            _metrics_get(metrics, "native_geometry_shadow_fragment_merges", 0)
+        ),
+    }
+
+
+def _non_negative_metric_int(value: object) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _optional_metric_text(value: object) -> str | None:
+    normalized = str(value or "").strip()
+    return normalized or None
 
 
 def _log_conversion_failure(

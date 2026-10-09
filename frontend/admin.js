@@ -21,6 +21,8 @@
   const dashboardTopErrorsNode = document.getElementById("dashboard-top-errors");
   const dashboardTopQualityIssuesNode = document.getElementById("dashboard-top-quality-issues");
   const dashboardCanonicalCaptureNode = document.getElementById("dashboard-canonical-capture");
+  const dashboardNativeGeometryShadowNode = document.getElementById("dashboard-native-geometry-shadow");
+  const dashboardNativeGeometryLayoutsNode = document.getElementById("dashboard-native-geometry-layouts");
   const dashboardCheckoutFunnelNode = document.getElementById("dashboard-checkout-funnel");
   const dashboardCommercialInterestNode = document.getElementById("dashboard-commercial-interest");
   const dashboardHeavyUsersNode = document.getElementById("dashboard-heavy-users");
@@ -529,6 +531,86 @@
     }
   }
 
+  function renderDashboardNativeGeometryShadow(summary) {
+    if (!dashboardNativeGeometryShadowNode || !dashboardNativeGeometryLayoutsNode) return;
+    dashboardNativeGeometryShadowNode.replaceChildren();
+    dashboardNativeGeometryLayoutsNode.replaceChildren();
+
+    appendMetricCard(
+      dashboardNativeGeometryShadowNode,
+      "PDFs avaliados",
+      formatInteger(summary.evaluated_count),
+      `${formatInteger(summary.success_count)} executados com sucesso`,
+      "",
+    );
+    appendMetricCard(
+      dashboardNativeGeometryShadowNode,
+      "Resgates potenciais",
+      formatInteger(summary.potential_rescue_count),
+      "Parser atual falhou; geometria encontrou transações",
+      "clean",
+    );
+    appendMetricCard(
+      dashboardNativeGeometryShadowNode,
+      "Ganhos potenciais",
+      formatInteger(summary.potential_gain_count),
+      `${formatInteger(summary.equivalent_count)} resultados equivalentes`,
+      "clean",
+    );
+    appendMetricCard(
+      dashboardNativeGeometryShadowNode,
+      "Conflitos",
+      formatInteger(summary.conflict_count),
+      `${formatInteger(summary.regression_count)} regressões potenciais`,
+      Number(summary.conflict_count || 0) > 0 ? "failure" : "",
+    );
+    appendMetricCard(
+      dashboardNativeGeometryShadowNode,
+      "Erros do shadow",
+      formatInteger(summary.error_count),
+      `${formatInteger(summary.inconclusive_count)} inconclusivos · ${formatInteger(summary.not_applicable_count)} fora do escopo`,
+      Number(summary.error_count || 0) > 0 ? "review" : "",
+    );
+    appendMetricCard(
+      dashboardNativeGeometryShadowNode,
+      "Tempo adicional",
+      `${formatInteger(summary.median_duration_ms)} ms`,
+      `p95: ${formatInteger(summary.p95_duration_ms)} ms`,
+      "",
+    );
+
+    const layouts = Array.isArray(summary.by_layout) ? summary.by_layout : [];
+    if (!layouts.length) {
+      dashboardNativeGeometryLayoutsNode.appendChild(
+        createTextElement("p", "empty dashboard-empty", "Nenhuma avaliação geométrica no período."),
+      );
+      return;
+    }
+    const table = document.createElement("table");
+    table.className = "dashboard-table";
+    const head = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    ["Layout", "Avaliados", "Resgates", "Ganhos", "Conflitos", "Erros", "Mediana"].forEach(function (label) {
+      appendTableCell(headRow, label, "th");
+    });
+    head.appendChild(headRow);
+    table.appendChild(head);
+    const body = document.createElement("tbody");
+    layouts.forEach(function (item) {
+      const row = document.createElement("tr");
+      appendTableCell(row, item.layout_name || "Não identificado");
+      appendTableCell(row, formatInteger(item.evaluated));
+      appendTableCell(row, formatInteger(item.potential_rescues));
+      appendTableCell(row, formatInteger(item.potential_gains));
+      appendTableCell(row, formatInteger(item.conflicts));
+      appendTableCell(row, formatInteger(item.errors));
+      appendTableCell(row, `${formatInteger(item.median_duration_ms)} ms`);
+      body.appendChild(row);
+    });
+    table.appendChild(body);
+    dashboardNativeGeometryLayoutsNode.appendChild(table);
+  }
+
   function renderDashboardLayouts(items) {
     if (!dashboardLayoutsNode) return;
     dashboardLayoutsNode.replaceChildren();
@@ -769,6 +851,7 @@
     renderDashboardErrors(payload.top_errors || []);
     renderDashboardQualityIssues(payload.top_quality_issues || []);
     renderDashboardCanonicalCapture(payload.canonical_capture || {});
+    renderDashboardNativeGeometryShadow(payload.native_geometry_shadow || {});
     renderDashboardCheckoutFunnel(payload.checkout_funnel || {});
     renderDashboardCommercialInterest(payload.commercial_interest || []);
     renderDashboardHeavyUsers(payload.heavy_users || []);

@@ -522,6 +522,9 @@ class AccessControlService:
     def list_user_conversions(self, *, user_id: str, limit: int = 20) -> list[dict[str, str | int]]:
         return self.checkout.list_user_conversions(user_id=user_id, limit=limit)
 
+    def record_pdf_native_geometry_shadow_event(self, **values) -> None:
+        self.checkout.record_pdf_native_geometry_shadow_event(**values)
+
     def record_anonymous_conversion_event(
         self,
         *,

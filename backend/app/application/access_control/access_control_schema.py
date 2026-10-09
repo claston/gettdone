@@ -37,6 +37,7 @@ class AccessControlSchemaComponent:
             "usage",
             "user_conversions",
             "anonymous_conversion_events",
+            "pdf_native_geometry_shadow_events",
             "conversion_quality_issues",
             "google_oauth_states",
             "user_sessions",

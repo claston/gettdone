@@ -32,6 +32,10 @@ from app.application.normalization.pdf_grouped_date_rules import parse_grouped_d
 from app.application.normalization.pdf_grouped_line_rules import should_ignore_grouped_line
 from app.application.normalization.pdf_grouped_section_rules import resolve_grouped_section_hint
 from app.application.normalization.pdf_inline_amount_rules import extract_single_trailing_amount_match
+from app.application.normalization.pdf_native_geometry_shadow import (
+    run_native_geometry_shadow,
+    should_run_native_geometry_shadow,
+)
 from app.application.normalization.pdf_parse_metrics import build_pdf_parse_metrics
 from app.application.normalization.pdf_parser_selection import select_parsed_rows
 from app.application.normalization.pdf_row_date_rules import parse_row_date
@@ -159,6 +163,49 @@ def _should_skip_ocr_retry_for_native_parse_error(exc: InvalidFileContentError) 
 
 
 def parse_pdf_transactions(
+    raw_bytes: bytes,
+    on_ocr_progress: Callable[[int, int], None] | None = None,
+    max_ocr_pages: int | None = None,
+) -> PdfParseResult:
+    if not should_run_native_geometry_shadow(raw_bytes):
+        return _parse_pdf_transactions_baseline(
+            raw_bytes,
+            on_ocr_progress=on_ocr_progress,
+            max_ocr_pages=max_ocr_pages,
+        )
+
+    baseline_result: PdfParseResult | None = None
+    baseline_error: Exception | None = None
+    try:
+        baseline_result = _parse_pdf_transactions_baseline(
+            raw_bytes,
+            on_ocr_progress=on_ocr_progress,
+            max_ocr_pages=max_ocr_pages,
+        )
+    except Exception as exc:
+        baseline_error = exc
+
+    try:
+        observation = run_native_geometry_shadow(
+            raw_bytes,
+            baseline_result=baseline_result,
+            baseline_error=baseline_error,
+            parse_page_texts=_parse_pdf_transactions_from_page_texts,
+        )
+    except Exception:
+        if baseline_error is not None:
+            raise baseline_error
+        assert baseline_result is not None
+        return baseline_result
+
+    metrics = observation.as_parse_metrics()
+    if baseline_error is not None:
+        raise _attach_parse_observability(baseline_error, **metrics)
+    assert baseline_result is not None
+    return _with_parse_observability(baseline_result, **metrics)
+
+
+def _parse_pdf_transactions_baseline(
     raw_bytes: bytes,
     on_ocr_progress: Callable[[int, int], None] | None = None,
     max_ocr_pages: int | None = None,

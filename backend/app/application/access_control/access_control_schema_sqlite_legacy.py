@@ -166,6 +166,40 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
             canonical_capture_reason TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS pdf_native_geometry_shadow_events (
+            processing_id TEXT NOT NULL,
+            identity_type TEXT NOT NULL CHECK (identity_type IN ('registered', 'anonymous')),
+            created_at TEXT NOT NULL,
+            classification TEXT NOT NULL,
+            baseline_status TEXT NOT NULL,
+            baseline_layout TEXT,
+            baseline_parser TEXT,
+            baseline_transactions INTEGER NOT NULL DEFAULT 0,
+            baseline_balance_failed INTEGER NOT NULL DEFAULT 0,
+            geometry_status TEXT NOT NULL,
+            geometry_layout TEXT,
+            geometry_parser TEXT,
+            geometry_transactions INTEGER NOT NULL DEFAULT 0,
+            geometry_balance_failed INTEGER NOT NULL DEFAULT 0,
+            geometry_duration_ms INTEGER NOT NULL DEFAULT 0,
+            matched_transactions INTEGER NOT NULL DEFAULT 0,
+            date_conflicts INTEGER NOT NULL DEFAULT 0,
+            amount_conflicts INTEGER NOT NULL DEFAULT 0,
+            sign_conflicts INTEGER NOT NULL DEFAULT 0,
+            geometry_error_type TEXT,
+            word_count INTEGER NOT NULL DEFAULT 0,
+            line_count INTEGER NOT NULL DEFAULT 0,
+            duplicate_characters_removed INTEGER NOT NULL DEFAULT 0,
+            fragment_merges INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (processing_id, identity_type)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pdf_native_geometry_shadow_created_at
+        ON pdf_native_geometry_shadow_events(created_at);
+
+        CREATE INDEX IF NOT EXISTS idx_pdf_native_geometry_shadow_classification
+        ON pdf_native_geometry_shadow_events(classification, created_at);
+
         CREATE TABLE IF NOT EXISTS product_events (
             id TEXT PRIMARY KEY,
             event_type TEXT NOT NULL,

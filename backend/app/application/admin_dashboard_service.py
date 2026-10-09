@@ -97,6 +97,12 @@ class AdminDashboardService:
                     end_at=now_utc.isoformat(),
                     identity_type=normalized_identity_type,
                 )
+                native_geometry_events = self._load_native_geometry_shadow_events(
+                    conn,
+                    start_at=start_utc.isoformat(),
+                    end_at=now_utc.isoformat(),
+                    identity_type=normalized_identity_type,
+                )
                 registered_profiles = self._load_registered_profiles(
                     conn,
                     events=events,
@@ -123,6 +129,7 @@ class AdminDashboardService:
             registered_profiles=registered_profiles,
             checkout_intents=checkout_intents,
             product_events=product_events,
+            native_geometry_events=native_geometry_events,
         )
 
     def get_attention_export_rows(
@@ -387,6 +394,35 @@ class AdminDashboardService:
 
         return events
 
+    def _load_native_geometry_shadow_events(
+        self,
+        conn,
+        *,
+        start_at: str,
+        end_at: str,
+        identity_type: str,
+    ) -> list[dict[str, object]]:
+        sql = """
+            SELECT
+                processing_id, identity_type, created_at, classification,
+                baseline_status, baseline_layout, baseline_parser,
+                baseline_transactions, baseline_balance_failed,
+                geometry_status, geometry_layout, geometry_parser,
+                geometry_transactions, geometry_balance_failed, geometry_duration_ms,
+                matched_transactions, date_conflicts, amount_conflicts, sign_conflicts,
+                geometry_error_type, word_count, line_count,
+                duplicate_characters_removed, fragment_merges
+            FROM pdf_native_geometry_shadow_events
+            WHERE created_at >= ? AND created_at <= ?
+        """
+        params: tuple[object, ...] = (start_at, end_at)
+        if identity_type != "all":
+            sql += " AND identity_type = ?"
+            params += (identity_type,)
+        sql += " ORDER BY created_at DESC"
+        rows = self._service._fetchall(conn, sql, params)
+        return [dict(row) for row in rows]
+
     def _load_prior_identity_keys(
         self,
         conn,
@@ -590,6 +626,7 @@ def _build_dashboard_payload(
     registered_profiles: dict[str, dict[str, object]],
     checkout_intents: list[dict[str, str]],
     product_events: list[dict[str, str]],
+    native_geometry_events: list[dict[str, object]],
 ) -> dict[str, object]:
     non_conversion_count = sum(1 for event in events if _is_non_conversion_event(event))
     events = [event for event in events if not _is_non_conversion_event(event)]
@@ -762,6 +799,7 @@ def _build_dashboard_payload(
         "top_errors": top_errors,
         "top_quality_issues": top_quality_issues,
         "canonical_capture": _build_canonical_capture_summary(events),
+        "native_geometry_shadow": _build_native_geometry_shadow_summary(native_geometry_events),
         "checkout_funnel": _build_checkout_funnel(checkout_intents, product_events),
         "commercial_interest": _build_commercial_interest(product_events, registered_profiles),
         "heavy_users": _rank_user_usage(user_usage, sort_field="pages"),
@@ -776,6 +814,96 @@ def _build_dashboard_payload(
         "layouts": layout_items,
         "recent_attention": recent_attention[:10],
     }
+
+
+def _build_native_geometry_shadow_summary(events: list[dict[str, object]]) -> dict[str, object]:
+    classification_counts = Counter(str(event.get("classification") or "inconclusive") for event in events)
+    durations = [_as_non_negative_int(event.get("geometry_duration_ms")) for event in events]
+    layouts: dict[str, dict[str, object]] = {}
+    for event in events:
+        layout_name = str(
+            event.get("baseline_layout")
+            or event.get("geometry_layout")
+            or "Não identificado"
+        )
+        item = layouts.setdefault(
+            layout_name,
+            {
+                "layout_name": layout_name,
+                "evaluated": 0,
+                "potential_rescues": 0,
+                "potential_gains": 0,
+                "conflicts": 0,
+                "errors": 0,
+                "durations": [],
+            },
+        )
+        classification = str(event.get("classification") or "inconclusive")
+        item["evaluated"] = int(item["evaluated"]) + 1
+        if classification == "potential_rescue":
+            item["potential_rescues"] = int(item["potential_rescues"]) + 1
+        if classification == "potential_gain":
+            item["potential_gains"] = int(item["potential_gains"]) + 1
+        if classification == "conflict":
+            item["conflicts"] = int(item["conflicts"]) + 1
+        if str(event.get("geometry_status") or "error") == "error":
+            item["errors"] = int(item["errors"]) + 1
+        item["durations"].append(_as_non_negative_int(event.get("geometry_duration_ms")))
+
+    by_layout: list[dict[str, object]] = []
+    for item in sorted(
+        layouts.values(),
+        key=lambda value: (-int(value["evaluated"]), str(value["layout_name"])),
+    )[:10]:
+        layout_durations = list(item.pop("durations"))
+        item["median_duration_ms"] = int(median(layout_durations)) if layout_durations else 0
+        by_layout.append(item)
+
+    recent = [
+        {
+            "processing_id": str(event.get("processing_id") or ""),
+            "identity_type": str(event.get("identity_type") or ""),
+            "created_at": str(event.get("created_at") or ""),
+            "classification": str(event.get("classification") or "inconclusive"),
+            "baseline_layout": str(event.get("baseline_layout") or "") or None,
+            "geometry_layout": str(event.get("geometry_layout") or "") or None,
+            "baseline_transactions": _as_non_negative_int(event.get("baseline_transactions")),
+            "geometry_transactions": _as_non_negative_int(event.get("geometry_transactions")),
+            "geometry_duration_ms": _as_non_negative_int(event.get("geometry_duration_ms")),
+            "date_conflicts": _as_non_negative_int(event.get("date_conflicts")),
+            "amount_conflicts": _as_non_negative_int(event.get("amount_conflicts")),
+            "sign_conflicts": _as_non_negative_int(event.get("sign_conflicts")),
+            "geometry_error_type": str(event.get("geometry_error_type") or "") or None,
+        }
+        for event in events[:10]
+    ]
+    return {
+        "evaluated_count": len(events),
+        "success_count": sum(1 for event in events if str(event.get("geometry_status") or "") == "ok"),
+        "potential_rescue_count": classification_counts["potential_rescue"],
+        "potential_gain_count": classification_counts["potential_gain"],
+        "equivalent_count": classification_counts["equivalent"],
+        "regression_count": classification_counts["regression"],
+        "conflict_count": classification_counts["conflict"],
+        "error_count": sum(
+            1 for event in events if str(event.get("geometry_status") or "error") == "error"
+        ),
+        "shadow_error_count": classification_counts["shadow_error"],
+        "inconclusive_count": classification_counts["inconclusive"],
+        "not_applicable_count": classification_counts["not_applicable"],
+        "median_duration_ms": int(median(durations)) if durations else 0,
+        "p95_duration_ms": _nearest_rank_percentile(durations, 0.95),
+        "by_layout": by_layout,
+        "recent": recent,
+    }
+
+
+def _nearest_rank_percentile(values: list[int], percentile: float) -> int:
+    if not values:
+        return 0
+    ordered = sorted(values)
+    rank = max(1, int(len(ordered) * percentile + 0.999999))
+    return int(ordered[min(rank, len(ordered)) - 1])
 
 
 def _build_user_usage(

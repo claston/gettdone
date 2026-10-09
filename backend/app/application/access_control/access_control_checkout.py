@@ -40,6 +40,9 @@ from app.application.conversion_history import (
 from app.application.conversion_history import (
     record_user_conversion as record_user_conversion_query,
 )
+from app.application.pdf_native_geometry_shadow_history import (
+    record_pdf_native_geometry_shadow_event as record_pdf_native_geometry_shadow_event_query,
+)
 from app.application.plan_management import (
     activate_user_plan as activate_user_plan_query,
 )
@@ -137,6 +140,17 @@ class AccessControlCheckoutComponent:
                     canonical_capture_reason=canonical_capture_reason,
                     created_at=created_at,
                     expires_at=expires_at,
+                )
+                conn.commit()
+
+    def record_pdf_native_geometry_shadow_event(self, **values) -> None:
+        with self._service._lock:
+            with self._service._connect() as conn:
+                record_pdf_native_geometry_shadow_event_query(
+                    conn,
+                    execute=self._service._execute,
+                    now_iso=self._service.now_provider().isoformat(),
+                    **values,
                 )
                 conn.commit()
 
