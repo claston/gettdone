@@ -1,0 +1,91 @@
+layout_profile:
+  schema_version: 2
+  profile_name: credisis_extrato_conta_corrente_descendente_v1
+  bank: CrediSIS
+  layout_family: credisis_extrato_conta_corrente_descendente
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "CrediSIS"
+      - "Período"
+      - "Data"
+      - "Descrição"
+      - "Valor"
+      - "Saldo"
+    optional_keywords:
+      - "Extrato de Conta Corrente"
+      - "Saldo Final"
+      - "Saldo Anterior"
+    negative_keywords:
+      - "Sicredi"
+      - "SICOOB"
+      - "Sisprime"
+      - "Unicred"
+      - "Cresol"
+      - "Viacredi"
+      - "Santander"
+      - "Bradesco"
+      - "Banco do Brasil"
+    min_score_hint: 0.9
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Descrição"
+      - "Valor"
+      - "Saldo"
+    expected_column_order:
+      - date
+      - document
+      - description
+      - amount
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      document:
+        - "ID"
+        - "Documento"
+      description:
+        - "Descrição"
+        - "Histórico"
+      amount:
+        - "Valor"
+      balance:
+        - "Saldo"
+    table_starts_after:
+      - "Data ID Descrição Valor Saldo"
+      - "Data Descrição Valor Saldo"
+    row_separator_hint: "transaction row starts with dd/MM/yyyy; rows are ordered from newest to oldest"
+  parsing:
+    date_formats:
+      - "dd/MM/yyyy"
+    date_year_source: transaction
+    amount_locale: pt-BR
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "- R$ {amount}"
+      - "-R$ {amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "+ R$ {amount}"
+      - "+R$ {amount}"
+      - "+{amount}"
+    ignore_rows:
+      - "Período"
+      - "Data ID Descrição Valor Saldo"
+      - "Data Descrição Valor Saldo"
+      - "Saldo Final"
+      - "Total"
+    opening_balance_rows:
+      - "Saldo Anterior"
+      - "Saldo Inicial"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
