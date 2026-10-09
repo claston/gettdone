@@ -216,6 +216,18 @@ def annotate_balance_consistency(
             amounts_since_balance = current.amount if descending else 0.0
             continue
 
+        if (
+            descending
+            and previous_balance_row is not None
+            and current.running_balance is not None
+            and current.date > previous_balance_row.date
+        ):
+            # A forward date jump inside a descending layout starts another
+            # statement/period, so balances on the two sides are unrelated.
+            previous_balance_row = current
+            amounts_since_balance = current.amount
+            continue
+
         if previous_balance_row is None:
             if current.running_balance is not None:
                 previous_balance_row = current
