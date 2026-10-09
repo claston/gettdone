@@ -42,6 +42,7 @@ class FakeAccessControlService:
             max_pages_per_file_ocr=10,
         )
         self.recorded_user_conversions: list[dict[str, object]] = []
+        self.recorded_native_geometry_events: list[dict[str, object]] = []
         self.consumed_units: list[int] = []
 
     def resolve_identity(self, *, anonymous_fingerprint: str | None, user_token: str | None):
@@ -64,6 +65,9 @@ class FakeAccessControlService:
 
     def record_user_conversion(self, **kwargs) -> None:
         self.recorded_user_conversions.append(kwargs)
+
+    def record_pdf_native_geometry_shadow_event(self, **kwargs) -> None:
+        self.recorded_native_geometry_events.append(kwargs)
 
 
 class FakeAnonymousAccessControlService(FakeAccessControlService):
@@ -107,8 +111,9 @@ class FakeAnalysisRepository:
 
 
 class FakeProcessingPipeline:
-    def __init__(self) -> None:
+    def __init__(self, *, include_native_geometry_shadow: bool = False) -> None:
         self.calls: list[dict[str, object]] = []
+        self.include_native_geometry_shadow = include_native_geometry_shadow
 
     def run_parsed_document(
         self,
@@ -126,6 +131,49 @@ class FakeProcessingPipeline:
                 "parse_ms": parse_ms,
             }
         )
+        pdf_processing_metrics = {
+            "total_ms": 12.4,
+            "parse_ms": 4.2,
+            "classify_ms": 1.3,
+            "normalize_ms": 0.8,
+            "reconcile_ms": 0.9,
+            "page_count": 1,
+            "extracted_char_count": 220,
+            "flattened_line_count": 10,
+            "grouped_transactions_count": 1,
+            "inline_candidates_count": 1,
+            "inline_transactions_count": 1,
+            "selected_parser": "grouped",
+            "export_recommendation": "review_recommended",
+            "export_recommendation_reason": "low_confidence_band",
+        }
+        if self.include_native_geometry_shadow:
+            pdf_processing_metrics.update(
+                {
+                    "native_geometry_shadow_attempted": 1,
+                    "native_geometry_shadow_classification": "potential_gain",
+                    "native_geometry_shadow_baseline_status": "ok",
+                    "native_geometry_shadow_baseline_layout": "generic_statement_v1",
+                    "native_geometry_shadow_baseline_parser": "grouped",
+                    "native_geometry_shadow_baseline_transactions": 1,
+                    "native_geometry_shadow_baseline_balance_failed": 0,
+                    "native_geometry_shadow_status": "ok",
+                    "native_geometry_shadow_layout": "generic_statement_v1",
+                    "native_geometry_shadow_parser": "tabular",
+                    "native_geometry_shadow_transactions": 2,
+                    "native_geometry_shadow_balance_failed": 0,
+                    "native_geometry_shadow_duration_ms": 31,
+                    "native_geometry_shadow_matched_transactions": 1,
+                    "native_geometry_shadow_date_conflicts": 0,
+                    "native_geometry_shadow_amount_conflicts": 0,
+                    "native_geometry_shadow_sign_conflicts": 0,
+                    "native_geometry_shadow_error_type": "",
+                    "native_geometry_shadow_word_count": 20,
+                    "native_geometry_shadow_line_count": 4,
+                    "native_geometry_shadow_duplicate_characters_removed": 0,
+                    "native_geometry_shadow_fragment_merges": 1,
+                }
+            )
         analysis_data = AnalysisData(
             analysis_id=analysis_id,
             file_type="pdf",
@@ -158,22 +206,7 @@ class FakeProcessingPipeline:
             updated_at="2026-06-18T15:00:00+00:00",
             bank_name="Itau",
             bank_code="341",
-            pdf_processing_metrics={
-                "total_ms": 12.4,
-                "parse_ms": 4.2,
-                "classify_ms": 1.3,
-                "normalize_ms": 0.8,
-                "reconcile_ms": 0.9,
-                "page_count": 1,
-                "extracted_char_count": 220,
-                "flattened_line_count": 10,
-                "grouped_transactions_count": 1,
-                "inline_candidates_count": 1,
-                "inline_transactions_count": 1,
-                "selected_parser": "grouped",
-                "export_recommendation": "review_recommended",
-                "export_recommendation_reason": "low_confidence_band",
-            },
+            pdf_processing_metrics=pdf_processing_metrics,
         )
         return ConversionPipelineResult(
             analysis_data=analysis_data,
@@ -442,6 +475,65 @@ def test_document_conversion_pipeline_uses_processing_pipeline_when_available() 
     assert response.metadata["page_count"] == 1
     assert report_service.owners == [(response.payload["processing_id"], "user", "user_123")]
     assert access_control_service.consumed_units == [1]
+
+
+def test_document_conversion_pipeline_persists_native_geometry_shadow_telemetry() -> None:
+    staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
+    access_control_service = FakeAccessControlService()
+    pipeline = DocumentConversionPipeline(
+        report_service=FakeReportService(),
+        access_control_service=access_control_service,
+        processing_pipeline=FakeProcessingPipeline(include_native_geometry_shadow=True),
+        analysis_repository=FakeAnalysisRepository(),
+        document_extractor=FakeDocumentExtractor(),
+        statement_parser=FakeStatementParser(),
+    )
+
+    response = pipeline.run(
+        document=UploadedDocument.from_staged_upload(
+            filename="statement.pdf",
+            staged_upload=UploadedDocumentStage(
+                path=staged_path,
+                size_bytes=staged_path.stat().st_size,
+                sha256_hex="abc123",
+            ),
+        ),
+        anonymous_fingerprint=None,
+        user_token="user-token",
+        authorization=None,
+        access_cookie_token=None,
+        scanned_likely=False,
+        estimated_pages_count=1,
+    )
+
+    assert response.status == ConversionPipelineStatus.COMPLETED
+    assert access_control_service.recorded_native_geometry_events == [
+        {
+            "processing_id": response.payload["processing_id"],
+            "identity_type": "registered",
+            "classification": "potential_gain",
+            "baseline_status": "ok",
+            "baseline_layout": "generic_statement_v1",
+            "baseline_parser": "grouped",
+            "baseline_transactions": 1,
+            "baseline_balance_failed": 0,
+            "geometry_status": "ok",
+            "geometry_layout": "generic_statement_v1",
+            "geometry_parser": "tabular",
+            "geometry_transactions": 2,
+            "geometry_balance_failed": 0,
+            "geometry_duration_ms": 31,
+            "matched_transactions": 1,
+            "date_conflicts": 0,
+            "amount_conflicts": 0,
+            "sign_conflicts": 0,
+            "geometry_error_type": None,
+            "word_count": 20,
+            "line_count": 4,
+            "duplicate_characters_removed": 0,
+            "fragment_merges": 1,
+        }
+    ]
 
 
 def test_non_clean_pdf_is_forwarded_to_best_effort_canonical_capture(caplog) -> None:

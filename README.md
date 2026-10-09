@@ -73,6 +73,7 @@ OCR para PDF sem camada de texto:
 
 - Em `development`, o OCR pode ser autoativado quando houver Tesseract instalado e `backend/tmp/tessdata` com idiomas disponiveis.
 - Em `production`, o OCR continua desligado por padrao; use `PDF_OCR_ENABLED=true` para habilitar explicitamente.
+- A normalização geométrica de PDFs pode ser avaliada sem mudar o resultado oficial com `PDF_NATIVE_GEOMETRY_SHADOW_ENABLED=true` e `PDF_NATIVE_GEOMETRY_SHADOW_PERCENT=<0-100>`; veja [docs/pdf-native-geometry-shadow.md](docs/pdf-native-geometry-shadow.md).
 - Idioma padrao: `por+eng` (configuravel por `PDF_OCR_LANG`).
 - Limite padrao de paginas no fallback: `12` (configuravel por `PDF_OCR_MAX_PAGES`).
 - DPI padrao de renderizacao OCR: `250` (configuravel por `PDF_OCR_DPI`; faixa recomendada `150` a `400`).

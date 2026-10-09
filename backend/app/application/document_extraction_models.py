@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 
@@ -33,6 +35,22 @@ class ExtractedLine:
     text: str
     confidence: float | None = None
     bbox: dict[str, float] | None = None
+    normalized_text: str | None = None
+    source_word_ids: tuple[str, ...] = ()
+    words: tuple[ExtractedWord, ...] = ()
+
+
+@dataclass(frozen=True)
+class ExtractedWord:
+    id: str
+    page_number: int
+    word_index: int
+    text: str
+    normalized_text: str
+    bbox: dict[str, float]
+    font_size: float | None = None
+    rotation: int = 0
+    source_fragment_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -41,6 +59,9 @@ class ExtractedPage:
     lines: list[ExtractedLine] = field(default_factory=list)
     tables: list[ExtractedTable] = field(default_factory=list)
     confidence: float | None = None
+    width: float | None = None
+    height: float | None = None
+    words: list[ExtractedWord] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

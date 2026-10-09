@@ -180,11 +180,11 @@ def _build_pdf_processing_metrics(
     normalize_ms: float,
     reconcile_ms: float,
     total_ms: float,
-) -> dict[str, int | float | str] | None:
+) -> dict[str, int | float | str | list[str]] | None:
     if extension != "pdf" or parse_metrics is None:
         return None
 
-    return {
+    metrics: dict[str, int | float | str | list[str]] = {
         "total_ms": total_ms,
         "parse_ms": parse_ms,
         "classify_ms": classify_ms,
@@ -261,6 +261,10 @@ def _build_pdf_processing_metrics(
             if item.strip()
         ],
     }
+    for key, value in parse_metrics.items():
+        if key.startswith("native_geometry_shadow_"):
+            metrics[key] = value
+    return metrics
 
 
 def _resolve_bank_name(*, extension: str, layout_inference_name: str | None, extracted_text: str | None) -> str | None:

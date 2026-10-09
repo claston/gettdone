@@ -307,6 +307,50 @@ class AdminDashboardCanonicalCaptureSummary(BaseModel):
     by_reason: list[AdminDashboardCanonicalCaptureReasonItem]
 
 
+class AdminDashboardNativeGeometryLayoutItem(BaseModel):
+    layout_name: str
+    evaluated: int
+    potential_rescues: int
+    potential_gains: int
+    conflicts: int
+    errors: int
+    median_duration_ms: int
+
+
+class AdminDashboardNativeGeometryRecentItem(BaseModel):
+    processing_id: str
+    identity_type: str
+    created_at: str
+    classification: str
+    baseline_layout: str | None = None
+    geometry_layout: str | None = None
+    baseline_transactions: int
+    geometry_transactions: int
+    geometry_duration_ms: int
+    date_conflicts: int
+    amount_conflicts: int
+    sign_conflicts: int
+    geometry_error_type: str | None = None
+
+
+class AdminDashboardNativeGeometrySummary(BaseModel):
+    evaluated_count: int
+    success_count: int
+    potential_rescue_count: int
+    potential_gain_count: int
+    equivalent_count: int
+    regression_count: int
+    conflict_count: int
+    error_count: int
+    shadow_error_count: int
+    inconclusive_count: int
+    not_applicable_count: int
+    median_duration_ms: int
+    p95_duration_ms: int
+    by_layout: list[AdminDashboardNativeGeometryLayoutItem]
+    recent: list[AdminDashboardNativeGeometryRecentItem]
+
+
 class AdminDashboardHeavyUserItem(BaseModel):
     rank: int
     identity_type: str
@@ -404,6 +448,7 @@ class AdminDashboardResponse(BaseModel):
     top_errors: list[AdminDashboardErrorItem]
     top_quality_issues: list[AdminDashboardQualityIssueItem]
     canonical_capture: AdminDashboardCanonicalCaptureSummary
+    native_geometry_shadow: AdminDashboardNativeGeometrySummary
     checkout_funnel: AdminDashboardCheckoutFunnel
     commercial_interest: list[AdminDashboardCommercialInterestItem]
     heavy_users: list[AdminDashboardHeavyUserItem]
