@@ -95,6 +95,7 @@ _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT = (
 )
 _ITAU_COMPLETE_TABLE_LAYOUT = "itau_empresas_extrato_completo_tabela_v1"
 _SICREDI_MATRIX_LANDSCAPE_LAYOUT = "sicredi_matricial_paisagem_conta_corrente_v1"
+_CREDISIS_DESCENDING_ACCOUNT_LAYOUT = "credisis_extrato_conta_corrente_descendente_v1"
 _STONE_CURRENT_ACCOUNT_A4_LAYOUT = "stone_extrato_conta_corrente_a4_v1"
 _INHERITED_TABULAR_DATE_LAYOUTS = {
     _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT,
@@ -1999,6 +2000,15 @@ def _resolve_layout_tabular_role_override(
         if normalized_description.startswith("PIX_CRED "):
             return "credit"
         if normalized_description.startswith(("PIX_DEB ", "DEB_FCO ", "CAPTACAO APLIC.")):
+            return "debit"
+    if (
+        tabular_profile.profile_name == _CREDISIS_DESCENDING_ACCOUNT_LAYOUT
+        and default_role not in {"credit", "debit"}
+        and not has_explicit_amount_sign(amount_token_value)
+    ):
+        if "PIX RECEBIDO" in normalized_description:
+            return "credit"
+        if "PIX ENVIADO" in normalized_description:
             return "debit"
     if (
         tabular_profile.profile_name == _SANTANDER_EMPRESARIAL_ACCOUNT_LAYOUT
