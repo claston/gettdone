@@ -15,6 +15,7 @@ from app.application.normalization.balance import (
     annotate_balance_consistency,
     resolve_ascending_running_balance_order,
     resolve_descending_running_balance,
+    uses_descending_running_balance,
 )
 from app.application.normalization.canonical import build_canonical_transactions
 from app.application.normalization.canonical_metrics import build_canonical_quality_metrics
@@ -2398,8 +2399,9 @@ def _reconcile_tabular_amount_from_running_balance(
     initial_running_balance: float | None = None,
     layout_profile: DeclarativeLayoutProfile | None = None,
 ) -> _ParsedTransaction:
-    if layout_profile is not None and layout_profile.profile_name == _STONE_CURRENT_ACCOUNT_A4_LAYOUT:
-        # Stone order is detected after parsing; ascending delta reconciliation can corrupt descending rows.
+    if layout_profile is not None and uses_descending_running_balance(layout_profile.profile_name):
+        # An ascending delta points to the preceding row's amount in descending statements
+        # and can therefore invert unsigned credits when consecutive values are equal.
         return parsed_row
 
     previous_running_balance = _resolve_latest_running_balance(transactions)

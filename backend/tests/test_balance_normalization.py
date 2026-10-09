@@ -427,3 +427,55 @@ def test_annotate_balance_consistency_supports_descending_santander_app_layout()
     assert checked_count == 2
     assert failed_count == 0
     assert all(transaction.warnings == [] for transaction in canonical_transactions)
+
+
+def test_annotate_balance_consistency_resets_when_descending_statement_date_restarts() -> None:
+    layout_name = "santander_aplicativo_empresas_conta_corrente_extrato_v1"
+    canonical_transactions = [
+        CanonicalTransaction(
+            date="2026-09-25",
+            description="PIX RECEBIDO",
+            amount=100.0,
+            type="inflow",
+            running_balance=1000.0,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-09-24",
+            description="PIX RECEBIDO",
+            amount=50.0,
+            type="inflow",
+            running_balance=900.0,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-09-23",
+            description="PIX RECEBIDO",
+            amount=25.0,
+            type="inflow",
+            running_balance=850.0,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-09-30",
+            description="PIX RECEBIDO",
+            amount=25.0,
+            type="inflow",
+            running_balance=500.0,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-09-29",
+            description="PIX RECEBIDO",
+            amount=10.0,
+            type="inflow",
+            running_balance=475.0,
+            layout_name=layout_name,
+        ),
+    ]
+
+    checked_count, failed_count = annotate_balance_consistency(canonical_transactions)
+
+    assert checked_count == 3
+    assert failed_count == 0
+    assert all(transaction.warnings == [] for transaction in canonical_transactions)
