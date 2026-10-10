@@ -1,0 +1,87 @@
+layout_profile:
+  schema_version: 2
+  profile_name: banco_do_brasil_rende_facil_historico_movimentacao_v1
+  bank: Banco do Brasil
+  layout_family: banco_do_brasil_rende_facil_historico_movimentacao
+  statement_type: investimento_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "BB Rende Fácil"
+      - "Histórico de movimentação"
+      - "Data"
+      - "Histórico"
+      - "Capital"
+      - "Rendimento"
+      - "Valor Líquido"
+    optional_keywords:
+      - "IR"
+      - "IOF"
+      - "Saldo Anterior"
+      - "Saldo Final"
+      - "Agência"
+      - "Conta"
+    negative_keywords:
+      - "Extratos - CDB / RDB e BB Reaplic"
+      - "Extrato de Conta Corrente"
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.86
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Histórico"
+      - "Capital"
+      - "Rendimento"
+      - "IR"
+      - "IOF"
+      - "Valor Líquido"
+    expected_column_order:
+      - date
+      - description
+      - capital
+      - earnings
+      - income_tax
+      - iof
+      - net_amount
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Histórico"
+      capital:
+        - "Capital"
+      earnings:
+        - "Rendimento"
+      income_tax:
+        - "IR"
+      iof:
+        - "IOF"
+      net_amount:
+        - "Valor Líquido"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    date_year_source: "row"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "Aplicação"
+    positive_patterns:
+      - "Resgate"
+    ignore_rows:
+      - "Saldo Anterior"
+      - "Saldo Final"
+      - "Data Histórico Capital Rendimento IR IOF Valor Líquido"
+    opening_balance_rows:
+      - "Saldo Anterior"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - net_amount
+    optional_transaction_fields:
+      - capital
+      - earnings
+      - income_tax
+      - iof
