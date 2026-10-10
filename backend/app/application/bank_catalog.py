@@ -21,6 +21,17 @@ class BankRecord:
 
 _EXTRA_BANK_RECORDS = (
     BankRecord(
+        code="084",
+        name="SISPRIME DO BRASIL - COOPERATIVA DE CRÉDITO",
+        short_name="Sisprime do Brasil",
+        aliases=(
+            "Sisprime",
+            "Sisprime do Brasil",
+            "SISPRIME DO BRASIL - COOPERATIVA DE CREDITO",
+        ),
+        active=True,
+    ),
+    BankRecord(
         code="082",
         name="Banco Topázio S.A.",
         short_name="Banco Topázio",

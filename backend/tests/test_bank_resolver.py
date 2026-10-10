@@ -53,3 +53,8 @@ def test_resolve_bank_code_from_topazio_statement_layout_profile() -> None:
 
 def test_resolve_bank_code_from_trust_srm_statement_layout_profile() -> None:
     assert resolve_bank_code(layout_inference_name="trust_srm_bank_extrato_conta_corrente_v1") == "533"
+
+
+def test_resolve_bank_code_from_sisprime_statement_layout_profiles() -> None:
+    assert resolve_bank_code(layout_inference_name="sisprime_extrato_conta_debito_credito_saldo_v1") == "084"
+    assert resolve_bank_code(layout_inference_name="sisprime_nexx_extrato_conta_corrente_debito_credito_v1") == "084"
