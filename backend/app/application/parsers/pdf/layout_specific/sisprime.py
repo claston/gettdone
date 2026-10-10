@@ -92,7 +92,7 @@ def _parse_statement_row(
     amount_tokens = find_amount_tokens(line.text)
     if len(amount_tokens) != 2:
         return None
-    movement_token, balance_token = amount_tokens
+    movement_token, balance_token = _restore_prefixed_balance_sign(*amount_tokens)
     raw_amount = abs(parse_pdf_amount(movement_token.value))
     running_balance = parse_pdf_amount(balance_token.value)
     amount = _resolve_amount_sign(
@@ -138,6 +138,34 @@ def _resolve_amount_sign(
     debit_distance = abs(movement_token.end - anchors.debit_end)
     credit_distance = abs(movement_token.end - anchors.credit_end)
     return -abs(raw_amount) if debit_distance <= credit_distance else abs(raw_amount)
+
+
+def _restore_prefixed_balance_sign(
+    movement_token: AmountToken,
+    balance_token: AmountToken,
+) -> tuple[AmountToken, AmountToken]:
+    movement_value = movement_token.value.rstrip()
+    if not movement_value.endswith(("-", "+", "−")):
+        return movement_token, balance_token
+    if not balance_token.value.lstrip().upper().startswith(("R$", "US$")):
+        return movement_token, balance_token
+
+    sign = movement_value[-1]
+    unsigned_movement_value = movement_value[:-1].rstrip()
+    return (
+        AmountToken(
+            value=unsigned_movement_value,
+            start=movement_token.start,
+            end=movement_token.start + len(unsigned_movement_value),
+            role_hint=movement_token.role_hint,
+        ),
+        AmountToken(
+            value=f"{sign}{balance_token.value}",
+            start=balance_token.start - 1,
+            end=balance_token.end,
+            role_hint=balance_token.role_hint,
+        ),
+    )
 
 
 def _find_column_anchors(lines: list[_PdfLine]) -> dict[int, _ColumnAnchors]:

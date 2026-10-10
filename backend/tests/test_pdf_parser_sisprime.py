@@ -110,3 +110,48 @@ def test_parses_sisprime_when_pdf_text_replaces_accents() -> None:
     assert result.layout.layout_name == SISPRIME_LAYOUT
     assert result.parse_metrics["selected_parser"] == "layout_specific_sisprime"
     assert len(result.transactions) == 4
+
+
+def test_preserves_prefixed_negative_running_balance() -> None:
+    page = "\n".join(
+        (
+            "Extrato de Conta",
+            "Período do extrato: 01/09/2026 a 30/09/2026",
+            "Lançamentos Saldo Anterior 0,00",
+            f"{'Data':<12}{'Documento':<15}{'Histórico':<30}{'Descrição':<23}{'Débito':>12}{'Crédito':>18}{'Saldo':>18}",
+            _fixed_width_line(
+                "01/09/2026",
+                "1001",
+                "VENDA CRÉDITO",
+                credit="R$ 75,78",
+                balance="R$ 75,78",
+            ),
+            _fixed_width_line(
+                "02/09/2026",
+                "1002",
+                "LIQ. ELETRÔNICA IB",
+                debit="R$ 433,33",
+                balance="-R$ 357,55",
+            ),
+            _fixed_width_line(
+                "03/09/2026",
+                "1003",
+                "CRÉDITO PIX",
+                credit="R$ 1.400,00",
+                balance="R$ 1.042,45",
+            ),
+        )
+    )
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        [page],
+        preserve_layout_spacing=True,
+    )
+
+    assert [row.amount for row in result.transactions] == [75.78, -433.33, 1400.0]
+    assert [row.running_balance for row in result.canonical_transactions or []] == [
+        75.78,
+        -357.55,
+        1042.45,
+    ]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
