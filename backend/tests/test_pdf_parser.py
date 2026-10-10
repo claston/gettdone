@@ -4240,7 +4240,7 @@ def test_parse_pdf_transactions_scopes_santander_consolidated_rows_and_inherits_
     )
 
     assert result.layout.layout_name == "santander_extrato_consolidado_basico_conta_corrente_v1"
-    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert result.parse_metrics["selected_parser"] == "layout_specific_santander_consolidated_basic"
     assert [transaction.date for transaction in result.transactions] == [
         "2026-03-02",
         "2026-03-02",

@@ -28,6 +28,7 @@ SANTANDER_STATEMENT_LAYOUT = "santander_statement_ptbr"
 SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT = (
     "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
 )
+SANTANDER_CONSOLIDATED_BASIC_LAYOUT = "santander_extrato_consolidado_basico_conta_corrente_v1"
 
 _DATE_ROW_PATTERN = re.compile(
     r"^\s*(?P<date>\d{1,2}/\d{1,2}(?:/\d{2,4})?)\s+(?P<rest>.+)$",
@@ -46,6 +47,7 @@ class SantanderStatementLayoutParser:
         {
             SANTANDER_STATEMENT_LAYOUT,
             SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT,
+            SANTANDER_CONSOLIDATED_BASIC_LAYOUT,
         }
     )
 
@@ -69,6 +71,16 @@ class SantanderStatementLayoutParser:
                 selection_reason="layout_specific_santander_consolidated_intelligent:multiline_movements",
             )
 
+        if layout_name == SANTANDER_CONSOLIDATED_BASIC_LAYOUT:
+            rows = _parse_consolidated_basic_rows(lines, context=context)
+            if not rows:
+                return None
+            return LayoutSpecificParseResult(
+                rows=rows,
+                selected_parser="layout_specific_santander_consolidated_basic",
+                selection_reason="layout_specific_santander_consolidated_basic:movement_suffix_signs",
+            )
+
         rows = _parse_movement_rows(lines, context=context)
         if not rows:
             return None
@@ -77,6 +89,84 @@ class SantanderStatementLayoutParser:
             selected_parser="layout_specific_santander_statement",
             selection_reason="layout_specific_santander_statement:grouped_daily_movements",
         )
+
+
+def _parse_consolidated_basic_rows(
+    lines: list[_PdfLine],
+    *,
+    context: LayoutSpecificParseContext,
+) -> list[_ParsedTransaction]:
+    fallback_year = _resolve_fallback_year(lines, context=context)
+    inside_movements = False
+    current_date: str | None = None
+    rows: list[_ParsedTransaction] = []
+    last_content_page: int | None = None
+    last_content_line: int | None = None
+
+    for line in lines:
+        normalized_line = normalize_text(line.text)
+        if _is_movement_heading(normalized_line):
+            inside_movements = True
+            current_date = None
+            continue
+        if not inside_movements:
+            continue
+        if normalized_line.startswith("SALDOS POR PERIODO"):
+            break
+        if _is_table_header(normalized_line):
+            continue
+
+        raw_content = line.text.strip()
+        if _FULL_DATE_PATTERN.fullmatch(raw_content) is not None:
+            continue
+
+        date_match = _DATE_ROW_PATTERN.match(line.text)
+        body = raw_content
+        if date_match is not None:
+            current_date = parse_row_date(date_match.group("date"), fallback_year=fallback_year)
+            body = date_match.group("rest").strip()
+
+        amount_tokens = tuple(find_amount_tokens(body))
+        if not amount_tokens:
+            if _is_description_continuation(
+                line=line,
+                normalized_line=normalized_line,
+                rows=rows,
+                last_content_page=last_content_page,
+                last_content_line=last_content_line,
+            ):
+                rows[-1] = _append_description(rows[-1], body)
+                last_content_line = line.line_number
+            continue
+        if current_date is None:
+            continue
+
+        amount_token, balance_token = _select_amount_and_balance(amount_tokens)
+        description, external_reference_id = _extract_description_and_reference(
+            body,
+            amount_token=amount_token,
+        )
+        if _should_skip_row(description):
+            continue
+
+        rows.append(
+            build_parsed_transaction(
+                date=current_date,
+                description=description,
+                amount=parse_amount_token(amount_token),
+                source_page=line.page_number,
+                source_line=line.line_number,
+                running_balance=(
+                    parse_amount_token(balance_token) if balance_token is not None else None
+                ),
+                external_reference_id=external_reference_id,
+                has_explicit_amount_sign=True,
+            )
+        )
+        last_content_page = line.page_number
+        last_content_line = line.line_number
+
+    return rows
 
 
 def _parse_consolidated_intelligent_rows(
