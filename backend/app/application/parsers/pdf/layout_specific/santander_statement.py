@@ -258,6 +258,7 @@ def _is_consolidated_header_line(normalized_line: str) -> bool:
         (
             "EXTRATO CONSOLIDADO INTELIGENTE",
             "EXTRATO_PJ_A4_INTELIGENTE",
+            "EXTRATO_PF_A4_INTELIGENTE",
             "BALP_",
             "PAGINA:",
         )
