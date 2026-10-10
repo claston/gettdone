@@ -224,6 +224,11 @@ class DeterministicArtifactReference(StrictContractModel):
     statement_type: ShortIdentifier
     layout_confidence: float = Field(ge=0.0, le=1.0)
     issue_codes: list[ShortIdentifier] = Field(min_length=1)
+    document_type: ShortIdentifier | None = None
+    document_type_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    document_classification_version: ShortIdentifier | None = None
+    document_processing_decision: ShortIdentifier | None = None
+    document_classification_evidence: list[ShortIdentifier] | None = None
 
 
 class AIRecoveryVersionSet(StrictContractModel):

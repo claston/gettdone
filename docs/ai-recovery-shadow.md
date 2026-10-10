@@ -9,6 +9,10 @@ mas não publica mensagens na fila e não possui permissão IAM para invocar mod
 
 ## Fluxo e dados
 
+Documentos recusados por `unsupported_document_type` também são preservados para revisão manual. Nesses casos,
+`ready.json` e `deterministic.json` registram tipo, confiança, versão do classificador, decisão e IDs de evidência;
+o request não é enviado à fila nem ao Bedrock, mesmo que a invocação esteja habilitada.
+
 1. O pipeline compartilhado pelos modos inline e SQS/Lambda verifica a elegibilidade.
 2. Com `AI_RECOVERY_MODE=shadow`, o PDF **original**, a saída determinística, os warnings e as evidências
    de origem são gravados como objetos restritos e imutáveis. `ready.json` é sempre publicado por último.

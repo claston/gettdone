@@ -726,6 +726,8 @@ class DocumentConversionPipeline:
             error_subcode=error_subcode,
             exception_class=exception_class,
             parse_observability=parse_observability,
+            document_classification=document_classification,
+            document_processing_decision=document_processing_decision,
         )
         failed_event_id: str | None = None
         logger.info(
@@ -899,6 +901,8 @@ class DocumentConversionPipeline:
         error_subcode: str | None,
         exception_class: str,
         parse_observability: dict[str, object],
+        document_classification=None,
+        document_processing_decision: str | None = None,
     ) -> None:
         if self.ai_recovery_dispatcher is None:
             return
@@ -911,6 +915,8 @@ class DocumentConversionPipeline:
                 error_subcode=error_subcode,
                 exception_class=exception_class,
                 parse_observability=parse_observability,
+                document_classification=document_classification,
+                document_processing_decision=document_processing_decision,
             )
         except Exception as exc:  # recovery capture must never change the conversion failure
             logger.warning("ai_recovery_failure_dispatch_failed error_type=%s", exc.__class__.__name__)

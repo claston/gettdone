@@ -12,6 +12,7 @@ ELIGIBLE_FAILURE_SUBCODES = frozenset(
         "no_transaction_row_pattern",
         "insufficient_text",
         "ocr_no_usable_transactions",
+        "unsupported_document_type",
     }
 )
 

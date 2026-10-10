@@ -56,6 +56,7 @@ def _generic_context(**overrides: object) -> AIRecoveryEligibilityContext:
         "no_transaction_row_pattern",
         "insufficient_text",
         "ocr_no_usable_transactions",
+        "unsupported_document_type",
     ],
 )
 def test_ai_recovery_is_eligible_only_for_allowlisted_content_failures(subcode: str) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -23,6 +24,8 @@ from app.application.layout_profiles.registry import get_layout_profile
 PROMPT_VERSION = "nova_transaction_diagnosis_v1"
 OUTPUT_SCHEMA_VERSION = "nova_diagnostic_v1"
 DEFAULT_REQUEST_TTL_SECONDS = 86_400
+_CLASSIFICATION_EVIDENCE_PATTERN = re.compile(r"[a-z0-9][a-z0-9_.:+-]{0,79}")
+_CLASSIFICATION_IDENTIFIER_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:+-]{0,79}")
 
 _LEGACY_LAYOUT_METADATA = {
     "nubank_statement_ptbr": ("nubank_conta_digital", "conta_digital_extrato"),
@@ -132,6 +135,8 @@ class AIRecoveryShadowDispatcher:
         error_subcode: str | None,
         exception_class: str,
         parse_observability: dict[str, object] | None = None,
+        document_classification=None,
+        document_processing_decision: str | None = None,
     ) -> AIRecoveryDispatchResult:
         observability = dict(parse_observability or {})
         decision = assess_ai_recovery_eligibility(
@@ -151,6 +156,14 @@ class AIRecoveryShadowDispatcher:
         layout_family, statement_type = _layout_metadata(layout_name)
         selected_parser = str(observability.get("selected_parser") or "").strip()
         normalized_subcode = str(error_subcode or "content_extraction_failure").strip().lower()
+        classification_metadata = (
+            _document_classification_metadata(
+                document_classification,
+                processing_decision=document_processing_decision,
+            )
+            if normalized_subcode == "unsupported_document_type"
+            else None
+        )
         deterministic_artifact = {
             "schema_version": "deterministic_statement_v1",
             "analysis_id": analysis_id,
@@ -165,6 +178,8 @@ class AIRecoveryShadowDispatcher:
                 "exception_class": str(exception_class or "Exception"),
             },
         }
+        if classification_metadata is not None:
+            deterministic_artifact["document_classification"] = classification_metadata
         return self._publish(
             document=document,
             analysis_id=analysis_id,
@@ -176,6 +191,14 @@ class AIRecoveryShadowDispatcher:
             statement_type=statement_type or "unknown",
             layout_confidence=_confidence(observability.get("layout_inference_confidence")),
             issue_codes=(normalized_subcode,),
+            document_type=(classification_metadata or {}).get("document_type"),
+            document_type_confidence=(classification_metadata or {}).get("confidence"),
+            document_classification_version=(classification_metadata or {}).get("classifier_version"),
+            document_processing_decision=(classification_metadata or {}).get("processing_decision"),
+            document_classification_evidence=tuple(
+                (classification_metadata or {}).get("evidence") or []
+            ),
+            enqueue=normalized_subcode != "unsupported_document_type",
         )
 
     def _publish(
@@ -191,6 +214,12 @@ class AIRecoveryShadowDispatcher:
         statement_type: str,
         layout_confidence: float,
         issue_codes: tuple[str, ...],
+        document_type: object = None,
+        document_type_confidence: object = None,
+        document_classification_version: object = None,
+        document_processing_decision: object = None,
+        document_classification_evidence: tuple[str, ...] = (),
+        enqueue: bool = True,
     ) -> AIRecoveryDispatchResult:
         created_at = self.clock()
         versions = AIRecoveryVersionSet(
@@ -215,9 +244,31 @@ class AIRecoveryShadowDispatcher:
             ai=versions,
             created_at=created_at,
             expires_at=created_at + timedelta(seconds=self.request_ttl_seconds),
+            document_type=str(document_type or "").strip() or None,
+            document_type_confidence=(
+                _confidence(document_type_confidence)
+                if document_type_confidence is not None
+                else None
+            ),
+            document_classification_version=(
+                str(document_classification_version or "").strip() or None
+            ),
+            document_processing_decision=(
+                str(document_processing_decision or "").strip() or None
+            ),
+            document_classification_evidence=(
+                document_classification_evidence or None
+            ),
             prefix=self.request_prefix,
         )
         publication = self.request_publisher.publish(artifacts)
+        if not enqueue:
+            return AIRecoveryDispatchResult(
+                status="stored",
+                reason="manual_classification_review",
+                idempotency_key=artifacts.manifest.idempotency_key,
+                ready_key=publication.ready_key,
+            )
         if not self.config.bedrock_invocation_enabled:
             return AIRecoveryDispatchResult(
                 status="stored",
@@ -240,6 +291,37 @@ class AIRecoveryShadowDispatcher:
             ready_key=publication.ready_key,
             message_id=message_id,
         )
+
+
+def _document_classification_metadata(
+    classification,
+    *,
+    processing_decision: str | None,
+) -> dict[str, object]:
+    document_type = str(getattr(classification, "document_type", None) or "").strip().lower()
+    if not _CLASSIFICATION_IDENTIFIER_PATTERN.fullmatch(document_type):
+        document_type = "unknown"
+    classifier_version = str(getattr(classification, "classifier_version", None) or "").strip()
+    if not _CLASSIFICATION_IDENTIFIER_PATTERN.fullmatch(classifier_version):
+        classifier_version = "unknown"
+    normalized_decision = str(processing_decision or "").strip().lower()
+    if normalized_decision not in {"rejected", "failed", "accepted", "processing"}:
+        normalized_decision = "rejected"
+    evidence = tuple(
+        dict.fromkeys(
+            value
+            for raw_value in (getattr(classification, "evidence", None) or [])
+            if (value := str(raw_value or "").strip().lower())
+            and _CLASSIFICATION_EVIDENCE_PATTERN.fullmatch(value)
+        )
+    )[:20]
+    return {
+        "document_type": document_type,
+        "confidence": _confidence(getattr(classification, "confidence", None)),
+        "evidence": list(evidence),
+        "classifier_version": classifier_version,
+        "processing_decision": normalized_decision,
+    }
 
 
 def _layout_metadata(layout_name: str) -> tuple[str, str]:

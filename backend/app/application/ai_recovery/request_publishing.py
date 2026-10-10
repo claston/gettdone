@@ -105,6 +105,11 @@ def build_ai_recovery_request_artifacts(
     ai: AIRecoveryVersionSet,
     created_at: datetime,
     expires_at: datetime,
+    document_type: str | None = None,
+    document_type_confidence: float | None = None,
+    document_classification_version: str | None = None,
+    document_processing_decision: str | None = None,
+    document_classification_evidence: tuple[str, ...] | None = None,
     prefix: str = DEFAULT_AI_RECOVERY_REQUEST_PREFIX,
 ) -> AIRecoveryRequestArtifacts:
     _require_timezone(created_at, field_name="created_at")
@@ -153,6 +158,15 @@ def build_ai_recovery_request_artifacts(
             statement_type=statement_type,
             layout_confidence=layout_confidence,
             issue_codes=list(issue_codes),
+            document_type=document_type,
+            document_type_confidence=document_type_confidence,
+            document_classification_version=document_classification_version,
+            document_processing_decision=document_processing_decision,
+            document_classification_evidence=(
+                list(document_classification_evidence)
+                if document_classification_evidence is not None
+                else None
+            ),
         ),
         ai=ai,
         created_at=created_at,
