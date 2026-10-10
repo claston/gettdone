@@ -189,7 +189,6 @@ layout_profile:
       - "Itaú"
       - "VIACREDI"
       - "Cartão de Crédito"
-      - "Fatura"
       - "Comprovante"
     min_score_hint: 0.85
   table_detection:

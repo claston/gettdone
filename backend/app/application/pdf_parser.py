@@ -1,5 +1,6 @@
 import os
 import re
+from dataclasses import replace
 from datetime import datetime
 from typing import Callable
 
@@ -89,6 +90,7 @@ _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT = (
     "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
 )
 _SANTANDER_EMPRESARIAL_ACCOUNT_LAYOUT = "santander_empresarial_conta_corrente"
+_ASAAS_MOVEMENTS_LAYOUT = "asaas_extrato_conta_digital_movimentacoes_v1"
 _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT = "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
 _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT = (
     "itau_empresas_extrato_mensal_conta_corrente_aplicacoes_automaticas_v1"
@@ -664,7 +666,10 @@ def _parse_pdf_transactions_from_page_texts(
             layout_profile=profile,
         ),
     )
-    parsed_rows = selection.rows
+    parsed_rows = _normalize_asaas_parsed_rows(
+        selection.rows,
+        layout_name=layout.layout_name,
+    )
     parsed_rows = _adjust_forward_year_rollover_rows(parsed_rows, line_texts=_extract_line_texts(lines))
     selected_parser = selection.selected_parser
     balance_checkpoints = (
@@ -721,6 +726,35 @@ def _parse_pdf_transactions_from_page_texts(
         multiline_conflict_count=multiline_conflict_count,
         balance_checkpoints=balance_checkpoints,
     )
+
+
+_ASAAS_FOOTER_SUFFIX_PATTERN = re.compile(
+    r"\s+(?:VALOR\s+)?ASAAS\s+GEST\S*\s+FINANCEIRA\s+INSTITUI\S*\s+DE\s+PAGAMENTO\s+S\.A\..*$",
+    flags=re.IGNORECASE,
+)
+
+
+def _normalize_asaas_parsed_rows(
+    parsed_rows: list[_ParsedTransaction],
+    *,
+    layout_name: str,
+) -> list[_ParsedTransaction]:
+    if layout_name != _ASAAS_MOVEMENTS_LAYOUT:
+        return parsed_rows
+
+    normalized_rows: list[_ParsedTransaction] = []
+    for row in parsed_rows:
+        description = row.transaction.description.strip()
+        if _normalize_text(description).startswith("SALDO INICIAL"):
+            continue
+        cleaned_description = _ASAAS_FOOTER_SUFFIX_PATTERN.sub("", description).strip()
+        normalized_rows.append(
+            replace(
+                row,
+                transaction=replace(row.transaction, description=cleaned_description),
+            )
+        )
+    return normalized_rows
 
 
 def _parse_layout_specific_statement_rows(
