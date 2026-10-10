@@ -119,3 +119,31 @@ def test_banco_inter_invoice_resolves_credit_card_ofx_account_type() -> None:
     )
 
     assert account_type == "credit_card"
+
+
+def test_banco_inter_running_balance_preserves_negative_currency_prefixes(monkeypatch) -> None:
+    text = """
+    inter CPF/CNPJ
+    Período: 01/08/2023 a 31/08/2023
+    Saldo total R$ 0,00 Saldo disponível R$ 0,00 Saldo bloqueado R$ 0,00
+    1 de Agosto de 2023 Saldo do dia Valor Saldo por transação
+    PIX RECEBIDO R$ 100,00 R$ 100,00
+    PIX ENVIADO -R$ 650,00 -R$ 550,00
+    PIX RECEBIDO R$ 500,00 -R$ 50,00
+    PIX RECEBIDO R$ 50,00 R$ 0,00
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [text])
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [text])
+
+    result = pdf_parser_module.parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "banco_inter_extrato_conta_corrente_saldo_transacao_v1"
+    assert [transaction.amount for transaction in result.transactions] == [100.0, -650.0, 500.0, 50.0]
+    assert [transaction.running_balance for transaction in result.canonical_transactions] == [
+        100.0,
+        -550.0,
+        -50.0,
+        0.0,
+    ]
+    assert result.parse_metrics["balance_consistency_checked"] == 3
+    assert result.parse_metrics["balance_consistency_failed"] == 0
