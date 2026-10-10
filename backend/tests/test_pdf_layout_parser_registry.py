@@ -113,5 +113,6 @@ def test_default_layout_parser_registry_contains_current_specific_families() -> 
             "banco_bv_extrato_periodo_grouped_v1",
             "trust_srm_bank_extrato_conta_corrente_v1",
             "stone_extrato_conta_corrente_a4_v1",
+            "sisprime_extrato_conta_debito_credito_saldo_v1",
         }
     )

@@ -1,0 +1,76 @@
+layout_profile:
+  schema_version: 2
+  profile_name: sisprime_extrato_conta_debito_credito_saldo_v1
+  bank: Sisprime do Brasil
+  layout_family: sisprime_extrato_conta_debito_credito_saldo
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Extrato de Conta"
+      - "do extrato"
+      - "Saldo Anterior"
+      - "Data"
+      - "Documento"
+      - "Saldo"
+    optional_keywords:
+      - "amentos"
+      - "rico"
+      - "Conta"
+      - "Saldo Atual"
+    negative_keywords:
+      - "NEXX"
+      - "EXTRATO DE CONTA CORRENTE"
+      - "Saldo Util. Cheq. Esp."
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Documento"
+      - "Saldo"
+    expected_column_order:
+      - date
+      - document
+      - description
+      - debit
+      - credit
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      document:
+        - "Documento"
+      description:
+        - "Histórico"
+        - "Descrição"
+      debit:
+        - "Débito"
+      credit:
+        - "Crédito"
+      balance:
+        - "Saldo"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    date_year_source: "row"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "value_in_debit_column"
+    positive_patterns:
+      - "value_in_credit_column"
+    ignore_rows:
+      - "Lançamentos Saldo Anterior"
+      - "Data Documento Histórico Descrição Débito Crédito Saldo"
+    opening_balance_rows:
+      - "Saldo Anterior"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance
