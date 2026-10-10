@@ -133,6 +133,10 @@ class FakeProcessingPipeline:
             semantic_type="bank_statement",
             semantic_confidence=0.98,
             semantic_evidence=["csv"],
+            document_type="bank_statement",
+            document_type_confidence=0.96,
+            document_type_evidence=["statement_title", "statement_balance"],
+            document_classification_version="2026-10-10.1",
             transactions_total=1,
             total_inflows=150.0,
             total_outflows=0.0,
@@ -197,6 +201,18 @@ class FakeProcessingPipeline:
             ],
             parse_ms=4.2,
         )
+
+
+class FailingClassifiedProcessingPipeline:
+    def run_parsed_document(self, **_kwargs):
+        exc = InvalidFileContentError("Unsupported fiscal document")
+        exc._document_type_classification = SimpleNamespace(
+            document_type="fiscal_invoice",
+            confidence=0.93,
+            evidence=["nfe_danfe", "nfe_access_key"],
+            classifier_version="2026-10-10.1",
+        )
+        raise exc
 
 
 class FakeDocumentExtractor:
@@ -442,6 +458,12 @@ def test_document_conversion_pipeline_uses_processing_pipeline_when_available() 
     assert response.metadata["page_count"] == 1
     assert report_service.owners == [(response.payload["processing_id"], "user", "user_123")]
     assert access_control_service.consumed_units == [1]
+    persisted = access_control_service.recorded_user_conversions[-1]
+    assert persisted["document_type"] == "bank_statement"
+    assert persisted["document_type_confidence"] == 0.96
+    assert persisted["document_classification_version"] == "2026-10-10.1"
+    assert persisted["document_processing_decision"] == "accepted"
+    assert persisted["document_classification_evidence"] == ["statement_title", "statement_balance"]
 
 
 def test_non_clean_pdf_is_forwarded_to_best_effort_canonical_capture(caplog) -> None:
@@ -496,6 +518,44 @@ def test_non_clean_pdf_is_forwarded_to_best_effort_canonical_capture(caplog) -> 
     assert ai_dispatch.calls[0]["document"].raw_bytes == staged_path.read_bytes()
     assert ai_dispatch.calls[0]["page_texts"] == ("2026-06-18 PIX RECEBIDO 150,00",)
     assert "ai_recovery_dispatch_result status=queued reason=eligible" in caplog.text
+
+
+def test_failed_conversion_persists_document_type_classification() -> None:
+    staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
+    access_control_service = FakeAccessControlService()
+    pipeline = DocumentConversionPipeline(
+        report_service=FakeReportService(),
+        access_control_service=access_control_service,
+        processing_pipeline=FailingClassifiedProcessingPipeline(),
+        analysis_repository=FakeAnalysisRepository(),
+        document_extractor=FakeDocumentExtractor(),
+        statement_parser=FakeStatementParser(),
+    )
+
+    with pytest.raises(InvalidFileContentError, match="Unsupported fiscal document"):
+        pipeline.run(
+            document=UploadedDocument.from_staged_upload(
+                filename="invoice.pdf",
+                staged_upload=UploadedDocumentStage(
+                    path=staged_path,
+                    size_bytes=staged_path.stat().st_size,
+                    sha256_hex="abc123",
+                ),
+            ),
+            anonymous_fingerprint=None,
+            user_token="user-token",
+            authorization=None,
+            access_cookie_token=None,
+            scanned_likely=False,
+            estimated_pages_count=1,
+        )
+
+    recorded = access_control_service.recorded_user_conversions[-1]
+    assert recorded["document_type"] == "fiscal_invoice"
+    assert recorded["document_type_confidence"] == 0.93
+    assert recorded["document_classification_version"] == "2026-10-10.1"
+    assert recorded["document_processing_decision"] == "failed"
+    assert recorded["document_classification_evidence"] == ["nfe_danfe", "nfe_access_key"]
 
 
 def test_ai_recovery_dispatch_failure_does_not_fail_conversion(caplog) -> None:

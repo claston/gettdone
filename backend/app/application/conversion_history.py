@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from app.application.conversion_quality_history import prepare_quality_record, replace_quality_issues
+from app.application.document_classification_history import prepare_document_classification_record
 
 
 def record_user_conversion(
@@ -45,6 +46,11 @@ def record_user_conversion(
     quality_issues: list[dict[str, object]] | None = None,
     canonical_capture_status: str | None = None,
     canonical_capture_reason: str | None = None,
+    document_type: str | None = None,
+    document_type_confidence: float | None = None,
+    document_classification_version: str | None = None,
+    document_processing_decision: str | None = None,
+    document_classification_evidence: list[str] | None = None,
     created_at: str | None = None,
     expires_at: str | None = None,
 ) -> None:
@@ -62,6 +68,19 @@ def record_user_conversion(
         parser_coverage_rate=parser_coverage_rate,
         warning_types=warning_types,
         failure_diagnostics=failure_diagnostics,
+    )
+    (
+        normalized_document_type,
+        normalized_document_type_confidence,
+        normalized_document_classification_version,
+        normalized_document_processing_decision,
+        document_classification_evidence_json,
+    ) = prepare_document_classification_record(
+        document_type=document_type,
+        document_type_confidence=document_type_confidence,
+        document_classification_version=document_classification_version,
+        document_processing_decision=document_processing_decision,
+        document_classification_evidence=document_classification_evidence,
     )
     execute(
         conn,
@@ -105,9 +124,17 @@ def record_user_conversion(
           warning_types_json,
           failure_diagnostics_json,
           canonical_capture_status,
-          canonical_capture_reason
+          canonical_capture_reason,
+          document_type,
+          document_type_confidence,
+          document_classification_version,
+          document_processing_decision,
+          document_classification_evidence_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        )
         ON CONFLICT(analysis_id)
         DO UPDATE SET
           user_id=excluded.user_id,
@@ -147,7 +174,12 @@ def record_user_conversion(
           warning_types_json=excluded.warning_types_json,
           failure_diagnostics_json=excluded.failure_diagnostics_json,
           canonical_capture_status=excluded.canonical_capture_status,
-          canonical_capture_reason=excluded.canonical_capture_reason
+          canonical_capture_reason=excluded.canonical_capture_reason,
+          document_type=excluded.document_type,
+          document_type_confidence=excluded.document_type_confidence,
+          document_classification_version=excluded.document_classification_version,
+          document_processing_decision=excluded.document_processing_decision,
+          document_classification_evidence_json=excluded.document_classification_evidence_json
         """,
         (
             processing_id,
@@ -189,6 +221,11 @@ def record_user_conversion(
             failure_diagnostics_json,
             (canonical_capture_status or "").strip() or None,
             (canonical_capture_reason or "").strip() or None,
+            normalized_document_type,
+            normalized_document_type_confidence,
+            normalized_document_classification_version,
+            normalized_document_processing_decision,
+            document_classification_evidence_json,
         ),
     )
     replace_quality_issues(

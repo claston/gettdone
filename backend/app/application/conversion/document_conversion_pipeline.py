@@ -39,6 +39,7 @@ from app.application.conversion.statement_parser import (
 )
 from app.application.conversion.uploaded_document import UploadedDocument
 from app.application.conversion_pipeline import ConversionPipeline
+from app.application.document_type_classifier import classify_document_type
 from app.application.errors import (
     FileTooLargeError,
     InvalidFileContentError,
@@ -430,6 +431,7 @@ class DocumentConversionPipeline:
                 file_sha256=runtime.file_digest,
                 canonical_warning_transactions_count=0,
                 balance_consistency_failed=0,
+                document_processing_decision="processing",
                 expires_at=None,
             )
         elif identity.identity_type == "anonymous":
@@ -450,6 +452,7 @@ class DocumentConversionPipeline:
                 duration_ms=0,
                 canonical_warning_transactions_count=0,
                 balance_consistency_failed=0,
+                document_processing_decision="processing",
                 error_code=None,
                 error_stage=None,
                 error_subcode=None,
@@ -571,6 +574,13 @@ class DocumentConversionPipeline:
                 quality_issues=list(getattr(analysis, "quality_issues", []) or []),
                 canonical_capture_status=canonical_capture_result.status,
                 canonical_capture_reason=canonical_capture_result.reason,
+                document_type=getattr(analysis, "document_type", None),
+                document_type_confidence=getattr(analysis, "document_type_confidence", None),
+                document_classification_version=getattr(analysis, "document_classification_version", None),
+                document_processing_decision="accepted",
+                document_classification_evidence=list(
+                    getattr(analysis, "document_type_evidence", None) or []
+                ),
                 expires_at=(persisted_result.expires_at if persisted_result is not None else getattr(analysis, "expires_at", None)),
             )
         elif identity.identity_type == "anonymous":
@@ -609,6 +619,13 @@ class DocumentConversionPipeline:
                 quality_issues=list(getattr(analysis, "quality_issues", []) or []),
                 canonical_capture_status=canonical_capture_result.status,
                 canonical_capture_reason=canonical_capture_result.reason,
+                document_type=getattr(analysis, "document_type", None),
+                document_type_confidence=getattr(analysis, "document_type_confidence", None),
+                document_classification_version=getattr(analysis, "document_classification_version", None),
+                document_processing_decision="accepted",
+                document_classification_evidence=list(
+                    getattr(analysis, "document_type_evidence", None) or []
+                ),
             )
         if persisted_result is not None:
             payload = build_convert_response_payload(
@@ -648,6 +665,9 @@ class DocumentConversionPipeline:
         identity = runtime.identity
         error_stage, error_subcode, exception_class = _resolve_error_observability(exc)
         error_code = _resolve_failed_conversion_code(exc)
+        document_processing_decision = (
+            "rejected" if error_code == "unsupported_document_type" else "failed"
+        )
         failure_diagnostics = _build_failure_diagnostics(exc)
         ocr_context = str(getattr(exc, "ocr_context", "") or "")
         if ocr_context:
@@ -658,6 +678,18 @@ class DocumentConversionPipeline:
         duration_ms = runtime.duration_ms()
         ocr_attempted = runtime.ocr_pages_processed > 0 or bool(ocr_context)
         parse_observability = dict(getattr(exc, "_parse_observability", {}) or {})
+        document_classification = getattr(exc, "_document_type_classification", None)
+        if document_classification is None:
+            try:
+                document_classification = classify_document_type(
+                    filename=request.document.filename,
+                    raw_bytes=request.document.raw_bytes,
+                )
+            except Exception as classification_exc:
+                logger.warning(
+                    "document_type_failure_classification_failed error_class=%s",
+                    type(classification_exc).__name__,
+                )
         canonical_capture_result = CanonicalLayoutCaptureResult(
             "not_attempted",
             "pre_parser_failure",
@@ -738,6 +770,13 @@ class DocumentConversionPipeline:
                 failure_diagnostics=failure_diagnostics,
                 canonical_capture_status=canonical_capture_result.status,
                 canonical_capture_reason=canonical_capture_result.reason,
+                document_type=getattr(document_classification, "document_type", None),
+                document_type_confidence=getattr(document_classification, "confidence", None),
+                document_classification_version=getattr(document_classification, "classifier_version", None),
+                document_processing_decision=document_processing_decision,
+                document_classification_evidence=list(
+                    getattr(document_classification, "evidence", None) or []
+                ),
             )
         elif identity is not None and identity.identity_type == "user":
             _safe_record_user_conversion(
@@ -772,6 +811,13 @@ class DocumentConversionPipeline:
                 failure_diagnostics=failure_diagnostics,
                 canonical_capture_status=canonical_capture_result.status,
                 canonical_capture_reason=canonical_capture_result.reason,
+                document_type=getattr(document_classification, "document_type", None),
+                document_type_confidence=getattr(document_classification, "confidence", None),
+                document_classification_version=getattr(document_classification, "classifier_version", None),
+                document_processing_decision=document_processing_decision,
+                document_classification_evidence=list(
+                    getattr(document_classification, "evidence", None) or []
+                ),
                 expires_at=None,
             )
         _log_conversion_failure(

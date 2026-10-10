@@ -667,6 +667,11 @@ def test_record_user_conversion_persists_warning_metrics(tmp_path) -> None:
         warning_types=["balance_consistency_failed", "amount_sign_inferred"],
         canonical_capture_status="stored",
         canonical_capture_reason=None,
+        document_type="bank_statement",
+        document_type_confidence=0.98,
+        document_classification_version="2026-10-10.1",
+        document_processing_decision="accepted",
+        document_classification_evidence=["statement_title", "statement_account"],
         quality_issues=[
             {
                 "scope": "transaction",
@@ -694,7 +699,12 @@ def test_record_user_conversion_persists_warning_metrics(tmp_path) -> None:
               parser_coverage_rate,
               warning_types_json,
               canonical_capture_status,
-              canonical_capture_reason
+              canonical_capture_reason,
+              document_type,
+              document_type_confidence,
+              document_classification_version,
+              document_processing_decision,
+              document_classification_evidence_json
             FROM user_conversions
             WHERE analysis_id = ?
             """,
@@ -712,6 +722,11 @@ def test_record_user_conversion_persists_warning_metrics(tmp_path) -> None:
     assert "amount_sign_inferred" in str(row["warning_types_json"])
     assert str(row["canonical_capture_status"]) == "stored"
     assert row["canonical_capture_reason"] is None
+    assert str(row["document_type"]) == "bank_statement"
+    assert float(row["document_type_confidence"]) == 0.98
+    assert str(row["document_classification_version"]) == "2026-10-10.1"
+    assert str(row["document_processing_decision"]) == "accepted"
+    assert str(row["document_classification_evidence_json"]) == '["statement_account", "statement_title"]'
 
     with service._connect() as conn:
         issue = service._fetchone(
@@ -777,6 +792,11 @@ def test_record_anonymous_conversion_event_persists_metrics(tmp_path) -> None:
         error_code=None,
         canonical_capture_status="upload_failed",
         canonical_capture_reason="ClientError",
+        document_type="fiscal_invoice",
+        document_type_confidence=0.93,
+        document_classification_version="2026-10-10.1",
+        document_processing_decision="failed",
+        document_classification_evidence=["nfe_danfe", "raw customer text must not persist"],
     )
 
     with service._connect() as conn:
@@ -798,7 +818,12 @@ def test_record_anonymous_conversion_event_persists_metrics(tmp_path) -> None:
               canonical_warning_transactions_count,
               balance_consistency_failed,
               canonical_capture_status,
-              canonical_capture_reason
+              canonical_capture_reason,
+              document_type,
+              document_type_confidence,
+              document_classification_version,
+              document_processing_decision,
+              document_classification_evidence_json
             FROM anonymous_conversion_events
             WHERE id = ?
             """,
@@ -819,6 +844,11 @@ def test_record_anonymous_conversion_event_persists_metrics(tmp_path) -> None:
     assert int(row["balance_consistency_failed"]) == 1
     assert str(row["canonical_capture_status"]) == "upload_failed"
     assert str(row["canonical_capture_reason"]) == "ClientError"
+    assert str(row["document_type"]) == "fiscal_invoice"
+    assert float(row["document_type_confidence"]) == 0.93
+    assert str(row["document_classification_version"]) == "2026-10-10.1"
+    assert str(row["document_processing_decision"]) == "failed"
+    assert str(row["document_classification_evidence_json"]) == '["nfe_danfe"]'
 
 
 def test_retryable_db_exception_includes_unexpected_ssl_close(tmp_path) -> None:

@@ -122,6 +122,11 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
             failure_diagnostics_json TEXT,
             canonical_capture_status TEXT,
             canonical_capture_reason TEXT,
+            document_type TEXT,
+            document_type_confidence REAL,
+            document_classification_version TEXT,
+            document_processing_decision TEXT,
+            document_classification_evidence_json TEXT,
             FOREIGN KEY(user_id) REFERENCES users(id)
         );
 
@@ -163,7 +168,12 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
             warning_types_json TEXT,
             failure_diagnostics_json TEXT,
             canonical_capture_status TEXT,
-            canonical_capture_reason TEXT
+            canonical_capture_reason TEXT,
+            document_type TEXT,
+            document_type_confidence REAL,
+            document_classification_version TEXT,
+            document_processing_decision TEXT,
+            document_classification_evidence_json TEXT
         );
 
         CREATE TABLE IF NOT EXISTS product_events (
@@ -485,6 +495,11 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
         ("failure_diagnostics_json", "TEXT"),
         ("canonical_capture_status", "TEXT"),
         ("canonical_capture_reason", "TEXT"),
+        ("document_type", "TEXT"),
+        ("document_type_confidence", "REAL"),
+        ("document_classification_version", "TEXT"),
+        ("document_processing_decision", "TEXT"),
+        ("document_classification_evidence_json", "TEXT"),
     ):
         if column_name not in user_conversions_columns:
             conn.execute(f"ALTER TABLE user_conversions ADD COLUMN {column_name} {column_type}")
@@ -535,6 +550,11 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
         ("failure_diagnostics_json", "TEXT"),
         ("canonical_capture_status", "TEXT"),
         ("canonical_capture_reason", "TEXT"),
+        ("document_type", "TEXT"),
+        ("document_type_confidence", "REAL"),
+        ("document_classification_version", "TEXT"),
+        ("document_processing_decision", "TEXT"),
+        ("document_classification_evidence_json", "TEXT"),
     ):
         if column_name not in anonymous_conversion_event_columns:
             conn.execute(f"ALTER TABLE anonymous_conversion_events ADD COLUMN {column_name} {column_type}")

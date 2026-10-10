@@ -307,6 +307,39 @@ class AdminDashboardCanonicalCaptureSummary(BaseModel):
     by_reason: list[AdminDashboardCanonicalCaptureReasonItem]
 
 
+class AdminDashboardDocumentTypeItem(BaseModel):
+    document_type: str
+    attempts: int
+    accepted: int
+    rejected: int
+    failed: int
+    processing: int
+    average_confidence: float | None = None
+
+
+class AdminDashboardDocumentTypeAttentionItem(BaseModel):
+    created_at: str
+    processing_id: str
+    identity_type: str
+    document_type: str
+    confidence: float | None = None
+    decision: str
+    status: str
+
+
+class AdminDashboardDocumentTypeSummary(BaseModel):
+    total_count: int
+    classified_count: int
+    unknown_count: int
+    unknown_rate: float
+    unclassified_count: int
+    unclassified_rate: float
+    low_confidence_count: int
+    low_confidence_threshold: float
+    by_type: list[AdminDashboardDocumentTypeItem]
+    recent_attention: list[AdminDashboardDocumentTypeAttentionItem]
+
+
 class AdminDashboardHeavyUserItem(BaseModel):
     rank: int
     identity_type: str
@@ -404,6 +437,7 @@ class AdminDashboardResponse(BaseModel):
     top_errors: list[AdminDashboardErrorItem]
     top_quality_issues: list[AdminDashboardQualityIssueItem]
     canonical_capture: AdminDashboardCanonicalCaptureSummary
+    document_types: AdminDashboardDocumentTypeSummary
     checkout_funnel: AdminDashboardCheckoutFunnel
     commercial_interest: list[AdminDashboardCommercialInterestItem]
     heavy_users: list[AdminDashboardHeavyUserItem]

@@ -30,6 +30,9 @@ def _record_user_conversion(
     layout_confidence: float = 0.98,
     canonical_capture_status: str = "not_eligible",
     canonical_capture_reason: str | None = "clean_conversion",
+    document_type: str | None = "bank_statement",
+    document_type_confidence: float | None = 0.98,
+    document_processing_decision: str | None = None,
 ) -> None:
     service.record_user_conversion(
         user_id=user_id,
@@ -53,6 +56,11 @@ def _record_user_conversion(
         selected_parser="inline",
         canonical_capture_status=canonical_capture_status,
         canonical_capture_reason=canonical_capture_reason,
+        document_type=document_type,
+        document_type_confidence=document_type_confidence,
+        document_classification_version="2026-10-10.1" if document_type else None,
+        document_processing_decision=document_processing_decision or ("accepted" if status == "Sucesso" else "failed"),
+        document_classification_evidence=["statement_title"] if document_type else None,
         created_at=created_at.isoformat(),
     )
 
@@ -77,6 +85,9 @@ def _record_anonymous_conversion(
     layout_confidence: float = 0.97,
     canonical_capture_status: str = "not_eligible",
     canonical_capture_reason: str | None = "clean_conversion",
+    document_type: str | None = "bank_statement",
+    document_type_confidence: float | None = 0.97,
+    document_processing_decision: str | None = None,
 ) -> None:
     clock["now"] = created_at
     service.record_anonymous_conversion_event(
@@ -101,6 +112,11 @@ def _record_anonymous_conversion(
         selected_parser="inline",
         canonical_capture_status=canonical_capture_status,
         canonical_capture_reason=canonical_capture_reason,
+        document_type=document_type,
+        document_type_confidence=document_type_confidence,
+        document_classification_version="2026-10-10.1" if document_type else None,
+        document_processing_decision=document_processing_decision or ("accepted" if status == "Sucesso" else "failed"),
+        document_classification_evidence=["statement_title"] if document_type else None,
     )
 
 
@@ -288,6 +304,114 @@ def test_admin_dashboard_aggregates_quality_failures_and_returning_people(tmp_pa
         assert "s3_key" not in str(payload)
         assert "anonymous_fingerprint" not in str(payload)
         assert "filename" not in str(payload)
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_admin_dashboard_aggregates_document_types_and_classification_attention(tmp_path: Path) -> None:
+    client, service, clock, user_id = _build_dashboard_client(tmp_path)
+    _record_user_conversion(
+        service,
+        user_id=user_id,
+        processing_id="an_statement",
+        created_at=datetime(2026, 9, 7, 12, 0, tzinfo=timezone.utc),
+        document_type="bank_statement",
+        document_type_confidence=0.98,
+    )
+    _record_anonymous_conversion(
+        service,
+        clock,
+        fingerprint="anon-invoice",
+        event_id="ace_invoice",
+        created_at=datetime(2026, 9, 8, 12, 0, tzinfo=timezone.utc),
+        status="Falha",
+        error_code="unsupported_document_type",
+        document_type="fiscal_invoice",
+        document_type_confidence=0.93,
+        document_processing_decision="rejected",
+    )
+    _record_anonymous_conversion(
+        service,
+        clock,
+        fingerprint="anon-unknown",
+        event_id="ace_unknown",
+        created_at=datetime(2026, 9, 9, 11, 0, tzinfo=timezone.utc),
+        status="Falha",
+        error_code="parse_failed",
+        document_type="unknown",
+        document_type_confidence=0.2,
+    )
+    _record_user_conversion(
+        service,
+        user_id=user_id,
+        processing_id="an_legacy",
+        created_at=datetime(2026, 9, 9, 12, 0, tzinfo=timezone.utc),
+        document_type=None,
+        document_type_confidence=None,
+    )
+    clock["now"] = datetime(2026, 9, 9, 15, 0, tzinfo=timezone.utc)
+
+    try:
+        login = client.post(
+            "/admin/auth/login",
+            json={"email": "admin@example.com", "password": "admin-pass"},
+        )
+        assert login.status_code == 200
+
+        response = client.get("/admin/dashboard", params={"days": 7, "identity_type": "all"})
+
+        assert response.status_code == 200
+        document_types = response.json()["document_types"]
+        assert document_types["total_count"] == 4
+        assert document_types["classified_count"] == 3
+        assert document_types["unknown_count"] == 1
+        assert document_types["unknown_rate"] == 25.0
+        assert document_types["unclassified_count"] == 1
+        assert document_types["low_confidence_count"] == 1
+        assert document_types["by_type"] == [
+            {
+                "document_type": "bank_statement",
+                "attempts": 1,
+                "accepted": 1,
+                "rejected": 0,
+                "failed": 0,
+                "processing": 0,
+                "average_confidence": 0.98,
+            },
+            {
+                "document_type": "fiscal_invoice",
+                "attempts": 1,
+                "accepted": 0,
+                "rejected": 1,
+                "failed": 0,
+                "processing": 0,
+                "average_confidence": 0.93,
+            },
+            {
+                "document_type": "unclassified",
+                "attempts": 1,
+                "accepted": 1,
+                "rejected": 0,
+                "failed": 0,
+                "processing": 0,
+                "average_confidence": None,
+            },
+            {
+                "document_type": "unknown",
+                "attempts": 1,
+                "accepted": 0,
+                "rejected": 0,
+                "failed": 1,
+                "processing": 0,
+                "average_confidence": 0.2,
+            },
+        ]
+        assert [item["processing_id"] for item in document_types["recent_attention"]] == [
+            "an_legacy",
+            "ace_unknown",
+        ]
+        assert "filename" not in str(document_types)
+        assert "document_classification_evidence" not in str(document_types)
     finally:
         app.dependency_overrides.clear()
 

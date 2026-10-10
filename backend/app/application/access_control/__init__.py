@@ -477,6 +477,11 @@ class AccessControlService:
         quality_issues: list[dict[str, object]] | None = None,
         canonical_capture_status: str | None = None,
         canonical_capture_reason: str | None = None,
+        document_type: str | None = None,
+        document_type_confidence: float | None = None,
+        document_classification_version: str | None = None,
+        document_processing_decision: str | None = None,
+        document_classification_evidence: list[str] | None = None,
         created_at: str | None = None,
         expires_at: str | None = None,
     ) -> None:
@@ -515,6 +520,11 @@ class AccessControlService:
             quality_issues=quality_issues,
             canonical_capture_status=canonical_capture_status,
             canonical_capture_reason=canonical_capture_reason,
+            document_type=document_type,
+            document_type_confidence=document_type_confidence,
+            document_classification_version=document_classification_version,
+            document_processing_decision=document_processing_decision,
+            document_classification_evidence=document_classification_evidence,
             created_at=created_at,
             expires_at=expires_at,
         )
@@ -559,6 +569,11 @@ class AccessControlService:
         quality_issues: list[dict[str, object]] | None = None,
         canonical_capture_status: str | None = None,
         canonical_capture_reason: str | None = None,
+        document_type: str | None = None,
+        document_type_confidence: float | None = None,
+        document_classification_version: str | None = None,
+        document_processing_decision: str | None = None,
+        document_classification_evidence: list[str] | None = None,
     ) -> None:
         self.checkout.record_anonymous_conversion_event(
             event_id=event_id,
@@ -595,6 +610,11 @@ class AccessControlService:
             quality_issues=quality_issues,
             canonical_capture_status=canonical_capture_status,
             canonical_capture_reason=canonical_capture_reason,
+            document_type=document_type,
+            document_type_confidence=document_type_confidence,
+            document_classification_version=document_classification_version,
+            document_processing_decision=document_processing_decision,
+            document_classification_evidence=document_classification_evidence,
         )
 
     def list_public_plans(self) -> list[dict[str, str | int]]:
