@@ -154,7 +154,9 @@ def test_publisher_writes_ready_manifest_last_with_conditional_aes256_uploads() 
         "application/json",
         "application/json",
     ]
-    assert json.loads(client.put_calls[-1]["Body"]) == artifacts.manifest.model_dump(mode="json")
+    ready_manifest = json.loads(client.put_calls[-1]["Body"])
+    assert ready_manifest == artifacts.manifest.model_dump(mode="json", exclude_none=True)
+    assert "document_type" not in ready_manifest["deterministic_artifact"]
 
 
 def test_publisher_replay_reuses_identical_objects_without_overwriting() -> None:

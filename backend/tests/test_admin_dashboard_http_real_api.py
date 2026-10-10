@@ -51,6 +51,11 @@ def _run_http_server(tmp_path: Path):
         ocr_used=False,
         ocr_pages_processed=0,
         duration_ms=1400,
+        document_type="bank_statement",
+        document_type_confidence=0.98,
+        document_classification_version="2026-10-10.1",
+        document_processing_decision="accepted",
+        document_classification_evidence=["statement_title"],
         created_at=datetime(2026, 9, 9, 12, 0, tzinfo=timezone.utc).isoformat(),
     )
     app.dependency_overrides[get_access_control_service] = lambda: access_control
@@ -141,3 +146,14 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
         "by_status": [{"status": "not_recorded", "count": 1}],
         "by_reason": [],
     }
+    assert dashboard.json()["document_types"]["by_type"] == [
+        {
+            "document_type": "bank_statement",
+            "attempts": 1,
+            "accepted": 1,
+            "rejected": 0,
+            "failed": 0,
+            "processing": 0,
+            "average_confidence": 0.98,
+        }
+    ]

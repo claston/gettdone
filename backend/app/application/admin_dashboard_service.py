@@ -52,6 +52,7 @@ NON_CONVERSION_ERROR_CODES = frozenset(
         "weekly_quota_exceeded",
     }
 )
+DOCUMENT_TYPE_LOW_CONFIDENCE_THRESHOLD = 0.7
 
 
 class AdminDashboardService:
@@ -177,6 +178,9 @@ class AdminDashboardService:
                     "layout_name": event.get("layout_name"),
                     "layout_confidence": event.get("layout_confidence"),
                     "selected_parser": event.get("selected_parser"),
+                    "document_type": event.get("document_type") or "unclassified",
+                    "document_type_confidence": event.get("document_type_confidence"),
+                    "document_processing_decision": event.get("document_processing_decision"),
                     "error_code": event.get("error_code"),
                     "error_stage": event.get("error_stage"),
                     "quality_status": event.get("quality_status"),
@@ -342,7 +346,11 @@ class AdminDashboardService:
                     quality_rule_version,
                     quality_reason_codes_json,
                     canonical_capture_status,
-                    canonical_capture_reason
+                    canonical_capture_reason,
+                    document_type,
+                    document_type_confidence,
+                    document_classification_version,
+                    document_processing_decision
                 FROM user_conversions
                 WHERE created_at >= ? AND created_at <= ?
                 """,
@@ -377,7 +385,11 @@ class AdminDashboardService:
                     quality_rule_version,
                     quality_reason_codes_json,
                     canonical_capture_status,
-                    canonical_capture_reason
+                    canonical_capture_reason,
+                    document_type,
+                    document_type_confidence,
+                    document_classification_version,
+                    document_processing_decision
                 FROM anonymous_conversion_events
                 WHERE created_at >= ? AND created_at <= ?
                 """,
@@ -575,6 +587,10 @@ def _row_to_event(row, *, identity_type: str) -> dict[str, object]:
         "quality_reason_codes": stored_reasons or list(assessment.reason_codes),
         "canonical_capture_status": str(row["canonical_capture_status"] or "").strip() or "not_recorded",
         "canonical_capture_reason": str(row["canonical_capture_reason"] or "").strip() or None,
+        "document_type": str(row["document_type"] or "").strip().lower() or None,
+        "document_type_confidence": _as_optional_float(row["document_type_confidence"]),
+        "document_classification_version": str(row["document_classification_version"] or "").strip() or None,
+        "document_processing_decision": str(row["document_processing_decision"] or "").strip().lower() or None,
     }
 
 
@@ -762,6 +778,7 @@ def _build_dashboard_payload(
         "top_errors": top_errors,
         "top_quality_issues": top_quality_issues,
         "canonical_capture": _build_canonical_capture_summary(events),
+        "document_types": _build_document_type_summary(events),
         "checkout_funnel": _build_checkout_funnel(checkout_intents, product_events),
         "commercial_interest": _build_commercial_interest(product_events, registered_profiles),
         "heavy_users": _rank_user_usage(user_usage, sort_field="pages"),
@@ -774,6 +791,94 @@ def _build_dashboard_payload(
             sort_field="ocr_pages",
         ),
         "layouts": layout_items,
+        "recent_attention": recent_attention[:10],
+    }
+
+
+def _build_document_type_summary(events: list[dict[str, object]]) -> dict[str, object]:
+    grouped: dict[str, dict[str, object]] = {}
+    recent_attention: list[dict[str, object]] = []
+    classified_count = 0
+    unknown_count = 0
+    unclassified_count = 0
+    low_confidence_count = 0
+
+    for event in events:
+        document_type = str(event.get("document_type") or "").strip().lower() or "unclassified"
+        confidence = _as_optional_float(event.get("document_type_confidence"))
+        if document_type == "unclassified":
+            unclassified_count += 1
+        else:
+            classified_count += 1
+        if document_type == "unknown":
+            unknown_count += 1
+        is_low_confidence = (
+            document_type != "unclassified"
+            and confidence is not None
+            and confidence < DOCUMENT_TYPE_LOW_CONFIDENCE_THRESHOLD
+        )
+        if is_low_confidence:
+            low_confidence_count += 1
+
+        decision = str(event.get("document_processing_decision") or "").strip().lower()
+        if decision not in {"accepted", "rejected", "failed", "processing"}:
+            decision = "accepted" if _is_success_status(str(event.get("status") or "")) else "failed"
+        item = grouped.setdefault(
+            document_type,
+            {
+                "document_type": document_type,
+                "attempts": 0,
+                "accepted": 0,
+                "rejected": 0,
+                "failed": 0,
+                "processing": 0,
+                "confidence_sum": 0.0,
+                "confidence_count": 0,
+            },
+        )
+        item["attempts"] = int(item["attempts"]) + 1
+        item[decision] = int(item[decision]) + 1
+        if confidence is not None:
+            item["confidence_sum"] = float(item["confidence_sum"]) + confidence
+            item["confidence_count"] = int(item["confidence_count"]) + 1
+
+        if document_type in {"unknown", "unclassified"} or is_low_confidence:
+            recent_attention.append(
+                {
+                    "created_at": str(event.get("created_at") or ""),
+                    "processing_id": str(event.get("processing_id") or ""),
+                    "identity_type": str(event.get("identity_type") or ""),
+                    "document_type": document_type,
+                    "confidence": confidence,
+                    "decision": decision,
+                    "status": str(event.get("status") or ""),
+                }
+            )
+
+    by_type: list[dict[str, object]] = []
+    for item in sorted(
+        grouped.values(),
+        key=lambda value: (-int(value["attempts"]), str(value["document_type"])),
+    ):
+        confidence_sum = float(item.pop("confidence_sum"))
+        confidence_count = int(item.pop("confidence_count"))
+        item["average_confidence"] = (
+            round(confidence_sum / confidence_count, 4) if confidence_count else None
+        )
+        by_type.append(item)
+
+    recent_attention.sort(key=lambda item: str(item["created_at"]), reverse=True)
+    total_count = len(events)
+    return {
+        "total_count": total_count,
+        "classified_count": classified_count,
+        "unknown_count": unknown_count,
+        "unknown_rate": _percentage(unknown_count, total_count),
+        "unclassified_count": unclassified_count,
+        "unclassified_rate": _percentage(unclassified_count, total_count),
+        "low_confidence_count": low_confidence_count,
+        "low_confidence_threshold": DOCUMENT_TYPE_LOW_CONFIDENCE_THRESHOLD,
+        "by_type": by_type,
         "recent_attention": recent_attention[:10],
     }
 

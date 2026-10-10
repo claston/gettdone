@@ -15,6 +15,7 @@ def test_admin_dashboard_frontend_exposes_summary_filters_and_attention_sections
     assert 'id="dashboard-top-errors"' in html
     assert 'id="dashboard-top-quality-issues"' in html
     assert 'id="dashboard-canonical-capture"' in html
+    assert 'id="dashboard-document-types"' in html
     assert 'id="dashboard-layouts"' in html
     assert 'id="dashboard-recent-attention"' in html
     assert 'id="dashboard-attention-export-btn"' in html
@@ -44,6 +45,8 @@ def test_admin_dashboard_frontend_exposes_summary_filters_and_attention_sections
     assert "renderDashboard" in javascript
     assert "renderDashboardLayouts" in javascript
     assert "renderDashboardCanonicalCapture" in javascript
+    assert "renderDashboardDocumentTypes" in javascript
+    assert "payload.document_types" in javascript
     assert "canonical_capture_status" in javascript
     assert "clean_high_confidence_rate" in javascript
     assert '"Páginas processadas"' in javascript

@@ -238,6 +238,61 @@ def test_shadow_dispatch_stores_allowlisted_conversion_failure() -> None:
     }
 
 
+def test_shadow_dispatch_stores_rejected_document_for_manual_review_without_queueing() -> None:
+    calls: list[str] = []
+    publisher = _Publisher(calls)
+    queue = _Queue(calls)
+    dispatcher = AIRecoveryShadowDispatcher(
+        config=_config("active", bedrock_enabled=True),
+        bucket="private-ai-recovery",
+        request_publisher=publisher,
+        queue_publisher=queue,
+        parser_release="release-123",
+        clock=lambda: datetime(2026, 10, 10, 12, 0, tzinfo=UTC),
+    )
+
+    result = dispatcher.dispatch_failure(
+        document=UploadedDocument(
+            filename="invoice.pdf",
+            raw_bytes=b"%PDF fiscal invoice for private manual review",
+            file_type="pdf",
+        ),
+        analysis_id="an_rejected123",
+        page_count=1,
+        error_stage="parse",
+        error_subcode="unsupported_document_type",
+        exception_class="UnsupportedDocumentContentError",
+        parse_observability={},
+        document_classification=SimpleNamespace(
+            document_type="fiscal_invoice",
+            confidence=0.93,
+            evidence=["nfe_danfe", "raw customer text must not persist", "nfe_access_key"],
+            classifier_version="2026-10-10.1",
+        ),
+        document_processing_decision="rejected",
+    )
+
+    assert result.status == "stored"
+    assert result.reason == "manual_classification_review"
+    assert calls == ["s3"]
+    assert queue.message is None
+    reference = publisher.artifacts.manifest.deterministic_artifact
+    assert reference.document_type == "fiscal_invoice"
+    assert reference.document_type_confidence == 0.93
+    assert reference.document_classification_version == "2026-10-10.1"
+    assert reference.document_processing_decision == "rejected"
+    assert reference.document_classification_evidence == ["nfe_danfe", "nfe_access_key"]
+    deterministic = json.loads(publisher.artifacts.deterministic_artifact)
+    assert deterministic["document_classification"] == {
+        "document_type": "fiscal_invoice",
+        "confidence": 0.93,
+        "evidence": ["nfe_danfe", "nfe_access_key"],
+        "classifier_version": "2026-10-10.1",
+        "processing_decision": "rejected",
+    }
+    assert deterministic["failure"]["error_subcode"] == "unsupported_document_type"
+
+
 def test_shadow_dispatch_is_disabled_by_default() -> None:
     calls: list[str] = []
     dispatcher = AIRecoveryShadowDispatcher(

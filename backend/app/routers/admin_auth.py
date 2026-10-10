@@ -58,6 +58,9 @@ ATTENTION_EXPORT_COLUMNS = (
     ("motivo_atencao", "issue_reason"),
     ("status_coleta_canonica", "canonical_capture_status"),
     ("motivo_coleta_canonica", "canonical_capture_reason"),
+    ("tipo_documento", "document_type"),
+    ("confianca_tipo_documento", "document_type_confidence"),
+    ("decisao_processamento", "document_processing_decision"),
 )
 
 

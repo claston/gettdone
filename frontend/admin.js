@@ -26,6 +26,7 @@
   const dashboardHeavyUsersNode = document.getElementById("dashboard-heavy-users");
   const dashboardReturningHeavyUsersNode = document.getElementById("dashboard-returning-heavy-users");
   const dashboardOcrHeavyUsersNode = document.getElementById("dashboard-ocr-heavy-users");
+  const dashboardDocumentTypesNode = document.getElementById("dashboard-document-types");
   const dashboardLayoutsNode = document.getElementById("dashboard-layouts");
   const dashboardRecentAttentionNode = document.getElementById("dashboard-recent-attention");
   const dashboardAttentionExportBtn = document.getElementById("dashboard-attention-export-btn");
@@ -529,6 +530,101 @@
     }
   }
 
+  function documentTypeLabel(documentType) {
+    const labels = {
+      bank_statement: "Extrato bancário",
+      fiscal_invoice: "Nota fiscal",
+      billing_report: "Relatório de faturamento",
+      bank_receipt: "Comprovante bancário",
+      credit_card_statement: "Fatura de cartão",
+      financial_spreadsheet: "Planilha financeira",
+      other: "Outro documento",
+      unknown: "Desconhecido",
+      unclassified: "Não classificado",
+    };
+    return labels[String(documentType || "")] || String(documentType || "Não classificado");
+  }
+
+  function documentProcessingDecisionLabel(decision) {
+    const labels = {
+      accepted: "Aceito",
+      rejected: "Recusado",
+      failed: "Falha",
+      processing: "Em processamento",
+    };
+    return labels[String(decision || "")] || String(decision || "-");
+  }
+
+  function renderDashboardDocumentTypes(summary) {
+    if (!dashboardDocumentTypesNode) return;
+    dashboardDocumentTypesNode.replaceChildren();
+    const overview = createTextElement(
+      "p",
+      "muted compact",
+      `${formatInteger(summary.classified_count)} classificados · ${formatInteger(summary.unknown_count)} desconhecidos (${formatPercent(summary.unknown_rate)}) · ${formatInteger(summary.unclassified_count)} legados sem classificação`,
+    );
+    dashboardDocumentTypesNode.appendChild(overview);
+
+    const items = Array.isArray(summary.by_type) ? summary.by_type : [];
+    if (!items.length) {
+      dashboardDocumentTypesNode.appendChild(
+        createTextElement("p", "empty dashboard-empty", "Nenhum documento no período."),
+      );
+      return;
+    }
+    const table = document.createElement("table");
+    table.className = "dashboard-table";
+    const head = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    ["Tipo", "Tentativas", "Aceitos", "Recusados", "Falhas", "Em processamento", "Confiança média"].forEach(function (label) {
+      appendTableCell(headRow, label, "th");
+    });
+    head.appendChild(headRow);
+    table.appendChild(head);
+    const body = document.createElement("tbody");
+    items.forEach(function (item) {
+      const row = document.createElement("tr");
+      appendTableCell(row, documentTypeLabel(item.document_type));
+      appendTableCell(row, formatInteger(item.attempts));
+      appendTableCell(row, formatInteger(item.accepted));
+      appendTableCell(row, formatInteger(item.rejected));
+      appendTableCell(row, formatInteger(item.failed));
+      appendTableCell(row, formatInteger(item.processing));
+      appendTableCell(row, item.average_confidence == null ? "-" : formatPercent(Number(item.average_confidence) * 100));
+      body.appendChild(row);
+    });
+    table.appendChild(body);
+    dashboardDocumentTypesNode.appendChild(table);
+
+    const attentionItems = Array.isArray(summary.recent_attention) ? summary.recent_attention : [];
+    if (attentionItems.length) {
+      dashboardDocumentTypesNode.appendChild(
+        createTextElement("p", "muted compact", "Classificações desconhecidas, ausentes ou com baixa confiança"),
+      );
+      const attentionTable = document.createElement("table");
+      attentionTable.className = "dashboard-table";
+      const attentionHead = document.createElement("thead");
+      const attentionHeadRow = document.createElement("tr");
+      ["Data", "Tipo", "Confiança", "Decisão", "Identificador"].forEach(function (label) {
+        appendTableCell(attentionHeadRow, label, "th");
+      });
+      attentionHead.appendChild(attentionHeadRow);
+      attentionTable.appendChild(attentionHead);
+      const attentionBody = document.createElement("tbody");
+      attentionItems.forEach(function (item) {
+        const row = document.createElement("tr");
+        appendTableCell(row, formatDateTime(item.created_at));
+        appendTableCell(row, documentTypeLabel(item.document_type));
+        appendTableCell(row, item.confidence == null ? "-" : formatPercent(Number(item.confidence) * 100));
+        appendTableCell(row, documentProcessingDecisionLabel(item.decision));
+        appendTableCell(row, item.processing_id || "-");
+        attentionBody.appendChild(row);
+      });
+      attentionTable.appendChild(attentionBody);
+      dashboardDocumentTypesNode.appendChild(attentionTable);
+    }
+  }
+
   function renderDashboardLayouts(items) {
     if (!dashboardLayoutsNode) return;
     dashboardLayoutsNode.replaceChildren();
@@ -782,6 +878,7 @@
       dashboardOcrHeavyUsersNode,
       "Nenhum uso de OCR neste período.",
     );
+    renderDashboardDocumentTypes(payload.document_types || {});
     renderDashboardLayouts(payload.layouts || []);
     renderDashboardAttention(payload.recent_attention || []);
   }
@@ -1738,6 +1835,7 @@
       if (dashboardHeavyUsersNode) dashboardHeavyUsersNode.replaceChildren();
       if (dashboardReturningHeavyUsersNode) dashboardReturningHeavyUsersNode.replaceChildren();
       if (dashboardOcrHeavyUsersNode) dashboardOcrHeavyUsersNode.replaceChildren();
+      if (dashboardDocumentTypesNode) dashboardDocumentTypesNode.replaceChildren();
       if (dashboardCheckoutFunnelNode) dashboardCheckoutFunnelNode.replaceChildren();
       if (dashboardCommercialInterestNode) dashboardCommercialInterestNode.replaceChildren();
       if (activeUsersSummaryNode) activeUsersSummaryNode.replaceChildren();

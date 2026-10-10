@@ -39,7 +39,7 @@ class S3AIRecoveryRequestPublisher:
             prefix=self.prefix,
         )
         manifest_bytes = json.dumps(
-            artifacts.manifest.model_dump(mode="json"),
+            artifacts.manifest.model_dump(mode="json", exclude_none=True),
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
