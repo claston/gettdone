@@ -382,6 +382,30 @@ def test_infer_pdf_layout_prefers_santander_negocios_profile_with_credit_debit_t
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_recognizes_santander_pf_consolidated_intelligent_export() -> None:
+    text = """
+    EXTRATO CONSOLIDADO INTELIGENTE
+    setembro/2026
+    Santander
+    Conta Corrente
+    Movimentação
+    01/09 PIX RECEBIDO - 200,00
+    PIX ENVIADO - 21,00-
+    02/09 PAGAMENTO DE BOLETO - 50,00-
+    PIX RECEBIDO - 75,00
+    Extrato_PF_A4_Inteligente - 27/11/2024
+    BALP_UY_M3FM4156_MXDD0926.PIM -
+    Página: 2/11
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == (
+        "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
+    )
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_new_santander_empresarial_grouped_period_profile() -> None:
     text = """
     Santander

@@ -400,6 +400,43 @@ def test_parse_pdf_transactions_scopes_santander_intelligent_consolidated_moveme
     assert all("25 MAI 26" not in transaction.description for transaction in result.transactions)
 
 
+def test_parse_santander_pf_consolidated_intelligent_uses_existing_specialized_parser() -> None:
+    pages = [
+        """
+        EXTRATO CONSOLIDADO INTELIGENTE
+        setembro/2026
+        Santander
+        Conta Corrente
+        Movimentação
+        SALDO EM 31/08 0,00
+        01/09 PIX RECEBIDO - 200,00
+              PIX ENVIADO - 21,00-
+        Extrato_PF_A4_Inteligente - 27/11/2024
+        BALP_UY_M3FM4156_MXDD0926.PIM -
+        """,
+        """
+        EXTRATO CONSOLIDADO INTELIGENTE
+        setembro/2026
+        Página: 2/11
+        02/09 PAGAMENTO DE BOLETO - 50,00-
+              PIX RECEBIDO - 75,00
+        SALDO EM 30/09 204,00
+        """,
+    ]
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(pages)
+
+    assert result.layout.layout_name == (
+        "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
+    )
+    assert result.parse_metrics["selected_parser"] == (
+        "layout_specific_santander_consolidated_intelligent"
+    )
+    assert [transaction.amount for transaction in result.transactions] == [200.0, -21.0, -50.0, 75.0]
+    assert all("EXTRATO_PF" not in transaction.description for transaction in result.transactions)
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
 def test_parse_pdf_transactions_stops_grouped_santander_at_balances_by_period_section() -> None:
     page = """
     Santander Negocios & Empresas

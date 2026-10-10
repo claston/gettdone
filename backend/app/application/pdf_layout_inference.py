@@ -24,6 +24,9 @@ BANK_AGENCY_TABLE_PATTERN = re.compile(
     r"\bLANCAMENTOS?\b.*\bDEBITO\s*R?\b.*\bCREDITO\s*R?\b.*\bSALDO\s*R?\b"
 )
 BANK_AGENCY_LAYOUT_NAME = "bank_agency_debit_credit_statement_v1"
+SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT_NAME = (
+    "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
+)
 BR_PROFILE_TERMS: dict[str, tuple[tuple[str, float], ...]] = {
     "nubank_statement_ptbr": (
         ("NUBANK", 0.7),
@@ -136,6 +139,10 @@ def infer_pdf_layout(text: str) -> PdfLayoutInference:
         for profile in load_layout_profiles()
     }
     specific_scores.update(declarative_scores)
+    specific_scores[SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT_NAME] = max(
+        specific_scores.get(SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT_NAME, 0.0),
+        _score_santander_pf_consolidated_intelligent(normalized),
+    )
     specific_scores[BANK_AGENCY_LAYOUT_NAME] = _score_bank_agency_debit_credit_statement(normalized_lines)
     generic_score = _score_generic_statement(normalized)
     specific_best_name, specific_best_score = max(specific_scores.items(), key=lambda item: item[1])
@@ -168,6 +175,22 @@ def _score_bank_agency_debit_credit_statement(normalized_lines: tuple[str, ...])
     if not re.search(r"\bSALDO\s*ANTERIOR\b", text):
         return 0.0
     return 0.78 if re.search(r"\bSALDO\s*FINAL\b", text) else 0.72
+
+
+def _score_santander_pf_consolidated_intelligent(normalized_text: str) -> float:
+    if "EXTRATO CONSOLIDADO INTELIGENTE" not in normalized_text:
+        return 0.0
+    if "EXTRATO_PF_A4_INTELIGENTE" not in normalized_text and "BALP_" not in normalized_text:
+        return 0.0
+
+    score = 0.76
+    if "SANTANDER" in normalized_text:
+        score += 0.08
+    if "MOVIMENTACAO" in normalized_text:
+        score += 0.08
+    if "CONTA CORRENTE" in normalized_text:
+        score += 0.04
+    return min(score, 1.0)
 
 
 def _score_layout_profile(layout_name: str, normalized_text: str, terms: tuple[tuple[str, float], ...]) -> float:
