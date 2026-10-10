@@ -39,6 +39,7 @@ from app.application.conversion.statement_parser import (
 )
 from app.application.conversion.uploaded_document import UploadedDocument
 from app.application.conversion_pipeline import ConversionPipeline
+from app.application.document_routing_policy import enforce_document_routing
 from app.application.document_type_classifier import classify_document_type
 from app.application.errors import (
     FileTooLargeError,
@@ -226,6 +227,11 @@ class DocumentConversionPipeline:
             )
             page_texts: tuple[str, ...] | None = None
             source_layout_lines = None
+            initial_document_type = classify_document_type(
+                filename=request.document.filename,
+                raw_bytes=request.document.raw_bytes,
+            )
+            enforce_document_routing(initial_document_type)
             if self.legacy_conversion_runner is not None:
                 conversion_response = self.legacy_conversion_runner(
                     filename=request.document.filename,

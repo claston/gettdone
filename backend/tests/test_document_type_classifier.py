@@ -14,7 +14,7 @@ from app.application.document_type_classifier import (
     DocumentTypeClassification,
     classify_document_type,
 )
-from app.application.errors import InvalidFileContentError
+from app.application.errors import InvalidFileContentError, UnsupportedDocumentContentError
 from app.application.models import NormalizedTransaction
 from app.application.parsers.service import ParsedDocument
 
@@ -176,9 +176,9 @@ def test_conversion_pipeline_classifies_before_parsing_and_exposes_result() -> N
 
 def test_conversion_pipeline_attaches_preclassification_to_parser_failure() -> None:
     classification = DocumentTypeClassification(
-        document_type=FISCAL_INVOICE,
+        document_type=BANK_STATEMENT,
         confidence=0.97,
-        evidence=["nfe_danfe", "nfe_access_key"],
+        evidence=["statement_title", "statement_balance"],
     )
 
     class FailingParser:
@@ -198,3 +198,69 @@ def test_conversion_pipeline_attaches_preclassification_to_parser_failure() -> N
         )
 
     assert exc_info.value._document_type_classification == classification
+
+
+def test_conversion_pipeline_rejects_high_confidence_nfe_before_parser() -> None:
+    classification = DocumentTypeClassification(
+        document_type=FISCAL_INVOICE,
+        confidence=0.93,
+        evidence=["nfe_danfe", "nfe_access_key", "nfe_parties"],
+    )
+    parser_called = False
+
+    class RecordingParser:
+        def parse(self, document, **kwargs) -> ParsedDocument:
+            nonlocal parser_called
+            parser_called = True
+            raise AssertionError("the parser must not run for a high-confidence NF-e")
+
+    pipeline = ConversionPipeline(
+        parser=RecordingParser(),
+        document_type_classifier=lambda **kwargs: classification,
+    )
+
+    with pytest.raises(UnsupportedDocumentContentError) as exc_info:
+        pipeline.run(
+            filename="nfe.pdf",
+            raw_bytes=b"%PDF synthetic",
+            analysis_id="an_nfe_rejected",
+        )
+
+    assert exc_info.value._document_type_classification == classification
+    assert parser_called is False
+
+
+def test_conversion_pipeline_rejects_nfe_identified_from_extracted_text() -> None:
+    initial_classification = DocumentTypeClassification(
+        document_type=UNKNOWN_DOCUMENT,
+        confidence=0.0,
+        evidence=[],
+    )
+    refined_classification = DocumentTypeClassification(
+        document_type=FISCAL_INVOICE,
+        confidence=0.93,
+        evidence=["nfe_danfe", "nfe_access_key", "nfe_parties"],
+    )
+    classifications = iter([initial_classification, refined_classification])
+
+    class InvoiceParser:
+        def parse(self, document, **kwargs) -> ParsedDocument:
+            return ParsedDocument(
+                file_type=document.file_type,
+                transactions=[],
+                extracted_text="DANFE CHAVE DE ACESSO EMITENTE DESTINATÁRIO",
+            )
+
+    pipeline = ConversionPipeline(
+        parser=InvoiceParser(),
+        document_type_classifier=lambda **kwargs: next(classifications),
+    )
+
+    with pytest.raises(UnsupportedDocumentContentError) as exc_info:
+        pipeline.run(
+            filename="nfe-digitalizada.pdf",
+            raw_bytes=b"%PDF synthetic",
+            analysis_id="an_nfe_refined",
+        )
+
+    assert exc_info.value._document_type_classification == refined_classification
