@@ -68,6 +68,10 @@ class AnalysisData:
     semantic_type: str | None = None
     semantic_confidence: float | None = None
     semantic_evidence: list[str] | None = None
+    document_type: str | None = None
+    document_type_confidence: float | None = None
+    document_type_evidence: list[str] | None = None
+    document_classification_version: str | None = None
     preview_before_after: list[BeforeAfterRow] = field(default_factory=list)
     matched_groups: int = 0
     reversed_entries: int = 0

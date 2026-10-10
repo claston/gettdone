@@ -89,6 +89,10 @@ class _LegacyFakeAnalyzeService:
         analysis = AnalyzeResponse(
             analysis_id=analysis_id or "an_convert_http123",
             file_type="pdf",
+            document_type="bank_statement",
+            document_type_confidence=0.99,
+            document_type_evidence=["statement_layout"],
+            document_classification_version="2026-10-10.1",
             transactions_total=2,
             total_inflows=100.0,
             total_outflows=-20.0,
@@ -248,6 +252,10 @@ class FakeAnalyzeService:
         analysis = AnalyzeResponse(
             analysis_id=kwargs.get("analysis_id") or "an_convert_http123",
             file_type="pdf",
+            document_type="bank_statement",
+            document_type_confidence=0.99,
+            document_type_evidence=["statement_layout"],
+            document_classification_version="2026-10-10.1",
             transactions_total=2,
             total_inflows=100.0,
             total_outflows=-20.0,
@@ -405,6 +413,10 @@ def test_http_convert_happy_path_exposes_canonical_pdf_metrics_compatibility() -
     assert response.status_code == 200
     payload = response.json()
     assert payload["processing_id"] == "an_convert_http123"
+    assert payload["analysis"]["document_type"] == "bank_statement"
+    assert payload["analysis"]["document_type_confidence"] == 0.99
+    assert payload["analysis"]["document_type_evidence"] == ["statement_layout"]
+    assert payload["analysis"]["document_classification_version"] == "2026-10-10.1"
     assert payload["analysis"]["pdf_processing_metrics"]["selected_parser"] == "grouped"
     assert payload["analysis"]["pdf_processing_metrics"]["parser_selection_reason"] == "grouped_rows_available"
     assert payload["analysis"]["pdf_processing_metrics"]["inline_decision"] == "skipped_due_to_grouped"

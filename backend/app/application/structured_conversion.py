@@ -19,6 +19,10 @@ class StructuredDocumentInfo:
     semantic_type: str | None = None
     semantic_confidence: float | None = None
     semantic_evidence: list[str] = field(default_factory=list)
+    document_type: str | None = None
+    document_type_confidence: float | None = None
+    document_type_evidence: list[str] = field(default_factory=list)
+    document_classification_version: str | None = None
     bank_name: str | None = None
     layout_inference_name: str | None = None
     layout_inference_confidence: float | None = None
@@ -128,6 +132,10 @@ def build_structured_conversion_result_from_analysis_data(
             semantic_type=analysis_data.semantic_type,
             semantic_confidence=analysis_data.semantic_confidence,
             semantic_evidence=list(analysis_data.semantic_evidence or []),
+            document_type=analysis_data.document_type,
+            document_type_confidence=analysis_data.document_type_confidence,
+            document_type_evidence=list(analysis_data.document_type_evidence or []),
+            document_classification_version=analysis_data.document_classification_version,
             bank_name=analysis_data.bank_name,
             layout_inference_name=analysis_data.layout_inference_name,
             layout_inference_confidence=analysis_data.layout_inference_confidence,

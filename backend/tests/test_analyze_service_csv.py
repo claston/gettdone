@@ -22,6 +22,8 @@ def test_analyze_service_uses_real_csv_content(tmp_path) -> None:
     result = _run_pipeline_preview(storage=storage, filename="sample.csv", raw_bytes=raw)
 
     assert result.file_type == "csv"
+    assert result.document_type == "financial_spreadsheet"
+    assert result.document_type_confidence == 0.85
     assert result.transactions_total == 2
     assert result.total_inflows == 2500.00
     assert result.total_outflows == -58.90

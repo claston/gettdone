@@ -8,6 +8,10 @@ from typing import Callable, Protocol
 from app.application.conversion.uploaded_document import UploadedDocument, ingest_uploaded_document
 from app.application.conversion_quality import build_line_quality_issues
 from app.application.document_classifier import DocumentClassification, classify_document
+from app.application.document_type_classifier import (
+    DocumentTypeClassification,
+    classify_document_type,
+)
 from app.application.models import AnalysisData, BeforeAfterRow, NormalizedTransaction, TransactionRow
 from app.application.normalization.transaction_normalizer import normalize_transactions as default_normalize_transactions
 from app.application.parsers.service import ParsedDocument, ParsingService
@@ -41,6 +45,7 @@ class ProcessingResult:
     operational_summary: OperationalPipelineSummary
     top_expenses_rows: list[NormalizedTransaction]
     parse_ms: float
+    document_type_classification: DocumentTypeClassification | None = None
 
 
 class ConversionPipeline:
@@ -52,6 +57,7 @@ class ConversionPipeline:
         = default_normalize_transactions,
         reconcile_transactions: ReconciliationFunction = default_reconcile_transactions,
         classifier: Callable[..., DocumentClassification] = classify_document,
+        document_type_classifier: Callable[..., DocumentTypeClassification] = classify_document_type,
         resolve_opening_balance: Callable[[list[TransactionRow], str | None, str | None], float | None] | None = None,
         is_balance_metadata_row: Callable[[list[TransactionRow], int], bool] | None = None,
         resolve_closing_balance: Callable[[list[TransactionRow], float | None, str | None], float | None] | None = None,
@@ -65,6 +71,7 @@ class ConversionPipeline:
         self.normalize_transactions = normalize_transactions
         self.reconcile_transactions = reconcile_transactions
         self.classifier = classifier
+        self.document_type_classifier = document_type_classifier
         self.resolve_opening_balance = resolve_opening_balance or _default_resolve_opening_balance
         self.is_balance_metadata_row = is_balance_metadata_row or _default_is_balance_metadata_row
         self.resolve_closing_balance = resolve_closing_balance or _default_resolve_closing_balance
@@ -102,19 +109,28 @@ class ConversionPipeline:
         max_ocr_pages: int | None = None,
         pdf_parser: PdfParser = parse_pdf_transactions,
     ) -> ProcessingResult:
-        parse_start = perf_counter()
-        parsed_document = self.parser.parse(
-            document,
-            on_ocr_progress=on_ocr_progress,
-            max_ocr_pages=max_ocr_pages,
-            pdf_parser=pdf_parser,
+        initial_document_type = self.document_type_classifier(
+            filename=document.filename,
+            raw_bytes=document.raw_bytes,
         )
+        parse_start = perf_counter()
+        try:
+            parsed_document = self.parser.parse(
+                document,
+                on_ocr_progress=on_ocr_progress,
+                max_ocr_pages=max_ocr_pages,
+                pdf_parser=pdf_parser,
+            )
+        except Exception as exc:
+            setattr(exc, "_document_type_classification", initial_document_type)
+            raise
         parse_ms = round((perf_counter() - parse_start) * 1000, 3)
         return self.run_parsed_document(
             document=document,
             parsed_document=parsed_document,
             analysis_id=analysis_id,
             parse_ms=parse_ms,
+            initial_document_type_classification=initial_document_type,
         )
 
     def run_parsed_document(
@@ -124,6 +140,7 @@ class ConversionPipeline:
         parsed_document: ParsedDocument,
         analysis_id: str,
         parse_ms: float,
+        initial_document_type_classification: DocumentTypeClassification | None = None,
     ) -> ProcessingResult:
         total_start = perf_counter()
         filename = document.filename
@@ -138,6 +155,20 @@ class ConversionPipeline:
         transaction_warning_types = parsed_document.warning_types or [[] for _ in parsed_transactions]
         transaction_running_balances = parsed_document.running_balances or [None for _ in parsed_transactions]
         canonical_transactions = list(parsed_document.canonical_transactions or [])
+
+        document_type_classification = self.document_type_classifier(
+            filename=filename,
+            raw_bytes=raw_bytes,
+            extracted_text=extracted_text,
+            layout_inference_name=layout_inference_name,
+            layout_inference_confidence=layout_inference_confidence,
+        )
+        if (
+            document_type_classification.document_type == "unknown"
+            and initial_document_type_classification is not None
+            and initial_document_type_classification.document_type != "unknown"
+        ):
+            document_type_classification = initial_document_type_classification
 
         classify_start = perf_counter()
         classification_result = self.classifier(
@@ -254,6 +285,10 @@ class ConversionPipeline:
             semantic_type=classification_result.semantic_type,
             semantic_confidence=classification_result.confidence,
             semantic_evidence=list(classification_result.evidence or []),
+            document_type=document_type_classification.document_type,
+            document_type_confidence=document_type_classification.confidence,
+            document_type_evidence=list(document_type_classification.evidence or []),
+            document_classification_version=document_type_classification.classifier_version,
             transactions_total=len(transactions),
             total_inflows=total_inflows,
             total_outflows=total_outflows,
@@ -283,6 +318,7 @@ class ConversionPipeline:
             document=document,
             parsed_document=parsed_document,
             classification=classification_result,
+            document_type_classification=document_type_classification,
             operational_summary=OperationalPipelineSummary(
                 total_volume=total_volume,
                 inflow_count=inflow_count,
