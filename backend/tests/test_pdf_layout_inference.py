@@ -479,6 +479,35 @@ def test_infer_pdf_layout_prefers_santander_simples_conferencia_profile() -> Non
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_recognizes_asaas_when_transactions_reference_invoices() -> None:
+    text = """
+    CNPJ
+    Agência: 0001
+    Conta: 123456 - 7
+    Período
+    01 de Março de 2026 a 31 de Março de 2026
+    Extrato gerado em 01/04/2026 às 18:20:00
+    Saldo inicial do período R$ 1.000,00
+    Saldo final do período R$ 1.098,01
+    Data
+    Movimentações
+    Valor
+    04/03/2026
+    Comissão recebida do parceiro - fatura nr. 733619991
+    R$ 100,00
+    05/03/2026
+    Taxa de boleto - fatura nr. 733619991
+    R$ -1,99
+    ASAAS Gestão Financeira Instituição de Pagamento S.A.
+    CNPJ: 19.540.550/0001-21
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "asaas_extrato_conta_digital_movimentacoes_v1"
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_santander_monthly_landscape_consolidated_profile() -> None:
     text = """
     Santander
