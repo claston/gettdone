@@ -823,6 +823,22 @@ class TempAnalysisStorage:
             ]
             if isinstance(content.get("semantic_evidence"), list)
             else None,
+            document_type=str(content.get("document_type") or "").strip() or None,
+            document_type_confidence=(
+                float(content["document_type_confidence"])
+                if content.get("document_type_confidence") is not None
+                else None
+            ),
+            document_type_evidence=[
+                str(item).strip()
+                for item in (content.get("document_type_evidence") or [])
+                if str(item).strip()
+            ]
+            if isinstance(content.get("document_type_evidence"), list)
+            else None,
+            document_classification_version=(
+                str(content.get("document_classification_version") or "").strip() or None
+            ),
             preview_before_after=self._parse_before_after_rows(content.get("preview_before_after", [])),
             matched_groups=int(content.get("matched_groups", 0)),
             reversed_entries=int(content.get("reversed_entries", 0)),

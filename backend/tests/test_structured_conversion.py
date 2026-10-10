@@ -16,6 +16,10 @@ def _build_analysis_data() -> AnalysisData:
         semantic_type="bank_statement",
         semantic_confidence=0.97,
         semantic_evidence=["pdf", "statement"],
+        document_type="bank_statement",
+        document_type_confidence=0.99,
+        document_type_evidence=["statement_layout", "statement_title"],
+        document_classification_version="2026-10-10.1",
         transactions_total=2,
         total_inflows=120.5,
         total_outflows=-20.0,
@@ -96,6 +100,10 @@ def test_build_structured_conversion_result_from_analysis_data() -> None:
     assert structured.conversion_id == "an_structured123"
     assert structured.source.filename == "extrato.pdf"
     assert structured.document.semantic_type == "bank_statement"
+    assert structured.document.document_type == "bank_statement"
+    assert structured.document.document_type_confidence == 0.99
+    assert structured.document.document_type_evidence == ["statement_layout", "statement_title"]
+    assert structured.document.document_classification_version == "2026-10-10.1"
     assert structured.document.bank_name == "Itau"
     assert structured.account.account_type == "bank"
     assert structured.balances.closing_balance == 110.5
@@ -118,6 +126,9 @@ def test_save_analysis_persists_structured_result(tmp_path) -> None:
     assert payload["structured_result"]["contract_version"] == STRUCTURED_CONVERSION_CONTRACT_VERSION
     assert payload["structured_result"]["analysis_id"] == "an_structured123"
     assert payload["structured_result"]["document"]["semantic_type"] == "bank_statement"
+    assert payload["structured_result"]["document"]["document_type"] == "bank_statement"
+    assert payload["document_type"] == "bank_statement"
+    assert payload["document_classification_version"] == "2026-10-10.1"
     assert payload["structured_result"]["account"]["bank_code"] == "341"
     assert payload["structured_result"]["transactions"][1]["transaction_type"] == "outflow"
     assert payload["structured_result"]["export"]["recommended_review"] is True

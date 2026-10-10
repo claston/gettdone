@@ -189,6 +189,10 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
     assert result.layout_inference_confidence >= 0.2
     assert result.semantic_type == "extrato_bancario"
     assert result.semantic_confidence is not None
+    assert result.document_type == "bank_statement"
+    assert result.document_type_confidence is not None
+    assert "statement_layout" in (result.document_type_evidence or [])
+    assert result.document_classification_version == "2026-10-10.1"
     assert result.pdf_processing_metrics is not None
     assert result.pdf_processing_metrics.selected_parser == "grouped"
     assert result.pdf_processing_metrics.grouped_transactions_count == 2
