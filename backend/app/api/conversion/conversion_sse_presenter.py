@@ -21,6 +21,7 @@ from app.application import (
     ConversionCapacityController,
     ConversionCapacityLease,
     ConvertDocumentUseCase,
+    CrossPageTransactionSplitError,
     FileTooLargeError,
     InvalidFileContentError,
     MaxPagesPerFileExceededError,
@@ -286,6 +287,9 @@ class _ConversionUploadSseMachine:
             )
             max_mb = max(1, int(max_bytes // (1024 * 1024)))
             message = f"Arquivo excede o tamanho máximo de {max_mb} MB."
+        elif isinstance(error, CrossPageTransactionSplitError):
+            code = "cross_page_transaction_split"
+            message = str(error)
         elif isinstance(error, UnsupportedDocumentContentError):
             code = "unsupported_document_type"
             message = str(error)

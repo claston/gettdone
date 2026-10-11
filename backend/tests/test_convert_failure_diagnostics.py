@@ -1,9 +1,17 @@
+import pytest
+from fastapi import HTTPException
+
+from app.api.conversion.conversion_error_mapper import _raise_http_convert_error
 from app.api.conversion.conversion_observability import (
     _build_failure_diagnostics,
     _resolve_error_observability,
     _resolve_failed_conversion_code,
 )
-from app.application import InvalidFileContentError, UnsupportedDocumentContentError
+from app.application import (
+    CrossPageTransactionSplitError,
+    InvalidFileContentError,
+    UnsupportedDocumentContentError,
+)
 from app.application.conversion.document_conversion_pipeline import (
     _build_failure_diagnostics as _build_pipeline_failure_diagnostics,
 )
@@ -122,3 +130,45 @@ def test_unsupported_document_type_has_distinct_observability() -> None:
     assert _build_pipeline_failure_diagnostics(error)["unsupported_document_type"] == "billing_report"
     assert _build_failure_diagnostics(error)["text_extracted_likely"] is True
     assert _build_pipeline_failure_diagnostics(error)["text_extracted_likely"] is True
+
+
+def test_cross_page_transaction_split_has_distinct_observability() -> None:
+    error = CrossPageTransactionSplitError(
+        split_kind="tiled_columns",
+        description_page=1,
+        amount_page=2,
+    )
+
+    assert _resolve_failed_conversion_code(error) == "cross_page_transaction_split"
+    assert _resolve_pipeline_failed_conversion_code(error) == "cross_page_transaction_split"
+    assert _resolve_error_observability(error) == (
+        "parse",
+        "cross_page_transaction_split",
+        "CrossPageTransactionSplitError",
+    )
+    assert _resolve_pipeline_error_observability(error) == (
+        "parse",
+        "cross_page_transaction_split",
+        "CrossPageTransactionSplitError",
+    )
+    assert _build_failure_diagnostics(error)["cross_page_split_kind"] == "tiled_columns"
+    assert _build_failure_diagnostics(error)["cross_page_description_page"] == 1
+    assert _build_failure_diagnostics(error)["cross_page_amount_page"] == 2
+    assert _build_pipeline_failure_diagnostics(error)["cross_page_split_kind"] == "tiled_columns"
+
+
+def test_cross_page_transaction_split_has_structured_http_error() -> None:
+    error = CrossPageTransactionSplitError(
+        split_kind="page_boundary",
+        description_page=2,
+        amount_page=3,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        _raise_http_convert_error(error, identity=None, access_control_service=object())
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == {
+        "code": "cross_page_transaction_split",
+        "message": str(error),
+    }

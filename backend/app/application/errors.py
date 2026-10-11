@@ -10,6 +10,23 @@ class InvalidFileContentError(Exception):
     """Raised when a supported file has invalid or unreadable content."""
 
 
+class CrossPageTransactionSplitError(InvalidFileContentError):
+    """Raised when transaction fields were printed on different PDF pages."""
+
+    USER_MESSAGE = (
+        "Identificamos que algumas transações estão divididas entre páginas, com informações "
+        "como descrição e valor em páginas diferentes. Para evitar lançamentos incorretos, este "
+        "arquivo não foi convertido. Envie o extrato original baixado da instituição ou gere "
+        "novamente o PDF mantendo todas as colunas na mesma página."
+    )
+
+    def __init__(self, *, split_kind: str, description_page: int, amount_page: int) -> None:
+        self.split_kind = str(split_kind or "unknown").strip() or "unknown"
+        self.description_page = max(1, int(description_page))
+        self.amount_page = max(1, int(amount_page))
+        super().__init__(self.USER_MESSAGE)
+
+
 class UnsupportedDocumentContentError(InvalidFileContentError):
     """Raised when readable content is not a supported financial document."""
 
