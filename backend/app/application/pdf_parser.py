@@ -993,6 +993,10 @@ def _build_pdf_parse_result(
     multiline_conflict_count: int = 0,
     balance_checkpoints: dict[int, float] | None = None,
 ) -> PdfParseResult:
+    parsed_rows = _reconcile_descending_implicit_signs_from_running_balance(
+        parsed_rows,
+        layout_name=layout.layout_name,
+    )
     canonical_transactions = build_canonical_transactions(
         parsed_rows,
         bank_name=layout_profile.bank if layout_profile is not None else None,
@@ -1058,6 +1062,45 @@ def _build_pdf_parse_result(
         parse_metrics=parse_metrics,
         source_page_texts=source_page_texts,
     )
+
+
+def _reconcile_descending_implicit_signs_from_running_balance(
+    parsed_rows: list[_ParsedTransaction],
+    *,
+    layout_name: str,
+) -> list[_ParsedTransaction]:
+    if not uses_descending_running_balance(layout_name) or len(parsed_rows) < 2:
+        return parsed_rows
+
+    reconciled_rows = list(parsed_rows)
+    tolerance = 0.02
+    for index, (current, following) in enumerate(zip(parsed_rows, parsed_rows[1:])):
+        if current.has_explicit_amount_sign or current.raw_amount_token is None:
+            continue
+        if current.running_balance is None or following.running_balance is None:
+            continue
+        if following.transaction.date > current.transaction.date:
+            continue
+
+        balance_delta = round(current.running_balance - following.running_balance, 2)
+        amount_abs = abs(current.transaction.amount)
+        positive_error = abs(balance_delta - amount_abs)
+        negative_error = abs(balance_delta + amount_abs)
+        if positive_error <= tolerance and positive_error + 0.005 < negative_error:
+            signed_amount = amount_abs
+        elif negative_error <= tolerance and negative_error + 0.005 < positive_error:
+            signed_amount = -amount_abs
+        else:
+            continue
+
+        if abs(current.transaction.amount - signed_amount) <= 0.005:
+            continue
+        reconciled_rows[index] = _replace_parsed_transaction_amount(
+            parsed_row=current,
+            amount=signed_amount,
+        )
+
+    return reconciled_rows
 
 
 def _extract_pdf_page_texts(

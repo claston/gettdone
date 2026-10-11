@@ -1579,6 +1579,51 @@ def test_parse_pdf_transactions_keeps_repeated_santander_pix_recebido_as_credit(
     assert result.parse_metrics["canonical_warning_count"] == 0
 
 
+def test_parse_pdf_transactions_reconciles_implicit_santander_sign_from_descending_balance() -> None:
+    text = """
+    Aplicativo Santander Empresas
+    Santander
+    Agencia 1234 Conta 123456
+    Periodos 01/09/2026 a 30/09/2026
+    Data/Hora 01/10/2026 10:00
+    Saldo disponivel para uso R$ 1.200,00
+    Data Historico Documento Valor (R$) Saldo (R$)
+    30/09/2026 PIX RECEBIDO CLIENTE 000001 100,00 1.200,00
+    30/09/2026 PAGAMENTO A FORNECEDORES CNPJ 000002 82,42 1.100,00
+    29/09/2026 PIX RECEBIDO CLIENTE 000003 10,00 1.017,58
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert result.layout.layout_name == "santander_aplicativo_empresas_conta_corrente_extrato_v1"
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert [transaction.amount for transaction in result.transactions] == [100.0, 82.42, 10.0]
+    assert result.parse_metrics["balance_consistency_checked"] == 2
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert result.parse_metrics["canonical_warning_count"] == 0
+
+
+def test_parse_pdf_transactions_preserves_explicit_santander_sign_despite_descending_balance() -> None:
+    text = """
+    Aplicativo Santander Empresas
+    Santander
+    Agencia 1234 Conta 123456
+    Periodos 01/09/2026 a 30/09/2026
+    Data/Hora 01/10/2026 10:00
+    Saldo disponivel para uso R$ 1.200,00
+    Data Historico Documento Valor (R$) Saldo (R$)
+    30/09/2026 PIX RECEBIDO CLIENTE 000001 100,00 1.200,00
+    30/09/2026 PAGAMENTO A FORNECEDORES CNPJ 000002 -82,42 1.100,00
+    29/09/2026 PIX RECEBIDO CLIENTE 000003 10,00 1.017,58
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert result.transactions[1].amount == -82.42
+    assert result.transactions[1].type == "outflow"
+    assert result.parse_metrics["balance_consistency_failed"] == 1
+
+
 def test_parse_pdf_transactions_supports_santander_grouped_daily_movements_with_sparse_balances() -> None:
     text = """
     BANCO SANTANDER BRASIL S.A.
