@@ -9,6 +9,7 @@ from app.application.ai_recovery.config import AIRecoveryConfig
 from app.application.ai_recovery.shadow_dispatch import AIRecoveryShadowDispatcher
 from app.application.conversion.uploaded_document import UploadedDocument
 from app.application.models import AnalysisData, TransactionRow
+from app.application.pdf_representation_classifier import PdfRepresentationClassification
 
 
 class _Publisher:
@@ -113,6 +114,13 @@ def test_shadow_dispatch_publishes_original_pdf_before_queue_message() -> None:
             "NUBANK\nFAR ENGENHARIA LTDA\n01/09/2026 PIX RECEBIDO FAR ENGENHARIA LTDA 125,50 1.125,50",
         ),
         source_layout_lines=None,
+        pdf_representation_classification=PdfRepresentationClassification(
+            representation="vector_outlines",
+            creation_method="virtual_print",
+            confidence=0.99,
+            evidence=("native_text_absent", "dense_vector_paths"),
+            requires_visual_extraction=True,
+        ),
     )
 
     assert result.status == "queued"
@@ -122,6 +130,15 @@ def test_shadow_dispatch_publishes_original_pdf_before_queue_message() -> None:
     assert publisher.artifacts.manifest.deterministic_artifact.statement_type == "conta_digital_extrato"
     assert queue.message.ready_key.endswith("/ready.json")
     assert queue.message.idempotency_key == publisher.artifacts.manifest.idempotency_key
+    deterministic = json.loads(publisher.artifacts.deterministic_artifact)
+    assert deterministic["pdf_representation_classification"] == {
+        "representation": "vector_outlines",
+        "creation_method": "virtual_print",
+        "confidence": 0.99,
+        "evidence": ["native_text_absent", "dense_vector_paths"],
+        "classifier_version": "pdf_representation_v1",
+        "requires_visual_extraction": True,
+    }
 
 
 def test_shadow_dispatch_stores_request_without_queueing_when_bedrock_is_disabled() -> None:
@@ -270,6 +287,13 @@ def test_shadow_dispatch_stores_rejected_document_for_manual_review_without_queu
             classifier_version="2026-10-10.1",
         ),
         document_processing_decision="rejected",
+        pdf_representation_classification=PdfRepresentationClassification(
+            representation="raster_images",
+            creation_method="scanner",
+            confidence=0.97,
+            evidence=("native_text_absent", "full_page_raster_present"),
+            requires_visual_extraction=True,
+        ),
     )
 
     assert result.status == "stored"
@@ -291,6 +315,8 @@ def test_shadow_dispatch_stores_rejected_document_for_manual_review_without_queu
         "processing_decision": "rejected",
     }
     assert deterministic["failure"]["error_subcode"] == "unsupported_document_type"
+    assert deterministic["pdf_representation_classification"]["representation"] == "raster_images"
+    assert deterministic["pdf_representation_classification"]["creation_method"] == "scanner"
 
 
 def test_shadow_dispatch_is_disabled_by_default() -> None:

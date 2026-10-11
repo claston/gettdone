@@ -672,6 +672,11 @@ def test_record_user_conversion_persists_warning_metrics(tmp_path) -> None:
         document_classification_version="2026-10-10.1",
         document_processing_decision="accepted",
         document_classification_evidence=["statement_title", "statement_account"],
+        pdf_representation="vector_outlines",
+        pdf_creation_method="virtual_print",
+        pdf_representation_confidence=0.99,
+        pdf_classification_version="pdf_representation_v1",
+        pdf_classification_evidence=["dense_vector_paths", "raw customer text must not persist"],
         quality_issues=[
             {
                 "scope": "transaction",
@@ -704,7 +709,12 @@ def test_record_user_conversion_persists_warning_metrics(tmp_path) -> None:
               document_type_confidence,
               document_classification_version,
               document_processing_decision,
-              document_classification_evidence_json
+              document_classification_evidence_json,
+              pdf_representation,
+              pdf_creation_method,
+              pdf_representation_confidence,
+              pdf_classification_version,
+              pdf_classification_evidence_json
             FROM user_conversions
             WHERE analysis_id = ?
             """,
@@ -727,6 +737,11 @@ def test_record_user_conversion_persists_warning_metrics(tmp_path) -> None:
     assert str(row["document_classification_version"]) == "2026-10-10.1"
     assert str(row["document_processing_decision"]) == "accepted"
     assert str(row["document_classification_evidence_json"]) == '["statement_account", "statement_title"]'
+    assert str(row["pdf_representation"]) == "vector_outlines"
+    assert str(row["pdf_creation_method"]) == "virtual_print"
+    assert float(row["pdf_representation_confidence"]) == 0.99
+    assert str(row["pdf_classification_version"]) == "pdf_representation_v1"
+    assert str(row["pdf_classification_evidence_json"]) == '["dense_vector_paths"]'
 
     with service._connect() as conn:
         issue = service._fetchone(
@@ -797,6 +812,11 @@ def test_record_anonymous_conversion_event_persists_metrics(tmp_path) -> None:
         document_classification_version="2026-10-10.1",
         document_processing_decision="failed",
         document_classification_evidence=["nfe_danfe", "raw customer text must not persist"],
+        pdf_representation="raster_images",
+        pdf_creation_method="scanner",
+        pdf_representation_confidence=1.7,
+        pdf_classification_version="pdf_representation_v1",
+        pdf_classification_evidence=["full_page_raster_present", "raw customer text must not persist"],
     )
 
     with service._connect() as conn:
@@ -823,7 +843,12 @@ def test_record_anonymous_conversion_event_persists_metrics(tmp_path) -> None:
               document_type_confidence,
               document_classification_version,
               document_processing_decision,
-              document_classification_evidence_json
+              document_classification_evidence_json,
+              pdf_representation,
+              pdf_creation_method,
+              pdf_representation_confidence,
+              pdf_classification_version,
+              pdf_classification_evidence_json
             FROM anonymous_conversion_events
             WHERE id = ?
             """,
@@ -849,6 +874,11 @@ def test_record_anonymous_conversion_event_persists_metrics(tmp_path) -> None:
     assert str(row["document_classification_version"]) == "2026-10-10.1"
     assert str(row["document_processing_decision"]) == "failed"
     assert str(row["document_classification_evidence_json"]) == '["nfe_danfe"]'
+    assert str(row["pdf_representation"]) == "raster_images"
+    assert str(row["pdf_creation_method"]) == "scanner"
+    assert float(row["pdf_representation_confidence"]) == 1.0
+    assert str(row["pdf_classification_version"]) == "pdf_representation_v1"
+    assert str(row["pdf_classification_evidence_json"]) == '["full_page_raster_present"]'
 
 
 def test_retryable_db_exception_includes_unexpected_ssl_close(tmp_path) -> None:
