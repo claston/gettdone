@@ -78,6 +78,7 @@ class AIRecoveryShadowDispatcher:
         analysis,
         page_texts: tuple[str, ...] | None,
         source_layout_lines,
+        pdf_representation_classification=None,
     ) -> AIRecoveryDispatchResult:
         layout_name = str(getattr(analysis, "layout_inference_name", None) or "").strip()
         layout_family, statement_type = _layout_metadata(layout_name)
@@ -112,11 +113,17 @@ class AIRecoveryShadowDispatcher:
         if not decision.eligible:
             return AIRecoveryDispatchResult(status="skipped", reason=decision.reason.value)
 
+        deterministic_artifact = _deterministic_artifact(analysis, selected_parser=selected_parser)
+        pdf_representation_metadata = _pdf_representation_metadata(
+            pdf_representation_classification
+        )
+        if pdf_representation_metadata is not None:
+            deterministic_artifact["pdf_representation_classification"] = pdf_representation_metadata
         return self._publish(
             document=document,
             analysis_id=str(analysis.analysis_id),
             page_count=int(page_count),
-            deterministic_artifact=_deterministic_artifact(analysis, selected_parser=selected_parser),
+            deterministic_artifact=deterministic_artifact,
             source_evidence=_source_evidence(page_texts, source_layout_lines),
             layout_profile=layout_name,
             layout_family=layout_family,
@@ -137,6 +144,7 @@ class AIRecoveryShadowDispatcher:
         parse_observability: dict[str, object] | None = None,
         document_classification=None,
         document_processing_decision: str | None = None,
+        pdf_representation_classification=None,
     ) -> AIRecoveryDispatchResult:
         observability = dict(parse_observability or {})
         decision = assess_ai_recovery_eligibility(
@@ -180,6 +188,11 @@ class AIRecoveryShadowDispatcher:
         }
         if classification_metadata is not None:
             deterministic_artifact["document_classification"] = classification_metadata
+        pdf_representation_metadata = _pdf_representation_metadata(
+            pdf_representation_classification
+        )
+        if pdf_representation_metadata is not None:
+            deterministic_artifact["pdf_representation_classification"] = pdf_representation_metadata
         return self._publish(
             document=document,
             analysis_id=analysis_id,
@@ -321,6 +334,44 @@ def _document_classification_metadata(
         "evidence": list(evidence),
         "classifier_version": classifier_version,
         "processing_decision": normalized_decision,
+    }
+
+
+def _pdf_representation_metadata(classification) -> dict[str, object] | None:
+    if classification is None:
+        return None
+    representation = str(getattr(classification, "representation", None) or "").strip().lower()
+    if representation not in {
+        "native_text",
+        "vector_outlines",
+        "raster_images",
+        "mixed",
+        "unknown_no_text",
+    }:
+        representation = "unknown_no_text"
+    creation_method = str(getattr(classification, "creation_method", None) or "").strip().lower()
+    if creation_method not in {"virtual_print", "direct_export", "scanner", "unknown"}:
+        creation_method = "unknown"
+    classifier_version = str(getattr(classification, "classifier_version", None) or "").strip()
+    if not _CLASSIFICATION_IDENTIFIER_PATTERN.fullmatch(classifier_version):
+        classifier_version = "unknown"
+    evidence = tuple(
+        dict.fromkeys(
+            value
+            for raw_value in (getattr(classification, "evidence", None) or [])
+            if (value := str(raw_value or "").strip().lower())
+            and _CLASSIFICATION_EVIDENCE_PATTERN.fullmatch(value)
+        )
+    )[:20]
+    return {
+        "representation": representation,
+        "creation_method": creation_method,
+        "confidence": _confidence(getattr(classification, "confidence", None)),
+        "evidence": list(evidence),
+        "classifier_version": classifier_version,
+        "requires_visual_extraction": bool(
+            getattr(classification, "requires_visual_extraction", False)
+        ),
     }
 
 
