@@ -8,6 +8,7 @@ from typing import Callable, Protocol
 from app.application.conversion.uploaded_document import UploadedDocument, ingest_uploaded_document
 from app.application.conversion_quality import build_line_quality_issues
 from app.application.document_classifier import DocumentClassification, classify_document
+from app.application.document_routing_policy import enforce_document_routing
 from app.application.document_type_classifier import (
     DocumentTypeClassification,
     classify_document_type,
@@ -113,6 +114,7 @@ class ConversionPipeline:
             filename=document.filename,
             raw_bytes=document.raw_bytes,
         )
+        enforce_document_routing(initial_document_type)
         parse_start = perf_counter()
         try:
             parsed_document = self.parser.parse(
@@ -169,6 +171,7 @@ class ConversionPipeline:
             and initial_document_type_classification.document_type != "unknown"
         ):
             document_type_classification = initial_document_type_classification
+        enforce_document_routing(document_type_classification)
 
         classify_start = perf_counter()
         classification_result = self.classifier(

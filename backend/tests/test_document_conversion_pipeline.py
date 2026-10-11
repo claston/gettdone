@@ -18,6 +18,7 @@ from app.application.conversion.statement_parser import ParsedBankStatement, Par
 from app.application.conversion.uploaded_document import UploadedDocument, UploadedDocumentStage
 from app.application.conversion_pipeline import ConversionPipelineResult, OperationalPipelineSummary
 from app.application.document_extraction_models import ExtractedLine
+from app.application.document_type_classifier import FISCAL_INVOICE, DocumentTypeClassification
 from app.application.errors import (
     InvalidFileContentError,
     MaxPagesPerFileExceededError,
@@ -615,6 +616,56 @@ def test_rejected_document_is_forwarded_to_recovery_with_classification_metadata
     assert classification.confidence == 0.93
     assert call["document_processing_decision"] == "rejected"
     assert call["error_subcode"] == "unsupported_document_type"
+
+
+def test_high_confidence_nfe_is_rejected_before_document_extraction(monkeypatch) -> None:
+    staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
+    access_control_service = FakeAccessControlService()
+    extractor = FakeDocumentExtractor()
+    ai_dispatch = RecordingAIRecoveryDispatcher()
+    classification = DocumentTypeClassification(
+        document_type=FISCAL_INVOICE,
+        confidence=0.93,
+        evidence=["nfe_danfe", "nfe_access_key", "nfe_parties"],
+    )
+    monkeypatch.setattr(
+        "app.application.conversion.document_conversion_pipeline.classify_document_type",
+        lambda **_kwargs: classification,
+    )
+    pipeline = DocumentConversionPipeline(
+        report_service=FakeReportService(),
+        access_control_service=access_control_service,
+        processing_pipeline=FakeProcessingPipeline(),
+        analysis_repository=FakeAnalysisRepository(),
+        document_extractor=extractor,
+        statement_parser=FakeStatementParser(),
+        ai_recovery_dispatcher=ai_dispatch,
+    )
+
+    with pytest.raises(UnsupportedDocumentContentError):
+        pipeline.run(
+            document=UploadedDocument.from_staged_upload(
+                filename="nfe.pdf",
+                staged_upload=UploadedDocumentStage(
+                    path=staged_path,
+                    size_bytes=staged_path.stat().st_size,
+                    sha256_hex="abc123",
+                ),
+            ),
+            anonymous_fingerprint=None,
+            user_token="user-token",
+            authorization=None,
+            access_cookie_token=None,
+            scanned_likely=False,
+            estimated_pages_count=1,
+        )
+
+    assert extractor.calls == []
+    assert access_control_service.consumed_units == []
+    recorded = access_control_service.recorded_user_conversions[-1]
+    assert recorded["document_type"] == FISCAL_INVOICE
+    assert recorded["document_processing_decision"] == "rejected"
+    assert ai_dispatch.failure_calls[0]["document_classification"] == classification
 
 
 def test_ai_recovery_dispatch_failure_does_not_fail_conversion(caplog) -> None:
