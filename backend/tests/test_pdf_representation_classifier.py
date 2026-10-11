@@ -9,6 +9,7 @@ from pypdf.generic import (
     NumberObject,
 )
 
+import app.application.pdf_representation_classifier as pdf_representation_classifier
 from app.application.pdf_representation_classifier import (
     CLASSIFIER_VERSION,
     classify_pdf_representation,
@@ -111,6 +112,18 @@ def test_classifies_microsoft_print_pdf_with_dense_paths_as_vector_outlines() ->
         "full_page_raster_absent",
         "producer_microsoft_print_to_pdf",
     )
+
+
+def test_skips_expensive_text_extraction_when_pdf_has_no_font_resources(monkeypatch) -> None:
+    monkeypatch.setattr(
+        pdf_representation_classifier,
+        "_count_extractable_characters",
+        lambda _reader: (_ for _ in ()).throw(AssertionError("text extraction must be skipped")),
+    )
+
+    result = classify_pdf_representation(_vector_outline_pdf())
+
+    assert result.representation == "vector_outlines"
 
 
 def test_classifies_full_page_image_as_raster_even_when_pdf_was_virtually_printed() -> None:

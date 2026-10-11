@@ -38,9 +38,9 @@ def classify_pdf_representation(raw_bytes: bytes) -> PdfRepresentationClassifica
         reader = PdfReader(BytesIO(raw_bytes))
         producer_marker = _virtual_printer_producer_marker(reader)
         creation_method = "virtual_print" if producer_marker else "unknown"
-        extracted_chars = _count_extractable_characters(reader)
         sampled_pages = _sample_pages(reader)
         has_fonts = _has_font_resources(reader)
+        extracted_chars = _count_extractable_characters(reader) if has_fonts else 0
         dense_vector_paths = _has_dense_vector_paths(sampled_pages, reader)
         full_page_raster = _has_full_page_raster_image(sampled_pages)
     except Exception:
