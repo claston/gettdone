@@ -1,7 +1,7 @@
 import pytest
 
 from app.application import pdf_parser as pdf_parser_module
-from app.application.errors import InvalidFileContentError
+from app.application.errors import CrossPageTransactionSplitError, InvalidFileContentError
 from app.application.normalization.text import normalize_upper_text
 from app.application.pdf_parser import parse_pdf_transactions
 from tests.fixtures.pdf_golden_samples import (
@@ -34,6 +34,9 @@ def test_pdf_golden_minimal_catalog_matches_expectations_keys() -> None:
                 assert any(char.isdigit() for char in page_text), scenario_name
                 assert not any(token in page_text for token in _MOJIBAKE_TOKENS), scenario_name
     for scenario_name, expected in PDF_GOLDEN_MINIMAL_EXPECTATIONS.items():
+        if expected.get("expected_error"):
+            assert expected["expected_error"] == "cross_page_transaction_split", scenario_name
+            continue
         first_transaction = expected["first_transaction"]
         last_transaction = expected["last_transaction"]
         assert first_transaction["date"], scenario_name
@@ -60,6 +63,15 @@ def test_pdf_golden_minimal_catalog_matches_expectations_keys() -> None:
 def test_pdf_parser_golden_minimal_dataset_stability(monkeypatch, scenario_name: str) -> None:
     scenario = PDF_GOLDEN_MINIMAL_SCENARIOS[scenario_name]
     expected = PDF_GOLDEN_MINIMAL_EXPECTATIONS[scenario_name]
+    if expected.get("expected_error") == "cross_page_transaction_split":
+        with pytest.raises(CrossPageTransactionSplitError):
+            _run_pdf_parser_scenario(
+                monkeypatch=monkeypatch,
+                sample_text=scenario.get("sample_text"),
+                sample_pages=scenario.get("sample_pages"),
+                layout_override=_build_layout_override(layout_name=scenario["layout_name"]),
+            )
+        return
     result = _run_pdf_parser_scenario(
         monkeypatch=monkeypatch,
         sample_text=scenario.get("sample_text"),

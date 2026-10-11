@@ -6,6 +6,7 @@ from app.application import (
     AccessControlService,
     AnalysisAccessDeniedError,
     AnalysisNotFoundError,
+    CrossPageTransactionSplitError,
     FileTooLargeError,
     InvalidFileContentError,
     InvalidUserTokenError,
@@ -144,6 +145,14 @@ def _raise_http_convert_error(exc: Exception, *, identity, access_control_servic
             detail={
                 "code": "unsupported_document_type",
                 "document_type": exc.document_type,
+                "message": str(exc),
+            },
+        )
+    if isinstance(exc, CrossPageTransactionSplitError):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "cross_page_transaction_split",
                 "message": str(exc),
             },
         )

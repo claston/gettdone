@@ -4,7 +4,9 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Callable
 
+from app.application.cross_page_transaction_detection import detect_cross_page_transaction_split
 from app.application.errors import (
+    CrossPageTransactionSplitError,
     InvalidFileContentError,
     MaxPagesPerFileExceededError,
     UnsupportedDocumentContentError,
@@ -250,13 +252,18 @@ def parse_pdf_transactions(
             page_texts, context=LayoutSpecificParseContext(reference_month_year=reference_month_year)
         )
     except InvalidFileContentError as native_parse_error:
-        if isinstance(native_parse_error, UnsupportedDocumentContentError):
+        if isinstance(native_parse_error, (CrossPageTransactionSplitError, UnsupportedDocumentContentError)):
+            skip_reason = (
+                "cross_page_transaction_split"
+                if isinstance(native_parse_error, CrossPageTransactionSplitError)
+                else "unsupported_document_type"
+            )
             raise _attach_parse_observability(
                 native_parse_error,
                 textract_attempted=textract_attempted,
                 native_text_detected=native_text_detected,
                 ocr_retry_skipped=1,
-                ocr_retry_skip_reason="unsupported_document_type",
+                ocr_retry_skip_reason=skip_reason,
             )
         if not using_native_text:
             raise _attach_parse_observability(
@@ -574,6 +581,8 @@ def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
             )
     try:
         return _parse_pdf_transactions_from_page_texts(page_texts)
+    except CrossPageTransactionSplitError:
+        raise
     except InvalidFileContentError:
         adapted = adapt_textract_extraction_to_transactions(extraction)
         inferred_layout = infer_pdf_layout(adapted.extracted_text)
@@ -617,6 +626,13 @@ def _parse_pdf_transactions_from_page_texts(
         )
     layout = infer_pdf_layout(joined_text)
     layout_profile = get_layout_profile(layout.layout_name)
+    cross_page_split = detect_cross_page_transaction_split(page_texts, layout_profile=layout_profile)
+    if cross_page_split is not None:
+        raise CrossPageTransactionSplitError(
+            split_kind=cross_page_split.split_kind,
+            description_page=cross_page_split.description_page,
+            amount_page=cross_page_split.amount_page,
+        )
     lines = _flatten_statement_lines(page_texts, preserve_layout_spacing=preserve_layout_spacing)
     lines, invalid_date_candidates_skipped = _filter_invalid_leading_date_candidate_lines(lines)
     flattened_line_count = len(lines)

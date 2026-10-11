@@ -6,6 +6,7 @@ import re
 from app.api.conversion.conversion_error_mapper import _is_likely_corrupted_pdf_detail
 from app.application import (
     AccessControlService,
+    CrossPageTransactionSplitError,
     FileTooLargeError,
     InvalidFileContentError,
     InvalidUserTokenError,
@@ -36,6 +37,8 @@ def _resolve_failed_conversion_code(exc: Exception) -> str:
         return "unsupported_type"
     if isinstance(exc, UnsupportedDocumentContentError):
         return "unsupported_document_type"
+    if isinstance(exc, CrossPageTransactionSplitError):
+        return "cross_page_transaction_split"
     if isinstance(exc, InvalidFileContentError):
         detail = str(exc).lower()
         if "password" in detail or "senha" in detail:
@@ -269,6 +272,8 @@ def _resolve_error_observability(exc: Exception) -> tuple[str | None, str | None
         return "upload_validation", "unsupported_file_type", exception_class
     if isinstance(exc, UnsupportedDocumentContentError):
         return "parse", "unsupported_document_type", exception_class
+    if isinstance(exc, CrossPageTransactionSplitError):
+        return "parse", "cross_page_transaction_split", exception_class
     if isinstance(exc, InvalidFileContentError):
         detail = str(exc).lower()
         if "password" in detail or "senha" in detail:
@@ -351,6 +356,10 @@ def _build_failure_diagnostics(exc: Exception) -> dict[str, str | int | bool | l
     }
     if isinstance(exc, UnsupportedDocumentContentError):
         diagnostics["unsupported_document_type"] = exc.document_type
+    if isinstance(exc, CrossPageTransactionSplitError):
+        diagnostics["cross_page_split_kind"] = exc.split_kind
+        diagnostics["cross_page_description_page"] = exc.description_page
+        diagnostics["cross_page_amount_page"] = exc.amount_page
     if pdf_structure_read_ok is not None:
         diagnostics["pdf_structure_read_ok"] = bool(pdf_structure_read_ok)
     if native_text_extraction_ok is not None:

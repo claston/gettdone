@@ -33,6 +33,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
         "ConversionDocumentStore",
     ),
     "ConversionExecutionHooks": ("app.application.conversion.conversion_job", "ConversionExecutionHooks"),
+    "CrossPageTransactionSplitError": ("app.application.errors", "CrossPageTransactionSplitError"),
     "ConversionJob": ("app.application.conversion.conversion_job", "ConversionJob"),
     "ConversionJobCleanupService": (
         "app.application.conversion.conversion_job_cleanup_service",

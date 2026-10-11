@@ -512,27 +512,7 @@ PDF_GOLDEN_MINIMAL_EXPECTATIONS = {
         },
     },
     "quasi_real_inline_pending_page_break": {
-        "selected_parser": "inline",
-        "transactions_count": 1,
-        "inline_candidates_count": 1,
-        "balance_consistency_checked": 0,
-        "balance_consistency_failed": 0,
-        "first_transaction": {
-            "date": "2026-05-10",
-            "amount": 500.0,
-            "type": "inflow",
-            "description": "PIX RECEBIDO CLIENTE BETA",
-            "source_page": 2,
-            "source_line": 2,
-        },
-        "last_transaction": {
-            "date": "2026-05-10",
-            "amount": 500.0,
-            "type": "inflow",
-            "description": "PIX RECEBIDO CLIENTE BETA",
-            "source_page": 2,
-            "source_line": 2,
-        },
+        "expected_error": "cross_page_transaction_split",
     },
     "quasi_real_inline_pending_ocr_noise_multiline": {
         "selected_parser": "inline",

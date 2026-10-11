@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
 from app.application import (
+    CrossPageTransactionSplitError,
     FileTooLargeError,
     InvalidFileContentError,
     QuotaExceededError,
@@ -75,6 +76,12 @@ class _LegacyFakeAnalyzeService:
                     "Este arquivo é um relatório de faturamento, não um extrato bancário. "
                     "Envie o extrato da conta em PDF, CSV, XLSX ou OFX."
                 ),
+            )
+        if "cross_page" in filename:
+            raise CrossPageTransactionSplitError(
+                split_kind="tiled_columns",
+                description_page=1,
+                amount_page=2,
             )
         if on_ocr_progress is not None:
             on_ocr_progress(1, 2)
@@ -219,6 +226,12 @@ class FakeAnalyzeService:
                     "Este arquivo é um relatório de faturamento, não um extrato bancário. "
                     "Envie o extrato da conta em PDF, CSV, XLSX ou OFX."
                 ),
+            )
+        if "cross_page" in filename:
+            raise CrossPageTransactionSplitError(
+                split_kind="tiled_columns",
+                description_page=1,
+                amount_page=2,
             )
         if on_ocr_progress is not None:
             on_ocr_progress(1, 2)
@@ -393,6 +406,27 @@ def test_streaming_upload_rejects_billing_report_as_unsupported_document_type() 
     assert failed["message"] == (
         "Este arquivo é um relatório de faturamento, não um extrato bancário. "
         "Envie o extrato da conta em PDF, CSV, XLSX ou OFX."
+    )
+    assert failed["retryable"] is False
+
+
+def test_streaming_upload_explains_cross_page_transaction_split() -> None:
+    client = _build_client()
+    response = client.post(
+        "/api/conversions/upload",
+        headers={"accept": "text/event-stream"},
+        data={"anonymous_fingerprint": "fp-cross-page"},
+        files={"file": ("cross_page.pdf", _blank_pdf_bytes(), "application/pdf")},
+    )
+
+    payloads = _parse_sse_payloads(response.text)
+    failed = next(item for item in payloads if item.get("stage") == "failed")
+    assert failed["code"] == "cross_page_transaction_split"
+    assert failed["message"] == (
+        "Identificamos que algumas transações estão divididas entre páginas, com informações "
+        "como descrição e valor em páginas diferentes. Para evitar lançamentos incorretos, este "
+        "arquivo não foi convertido. Envie o extrato original baixado da instituição ou gere "
+        "novamente o PDF mantendo todas as colunas na mesma página."
     )
     assert failed["retryable"] is False
 
