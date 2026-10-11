@@ -22,6 +22,9 @@ def _record_user_conversion(
     duration_ms: int = 1000,
     pages_count: int = 2,
     ocr_used: bool = False,
+    pdf_representation: str | None = None,
+    pdf_creation_method: str | None = None,
+    pdf_representation_confidence: float | None = None,
     warning_count: int = 0,
     balance_failed: int = 0,
     error_code: str | None = None,
@@ -46,6 +49,10 @@ def _record_user_conversion(
         scanned_likely=ocr_used,
         ocr_used=ocr_used,
         ocr_pages_processed=pages_count if ocr_used else 0,
+        pdf_representation=pdf_representation,
+        pdf_creation_method=pdf_creation_method,
+        pdf_representation_confidence=pdf_representation_confidence,
+        pdf_classification_version="pdf_representation_v1" if pdf_representation else None,
         duration_ms=duration_ms,
         canonical_warning_transactions_count=warning_count,
         balance_consistency_failed=balance_failed,
@@ -77,6 +84,9 @@ def _record_anonymous_conversion(
     duration_ms: int = 1000,
     pages_count: int = 2,
     ocr_used: bool = False,
+    pdf_representation: str | None = None,
+    pdf_creation_method: str | None = None,
+    pdf_representation_confidence: float | None = None,
     warning_count: int = 0,
     balance_failed: int = 0,
     error_code: str | None = None,
@@ -102,6 +112,10 @@ def _record_anonymous_conversion(
         scanned_likely=ocr_used,
         ocr_used=ocr_used,
         ocr_pages_processed=pages_count if ocr_used else 0,
+        pdf_representation=pdf_representation,
+        pdf_creation_method=pdf_creation_method,
+        pdf_representation_confidence=pdf_representation_confidence,
+        pdf_classification_version="pdf_representation_v1" if pdf_representation else None,
         duration_ms=duration_ms,
         canonical_warning_transactions_count=warning_count,
         balance_consistency_failed=balance_failed,
@@ -159,6 +173,9 @@ def test_admin_dashboard_aggregates_quality_failures_and_returning_people(tmp_pa
         duration_ms=3000,
         pages_count=4,
         ocr_used=True,
+        pdf_representation="raster_images",
+        pdf_creation_method="scanner",
+        pdf_representation_confidence=0.98,
         warning_count=2,
         canonical_capture_status="stored",
         canonical_capture_reason=None,
@@ -300,6 +317,10 @@ def test_admin_dashboard_aggregates_quality_failures_and_returning_people(tmp_pa
             "upload_failed",
         ]
         assert payload["recent_attention"][1]["canonical_capture_reason"] == "ClientError"
+        assert payload["recent_attention"][0]["ocr_used"] is True
+        assert payload["recent_attention"][0]["pdf_representation"] == "raster_images"
+        assert payload["recent_attention"][0]["pdf_creation_method"] == "scanner"
+        assert payload["recent_attention"][0]["pdf_representation_confidence"] == 0.98
         assert "capture_id" not in str(payload)
         assert "s3_key" not in str(payload)
         assert "anonymous_fingerprint" not in str(payload)
@@ -580,6 +601,9 @@ def test_admin_dashboard_exports_all_attention_items_from_last_seven_days(tmp_pa
         transactions_count=0,
         pages_count=4,
         ocr_used=True,
+        pdf_representation="raster_images",
+        pdf_creation_method="scanner",
+        pdf_representation_confidence=0.96,
         error_code="parse_failed",
         error_stage="extraction",
     )
@@ -623,6 +647,9 @@ def test_admin_dashboard_exports_all_attention_items_from_last_seven_days(tmp_pa
         assert rows[-1]["identificador"] == "ace_failed_export"
         assert rows[-1]["paginas"] == "4"
         assert rows[-1]["usa_ocr"] == "sim"
+        assert rows[-1]["representacao_pdf"] == "raster_images"
+        assert rows[-1]["metodo_criacao_pdf"] == "scanner"
+        assert rows[-1]["confianca_representacao_pdf"] == "0.96"
         assert rows[-1]["codigo_erro"] == "parse_failed"
         assert rows[-1]["motivo_atencao"]
         assert "an_clean_not_exported" not in decoded

@@ -401,6 +401,10 @@ class AdminDashboardAttentionItem(BaseModel):
     status: str
     transactions_count: int
     duration_ms: int
+    ocr_used: bool = False
+    pdf_representation: str | None = None
+    pdf_creation_method: str | None = None
+    pdf_representation_confidence: float | None = None
     error_code: str | None = None
     error_stage: str | None = None
     layout_name: str | None = None
