@@ -48,6 +48,10 @@ def test_admin_dashboard_frontend_exposes_summary_filters_and_attention_sections
     assert "renderDashboardDocumentTypes" in javascript
     assert "payload.document_types" in javascript
     assert "canonical_capture_status" in javascript
+    assert '"Documento/OCR"' in javascript
+    assert "formatDocumentOrigin" in javascript
+    assert '"Escaneado · OCR"' in javascript
+    assert '"OCR utilizado"' in javascript
     assert "clean_high_confidence_rate" in javascript
     assert '"Páginas processadas"' in javascript
     assert '"PDF (texto)"' in javascript

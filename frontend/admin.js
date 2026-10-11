@@ -818,6 +818,35 @@
     return cell;
   }
 
+  function formatDocumentOrigin(item) {
+    const representation = String(item.pdf_representation || "").toLowerCase();
+    const creationMethod = String(item.pdf_creation_method || "").toLowerCase();
+    const usedOcr = Boolean(item.ocr_used);
+
+    if (creationMethod === "scanner") {
+      return usedOcr ? "Escaneado · OCR" : "Escaneado";
+    }
+    if (representation === "raster_images") {
+      return usedOcr ? "PDF em imagem · OCR" : "PDF em imagem";
+    }
+    if (usedOcr) {
+      return "OCR utilizado";
+    }
+    if (representation === "native_text") {
+      return "PDF com texto";
+    }
+    if (creationMethod === "virtual_print") {
+      return "Impresso virtualmente";
+    }
+    if (representation === "vector_outlines") {
+      return "PDF vetorial";
+    }
+    if (representation === "mixed") {
+      return "PDF misto";
+    }
+    return "Não identificado";
+  }
+
   function renderDashboardAttention(items) {
     if (!dashboardRecentAttentionNode) return;
     dashboardRecentAttentionNode.replaceChildren();
@@ -833,7 +862,7 @@
     table.className = "dashboard-table";
     const head = document.createElement("thead");
     const headRow = document.createElement("tr");
-    ["Data", "Pessoa", "Banco/modelo", "Resultado", "Motivo", "Coleta canônica", "Identificador"].forEach(function (label) {
+    ["Data", "Pessoa", "Banco/modelo", "Documento/OCR", "Resultado", "Motivo", "Coleta canônica", "Identificador"].forEach(function (label) {
       appendTableCell(headRow, label, "th");
     });
     head.appendChild(headRow);
@@ -845,6 +874,7 @@
       appendTableCell(row, formatDateTime(item.created_at));
       appendTableCell(row, String(item.identity_type || "") === "registered" ? "Cadastrada" : "Anônima");
       appendTableCell(row, item.model || "Não identificado");
+      appendTableCell(row, formatDocumentOrigin(item));
       appendTableCell(row, item.status || "Não informado");
       appendTableCell(row, item.issue_reason || "Revisão recomendada");
       appendTableCell(

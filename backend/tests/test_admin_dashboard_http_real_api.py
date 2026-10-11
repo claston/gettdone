@@ -50,6 +50,10 @@ def _run_http_server(tmp_path: Path):
         scanned_likely=False,
         ocr_used=False,
         ocr_pages_processed=0,
+        pdf_representation="native_text",
+        pdf_creation_method="direct_export",
+        pdf_representation_confidence=0.99,
+        pdf_classification_version="pdf_representation_v1",
         duration_ms=1400,
         document_type="bank_statement",
         document_type_confidence=0.98,
@@ -128,6 +132,10 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
     assert dashboard.json()["summary"]["pdf_pages_count"] == 3
     assert dashboard.json()["summary"]["ocr_conversions_count"] == 0
     assert dashboard.json()["summary"]["ocr_pages_count"] == 0
+    assert dashboard.json()["recent_attention"][0]["ocr_used"] is False
+    assert dashboard.json()["recent_attention"][0]["pdf_representation"] == "native_text"
+    assert dashboard.json()["recent_attention"][0]["pdf_creation_method"] == "direct_export"
+    assert dashboard.json()["recent_attention"][0]["pdf_representation_confidence"] == 0.99
     assert attention_export.status_code == 200
     assert attention_export.headers["content-type"].startswith("text/csv")
     assert "an_http_dashboard" in attention_export.content.decode("utf-8-sig")
