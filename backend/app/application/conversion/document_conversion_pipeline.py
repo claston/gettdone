@@ -50,6 +50,7 @@ from app.application.errors import (
     UnsupportedDocumentContentError,
     UnsupportedFileTypeError,
 )
+from app.application.pdf_representation_classifier import classify_pdf_representation
 from app.application.report_service import ReportService
 from app.application.repositories import AnalysisRepository
 
@@ -66,6 +67,7 @@ class DocumentConversionRuntime:
     ocr_started_logged: bool = False
     attempt_processing_id: str | None = None
     attempt_anonymous_event_id: str | None = None
+    pdf_representation_classification: object | None = None
 
     @classmethod
     def from_job(cls, job: ConversionJob) -> "DocumentConversionRuntime":
@@ -145,6 +147,7 @@ class DocumentConversionPipeline:
         statement_parser: StatementParser | None = None,
         canonical_layout_capture_service: CanonicalLayoutCaptureService | None = None,
         ai_recovery_dispatcher=None,
+        pdf_representation_classifier=classify_pdf_representation,
         legacy_conversion_runner=None,
     ) -> None:
         self.report_service = report_service
@@ -163,6 +166,7 @@ class DocumentConversionPipeline:
             enabled=False
         )
         self.ai_recovery_dispatcher = ai_recovery_dispatcher
+        self.pdf_representation_classifier = pdf_representation_classifier
         self.legacy_conversion_runner = legacy_conversion_runner
 
     def run(
@@ -366,6 +370,24 @@ class DocumentConversionPipeline:
             setattr(exc, "_max_upload_size_bytes", preflight_policy.max_upload_size_bytes)
             raise
         self.quota_validator_service.ensure_conversion_quota_available(identity=identity)
+        if request.document.file_type == "pdf":
+            try:
+                runtime.pdf_representation_classification = self.pdf_representation_classifier(
+                    request.document.raw_bytes
+                )
+                classification = runtime.pdf_representation_classification
+                logger.info(
+                    "pdf_representation_shadow_classified representation=%s creation_method=%s confidence=%.2f classifier_version=%s",
+                    getattr(classification, "representation", "unknown_no_text"),
+                    getattr(classification, "creation_method", "unknown"),
+                    float(getattr(classification, "confidence", 0.0) or 0.0),
+                    getattr(classification, "classifier_version", "unknown"),
+                )
+            except Exception as classification_exc:
+                logger.warning(
+                    "pdf_representation_shadow_classification_failed error_class=%s",
+                    type(classification_exc).__name__,
+                )
         self._record_processing_started(request=request, runtime=runtime, identity=identity)
         return PreparedDocumentConversion(
             job=request,
@@ -438,6 +460,7 @@ class DocumentConversionPipeline:
                 canonical_warning_transactions_count=0,
                 balance_consistency_failed=0,
                 document_processing_decision="processing",
+                **_pdf_representation_record_kwargs(runtime),
                 expires_at=None,
             )
         elif identity.identity_type == "anonymous":
@@ -459,6 +482,7 @@ class DocumentConversionPipeline:
                 canonical_warning_transactions_count=0,
                 balance_consistency_failed=0,
                 document_processing_decision="processing",
+                **_pdf_representation_record_kwargs(runtime),
                 error_code=None,
                 error_stage=None,
                 error_subcode=None,
@@ -525,6 +549,7 @@ class DocumentConversionPipeline:
             analysis=analysis,
             page_texts=page_texts,
             source_layout_lines=source_layout_lines,
+            pdf_representation_classification=runtime.pdf_representation_classification,
         )
         conversion_model_label = resolve_conversion_model_label(
             layout_inference_name=getattr(analysis, "layout_inference_name", None),
@@ -587,6 +612,7 @@ class DocumentConversionPipeline:
                 document_classification_evidence=list(
                     getattr(analysis, "document_type_evidence", None) or []
                 ),
+                **_pdf_representation_record_kwargs(runtime),
                 expires_at=(persisted_result.expires_at if persisted_result is not None else getattr(analysis, "expires_at", None)),
             )
         elif identity.identity_type == "anonymous":
@@ -632,6 +658,7 @@ class DocumentConversionPipeline:
                 document_classification_evidence=list(
                     getattr(analysis, "document_type_evidence", None) or []
                 ),
+                **_pdf_representation_record_kwargs(runtime),
             )
         if persisted_result is not None:
             payload = build_convert_response_payload(
@@ -734,6 +761,7 @@ class DocumentConversionPipeline:
             parse_observability=parse_observability,
             document_classification=document_classification,
             document_processing_decision=document_processing_decision,
+            pdf_representation_classification=runtime.pdf_representation_classification,
         )
         failed_event_id: str | None = None
         logger.info(
@@ -785,6 +813,7 @@ class DocumentConversionPipeline:
                 document_classification_evidence=list(
                     getattr(document_classification, "evidence", None) or []
                 ),
+                **_pdf_representation_record_kwargs(runtime),
             )
         elif identity is not None and identity.identity_type == "user":
             _safe_record_user_conversion(
@@ -826,6 +855,7 @@ class DocumentConversionPipeline:
                 document_classification_evidence=list(
                     getattr(document_classification, "evidence", None) or []
                 ),
+                **_pdf_representation_record_kwargs(runtime),
                 expires_at=None,
             )
         _log_conversion_failure(
@@ -877,6 +907,7 @@ class DocumentConversionPipeline:
         analysis,
         page_texts: tuple[str, ...] | None,
         source_layout_lines,
+        pdf_representation_classification=None,
     ) -> None:
         if self.ai_recovery_dispatcher is None:
             return
@@ -886,6 +917,7 @@ class DocumentConversionPipeline:
                 analysis=analysis,
                 page_texts=page_texts,
                 source_layout_lines=source_layout_lines,
+                pdf_representation_classification=pdf_representation_classification,
             )
         except Exception as exc:  # shadow analysis must never change the conversion result
             logger.warning("ai_recovery_dispatch_failed error_type=%s", exc.__class__.__name__)
@@ -909,6 +941,7 @@ class DocumentConversionPipeline:
         parse_observability: dict[str, object],
         document_classification=None,
         document_processing_decision: str | None = None,
+        pdf_representation_classification=None,
     ) -> None:
         if self.ai_recovery_dispatcher is None:
             return
@@ -923,6 +956,7 @@ class DocumentConversionPipeline:
                 parse_observability=parse_observability,
                 document_classification=document_classification,
                 document_processing_decision=document_processing_decision,
+                pdf_representation_classification=pdf_representation_classification,
             )
         except Exception as exc:  # recovery capture must never change the conversion failure
             logger.warning("ai_recovery_failure_dispatch_failed error_type=%s", exc.__class__.__name__)
@@ -933,6 +967,19 @@ class DocumentConversionPipeline:
             result.reason,
             result.idempotency_key or "",
         )
+
+
+def _pdf_representation_record_kwargs(runtime: DocumentConversionRuntime) -> dict[str, object]:
+    classification = runtime.pdf_representation_classification
+    if classification is None:
+        return {}
+    return {
+        "pdf_representation": getattr(classification, "representation", None),
+        "pdf_creation_method": getattr(classification, "creation_method", None),
+        "pdf_representation_confidence": getattr(classification, "confidence", None),
+        "pdf_classification_version": getattr(classification, "classifier_version", None),
+        "pdf_classification_evidence": list(getattr(classification, "evidence", None) or []),
+    }
 
 
 def _resolve_processed_pages(analysis) -> int | None:

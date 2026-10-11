@@ -97,6 +97,11 @@ class AccessControlCheckoutComponent:
         document_classification_version: str | None = None,
         document_processing_decision: str | None = None,
         document_classification_evidence: list[str] | None = None,
+        pdf_representation: str | None = None,
+        pdf_creation_method: str | None = None,
+        pdf_representation_confidence: float | None = None,
+        pdf_classification_version: str | None = None,
+        pdf_classification_evidence: list[str] | None = None,
         created_at: str | None = None,
         expires_at: str | None = None,
     ) -> None:
@@ -145,6 +150,11 @@ class AccessControlCheckoutComponent:
                     document_classification_version=document_classification_version,
                     document_processing_decision=document_processing_decision,
                     document_classification_evidence=document_classification_evidence,
+                    pdf_representation=pdf_representation,
+                    pdf_creation_method=pdf_creation_method,
+                    pdf_representation_confidence=pdf_representation_confidence,
+                    pdf_classification_version=pdf_classification_version,
+                    pdf_classification_evidence=pdf_classification_evidence,
                     created_at=created_at,
                     expires_at=expires_at,
                 )
@@ -203,6 +213,11 @@ class AccessControlCheckoutComponent:
         document_classification_version: str | None = None,
         document_processing_decision: str | None = None,
         document_classification_evidence: list[str] | None = None,
+        pdf_representation: str | None = None,
+        pdf_creation_method: str | None = None,
+        pdf_representation_confidence: float | None = None,
+        pdf_classification_version: str | None = None,
+        pdf_classification_evidence: list[str] | None = None,
     ) -> None:
         with self._service._lock:
             with self._service._connect() as conn:
@@ -249,6 +264,11 @@ class AccessControlCheckoutComponent:
                     document_classification_version=document_classification_version,
                     document_processing_decision=document_processing_decision,
                     document_classification_evidence=document_classification_evidence,
+                    pdf_representation=pdf_representation,
+                    pdf_creation_method=pdf_creation_method,
+                    pdf_representation_confidence=pdf_representation_confidence,
+                    pdf_classification_version=pdf_classification_version,
+                    pdf_classification_evidence=pdf_classification_evidence,
                 )
                 conn.commit()
 

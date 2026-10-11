@@ -26,6 +26,7 @@ from app.application.errors import (
 )
 from app.application.models import AnalysisData, NormalizedTransaction, TransactionRow
 from app.application.parsers.service import ParsedDocument
+from app.application.pdf_representation_classifier import PdfRepresentationClassification
 
 
 def test_conversion_type_describes_processing_not_assumed_download_format() -> None:
@@ -491,6 +492,13 @@ def test_non_clean_pdf_is_forwarded_to_best_effort_canonical_capture(caplog) -> 
     capture = RecordingCanonicalLayoutCapture()
     ai_dispatch = RecordingAIRecoveryDispatcher()
     caplog.set_level(logging.INFO, logger="app.application.conversion.document_conversion_pipeline")
+    pdf_classification = PdfRepresentationClassification(
+        representation="vector_outlines",
+        creation_method="virtual_print",
+        confidence=0.99,
+        evidence=("native_text_absent", "dense_vector_paths"),
+        requires_visual_extraction=True,
+    )
     pipeline = DocumentConversionPipeline(
         report_service=FakeReportService(),
         access_control_service=FakeAccessControlService(),
@@ -500,6 +508,7 @@ def test_non_clean_pdf_is_forwarded_to_best_effort_canonical_capture(caplog) -> 
         statement_parser=FakeStatementParser(),
         canonical_layout_capture_service=capture,
         ai_recovery_dispatcher=ai_dispatch,
+        pdf_representation_classifier=lambda _raw_bytes: pdf_classification,
     )
 
     response = pipeline.run(
@@ -537,12 +546,27 @@ def test_non_clean_pdf_is_forwarded_to_best_effort_canonical_capture(caplog) -> 
     assert len(ai_dispatch.calls) == 1
     assert ai_dispatch.calls[0]["document"].raw_bytes == staged_path.read_bytes()
     assert ai_dispatch.calls[0]["page_texts"] == ("2026-06-18 PIX RECEBIDO 150,00",)
+    assert ai_dispatch.calls[0]["pdf_representation_classification"] == pdf_classification
+    processing, persisted = pipeline.access_control_service.recorded_user_conversions
+    for event in (processing, persisted):
+        assert event["pdf_representation"] == "vector_outlines"
+        assert event["pdf_creation_method"] == "virtual_print"
+        assert event["pdf_representation_confidence"] == 0.99
+        assert event["pdf_classification_version"] == "pdf_representation_v1"
+        assert event["pdf_classification_evidence"] == ["native_text_absent", "dense_vector_paths"]
     assert "ai_recovery_dispatch_result status=queued reason=eligible" in caplog.text
 
 
 def test_failed_conversion_persists_document_type_classification() -> None:
     staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
     access_control_service = FakeAccessControlService()
+    pdf_classification = PdfRepresentationClassification(
+        representation="raster_images",
+        creation_method="scanner",
+        confidence=0.97,
+        evidence=("native_text_absent", "full_page_raster_present"),
+        requires_visual_extraction=True,
+    )
     pipeline = DocumentConversionPipeline(
         report_service=FakeReportService(),
         access_control_service=access_control_service,
@@ -550,6 +574,7 @@ def test_failed_conversion_persists_document_type_classification() -> None:
         analysis_repository=FakeAnalysisRepository(),
         document_extractor=FakeDocumentExtractor(),
         statement_parser=FakeStatementParser(),
+        pdf_representation_classifier=lambda _raw_bytes: pdf_classification,
     )
 
     with pytest.raises(InvalidFileContentError, match="Unsupported fiscal document"):
@@ -576,6 +601,10 @@ def test_failed_conversion_persists_document_type_classification() -> None:
     assert recorded["document_classification_version"] == "2026-10-10.1"
     assert recorded["document_processing_decision"] == "failed"
     assert recorded["document_classification_evidence"] == ["nfe_danfe", "nfe_access_key"]
+    assert recorded["pdf_representation"] == "raster_images"
+    assert recorded["pdf_creation_method"] == "scanner"
+    assert recorded["pdf_representation_confidence"] == 0.97
+    assert recorded["pdf_classification_version"] == "pdf_representation_v1"
 
 
 def test_rejected_document_is_forwarded_to_recovery_with_classification_metadata() -> None:

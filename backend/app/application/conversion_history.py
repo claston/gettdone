@@ -5,6 +5,7 @@ from typing import Callable
 
 from app.application.conversion_quality_history import prepare_quality_record, replace_quality_issues
 from app.application.document_classification_history import prepare_document_classification_record
+from app.application.pdf_representation_history import prepare_pdf_representation_record
 
 
 def record_user_conversion(
@@ -51,6 +52,11 @@ def record_user_conversion(
     document_classification_version: str | None = None,
     document_processing_decision: str | None = None,
     document_classification_evidence: list[str] | None = None,
+    pdf_representation: str | None = None,
+    pdf_creation_method: str | None = None,
+    pdf_representation_confidence: float | None = None,
+    pdf_classification_version: str | None = None,
+    pdf_classification_evidence: list[str] | None = None,
     created_at: str | None = None,
     expires_at: str | None = None,
 ) -> None:
@@ -81,6 +87,19 @@ def record_user_conversion(
         document_classification_version=document_classification_version,
         document_processing_decision=document_processing_decision,
         document_classification_evidence=document_classification_evidence,
+    )
+    (
+        normalized_pdf_representation,
+        normalized_pdf_creation_method,
+        normalized_pdf_representation_confidence,
+        normalized_pdf_classification_version,
+        pdf_classification_evidence_json,
+    ) = prepare_pdf_representation_record(
+        pdf_representation=pdf_representation,
+        pdf_creation_method=pdf_creation_method,
+        pdf_representation_confidence=pdf_representation_confidence,
+        pdf_classification_version=pdf_classification_version,
+        pdf_classification_evidence=pdf_classification_evidence,
     )
     execute(
         conn,
@@ -129,11 +148,17 @@ def record_user_conversion(
           document_type_confidence,
           document_classification_version,
           document_processing_decision,
-          document_classification_evidence_json
+          document_classification_evidence_json,
+          pdf_representation,
+          pdf_creation_method,
+          pdf_representation_confidence,
+          pdf_classification_version,
+          pdf_classification_evidence_json
         )
         VALUES (
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?
         )
         ON CONFLICT(analysis_id)
         DO UPDATE SET
@@ -179,7 +204,12 @@ def record_user_conversion(
           document_type_confidence=excluded.document_type_confidence,
           document_classification_version=excluded.document_classification_version,
           document_processing_decision=excluded.document_processing_decision,
-          document_classification_evidence_json=excluded.document_classification_evidence_json
+          document_classification_evidence_json=excluded.document_classification_evidence_json,
+          pdf_representation=excluded.pdf_representation,
+          pdf_creation_method=excluded.pdf_creation_method,
+          pdf_representation_confidence=excluded.pdf_representation_confidence,
+          pdf_classification_version=excluded.pdf_classification_version,
+          pdf_classification_evidence_json=excluded.pdf_classification_evidence_json
         """,
         (
             processing_id,
@@ -226,6 +256,11 @@ def record_user_conversion(
             normalized_document_classification_version,
             normalized_document_processing_decision,
             document_classification_evidence_json,
+            normalized_pdf_representation,
+            normalized_pdf_creation_method,
+            normalized_pdf_representation_confidence,
+            normalized_pdf_classification_version,
+            pdf_classification_evidence_json,
         ),
     )
     replace_quality_issues(

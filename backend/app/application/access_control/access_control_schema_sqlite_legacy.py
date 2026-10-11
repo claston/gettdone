@@ -127,6 +127,11 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
             document_classification_version TEXT,
             document_processing_decision TEXT,
             document_classification_evidence_json TEXT,
+            pdf_representation TEXT,
+            pdf_creation_method TEXT,
+            pdf_representation_confidence REAL,
+            pdf_classification_version TEXT,
+            pdf_classification_evidence_json TEXT,
             FOREIGN KEY(user_id) REFERENCES users(id)
         );
 
@@ -173,7 +178,12 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
             document_type_confidence REAL,
             document_classification_version TEXT,
             document_processing_decision TEXT,
-            document_classification_evidence_json TEXT
+            document_classification_evidence_json TEXT,
+            pdf_representation TEXT,
+            pdf_creation_method TEXT,
+            pdf_representation_confidence REAL,
+            pdf_classification_version TEXT,
+            pdf_classification_evidence_json TEXT
         );
 
         CREATE TABLE IF NOT EXISTS product_events (
@@ -500,6 +510,11 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
         ("document_classification_version", "TEXT"),
         ("document_processing_decision", "TEXT"),
         ("document_classification_evidence_json", "TEXT"),
+        ("pdf_representation", "TEXT"),
+        ("pdf_creation_method", "TEXT"),
+        ("pdf_representation_confidence", "REAL"),
+        ("pdf_classification_version", "TEXT"),
+        ("pdf_classification_evidence_json", "TEXT"),
     ):
         if column_name not in user_conversions_columns:
             conn.execute(f"ALTER TABLE user_conversions ADD COLUMN {column_name} {column_type}")
@@ -555,6 +570,11 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
         ("document_classification_version", "TEXT"),
         ("document_processing_decision", "TEXT"),
         ("document_classification_evidence_json", "TEXT"),
+        ("pdf_representation", "TEXT"),
+        ("pdf_creation_method", "TEXT"),
+        ("pdf_representation_confidence", "REAL"),
+        ("pdf_classification_version", "TEXT"),
+        ("pdf_classification_evidence_json", "TEXT"),
     ):
         if column_name not in anonymous_conversion_event_columns:
             conn.execute(f"ALTER TABLE anonymous_conversion_events ADD COLUMN {column_name} {column_type}")
