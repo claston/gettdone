@@ -29,7 +29,10 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { workspaceRepository } from "@/data/workspace-repository";
+import {
+  resolveWorkspaceRepository,
+  type WorkspaceDataMode,
+} from "@/data/workspace-repository";
 import {
   filterTransactions,
   formatCurrency,
@@ -50,6 +53,7 @@ interface WorkspaceScreenProps {
   batchId: string;
   initialConversionId?: string;
   repository?: WorkspaceRepository;
+  dataMode?: WorkspaceDataMode;
 }
 
 const statusContent: Record<
@@ -662,12 +666,16 @@ function TransactionGrid({
 export function WorkspaceScreen({
   batchId,
   initialConversionId,
-  repository = workspaceRepository,
+  repository,
+  dataMode = "api",
 }: WorkspaceScreenProps) {
+  const activeRepository = repository ?? resolveWorkspaceRepository(dataMode);
+  const reviewBasePath = dataMode === "demo" ? "/demo/review" : "/review";
   const controller = useWorkspaceController(
     batchId,
-    repository,
+    activeRepository,
     initialConversionId,
+    reviewBasePath,
   );
   const [navigatorCollapsed, setNavigatorCollapsed] = useState(false);
   const [focusMode, setFocusMode] = useState(true);
@@ -692,7 +700,11 @@ export function WorkspaceScreen({
       <main className="screen-state">
         <LoaderCircle className="spin" size={30} />
         <h1>Abrindo workspace PRO</h1>
-        <p>Preparando o lote e as conversões mockadas…</p>
+        <p>
+          {dataMode === "demo"
+            ? "Preparando os dados de demonstração…"
+            : "Carregando o lote e as conversões…"}
+        </p>
       </main>
     );
   }
@@ -730,6 +742,9 @@ export function WorkspaceScreen({
             <span className="eyebrow">{batch.clientName}</span>
             <h1>{batch.name}</h1>
           </div>
+          {dataMode === "demo" && (
+            <span className="demo-badge">Dados de demonstração</span>
+          )}
         </div>
         <div className="batch-progress">
           <div className="progress-copy">

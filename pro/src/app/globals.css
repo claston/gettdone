@@ -564,6 +564,19 @@ a {
   font-size: 16px;
   letter-spacing: -0.015em;
 }
+.demo-badge {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border: 1px solid #f1d08d;
+  border-radius: 10px;
+  background: var(--amber-100);
+  color: var(--amber-700);
+  font-size: 8px;
+  font-weight: 800;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
 .batch-progress {
   display: grid;
   grid-template-columns: auto minmax(80px, 1fr) auto;
