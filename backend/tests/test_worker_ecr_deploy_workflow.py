@@ -19,6 +19,7 @@ def test_worker_deploy_is_manual_confirmed_and_main_only():
     assert "inputs.deploy" in workflow
     assert "\n  push:" not in workflow
     assert "\n  workflow_run:" not in workflow
+    assert "environment: production-worker" in workflow
 
 
 def test_worker_deploy_uses_oidc_and_pinned_actions_without_long_lived_secrets():
@@ -27,6 +28,10 @@ def test_worker_deploy_uses_oidc_and_pinned_actions_without_long_lived_secrets()
     assert "id-token: write" in workflow
     assert "contents: read" in workflow
     assert "vars.AWS_WORKER_DEPLOY_ROLE_ARN" in workflow
+    assert "vars.AWS_ACCOUNT_ID" in workflow
+    assert "role-duration-seconds: 900" in workflow
+    assert "allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}" in workflow
+    assert "persist-credentials: false" in workflow
     assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" in workflow
     assert (
         "aws-actions/configure-aws-credentials@"
@@ -38,6 +43,23 @@ def test_worker_deploy_uses_oidc_and_pinned_actions_without_long_lived_secrets()
     assert "DATABASE_URL" not in workflow
     assert "ACCESS_CONTROL_TOKEN" not in workflow
     assert "@v" not in workflow
+
+
+def test_worker_deploy_uses_dedicated_image_only_execution_role():
+    workflow = _workflow()
+
+    assert "GettDoneWorkerImageCloudFormationExecutionRole" in workflow
+    assert "GettDoneCloudFormationExecutionRole" not in workflow
+
+
+def test_worker_deploy_blocks_vulnerable_ecr_images():
+    workflow = _workflow()
+
+    assert "ecr wait image-scan-complete" in workflow
+    assert "ecr describe-image-scan-findings" in workflow
+    assert "findingSeverityCounts" in workflow
+    assert "'.CRITICAL // 0'" in workflow
+    assert "'.HIGH // 0'" in workflow
 
 
 def test_worker_deploy_builds_immutable_lambda_image_and_uses_digest():
