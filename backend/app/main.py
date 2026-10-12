@@ -117,7 +117,7 @@ if frontend_dir.exists():
 async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
-    if re.fullmatch(r"/api/conversion-batches/[^/]+/jobs/[^/]+/document", request.url.path):
+    if re.fullmatch(r"/api/(?:pro/)?conversion-batches/[^/]+/jobs/[^/]+/document", request.url.path):
         allowed_frames = " ".join(get_cors_allow_origins())
         response.headers["Content-Security-Policy"] = f"frame-ancestors 'self' {allowed_frames}".strip()
     else:

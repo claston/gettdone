@@ -69,7 +69,7 @@ describe("HttpWorkspaceRepository", () => {
     await repository.getBatch("batch-real");
 
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/conversion-batches/batch-real",
+      "/api/pro/conversion-batches/batch-real",
       expect.objectContaining({ credentials: "include" }),
     );
   });
@@ -84,7 +84,7 @@ describe("HttpWorkspaceRepository", () => {
     const batch = await repository.getBatch("batch-real");
 
     expect(fetcher).toHaveBeenCalledWith(
-      "https://api.example.test/api/conversion-batches/batch-real",
+      "https://api.example.test/api/pro/conversion-batches/batch-real",
       expect.objectContaining({ credentials: "include" }),
     );
     expect(batch.quota).toEqual({ used: 3, limit: 50, unit: "FILES" });
@@ -103,7 +103,7 @@ describe("HttpWorkspaceRepository", () => {
       balance: 1150,
     });
     expect(batch.conversions[0].pdf?.url).toBe(
-      "https://api.example.test/api/conversion-batches/batch-real/jobs/job-ready/document",
+      "https://api.example.test/api/pro/conversion-batches/batch-real/jobs/job-ready/document",
     );
     expect(batch.conversions[0].downloadUrl).toBe(
       "https://api.example.test/convert-report/an_real?format=ofx",
@@ -114,6 +114,7 @@ describe("HttpWorkspaceRepository", () => {
   it("traduz alterações, inserções e remoções para a API de edições existente", async () => {
     const fetcher = vi
       .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: "ready" }))
       .mockResolvedValueOnce(jsonResponse(batchPayload))
       .mockResolvedValueOnce(
         jsonResponse({
@@ -138,7 +139,8 @@ describe("HttpWorkspaceRepository", () => {
       },
     ]);
 
-    const [, request] = fetcher.mock.calls[1] as [string, RequestInit];
+    const [url, request] = fetcher.mock.calls[2] as [string, RequestInit];
+    expect(url).toBe("https://api.example.test/api/pro/convert-edits/an_real");
     const payload = JSON.parse(String(request.body));
     expect(payload.edits).toEqual([
       expect.objectContaining({
@@ -170,6 +172,7 @@ describe("HttpWorkspaceRepository", () => {
     ];
     const fetcher = vi
       .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: "ready" }))
       .mockResolvedValueOnce(jsonResponse(payloadWithDeletedRow))
       .mockResolvedValueOnce(
         jsonResponse({
@@ -192,7 +195,7 @@ describe("HttpWorkspaceRepository", () => {
       second,
     ]);
 
-    const [, request] = fetcher.mock.calls[1] as [string, RequestInit];
+    const [, request] = fetcher.mock.calls[2] as [string, RequestInit];
     const payload = JSON.parse(String(request.body));
     expect(payload.edits[0]).toEqual(
       expect.objectContaining({
@@ -205,6 +208,7 @@ describe("HttpWorkspaceRepository", () => {
   it("persiste revisão e solicita retry no contexto do lote", async () => {
     const fetcher = vi
       .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: "ready" }))
       .mockResolvedValueOnce(jsonResponse(batchPayload))
       .mockResolvedValueOnce(
         jsonResponse({ job_id: "job-ready", reviewed_at: "now" }),
@@ -219,10 +223,10 @@ describe("HttpWorkspaceRepository", () => {
     await repository.markReviewed("job-ready");
     await repository.retryConversion("job-failed");
 
-    expect(fetcher.mock.calls[1][0]).toContain(
+    expect(fetcher.mock.calls[2][0]).toContain(
       "/batch-real/jobs/job-ready/review",
     );
-    expect(fetcher.mock.calls[2][0]).toContain(
+    expect(fetcher.mock.calls[3][0]).toContain(
       "/batch-real/jobs/job-failed/retry",
     );
   });

@@ -44,6 +44,7 @@ from app.routers.auth_session import (
     resolve_anonymous_fingerprint_with_cookie,
     resolve_user_token_with_session,
 )
+from app.routers.pro_security import require_pro_browser_request
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -152,6 +153,12 @@ def conversion_runtime(
 
 
 @router.post("/api/conversion-batches", response_model=ConversionBatchResponse, status_code=201)
+@router.post(
+    "/api/pro/conversion-batches",
+    response_model=ConversionBatchResponse,
+    status_code=201,
+    dependencies=[Depends(require_pro_browser_request)],
+)
 def create_conversion_batch(
     request: CreateConversionBatchRequest,
     idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=200),
@@ -220,6 +227,12 @@ def create_conversion_batch(
 
 
 @router.post("/api/conversion-batches/{batch_id}/submit", response_model=ConversionBatchResponse, status_code=202)
+@router.post(
+    "/api/pro/conversion-batches/{batch_id}/submit",
+    response_model=ConversionBatchResponse,
+    status_code=202,
+    dependencies=[Depends(require_pro_browser_request)],
+)
 def submit_conversion_batch(
     batch_id: str,
     request: ConversionBatchIdentityRequest,
@@ -279,6 +292,7 @@ def submit_conversion_batch(
 
 
 @router.get("/api/conversion-batches/{batch_id}", response_model=ConversionBatchResponse)
+@router.get("/api/pro/conversion-batches/{batch_id}", response_model=ConversionBatchResponse)
 def get_conversion_batch(
     batch_id: str,
     anonymous_fingerprint: str | None = Query(default=None, max_length=500),
@@ -317,6 +331,7 @@ def get_conversion_batch(
 
 
 @router.get("/api/conversion-batches/{batch_id}/jobs/{job_id}/document")
+@router.get("/api/pro/conversion-batches/{batch_id}/jobs/{job_id}/document")
 def get_conversion_job_document(
     batch_id: str,
     job_id: str,
@@ -378,6 +393,11 @@ def get_conversion_job_document(
     "/api/conversion-batches/{batch_id}/jobs/{job_id}/review",
     response_model=ConversionJobReviewResponse,
 )
+@router.post(
+    "/api/pro/conversion-batches/{batch_id}/jobs/{job_id}/review",
+    response_model=ConversionJobReviewResponse,
+    dependencies=[Depends(require_pro_browser_request)],
+)
 def review_conversion_job(
     batch_id: str,
     job_id: str,
@@ -419,6 +439,11 @@ def review_conversion_job(
 
 
 @router.post("/api/conversion-batches/{batch_id}/jobs/{job_id}/retry", response_model=ConversionBatchResponse)
+@router.post(
+    "/api/pro/conversion-batches/{batch_id}/jobs/{job_id}/retry",
+    response_model=ConversionBatchResponse,
+    dependencies=[Depends(require_pro_browser_request)],
+)
 def retry_conversion_job(
     batch_id: str,
     job_id: str,
@@ -462,6 +487,7 @@ def retry_conversion_job(
 
 
 @router.get("/api/conversion-batches/{batch_id}/export")
+@router.get("/api/pro/conversion-batches/{batch_id}/export")
 def export_conversion_batch(
     batch_id: str,
     anonymous_fingerprint: str | None = Query(default=None, max_length=500),
