@@ -22,6 +22,12 @@ O template de infraestrutura também deve remover essa variável do ambiente da
 Lambda. Publicar somente a nova imagem não apaga variáveis já configuradas na
 função.
 
+O estágio final da imagem atualiza os pacotes do Amazon Linux 2023 usando uma
+versão de repositório explícita. Essa atualização mantém correções do sistema
+operacional reproduzíveis e deve ocorrer antes da validação do contrato do
+worker. O deploy automatizado aguarda o scan do ECR e bloqueia a publicação se
+houver findings `CRITICAL` ou `HIGH`; esse bloqueio não deve ser ignorado.
+
 ## Build e validação local
 
 Execute na raiz do repositório:
