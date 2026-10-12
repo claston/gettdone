@@ -286,6 +286,39 @@ class PostgresConversionBatchRepository:
             terminal=True,
         )
 
+    def mark_reviewed(self, job_id: str, *, reviewed_at: str) -> ConversionJobRecord:
+        normalized_reviewed_at = (reviewed_at or "").strip()
+        if not normalized_reviewed_at:
+            raise ValueError("Reviewed conversion job requires a timestamp.")
+        now = self._normalize_datetime(self.clock())
+        with self._connection() as conn:
+            current_row = self._fetch_job(conn, job_id, for_update=True)
+            if current_row is None:
+                raise KeyError(f"Conversion job not found: {job_id}")
+            current = self._record_from_row(current_row)
+            if current.status != ConversionJobStatus.COMPLETED or current.result is None:
+                raise ValueError("Only completed conversion jobs can be reviewed.")
+            payload = dict(current.result.payload or {})
+            payload["reviewed_at"] = normalized_reviewed_at
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    UPDATE {self._jobs_table}
+                    SET result_payload = %s, updated_at = %s
+                    WHERE job_id = %s
+                    RETURNING *
+                    """,
+                    (self._jsonb(payload), now, job_id),
+                )
+                return self._record_from_row(cursor.fetchone())
+
+    def retry_failed(self, job_id: str) -> ConversionJobRecord:
+        return self._transition(
+            job_id,
+            ConversionJobStatus.RETRYING,
+            {ConversionJobStatus.FAILED},
+        )
+
     def mark_failed(self, job_id: str, *, code: str, message: str | None = None) -> ConversionJobRecord:
         return self._transition(
             job_id,

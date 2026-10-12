@@ -29,7 +29,7 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { mockWorkspaceRepository } from "@/data/mock-workspace-repository";
+import { workspaceRepository } from "@/data/workspace-repository";
 import {
   filterTransactions,
   formatCurrency,
@@ -397,54 +397,64 @@ function PdfViewer({ conversion }: { conversion: Conversion }) {
           role="document"
           aria-label="Visualizador do extrato original"
         >
-          <div className="mock-pdf-brand">
-            <strong>{conversion.bankName}</strong>
-            <span>Extrato de conta corrente</span>
-          </div>
-          <div className="mock-pdf-summary">
-            <div>
-              <small>Agência</small>
-              <strong>0192</strong>
-            </div>
-            <div>
-              <small>Conta</small>
-              <strong>45.810-7</strong>
-            </div>
-            <div>
-              <small>Período</small>
-              <strong>01/09/2026–30/09/2026</strong>
-            </div>
-          </div>
-          <h3>Movimentação da conta</h3>
-          <div className="mock-pdf-table">
-            <div className="mock-pdf-row head">
-              <span>Data</span>
-              <span>Histórico</span>
-              <span>Valor (R$)</span>
-              <span>Saldo (R$)</span>
-            </div>
-            {previewRows.map((row, index) => (
-              <div
-                key={`${page}-${index}`}
-                className={`mock-pdf-row ${index === 1 || index === 7 ? "highlight" : ""}`}
-              >
-                <span>{row[0]}</span>
-                <span>{row[1]}</span>
-                <span>{row[2]}</span>
-                <span>{row[3]}</span>
+          {conversion.pdf.url.startsWith("/mock-statement") ? (
+            <>
+              <div className="mock-pdf-brand">
+                <strong>{conversion.bankName}</strong>
+                <span>Extrato de conta corrente</span>
               </div>
-            ))}
-          </div>
-          <div className="mock-pdf-total">
-            <span>Saldo final do período</span>
-            <strong>R$ 38.548,73</strong>
-          </div>
-          <footer>
-            <span>Documento demonstrativo · OFX Simples PRO</span>
-            <span>
-              Página {page} de {conversion.pdf.pageCount}
-            </span>
-          </footer>
+              <div className="mock-pdf-summary">
+                <div>
+                  <small>Agência</small>
+                  <strong>0192</strong>
+                </div>
+                <div>
+                  <small>Conta</small>
+                  <strong>45.810-7</strong>
+                </div>
+                <div>
+                  <small>Período</small>
+                  <strong>01/09/2026–30/09/2026</strong>
+                </div>
+              </div>
+              <h3>Movimentação da conta</h3>
+              <div className="mock-pdf-table">
+                <div className="mock-pdf-row head">
+                  <span>Data</span>
+                  <span>Histórico</span>
+                  <span>Valor (R$)</span>
+                  <span>Saldo (R$)</span>
+                </div>
+                {previewRows.map((row, index) => (
+                  <div
+                    key={`${page}-${index}`}
+                    className={`mock-pdf-row ${index === 1 || index === 7 ? "highlight" : ""}`}
+                  >
+                    <span>{row[0]}</span>
+                    <span>{row[1]}</span>
+                    <span>{row[2]}</span>
+                    <span>{row[3]}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mock-pdf-total">
+                <span>Saldo final do período</span>
+                <strong>R$ 38.548,73</strong>
+              </div>
+              <footer>
+                <span>Documento demonstrativo · OFX Simples PRO</span>
+                <span>
+                  Página {page} de {conversion.pdf.pageCount}
+                </span>
+              </footer>
+            </>
+          ) : (
+            <iframe
+              className="real-pdf-frame"
+              src={`${conversion.pdf.url}#page=${page}&zoom=${zoom === "page-width" ? "page-width" : zoom}`}
+              title={`Extrato original ${conversion.fileName}`}
+            />
+          )}
         </div>
       </div>
     </section>
@@ -652,7 +662,7 @@ function TransactionGrid({
 export function WorkspaceScreen({
   batchId,
   initialConversionId,
-  repository = mockWorkspaceRepository,
+  repository = workspaceRepository,
 }: WorkspaceScreenProps) {
   const controller = useWorkspaceController(
     batchId,
@@ -745,6 +755,15 @@ export function WorkspaceScreen({
             error={controller.saveError}
             onRetry={controller.retrySave}
           />
+          {activeConversion?.downloadUrl && (
+            <a
+              className="secondary-button"
+              href={activeConversion.downloadUrl}
+              download
+            >
+              <Download size={15} /> Baixar OFX
+            </a>
+          )}
           <button
             className="icon-button"
             onClick={() => setFocusMode((value) => !value)}
@@ -864,7 +883,7 @@ export function WorkspaceScreen({
         <div className="toast" role="status">
           <CheckCircle2 size={18} />
           <div>
-            <strong>Exportação simulada concluída</strong>
+            <strong>Exportação concluída</strong>
             <span>
               {controller.exportResult.fileName} ·{" "}
               {controller.exportResult.conversionCount} conversões

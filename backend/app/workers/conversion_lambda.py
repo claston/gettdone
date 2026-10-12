@@ -82,7 +82,9 @@ class ConversionLambdaProcessor:
                 return
             raise RetryableConversionError("Conversion job is already being processed.")
 
-        should_delete_source = False
+        # Batch sources remain private until the job TTL so the authenticated
+        # PRO workspace can render or retry the original statement. S3 lifecycle
+        # and ConversionJobCleanupService remove them after retention expires.
         try:
             document = self.document_store.load(claimed.job.document)
             result = self.pipeline.run_job(
@@ -104,13 +106,11 @@ class ConversionLambdaProcessor:
                         s3_prefix=result_prefix,
                     ),
                 )
-                should_delete_source = True
                 self._log_outcome(claimed.job, trace_id=trace_id, outcome="completed", started_at=started_at)
                 return
 
             failure_code = result.rejection_reason or "conversion_failed"
             self.repository.mark_failed(job_id, code=failure_code, message=result.message)
-            should_delete_source = True
             self._log_outcome(
                 claimed.job,
                 trace_id=trace_id,
@@ -132,7 +132,6 @@ class ConversionLambdaProcessor:
                 raise RetryableConversionError(str(exc)) from exc
 
             self.repository.mark_failed(job_id, code=type(exc).__name__, message=str(exc))
-            should_delete_source = True
             self._log_outcome(
                 claimed.job,
                 trace_id=trace_id,
@@ -142,17 +141,6 @@ class ConversionLambdaProcessor:
             )
             if retryable:
                 raise RetryableConversionError(str(exc)) from exc
-        finally:
-            if should_delete_source:
-                try:
-                    self.document_store.delete(claimed.job.document)
-                except Exception as exc:  # cleanup is also covered by S3 lifecycle
-                    _log_json(
-                        "conversion_source_cleanup_failed",
-                        job_id=claimed.job.job_id,
-                        batch_id=claimed.job.batch_id,
-                        error_class=type(exc).__name__,
-                    )
 
     @staticmethod
     def _log_outcome(job, *, trace_id: str, outcome: str, started_at: float, error_code: str | None = None) -> None:

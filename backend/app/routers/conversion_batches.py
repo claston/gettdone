@@ -2,14 +2,20 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
+from io import BytesIO
+from pathlib import Path
+from urllib.parse import quote
 from uuid import uuid4
+from zipfile import ZIP_DEFLATED, ZipFile
 
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
-from app.application import AccessControlService, InvalidUserTokenError, QuotaExceededError
+from app.application import AccessControlService, InvalidUserTokenError, QuotaExceededError, ReportService
 from app.application.conversion.async_conversion_rollout import AsyncConversionRolloutPolicy
 from app.application.conversion.contracts.batches import ConversionBatchSnapshot
+from app.application.conversion.contracts.documents import ConversionDocumentStore
 from app.application.conversion.conversion_batch_service import (
     ConversionBatchFile,
     ConversionBatchService,
@@ -22,11 +28,15 @@ from app.application.conversion.conversion_runtime_config import (
     ConversionRuntimeConfig,
     ConversionUploadMode,
 )
+from app.application.errors import AnalysisNotFoundError
 from app.dependencies import (
     get_access_control_service,
+    get_async_conversion_report_service,
     get_async_conversion_rollout_policy,
     get_conversion_batch_service,
+    get_conversion_document_store,
     get_conversion_runtime_config,
+    get_report_service,
 )
 from app.routers.auth_session import (
     ANONYMOUS_IDENTITY_COOKIE_NAME,
@@ -73,11 +83,18 @@ class ConversionBatchJobResponse(BaseModel):
     error_code: str | None = None
     error_message: str | None = None
     result: dict[str, object] | None = None
+    reviewed_at: str | None = None
+
+
+class ConversionJobReviewResponse(BaseModel):
+    job_id: str
+    reviewed_at: str
 
 
 class ConversionBatchResponse(BaseModel):
     batch_id: str
     status: str
+    created_at: str | None = None
     created: bool | None = None
     uploads: list[ConversionUploadResponse] | None = None
     jobs: list[ConversionBatchJobResponse]
@@ -299,6 +316,265 @@ def get_conversion_batch(
     return _snapshot_response(snapshot)
 
 
+@router.get("/api/conversion-batches/{batch_id}/jobs/{job_id}/document")
+def get_conversion_job_document(
+    batch_id: str,
+    job_id: str,
+    anonymous_fingerprint: str | None = Query(default=None, max_length=500),
+    user_token: str | None = Query(default=None, max_length=500),
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    anonymous_cookie_token: str | None = Cookie(default=None, alias=ANONYMOUS_IDENTITY_COOKIE_NAME),
+    runtime: ConversionRuntimeConfig = Depends(get_conversion_runtime_config),
+    rollout_policy: AsyncConversionRolloutPolicy = Depends(get_async_conversion_rollout_policy),
+    service: ConversionBatchService | None = Depends(get_conversion_batch_service),
+    document_store: ConversionDocumentStore = Depends(get_conversion_document_store),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
+) -> Response:
+    identity = _resolve_identity(
+        access_control_service=access_control_service,
+        anonymous_cookie_token=anonymous_cookie_token,
+        anonymous_fingerprint=anonymous_fingerprint,
+        user_token=user_token,
+        authorization=authorization,
+        access_cookie_token=access_cookie_token,
+    )
+    snapshot = _owned_snapshot(
+        batch_id=batch_id,
+        identity=identity,
+        runtime=runtime,
+        rollout_policy=rollout_policy,
+        service=service,
+        access_control_service=access_control_service,
+    )
+    record = next((item for item in snapshot.jobs if item.job.job_id == job_id), None)
+    if (
+        record is None
+        or record.job.document.file_type != "pdf"
+        or record.expires_at <= datetime.now(timezone.utc)
+    ):
+        raise HTTPException(status_code=404, detail="Conversion document not found.")
+    try:
+        document = document_store.load(record.job.document)
+    except Exception as exc:
+        logger.warning(
+            "conversion_workspace_document_unavailable",
+            extra={"batch_id": batch_id, "job_id": job_id, "error_class": type(exc).__name__},
+        )
+        raise HTTPException(status_code=404, detail="Conversion document not found.") from exc
+    filename = Path(document.filename).name or "extrato.pdf"
+    return Response(
+        content=document.raw_bytes,
+        media_type="application/pdf",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f"inline; filename*=UTF-8''{quote(filename)}",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.post(
+    "/api/conversion-batches/{batch_id}/jobs/{job_id}/review",
+    response_model=ConversionJobReviewResponse,
+)
+def review_conversion_job(
+    batch_id: str,
+    job_id: str,
+    request: ConversionBatchIdentityRequest,
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    anonymous_cookie_token: str | None = Cookie(default=None, alias=ANONYMOUS_IDENTITY_COOKIE_NAME),
+    runtime: ConversionRuntimeConfig = Depends(get_conversion_runtime_config),
+    rollout_policy: AsyncConversionRolloutPolicy = Depends(get_async_conversion_rollout_policy),
+    service: ConversionBatchService | None = Depends(get_conversion_batch_service),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
+) -> ConversionJobReviewResponse:
+    identity = _resolve_identity(
+        access_control_service=access_control_service,
+        anonymous_cookie_token=anonymous_cookie_token,
+        anonymous_fingerprint=request.anonymous_fingerprint,
+        user_token=request.user_token,
+        authorization=authorization,
+        access_cookie_token=access_cookie_token,
+    )
+    snapshot = _owned_snapshot(
+        batch_id=batch_id,
+        identity=identity,
+        runtime=runtime,
+        rollout_policy=rollout_policy,
+        service=service,
+        access_control_service=access_control_service,
+    )
+    if not any(item.job.job_id == job_id for item in snapshot.jobs):
+        raise HTTPException(status_code=404, detail="Conversion job not found.")
+    if service is None:  # protected by _owned_snapshot
+        raise HTTPException(status_code=404, detail="Conversion batch not found.")
+    reviewed_at = datetime.now(timezone.utc).isoformat()
+    try:
+        service.repository.mark_reviewed(job_id, reviewed_at=reviewed_at)
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return ConversionJobReviewResponse(job_id=job_id, reviewed_at=reviewed_at)
+
+
+@router.post("/api/conversion-batches/{batch_id}/jobs/{job_id}/retry", response_model=ConversionBatchResponse)
+def retry_conversion_job(
+    batch_id: str,
+    job_id: str,
+    request: ConversionBatchIdentityRequest,
+    x_request_id: str | None = Header(default=None, alias="X-Request-ID"),
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    anonymous_cookie_token: str | None = Cookie(default=None, alias=ANONYMOUS_IDENTITY_COOKIE_NAME),
+    runtime: ConversionRuntimeConfig = Depends(get_conversion_runtime_config),
+    rollout_policy: AsyncConversionRolloutPolicy = Depends(get_async_conversion_rollout_policy),
+    service: ConversionBatchService | None = Depends(get_conversion_batch_service),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
+) -> ConversionBatchResponse:
+    identity = _resolve_identity(
+        access_control_service=access_control_service,
+        anonymous_cookie_token=anonymous_cookie_token,
+        anonymous_fingerprint=request.anonymous_fingerprint,
+        user_token=request.user_token,
+        authorization=authorization,
+        access_cookie_token=access_cookie_token,
+    )
+    active_service = _require_async_service(
+        runtime,
+        service,
+        rollout_policy=rollout_policy,
+        identity=identity,
+        access_control_service=access_control_service,
+    )
+    try:
+        snapshot = active_service.retry(
+            batch_id=batch_id,
+            job_id=job_id,
+            identity=identity,
+            trace_id=(x_request_id or "").strip()[:128] or f"trace-{uuid4().hex}",
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Conversion job not found.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _snapshot_response(snapshot)
+
+
+@router.get("/api/conversion-batches/{batch_id}/export")
+def export_conversion_batch(
+    batch_id: str,
+    anonymous_fingerprint: str | None = Query(default=None, max_length=500),
+    user_token: str | None = Query(default=None, max_length=500),
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    anonymous_cookie_token: str | None = Cookie(default=None, alias=ANONYMOUS_IDENTITY_COOKIE_NAME),
+    runtime: ConversionRuntimeConfig = Depends(get_conversion_runtime_config),
+    rollout_policy: AsyncConversionRolloutPolicy = Depends(get_async_conversion_rollout_policy),
+    service: ConversionBatchService | None = Depends(get_conversion_batch_service),
+    report_service: ReportService = Depends(get_report_service),
+    async_report_service: ReportService | None = Depends(get_async_conversion_report_service),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
+) -> Response:
+    identity = _resolve_identity(
+        access_control_service=access_control_service,
+        anonymous_cookie_token=anonymous_cookie_token,
+        anonymous_fingerprint=anonymous_fingerprint,
+        user_token=user_token,
+        authorization=authorization,
+        access_cookie_token=access_cookie_token,
+    )
+    snapshot = _owned_snapshot(
+        batch_id=batch_id,
+        identity=identity,
+        runtime=runtime,
+        rollout_policy=rollout_policy,
+        service=service,
+        access_control_service=access_control_service,
+    )
+    candidates = [item for item in (async_report_service, report_service) if item is not None]
+    buffer = BytesIO()
+    exported = 0
+    used_names: set[str] = set()
+    with ZipFile(buffer, mode="w", compression=ZIP_DEFLATED) as archive:
+        for record in snapshot.jobs:
+            if record.result is None:
+                continue
+            report_path = _find_convert_report(
+                record.result.analysis_id,
+                candidates=candidates,
+            )
+            if report_path is None:
+                continue
+            archive_name = _unique_export_name(
+                filename=record.job.document.filename,
+                analysis_id=record.result.analysis_id,
+                used_names=used_names,
+            )
+            archive.writestr(archive_name, report_path.read_bytes())
+            exported += 1
+    if exported == 0:
+        raise HTTPException(status_code=409, detail="No completed conversion is available for export.")
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/zip",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'attachment; filename="lote-{batch_id}.zip"',
+            "X-Conversion-Count": str(exported),
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+def _owned_snapshot(
+    *,
+    batch_id: str,
+    identity,
+    runtime: ConversionRuntimeConfig,
+    rollout_policy: AsyncConversionRolloutPolicy,
+    service: ConversionBatchService | None,
+    access_control_service: AccessControlService,
+) -> ConversionBatchSnapshot:
+    active_service = _require_async_service(
+        runtime,
+        service,
+        rollout_policy=rollout_policy,
+        identity=identity,
+        access_control_service=access_control_service,
+    )
+    snapshot = active_service.repository.get_for_owner(
+        batch_id,
+        identity_type=identity.identity_type,
+        identity_id=identity.identity_id,
+    )
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Conversion batch not found.")
+    return snapshot
+
+
+def _find_convert_report(analysis_id: str, *, candidates: list[ReportService]) -> Path | None:
+    for candidate in candidates:
+        try:
+            return candidate.get_convert_report_path(analysis_id, file_format="ofx")
+        except AnalysisNotFoundError:
+            continue
+    return None
+
+
+def _unique_export_name(*, filename: str, analysis_id: str, used_names: set[str]) -> str:
+    stem = Path(filename).stem.strip() or analysis_id
+    sanitized = "".join(character if character.isalnum() or character in {"-", "_"} else "-" for character in stem)
+    base = sanitized.strip("-") or analysis_id
+    candidate = f"{base}.ofx"
+    suffix = 2
+    while candidate.lower() in used_names:
+        candidate = f"{base}-{suffix}.ofx"
+        suffix += 1
+    used_names.add(candidate.lower())
+    return candidate
+
+
 def _resolve_identity(
     *,
     access_control_service: AccessControlService,
@@ -462,6 +738,7 @@ def _snapshot_response(snapshot: ConversionBatchSnapshot) -> ConversionBatchResp
     return ConversionBatchResponse(
         batch_id=snapshot.batch.batch_id,
         status=snapshot.batch.status.value,
+        created_at=snapshot.batch.created_at.isoformat(),
         jobs=[
             ConversionBatchJobResponse(
                 job_id=record.job.job_id,
@@ -471,6 +748,11 @@ def _snapshot_response(snapshot: ConversionBatchSnapshot) -> ConversionBatchResp
                 error_code=record.failure.code if record.failure else None,
                 error_message=record.failure.message if record.failure else None,
                 result=record.result.payload if record.result else None,
+                reviewed_at=(
+                    str(record.result.payload.get("reviewed_at") or "").strip() or None
+                    if record.result and record.result.payload
+                    else None
+                ),
             )
             for record in snapshot.jobs
         ],
