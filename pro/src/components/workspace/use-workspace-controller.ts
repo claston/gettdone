@@ -60,6 +60,7 @@ export function useWorkspaceController(
   batchId: string,
   repository: WorkspaceRepository,
   initialConversionId?: string,
+  reviewBasePath = "/review",
 ): WorkspaceController {
   const [batch, setBatch] = useState<Batch | null>(null);
   const [activeId, setActiveId] = useState(initialConversionId ?? "");
@@ -277,10 +278,14 @@ export function useWorkspaceController(
     (id: string) => {
       setActiveId(id);
       if (typeof window !== "undefined") {
-        window.history.replaceState(null, "", `/review/${batchId}/${id}`);
+        window.history.replaceState(
+          null,
+          "",
+          `${reviewBasePath}/${batchId}/${id}`,
+        );
       }
     },
-    [batchId],
+    [batchId, reviewBasePath],
   );
 
   const goToNextPending = useCallback(() => {

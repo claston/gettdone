@@ -5,6 +5,26 @@ import { createMockWorkspaceRepository } from "@/data/mock-workspace-repository"
 import { WorkspaceScreen } from "./workspace-screen";
 
 describe("WorkspaceScreen", () => {
+  it("identifica a demonstração e preserva sua rota ao trocar de conversão", async () => {
+    render(
+      <WorkspaceScreen
+        batchId="batch-setembro-2026"
+        dataMode="demo"
+        repository={createMockWorkspaceRepository({ latencyMs: 0 })}
+      />,
+    );
+
+    expect(
+      await screen.findByText("Dados de demonstração"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("option", { name: /Nubank/ }));
+
+    expect(window.location.pathname).toBe(
+      "/demo/review/batch-setembro-2026/conv-nubank",
+    );
+  });
+
   it("integra navegador, PDF e lançamentos usando somente o repository mock", async () => {
     render(
       <WorkspaceScreen

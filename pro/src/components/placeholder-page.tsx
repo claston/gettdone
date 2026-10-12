@@ -29,7 +29,10 @@ export function PlaceholderPage({
           Esta rota faz parte do shell navegável. Nesta fase, o foco está no
           workspace mockado de revisão.
         </p>
-        <Link href="/review/batch-setembro-2026" className="primary-button">
+        <Link
+          href="/demo/review/batch-setembro-2026"
+          className="primary-button"
+        >
           Abrir workspace de demonstração <ArrowRight size={16} />
         </Link>
       </section>
@@ -79,7 +82,10 @@ export function DashboardPage() {
           </span>
           <small>1 de 8 revisados</small>
         </div>
-        <Link href="/review/batch-setembro-2026" className="primary-button">
+        <Link
+          href="/demo/review/batch-setembro-2026"
+          className="primary-button"
+        >
           <FileStack size={16} /> Continuar revisão <ArrowRight size={16} />
         </Link>
       </section>

@@ -10,7 +10,7 @@ npm install
 npm run dev
 ```
 
-Abra `http://localhost:3000/review/batch-setembro-2026` para acessar o vertical slice completo.
+Abra `http://localhost:3000/demo/review/batch-setembro-2026` para acessar o vertical slice completo com dados de demonstração, sem depender do backend.
 
 ## Scripts
 
@@ -29,14 +29,18 @@ Abra `http://localhost:3000/review/batch-setembro-2026` para acessar o vertical 
 - `/periods`
 - `/reconciliation`
 - `/account`
+- `/demo/review/[batchId]`
+- `/demo/review/[batchId]/[conversionId]`
 - `/review/[batchId]`
 - `/review/[batchId]/[conversionId]`
 
 ## Arquitetura de dados
 
-A UI consome somente a interface `WorkspaceRepository`, definida em `src/domain/workspace.ts`. Quando `NEXT_PUBLIC_API_URL` está configurada, `src/data/http-workspace-repository.ts` adapta os contratos reais de lote, edição, revisão, retry, PDF privado e exportação ZIP sem expor o formato bruto do backend aos componentes.
+A UI consome somente a interface `WorkspaceRepository`, definida em `src/domain/workspace.ts`. As rotas `/demo/review/*` sempre usam `src/data/mock-workspace-repository.ts`, mesmo quando a API está configurada. Assim, a demonstração continua disponível no mesmo build caso o backend esteja indisponível.
 
-Sem a variável, o app usa `src/data/mock-workspace-repository.ts` para a demonstração isolada. As fixtures cobrem conversões prontas, com suspeitas, revisadas, processando e com falha; o extrato demonstrativo é servido localmente em `/mock-statement`.
+As rotas `/review/*` usam o repository configurado. Quando `NEXT_PUBLIC_API_URL` está presente, `src/data/http-workspace-repository.ts` adapta os contratos reais de lote, edição, revisão, retry, PDF privado e exportação ZIP sem expor o formato bruto do backend aos componentes. Sem a variável, essas rotas mantêm o fallback mock por compatibilidade com o desenvolvimento local.
+
+As fixtures de demonstração cobrem conversões prontas, com suspeitas, revisadas, processando e com falha; o extrato demonstrativo é servido localmente em `/mock-statement`. A interface identifica esse modo com o selo `Dados de demonstração`.
 
 ## Configuração
 
@@ -52,16 +56,18 @@ O app deve ser publicado como **Web Service Node**, porque as rotas de revisão 
 - health check `/dashboard`;
 - deploy automático somente depois que os checks da branch passarem.
 
-Para uma primeira revisão somente das telas, não configure `NEXT_PUBLIC_API_URL` nem `BACKEND_API_URL`; o repository mock continuará ativo.
+Para revisar somente as telas, use `/demo/review/batch-setembro-2026`. Essa rota não chama as APIs de lote, autenticação, edição ou relatório e funciona com ou sem variáveis de backend.
 
 Para conectar o backend real no Render, configure as duas variáveis no serviço e faça um novo build:
 
 ```text
 NEXT_PUBLIC_API_URL=/
-BACKEND_API_URL=https://URL-DO-BACKEND.onrender.com
+BACKEND_API_URL=https://www.ofxsimples.com.br
 ```
 
-`NEXT_PUBLIC_API_URL=/` faz o navegador usar o mesmo domínio do PRO. O Next.js encaminha apenas `/api/conversion-batches/*`, `/auth/*`, `/convert-edits/*` e `/convert-report/*` ao backend, evitando cookies cross-site e sem expor `BACKEND_API_URL` ao bundle do navegador. Sessões usadas pelo PRO devem ser iniciadas por `/auth/*` nesse mesmo domínio para que os cookies pertençam ao preview.
+Neste estágio, `BACKEND_API_URL` aponta para o backend FastAPI já existente do OFX Simples Free em `https://www.ofxsimples.com.br`; ele não é outro serviço Render. `NEXT_PUBLIC_API_URL=/` faz o navegador usar o mesmo domínio do PRO. O Next.js encaminha apenas `/api/conversion-batches/*`, `/auth/*`, `/convert-edits/*` e `/convert-report/*` ao backend, evitando cookies cross-site e sem expor `BACKEND_API_URL` ao bundle do navegador. Sessões usadas pelo PRO devem ser iniciadas por `/auth/*` nesse mesmo domínio para que os cookies pertençam ao preview.
+
+Depois de configurar ou alterar `NEXT_PUBLIC_API_URL`, faça um novo build do serviço. Essa variável é incorporada ao bundle do navegador durante o build; um redeploy sem rebuild não aplica a mudança.
 
 No backend, mantenha `CORS_ALLOW_ORIGINS` sem wildcard e inclua a origem exata do preview caso também queira permitir acesso direto à API:
 
