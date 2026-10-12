@@ -526,6 +526,8 @@ class PlanCatalogItem(BaseModel):
     max_upload_size_bytes: int
     max_pages_per_file: int
     max_pages_per_file_ocr: int
+    batch_conversion_enabled: bool
+    batch_max_files: int
 
 
 class PlanCatalogResponse(BaseModel):

@@ -17,3 +17,5 @@ class IdentityContext:
     max_pages_per_file_ocr: int | None = None
     plan_code: str | None = None
     plan_name: str | None = None
+    batch_conversion_enabled: bool = False
+    batch_max_files: int = 1

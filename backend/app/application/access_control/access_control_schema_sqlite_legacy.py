@@ -267,6 +267,8 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
             max_upload_size_bytes INTEGER NOT NULL,
             max_pages_per_file INTEGER NOT NULL,
             max_pages_per_file_ocr INTEGER NOT NULL DEFAULT 6,
+            batch_conversion_enabled INTEGER NOT NULL DEFAULT 0,
+            batch_max_files INTEGER NOT NULL DEFAULT 1,
             is_public INTEGER NOT NULL DEFAULT 1,
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL
@@ -584,6 +586,15 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
     }
     if "max_pages_per_file_ocr" not in plan_versions_columns:
         conn.execute("ALTER TABLE plan_versions ADD COLUMN max_pages_per_file_ocr INTEGER NOT NULL DEFAULT 6")
+    batch_entitlements_added = False
+    if "batch_conversion_enabled" not in plan_versions_columns:
+        conn.execute("ALTER TABLE plan_versions ADD COLUMN batch_conversion_enabled INTEGER NOT NULL DEFAULT 0")
+        batch_entitlements_added = True
+    if "batch_max_files" not in plan_versions_columns:
+        conn.execute("ALTER TABLE plan_versions ADD COLUMN batch_max_files INTEGER NOT NULL DEFAULT 1")
+        batch_entitlements_added = True
+    if batch_entitlements_added:
+        conn.execute("UPDATE plan_versions SET batch_conversion_enabled = 1, batch_max_files = 12")
     checkout_intents_columns = {
         str(row["name"])
         for row in conn.execute("PRAGMA table_info(checkout_intents)").fetchall()
