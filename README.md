@@ -270,12 +270,15 @@ Passo a passo no Render:
 ## Deploy do worker AWS
 
 O workflow `CD | Deploy Worker Image (ECR)` é manual e aceita deploy somente da
-branch `main`. Configure a variável de Actions `AWS_WORKER_DEPLOY_ROLE_ARN` com
-o output homônimo do bootstrap de infraestrutura. O workflow usa credenciais
-temporárias OIDC, constrói `Dockerfile.lambda` para `linux/amd64`, publica uma
-tag imutável por commit e atualiza somente `ConversionImageUri` na stack do
-worker. Nenhuma access key AWS, URL do banco ou token da aplicação é armazenado
-no GitHub.
+branch `main` e do ambiente protegido `production-worker`. Configure nesse
+ambiente as variáveis `AWS_ACCOUNT_ID` e `AWS_WORKER_DEPLOY_ROLE_ARN`; a segunda
+recebe o output homônimo do bootstrap privado de infraestrutura. O workflow usa
+credenciais OIDC de 15 minutos, valida a conta e a role exatas, constrói
+`Dockerfile.lambda` para `linux/amd64`, publica uma tag imutável por commit,
+bloqueia imagens com vulnerabilidades Critical/High e atualiza somente
+`ConversionImageUri` usando uma role de execução do CloudFormation exclusiva
+para o código da Lambda. Nenhuma access key AWS, URL do banco ou token da
+aplicação é armazenado no GitHub.
 
 A imagem do worker possui uma fronteira própria: compartilha o core de
 conversão, mas exclui frontend, rotas, administração, autenticação, checkout e

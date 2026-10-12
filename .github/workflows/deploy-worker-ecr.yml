@@ -25,22 +25,35 @@ env:
 jobs:
   deploy-worker:
     if: ${{ github.ref == 'refs/heads/main' && inputs.deploy }}
+    environment: production-worker
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
       - name: Validate deployment configuration
         env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
           AWS_WORKER_DEPLOY_ROLE_ARN: ${{ vars.AWS_WORKER_DEPLOY_ROLE_ARN }}
         run: |
           set -euo pipefail
+          if ! [[ "${AWS_ACCOUNT_ID:-}" =~ ^[0-9]{12}$ ]]; then
+            echo "::error::Repository variable AWS_ACCOUNT_ID must contain exactly 12 digits."
+            exit 1
+          fi
           if [ -z "${AWS_WORKER_DEPLOY_ROLE_ARN:-}" ]; then
             echo "::error::Repository variable AWS_WORKER_DEPLOY_ROLE_ARN is not configured."
+            exit 1
+          fi
+          expected_role_arn="arn:aws:iam::${AWS_ACCOUNT_ID}:role/gettdone/GettDoneGitHubWorkerDeploy"
+          if [ "${AWS_WORKER_DEPLOY_ROLE_ARN}" != "${expected_role_arn}" ]; then
+            echo "::error::AWS_WORKER_DEPLOY_ROLE_ARN does not identify the expected deploy role."
             exit 1
           fi
 
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Configure temporary AWS credentials
         uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
@@ -48,6 +61,8 @@ jobs:
           role-to-assume: ${{ vars.AWS_WORKER_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: gettdone-worker-${{ github.run_id }}
+          role-duration-seconds: 900
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
           mask-aws-account-id: true
 
       - name: Resolve ECR and CloudFormation targets
@@ -63,13 +78,22 @@ jobs:
             --stack-name "${FOUNDATION_STACK_NAME}" \
             --query "Stacks[0].Outputs[?OutputKey=='ConversionImageRepositoryUri'].OutputValue | [0]" \
             --output text)"
-          repository_name="${repository_uri#*/}"
-          registry="${repository_uri%%/*}"
+          repository_name="$(aws cloudformation describe-stacks \
+            --stack-name "${FOUNDATION_STACK_NAME}" \
+            --query "Stacks[0].Outputs[?OutputKey=='ConversionImageRepositoryName'].OutputValue | [0]" \
+            --output text)"
+          registry="${account_id}.dkr.ecr.${AWS_REGION}.amazonaws.com"
           image_tag="release-${GITHUB_SHA::12}"
-          execution_role_arn="arn:${partition}:iam::${account_id}:role/gettdone/GettDoneCloudFormationExecutionRole"
+          execution_role_arn="arn:${partition}:iam::${account_id}:role/gettdone/GettDoneWorkerImageCloudFormationExecutionRole"
 
-          if [ -z "${repository_uri}" ] || [ "${repository_uri}" = "None" ]; then
-            echo "::error::ConversionImageRepositoryUri was not found in the foundation stack."
+          if [ -z "${repository_uri}" ] || [ "${repository_uri}" = "None" ] || \
+             [ -z "${repository_name}" ] || [ "${repository_name}" = "None" ]; then
+            echo "::error::Conversion image repository outputs were not found in the foundation stack."
+            exit 1
+          fi
+          if [[ "${repository_name}" != "${FOUNDATION_STACK_NAME}-"* ]] || \
+             [ "${repository_uri}" != "${registry}/${repository_name}" ]; then
+            echo "::error::Foundation stack returned an unexpected ECR repository."
             exit 1
           fi
 
@@ -176,6 +200,37 @@ jobs:
             echo "image_uri=${image_uri}"
             echo "needs_update=${needs_update}"
           } >> "${GITHUB_OUTPUT}"
+
+      - name: Wait for image scan and block vulnerable images
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          REPOSITORY_NAME: ${{ steps.target.outputs.repository_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          aws ecr wait image-scan-complete \
+            --repository-name "${REPOSITORY_NAME}" \
+            --image-id "imageDigest=${IMAGE_DIGEST}"
+          severity_counts="$(aws ecr describe-image-scan-findings \
+            --repository-name "${REPOSITORY_NAME}" \
+            --image-id "imageDigest=${IMAGE_DIGEST}" \
+            --query 'imageScanFindings.findingSeverityCounts' \
+            --output json)"
+          critical="$(jq -r '.CRITICAL // 0' <<<"${severity_counts}")"
+          high="$(jq -r '.HIGH // 0' <<<"${severity_counts}")"
+
+          {
+            echo "## ECR vulnerability scan"
+            echo ""
+            echo "- Critical findings: ${critical}"
+            echo "- High findings: ${high}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          if [ "${critical}" -gt 0 ] || [ "${high}" -gt 0 ]; then
+            echo "::error::Worker image has ${critical} critical and ${high} high vulnerability findings."
+            exit 1
+          fi
 
       - name: Create and validate worker image change set
         id: change_set
