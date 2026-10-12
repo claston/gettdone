@@ -92,7 +92,7 @@ def _event(job_id: str = "job_worker", *, receive_count: int = 1, message_id: st
     }
 
 
-def test_lambda_processor_completes_job_persists_payload_and_deletes_source() -> None:
+def test_lambda_processor_completes_job_persists_payload_and_retains_source_until_ttl() -> None:
     repository, job = _queued_repository()
     store = FakeDocumentStore()
     pipeline = SuccessfulPipeline()
@@ -107,7 +107,7 @@ def test_lambda_processor_completes_job_persists_payload_and_deletes_source() ->
     assert record.result is not None
     assert record.result.analysis_id == "an_worker123"
     assert record.result.payload["analysis"]["transactions_total"] == 1
-    assert store.deleted == [job.document.storage_key]
+    assert store.deleted == []
 
     handle_sqs_event(_event(message_id="message-duplicate"), processor=processor, request_id="lambda-request-2")
     assert pipeline.calls == 1
@@ -137,7 +137,7 @@ def test_lambda_acknowledges_permanent_document_failure() -> None:
 
     assert response == {"batchItemFailures": []}
     assert repository.get(job.job_id).status == ConversionJobStatus.FAILED
-    assert store.deleted == [job.document.storage_key]
+    assert store.deleted == []
 
 
 def test_lambda_rejects_malformed_message_to_dlq() -> None:
@@ -172,7 +172,7 @@ def test_lambda_marks_exhausted_transient_failure_and_still_requests_redrive() -
 
     assert response == {"batchItemFailures": [{"itemIdentifier": "message-1"}]}
     assert repository.get(job.job_id).status == ConversionJobStatus.FAILED
-    assert store.deleted == [job.document.storage_key]
+    assert store.deleted == []
 
 
 def test_lambda_scheduled_event_dispatches_transactional_outbox(monkeypatch) -> None:

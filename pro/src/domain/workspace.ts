@@ -37,6 +37,7 @@ export interface Conversion {
   suspectedCount: number;
   editedCount: number;
   pdf: PdfDocument | null;
+  downloadUrl?: string;
   transactions: Transaction[];
 }
 

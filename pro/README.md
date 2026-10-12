@@ -32,12 +32,12 @@ Abra `http://localhost:3000/review/batch-setembro-2026` para acessar o vertical 
 - `/review/[batchId]`
 - `/review/[batchId]/[conversionId]`
 
-## Arquitetura do mock
+## Arquitetura de dados
 
-A UI consome somente a interface `WorkspaceRepository`, definida em `src/domain/workspace.ts`. O adapter atual (`src/data/mock-workspace-repository.ts`) mantém o estado em memória, simula latência, falha de persistência, retry, conclusão de revisão e exportação. Um futuro adapter HTTP poderá substituir o mock sem expor à UI o formato bruto do backend existente.
+A UI consome somente a interface `WorkspaceRepository`, definida em `src/domain/workspace.ts`. Quando `NEXT_PUBLIC_API_URL` está configurada, `src/data/http-workspace-repository.ts` adapta os contratos reais de lote, edição, revisão, retry, PDF privado e exportação ZIP sem expor o formato bruto do backend aos componentes.
 
-As fixtures cobrem conversões prontas, com suspeitas, revisadas, processando e com falha. O extrato demonstrativo é servido localmente em `/mock-statement`; a prévia determinística no workspace evita depender do plugin nativo de PDF durante a revisão visual.
+Sem a variável, o app usa `src/data/mock-workspace-repository.ts` para a demonstração isolada. As fixtures cobrem conversões prontas, com suspeitas, revisadas, processando e com falha; o extrato demonstrativo é servido localmente em `/mock-statement`.
 
 ## Configuração
 
-Copie `.env.example` para `.env.local` quando for necessário apontar para outro ambiente. `NEXT_PUBLIC_API_URL` está documentada agora, mas não é consumida pelo vertical slice mockado.
+Copie `.env.example` para `.env.local` e ajuste `NEXT_PUBLIC_API_URL` para apontar ao backend. A autenticação usa os cookies de sessão existentes e todas as requisições são enviadas com credenciais.

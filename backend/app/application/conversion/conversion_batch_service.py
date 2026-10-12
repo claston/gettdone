@@ -157,6 +157,26 @@ class ConversionBatchService:
             limit=limit,
         )
 
+    def retry(self, *, batch_id: str, job_id: str, identity: IdentityContext, trace_id: str) -> ConversionBatchSnapshot:
+        snapshot = self.repository.get_for_owner(
+            batch_id,
+            identity_type=identity.identity_type,
+            identity_id=identity.identity_id,
+        )
+        if snapshot is None or not any(record.job.job_id == job_id for record in snapshot.jobs):
+            raise KeyError(f"Conversion job not found: {job_id}")
+        self.repository.retry_failed(job_id)
+        self.repository.stage_for_queue(job_id, trace_id=trace_id)
+        self.dispatch_pending_outbox()
+        refreshed = self.repository.get_for_owner(
+            batch_id,
+            identity_type=identity.identity_type,
+            identity_id=identity.identity_id,
+        )
+        if refreshed is None:  # pragma: no cover
+            raise KeyError(f"Conversion batch not found: {batch_id}")
+        return refreshed
+
     @staticmethod
     def _validate_idempotent_files(snapshot: ConversionBatchSnapshot, files: list[ConversionBatchFile]) -> None:
         expected = [

@@ -145,6 +145,30 @@ class InMemoryConversionBatchRepository:
             result=result,
         )
 
+    def mark_reviewed(self, job_id: str, *, reviewed_at: str) -> ConversionJobRecord:
+        with self._lock:
+            current = self._jobs.get(job_id)
+            if current is None:
+                raise KeyError(f"Conversion job not found: {job_id}")
+            if current.status != ConversionJobStatus.COMPLETED or current.result is None:
+                raise ValueError("Only completed conversion jobs can be reviewed.")
+            payload = dict(current.result.payload or {})
+            payload["reviewed_at"] = reviewed_at
+            updated = replace(
+                current,
+                updated_at=datetime.now(timezone.utc),
+                result=replace(current.result, payload=payload),
+            )
+            self._jobs[job_id] = updated
+            return updated
+
+    def retry_failed(self, job_id: str) -> ConversionJobRecord:
+        return self._transition(
+            job_id,
+            ConversionJobStatus.RETRYING,
+            {ConversionJobStatus.FAILED},
+        )
+
     def mark_failed(self, job_id: str, *, code: str, message: str | None = None) -> ConversionJobRecord:
         return self._transition(
             job_id,

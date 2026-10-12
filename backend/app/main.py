@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -116,7 +117,11 @@ if frontend_dir.exists():
 async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
+    if re.fullmatch(r"/api/conversion-batches/[^/]+/jobs/[^/]+/document", request.url.path):
+        allowed_frames = " ".join(get_cors_allow_origins())
+        response.headers["Content-Security-Policy"] = f"frame-ancestors 'self' {allowed_frames}".strip()
+    else:
+        response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
     if is_production_env():
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"

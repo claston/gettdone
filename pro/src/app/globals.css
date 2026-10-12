@@ -947,6 +947,12 @@ button.save-indicator {
   color: #303946;
   transition: width 0.15s ease;
 }
+.real-pdf-frame {
+  width: 100%;
+  min-height: 690px;
+  border: 0;
+  background: #fff;
+}
 .mock-pdf-brand {
   display: flex;
   align-items: baseline;

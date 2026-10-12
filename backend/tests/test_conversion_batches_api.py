@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -7,14 +8,18 @@ from app import dependencies
 from app.application.access_control import IdentityContext, RegisteredUser
 from app.application.conversion.async_conversion_rollout import AsyncConversionRolloutPolicy
 from app.application.conversion.conversion_batch_repository import InMemoryConversionBatchRepository
-from app.application.conversion.conversion_batch_service import ConversionBatchService
+from app.application.conversion.conversion_batch_service import ConversionBatchFile, ConversionBatchService
 from app.application.conversion.conversion_document_store import ConversionDocumentReference
+from app.application.conversion.conversion_job_repository import ConversionJobResultReference
 from app.application.conversion.conversion_runtime_config import ConversionRuntimeConfig
 from app.application.conversion.s3_direct_upload_service import PreparedS3Upload
+from app.application.conversion.uploaded_document import ingest_uploaded_document
 from app.dependencies import (
     get_access_control_service,
+    get_async_conversion_report_service,
     get_async_conversion_rollout_policy,
     get_conversion_batch_service,
+    get_conversion_document_store,
     get_conversion_runtime_config,
 )
 from app.main import app
@@ -98,6 +103,25 @@ class FakeDirectUploadService:
         return None
 
 
+class FakeDocumentStore:
+    def load(self, reference):
+        return ingest_uploaded_document(
+            reference.filename,
+            b"%PDF-1.4\n% retained statement\n",
+        )
+
+
+class FakeBatchReportService:
+    def __init__(self, root_dir: Path) -> None:
+        self.root_dir = root_dir
+
+    def get_convert_report_path(self, analysis_id: str, file_format: str):
+        path = self.root_dir / f"{analysis_id}.{file_format}"
+        if not path.exists():
+            raise AssertionError(f"missing test report: {path}")
+        return path
+
+
 @dataclass
 class FakePublisher:
     calls: list[str]
@@ -120,6 +144,59 @@ def _request_payload(count: int = 2) -> dict:
             for index in range(1, count + 1)
         ],
     }
+
+
+def _completed_batch_service() -> tuple[ConversionBatchService, str, str]:
+    service = ConversionBatchService(
+        repository=InMemoryConversionBatchRepository(),
+        direct_upload_service=FakeDirectUploadService(),
+        queue_publisher=FakePublisher(calls=[]),
+    )
+    identity = FakeAccessControlService().resolve_identity(
+        anonymous_fingerprint="browser-fingerprint",
+        user_token=None,
+    )
+    prepared = service.create(
+        identity=identity,
+        files=[
+            ConversionBatchFile(
+                filename="extrato.pdf",
+                content_type="application/pdf",
+                size_bytes=1024,
+                sha256_hex="1" * 64,
+            )
+        ],
+        idempotency_key="workspace-test",
+    )
+    job_id = prepared.snapshot.jobs[0].job.job_id
+    service.repository.mark_uploaded(job_id)
+    service.repository.mark_queued(job_id)
+    service.repository.mark_running(job_id)
+    service.repository.mark_completed(
+        job_id,
+        result=ConversionJobResultReference(
+            analysis_id="an_workspace",
+            payload={
+                "processing_id": "an_workspace",
+                "quota_limit": 20,
+                "quota_remaining": 19,
+                "analysis": {
+                    "transactions_total": 1,
+                    "bank_name": "Banco Teste",
+                    "preview_transactions": [
+                        {
+                            "date": "2026-10-01",
+                            "description": "PIX TESTE",
+                            "amount": 25.0,
+                            "running_balance": 125.0,
+                            "warning_types": [],
+                        }
+                    ],
+                },
+            },
+        ),
+    )
+    return service, prepared.snapshot.batch.batch_id, job_id
 
 
 def test_async_batch_api_creates_submits_and_returns_owner_scoped_status() -> None:
@@ -408,3 +485,124 @@ def test_inline_shared_fallback_builds_without_sqs_configuration(monkeypatch: py
     assert service is not None
     with pytest.raises(RuntimeError, match="disabled by the active runtime fallback"):
         service.queue_publisher.publish(job_id="job_test", batch_id="batch_test", trace_id="trace-test")
+
+
+def test_workspace_returns_owner_scoped_original_pdf() -> None:
+    service, batch_id, job_id = _completed_batch_service()
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
+        {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
+    )
+    app.dependency_overrides[get_conversion_batch_service] = lambda: service
+    app.dependency_overrides[get_conversion_document_store] = lambda: FakeDocumentStore()
+    app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
+    client = TestClient(app)
+    try:
+        response = client.get(
+            f"/api/conversion-batches/{batch_id}/jobs/{job_id}/document",
+            params={"anonymous_fingerprint": "browser-fingerprint"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["cache-control"] == "private, no-store"
+    assert "x-frame-options" not in response.headers
+    assert "http://localhost:3000" in response.headers["content-security-policy"]
+    assert response.content.startswith(b"%PDF-1.4")
+
+
+def test_workspace_persists_reviewed_state_in_batch_result() -> None:
+    service, batch_id, job_id = _completed_batch_service()
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
+        {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
+    )
+    app.dependency_overrides[get_conversion_batch_service] = lambda: service
+    app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
+    client = TestClient(app)
+    try:
+        reviewed = client.post(
+            f"/api/conversion-batches/{batch_id}/jobs/{job_id}/review",
+            json={"anonymous_fingerprint": "browser-fingerprint"},
+        )
+        reloaded = client.get(
+            f"/api/conversion-batches/{batch_id}",
+            params={"anonymous_fingerprint": "browser-fingerprint"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert reviewed.status_code == 200
+    assert reviewed.json()["reviewed_at"]
+    assert reloaded.status_code == 200
+    assert reloaded.json()["jobs"][0]["reviewed_at"] == reviewed.json()["reviewed_at"]
+
+
+def test_workspace_exports_available_reports_without_failed_jobs(tmp_path: Path) -> None:
+    service, batch_id, _job_id = _completed_batch_service()
+    (tmp_path / "an_workspace.ofx").write_text("OFXHEADER:100\n", encoding="utf-8")
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
+        {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
+    )
+    app.dependency_overrides[get_conversion_batch_service] = lambda: service
+    app.dependency_overrides[get_async_conversion_report_service] = lambda: FakeBatchReportService(tmp_path)
+    app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
+    client = TestClient(app)
+    try:
+        response = client.get(
+            f"/api/conversion-batches/{batch_id}/export",
+            params={"anonymous_fingerprint": "browser-fingerprint"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["x-conversion-count"] == "1"
+    assert response.content.startswith(b"PK")
+
+
+def test_workspace_retries_only_failed_job_without_recreating_batch() -> None:
+    publisher = FakePublisher(calls=[])
+    service = ConversionBatchService(
+        repository=InMemoryConversionBatchRepository(),
+        direct_upload_service=FakeDirectUploadService(),
+        queue_publisher=publisher,
+    )
+    identity = FakeAccessControlService().resolve_identity(
+        anonymous_fingerprint="browser-fingerprint",
+        user_token=None,
+    )
+    prepared = service.create(
+        identity=identity,
+        files=[
+            ConversionBatchFile(
+                filename="falha.pdf",
+                content_type="application/pdf",
+                size_bytes=1024,
+                sha256_hex="2" * 64,
+            )
+        ],
+        idempotency_key="workspace-retry",
+    )
+    job_id = prepared.snapshot.jobs[0].job.job_id
+    service.repository.mark_failed(job_id, code="temporary_failure")
+    batch_id = prepared.snapshot.batch.batch_id
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
+        {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
+    )
+    app.dependency_overrides[get_conversion_batch_service] = lambda: service
+    app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
+    client = TestClient(app)
+    try:
+        response = client.post(
+            f"/api/conversion-batches/{batch_id}/jobs/{job_id}/retry",
+            json={"anonymous_fingerprint": "browser-fingerprint"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["batch_id"] == batch_id
+    assert response.json()["jobs"][0]["status"] == "queued"
+    assert publisher.calls == [job_id]
