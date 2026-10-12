@@ -59,6 +59,21 @@ const batchPayload = {
 };
 
 describe("HttpWorkspaceRepository", () => {
+  it("usa rotas relativas quando configurado para o proxy same-origin", async () => {
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse(batchPayload));
+    const repository = createHttpWorkspaceRepository({
+      apiUrl: "/",
+      fetcher,
+    });
+
+    await repository.getBatch("batch-real");
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/conversion-batches/batch-real",
+      expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
   it("mapeia lote real sem expor o contrato bruto do backend", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse(batchPayload));
     const repository = createHttpWorkspaceRepository({
