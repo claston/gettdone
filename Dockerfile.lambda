@@ -11,6 +11,10 @@ RUN python -m pip install --only-binary=:all: --target /build/site-packages -r r
 
 FROM ${PYTHON_IMAGE} AS runtime
 
+ARG AL2023_RELEASE=2023.12.20260928
+RUN dnf upgrade -y --releasever "${AL2023_RELEASE}" \
+    && dnf clean all
+
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/var/task
