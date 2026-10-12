@@ -16,9 +16,9 @@ export function PlaceholderPage({
           <h1>{title}</h1>
           <p>{description}</p>
         </div>
-        <button className="primary-button">
+        <Link href="/conversions" className="primary-button">
           <Plus size={16} /> Nova conversão
-        </button>
+        </Link>
       </div>
       <section className="placeholder-card">
         <span className="placeholder-icon">
@@ -49,9 +49,9 @@ export function DashboardPage() {
           <h1>Bom trabalho, Ana</h1>
           <p>Veja o que precisa de atenção nos seus lotes.</p>
         </div>
-        <button className="primary-button">
+        <Link href="/conversions" className="primary-button">
           <Plus size={16} /> Nova conversão
-        </button>
+        </Link>
       </div>
       <div className="metric-grid">
         <article>

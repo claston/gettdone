@@ -4,6 +4,9 @@ export interface BackendProxyRewrite {
 }
 
 const workspaceRoutes = [
+  "/api/conversion-runtime",
+  "/api/pro/conversion-batches/:path*",
+  "/api/pro/convert-edits/:path*",
   "/api/conversion-batches/:path*",
   "/auth/:path*",
   "/convert-edits/:path*",

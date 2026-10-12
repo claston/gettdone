@@ -31,6 +31,7 @@ from app.routers.auth_session import (
     resolve_anonymous_fingerprint_with_cookie,
     resolve_user_token_with_session,
 )
+from app.routers.pro_security import require_pro_browser_request
 from app.schemas import ConvertEditsRequest, ConvertEditsResponse
 
 router = APIRouter()
@@ -264,6 +265,11 @@ def get_convert_report(
 
 
 @router.post("/convert-edits/{processing_id}", response_model=ConvertEditsResponse)
+@router.post(
+    "/api/pro/convert-edits/{processing_id}",
+    response_model=ConvertEditsResponse,
+    dependencies=[Depends(require_pro_browser_request)],
+)
 def apply_convert_edits(
     processing_id: str,
     payload: ConvertEditsRequest,

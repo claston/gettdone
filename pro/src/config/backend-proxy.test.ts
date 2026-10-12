@@ -12,6 +12,20 @@ describe("buildBackendProxyRewrites", () => {
     expect(buildBackendProxyRewrites("https://api.ofxsimples.com.br/")).toEqual(
       [
         {
+          source: "/api/conversion-runtime",
+          destination: "https://api.ofxsimples.com.br/api/conversion-runtime",
+        },
+        {
+          source: "/api/pro/conversion-batches/:path*",
+          destination:
+            "https://api.ofxsimples.com.br/api/pro/conversion-batches/:path*",
+        },
+        {
+          source: "/api/pro/convert-edits/:path*",
+          destination:
+            "https://api.ofxsimples.com.br/api/pro/convert-edits/:path*",
+        },
+        {
           source: "/api/conversion-batches/:path*",
           destination:
             "https://api.ofxsimples.com.br/api/conversion-batches/:path*",

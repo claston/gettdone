@@ -243,6 +243,56 @@ def test_async_batch_api_creates_submits_and_returns_owner_scoped_status() -> No
         app.dependency_overrides.clear()
 
 
+def test_pro_batch_api_requires_browser_guard_and_preserves_worker_submission(monkeypatch) -> None:
+    service = ConversionBatchService(
+        repository=InMemoryConversionBatchRepository(),
+        direct_upload_service=FakeDirectUploadService(),
+        queue_publisher=FakePublisher(calls=[]),
+    )
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
+        {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
+    )
+    app.dependency_overrides[get_conversion_batch_service] = lambda: service
+    app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://pro.example.test")
+    client = TestClient(app)
+    client.cookies.set(ANONYMOUS_IDENTITY_COOKIE_NAME, "anonymous-cookie")
+    payload = _request_payload()
+    payload.pop("anonymous_fingerprint")
+    try:
+        missing_guard = client.post(
+            "/api/pro/conversion-batches",
+            headers={"Idempotency-Key": "request-pro-missing"},
+            json=payload,
+        )
+        created = client.post(
+            "/api/pro/conversion-batches",
+            headers={
+                "Idempotency-Key": "request-pro-ok",
+                "Origin": "https://pro.example.test",
+                "X-OFX-Pro-Client": "web",
+            },
+            json=payload,
+        )
+        batch_id = created.json()["batch_id"]
+        submitted = client.post(
+            f"/api/pro/conversion-batches/{batch_id}/submit",
+            headers={
+                "Origin": "https://pro.example.test",
+                "X-OFX-Pro-Client": "web",
+            },
+            json={},
+        )
+
+        assert missing_guard.status_code == 403
+        assert created.status_code == 201
+        assert submitted.status_code == 202
+        assert submitted.json()["status"] == "queued"
+        assert len(service.queue_publisher.calls) == 2
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_batch_api_stays_disabled_in_legacy_fallback_mode() -> None:
     app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping({})
     app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
@@ -487,7 +537,14 @@ def test_inline_shared_fallback_builds_without_sqs_configuration(monkeypatch: py
         service.queue_publisher.publish(job_id="job_test", batch_id="batch_test", trace_id="trace-test")
 
 
-def test_workspace_returns_owner_scoped_original_pdf() -> None:
+@pytest.mark.parametrize(
+    "document_path",
+    [
+        "/api/conversion-batches/{batch_id}/jobs/{job_id}/document",
+        "/api/pro/conversion-batches/{batch_id}/jobs/{job_id}/document",
+    ],
+)
+def test_workspace_returns_owner_scoped_original_pdf(document_path: str) -> None:
     service, batch_id, job_id = _completed_batch_service()
     app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
         {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
@@ -498,7 +555,7 @@ def test_workspace_returns_owner_scoped_original_pdf() -> None:
     client = TestClient(app)
     try:
         response = client.get(
-            f"/api/conversion-batches/{batch_id}/jobs/{job_id}/document",
+            document_path.format(batch_id=batch_id, job_id=job_id),
             params={"anonymous_fingerprint": "browser-fingerprint"},
         )
     finally:

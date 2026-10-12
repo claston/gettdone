@@ -6,6 +6,7 @@ import type {
   Transaction,
   WorkspaceRepository,
 } from "@/domain/workspace";
+import { createProApiClient } from "./pro-api-client";
 
 interface HttpWorkspaceRepositoryOptions {
   apiUrl: string;
@@ -72,11 +73,11 @@ export function createHttpWorkspaceRepository(
 ): WorkspaceRepository {
   const apiUrl = options.apiUrl.replace(/\/+$/, "");
   const fetcher = options.fetcher ?? fetch;
+  const apiClient = createProApiClient({ apiUrl, fetcher });
   const contexts = new Map<string, ConversionContext>();
 
   const request = async (path: string, init: RequestInit = {}) => {
-    const response = await fetcher(`${apiUrl}${path}`, {
-      credentials: "include",
+    const response = await apiClient.request(path, {
       ...init,
       headers: {
         Accept: "application/json",
@@ -99,7 +100,7 @@ export function createHttpWorkspaceRepository(
 
   const getBatch = async (batchId: string): Promise<Batch> => {
     const response = await request(
-      `/api/conversion-batches/${encodeURIComponent(batchId)}`,
+      `/api/pro/conversion-batches/${encodeURIComponent(batchId)}`,
     );
     const payload = (await response.json()) as ApiBatch;
     const conversions = payload.jobs.map((job) =>
@@ -159,7 +160,7 @@ export function createHttpWorkspaceRepository(
           edits.push({ action: "delete", row_id: rowId });
       }
       const response = await request(
-        `/convert-edits/${encodeURIComponent(context.analysisId)}`,
+        `/api/pro/convert-edits/${encodeURIComponent(context.analysisId)}`,
         {
           method: "POST",
           body: JSON.stringify({
@@ -189,7 +190,7 @@ export function createHttpWorkspaceRepository(
     async markReviewed(conversionId: string) {
       const context = requireContext(contexts, conversionId);
       await request(
-        `/api/conversion-batches/${encodeURIComponent(context.batchId)}/jobs/${encodeURIComponent(conversionId)}/review`,
+        `/api/pro/conversion-batches/${encodeURIComponent(context.batchId)}/jobs/${encodeURIComponent(conversionId)}/review`,
         { method: "POST", body: "{}" },
       );
     },
@@ -197,14 +198,14 @@ export function createHttpWorkspaceRepository(
     async retryConversion(conversionId: string) {
       const context = requireContext(contexts, conversionId);
       await request(
-        `/api/conversion-batches/${encodeURIComponent(context.batchId)}/jobs/${encodeURIComponent(conversionId)}/retry`,
+        `/api/pro/conversion-batches/${encodeURIComponent(context.batchId)}/jobs/${encodeURIComponent(conversionId)}/retry`,
         { method: "POST", body: "{}" },
       );
     },
 
     async exportBatch(batchId: string): Promise<ExportResult> {
       const response = await request(
-        `/api/conversion-batches/${encodeURIComponent(batchId)}/export`,
+        `/api/pro/conversion-batches/${encodeURIComponent(batchId)}/export`,
         {
           headers: { Accept: "application/zip" },
         },
@@ -279,7 +280,7 @@ function mapConversion({
       job.status === "failed" || job.status === "expired"
         ? null
         : {
-            url: `${apiUrl}/api/conversion-batches/${encodeURIComponent(batchId)}/jobs/${encodeURIComponent(job.job_id)}/document`,
+            url: `${apiUrl}/api/pro/conversion-batches/${encodeURIComponent(batchId)}/jobs/${encodeURIComponent(job.job_id)}/document`,
             pageCount: analysis?.pdf_processing_metrics?.page_count ?? 1,
             fileName: job.filename,
           },

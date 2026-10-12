@@ -109,6 +109,43 @@ def test_convert_edits_updates_preview_and_csv_artifact(tmp_path: Path) -> None:
     app.dependency_overrides.clear()
 
 
+def test_pro_convert_edits_requires_browser_guard_and_preserves_owner_scope(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = build_client(tmp_path)
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://pro.example.test")
+    payload = {
+        "edits": [
+            {
+                "row_id": "row_1",
+                "date": "2026-04-05",
+                "description": "EDITED FROM PRO",
+                "credit": 45.75,
+                "debit": None,
+            }
+        ]
+    }
+
+    missing_guard = client.post(
+        "/api/pro/convert-edits/an_convert123?anonymous_fingerprint=fp-owner",
+        json=payload,
+    )
+    accepted = client.post(
+        "/api/pro/convert-edits/an_convert123?anonymous_fingerprint=fp-owner",
+        headers={
+            "Origin": "https://pro.example.test",
+            "X-OFX-Pro-Client": "web",
+        },
+        json=payload,
+    )
+
+    assert missing_guard.status_code == 403
+    assert accepted.status_code == 200
+    assert accepted.json()["preview_transactions"][0]["description"] == "EDITED FROM PRO"
+    app.dependency_overrides.clear()
+
+
 def test_convert_edits_recalculates_running_balances_after_edit_and_xlsx_export(tmp_path: Path) -> None:
     client = build_client(tmp_path)
 

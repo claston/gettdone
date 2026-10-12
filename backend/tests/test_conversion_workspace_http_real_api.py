@@ -10,7 +10,7 @@ import httpx
 import pytest
 import uvicorn
 
-from app.application.access_control import IdentityContext
+from app.application.access_control import AccessControlService, IdentityContext
 from app.application.conversion.async_conversion_rollout import AsyncConversionRolloutPolicy
 from app.application.conversion.contracts.documents import ConversionDocumentReference
 from app.application.conversion.contracts.jobs import ConversionJobResultReference
@@ -19,6 +19,7 @@ from app.application.conversion.conversion_batch_repository import InMemoryConve
 from app.application.conversion.conversion_batch_service import ConversionBatchService
 from app.application.conversion.conversion_job import ConversionJob
 from app.application.conversion.conversion_runtime_config import ConversionRuntimeConfig
+from app.application.conversion.s3_direct_upload_service import PreparedS3Upload
 from app.application.conversion.uploaded_document import ingest_uploaded_document
 from app.dependencies import (
     get_access_control_service,
@@ -62,6 +63,40 @@ class NoopUploadService:
 class NoopPublisher:
     def publish(self, **_kwargs):
         return "message"
+
+
+class PreparedUploadService:
+    def __init__(self) -> None:
+        self.counter = 0
+
+    def prepare(self, *, filename, content_type, size_bytes, sha256_hex, max_size_bytes):
+        self.counter += 1
+        document = ConversionDocumentReference(
+            storage_key=f"doc_{self.counter:024x}",
+            filename=filename,
+            file_type=Path(filename).suffix.lstrip("."),
+            size_bytes=size_bytes,
+            sha256_hex=sha256_hex,
+        )
+        return PreparedS3Upload(
+            document=document,
+            object_key=f"incoming/{document.storage_key}/document.pdf",
+            upload_url="https://uploads.example.test",
+            upload_fields={"key": document.storage_key, "Content-Type": content_type},
+            expires_in_seconds=900,
+        )
+
+    def verify_uploaded(self, _document):
+        return None
+
+
+class RecordingPublisher:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def publish(self, *, job_id, **_kwargs):
+        self.calls.append(job_id)
+        return f"message-{job_id}"
 
 
 def _service() -> tuple[ConversionBatchService, str, str]:
@@ -113,20 +148,7 @@ def _find_free_port() -> int:
 
 
 @contextmanager
-def _run_http_server(tmp_path: Path):
-    service, batch_id, job_id = _service()
-    report_path = tmp_path / "converted.ofx"
-    report_path.write_text("OFXHEADER:100\n", encoding="utf-8")
-    app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControl()
-    app.dependency_overrides[get_async_conversion_report_service] = lambda: FakeReportService(report_path)
-    app.dependency_overrides[get_async_conversion_rollout_policy] = lambda: AsyncConversionRolloutPolicy.from_mapping(
-        {}
-    )
-    app.dependency_overrides[get_conversion_batch_service] = lambda: service
-    app.dependency_overrides[get_conversion_document_store] = lambda: FakeDocumentStore()
-    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
-        {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
-    )
+def _serve_app():
     host = "127.0.0.1"
     port = _find_free_port()
     server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="error"))
@@ -143,28 +165,81 @@ def _run_http_server(tmp_path: Path):
     else:
         raise RuntimeError("HTTP test server did not start in time")
     try:
-        yield base_url, batch_id, job_id
+        yield base_url
     finally:
         server.should_exit = True
         thread.join(timeout=5)
+
+
+@contextmanager
+def _run_http_server(tmp_path: Path):
+    service, batch_id, job_id = _service()
+    report_path = tmp_path / "converted.ofx"
+    report_path.write_text("OFXHEADER:100\n", encoding="utf-8")
+    app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControl()
+    app.dependency_overrides[get_async_conversion_report_service] = lambda: FakeReportService(report_path)
+    app.dependency_overrides[get_async_conversion_rollout_policy] = lambda: AsyncConversionRolloutPolicy.from_mapping(
+        {}
+    )
+    app.dependency_overrides[get_conversion_batch_service] = lambda: service
+    app.dependency_overrides[get_conversion_document_store] = lambda: FakeDocumentStore()
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
+        {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
+    )
+    try:
+        with _serve_app() as base_url:
+            yield base_url, batch_id, job_id
+    finally:
         app.dependency_overrides.clear()
 
 
-def test_http_workspace_batch_document_review_export_and_negative_owner(tmp_path: Path) -> None:
+@contextmanager
+def _run_pro_upload_http_server(tmp_path: Path):
+    access_control = AccessControlService(
+        state_file=tmp_path / "access-control-state.json",
+        token_secret="real-http-test-secret",
+    )
+    publisher = RecordingPublisher()
+    service = ConversionBatchService(
+        repository=InMemoryConversionBatchRepository(),
+        direct_upload_service=PreparedUploadService(),
+        queue_publisher=publisher,
+    )
+    app.dependency_overrides[get_access_control_service] = lambda: access_control
+    app.dependency_overrides[get_async_conversion_rollout_policy] = lambda: AsyncConversionRolloutPolicy.from_mapping(
+        {}
+    )
+    app.dependency_overrides[get_conversion_batch_service] = lambda: service
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
+        {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
+    )
+    try:
+        with _serve_app() as base_url:
+            yield base_url, publisher
+    finally:
+        app.dependency_overrides.clear()
+        access_control.close()
+
+
+def test_http_pro_workspace_batch_document_review_export_and_negative_owner(tmp_path: Path) -> None:
     with _run_http_server(tmp_path) as (base_url, batch_id, job_id):
         params = {"anonymous_fingerprint": "workspace-owner"}
-        batch = httpx.get(f"{base_url}/api/conversion-batches/{batch_id}", params=params)
+        batch = httpx.get(f"{base_url}/api/pro/conversion-batches/{batch_id}", params=params)
         document = httpx.get(
-            f"{base_url}/api/conversion-batches/{batch_id}/jobs/{job_id}/document",
+            f"{base_url}/api/pro/conversion-batches/{batch_id}/jobs/{job_id}/document",
             params=params,
         )
         reviewed = httpx.post(
-            f"{base_url}/api/conversion-batches/{batch_id}/jobs/{job_id}/review",
+            f"{base_url}/api/pro/conversion-batches/{batch_id}/jobs/{job_id}/review",
+            headers={
+                "Origin": "http://localhost:3000",
+                "X-OFX-Pro-Client": "web",
+            },
             json=params,
         )
-        exported = httpx.get(f"{base_url}/api/conversion-batches/{batch_id}/export", params=params)
+        exported = httpx.get(f"{base_url}/api/pro/conversion-batches/{batch_id}/export", params=params)
         forbidden = httpx.get(
-            f"{base_url}/api/conversion-batches/{batch_id}",
+            f"{base_url}/api/pro/conversion-batches/{batch_id}",
             params={"anonymous_fingerprint": "not-owner"},
         )
 
@@ -173,3 +248,48 @@ def test_http_workspace_batch_document_review_export_and_negative_owner(tmp_path
     assert reviewed.status_code == 200 and reviewed.json()["reviewed_at"]
     assert exported.status_code == 200 and exported.content.startswith(b"PK")
     assert forbidden.status_code == 404
+
+
+def test_http_pro_bootstrap_create_submit_read_and_negative_owner(tmp_path: Path) -> None:
+    pro_headers = {
+        "Origin": "http://localhost:3000",
+        "X-OFX-Pro-Client": "web",
+    }
+    with _run_pro_upload_http_server(tmp_path) as (base_url, publisher):
+        with httpx.Client(base_url=base_url) as owner:
+            bootstrap = owner.post("/auth/pro/anonymous-session", headers=pro_headers, json={})
+            runtime = owner.get("/api/conversion-runtime", headers=pro_headers)
+            created = owner.post(
+                "/api/pro/conversion-batches",
+                headers={**pro_headers, "Idempotency-Key": "real-http-upload"},
+                json={
+                    "files": [
+                        {
+                            "filename": "extrato.pdf",
+                            "content_type": "application/pdf",
+                            "size_bytes": 1024,
+                            "sha256_hex": "1" * 64,
+                        }
+                    ]
+                },
+            )
+            batch_id = created.json()["batch_id"]
+            submitted = owner.post(
+                f"/api/pro/conversion-batches/{batch_id}/submit",
+                headers=pro_headers,
+                json={},
+            )
+            reloaded = owner.get(f"/api/pro/conversion-batches/{batch_id}")
+
+        with httpx.Client(base_url=base_url) as other:
+            other_bootstrap = other.post("/auth/pro/anonymous-session", headers=pro_headers, json={})
+            forbidden = other.get(f"/api/pro/conversion-batches/{batch_id}")
+
+    assert bootstrap.status_code == 200
+    assert runtime.json()["execution_mode"] == "sqs_lambda"
+    assert created.status_code == 201 and len(created.json()["uploads"]) == 1
+    assert submitted.status_code == 202 and submitted.json()["status"] == "queued"
+    assert reloaded.status_code == 200 and reloaded.json()["batch_id"] == batch_id
+    assert other_bootstrap.status_code == 200
+    assert forbidden.status_code == 404
+    assert len(publisher.calls) == 1

@@ -11,6 +11,7 @@ from app.application.errors import InvalidUserTokenError
 from app.dependencies import get_access_control_service
 from app.main import app
 from app.routers.access_control_common import ANONYMOUS_IDENTITY_COOKIE_NAME
+from app.routers.pro_security import ProSessionRateLimiter, get_pro_session_rate_limiter
 
 
 class _InMemoryConnCtx:
@@ -118,6 +119,74 @@ def test_anonymous_session_does_not_trust_unknown_legacy_fingerprint() -> None:
         assert server_fingerprint.startswith("afp_")
         assert server_fingerprint != unknown_legacy_fingerprint
         assert not service.anonymous_identity_exists(fingerprint=server_fingerprint)
+    finally:
+        app.dependency_overrides.clear()
+        service.close()
+        shutil.rmtree(state_dir, ignore_errors=True)
+
+
+def test_pro_anonymous_session_requires_exact_origin_and_client_header(monkeypatch) -> None:
+    state_dir = Path(mkdtemp(prefix="pro-anonymous-session-api-"))
+    client, service = _build_client(state_dir)
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://pro.example.test")
+    app.dependency_overrides[get_pro_session_rate_limiter] = lambda: ProSessionRateLimiter(
+        limit=10,
+        window_seconds=60,
+    )
+    try:
+        missing_header = client.post(
+            "/auth/pro/anonymous-session",
+            headers={"Origin": "https://pro.example.test"},
+            json={},
+        )
+        invalid_origin = client.post(
+            "/auth/pro/anonymous-session",
+            headers={
+                "Origin": "https://attacker.example",
+                "X-OFX-Pro-Client": "web",
+            },
+            json={},
+        )
+        accepted = client.post(
+            "/auth/pro/anonymous-session",
+            headers={
+                "Origin": "https://pro.example.test",
+                "X-OFX-Pro-Client": "web",
+            },
+            json={},
+        )
+
+        assert missing_header.status_code == 403
+        assert invalid_origin.status_code == 403
+        assert accepted.status_code == 200
+        assert accepted.cookies.get(ANONYMOUS_IDENTITY_COOKIE_NAME)
+    finally:
+        app.dependency_overrides.clear()
+        service.close()
+        shutil.rmtree(state_dir, ignore_errors=True)
+
+
+def test_pro_anonymous_session_limits_new_identities_but_allows_idempotent_reuse(monkeypatch) -> None:
+    state_dir = Path(mkdtemp(prefix="pro-anonymous-session-limit-"))
+    client, service = _build_client(state_dir)
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://pro.example.test")
+    limiter = ProSessionRateLimiter(limit=1, window_seconds=60)
+    app.dependency_overrides[get_pro_session_rate_limiter] = lambda: limiter
+    headers = {
+        "Origin": "https://pro.example.test",
+        "X-OFX-Pro-Client": "web",
+    }
+    try:
+        created = client.post("/auth/pro/anonymous-session", headers=headers, json={})
+        resumed = client.post("/auth/pro/anonymous-session", headers=headers, json={})
+        client.cookies.clear()
+        blocked = client.post("/auth/pro/anonymous-session", headers=headers, json={})
+
+        assert created.status_code == 200
+        assert resumed.status_code == 200
+        assert "set-cookie" not in resumed.headers
+        assert blocked.status_code == 429
+        assert blocked.headers["retry-after"] == "60"
     finally:
         app.dependency_overrides.clear()
         service.close()

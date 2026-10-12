@@ -37,6 +37,12 @@ from app.routers.access_control_common import (
     set_anonymous_identity_cookie,
     set_session_cookies,
 )
+from app.routers.pro_security import (
+    ProSessionRateLimiter,
+    get_pro_session_rate_limiter,
+    pro_session_rate_limit_key,
+    require_pro_browser_request,
+)
 from app.schemas import (
     AnonymousSessionRequest,
     AnonymousSessionResponse,
@@ -91,6 +97,40 @@ def anonymous_session(
     anonymous_cookie_token: str | None = Cookie(default=None, alias=ANONYMOUS_IDENTITY_COOKIE_NAME),
     service: AccessControlService = Depends(get_access_control_service),
 ) -> JSONResponse:
+    return _anonymous_session_response(
+        payload=payload,
+        anonymous_cookie_token=anonymous_cookie_token,
+        service=service,
+    )
+
+
+@router.post(
+    "/auth/pro/anonymous-session",
+    response_model=AnonymousSessionResponse,
+    dependencies=[Depends(require_pro_browser_request)],
+)
+def pro_anonymous_session(
+    payload: AnonymousSessionRequest,
+    request: Request,
+    anonymous_cookie_token: str | None = Cookie(default=None, alias=ANONYMOUS_IDENTITY_COOKIE_NAME),
+    service: AccessControlService = Depends(get_access_control_service),
+    rate_limiter: ProSessionRateLimiter = Depends(get_pro_session_rate_limiter),
+) -> JSONResponse:
+    return _anonymous_session_response(
+        payload=payload,
+        anonymous_cookie_token=anonymous_cookie_token,
+        service=service,
+        before_create=lambda: rate_limiter.enforce(pro_session_rate_limit_key(request)),
+    )
+
+
+def _anonymous_session_response(
+    *,
+    payload: AnonymousSessionRequest,
+    anonymous_cookie_token: str | None,
+    service: AccessControlService,
+    before_create=None,
+) -> JSONResponse:
     cookie_token = str(anonymous_cookie_token or "").strip()
     if cookie_token:
         try:
@@ -102,6 +142,9 @@ def anonymous_session(
             response = JSONResponse(content=response_model.model_dump())
             response.headers["Cache-Control"] = "no-store"
             return response
+
+    if before_create is not None:
+        before_create()
 
     legacy_fingerprint = str(payload.legacy_fingerprint or "").strip()
     legacy_identity_id = None

@@ -40,11 +40,21 @@ A UI consome somente a interface `WorkspaceRepository`, definida em `src/domain/
 
 As rotas `/review/*` usam o repository configurado. Quando `NEXT_PUBLIC_API_URL` está presente, `src/data/http-workspace-repository.ts` adapta os contratos reais de lote, edição, revisão, retry, PDF privado e exportação ZIP sem expor o formato bruto do backend aos componentes. Sem a variável, essas rotas mantêm o fallback mock por compatibilidade com o desenvolvimento local.
 
+O upload real em `/conversions` é exclusivamente assíncrono:
+
+1. inicia ou reutiliza uma sessão anônima assinada em cookie `HttpOnly`;
+2. consulta `/api/conversion-runtime` e exige `direct_s3` + `sqs_lambda`;
+3. cria o lote em `/api/pro/conversion-batches`;
+4. envia cada arquivo diretamente para a URL temporária do armazenamento privado;
+5. submete o lote para a fila do worker e abre `/review/{batchId}`.
+
+O PRO nunca chama `/api/conversions/upload`. Se o runtime assíncrono estiver indisponível, a interface interrompe o fluxo antes de calcular hashes, criar o lote ou enviar arquivos e mostra uma mensagem de indisponibilidade. Não existe fallback inline.
+
 As fixtures de demonstração cobrem conversões prontas, com suspeitas, revisadas, processando e com falha; o extrato demonstrativo é servido localmente em `/mock-statement`. A interface identifica esse modo com o selo `Dados de demonstração`.
 
 ## Configuração
 
-Copie `.env.example` para `.env.local` e ajuste `NEXT_PUBLIC_API_URL` para apontar ao backend. A autenticação usa os cookies de sessão existentes e todas as requisições são enviadas com credenciais.
+Copie `.env.example` para `.env.local` e ajuste `NEXT_PUBLIC_API_URL` para apontar ao backend. A autenticação usa cookies de sessão e todas as requisições são enviadas com credenciais. Os endpoints mutáveis do PRO exigem o cabeçalho `X-OFX-Pro-Client: web` e uma origem exata permitida pelo backend; isso não substitui a validação de propriedade do lote por identidade.
 
 ### Preview no Render
 
@@ -65,14 +75,35 @@ NEXT_PUBLIC_API_URL=/
 BACKEND_API_URL=https://www.ofxsimples.com.br
 ```
 
-Neste estágio, `BACKEND_API_URL` aponta para o backend FastAPI já existente do OFX Simples Free em `https://www.ofxsimples.com.br`; ele não é outro serviço Render. `NEXT_PUBLIC_API_URL=/` faz o navegador usar o mesmo domínio do PRO. O Next.js encaminha apenas `/api/conversion-batches/*`, `/auth/*`, `/convert-edits/*` e `/convert-report/*` ao backend, evitando cookies cross-site e sem expor `BACKEND_API_URL` ao bundle do navegador. Sessões usadas pelo PRO devem ser iniciadas por `/auth/*` nesse mesmo domínio para que os cookies pertençam ao preview.
+Neste estágio, `BACKEND_API_URL` aponta para o backend FastAPI já existente do OFX Simples Free em `https://www.ofxsimples.com.br`; ele não é outro serviço Render. `NEXT_PUBLIC_API_URL=/` faz o navegador usar o mesmo domínio do PRO. O Next.js encaminha somente as rotas explicitamente listadas em `src/config/backend-proxy.ts`, incluindo o runtime, `/api/pro/*`, o bootstrap de sessão e os relatórios. Assim, evita cookies cross-site e não expõe `BACKEND_API_URL` ao bundle do navegador.
 
 Depois de configurar ou alterar `NEXT_PUBLIC_API_URL`, faça um novo build do serviço. Essa variável é incorporada ao bundle do navegador durante o build; um redeploy sem rebuild não aplica a mudança.
 
-No backend, mantenha `CORS_ALLOW_ORIGINS` sem wildcard e inclua a origem exata do preview caso também queira permitir acesso direto à API:
+No backend, mantenha `CORS_ALLOW_ORIGINS` sem wildcard e inclua obrigatoriamente a origem exata do preview. A validação dos endpoints mutáveis confere o cabeçalho `Origin` mesmo quando a chamada chega pelo proxy same-origin:
 
 ```text
 CORS_ALLOW_ORIGINS=https://ofxsimples-pro-preview.onrender.com,https://OUTRA-ORIGEM-JA-EXISTENTE
 ```
 
-Não inclua barra final na origem. Com o proxy same-origin, o fluxo normal do workspace não depende de CORS; a entrada explícita preserva compatibilidade para diagnósticos e acessos diretos controlados.
+Não inclua barra final na origem.
+
+### Pré-requisitos do worker
+
+O upload real só deve ser liberado depois que o worker de conversão estiver atualizado com o mesmo contrato da API. No backend, o runtime efetivo do usuário precisa responder:
+
+```json
+{
+  "upload_mode": "direct_s3",
+  "execution_mode": "sqs_lambda",
+  "direct_batch_enabled": true
+}
+```
+
+Isso requer, no mínimo, a arquitetura `async_aws`, repositório PostgreSQL, bucket privado de conversão e `CONVERSION_SQS_QUEUE_URL` válida. As variáveis completas estão em `backend/.env.example`. Ativar o runtime antes de atualizar o worker pode enfileirar trabalhos que a versão implantada não consegue processar; portanto, a ordem segura é:
+
+1. publicar e validar manualmente a versão compatível do worker;
+2. publicar o backend com os endpoints PRO e a origem do preview;
+3. ativar `direct_s3 + sqs_lambda`;
+4. executar um lote real e conferir processamento, revisão e exportação.
+
+A automação de CD do worker será tratada separadamente. Enquanto esses pré-requisitos não forem atendidos, o modo demo continua funcional e o upload real permanece bloqueado sem recorrer ao caminho inline.
