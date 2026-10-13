@@ -491,6 +491,19 @@ def session_login(
     return _session_auth_response(service=service, session_bundle=session_bundle)
 
 
+@router.post(
+    "/auth/pro/session/login",
+    response_model=SessionAuthResponse,
+    dependencies=[Depends(require_pro_browser_request)],
+)
+def pro_session_login(
+    payload: LoginRequest,
+    request: Request,
+    service: AccessControlService = Depends(get_access_control_service),
+) -> JSONResponse:
+    return session_login(payload=payload, request=request, service=service)
+
+
 @router.post("/auth/session/migrate", response_model=SessionAuthResponse)
 def session_migrate(
     request: Request,

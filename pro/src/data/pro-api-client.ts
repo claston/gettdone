@@ -18,21 +18,43 @@ export function createProApiClient(options: ProApiClientOptions): ProApiClient {
   const bootstrap = async (force = false) => {
     if (force) bootstrapPromise = null;
     if (!bootstrapPromise) {
-      bootstrapPromise = fetcher(`${apiUrl}/auth/pro/anonymous-session`, {
-        method: "POST",
+      bootstrapPromise = fetcher(`${apiUrl}/auth/me`, {
+        method: "GET",
         credentials: "include",
         headers: {
           Accept: "application/json",
-          "Content-Type": "application/json",
           [PRO_CLIENT_HEADER_NAME]: PRO_CLIENT_HEADER_VALUE,
         },
-        body: "{}",
       }).then(async (response) => {
-        if (!response.ok) {
+        if (response.ok) return;
+        if (response.status !== 401) {
           bootstrapPromise = null;
           throw new Error(
             await readApiError(
               response,
+              "Não foi possível verificar a sessão segura.",
+            ),
+          );
+        }
+
+        const anonymousResponse = await fetcher(
+          `${apiUrl}/auth/pro/anonymous-session`,
+          {
+            method: "POST",
+            credentials: "include",
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json",
+              [PRO_CLIENT_HEADER_NAME]: PRO_CLIENT_HEADER_VALUE,
+            },
+            body: "{}",
+          },
+        );
+        if (!anonymousResponse.ok) {
+          bootstrapPromise = null;
+          throw new Error(
+            await readApiError(
+              anonymousResponse,
               "Não foi possível iniciar a sessão segura.",
             ),
           );
