@@ -13,6 +13,9 @@ _DESCENDING_RUNNING_BALANCE_LAYOUTS = {
 _DYNAMIC_RUNNING_BALANCE_ORDER_LAYOUTS = {
     "stone_extrato_conta_corrente_a4_v1",
 }
+_DESCENDING_DATE_GROUPS_WITH_ASCENDING_BALANCE_LAYOUTS = {
+    "bradesco_empresas_negocios_extrato_lancamentos_v1",
+}
 _STONE_RUNNING_BALANCE_LAYOUT = "stone_extrato_conta_corrente_a4_v1"
 
 
@@ -159,6 +162,13 @@ def uses_descending_running_balance(layout_name: str | None) -> bool:
     return str(layout_name or "").strip().lower() in _DESCENDING_RUNNING_BALANCE_LAYOUTS
 
 
+def _resets_ascending_balance_on_backward_date(layout_name: str | None) -> bool:
+    return (
+        str(layout_name or "").strip().lower()
+        in _DESCENDING_DATE_GROUPS_WITH_ASCENDING_BALANCE_LAYOUTS
+    )
+
+
 def _is_stone_fee_credit_pair(
     fee: CanonicalTransaction,
     credit: CanonicalTransaction,
@@ -227,6 +237,20 @@ def annotate_balance_consistency(
             # statement/period, so balances on the two sides are unrelated.
             previous_balance_row = current
             amounts_since_balance = current.amount
+            continue
+
+        if (
+            not descending
+            and previous_balance_row is not None
+            and current.running_balance is not None
+            and current.date < previous_balance_row.date
+            and _resets_ascending_balance_on_backward_date(current.layout_name)
+        ):
+            # Bradesco groups days newest-first while keeping the transactions
+            # inside each day in ascending running-balance order. A backward
+            # date jump therefore starts an independent daily balance chain.
+            previous_balance_row = current
+            amounts_since_balance = 0.0
             continue
 
         if previous_balance_row is None:
