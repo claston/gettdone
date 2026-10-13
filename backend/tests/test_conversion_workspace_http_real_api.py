@@ -199,6 +199,12 @@ def _run_pro_upload_http_server(tmp_path: Path):
         state_file=tmp_path / "access-control-state.json",
         token_secret="real-http-test-secret",
     )
+    paid_user = access_control.register_user(
+        name="Cliente pago",
+        email="cliente-pago@example.com",
+        password="strong-test-password",
+    )
+    access_control.activate_user_plan(user_id=paid_user.user_id, plan_code="essencial")
     publisher = RecordingPublisher()
     service = ConversionBatchService(
         repository=InMemoryConversionBatchRepository(),
@@ -215,7 +221,7 @@ def _run_pro_upload_http_server(tmp_path: Path):
     )
     try:
         with _serve_app() as base_url:
-            yield base_url, publisher
+            yield base_url, publisher, paid_user.token
     finally:
         app.dependency_overrides.clear()
         access_control.close()
@@ -250,18 +256,21 @@ def test_http_pro_workspace_batch_document_review_export_and_negative_owner(tmp_
     assert forbidden.status_code == 404
 
 
-def test_http_pro_bootstrap_create_submit_read_and_negative_owner(tmp_path: Path) -> None:
+def test_http_paid_user_can_create_submit_read_and_rejects_negative_owner(tmp_path: Path) -> None:
     pro_headers = {
         "Origin": "http://localhost:3000",
         "X-OFX-Pro-Client": "web",
     }
-    with _run_pro_upload_http_server(tmp_path) as (base_url, publisher):
+    with _run_pro_upload_http_server(tmp_path) as (base_url, publisher, paid_user_token):
         with httpx.Client(base_url=base_url) as owner:
-            bootstrap = owner.post("/auth/pro/anonymous-session", headers=pro_headers, json={})
-            runtime = owner.get("/api/conversion-runtime", headers=pro_headers)
+            authenticated_headers = {
+                **pro_headers,
+                "Authorization": f"Bearer {paid_user_token}",
+            }
+            runtime = owner.get("/api/conversion-runtime", headers=authenticated_headers)
             created = owner.post(
                 "/api/pro/conversion-batches",
-                headers={**pro_headers, "Idempotency-Key": "real-http-upload"},
+                headers={**authenticated_headers, "Idempotency-Key": "real-http-upload"},
                 json={
                     "files": [
                         {
@@ -276,16 +285,18 @@ def test_http_pro_bootstrap_create_submit_read_and_negative_owner(tmp_path: Path
             batch_id = created.json()["batch_id"]
             submitted = owner.post(
                 f"/api/pro/conversion-batches/{batch_id}/submit",
-                headers=pro_headers,
+                headers=authenticated_headers,
                 json={},
             )
-            reloaded = owner.get(f"/api/pro/conversion-batches/{batch_id}")
+            reloaded = owner.get(
+                f"/api/pro/conversion-batches/{batch_id}",
+                headers=authenticated_headers,
+            )
 
         with httpx.Client(base_url=base_url) as other:
             other_bootstrap = other.post("/auth/pro/anonymous-session", headers=pro_headers, json={})
             forbidden = other.get(f"/api/pro/conversion-batches/{batch_id}")
 
-    assert bootstrap.status_code == 200
     assert runtime.json()["execution_mode"] == "sqs_lambda"
     assert created.status_code == 201 and len(created.json()["uploads"]) == 1
     assert submitted.status_code == 202 and submitted.json()["status"] == "queued"

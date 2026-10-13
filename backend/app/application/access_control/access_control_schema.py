@@ -148,7 +148,11 @@ class AccessControlSchemaComponent:
                 "pdf_classification_version",
                 "pdf_classification_evidence_json",
             ),
-            "plan_versions": ("max_pages_per_file_ocr",),
+            "plan_versions": (
+                "max_pages_per_file_ocr",
+                "batch_conversion_enabled",
+                "batch_max_files",
+            ),
             "checkout_intents": ("user_id", "payment_link", "payment_link_sent_at", "released_at"),
             "user_login_events": ("user_id", "auth_method", "created_at"),
             "email_verification_tokens": (

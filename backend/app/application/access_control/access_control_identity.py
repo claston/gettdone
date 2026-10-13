@@ -38,6 +38,8 @@ class AccessControlIdentityComponent:
                     max_pages_per_file_ocr=int(active_plan["max_pages_per_file_ocr"]),
                     plan_code=str(active_plan["code"]),
                     plan_name=str(active_plan["name"]),
+                    batch_conversion_enabled=bool(active_plan["batch_conversion_enabled"]),
+                    batch_max_files=int(active_plan["batch_max_files"]),
                 )
             return service._identity_context_factory(
                 identity_type="user",

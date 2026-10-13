@@ -539,6 +539,8 @@ def test_public_plans_are_seeded_with_versions(tmp_path) -> None:
     assert prices["essencial"] == 2990
     assert prices["profissional"] == 3990
     assert prices["escritorio"] == 4990
+    assert all(bool(item["batch_conversion_enabled"]) for item in plans)
+    assert all(int(item["batch_max_files"]) == 12 for item in plans)
 
 
 def test_public_plans_cache_avoids_repeated_database_reads(tmp_path, monkeypatch) -> None:
@@ -610,6 +612,8 @@ def test_registered_user_can_use_pages_plan_quota(tmp_path) -> None:
     assert identity.quota_limit == 150
     assert identity.plan_code == "essencial"
     assert identity.max_pages_per_file_ocr == 6
+    assert identity.batch_conversion_enabled is True
+    assert identity.batch_max_files == 12
 
     service.ensure_quota_available(identity, required_units=10)
     remaining = service.consume_quota(identity, consumed_units=10)

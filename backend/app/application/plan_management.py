@@ -4,12 +4,12 @@ from typing import Callable
 
 from app.application.errors import InvalidUserTokenError
 
-PlanTuple = tuple[str, str, int, str, int, int, int]
+PlanTuple = tuple[str, str, int, str, int, int, int, bool, int]
 
 DEFAULT_PUBLIC_PLANS: tuple[PlanTuple, ...] = (
-    ("essencial", "Essencial", 1, "BRL", 2990, 150, 6),
-    ("profissional", "Profissional", 1, "BRL", 3990, 300, 6),
-    ("escritorio", "Escritorio", 1, "BRL", 4990, 500, 6),
+    ("essencial", "Essencial", 1, "BRL", 2990, 150, 6, True, 12),
+    ("profissional", "Profissional", 1, "BRL", 3990, 300, 6, True, 12),
+    ("escritorio", "Escritorio", 1, "BRL", 4990, 500, 6, True, 12),
 )
 
 MONTHLY_QUOTA_WINDOW_DAYS = 30
@@ -39,7 +39,9 @@ def list_public_plans(
           quota_window_days,
           max_upload_size_bytes,
           max_pages_per_file,
-          max_pages_per_file_ocr
+          max_pages_per_file_ocr,
+          batch_conversion_enabled,
+          batch_max_files
         FROM plan_versions
         WHERE is_public = ? AND is_active = ?
         ORDER BY code ASC, version DESC
@@ -63,6 +65,8 @@ def list_public_plans(
                 "max_upload_size_bytes": int(row["max_upload_size_bytes"]),
                 "max_pages_per_file": int(row["max_pages_per_file"]),
                 "max_pages_per_file_ocr": int(row["max_pages_per_file_ocr"]),
+                "batch_conversion_enabled": bool(row["batch_conversion_enabled"]),
+                "batch_max_files": int(row["batch_max_files"]),
             }
         )
     return items
@@ -98,7 +102,9 @@ def activate_user_plan(
           quota_window_days,
           max_upload_size_bytes,
           max_pages_per_file,
-          max_pages_per_file_ocr
+          max_pages_per_file_ocr,
+          batch_conversion_enabled,
+          batch_max_files
         FROM plan_versions
         WHERE code = ? AND is_active = ?
         ORDER BY version DESC
@@ -181,7 +187,9 @@ def read_active_user_plan(
           pv.quota_window_days,
           pv.max_upload_size_bytes,
           pv.max_pages_per_file,
-          pv.max_pages_per_file_ocr
+          pv.max_pages_per_file_ocr,
+          pv.batch_conversion_enabled,
+          pv.batch_max_files
         FROM user_plan_subscriptions ups
         JOIN plan_versions pv ON pv.id = ups.plan_version_id
         WHERE ups.user_id = ? AND ups.status = 'active'
@@ -202,6 +210,8 @@ def read_active_user_plan(
         "max_upload_size_bytes": int(row["max_upload_size_bytes"]),
         "max_pages_per_file": int(row["max_pages_per_file"]),
         "max_pages_per_file_ocr": int(row["max_pages_per_file_ocr"]),
+        "batch_conversion_enabled": bool(row["batch_conversion_enabled"]),
+        "batch_max_files": int(row["batch_max_files"]),
     }
 
 
@@ -213,7 +223,17 @@ def seed_default_public_plans(
     now_iso: str,
     true_value: bool | int,
 ) -> None:
-    for code, name, version, currency, price_cents, quota_limit, max_pages_per_file_ocr in DEFAULT_PUBLIC_PLANS:
+    for (
+        code,
+        name,
+        version,
+        currency,
+        price_cents,
+        quota_limit,
+        max_pages_per_file_ocr,
+        batch_conversion_enabled,
+        batch_max_files,
+    ) in DEFAULT_PUBLIC_PLANS:
         existing_version = fetchone(
             conn,
             """
@@ -243,11 +263,13 @@ def seed_default_public_plans(
               max_upload_size_bytes,
               max_pages_per_file,
               max_pages_per_file_ocr,
+              batch_conversion_enabled,
+              batch_max_files,
               is_public,
               is_active,
               created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 f"plan_{code}_v{version}",
@@ -263,6 +285,8 @@ def seed_default_public_plans(
                 PAID_MAX_UPLOAD_SIZE_BYTES,
                 PAID_MAX_PAGES_PER_FILE,
                 max_pages_per_file_ocr,
+                batch_conversion_enabled,
+                batch_max_files,
                 true_value,
                 true_value,
                 now_iso,

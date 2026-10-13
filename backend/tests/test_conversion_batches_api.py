@@ -48,8 +48,16 @@ class FakeAccessControlService:
 
 
 class FakeRegisteredAccessControlService:
-    def __init__(self, *, email: str) -> None:
+    def __init__(
+        self,
+        *,
+        email: str,
+        batch_conversion_enabled: bool = True,
+        batch_max_files: int = 12,
+    ) -> None:
         self.email = email
+        self.batch_conversion_enabled = batch_conversion_enabled
+        self.batch_max_files = batch_max_files
 
     def ensure_quota_available(self, identity, *, required_units=1):
         assert identity.identity_id == "usr_canary"
@@ -63,6 +71,8 @@ class FakeRegisteredAccessControlService:
             identity_id="usr_canary",
             quota_limit=20,
             max_upload_size_bytes=5 * 1024 * 1024,
+            batch_conversion_enabled=self.batch_conversion_enabled,
+            batch_max_files=self.batch_max_files,
         )
 
     def get_user_by_id(self, user_id: str) -> RegisteredUser:
@@ -209,13 +219,19 @@ def test_async_batch_api_creates_submits_and_returns_owner_scoped_status() -> No
         {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
     )
     app.dependency_overrides[get_conversion_batch_service] = lambda: service
-    app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
+    app.dependency_overrides[get_access_control_service] = lambda: FakeRegisteredAccessControlService(
+        email="paid@example.com"
+    )
     client = TestClient(app)
     try:
         created = client.post(
             "/api/conversion-batches",
-            headers={"Idempotency-Key": "request-123", "X-Request-ID": "trace-123"},
-            json=_request_payload(),
+            headers={
+                "Authorization": "Bearer allowed-token",
+                "Idempotency-Key": "request-123",
+                "X-Request-ID": "trace-123",
+            },
+            json={"files": _request_payload()["files"]},
         )
         assert created.status_code == 201
         created_payload = created.json()
@@ -226,8 +242,11 @@ def test_async_batch_api_creates_submits_and_returns_owner_scoped_status() -> No
 
         submitted = client.post(
             f"/api/conversion-batches/{batch_id}/submit",
-            headers={"X-Request-ID": "trace-456"},
-            json={"anonymous_fingerprint": "browser-fingerprint"},
+            headers={
+                "Authorization": "Bearer allowed-token",
+                "X-Request-ID": "trace-456",
+            },
+            json={},
         )
         assert submitted.status_code == 202
         assert submitted.json()["status"] == "queued"
@@ -235,7 +254,7 @@ def test_async_batch_api_creates_submits_and_returns_owner_scoped_status() -> No
 
         status = client.get(
             f"/api/conversion-batches/{batch_id}",
-            params={"anonymous_fingerprint": "browser-fingerprint"},
+            headers={"Authorization": "Bearer allowed-token"},
         )
         assert status.status_code == 200
         assert status.json()["batch_id"] == batch_id
@@ -253,22 +272,27 @@ def test_pro_batch_api_requires_browser_guard_and_preserves_worker_submission(mo
         {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
     )
     app.dependency_overrides[get_conversion_batch_service] = lambda: service
-    app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
+    app.dependency_overrides[get_access_control_service] = lambda: FakeRegisteredAccessControlService(
+        email="canary@example.com"
+    )
     monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://pro.example.test")
     client = TestClient(app)
-    client.cookies.set(ANONYMOUS_IDENTITY_COOKIE_NAME, "anonymous-cookie")
     payload = _request_payload()
     payload.pop("anonymous_fingerprint")
     try:
         missing_guard = client.post(
             "/api/pro/conversion-batches",
-            headers={"Idempotency-Key": "request-pro-missing"},
+            headers={
+                "Authorization": "Bearer allowed-token",
+                "Idempotency-Key": "request-pro-missing",
+            },
             json=payload,
         )
         created = client.post(
             "/api/pro/conversion-batches",
             headers={
                 "Idempotency-Key": "request-pro-ok",
+                "Authorization": "Bearer allowed-token",
                 "Origin": "https://pro.example.test",
                 "X-OFX-Pro-Client": "web",
             },
@@ -280,6 +304,7 @@ def test_pro_batch_api_requires_browser_guard_and_preserves_worker_submission(mo
             headers={
                 "Origin": "https://pro.example.test",
                 "X-OFX-Pro-Client": "web",
+                "Authorization": "Bearer allowed-token",
             },
             json={},
         )
@@ -291,6 +316,156 @@ def test_pro_batch_api_requires_browser_guard_and_preserves_worker_submission(mo
         assert len(service.queue_publisher.calls) == 2
     finally:
         app.dependency_overrides.clear()
+
+
+def test_pro_batch_api_denies_anonymous_identity_even_when_worker_is_globally_enabled(
+    monkeypatch,
+) -> None:
+    service = ConversionBatchService(
+        repository=InMemoryConversionBatchRepository(),
+        direct_upload_service=FakeDirectUploadService(),
+        queue_publisher=FakePublisher(calls=[]),
+    )
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
+        {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
+    )
+    app.dependency_overrides[get_conversion_batch_service] = lambda: service
+    app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://pro.example.test")
+    client = TestClient(app)
+    client.cookies.set(ANONYMOUS_IDENTITY_COOKIE_NAME, "anonymous-cookie")
+    payload = _request_payload(1)
+    payload.pop("anonymous_fingerprint")
+    try:
+        response = client.post(
+            "/api/pro/conversion-batches",
+            headers={
+                "Idempotency-Key": "anonymous-pro-request",
+                "Origin": "https://pro.example.test",
+                "X-OFX-Pro-Client": "web",
+            },
+            json=payload,
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "batch_plan_required"
+    assert service.direct_upload_service.counter == 0
+
+
+def test_paid_plan_batch_limit_is_enforced_before_upload_preparation(monkeypatch) -> None:
+    service = ConversionBatchService(
+        repository=InMemoryConversionBatchRepository(),
+        direct_upload_service=FakeDirectUploadService(),
+        queue_publisher=FakePublisher(calls=[]),
+    )
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
+        {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
+    )
+    app.dependency_overrides[get_conversion_batch_service] = lambda: service
+    app.dependency_overrides[get_access_control_service] = lambda: FakeRegisteredAccessControlService(
+        email="paid@example.com",
+        batch_max_files=2,
+    )
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://pro.example.test")
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/api/pro/conversion-batches",
+            headers={
+                "Authorization": "Bearer allowed-token",
+                "Idempotency-Key": "paid-over-limit",
+                "Origin": "https://pro.example.test",
+                "X-OFX-Pro-Client": "web",
+            },
+            json={"files": _request_payload(3)["files"]},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "batch_file_limit_exceeded",
+        "message": "Este plano permite no máximo 2 arquivos por lote.",
+        "batch_max_files": 2,
+    }
+    assert service.direct_upload_service.counter == 0
+
+
+def test_pro_batch_submit_rechecks_plan_entitlement(monkeypatch) -> None:
+    publisher = FakePublisher(calls=[])
+    service = ConversionBatchService(
+        repository=InMemoryConversionBatchRepository(),
+        direct_upload_service=FakeDirectUploadService(),
+        queue_publisher=publisher,
+    )
+    access_control = FakeRegisteredAccessControlService(email="paid@example.com")
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
+        {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
+    )
+    app.dependency_overrides[get_conversion_batch_service] = lambda: service
+    app.dependency_overrides[get_access_control_service] = lambda: access_control
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://pro.example.test")
+    headers = {
+        "Authorization": "Bearer allowed-token",
+        "Origin": "https://pro.example.test",
+        "X-OFX-Pro-Client": "web",
+    }
+    client = TestClient(app)
+    try:
+        created = client.post(
+            "/api/pro/conversion-batches",
+            headers={**headers, "Idempotency-Key": "revoked-before-submit"},
+            json={"files": _request_payload(2)["files"]},
+        )
+        assert created.status_code == 201
+
+        access_control.batch_conversion_enabled = False
+        submitted = client.post(
+            f"/api/pro/conversion-batches/{created.json()['batch_id']}/submit",
+            headers=headers,
+            json={},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert submitted.status_code == 403
+    assert submitted.json()["detail"]["code"] == "batch_plan_required"
+    assert publisher.calls == []
+
+
+def test_generic_worker_route_denies_multiple_files_without_batch_entitlement() -> None:
+    service = ConversionBatchService(
+        repository=InMemoryConversionBatchRepository(),
+        direct_upload_service=FakeDirectUploadService(),
+        queue_publisher=FakePublisher(calls=[]),
+    )
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
+        {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
+    )
+    app.dependency_overrides[get_conversion_batch_service] = lambda: service
+    app.dependency_overrides[get_access_control_service] = lambda: FakeRegisteredAccessControlService(
+        email="free@example.com",
+        batch_conversion_enabled=False,
+        batch_max_files=1,
+    )
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/api/conversion-batches",
+            headers={
+                "Authorization": "Bearer allowed-token",
+                "Idempotency-Key": "free-multi-file",
+            },
+            json={"files": _request_payload(2)["files"]},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "batch_plan_required"
+    assert service.direct_upload_service.counter == 0
 
 
 def test_batch_api_stays_disabled_in_legacy_fallback_mode() -> None:

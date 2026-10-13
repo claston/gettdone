@@ -9,7 +9,7 @@ from urllib.parse import quote
 from uuid import uuid4
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Response
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from app.application import AccessControlService, InvalidUserTokenError, QuotaExceededError, ReportService
@@ -160,6 +160,7 @@ def conversion_runtime(
     dependencies=[Depends(require_pro_browser_request)],
 )
 def create_conversion_batch(
+    http_request: Request,
     request: CreateConversionBatchRequest,
     idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=200),
     authorization: str | None = Header(default=None),
@@ -177,6 +178,11 @@ def create_conversion_batch(
         user_token=request.user_token,
         authorization=authorization,
         access_cookie_token=access_cookie_token,
+    )
+    _require_batch_entitlement(
+        identity,
+        files_count=len(request.files),
+        pro_endpoint=_is_pro_batch_request(http_request),
     )
     active_service = _require_direct_batch(
         runtime,
@@ -234,6 +240,7 @@ def create_conversion_batch(
     dependencies=[Depends(require_pro_browser_request)],
 )
 def submit_conversion_batch(
+    http_request: Request,
     batch_id: str,
     request: ConversionBatchIdentityRequest,
     x_request_id: str | None = Header(default=None, alias="X-Request-ID"),
@@ -253,12 +260,26 @@ def submit_conversion_batch(
         authorization=authorization,
         access_cookie_token=access_cookie_token,
     )
+    if _is_pro_batch_request(http_request):
+        _require_batch_entitlement(identity, pro_endpoint=True)
     active_service = _require_direct_batch(
         runtime,
         service,
         rollout_policy=rollout_policy,
         identity=identity,
         access_control_service=access_control_service,
+    )
+    existing = active_service.repository.get_for_owner(
+        batch_id,
+        identity_type=identity.identity_type,
+        identity_id=identity.identity_id,
+    )
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Conversion batch not found.")
+    _require_batch_entitlement(
+        identity,
+        files_count=len(existing.jobs),
+        pro_endpoint=_is_pro_batch_request(http_request),
     )
     trace_id = (x_request_id or "").strip()[:128] or f"trace-{uuid4().hex}"
     try:
@@ -723,6 +744,39 @@ def _require_direct_batch(
             detail="Percentage rollout conversions accept only one file per batch.",
         )
     return service
+
+
+def _is_pro_batch_request(request: Request) -> bool:
+    return request.url.path.startswith("/api/pro/conversion-batches")
+
+
+def _require_batch_entitlement(
+    identity,
+    *,
+    files_count: int | None = None,
+    pro_endpoint: bool = False,
+) -> None:
+    is_multi_file = files_count is not None and files_count > 1
+    if not pro_endpoint and not is_multi_file:
+        return
+    if identity.identity_type != "user" or not identity.batch_conversion_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "batch_plan_required",
+                "message": "A conversão em lote requer um plano com esse recurso habilitado.",
+            },
+        )
+    plan_batch_max_files = max(1, int(identity.batch_max_files))
+    if files_count is not None and files_count > plan_batch_max_files:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "batch_file_limit_exceeded",
+                "message": f"Este plano permite no máximo {plan_batch_max_files} arquivos por lote.",
+                "batch_max_files": plan_batch_max_files,
+            },
+        )
 
 
 def _require_async_service(
