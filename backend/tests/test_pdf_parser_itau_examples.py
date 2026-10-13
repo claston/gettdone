@@ -420,6 +420,46 @@ def test_itau_monthly_handles_sidebar_before_investment_balance_and_split_negati
     assert result.canonical_transactions[8].running_balance == 1.0
 
 
+def test_itau_monthly_keeps_account_limit_interest_as_transaction() -> None:
+    text = """
+    ItaúEmpresas
+    extrato mensal
+    set 2026
+    01. Conta Corrente e Aplicações Automáticas
+    Conta Corrente | Movimentação
+    data
+    descrição
+    entradas R$
+    saídas R$
+    saldo R$
+    (créditos)
+    (débitos)
+    31/08
+    Saldo anterior
+    70,00-
+    01/09
+    PAGAMENTO
+    10,00-
+    JUROS LIMITE DA CONTA
+    5,00-
+    85,00
+    -
+    Saldo final
+    85,00
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert [(transaction.description, transaction.amount) for transaction in result.transactions] == [
+        ("SALDO ANTERIOR", -70.0),
+        ("PAGAMENTO", -10.0),
+        ("JUROS LIMITE DA CONTA", -5.0),
+    ]
+    assert result.canonical_transactions is not None
+    assert result.canonical_transactions[-1].running_balance == -85.0
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
 def test_itau_monthly_preserves_explicit_sispag_salary_debit_sign() -> None:
     text = """
     ItaúEmpresas
