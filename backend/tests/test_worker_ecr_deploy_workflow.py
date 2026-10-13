@@ -66,6 +66,18 @@ def test_worker_deploy_blocks_vulnerable_ecr_images():
     assert "'.HIGH // 0'" in workflow
 
 
+def test_worker_deploy_reports_blocking_ecr_findings_before_failing():
+    workflow = _workflow()
+
+    assert "imageScanFindings.findings" in workflow
+    assert 'select(.severity == "CRITICAL" or .severity == "HIGH")' in workflow
+    assert 'select(.key == "package_name")' in workflow
+    assert 'select(.key == "package_version")' in workflow
+    assert 'select(.key == "fixed_version")' in workflow
+    assert "### Blocking findings" in workflow
+    assert "Worker image has ${critical} critical and ${high} high vulnerability findings." in workflow
+
+
 def test_worker_deploy_builds_immutable_lambda_image_and_uses_digest():
     workflow = _workflow()
 

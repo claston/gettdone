@@ -238,22 +238,48 @@ jobs:
             exit 1
           fi
 
-          severity_counts="$(aws ecr describe-image-scan-findings \
+          scan_findings="$(aws ecr describe-image-scan-findings \
             --repository-name "${REPOSITORY_NAME}" \
             --image-id "imageDigest=${IMAGE_DIGEST}" \
-            --query 'imageScanFindings.findingSeverityCounts' \
             --output json)"
+          severity_counts="$(jq -c '.imageScanFindings.findingSeverityCounts // {}' <<<"${scan_findings}")"
           critical="$(jq -r '.CRITICAL // 0' <<<"${severity_counts}")"
           high="$(jq -r '.HIGH // 0' <<<"${severity_counts}")"
+          blocking_findings="$(jq -c '
+            [
+              .imageScanFindings.findings[]?
+              | select(.severity == "CRITICAL" or .severity == "HIGH")
+              | {
+                  severity,
+                  name,
+                  package: ([.attributes[]? | select(.key == "package_name") | .value][0] // "unknown"),
+                  installed_version: ([.attributes[]? | select(.key == "package_version") | .value][0] // "unknown"),
+                  fixed_version: ([.attributes[]? | select(.key == "fixed_version") | .value][0] // "unknown"),
+                  uri
+                }
+            ]
+            | sort_by(.severity, .name, .package)
+          ' <<<"${scan_findings}")"
 
           {
             echo "## ECR vulnerability scan"
             echo ""
             echo "- Critical findings: ${critical}"
             echo "- High findings: ${high}"
+            if [ "${critical}" -gt 0 ] || [ "${high}" -gt 0 ]; then
+              echo ""
+              echo "### Blocking findings"
+              echo ""
+              echo '```json'
+              jq '.' <<<"${blocking_findings}"
+              echo '```'
+            fi
           } >> "${GITHUB_STEP_SUMMARY}"
 
           if [ "${critical}" -gt 0 ] || [ "${high}" -gt 0 ]; then
+            echo "Blocking ECR findings:"
+            jq -r '.[] | "\(.severity) \(.name) package=\(.package) installed=\(.installed_version) fixed=\(.fixed_version) uri=\(.uri)"' \
+              <<<"${blocking_findings}"
             echo "::error::Worker image has ${critical} critical and ${high} high vulnerability findings."
             exit 1
           fi
