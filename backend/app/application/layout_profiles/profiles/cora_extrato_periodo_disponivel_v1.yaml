@@ -1,0 +1,76 @@
+layout_profile:
+  schema_version: 2
+  profile_name: cora_extrato_periodo_disponivel_v1
+  bank: Cora
+  layout_family: cora_extrato_periodo_disponivel
+  statement_type: conta_digital_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Cora SCFI"
+      - "CNPJ"
+      - "Agência"
+      - "Conta"
+      - "Extrato do período"
+      - "Saldo inicial disponível"
+      - "Total de entradas"
+      - "Total de saídas"
+      - "Saldo final disponível"
+      - "Transações"
+      - "Saldo do dia"
+    optional_keywords:
+      - "Transf Pix enviada"
+      - "Transf Pix recebida"
+      - "Boleto pago"
+      - "Pgto QR Code Pix"
+      - "Extrato gerado no dia"
+    negative_keywords:
+      - "Fatura"
+      - "Comprovante"
+    min_score_hint: 0.9
+  table_detection:
+    header_keywords:
+      - "Transações"
+      - "Saldo do dia"
+    expected_column_order:
+      - date_group
+      - description
+      - counterparty
+      - amount
+    column_aliases:
+      date:
+        - "Saldo do dia"
+      description:
+        - "Transações"
+      amount:
+        - "+ R$"
+        - "- R$"
+  parsing:
+    date_formats:
+      - "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "- R$ {amount}"
+    positive_patterns:
+      - "+ R$ {amount}"
+    ignore_rows:
+      - "Saldo do dia"
+      - "Saldo inicial disponível"
+      - "Total de entradas"
+      - "Total de saídas"
+      - "Saldo final disponível"
+      - "Cora SCFI"
+      - "Ouvidoria"
+      - "Extrato gerado no dia"
+    opening_balance_rows:
+      - "Saldo inicial disponível"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - counterparty
+      - balance

@@ -272,6 +272,18 @@ def parse_pdf_transactions(
                 textract_attempted=textract_attempted,
                 native_text_detected=native_text_detected,
             )
+        native_layout_result = _try_parse_native_layout_text(
+            raw_bytes=raw_bytes,
+            baseline_text="\n".join(page_texts),
+            reference_month_year=reference_month_year,
+        )
+        if native_layout_result is not None:
+            return _with_parse_observability(
+                native_layout_result,
+                native_layout_recovery=1,
+                textract_attempted=textract_attempted,
+                native_text_detected=native_text_detected,
+            )
         return _retry_native_parse_failure_with_ocr(
             raw_bytes,
             native_pages=native_pages,
@@ -3179,26 +3191,40 @@ def _resolve_tabular_column_positions(line_texts: list[str]) -> _TabularColumnPo
     return None
 
 
-def _maybe_upgrade_native_parse_with_layout_text(*, raw_bytes: bytes, baseline_result: PdfParseResult) -> PdfParseResult:
+def _try_parse_native_layout_text(
+    *,
+    raw_bytes: bytes,
+    baseline_text: str,
+    reference_month_year: tuple[int, int] | None,
+) -> PdfParseResult | None:
     try:
         layout_pages = _read_layout_native_pdf_page_texts(raw_bytes)
     except InvalidFileContentError:
-        return baseline_result
+        return None
 
     if not layout_pages:
-        return baseline_result
-    if "\n".join(layout_pages).strip() == baseline_result.extracted_text.strip():
-        return baseline_result
-
-    reference_month_year = text_extraction.read_pdf_creation_month_year(raw_bytes)
+        return None
+    if "\n".join(layout_pages).strip() == baseline_text.strip():
+        return None
 
     try:
-        candidate_result = _parse_pdf_transactions_from_page_texts(
+        return _parse_pdf_transactions_from_page_texts(
             layout_pages,
             preserve_layout_spacing=True,
             context=LayoutSpecificParseContext(reference_month_year=reference_month_year),
         )
     except InvalidFileContentError:
+        return None
+
+
+def _maybe_upgrade_native_parse_with_layout_text(*, raw_bytes: bytes, baseline_result: PdfParseResult) -> PdfParseResult:
+    reference_month_year = text_extraction.read_pdf_creation_month_year(raw_bytes)
+    candidate_result = _try_parse_native_layout_text(
+        raw_bytes=raw_bytes,
+        baseline_text=baseline_result.extracted_text,
+        reference_month_year=reference_month_year,
+    )
+    if candidate_result is None:
         return baseline_result
 
     if _is_better_parse_result(candidate=candidate_result, baseline=baseline_result):
