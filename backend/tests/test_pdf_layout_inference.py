@@ -662,6 +662,26 @@ def test_infer_pdf_layout_prefers_bradesco_profile_when_tokens_match() -> None:
     assert result.confidence >= 0.5
 
 
+def test_infer_pdf_layout_marks_bradesco_business_search_statement_as_high_confidence() -> None:
+    text = """
+    Bradesco
+    Extrato
+    Data e hora: 08/10/2026
+    Busca de lançamentos
+    Dados da empresa Agência Conta
+    Lançamentos
+    Data Descrição Documento Tipo Valor Saldo (R$)
+    25/09/2026 TRANSFERÊNCIA RECEBIDA 123456 Crédito 2.000,00 5.721,78
+    24/09/2026 PAGAMENTO FORNECEDOR 654321 Débito 300,00 5.421,78
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "bradesco_empresas_negocios_extrato_lancamentos_v1"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_identifies_bradesco_period_statement_without_bank_header() -> None:
     text = """
     EXTRATO DE: AGENCIA [AGENCIA] CONTA [CONTA]

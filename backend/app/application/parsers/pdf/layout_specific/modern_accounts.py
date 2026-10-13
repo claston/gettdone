@@ -111,44 +111,110 @@ class ModernAccountLayoutParser:
 
 def _parse_bradesco_rows(lines: list[_PdfLine]) -> list[_ParsedTransaction]:
     rows: list[_ParsedTransaction] = []
+    pending_dated_line: tuple[str, str, _PdfLine] | None = None
     for line in lines:
         match = _DATE_AT_START_PATTERN.match(line.text)
-        if match is None:
+        if match is not None:
+            pending_dated_line = None
+            date = _safe_parse_date(match.group("date"))
+            if date is None:
+                continue
+            rest = match.group("rest")
+            amount_tokens = tuple(find_amount_tokens(rest))
+            if len(amount_tokens) >= 2:
+                row = _build_bradesco_row(
+                    date=date,
+                    row_text=rest,
+                    amount_tokens=amount_tokens,
+                    source=line,
+                )
+                if row is not None:
+                    rows.append(row)
+            elif not amount_tokens and not _should_skip_description(rest):
+                pending_dated_line = (date, rest, line)
             continue
-        amount_tokens = tuple(find_amount_tokens(match.group("rest")))
-        if len(amount_tokens) < 2:
+
+        if not line.text.strip():
             continue
-        date = _safe_parse_date(match.group("date"))
+
+        if pending_dated_line is not None:
+            date, dated_text, dated_source = pending_dated_line
+            pending_dated_line = None
+            row_text = f"{dated_text} {line.text}".strip()
+            amount_tokens = tuple(find_amount_tokens(row_text))
+            if len(amount_tokens) < 2:
+                continue
+            row = _build_bradesco_row(
+                date=date,
+                row_text=row_text,
+                amount_tokens=amount_tokens,
+                source=dated_source,
+            )
+            if row is not None:
+                rows.append(row)
+            continue
+
+        embedded_date_match = _DATE_ANY_PATTERN.search(line.text)
+        if embedded_date_match is None or len(embedded_date_match.group("date")) != 10:
+            continue
+        date = _safe_parse_date(embedded_date_match.group("date"))
         if date is None:
             continue
-        amount_token, balance_token = amount_tokens[-2], amount_tokens[-1]
-        raw_description = _remove_amount_tokens(match.group("rest"), amount_tokens)
-        document_match = _BRADESCO_DOCUMENT_AND_TYPE_PATTERN.search(raw_description)
-        external_reference_id = document_match.group("document") if document_match is not None else None
-        description = (
-            raw_description[: document_match.start()].strip()
-            if document_match is not None
-            else raw_description
-        )
-        if _should_skip_description(description):
-            continue
-        amount, forced_sign = _resolve_signed_amount(
-            amount_token,
-            description=raw_description,
-        )
-        rows.append(
-            _build_row(
-                date=date,
-                description=description,
-                amount=amount,
-                amount_token=amount_token,
-                source=line,
-                running_balance=parse_pdf_amount(balance_token.value),
-                external_reference_id=external_reference_id,
-                forced_sign=forced_sign,
+        row_text = " ".join(
+            (
+                line.text[: embedded_date_match.start()].strip(),
+                line.text[embedded_date_match.end() :].strip(),
             )
+        ).strip()
+        amount_tokens = tuple(find_amount_tokens(row_text))
+        if len(amount_tokens) < 2:
+            continue
+        raw_description = _remove_amount_tokens(row_text, amount_tokens)
+        if _BRADESCO_DOCUMENT_AND_TYPE_PATTERN.search(raw_description) is None:
+            continue
+        row = _build_bradesco_row(
+            date=date,
+            row_text=row_text,
+            amount_tokens=amount_tokens,
+            source=line,
         )
+        if row is not None:
+            rows.append(row)
     return rows
+
+
+def _build_bradesco_row(
+    *,
+    date: str,
+    row_text: str,
+    amount_tokens: tuple[AmountToken, ...],
+    source: _PdfLine,
+) -> _ParsedTransaction | None:
+    amount_token, balance_token = amount_tokens[-2], amount_tokens[-1]
+    raw_description = _remove_amount_tokens(row_text, amount_tokens)
+    document_match = _BRADESCO_DOCUMENT_AND_TYPE_PATTERN.search(raw_description)
+    external_reference_id = document_match.group("document") if document_match is not None else None
+    description = (
+        raw_description[: document_match.start()].strip()
+        if document_match is not None
+        else raw_description
+    )
+    if _should_skip_description(description):
+        return None
+    amount, forced_sign = _resolve_signed_amount(
+        amount_token,
+        description=raw_description,
+    )
+    return _build_row(
+        date=date,
+        description=description,
+        amount=amount,
+        amount_token=amount_token,
+        source=source,
+        running_balance=parse_pdf_amount(balance_token.value),
+        external_reference_id=external_reference_id,
+        forced_sign=forced_sign,
+    )
 
 
 def _parse_sicredi_rows(lines: list[_PdfLine]) -> list[_ParsedTransaction]:

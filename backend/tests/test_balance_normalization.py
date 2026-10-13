@@ -479,3 +479,47 @@ def test_annotate_balance_consistency_resets_when_descending_statement_date_rest
     assert checked_count == 3
     assert failed_count == 0
     assert all(transaction.warnings == [] for transaction in canonical_transactions)
+
+
+def test_annotate_balance_consistency_resets_between_descending_bradesco_date_groups() -> None:
+    layout_name = "bradesco_empresas_negocios_extrato_lancamentos_v1"
+    canonical_transactions = [
+        CanonicalTransaction(
+            date="2026-09-25",
+            description="CRÉDITO UM",
+            amount=2000.0,
+            type="inflow",
+            running_balance=5721.78,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-09-25",
+            description="CRÉDITO DOIS",
+            amount=2000.0,
+            type="inflow",
+            running_balance=7721.78,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-09-24",
+            description="CRÉDITO TRÊS",
+            amount=100.0,
+            type="inflow",
+            running_balance=10000.0,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-09-24",
+            description="DÉBITO UM",
+            amount=-300.0,
+            type="outflow",
+            running_balance=9700.0,
+            layout_name=layout_name,
+        ),
+    ]
+
+    checked_count, failed_count = annotate_balance_consistency(canonical_transactions)
+
+    assert checked_count == 2
+    assert failed_count == 0
+    assert all(transaction.warnings == [] for transaction in canonical_transactions)
