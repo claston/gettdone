@@ -56,6 +56,10 @@ def test_worker_deploy_blocks_vulnerable_ecr_images():
     workflow = _workflow()
 
     assert "ecr wait image-scan-complete" in workflow
+    assert "ScanNotFoundException" in workflow
+    assert "scan_registration_attempt" in workflow
+    assert "sleep 5" in workflow
+    assert "Timed out waiting for the ECR image scan to be registered" in workflow
     assert "ecr describe-image-scan-findings" in workflow
     assert "findingSeverityCounts" in workflow
     assert "'.CRITICAL // 0'" in workflow

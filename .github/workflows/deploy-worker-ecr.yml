@@ -209,9 +209,35 @@ jobs:
         run: |
           set -euo pipefail
 
-          aws ecr wait image-scan-complete \
-            --repository-name "${REPOSITORY_NAME}" \
-            --image-id "imageDigest=${IMAGE_DIGEST}"
+          scan_complete=false
+          scan_wait_error="${RUNNER_TEMP}/ecr-scan-wait-error.txt"
+          for scan_registration_attempt in $(seq 1 24); do
+            set +e
+            aws ecr wait image-scan-complete \
+              --repository-name "${REPOSITORY_NAME}" \
+              --image-id "imageDigest=${IMAGE_DIGEST}" \
+              2>"${scan_wait_error}"
+            scan_wait_exit=$?
+            set -e
+
+            if [ "${scan_wait_exit}" -eq 0 ]; then
+              scan_complete=true
+              break
+            fi
+            if grep -q "ScanNotFoundException" "${scan_wait_error}"; then
+              echo "Waiting for ECR to register the image scan (${scan_registration_attempt}/24)."
+              sleep 5
+              continue
+            fi
+
+            cat "${scan_wait_error}" >&2
+            exit "${scan_wait_exit}"
+          done
+          if [ "${scan_complete}" != "true" ]; then
+            echo "::error::Timed out waiting for the ECR image scan to be registered."
+            exit 1
+          fi
+
           severity_counts="$(aws ecr describe-image-scan-findings \
             --repository-name "${REPOSITORY_NAME}" \
             --image-id "imageDigest=${IMAGE_DIGEST}" \
