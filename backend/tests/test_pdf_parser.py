@@ -4501,6 +4501,69 @@ def test_parse_pdf_transactions_ignores_bradesco_repeated_account_summary_across
     assert result.parse_metrics["balance_consistency_failed"] == 0
 
 
+def test_parse_pdf_transactions_preserves_fragmented_bradesco_date_after_slash_page_counter() -> None:
+    pages = [
+        """
+        Data da operação: 02/10/2026
+        Bradesco Net Empresa
+        Extrato Mensal / Por Período
+        Extrato de: Ag: 1234 | CC: 56789-0 | Entre 01/09/2026 e 30/09/2026
+        Data
+        Lançamento
+        Dcto.
+        Crédito (R$)
+        Débito (R$)
+        Saldo (R$)
+        31/08/2026
+        SALDO ANTERIOR
+        100,00
+        04/09/2026
+        DEPÓSITO IDENTIFICADO
+        040926001
+        100,00
+        200,00
+        1/2
+        """,
+        """
+        Data da operação: 02/10/2026
+        Bradesco Net Empresa
+        Extrato Mensal / Por Período
+        Data
+        Lançamento
+        Dcto.
+        Crédito (R$)
+        Débito (R$)
+        Saldo (R$)
+        PAGAMENTO DE BOLETO
+        040926002
+        50,00-
+        150,00
+        Total
+        2/2
+        Saldos Invest Fácil / Plus
+        RENTAB.INVEST FACILCRED
+        """,
+    ]
+
+    profile = pdf_parser_module.get_layout_profile(
+        "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
+    )
+    rows = pdf_parser_module._parse_grouped_statement_lines(
+        pdf_parser_module._flatten_statement_lines(pages),
+        layout_profile=profile,
+    )
+
+    assert [
+        (row.transaction.date, row.transaction.description, row.transaction.amount)
+        for row in rows
+        if row.transaction.description != "SALDO ANTERIOR"
+    ] == [
+        ("2026-09-04", "DEPÓSITO IDENTIFICADO 040926001", 100.0),
+        ("2026-09-04", "PAGAMENTO DE BOLETO 040926002", -50.0),
+    ]
+    assert rows[-1].running_balance == 150.0
+
+
 def test_parse_pdf_transactions_prefers_caixa_gerenciador_period_effective_date_profile(monkeypatch) -> None:
     native_text = """
     GERENCIADOR

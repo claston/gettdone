@@ -101,6 +101,7 @@ _ITAU_COMPLETE_TABLE_LAYOUT = "itau_empresas_extrato_completo_tabela_v1"
 _SICREDI_MATRIX_LANDSCAPE_LAYOUT = "sicredi_matricial_paisagem_conta_corrente_v1"
 _CREDISIS_DESCENDING_ACCOUNT_LAYOUT = "credisis_extrato_conta_corrente_descendente_v1"
 _STONE_CURRENT_ACCOUNT_A4_LAYOUT = "stone_extrato_conta_corrente_a4_v1"
+_BRADESCO_SLASH_PAGE_COUNTER_PATTERN = re.compile(r"^\d{1,3}/\d{1,3}$")
 _INHERITED_TABULAR_DATE_LAYOUTS = {
     _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT,
     _SANTANDER_CONSOLIDATED_BASIC_LAYOUT,
@@ -1238,14 +1239,39 @@ def _parse_grouped_statement_lines(
                 has_transactions=bool(transactions),
             )
             current_page_number = line.page_number
-            current_date = current_date if preserve_current_date else None
+            if (
+                preserve_current_date
+                and layout_profile is not None
+                and layout_profile.profile_name == _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT
+                and last_transaction_index is not None
+            ):
+                current_date = transactions[last_transaction_index].transaction.date
+            else:
+                current_date = current_date if preserve_current_date else None
             current_section_hint = None
             description_parts = []
             pending_opening_balance_label = None
             pending_opening_balance_line = None
-            skipping_repeated_page_header = preserve_current_date
+            skipping_repeated_page_header = bool(
+                preserve_current_date
+                and layout_profile is not None
+                and (
+                    layout_profile.profile_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
+                    or _starts_bradesco_grouped_repeated_page_header(
+                        lines=lines,
+                        start_index=index,
+                        page_number=line.page_number,
+                        layout_profile=layout_profile,
+                    )
+                )
+            )
 
         normalized_line = _normalize_text(line.text)
+        if _is_bradesco_grouped_page_counter(
+            normalized_line=normalized_line,
+            layout_profile=layout_profile,
+        ):
+            continue
         if (
             layout_profile is not None
             and layout_profile.profile_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
@@ -1265,6 +1291,13 @@ def _parse_grouped_statement_lines(
                 last_attached_running_balance_line = None
                 continue
         if skipping_repeated_page_header:
+            if (
+                layout_profile is not None
+                and layout_profile.profile_name == _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT
+            ):
+                if _is_bradesco_grouped_repeated_page_header_end(normalized_line):
+                    skipping_repeated_page_header = False
+                continue
             if _is_itau_monthly_repeated_page_header_line(normalized_line):
                 continue
             skipping_repeated_page_header = False
@@ -1509,6 +1542,41 @@ def _is_bradesco_grouped_section_boundary(
     return normalized_line == "TOTAL" or normalized_line.startswith("ULTIMOS LANCAMENTOS")
 
 
+def _is_bradesco_grouped_page_counter(
+    *,
+    normalized_line: str,
+    layout_profile: DeclarativeLayoutProfile | None,
+) -> bool:
+    return bool(
+        layout_profile is not None
+        and layout_profile.profile_name == _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT
+        and _BRADESCO_SLASH_PAGE_COUNTER_PATTERN.fullmatch(normalized_line)
+    )
+
+
+def _starts_bradesco_grouped_repeated_page_header(
+    *,
+    lines: list[_PdfLine],
+    start_index: int,
+    page_number: int,
+    layout_profile: DeclarativeLayoutProfile | None,
+) -> bool:
+    if layout_profile is None or layout_profile.profile_name != _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT:
+        return False
+    page_prefix = [
+        _normalize_text(candidate.text)
+        for candidate in lines[start_index : start_index + 20]
+        if candidate.page_number == page_number
+    ]
+    return any("EXTRATO MENSAL / POR PERIODO" in text for text in page_prefix) and any(
+        _is_bradesco_grouped_repeated_page_header_end(text) for text in page_prefix
+    )
+
+
+def _is_bradesco_grouped_repeated_page_header_end(normalized_line: str) -> bool:
+    return normalized_line == "SALDO (R$)" or normalized_line.endswith(" SALDO (R$)")
+
+
 def _is_terminal_grouped_statement_section_boundary(
     line_text: str,
     *,
@@ -1535,7 +1603,11 @@ def _should_preserve_grouped_date_across_page(
         current_date
         and has_transactions
         and layout_profile is not None
-        and layout_profile.profile_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
+        and layout_profile.profile_name
+        in {
+            _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT,
+            _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT,
+        }
     )
 
 
