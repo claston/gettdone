@@ -662,6 +662,26 @@ def test_infer_pdf_layout_prefers_bradesco_profile_when_tokens_match() -> None:
     assert result.confidence >= 0.5
 
 
+def test_infer_pdf_layout_marks_bradesco_business_search_statement_as_high_confidence() -> None:
+    text = """
+    Bradesco
+    Extrato
+    Data e hora: 08/10/2026
+    Busca de lançamentos
+    Dados da empresa Agência Conta
+    Lançamentos
+    Data Descrição Documento Tipo Valor Saldo (R$)
+    25/09/2026 TRANSFERÊNCIA RECEBIDA 123456 Crédito 2.000,00 5.721,78
+    24/09/2026 PAGAMENTO FORNECEDOR 654321 Débito 300,00 5.421,78
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "bradesco_empresas_negocios_extrato_lancamentos_v1"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_identifies_bradesco_period_statement_without_bank_header() -> None:
     text = """
     EXTRATO DE: AGENCIA [AGENCIA] CONTA [CONTA]
@@ -678,6 +698,42 @@ def test_infer_pdf_layout_identifies_bradesco_period_statement_without_bank_head
 
     assert result.layout_name == "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
     assert result.confidence >= 0.7
+    assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_confidently_recognizes_itau_monthly_with_split_column_headers() -> None:
+    text = """
+    extrato mensal
+    set 2026
+    01. Conta Corrente e Aplicações Automáticas
+    Conta Corrente | Movimentação
+    data
+    descrição
+    entradas R$
+    saídas R$
+    saldo R$
+    (créditos)
+    (débitos)
+    31/08
+    Saldo anterior
+    1.000,00
+    01/09
+    Sispag
+    100,00-
+    Apl Aplic Aut Mais
+    900,00-
+    SALDO APLIC AUT MAIS
+    total entradas
+    total saídas
+    Limite Itaú para saque
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == (
+        "itau_empresas_extrato_mensal_conta_corrente_aplicacoes_automaticas_v1"
+    )
+    assert result.confidence >= 0.95
     assert result.used_fallback is False
 
 
@@ -1475,6 +1531,34 @@ def test_infer_pdf_layout_recognizes_unbranded_bank_agency_debit_credit_statemen
     result = infer_pdf_layout(text)
 
     assert result.layout_name == "bank_agency_debit_credit_statement_v1"
+    assert result.used_fallback is False
+
+
+def test_infer_pdf_layout_recognizes_split_unbranded_bank_agency_header() -> None:
+    text = """
+    Extrato
+    Período de 01/09/2026 a 30/09/2026
+    Cliente: EMPRESA EXEMPLO
+    Banco: 077 Agência: 0001-0 Conta: 12345-6
+    Data
+    Descrição
+    Documento
+    Crédito (R$)
+    Débito (R$)
+    Saldo (R$)
+    Saldo anterior
+    100,00
+    01/09/2026
+    PAGAMENTO FORNECEDOR
+    123456
+    -5,00
+    95,00
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "bank_agency_debit_credit_statement_v1"
+    assert result.confidence >= 0.95
     assert result.used_fallback is False
 
 

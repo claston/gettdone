@@ -8,13 +8,13 @@ layout_profile:
   classifier:
     required_keywords:
       - "Bradesco"
-      - "empresas e negócios"
       - "Extrato"
       - "Data e hora"
       - "Busca de lançamentos"
       - "Dados da empresa"
       - "Lançamentos"
     optional_keywords:
+      - "empresas e negócios"
       - "Agência"
       - "Conta"
       - "PIX QR CODE"
