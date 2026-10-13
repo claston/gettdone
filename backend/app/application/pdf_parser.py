@@ -102,6 +102,8 @@ _ITAU_COMPLETE_TABLE_LAYOUT = "itau_empresas_extrato_completo_tabela_v1"
 _SICREDI_MATRIX_LANDSCAPE_LAYOUT = "sicredi_matricial_paisagem_conta_corrente_v1"
 _CREDISIS_DESCENDING_ACCOUNT_LAYOUT = "credisis_extrato_conta_corrente_descendente_v1"
 _STONE_CURRENT_ACCOUNT_A4_LAYOUT = "stone_extrato_conta_corrente_a4_v1"
+_BRADESCO_SLASH_PAGE_COUNTER_PATTERN = re.compile(r"^\d{1,3}/\d{1,3}$")
+_BANK_AGENCY_DEBIT_CREDIT_LAYOUT = "bank_agency_debit_credit_statement_v1"
 _INHERITED_TABULAR_DATE_LAYOUTS = {
     _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT,
     _SANTANDER_CONSOLIDATED_BASIC_LAYOUT,
@@ -269,6 +271,18 @@ def parse_pdf_transactions(
         if not using_native_text:
             raise _attach_parse_observability(
                 native_parse_error,
+                textract_attempted=textract_attempted,
+                native_text_detected=native_text_detected,
+            )
+        native_layout_result = _try_parse_native_layout_text(
+            raw_bytes=raw_bytes,
+            baseline_text="\n".join(page_texts),
+            reference_month_year=reference_month_year,
+        )
+        if native_layout_result is not None:
+            return _with_parse_observability(
+                native_layout_result,
+                native_layout_recovery=1,
                 textract_attempted=textract_attempted,
                 native_text_detected=native_text_detected,
             )
@@ -1239,14 +1253,39 @@ def _parse_grouped_statement_lines(
                 has_transactions=bool(transactions),
             )
             current_page_number = line.page_number
-            current_date = current_date if preserve_current_date else None
+            if (
+                preserve_current_date
+                and layout_profile is not None
+                and layout_profile.profile_name == _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT
+                and last_transaction_index is not None
+            ):
+                current_date = transactions[last_transaction_index].transaction.date
+            else:
+                current_date = current_date if preserve_current_date else None
             current_section_hint = None
             description_parts = []
             pending_opening_balance_label = None
             pending_opening_balance_line = None
-            skipping_repeated_page_header = preserve_current_date
+            skipping_repeated_page_header = bool(
+                preserve_current_date
+                and layout_profile is not None
+                and (
+                    layout_profile.profile_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
+                    or _starts_bradesco_grouped_repeated_page_header(
+                        lines=lines,
+                        start_index=index,
+                        page_number=line.page_number,
+                        layout_profile=layout_profile,
+                    )
+                )
+            )
 
         normalized_line = _normalize_text(line.text)
+        if _is_bradesco_grouped_page_counter(
+            normalized_line=normalized_line,
+            layout_profile=layout_profile,
+        ):
+            continue
         if (
             layout_profile is not None
             and layout_profile.profile_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
@@ -1266,7 +1305,14 @@ def _parse_grouped_statement_lines(
                 last_attached_running_balance_line = None
                 continue
         if skipping_repeated_page_header:
-            if _is_itau_monthly_repeated_page_header_line(normalized_line):
+            if (
+                layout_profile is not None
+                and layout_profile.profile_name == _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT
+            ):
+                if _is_bradesco_grouped_repeated_page_header_end(normalized_line):
+                    skipping_repeated_page_header = False
+                continue
+            if _is_grouped_repeated_page_header_line(normalized_line):
                 continue
             skipping_repeated_page_header = False
         if (
@@ -1344,18 +1390,19 @@ def _parse_grouped_statement_lines(
                     and opening_balance_amount is not None
                     and pending_opening_balance_label is not None
                 ):
-                    opening_row = _build_parsed_transaction(
-                        date=grouped_date_match.date,
-                        description=pending_opening_balance_label,
-                        amount=opening_balance_amount,
-                        source_page=(opening_balance_amount_line or pending_opening_balance_line or line).page_number,
-                        source_line=(opening_balance_amount_line or pending_opening_balance_line or line).line_number,
-                        has_explicit_amount_sign=has_explicit_amount_sign(
-                            (opening_balance_amount_line or line).text
-                        ),
-                    )
-                    transactions.append(opening_row)
-                    last_transaction_index = len(transactions) - 1
+                    if _should_import_grouped_opening_balance(layout_profile):
+                        opening_row = _build_parsed_transaction(
+                            date=grouped_date_match.date,
+                            description=pending_opening_balance_label,
+                            amount=opening_balance_amount,
+                            source_page=(opening_balance_amount_line or pending_opening_balance_line or line).page_number,
+                            source_line=(opening_balance_amount_line or pending_opening_balance_line or line).line_number,
+                            has_explicit_amount_sign=has_explicit_amount_sign(
+                                (opening_balance_amount_line or line).text
+                            ),
+                        )
+                        transactions.append(opening_row)
+                        last_transaction_index = len(transactions) - 1
                     last_known_running_balance = opening_balance_amount
                     opening_balance_inserted = True
                 transactions.append(inline_transaction)
@@ -1433,18 +1480,19 @@ def _parse_grouped_statement_lines(
                     and opening_balance_amount is not None
                     and pending_opening_balance_label is not None
                 ):
-                    opening_row = _build_parsed_transaction(
-                        date=parsed_row.transaction.date,
-                        description=pending_opening_balance_label,
-                        amount=opening_balance_amount,
-                        source_page=(opening_balance_amount_line or pending_opening_balance_line or line).page_number,
-                        source_line=(opening_balance_amount_line or pending_opening_balance_line or line).line_number,
-                        has_explicit_amount_sign=has_explicit_amount_sign(
-                            (opening_balance_amount_line or line).text
-                        ),
-                    )
-                    transactions.append(opening_row)
-                    last_transaction_index = len(transactions) - 1
+                    if _should_import_grouped_opening_balance(layout_profile):
+                        opening_row = _build_parsed_transaction(
+                            date=parsed_row.transaction.date,
+                            description=pending_opening_balance_label,
+                            amount=opening_balance_amount,
+                            source_page=(opening_balance_amount_line or pending_opening_balance_line or line).page_number,
+                            source_line=(opening_balance_amount_line or pending_opening_balance_line or line).line_number,
+                            has_explicit_amount_sign=has_explicit_amount_sign(
+                                (opening_balance_amount_line or line).text
+                            ),
+                        )
+                        transactions.append(opening_row)
+                        last_transaction_index = len(transactions) - 1
                     last_known_running_balance = opening_balance_amount
                     opening_balance_inserted = True
                 transactions.append(parsed_row)
@@ -1510,6 +1558,49 @@ def _is_bradesco_grouped_section_boundary(
     return normalized_line == "TOTAL" or normalized_line.startswith("ULTIMOS LANCAMENTOS")
 
 
+def _is_bradesco_grouped_page_counter(
+    *,
+    normalized_line: str,
+    layout_profile: DeclarativeLayoutProfile | None,
+) -> bool:
+    return bool(
+        layout_profile is not None
+        and layout_profile.profile_name == _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT
+        and _BRADESCO_SLASH_PAGE_COUNTER_PATTERN.fullmatch(normalized_line)
+    )
+
+
+def _starts_bradesco_grouped_repeated_page_header(
+    *,
+    lines: list[_PdfLine],
+    start_index: int,
+    page_number: int,
+    layout_profile: DeclarativeLayoutProfile | None,
+) -> bool:
+    if layout_profile is None or layout_profile.profile_name != _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT:
+        return False
+    page_prefix = [
+        _normalize_text(candidate.text)
+        for candidate in lines[start_index : start_index + 20]
+        if candidate.page_number == page_number
+    ]
+    return any("EXTRATO MENSAL / POR PERIODO" in text for text in page_prefix) and any(
+        _is_bradesco_grouped_repeated_page_header_end(text) for text in page_prefix
+    )
+
+
+def _is_bradesco_grouped_repeated_page_header_end(normalized_line: str) -> bool:
+    return normalized_line == "SALDO (R$)" or normalized_line.endswith(" SALDO (R$)")
+
+
+def _should_import_grouped_opening_balance(
+    layout_profile: DeclarativeLayoutProfile | None,
+) -> bool:
+    if layout_profile is None or layout_profile.profile_name != _BANK_AGENCY_DEBIT_CREDIT_LAYOUT:
+        return True
+    return should_import_profile_opening_balance(layout_profile)
+
+
 def _is_terminal_grouped_statement_section_boundary(
     line_text: str,
     *,
@@ -1520,6 +1611,8 @@ def _is_terminal_grouped_statement_section_boundary(
         return True
     if not has_transactions or layout_profile is None:
         return False
+    if layout_profile.profile_name == _BANK_AGENCY_DEBIT_CREDIT_LAYOUT:
+        return _normalize_text(line_text) == "TOTAL"
     return (
         layout_profile.profile_name == _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT
         and _normalize_text(line_text).startswith("PERIODO:")
@@ -1536,17 +1629,26 @@ def _should_preserve_grouped_date_across_page(
         current_date
         and has_transactions
         and layout_profile is not None
-        and layout_profile.profile_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
+        and layout_profile.profile_name
+        in {
+            _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT,
+            _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT,
+            _BANK_AGENCY_DEBIT_CREDIT_LAYOUT,
+        }
     )
 
 
-def _is_itau_monthly_repeated_page_header_line(normalized_line: str) -> bool:
+def _is_grouped_repeated_page_header_line(normalized_line: str) -> bool:
     if normalized_line in {
         "EXTRATO",
         "MENSAL",
         "EXTRATO MENSAL",
         "DATA",
         "DESCRICAO",
+        "DOCUMENTO",
+        "CREDITO (R$)",
+        "DEBITO (R$)",
+        "SALDO (R$)",
         "ENTRADAS R$",
         "SAIDAS R$",
         "SALDO R$",
@@ -3194,26 +3296,40 @@ def _resolve_tabular_column_positions(line_texts: list[str]) -> _TabularColumnPo
     return None
 
 
-def _maybe_upgrade_native_parse_with_layout_text(*, raw_bytes: bytes, baseline_result: PdfParseResult) -> PdfParseResult:
+def _try_parse_native_layout_text(
+    *,
+    raw_bytes: bytes,
+    baseline_text: str,
+    reference_month_year: tuple[int, int] | None,
+) -> PdfParseResult | None:
     try:
         layout_pages = _read_layout_native_pdf_page_texts(raw_bytes)
     except InvalidFileContentError:
-        return baseline_result
+        return None
 
     if not layout_pages:
-        return baseline_result
-    if "\n".join(layout_pages).strip() == baseline_result.extracted_text.strip():
-        return baseline_result
-
-    reference_month_year = text_extraction.read_pdf_creation_month_year(raw_bytes)
+        return None
+    if "\n".join(layout_pages).strip() == baseline_text.strip():
+        return None
 
     try:
-        candidate_result = _parse_pdf_transactions_from_page_texts(
+        return _parse_pdf_transactions_from_page_texts(
             layout_pages,
             preserve_layout_spacing=True,
             context=LayoutSpecificParseContext(reference_month_year=reference_month_year),
         )
     except InvalidFileContentError:
+        return None
+
+
+def _maybe_upgrade_native_parse_with_layout_text(*, raw_bytes: bytes, baseline_result: PdfParseResult) -> PdfParseResult:
+    reference_month_year = text_extraction.read_pdf_creation_month_year(raw_bytes)
+    candidate_result = _try_parse_native_layout_text(
+        raw_bytes=raw_bytes,
+        baseline_text=baseline_result.extracted_text,
+        reference_month_year=reference_month_year,
+    )
+    if candidate_result is None:
         return baseline_result
 
     if _is_better_parse_result(candidate=candidate_result, baseline=baseline_result):

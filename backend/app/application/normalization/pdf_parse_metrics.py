@@ -1,6 +1,9 @@
 _HIGH_CONFIDENCE_LAYOUT_SPECIFIC_PARSERS = {
     "layout_specific_santander_statement",
 }
+_HIGH_CONFIDENCE_LAYOUT_SPECIFIC_REASONS = {
+    "layout_specific_modern_accounts:bradesco_empresas_negocios_extrato_lancamentos_v1",
+}
 
 
 def build_pdf_parse_metrics(
@@ -129,6 +132,8 @@ def _resolve_confidence_band(
             return "medium"
     if layout_used_fallback:
         return "medium"
+    if parser_selection_reason in _HIGH_CONFIDENCE_LAYOUT_SPECIFIC_REASONS:
+        return "high"
     if selected_parser in _HIGH_CONFIDENCE_LAYOUT_SPECIFIC_PARSERS:
         return "high"
     if selected_parser != "inline":
