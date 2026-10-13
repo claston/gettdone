@@ -18,6 +18,7 @@ layout_profile:
       - "Valor"
     optional_keywords:
       - "SALDO DO DIA"
+      - "PIX"
       - "TARIFA COBRANÇA"
       - "CRÉD.LIQUIDAÇÃO COBRANÇA"
     negative_keywords:

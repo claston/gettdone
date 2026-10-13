@@ -143,7 +143,10 @@ def infer_pdf_layout(text: str) -> PdfLayoutInference:
         specific_scores.get(SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT_NAME, 0.0),
         _score_santander_pf_consolidated_intelligent(normalized),
     )
-    specific_scores[BANK_AGENCY_LAYOUT_NAME] = _score_bank_agency_debit_credit_statement(normalized_lines)
+    specific_scores[BANK_AGENCY_LAYOUT_NAME] = max(
+        specific_scores.get(BANK_AGENCY_LAYOUT_NAME, 0.0),
+        _score_bank_agency_debit_credit_statement(normalized_lines),
+    )
     generic_score = _score_generic_statement(normalized)
     specific_best_name, specific_best_score = max(specific_scores.items(), key=lambda item: item[1])
 

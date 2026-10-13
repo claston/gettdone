@@ -117,3 +117,53 @@ def test_parse_pdf_transactions_supports_modern_account_layouts(case_name: str, 
     ofx = build_ofx_statement(result.transactions)
     assert ofx.count("<STMTTRN>") == len(case["amounts"])
     assert all(f"<TRNAMT>{amount:.2f}" in ofx for amount in case["amounts"])
+
+
+def test_parse_pdf_transactions_joins_split_bradesco_visual_rows(monkeypatch) -> None:
+    text = """
+    Bradesco empresas e negócios
+    Extrato
+    Data e hora: 08/10/2026
+    Busca de lançamentos
+    Dados da empresa Agência Conta
+    Lançamentos
+    Data Descrição Documento Tipo Valor Saldo (R$)
+    25/09/2026 TRANSFERÊNCIA RECEBIDA
+    REMETENTE EMPRESA EXEMPLO 25/09 123456 Crédito 2.000,00 5.721,78
+    25/09/2026 TRANSFERÊNCIA RECEBIDA
+    REMETENTE EMPRESA EXEMPLO 25/09 123457 Crédito 2.000,00 7.721,78
+    24/09/2026 PIX RECEBIDO
+    REMETENTE EMPRESA EXEMPLO 24/09 654320 Crédito 100,00 10.000,00
+    24/09/2026 PAGAMENTO FORNECEDOR
+    FAVORECIDO EMPRESA EXEMPLO 24/09 654321 Débito 300,00 9.700,00
+    PIX ENVIADO 23/09/2026 777777 Débito 1.180,80 8.519,20
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [text])
+    monkeypatch.setattr(
+        pdf_parser_module,
+        "_read_layout_native_pdf_page_texts",
+        lambda raw_bytes: [text],
+    )
+
+    result = pdf_parser_module.parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "bradesco_empresas_negocios_extrato_lancamentos_v1"
+    assert result.parse_metrics["selected_parser"] == "layout_specific_modern_accounts"
+    assert [transaction.amount for transaction in result.transactions] == [
+        2000.00,
+        2000.00,
+        100.00,
+        -300.00,
+        -1180.80,
+    ]
+    assert [transaction.running_balance for transaction in result.canonical_transactions] == [
+        5721.78,
+        7721.78,
+        10000.00,
+        9700.00,
+        8519.20,
+    ]
+    assert result.parse_metrics["balance_consistency_checked"] == 2
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert result.parse_metrics["confidence_band"] == "high"
+    assert result.parse_metrics["export_recommendation"] == "safe_to_export"
