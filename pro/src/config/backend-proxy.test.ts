@@ -31,8 +31,17 @@ describe("buildBackendProxyRewrites", () => {
             "https://api.ofxsimples.com.br/api/conversion-batches/:path*",
         },
         {
-          source: "/auth/:path*",
-          destination: "https://api.ofxsimples.com.br/auth/:path*",
+          source: "/auth/me",
+          destination: "https://api.ofxsimples.com.br/auth/me",
+        },
+        {
+          source: "/auth/pro/anonymous-session",
+          destination:
+            "https://api.ofxsimples.com.br/auth/pro/anonymous-session",
+        },
+        {
+          source: "/auth/pro/session/login",
+          destination: "https://api.ofxsimples.com.br/auth/pro/session/login",
         },
         {
           source: "/convert-edits/:path*",

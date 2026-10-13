@@ -8,7 +8,9 @@ const workspaceRoutes = [
   "/api/pro/conversion-batches/:path*",
   "/api/pro/convert-edits/:path*",
   "/api/conversion-batches/:path*",
-  "/auth/:path*",
+  "/auth/me",
+  "/auth/pro/anonymous-session",
+  "/auth/pro/session/login",
   "/convert-edits/:path*",
   "/convert-report/:path*",
 ] as const;

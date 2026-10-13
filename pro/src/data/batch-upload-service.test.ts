@@ -13,7 +13,7 @@ describe("BatchUploadService", () => {
   it("usa exclusivamente upload direto e submissão ao worker", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ status: "ready" }))
+      .mockResolvedValueOnce(jsonResponse({ email: "canario@example.com" }))
       .mockResolvedValueOnce(
         jsonResponse({
           direct_batch_enabled: true,
@@ -54,7 +54,7 @@ describe("BatchUploadService", () => {
 
     expect(result).toEqual({ batchId: "batch-real" });
     expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual([
-      "/auth/pro/anonymous-session",
+      "/auth/me",
       "/api/conversion-runtime",
       "/api/pro/conversion-batches",
       "https://uploads.example.test",
@@ -80,7 +80,7 @@ describe("BatchUploadService", () => {
     const digestFile = vi.fn().mockResolvedValue("a".repeat(64));
     const fetcher = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ status: "ready" }))
+      .mockResolvedValueOnce(jsonResponse({ email: "canario@example.com" }))
       .mockResolvedValueOnce(
         jsonResponse({
           direct_batch_enabled: false,

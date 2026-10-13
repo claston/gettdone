@@ -123,6 +123,46 @@ def test_http_auth_session_login_sets_cookies_and_me_works_without_bearer() -> N
     assert events[0]["auth_method"] == "local_password"
 
 
+def test_http_pro_session_login_rejects_invalid_origin_and_sets_secure_session(monkeypatch) -> None:
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://pro.example.test")
+    with _run_http_server() as (base_url, _access_control):
+        with httpx.Client(timeout=5.0) as client:
+            register = client.post(
+                f"{base_url}/auth/register",
+                json={
+                    "name": "Erica",
+                    "email": "erica@example.com",
+                    "password": "strong-pass",
+                    "accepted_terms": True,
+                },
+            )
+            assert register.status_code == 200
+            credentials = {"email": "erica@example.com", "password": "strong-pass"}
+
+            rejected = client.post(
+                f"{base_url}/auth/pro/session/login",
+                headers={
+                    "Origin": "https://attacker.example",
+                    "X-OFX-Pro-Client": "web",
+                },
+                json=credentials,
+            )
+            accepted = client.post(
+                f"{base_url}/auth/pro/session/login",
+                headers={
+                    "Origin": "https://pro.example.test",
+                    "X-OFX-Pro-Client": "web",
+                },
+                json=credentials,
+            )
+
+    assert rejected.status_code == 403
+    assert accepted.status_code == 200
+    assert "user_token" not in accepted.json()
+    assert client.cookies.get(SESSION_ACCESS_COOKIE_NAME)
+    assert client.cookies.get(SESSION_REFRESH_COOKIE_NAME)
+
+
 def test_http_admin_lists_marketing_contacts_with_session_cookie() -> None:
     with _run_http_server(admin_emails={"admin@example.com"}) as (base_url, access_control):
         access_control.register_user(

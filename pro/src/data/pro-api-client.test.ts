@@ -10,10 +10,10 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("ProApiClient", () => {
-  it("inicializa a sessão anônima uma única vez antes das chamadas", async () => {
+  it("reutiliza a sessão autenticada sem criar identidade anônima", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ status: "ready" }))
+      .mockResolvedValueOnce(jsonResponse({ email: "canario@example.com" }))
       .mockResolvedValueOnce(jsonResponse({ ok: true }))
       .mockResolvedValueOnce(jsonResponse({ ok: true }));
     const client = createProApiClient({ apiUrl: "/", fetcher });
@@ -23,24 +23,49 @@ describe("ProApiClient", () => {
 
     expect(fetcher).toHaveBeenNthCalledWith(
       1,
-      "/auth/pro/anonymous-session",
+      "/auth/me",
       expect.objectContaining({
-        method: "POST",
+        method: "GET",
         credentials: "include",
         headers: expect.objectContaining({
-          "Content-Type": "application/json",
           "X-OFX-Pro-Client": "web",
         }),
       }),
     );
+    expect(
+      fetcher.mock.calls.some(([url]) =>
+        String(url).endsWith("/auth/pro/anonymous-session"),
+      ),
+    ).toBe(false);
     expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("cria uma identidade anônima somente quando não existe sessão autenticada", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ detail: "unauthorized" }, 401))
+      .mockResolvedValueOnce(jsonResponse({ status: "ready" }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+    const client = createProApiClient({ apiUrl: "/", fetcher });
+
+    await client.request("/api/pro/conversion-batches/batch-1");
+
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "/auth/pro/anonymous-session",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+      }),
+    );
   });
 
   it("refaz o bootstrap e repete a chamada somente uma vez após 401", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ status: "ready" }))
+      .mockResolvedValueOnce(jsonResponse({ email: "canario@example.com" }))
       .mockResolvedValueOnce(jsonResponse({ detail: "expired" }, 401))
+      .mockResolvedValueOnce(jsonResponse({ detail: "unauthorized" }, 401))
       .mockResolvedValueOnce(jsonResponse({ status: "ready" }))
       .mockResolvedValueOnce(jsonResponse({ ok: true }));
     const client = createProApiClient({ apiUrl: "/", fetcher });
@@ -54,7 +79,7 @@ describe("ProApiClient", () => {
       fetcher.mock.calls.filter(([url]) =>
         String(url).endsWith("/auth/pro/anonymous-session"),
       ),
-    ).toHaveLength(2);
-    expect(fetcher).toHaveBeenCalledTimes(4);
+    ).toHaveLength(1);
+    expect(fetcher).toHaveBeenCalledTimes(5);
   });
 });

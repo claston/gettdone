@@ -496,6 +496,67 @@ a {
   display: flex;
   justify-content: flex-end;
 }
+.session-gate-page {
+  min-height: calc(100vh - 66px);
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+}
+.session-gate-page > p {
+  color: var(--ink-500);
+}
+.session-gate-card {
+  width: min(100%, 470px);
+  display: grid;
+  gap: 22px;
+  padding: 30px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.session-gate-card h1 {
+  margin: 0;
+  font-size: 25px;
+  letter-spacing: -0.03em;
+}
+.session-gate-card > div > p {
+  margin: 8px 0 0;
+  color: var(--ink-500);
+  line-height: 1.55;
+}
+.session-login-form {
+  display: grid;
+  gap: 9px;
+}
+.session-login-form label {
+  margin-top: 4px;
+  color: var(--ink-700);
+  font-size: 12px;
+  font-weight: 700;
+}
+.session-login-form input {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
+  color: var(--ink-900);
+}
+.session-login-form input:focus {
+  outline: 2px solid rgba(45, 140, 255, 0.22);
+  border-color: var(--blue-500);
+}
+.session-login-form .primary-button {
+  margin-top: 10px;
+}
+.session-security-note {
+  margin: 0;
+  color: var(--green-600);
+  font-size: 11px;
+  line-height: 1.5;
+}
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

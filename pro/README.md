@@ -40,15 +40,18 @@ A UI consome somente a interface `WorkspaceRepository`, definida em `src/domain/
 
 As rotas `/review/*` usam o repository configurado. Quando `NEXT_PUBLIC_API_URL` está presente, `src/data/http-workspace-repository.ts` adapta os contratos reais de lote, edição, revisão, retry, PDF privado e exportação ZIP sem expor o formato bruto do backend aos componentes. Sem a variável, essas rotas mantêm o fallback mock por compatibilidade com o desenvolvimento local.
 
-O upload real em `/conversions` é exclusivamente assíncrono:
+O upload real em `/conversions` é autenticado e exclusivamente assíncrono:
 
-1. inicia ou reutiliza uma sessão anônima assinada em cookie `HttpOnly`;
-2. consulta `/api/conversion-runtime` e exige `direct_s3` + `sqs_lambda`;
-3. cria o lote em `/api/pro/conversion-batches`;
-4. envia cada arquivo diretamente para a URL temporária do armazenamento privado;
-5. submete o lote para a fila do worker e abre `/review/{batchId}`.
+1. consulta `/auth/me` para reutilizar uma sessão autenticada em cookie `HttpOnly`;
+2. quando não existe sessão, solicita login e usa `/auth/pro/session/login`, protegido por origem e pelo header próprio do PRO;
+3. consulta `/api/conversion-runtime` e exige `direct_s3` + `sqs_lambda`;
+4. cria o lote em `/api/pro/conversion-batches`;
+5. envia cada arquivo diretamente para a URL temporária do armazenamento privado;
+6. submete o lote para a fila do worker e abre `/review/{batchId}`.
 
 O PRO nunca chama `/api/conversions/upload`. Se o runtime assíncrono estiver indisponível, a interface interrompe o fluxo antes de calcular hashes, criar o lote ou enviar arquivos e mostra uma mensagem de indisponibilidade. Não existe fallback inline.
+
+O preview usa cookies host-only próprios. Uma sessão criada em `www.ofxsimples.com.br` não autentica automaticamente `ofxsimples-pro-preview.onrender.com`; para o canário, entre novamente no preview com o usuário pago cujo e-mail está em `CONVERSION_ASYNC_USER_EMAIL_ALLOWLIST`. O proxy expõe somente as rotas de autenticação necessárias ao PRO, sem encaminhar todo o namespace `/auth/*`.
 
 As fixtures de demonstração cobrem conversões prontas, com suspeitas, revisadas, processando e com falha; o extrato demonstrativo é servido localmente em `/mock-statement`. A interface identifica esse modo com o selo `Dados de demonstração`.
 
