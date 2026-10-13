@@ -29,6 +29,7 @@ SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT = (
     "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
 )
 SANTANDER_CONSOLIDATED_BASIC_LAYOUT = "santander_extrato_consolidado_basico_conta_corrente_v1"
+SANTANDER_VANGOGH_LAYOUT = "santander_vangogh_resumo_consolidado_conta_corrente_v1"
 
 _DATE_ROW_PATTERN = re.compile(
     r"^\s*(?P<date>\d{1,2}/\d{1,2}(?:/\d{2,4})?)\s+(?P<rest>.+)$",
@@ -48,6 +49,7 @@ class SantanderStatementLayoutParser:
             SANTANDER_STATEMENT_LAYOUT,
             SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT,
             SANTANDER_CONSOLIDATED_BASIC_LAYOUT,
+            SANTANDER_VANGOGH_LAYOUT,
         }
     )
 
@@ -79,6 +81,16 @@ class SantanderStatementLayoutParser:
                 rows=rows,
                 selected_parser="layout_specific_santander_consolidated_basic",
                 selection_reason="layout_specific_santander_consolidated_basic:movement_suffix_signs",
+            )
+
+        if layout_name == SANTANDER_VANGOGH_LAYOUT:
+            rows = _parse_consolidated_basic_rows(lines, context=context)
+            if not rows:
+                return None
+            return LayoutSpecificParseResult(
+                rows=rows,
+                selected_parser="layout_specific_santander_vangogh",
+                selection_reason="layout_specific_santander_vangogh:grouped_movement_suffix_signs",
             )
 
         rows = _parse_movement_rows(lines, context=context)
