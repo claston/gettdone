@@ -1,0 +1,81 @@
+layout_profile:
+  schema_version: 2
+  profile_name: bank_agency_debit_credit_statement_v1
+  bank: Não identificado
+  layout_family: bank_agency_debit_credit_statement
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Extrato"
+      - "Período"
+      - "Banco"
+      - "Agência"
+      - "Conta"
+      - "Saldo anterior"
+    optional_keywords:
+      - "Cliente"
+      - "Documento"
+      - "Crédito"
+      - "Débito"
+    negative_keywords:
+      - "Fatura"
+      - "Cartão selecionado"
+      - "Bradesco"
+      - "Itaú"
+      - "Santander"
+      - "Caixa"
+      - "Banco do Brasil"
+    min_score_hint: 0.80
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Descrição"
+      - "Documento"
+      - "Crédito (R$)"
+      - "Débito (R$)"
+      - "Saldo (R$)"
+    expected_column_order:
+      - date
+      - description
+      - document
+      - credit
+      - debit
+      - balance
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Descrição"
+      document:
+        - "Documento"
+      amount:
+        - "Crédito (R$)"
+        - "Débito (R$)"
+      balance:
+        - "Saldo (R$)"
+  parsing:
+    date_formats:
+      - "dd/MM/yyyy"
+    date_year_source: transaction
+    amount_locale: pt-BR
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+      - "Débito {amount}"
+    positive_patterns:
+      - "Crédito {amount}"
+    ignore_rows:
+      - "Total"
+    opening_balance_rows:
+      - "Saldo anterior"
+      - "Saldo inicial"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - document
+      - balance

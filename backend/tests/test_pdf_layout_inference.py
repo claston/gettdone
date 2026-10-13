@@ -1498,6 +1498,34 @@ def test_infer_pdf_layout_recognizes_unbranded_bank_agency_debit_credit_statemen
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_recognizes_split_unbranded_bank_agency_header() -> None:
+    text = """
+    Extrato
+    Período de 01/09/2026 a 30/09/2026
+    Cliente: EMPRESA EXEMPLO
+    Banco: 077 Agência: 0001-0 Conta: 12345-6
+    Data
+    Descrição
+    Documento
+    Crédito (R$)
+    Débito (R$)
+    Saldo (R$)
+    Saldo anterior
+    100,00
+    01/09/2026
+    PAGAMENTO FORNECEDOR
+    123456
+    -5,00
+    95,00
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "bank_agency_debit_credit_statement_v1"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_does_not_assign_bank_agency_layout_from_common_table_columns() -> None:
     text = """
     EXTRATO DE CONTA CORRENTE

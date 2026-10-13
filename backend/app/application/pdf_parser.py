@@ -101,6 +101,7 @@ _ITAU_COMPLETE_TABLE_LAYOUT = "itau_empresas_extrato_completo_tabela_v1"
 _SICREDI_MATRIX_LANDSCAPE_LAYOUT = "sicredi_matricial_paisagem_conta_corrente_v1"
 _CREDISIS_DESCENDING_ACCOUNT_LAYOUT = "credisis_extrato_conta_corrente_descendente_v1"
 _STONE_CURRENT_ACCOUNT_A4_LAYOUT = "stone_extrato_conta_corrente_a4_v1"
+_BANK_AGENCY_DEBIT_CREDIT_LAYOUT = "bank_agency_debit_credit_statement_v1"
 _INHERITED_TABULAR_DATE_LAYOUTS = {
     _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT,
     _SANTANDER_CONSOLIDATED_BASIC_LAYOUT,
@@ -1277,7 +1278,7 @@ def _parse_grouped_statement_lines(
                 last_attached_running_balance_line = None
                 continue
         if skipping_repeated_page_header:
-            if _is_itau_monthly_repeated_page_header_line(normalized_line):
+            if _is_grouped_repeated_page_header_line(normalized_line):
                 continue
             skipping_repeated_page_header = False
         if (
@@ -1355,18 +1356,19 @@ def _parse_grouped_statement_lines(
                     and opening_balance_amount is not None
                     and pending_opening_balance_label is not None
                 ):
-                    opening_row = _build_parsed_transaction(
-                        date=grouped_date_match.date,
-                        description=pending_opening_balance_label,
-                        amount=opening_balance_amount,
-                        source_page=(opening_balance_amount_line or pending_opening_balance_line or line).page_number,
-                        source_line=(opening_balance_amount_line or pending_opening_balance_line or line).line_number,
-                        has_explicit_amount_sign=has_explicit_amount_sign(
-                            (opening_balance_amount_line or line).text
-                        ),
-                    )
-                    transactions.append(opening_row)
-                    last_transaction_index = len(transactions) - 1
+                    if _should_import_grouped_opening_balance(layout_profile):
+                        opening_row = _build_parsed_transaction(
+                            date=grouped_date_match.date,
+                            description=pending_opening_balance_label,
+                            amount=opening_balance_amount,
+                            source_page=(opening_balance_amount_line or pending_opening_balance_line or line).page_number,
+                            source_line=(opening_balance_amount_line or pending_opening_balance_line or line).line_number,
+                            has_explicit_amount_sign=has_explicit_amount_sign(
+                                (opening_balance_amount_line or line).text
+                            ),
+                        )
+                        transactions.append(opening_row)
+                        last_transaction_index = len(transactions) - 1
                     last_known_running_balance = opening_balance_amount
                     opening_balance_inserted = True
                 transactions.append(inline_transaction)
@@ -1444,18 +1446,19 @@ def _parse_grouped_statement_lines(
                     and opening_balance_amount is not None
                     and pending_opening_balance_label is not None
                 ):
-                    opening_row = _build_parsed_transaction(
-                        date=parsed_row.transaction.date,
-                        description=pending_opening_balance_label,
-                        amount=opening_balance_amount,
-                        source_page=(opening_balance_amount_line or pending_opening_balance_line or line).page_number,
-                        source_line=(opening_balance_amount_line or pending_opening_balance_line or line).line_number,
-                        has_explicit_amount_sign=has_explicit_amount_sign(
-                            (opening_balance_amount_line or line).text
-                        ),
-                    )
-                    transactions.append(opening_row)
-                    last_transaction_index = len(transactions) - 1
+                    if _should_import_grouped_opening_balance(layout_profile):
+                        opening_row = _build_parsed_transaction(
+                            date=parsed_row.transaction.date,
+                            description=pending_opening_balance_label,
+                            amount=opening_balance_amount,
+                            source_page=(opening_balance_amount_line or pending_opening_balance_line or line).page_number,
+                            source_line=(opening_balance_amount_line or pending_opening_balance_line or line).line_number,
+                            has_explicit_amount_sign=has_explicit_amount_sign(
+                                (opening_balance_amount_line or line).text
+                            ),
+                        )
+                        transactions.append(opening_row)
+                        last_transaction_index = len(transactions) - 1
                     last_known_running_balance = opening_balance_amount
                     opening_balance_inserted = True
                 transactions.append(parsed_row)
@@ -1521,6 +1524,14 @@ def _is_bradesco_grouped_section_boundary(
     return normalized_line == "TOTAL" or normalized_line.startswith("ULTIMOS LANCAMENTOS")
 
 
+def _should_import_grouped_opening_balance(
+    layout_profile: DeclarativeLayoutProfile | None,
+) -> bool:
+    if layout_profile is None or layout_profile.profile_name != _BANK_AGENCY_DEBIT_CREDIT_LAYOUT:
+        return True
+    return should_import_profile_opening_balance(layout_profile)
+
+
 def _is_terminal_grouped_statement_section_boundary(
     line_text: str,
     *,
@@ -1531,6 +1542,8 @@ def _is_terminal_grouped_statement_section_boundary(
         return True
     if not has_transactions or layout_profile is None:
         return False
+    if layout_profile.profile_name == _BANK_AGENCY_DEBIT_CREDIT_LAYOUT:
+        return _normalize_text(line_text) == "TOTAL"
     return (
         layout_profile.profile_name == _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT
         and _normalize_text(line_text).startswith("PERIODO:")
@@ -1547,17 +1560,22 @@ def _should_preserve_grouped_date_across_page(
         current_date
         and has_transactions
         and layout_profile is not None
-        and layout_profile.profile_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
+        and layout_profile.profile_name
+        in {_ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT, _BANK_AGENCY_DEBIT_CREDIT_LAYOUT}
     )
 
 
-def _is_itau_monthly_repeated_page_header_line(normalized_line: str) -> bool:
+def _is_grouped_repeated_page_header_line(normalized_line: str) -> bool:
     if normalized_line in {
         "EXTRATO",
         "MENSAL",
         "EXTRATO MENSAL",
         "DATA",
         "DESCRICAO",
+        "DOCUMENTO",
+        "CREDITO (R$)",
+        "DEBITO (R$)",
+        "SALDO (R$)",
         "ENTRADAS R$",
         "SAIDAS R$",
         "SALDO R$",
