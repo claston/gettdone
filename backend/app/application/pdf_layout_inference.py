@@ -27,6 +27,7 @@ BANK_AGENCY_LAYOUT_NAME = "bank_agency_debit_credit_statement_v1"
 SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT_NAME = (
     "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
 )
+ITAU_EMPRESAS_LANCAMENTOS_LAYOUT_NAME = "itau_empresas_extrato_lancamentos_conta_corrente_v1"
 BR_PROFILE_TERMS: dict[str, tuple[tuple[str, float], ...]] = {
     "nubank_statement_ptbr": (
         ("NUBANK", 0.7),
@@ -143,6 +144,10 @@ def infer_pdf_layout(text: str) -> PdfLayoutInference:
         specific_scores.get(SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT_NAME, 0.0),
         _score_santander_pf_consolidated_intelligent(normalized),
     )
+    specific_scores[ITAU_EMPRESAS_LANCAMENTOS_LAYOUT_NAME] = max(
+        specific_scores.get(ITAU_EMPRESAS_LANCAMENTOS_LAYOUT_NAME, 0.0),
+        _score_itau_empresas_vertical_lancamentos(normalized),
+    )
     specific_scores[BANK_AGENCY_LAYOUT_NAME] = _score_bank_agency_debit_credit_statement(normalized_lines)
     generic_score = _score_generic_statement(normalized)
     specific_best_name, specific_best_score = max(specific_scores.items(), key=lambda item: item[1])
@@ -191,6 +196,24 @@ def _score_santander_pf_consolidated_intelligent(normalized_text: str) -> float:
     if "CONTA CORRENTE" in normalized_text:
         score += 0.04
     return min(score, 1.0)
+
+
+def _score_itau_empresas_vertical_lancamentos(normalized_text: str) -> float:
+    stable_markers = (
+        "CONTA CORRENTE",
+        "LIMITE DA CONTA",
+        "AG/ORIGEM",
+        "VALOR (R$)",
+        "SALDO (R$)",
+        "SALDO ANTERIOR",
+    )
+    if not all(marker in normalized_text for marker in stable_markers):
+        return 0.0
+    if re.search(r"\bLAN.AMENTOS PER.ODO\b", normalized_text) is None:
+        return 0.0
+    if re.search(r"\bSALDO TOTAL DISPON.VEL DIA\b", normalized_text) is None:
+        return 0.0
+    return 0.96
 
 
 def _score_layout_profile(layout_name: str, normalized_text: str, terms: tuple[tuple[str, float], ...]) -> float:

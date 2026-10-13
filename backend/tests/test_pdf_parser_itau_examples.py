@@ -211,6 +211,70 @@ def test_parse_pdf_transactions_supports_itau_visual_examples(case_name: str, mo
     assert all(f"<TRNAMT>{amount:.2f}" in ofx for amount in case["amounts"])
 
 
+def test_itau_lancamentos_ignores_available_balance_checkpoints_and_account_summary() -> None:
+    pages = [
+        """
+        Ita�Empresas
+        Ita�
+        ag�ncia
+        conta corrente
+        saldo dispon�vel
+        limite da conta
+        lan�amentos per�odo: 01/03/2025 at� 31/03/2025
+        data
+        lan�amentos
+        ag/origem
+        valor (R$)
+        saldo (R$)
+        28 / fev
+        SALDO ANTERIOR
+        1.000,00
+        05 / mar
+        PIX TRANSF CLIENTE05/03
+        100,00
+        05 / mar
+        SALDO TOTAL DISPON�VEL DIA
+        900,00
+        """,
+        """
+        data
+        lan�amentos
+        ag/origem
+        valor (R$)
+        saldo (R$)
+        06 / mar
+        PIX ENVIADO CLIENTE
+        -50,00
+        06 / mar
+        SALDO TOTAL
+        1.050,00
+        31 / mar
+        SALDO TOTAL DISPON�VEL DIA
+        1.050,00
+        saldo da conta corrente
+        descri��o
+        valor (R$)
+        saldo (R$)
+        saldo dispon�vel sem investimentos autom�ticos
+        50,00
+        saldo em aplica��o autom�tica aplic aut mais
+        1.000,00
+        """,
+    ]
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(pages)
+
+    assert result.layout.layout_name == "itau_empresas_extrato_lancamentos_conta_corrente_v1"
+    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    assert [(transaction.description, transaction.amount) for transaction in result.transactions] == [
+        ("PIX TRANSF CLIENTE05/03", 100.0),
+        ("PIX ENVIADO CLIENTE", -50.0),
+    ]
+    assert result.canonical_transactions is not None
+    assert result.canonical_transactions[-1].running_balance == 1050.0
+
+
 def test_itau_monthly_keeps_date_across_pages_and_stops_before_investment_details() -> None:
     pages = [
         """

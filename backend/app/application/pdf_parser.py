@@ -97,6 +97,7 @@ _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT = "bradesco_net_empresa_extrato_mensal_por_
 _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT = (
     "itau_empresas_extrato_mensal_conta_corrente_aplicacoes_automaticas_v1"
 )
+_ITAU_LANCAMENTOS_LAYOUT = "itau_empresas_extrato_lancamentos_conta_corrente_v1"
 _ITAU_COMPLETE_TABLE_LAYOUT = "itau_empresas_extrato_completo_tabela_v1"
 _SICREDI_MATRIX_LANDSCAPE_LAYOUT = "sicredi_matricial_paisagem_conta_corrente_v1"
 _CREDISIS_DESCENDING_ACCOUNT_LAYOUT = "credisis_extrato_conta_corrente_descendente_v1"
@@ -1737,6 +1738,7 @@ def _parse_tabular_statement_rows(
         in {
             _SANTANDER_CONSOLIDATED_BASIC_LAYOUT,
             _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT,
+            _ITAU_LANCAMENTOS_LAYOUT,
         }
     ):
         tabular_profile = layout_profile
@@ -1776,7 +1778,12 @@ def _parse_tabular_statement_rows(
         if dated_balance_consumed:
             index += dated_balance_consumed
             continue
-        if _maybe_attach_tabular_running_balance_line(transactions=transactions, line=line):
+        if _maybe_attach_tabular_running_balance_line(
+            transactions=transactions,
+            lines=lines,
+            index=index,
+            layout_profile=tabular_profile,
+        ):
             index += 1
             continue
         parsed_row, is_candidate = _classify_tabular_statement_line(
@@ -1843,6 +1850,8 @@ def _is_terminal_statement_section_boundary(
         return normalized_line.startswith("SALDOS POR PERIODO")
     if layout_profile.profile_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT:
         return normalized_line.startswith(("SALDO FINAL", "TOTALIZADOR DE APLICACOES AUTOMATICAS"))
+    if layout_profile.profile_name == _ITAU_LANCAMENTOS_LAYOUT:
+        return normalized_line.startswith("SALDO DA CONTA CORRENTE")
     return False
 
 
@@ -2116,12 +2125,17 @@ def _resolve_layout_tabular_role_override(
 def _maybe_attach_tabular_running_balance_line(
     *,
     transactions: list[_ParsedTransaction],
-    line: _PdfLine,
+    lines: list[_PdfLine],
+    index: int,
+    layout_profile: DeclarativeLayoutProfile | None,
 ) -> bool:
+    line = lines[index]
     if not transactions:
         return False
     if not is_amount_only_row(line.text):
         return False
+    if _is_itau_available_balance_amount(lines=lines, index=index, layout_profile=layout_profile):
+        return True
 
     last_transaction = transactions[-1]
     if last_transaction.running_balance is not None:
@@ -2140,6 +2154,23 @@ def _maybe_attach_tabular_running_balance_line(
         previous_running_balance=previous_running_balance,
     )
     return True
+
+
+def _is_itau_available_balance_amount(
+    *,
+    lines: list[_PdfLine],
+    index: int,
+    layout_profile: DeclarativeLayoutProfile | None,
+) -> bool:
+    if layout_profile is None or layout_profile.profile_name != _ITAU_LANCAMENTOS_LAYOUT:
+        return False
+    current_page = lines[index].page_number
+    for previous in lines[max(0, index - 2) : index]:
+        if previous.page_number != current_page:
+            continue
+        if re.fullmatch(r"SALDO TOTAL DISPON.VEL DIA", _normalize_text(previous.text)) is not None:
+            return True
+    return False
 
 
 def _maybe_attach_tabular_dated_balance_block(
@@ -2207,6 +2238,8 @@ def _recover_tabular_multiline_row(
     for index in range(start_index + 1, min(len(lines), start_index + 6)):
         current = lines[index]
         if current.page_number != date_line.page_number:
+            break
+        if _is_terminal_statement_section_boundary(current.text, layout_profile=tabular_profile):
             break
         normalized_line = _normalize_text(current.text)
         if is_date_only_row(current.text, date_formats=date_formats):

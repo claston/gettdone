@@ -681,6 +681,37 @@ def test_infer_pdf_layout_identifies_bradesco_period_statement_without_bank_head
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_confidently_recognizes_itau_empresas_vertical_lancamentos() -> None:
+    text = """
+    Ita�Empresas
+    Ita�
+    ag�ncia
+    conta corrente
+    saldo dispon�vel
+    limite da conta
+    lan�amentos per�odo: 01/03/2025 at� 31/03/2025
+    data
+    lan�amentos
+    ag/origem
+    valor (R$)
+    saldo (R$)
+    28 / fev
+    SALDO ANTERIOR
+    64.230,27
+    05 / mar
+    PIX TRANSF CLIENTE05/03
+    14.000,00
+    SALDO TOTAL DISPON�VEL DIA
+    78.230,27
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "itau_empresas_extrato_lancamentos_conta_corrente_v1"
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_keeps_bradesco_period_statement_with_full_header() -> None:
     text = """
     Bradesco net empresa
