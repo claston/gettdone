@@ -85,6 +85,8 @@ def should_skip_transaction_description(description: str) -> bool:
         return True
     if normalized_description.startswith("SALDO ANTERIOR") or normalized_description.startswith("SALDO INICIAL"):
         return False
+    if normalized_description.startswith("JUROS LIMITE DA CONTA"):
+        return False
     if any(hint in normalized_description for hint in IGNORED_TRANSACTION_HINTS):
         return True
     if normalized_description == "SALDO":

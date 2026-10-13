@@ -701,6 +701,42 @@ def test_infer_pdf_layout_identifies_bradesco_period_statement_without_bank_head
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_confidently_recognizes_itau_monthly_with_split_column_headers() -> None:
+    text = """
+    extrato mensal
+    set 2026
+    01. Conta Corrente e Aplicações Automáticas
+    Conta Corrente | Movimentação
+    data
+    descrição
+    entradas R$
+    saídas R$
+    saldo R$
+    (créditos)
+    (débitos)
+    31/08
+    Saldo anterior
+    1.000,00
+    01/09
+    Sispag
+    100,00-
+    Apl Aplic Aut Mais
+    900,00-
+    SALDO APLIC AUT MAIS
+    total entradas
+    total saídas
+    Limite Itaú para saque
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == (
+        "itau_empresas_extrato_mensal_conta_corrente_aplicacoes_automaticas_v1"
+    )
+    assert result.confidence >= 0.95
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_keeps_bradesco_period_statement_with_full_header() -> None:
     text = """
     Bradesco net empresa
