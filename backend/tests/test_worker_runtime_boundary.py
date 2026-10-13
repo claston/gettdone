@@ -75,7 +75,7 @@ def test_worker_runtime_installs_patched_amazon_linux_packages() -> None:
     dockerfile = DOCKERFILE_PATH.read_text(encoding="utf-8")
     runtime_stage = dockerfile.split("FROM ${PYTHON_IMAGE} AS runtime", maxsplit=1)[1]
 
-    assert "ARG AL2023_RELEASE=2023.12.20260928" in runtime_stage
+    assert "ARG AL2023_RELEASE=2023.12.20261012" in runtime_stage
     assert 'dnf upgrade -y --releasever "${AL2023_RELEASE}"' in runtime_stage
     assert "dnf clean all" in runtime_stage
 
