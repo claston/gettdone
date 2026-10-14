@@ -2,8 +2,10 @@
 
 import { LoaderCircle, LockKeyhole } from "lucide-react";
 import {
+  createContext,
   type FormEvent,
   type ReactNode,
+  useContext,
   useEffect,
   useMemo,
   useState,
@@ -14,6 +16,25 @@ import {
   type ProAuthService,
   type ProUser,
 } from "@/data/pro-auth-service";
+
+interface ProSessionContextValue {
+  user: ProUser;
+  logout(): Promise<void>;
+}
+
+const ProSessionContext = createContext<ProSessionContextValue | null>(null);
+
+export function useProSession(): ProSessionContextValue {
+  const session = useOptionalProSession();
+  if (!session) {
+    throw new Error("useProSession deve ser usado dentro de ProSessionGate.");
+  }
+  return session;
+}
+
+export function useOptionalProSession(): ProSessionContextValue | null {
+  return useContext(ProSessionContext);
+}
 
 export function ProSessionGate({
   authService,
@@ -83,6 +104,13 @@ export function ProSessionGate({
     }
   };
 
+  const logout = async () => {
+    await activeService.logout();
+    setPassword("");
+    setUser(null);
+    setStatus("anonymous");
+  };
+
   if (status === "checking") {
     return (
       <main className="standard-page session-gate-page" aria-busy="true">
@@ -92,7 +120,13 @@ export function ProSessionGate({
     );
   }
 
-  if (status === "authenticated" && user) return children;
+  if (status === "authenticated" && user) {
+    return (
+      <ProSessionContext.Provider value={{ user, logout }}>
+        {children}
+      </ProSessionContext.Provider>
+    );
+  }
 
   return (
     <main className="standard-page session-gate-page">

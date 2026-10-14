@@ -10,11 +10,15 @@ export interface ProUser {
   email: string;
   plan_code?: string | null;
   plan_name?: string | null;
+  quota_remaining?: number;
+  quota_limit?: number;
+  quota_mode?: string;
 }
 
 export interface ProAuthService {
   currentUser(): Promise<ProUser | null>;
   login(email: string, password: string): Promise<ProUser>;
+  logout(): Promise<void>;
 }
 
 interface ProAuthServiceOptions {
@@ -34,12 +38,19 @@ export function createProAuthService(
 
   return {
     async currentUser() {
-      const response = await fetcher(`${apiUrl}/auth/me`, {
+      let response = await fetcher(`${apiUrl}/auth/me`, {
         method: "GET",
         credentials: "include",
         headers,
       });
-      if (response.status === 401) return null;
+      if (response.status === 401) {
+        response = await fetcher(`${apiUrl}/auth/session/refresh`, {
+          method: "POST",
+          credentials: "include",
+          headers,
+        });
+        if (response.status === 401) return null;
+      }
       if (!response.ok) {
         throw new Error(
           await readApiError(
@@ -72,6 +83,19 @@ export function createProAuthService(
         );
       }
       return (await response.json()) as ProUser;
+    },
+
+    async logout() {
+      const response = await fetcher(`${apiUrl}/auth/session/logout`, {
+        method: "POST",
+        credentials: "include",
+        headers,
+      });
+      if (!response.ok) {
+        throw new Error(
+          await readApiError(response, "Não foi possível encerrar sua sessão."),
+        );
+      }
     },
   };
 }

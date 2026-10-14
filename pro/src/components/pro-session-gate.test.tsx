@@ -8,6 +8,7 @@ describe("ProSessionGate", () => {
     const authService = {
       currentUser: vi.fn().mockResolvedValue(null),
       login: vi.fn(),
+      logout: vi.fn(),
     };
 
     render(
@@ -31,6 +32,7 @@ describe("ProSessionGate", () => {
         email: "canario@example.com",
         plan_code: "paid",
       }),
+      logout: vi.fn(),
     };
 
     render(

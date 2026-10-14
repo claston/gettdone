@@ -29,6 +29,7 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { useOptionalProSession } from "@/components/pro-session-gate";
 import {
   resolveWorkspaceRepository,
   type WorkspaceDataMode,
@@ -120,7 +121,15 @@ function SaveIndicator({
   );
 }
 
-function ReviewRail() {
+function ReviewRail({ userName }: { userName: string }) {
+  const avatar = userName
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toLocaleUpperCase("pt-BR") ?? "")
+    .join("");
+
   return (
     <aside className="review-rail" aria-label="Navegação rápida">
       <Link
@@ -141,8 +150,8 @@ function ReviewRail() {
         <Menu size={20} />
       </Link>
       <span className="rail-spacer" />
-      <span className="rail-avatar" title="Ana Souza">
-        AS
+      <span className="rail-avatar" title={userName}>
+        {avatar || "OF"}
       </span>
     </aside>
   );
@@ -669,6 +678,7 @@ export function WorkspaceScreen({
   repository,
   dataMode = "api",
 }: WorkspaceScreenProps) {
+  const session = useOptionalProSession();
   const activeRepository = repository ?? resolveWorkspaceRepository(dataMode);
   const reviewBasePath = dataMode === "demo" ? "/demo/review" : "/review";
   const controller = useWorkspaceController(
@@ -732,7 +742,13 @@ export function WorkspaceScreen({
 
   return (
     <main className={`workspace ${focusMode ? "focus-mode" : ""}`}>
-      <ReviewRail />
+      <ReviewRail
+        userName={
+          dataMode === "demo"
+            ? "Usuário de demonstração"
+            : (session?.user.name ?? "Usuário PRO")
+        }
+      />
       <header className="workspace-header">
         <div className="batch-heading">
           <Link href="/conversions" className="back-link">
