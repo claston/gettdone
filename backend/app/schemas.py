@@ -397,6 +397,7 @@ class AdminDashboardAttentionItem(BaseModel):
     identity_type: str
     created_at: str
     model: str
+    document_type: str | None = None
     conversion_type: str
     status: str
     transactions_count: int

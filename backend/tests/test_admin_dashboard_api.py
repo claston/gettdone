@@ -321,6 +321,7 @@ def test_admin_dashboard_aggregates_quality_failures_and_returning_people(tmp_pa
         assert payload["recent_attention"][0]["pdf_representation"] == "raster_images"
         assert payload["recent_attention"][0]["pdf_creation_method"] == "scanner"
         assert payload["recent_attention"][0]["pdf_representation_confidence"] == 0.98
+        assert payload["recent_attention"][0]["document_type"] == "bank_statement"
         assert "capture_id" not in str(payload)
         assert "s3_key" not in str(payload)
         assert "anonymous_fingerprint" not in str(payload)

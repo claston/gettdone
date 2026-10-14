@@ -8,6 +8,7 @@ DOCUMENT_TYPES = frozenset(
         "bank_statement",
         "fiscal_invoice",
         "billing_report",
+        "payment_report",
         "bank_receipt",
         "credit_card_statement",
         "financial_spreadsheet",
