@@ -137,6 +137,10 @@ def test_worker_access_allows_pool_to_start_with_zero_connections(monkeypatch: p
     captured: dict[str, object] = {}
 
     class CapturingPool:
+        @staticmethod
+        def check_connection(_connection) -> None:
+            return None
+
         def __init__(self, **kwargs) -> None:
             captured.update(kwargs)
 
@@ -150,3 +154,4 @@ def test_worker_access_allows_pool_to_start_with_zero_connections(monkeypatch: p
 
     assert captured["min_size"] == 0
     assert captured["max_size"] == 1
+    assert captured["check"] is CapturingPool.check_connection

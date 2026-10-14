@@ -158,6 +158,7 @@ class AccessControlService:
                 max_size=self.db_pool_max_size,
                 timeout=self.db_pool_timeout_seconds,
                 max_idle=self.db_pool_max_idle_seconds,
+                check=ConnectionPool.check_connection,
                 open=True,
             )
         self.db = AccessControlDbComponent(self)
