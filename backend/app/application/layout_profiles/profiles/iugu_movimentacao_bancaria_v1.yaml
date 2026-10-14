@@ -1,0 +1,89 @@
+layout_profile:
+  profile_name: iugu_movimentacao_bancaria_v1
+  bank: Iugu
+  layout_family: iugu_movimentacao_bancaria
+  statement_type: conta_corrente_extrato
+  confidence: high
+  schema_version: 2
+  classifier:
+    required_keywords:
+      - "IDEVELOPER-IUGU"
+      - "FILTROS UTILIZADOS"
+      - "REGISTRO(S) ENCONTRADO(S)"
+      - "SALDO ANTERIOR"
+      - "CODIGO"
+      - "STATUS"
+      - "PARCELA"
+    optional_keywords:
+      - "MOVIMENTA"
+      - "COBRAN"
+      - "IDENTIFICA"
+      - "HIST"
+      - "CONTA CORRENTE"
+    negative_keywords:
+      - "BANCO SANTANDER"
+      - "BRADESCO"
+      - "CAIXA ECONOMICA FEDERAL"
+      - "BANCO DO BRASIL"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "CODIGO"
+      - "DATA"
+      - "STATUS"
+      - "HIST"
+      - "PARCELA"
+      - "VALOR"
+      - "SALDO"
+    expected_column_order:
+      - transaction_id
+      - date
+      - status
+      - billing_id
+      - identification
+      - description
+      - installment
+      - amount
+      - balance
+    column_aliases:
+      transaction_id:
+        - "CODIGO"
+        - "#"
+      date:
+        - "DATA MOV."
+        - "DATA"
+      description:
+        - "HISTORICO"
+        - "HIST"
+      amount:
+        - "VALOR"
+      balance:
+        - "SALDO"
+  parsing:
+    date_formats:
+      - "dd/MM/yyyy"
+    amount_locale: "pt-BR"
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "R$ -{amount}"
+      - "-{amount}"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "SALDO ANTERIOR"
+      - "FILTROS UTILIZADOS"
+      - "REGISTRO(S) ENCONTRADO(S)"
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - transaction_id
+      - balance
+      - status
+      - identification
