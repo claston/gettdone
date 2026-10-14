@@ -47,9 +47,6 @@ def test_admin_dashboard_frontend_exposes_summary_filters_and_attention_sections
     assert "renderDashboardCanonicalCapture" in javascript
     assert "renderDashboardDocumentTypes" in javascript
     assert "payload.document_types" in javascript
-    assert 'payment_report: "Relatório de pagamentos"' in javascript
-    assert '"Tipo de documento"' in javascript
-    assert "documentTypeLabel(item.document_type)" in javascript
     assert "canonical_capture_status" in javascript
     assert '"Documento/OCR"' in javascript
     assert "formatDocumentOrigin" in javascript

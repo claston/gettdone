@@ -535,7 +535,6 @@
       bank_statement: "Extrato bancário",
       fiscal_invoice: "Nota fiscal",
       billing_report: "Relatório de faturamento",
-      payment_report: "Relatório de pagamentos",
       bank_receipt: "Comprovante bancário",
       credit_card_statement: "Fatura de cartão",
       financial_spreadsheet: "Planilha financeira",
@@ -863,7 +862,7 @@
     table.className = "dashboard-table";
     const head = document.createElement("thead");
     const headRow = document.createElement("tr");
-    ["Data", "Pessoa", "Banco/modelo", "Tipo de documento", "Documento/OCR", "Resultado", "Motivo", "Coleta canônica", "Identificador"].forEach(function (label) {
+    ["Data", "Pessoa", "Banco/modelo", "Documento/OCR", "Resultado", "Motivo", "Coleta canônica", "Identificador"].forEach(function (label) {
       appendTableCell(headRow, label, "th");
     });
     head.appendChild(headRow);
@@ -875,7 +874,6 @@
       appendTableCell(row, formatDateTime(item.created_at));
       appendTableCell(row, String(item.identity_type || "") === "registered" ? "Cadastrada" : "Anônima");
       appendTableCell(row, item.model || "Não identificado");
-      appendTableCell(row, documentTypeLabel(item.document_type));
       appendTableCell(row, formatDocumentOrigin(item));
       appendTableCell(row, item.status || "Não informado");
       appendTableCell(row, item.issue_reason || "Revisão recomendada");
