@@ -44,6 +44,14 @@ describe("buildBackendProxyRewrites", () => {
           destination: "https://api.ofxsimples.com.br/auth/pro/session/login",
         },
         {
+          source: "/auth/session/refresh",
+          destination: "https://api.ofxsimples.com.br/auth/session/refresh",
+        },
+        {
+          source: "/auth/session/logout",
+          destination: "https://api.ofxsimples.com.br/auth/session/logout",
+        },
+        {
           source: "/convert-edits/:path*",
           destination: "https://api.ofxsimples.com.br/convert-edits/:path*",
         },

@@ -37,6 +37,28 @@ export function createProApiClient(options: ProApiClientOptions): ProApiClient {
           );
         }
 
+        const refreshResponse = await fetcher(
+          `${apiUrl}/auth/session/refresh`,
+          {
+            method: "POST",
+            credentials: "include",
+            headers: {
+              Accept: "application/json",
+              [PRO_CLIENT_HEADER_NAME]: PRO_CLIENT_HEADER_VALUE,
+            },
+          },
+        );
+        if (refreshResponse.ok) return;
+        if (refreshResponse.status !== 401) {
+          bootstrapPromise = null;
+          throw new Error(
+            await readApiError(
+              refreshResponse,
+              "Não foi possível renovar a sessão segura.",
+            ),
+          );
+        }
+
         const anonymousResponse = await fetcher(
           `${apiUrl}/auth/pro/anonymous-session`,
           {

@@ -45,49 +45,37 @@ export function DashboardPage() {
     <main className="standard-page dashboard-page">
       <div className="page-title">
         <div>
-          <span className="eyebrow">Segunda-feira, 5 de outubro</span>
-          <h1>Bom trabalho, Ana</h1>
-          <p>Veja o que precisa de atenção nos seus lotes.</p>
+          <span className="eyebrow">OFX Simples PRO</span>
+          <h1>Visão geral</h1>
+          <p>
+            Este ambiente autenticado exibe somente dados reais da sua conta.
+          </p>
         </div>
         <Link href="/conversions" className="primary-button">
           <Plus size={16} /> Nova conversão
         </Link>
       </div>
-      <div className="metric-grid">
-        <article>
-          <span>Arquivos no mês</span>
-          <strong>23</strong>
-          <small>de 50 incluídos no plano</small>
-        </article>
-        <article>
-          <span>Aguardando revisão</span>
-          <strong className="warning-text">5</strong>
-          <small>7 campos suspeitos</small>
-        </article>
-        <article>
-          <span>Concluídos</span>
-          <strong>18</strong>
-          <small>78% do volume recebido</small>
-        </article>
-      </div>
-      <section className="recent-batch">
-        <div>
-          <span className="eyebrow">Lote em andamento</span>
-          <h2>Extratos Setembro/2026</h2>
-          <p>Almeida & Torres Contabilidade · 8 arquivos</p>
+      <section className="placeholder-card">
+        <span className="placeholder-icon">
+          <FileStack size={24} />
+        </span>
+        <h2>Dashboard em construção</h2>
+        <p>
+          Histórico, lotes recentes e indicadores aparecerão aqui quando a
+          integração do dashboard estiver pronta. Nenhuma métrica fictícia é
+          apresentada como dado da sua conta.
+        </p>
+        <div className="placeholder-actions">
+          <Link href="/conversions" className="primary-button">
+            <Plus size={16} /> Criar conversão real
+          </Link>
+          <Link
+            href="/demo/review/batch-setembro-2026"
+            className="secondary-button"
+          >
+            Ver demonstração com dados fictícios <ArrowRight size={16} />
+          </Link>
         </div>
-        <div className="batch-mini-progress">
-          <span>
-            <i style={{ width: "13%" }} />
-          </span>
-          <small>1 de 8 revisados</small>
-        </div>
-        <Link
-          href="/demo/review/batch-setembro-2026"
-          className="primary-button"
-        >
-          <FileStack size={16} /> Continuar revisão <ArrowRight size={16} />
-        </Link>
       </section>
     </main>
   );

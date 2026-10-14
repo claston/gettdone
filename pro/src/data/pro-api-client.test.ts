@@ -44,6 +44,7 @@ describe("ProApiClient", () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({ detail: "unauthorized" }, 401))
+      .mockResolvedValueOnce(jsonResponse({ detail: "unauthorized" }, 401))
       .mockResolvedValueOnce(jsonResponse({ status: "ready" }))
       .mockResolvedValueOnce(jsonResponse({ ok: true }));
     const client = createProApiClient({ apiUrl: "/", fetcher });
@@ -51,7 +52,7 @@ describe("ProApiClient", () => {
     await client.request("/api/pro/conversion-batches/batch-1");
 
     expect(fetcher).toHaveBeenNthCalledWith(
-      2,
+      3,
       "/auth/pro/anonymous-session",
       expect.objectContaining({
         method: "POST",
@@ -60,11 +61,34 @@ describe("ProApiClient", () => {
     );
   });
 
+  it("renova a sessão antes de considerar o navegador anônimo", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ detail: "expired" }, 401))
+      .mockResolvedValueOnce(jsonResponse({ email: "canario@example.com" }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+    const client = createProApiClient({ apiUrl: "/", fetcher });
+
+    await client.request("/api/pro/conversion-batches/batch-1");
+
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "/auth/session/refresh",
+      expect.objectContaining({ method: "POST", credentials: "include" }),
+    );
+    expect(
+      fetcher.mock.calls.some(([url]) =>
+        String(url).endsWith("/auth/pro/anonymous-session"),
+      ),
+    ).toBe(false);
+  });
+
   it("refaz o bootstrap e repete a chamada somente uma vez após 401", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({ email: "canario@example.com" }))
       .mockResolvedValueOnce(jsonResponse({ detail: "expired" }, 401))
+      .mockResolvedValueOnce(jsonResponse({ detail: "unauthorized" }, 401))
       .mockResolvedValueOnce(jsonResponse({ detail: "unauthorized" }, 401))
       .mockResolvedValueOnce(jsonResponse({ status: "ready" }))
       .mockResolvedValueOnce(jsonResponse({ ok: true }));
@@ -80,6 +104,6 @@ describe("ProApiClient", () => {
         String(url).endsWith("/auth/pro/anonymous-session"),
       ),
     ).toHaveLength(1);
-    expect(fetcher).toHaveBeenCalledTimes(5);
+    expect(fetcher).toHaveBeenCalledTimes(6);
   });
 });

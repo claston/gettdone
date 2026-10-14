@@ -11,6 +11,8 @@ const workspaceRoutes = [
   "/auth/me",
   "/auth/pro/anonymous-session",
   "/auth/pro/session/login",
+  "/auth/session/refresh",
+  "/auth/session/logout",
   "/convert-edits/:path*",
   "/convert-report/:path*",
 ] as const;

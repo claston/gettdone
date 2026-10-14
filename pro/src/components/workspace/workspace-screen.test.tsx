@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { ProSessionGate } from "@/components/pro-session-gate";
 import { createMockWorkspaceRepository } from "@/data/mock-workspace-repository";
 import { WorkspaceScreen } from "./workspace-screen";
 
@@ -17,12 +18,39 @@ describe("WorkspaceScreen", () => {
     expect(
       await screen.findByText("Dados de demonstração"),
     ).toBeInTheDocument();
+    expect(screen.getByTitle("Usuário de demonstração")).toHaveTextContent(
+      "UD",
+    );
 
     fireEvent.click(screen.getByRole("option", { name: /Nubank/ }));
 
     expect(window.location.pathname).toBe(
       "/demo/review/batch-setembro-2026/conv-nubank",
     );
+  });
+
+  it("usa a identidade autenticada no workspace real", async () => {
+    const authService = {
+      currentUser: vi.fn().mockResolvedValue({
+        user_id: "usr-1",
+        name: "Usuário Canário",
+        email: "canario@example.com",
+      }),
+      login: vi.fn(),
+      logout: vi.fn(),
+    };
+
+    render(
+      <ProSessionGate authService={authService}>
+        <WorkspaceScreen
+          batchId="batch-setembro-2026"
+          repository={createMockWorkspaceRepository({ latencyMs: 0 })}
+        />
+      </ProSessionGate>,
+    );
+
+    expect(await screen.findByTitle("Usuário Canário")).toHaveTextContent("UC");
+    expect(screen.queryByText("Dados de demonstração")).not.toBeInTheDocument();
   });
 
   it("integra navegador, PDF e lançamentos usando somente o repository mock", async () => {
