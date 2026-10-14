@@ -11,6 +11,7 @@ _DESCENDING_RUNNING_BALANCE_LAYOUTS = {
     "trust_srm_bank_extrato_conta_corrente_v1",
 }
 _DYNAMIC_RUNNING_BALANCE_ORDER_LAYOUTS = {
+    "caixa_extrato_por_periodo_web_v1",
     "cora_extrato_periodo_disponivel_v1",
     "stone_extrato_conta_corrente_a4_v1",
 }

@@ -94,6 +94,7 @@ _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT = (
 _SANTANDER_EMPRESARIAL_ACCOUNT_LAYOUT = "santander_empresarial_conta_corrente"
 _ASAAS_MOVEMENTS_LAYOUT = "asaas_extrato_conta_digital_movimentacoes_v1"
 _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT = "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
+_CAIXA_WEB_PERIOD_LAYOUT = "caixa_extrato_por_periodo_web_v1"
 _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT = (
     "itau_empresas_extrato_mensal_conta_corrente_aplicacoes_automaticas_v1"
 )
@@ -649,6 +650,7 @@ def _parse_pdf_transactions_from_page_texts(
             amount_page=cross_page_split.amount_page,
         )
     lines = _flatten_statement_lines(page_texts, preserve_layout_spacing=preserve_layout_spacing)
+    lines = _normalize_caixa_web_ocr_lines(lines, layout_name=layout.layout_name)
     lines, invalid_date_candidates_skipped = _filter_invalid_leading_date_candidate_lines(lines)
     flattened_line_count = len(lines)
     lines = _scope_profile_transaction_lines(lines, layout_profile=layout_profile)
@@ -757,6 +759,44 @@ def _parse_pdf_transactions_from_page_texts(
         multiline_conflict_count=multiline_conflict_count,
         balance_checkpoints=balance_checkpoints,
     )
+
+
+_CAIXA_REPEATED_DOT_MONEY_PATTERN = re.compile(
+    r"(?<![\d.])(?P<integer>\d{1,3}(?:\.\d{3})+)\.(?P<cents>\d{2})(?!\d)"
+)
+_CAIXA_TRUNCATED_YEAR_PATTERN = re.compile(
+    r"^(?P<prefix>\s*\d{1,2}/\d{1,2}/)(?P<year>\d{2})(?=(?:\s|-))"
+)
+
+
+def _normalize_caixa_web_ocr_lines(lines: list[_PdfLine], *, layout_name: str) -> list[_PdfLine]:
+    if layout_name != _CAIXA_WEB_PERIOD_LAYOUT:
+        return lines
+
+    statement_year = infer_default_statement_year(_extract_line_texts(lines))
+    normalized_lines: list[_PdfLine] = []
+    for line in lines:
+        text = _CAIXA_REPEATED_DOT_MONEY_PATTERN.sub(
+            lambda match: f"{match.group('integer')},{match.group('cents')}",
+            line.text,
+        )
+        truncated_year_match = _CAIXA_TRUNCATED_YEAR_PATTERN.match(text)
+        if statement_year is not None and truncated_year_match is not None:
+            parsed_short_year = int(truncated_year_match.group("year"))
+            if parsed_short_year == statement_year // 100:
+                text = _CAIXA_TRUNCATED_YEAR_PATTERN.sub(
+                    lambda match: f"{match.group('prefix')}{statement_year}",
+                    text,
+                    count=1,
+                )
+        normalized_lines.append(
+            _PdfLine(
+                text=text,
+                page_number=line.page_number,
+                line_number=line.line_number,
+            )
+        )
+    return normalized_lines
 
 
 _ASAAS_FOOTER_SUFFIX_PATTERN = re.compile(
