@@ -60,6 +60,7 @@ class PostgresConversionAccessService:
             min_size=min_size,
             max_size=max_size,
             timeout=self.db_pool_timeout_seconds,
+            check=ConnectionPool.check_connection,
             open=True,
         )
 

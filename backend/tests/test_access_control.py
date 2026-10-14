@@ -580,6 +580,35 @@ def test_access_control_accepts_zero_minimum_postgres_pool_size(tmp_path) -> Non
     assert service.db_pool_max_size == 1
 
 
+def test_access_control_pool_checks_connections_before_use(tmp_path, monkeypatch) -> None:
+    import app.application.access_control as access_control_module
+
+    captured: dict[str, object] = {}
+
+    class CapturingPool:
+        @staticmethod
+        def check_connection(_connection) -> None:
+            return None
+
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(access_control_module, "ConnectionPool", CapturingPool)
+    monkeypatch.setattr(AccessControlService, "_init_db", lambda _self: None)
+
+    service = AccessControlService(
+        state_file=tmp_path / "state.json",
+        token_secret="test-secret",
+        database_url="postgresql://backend:test@database.example/gettdone",
+    )
+
+    assert captured["check"] is CapturingPool.check_connection
+    service.close()
+
+
 def test_public_plan_seed_recovers_missing_default_rows(tmp_path) -> None:
     service = AccessControlService(
         state_file=tmp_path / "state.json",
