@@ -2093,6 +2093,64 @@ def test_parse_pdf_transactions_keeps_vangogh_grouped_multiline_descriptions_wit
     assert result.canonical_transactions[7].running_balance == 4174.56
 
 
+def test_parse_pdf_transactions_scopes_vangogh_movements_and_treats_inss_benefits_as_credits() -> None:
+    text = """
+    Santander Select
+    EXTRATO CONSOLIDADO INTELIGENTE
+    Resumo agosto/2026
+    Conta Corrente
+    Movimentação
+    Data
+    Descrição
+    Nº Documento
+    Movimento (R$)
+    Saldo (R$)
+    SALDO EM 31/07
+    4.164,29
+    05/08
+    PAGAMENTO DE BENEFICIOS DO INSS
+    000613
+    2.690,99
+    NB:1461132484 07/2026
+    PIX ENVIADO Rejane Maia Pinheiro
+    1.600,00-
+    PIX ENVIADO
+    200,00-
+    5.055,28
+    27/08
+    PAGAMENTO DE BENEFICIOS DO INSS
+    000613
+    1.621,00
+    6.676,28
+    NB:1076943630 08/2026
+    31/08
+    REMUNERACAO APLICACAO AUTOMATICA
+    0,01
+    6.676,29
+    SALDO EM 31/08
+    6.676,29
+    Se voce nao tem Limite da Conta, consulte as condicoes contratuais.
+    Saldos por Periodo
+    Dia
+    Saldo de Conta Corrente
+    03
+    3.899,00
+    04
+    3.835,80
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert result.layout.layout_name == "santander_vangogh_resumo_consolidado_conta_corrente_v1"
+    assert [
+        transaction.amount
+        for transaction in result.transactions
+        if transaction.description.startswith("PAGAMENTO DE BENEFICIOS DO INSS")
+    ] == [2690.99, 1621.0]
+    assert all(transaction.description not in {"03", "04"} for transaction in result.transactions)
+    assert all("CONDICOES CONTRATUAIS" not in transaction.description for transaction in result.transactions)
+
+
 def test_parse_pdf_transactions_parses_santander_credit_card_invoice_sections_without_mixing_headers() -> None:
     text = """
     Data: 05/01/2026
