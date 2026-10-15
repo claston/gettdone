@@ -83,6 +83,8 @@ from app.application.textract_transaction_adapter import adapt_textract_extracti
 from app.application.unsupported_document_detection import (
     BILLING_REPORT_DOCUMENT_TYPE,
     BILLING_REPORT_USER_MESSAGE,
+    PAYMENT_REPORT_DOCUMENT_TYPE,
+    PAYMENT_REPORT_USER_MESSAGE,
     detect_unsupported_document_type,
 )
 
@@ -91,9 +93,11 @@ _SANTANDER_CONSOLIDATED_BASIC_LAYOUT = "santander_extrato_consolidado_basico_con
 _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT = (
     "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
 )
+_SANTANDER_VANGOGH_LAYOUT = "santander_vangogh_resumo_consolidado_conta_corrente_v1"
 _SANTANDER_EMPRESARIAL_ACCOUNT_LAYOUT = "santander_empresarial_conta_corrente"
 _ASAAS_MOVEMENTS_LAYOUT = "asaas_extrato_conta_digital_movimentacoes_v1"
 _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT = "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
+_CAIXA_WEB_PERIOD_LAYOUT = "caixa_extrato_por_periodo_web_v1"
 _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT = (
     "itau_empresas_extrato_mensal_conta_corrente_aplicacoes_automaticas_v1"
 )
@@ -639,6 +643,11 @@ def _parse_pdf_transactions_from_page_texts(
             document_type=unsupported_document_type,
             message=BILLING_REPORT_USER_MESSAGE,
         )
+    if unsupported_document_type == PAYMENT_REPORT_DOCUMENT_TYPE:
+        raise UnsupportedDocumentContentError(
+            document_type=unsupported_document_type,
+            message=PAYMENT_REPORT_USER_MESSAGE,
+        )
     layout = infer_pdf_layout(joined_text)
     layout_profile = get_layout_profile(layout.layout_name)
     cross_page_split = detect_cross_page_transaction_split(page_texts, layout_profile=layout_profile)
@@ -649,6 +658,7 @@ def _parse_pdf_transactions_from_page_texts(
             amount_page=cross_page_split.amount_page,
         )
     lines = _flatten_statement_lines(page_texts, preserve_layout_spacing=preserve_layout_spacing)
+    lines = _normalize_caixa_web_ocr_lines(lines, layout_name=layout.layout_name)
     lines, invalid_date_candidates_skipped = _filter_invalid_leading_date_candidate_lines(lines)
     flattened_line_count = len(lines)
     lines = _scope_profile_transaction_lines(lines, layout_profile=layout_profile)
@@ -661,6 +671,11 @@ def _parse_pdf_transactions_from_page_texts(
         specialized_rows = _adjust_forward_year_rollover_rows(
             specialized_selection.rows,
             line_texts=_extract_line_texts(lines),
+        )
+        specialized_balance_checkpoints = _resolve_tabular_balance_checkpoints(
+            lines=lines,
+            parsed_rows=specialized_rows,
+            tabular_profile=layout_profile,
         )
         return _build_pdf_parse_result(
             parsed_rows=specialized_rows,
@@ -683,6 +698,7 @@ def _parse_pdf_transactions_from_page_texts(
             tabular_transactions_count=0,
             columnar_candidates_count=0,
             columnar_transactions_count=0,
+            balance_checkpoints=specialized_balance_checkpoints,
         )
     grouped_rows = _parse_grouped_statement_lines(lines, layout_profile=layout_profile)
     selection = select_parsed_rows(
@@ -759,6 +775,44 @@ def _parse_pdf_transactions_from_page_texts(
     )
 
 
+_CAIXA_REPEATED_DOT_MONEY_PATTERN = re.compile(
+    r"(?<![\d.])(?P<integer>\d{1,3}(?:\.\d{3})+)\.(?P<cents>\d{2})(?!\d)"
+)
+_CAIXA_TRUNCATED_YEAR_PATTERN = re.compile(
+    r"^(?P<prefix>\s*\d{1,2}/\d{1,2}/)(?P<year>\d{2})(?=(?:\s|-))"
+)
+
+
+def _normalize_caixa_web_ocr_lines(lines: list[_PdfLine], *, layout_name: str) -> list[_PdfLine]:
+    if layout_name != _CAIXA_WEB_PERIOD_LAYOUT:
+        return lines
+
+    statement_year = infer_default_statement_year(_extract_line_texts(lines))
+    normalized_lines: list[_PdfLine] = []
+    for line in lines:
+        text = _CAIXA_REPEATED_DOT_MONEY_PATTERN.sub(
+            lambda match: f"{match.group('integer')},{match.group('cents')}",
+            line.text,
+        )
+        truncated_year_match = _CAIXA_TRUNCATED_YEAR_PATTERN.match(text)
+        if statement_year is not None and truncated_year_match is not None:
+            parsed_short_year = int(truncated_year_match.group("year"))
+            if parsed_short_year == statement_year // 100:
+                text = _CAIXA_TRUNCATED_YEAR_PATTERN.sub(
+                    lambda match: f"{match.group('prefix')}{statement_year}",
+                    text,
+                    count=1,
+                )
+        normalized_lines.append(
+            _PdfLine(
+                text=text,
+                page_number=line.page_number,
+                line_number=line.line_number,
+            )
+        )
+    return normalized_lines
+
+
 _ASAAS_FOOTER_SUFFIX_PATTERN = re.compile(
     r"\s+(?:VALOR\s+)?ASAAS\s+GEST\S*\s+FINANCEIRA\s+INSTITUI\S*\s+DE\s+PAGAMENTO\s+S\.A\..*$",
     flags=re.IGNORECASE,
@@ -809,6 +863,8 @@ def _scope_profile_transaction_lines(
 
     if layout_profile.profile_name == _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT:
         return _scope_santander_intelligent_transaction_lines(lines)
+    if layout_profile.profile_name == _SANTANDER_VANGOGH_LAYOUT:
+        return _scope_santander_vangogh_transaction_lines(lines)
     if layout_profile.profile_name != _SANTANDER_CONSOLIDATED_BASIC_LAYOUT:
         return lines
 
@@ -827,7 +883,7 @@ def _scope_profile_transaction_lines(
         (
             index
             for index in range(start_index + 1, len(lines))
-            if _normalize_text(lines[index].text).startswith("SALDOS POR PERIODO")
+            if _is_saldos_por_periodo_heading(lines[index].text)
         ),
         len(lines),
     )
@@ -864,7 +920,7 @@ def _scope_santander_intelligent_transaction_lines(lines: list[_PdfLine]) -> lis
         (
             index
             for index in range(start_index + 1, len(lines))
-            if _normalize_text(lines[index].text).startswith("SALDOS POR PERIODO")
+            if _is_saldos_por_periodo_heading(lines[index].text)
         ),
         len(lines),
     )
@@ -874,6 +930,47 @@ def _scope_santander_intelligent_transaction_lines(lines: list[_PdfLine]) -> lis
         if _normalize_text(line.text).startswith("RESUMO -")
     ]
     return [*reference_markers[-1:], *lines[start_index:end_index]]
+
+
+def _scope_santander_vangogh_transaction_lines(lines: list[_PdfLine]) -> list[_PdfLine]:
+    start_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if _normalize_text(line.text).startswith("MOVIMENTA")
+        ),
+        None,
+    )
+    if start_index is None:
+        return lines
+
+    balances_index = next(
+        (
+            index
+            for index in range(start_index + 1, len(lines))
+            if _is_saldos_por_periodo_heading(lines[index].text)
+        ),
+        len(lines),
+    )
+    closing_balance_indexes = [
+        index
+        for index in range(start_index + 1, balances_index)
+        if _normalize_text(lines[index].text).startswith("SALDO EM")
+    ]
+    end_index = balances_index
+    if len(closing_balance_indexes) >= 2:
+        end_index = min(balances_index, closing_balance_indexes[-1] + 2)
+
+    reference_markers = [
+        line
+        for line in lines[:start_index]
+        if _normalize_text(line.text).startswith("RESUMO")
+    ]
+    return [*reference_markers[-1:], *lines[start_index:end_index]]
+
+
+def _is_saldos_por_periodo_heading(value: str) -> bool:
+    return _normalize_text(value).startswith("SALDOS POR PER")
 
 
 def _should_treat_grouped_date_line_as_description_continuation(

@@ -10,6 +10,7 @@ from app.application.document_type_classifier import (
     CREDIT_CARD_STATEMENT,
     FINANCIAL_SPREADSHEET,
     FISCAL_INVOICE,
+    PAYMENT_REPORT,
     UNKNOWN_DOCUMENT,
     DocumentTypeClassification,
     classify_document_type,
@@ -119,6 +120,25 @@ def test_classifies_generic_csv_as_financial_spreadsheet() -> None:
 
     assert result.document_type == FINANCIAL_SPREADSHEET
     assert result.confidence >= 0.8
+
+
+def test_classifies_santander_credit_list_as_payment_report() -> None:
+    text = """
+    Santander Internet Banking Empresarial
+    Resultado da Busca
+    Critérios de Busca
+    Lista de Créditos
+    Número do Pagamento Número do Cliente Funcionário Data de Pagamento
+    Tipo de Pagamento Valor R$ Situação
+    900000860 12345 FUNCIONÁRIO EXEMPLO 03/09/2026 CC 2.148,85 Efetivado
+    Total Compromissos: 1 Valor Total: R$ 2.148,85
+    """
+
+    result = classify_document_type("pagamentos.pdf", b"%PDF", extracted_text=text)
+
+    assert result.document_type == PAYMENT_REPORT
+    assert result.confidence == 0.99
+    assert result.evidence == ["payment_report_structure"]
 
 
 def test_returns_unknown_when_there_is_not_enough_evidence() -> None:

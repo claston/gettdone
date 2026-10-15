@@ -2,6 +2,7 @@ from app.application.normalization.text import normalize_upper_text
 
 INFLOW_HINTS = (
     "CIELO VDA DEBITO MASTER",
+    "PAGAMENTO DE BENEFICIOS DO INSS",
     "TRANSFERENCIA RECEBIDA",
     "RECEBIMENTO",
     "ESTORNO",

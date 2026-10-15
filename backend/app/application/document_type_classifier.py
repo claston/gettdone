@@ -8,18 +8,23 @@ from pathlib import Path
 from pypdf import PdfReader
 
 from app.application.normalization.text import normalize_upper_text
-from app.application.unsupported_document_detection import detect_unsupported_document_type
+from app.application.unsupported_document_detection import (
+    BILLING_REPORT_DOCUMENT_TYPE,
+    PAYMENT_REPORT_DOCUMENT_TYPE,
+    detect_unsupported_document_type,
+)
 
 BANK_STATEMENT = "bank_statement"
 FISCAL_INVOICE = "fiscal_invoice"
 BILLING_REPORT = "billing_report"
+PAYMENT_REPORT = "payment_report"
 BANK_RECEIPT = "bank_receipt"
 CREDIT_CARD_STATEMENT = "credit_card_statement"
 FINANCIAL_SPREADSHEET = "financial_spreadsheet"
 OTHER_DOCUMENT = "other"
 UNKNOWN_DOCUMENT = "unknown"
 
-DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-10-10.1"
+DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-10-14.1"
 
 _PDF_PREVIEW_PAGE_LIMIT = 3
 _PDF_PREVIEW_CHAR_LIMIT = 16_000
@@ -50,8 +55,10 @@ def classify_document_type(
         return _classification(BANK_STATEMENT, 1.0, "ofx_structure")
 
     unsupported_type = detect_unsupported_document_type(text)
-    if unsupported_type == BILLING_REPORT:
+    if unsupported_type == BILLING_REPORT_DOCUMENT_TYPE:
         return _classification(BILLING_REPORT, 0.99, "billing_report_structure")
+    if unsupported_type == PAYMENT_REPORT_DOCUMENT_TYPE:
+        return _classification(PAYMENT_REPORT, 0.99, "payment_report_structure")
 
     invoice_evidence = _invoice_evidence(normalized_text, text)
     if _has_strong_invoice_identity(invoice_evidence):
