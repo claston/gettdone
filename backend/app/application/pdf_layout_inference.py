@@ -28,6 +28,7 @@ SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT_NAME = (
     "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
 )
 ITAU_EMPRESAS_LANCAMENTOS_LAYOUT_NAME = "itau_empresas_extrato_lancamentos_conta_corrente_v1"
+BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT_NAME = "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
 BR_PROFILE_TERMS: dict[str, tuple[tuple[str, float], ...]] = {
     "nubank_statement_ptbr": (
         ("NUBANK", 0.7),
@@ -148,6 +149,10 @@ def infer_pdf_layout(text: str) -> PdfLayoutInference:
         specific_scores.get(ITAU_EMPRESAS_LANCAMENTOS_LAYOUT_NAME, 0.0),
         _score_itau_empresas_vertical_lancamentos(normalized),
     )
+    specific_scores[BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT_NAME] = max(
+        specific_scores.get(BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT_NAME, 0.0),
+        _score_bradesco_net_empresa_monthly(normalized_lines),
+    )
     specific_scores[BANK_AGENCY_LAYOUT_NAME] = max(
         specific_scores.get(BANK_AGENCY_LAYOUT_NAME, 0.0),
         _score_bank_agency_debit_credit_statement(normalized_lines),
@@ -183,6 +188,23 @@ def _score_bank_agency_debit_credit_statement(normalized_lines: tuple[str, ...])
     if not re.search(r"\bSALDO\s*ANTERIOR\b", text):
         return 0.0
     return 0.78 if re.search(r"\bSALDO\s*FINAL\b", text) else 0.72
+
+
+def _score_bradesco_net_empresa_monthly(normalized_lines: tuple[str, ...]) -> float:
+    text = "\n".join(normalized_lines)
+    has_account_header = re.search(r"\bAG.NCIA\s*\|\s*CONTA\b", text) is not None
+    has_extract_scope = re.search(r"\bEXTRATO DE:\s*AG:\s*\d+\s*\|\s*CC:", text) is not None
+    has_table_header = any(
+        re.search(
+            r"\bDATA.*LAN.AMENTO.*DCTO\.?.*CR.DITO.*D.BITO.*SALDO",
+            line,
+        )
+        is not None
+        for line in normalized_lines
+    )
+    if not (has_account_header and has_extract_scope and has_table_header):
+        return 0.0
+    return 0.98
 
 
 def _score_santander_pf_consolidated_intelligent(normalized_text: str) -> float:

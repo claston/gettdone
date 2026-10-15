@@ -9,6 +9,7 @@ from app.application.parsers.pdf.layout_specific.banco_do_brasil_rende_facil imp
 from app.application.parsers.pdf.layout_specific.banco_do_nordeste import BancoDoNordesteLayoutParser
 from app.application.parsers.pdf.layout_specific.banestes import BanestesLayoutParser
 from app.application.parsers.pdf.layout_specific.banrisul import BanrisulLayoutParser
+from app.application.parsers.pdf.layout_specific.bradesco_net_empresa import BradescoNetEmpresaLayoutParser
 from app.application.parsers.pdf.layout_specific.bradesco_unificado import BradescoUnificadoLayoutParser
 from app.application.parsers.pdf.layout_specific.btg_pactual import BtgPactualLayoutParser
 from app.application.parsers.pdf.layout_specific.contract import (
@@ -20,6 +21,7 @@ from app.application.parsers.pdf.layout_specific.cora import CoraLayoutParser
 from app.application.parsers.pdf.layout_specific.cresol import CresolLayoutParser
 from app.application.parsers.pdf.layout_specific.inter import InterLayoutParser
 from app.application.parsers.pdf.layout_specific.itau import ItauLayoutParser
+from app.application.parsers.pdf.layout_specific.iugu import IuguLayoutParser
 from app.application.parsers.pdf.layout_specific.modern_accounts import ModernAccountLayoutParser
 from app.application.parsers.pdf.layout_specific.pagbank import PagBankLayoutParser
 from app.application.parsers.pdf.layout_specific.santander_credit_card import SantanderCreditCardLayoutParser
@@ -70,12 +72,14 @@ DEFAULT_PDF_LAYOUT_PARSER_REGISTRY = PdfLayoutParserRegistry(
         BancoDoBrasilRendeFacilLayoutParser(),
         SantanderCreditCardLayoutParser(),
         SantanderStatementLayoutParser(),
+        BradescoNetEmpresaLayoutParser(),
         BradescoUnificadoLayoutParser(),
         BancoDoNordesteLayoutParser(),
         BanestesLayoutParser(),
         BanrisulLayoutParser(),
         ItauLayoutParser(),
         InterLayoutParser(),
+        IuguLayoutParser(),
         CoraLayoutParser(),
         CresolLayoutParser(),
         SicoobLayoutParser(),

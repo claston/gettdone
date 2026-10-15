@@ -179,6 +179,35 @@ def test_parse_pdf_transactions_handles_banrisul_fixed_width_rows_with_inherited
     ]
 
 
+def test_parse_pdf_transactions_handles_banrisul_alphanumeric_document_codes() -> None:
+    text = """
+    B A N R I S U L
+    AGENCIA: 0001
+    CONTA..: 12345
+    NOME...: TESTE
+    DIA HISTORICO                         DOCUMENTO        V A L O R
+    MOVIMENTOS DA CONTA CORRENTE
+    SALDO ANT EM 31/07/2026                                1.000,00
+    MOVIMENTOS AGO/2026
+    03   REND CDB AUT                     0000RC                0,62
+         REND CDB AUT                     0001RC                1,20
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        [text],
+        preserve_layout_spacing=True,
+    )
+
+    assert [(transaction.date, transaction.description, transaction.amount) for transaction in result.transactions] == [
+        ("2026-08-03", "REND CDB AUT", 0.62),
+        ("2026-08-03", "REND CDB AUT", 1.20),
+    ]
+    assert [transaction.external_reference_id for transaction in result.canonical_transactions] == [
+        "0000RC",
+        "0001RC",
+    ]
+
+
 def test_parse_pdf_transactions_handles_inline_and_multiline_amount_rows(monkeypatch) -> None:
     monkeypatch.setattr(
         pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [GROUPED_INLINE_MULTILINE_SAMPLE]
@@ -2062,6 +2091,64 @@ def test_parse_pdf_transactions_keeps_vangogh_grouped_multiline_descriptions_wit
     assert result.canonical_transactions[4].running_balance == 7490.8
     assert result.canonical_transactions[6].running_balance == 4367.18
     assert result.canonical_transactions[7].running_balance == 4174.56
+
+
+def test_parse_pdf_transactions_scopes_vangogh_movements_and_treats_inss_benefits_as_credits() -> None:
+    text = """
+    Santander Select
+    EXTRATO CONSOLIDADO INTELIGENTE
+    Resumo agosto/2026
+    Conta Corrente
+    Movimentação
+    Data
+    Descrição
+    Nº Documento
+    Movimento (R$)
+    Saldo (R$)
+    SALDO EM 31/07
+    4.164,29
+    05/08
+    PAGAMENTO DE BENEFICIOS DO INSS
+    000613
+    2.690,99
+    NB:1461132484 07/2026
+    PIX ENVIADO Rejane Maia Pinheiro
+    1.600,00-
+    PIX ENVIADO
+    200,00-
+    5.055,28
+    27/08
+    PAGAMENTO DE BENEFICIOS DO INSS
+    000613
+    1.621,00
+    6.676,28
+    NB:1076943630 08/2026
+    31/08
+    REMUNERACAO APLICACAO AUTOMATICA
+    0,01
+    6.676,29
+    SALDO EM 31/08
+    6.676,29
+    Se voce nao tem Limite da Conta, consulte as condicoes contratuais.
+    Saldos por Periodo
+    Dia
+    Saldo de Conta Corrente
+    03
+    3.899,00
+    04
+    3.835,80
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert result.layout.layout_name == "santander_vangogh_resumo_consolidado_conta_corrente_v1"
+    assert [
+        transaction.amount
+        for transaction in result.transactions
+        if transaction.description.startswith("PAGAMENTO DE BENEFICIOS DO INSS")
+    ] == [2690.99, 1621.0]
+    assert all(transaction.description not in {"03", "04"} for transaction in result.transactions)
+    assert all("CONDICOES CONTRATUAIS" not in transaction.description for transaction in result.transactions)
 
 
 def test_parse_pdf_transactions_parses_santander_credit_card_invoice_sections_without_mixing_headers() -> None:
@@ -4367,7 +4454,7 @@ def test_parse_pdf_transactions_inherits_bradesco_dates_across_pages_and_stops_a
     )
 
     assert result.layout.layout_name == "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
-    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert result.parse_metrics["selected_parser"] == "layout_specific_bradesco_net_empresa"
     assert [transaction.date for transaction in result.transactions] == [
         "2021-09-01",
         "2021-09-01",
@@ -4491,7 +4578,7 @@ def test_parse_pdf_transactions_ignores_bradesco_repeated_account_summary_across
     )
 
     assert result.layout.layout_name == "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
-    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert result.parse_metrics["selected_parser"] == "layout_specific_bradesco_net_empresa"
     assert [transaction.description for transaction in result.transactions] == [
         "DEPOSITO IDENTIFICADO 010324854",
         "LIQUIDACAO DE COBRANCA 020324106",

@@ -29,6 +29,18 @@ TOTAIS 0,00 388.274,99
 CONTADOR EXEMPLO REGISTRO NO C.R.C.: 000000/O8
 """
 
+PAYMENT_REPORT_TEXT = """
+Santander Internet Banking Empresarial
+Resultado da Busca
+Critérios de Busca:
+Data de Débito Inicial: 01/09/2026 Data de Débito Final: 30/09/2026
+Lista de Créditos
+Número do Pagamento Número do Cliente Funcionário Data de Pagamento
+Tipo de Pagamento Valor R$ Situação
+900000860 12345 FUNCIONÁRIO EXEMPLO 03/09/2026 CC 2.148,85 Efetivado
+Total Compromissos: 1 Valor Total: R$ 2.148,85
+"""
+
 
 def test_parser_rejects_billing_report_without_retrying_ocr(monkeypatch) -> None:
     ocr_calls = 0
@@ -61,6 +73,43 @@ def test_parser_does_not_reject_statement_with_billing_report_in_transaction_des
     EXTRATO DE CONTA CORRENTE
     DATA DESCRIÇÃO VALOR
     01/09/2026 PAGAMENTO RELATÓRIO DE FATURAMENTO -100,00
+    02/09/2026 PIX RECEBIDO 250,00
+    """
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [statement_text])
+
+    result = parse_pdf_transactions(b"%PDF synthetic")
+
+    assert len(result.transactions) == 2
+
+
+def test_parser_rejects_payment_report_without_retrying_ocr(monkeypatch) -> None:
+    ocr_calls = 0
+
+    def extract_ocr(*args, **kwargs):
+        nonlocal ocr_calls
+        ocr_calls += 1
+        return []
+
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [PAYMENT_REPORT_TEXT])
+    monkeypatch.setattr(pdf_parser_module, "is_pdf_ocr_enabled", lambda: True)
+    monkeypatch.setattr(pdf_parser_module, "extract_pdf_page_texts_with_ocr", extract_ocr)
+
+    with pytest.raises(UnsupportedDocumentContentError) as exc_info:
+        parse_pdf_transactions(b"%PDF synthetic")
+
+    assert exc_info.value.document_type == "payment_report"
+    assert "lista de créditos ou pagamentos" in str(exc_info.value).lower()
+    assert ocr_calls == 0
+    assert getattr(exc_info.value, "_parse_observability", {})["ocr_retry_skip_reason"] == (
+        "unsupported_document_type"
+    )
+
+
+def test_parser_does_not_reject_statement_with_credit_list_in_transaction_description(monkeypatch) -> None:
+    statement_text = """
+    EXTRATO DE CONTA CORRENTE
+    DATA DESCRIÇÃO VALOR
+    01/09/2026 PAGAMENTO LISTA DE CRÉDITOS FORNECEDOR -100,00
     02/09/2026 PIX RECEBIDO 250,00
     """
     monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [statement_text])
