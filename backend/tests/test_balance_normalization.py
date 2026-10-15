@@ -348,6 +348,70 @@ def test_uses_descending_running_balance_for_banco_pan_statement_layout() -> Non
     assert uses_descending_running_balance("banco_pan_extrato_conta_pix_saldo_v1") is True
 
 
+def test_resolves_caixa_web_running_balance_order_from_the_rows() -> None:
+    layout_name = "caixa_extrato_por_periodo_web_v1"
+    descending_rows = [
+        CanonicalTransaction(
+            date="2026-09-28",
+            description="TAR PIX",
+            amount=-8.50,
+            type="outflow",
+            running_balance=8334.93,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-09-28",
+            description="DEB PIX CHAVE",
+            amount=-1500.00,
+            type="outflow",
+            running_balance=8343.43,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-09-28",
+            description="PIX RECEBIDO",
+            amount=667.80,
+            type="inflow",
+            running_balance=9843.43,
+            layout_name=layout_name,
+        ),
+    ]
+    ascending_rows = [
+        CanonicalTransaction(
+            date="2026-01-02",
+            description="CRED PIX",
+            amount=98.43,
+            type="inflow",
+            running_balance=5334.31,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-01-02",
+            description="CRED TED",
+            amount=216.07,
+            type="inflow",
+            running_balance=5550.38,
+            layout_name=layout_name,
+        ),
+        CanonicalTransaction(
+            date="2026-01-02",
+            description="CRED TED",
+            amount=6.98,
+            type="inflow",
+            running_balance=5557.36,
+            layout_name=layout_name,
+        ),
+    ]
+
+    assert resolve_descending_running_balance(descending_rows, layout_name=layout_name) is True
+    assert resolve_descending_running_balance(ascending_rows, layout_name=layout_name) is False
+
+    checked_count, failed_count = annotate_balance_consistency(descending_rows)
+
+    assert checked_count == 2
+    assert failed_count == 0
+
+
 def test_annotate_balance_consistency_accumulates_transactions_between_sparse_balances() -> None:
     canonical_transactions = [
         CanonicalTransaction(

@@ -4743,6 +4743,53 @@ def test_parse_pdf_transactions_keeps_trailing_description_number_out_of_spaced_
     assert result.canonical_transactions[1].warnings == []
 
 
+def test_parse_pdf_transactions_repairs_caixa_web_ocr_money_separators_and_truncated_year() -> None:
+    native_text = """
+    CAIXA
+    Extrato por período
+    Data 01/10/2026-14:39
+    Período dos lançamentos 01/09/2026 até 30/09/2026
+    SALDO ANTERIOR R$ 9.851,93 C
+    Lançamentos Nr. Doc Histórico/Complemento Valor Saldo
+    28/09/2026-16:31:44 281631 TAR PIX 8,50 D 8.334,93 C
+    28/09/2026-16:30:17 281630 DEB PIX CHAVE 1.500,00 D 8.343.43 C
+    28/09/20-16:28:46 281628 PIX RECEBIDO 667,80 C 9.843.43 C
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([native_text])
+
+    assert result.layout.layout_name == "caixa_extrato_por_periodo_web_v1"
+    assert [transaction.date for transaction in result.transactions] == ["2026-09-28"] * 3
+    assert [transaction.running_balance for transaction in result.canonical_transactions] == [
+        8334.93,
+        8343.43,
+        9843.43,
+    ]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
+def test_caixa_web_ocr_normalization_preserves_legitimate_previous_year() -> None:
+    lines = [
+        pdf_parser_module._PdfLine(
+            text="Data 01/01/2026-08:00",
+            page_number=1,
+            line_number=1,
+        ),
+        pdf_parser_module._PdfLine(
+            text="31/12/25-18:00:00 123 PIX RECEBIDO 100,00 C 500,00 C",
+            page_number=1,
+            line_number=2,
+        ),
+    ]
+
+    normalized = pdf_parser_module._normalize_caixa_web_ocr_lines(
+        lines,
+        layout_name="caixa_extrato_por_periodo_web_v1",
+    )
+
+    assert normalized[1].text.startswith("31/12/25-")
+
+
 def test_parse_pdf_transactions_reconciles_caixa_solucard_credit_from_running_balance() -> None:
     native_text = """
     CAIXA
