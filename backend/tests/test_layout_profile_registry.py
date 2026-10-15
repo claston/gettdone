@@ -90,3 +90,13 @@ def test_caixa_web_profile_keeps_fragmented_date_header_as_column_alias() -> Non
     assert "DATA M OV." in profile.column_aliases["date"]
     assert "DATA M OV." not in profile.optional_keywords
     assert "ENVIO PIX" not in profile.optional_keywords
+
+
+def test_load_iugu_bank_movement_profile() -> None:
+    profile = get_layout_profile("iugu_movimentacao_bancaria_v1")
+
+    assert profile is not None
+    assert profile.bank == "Iugu"
+    assert profile.layout_family == "iugu_movimentacao_bancaria"
+    assert profile.statement_type == "conta_corrente_extrato"
+    assert profile.parsing.opening_balance_policy == "skip"
