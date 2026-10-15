@@ -144,9 +144,31 @@ def _sample_pages(reader: PdfReader) -> list[object]:
 
 def _has_font_resources(reader: PdfReader) -> bool:
     for page in reader.pages:
-        resources = _dereference(page.get("/Resources", {}))
-        fonts = _dereference(resources.get("/Font", {})) if resources else {}
-        if fonts:
+        if _resources_have_fonts(page.get("/Resources", {}), visited=set()):
+            return True
+    return False
+
+
+def _resources_have_fonts(resources_ref, *, visited: set[int]) -> bool:
+    resources = _dereference(resources_ref)
+    if not resources:
+        return False
+
+    resource_id = id(resources)
+    if resource_id in visited:
+        return False
+    visited.add(resource_id)
+
+    fonts = _dereference(resources.get("/Font", {}))
+    if fonts:
+        return True
+
+    xobjects = _dereference(resources.get("/XObject", {}))
+    for xobject_ref in xobjects.values():
+        xobject = _dereference(xobject_ref)
+        if str(xobject.get("/Subtype")) != "/Form":
+            continue
+        if _resources_have_fonts(xobject.get("/Resources", {}), visited=visited):
             return True
     return False
 

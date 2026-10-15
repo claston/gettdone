@@ -83,6 +83,8 @@ from app.application.textract_transaction_adapter import adapt_textract_extracti
 from app.application.unsupported_document_detection import (
     BILLING_REPORT_DOCUMENT_TYPE,
     BILLING_REPORT_USER_MESSAGE,
+    PAYMENT_REPORT_DOCUMENT_TYPE,
+    PAYMENT_REPORT_USER_MESSAGE,
     detect_unsupported_document_type,
 )
 
@@ -638,6 +640,11 @@ def _parse_pdf_transactions_from_page_texts(
         raise UnsupportedDocumentContentError(
             document_type=unsupported_document_type,
             message=BILLING_REPORT_USER_MESSAGE,
+        )
+    if unsupported_document_type == PAYMENT_REPORT_DOCUMENT_TYPE:
+        raise UnsupportedDocumentContentError(
+            document_type=unsupported_document_type,
+            message=PAYMENT_REPORT_USER_MESSAGE,
         )
     layout = infer_pdf_layout(joined_text)
     layout_profile = get_layout_profile(layout.layout_name)
