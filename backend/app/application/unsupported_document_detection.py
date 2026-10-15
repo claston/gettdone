@@ -9,6 +9,11 @@ BILLING_REPORT_USER_MESSAGE = (
     "Este arquivo é um relatório de faturamento, não um extrato bancário. "
     "Envie o extrato da conta em PDF, CSV, XLSX ou OFX."
 )
+PAYMENT_REPORT_DOCUMENT_TYPE = "payment_report"
+PAYMENT_REPORT_USER_MESSAGE = (
+    "Este arquivo é uma lista de créditos ou pagamentos, não é um extrato bancário. "
+    "Envie o extrato da conta em PDF, CSV, XLSX ou OFX."
+)
 
 _BILLING_REPORT_TITLE = "RELATORIO DE FATURAMENTO"
 _MONTH_NAMES = (
@@ -33,6 +38,16 @@ _BILLING_REPORT_SUPPORTING_MARKERS = (
     "ALIQUOTA",
     "IMPOSTOS",
 )
+_PAYMENT_REPORT_TITLE = "LISTA DE CREDITOS"
+_PAYMENT_REPORT_SUPPORTING_MARKERS = (
+    "NUMERO DO PAGAME",
+    "NUMERO DO CLIENTE",
+    "FUNCIONARIO",
+    "DATA DE PAGAMENT",
+    "TIPO DE PAGAMENTO",
+    "SITUACAO",
+    "TOTAL COMPROMISSOS",
+)
 
 
 def detect_unsupported_document_type(text: str) -> str | None:
@@ -44,16 +59,24 @@ def detect_unsupported_document_type(text: str) -> str | None:
     if not normalized_lines:
         return None
 
-    header_text = " ".join(normalized_lines[:6])
-    if _BILLING_REPORT_TITLE not in header_text:
-        return None
-
     normalized_text = "\n".join(normalized_lines)
+    header_text = " ".join(normalized_lines[:6])
+    if _BILLING_REPORT_TITLE in header_text and _is_billing_report(normalized_text):
+        return BILLING_REPORT_DOCUMENT_TYPE
+    if _PAYMENT_REPORT_TITLE in normalized_text and _is_payment_report(normalized_text):
+        return PAYMENT_REPORT_DOCUMENT_TYPE
+    return None
+
+
+def _is_billing_report(normalized_text: str) -> bool:
     month_hits = sum(
         re.search(rf"(?<![A-Z0-9]){month}(?![A-Z0-9])", normalized_text) is not None
         for month in _MONTH_NAMES
     )
     supporting_hits = sum(marker in normalized_text for marker in _BILLING_REPORT_SUPPORTING_MARKERS)
-    if month_hits >= 6 and supporting_hits >= 2:
-        return BILLING_REPORT_DOCUMENT_TYPE
-    return None
+    return month_hits >= 6 and supporting_hits >= 2
+
+
+def _is_payment_report(normalized_text: str) -> bool:
+    supporting_hits = sum(marker in normalized_text for marker in _PAYMENT_REPORT_SUPPORTING_MARKERS)
+    return supporting_hits >= 4
