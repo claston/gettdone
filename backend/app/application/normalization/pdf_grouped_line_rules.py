@@ -3,7 +3,7 @@ import re
 from app.application.normalization.pdf_text_rules import should_ignore_line
 
 _PAGE_COUNTER_PATTERN = re.compile(r"^\d+\s+DE\s+\d+$")
-_GROUPED_ICON_LINES = {"↑", "↓", "?"}
+_GROUPED_ICON_LINES = {"↑", "↓", "?", ">"}
 _GROUPED_CONTEXT_LINES = {"SALDO DO DIA", "SALDO DIA"}
 
 

@@ -95,6 +95,8 @@ def test_parse_pdf_amount_supports_credit_debit_suffix() -> None:
 def test_has_explicit_amount_sign_detects_supported_sign_forms() -> None:
     assert has_explicit_amount_sign("-10,00")
     assert has_explicit_amount_sign("(10,00)")
+    assert has_explicit_amount_sign("10,00D")
+    assert has_explicit_amount_sign("10,00C")
     assert has_explicit_amount_sign("10,00 D")
     assert has_explicit_amount_sign("10,00 C")
     assert not has_explicit_amount_sign("10,00")
