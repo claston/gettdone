@@ -21,12 +21,15 @@ import type {
 } from "@/domain/workspace";
 
 type LoadState = "LOADING" | "READY" | "ERROR";
+type RefreshState = "IDLE" | "REFRESHING" | "ERROR";
 
 export interface WorkspaceController {
   batch: Batch | null;
   activeConversion: Conversion | null;
   loadState: LoadState;
   loadError: string | null;
+  refreshState: RefreshState;
+  refreshError: string | null;
   saveStatus: SaveStatus;
   saveError: string | null;
   canUndo: boolean;
@@ -46,6 +49,7 @@ export interface WorkspaceController {
   goToNextPending(): void;
   retryConversion(): Promise<void>;
   exportBatch(): Promise<void>;
+  refreshBatch(): Promise<void>;
 }
 
 const emptyStates: Transaction["fieldStates"] = {
@@ -61,11 +65,14 @@ export function useWorkspaceController(
   repository: WorkspaceRepository,
   initialConversionId?: string,
   reviewBasePath = "/review",
+  pollIntervalMs = 2500,
 ): WorkspaceController {
   const [batch, setBatch] = useState<Batch | null>(null);
   const [activeId, setActiveId] = useState(initialConversionId ?? "");
   const [loadState, setLoadState] = useState<LoadState>("LOADING");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshState, setRefreshState] = useState<RefreshState>("IDLE");
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>(
     {},
   );
@@ -79,6 +86,8 @@ export function useWorkspaceController(
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const batchRef = useRef<Batch | null>(null);
+  const saveStatusesRef = useRef<Record<string, SaveStatus>>({});
+  const refreshPromiseRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -115,6 +124,77 @@ export function useWorkspaceController(
   useEffect(() => {
     batchRef.current = batch;
   }, [batch]);
+
+  useEffect(() => {
+    saveStatusesRef.current = saveStatuses;
+  }, [saveStatuses]);
+
+  const refreshBatch = useCallback((): Promise<void> => {
+    if (refreshPromiseRef.current) return refreshPromiseRef.current;
+
+    setRefreshState("REFRESHING");
+    setRefreshError(null);
+    const refreshPromise = repository
+      .getBatch(batchId)
+      .then((loadedBatch) => {
+        setBatch((current) => {
+          const merged = mergeRefreshedBatch(
+            current,
+            loadedBatch,
+            saveStatusesRef.current,
+          );
+          batchRef.current = merged;
+          return merged;
+        });
+        setActiveId((current) => {
+          if (loadedBatch.conversions.some((item) => item.id === current)) {
+            return current;
+          }
+          return sortConversionsForReview(loadedBatch.conversions)[0]?.id ?? "";
+        });
+        setRefreshState("IDLE");
+      })
+      .catch((error: unknown) => {
+        setRefreshError(
+          error instanceof Error
+            ? error.message
+            : "Não foi possível atualizar o lote.",
+        );
+        setRefreshState("ERROR");
+      })
+      .finally(() => {
+        refreshPromiseRef.current = null;
+      });
+    refreshPromiseRef.current = refreshPromise;
+    return refreshPromise;
+  }, [batchId, repository]);
+
+  const hasProcessing = Boolean(
+    batch?.conversions.some((item) => item.status === "PROCESSING"),
+  );
+
+  useEffect(() => {
+    if (!hasProcessing) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const schedule = () => {
+      timer = setTimeout(() => {
+        void refreshBatch().then(() => {
+          const stillProcessing = batchRef.current?.conversions.some(
+            (item) => item.status === "PROCESSING",
+          );
+          if (active && stillProcessing) schedule();
+        });
+      }, pollIntervalMs);
+    };
+
+    schedule();
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [hasProcessing, pollIntervalMs, refreshBatch]);
 
   const activeConversion =
     batch?.conversions.find((item) => item.id === activeId) ?? null;
@@ -360,6 +440,8 @@ export function useWorkspaceController(
       activeConversion,
       loadState,
       loadError,
+      refreshState,
+      refreshError,
       saveStatus: activeConversion
         ? (saveStatuses[activeConversion.id] ?? "IDLE")
         : "IDLE",
@@ -381,6 +463,7 @@ export function useWorkspaceController(
       goToNextPending,
       retryConversion,
       exportBatch,
+      refreshBatch,
     }),
     [
       activeConversion,
@@ -395,6 +478,9 @@ export function useWorkspaceController(
       loadState,
       markReviewed,
       removeTransaction,
+      refreshBatch,
+      refreshError,
+      refreshState,
       retryConversion,
       retrySave,
       saveErrors,
@@ -404,4 +490,33 @@ export function useWorkspaceController(
       updateField,
     ],
   );
+}
+
+function mergeRefreshedBatch(
+  current: Batch | null,
+  refreshed: Batch,
+  saveStatuses: Record<string, SaveStatus>,
+): Batch {
+  if (!current) return refreshed;
+  const currentById = new Map(
+    current.conversions.map((conversion) => [conversion.id, conversion]),
+  );
+  return {
+    ...refreshed,
+    conversions: refreshed.conversions.map((conversion) => {
+      const local = currentById.get(conversion.id);
+      const saveStatus = saveStatuses[conversion.id] ?? "IDLE";
+      if (!local || !["DIRTY", "SAVING", "ERROR"].includes(saveStatus)) {
+        return conversion;
+      }
+      return {
+        ...conversion,
+        transactions: local.transactions,
+        transactionCount: local.transactionCount,
+        suspectedCount: local.suspectedCount,
+        editedCount: local.editedCount,
+        reviewStatus: local.reviewStatus,
+      };
+    }),
+  };
 }

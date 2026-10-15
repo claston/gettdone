@@ -19,6 +19,7 @@ import {
   PanelLeftOpen,
   Plus,
   Redo2,
+  RefreshCw,
   RotateCcw,
   Search,
   Trash2,
@@ -55,6 +56,7 @@ interface WorkspaceScreenProps {
   initialConversionId?: string;
   repository?: WorkspaceRepository;
   dataMode?: WorkspaceDataMode;
+  pollIntervalMs?: number;
 }
 
 const statusContent: Record<
@@ -305,15 +307,6 @@ function PdfViewer({ conversion }: { conversion: Conversion }) {
   const [page, setPage] = useState(1);
   const [zoom, setZoom] = useState<"page-width" | number>("page-width");
 
-  if (conversion.status === "PROCESSING") {
-    return (
-      <div className="viewer-state">
-        <LoaderCircle className="spin" size={28} />
-        <h3>Processando extrato</h3>
-        <p>Você pode revisar outro arquivo enquanto este termina.</p>
-      </div>
-    );
-  }
   if (!conversion.pdf || conversion.status === "FAILED") {
     return (
       <div className="viewer-state error">
@@ -341,6 +334,11 @@ function PdfViewer({ conversion }: { conversion: Conversion }) {
         <div className="toolbar-title">
           <FileText size={16} />
           <span>{conversion.fileName}</span>
+          {conversion.status === "PROCESSING" && (
+            <span className="pdf-processing-status" role="status">
+              <LoaderCircle className="spin" size={12} /> Processando dados
+            </span>
+          )}
         </div>
         <div className="pdf-controls">
           <button
@@ -677,6 +675,7 @@ export function WorkspaceScreen({
   initialConversionId,
   repository,
   dataMode = "api",
+  pollIntervalMs,
 }: WorkspaceScreenProps) {
   const session = useOptionalProSession();
   const activeRepository = repository ?? resolveWorkspaceRepository(dataMode);
@@ -686,6 +685,7 @@ export function WorkspaceScreen({
     activeRepository,
     initialConversionId,
     reviewBasePath,
+    pollIntervalMs,
   );
   const [navigatorCollapsed, setNavigatorCollapsed] = useState(false);
   const [focusMode, setFocusMode] = useState(true);
@@ -786,6 +786,20 @@ export function WorkspaceScreen({
             error={controller.saveError}
             onRetry={controller.retrySave}
           />
+          <button
+            className="icon-button"
+            onClick={() => void controller.refreshBatch()}
+            disabled={controller.refreshState === "REFRESHING"}
+            aria-label="Atualizar dados do lote"
+            title={controller.refreshError ?? "Atualizar dados do lote"}
+          >
+            <RefreshCw
+              size={16}
+              className={
+                controller.refreshState === "REFRESHING" ? "spin" : undefined
+              }
+            />
+          </button>
           {activeConversion?.downloadUrl && (
             <a
               className="secondary-button"
@@ -861,12 +875,31 @@ export function WorkspaceScreen({
               <section className="transactions-panel viewer-state">
                 <LoaderCircle className="spin" size={28} />
                 <h3>Aguardando lançamentos</h3>
-                <p>Os dados aparecerão quando o processamento terminar.</p>
+                <p>
+                  Esta tela atualiza o lote automaticamente. O PDF original
+                  continua disponível para consulta.
+                </p>
+                {controller.refreshError && (
+                  <p className="refresh-error" role="alert">
+                    {controller.refreshError}
+                  </p>
+                )}
                 <button
                   className="secondary-button"
-                  onClick={controller.goToNextPending}
+                  onClick={() => void controller.refreshBatch()}
+                  disabled={controller.refreshState === "REFRESHING"}
                 >
-                  Revisar próximo arquivo
+                  <RefreshCw
+                    size={15}
+                    className={
+                      controller.refreshState === "REFRESHING"
+                        ? "spin"
+                        : undefined
+                    }
+                  />
+                  {controller.refreshState === "REFRESHING"
+                    ? "Atualizando…"
+                    : "Atualizar agora"}
                 </button>
               </section>
             ) : (
