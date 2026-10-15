@@ -83,6 +83,8 @@ from app.application.textract_transaction_adapter import adapt_textract_extracti
 from app.application.unsupported_document_detection import (
     BILLING_REPORT_DOCUMENT_TYPE,
     BILLING_REPORT_USER_MESSAGE,
+    PAYMENT_REPORT_DOCUMENT_TYPE,
+    PAYMENT_REPORT_USER_MESSAGE,
     detect_unsupported_document_type,
 )
 
@@ -91,6 +93,7 @@ _SANTANDER_CONSOLIDATED_BASIC_LAYOUT = "santander_extrato_consolidado_basico_con
 _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT = (
     "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
 )
+_SANTANDER_VANGOGH_LAYOUT = "santander_vangogh_resumo_consolidado_conta_corrente_v1"
 _SANTANDER_EMPRESARIAL_ACCOUNT_LAYOUT = "santander_empresarial_conta_corrente"
 _ASAAS_MOVEMENTS_LAYOUT = "asaas_extrato_conta_digital_movimentacoes_v1"
 _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT = "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
@@ -639,6 +642,11 @@ def _parse_pdf_transactions_from_page_texts(
             document_type=unsupported_document_type,
             message=BILLING_REPORT_USER_MESSAGE,
         )
+    if unsupported_document_type == PAYMENT_REPORT_DOCUMENT_TYPE:
+        raise UnsupportedDocumentContentError(
+            document_type=unsupported_document_type,
+            message=PAYMENT_REPORT_USER_MESSAGE,
+        )
     layout = infer_pdf_layout(joined_text)
     layout_profile = get_layout_profile(layout.layout_name)
     cross_page_split = detect_cross_page_transaction_split(page_texts, layout_profile=layout_profile)
@@ -815,6 +823,8 @@ def _scope_profile_transaction_lines(
 
     if layout_profile.profile_name == _SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT:
         return _scope_santander_intelligent_transaction_lines(lines)
+    if layout_profile.profile_name == _SANTANDER_VANGOGH_LAYOUT:
+        return _scope_santander_vangogh_transaction_lines(lines)
     if layout_profile.profile_name != _SANTANDER_CONSOLIDATED_BASIC_LAYOUT:
         return lines
 
@@ -833,7 +843,7 @@ def _scope_profile_transaction_lines(
         (
             index
             for index in range(start_index + 1, len(lines))
-            if _normalize_text(lines[index].text).startswith("SALDOS POR PERIODO")
+            if _is_saldos_por_periodo_heading(lines[index].text)
         ),
         len(lines),
     )
@@ -870,7 +880,7 @@ def _scope_santander_intelligent_transaction_lines(lines: list[_PdfLine]) -> lis
         (
             index
             for index in range(start_index + 1, len(lines))
-            if _normalize_text(lines[index].text).startswith("SALDOS POR PERIODO")
+            if _is_saldos_por_periodo_heading(lines[index].text)
         ),
         len(lines),
     )
@@ -880,6 +890,47 @@ def _scope_santander_intelligent_transaction_lines(lines: list[_PdfLine]) -> lis
         if _normalize_text(line.text).startswith("RESUMO -")
     ]
     return [*reference_markers[-1:], *lines[start_index:end_index]]
+
+
+def _scope_santander_vangogh_transaction_lines(lines: list[_PdfLine]) -> list[_PdfLine]:
+    start_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if _normalize_text(line.text).startswith("MOVIMENTA")
+        ),
+        None,
+    )
+    if start_index is None:
+        return lines
+
+    balances_index = next(
+        (
+            index
+            for index in range(start_index + 1, len(lines))
+            if _is_saldos_por_periodo_heading(lines[index].text)
+        ),
+        len(lines),
+    )
+    closing_balance_indexes = [
+        index
+        for index in range(start_index + 1, balances_index)
+        if _normalize_text(lines[index].text).startswith("SALDO EM")
+    ]
+    end_index = balances_index
+    if len(closing_balance_indexes) >= 2:
+        end_index = min(balances_index, closing_balance_indexes[-1] + 2)
+
+    reference_markers = [
+        line
+        for line in lines[:start_index]
+        if _normalize_text(line.text).startswith("RESUMO")
+    ]
+    return [*reference_markers[-1:], *lines[start_index:end_index]]
+
+
+def _is_saldos_por_periodo_heading(value: str) -> bool:
+    return _normalize_text(value).startswith("SALDOS POR PER")
 
 
 def _should_treat_grouped_date_line_as_description_continuation(

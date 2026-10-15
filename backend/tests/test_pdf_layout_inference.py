@@ -910,6 +910,25 @@ def test_infer_pdf_layout_recognizes_banrisul_monospace_statement_with_spaced_la
     assert result.used_fallback is False
 
 
+def test_infer_pdf_layout_recognizes_iugu_bank_movement_export() -> None:
+    text = """
+    Filtros utilizados:
+    Conta Corrente: 0000/IDeveloper-IUGU - IDEVELOPER-IUGU
+    Total de 56 registro(s) encontrado(s).
+    SALDO ANTERIOR R$ 2.468,58
+    CODIGO DATA MOV. STATUS COBRANÇA IDENTIFICAÇÃO HISTÓRICO PARCELA VALOR SALDO
+    #1678737 01/10/2026 Autorizado Entrada - Doação 1/1 R$ 20,00 R$ 2.488,58
+    #1678738 01/10/2026 Autorizado Tarifa - Doação 1/1 R$ -0,62 R$ 2.487,96
+    Movimentação Bancária
+    """
+
+    result = infer_pdf_layout(text)
+
+    assert result.layout_name == "iugu_movimentacao_bancaria_v1"
+    assert result.confidence >= 0.8
+    assert result.used_fallback is False
+
+
 def test_infer_pdf_layout_prefers_caixa_profile_when_tokens_match() -> None:
     text = """
     CAIXA ECONOMICA FEDERAL
