@@ -55,6 +55,32 @@ def test_does_not_classify_bank_statement_as_invoice_from_transaction_descriptio
     assert result.confidence >= 0.85
 
 
+def test_credit_card_invoice_takes_precedence_over_account_header_evidence() -> None:
+    text = """
+    Itaú Empresas
+    agência 0185 conta corrente 34762-2
+    ITAU EMPRESAS MASTERCARD
+    fatura do cartão: Fechada
+    vencimento: 17/10/2026
+    Resumo da fatura
+    Total da fatura R$ 25.560,47
+    Pagamento mínimo R$ 0,00
+    Lançamentos nacionais
+    data descrição valor
+    """
+
+    result = classify_document_type(
+        "fatura-itau-empresas.pdf",
+        b"%PDF",
+        extracted_text=text,
+        layout_inference_name="itau_empresas_fatura_cartao_mastercard_v1",
+        layout_inference_confidence=0.99,
+    )
+
+    assert result.document_type == CREDIT_CARD_STATEMENT
+    assert result.confidence >= 0.9
+
+
 @pytest.mark.parametrize(
     "transaction_text",
     [

@@ -167,3 +167,113 @@ def test_parse_pdf_transactions_joins_split_bradesco_visual_rows(monkeypatch) ->
     assert result.parse_metrics["balance_consistency_failed"] == 0
     assert result.parse_metrics["confidence_band"] == "high"
     assert result.parse_metrics["export_recommendation"] == "safe_to_export"
+
+
+def test_banco_bv_current_account_parses_column_major_daily_groups() -> None:
+    pages = [
+        """
+        Banco BV
+        Extrato de Conta Corrente
+        Período: 01/10/2026 à 14/10/2026
+        Data
+        14/10/2026
+        13/10/2026
+        Lançamento
+        Saldo do dia
+        Débito por TED IB
+        Transferência recebida
+        Crédito de cobrança
+        Saldo do dia
+        Débito por TED IB
+        Transferência recebida
+        Tarifa de liquidação de título
+        Tarifa de liquidação de título
+        Tarifa de liquidação de título
+        Tarifa de liquidação de título
+        Nº Documento
+        885078361
+        498320577
+        885012474
+        884977064
+        498208604
+        498171376
+        498171243
+        498170991
+        498170987
+        Valor (R$)
+        2.312,09
+        - 228.000,00
+        208.009,91
+        20.650,84
+        1.651,34
+        - 93.000,00
+        77.740,15
+        - 65,00
+        - 10,40
+        - 4,00
+        - 2,00
+        """,
+        """
+        Banco BV
+        Extrato de Conta Corrente
+        10/10/2026
+        09/10/2026
+        Saldo do dia
+        Crédito de cobrança
+        Saldo do dia
+        Tarifa de registro de títulos
+        Cobrança própria
+        884700001
+        497700002
+        16.992,59
+        15.287,19
+        1.705,40
+        - 70,20
+        """,
+    ]
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(pages)
+
+    assert result.layout.layout_name == "banco_bv_extrato_conta_corrente_saldo_dia_v1"
+    assert result.parse_metrics["selected_parser"] == "layout_specific_modern_accounts"
+    assert [transaction.amount for transaction in result.transactions] == [
+        -228000.0,
+        208009.91,
+        20650.84,
+        -93000.0,
+        77740.15,
+        -65.0,
+        -10.4,
+        -4.0,
+        -2.0,
+        15287.19,
+        -70.2,
+    ]
+    assert [transaction.date for transaction in result.transactions] == [
+        "2026-10-14",
+        "2026-10-14",
+        "2026-10-14",
+        "2026-10-13",
+        "2026-10-13",
+        "2026-10-13",
+        "2026-10-13",
+        "2026-10-13",
+        "2026-10-13",
+        "2026-10-10",
+        "2026-10-09",
+    ]
+    assert result.canonical_transactions is not None
+    assert [transaction.running_balance for transaction in result.canonical_transactions] == [
+        2312.09,
+        None,
+        None,
+        1651.34,
+        None,
+        None,
+        None,
+        None,
+        None,
+        16992.59,
+        1705.4,
+    ]
+    assert result.parse_metrics["balance_consistency_failed"] == 0

@@ -36,6 +36,7 @@ ITAU_SAVINGS_LAYOUT = "itau_extrato_poupanca_entradas_saidas_v1"
 ITAU_RECEIVED_TRANSFERS_LAYOUT = "itau_empresas_transferencias_recebidas_v1"
 ITAU_COMPLETE_TABLE_LAYOUT = "itau_empresas_extrato_completo_tabela_v1"
 ITAU_TRANSFER_RECEIPT_LAYOUT = "itau_comprovante_transferencia_pix_v1"
+ITAU_EMPRESAS_MASTERCARD_LAYOUT = "itau_empresas_fatura_cartao_mastercard_v1"
 
 _STANDARD_DATE_FIRST_LAYOUTS = frozenset(
     {
@@ -56,6 +57,7 @@ _ALL_LAYOUTS = frozenset(
         ITAU_SAVINGS_LAYOUT,
         ITAU_RECEIVED_TRANSFERS_LAYOUT,
         ITAU_TRANSFER_RECEIPT_LAYOUT,
+        ITAU_EMPRESAS_MASTERCARD_LAYOUT,
     }
 )
 _DATE_AT_START_PATTERN = re.compile(
@@ -102,7 +104,9 @@ class ItauLayoutParser:
         if fallback_year is None and context.reference_month_year is not None:
             fallback_year = context.reference_month_year[1]
 
-        if layout_name in _STANDARD_DATE_FIRST_LAYOUTS:
+        if layout_name == ITAU_EMPRESAS_MASTERCARD_LAYOUT:
+            rows = _parse_empresas_mastercard_rows(lines, fallback_year=fallback_year)
+        elif layout_name in _STANDARD_DATE_FIRST_LAYOUTS:
             rows = _parse_date_first_rows(lines, fallback_year=fallback_year)
         elif layout_name == ITAU_SAVINGS_LAYOUT:
             rows = _parse_savings_rows(lines, fallback_year=fallback_year)
@@ -146,6 +150,97 @@ def _parse_date_first_rows(lines: list[_PdfLine], *, fallback_year: int | None) 
             continue
         rows.append(_build_row(date=date, description=description, amount=amount, amount_token=amount_token, source=line))
     return rows
+
+
+def _parse_empresas_mastercard_rows(
+    lines: list[_PdfLine],
+    *,
+    fallback_year: int | None,
+) -> list[_ParsedTransaction]:
+    reference_month, reference_year = _infer_card_reference_month_year(
+        lines,
+        fallback_year=fallback_year,
+    )
+    inside_transactions = False
+    rows: list[_ParsedTransaction] = []
+    for line in lines:
+        normalized = normalize_text(line.text)
+        if normalized == "LANCAMENTOS":
+            inside_transactions = True
+            continue
+        if not inside_transactions:
+            continue
+        match = _DATE_AT_START_PATTERN.match(line.text)
+        if match is None:
+            continue
+        amount_tokens = tuple(find_amount_tokens(match.group("rest")))
+        if not amount_tokens:
+            continue
+        date = _parse_card_date(
+            match.group("date"),
+            reference_month=reference_month,
+            reference_year=reference_year,
+        )
+        if date is None:
+            continue
+        amount_token = amount_tokens[-1]
+        description = _clean_description(match.group("rest"), amount_tokens=amount_tokens)
+        if not description or _is_balance_or_summary_row(description):
+            continue
+        normalized_description = normalize_text(description)
+        raw_amount = parse_pdf_amount(amount_token.value)
+        is_credit = any(
+            token in normalized_description
+            for token in ("ESTORNO", "CREDITO", "PAGAMENTO RECEBIDO", "PAGAMENTO EFETUADO")
+        )
+        amount = abs(raw_amount) if is_credit else -abs(raw_amount)
+        rows.append(
+            _build_row(
+                date=date,
+                description=description,
+                amount=amount,
+                amount_token=amount_token,
+                source=line,
+                forced_sign=True,
+            )
+        )
+    return rows
+
+
+def _infer_card_reference_month_year(
+    lines: list[_PdfLine],
+    *,
+    fallback_year: int | None,
+) -> tuple[int | None, int | None]:
+    for line in lines:
+        if normalize_text(line.text) == "LANCAMENTOS":
+            break
+        for match in _DATE_PATTERN.finditer(line.text):
+            raw_date = match.group(0)
+            if len(re.findall(r"\d+", raw_date)) < 3:
+                continue
+            parsed = _parse_date(raw_date, fallback_year=fallback_year)
+            if parsed is not None:
+                year, month, _day = (int(part) for part in parsed.split("-"))
+                return month, year
+    return None, fallback_year
+
+
+def _parse_card_date(
+    raw_date: str,
+    *,
+    reference_month: int | None,
+    reference_year: int | None,
+) -> str | None:
+    parsed = _parse_date(raw_date, fallback_year=reference_year)
+    if parsed is None or reference_month is None or reference_year is None:
+        return parsed
+    if len(re.findall(r"\d+", raw_date)) >= 3:
+        return parsed
+    year, month, day = (int(part) for part in parsed.split("-"))
+    if month > reference_month:
+        year -= 1
+    return f"{year:04d}-{month:02d}-{day:02d}"
 
 
 def _parse_savings_rows(lines: list[_PdfLine], *, fallback_year: int | None) -> list[_ParsedTransaction]:

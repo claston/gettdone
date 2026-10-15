@@ -66,6 +66,13 @@ def _resolve_opening_balance(
     extracted_text: str | None = None,
     layout_name: str | None = None,
 ) -> float | None:
+    labeled_balance = _extract_labeled_balance(
+        extracted_text,
+        labels=_opening_balance_labels(layout_name),
+    )
+    if labeled_balance is not None:
+        return labeled_balance
+
     for row in rows:
         normalized_description = _normalize_text_for_profile(row.description)
         if _is_opening_balance_description(normalized_description):
@@ -116,7 +123,15 @@ def _resolve_closing_balance(
     *,
     opening_balance: float | None = None,
     layout_name: str | None = None,
+    extracted_text: str | None = None,
 ) -> float | None:
+    labeled_balance = _extract_labeled_balance(
+        extracted_text,
+        labels=_closing_balance_labels(layout_name),
+    )
+    if labeled_balance is not None:
+        return labeled_balance
+
     if resolve_descending_running_balance(rows, layout_name=layout_name):
         for row in rows:
             if row.running_balance is None:
@@ -141,6 +156,48 @@ def _resolve_closing_balance(
             if not _is_opening_balance_description(row.description)
         )
         return round(float(opening_balance) + transaction_total, 2)
+    return None
+
+
+def _opening_balance_labels(layout_name: str | None) -> tuple[str, ...]:
+    if layout_name == "asaas_extrato_conta_digital_movimentacoes_v1":
+        return ("SALDO INICIAL DO PERIODO",)
+    if layout_name == "bling_relatorio_caixa_bancos_v1":
+        return ("SALDO ANTERIOR",)
+    return ()
+
+
+def _closing_balance_labels(layout_name: str | None) -> tuple[str, ...]:
+    if layout_name == "asaas_extrato_conta_digital_movimentacoes_v1":
+        return ("SALDO FINAL DO PERIODO",)
+    if layout_name == "bling_relatorio_caixa_bancos_v1":
+        return ("SALDO FINAL",)
+    return ()
+
+
+def _extract_labeled_balance(
+    extracted_text: str | None,
+    *,
+    labels: tuple[str, ...],
+) -> float | None:
+    if not extracted_text or not labels:
+        return None
+
+    amount_pattern = re.compile(r"^[R$\s]*([\-+]?(?:\d{1,3}(?:[.\s]\d{3})*|\d+),\d{2})\s*$")
+    lines = extracted_text.splitlines()
+    for index, raw_line in enumerate(lines):
+        normalized_line = _normalize_text_for_profile(raw_line)
+        if not any(label in normalized_line for label in labels):
+            continue
+        for candidate in lines[index + 1 : index + 4]:
+            match = amount_pattern.match(candidate.strip())
+            if match is None:
+                continue
+            raw_amount = match.group(1).replace(" ", "").replace(".", "").replace(",", ".")
+            try:
+                return round(float(raw_amount), 2)
+            except ValueError:
+                continue
     return None
 
 
@@ -434,6 +491,7 @@ def _resolve_ofx_account_type(
             "sicoob_cartao_lancamentos_futuros_v1",
             "banrisul_fatura_cartao_historico_transacoes_v1",
             "banrisul_extrato_cartao_credito_simples_v1",
+            "itau_empresas_fatura_cartao_mastercard_v1",
         }:
             return "credit_card"
 
