@@ -47,6 +47,10 @@ _DATE_ROW_PATTERN = re.compile(
     r"^\s*(?P<date>\d{1,2}/\d{1,2}(?:/\d{2,4})?)\s+(?P<rest>.+)$",
     flags=re.IGNORECASE,
 )
+_DATE_ONLY_PATTERN = re.compile(
+    r"^\s*(?P<date>\d{1,2}/\d{1,2}(?:/\d{2,4})?)\s*$",
+    flags=re.IGNORECASE,
+)
 _PIX_ROW_PATTERN = re.compile(
     r"^\s*(?P<month>JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+"
     r"(?P<day>\d{1,2})\s+(?P<rest>.+)$",
@@ -104,6 +108,8 @@ class SicoobLayoutParser:
             rows = _parse_credit_card_rows(lines, fallback_year=fallback_year)
         elif layout_name in {SICOOB_HISTORY_LAYOUT, SICOOB_MONOSPACE_LAYOUT}:
             rows = _parse_current_account_cd_rows(lines, fallback_year=fallback_year)
+            if not rows and layout_name == SICOOB_HISTORY_LAYOUT:
+                rows = _parse_vertical_history_rows(lines, fallback_year=fallback_year)
         elif layout_name == SICOOB_FUTURE_CARD_LAYOUT:
             rows = _parse_future_card_rows(lines, fallback_year=fallback_year)
         elif layout_name == SICOOB_APPLICATIONS_LAYOUT:
@@ -112,6 +118,8 @@ class SicoobLayoutParser:
             rows = _parse_pix_rows(lines, fallback_year=fallback_year)
         elif layout_name == SICOOB_MODERN_CURRENT_LAYOUT:
             rows = _parse_modern_current_rows(lines, fallback_year=fallback_year)
+            if not rows:
+                rows = _parse_modern_columnar_rows(lines, fallback_year=fallback_year)
         elif layout_name == SICOOB_BOLETO_RECEIPT_LAYOUT:
             rows = _parse_boleto_receipt(lines)
         else:
@@ -178,6 +186,62 @@ def _parse_current_account_cd_rows(lines: list[_PdfLine], *, fallback_year: int)
                 amount_token=amount_token,
                 source=line,
                 forced_sign=not _amount_has_explicit_sign(amount_token.value),
+            )
+        )
+    return rows
+
+
+def _parse_vertical_history_rows(lines: list[_PdfLine], *, fallback_year: int) -> list[_ParsedTransaction]:
+    blocks: list[tuple[str, _PdfLine, list[_PdfLine]]] = []
+    in_transaction_scope = False
+    for line in lines:
+        normalized = normalize_text(line.text)
+        if not in_transaction_scope:
+            if "HIST" in normalized and "MOVIMENT" in normalized:
+                in_transaction_scope = True
+            continue
+        if normalized == "RESUMO":
+            break
+        date_match = _DATE_ONLY_PATTERN.match(line.text)
+        if date_match is not None:
+            blocks.append((date_match.group("date"), line, []))
+            continue
+        if not blocks or _is_vertical_table_header(normalized):
+            continue
+        blocks[-1][2].append(line)
+
+    rows: list[_ParsedTransaction] = []
+    carried_amounts: list[AmountToken] = []
+    for raw_date, source, content_lines in blocks:
+        block_amounts = [
+            token
+            for content_line in content_lines
+            for token in find_amount_tokens(content_line.text)
+        ]
+        # Textract can emit the next row's right-aligned value just before its date.
+        amount_candidates = [*carried_amounts, *block_amounts]
+        if not amount_candidates:
+            continue
+        amount_token = amount_candidates[0]
+        carried_amounts = amount_candidates[1:]
+
+        description = _clean_vertical_description(content_lines)
+        normalized_description = normalize_text(description)
+        if not description or _is_opening_or_balance(normalized_description):
+            continue
+        amount = _resolve_vertical_amount(
+            description,
+            amount_token=amount_token,
+            content_lines=content_lines,
+        )
+        rows.append(
+            _build_row(
+                date=_safe_parse_date(raw_date, fallback_year=fallback_year),
+                description=description,
+                amount=amount,
+                amount_token=amount_token,
+                source=source,
+                forced_sign=True,
             )
         )
     return rows
@@ -274,6 +338,106 @@ def _parse_modern_current_rows(lines: list[_PdfLine], *, fallback_year: int) -> 
     return rows
 
 
+def _parse_modern_columnar_rows(lines: list[_PdfLine], *, fallback_year: int) -> list[_ParsedTransaction]:
+    date_rows = _extract_modern_columnar_dates(lines)
+    descriptions = _extract_modern_columnar_descriptions(lines)
+    amounts = _extract_modern_columnar_amounts(lines, limit=len(date_rows))
+    if not date_rows or len(date_rows) != len(descriptions) or len(date_rows) != len(amounts):
+        return []
+
+    rows: list[_ParsedTransaction] = []
+    for (raw_date, source), description, amount_token in zip(
+        date_rows,
+        descriptions,
+        amounts,
+        strict=True,
+    ):
+        normalized_description = normalize_text(description)
+        if _is_opening_or_balance(normalized_description):
+            continue
+        rows.append(
+            _build_row(
+                date=_safe_parse_date(raw_date, fallback_year=fallback_year),
+                description=description,
+                amount=_resolve_vertical_amount(
+                    description,
+                    amount_token=amount_token,
+                    content_lines=[],
+                ),
+                amount_token=amount_token,
+                source=source,
+                forced_sign=True,
+            )
+        )
+    return rows
+
+
+def _extract_modern_columnar_dates(lines: list[_PdfLine]) -> list[tuple[str, _PdfLine]]:
+    rows: list[tuple[str, _PdfLine]] = []
+    in_date_column = False
+    for line in lines:
+        normalized = normalize_text(line.text)
+        if not in_date_column:
+            if normalized == "DATA DOCUMENTO":
+                in_date_column = True
+            continue
+        if normalized == "RESUMO":
+            break
+        date_match = re.match(r"^\s*(?P<date>\d{1,2}/\d{1,2}(?:/\d{2,4})?)(?:\s|$)", line.text)
+        if date_match is not None:
+            rows.append((date_match.group("date"), line))
+    return rows
+
+
+def _extract_modern_columnar_descriptions(lines: list[_PdfLine]) -> list[str]:
+    descriptions: list[str] = []
+    in_description_column = False
+    for line in lines:
+        normalized = normalize_text(line.text)
+        if not in_description_column:
+            if normalized.startswith("HIST") and "MOVIMENT" not in normalized:
+                in_description_column = True
+            continue
+        if "CHEQUE ESPECIAL CONTRATADO" in normalized:
+            break
+        if _is_modern_columnar_description_anchor(normalized):
+            descriptions.append(_strip_modern_ocr_marker(line.text))
+        elif descriptions and line.text.strip():
+            descriptions[-1] = f"{descriptions[-1]} {line.text.strip()}"
+    return descriptions
+
+
+def _extract_modern_columnar_amounts(lines: list[_PdfLine], *, limit: int) -> list[AmountToken]:
+    amounts: list[AmountToken] = []
+    in_amount_column = False
+    for line in lines:
+        normalized = normalize_text(line.text)
+        if not in_amount_column:
+            if normalized == "VALOR":
+                in_amount_column = True
+            continue
+        amounts.extend(find_amount_tokens(line.text))
+        if len(amounts) >= limit:
+            return amounts[:limit]
+    return amounts
+
+
+def _is_modern_columnar_description_anchor(normalized: str) -> bool:
+    return (
+        "SALDO ANTERIOR" in normalized
+        or "SALDO BLOQUEADO ANTERIOR" in normalized
+        or "SALDO DO DIA" in normalized
+        or ("PIX" in normalized and "RECEBIDO" in normalized)
+        or "PARCELAS SUBSC" in normalized
+        or ("APLICA" in normalized and "RDC" in normalized)
+        or ("TRANSFER" in normalized and "POUPAN" in normalized)
+    )
+
+
+def _strip_modern_ocr_marker(value: str) -> str:
+    return re.sub(r"^[^A-Za-zÀ-ÿ]+", "", value).strip()
+
+
 def _parse_boleto_receipt(lines: list[_PdfLine]) -> list[_ParsedTransaction]:
     full_text = " ".join(line.text.strip() for line in lines if line.text.strip())
     date_match = re.search(r"DATA PAGAMENTO\s*:\s*(\d{1,2}/\d{1,2}/\d{4})", normalize_text(full_text))
@@ -367,6 +531,48 @@ def _safe_parse_date(raw_date: str, *, fallback_year: int | None) -> str:
 
 def _is_opening_or_balance(normalized_description: str) -> bool:
     return any(token in normalized_description for token in _OPENING_OR_BALANCE_TOKENS)
+
+
+def _is_vertical_table_header(normalized: str) -> bool:
+    return normalized in {"DATA", "HISTORICO", "VALOR"} or (
+        "HIST" in normalized and "MOVIMENT" in normalized
+    )
+
+
+def _clean_vertical_description(lines: list[_PdfLine]) -> str:
+    parts: list[str] = []
+    for line in lines:
+        normalized = normalize_text(line.text)
+        if normalized in {"C", "D"} or _is_vertical_table_header(normalized):
+            continue
+        amount_tokens = tuple(find_amount_tokens(line.text))
+        cleaned = _clean_description(line.text, amount_tokens=amount_tokens)
+        if cleaned:
+            parts.append(cleaned)
+    return " ".join(parts)
+
+
+def _resolve_vertical_amount(
+    description: str,
+    *,
+    amount_token: AmountToken,
+    content_lines: list[_PdfLine],
+) -> float:
+    raw_amount = parse_pdf_amount(amount_token.value)
+    suffix_match = re.search(r"([CD])\s*$", amount_token.value, flags=re.IGNORECASE)
+    if suffix_match is not None:
+        return -abs(raw_amount) if suffix_match.group(1).upper() == "D" else abs(raw_amount)
+    standalone_sign = next(
+        (
+            normalize_text(line.text)
+            for line in content_lines
+            if normalize_text(line.text) in {"C", "D"}
+        ),
+        None,
+    )
+    if standalone_sign is not None:
+        return -abs(raw_amount) if standalone_sign == "D" else abs(raw_amount)
+    return _resolve_semantic_amount(description, amount_token=amount_token)
 
 
 def _clean_description(raw_text: str, *, amount_tokens: tuple[AmountToken, ...]) -> str:
