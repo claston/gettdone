@@ -670,6 +670,11 @@ def _parse_pdf_transactions_from_page_texts(
             specialized_selection.rows,
             line_texts=_extract_line_texts(lines),
         )
+        specialized_balance_checkpoints = _resolve_tabular_balance_checkpoints(
+            lines=lines,
+            parsed_rows=specialized_rows,
+            tabular_profile=layout_profile,
+        )
         return _build_pdf_parse_result(
             parsed_rows=specialized_rows,
             layout=layout,
@@ -691,6 +696,7 @@ def _parse_pdf_transactions_from_page_texts(
             tabular_transactions_count=0,
             columnar_candidates_count=0,
             columnar_transactions_count=0,
+            balance_checkpoints=specialized_balance_checkpoints,
         )
     grouped_rows = _parse_grouped_statement_lines(lines, layout_profile=layout_profile)
     selection = select_parsed_rows(

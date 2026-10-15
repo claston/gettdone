@@ -61,6 +61,7 @@ def test_default_layout_parser_registry_contains_current_specific_families() -> 
             "santander_extrato_consolidado_basico_conta_corrente_v1",
             "santander_vangogh_resumo_consolidado_conta_corrente_v1",
             "bradesco_extrato_unificado_pj_poupanca_facil_a4_v1",
+            "bradesco_net_empresa_extrato_mensal_por_periodo_v1",
             "banco_do_nordeste_extrato_consolidado_v1",
             "banco_do_nordeste_fundos_investimentos_rentabilidade_v1",
             "banestes_internet_banking_extrato_v1",

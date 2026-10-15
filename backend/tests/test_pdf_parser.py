@@ -4454,7 +4454,7 @@ def test_parse_pdf_transactions_inherits_bradesco_dates_across_pages_and_stops_a
     )
 
     assert result.layout.layout_name == "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
-    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert result.parse_metrics["selected_parser"] == "layout_specific_bradesco_net_empresa"
     assert [transaction.date for transaction in result.transactions] == [
         "2021-09-01",
         "2021-09-01",
@@ -4578,7 +4578,7 @@ def test_parse_pdf_transactions_ignores_bradesco_repeated_account_summary_across
     )
 
     assert result.layout.layout_name == "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
-    assert result.parse_metrics["selected_parser"] == "tabular"
+    assert result.parse_metrics["selected_parser"] == "layout_specific_bradesco_net_empresa"
     assert [transaction.description for transaction in result.transactions] == [
         "DEPOSITO IDENTIFICADO 010324854",
         "LIQUIDACAO DE COBRANCA 020324106",
