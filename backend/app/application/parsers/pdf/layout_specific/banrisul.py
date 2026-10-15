@@ -48,12 +48,13 @@ _MONTH_SECTION_PATTERN = re.compile(
     r"\s*/\s*(?P<year>\d{4})\b"
 )
 _DAY_PATTERN = re.compile(r"^(?P<day>0[1-9]|[12]\d|3[01])$")
-_DOCUMENT_PATTERN = re.compile(r"^\d{4,20}$")
+_DOCUMENT_TOKEN = r"(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{4,20}"
+_DOCUMENT_PATTERN = re.compile(rf"^{_DOCUMENT_TOKEN}$")
 _AMOUNT_TOKEN = r"\.?(?:\d{1,3}(?:\.\d{3})*|\d+),\d{2}[+-]?"
 _AMOUNT_ONLY_PATTERN = re.compile(rf"^(?P<amount>{_AMOUNT_TOKEN})$")
 _FIXED_WIDTH_ROW_PATTERN = re.compile(
     rf"^\s*(?:(?P<day>0[1-9]|[12]\d|3[01])\s+)?"
-    rf"(?P<description>.+?)\s+(?P<document>\d{{4,20}})\s+"
+    rf"(?P<description>.+?)\s+(?P<document>{_DOCUMENT_TOKEN})\s+"
     rf"(?P<amount>{_AMOUNT_TOKEN})\s*$"
 )
 _IGNORED_EXACT_LINES = {

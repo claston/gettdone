@@ -179,6 +179,35 @@ def test_parse_pdf_transactions_handles_banrisul_fixed_width_rows_with_inherited
     ]
 
 
+def test_parse_pdf_transactions_handles_banrisul_alphanumeric_document_codes() -> None:
+    text = """
+    B A N R I S U L
+    AGENCIA: 0001
+    CONTA..: 12345
+    NOME...: TESTE
+    DIA HISTORICO                         DOCUMENTO        V A L O R
+    MOVIMENTOS DA CONTA CORRENTE
+    SALDO ANT EM 31/07/2026                                1.000,00
+    MOVIMENTOS AGO/2026
+    03   REND CDB AUT                     0000RC                0,62
+         REND CDB AUT                     0001RC                1,20
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        [text],
+        preserve_layout_spacing=True,
+    )
+
+    assert [(transaction.date, transaction.description, transaction.amount) for transaction in result.transactions] == [
+        ("2026-08-03", "REND CDB AUT", 0.62),
+        ("2026-08-03", "REND CDB AUT", 1.20),
+    ]
+    assert [transaction.external_reference_id for transaction in result.canonical_transactions] == [
+        "0000RC",
+        "0001RC",
+    ]
+
+
 def test_parse_pdf_transactions_handles_inline_and_multiline_amount_rows(monkeypatch) -> None:
     monkeypatch.setattr(
         pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: [GROUPED_INLINE_MULTILINE_SAMPLE]
