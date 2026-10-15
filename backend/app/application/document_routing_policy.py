@@ -5,11 +5,14 @@ from enum import Enum
 
 from app.application.document_type_classifier import (
     FISCAL_INVOICE,
+    PAYMENT_REPORT,
     DocumentTypeClassification,
 )
 from app.application.errors import UnsupportedDocumentContentError
+from app.application.unsupported_document_detection import PAYMENT_REPORT_USER_MESSAGE
 
 FISCAL_INVOICE_REJECTION_MIN_CONFIDENCE = 0.90
+PAYMENT_REPORT_REJECTION_MIN_CONFIDENCE = 0.90
 
 FISCAL_INVOICE_REJECTION_MESSAGE = (
     "Este arquivo é uma nota fiscal eletrônica (NF-e), não um extrato bancário. A conciliação de notas fiscais ainda não está disponível."
@@ -35,6 +38,11 @@ def decide_document_routing(
             action=DocumentRoutingAction.REJECT,
             reason="high_confidence_fiscal_invoice",
         )
+    if classification.document_type == PAYMENT_REPORT and classification.confidence >= PAYMENT_REPORT_REJECTION_MIN_CONFIDENCE:
+        return DocumentRoutingDecision(
+            action=DocumentRoutingAction.REJECT,
+            reason="high_confidence_payment_report",
+        )
     return DocumentRoutingDecision(
         action=DocumentRoutingAction.CONTINUE,
         reason="document_type_allowed",
@@ -46,9 +54,14 @@ def enforce_document_routing(
 ) -> DocumentRoutingDecision:
     decision = decide_document_routing(classification)
     if decision.action == DocumentRoutingAction.REJECT:
+        message = (
+            PAYMENT_REPORT_USER_MESSAGE
+            if classification.document_type == PAYMENT_REPORT
+            else FISCAL_INVOICE_REJECTION_MESSAGE
+        )
         error = UnsupportedDocumentContentError(
             document_type=classification.document_type,
-            message=FISCAL_INVOICE_REJECTION_MESSAGE,
+            message=message,
         )
         setattr(error, "_document_type_classification", classification)
         raise error
