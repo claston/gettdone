@@ -195,16 +195,18 @@
       const payload = await response.json().catch(() => ({}));
       const directBatchEnabled = Boolean(payload.direct_batch_enabled);
       const configuredLimit = Number(payload.batch_max_files || 1);
+      const batchMaxFiles = directBatchEnabled && Number.isFinite(configuredLimit)
+        ? Math.max(1, Math.min(12, Math.trunc(configuredLimit)))
+        : 1;
+      const multiFileEnabled = directBatchEnabled && batchMaxFiles > 1;
       state.conversionRuntime = {
         directBatchEnabled,
-        batchMaxFiles: directBatchEnabled && Number.isFinite(configuredLimit)
-          ? Math.max(1, Math.min(12, Math.trunc(configuredLimit)))
-          : 1,
+        batchMaxFiles,
       };
-      input.multiple = directBatchEnabled;
+      input.multiple = multiFileEnabled;
       const emptyHint = dropzoneEmpty ? dropzoneEmpty.querySelector("strong") : null;
       if (emptyHint) {
-        emptyHint.textContent = directBatchEnabled
+        emptyHint.textContent = multiFileEnabled
           ? `Arraste até ${state.conversionRuntime.batchMaxFiles} PDFs aqui`
           : "Arraste o arquivo aqui";
       }

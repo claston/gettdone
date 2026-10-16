@@ -23,6 +23,7 @@ from app.dependencies import (
     get_conversion_runtime_config,
 )
 from app.main import app
+from app.routers import conversion_batches
 from app.routers.auth_session import ANONYMOUS_IDENTITY_COOKIE_NAME
 from app.routers.conversion_batches import get_runtime_access_control_service
 
@@ -506,6 +507,81 @@ def test_conversion_runtime_endpoint_exposes_safe_fallback_contract() -> None:
         "direct_batch_enabled": False,
         "fallback_endpoint": "/api/conversions/upload",
     }
+
+
+def test_global_async_runtime_limits_anonymous_identity_to_one_file() -> None:
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
+        {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
+    )
+    app.dependency_overrides[get_runtime_access_control_service] = lambda: FakeAccessControlService()
+    client = TestClient(app)
+    client.cookies.set(ANONYMOUS_IDENTITY_COOKIE_NAME, "anonymous-cookie")
+    try:
+        response = client.get("/api/conversion-runtime")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["direct_batch_enabled"] is True
+    assert response.json()["batch_max_files"] == 1
+
+
+def test_global_async_runtime_loads_access_control_for_batch_entitlement(monkeypatch) -> None:
+    expected_service = FakeAccessControlService()
+    monkeypatch.setattr(conversion_batches, "get_access_control_service", lambda: expected_service)
+
+    service = get_runtime_access_control_service(
+        runtime=ConversionRuntimeConfig.from_mapping({"CONVERSION_ARCHITECTURE_MODE": "async_aws"}),
+        rollout_policy=AsyncConversionRolloutPolicy.from_mapping({}),
+    )
+
+    assert service is expected_service
+
+
+def test_global_async_runtime_limits_free_user_to_one_file() -> None:
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
+        {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
+    )
+    app.dependency_overrides[get_runtime_access_control_service] = lambda: FakeRegisteredAccessControlService(
+        email="free@example.com",
+        batch_conversion_enabled=False,
+        batch_max_files=1,
+    )
+    client = TestClient(app)
+    try:
+        response = client.get(
+            "/api/conversion-runtime",
+            headers={"Authorization": "Bearer allowed-token"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["direct_batch_enabled"] is True
+    assert response.json()["batch_max_files"] == 1
+
+
+def test_global_async_runtime_exposes_paid_plan_batch_limit() -> None:
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
+        {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
+    )
+    app.dependency_overrides[get_runtime_access_control_service] = lambda: FakeRegisteredAccessControlService(
+        email="paid@example.com",
+        batch_conversion_enabled=True,
+        batch_max_files=5,
+    )
+    client = TestClient(app)
+    try:
+        response = client.get(
+            "/api/conversion-runtime",
+            headers={"Authorization": "Bearer allowed-token"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["direct_batch_enabled"] is True
+    assert response.json()["batch_max_files"] == 5
 
 
 def test_conversion_runtime_uses_access_control_only_for_identity_scoped_rollout() -> None:
