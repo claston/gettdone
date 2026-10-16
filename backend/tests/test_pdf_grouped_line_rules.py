@@ -13,6 +13,7 @@ def test_should_ignore_grouped_line_for_mobile_arrow_icons() -> None:
     assert should_ignore_grouped_line("↑") is True
     assert should_ignore_grouped_line("↓") is True
     assert should_ignore_grouped_line("?") is True
+    assert should_ignore_grouped_line(">") is True
 
 
 def test_should_ignore_grouped_line_for_daily_balance_context() -> None:

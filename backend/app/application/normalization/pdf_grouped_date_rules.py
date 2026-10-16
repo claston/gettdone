@@ -48,13 +48,18 @@ class GroupedDateMatch:
     rest: str
 
 
-def parse_grouped_date_line(raw_line: str, *, inferred_year: int | None) -> GroupedDateMatch | None:
+def parse_grouped_date_line(
+    raw_line: str,
+    *,
+    inferred_year: int | None,
+    allow_slash_date_rest: bool = False,
+) -> GroupedDateMatch | None:
     normalized_line = normalize_upper_text(raw_line)
 
     slash_match = SLASH_DATE_PATTERN.match(normalized_line)
     if slash_match:
         rest_value = (slash_match.group("rest") or "").strip()
-        if rest_value:
+        if rest_value and not allow_slash_date_rest:
             return None
         year_value = slash_match.group("year")
         if year_value is None:

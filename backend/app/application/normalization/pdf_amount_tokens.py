@@ -94,7 +94,7 @@ def has_explicit_amount_sign(raw: str) -> bool:
         return True
     if value.startswith(("+", "-", "\u2212")) or value.endswith(("+", "-", "\u2212")):
         return True
-    return bool(re.search(r"\s[CD]$", value))
+    return bool(re.search(r"(?:\d|\s)[CD]$", value))
 
 
 def is_amount_like(raw: str) -> bool:

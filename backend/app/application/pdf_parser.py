@@ -106,6 +106,7 @@ _ITAU_COMPLETE_TABLE_LAYOUT = "itau_empresas_extrato_completo_tabela_v1"
 _SICREDI_MATRIX_LANDSCAPE_LAYOUT = "sicredi_matricial_paisagem_conta_corrente_v1"
 _CREDISIS_DESCENDING_ACCOUNT_LAYOUT = "credisis_extrato_conta_corrente_descendente_v1"
 _STONE_CURRENT_ACCOUNT_A4_LAYOUT = "stone_extrato_conta_corrente_a4_v1"
+_SICOOB_SISBR_MONOSPACE_DC_LAYOUT = "sicoob_sisbr_extrato_conta_corrente_monospace_valor_dc_v1"
 _BRADESCO_SLASH_PAGE_COUNTER_PATTERN = re.compile(r"^\d{1,3}/\d{1,3}$")
 _BANK_AGENCY_DEBIT_CREDIT_LAYOUT = "bank_agency_debit_credit_statement_v1"
 _INHERITED_TABULAR_DATE_LAYOUTS = {
@@ -1378,6 +1379,16 @@ def _parse_grouped_statement_lines(
             )
 
         normalized_line = _normalize_text(line.text)
+        if _is_sicoob_report_timestamp(
+            line_text=line.text,
+            layout_profile=layout_profile,
+        ):
+            continue
+        if _is_sicoob_page_counter(
+            line_text=line.text,
+            layout_profile=layout_profile,
+        ):
+            continue
         if _is_bradesco_grouped_page_counter(
             normalized_line=normalized_line,
             layout_profile=layout_profile,
@@ -1455,7 +1466,14 @@ def _parse_grouped_statement_lines(
             opening_balance_amount_line = line
             continue
 
-        grouped_date_match = parse_grouped_date_line(normalized_line, inferred_year=inferred_year)
+        grouped_date_match = parse_grouped_date_line(
+            normalized_line,
+            inferred_year=inferred_year,
+            allow_slash_date_rest=bool(
+                layout_profile is not None
+                and layout_profile.profile_name == _SICOOB_SISBR_MONOSPACE_DC_LAYOUT
+            ),
+        )
         if grouped_date_match is not None:
             if _should_treat_grouped_date_line_as_description_continuation(
                 lines=lines,
@@ -1481,6 +1499,14 @@ def _parse_grouped_statement_lines(
                 grouped_date=grouped_date_match.date,
                 grouped_rest=grouped_date_match.rest,
             )
+            if (
+                inline_transaction is None
+                and layout_profile is not None
+                and layout_profile.profile_name == _SICOOB_SISBR_MONOSPACE_DC_LAYOUT
+            ):
+                inline_description = _extract_sicoob_split_row_description(grouped_date_match.rest)
+                if inline_description:
+                    description_parts = [inline_description]
             if inline_transaction is not None:
                 if (
                     not opening_balance_inserted
@@ -1525,9 +1551,13 @@ def _parse_grouped_statement_lines(
         if should_continue:
             continue
 
+        grouped_value_line = _normalize_sicoob_ocr_credit_line(
+            line=line,
+            layout_profile=layout_profile,
+        )
         inherited_date_transaction = _parse_grouped_inherited_date_line(
             current_date=current_date,
-            line=line,
+            line=grouped_value_line,
             section_hint=current_section_hint,
             layout_profile=layout_profile,
             description_parts=description_parts,
@@ -1567,7 +1597,7 @@ def _parse_grouped_statement_lines(
         parsed_row, description_parts, should_continue = _handle_grouped_amount_only_line(
             current_date=current_date,
             description_parts=description_parts,
-            line=line,
+            line=grouped_value_line,
             section_hint=current_section_hint,
         )
         if should_continue:
@@ -1600,7 +1630,7 @@ def _parse_grouped_statement_lines(
                 parsed_balance_snapshot = _build_grouped_opening_balance_transaction(
                     current_date=current_date,
                     description_parts=pre_amount_description_parts,
-                    line=line,
+                    line=grouped_value_line,
                     transactions=transactions,
                     opening_balance_inserted=opening_balance_inserted,
                 )
@@ -1610,7 +1640,7 @@ def _parse_grouped_statement_lines(
                     last_known_running_balance = parsed_balance_snapshot.transaction.amount
                     opening_balance_inserted = True
                 else:
-                    last_known_running_balance = parse_pdf_amount(line.text)
+                    last_known_running_balance = parse_pdf_amount(grouped_value_line.text)
             elif _can_attach_grouped_running_balance(description_parts=description_parts, last_transaction_index=last_transaction_index):
                 previous_balance = None
                 if _has_adjacent_previous_running_balance_context(transactions, last_transaction_index):
@@ -1619,7 +1649,7 @@ def _parse_grouped_statement_lines(
                         previous_balance = last_known_running_balance
                 transactions[last_transaction_index] = _attach_running_balance_and_reconcile_sign(
                     transaction=transactions[last_transaction_index],
-                    running_balance=parse_pdf_amount(line.text),
+                    running_balance=parse_pdf_amount(grouped_value_line.text),
                     previous_running_balance=previous_balance,
                 )
                 last_known_running_balance = transactions[last_transaction_index].running_balance
@@ -1693,6 +1723,8 @@ def _is_bradesco_grouped_repeated_page_header_end(normalized_line: str) -> bool:
 def _should_import_grouped_opening_balance(
     layout_profile: DeclarativeLayoutProfile | None,
 ) -> bool:
+    if layout_profile is not None and layout_profile.profile_name == _SICOOB_SISBR_MONOSPACE_DC_LAYOUT:
+        return False
     if layout_profile is None or layout_profile.profile_name != _BANK_AGENCY_DEBIT_CREDIT_LAYOUT:
         return True
     return should_import_profile_opening_balance(layout_profile)
@@ -1731,7 +1763,59 @@ def _should_preserve_grouped_date_across_page(
             _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT,
             _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT,
             _BANK_AGENCY_DEBIT_CREDIT_LAYOUT,
+            _SICOOB_SISBR_MONOSPACE_DC_LAYOUT,
         }
+    )
+
+
+def _is_sicoob_report_timestamp(
+    *,
+    line_text: str,
+    layout_profile: DeclarativeLayoutProfile | None,
+) -> bool:
+    return bool(
+        layout_profile is not None
+        and layout_profile.profile_name == _SICOOB_SISBR_MONOSPACE_DC_LAYOUT
+        and re.fullmatch(
+            r"\s*\d{1,2}/\d{1,2}/\d{4}\s*,\s*\d{1,2}:\d{2}\s*",
+            line_text,
+        )
+    )
+
+
+def _is_sicoob_page_counter(
+    *,
+    line_text: str,
+    layout_profile: DeclarativeLayoutProfile | None,
+) -> bool:
+    return bool(
+        layout_profile is not None
+        and layout_profile.profile_name == _SICOOB_SISBR_MONOSPACE_DC_LAYOUT
+        and re.fullmatch(r"\s*\d{1,3}/\d{1,3}\s*", line_text)
+    )
+
+
+def _extract_sicoob_split_row_description(grouped_rest: str) -> str:
+    match = re.match(r"^\s*\d[\d.]*\s+(?P<description>.+?)\s*$", grouped_rest)
+    if match is None:
+        return ""
+    return match.group("description")
+
+
+def _normalize_sicoob_ocr_credit_line(
+    *,
+    line: _PdfLine,
+    layout_profile: DeclarativeLayoutProfile | None,
+) -> _PdfLine:
+    if layout_profile is None or layout_profile.profile_name != _SICOOB_SISBR_MONOSPACE_DC_LAYOUT:
+        return line
+    match = re.fullmatch(r"\s*(?P<amount>\d[\d.]*,\d{2})0\s*", line.text)
+    if match is None:
+        return line
+    return _PdfLine(
+        text=f"{match.group('amount')}C",
+        page_number=line.page_number,
+        line_number=line.line_number,
     )
 
 
@@ -2051,6 +2135,8 @@ def _is_terminal_statement_section_boundary(
         return normalized_line.startswith(("SALDO FINAL", "TOTALIZADOR DE APLICACOES AUTOMATICAS"))
     if layout_profile.profile_name == _ITAU_LANCAMENTOS_LAYOUT:
         return normalized_line.startswith("SALDO DA CONTA CORRENTE")
+    if layout_profile.profile_name == _SICOOB_SISBR_MONOSPACE_DC_LAYOUT:
+        return normalized_line.startswith(("(+) SALDO EM CONTA", "(=) SALDO DISPONIVEL"))
     return False
 
 

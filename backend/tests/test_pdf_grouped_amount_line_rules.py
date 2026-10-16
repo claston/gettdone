@@ -18,3 +18,14 @@ def test_parse_grouped_amount_line_preserves_explicit_negative_over_inflow_hint(
         )
         == -900.0
     )
+
+
+def test_parse_grouped_amount_line_preserves_explicit_credit_over_outflow_hint() -> None:
+    assert (
+        parse_grouped_amount_line(
+            raw_amount_text="277,28C",
+            description="CR COMPRAS MAESTRO",
+            section_hint=None,
+        )
+        == 277.28
+    )
