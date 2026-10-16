@@ -1408,6 +1408,15 @@
 
   function collectReviewWarnings(analysis) {
     const list = [];
+    const parts = analysis && Array.isArray(analysis.document_parts) ? analysis.document_parts : [];
+    const documentLabels = { fiscal_invoice: "notas fiscais", bank_receipt: "comprovantes", unknown: "documentos não identificados", mixed: "conteúdo misturado na mesma página" };
+    for (const part of parts) {
+      if (!part || part.included_in_statement || !Array.isArray(part.pages)) {
+        continue;
+      }
+      const label = documentLabels[part.document_type] || "outros documentos";
+      list.push(`Páginas ${part.pages.join(", ")}: ${label}, separados dos lançamentos do extrato.${part.requires_review ? " Confira essas páginas no PDF original." : ""}`);
+    }
     const metrics = analysis && typeof analysis === "object" ? analysis.pdf_processing_metrics : null;
     if (!metrics || typeof metrics !== "object") {
       return list;
@@ -1419,6 +1428,13 @@
     const confidenceBand = String(metrics.confidence_band || "").trim().toLowerCase();
     const exportRecommendation = String(metrics.export_recommendation || "").trim().toLowerCase();
     const balanceFailed = Number(metrics.balance_consistency_failed || 0);
+    const unresolvedRows = Number(metrics.ocr_unresolved_rows || 0);
+    if (unresolvedRows > 0) {
+      list.push(`${unresolvedRows} linha(s) com valores ambíguos ficaram fora da conversão. Compare o resultado com o PDF original antes de exportar.`);
+    }
+    if (Number(metrics.opening_balance_ambiguous || 0) > 0) {
+      list.push("O saldo inicial pode incluir aplicações e não foi usado como saldo da conta corrente. Confira e informe o saldo correto antes de exportar.");
+    }
 
     if (
       pageCount >= 2 &&
