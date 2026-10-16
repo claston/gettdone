@@ -255,9 +255,15 @@ class ConversionPipeline:
             opening_balance,
             layout_inference_name,
         )
-        bank_name = self.resolve_bank_name(extension, layout_inference_name, extracted_text)
+        bank_name = parsed_document.bank_name or self.resolve_bank_name(
+            extension, layout_inference_name, extracted_text
+        )
         bank_branch, account_number = self.extract_bank_account_metadata(extracted_text)
-        inferred_bank_code = self.resolve_inferred_bank_code(extension, layout_inference_name, bank_name)
+        bank_branch = parsed_document.bank_branch or bank_branch
+        account_number = parsed_document.account_number or account_number
+        inferred_bank_code = parsed_document.bank_code or self.resolve_inferred_bank_code(
+            extension, layout_inference_name, bank_name
+        )
         total_volume = round(sum(abs(item.amount) for item in transactions), 2)
         inflow_count = sum(1 for item in transactions if item.amount > 0)
         outflow_count = sum(1 for item in transactions if item.amount < 0)

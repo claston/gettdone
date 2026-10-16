@@ -69,6 +69,10 @@ class LegacyExtractedDocumentStatementParser:
                 "canonical_transactions": parsed_document.canonical_transactions,
                 "warning_types": parsed_document.warning_types,
                 "running_balances": parsed_document.running_balances,
+                "bank_name": parsed_document.bank_name,
+                "bank_code": parsed_document.bank_code,
+                "bank_branch": parsed_document.bank_branch,
+                "account_number": parsed_document.account_number,
             },
         )
 
@@ -101,6 +105,10 @@ def resolve_legacy_parsed_statement(parsed_statement: ParsedBankStatement) -> Pa
         canonical_transactions=canonical_transactions if isinstance(canonical_transactions, list) else None,
         warning_types=warning_types if isinstance(warning_types, list) else None,
         running_balances=running_balances if isinstance(running_balances, list) else None,
+        bank_name=metadata.get("bank_name"),
+        bank_code=metadata.get("bank_code"),
+        bank_branch=metadata.get("bank_branch"),
+        account_number=metadata.get("account_number"),
     )
 
 

@@ -279,6 +279,7 @@ function ConversionNavigator({
               <span className="conversion-bank">{conversion.bankName}</span>
               <span className="conversion-file">{conversion.fileName}</span>
               <span className="conversion-meta">
+                {conversion.fileName.split(".").pop()?.toUpperCase()} ·{" "}
                 {conversion.period} · {conversion.transactionCount} lanç.
               </span>
             </span>
@@ -303,15 +304,34 @@ function ConversionNavigator({
   );
 }
 
-function PdfViewer({ conversion }: { conversion: Conversion }) {
+function DocumentViewer({ conversion }: { conversion: Conversion }) {
   const [page, setPage] = useState(1);
   const [zoom, setZoom] = useState<"page-width" | number>("page-width");
+
+  const format = conversion.fileName.split(".").pop()?.toUpperCase();
+  if (!conversion.pdf && conversion.status !== "FAILED" && format !== "PDF") {
+    return (
+      <section
+        className="pdf-panel viewer-state"
+        aria-label="Documento original"
+      >
+        <FileText size={30} />
+        <h3>Arquivo original em {format || "formato de dados"}</h3>
+        <p>Este formato não possui visualização em PDF.</p>
+        <p>
+          {conversion.status === "PROCESSING"
+            ? "Os lançamentos aparecerão ao lado quando o processamento terminar."
+            : "Os lançamentos extraídos estão disponíveis ao lado para revisão."}
+        </p>
+      </section>
+    );
+  }
 
   if (!conversion.pdf || conversion.status === "FAILED") {
     return (
       <div className="viewer-state error">
         <XCircle size={30} />
-        <h3>Não foi possível processar o PDF</h3>
+        <h3>Não foi possível processar o arquivo</h3>
         <p>O restante do lote continua disponível.</p>
       </div>
     );
@@ -852,7 +872,7 @@ export function WorkspaceScreen({
         />
         {activeConversion ? (
           <div className="review-stage">
-            <PdfViewer
+            <DocumentViewer
               key={activeConversion.id}
               conversion={activeConversion}
             />
@@ -876,8 +896,10 @@ export function WorkspaceScreen({
                 <LoaderCircle className="spin" size={28} />
                 <h3>Aguardando lançamentos</h3>
                 <p>
-                  Esta tela atualiza o lote automaticamente. O PDF original
-                  continua disponível para consulta.
+                  Esta tela atualiza o lote automaticamente.{" "}
+                  {activeConversion.pdf
+                    ? "O PDF original continua disponível para consulta."
+                    : "Os lançamentos aparecerão aqui ao concluir o processamento."}
                 </p>
                 {controller.refreshError && (
                   <p className="refresh-error" role="alert">

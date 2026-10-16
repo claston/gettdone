@@ -59,6 +59,72 @@ const batchPayload = {
 };
 
 describe("HttpWorkspaceRepository", () => {
+  it("cria visualização PDF somente para os dois PDFs de um lote com três OFX", async () => {
+    const names = [
+      "caixa.pdf",
+      "itau.pdf",
+      "banrisul.ofx",
+      "nordeste.ofx",
+      "santander.ofx",
+    ];
+    const fetcher = vi.fn().mockResolvedValue(
+      jsonResponse({
+        ...batchPayload,
+        jobs: names.map((filename, index) => ({
+          ...batchPayload.jobs[0],
+          job_id: `job-${index}`,
+          filename,
+          result: {
+            ...batchPayload.jobs[0].result,
+            analysis: {
+              ...batchPayload.jobs[0].result!.analysis,
+              file_type: index < 2 ? "pdf" : "ofx",
+            },
+          },
+        })),
+      }),
+    );
+
+    const batch = await createHttpWorkspaceRepository({
+      apiUrl: "/",
+      fetcher,
+    }).getBatch("batch-real");
+
+    expect(
+      batch.conversions.map((conversion) => Boolean(conversion.pdf)),
+    ).toEqual([true, true, false, false, false]);
+    expect(
+      batch.conversions.every(
+        (conversion) => conversion.transactions.length === 2,
+      ),
+    ).toBe(true);
+  });
+
+  it.each(["ofx", "csv", "xlsx"])(
+    "não cria iframe para %s ainda em processamento",
+    async (extension) => {
+      const fetcher = vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...batchPayload,
+          jobs: [
+            {
+              job_id: "job-pending",
+              filename: `original.${extension}`,
+              status: "queued",
+              result: null,
+            },
+          ],
+        }),
+      );
+      const batch = await createHttpWorkspaceRepository({
+        apiUrl: "/",
+        fetcher,
+      }).getBatch("batch-real");
+      expect(batch.conversions[0].status).toBe("PROCESSING");
+      expect(batch.conversions[0].pdf).toBeNull();
+    },
+  );
+
   it("mantém instituição, páginas e PDF separados para os três arquivos do lote", async () => {
     const institutions = [
       { name: "Itaú", code: "341", pages: 1 },

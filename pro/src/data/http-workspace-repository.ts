@@ -23,6 +23,7 @@ interface ApiTransaction {
 }
 
 interface ApiAnalysis {
+  file_type?: string;
   bank_name?: string | null;
   bank_code?: string | null;
   transactions_total?: number;
@@ -248,6 +249,11 @@ function mapConversion({
   contexts: Map<string, ConversionContext>;
 }): Conversion {
   const analysis = job.result?.analysis;
+  const fileType = (
+    analysis?.file_type ??
+    job.filename.split(".").pop() ??
+    ""
+  ).toLowerCase();
   const transactions = (analysis?.preview_transactions ?? [])
     .map(mapTransaction)
     .filter((_, index) => !analysis?.preview_transactions?.[index].is_deleted);
@@ -277,7 +283,7 @@ function mapConversion({
     suspectedCount,
     editedCount: 0,
     pdf:
-      job.status === "failed" || job.status === "expired"
+      fileType !== "pdf" || job.status === "failed" || job.status === "expired"
         ? null
         : {
             url: `${apiUrl}/api/pro/conversion-batches/${encodeURIComponent(batchId)}/jobs/${encodeURIComponent(job.job_id)}/document`,

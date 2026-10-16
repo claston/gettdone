@@ -2,6 +2,44 @@ import pytest
 
 from app.application.errors import InvalidFileContentError
 from app.application.ofx_parser import parse_ofx_transactions
+from app.application.parsers.ofx import parse_ofx_account_metadata
+
+
+@pytest.mark.parametrize("closing_tags", [False, True])
+def test_ofx_bank_metadata_supports_sgml_and_xml(closing_tags: bool) -> None:
+    def tag(name: str, value: str) -> str:
+        return f"<{name}>{value}" + (f"</{name}>" if closing_tags else "") + "\n"
+
+    raw = ("<OFX><BANKACCTFROM>\n" + tag("BANKID", "33") + tag("BRANCHID", "0012")
+           + tag("ACCTID", "000345-6") + "</BANKACCTFROM></OFX>").encode()
+
+    account = parse_ofx_account_metadata(raw)
+
+    assert account.bank_code == "033"
+    assert account.bank_name == "Santander"
+    assert account.bank_branch == "0012"
+    assert account.account_number == "000345-6"
+
+
+def test_ofx_bank_metadata_does_not_infer_bank_from_transaction_content() -> None:
+    account = parse_ofx_account_metadata(b"<OFX><STMTTRN><MEMO>Santander <BANKID>033\n</STMTTRN></OFX>")
+    assert account.bank_name is None
+    assert account.bank_code is None
+
+
+def test_ofx_bank_metadata_preserves_unknown_code_without_guessing_a_name() -> None:
+    account = parse_ofx_account_metadata(b"<OFX><BANKACCTFROM><BANKID>999\n</BANKACCTFROM></OFX>")
+    assert account.bank_code == "999"
+    assert account.bank_name is None
+
+
+def test_ofx_bank_metadata_does_not_label_combined_accounts_as_a_single_bank() -> None:
+    account = parse_ofx_account_metadata(
+        b"<OFX><BANKACCTFROM><BANKID>041\n</BANKACCTFROM>"
+        b"<BANKACCTFROM><BANKID>033\n</BANKACCTFROM></OFX>"
+    )
+    assert account.bank_code is None
+    assert account.bank_name is None
 
 
 def test_parse_ofx_transactions_happy_path() -> None:

@@ -1,6 +1,7 @@
 from io import BytesIO
 from uuid import uuid4
 
+import pytest
 from openpyxl import Workbook
 
 from app.application import default_conversion_pipeline as default_conversion_pipeline_module
@@ -141,6 +142,40 @@ VERSION:102
     assert result.ofx_account_type == "credit_card"
     assert result.transactions_total == 1
     assert result.preview_transactions[0].description == "ASSINATURA STREAMING"
+
+
+@pytest.mark.parametrize("code,name", [("041", "Banrisul"), ("004", "Banco do Nordeste"), ("033", "Santander")])
+def test_analyze_service_preserves_ofx_bank_account_metadata(tmp_path, code: str, name: str) -> None:
+    raw = f"""OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+
+<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS>
+<BANKACCTFROM>
+<BANKID>{code}
+<BRANCHID>0123
+<ACCTID>000456-7
+<ACCTTYPE>CHECKING
+</BANKACCTFROM>
+<BANKTRANLIST><STMTTRN>
+<DTPOSTED>20261001000000
+<TRNAMT>25.00
+<MEMO>PIX RECEBIDO
+<TRNTYPE>CREDIT
+</STMTTRN></BANKTRANLIST>
+</STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>
+""".encode()
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+
+    result = _run_analysis_with_storage(storage=storage, filename="statement.ofx", raw_bytes=raw)
+
+    assert result.bank_code == code
+    assert result.bank_name == name
+    assert result.bank_branch == "0123"
+    assert result.account_number == "000456-7"
+    assert result.transactions_total == 1
+    assert result.pdf_processing_metrics is None
+    assert result.layout_inference_name is None
 
 
 def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkeypatch) -> None:
