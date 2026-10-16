@@ -1,6 +1,7 @@
 import pytest
 
 from app.application import pdf_parser as pdf_parser_module
+from app.application.default_conversion_pipeline import _resolve_ofx_account_type
 from app.application.ofx_writer import build_ofx_statement
 
 ITAU_EXAMPLE_CASES = {
@@ -209,6 +210,52 @@ def test_parse_pdf_transactions_supports_itau_visual_examples(case_name: str, mo
     ofx = build_ofx_statement(result.transactions)
     assert ofx.count("<STMTTRN>") == len(case["amounts"])
     assert all(f"<TRNAMT>{amount:.2f}" in ofx for amount in case["amounts"])
+
+
+def test_itau_empresas_mastercard_invoice_uses_credit_card_signs_and_years() -> None:
+    text = """
+    Itaú Empresas
+    ITAU EMPRESAS MASTERCARD - 0005.XXXX.XXXX.0707
+    fatura do cartão: Fechada
+    vencimento: 17/10/2026
+    data de fechamento: 05 outubro
+    Resumo da fatura
+    Total da fatura R$25.560,47
+    Pagamento mínimo R$0,00
+    Lançamentos
+    CARTÃO FINAL 1438
+    Lançamentos nacionais
+    data descrição valor
+    17/12 SEGURO EMPRESARIAL 10/10 R$574,27
+    24/02 FORNECEDOR EXEMPLO 08/10 R$696,00
+    18/09 ESTORNO DE COMPRA R$56,25
+    Lançamentos internacionais
+    data descrição moeda local moeda global cotação valor
+    28/09 SERVIÇO INTERNACIONAL USD20,00 US$20,00 R$5,52 R$110,40
+    Repasse de IOF R$0,00
+    Total lançamentos internacionais R$110,40
+    """
+
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
+
+    assert result.layout.layout_name == "itau_empresas_fatura_cartao_mastercard_v1"
+    assert result.parse_metrics["selected_parser"] == "layout_specific_itau"
+    assert [(transaction.date, transaction.amount) for transaction in result.transactions] == [
+        ("2025-12-17", -574.27),
+        ("2026-02-24", -696.0),
+        ("2026-09-18", 56.25),
+        ("2026-09-28", -110.4),
+    ]
+    assert (
+        _resolve_ofx_account_type(
+            extension="pdf",
+            filename="fatura.pdf",
+            raw_bytes=b"%PDF synthetic",
+            extracted_text=text,
+            layout_inference_name=result.layout.layout_name,
+        )
+        == "credit_card"
+    )
 
 
 def test_itau_lancamentos_ignores_available_balance_checkpoints_and_account_summary() -> None:

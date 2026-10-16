@@ -3,6 +3,7 @@ from typing import Protocol, Sequence
 from app.application.models import CanonicalTransaction
 
 _DESCENDING_RUNNING_BALANCE_LAYOUTS = {
+    "banco_bv_extrato_conta_corrente_saldo_dia_v1",
     "banco_pan_extrato_conta_pix_saldo_v1",
     "credisis_extrato_conta_corrente_descendente_v1",
     "stone_extrato_conta_corrente_a4_v1",

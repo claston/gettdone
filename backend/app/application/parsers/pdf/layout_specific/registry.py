@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from app.application.parsers.pdf.layout_specific.asaas import AsaasLayoutParser
 from app.application.parsers.pdf.layout_specific.banco_do_brasil_cdb import BancoDoBrasilCdbLayoutParser
 from app.application.parsers.pdf.layout_specific.banco_do_brasil_rende_facil import (
     BancoDoBrasilRendeFacilLayoutParser,
@@ -9,6 +10,7 @@ from app.application.parsers.pdf.layout_specific.banco_do_brasil_rende_facil imp
 from app.application.parsers.pdf.layout_specific.banco_do_nordeste import BancoDoNordesteLayoutParser
 from app.application.parsers.pdf.layout_specific.banestes import BanestesLayoutParser
 from app.application.parsers.pdf.layout_specific.banrisul import BanrisulLayoutParser
+from app.application.parsers.pdf.layout_specific.bling import BlingLayoutParser
 from app.application.parsers.pdf.layout_specific.bradesco_net_empresa import BradescoNetEmpresaLayoutParser
 from app.application.parsers.pdf.layout_specific.bradesco_unificado import BradescoUnificadoLayoutParser
 from app.application.parsers.pdf.layout_specific.btg_pactual import BtgPactualLayoutParser
@@ -68,6 +70,8 @@ class PdfLayoutParserRegistry:
 
 DEFAULT_PDF_LAYOUT_PARSER_REGISTRY = PdfLayoutParserRegistry(
     parsers=(
+        AsaasLayoutParser(),
+        BlingLayoutParser(),
         BancoDoBrasilCdbLayoutParser(),
         BancoDoBrasilRendeFacilLayoutParser(),
         SantanderCreditCardLayoutParser(),

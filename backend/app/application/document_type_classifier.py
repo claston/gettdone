@@ -69,6 +69,17 @@ def classify_document_type(
             evidence=invoice_evidence,
         )
 
+    card_evidence = _credit_card_evidence(normalized_text)
+    if _has_strong_credit_card_identity(card_evidence) and _has_document_level_credit_card_identity(
+        normalized_text,
+        layout_inference_name=layout_inference_name,
+    ):
+        return DocumentTypeClassification(
+            document_type=CREDIT_CARD_STATEMENT,
+            confidence=min(0.98, round(0.62 + (0.1 * len(card_evidence)), 2)),
+            evidence=card_evidence,
+        )
+
     statement_evidence = _bank_statement_evidence(
         normalized_text,
         layout_inference_name=layout_inference_name,
@@ -82,7 +93,6 @@ def classify_document_type(
             evidence=statement_evidence,
         )
 
-    card_evidence = _credit_card_evidence(normalized_text)
     if _has_strong_credit_card_identity(card_evidence):
         return DocumentTypeClassification(
             document_type=CREDIT_CARD_STATEMENT,
@@ -161,6 +171,20 @@ def _has_strong_credit_card_identity(evidence: list[str]) -> bool:
         "card_invoice_title",
         "card_product",
     }.issubset(evidence_set) and len(evidence_set) >= 3
+
+
+def _has_document_level_credit_card_identity(
+    normalized_text: str,
+    *,
+    layout_inference_name: str | None,
+) -> bool:
+    normalized_layout = str(layout_inference_name or "").strip().lower()
+    return (
+        "fatura_cartao" in normalized_layout
+        or "cartao_credito" in normalized_layout
+        or "RESUMO DA FATURA" in normalized_text
+        or "PAGAMENTO MINIMO" in normalized_text
+    )
 
 
 def _bank_receipt_evidence(normalized_text: str) -> list[str]:

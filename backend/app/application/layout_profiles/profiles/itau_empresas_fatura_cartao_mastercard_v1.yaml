@@ -1,0 +1,61 @@
+layout_profile:
+  schema_version: 2
+  profile_name: itau_empresas_fatura_cartao_mastercard_v1
+  bank: Itaú
+  layout_family: itau_empresas_fatura_cartao_mastercard
+  statement_type: cartao_credito_fatura
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Itaú Empresas"
+      - "Mastercard"
+      - "fatura do cartão"
+      - "vencimento"
+      - "Resumo da fatura"
+      - "Total da fatura"
+      - "Lançamentos nacionais"
+    optional_keywords:
+      - "Lançamentos internacionais"
+      - "Pagamento mínimo"
+      - "Repasse de IOF"
+    negative_keywords:
+      - "Extrato conta corrente / Lançamentos"
+      - "Saldo total disponível"
+    min_score_hint: 0.8
+  table_detection:
+    header_keywords:
+      - "data"
+      - "descrição"
+      - "valor"
+    expected_column_order:
+      - date
+      - description
+      - amount
+    column_aliases:
+      date:
+        - "data"
+      description:
+        - "descrição"
+      amount:
+        - "valor"
+  parsing:
+    date_format: "dd/MM"
+    date_year_source: statement
+    amount_locale: pt-BR
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "invoice_expense"
+    positive_patterns:
+      - "invoice_credit"
+    ignore_rows:
+      - "Total lançamentos nacionais"
+      - "Total lançamentos internacionais"
+      - "Repasse de IOF"
+    opening_balance_rows: []
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields: []

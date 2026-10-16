@@ -12,6 +12,7 @@ from app.application.normalization.pdf_amount_tokens import (
     parse_pdf_amount,
 )
 from app.application.normalization.pdf_row_date_rules import parse_row_date
+from app.application.normalization.pdf_row_match_rules import is_amount_only_row, is_date_only_row
 from app.application.parsers.pdf.layout_specific.contract import (
     LayoutSpecificParseContext,
     LayoutSpecificParseResult,
@@ -27,6 +28,7 @@ SICREDI_MODERN_LAYOUT = "sicredi_extrato_conta_corrente_moderno_movimentacoes_v1
 PICPAY_GROUPED_LAYOUT = "picpay_extrato_conta_grouped_2025_v1"
 NEON_MODERN_LAYOUT = "neon_extrato_por_periodo_moderno_v1"
 BANCO_BV_GROUPED_LAYOUT = "banco_bv_extrato_periodo_grouped_v1"
+BANCO_BV_CURRENT_ACCOUNT_LAYOUT = "banco_bv_extrato_conta_corrente_saldo_dia_v1"
 
 _ALL_LAYOUTS = frozenset(
     {
@@ -35,6 +37,7 @@ _ALL_LAYOUTS = frozenset(
         PICPAY_GROUPED_LAYOUT,
         NEON_MODERN_LAYOUT,
         BANCO_BV_GROUPED_LAYOUT,
+        BANCO_BV_CURRENT_ACCOUNT_LAYOUT,
     }
 )
 _DATE_AT_START_PATTERN = re.compile(
@@ -95,6 +98,8 @@ class ModernAccountLayoutParser:
             rows = _parse_sicredi_rows(lines)
         elif layout_name in {PICPAY_GROUPED_LAYOUT, BANCO_BV_GROUPED_LAYOUT}:
             rows = _parse_grouped_long_date_rows(lines)
+        elif layout_name == BANCO_BV_CURRENT_ACCOUNT_LAYOUT:
+            rows = _parse_bv_current_account_rows(lines)
         elif layout_name == NEON_MODERN_LAYOUT:
             rows = _parse_neon_rows(lines)
         else:
@@ -289,6 +294,257 @@ def _parse_grouped_long_date_rows(lines: list[_PdfLine]) -> list[_ParsedTransact
             )
         )
     return rows
+
+
+def _parse_bv_current_account_rows(lines: list[_PdfLine]) -> list[_ParsedTransaction]:
+    rows: list[_ParsedTransaction] = []
+    pages: dict[int, list[_PdfLine]] = {}
+    for line in lines:
+        pages.setdefault(line.page_number, []).append(line)
+
+    current_date: str | None = None
+    for page_lines in pages.values():
+        page_rows, page_date = _parse_bv_columnar_page(
+            page_lines,
+            previous_date=current_date,
+        )
+        if page_rows:
+            rows.extend(page_rows)
+            current_date = page_date or current_date
+            continue
+        page_rows, current_date = _parse_bv_inline_page(
+            page_lines,
+            current_date=current_date,
+        )
+        rows.extend(page_rows)
+    return rows
+
+
+def _parse_bv_columnar_page(
+    lines: list[_PdfLine],
+    *,
+    previous_date: str | None,
+) -> tuple[list[_ParsedTransaction], str | None]:
+    normalized = [normalize_text(line.text) for line in lines]
+    document_start = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if re.fullmatch(r"\d{5,}", line.text.strip())
+        ),
+        None,
+    )
+    if document_start is None:
+        return [], None
+
+    transaction_dates = [
+        parsed
+        for line in lines[:document_start]
+        if (parsed := _extract_bv_transaction_date(line.text)) is not None
+    ]
+    if not transaction_dates:
+        return [], None
+
+    description_header = next(
+        (index for index, value in enumerate(normalized[:document_start]) if value == "LANCAMENTO"),
+        None,
+    )
+    first_date_index = next(
+        (
+            index
+            for index, line in enumerate(lines[:document_start])
+            if _extract_bv_transaction_date(line.text) is not None
+        ),
+        None,
+    )
+    if first_date_index is None:
+        return [], None
+    description_start = description_header + 1 if description_header is not None else first_date_index
+    descriptions = _group_bv_descriptions(lines[description_start:document_start])
+    documents = [
+        line.text.strip()
+        for line in lines[document_start:]
+        if re.fullmatch(r"\d{5,}", line.text.strip())
+    ]
+    amount_lines = [
+        line
+        for line in lines[document_start:]
+        if is_amount_only_row(line.text)
+    ]
+    if not descriptions or len(descriptions) != len(amount_lines):
+        return [], None
+
+    balances: dict[str, float] = {}
+    date_index = 0
+    current_date = previous_date
+    for (description_line, inline_date), amount_line in zip(descriptions, amount_lines, strict=True):
+        description = description_line.text.strip()
+        if inline_date is not None:
+            current_date = inline_date
+        elif normalize_text(description).startswith("SALDO DO DIA"):
+            if len(transaction_dates) == 1:
+                current_date = transaction_dates[0]
+            else:
+                if date_index >= len(transaction_dates):
+                    return [], None
+                current_date = transaction_dates[date_index]
+                date_index += 1
+        if normalize_text(description).startswith("SALDO DO DIA"):
+            if current_date is None:
+                return [], None
+            balances[current_date] = parse_pdf_amount(amount_line.text.strip())
+
+    rows: list[_ParsedTransaction] = []
+    dates_seen: set[str] = set()
+    current_date = previous_date
+    date_index = 0
+    document_index = 0
+    for (description_line, inline_date), amount_line in zip(descriptions, amount_lines, strict=True):
+        description = description_line.text.strip()
+        if inline_date is not None:
+            current_date = inline_date
+        elif normalize_text(description).startswith("SALDO DO DIA"):
+            if len(transaction_dates) == 1:
+                current_date = transaction_dates[0]
+            else:
+                current_date = transaction_dates[date_index]
+                date_index += 1
+        if normalize_text(description).startswith("SALDO DO DIA") or current_date is None:
+            continue
+        if _should_skip_description(description):
+            continue
+        amount_token = AmountToken(
+            value=amount_line.text.strip(),
+            start=0,
+            end=len(amount_line.text.strip()),
+        )
+        amount, forced_sign = _resolve_signed_amount(amount_token, description=description)
+        external_reference_id = documents[document_index] if document_index < len(documents) else None
+        document_index += 1
+        running_balance = balances.get(current_date) if current_date not in dates_seen else None
+        dates_seen.add(current_date)
+        rows.append(
+            _build_row(
+                date=current_date,
+                description=description,
+                amount=amount,
+                amount_token=amount_token,
+                source=description_line,
+                running_balance=running_balance,
+                external_reference_id=external_reference_id,
+                forced_sign=forced_sign,
+            )
+        )
+    return rows, transaction_dates[-1]
+
+
+def _group_bv_descriptions(
+    lines: list[_PdfLine],
+) -> list[tuple[_PdfLine, str | None]]:
+    grouped: list[tuple[_PdfLine, str | None]] = []
+    continuation_prefixes = ("REDE BANCARIA", "CORRESP BANCARIO", "COBRANCA PROPRIA")
+    for line in lines:
+        value = line.text.strip()
+        normalized = normalize_text(value)
+        if (
+            not value
+            or normalized in {"DATA", "LANCAMENTO"}
+            or "DOCUMENTO" in normalized
+            or is_date_only_row(value)
+        ):
+            continue
+        inline_date = _extract_bv_transaction_date(value)
+        if inline_date is not None and "SALDO DO DIA" in normalized:
+            date_match = _DATE_AT_START_PATTERN.match(value)
+            description = date_match.group("rest").strip() if date_match is not None else value
+            grouped.append(
+                (
+                    _PdfLine(
+                        text=description,
+                        page_number=line.page_number,
+                        line_number=line.line_number,
+                    ),
+                    inline_date,
+                )
+            )
+            continue
+        if normalized.startswith(continuation_prefixes) and grouped:
+            previous_line, previous_date = grouped[-1]
+            combined = _PdfLine(
+                text=f"{previous_line.text.strip()} {value}",
+                page_number=previous_line.page_number,
+                line_number=previous_line.line_number,
+            )
+            grouped[-1] = (combined, previous_date)
+            continue
+        grouped.append((line, None))
+    return grouped
+
+
+def _parse_bv_inline_page(
+    lines: list[_PdfLine],
+    *,
+    current_date: str | None,
+) -> tuple[list[_ParsedTransaction], str | None]:
+    rows: list[_ParsedTransaction] = []
+    pending_description: list[str] = []
+    pending_balance: float | None = None
+    for line in lines:
+        date = _extract_bv_transaction_date(line.text)
+        if date is not None:
+            current_date = date
+        amount_tokens = tuple(find_amount_tokens(line.text))
+        normalized = normalize_text(line.text)
+        if date is not None and "SALDO DO DIA" in normalized and amount_tokens:
+            pending_balance = parse_pdf_amount(amount_tokens[-1].value)
+            pending_description.clear()
+            continue
+        if not amount_tokens:
+            if _looks_like_bv_transaction_description(normalized):
+                pending_description.append(line.text.strip())
+            continue
+        if current_date is None:
+            continue
+
+        amount_token = amount_tokens[-1]
+        raw_description = _remove_amount_tokens(line.text, amount_tokens)
+        raw_description = _DATE_AT_START_PATTERN.sub("", raw_description, count=1).strip()
+        external_reference_match = re.search(r"\b(\d{5,})\s*$", raw_description)
+        external_reference_id = (
+            external_reference_match.group(1) if external_reference_match is not None else None
+        )
+        if external_reference_match is not None:
+            raw_description = raw_description[: external_reference_match.start()].strip()
+        description = " ".join((*pending_description, raw_description)).strip()
+        pending_description.clear()
+        if _should_skip_description(description):
+            continue
+        amount, forced_sign = _resolve_signed_amount(amount_token, description=description)
+        rows.append(
+            _build_row(
+                date=current_date,
+                description=description,
+                amount=amount,
+                amount_token=amount_token,
+                source=line,
+                running_balance=pending_balance,
+                external_reference_id=external_reference_id,
+                forced_sign=forced_sign,
+            )
+        )
+        pending_balance = None
+    return rows, current_date
+
+
+def _extract_bv_transaction_date(value: str) -> str | None:
+    match = _DATE_AT_START_PATTERN.match(value)
+    if match is None or len(match.group("date")) != 10:
+        return None
+    return _safe_parse_date(match.group("date"))
+
+
+def _looks_like_bv_transaction_description(normalized: str) -> bool:
+    return normalized.startswith(("TARIFA", "RETE", "CORRESP BANCARIO", "CONVEY"))
 
 
 def _parse_neon_rows(lines: list[_PdfLine]) -> list[_ParsedTransaction]:

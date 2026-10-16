@@ -1,0 +1,77 @@
+layout_profile:
+  schema_version: 2
+  profile_name: bling_relatorio_caixa_bancos_v1
+  bank: Bling
+  layout_family: bling_relatorio_caixa_bancos
+  statement_type: relatorio_caixa_bancos
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Bling - Relatório de Caixa e Bancos"
+      - "Bling Conta"
+      - "Todas categorias"
+      - "Cliente/Fornecedor"
+      - "Histórico"
+      - "Categoria"
+      - "Entrada"
+      - "Saída"
+    optional_keywords:
+      - "Saldo do dia"
+      - "Totais"
+      - "Diferença (Entrada - Saída)"
+      - "Saldo Anterior"
+      - "Saldo Final"
+    negative_keywords:
+      - "CAIXA ECONÔMICA FEDERAL"
+      - "Cartão de crédito"
+    min_score_hint: 0.82
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Cliente/Fornecedor"
+      - "Histórico"
+      - "Entrada"
+      - "Saída"
+    expected_column_order:
+      - date
+      - counterparty
+      - description
+      - category
+      - credit
+      - debit
+    column_aliases:
+      date:
+        - "Data"
+      description:
+        - "Histórico"
+      credit:
+        - "Entrada"
+      debit:
+        - "Saída"
+  parsing:
+    date_format: "dd/MM/yyyy"
+    date_year_source: transaction
+    amount_locale: pt-BR
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "Saída"
+      - "Pagamento"
+    positive_patterns:
+      - "Entrada"
+      - "Vendas"
+    ignore_rows:
+      - "Saldo do dia"
+      - "Totais"
+      - "Diferença (Entrada - Saída)"
+      - "Saldo Anterior"
+      - "Saldo Final"
+    opening_balance_rows:
+      - "Saldo Anterior"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - counterparty
