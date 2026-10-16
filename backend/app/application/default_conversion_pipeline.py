@@ -95,7 +95,10 @@ def _resolve_opening_balance(
             continue
         candidate_lines = [raw_line]
         if (
-            layout_name == "banrisul_extrato_texto_movimentos_conta_corrente_v1"
+            layout_name in {
+                "banrisul_extrato_texto_movimentos_conta_corrente_v1",
+                "itau_empresas_extrato_completo_tabela_v1",
+            }
             and line_index + 1 < len(extracted_lines)
         ):
             candidate_lines.append(extracted_lines[line_index + 1])

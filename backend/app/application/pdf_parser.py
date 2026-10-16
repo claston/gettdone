@@ -88,6 +88,8 @@ from app.application.textract_transaction_adapter import adapt_textract_extracti
 from app.application.unsupported_document_detection import (
     BILLING_REPORT_DOCUMENT_TYPE,
     BILLING_REPORT_USER_MESSAGE,
+    INVESTMENT_SUMMARY_DOCUMENT_TYPE,
+    INVESTMENT_SUMMARY_USER_MESSAGE,
     PAYMENT_REPORT_DOCUMENT_TYPE,
     PAYMENT_REPORT_USER_MESSAGE,
     detect_unsupported_document_type,
@@ -209,6 +211,14 @@ def parse_pdf_transactions(
                 textract_result,
                 textract_attempted=textract_attempted,
                 native_text_detected=native_text_detected,
+            )
+        except UnsupportedDocumentContentError as unsupported_error:
+            raise _attach_parse_observability(
+                unsupported_error,
+                textract_attempted=textract_attempted,
+                native_text_detected=native_text_detected,
+                ocr_retry_skipped=1,
+                ocr_retry_skip_reason="unsupported_document_type",
             )
         except InvalidFileContentError as textract_error:
             if isinstance(textract_error, (UnsupportedDocumentContentError, OcrFinancialAmbiguityError)):
@@ -706,6 +716,11 @@ def _parse_statement_page_texts(
         raise UnsupportedDocumentContentError(
             document_type=unsupported_document_type,
             message=PAYMENT_REPORT_USER_MESSAGE,
+        )
+    if unsupported_document_type == INVESTMENT_SUMMARY_DOCUMENT_TYPE:
+        raise UnsupportedDocumentContentError(
+            document_type=unsupported_document_type,
+            message=INVESTMENT_SUMMARY_USER_MESSAGE,
         )
     layout = infer_pdf_layout(joined_text)
     layout_profile = get_layout_profile(layout.layout_name)
@@ -2525,8 +2540,7 @@ def _maybe_attach_tabular_dated_balance_block(
     layout_profile: DeclarativeLayoutProfile | None,
 ) -> int:
     if (
-        not transactions
-        or layout_profile is None
+        layout_profile is None
         or layout_profile.profile_name != _ITAU_COMPLETE_TABLE_LAYOUT
         or start_index + 2 >= len(lines)
     ):
@@ -2548,9 +2562,11 @@ def _maybe_attach_tabular_dated_balance_block(
         fallback_year=inferred_year,
         date_formats=date_formats,
     )
+    # A daily balance may start the next page. Consume unmatched checkpoints too,
+    # so their amount cannot become a transaction with the following description.
+    if not transactions or transactions[-1].transaction.date != balance_date:
+        return 3
     last_transaction = transactions[-1]
-    if last_transaction.transaction.date != balance_date or last_transaction.source_page != date_line.page_number:
-        return 0
 
     previous_running_balance = _resolve_latest_running_balance(transactions[:-1])
     transactions[-1] = _attach_running_balance_and_reconcile_sign(
