@@ -298,6 +298,15 @@
           ],
           "default": null,
           "title": "Bank Code"
+        },
+        "document_parts": {
+          "default": [],
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Document Parts",
+          "type": "array"
         }
       },
       "required": [
@@ -559,6 +568,21 @@
         "native_text_detected": {
           "default": 0,
           "title": "Native Text Detected",
+          "type": "integer"
+        },
+        "ocr_unresolved_rows": {
+          "default": 0,
+          "title": "Ocr Unresolved Rows",
+          "type": "integer"
+        },
+        "ocr_annotations_detected": {
+          "default": 0,
+          "title": "Ocr Annotations Detected",
+          "type": "integer"
+        },
+        "opening_balance_ambiguous": {
+          "default": 0,
+          "title": "Opening Balance Ambiguous",
           "type": "integer"
         },
         "inline_decision": {
