@@ -8,6 +8,11 @@ from app.application.bank_resolver import DEFAULT_BANK_CODE, resolve_bank_code
 from app.application.conversion_pipeline import ConversionPipeline
 from app.application.models import TransactionRow
 from app.application.normalization.balance import resolve_descending_running_balance
+from app.application.parsers.pdf.layout_specific.bradesco_daily_order import (
+    resolve_bradesco_period_closing,
+    resolve_bradesco_period_opening,
+)
+from app.application.parsers.pdf.layout_specific.modern_accounts import BRADESCO_EMPRESAS_LAYOUT
 from app.application.parsers.service import ParsingService
 from app.application.pdf_parser import parse_pdf_transactions
 
@@ -108,6 +113,8 @@ def _resolve_opening_balance(
                 return round(float(raw_amount), 2)
             except ValueError:
                 continue
+    if layout_name == BRADESCO_EMPRESAS_LAYOUT:
+        return resolve_bradesco_period_opening(rows)
     descending = resolve_descending_running_balance(rows, layout_name=layout_name)
     if descending:
         return None
@@ -125,6 +132,8 @@ def _resolve_closing_balance(
     layout_name: str | None = None,
     extracted_text: str | None = None,
 ) -> float | None:
+    if layout_name == BRADESCO_EMPRESAS_LAYOUT:
+        return resolve_bradesco_period_closing(rows)
     labeled_balance = _extract_labeled_balance(
         extracted_text,
         labels=_closing_balance_labels(layout_name),

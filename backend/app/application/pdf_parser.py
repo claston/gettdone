@@ -64,10 +64,12 @@ from app.application.normalization.pdf_tabular_rules import (
 from app.application.normalization.pdf_text_rules import should_ignore_line, should_skip_transaction_description
 from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf import text_extraction
+from app.application.parsers.pdf.layout_specific.bradesco_daily_order import resolve_bradesco_split_day_order
 from app.application.parsers.pdf.layout_specific.contract import (
     LayoutSpecificParseContext,
     LayoutSpecificParseResult,
 )
+from app.application.parsers.pdf.layout_specific.modern_accounts import BRADESCO_EMPRESAS_LAYOUT
 from app.application.parsers.pdf.layout_specific.registry import DEFAULT_PDF_LAYOUT_PARSER_REGISTRY
 from app.application.parsers.pdf.layout_specific.unicred import (
     UNICRED_MODERN_CURRENT_LAYOUT,
@@ -1134,21 +1136,24 @@ def _build_pdf_parse_result(
         layout_confidence=layout.confidence,
         source_parser=selected_parser,
     )
+    running_balance_order = list(range(len(parsed_rows)))
     if (
         layout.layout_name == _STONE_CURRENT_ACCOUNT_A4_LAYOUT
         and not resolve_descending_running_balance(canonical_transactions)
     ):
         running_balance_order = resolve_ascending_running_balance_order(canonical_transactions)
-        if running_balance_order != list(range(len(parsed_rows))):
-            parsed_rows = [parsed_rows[index] for index in running_balance_order]
-            canonical_transactions = build_canonical_transactions(
-                parsed_rows,
-                bank_name=layout_profile.bank if layout_profile is not None else None,
-                layout_name=layout.layout_name,
-                layout_used_fallback=layout.used_fallback,
-                layout_confidence=layout.confidence,
-                source_parser=selected_parser,
-            )
+    elif layout.layout_name == BRADESCO_EMPRESAS_LAYOUT:
+        running_balance_order = resolve_bradesco_split_day_order(canonical_transactions, source_page_texts)
+    if running_balance_order != list(range(len(parsed_rows))):
+        parsed_rows = [parsed_rows[index] for index in running_balance_order]
+        canonical_transactions = build_canonical_transactions(
+            parsed_rows,
+            bank_name=layout_profile.bank if layout_profile is not None else None,
+            layout_name=layout.layout_name,
+            layout_used_fallback=layout.used_fallback,
+            layout_confidence=layout.confidence,
+            source_parser=selected_parser,
+        )
     transactions = [item.transaction for item in parsed_rows]
     balance_checked_count, balance_failed_count = annotate_balance_consistency(
         canonical_transactions,

@@ -133,7 +133,7 @@ def _escape_ofx_text(raw_text: str) -> str:
 
 def _resolve_ledger_asof(transactions: list[NormalizedTransaction]) -> str:
     if transactions:
-        return _format_ofx_date(transactions[-1].date)
+        return _format_ofx_date(max(transaction.date for transaction in transactions))
     return datetime.now().strftime("%Y%m%d000000[-3:BRT]")
 
 
