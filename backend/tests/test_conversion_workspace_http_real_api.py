@@ -25,8 +25,8 @@ from app.dependencies import (
     get_access_control_service,
     get_async_conversion_report_service,
     get_async_conversion_rollout_policy,
+    get_conversion_batch_document_store,
     get_conversion_batch_service,
-    get_conversion_document_store,
     get_conversion_runtime_config,
 )
 from app.main import app
@@ -182,7 +182,7 @@ def _run_http_server(tmp_path: Path):
         {}
     )
     app.dependency_overrides[get_conversion_batch_service] = lambda: service
-    app.dependency_overrides[get_conversion_document_store] = lambda: FakeDocumentStore()
+    app.dependency_overrides[get_conversion_batch_document_store] = lambda: FakeDocumentStore()
     app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
         {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
     )

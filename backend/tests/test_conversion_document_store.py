@@ -3,6 +3,7 @@ from typing import Any
 
 import pytest
 
+from app import dependencies
 from app.application.conversion.conversion_document_store import (
     FilesystemConversionDocumentStore,
     S3ConversionDocumentStore,
@@ -172,3 +173,37 @@ def test_conversion_document_store_config_rejects_unknown_mode(monkeypatch, tmp_
 
     with pytest.raises(RuntimeError, match="CONVERSION_DOCUMENT_STORE"):
         _build_conversion_document_store(backend_root=tmp_path)
+
+
+def test_batch_document_store_uses_direct_upload_s3_even_when_legacy_store_is_local(monkeypatch, tmp_path: Path) -> None:
+    local_store = FilesystemConversionDocumentStore(root_dir=tmp_path / "legacy-documents")
+    monkeypatch.setattr(dependencies, "_conversion_document_store", local_store)
+    monkeypatch.setattr(dependencies, "_async_conversion_document_store", None, raising=False)
+    monkeypatch.setenv("CONVERSION_S3_BUCKET", "private-batch-bucket")
+    monkeypatch.setenv("CONVERSION_S3_PREFIX", "conversion/jobs")
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+
+    store = dependencies.get_conversion_batch_document_store()
+
+    assert isinstance(store, S3ConversionDocumentStore)
+    assert store.bucket == "private-batch-bucket"
+    assert store.prefix == "conversion/jobs"
+    assert store.region == "us-east-1"
+    assert store._s3_client is None
+    assert dependencies.get_conversion_batch_document_store() is store
+    assert dependencies.get_conversion_document_store() is local_store
+
+
+def test_batch_document_store_reuses_configured_s3_store(monkeypatch) -> None:
+    store = S3ConversionDocumentStore(bucket="private-batch-bucket")
+    monkeypatch.setattr(dependencies, "_conversion_document_store", store)
+
+    assert dependencies.get_conversion_batch_document_store() is store
+
+
+def test_batch_document_store_preserves_local_setups_without_s3(monkeypatch, tmp_path: Path) -> None:
+    store = FilesystemConversionDocumentStore(root_dir=tmp_path)
+    monkeypatch.setattr(dependencies, "_conversion_document_store", store)
+    monkeypatch.delenv("CONVERSION_S3_BUCKET", raising=False)
+
+    assert dependencies.get_conversion_batch_document_store() is store
