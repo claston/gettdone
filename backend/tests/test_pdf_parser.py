@@ -1075,7 +1075,7 @@ def test_parse_pdf_transactions_textract_path_applies_balance_consistency_check(
     monkeypatch.setattr(
         pdf_parser_module,
         "map_textract_blocks_to_extraction",
-        lambda document_hash, blocks, page_count: RawDocumentExtraction(
+        lambda document_hash, blocks, page_count, operation_id=None: RawDocumentExtraction(
             provider="aws_textract",
             document_hash=document_hash,
             pages=[],

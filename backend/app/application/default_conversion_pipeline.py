@@ -8,6 +8,10 @@ from app.application.bank_resolver import DEFAULT_BANK_CODE, resolve_bank_code
 from app.application.conversion_pipeline import ConversionPipeline
 from app.application.models import TransactionRow
 from app.application.normalization.balance import resolve_descending_running_balance
+from app.application.parsers.pdf.layout_specific.digital_credit_card import (
+    DIGITAL_CREDIT_CARD_LAYOUT,
+    extract_invoice_financials,
+)
 from app.application.parsers.service import ParsingService
 from app.application.pdf_parser import parse_pdf_transactions
 
@@ -66,6 +70,8 @@ def _resolve_opening_balance(
     extracted_text: str | None = None,
     layout_name: str | None = None,
 ) -> float | None:
+    if layout_name == DIGITAL_CREDIT_CARD_LAYOUT:
+        return float(extract_invoice_financials(extracted_text or "").opening_balance)
     labeled_balance = _extract_labeled_balance(
         extracted_text,
         labels=_opening_balance_labels(layout_name),
@@ -95,7 +101,10 @@ def _resolve_opening_balance(
             continue
         candidate_lines = [raw_line]
         if (
-            layout_name == "banrisul_extrato_texto_movimentos_conta_corrente_v1"
+            layout_name in {
+                "banrisul_extrato_texto_movimentos_conta_corrente_v1",
+                "itau_empresas_extrato_completo_tabela_v1",
+            }
             and line_index + 1 < len(extracted_lines)
         ):
             candidate_lines.append(extracted_lines[line_index + 1])
@@ -270,6 +279,9 @@ def _build_pdf_processing_metrics(
         "textract_attempted": int(parse_metrics.get("textract_attempted", 0)),
         "textract_error_type": str(parse_metrics.get("textract_error_type", "")),
         "native_text_detected": int(parse_metrics.get("native_text_detected", 0)),
+        "ocr_unresolved_rows": int(parse_metrics.get("ocr_unresolved_rows", 0)),
+        "ocr_annotations_detected": int(parse_metrics.get("ocr_annotations_detected", 0)),
+        "opening_balance_ambiguous": int(parse_metrics.get("opening_balance_ambiguous", 0)),
         "inline_decision": str(parse_metrics.get("inline_decision", "")),
         "tabular_decision": str(parse_metrics.get("tabular_decision", "")),
         "columnar_decision": str(parse_metrics.get("columnar_decision", "")),
@@ -486,6 +498,7 @@ def _resolve_ofx_account_type(
         layout_name = str(layout_inference_name or "").strip().lower()
 
         if layout_name in {
+            DIGITAL_CREDIT_CARD_LAYOUT,
             "banco_inter_fatura_cartao_despesas_v1",
             "sicoob_fatura_cartao_credito_movimentos_v1",
             "sicoob_cartao_lancamentos_futuros_v1",

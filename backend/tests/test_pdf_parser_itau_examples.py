@@ -662,3 +662,53 @@ def test_itau_complete_table_attaches_vertical_daily_balances_without_importing_
         -4275.11,
         -4717.46,
     ]
+
+
+@pytest.mark.parametrize(
+    ("previous_transaction", "balance_date", "expected_first_balance"),
+    [
+        (True, "17/12/2025", 150.0),
+        (True, "16/12/2025", None),
+        (False, "17/12/2025", None),
+    ],
+    ids=["matching-day-across-pages", "different-day", "no-previous-transaction"],
+)
+def test_itau_complete_table_never_imports_daily_balance_at_page_start(
+    previous_transaction: bool,
+    balance_date: str,
+    expected_first_balance: float | None,
+) -> None:
+    pages = [
+        """
+        Itaú
+        Agência Conta Saldo total Limite da conta Utilizado Disponível
+        Lançamentos do período: 17/12/2025 até 18/12/2025
+        Data Lançamentos Razão Social CNPJ/CPF Valor (R$) Saldo (R$)
+        16/12/2025 SALDO ANTERIOR 100,00
+        """
+        + ("17/12/2025\nPIX RECEBIDO\n50,00\n" if previous_transaction else ""),
+        f"""
+        {balance_date}
+        SALDO TOTAL DISPONÍVEL DIA
+        150,00
+        FORNECEDOR EXEMPLO
+        18/12/2025
+        PIX ENVIADO
+        -20,00
+        18/12/2025
+        SALDO TOTAL DISPONÍVEL DIA
+        130,00
+        """,
+    ]
+    profile = pdf_parser_module.get_layout_profile("itau_empresas_extrato_completo_tabela_v1")
+    lines = pdf_parser_module._flatten_statement_lines(pages)
+
+    rows, _ = pdf_parser_module._parse_tabular_statement_rows(lines, layout_profile=profile)
+
+    expected = [("2025-12-18", "PIX ENVIADO", -20.0, 130.0)]
+    if previous_transaction:
+        expected.insert(0, ("2025-12-17", "PIX RECEBIDO", 50.0, expected_first_balance))
+    assert [
+        (row.transaction.date, row.transaction.description, row.transaction.amount, row.running_balance)
+        for row in rows
+    ] == expected

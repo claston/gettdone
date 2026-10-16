@@ -5,10 +5,14 @@ from datetime import datetime
 from typing import Callable
 
 from app.application.cross_page_transaction_detection import detect_cross_page_transaction_split
+from app.application.document_routing_policy import enforce_document_routing
+from app.application.document_type_classifier import classify_document_type
 from app.application.errors import (
     CrossPageTransactionSplitError,
     InvalidFileContentError,
     MaxPagesPerFileExceededError,
+    OcrFinancialAmbiguityError,
+    PdfFinancialValidationError,
     UnsupportedDocumentContentError,
 )
 from app.application.layout_profiles.registry import DeclarativeLayoutProfile, get_layout_profile
@@ -69,6 +73,11 @@ from app.application.parsers.pdf.layout_specific.contract import (
     LayoutSpecificParseContext,
     LayoutSpecificParseResult,
 )
+from app.application.parsers.pdf.layout_specific.digital_credit_card import (
+    DIGITAL_CREDIT_CARD_LAYOUT,
+    DIGITAL_CREDIT_CARD_PARSER,
+)
+from app.application.parsers.pdf.layout_specific.itau_monthly_ocr import parse_itau_monthly_ocr
 from app.application.parsers.pdf.layout_specific.registry import DEFAULT_PDF_LAYOUT_PARSER_REGISTRY
 from app.application.parsers.pdf.layout_specific.unicred import (
     UNICRED_MODERN_CURRENT_LAYOUT,
@@ -76,6 +85,8 @@ from app.application.parsers.pdf.layout_specific.unicred import (
 )
 from app.application.parsers.pdf.models import PdfParseResult, _ParsedTransaction, _PdfLine, _TabularColumnPositions
 from app.application.parsers.pdf.multiline_transaction_assembler import parse_multiline_transaction_rows
+from app.application.parsers.pdf.native_unicred_grid import UNICRED_NATIVE_COLUMNS_LAYOUT, parse_native_unicred_grid
+from app.application.pdf_document_segmentation import segment_pdf_pages
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
 from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE, extract_pdf_page_texts_with_ocr, is_pdf_ocr_enabled
 from app.application.textract_extraction_mapper import map_textract_blocks_to_extraction
@@ -84,6 +95,8 @@ from app.application.textract_transaction_adapter import adapt_textract_extracti
 from app.application.unsupported_document_detection import (
     BILLING_REPORT_DOCUMENT_TYPE,
     BILLING_REPORT_USER_MESSAGE,
+    INVESTMENT_SUMMARY_DOCUMENT_TYPE,
+    INVESTMENT_SUMMARY_USER_MESSAGE,
     PAYMENT_REPORT_DOCUMENT_TYPE,
     PAYMENT_REPORT_USER_MESSAGE,
     detect_unsupported_document_type,
@@ -141,6 +154,8 @@ def _with_parse_observability(
         parse_metrics=parse_metrics,
         source_page_texts=result.source_page_texts,
         source_layout_lines=result.source_layout_lines,
+        source_extraction=result.source_extraction,
+        document_parts=result.document_parts,
     )
 
 
@@ -204,7 +219,17 @@ def parse_pdf_transactions(
                 textract_attempted=textract_attempted,
                 native_text_detected=native_text_detected,
             )
+        except UnsupportedDocumentContentError as unsupported_error:
+            raise _attach_parse_observability(
+                unsupported_error,
+                textract_attempted=textract_attempted,
+                native_text_detected=native_text_detected,
+                ocr_retry_skipped=1,
+                ocr_retry_skip_reason="unsupported_document_type",
+            )
         except InvalidFileContentError as textract_error:
+            if isinstance(textract_error, (UnsupportedDocumentContentError, OcrFinancialAmbiguityError)):
+                raise
             if not is_pdf_ocr_enabled():
                 raise _attach_parse_observability(
                     textract_error,
@@ -235,11 +260,34 @@ def parse_pdf_transactions(
                     extracted_text=fallback_result.extracted_text,
                     parse_metrics=fallback_metrics,
                     source_page_texts=fallback_result.source_page_texts,
+                    document_parts=fallback_result.document_parts,
                 ),
                 textract_attempted=textract_attempted,
                 native_text_detected=native_text_detected,
             )
 
+    if native_pages:
+        native_grid = parse_native_unicred_grid(raw_bytes, native_pages)
+        if native_grid is not None:
+            return _with_parse_observability(
+                _build_pdf_parse_result(
+                    parsed_rows=native_grid.rows,
+                    layout=PdfLayoutInference(UNICRED_NATIVE_COLUMNS_LAYOUT, 0.98, False),
+                    layout_profile=get_layout_profile(UNICRED_NATIVE_COLUMNS_LAYOUT),
+                    selected_parser="layout_specific_unicred_native_columns",
+                    parser_selection_reason="native_debit_credit_column_coordinates",
+                    inline_decision="not_applicable_layout_specific", tabular_decision="not_applicable_layout_specific",
+                    columnar_decision="not_applicable_layout_specific", joined_text="\n".join(native_grid.source_pages),
+                    source_page_texts=native_grid.source_pages, page_count=len(native_grid.source_pages),
+                    flattened_line_count=sum(len(page.splitlines()) for page in native_grid.source_pages),
+                    invalid_date_candidates_skipped=0, grouped_transactions_count=0, inline_candidates_count=0,
+                    inline_transactions_count=0, tabular_candidates_count=0, tabular_transactions_count=0,
+                    columnar_candidates_count=0, columnar_transactions_count=0,
+                    balance_checkpoints=native_grid.balance_checkpoints,
+                ),
+                extraction_provider="native_pdfium_text", nonfinancial_date_rows_skipped=native_grid.nonfinancial_rows,
+                native_text_detected=1, textract_attempted=0,
+            )
     if native_read_error is None and not native_pages:
         return _retry_insufficient_native_text_with_ocr(
             raw_bytes,
@@ -261,12 +309,17 @@ def parse_pdf_transactions(
             page_texts, context=LayoutSpecificParseContext(reference_month_year=reference_month_year)
         )
     except InvalidFileContentError as native_parse_error:
-        if isinstance(native_parse_error, (CrossPageTransactionSplitError, UnsupportedDocumentContentError)):
+        if isinstance(
+            native_parse_error,
+            (CrossPageTransactionSplitError, UnsupportedDocumentContentError, PdfFinancialValidationError),
+        ):
             skip_reason = (
                 "cross_page_transaction_split"
                 if isinstance(native_parse_error, CrossPageTransactionSplitError)
                 else "unsupported_document_type"
             )
+            if isinstance(native_parse_error, PdfFinancialValidationError):
+                skip_reason = "financial_validation_failed"
             raise _attach_parse_observability(
                 native_parse_error,
                 textract_attempted=textract_attempted,
@@ -492,15 +545,24 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
         document_hash=str(gateway_result.get("document_hash") or ""),
         blocks=list(gateway_result.get("blocks") or []),
         page_count=int(gateway_result.get("page_count") or 0),
+        operation_id=str(gateway_result.get("job_id") or "") or None,
     )
     gateway_metrics = dict(gateway_result.get("metrics") or {})
     textract_mode = str(gateway_metrics.get("textract_mode") or "").strip().lower()
-    if textract_mode == "text":
-        text_mode_result = _parse_scanned_pdf_with_textract_text_pages(extraction)
+    segmentation = segment_pdf_pages(_textract_page_texts(extraction))
+    statement_extraction = extraction
+    if segmentation.parts:
+        statement_extraction = replace(extraction, pages=[
+            page for page in extraction.pages if segmentation.page_texts[page.page_number - 1]
+        ])
+    is_monthly = infer_pdf_layout("\n".join(segmentation.page_texts)).layout_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
+    if textract_mode == "text" or is_monthly:
+        text_mode_result = _parse_scanned_pdf_with_textract_text_pages(statement_extraction)
         text_mode_metrics = dict(text_mode_result.parse_metrics)
         text_mode_metrics["extraction_provider"] = "aws_textract"
         text_mode_metrics["textract_enabled"] = 1
         text_mode_metrics["textract_used"] = 1
+        text_mode_metrics["page_count"] = len(extraction.pages)
         for key, value in gateway_metrics.items():
             text_mode_metrics[str(key)] = value
         return PdfParseResult(
@@ -509,10 +571,12 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
             layout=text_mode_result.layout,
             extracted_text=text_mode_result.extracted_text,
             parse_metrics=text_mode_metrics,
-            source_page_texts=text_mode_result.source_page_texts,
+            source_page_texts=_textract_page_texts(extraction),
             source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages),
+            source_extraction=extraction,
+            document_parts=segmentation.parts or text_mode_result.document_parts,
         )
-    adapted = adapt_textract_extraction_to_transactions(extraction)
+    adapted = adapt_textract_extraction_to_transactions(statement_extraction)
     inferred_layout = infer_pdf_layout(adapted.extracted_text)
     canonical_transactions = adapted.canonical_transactions
     balance_checked_count, balance_failed_count = annotate_balance_consistency(canonical_transactions)
@@ -552,17 +616,20 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
         parse_metrics=parse_metrics,
         source_page_texts=_textract_page_texts(extraction),
         source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages),
+        source_extraction=extraction,
+        document_parts=segmentation.parts or None,
     )
 
 
 def _textract_page_texts(extraction) -> tuple[str, ...]:
+    pages = {page.page_number: page for page in extraction.pages}
     return tuple(
         "\n".join(
             line.text
-            for line in sorted(page.lines, key=lambda value: value.line_index)
+            for line in sorted(pages[page_number].lines, key=lambda value: value.line_index)
             if line.text
-        )
-        for page in extraction.pages
+        ) if page_number in pages else ""
+        for page_number in range(1, max(pages, default=0) + 1)
     )
 
 
@@ -572,6 +639,27 @@ def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
         raise InvalidFileContentError("Nao foi possivel extrair transacoes do OCR para revisao.")
     joined_text = "\n".join(page_texts)
     inferred_layout = infer_pdf_layout(joined_text)
+    if inferred_layout.layout_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT:
+        monthly = parse_itau_monthly_ocr(extraction.pages)
+        if monthly.rows:
+            result = _build_pdf_parse_result(
+                parsed_rows=monthly.rows, layout=inferred_layout, layout_profile=get_layout_profile(inferred_layout.layout_name),
+                selected_parser="layout_specific_itau_monthly_ocr", parser_selection_reason="word_geometry_and_financial_columns",
+                inline_decision="not_applicable_layout_specific", tabular_decision="not_applicable_layout_specific",
+                columnar_decision="not_applicable_layout_specific", joined_text=joined_text,
+                source_page_texts=tuple(page_texts), page_count=len(page_texts),
+                flattened_line_count=sum(len(page.lines) for page in extraction.pages), invalid_date_candidates_skipped=0,
+                grouped_transactions_count=0, inline_candidates_count=0, inline_transactions_count=0,
+                tabular_candidates_count=0, tabular_transactions_count=0, columnar_candidates_count=0, columnar_transactions_count=0,
+            )
+            metrics = dict(result.parse_metrics)
+            metrics.update(ocr_unresolved_rows=monthly.unresolved_rows, ocr_annotations_detected=monthly.annotations_detected,
+                           opening_balance_ambiguous=int(monthly.opening_balance_ambiguous))
+            if monthly.unresolved_rows or monthly.opening_balance_ambiguous:
+                metrics.update(export_recommendation="review_recommended", export_recommendation_reason="ocr_financial_ambiguity")
+            return replace(result, parse_metrics=metrics)
+        if monthly.unresolved_rows:
+            raise OcrFinancialAmbiguityError("Não foi possível associar os valores às linhas do extrato. Revise a qualidade do documento.")
     if inferred_layout.layout_name == UNICRED_MODERN_CURRENT_LAYOUT:
         geometry_rows = parse_unicred_textract_rows(
             extraction.pages,
@@ -602,7 +690,7 @@ def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
             )
     try:
         return _parse_pdf_transactions_from_page_texts(page_texts)
-    except CrossPageTransactionSplitError:
+    except (CrossPageTransactionSplitError, UnsupportedDocumentContentError):
         raise
     except InvalidFileContentError:
         adapted = adapt_textract_extraction_to_transactions(extraction)
@@ -638,6 +726,19 @@ def _parse_pdf_transactions_from_page_texts(
     preserve_layout_spacing: bool = False,
     context: LayoutSpecificParseContext | None = None,
 ) -> PdfParseResult:
+    segmentation = segment_pdf_pages(page_texts)
+    selected_pages = list(segmentation.page_texts)
+    enforce_document_routing(classify_document_type("extracted.pdf", b"", extracted_text="\n".join(selected_pages)))
+    result = _parse_statement_page_texts(selected_pages, preserve_layout_spacing=preserve_layout_spacing, context=context)
+    return replace(result, source_page_texts=segmentation.source_page_texts, document_parts=segmentation.parts or None)
+
+
+def _parse_statement_page_texts(
+    page_texts: list[str],
+    *,
+    preserve_layout_spacing: bool = False,
+    context: LayoutSpecificParseContext | None = None,
+) -> PdfParseResult:
     joined_text = "\n".join(page_texts)
     unsupported_document_type = detect_unsupported_document_type(joined_text)
     if unsupported_document_type == BILLING_REPORT_DOCUMENT_TYPE:
@@ -650,6 +751,11 @@ def _parse_pdf_transactions_from_page_texts(
             document_type=unsupported_document_type,
             message=PAYMENT_REPORT_USER_MESSAGE,
         )
+    if unsupported_document_type == INVESTMENT_SUMMARY_DOCUMENT_TYPE:
+        raise UnsupportedDocumentContentError(
+            document_type=unsupported_document_type,
+            message=INVESTMENT_SUMMARY_USER_MESSAGE,
+        )
     layout = infer_pdf_layout(joined_text)
     layout_profile = get_layout_profile(layout.layout_name)
     cross_page_split = detect_cross_page_transaction_split(page_texts, layout_profile=layout_profile)
@@ -661,7 +767,11 @@ def _parse_pdf_transactions_from_page_texts(
         )
     lines = _flatten_statement_lines(page_texts, preserve_layout_spacing=preserve_layout_spacing)
     lines = _normalize_caixa_web_ocr_lines(lines, layout_name=layout.layout_name)
-    lines, invalid_date_candidates_skipped = _filter_invalid_leading_date_candidate_lines(lines)
+    if layout.layout_name == DIGITAL_CREDIT_CARD_LAYOUT:
+        # Keep invalid source dates visible to the invoice's financial validation.
+        invalid_date_candidates_skipped = 0
+    else:
+        lines, invalid_date_candidates_skipped = _filter_invalid_leading_date_candidate_lines(lines)
     flattened_line_count = len(lines)
     lines = _scope_profile_transaction_lines(lines, layout_profile=layout_profile)
     specialized_selection = _parse_layout_specific_statement_rows(
@@ -1333,6 +1443,7 @@ def _parse_grouped_statement_lines(
     current_page_number: int | None = None
     skipping_repeated_page_header = False
     last_attached_running_balance_line: tuple[int, int, int] | None = None
+    contact_footer_page: int | None = None
 
     for index, line in enumerate(lines):
         if current_page_number is None:
@@ -1380,6 +1491,21 @@ def _parse_grouped_statement_lines(
             )
 
         normalized_line = _normalize_text(line.text)
+        if line.page_number == contact_footer_page:
+            continue
+        if (
+            transactions
+            and normalized_line.startswith("CENTRAL DE ATENDIMENTO SANTANDER")
+            and not find_profile_tabular_amount_tokens(line.text, None)
+        ):
+            description_parts = _flush_grouped_description_continuation(
+                transactions=transactions,
+                last_transaction_index=last_transaction_index,
+                description_parts=description_parts,
+                current_date=current_date,
+            )
+            contact_footer_page = line.page_number
+            continue
         if _is_sicoob_report_timestamp(
             line_text=line.text,
             layout_profile=layout_profile,
@@ -2468,8 +2594,7 @@ def _maybe_attach_tabular_dated_balance_block(
     layout_profile: DeclarativeLayoutProfile | None,
 ) -> int:
     if (
-        not transactions
-        or layout_profile is None
+        layout_profile is None
         or layout_profile.profile_name != _ITAU_COMPLETE_TABLE_LAYOUT
         or start_index + 2 >= len(lines)
     ):
@@ -2491,9 +2616,11 @@ def _maybe_attach_tabular_dated_balance_block(
         fallback_year=inferred_year,
         date_formats=date_formats,
     )
+    # A daily balance may start the next page. Consume unmatched checkpoints too,
+    # so their amount cannot become a transaction with the following description.
+    if not transactions or transactions[-1].transaction.date != balance_date:
+        return 3
     last_transaction = transactions[-1]
-    if last_transaction.transaction.date != balance_date or last_transaction.source_page != date_line.page_number:
-        return 0
 
     previous_running_balance = _resolve_latest_running_balance(transactions[:-1])
     transactions[-1] = _attach_running_balance_and_reconcile_sign(
@@ -3507,6 +3634,10 @@ def _try_parse_native_layout_text(
 
 
 def _maybe_upgrade_native_parse_with_layout_text(*, raw_bytes: bytes, baseline_result: PdfParseResult) -> PdfParseResult:
+    if baseline_result.parse_metrics.get("selected_parser") == DIGITAL_CREDIT_CARD_PARSER:
+        # All movements already reconcile with printed invoice totals. A generic
+        # layout candidate must not replace that result based only on row count.
+        return baseline_result
     reference_month_year = text_extraction.read_pdf_creation_month_year(raw_bytes)
     candidate_result = _try_parse_native_layout_text(
         raw_bytes=raw_bytes,

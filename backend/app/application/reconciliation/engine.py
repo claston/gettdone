@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from app.application.models import NormalizedTransaction
+from app.application.normalization.text import split_credit_card_reference
 
 TRANSFER_KEYWORDS = ("pix", "transferencia", "transfer", "ted", "doc")
 REVERSAL_KEYWORDS = ("estorno", "reversao", "reversal", "cancelamento", "chargeback")
@@ -106,6 +107,10 @@ def _is_opposite_amount(left: float, right: float) -> bool:
 
 
 def _is_possible_duplicate_pair(left: NormalizedTransaction, right: NormalizedTransaction) -> bool:
+    _, left_card = split_credit_card_reference(left.description)
+    _, right_card = split_credit_card_reference(right.description)
+    if left_card and right_card and left_card != right_card:
+        return False
     if _same_sign(left.amount, right.amount) is False:
         return False
     if round(left.amount - right.amount, 2) != 0:

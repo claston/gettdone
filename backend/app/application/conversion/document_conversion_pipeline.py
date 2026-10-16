@@ -39,7 +39,7 @@ from app.application.conversion.statement_parser import (
 )
 from app.application.conversion.uploaded_document import UploadedDocument
 from app.application.conversion_pipeline import ConversionPipeline
-from app.application.document_routing_policy import enforce_document_routing
+from app.application.document_routing_policy import enforce_initial_document_routing
 from app.application.document_type_classifier import classify_document_type
 from app.application.errors import (
     CrossPageTransactionSplitError,
@@ -232,11 +232,14 @@ class DocumentConversionPipeline:
             )
             page_texts: tuple[str, ...] | None = None
             source_layout_lines = None
+            source_extraction = None
             initial_document_type = classify_document_type(
                 filename=request.document.filename,
                 raw_bytes=request.document.raw_bytes,
             )
-            enforce_document_routing(initial_document_type)
+            enforce_initial_document_routing(
+                initial_document_type, filename=request.document.filename, raw_bytes=request.document.raw_bytes,
+            )
             if self.legacy_conversion_runner is not None:
                 conversion_response = self.legacy_conversion_runner(
                     filename=request.document.filename,
@@ -270,6 +273,7 @@ class DocumentConversionPipeline:
                 parsed_document = resolve_legacy_parsed_statement(parsed_statement)
                 page_texts = parsed_document.source_page_texts
                 source_layout_lines = parsed_document.source_layout_lines
+                source_extraction = parsed_document.source_extraction
                 legacy_pipeline_result = self.processing_pipeline.run_parsed_document(
                     document=document,
                     parsed_document=parsed_document,
@@ -298,6 +302,7 @@ class DocumentConversionPipeline:
                 conversion_response=conversion_response,
                 page_texts=page_texts,
                 source_layout_lines=source_layout_lines,
+                source_extraction=source_extraction,
             )
         except MaxPagesPerFileExceededError as exc:
             _apply_ocr_limit_context(
@@ -507,6 +512,7 @@ class DocumentConversionPipeline:
         conversion_response,
         page_texts: tuple[str, ...] | None,
         source_layout_lines=None,
+        source_extraction=None,
     ) -> ConversionPipelineResult:
         request = prepared.job
         identity = prepared.identity
@@ -550,6 +556,7 @@ class DocumentConversionPipeline:
             analysis=analysis,
             page_texts=page_texts,
             source_layout_lines=source_layout_lines,
+            source_extraction=source_extraction,
             pdf_representation_classification=runtime.pdf_representation_classification,
         )
         conversion_model_label = resolve_conversion_model_label(
@@ -909,6 +916,7 @@ class DocumentConversionPipeline:
         page_texts: tuple[str, ...] | None,
         source_layout_lines,
         pdf_representation_classification=None,
+        source_extraction=None,
     ) -> None:
         if self.ai_recovery_dispatcher is None:
             return
@@ -919,6 +927,7 @@ class DocumentConversionPipeline:
                 page_texts=page_texts,
                 source_layout_lines=source_layout_lines,
                 pdf_representation_classification=pdf_representation_classification,
+                source_extraction=source_extraction,
             )
         except Exception as exc:  # shadow analysis must never change the conversion result
             logger.warning("ai_recovery_dispatch_failed error_type=%s", exc.__class__.__name__)
