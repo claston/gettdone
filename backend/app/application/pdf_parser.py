@@ -1405,6 +1405,7 @@ def _parse_grouped_statement_lines(
     current_page_number: int | None = None
     skipping_repeated_page_header = False
     last_attached_running_balance_line: tuple[int, int, int] | None = None
+    contact_footer_page: int | None = None
 
     for index, line in enumerate(lines):
         if current_page_number is None:
@@ -1452,6 +1453,21 @@ def _parse_grouped_statement_lines(
             )
 
         normalized_line = _normalize_text(line.text)
+        if line.page_number == contact_footer_page:
+            continue
+        if (
+            transactions
+            and normalized_line.startswith("CENTRAL DE ATENDIMENTO SANTANDER")
+            and not find_profile_tabular_amount_tokens(line.text, None)
+        ):
+            description_parts = _flush_grouped_description_continuation(
+                transactions=transactions,
+                last_transaction_index=last_transaction_index,
+                description_parts=description_parts,
+                current_date=current_date,
+            )
+            contact_footer_page = line.page_number
+            continue
         if _is_sicoob_report_timestamp(
             line_text=line.text,
             layout_profile=layout_profile,

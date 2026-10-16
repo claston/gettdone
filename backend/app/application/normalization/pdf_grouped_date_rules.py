@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -54,7 +55,12 @@ def parse_grouped_date_line(
     inferred_year: int | None,
     allow_slash_date_rest: bool = False,
 ) -> GroupedDateMatch | None:
-    normalized_line = normalize_upper_text(raw_line)
+    # PDF icon fonts can emit private-use calendar glyphs before date headings.
+    # Remove only that prefix; retain ordinary text and icons inside the content.
+    date_line = raw_line.lstrip()
+    while date_line and unicodedata.category(date_line[0]) == "Co":
+        date_line = date_line[1:].lstrip()
+    normalized_line = normalize_upper_text(date_line)
 
     slash_match = SLASH_DATE_PATTERN.match(normalized_line)
     if slash_match:
