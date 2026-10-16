@@ -10,6 +10,7 @@ from pypdf import PdfReader
 from app.application.normalization.text import normalize_upper_text
 from app.application.unsupported_document_detection import (
     BILLING_REPORT_DOCUMENT_TYPE,
+    INVESTMENT_SUMMARY_DOCUMENT_TYPE,
     PAYMENT_REPORT_DOCUMENT_TYPE,
     detect_unsupported_document_type,
 )
@@ -18,13 +19,14 @@ BANK_STATEMENT = "bank_statement"
 FISCAL_INVOICE = "fiscal_invoice"
 BILLING_REPORT = "billing_report"
 PAYMENT_REPORT = "payment_report"
+INVESTMENT_SUMMARY = "investment_summary"
 BANK_RECEIPT = "bank_receipt"
 CREDIT_CARD_STATEMENT = "credit_card_statement"
 FINANCIAL_SPREADSHEET = "financial_spreadsheet"
 OTHER_DOCUMENT = "other"
 UNKNOWN_DOCUMENT = "unknown"
 
-DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-10-14.1"
+DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-10-16.2"
 
 _PDF_PREVIEW_PAGE_LIMIT = 3
 _PDF_PREVIEW_CHAR_LIMIT = 16_000
@@ -59,6 +61,8 @@ def classify_document_type(
         return _classification(BILLING_REPORT, 0.99, "billing_report_structure")
     if unsupported_type == PAYMENT_REPORT_DOCUMENT_TYPE:
         return _classification(PAYMENT_REPORT, 0.99, "payment_report_structure")
+    if unsupported_type == INVESTMENT_SUMMARY_DOCUMENT_TYPE:
+        return _classification(INVESTMENT_SUMMARY, 0.99, "investment_summary_structure")
 
     invoice_evidence = _invoice_evidence(normalized_text, text)
     if _has_strong_invoice_identity(invoice_evidence):
@@ -128,6 +132,14 @@ def _classification(document_type: str, confidence: float, evidence: str) -> Doc
 
 def _invoice_evidence(normalized_text: str, raw_text: str) -> list[str]:
     evidence: list[str] = []
+    if re.search(r"\bNFS[ -]?E\b|NOTA FISCAL (?:ELETRONICA )?DE SERVICOS|NOTA FISCAL DE SERVICOS ELETRONICA", normalized_text):
+        evidence.append("nfse_title")
+    if "PRESTADOR" in normalized_text and "TOMADOR" in normalized_text:
+        evidence.append("nfse_parties")
+    if "PREFEITURA" in normalized_text or "SECRETARIA MUNICIPAL" in normalized_text:
+        evidence.append("nfse_municipality")
+    if "VALOR DOS SERVICOS" in normalized_text or "ISSQN" in normalized_text:
+        evidence.append("nfse_tax_or_services")
     if _contains_token(normalized_text, "DANFE"):
         evidence.append("nfe_danfe")
     if "DOCUMENTO AUXILIAR DA NOTA FISCAL ELETRONICA" in normalized_text:
@@ -145,6 +157,10 @@ def _invoice_evidence(normalized_text: str, raw_text: str) -> list[str]:
 
 def _has_strong_invoice_identity(evidence: list[str]) -> bool:
     evidence_set = set(evidence)
+    if {"nfse_title", "nfse_parties"}.issubset(evidence_set) and bool(
+        {"nfse_municipality", "nfse_tax_or_services"} & evidence_set
+    ):
+        return True
     has_title = bool({"nfe_danfe", "nfe_auxiliary_document_title"} & evidence_set)
     has_fiscal_identity = bool({"nfe_access_key", "nfe_authorization_protocol"} & evidence_set)
     return len(evidence_set) >= 3 and (has_title or has_fiscal_identity)

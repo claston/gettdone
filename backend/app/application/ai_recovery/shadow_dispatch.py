@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Callable
@@ -79,6 +79,7 @@ class AIRecoveryShadowDispatcher:
         page_texts: tuple[str, ...] | None,
         source_layout_lines,
         pdf_representation_classification=None,
+        source_extraction=None,
     ) -> AIRecoveryDispatchResult:
         layout_name = str(getattr(analysis, "layout_inference_name", None) or "").strip()
         layout_family, statement_type = _layout_metadata(layout_name)
@@ -124,7 +125,7 @@ class AIRecoveryShadowDispatcher:
             analysis_id=str(analysis.analysis_id),
             page_count=int(page_count),
             deterministic_artifact=deterministic_artifact,
-            source_evidence=_source_evidence(page_texts, source_layout_lines),
+            source_evidence=_source_evidence(page_texts, source_layout_lines, source_extraction),
             layout_profile=layout_name,
             layout_family=layout_family,
             statement_type=statement_type,
@@ -456,11 +457,12 @@ def _deterministic_artifact(analysis, *, selected_parser: object) -> dict[str, o
     }
 
 
-def _source_evidence(page_texts, source_layout_lines) -> dict[str, object]:
+def _source_evidence(page_texts, source_layout_lines, source_extraction=None) -> dict[str, object]:
     pages: list[dict[str, object]] = []
     texts = tuple(str(value or "") for value in (page_texts or ()))
     layouts = source_layout_lines or ()
-    for page_index in range(max(len(texts), len(layouts))):
+    extracted_pages = {page.page_number: page for page in source_extraction.pages} if source_extraction else {}
+    for page_index in range(max(len(texts), len(layouts), max(extracted_pages, default=0))):
         lines = layouts[page_index] if page_index < len(layouts) else ()
         pages.append(
             {
@@ -472,12 +474,24 @@ def _source_evidence(page_texts, source_layout_lines) -> dict[str, object]:
                         "line_index": int(getattr(line, "line_index", 0) or 0),
                         "text": str(getattr(line, "text", "") or ""),
                         "bbox": getattr(line, "bbox", None),
+                        "confidence": getattr(line, "confidence", None),
+                        "word_ids": list(getattr(line, "word_ids", ())),
                     }
                     for line in lines
                 ],
             }
         )
-    return {"schema_version": "source_evidence_v1", "classification": "restricted", "pages": pages}
+        if page_index + 1 in extracted_pages:
+            extracted = extracted_pages[page_index + 1]
+            pages[-1]["words"] = [asdict(word) for word in extracted.words]
+            pages[-1]["tables"] = [asdict(table) for table in extracted.tables]
+    evidence = {"schema_version": "source_evidence_v1", "classification": "restricted", "pages": pages}
+    if source_extraction:
+        evidence["extraction"] = {
+            "provider": source_extraction.provider, "document_hash": source_extraction.document_hash,
+            "operation_id": source_extraction.operation_id,
+        }
+    return evidence
 
 
 def _metric(metrics: object, name: str):

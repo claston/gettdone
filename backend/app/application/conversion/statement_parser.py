@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from app.application.conversion.document_extractor import ExtractedDocument, resolve_legacy_parsed_document
+from app.application.document_extraction_models import RawDocumentExtraction
 from app.application.models import NormalizedTransaction
 from app.application.parsers.service import ParsedDocument
 
@@ -28,6 +29,7 @@ class ParsedBankStatement:
     layout_inference_name: str | None = None
     layout_inference_confidence: float | None = None
     metadata: dict[str, Any] | None = None
+    source_extraction: RawDocumentExtraction | None = None
 
 
 class StatementParser(Protocol):
@@ -61,6 +63,7 @@ class LegacyExtractedDocumentStatementParser:
             extracted_document=extracted_document,
             extracted_text=parsed_document.extracted_text,
             source_page_texts=parsed_document.source_page_texts,
+            source_extraction=parsed_document.source_extraction,
             layout_inference_name=parsed_document.layout_inference_name,
             layout_inference_confidence=parsed_document.layout_inference_confidence,
             metadata={
@@ -73,6 +76,7 @@ class LegacyExtractedDocumentStatementParser:
                 "bank_code": parsed_document.bank_code,
                 "bank_branch": parsed_document.bank_branch,
                 "account_number": parsed_document.account_number,
+                "document_parts": parsed_document.document_parts,
             },
         )
 
@@ -109,6 +113,8 @@ def resolve_legacy_parsed_statement(parsed_statement: ParsedBankStatement) -> Pa
         bank_code=metadata.get("bank_code"),
         bank_branch=metadata.get("bank_branch"),
         account_number=metadata.get("account_number"),
+        source_extraction=parsed_statement.source_extraction,
+        document_parts=metadata.get("document_parts"),
     )
 
 

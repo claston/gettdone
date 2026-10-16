@@ -1,10 +1,11 @@
-from collections import defaultdict
+from collections import defaultdict, deque
 
 from app.application.document_extraction_models import (
     ExtractedCell,
     ExtractedLine,
     ExtractedPage,
     ExtractedTable,
+    ExtractedWord,
     RawDocumentExtraction,
 )
 
@@ -14,14 +15,31 @@ def map_textract_blocks_to_extraction(
     document_hash: str,
     blocks: list[dict[str, object]],
     page_count: int | None = None,
+    operation_id: str | None = None,
 ) -> RawDocumentExtraction:
     by_id = {str(block.get("Id")): block for block in blocks if block.get("Id")}
+    page_numbers = _page_numbers(by_id)
+    word_blocks = [block for block in blocks if block.get("BlockType") == "WORD"]
     line_blocks = [block for block in blocks if block.get("BlockType") == "LINE"]
     table_blocks = [block for block in blocks if block.get("BlockType") == "TABLE"]
 
+    words_by_page: dict[int, list[ExtractedWord]] = defaultdict(list)
+    for word_index, block in enumerate(word_blocks, start=1):
+        page_number = page_numbers.get(str(block.get("Id")), int(block.get("Page") or 1))
+        words_by_page[page_number].append(ExtractedWord(
+            id=str(block.get("Id") or f"word-{word_index}"),
+            page_number=page_number,
+            word_index=len(words_by_page[page_number]) + 1,
+            text=str(block.get("Text") or "").strip(),
+            confidence=_to_float(block.get("Confidence")),
+            bbox=_bbox(block),
+            text_type=str(block.get("TextType") or "").strip() or None,
+            polygon=_polygon(block),
+        ))
+
     lines_by_page: dict[int, list[ExtractedLine]] = defaultdict(list)
     for line_index, block in enumerate(line_blocks, start=1):
-        page_number = int(block.get("Page") or 1)
+        page_number = page_numbers.get(str(block.get("Id")), int(block.get("Page") or 1))
         lines_by_page[page_number].append(
             ExtractedLine(
                 id=str(block.get("Id") or f"line-{line_index}"),
@@ -30,12 +48,13 @@ def map_textract_blocks_to_extraction(
                 text=str(block.get("Text") or "").strip(),
                 confidence=_to_float(block.get("Confidence")),
                 bbox=_bbox(block),
+                word_ids=_word_ids(block, by_id),
             )
         )
 
     tables_by_page: dict[int, list[ExtractedTable]] = defaultdict(list)
     for table_index, table in enumerate(table_blocks, start=1):
-        page_number = int(table.get("Page") or 1)
+        page_number = page_numbers.get(str(table.get("Id")), int(table.get("Page") or 1))
         rows = _table_rows(table, by_id)
         tables_by_page[page_number].append(
             ExtractedTable(
@@ -47,7 +66,7 @@ def map_textract_blocks_to_extraction(
             )
         )
 
-    known_pages = set(lines_by_page.keys()) | set(tables_by_page.keys())
+    known_pages = set(page_numbers.values()) | set(words_by_page) | set(lines_by_page) | set(tables_by_page)
     if page_count and page_count > 0:
         known_pages |= set(range(1, page_count + 1))
     pages = [
@@ -55,6 +74,7 @@ def map_textract_blocks_to_extraction(
             page_number=page,
             lines=lines_by_page.get(page, []),
             tables=tables_by_page.get(page, []),
+            words=words_by_page.get(page, []),
         )
         for page in sorted(known_pages)
     ]
@@ -62,6 +82,8 @@ def map_textract_blocks_to_extraction(
         "page_count": len(pages),
         "block_count": len(blocks),
         "line_count": len(line_blocks),
+        "word_count": len(word_blocks),
+        "handwriting_word_count": sum(block.get("TextType") == "HANDWRITING" for block in word_blocks),
         "table_count": len(table_blocks),
         "cell_count": sum(len(row) for page in pages for table in page.tables for row in table.rows),
     }
@@ -70,6 +92,7 @@ def map_textract_blocks_to_extraction(
         document_hash=document_hash,
         pages=pages,
         metrics=metrics,
+        operation_id=operation_id,
     )
 
 
@@ -94,6 +117,8 @@ def _table_rows(table: dict[str, object], by_id: dict[str, dict[str, object]]) -
             text=_cell_text(cell, by_id),
             confidence=_to_float(cell.get("Confidence")),
             bbox=_bbox(cell),
+            id=str(cell.get("Id") or "") or None,
+            word_ids=_word_ids(cell, by_id),
         )
 
     rows: list[list[ExtractedCell]] = []
@@ -108,6 +133,34 @@ def _table_rows(table: dict[str, object], by_id: dict[str, dict[str, object]]) -
             )
         rows.append(row)
     return rows
+
+
+def _page_numbers(by_id: dict[str, dict[str, object]]) -> dict[str, int]:
+    pages = {block_id: int(block["Page"]) for block_id, block in by_id.items() if block.get("Page")}
+    pending = deque(pages)
+    while pending:
+        parent_id = pending.popleft()
+        for child_id in _relationship_ids(by_id[parent_id], "CHILD"):
+            if child_id in by_id and child_id not in pages:
+                pages[child_id] = pages[parent_id]
+                pending.append(child_id)
+    return pages
+
+
+def _word_ids(block: dict[str, object], by_id: dict[str, dict[str, object]]) -> tuple[str, ...]:
+    return tuple(child_id for child_id in _relationship_ids(block, "CHILD") if by_id.get(child_id, {}).get("BlockType") == "WORD")
+
+
+def _polygon(block: dict[str, object]) -> list[dict[str, float]] | None:
+    geometry = block.get("Geometry")
+    if not isinstance(geometry, dict) or not isinstance(geometry.get("Polygon"), list):
+        return None
+    points = [
+        {"x": float(point["X"]), "y": float(point["Y"])}
+        for point in geometry["Polygon"]
+        if isinstance(point, dict) and isinstance(point.get("X"), int | float) and isinstance(point.get("Y"), int | float)
+    ]
+    return points or None
 
 
 def _relationship_ids(block: dict[str, object], relationship_type: str) -> list[str]:

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
 from app.application.conversion.uploaded_document import UploadedDocument
+from app.application.document_extraction_models import RawDocumentExtraction
 from app.application.parsers.service import ParsedDocument, ParsingService
 from app.application.pdf_parser import parse_pdf_transactions
 
@@ -19,6 +20,7 @@ class ExtractedDocument:
     layout_inference_name: str | None = None
     layout_inference_confidence: float | None = None
     metadata: dict[str, Any] | None = None
+    source_extraction: RawDocumentExtraction | None = None
 
 
 class DocumentExtractor(Protocol):
@@ -56,6 +58,7 @@ class LegacyParsingServiceDocumentExtractor:
             source_document=document,
             extracted_text=parsed_document.extracted_text,
             source_page_texts=parsed_document.source_page_texts,
+            source_extraction=parsed_document.source_extraction,
             layout_inference_name=parsed_document.layout_inference_name,
             layout_inference_confidence=parsed_document.layout_inference_confidence,
             metadata={

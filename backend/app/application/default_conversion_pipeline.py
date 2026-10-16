@@ -95,7 +95,10 @@ def _resolve_opening_balance(
             continue
         candidate_lines = [raw_line]
         if (
-            layout_name == "banrisul_extrato_texto_movimentos_conta_corrente_v1"
+            layout_name in {
+                "banrisul_extrato_texto_movimentos_conta_corrente_v1",
+                "itau_empresas_extrato_completo_tabela_v1",
+            }
             and line_index + 1 < len(extracted_lines)
         ):
             candidate_lines.append(extracted_lines[line_index + 1])
@@ -270,6 +273,9 @@ def _build_pdf_processing_metrics(
         "textract_attempted": int(parse_metrics.get("textract_attempted", 0)),
         "textract_error_type": str(parse_metrics.get("textract_error_type", "")),
         "native_text_detected": int(parse_metrics.get("native_text_detected", 0)),
+        "ocr_unresolved_rows": int(parse_metrics.get("ocr_unresolved_rows", 0)),
+        "ocr_annotations_detected": int(parse_metrics.get("ocr_annotations_detected", 0)),
+        "opening_balance_ambiguous": int(parse_metrics.get("opening_balance_ambiguous", 0)),
         "inline_decision": str(parse_metrics.get("inline_decision", "")),
         "tabular_decision": str(parse_metrics.get("tabular_decision", "")),
         "columnar_decision": str(parse_metrics.get("columnar_decision", "")),
