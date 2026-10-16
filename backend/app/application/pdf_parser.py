@@ -79,6 +79,7 @@ from app.application.parsers.pdf.layout_specific.unicred import (
 )
 from app.application.parsers.pdf.models import PdfParseResult, _ParsedTransaction, _PdfLine, _TabularColumnPositions
 from app.application.parsers.pdf.multiline_transaction_assembler import parse_multiline_transaction_rows
+from app.application.parsers.pdf.native_unicred_grid import UNICRED_NATIVE_COLUMNS_LAYOUT, parse_native_unicred_grid
 from app.application.pdf_document_segmentation import segment_pdf_pages
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
 from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE, extract_pdf_page_texts_with_ocr, is_pdf_ocr_enabled
@@ -259,6 +260,28 @@ def parse_pdf_transactions(
                 native_text_detected=native_text_detected,
             )
 
+    if native_pages:
+        native_grid = parse_native_unicred_grid(raw_bytes, native_pages)
+        if native_grid is not None:
+            return _with_parse_observability(
+                _build_pdf_parse_result(
+                    parsed_rows=native_grid.rows,
+                    layout=PdfLayoutInference(UNICRED_NATIVE_COLUMNS_LAYOUT, 0.98, False),
+                    layout_profile=get_layout_profile(UNICRED_NATIVE_COLUMNS_LAYOUT),
+                    selected_parser="layout_specific_unicred_native_columns",
+                    parser_selection_reason="native_debit_credit_column_coordinates",
+                    inline_decision="not_applicable_layout_specific", tabular_decision="not_applicable_layout_specific",
+                    columnar_decision="not_applicable_layout_specific", joined_text="\n".join(native_grid.source_pages),
+                    source_page_texts=native_grid.source_pages, page_count=len(native_grid.source_pages),
+                    flattened_line_count=sum(len(page.splitlines()) for page in native_grid.source_pages),
+                    invalid_date_candidates_skipped=0, grouped_transactions_count=0, inline_candidates_count=0,
+                    inline_transactions_count=0, tabular_candidates_count=0, tabular_transactions_count=0,
+                    columnar_candidates_count=0, columnar_transactions_count=0,
+                    balance_checkpoints=native_grid.balance_checkpoints,
+                ),
+                extraction_provider="native_pdfium_text", nonfinancial_date_rows_skipped=native_grid.nonfinancial_rows,
+                native_text_detected=1, textract_attempted=0,
+            )
     if native_read_error is None and not native_pages:
         return _retry_insufficient_native_text_with_ocr(
             raw_bytes,
