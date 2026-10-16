@@ -83,6 +83,8 @@ from app.application.textract_transaction_adapter import adapt_textract_extracti
 from app.application.unsupported_document_detection import (
     BILLING_REPORT_DOCUMENT_TYPE,
     BILLING_REPORT_USER_MESSAGE,
+    INVESTMENT_SUMMARY_DOCUMENT_TYPE,
+    INVESTMENT_SUMMARY_USER_MESSAGE,
     PAYMENT_REPORT_DOCUMENT_TYPE,
     PAYMENT_REPORT_USER_MESSAGE,
     detect_unsupported_document_type,
@@ -202,6 +204,14 @@ def parse_pdf_transactions(
                 textract_result,
                 textract_attempted=textract_attempted,
                 native_text_detected=native_text_detected,
+            )
+        except UnsupportedDocumentContentError as unsupported_error:
+            raise _attach_parse_observability(
+                unsupported_error,
+                textract_attempted=textract_attempted,
+                native_text_detected=native_text_detected,
+                ocr_retry_skipped=1,
+                ocr_retry_skip_reason="unsupported_document_type",
             )
         except InvalidFileContentError as textract_error:
             if not is_pdf_ocr_enabled():
@@ -601,7 +611,7 @@ def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
             )
     try:
         return _parse_pdf_transactions_from_page_texts(page_texts)
-    except CrossPageTransactionSplitError:
+    except (CrossPageTransactionSplitError, UnsupportedDocumentContentError):
         raise
     except InvalidFileContentError:
         adapted = adapt_textract_extraction_to_transactions(extraction)
@@ -648,6 +658,11 @@ def _parse_pdf_transactions_from_page_texts(
         raise UnsupportedDocumentContentError(
             document_type=unsupported_document_type,
             message=PAYMENT_REPORT_USER_MESSAGE,
+        )
+    if unsupported_document_type == INVESTMENT_SUMMARY_DOCUMENT_TYPE:
+        raise UnsupportedDocumentContentError(
+            document_type=unsupported_document_type,
+            message=INVESTMENT_SUMMARY_USER_MESSAGE,
         )
     layout = infer_pdf_layout(joined_text)
     layout_profile = get_layout_profile(layout.layout_name)
