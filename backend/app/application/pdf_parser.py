@@ -26,6 +26,7 @@ from app.application.normalization.date import infer_default_statement_year
 from app.application.normalization.pdf_amount_tokens import (
     has_amount_token_explicit_sign,
     has_explicit_amount_sign,
+    parse_amount_token,
     parse_pdf_amount,
 )
 from app.application.normalization.pdf_columnar_block_rules import next_columnar_block_index
@@ -2258,7 +2259,7 @@ def _resolve_tabular_opening_running_balance(
     anchor = lines[anchor_index]
     amount_tokens = find_profile_tabular_amount_tokens(anchor.text, tabular_profile)
     if amount_tokens:
-        return parse_pdf_amount(amount_tokens[-1].value)
+        return parse_amount_token(amount_tokens[-1])
 
     following_index = anchor_index + 1
     if following_index >= len(lines):
