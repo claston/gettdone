@@ -2467,8 +2467,7 @@ def _maybe_attach_tabular_dated_balance_block(
     layout_profile: DeclarativeLayoutProfile | None,
 ) -> int:
     if (
-        not transactions
-        or layout_profile is None
+        layout_profile is None
         or layout_profile.profile_name != _ITAU_COMPLETE_TABLE_LAYOUT
         or start_index + 2 >= len(lines)
     ):
@@ -2490,9 +2489,11 @@ def _maybe_attach_tabular_dated_balance_block(
         fallback_year=inferred_year,
         date_formats=date_formats,
     )
+    # A daily balance may start the next page. Consume unmatched checkpoints too,
+    # so their amount cannot become a transaction with the following description.
+    if not transactions or transactions[-1].transaction.date != balance_date:
+        return 3
     last_transaction = transactions[-1]
-    if last_transaction.transaction.date != balance_date or last_transaction.source_page != date_line.page_number:
-        return 0
 
     previous_running_balance = _resolve_latest_running_balance(transactions[:-1])
     transactions[-1] = _attach_running_balance_and_reconcile_sign(
