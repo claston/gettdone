@@ -82,6 +82,9 @@ class PdfProcessingMetrics(BaseModel):
     textract_attempted: int = 0
     textract_error_type: str = ""
     native_text_detected: int = 0
+    ocr_unresolved_rows: int = 0
+    ocr_annotations_detected: int = 0
+    opening_balance_ambiguous: int = 0
     inline_decision: str = ""
     tabular_decision: str = ""
     columnar_decision: str = ""
@@ -146,6 +149,7 @@ class AnalyzeResponse(BaseModel):
     bank_branch: str | None = None
     account_number: str | None = None
     bank_code: str | None = None
+    document_parts: list[dict[str, object]] = []
 
 
 class ConvertResponse(BaseModel):

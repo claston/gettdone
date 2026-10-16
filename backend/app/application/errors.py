@@ -21,6 +21,10 @@ class PdfFinancialValidationError(InvalidFileContentError):
         )
 
 
+class OcrFinancialAmbiguityError(InvalidFileContentError):
+    """Raised when OCR succeeded but financial fields cannot be associated safely."""
+
+
 class CrossPageTransactionSplitError(InvalidFileContentError):
     """Raised when transaction fields were printed on different PDF pages."""
 

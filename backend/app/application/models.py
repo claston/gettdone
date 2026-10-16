@@ -89,3 +89,4 @@ class AnalysisData:
     account_number: str | None = None
     bank_code: str | None = None
     structured_result: StructuredConversionResult | None = None
+    document_parts: list[dict[str, object]] = field(default_factory=list)

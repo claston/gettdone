@@ -843,6 +843,8 @@ class TempAnalysisStorage:
             document_classification_version=(
                 str(content.get("document_classification_version") or "").strip() or None
             ),
+            document_parts=[dict(part) for part in content.get("document_parts", []) if isinstance(part, dict)]
+            if isinstance(content.get("document_parts"), list) else [],
             preview_before_after=self._parse_before_after_rows(content.get("preview_before_after", [])),
             matched_groups=int(content.get("matched_groups", 0)),
             reversed_entries=int(content.get("reversed_entries", 0)),

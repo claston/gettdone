@@ -227,7 +227,7 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
     assert result.document_type == "bank_statement"
     assert result.document_type_confidence is not None
     assert "statement_layout" in (result.document_type_evidence or [])
-    assert result.document_classification_version == "2026-10-14.1"
+    assert result.document_classification_version == "2026-10-16.2"
     assert result.pdf_processing_metrics is not None
     assert result.pdf_processing_metrics.selected_parser == "grouped"
     assert result.pdf_processing_metrics.grouped_transactions_count == 2
@@ -803,6 +803,48 @@ def test_analyze_service_resolves_banrisul_opening_balance_from_following_line(
     assert result.transactions_total == 1
     assert result.opening_balance == 991.65
     assert result.closing_balance == 1691.79
+
+
+@pytest.mark.parametrize("opening_balance", [100.0, -100.0])
+def test_analyze_service_resolves_itau_vertical_opening_balance_before_daily_totals(
+    tmp_path, monkeypatch, opening_balance: float
+) -> None:
+    layout_name = "itau_empresas_extrato_completo_tabela_v1"
+    opening_text = f"{opening_balance:.2f}".replace(".", ",")
+    transactions = [
+        NormalizedTransaction("2025-12-17", "PIX RECEBIDO", 50.0, "inflow"),
+        NormalizedTransaction("2025-12-17", "TED RECEBIDA", 20.0, "inflow"),
+        NormalizedTransaction("2025-12-18", "PIX ENVIADO", -20.0, "outflow"),
+    ]
+    canonical_transactions = [
+        CanonicalTransaction(
+            date=transaction.date,
+            description=transaction.description,
+            amount=transaction.amount,
+            type=transaction.type,
+            layout_name=layout_name,
+            running_balance=running_balance,
+        )
+        for transaction, running_balance in zip(
+            transactions, [None, opening_balance + 70.0, opening_balance + 50.0]
+        )
+    ]
+    parsed = PdfParseResult(
+        transactions=transactions,
+        canonical_transactions=canonical_transactions,
+        layout=PdfLayoutInference(layout_name=layout_name, confidence=1.0, used_fallback=False),
+        extracted_text=f"16/12/2025\nSALDO ANTERIOR\n{opening_text}\n17/12/2025\nPIX RECEBIDO\n50,00",
+        parse_metrics={**PDF_PARSE_METRICS_INLINE_CANONICAL_EMPTY, "selected_parser": "tabular"},
+    )
+    monkeypatch.setattr(default_conversion_pipeline_module, "parse_pdf_transactions", lambda raw_bytes: parsed)
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+
+    result = _run_analysis_with_storage(storage=storage, filename="itau.pdf", raw_bytes=b"%PDF synthetic")
+
+    assert result.transactions_total == 3
+    assert result.opening_balance == opening_balance
+    assert result.closing_balance == opening_balance + 50.0
+    assert result.net_total == 50.0
 
 
 def test_analyze_service_resolves_opening_balance_from_spaced_saldo_anterior_text(
