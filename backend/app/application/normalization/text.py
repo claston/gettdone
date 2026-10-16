@@ -15,3 +15,11 @@ def normalize_description_text(value: object) -> str:
     alnum_spaced = re.sub(r"[^A-Z0-9]+", " ", folded)
     return " ".join(alnum_spaced.split())
 
+
+def split_credit_card_reference(value: str) -> tuple[str, str]:
+    """Separate the explicit trailing card reference attached by invoice parsers."""
+    normalized = normalize_upper_text(value)
+    match = re.search(r"(?:^|\s)(CARTAO FINAL \d{4})$", normalized)
+    if match is None:
+        return normalized, ""
+    return normalized[: match.start()].strip(), match[1]
