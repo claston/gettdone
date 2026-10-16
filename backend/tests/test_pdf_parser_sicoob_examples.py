@@ -279,3 +279,73 @@ def test_sicoob_card_layouts_resolve_credit_card_ofx_account_type(case_name: str
     )
 
     assert account_type == "credit_card"
+
+
+def test_parse_sicoob_monospace_textract_rows_preserves_dates_and_stops_before_summary(
+    monkeypatch,
+) -> None:
+    pages = [
+        """
+        SICOOB - Sistema de Cooperativas de Crédito do Brasil
+        SISBR - SISTEMA DE INFORMÁTICA DO SICOOB
+        EXTRATO CONTA CORRENTE
+        COOP.
+        CONTA
+        DATA
+        DOCUMENTO
+        HISTÓRICO
+        VALOR
+        30/06/2026
+        SALDO ANTERIOR
+        1.006,20C
+        01/07/2026 000001
+        CR COMPRAS MAESTRO
+        500,00C
+        01/07/2026 000002
+        PIX ENVIADO - OUTRA IF
+        50,00D
+        SALDO DO DIA
+        1.456,20C
+        02/07/2026 000003
+        TARIFA BANCÁRIA
+        6,20D
+        1/2
+        """,
+        """
+        28/09/2026, 08:34
+        SICOOB
+        EXTRATO CONTA CORRENTE
+        DATA
+        DOCUMENTO
+        HISTÓRICO
+        VALOR
+        SALDO DO DIA
+        >
+        1.450,00C
+        03/07/2026 000004 CR COMPRAS MAESTRO
+        100,000
+        SALDO DO DIA
+        1.550,00C
+        (+) SALDO EM CONTA:
+        1.550,00C
+        VENCIMENTO DO LIMITE CONTRATADO:
+        15/12/2026
+        TAXA DE JUROS MENSAL (A.M.):
+        8,00%
+        TAXA DE JUROS MORATÓRIOS (A.M.):
+        0,00%
+        """,
+    ]
+    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: pages)
+    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: pages)
+
+    result = pdf_parser_module.parse_pdf_transactions(b"%PDF synthetic")
+
+    assert result.layout.layout_name == "sicoob_sisbr_extrato_conta_corrente_monospace_valor_dc_v1"
+    assert result.parse_metrics["selected_parser"] == "grouped"
+    assert [(transaction.date, transaction.amount, transaction.running_balance) for transaction in result.canonical_transactions] == [
+        ("2026-07-01", 500.0, None),
+        ("2026-07-01", -50.0, 1456.2),
+        ("2026-07-02", -6.2, 1450.0),
+        ("2026-07-03", 100.0, 1550.0),
+    ]

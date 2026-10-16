@@ -29,6 +29,20 @@ def test_parse_grouped_date_line_supports_slash_date_prefix() -> None:
     assert result.rest.strip() == ""
 
 
+def test_parse_grouped_date_line_keeps_slash_date_rest_opt_in() -> None:
+    assert parse_grouped_date_line("01/04/2024 000123", inferred_year=2026) is None
+
+    result = parse_grouped_date_line(
+        "01/04/2024 000123",
+        inferred_year=2026,
+        allow_slash_date_rest=True,
+    )
+
+    assert result is not None
+    assert result.date == "2024-04-01"
+    assert result.rest == "000123"
+
+
 def test_parse_grouped_date_line_supports_weekday_and_full_month_in_portuguese() -> None:
     result = parse_grouped_date_line("Quarta, 02 de fevereiro de 2022", inferred_year=2026)
 

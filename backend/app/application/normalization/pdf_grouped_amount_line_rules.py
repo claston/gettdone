@@ -1,4 +1,4 @@
-from app.application.normalization.pdf_amount_tokens import parse_pdf_amount
+from app.application.normalization.pdf_amount_tokens import has_explicit_amount_sign, parse_pdf_amount
 from app.application.normalization.pdf_text_rules import apply_sign_hints
 
 
@@ -9,7 +9,7 @@ def parse_grouped_amount_line(
     section_hint: str | None,
 ) -> float:
     amount = parse_pdf_amount(raw_amount_text)
-    if amount < 0:
+    if has_explicit_amount_sign(raw_amount_text):
         return amount
     return apply_sign_hints(
         amount=amount,
