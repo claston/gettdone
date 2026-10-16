@@ -1,0 +1,43 @@
+layout_profile:
+  schema_version: 2
+  profile_name: cartao_credito_fatura_digital_dia_mes_v1
+  bank: ""
+  layout_family: cartao_credito_fatura_digital_dia_mes
+  statement_type: cartao_credito_fatura
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Data Lançamentos Moeda de Origem"
+      - "Valor (US$)"
+      - "Valor (R$)"
+      - "Valor da fatura anterior"
+      - "Data de vencimento"
+      - "Total da fatura"
+    optional_keywords:
+      - "Cartão: Final"
+      - "Valor da fatura"
+    negative_keywords:
+      - "EXTRATO CONTA CORRENTE"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data Lançamentos Moeda de Origem"
+      - "Valor (R$)"
+    expected_column_order:
+      - date
+      - description
+      - amount
+  parsing:
+    date_format: "dd MMM"
+    date_year_source: statement
+    month_language: pt-BR
+    amount_locale: pt-BR
+    decimal_separator: ","
+    thousands_separator: "."
+    opening_balance_rows:
+      - "SALDO ANTERIOR"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount

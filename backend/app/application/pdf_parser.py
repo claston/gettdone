@@ -12,6 +12,7 @@ from app.application.errors import (
     InvalidFileContentError,
     MaxPagesPerFileExceededError,
     OcrFinancialAmbiguityError,
+    PdfFinancialValidationError,
     UnsupportedDocumentContentError,
 )
 from app.application.layout_profiles.registry import DeclarativeLayoutProfile, get_layout_profile
@@ -70,6 +71,10 @@ from app.application.parsers.pdf import text_extraction
 from app.application.parsers.pdf.layout_specific.contract import (
     LayoutSpecificParseContext,
     LayoutSpecificParseResult,
+)
+from app.application.parsers.pdf.layout_specific.digital_credit_card import (
+    DIGITAL_CREDIT_CARD_LAYOUT,
+    DIGITAL_CREDIT_CARD_PARSER,
 )
 from app.application.parsers.pdf.layout_specific.itau_monthly_ocr import parse_itau_monthly_ocr
 from app.application.parsers.pdf.layout_specific.registry import DEFAULT_PDF_LAYOUT_PARSER_REGISTRY
@@ -303,12 +308,17 @@ def parse_pdf_transactions(
             page_texts, context=LayoutSpecificParseContext(reference_month_year=reference_month_year)
         )
     except InvalidFileContentError as native_parse_error:
-        if isinstance(native_parse_error, (CrossPageTransactionSplitError, UnsupportedDocumentContentError)):
+        if isinstance(
+            native_parse_error,
+            (CrossPageTransactionSplitError, UnsupportedDocumentContentError, PdfFinancialValidationError),
+        ):
             skip_reason = (
                 "cross_page_transaction_split"
                 if isinstance(native_parse_error, CrossPageTransactionSplitError)
                 else "unsupported_document_type"
             )
+            if isinstance(native_parse_error, PdfFinancialValidationError):
+                skip_reason = "financial_validation_failed"
             raise _attach_parse_observability(
                 native_parse_error,
                 textract_attempted=textract_attempted,
@@ -756,7 +766,11 @@ def _parse_statement_page_texts(
         )
     lines = _flatten_statement_lines(page_texts, preserve_layout_spacing=preserve_layout_spacing)
     lines = _normalize_caixa_web_ocr_lines(lines, layout_name=layout.layout_name)
-    lines, invalid_date_candidates_skipped = _filter_invalid_leading_date_candidate_lines(lines)
+    if layout.layout_name == DIGITAL_CREDIT_CARD_LAYOUT:
+        # Keep invalid source dates visible to the invoice's financial validation.
+        invalid_date_candidates_skipped = 0
+    else:
+        lines, invalid_date_candidates_skipped = _filter_invalid_leading_date_candidate_lines(lines)
     flattened_line_count = len(lines)
     lines = _scope_profile_transaction_lines(lines, layout_profile=layout_profile)
     specialized_selection = _parse_layout_specific_statement_rows(
@@ -3619,6 +3633,10 @@ def _try_parse_native_layout_text(
 
 
 def _maybe_upgrade_native_parse_with_layout_text(*, raw_bytes: bytes, baseline_result: PdfParseResult) -> PdfParseResult:
+    if baseline_result.parse_metrics.get("selected_parser") == DIGITAL_CREDIT_CARD_PARSER:
+        # All movements already reconcile with printed invoice totals. A generic
+        # layout candidate must not replace that result based only on row count.
+        return baseline_result
     reference_month_year = text_extraction.read_pdf_creation_month_year(raw_bytes)
     candidate_result = _try_parse_native_layout_text(
         raw_bytes=raw_bytes,

@@ -21,6 +21,7 @@ from app.application.parsers.pdf.layout_specific.contract import (
 )
 from app.application.parsers.pdf.layout_specific.cora import CoraLayoutParser
 from app.application.parsers.pdf.layout_specific.cresol import CresolLayoutParser
+from app.application.parsers.pdf.layout_specific.digital_credit_card import DigitalCreditCardLayoutParser
 from app.application.parsers.pdf.layout_specific.inter import InterLayoutParser
 from app.application.parsers.pdf.layout_specific.itau import ItauLayoutParser
 from app.application.parsers.pdf.layout_specific.iugu import IuguLayoutParser
@@ -75,6 +76,7 @@ DEFAULT_PDF_LAYOUT_PARSER_REGISTRY = PdfLayoutParserRegistry(
         BancoDoBrasilCdbLayoutParser(),
         BancoDoBrasilRendeFacilLayoutParser(),
         SantanderCreditCardLayoutParser(),
+        DigitalCreditCardLayoutParser(),
         SantanderStatementLayoutParser(),
         BradescoNetEmpresaLayoutParser(),
         BradescoUnificadoLayoutParser(),

@@ -2,7 +2,7 @@ from datetime import datetime
 
 from app.application.errors import InvalidFileContentError
 from app.application.models import NormalizedTransaction
-from app.application.normalization.text import normalize_description_text
+from app.application.normalization.text import normalize_description_text, split_credit_card_reference
 
 DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y%m%d")
 KNOWN_ESTABLISHMENTS = (
@@ -48,7 +48,9 @@ def _normalize_date(raw: str) -> str:
 
 
 def _normalize_description(raw: str) -> str:
-    return _standardize_establishment(normalize_description_text(raw))
+    description, card_reference = split_credit_card_reference(normalize_description_text(raw))
+    standardized = _standardize_establishment(description)
+    return f"{standardized} {card_reference}".strip()
 
 
 def _normalize_amount(amount: float, raw_type: str, description: str) -> float:
