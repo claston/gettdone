@@ -114,7 +114,7 @@ def get_runtime_access_control_service(
     runtime: ConversionRuntimeConfig = Depends(get_conversion_runtime_config),
     rollout_policy: AsyncConversionRolloutPolicy = Depends(get_async_conversion_rollout_policy),
 ) -> AccessControlService | None:
-    if _direct_batch_enabled(runtime) or not rollout_policy.enabled:
+    if not _direct_batch_enabled(runtime) and not rollout_policy.enabled:
         return None
     return get_access_control_service()
 
@@ -129,6 +129,7 @@ def conversion_runtime(
     access_control_service: AccessControlService | None = Depends(get_runtime_access_control_service),
 ) -> ConversionRuntimeResponse:
     effective_runtime = runtime
+    identity = None
     if access_control_service is not None:
         identity = _resolve_optional_identity(
             access_control_service=access_control_service,
@@ -146,7 +147,7 @@ def conversion_runtime(
         architecture_mode=effective_runtime.architecture_mode.value,
         upload_mode=effective_runtime.upload_mode.value,
         execution_mode=effective_runtime.execution_mode.value,
-        batch_max_files=effective_runtime.batch_max_files,
+        batch_max_files=_runtime_batch_max_files(effective_runtime, identity),
         direct_batch_enabled=_direct_batch_enabled(effective_runtime),
         fallback_endpoint="/api/conversions/upload",
     )
@@ -712,6 +713,15 @@ def _effective_runtime(
             batch_max_files=rollout_batch_max_files,
         )
     return runtime
+
+
+def _runtime_batch_max_files(runtime: ConversionRuntimeConfig, identity) -> int:
+    configured_max = max(1, int(runtime.batch_max_files))
+    if not _direct_batch_enabled(runtime):
+        return configured_max
+    if identity is None or identity.identity_type != "user" or not identity.batch_conversion_enabled:
+        return 1
+    return min(configured_max, max(1, int(identity.batch_max_files)))
 
 
 def _require_direct_batch(
