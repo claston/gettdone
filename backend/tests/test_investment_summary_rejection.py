@@ -94,7 +94,7 @@ def test_textract_text_summary_does_not_fall_back_to_transaction_adapter(
     text: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     extraction = SimpleNamespace(
-        pages=[SimpleNamespace(lines=[
+        pages=[SimpleNamespace(page_number=1, lines=[
             SimpleNamespace(text=line, line_index=index)
             for index, line in enumerate(text.strip().splitlines())
         ])]

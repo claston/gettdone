@@ -8,7 +8,7 @@ from typing import Callable, Protocol
 from app.application.conversion.uploaded_document import UploadedDocument, ingest_uploaded_document
 from app.application.conversion_quality import build_line_quality_issues
 from app.application.document_classifier import DocumentClassification, classify_document
-from app.application.document_routing_policy import enforce_document_routing
+from app.application.document_routing_policy import enforce_document_routing, enforce_initial_document_routing
 from app.application.document_type_classifier import (
     DocumentTypeClassification,
     classify_document_type,
@@ -114,7 +114,7 @@ class ConversionPipeline:
             filename=document.filename,
             raw_bytes=document.raw_bytes,
         )
-        enforce_document_routing(initial_document_type)
+        enforce_initial_document_routing(initial_document_type, filename=document.filename, raw_bytes=document.raw_bytes)
         parse_start = perf_counter()
         try:
             parsed_document = self.parser.parse(
@@ -198,6 +198,8 @@ class ConversionPipeline:
             extracted_text,
             layout_inference_name,
         )
+        if parse_metrics and parse_metrics.get("opening_balance_ambiguous"):
+            opening_balance = None
         kept_indices = [
             idx
             for idx, _row in enumerate(metadata_candidate_rows)
@@ -320,6 +322,7 @@ class ConversionPipeline:
             bank_branch=bank_branch,
             account_number=account_number,
             bank_code=inferred_bank_code,
+            document_parts=list(parsed_document.document_parts or []),
         )
 
         return ProcessingResult(

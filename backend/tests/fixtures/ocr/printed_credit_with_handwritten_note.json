@@ -1,0 +1,43 @@
+{
+  "description": "Synthetic basic OCR response. A printed credit and a handwritten dash share one OCR line; the dash must remain distinguishable without another OCR call.",
+  "page_count": 2,
+  "blocks": [
+    {"BlockType": "PAGE", "Id": "page-1", "Page": 1, "Relationships": [{"Type": "CHILD", "Ids": ["line-1"]}]},
+    {
+      "BlockType": "LINE", "Id": "line-1", "Page": 1,
+      "Text": "05/10/2026 PIX RECEBIDO 350,00 - NOTA12", "Confidence": 96.5,
+      "Geometry": {"BoundingBox": {"Left": 0.1, "Top": 0.3, "Width": 0.8, "Height": 0.02}},
+      "Relationships": [{"Type": "CHILD", "Ids": ["date", "description-1", "description-2", "credit", "dash", "note"]}]
+    },
+    {"BlockType": "WORD", "Id": "date", "Page": 1, "Text": "05/10/2026", "Confidence": 99.0, "TextType": "PRINTED"},
+    {"BlockType": "WORD", "Id": "description-1", "Page": 1, "Text": "PIX", "Confidence": 99.0, "TextType": "PRINTED"},
+    {"BlockType": "WORD", "Id": "description-2", "Page": 1, "Text": "RECEBIDO", "Confidence": 99.0, "TextType": "PRINTED"},
+    {
+      "BlockType": "WORD", "Id": "credit", "Page": 1, "Text": "350,00", "Confidence": 98.4, "TextType": "PRINTED",
+      "Geometry": {
+        "BoundingBox": {"Left": 0.6, "Top": 0.3, "Width": 0.06, "Height": 0.02},
+        "Polygon": [{"X": 0.6, "Y": 0.3}, {"X": 0.66, "Y": 0.3}, {"X": 0.66, "Y": 0.32}, {"X": 0.6, "Y": 0.32}]
+      }
+    },
+    {
+      "BlockType": "WORD", "Id": "dash", "Page": 1, "Text": "-", "Confidence": 74.0, "TextType": "HANDWRITING",
+      "Geometry": {"BoundingBox": {"Left": 0.68, "Top": 0.3, "Width": 0.02, "Height": 0.01}}
+    },
+    {"BlockType": "WORD", "Id": "note", "Page": 1, "Text": "NOTA12", "Confidence": 81.0, "TextType": "PRINTED"},
+    {"BlockType": "PAGE", "Id": "page-2", "Page": 2, "Relationships": [{"Type": "CHILD", "Ids": ["line-2"]}]},
+    {
+      "BlockType": "LINE", "Id": "line-2", "Page": 2, "Text": "NOTA FISCAL DE SERVICOS", "Confidence": 98.0,
+      "Relationships": [{"Type": "CHILD", "Ids": ["invoice-heading"]}]
+    },
+    {"BlockType": "WORD", "Id": "invoice-heading", "Page": 2, "Text": "NOTA", "Confidence": 99.0, "TextType": "PRINTED"}
+  ],
+  "reference": {
+    "page": 1,
+    "date": "2026-10-05",
+    "amount": "350.00",
+    "direction": "credit",
+    "printed_amount_word": "credit",
+    "annotation_word_ids": ["dash", "note"],
+    "annex_pages": [2]
+  }
+}

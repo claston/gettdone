@@ -115,6 +115,7 @@ def build_analyze_response(
         bank_branch=analysis_data.bank_branch,
         account_number=analysis_data.account_number,
         bank_code=analysis_data.bank_code,
+        document_parts=analysis_data.document_parts,
     )
 
 

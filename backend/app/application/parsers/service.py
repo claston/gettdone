@@ -3,7 +3,7 @@ from typing import Callable
 
 from app.application.canonization import build_transaction_metadata
 from app.application.conversion.uploaded_document import UploadedDocument
-from app.application.document_extraction_models import ExtractedLine
+from app.application.document_extraction_models import ExtractedLine, RawDocumentExtraction
 from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.parsers.csv import parse_csv_transactions
 from app.application.parsers.ofx import parse_ofx_account_metadata, parse_ofx_transactions
@@ -31,6 +31,8 @@ class ParsedDocument:
     bank_code: str | None = None
     bank_branch: str | None = None
     account_number: str | None = None
+    source_extraction: RawDocumentExtraction | None = None
+    document_parts: list[dict[str, object]] | None = None
 
 
 class ParsingService:
@@ -111,6 +113,8 @@ class ParsingService:
                 extracted_text=result.extracted_text,
                 source_page_texts=getattr(result, "source_page_texts", None),
                 source_layout_lines=getattr(result, "source_layout_lines", None),
+                source_extraction=getattr(result, "source_extraction", None),
+                document_parts=getattr(result, "document_parts", None),
                 parse_metrics=result.parse_metrics,
                 canonical_transactions=result.canonical_transactions,
             )

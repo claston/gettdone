@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from io import BytesIO
+
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
 
 from app.application.document_type_classifier import (
     FISCAL_INVOICE,
@@ -20,7 +24,8 @@ PAYMENT_REPORT_REJECTION_MIN_CONFIDENCE = 0.90
 INVESTMENT_SUMMARY_REJECTION_MIN_CONFIDENCE = 0.90
 
 FISCAL_INVOICE_REJECTION_MESSAGE = (
-    "Este arquivo é uma nota fiscal eletrônica (NF-e), não um extrato bancário. A conciliação de notas fiscais ainda não está disponível."
+    "Este arquivo é uma nota fiscal eletrônica (NF-e ou NFS-e), não um extrato bancário. "
+    "A conciliação de notas fiscais ainda não está disponível."
 )
 
 
@@ -76,3 +81,20 @@ def enforce_document_routing(
         setattr(error, "_document_type_classification", classification)
         raise error
     return decision
+
+
+def enforce_initial_document_routing(
+    classification: DocumentTypeClassification, *, filename: str, raw_bytes: bytes,
+) -> DocumentRoutingDecision:
+    if classification.document_type == FISCAL_INVOICE and filename.lower().endswith(".pdf"):
+        # A native invoice at the front of a compound PDF must not hide a later statement.
+        from app.application.pdf_document_segmentation import segment_pdf_pages
+
+        try:
+            reader = PdfReader(BytesIO(raw_bytes))
+            pages = [page.extract_text() or "" for page in reader.pages]
+        except (PdfReadError, ValueError, TypeError, KeyError):
+            pages = []
+        if pages and any(part["included_in_statement"] for part in segment_pdf_pages(pages).parts):
+            return DocumentRoutingDecision(DocumentRoutingAction.CONTINUE, "compound_pdf_contains_statement")
+    return enforce_document_routing(classification)
