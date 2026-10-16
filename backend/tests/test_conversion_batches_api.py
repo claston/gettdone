@@ -1,10 +1,13 @@
+import hashlib
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app import dependencies
+from app.adapters.conversion.document_store import FilesystemConversionDocumentStore, S3ConversionDocumentStore
 from app.application.access_control import IdentityContext, RegisteredUser
 from app.application.conversion.async_conversion_rollout import AsyncConversionRolloutPolicy
 from app.application.conversion.conversion_batch_repository import InMemoryConversionBatchRepository
@@ -18,8 +21,8 @@ from app.dependencies import (
     get_access_control_service,
     get_async_conversion_report_service,
     get_async_conversion_rollout_policy,
+    get_conversion_batch_document_store,
     get_conversion_batch_service,
-    get_conversion_document_store,
     get_conversion_runtime_config,
 )
 from app.main import app
@@ -801,7 +804,7 @@ def test_workspace_returns_owner_scoped_original_pdf(document_path: str) -> None
         {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
     )
     app.dependency_overrides[get_conversion_batch_service] = lambda: service
-    app.dependency_overrides[get_conversion_document_store] = lambda: FakeDocumentStore()
+    app.dependency_overrides[get_conversion_batch_document_store] = lambda: FakeDocumentStore()
     app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
     client = TestClient(app)
     try:
@@ -818,6 +821,60 @@ def test_workspace_returns_owner_scoped_original_pdf(document_path: str) -> None
     assert "x-frame-options" not in response.headers
     assert "http://localhost:3000" in response.headers["content-security-policy"]
     assert response.content.startswith(b"%PDF-1.4")
+
+
+def test_workspace_reads_each_batch_pdf_from_s3_with_local_legacy_storage(monkeypatch, tmp_path: Path) -> None:
+    service = ConversionBatchService(
+        repository=InMemoryConversionBatchRepository(),
+        direct_upload_service=FakeDirectUploadService(),
+        queue_publisher=FakePublisher(calls=[]),
+    )
+    originals = [b"%PDF-1.4\nItau\n", b"%PDF-1.4\nSantander\n", b"%PDF-1.4\nBradesco\n"]
+    identity = FakeAccessControlService().resolve_identity(
+        anonymous_fingerprint="browser-fingerprint", user_token=None,
+    )
+    prepared = service.create(
+        identity=identity,
+        files=[
+            ConversionBatchFile(
+                filename=f"extrato-{index}.pdf", content_type="application/pdf",
+                size_bytes=len(raw), sha256_hex=hashlib.sha256(raw).hexdigest(),
+            )
+            for index, raw in enumerate(originals)
+        ],
+        idempotency_key="three-originals",
+    )
+    objects = {
+        f"conversion/jobs/{record.job.document.storage_key}/document.pdf": raw
+        for record, raw in zip(prepared.snapshot.jobs, originals, strict=True)
+    }
+
+    class BatchS3Client:
+        def get_object(self, *, Bucket, Key):
+            assert Bucket == "private-batch-bucket"
+            return {"Body": BytesIO(objects[Key])}
+
+    monkeypatch.setattr(dependencies, "_conversion_document_store", FilesystemConversionDocumentStore(root_dir=tmp_path))
+    monkeypatch.setattr(dependencies, "_async_conversion_document_store", None, raising=False)
+    monkeypatch.setenv("CONVERSION_S3_BUCKET", "private-batch-bucket")
+    monkeypatch.setenv("CONVERSION_S3_PREFIX", "conversion/jobs")
+    monkeypatch.setattr(S3ConversionDocumentStore, "_client", lambda _self: BatchS3Client())
+    app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
+        {"CONVERSION_ARCHITECTURE_MODE": "async_aws"}
+    )
+    app.dependency_overrides[get_conversion_batch_service] = lambda: service
+    app.dependency_overrides[get_access_control_service] = lambda: FakeAccessControlService()
+    try:
+        with TestClient(app) as client:
+            for record, raw in zip(prepared.snapshot.jobs, originals, strict=True):
+                response = client.get(
+                    f"/api/pro/conversion-batches/{prepared.snapshot.batch.batch_id}/jobs/{record.job.job_id}/document",
+                    params={"anonymous_fingerprint": "browser-fingerprint"},
+                )
+                assert response.status_code == 200, response.text
+                assert response.content == raw
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_workspace_persists_reviewed_state_in_batch_result() -> None:

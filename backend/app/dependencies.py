@@ -103,6 +103,7 @@ _conversion_capacity_controller: ConversionCapacityController | None = None
 _conversion_batch_repository: ConversionBatchRepository | None = None
 _conversion_batch_service: ConversionBatchService | None = None
 _async_conversion_report_service: ReportService | None = None
+_async_conversion_document_store: ConversionDocumentStore | None = None
 _canonical_layout_capture_service: CanonicalLayoutCaptureService | None = None
 _ai_recovery_dispatcher = None
 _ai_recovery_dispatcher_initialized = False
@@ -147,6 +148,25 @@ def get_document_preflight_service() -> DocumentPreflightService:
 
 def get_conversion_document_store() -> ConversionDocumentStore:
     return _conversion_document_store
+
+
+def get_conversion_batch_document_store() -> ConversionDocumentStore:
+    """Read direct-upload batch sources from the same S3 location as the worker."""
+    global _async_conversion_document_store
+    if isinstance(_conversion_document_store, S3ConversionDocumentStore):
+        return _conversion_document_store
+    bucket = os.getenv("CONVERSION_S3_BUCKET", "").strip()
+    if not bucket:
+        return _conversion_document_store
+    if _async_conversion_document_store is None:
+        _async_conversion_document_store = S3ConversionDocumentStore(
+            bucket=bucket,
+            prefix=os.getenv("CONVERSION_S3_PREFIX", "conversion/jobs"),
+            region=os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION"),
+            server_side_encryption=os.getenv("CONVERSION_S3_SERVER_SIDE_ENCRYPTION", "AES256"),
+            kms_key_id=os.getenv("CONVERSION_S3_KMS_KEY_ID"),
+        )
+    return _async_conversion_document_store
 
 
 def get_conversion_job_repository() -> ConversionJobRepository:

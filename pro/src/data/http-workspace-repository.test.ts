@@ -59,6 +59,50 @@ const batchPayload = {
 };
 
 describe("HttpWorkspaceRepository", () => {
+  it("mantém instituição, páginas e PDF separados para os três arquivos do lote", async () => {
+    const institutions = [
+      { name: "Itaú", code: "341", pages: 1 },
+      { name: "Santander", code: "033", pages: 1 },
+      { name: "Bradesco", code: "237", pages: 6 },
+    ];
+    const fetcher = vi.fn().mockResolvedValue(
+      jsonResponse({
+        ...batchPayload,
+        jobs: institutions.map((institution, index) => ({
+          ...batchPayload.jobs[0],
+          job_id: `job-${index}`,
+          filename: `extrato-${index}.pdf`,
+          result: {
+            ...batchPayload.jobs[0].result,
+            analysis: {
+              ...batchPayload.jobs[0].result!.analysis,
+              bank_name: institution.name,
+              bank_code: institution.code,
+              pdf_processing_metrics: { page_count: institution.pages },
+            },
+          },
+        })),
+      }),
+    );
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+
+    const batch = await repository.getBatch("batch-real");
+
+    expect(batch.conversions).toHaveLength(3);
+    batch.conversions.forEach((conversion, index) => {
+      expect(conversion).toMatchObject({
+        id: `job-${index}`,
+        bankName: institutions[index].name,
+        bankCode: institutions[index].code,
+        pdf: {
+          url: `/api/pro/conversion-batches/batch-real/jobs/job-${index}/document`,
+          pageCount: institutions[index].pages,
+          fileName: `extrato-${index}.pdf`,
+        },
+      });
+    });
+  });
+
   it("usa rotas relativas quando configurado para o proxy same-origin", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse(batchPayload));
     const repository = createHttpWorkspaceRepository({

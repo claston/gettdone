@@ -33,8 +33,8 @@ from app.dependencies import (
     get_access_control_service,
     get_async_conversion_report_service,
     get_async_conversion_rollout_policy,
+    get_conversion_batch_document_store,
     get_conversion_batch_service,
-    get_conversion_document_store,
     get_conversion_runtime_config,
     get_report_service,
 )
@@ -365,7 +365,7 @@ def get_conversion_job_document(
     runtime: ConversionRuntimeConfig = Depends(get_conversion_runtime_config),
     rollout_policy: AsyncConversionRolloutPolicy = Depends(get_async_conversion_rollout_policy),
     service: ConversionBatchService | None = Depends(get_conversion_batch_service),
-    document_store: ConversionDocumentStore = Depends(get_conversion_document_store),
+    document_store: ConversionDocumentStore = Depends(get_conversion_batch_document_store),
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> Response:
     identity = _resolve_identity(
