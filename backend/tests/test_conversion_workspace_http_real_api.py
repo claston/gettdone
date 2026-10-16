@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import socket
 import threading
 import time
@@ -19,8 +20,12 @@ from app.application.conversion.conversion_batch_repository import InMemoryConve
 from app.application.conversion.conversion_batch_service import ConversionBatchService
 from app.application.conversion.conversion_job import ConversionJob
 from app.application.conversion.conversion_runtime_config import ConversionRuntimeConfig
+from app.application.conversion.document_conversion_pipeline import DocumentConversionPipeline
 from app.application.conversion.s3_direct_upload_service import PreparedS3Upload
 from app.application.conversion.uploaded_document import ingest_uploaded_document
+from app.application.default_conversion_pipeline import build_default_conversion_pipeline
+from app.application.report_service import ReportService
+from app.application.storage_service import TempAnalysisStorage
 from app.dependencies import (
     get_access_control_service,
     get_async_conversion_report_service,
@@ -28,10 +33,97 @@ from app.dependencies import (
     get_conversion_batch_document_store,
     get_conversion_batch_service,
     get_conversion_runtime_config,
+    get_report_service,
 )
 from app.main import app
+from app.workers.conversion_lambda import ConversionLambdaProcessor
 
 pytestmark = pytest.mark.real_http
+
+
+def test_http_ofx_batch_preserves_bank_metadata_through_worker_and_export(tmp_path: Path) -> None:
+    banks = [("041", "Banrisul"), ("004", "Banco do Nordeste"), ("033", "Santander")]
+    originals = {
+        f"statement-{index}.ofx": (
+            f"<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKACCTFROM>\n"
+            f"<BANKID>{code}\n<BRANCHID>0123\n<ACCTID>000456-7\n</BANKACCTFROM>"
+            "<BANKTRANLIST><STMTTRN><DTPOSTED>20261001000000\n<TRNAMT>25.00\n"
+            "<MEMO>PIX RECEBIDO\n<TRNTYPE>CREDIT\n</STMTTRN></BANKTRANLIST>"
+            "</STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>"
+        ).encode()
+        for index, (code, _name) in enumerate(banks)
+    }
+
+    class OriginalStore:
+        def load(self, reference):
+            return ingest_uploaded_document(reference.filename, originals[reference.filename])
+
+    with _run_pro_upload_http_server(tmp_path) as (base_url, publisher, token):
+        service = app.dependency_overrides[get_conversion_batch_service]()
+        access = app.dependency_overrides[get_access_control_service]()
+        storage = TempAnalysisStorage(root_dir=tmp_path / "analyses", ttl_seconds=3600)
+        reports = ReportService(storage=storage)
+        processor = ConversionLambdaProcessor(
+            repository=service.repository,
+            document_store=OriginalStore(),
+            pipeline=DocumentConversionPipeline(
+                report_service=reports,
+                access_control_service=access,
+                processing_pipeline=build_default_conversion_pipeline(),
+                analysis_repository=storage,
+            ),
+        )
+        app.dependency_overrides[get_async_conversion_report_service] = lambda: reports
+        app.dependency_overrides[get_report_service] = lambda: reports
+        with httpx.Client(base_url=base_url, headers={
+            "Authorization": f"Bearer {token}", "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web",
+        }) as owner:
+            created = owner.post("/api/pro/conversion-batches", headers={"Idempotency-Key": "ofx-metadata-http"}, json={
+                "files": [{"filename": name, "content_type": "application/x-ofx", "size_bytes": len(raw),
+                           "sha256_hex": hashlib.sha256(raw).hexdigest()} for name, raw in originals.items()],
+            })
+            assert created.status_code == 201, created.text
+            batch_id = created.json()["batch_id"]
+            submitted = owner.post(f"/api/pro/conversion-batches/{batch_id}/submit", json={})
+            assert submitted.status_code == 202, submitted.text
+            for job_id in publisher.calls:
+                processor.process(job_id=job_id, expected_batch_id=batch_id, trace_id="http-metadata",
+                                  receive_count=1, lease_owner=f"http-{job_id}")
+            batch = owner.get(f"/api/pro/conversion-batches/{batch_id}")
+            assert batch.status_code == 200
+            jobs = batch.json()["jobs"]
+            assert len(jobs) == 3
+            for job, (code, name) in zip(jobs, banks, strict=True):
+                assert job["status"] == "completed"
+                analysis = job["result"]["analysis"]
+                assert analysis["bank_code"] == code
+                assert analysis["bank_name"] == name
+                assert analysis["file_type"] == "ofx"
+                assert analysis["pdf_processing_metrics"] is None
+                report = owner.get(f"/report/{job['analysis_id']}")
+                assert report.status_code == 200, report.text
+                assert report.content.startswith(b"PK")
+                exported = owner.get(f"/convert-report/{job['analysis_id']}?format=ofx")
+                assert exported.status_code == 200, exported.text
+                assert f"<BANKID>{code}" in exported.text
+                assert "<ACCTID>0004567" in exported.text
+                edited = owner.post(f"/api/pro/convert-edits/{job['analysis_id']}", json={
+                    "edits": [{"action": "update", "row_id": "row_1", "date": "2026-10-01",
+                               "description": "PIX REVISADO", "credit": 25.0, "debit": None}],
+                    "expected_updated_at": analysis["updated_at"],
+                })
+                assert edited.status_code == 200, edited.text
+                exported_after_edit = owner.get(f"/convert-report/{job['analysis_id']}?format=ofx")
+                assert f"<BANKID>{code}" in exported_after_edit.text
+                assert "<ACCTID>0004567" in exported_after_edit.text
+                assert "PIX REVISADO" in exported_after_edit.text
+            with httpx.Client(base_url=base_url) as other:
+                bootstrap = other.post("/auth/pro/anonymous-session", headers={
+                    "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web",
+                }, json={})
+                assert bootstrap.status_code == 200
+                foreign = other.get(f"/api/pro/conversion-batches/{batch_id}")
+                assert foreign.status_code == 404
 
 
 class FakeAccessControl:

@@ -6,7 +6,7 @@ from app.application.conversion.uploaded_document import UploadedDocument
 from app.application.document_extraction_models import ExtractedLine
 from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.parsers.csv import parse_csv_transactions
-from app.application.parsers.ofx import parse_ofx_transactions
+from app.application.parsers.ofx import parse_ofx_account_metadata, parse_ofx_transactions
 from app.application.parsers.xlsx import parse_xlsx_transactions
 from app.application.pdf_parser import parse_pdf_transactions
 
@@ -27,6 +27,10 @@ class ParsedDocument:
     canonical_transactions: list[CanonicalTransaction] | None = None
     warning_types: list[list[str]] | None = None
     running_balances: list[float | None] | None = None
+    bank_name: str | None = None
+    bank_code: str | None = None
+    bank_branch: str | None = None
+    account_number: str | None = None
 
 
 class ParsingService:
@@ -53,10 +57,15 @@ class ParsingService:
                 )
             )
         if document.file_type == "ofx":
+            account = parse_ofx_account_metadata(document.raw_bytes)
             return self._with_transaction_metadata(
                 ParsedDocument(
                     file_type=document.file_type,
                     transactions=parse_ofx_transactions(document.raw_bytes),
+                    bank_name=account.bank_name,
+                    bank_code=account.bank_code,
+                    bank_branch=account.bank_branch,
+                    account_number=account.account_number,
                 )
             )
         return self._parse_pdf(

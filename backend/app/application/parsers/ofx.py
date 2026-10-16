@@ -1,12 +1,41 @@
 import re
+from dataclasses import dataclass
 from datetime import datetime
 
+from app.application.bank_catalog import load_bank_catalog, normalize_bank_code
 from app.application.errors import InvalidFileContentError
 from app.application.models import NormalizedTransaction
 from app.application.normalization.amount import parse_amount
 from app.application.parsers.csv import _normalize_header
 
 STMT_BLOCK_PATTERN = re.compile(r"<STMTTRN>(.*?)</STMTTRN>", re.IGNORECASE | re.DOTALL)
+
+
+@dataclass(frozen=True)
+class OfxAccountMetadata:
+    bank_name: str | None = None
+    bank_code: str | None = None
+    bank_branch: str | None = None
+    account_number: str | None = None
+
+
+def parse_ofx_account_metadata(raw_bytes: bytes) -> OfxAccountMetadata:
+    text = _decode_ofx_bytes(raw_bytes)
+    accounts = re.findall(r"<BANKACCTFROM>\s*(.*?)</BANKACCTFROM>", text, re.IGNORECASE | re.DOTALL)
+    # The transaction parser combines accounts; do not label that combined
+    # result as belonging to only one of several source accounts.
+    if len(accounts) != 1:
+        return OfxAccountMetadata()
+    account = accounts[0]
+    raw_code = _extract_optional_tag(account, "BANKID") or ""
+    code = normalize_bank_code(raw_code) if re.fullmatch(r"\d{1,9}", raw_code) else None
+    bank = next((item for item in load_bank_catalog() if item.code == code), None)
+    return OfxAccountMetadata(
+        bank_name=(bank.short_name or bank.name) if bank else None,
+        bank_code=code,
+        bank_branch=_extract_optional_tag(account, "BRANCHID"),
+        account_number=_extract_optional_tag(account, "ACCTID"),
+    )
 
 
 def parse_ofx_transactions(raw_bytes: bytes) -> list[NormalizedTransaction]:

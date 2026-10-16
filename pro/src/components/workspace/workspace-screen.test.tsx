@@ -74,6 +74,44 @@ const completedBatch: Batch = {
 };
 
 describe("WorkspaceScreen", () => {
+  it.each(["ofx", "csv", "xlsx"])(
+    "mostra o formato %s sem erro de PDF e mantém os lançamentos",
+    async (extension) => {
+      const batch: Batch = {
+        ...completedBatch,
+        conversions: [
+          {
+            ...completedBatch.conversions[0],
+            fileName: `extrato.${extension}`,
+            pdf: null,
+          },
+        ],
+      };
+      const repository: WorkspaceRepository = {
+        getBatch: vi.fn().mockResolvedValue(batch),
+        saveTransactions: vi.fn(),
+        markReviewed: vi.fn(),
+        retryConversion: vi.fn(),
+        exportBatch: vi.fn(),
+      };
+      render(<WorkspaceScreen batchId={batch.id} repository={repository} />);
+
+      expect(
+        await screen.findByText(
+          `Arquivo original em ${extension.toUpperCase()}`,
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("table", { name: "Lançamentos extraídos" }),
+      ).toBeInTheDocument();
+      expect(screen.getByDisplayValue("PIX concluído")).toBeInTheDocument();
+      expect(
+        screen.queryByText("Não foi possível processar o arquivo"),
+      ).not.toBeInTheDocument();
+      expect(document.querySelector("iframe")).toBeNull();
+    },
+  );
+
   it("identifica a demonstração e preserva sua rota ao trocar de conversão", async () => {
     render(
       <WorkspaceScreen

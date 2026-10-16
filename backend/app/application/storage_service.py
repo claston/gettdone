@@ -74,6 +74,9 @@ class TempAnalysisStorage:
             layout_inference_name=data.layout_inference_name,
             opening_balance=data.opening_balance,
             closing_balance=data.closing_balance,
+            bank_branch=data.bank_branch if data.file_type == "ofx" else None,
+            account_number=data.account_number if data.file_type == "ofx" else None,
+            bank_code=data.bank_code if data.file_type == "ofx" else None,
         )
         return expires_at.isoformat()
 
@@ -698,9 +701,10 @@ class TempAnalysisStorage:
         opening_balance = float(opening_raw) if opening_raw is not None else None
         closing_raw = content.get("convert_closing_balance")
         closing_balance = float(closing_raw) if closing_raw is not None else None
-        branch = str(content.get("convert_bank_branch") or "").strip() or None
-        account = str(content.get("convert_account_number") or "").strip() or None
-        code = str(content.get("convert_bank_code") or "").strip() or None
+        source = content if content.get("file_type") == "ofx" else {}
+        branch = str(content.get("convert_bank_branch") or source.get("bank_branch") or "").strip() or None
+        account = str(content.get("convert_account_number") or source.get("account_number") or "").strip() or None
+        code = str(content.get("convert_bank_code") or source.get("bank_code") or "").strip() or None
         return {
             "opening_balance": opening_balance,
             "closing_balance": closing_balance,
