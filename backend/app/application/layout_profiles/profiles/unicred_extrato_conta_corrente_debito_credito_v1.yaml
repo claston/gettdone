@@ -1,0 +1,46 @@
+layout_profile:
+  schema_version: 2
+  profile_name: unicred_extrato_conta_corrente_debito_credito_v1
+  bank: Unicred
+  layout_family: unicred_extrato_conta_corrente_native_columns
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "UNICRED"
+      - "EXTRATO DE CONTA CORRENTE"
+      - "DEBITO CREDITO SALDO"
+    optional_keywords:
+      - "Nr.Docum."
+      - "Historico"
+      - "Saldo Anterior"
+      - "De Transporte"
+    negative_keywords:
+      - "SICREDI"
+      - "SICOOB"
+      - "BRADESCO"
+      - "SANTANDER"
+    min_score_hint: 0.85
+  table_detection:
+    header_keywords:
+      - "Data"
+      - "Nr.Docum."
+      - "Debito"
+      - "Credito"
+      - "Saldo"
+    expected_column_order:
+      - date
+      - document
+      - description
+      - debit
+      - credit
+      - balance
+  parsing:
+    date_formats:
+      - "dd/MM/yyyy"
+    amount_locale: pt-BR
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
