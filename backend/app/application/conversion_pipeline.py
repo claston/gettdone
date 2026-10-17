@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from time import perf_counter
 from typing import Callable, Protocol
@@ -10,6 +10,7 @@ from app.application.conversion_quality import build_line_quality_issues
 from app.application.document_classifier import DocumentClassification, classify_document
 from app.application.document_routing_policy import enforce_document_routing, enforce_initial_document_routing
 from app.application.document_type_classifier import (
+    ACCOUNTS_PAYABLE_REPORT,
     DocumentTypeClassification,
     classify_document_type,
 )
@@ -172,6 +173,7 @@ class ConversionPipeline:
         ):
             document_type_classification = initial_document_type_classification
         enforce_document_routing(document_type_classification)
+        is_payables_report = document_type_classification.document_type == ACCOUNTS_PAYABLE_REPORT
 
         classify_start = perf_counter()
         classification_result = self.classifier(
@@ -185,6 +187,9 @@ class ConversionPipeline:
 
         normalize_start = perf_counter()
         normalized_transactions = self.normalize_transactions(parsed_transactions)
+        if is_payables_report:
+            normalized_transactions = [replace(normalized, description=original.description)
+                                       for normalized, original in zip(normalized_transactions, parsed_transactions, strict=True)]
         normalize_ms = round((perf_counter() - normalize_start) * 1000, 3)
 
         metadata_candidate_rows = _build_transaction_rows(
@@ -198,12 +203,12 @@ class ConversionPipeline:
             extracted_text,
             layout_inference_name,
         )
-        if parse_metrics and parse_metrics.get("opening_balance_ambiguous"):
+        if is_payables_report or (parse_metrics and parse_metrics.get("opening_balance_ambiguous")):
             opening_balance = None
         kept_indices = [
             idx
             for idx, _row in enumerate(metadata_candidate_rows)
-            if not self.is_balance_metadata_row(metadata_candidate_rows, idx)
+            if is_payables_report or not self.is_balance_metadata_row(metadata_candidate_rows, idx)
         ]
 
         parsed_transactions = [parsed_transactions[idx] for idx in kept_indices]
@@ -266,6 +271,9 @@ class ConversionPipeline:
         inferred_bank_code = parsed_document.bank_code or self.resolve_inferred_bank_code(
             extension, layout_inference_name, bank_name
         )
+        if is_payables_report:
+            opening_balance = closing_balance = None
+            bank_name = bank_branch = account_number = inferred_bank_code = None
         total_volume = round(sum(abs(item.amount) for item in transactions), 2)
         inflow_count = sum(1 for item in transactions if item.amount > 0)
         outflow_count = sum(1 for item in transactions if item.amount < 0)
@@ -288,6 +296,8 @@ class ConversionPipeline:
             extracted_text,
             layout_inference_name,
         )
+        if is_payables_report:
+            ofx_account_type = None
 
         analysis_data = AnalysisData(
             analysis_id=analysis_id,

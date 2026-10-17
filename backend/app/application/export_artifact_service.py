@@ -94,8 +94,14 @@ class ExportArtifactService:
         )
         summary_sheet = workbook.create_sheet(title="Resumo")
         summary_sheet.append(["Campo", "Valor"])
-        summary_sheet.append(["Saldo anterior", opening_balance_value])
-        summary_sheet.append(["Saldo final", closing_balance_value])
+        if layout_inference_name == "accounts_payable_native_columns_v1":
+            summary_sheet.append(["Documento", "Relatório de contas a pagar; não é um extrato bancário"])
+            summary_sheet.append(["Datas", "Pagos: pagamento. Pendentes e parciais: vencimento."])
+            summary_sheet.append(["Valores", "Total de cada conta, incluindo pendentes e parciais identificados no histórico."])
+            summary_sheet.append(["Saldo bancário", "Não informado pelo documento"])
+        else:
+            summary_sheet.append(["Saldo anterior", opening_balance_value])
+            summary_sheet.append(["Saldo final", closing_balance_value])
         self._format_sheet(summary_sheet)
         workbook.save(output_dir / "converted.xlsx")
 

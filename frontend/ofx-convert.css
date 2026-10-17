@@ -39,6 +39,7 @@ body {
   margin: 1.35rem auto 4rem;
   display: grid;
   gap: 1.1rem;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .topbar {
@@ -739,6 +740,7 @@ tr.row-deleted td:not(.actions-cell) {
 
 #download-ofx-btn,
 #download-excel-btn,
+#download-csv-btn,
 #download-report-btn {
   background: linear-gradient(135deg, #003ec7 0%, #0052ff 100%);
   color: #fff;
@@ -751,6 +753,7 @@ tr.row-deleted td:not(.actions-cell) {
 
 #download-ofx-btn:hover:not(:disabled),
 #download-excel-btn:hover:not(:disabled),
+#download-csv-btn:hover:not(:disabled),
 #download-report-btn:hover:not(:disabled) {
   background: linear-gradient(135deg, #0035ad 0%, #0047e2 100%);
 }

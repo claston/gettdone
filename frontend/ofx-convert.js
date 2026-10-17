@@ -45,6 +45,7 @@
   const downloadSingleBtn = document.getElementById("download-report-btn");
   const downloadOfxBtn = document.getElementById("download-ofx-btn");
   const downloadExcelBtn = document.getElementById("download-excel-btn");
+  const downloadCsvBtn = document.getElementById("download-csv-btn");
   const hasDualDownloadButtons = Boolean(downloadOfxBtn && downloadExcelBtn);
   const defaultDownloadBtn = downloadSingleBtn || downloadOfxBtn;
   const outputFormat = hasDualDownloadButtons
@@ -154,6 +155,9 @@
     }
     if (downloadExcelBtn) {
       downloadExcelBtn.disabled = isDisabled;
+    }
+    if (downloadCsvBtn) {
+      downloadCsvBtn.disabled = isDisabled;
     }
   }
 
@@ -1207,6 +1211,10 @@
   }
 
   function renderKpis(analysis) {
+    if (isPayablesReport(analysis)) {
+      renderPayablesKpis(analysis);
+      return;
+    }
     const hasPreviewRows = Array.isArray(state.previewRows) && state.previewRows.length > 0;
     const derived = hasPreviewRows
       ? buildDerivedSummaryFromRows(state.previewRows)
@@ -1294,6 +1302,10 @@
   }
 
   function renderKpisLegacy(analysis) {
+    if (isPayablesReport(analysis)) {
+      renderPayablesKpis(analysis);
+      return;
+    }
     const hasPreviewRows = Array.isArray(state.previewRows) && state.previewRows.length > 0;
     const derived = hasPreviewRows
       ? buildDerivedSummaryFromRows(state.previewRows)
@@ -1392,6 +1404,24 @@
     `;
   }
 
+  function isPayablesReport(analysis) {
+    return Boolean(analysis && analysis.document_type === "accounts_payable_report");
+  }
+
+  function renderPayablesKpis(analysis) {
+    const rows = (state.previewRows || []).filter((row) => row && !row.is_deleted);
+    const pending = rows.filter((row) => (row.warning_types || []).some((value) =>
+      value === "accounts_payable_pending" || value === "accounts_payable_partial"
+    )).length;
+    const total = rows.reduce((sum, row) => sum + Math.abs(Number(row.amount) || 0), 0);
+    kpis.innerHTML = `${buildReviewWarningsMarkup(analysis)}
+      <article class="kpi"><p class="kpi-label">Contas listadas</p><p class="kpi-value">${rows.length}</p></article>
+      <article class="kpi"><p class="kpi-label">Pagas</p><p class="kpi-value">${rows.length - pending}</p></article>
+      <article class="kpi"><p class="kpi-label">Pendentes ou parciais</p><p class="kpi-value">${pending}</p></article>
+      <article class="kpi"><p class="kpi-label">Valor total das contas</p><p class="kpi-value">${formatCurrency(total)}</p></article>
+      <p class="kpi-hint">Este relatório não informa saldos bancários.</p>`;
+  }
+
   function buildReviewWarningsMarkup(analysis) {
     const warnings = collectReviewWarnings(analysis);
     if (!warnings.length) {
@@ -1408,6 +1438,14 @@
 
   function collectReviewWarnings(analysis) {
     const list = [];
+    if (isPayablesReport(analysis)) {
+      list.push("Documento identificado: relatório de contas a pagar. Este documento não é um extrato bancário.");
+      list.push("Os valores representam o total de cada conta. Itens pagos usam a data de pagamento; pendentes e parciais usam o vencimento e estão identificados no histórico. Todos os itens listados podem ser exportados.");
+      if (analysis.pdf_processing_metrics && analysis.pdf_processing_metrics.export_recommendation_reason === "accounts_payable_filtered_report") {
+        list.push("Os itens listados conferem com o subtotal de pagos, mas diferem do total geral impresso. Foram mantidos apenas os itens presentes no documento.");
+      }
+      return list;
+    }
     const parts = analysis && Array.isArray(analysis.document_parts) ? analysis.document_parts : [];
     const documentLabels = { fiscal_invoice: "notas fiscais", bank_receipt: "comprovantes", unknown: "documentos não identificados", mixed: "conteúdo misturado na mesma página" };
     for (const part of parts) {
@@ -1506,6 +1544,9 @@
   }
 
   function buildDisplayedRunningBalances(rows) {
+    if (isPayablesReport(state.analysisSnapshot)) {
+      return (rows || []).map(() => null);
+    }
     const displayed = [];
     const opening = Number.isFinite(Number(state.openingBalanceOverride))
       ? Number(state.openingBalanceOverride)
@@ -1964,6 +2005,8 @@
   }
 
   function mapWarningTypeLabel(value) {
+    if (value === "accounts_payable_pending") return "Pendente";
+    if (value === "accounts_payable_partial") return "Parcial / pendente";
     const key = String(value || "").trim().toLowerCase();
     if (key === "balance_consistency_failed") {
       return "Saldo inconsistente";
@@ -1984,6 +2027,8 @@
   }
 
   function mapWarningTypeExplanation(value) {
+    if (value === "accounts_payable_pending") return "Conta em aberto: valor total com data de vencimento, ainda sem pagamento confirmado.";
+    if (value === "accounts_payable_partial") return "Conta parcialmente paga: valor total com data de vencimento; o valor em aberto está no histórico.";
     const key = String(value || "").trim().toLowerCase();
     if (key === "balance_consistency_failed") {
       return "O saldo calculado para esta linha não bateu com a consistência esperada do extrato.";
@@ -2630,6 +2675,15 @@
   }
 
   function resolveDownloadConfig(fileFormat) {
+    if (fileFormat === "csv") {
+      const processingId = state.processingId || state.analysisId;
+      return {
+        format: "csv", reportFormat: "csv", targetId: processingId,
+        endpoint: processingId ? `${apiBase}/convert-report/${processingId}` : "",
+        fileName: buildFallbackDownloadFilename("csv"),
+        errorMessage: "Falha ao baixar CSV.", networkErrorMessage: "Falha de rede ao baixar CSV.",
+      };
+    }
     if (fileFormat === "excel") {
       const processingId = state.processingId || state.analysisId;
       return {
@@ -2655,7 +2709,8 @@
   }
 
   async function runDownloadReport(formatOverride) {
-    const requestedFormat = String(formatOverride || outputFormat).trim().toLowerCase() === "excel" ? "excel" : "ofx";
+    const selectedFormat = String(formatOverride || outputFormat).trim().toLowerCase();
+    const requestedFormat = ["excel", "csv"].includes(selectedFormat) ? selectedFormat : "ofx";
     const downloadConfig = resolveDownloadConfig(requestedFormat);
     if (!downloadConfig.targetId) {
       setStatus("Converta um arquivo antes de baixar.", "error");
@@ -2671,7 +2726,7 @@
       if (downloadConfig.reportFormat) {
         query.set("format", downloadConfig.reportFormat);
       }
-      if (requestedFormat === "ofx") {
+      if (requestedFormat === "ofx" && !isPayablesReport(state.analysisSnapshot)) {
         const openingBalance = Number(state.openingBalanceOverride);
         const closingBalance = Number(state.closingBalanceOverride);
         const isCreditCardFlow = resolveOfxAccountType(state.analysisSnapshot) === "credit_card";
@@ -2953,6 +3008,17 @@
   } else if (defaultDownloadBtn) {
     defaultDownloadBtn.addEventListener("click", function () {
       void runDownloadReport(outputFormat);
+    });
+    if (downloadOfxBtn && downloadOfxBtn !== defaultDownloadBtn) {
+      downloadOfxBtn.addEventListener("click", function () { void runDownloadReport("ofx"); });
+    }
+    if (downloadExcelBtn && downloadExcelBtn !== defaultDownloadBtn) {
+      downloadExcelBtn.addEventListener("click", function () { void runDownloadReport("excel"); });
+    }
+  }
+  if (downloadCsvBtn) {
+    downloadCsvBtn.addEventListener("click", function () {
+      void runDownloadReport("csv");
     });
   }
   if (clearFileBtn) {
