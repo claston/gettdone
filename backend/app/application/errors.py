@@ -11,11 +11,11 @@ class InvalidFileContentError(Exception):
 
 
 class PdfFinancialValidationError(InvalidFileContentError):
-    """Readable invoice fields could not be reconciled with its printed totals."""
+    """Readable financial fields could not be reconciled with printed totals."""
 
-    def __init__(self) -> None:
+    def __init__(self, message: str | None = None) -> None:
         super().__init__(
-            "Não foi possível conferir todos os lançamentos com o total da fatura. "
+            message or "Não foi possível conferir todos os lançamentos com o total da fatura. "
             "Para evitar valores incorretos, este arquivo não foi convertido. "
             "Envie a fatura original completa baixada da instituição."
         )

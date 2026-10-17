@@ -87,6 +87,8 @@ from app.application.parsers.pdf.layout_specific.unicred import (
 )
 from app.application.parsers.pdf.models import PdfParseResult, _ParsedTransaction, _PdfLine, _TabularColumnPositions
 from app.application.parsers.pdf.multiline_transaction_assembler import parse_multiline_transaction_rows
+from app.application.parsers.pdf.native_accounts_payable import PARSER as ACCOUNTS_PAYABLE_PARSER
+from app.application.parsers.pdf.native_accounts_payable import VALIDATION_MESSAGE, parse_native_accounts_payable
 from app.application.parsers.pdf.native_unicred_grid import UNICRED_NATIVE_COLUMNS_LAYOUT, parse_native_unicred_grid
 from app.application.pdf_document_segmentation import segment_pdf_pages
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
@@ -95,8 +97,6 @@ from app.application.textract_extraction_mapper import map_textract_blocks_to_ex
 from app.application.textract_gateway import TextractGateway
 from app.application.textract_transaction_adapter import adapt_textract_extraction_to_transactions
 from app.application.unsupported_document_detection import (
-    ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE,
-    ACCOUNTS_PAYABLE_REPORT_USER_MESSAGE,
     BILLING_REPORT_DOCUMENT_TYPE,
     BILLING_REPORT_USER_MESSAGE,
     INVESTMENT_SUMMARY_DOCUMENT_TYPE,
@@ -104,6 +104,7 @@ from app.application.unsupported_document_detection import (
     PAYMENT_REPORT_DOCUMENT_TYPE,
     PAYMENT_REPORT_USER_MESSAGE,
     detect_unsupported_document_type,
+    has_accounts_payable_title,
 )
 
 _SANTANDER_IB_EMPRESARIAL_365_MOBILE_GROUPED_LAYOUT = "santander_empresarial_extrato_365_dias_mobile_grouped_v1"
@@ -232,7 +233,7 @@ def parse_pdf_transactions(
                 ocr_retry_skip_reason="unsupported_document_type",
             )
         except InvalidFileContentError as textract_error:
-            if isinstance(textract_error, (UnsupportedDocumentContentError, OcrFinancialAmbiguityError)):
+            if isinstance(textract_error, (UnsupportedDocumentContentError, OcrFinancialAmbiguityError, PdfFinancialValidationError)):
                 raise
             if not is_pdf_ocr_enabled():
                 raise _attach_parse_observability(
@@ -271,6 +272,14 @@ def parse_pdf_transactions(
             )
 
     if native_pages:
+        if has_accounts_payable_title("\n".join(native_pages)):
+            try:
+                return parse_native_accounts_payable(raw_bytes)
+            except PdfFinancialValidationError as exc:
+                raise _attach_parse_observability(
+                    exc, textract_attempted=0, native_text_detected=1,
+                    ocr_retry_skipped=1, ocr_retry_skip_reason="financial_validation_failed",
+                )
         native_grid = parse_native_unicred_grid(raw_bytes, native_pages)
         if native_grid is not None:
             return _with_parse_observability(
@@ -694,7 +703,7 @@ def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
             )
     try:
         return _parse_pdf_transactions_from_page_texts(page_texts)
-    except (CrossPageTransactionSplitError, UnsupportedDocumentContentError):
+    except (CrossPageTransactionSplitError, UnsupportedDocumentContentError, PdfFinancialValidationError):
         raise
     except InvalidFileContentError:
         adapted = adapt_textract_extraction_to_transactions(extraction)
@@ -745,11 +754,8 @@ def _parse_statement_page_texts(
 ) -> PdfParseResult:
     joined_text = "\n".join(page_texts)
     unsupported_document_type = detect_unsupported_document_type(joined_text)
-    if unsupported_document_type == ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE:
-        raise UnsupportedDocumentContentError(
-            document_type=unsupported_document_type,
-            message=ACCOUNTS_PAYABLE_REPORT_USER_MESSAGE,
-        )
+    if has_accounts_payable_title(joined_text):
+        raise PdfFinancialValidationError(VALIDATION_MESSAGE)
     if unsupported_document_type == BILLING_REPORT_DOCUMENT_TYPE:
         raise UnsupportedDocumentContentError(
             document_type=unsupported_document_type,
@@ -3646,8 +3652,8 @@ def _try_parse_native_layout_text(
 
 
 def _maybe_upgrade_native_parse_with_layout_text(*, raw_bytes: bytes, baseline_result: PdfParseResult) -> PdfParseResult:
-    if baseline_result.parse_metrics.get("selected_parser") == DIGITAL_CREDIT_CARD_PARSER:
-        # All movements already reconcile with printed invoice totals. A generic
+    if baseline_result.parse_metrics.get("selected_parser") in {DIGITAL_CREDIT_CARD_PARSER, ACCOUNTS_PAYABLE_PARSER}:
+        # All movements already reconcile with printed document totals. A generic
         # layout candidate must not replace that result based only on row count.
         return baseline_result
     reference_month_year = text_extraction.read_pdf_creation_month_year(raw_bytes)

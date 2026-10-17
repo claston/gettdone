@@ -8,7 +8,6 @@ from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
 from app.application.document_type_classifier import (
-    ACCOUNTS_PAYABLE_REPORT,
     FISCAL_INVOICE,
     INVESTMENT_SUMMARY,
     PAYMENT_REPORT,
@@ -16,7 +15,6 @@ from app.application.document_type_classifier import (
 )
 from app.application.errors import UnsupportedDocumentContentError
 from app.application.unsupported_document_detection import (
-    ACCOUNTS_PAYABLE_REPORT_USER_MESSAGE,
     INVESTMENT_SUMMARY_USER_MESSAGE,
     PAYMENT_REPORT_USER_MESSAGE,
 )
@@ -24,7 +22,6 @@ from app.application.unsupported_document_detection import (
 FISCAL_INVOICE_REJECTION_MIN_CONFIDENCE = 0.90
 PAYMENT_REPORT_REJECTION_MIN_CONFIDENCE = 0.90
 INVESTMENT_SUMMARY_REJECTION_MIN_CONFIDENCE = 0.90
-ACCOUNTS_PAYABLE_REPORT_REJECTION_MIN_CONFIDENCE = 0.90
 
 FISCAL_INVOICE_REJECTION_MESSAGE = (
     "Este arquivo é uma nota fiscal eletrônica (NF-e ou NFS-e), não um extrato bancário. "
@@ -46,14 +43,6 @@ class DocumentRoutingDecision:
 def decide_document_routing(
     classification: DocumentTypeClassification,
 ) -> DocumentRoutingDecision:
-    if (
-        classification.document_type == ACCOUNTS_PAYABLE_REPORT
-        and classification.confidence >= ACCOUNTS_PAYABLE_REPORT_REJECTION_MIN_CONFIDENCE
-    ):
-        return DocumentRoutingDecision(
-            action=DocumentRoutingAction.REJECT,
-            reason="high_confidence_accounts_payable_report",
-        )
     if classification.document_type == FISCAL_INVOICE and classification.confidence >= FISCAL_INVOICE_REJECTION_MIN_CONFIDENCE:
         return DocumentRoutingDecision(
             action=DocumentRoutingAction.REJECT,
@@ -81,7 +70,6 @@ def enforce_document_routing(
     decision = decide_document_routing(classification)
     if decision.action == DocumentRoutingAction.REJECT:
         message = {
-            ACCOUNTS_PAYABLE_REPORT: ACCOUNTS_PAYABLE_REPORT_USER_MESSAGE,
             PAYMENT_REPORT: PAYMENT_REPORT_USER_MESSAGE,
             INVESTMENT_SUMMARY: INVESTMENT_SUMMARY_USER_MESSAGE,
             FISCAL_INVOICE: FISCAL_INVOICE_REJECTION_MESSAGE,

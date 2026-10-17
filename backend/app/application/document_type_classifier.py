@@ -14,6 +14,7 @@ from app.application.unsupported_document_detection import (
     INVESTMENT_SUMMARY_DOCUMENT_TYPE,
     PAYMENT_REPORT_DOCUMENT_TYPE,
     detect_unsupported_document_type,
+    has_accounts_payable_title,
 )
 
 BANK_STATEMENT = "bank_statement"
@@ -61,6 +62,8 @@ def classify_document_type(
     unsupported_type = detect_unsupported_document_type(text)
     if unsupported_type == ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE:
         return _classification(ACCOUNTS_PAYABLE_REPORT, 0.99, "accounts_payable_report_structure")
+    if has_accounts_payable_title(text):
+        return _classification(ACCOUNTS_PAYABLE_REPORT, 0.8, "accounts_payable_report_title")
     if unsupported_type == BILLING_REPORT_DOCUMENT_TYPE:
         return _classification(BILLING_REPORT, 0.99, "billing_report_structure")
     if unsupported_type == PAYMENT_REPORT_DOCUMENT_TYPE:
