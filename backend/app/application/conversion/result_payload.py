@@ -83,6 +83,7 @@ def build_analyze_response(
         insights=insights,
         preview_transactions=[
             TransactionPreview(
+                source_page=row.source_page,
                 date=row.date,
                 description=row.description,
                 amount=row.amount,

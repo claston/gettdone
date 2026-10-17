@@ -1,5 +1,6 @@
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
@@ -10,12 +11,12 @@ from app.dependencies import get_access_control_service, get_report_service
 from app.main import app
 
 
-def _build_analysis_data(analysis_id: str = "an_convert123") -> AnalysisData:
+def _build_analysis_data(analysis_id: str = "an_convert123", *, first_amount: float = -20.0) -> AnalysisData:
     preview = [
         TransactionRow(
             date="2026-04-01",
             description="DEBIT A",
-            amount=-20.0,
+            amount=first_amount,
             category="Outros",
             reconciliation_status="unmatched",
             running_balance=80.0,
@@ -42,9 +43,9 @@ def _build_analysis_data(analysis_id: str = "an_convert123") -> AnalysisData:
     )
 
 
-def build_client(tmp_path: Path) -> TestClient:
+def build_client(tmp_path: Path, *, first_amount: float = -20.0) -> TestClient:
     storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
-    storage.save_analysis(_build_analysis_data())
+    storage.save_analysis(_build_analysis_data(first_amount=first_amount))
     access_control = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
         token_secret="test-secret",
@@ -107,6 +108,69 @@ def test_convert_edits_updates_preview_and_csv_artifact(tmp_path: Path) -> None:
     assert "2026-04-05,EDITED CREDIT,45.75" in csv_report.text
     assert isinstance(payload["updated_at"], str)
     app.dependency_overrides.clear()
+
+
+def test_convert_edits_can_correct_description_of_an_imported_zero_amount(tmp_path: Path) -> None:
+    client = build_client(tmp_path, first_amount=0.0)
+    try:
+        response = client.post("/convert-edits/an_convert123?anonymous_fingerprint=fp-owner", json={"edits": [{
+            "row_id": "row_1", "date": "2026-04-01", "description": "PIX VALIDADO", "credit": None, "debit": None,
+        }]})
+        assert response.status_code == 200
+        assert response.json()["preview_transactions"][0]["amount"] == 0.0
+        assert response.json()["preview_transactions"][0]["description"] == "PIX VALIDADO"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_pro_save_syncs_batch_snapshot_and_rejects_mismatched_job(tmp_path: Path, monkeypatch) -> None:
+    from app.adapters.conversion.memory_batches import InMemoryConversionBatchRepository
+    from app.application.conversion.contracts.documents import ConversionDocumentReference
+    from app.application.conversion.contracts.jobs import ConversionJobResultReference
+    from app.application.conversion.conversion_batch import ConversionBatch
+    from app.application.conversion.conversion_job import ConversionJob
+    from app.dependencies import get_conversion_batch_service
+
+    client = build_client(tmp_path)
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://pro.example.test")
+    headers = {"X-OFX-Pro-Client": "web", "Origin": "https://pro.example.test"}
+    access = app.dependency_overrides[get_access_control_service]()
+    owner = access.resolve_identity(anonymous_fingerprint="fp-owner", user_token=None)
+    batch = ConversionBatch.create(identity_type=owner.identity_type, identity_id=owner.identity_id,
+                                   files_count=1, idempotency_key="sync-test")
+    job = ConversionJob.create(batch_id=batch.batch_id, identity=owner, idempotency_key="sync-job",
+                               document=ConversionDocumentReference(storage_key="doc_sync", filename="extrato.pdf",
+                                                                    file_type="pdf", size_bytes=100, sha256_hex="0" * 64))
+    repository = InMemoryConversionBatchRepository()
+    repository.create(batch=batch, jobs=[job])
+    repository.mark_uploaded(job.job_id)
+    repository.mark_queued(job.job_id)
+    repository.mark_running(job.job_id)
+    repository.mark_completed(job.job_id, result=ConversionJobResultReference(
+        analysis_id="an_convert123", payload={"analysis": {"bank_name": "Banco Teste"}},
+    ))
+    app.dependency_overrides[get_conversion_batch_service] = lambda: SimpleNamespace(repository=repository)
+    request = {"batch_id": batch.batch_id, "job_id": job.job_id, "edits": [{
+        "row_id": "row_1", "date": "2026-04-01", "description": "SALVO NO LOTE", "credit": 40,
+    }]}
+    try:
+        wrong_job = client.post("/api/pro/convert-edits/an_convert123?anonymous_fingerprint=fp-owner",
+                                headers=headers, json={**request, "job_id": "job_other"})
+        assert wrong_job.status_code == 404
+        response = client.post("/api/pro/convert-edits/an_convert123?anonymous_fingerprint=fp-owner",
+                               headers=headers, json=request)
+        assert response.status_code == 200
+        snapshot = repository.get_for_owner(batch.batch_id, identity_type=owner.identity_type, identity_id=owner.identity_id)
+        analysis = snapshot.jobs[0].result.payload["analysis"]
+        assert analysis["bank_name"] == "Banco Teste"
+        assert analysis["updated_at"] == response.json()["updated_at"]
+        assert analysis["preview_transactions"][0]["description"] == "SALVO NO LOTE"
+        request["expected_updated_at"] = analysis["updated_at"]
+        request["edits"][0]["credit"] = 45
+        assert client.post("/api/pro/convert-edits/an_convert123?anonymous_fingerprint=fp-owner",
+                           headers=headers, json=request).status_code == 200
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_pro_convert_edits_requires_browser_guard_and_preserves_owner_scope(

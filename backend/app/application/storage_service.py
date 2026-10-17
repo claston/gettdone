@@ -338,7 +338,14 @@ class TempAnalysisStorage:
                 report_rows[row_index].is_deleted = True
                 continue
 
-            amount = self._build_amount_from_credit_debit(edit.get("credit"), edit.get("debit"))
+            # Zero-valued entries can be present in imported statements. Editing
+            # their text/date must preserve the amount when both cells are empty.
+            preserve_zero = (
+                preview_rows[row_index].amount == 0
+                and edit.get("credit") is None
+                and edit.get("debit") is None
+            )
+            amount = 0.0 if preserve_zero else self._build_amount_from_credit_debit(edit.get("credit"), edit.get("debit"))
             description = str(edit.get("description") or "").strip()
             date = str(edit.get("date") or "").strip()
             if not description or not date:
@@ -761,6 +768,7 @@ class TempAnalysisStorage:
                     amount=float(item.get("amount") or 0.0),
                     category=str(item.get("category") or "Outros"),
                     reconciliation_status=str(item.get("reconciliation_status") or "unmatched"),
+                    source_page=item.get("source_page") if isinstance(item.get("source_page"), int) else None,
                     running_balance=(
                         float(item.get("running_balance"))
                         if item.get("running_balance") is not None

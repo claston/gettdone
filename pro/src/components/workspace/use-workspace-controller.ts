@@ -8,6 +8,7 @@ import {
   nextPendingConversion,
   parseBrazilianCurrency,
   sortConversionsForReview,
+  sortTransactionsByDate,
   validateTransactionField,
 } from "@/domain/workspace";
 import type {
@@ -17,6 +18,7 @@ import type {
   SaveStatus,
   Transaction,
   TransactionField,
+  TransactionDraft,
   WorkspaceRepository,
 } from "@/domain/workspace";
 
@@ -41,7 +43,7 @@ export interface WorkspaceController {
     field: TransactionField,
     value: string,
   ): string | null;
-  addTransaction(): void;
+  addTransaction(draft: TransactionDraft): void;
   removeTransaction(transactionId: string): void;
   retrySave(): void;
   undo(): void;
@@ -88,6 +90,41 @@ export function useWorkspaceController(
   const batchRef = useRef<Batch | null>(null);
   const saveStatusesRef = useRef<Record<string, SaveStatus>>({});
   const refreshPromiseRef = useRef<Promise<void> | null>(null);
+  const pending = useRef(new Map<string, Transaction[]>());
+  const saving = useRef(new Set<string>());
+
+  const setStatus = useCallback((id: string, status: SaveStatus) => {
+    saveStatusesRef.current = { ...saveStatusesRef.current, [id]: status };
+    setSaveStatuses(saveStatusesRef.current);
+  }, []);
+
+  const changeRows = useCallback((id: string, transactions: Transaction[]) => {
+    const current = batchRef.current;
+    if (!current) return;
+    const next: Batch = {
+      ...current,
+      conversions: current.conversions.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              transactions,
+              transactionCount: transactions.length,
+              editedCount: countEdited(transactions),
+              suspectedCount: countSuspected(transactions),
+              reviewStatus: "IN_REVIEW",
+              status:
+                item.status === "REVIEWED" || item.status === "EXPORTED"
+                  ? countSuspected(transactions)
+                    ? "NEEDS_REVIEW"
+                    : "READY"
+                  : item.status,
+            }
+          : item,
+      ),
+    };
+    batchRef.current = next;
+    setBatch(next);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -128,6 +165,21 @@ export function useWorkspaceController(
   useEffect(() => {
     saveStatusesRef.current = saveStatuses;
   }, [saveStatuses]);
+
+  useEffect(() => {
+    const preventLoss = (event: BeforeUnloadEvent) => {
+      if (
+        Object.values(saveStatusesRef.current).some((status) =>
+          ["DIRTY", "SAVING", "ERROR"].includes(status),
+        )
+      ) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", preventLoss);
+    return () => window.removeEventListener("beforeunload", preventLoss);
+  }, []);
 
   const refreshBatch = useCallback((): Promise<void> => {
     if (refreshPromiseRef.current) return refreshPromiseRef.current;
@@ -200,33 +252,63 @@ export function useWorkspaceController(
     batch?.conversions.find((item) => item.id === activeId) ?? null;
 
   const persist = useCallback(
-    async (conversionId: string, transactions: Transaction[]) => {
-      setSaveStatuses((current) => ({ ...current, [conversionId]: "SAVING" }));
+    async (conversionId: string) => {
+      if (saving.current.has(conversionId)) return;
+      saving.current.add(conversionId);
+      clearTimeout(timers.current[conversionId]);
+      setStatus(conversionId, "SAVING");
       setSaveErrors((current) => ({ ...current, [conversionId]: null }));
       try {
-        await repository.saveTransactions(conversionId, transactions);
-        setSaveStatuses((current) => ({ ...current, [conversionId]: "SAVED" }));
+        while (pending.current.has(conversionId)) {
+          const transactions = pending.current.get(conversionId)!;
+          pending.current.delete(conversionId);
+          let saved: Transaction[] | void;
+          try {
+            saved = await repository.saveTransactions(
+              conversionId,
+              transactions,
+            );
+          } catch (error) {
+            if (!pending.current.has(conversionId))
+              pending.current.set(conversionId, transactions);
+            throw error;
+          }
+          clearTimeout(timers.current[conversionId]);
+          if (!pending.current.has(conversionId))
+            changeRows(
+              conversionId,
+              sortTransactionsByDate(saved ?? transactions),
+            );
+        }
+        setStatus(conversionId, "SAVED");
       } catch (error) {
-        setSaveStatuses((current) => ({ ...current, [conversionId]: "ERROR" }));
+        clearTimeout(timers.current[conversionId]);
+        setStatus(conversionId, "ERROR");
         setSaveErrors((current) => ({
           ...current,
           [conversionId]:
             error instanceof Error ? error.message : "Falha ao salvar.",
         }));
+      } finally {
+        saving.current.delete(conversionId);
       }
     },
-    [repository],
+    [repository, changeRows, setStatus],
   );
 
   const queueSave = useCallback(
     (conversionId: string, transactions: Transaction[]) => {
       clearTimeout(timers.current[conversionId]);
-      setSaveStatuses((current) => ({ ...current, [conversionId]: "DIRTY" }));
+      pending.current.set(conversionId, transactions);
+      setStatus(
+        conversionId,
+        saving.current.has(conversionId) ? "SAVING" : "DIRTY",
+      );
       timers.current[conversionId] = setTimeout(() => {
-        void persist(conversionId, transactions);
+        void persist(conversionId);
       }, 700);
     },
-    [persist],
+    [persist, setStatus],
   );
 
   const replaceTransactions = useCallback(
@@ -242,27 +324,10 @@ export function useWorkspaceController(
           structuredClone(previous),
         ],
       }));
-      setBatch((current) => {
-        if (!current) return current;
-        return {
-          ...current,
-          conversions: current.conversions.map((conversion) =>
-            conversion.id === conversionId
-              ? {
-                  ...conversion,
-                  transactions,
-                  transactionCount: transactions.length,
-                  suspectedCount: countSuspected(transactions),
-                  editedCount: countEdited(transactions),
-                  reviewStatus: "IN_REVIEW",
-                }
-              : conversion,
-          ),
-        };
-      });
+      changeRows(conversionId, transactions);
       queueSave(conversionId, transactions);
     },
-    [queueSave],
+    [queueSave, changeRows],
   );
 
   const updateField = useCallback(
@@ -271,16 +336,41 @@ export function useWorkspaceController(
       const validationError = validateTransactionField(field, value);
       if (validationError) return validationError;
 
-      const previous = activeConversion.transactions;
+      const previous =
+        batchRef.current?.conversions.find(
+          (item) => item.id === activeConversion.id,
+        )?.transactions ?? activeConversion.transactions;
+      const parsedValue =
+        field === "date" || field === "description"
+          ? value
+          : parseBrazilianCurrency(value);
+      const existing = previous.find(
+        (transaction) => transaction.id === transactionId,
+      );
+      if (!existing || existing[field] === parsedValue) return null;
+      if (field === "balance") return "O saldo é recalculado após a gravação.";
+      if (
+        (field === "credit" || field === "debit") &&
+        parsedValue !== null &&
+        Number(parsedValue) < 0
+      )
+        return "Use um valor positivo para crédito ou débito.";
+      if (field === "credit" || field === "debit") {
+        const other = field === "credit" ? "debit" : "credit";
+        if (
+          parsedValue === 0 ||
+          (parsedValue === null && existing[other] === null)
+        )
+          return "Informe um valor positivo em crédito ou débito.";
+      }
       const transactions = previous.map((transaction) => {
         if (transaction.id !== transactionId) return transaction;
-        const parsedValue =
-          field === "date" || field === "description"
-            ? value
-            : parseBrazilianCurrency(value);
         return {
           ...transaction,
           [field]: parsedValue,
+          ...((field === "credit" || field === "debit") && parsedValue !== null
+            ? { [field === "credit" ? "debit" : "credit"]: null }
+            : {}),
           fieldStates: { ...transaction.fieldStates, [field]: "EDITED" },
         };
       });
@@ -290,23 +380,24 @@ export function useWorkspaceController(
     [activeConversion, replaceTransactions],
   );
 
-  const addTransaction = useCallback(() => {
-    if (!activeConversion) return;
-    const previous = activeConversion.transactions;
-    const transactions = [
-      ...previous,
-      {
-        id: `new-${Date.now()}`,
-        date: "01/09/2026",
-        description: "Novo lançamento",
-        credit: null,
-        debit: null,
-        balance: null,
-        fieldStates: { ...emptyStates },
-      },
-    ];
-    replaceTransactions(activeConversion.id, transactions, previous);
-  }, [activeConversion, replaceTransactions]);
+  const addTransaction = useCallback(
+    (draft: TransactionDraft) => {
+      if (!activeConversion) return;
+      const previous = activeConversion.transactions;
+      const transactions = [
+        {
+          id: `new-${crypto.randomUUID()}`,
+          ...draft,
+          balance: null,
+          sourcePage: null,
+          fieldStates: { ...emptyStates },
+        },
+        ...previous,
+      ];
+      replaceTransactions(activeConversion.id, transactions, previous);
+    },
+    [activeConversion, replaceTransactions],
+  );
 
   const removeTransaction = useCallback(
     (transactionId: string) => {
@@ -322,8 +413,10 @@ export function useWorkspaceController(
   );
 
   const retrySave = useCallback(() => {
-    if (activeConversion)
-      void persist(activeConversion.id, activeConversion.transactions);
+    if (activeConversion) {
+      pending.current.set(activeConversion.id, activeConversion.transactions);
+      void persist(activeConversion.id);
+    }
   }, [activeConversion, persist]);
 
   const undo = useCallback(() => {
@@ -335,24 +428,9 @@ export function useWorkspaceController(
       ...current,
       [activeConversion.id]: entries.slice(0, -1),
     }));
-    setBatch((current) =>
-      current
-        ? {
-            ...current,
-            conversions: current.conversions.map((item) =>
-              item.id === activeConversion.id
-                ? {
-                    ...item,
-                    transactions: previous,
-                    editedCount: countEdited(previous),
-                  }
-                : item,
-            ),
-          }
-        : current,
-    );
+    changeRows(activeConversion.id, previous);
     queueSave(activeConversion.id, previous);
-  }, [activeConversion, history, queueSave]);
+  }, [activeConversion, history, queueSave, changeRows]);
 
   const selectConversion = useCallback(
     (id: string) => {
@@ -506,7 +584,10 @@ function mergeRefreshedBatch(
     conversions: refreshed.conversions.map((conversion) => {
       const local = currentById.get(conversion.id);
       const saveStatus = saveStatuses[conversion.id] ?? "IDLE";
-      if (!local || !["DIRTY", "SAVING", "ERROR"].includes(saveStatus)) {
+      if (
+        !local ||
+        !["DIRTY", "SAVING", "ERROR", "SAVED"].includes(saveStatus)
+      ) {
         return conversion;
       }
       return {

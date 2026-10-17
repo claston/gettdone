@@ -14,6 +14,7 @@ from app.application import (
     ReportService,
 )
 from app.application.conversion.async_conversion_rollout import AsyncConversionRolloutPolicy
+from app.application.conversion.conversion_batch_service import ConversionBatchService
 from app.application.conversion.conversion_runtime_config import (
     ConversionArchitectureMode,
     ConversionRuntimeConfig,
@@ -22,6 +23,7 @@ from app.dependencies import (
     get_access_control_service,
     get_async_conversion_report_service,
     get_async_conversion_rollout_policy,
+    get_conversion_batch_service,
     get_conversion_runtime_config,
     get_report_service,
 )
@@ -283,6 +285,7 @@ def apply_convert_edits(
     access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     anonymous_cookie_token: str | None = Cookie(default=None, alias=ANONYMOUS_IDENTITY_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
+    batch_service: ConversionBatchService | None = Depends(get_conversion_batch_service),
 ) -> ConvertEditsResponse:
     try:
         resolved_user_token = resolve_user_token_with_session(
@@ -300,6 +303,13 @@ def apply_convert_edits(
             anonymous_fingerprint=resolved_anonymous_fingerprint,
             user_token=resolved_user_token or None,
         )
+        if payload.batch_id or payload.job_id:
+            snapshot = batch_service.repository.get_for_owner(
+                payload.batch_id or "", identity_type=identity.identity_type, identity_id=identity.identity_id,
+            ) if batch_service else None
+            record = next((item for item in snapshot.jobs if item.job.job_id == payload.job_id), None) if snapshot else None
+            if record is None or record.result is None or record.result.analysis_id != processing_id:
+                raise HTTPException(status_code=404, detail="Conversion job not found.")
         active_service = _select_convert_report_service(
             analysis_id=processing_id,
             legacy_service=service,
@@ -319,6 +329,13 @@ def apply_convert_edits(
             account_number=payload.account_number,
             bank_code=payload.bank_code,
         )
+        if payload.job_id and batch_service:
+            try:
+                batch_service.repository.update_analysis(payload.job_id, analysis=ConvertEditsResponse(**result).model_dump())
+            except Exception:
+                # Artifacts are already committed. Never report a failed save after success,
+                # which would make a retry conflict with the newly persisted version.
+                logger.exception("conversion_batch_analysis_sync_failed job_id=%s", payload.job_id)
         return ConvertEditsResponse(**result)
     except AnalysisNotFoundError:
         raise HTTPException(status_code=404, detail="Analysis not found")

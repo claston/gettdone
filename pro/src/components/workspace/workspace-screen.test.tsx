@@ -4,13 +4,16 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ProSessionGate } from "@/components/pro-session-gate";
 import { createMockWorkspaceRepository } from "@/data/mock-workspace-repository";
 import type { Batch, WorkspaceRepository } from "@/domain/workspace";
 import { WorkspaceScreen } from "./workspace-screen";
+
+afterEach(() => vi.unstubAllGlobals());
 
 const processingBatch: Batch = {
   id: "batch-live",
@@ -74,6 +77,141 @@ const completedBatch: Batch = {
 };
 
 describe("WorkspaceScreen", () => {
+  it("valida a inclusão e permite cancelar sem alterar o documento", async () => {
+    const repository: WorkspaceRepository = {
+      getBatch: vi.fn().mockResolvedValue(completedBatch),
+      saveTransactions: vi.fn(),
+      markReviewed: vi.fn(),
+      retryConversion: vi.fn(),
+      exportBatch: vi.fn(),
+    };
+    render(
+      <WorkspaceScreen batchId={completedBatch.id} repository={repository} />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Adicionar" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Descrição"), {
+      target: { value: "Não incluir" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Incluir lançamento" }),
+    );
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Informe um valor positivo",
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Não incluir")).not.toBeInTheDocument();
+    expect(repository.saveTransactions).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("row")).toHaveLength(2);
+  });
+  it("inclui pelo diálogo, mostra no início e ordena pela data depois de salvar", async () => {
+    let finish: (() => void) | undefined;
+    const repository: WorkspaceRepository = {
+      getBatch: vi.fn().mockResolvedValue(completedBatch),
+      saveTransactions: vi.fn().mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+      markReviewed: vi.fn(),
+      retryConversion: vi.fn(),
+      exportBatch: vi.fn(),
+    };
+    render(
+      <WorkspaceScreen batchId={completedBatch.id} repository={repository} />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Adicionar" }));
+    const dialog = screen.getByRole("dialog", { name: "Adicionar lançamento" });
+    fireEvent.change(within(dialog).getByLabelText("Data"), {
+      target: { value: "20/10/2026" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Descrição"), {
+      target: { value: "Transação manual" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Crédito"), {
+      target: { value: "50,00" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Incluir lançamento" }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("row")[1]).toContainElement(
+      screen.getByDisplayValue("Transação manual"),
+    );
+    await waitFor(
+      () => expect(repository.saveTransactions).toHaveBeenCalled(),
+      { timeout: 1800 },
+    );
+    await act(async () => finish!());
+    expect(screen.getAllByRole("row")[2]).toContainElement(
+      screen.getByDisplayValue("Transação manual"),
+    );
+  });
+
+  it("agrupa pela página de origem e permite abrir a página correspondente", async () => {
+    const batch = structuredClone(completedBatch);
+    batch.conversions[0].pdf!.pageCount = 3;
+    batch.conversions[0].transactions[0].sourcePage = 3;
+    const repository: WorkspaceRepository = {
+      getBatch: vi.fn().mockResolvedValue(batch),
+      saveTransactions: vi.fn(),
+      markReviewed: vi.fn(),
+      retryConversion: vi.fn(),
+      exportBatch: vi.fn(),
+    };
+    render(<WorkspaceScreen batchId={batch.id} repository={repository} />);
+    fireEvent.change(await screen.findByLabelText("Organizar lançamentos"), {
+      target: { value: "PAGES" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ver página 3 no PDF" }),
+    );
+    expect(
+      screen.getByText("3", { selector: ".pdf-controls strong" }),
+    ).toBeInTheDocument();
+    expect(screen.getByDisplayValue("PIX concluído")).toBeInTheDocument();
+  });
+
+  it("carrega o PDF autenticado, mostra retry e libera o blob ao sair", async () => {
+    const batch = structuredClone(completedBatch);
+    batch.conversions[0].pdf!.url =
+      "/api/pro/conversion-batches/b/jobs/j/document";
+    const create = vi.fn().mockReturnValue("blob:test-pdf");
+    const revoke = vi.fn();
+    vi.stubGlobal(
+      "URL",
+      class extends URL {
+        static createObjectURL = create;
+        static revokeObjectURL = revoke;
+      },
+    );
+    const repository: WorkspaceRepository = {
+      getBatch: vi.fn().mockResolvedValue(batch),
+      saveTransactions: vi.fn(),
+      markReviewed: vi.fn(),
+      retryConversion: vi.fn(),
+      exportBatch: vi.fn(),
+      loadDocument: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Falha temporária"))
+        .mockResolvedValue(new Blob(["%PDF"], { type: "application/pdf" })),
+    };
+    const { unmount } = render(
+      <WorkspaceScreen batchId={batch.id} repository={repository} />,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Recarregar PDF" }),
+    );
+    await waitFor(() =>
+      expect(document.querySelector("iframe")?.src).toContain("blob:test-pdf"),
+    );
+    expect(repository.loadDocument).toHaveBeenCalledTimes(2);
+    unmount();
+    expect(revoke).toHaveBeenCalledWith("blob:test-pdf");
+    vi.unstubAllGlobals();
+  });
   it.each(["ofx", "csv", "xlsx"])(
     "mostra o formato %s sem erro de PDF e mantém os lançamentos",
     async (extension) => {

@@ -246,12 +246,16 @@ class ConversionPipeline:
             statuses=reconciliation_result.statuses,
             warning_types=transaction_warning_types,
             running_balances=transaction_running_balances,
+            source_pages=[canonical_transactions[idx].source_page if idx < len(canonical_transactions) else None
+                          for idx in kept_indices],
         )
         report_rows = _build_transaction_rows(
             transactions=transactions,
             statuses=reconciliation_result.statuses,
             warning_types=transaction_warning_types,
             running_balances=transaction_running_balances,
+            source_pages=[canonical_transactions[idx].source_page if idx < len(canonical_transactions) else None
+                          for idx in kept_indices],
         )
 
         total_inflows = round(sum(item.amount for item in transactions if item.amount > 0), 2)
@@ -359,6 +363,7 @@ def _build_transaction_rows(
     statuses: list[str],
     warning_types: list[list[str]],
     running_balances: list[float | None],
+    source_pages: list[int | None] | None = None,
 ) -> list[TransactionRow]:
     return [
         TransactionRow(
@@ -369,6 +374,7 @@ def _build_transaction_rows(
             reconciliation_status=statuses[idx],
             running_balance=running_balances[idx] if idx < len(running_balances) else None,
             warning_types=warning_types[idx] if idx < len(warning_types) else [],
+            source_page=source_pages[idx] if source_pages and idx < len(source_pages) else None,
         )
         for idx, item in enumerate(transactions)
     ]

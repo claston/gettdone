@@ -162,6 +162,19 @@ class InMemoryConversionBatchRepository:
             self._jobs[job_id] = updated
             return updated
 
+    def update_analysis(self, job_id: str, *, analysis: dict[str, object]) -> None:
+        with self._lock:
+            current = self._jobs[job_id]
+            if current.status != ConversionJobStatus.COMPLETED or current.result is None:
+                raise ValueError("Only completed conversion jobs can be edited.")
+            payload = dict(current.result.payload or {})
+            previous = dict(payload.get("analysis") or {})
+            if str(previous.get("updated_at") or "") > str(analysis.get("updated_at") or ""):
+                return
+            payload["analysis"] = {**previous, **analysis}
+            payload.pop("reviewed_at", None)
+            self._jobs[job_id] = replace(current, result=replace(current.result, payload=payload))
+
     def retry_failed(self, job_id: str) -> ConversionJobRecord:
         return self._transition(
             job_id,
