@@ -807,6 +807,18 @@
     },
     "TransactionPreview": {
       "properties": {
+        "source_page": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Page"
+        },
         "date": {
           "title": "Date",
           "type": "string"

@@ -312,6 +312,26 @@ class PostgresConversionBatchRepository:
                 )
                 return self._record_from_row(cursor.fetchone())
 
+    def update_analysis(self, job_id: str, *, analysis: dict[str, object]) -> None:
+        with self._connection() as conn:
+            row = self._fetch_job(conn, job_id, for_update=True)
+            if row is None:
+                raise KeyError(f"Conversion job not found: {job_id}")
+            current = self._record_from_row(row)
+            if current.status != ConversionJobStatus.COMPLETED or current.result is None:
+                raise ValueError("Only completed conversion jobs can be edited.")
+            payload = dict(current.result.payload or {})
+            previous = dict(payload.get("analysis") or {})
+            if str(previous.get("updated_at") or "") > str(analysis.get("updated_at") or ""):
+                return
+            payload["analysis"] = {**previous, **analysis}
+            payload.pop("reviewed_at", None)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"UPDATE {self._jobs_table} SET result_payload = %s, updated_at = %s WHERE job_id = %s",
+                    (self._jsonb(payload), self._normalize_datetime(self.clock()), job_id),
+                )
+
     def retry_failed(self, job_id: str) -> ConversionJobRecord:
         return self._transition(
             job_id,

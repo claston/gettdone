@@ -1,6 +1,6 @@
 from app.application.conversion.uploaded_document import ingest_uploaded_document
 from app.application.conversion_pipeline import ConversionPipeline
-from app.application.models import NormalizedTransaction
+from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.parsers.service import ParsingService
 
 
@@ -73,3 +73,33 @@ def test_conversion_pipeline_builds_analysis_data_from_parsed_document() -> None
     assert result.analysis_data.file_type == "csv"
     assert result.analysis_data.transactions_total == 1
     assert result.parse_ms == 1.5
+
+
+def test_source_pages_follow_retained_rows_and_survive_storage_edits(tmp_path) -> None:
+    from app.application.conversion.contracts.payloads import TransactionPreview
+    from app.application.storage_service import TempAnalysisStorage
+
+    document = ingest_uploaded_document(
+        filename="extrato.csv",
+        raw_bytes=b"date,description,amount\n2026-04-01,Saldo,100\n2026-04-02,Pix,20\n",
+    )
+    parsed = ParsingService().parse(document)
+    from dataclasses import replace
+
+    parsed = replace(parsed, canonical_transactions=[
+        CanonicalTransaction(date=row.date, description=row.description, amount=row.amount, type=row.type, source_page=page)
+        for row, page in zip(parsed.transactions, [1, 3], strict=True)
+    ])
+    result = ConversionPipeline(is_balance_metadata_row=lambda _rows, idx: idx == 0).run_parsed_document(
+        document=document, parsed_document=parsed, analysis_id="an_pages", parse_ms=1,
+    )
+    row = result.analysis_data.preview_transactions[0]
+    assert row.source_page == 3
+    assert TransactionPreview(**vars(row)).source_page == 3
+    storage = TempAnalysisStorage(root_dir=tmp_path, ttl_seconds=3600)
+    storage.save_analysis(result.analysis_data)
+    saved = storage.apply_convert_edits("an_pages", [
+        {"action": "update", "row_id": "row_1", "date": row.date, "description": "PIX EDITADO", "credit": 25},
+        {"action": "insert", "insert_position": 0, "date": row.date, "description": "MANUAL", "debit": 5},
+    ])
+    assert [item["source_page"] for item in saved["preview_transactions"]] == [None, 3]

@@ -21,6 +21,7 @@ export interface Transaction {
   credit: number | null;
   debit: number | null;
   balance: number | null;
+  sourcePage?: number | null;
   fieldStates: Record<TransactionField, TransactionFieldState>;
 }
 
@@ -63,14 +64,29 @@ export interface ExportResult {
 }
 
 export interface WorkspaceRepository {
+  loadDocument?(conversionId: string, signal?: AbortSignal): Promise<Blob>;
   getBatch(batchId: string): Promise<Batch>;
   saveTransactions(
     conversionId: string,
     transactions: Transaction[],
-  ): Promise<void>;
+  ): Promise<Transaction[] | void>;
   markReviewed(conversionId: string): Promise<void>;
   retryConversion(conversionId: string): Promise<void>;
   exportBatch(batchId: string): Promise<ExportResult>;
+}
+
+export type TransactionDraft = Pick<
+  Transaction,
+  "date" | "description" | "credit" | "debit"
+>;
+
+export function sortTransactionsByDate(
+  transactions: Transaction[],
+): Transaction[] {
+  const key = (date: string) => date.split("/").reverse().join("-");
+  return [...transactions].sort((a, b) =>
+    key(a.date).localeCompare(key(b.date)),
+  );
 }
 
 export function sortConversionsForReview(

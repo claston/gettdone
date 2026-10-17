@@ -161,7 +161,7 @@ def _find_free_port() -> int:
 
 
 @contextmanager
-def _run_http_server():
+def _run_http_server(configure=None):
     access_control = _AccessControlServiceInMemory(
         state_file=Path("access-control-state.json"),
         token_secret="test-secret",
@@ -170,6 +170,8 @@ def _run_http_server():
 
     app.dependency_overrides[get_report_service] = lambda: report_service
     app.dependency_overrides[get_access_control_service] = lambda: access_control
+    if configure:
+        configure(access_control)
 
     host = "127.0.0.1"
     port = _find_free_port()
@@ -316,3 +318,60 @@ def test_http_convert_edits_negative_path_rejects_other_owner() -> None:
 
     assert denied.status_code == 403
     assert denied.json()["detail"] == "Access denied for this analysis."
+
+
+def test_http_pro_save_can_be_reopened_from_batch_and_exported(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from app.adapters.conversion.memory_batches import InMemoryConversionBatchRepository
+    from app.application.conversion.contracts.documents import ConversionDocumentReference
+    from app.application.conversion.contracts.jobs import ConversionJobResultReference
+    from app.application.conversion.conversion_batch import ConversionBatch
+    from app.application.conversion.conversion_job import ConversionJob
+    from app.application.conversion.conversion_runtime_config import ConversionRuntimeConfig
+    from app.dependencies import get_conversion_batch_service, get_conversion_runtime_config
+
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://pro.example.test")
+    ids = {}
+
+    def configure(access):
+        owner = access.resolve_identity(anonymous_fingerprint="fp-owner", user_token=None)
+        batch = ConversionBatch.create(identity_type=owner.identity_type, identity_id=owner.identity_id,
+                                       files_count=1, idempotency_key="http-sync")
+        job = ConversionJob.create(batch_id=batch.batch_id, identity=owner, idempotency_key="http-sync-job",
+                                   document=ConversionDocumentReference(storage_key="doc_sync", filename="extrato.pdf",
+                                                                        file_type="pdf", size_bytes=100, sha256_hex="0" * 64))
+        repository = InMemoryConversionBatchRepository()
+        repository.create(batch=batch, jobs=[job])
+        repository.mark_uploaded(job.job_id)
+        repository.mark_queued(job.job_id)
+        repository.mark_running(job.job_id)
+        repository.mark_completed(job.job_id, result=ConversionJobResultReference(
+            analysis_id="an_convert_http_edits", payload={"analysis": {"bank_name": "Banco Teste"}},
+        ))
+        ids.update(batch_id=batch.batch_id, job_id=job.job_id)
+        app.dependency_overrides[get_conversion_batch_service] = lambda: SimpleNamespace(repository=repository)
+        app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping({
+            "CONVERSION_ARCHITECTURE_MODE": "async_aws",
+        })
+
+    with _run_http_server(configure) as base_url:
+        saved = httpx.post(f"{base_url}/api/pro/convert-edits/an_convert_http_edits",
+                           params={"anonymous_fingerprint": "fp-owner"},
+                           headers={"X-OFX-Pro-Client": "web", "Origin": "https://pro.example.test"},
+                           json={**ids, "edits": [{"row_id": "row_1", "date": "2026-04-05",
+                                                   "description": "SALVO E REABERTO", "credit": 45}]})
+        assert saved.status_code == 200
+        reloaded = httpx.get(f"{base_url}/api/pro/conversion-batches/{ids['batch_id']}",
+                            params={"anonymous_fingerprint": "fp-owner"})
+        assert reloaded.status_code == 200
+        analysis = reloaded.json()["jobs"][0]["result"]["analysis"]
+        assert analysis["updated_at"] == saved.json()["updated_at"]
+        assert analysis["preview_transactions"][0]["description"] == "SALVO E REABERTO"
+        report = httpx.get(f"{base_url}/convert-report/an_convert_http_edits",
+                          params={"anonymous_fingerprint": "fp-owner", "format": "csv"})
+        assert report.status_code == 200
+        assert "SALVO E REABERTO" in report.text
+        denied = httpx.get(f"{base_url}/api/pro/conversion-batches/{ids['batch_id']}",
+                          params={"anonymous_fingerprint": "fp-other"})
+        assert denied.status_code == 404

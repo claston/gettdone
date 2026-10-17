@@ -55,6 +55,18 @@ O preview usa cookies host-only próprios. Uma sessão criada em `www.ofxsimples
 
 As fixtures de demonstração cobrem conversões prontas, com suspeitas, revisadas, processando e com falha; o extrato demonstrativo é servido localmente em `/mock-statement`. A interface identifica esse modo com o selo `Dados de demonstração`.
 
+### Revisão de lançamentos
+
+Campos monetários são comparados pelo valor numérico: entrar e sair da célula ou mudar apenas sua formatação não cria uma alteração. O saldo é calculado pelo backend e aparece somente para consulta. As gravações automáticas são serializadas por documento; uma edição feita durante uma requisição permanece pendente até sua própria gravação. Em caso de erro, o workspace mantém as alterações e oferece uma nova tentativa.
+
+O botão **Adicionar** abre um diálogo com data, descrição e crédito ou débito. Ao confirmar, o lançamento aparece no topo da lista contínua e a rolagem volta ao início. Após a gravação, a lista fica ordenada por data. Cancelar o diálogo não altera o documento.
+
+O seletor **Organizar lançamentos** alterna entre lista contínua e separação por página de origem. O cabeçalho de cada página permite abrir a página correspondente no PDF. A opção acompanha a navegação entre documentos durante a revisão. Lançamentos manuais e resultados antigos sem procedência ficam no grupo **Sem página de origem**. A informação `source_page` é aditiva no JSON de transações e não exige migração SQL; resultados anteriores precisam ser reprocessados para obter esse dado.
+
+O PDF privado é carregado pelo mesmo cliente autenticado das APIs, com renovação de sessão e botão para recarregar em caso de falha. Somente o documento aberto fica em um blob temporário no navegador, liberado ao trocar de arquivo. Cookies e verificação de proprietário continuam obrigatórios.
+
+As edições do PRO também atualizam o snapshot em `conversion_jobs.result_payload`, preservando os metadados da instituição, para que o lote reaberto apresente as linhas e a versão salvas. O backend deve ser atualizado antes do frontend; o worker deve receber a mesma versão para que novas conversões incluam `source_page`. Conflitos reais com outra sessão não são sobrescritos automaticamente.
+
 ## Configuração
 
 Copie `.env.example` para `.env.local` e ajuste `NEXT_PUBLIC_API_URL` para apontar ao backend. A autenticação usa cookies de sessão e todas as requisições são enviadas com credenciais. Os endpoints mutáveis do PRO exigem o cabeçalho `X-OFX-Pro-Client: web` e uma origem exata permitida pelo backend; isso não substitui a validação de propriedade do lote por identidade.

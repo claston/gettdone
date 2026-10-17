@@ -59,6 +59,106 @@ const batchPayload = {
 };
 
 describe("HttpWorkspaceRepository", () => {
+  it("preserva versões e IDs após inserção no início, ordenação e polling antigo", async () => {
+    const original = structuredClone(batchPayload);
+    const rows = original.jobs[0].result!.analysis.preview_transactions;
+    const stored = [...rows];
+    let version = 0;
+    const writes: Array<{
+      edits: Array<Record<string, unknown>>;
+      expected_updated_at: string | null;
+    }> = [];
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (url, init) => {
+        if (String(url).endsWith("/auth/me")) return jsonResponse({ ok: true });
+        if (String(url).includes("/convert-edits/")) {
+          const payload = JSON.parse(String(init?.body));
+          writes.push(payload);
+          for (const edit of payload.edits) {
+            const row = {
+              date: edit.date,
+              description: edit.description,
+              amount: edit.credit ?? -edit.debit,
+              running_balance: 100,
+              warning_types: [],
+              is_deleted: false,
+            };
+            if (edit.action === "insert")
+              stored.splice(edit.insert_position, 0, row);
+            if (edit.action === "update")
+              stored[Number(edit.row_id.replace("row_", "")) - 1] = row;
+          }
+          version += 1;
+          return jsonResponse({
+            updated_at: `2026-10-17T20:00:0${version}Z`,
+            preview_transactions: stored,
+          });
+        }
+        return jsonResponse(original);
+      });
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+    const batch = await repository.getBatch("batch-real");
+    const [first, second] = batch.conversions[0].transactions;
+    const added = {
+      ...first,
+      id: "new-manual",
+      date: "30/09/2026",
+      description: "Nova transação",
+    };
+    await repository.saveTransactions("job-ready", [added, first, second]);
+    expect(writes[0].edits.map((edit) => edit.action)).toEqual(["insert"]);
+    const refreshed = await repository.getBatch("batch-real");
+    expect(refreshed.conversions[0].transactions[0].id).toBe("new-manual");
+    await repository.saveTransactions("job-ready", [
+      { ...second, description: "Tarifa corrigida" },
+      first,
+      added,
+    ]);
+    expect(writes[1].expected_updated_at).toBe("2026-10-17T20:00:01Z");
+    expect(writes[1].edits).toEqual([
+      expect.objectContaining({
+        action: "update",
+        row_id: "row_3",
+        description: "Tarifa corrigida",
+      }),
+    ]);
+    expect(stored.map((row) => row.description)).toEqual([
+      "Nova transação",
+      "PIX recebido",
+      "Tarifa corrigida",
+    ]);
+  });
+
+  it("não reenvia linhas inalteradas, incluindo lançamentos de valor zero", async () => {
+    const payload = structuredClone(batchPayload);
+    payload.jobs[0].result!.analysis.preview_transactions[0].amount = 0;
+    const fetcher = vi
+      .fn()
+      .mockImplementation(async (url: string) =>
+        jsonResponse(url.endsWith("/auth/me") ? {} : payload),
+      );
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+    const batch = await repository.getBatch("batch-real");
+    await repository.saveTransactions(
+      "job-ready",
+      batch.conversions[0].transactions,
+    );
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const rows = batch.conversions[0].transactions;
+    await repository.saveTransactions("job-ready", [
+      rows[0],
+      { ...rows[1], description: "Tarifa corrigida" },
+    ]);
+    const edits = JSON.parse(String(fetcher.mock.calls[2][1].body)).edits;
+    expect(edits).toEqual([
+      expect.objectContaining({
+        action: "update",
+        row_id: "row_2",
+        description: "Tarifa corrigida",
+      }),
+    ]);
+  });
   it("cria visualização PDF somente para os dois PDFs de um lote com três OFX", async () => {
     const names = [
       "caixa.pdf",
@@ -259,11 +359,11 @@ describe("HttpWorkspaceRepository", () => {
         description: "PIX corrigido",
         date: "2026-10-01",
       }),
+      { action: "delete", row_id: "row_2" },
       expect.objectContaining({
         action: "insert",
         description: "Novo lançamento",
       }),
-      { action: "delete", row_id: "row_2" },
     ]);
   });
 

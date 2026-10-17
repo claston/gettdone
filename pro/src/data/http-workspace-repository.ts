@@ -6,6 +6,7 @@ import type {
   Transaction,
   WorkspaceRepository,
 } from "@/domain/workspace";
+import { sortTransactionsByDate, countEdited } from "@/domain/workspace";
 import { createProApiClient } from "./pro-api-client";
 
 interface HttpWorkspaceRepositoryOptions {
@@ -14,6 +15,7 @@ interface HttpWorkspaceRepositoryOptions {
 }
 
 interface ApiTransaction {
+  source_page?: number | null;
   date?: string;
   description?: string;
   amount?: number;
@@ -59,6 +61,9 @@ interface ConversionContext {
   analysisId: string | null;
   updatedAt: string | null;
   rowIds: Map<string, string>;
+  rowCount: number;
+  persistedTransactions: Transaction[];
+  savedTransactions?: Transaction[];
 }
 
 const originalFieldStates = (): Transaction["fieldStates"] => ({
@@ -94,6 +99,9 @@ export function createHttpWorkspaceRepository(
       } catch {
         // Keep the safe status-based message when the response is not JSON.
       }
+      if (response.status === 409)
+        message =
+          "Este documento foi alterado em outra sessão. Suas edições continuam na tela; confira a outra sessão antes de recarregar.";
       throw new Error(message);
     }
     return response;
@@ -136,6 +144,15 @@ export function createHttpWorkspaceRepository(
   return {
     getBatch,
 
+    async loadDocument(conversionId, signal) {
+      const context = requireContext(contexts, conversionId);
+      const response = await request(
+        `/api/pro/conversion-batches/${encodeURIComponent(context.batchId)}/jobs/${encodeURIComponent(conversionId)}/document`,
+        { signal, headers: { Accept: "application/pdf" } },
+      );
+      return response.blob();
+    },
+
     async saveTransactions(conversionId: string, transactions: Transaction[]) {
       const context = requireContext(contexts, conversionId);
       if (!context.analysisId)
@@ -143,23 +160,60 @@ export function createHttpWorkspaceRepository(
       const currentIds = new Set(
         transactions.map((transaction) => transaction.id),
       );
-      const edits: Array<Record<string, unknown>> = transactions.map(
-        (transaction, index) => {
+      // Existing row IDs are positional: apply all updates/deletes before inserts.
+      const originalById = new Map(
+        context.persistedTransactions.map((row) => [row.id, row]),
+      );
+      const fields = ["date", "description", "credit", "debit"] as const;
+      const edits: Array<Record<string, unknown>> = transactions
+        .filter((row) => {
+          if (!context.rowIds.has(row.id)) return false;
+          const original = originalById.get(row.id);
+          return (
+            !original || fields.some((field) => row[field] !== original[field])
+          );
+        })
+        .map((transaction) => {
           const rowId = context.rowIds.get(transaction.id);
           return {
-            action: rowId ? "update" : "insert",
-            ...(rowId ? { row_id: rowId } : { insert_position: index }),
+            action: "update",
+            row_id: rowId,
             date: toIsoDate(transaction.date),
             description: transaction.description,
             credit: transaction.credit,
             debit: transaction.debit,
           };
-        },
-      );
+        });
       for (const [localId, rowId] of context.rowIds) {
         if (!currentIds.has(localId))
           edits.push({ action: "delete", row_id: rowId });
       }
+      const serverOrder: Array<string | null> = Array(context.rowCount).fill(
+        null,
+      );
+      for (const [localId, rowId] of context.rowIds) {
+        serverOrder[Number(rowId.replace("row_", "")) - 1] = localId;
+      }
+      const currentById = new Map(transactions.map((row) => [row.id, row]));
+      const dateKey = (date: string) => toIsoDate(date);
+      transactions.forEach((transaction) => {
+        if (context.rowIds.has(transaction.id)) return;
+        const nextIndex = serverOrder.findIndex((id) => {
+          const row = id ? currentById.get(id) : undefined;
+          return row && dateKey(row.date) > dateKey(transaction.date);
+        });
+        const position = nextIndex < 0 ? serverOrder.length : nextIndex;
+        edits.push({
+          action: "insert",
+          insert_position: position,
+          date: toIsoDate(transaction.date),
+          description: transaction.description,
+          credit: transaction.credit,
+          debit: transaction.debit,
+        });
+        serverOrder.splice(position, 0, transaction.id);
+      });
+      if (!edits.length) return transactions;
       const response = await request(
         `/api/pro/convert-edits/${encodeURIComponent(context.analysisId)}`,
         {
@@ -167,6 +221,8 @@ export function createHttpWorkspaceRepository(
           body: JSON.stringify({
             edits,
             expected_updated_at: context.updatedAt,
+            batch_id: context.batchId,
+            job_id: conversionId,
           }),
         },
       );
@@ -175,17 +231,28 @@ export function createHttpWorkspaceRepository(
         preview_transactions?: ApiTransaction[];
       };
       context.updatedAt = result.updated_at ?? context.updatedAt;
-      const activeRows = (result.preview_transactions ?? [])
-        .map((row, index) => ({ row, id: `row_${index + 1}` }))
-        .filter(({ row }) => !row.is_deleted);
-      if (activeRows.length === transactions.length) {
+      if (result.preview_transactions?.length === serverOrder.length) {
+        const rows = result.preview_transactions;
         context.rowIds = new Map(
-          transactions.map((transaction, index) => [
-            transaction.id,
-            activeRows[index].id,
-          ]),
+          serverOrder.flatMap((id, index) =>
+            id && currentIds.has(id) && !rows[index].is_deleted
+              ? [[id, `row_${index + 1}`] as const]
+              : [],
+          ),
         );
+        context.rowCount = rows.length;
+        context.savedTransactions = transactions.map((transaction) => {
+          const serverIndex = serverOrder.indexOf(transaction.id);
+          return {
+            ...transaction,
+            balance: rows[serverIndex].running_balance ?? null,
+          };
+        });
+      } else {
+        context.savedTransactions = transactions;
       }
+      context.persistedTransactions = context.savedTransactions;
+      return context.savedTransactions;
     },
 
     async markReviewed(conversionId: string) {
@@ -254,22 +321,41 @@ function mapConversion({
     job.filename.split(".").pop() ??
     ""
   ).toLowerCase();
-  const transactions = (analysis?.preview_transactions ?? [])
+  const remoteTransactions = (analysis?.preview_transactions ?? [])
     .map(mapTransaction)
     .filter((_, index) => !analysis?.preview_transactions?.[index].is_deleted);
+  const analysisId = job.analysis_id ?? job.result?.processing_id ?? null;
+  let context = contexts.get(job.job_id);
+  // A loaded document is an editing snapshot. Polling other jobs must not
+  // advance its optimistic-lock version or replace positional row mappings.
+  const keepContext =
+    context?.analysisId === analysisId &&
+    (context.rowCount > 0 || remoteTransactions.length === 0);
+  if (!keepContext) {
+    context = {
+      batchId,
+      analysisId,
+      updatedAt: analysis?.updated_at ?? null,
+      rowIds: new Map(
+        remoteTransactions.map((transaction) => [
+          transaction.id,
+          transaction.id,
+        ]),
+      ),
+      rowCount: analysis?.preview_transactions?.length ?? 0,
+      persistedTransactions: remoteTransactions,
+    };
+    contexts.set(job.job_id, context);
+  }
+  const transactions = sortTransactionsByDate(
+    context?.savedTransactions ??
+      context?.persistedTransactions ??
+      remoteTransactions,
+  );
   const suspectedCount = transactions.filter((transaction) =>
     Object.values(transaction.fieldStates).includes("SUSPECTED"),
   ).length;
   const status = mapStatus(job, suspectedCount);
-  const analysisId = job.analysis_id ?? job.result?.processing_id ?? null;
-  contexts.set(job.job_id, {
-    batchId,
-    analysisId,
-    updatedAt: analysis?.updated_at ?? null,
-    rowIds: new Map(
-      transactions.map((transaction) => [transaction.id, transaction.id]),
-    ),
-  });
   return {
     id: job.job_id,
     batchId,
@@ -279,9 +365,9 @@ function mapConversion({
     period: resolveTransactionPeriod(transactions),
     status,
     reviewStatus: status === "REVIEWED" ? "REVIEWED" : "PENDING",
-    transactionCount: analysis?.transactions_total ?? transactions.length,
+    transactionCount: transactions.length,
     suspectedCount,
-    editedCount: 0,
+    editedCount: countEdited(transactions),
     pdf:
       fileType !== "pdf" || job.status === "failed" || job.status === "expired"
         ? null
@@ -311,6 +397,7 @@ function mapTransaction(row: ApiTransaction, index: number): Transaction {
     credit: amount > 0 ? amount : null,
     debit: amount < 0 ? Math.abs(amount) : null,
     balance: row.running_balance == null ? null : Number(row.running_balance),
+    sourcePage: row.source_page ?? null,
     fieldStates,
   };
 }

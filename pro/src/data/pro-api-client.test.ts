@@ -10,6 +10,81 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("ProApiClient", () => {
+  it.each([
+    [
+      400,
+      "Missing or invalid identity context. Start an anonymous session or authenticate.",
+    ],
+    [403, "Access denied for this analysis."],
+  ])(
+    "recupera a sessão expirada antes de repetir uma gravação com %s",
+    async (status, detail) => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(jsonResponse({ email: "owner@test" }))
+        .mockResolvedValueOnce(jsonResponse({ detail }, status))
+        .mockResolvedValueOnce(jsonResponse({}, 401))
+        .mockResolvedValueOnce(jsonResponse({ email: "owner@test" }))
+        .mockResolvedValueOnce(jsonResponse({ updated_at: "saved" }));
+      const client = createProApiClient({ apiUrl: "/", fetcher });
+      expect(
+        (
+          await client.request("/api/pro/convert-edits/an_owned", {
+            method: "POST",
+            body: "{}",
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        fetcher.mock.calls.filter(([url]) => url === "/auth/session/refresh"),
+      ).toHaveLength(1);
+      expect(fetcher.mock.calls[1][1]?.body).toBe(
+        fetcher.mock.calls[4][1]?.body,
+      );
+    },
+  );
+
+  it("preserva a rejeição de origem sem repetir a gravação", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(
+        jsonResponse({ detail: "Origin is not allowed for PRO writes." }, 403),
+      );
+    const client = createProApiClient({ apiUrl: "/", fetcher });
+    expect(
+      (
+        await client.request("/api/pro/convert-edits/an_owned", {
+          method: "POST",
+        })
+      ).status,
+    ).toBe(403);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it("renova a sessão também quando um documento fica oculto por 404", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ email: "owner@test" }))
+      .mockResolvedValueOnce(
+        jsonResponse({ detail: "Conversion batch not found." }, 404),
+      )
+      .mockResolvedValueOnce(jsonResponse({}, 401))
+      .mockResolvedValueOnce(jsonResponse({ email: "owner@test" }))
+      .mockResolvedValueOnce(
+        new Response("%PDF-1.4", {
+          headers: { "Content-Type": "application/pdf" },
+        }),
+      );
+    const client = createProApiClient({ apiUrl: "/", fetcher });
+    const response = await client.request(
+      "/api/pro/conversion-batches/batch-1/jobs/job-1/document",
+    );
+    expect(response.status).toBe(200);
+    expect(
+      fetcher.mock.calls.some(([url]) => url === "/auth/session/refresh"),
+    ).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(5);
+  });
   it("reutiliza a sessão autenticada sem criar identidade anônima", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

@@ -96,3 +96,26 @@ def test_batch_repository_rejects_invalid_transition_without_corrupting_state() 
         repository.mark_running("job_1")
 
     assert repository.get("job_1").status == ConversionJobStatus.UPLOADING
+
+
+def test_batch_snapshot_keeps_saved_rows_and_never_regresses_to_an_older_save() -> None:
+    repository = InMemoryConversionBatchRepository()
+    repository.create(batch=_batch(), jobs=[_job(1), _job(2)])
+    repository.mark_uploaded("job_1")
+    repository.mark_queued("job_1")
+    repository.mark_running("job_1")
+    repository.mark_completed("job_1", result=ConversionJobResultReference(
+        analysis_id="an_1", payload={"quota_remaining": 18, "analysis": {
+            "bank_name": "Itaú", "updated_at": "2026-10-01T00:00:00Z",
+        }},
+    ))
+    repository.mark_reviewed("job_1", reviewed_at="2026-10-01")
+    saved = {"updated_at": "2026-10-02T00:00:00Z", "preview_transactions": [
+        {"description": "Corrigido", "source_page": 3},
+    ]}
+    repository.update_analysis("job_1", analysis=saved)
+    repository.update_analysis("job_1", analysis={"updated_at": "2026-10-01T00:00:00Z", "preview_transactions": []})
+    payload = repository.get("job_1").result.payload
+    assert payload["analysis"] == {"bank_name": "Itaú", **saved}
+    assert payload["quota_remaining"] == 18
+    assert "reviewed_at" not in payload

@@ -86,6 +86,8 @@ class ConvertEditPatch(BaseModel):
 
 
 class ConvertEditsRequest(BaseModel):
+    batch_id: str | None = None
+    job_id: str | None = None
     edits: list[ConvertEditPatch]
     expected_updated_at: str | None = None
     opening_balance: float | None = None

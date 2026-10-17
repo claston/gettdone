@@ -35,6 +35,7 @@ class Insight(BaseModel):
 
 
 class TransactionPreview(BaseModel):
+    source_page: int | None = None
     date: str
     description: str
     amount: float
