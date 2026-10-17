@@ -262,6 +262,15 @@ def _score_declarative_layout_profile(
     *,
     negative_evidence_text: str,
 ) -> float:
+    if profile.profile_name == "bradesco_extrato_cartao_web_usd_brl_v1":
+        header = normalized_text.split("DETALHE DO EXTRATO", 1)[0]
+        if not (
+            "BRADESCO" in normalized_text
+            and "NUMERO DO CARTAO" in header
+            and "DETALHE DO EXTRATO" in normalized_text
+            and "DATA HISTORICO US$ R$" in normalized_text
+        ):
+            return 0.0
     score = score_layout_profile(
         profile,
         normalized_text,

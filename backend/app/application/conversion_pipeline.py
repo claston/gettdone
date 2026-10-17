@@ -187,7 +187,7 @@ class ConversionPipeline:
 
         normalize_start = perf_counter()
         normalized_transactions = self.normalize_transactions(parsed_transactions)
-        if is_payables_report:
+        if is_payables_report or layout_inference_name == "bradesco_extrato_cartao_web_usd_brl_v1":
             normalized_transactions = [replace(normalized, description=original.description)
                                        for normalized, original in zip(normalized_transactions, parsed_transactions, strict=True)]
         normalize_ms = round((perf_counter() - normalize_start) * 1000, 3)

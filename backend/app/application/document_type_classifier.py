@@ -29,7 +29,7 @@ FINANCIAL_SPREADSHEET = "financial_spreadsheet"
 OTHER_DOCUMENT = "other"
 UNKNOWN_DOCUMENT = "unknown"
 
-DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-10-16.3"
+DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-10-16.4"
 
 _PDF_PREVIEW_PAGE_LIMIT = 3
 _PDF_PREVIEW_CHAR_LIMIT = 16_000
@@ -79,6 +79,13 @@ def classify_document_type(
             confidence=round(confidence, 2),
             evidence=invoice_evidence,
         )
+
+    if (
+        layout_inference_name == "bradesco_extrato_cartao_web_usd_brl_v1"
+        and "NUMERO DO CARTAO" in normalized_text
+        and "DATA HISTORICO US$ R$" in normalized_text
+    ):
+        return _classification(CREDIT_CARD_STATEMENT, 0.99, "card_currency_statement_layout")
 
     card_evidence = _credit_card_evidence(normalized_text)
     if _has_strong_credit_card_identity(card_evidence) and _has_document_level_credit_card_identity(

@@ -1,0 +1,45 @@
+layout_profile:
+  schema_version: 2
+  profile_name: bradesco_extrato_cartao_web_usd_brl_v1
+  bank: Bradesco
+  layout_family: bradesco_extrato_cartao_web
+  statement_type: cartao_credito_fatura
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Bradesco"
+      - "Número do cartão"
+      - "Detalhe do Extrato"
+      - "Data Histórico US$ R$"
+    optional_keywords:
+      - "Nova Consulta de Extrato"
+      - "Centro de custo"
+      - "Data de vencimento"
+    negative_keywords:
+      - "EXTRATO CONTA CORRENTE"
+    min_score_hint: 0.78
+  table_detection:
+    header_keywords:
+      - "Data Histórico US$ R$"
+    expected_column_order:
+      - date
+      - description
+      - foreign_amount
+      - amount
+  parsing:
+    date_format: "dd/MM"
+    date_year_source: "invoice_reference"
+    amount_locale: "pt-BR"
+    negative_patterns:
+      - "invoice_expense"
+    positive_patterns:
+      - "invoice_payment_or_credit"
+    ignore_rows:
+      - "TOTAL:"
+    opening_balance_rows: []
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields: []
