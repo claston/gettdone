@@ -8,6 +8,7 @@ from app.application.bank_resolver import DEFAULT_BANK_CODE, resolve_bank_code
 from app.application.conversion_pipeline import ConversionPipeline
 from app.application.models import TransactionRow
 from app.application.normalization.balance import resolve_descending_running_balance
+from app.application.parsers.pdf.layout_specific.bradesco_card_web import BRADESCO_CARD_WEB_LAYOUT
 from app.application.parsers.pdf.layout_specific.bradesco_daily_order import (
     resolve_bradesco_period_closing,
     resolve_bradesco_period_opening,
@@ -75,6 +76,8 @@ def _resolve_opening_balance(
     extracted_text: str | None = None,
     layout_name: str | None = None,
 ) -> float | None:
+    if layout_name == BRADESCO_CARD_WEB_LAYOUT:
+        return None
     if layout_name == DIGITAL_CREDIT_CARD_LAYOUT:
         return float(extract_invoice_financials(extracted_text or "").opening_balance)
     labeled_balance = _extract_labeled_balance(
@@ -141,6 +144,8 @@ def _resolve_closing_balance(
     layout_name: str | None = None,
     extracted_text: str | None = None,
 ) -> float | None:
+    if layout_name == BRADESCO_CARD_WEB_LAYOUT:
+        return None
     if layout_name == BRADESCO_EMPRESAS_LAYOUT:
         return resolve_bradesco_period_closing(rows)
     labeled_balance = _extract_labeled_balance(
@@ -508,6 +513,7 @@ def _resolve_ofx_account_type(
 
         if layout_name in {
             DIGITAL_CREDIT_CARD_LAYOUT,
+            BRADESCO_CARD_WEB_LAYOUT,
             "banco_inter_fatura_cartao_despesas_v1",
             "sicoob_fatura_cartao_credito_movimentos_v1",
             "sicoob_cartao_lancamentos_futuros_v1",
