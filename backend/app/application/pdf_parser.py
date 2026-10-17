@@ -95,6 +95,8 @@ from app.application.textract_extraction_mapper import map_textract_blocks_to_ex
 from app.application.textract_gateway import TextractGateway
 from app.application.textract_transaction_adapter import adapt_textract_extraction_to_transactions
 from app.application.unsupported_document_detection import (
+    ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE,
+    ACCOUNTS_PAYABLE_REPORT_USER_MESSAGE,
     BILLING_REPORT_DOCUMENT_TYPE,
     BILLING_REPORT_USER_MESSAGE,
     INVESTMENT_SUMMARY_DOCUMENT_TYPE,
@@ -743,6 +745,11 @@ def _parse_statement_page_texts(
 ) -> PdfParseResult:
     joined_text = "\n".join(page_texts)
     unsupported_document_type = detect_unsupported_document_type(joined_text)
+    if unsupported_document_type == ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE:
+        raise UnsupportedDocumentContentError(
+            document_type=unsupported_document_type,
+            message=ACCOUNTS_PAYABLE_REPORT_USER_MESSAGE,
+        )
     if unsupported_document_type == BILLING_REPORT_DOCUMENT_TYPE:
         raise UnsupportedDocumentContentError(
             document_type=unsupported_document_type,

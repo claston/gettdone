@@ -19,6 +19,11 @@ INVESTMENT_SUMMARY_USER_MESSAGE = (
     "Este arquivo é um resumo ou posição de investimentos, sem lançamentos compatíveis com esta conversão. "
     "Envie um extrato com as movimentações da conta."
 )
+ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE = "accounts_payable_report"
+ACCOUNTS_PAYABLE_REPORT_USER_MESSAGE = (
+    "Este arquivo é um relatório de contas a pagar, não um extrato bancário. "
+    "Envie o extrato da conta em PDF, CSV, XLSX ou OFX."
+)
 
 _BILLING_REPORT_TITLE = "RELATORIO DE FATURAMENTO"
 _MONTH_NAMES = (
@@ -70,6 +75,8 @@ def detect_unsupported_document_type(text: str) -> str | None:
 
     normalized_text = "\n".join(normalized_lines)
     header_text = " ".join(normalized_lines[:6])
+    if _is_accounts_payable_report(normalized_lines):
+        return ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE
     if _BILLING_REPORT_TITLE in header_text and _is_billing_report(normalized_text):
         return BILLING_REPORT_DOCUMENT_TYPE
     if _PAYMENT_REPORT_TITLE in normalized_text and _is_payment_report(normalized_text):
@@ -77,6 +84,23 @@ def detect_unsupported_document_type(text: str) -> str | None:
     if _is_investment_summary(normalized_lines):
         return INVESTMENT_SUMMARY_DOCUMENT_TYPE
     return None
+
+
+def _is_accounts_payable_report(lines: tuple[str, ...]) -> bool:
+    title_index = next(
+        (index for index, line in enumerate(lines[:6])
+         if re.match(r"^RELATORIO DE CONTAS A PAGAR\b", line)),
+        None,
+    )
+    if title_index is None:
+        return False
+    # A report appended to a bank statement must not reject the statement.
+    if any(line.startswith("EXTRATO") for line in lines[:title_index]):
+        return False
+    text = " ".join(lines)
+    return all(marker in text for marker in (
+        "VENCIMENTO", "PAGAMENTO", "FORNECEDOR", "VALOR TOTAL", "EM ABERTO", "SITUACAO",
+    ))
 
 
 def _is_billing_report(normalized_text: str) -> bool:
