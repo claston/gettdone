@@ -95,6 +95,17 @@ def test_build_ofx_statement_includes_ledgerbal_when_closing_balance_is_provided
     assert "<DTASOF>20260410000000[-3:BRT]" in statement
 
 
+def test_ledger_asof_uses_latest_transaction_date_regardless_of_input_order() -> None:
+    transactions = [
+        NormalizedTransaction("2026-09-29", "INTERMEDIÁRIO", -5, "outflow"),
+        NormalizedTransaction("2026-09-30", "MAIS RECENTE", -20, "outflow"),
+        NormalizedTransaction("2026-09-28", "MAIS ANTIGO", 100, "inflow"),
+    ]
+    statement = build_ofx_statement(transactions, closing_balance=75)
+    assert "<DTASOF>20260930000000[-3:BRT]" in statement
+    assert statement.index("<DTPOSTED>20260929") < statement.index("<DTPOSTED>20260930") < statement.index("<DTPOSTED>20260928")
+
+
 def test_build_ofx_statement_accepts_bank_branch_and_account_number() -> None:
     transactions = [
         NormalizedTransaction(
