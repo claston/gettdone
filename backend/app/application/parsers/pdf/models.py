@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from app.application.document_extraction_models import ExtractedLine
+from app.application.document_extraction_models import ExtractedLine, RawDocumentExtraction
 from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.pdf_layout_inference import PdfLayoutInference
 
@@ -14,6 +14,8 @@ class PdfParseResult:
     canonical_transactions: list[CanonicalTransaction] | None = None
     source_page_texts: tuple[str, ...] | None = None
     source_layout_lines: tuple[tuple[ExtractedLine, ...], ...] | None = None
+    source_extraction: RawDocumentExtraction | None = None
+    document_parts: list[dict[str, object]] | None = None
 
 
 @dataclass(frozen=True)

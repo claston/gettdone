@@ -10,6 +10,21 @@ class InvalidFileContentError(Exception):
     """Raised when a supported file has invalid or unreadable content."""
 
 
+class PdfFinancialValidationError(InvalidFileContentError):
+    """Readable invoice fields could not be reconciled with its printed totals."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Não foi possível conferir todos os lançamentos com o total da fatura. "
+            "Para evitar valores incorretos, este arquivo não foi convertido. "
+            "Envie a fatura original completa baixada da instituição."
+        )
+
+
+class OcrFinancialAmbiguityError(InvalidFileContentError):
+    """Raised when OCR succeeded but financial fields cannot be associated safely."""
+
+
 class CrossPageTransactionSplitError(InvalidFileContentError):
     """Raised when transaction fields were printed on different PDF pages."""
 
