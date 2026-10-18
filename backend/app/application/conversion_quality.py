@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Iterable
 
-QUALITY_RULE_VERSION = "2026-09-10.v1"
+QUALITY_RULE_VERSION = "2026-10-18.v2"
 PDF_LAYOUT_CONFIDENCE_THRESHOLD = 0.95
 
 
@@ -35,6 +35,14 @@ def assess_conversion_quality(
         return ConversionQualityAssessment("processing", None, QUALITY_RULE_VERSION, ())
     if normalized_status not in {"sucesso", "success", "completed"}:
         return ConversionQualityAssessment("failed", None, QUALITY_RULE_VERSION, ("technical_failure",))
+
+    if (
+        transactions_count == 0
+        and selected_parser in {"explicit_no_activity", "layout_confirmed_no_activity"}
+        and not warning_count
+        and not balance_failed
+    ):
+        return ConversionQualityAssessment("clean", None, QUALITY_RULE_VERSION, ())
 
     reasons: list[str] = []
     if max(0, int(transactions_count or 0)) == 0:

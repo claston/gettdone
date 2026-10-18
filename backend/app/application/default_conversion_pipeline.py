@@ -296,6 +296,7 @@ def _build_pdf_processing_metrics(
         "ocr_unresolved_rows": int(parse_metrics.get("ocr_unresolved_rows", 0)),
         "ocr_annotations_detected": int(parse_metrics.get("ocr_annotations_detected", 0)),
         "opening_balance_ambiguous": int(parse_metrics.get("opening_balance_ambiguous", 0)),
+        "statement_no_activity": int(parse_metrics.get("statement_no_activity", 0)),
         "inline_decision": str(parse_metrics.get("inline_decision", "")),
         "tabular_decision": str(parse_metrics.get("tabular_decision", "")),
         "columnar_decision": str(parse_metrics.get("columnar_decision", "")),

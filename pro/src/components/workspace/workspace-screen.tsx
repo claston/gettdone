@@ -835,7 +835,19 @@ function TransactionGrid({
           </tbody>
         </table>
         {visible.length === 0 && (
-          <div className="empty-table">Nenhum lançamento neste filtro.</div>
+          <div className="empty-table" role="status">
+            {conversion.noActivity && conversion.transactions.length === 0 ? (
+              <>
+                <p>Extrato sem movimentação no período.</p>
+                <p>
+                  A conversão foi concluída. Você pode baixar o OFX sem
+                  lançamentos.
+                </p>
+              </>
+            ) : (
+              "Nenhum lançamento neste filtro."
+            )}
+          </div>
         )}
       </div>
       <footer className="grid-legend">

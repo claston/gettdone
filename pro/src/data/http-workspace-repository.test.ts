@@ -59,6 +59,36 @@ const batchPayload = {
 };
 
 describe("HttpWorkspaceRepository", () => {
+  it("mapeia a declaração de ausência de movimentação sem marcar falha", async () => {
+    const payload = structuredClone(batchPayload);
+    payload.jobs = [payload.jobs[0]];
+    const analysis = {
+      ...payload.jobs[0].result!.analysis,
+      transactions_total: 0,
+      preview_transactions: [],
+      pdf_processing_metrics: { statement_no_activity: 1 },
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...payload,
+          jobs: [{ ...payload.jobs[0], result: { analysis } }],
+        }),
+      );
+    const batch = await createHttpWorkspaceRepository({
+      apiUrl: "/",
+      fetcher,
+    }).getBatch("batch-real");
+    expect(batch.conversions[0]).toMatchObject({
+      status: "READY",
+      noActivity: true,
+      transactionCount: 0,
+      transactions: [],
+    });
+    expect(batch.conversions[0].downloadUrl).toContain("format=ofx");
+  });
   it("mantém excluída a linha nova removida antes do primeiro autosave", async () => {
     const rows = batchPayload.jobs[0].result!.analysis.preview_transactions;
     const fetcher = vi

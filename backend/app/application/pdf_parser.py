@@ -69,6 +69,7 @@ from app.application.normalization.pdf_tabular_rules import (
 from app.application.normalization.pdf_text_rules import should_ignore_line, should_skip_transaction_description
 from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf import text_extraction
+from app.application.parsers.pdf.empty_statement import has_complete_santander_inactive_summary, has_explicit_no_activity
 from app.application.parsers.pdf.layout_specific.bradesco_card_web import BRADESCO_CARD_WEB_LAYOUT, BRADESCO_CARD_WEB_PARSER
 from app.application.parsers.pdf.layout_specific.bradesco_daily_order import resolve_bradesco_split_day_order
 from app.application.parsers.pdf.layout_specific.contract import (
@@ -199,6 +200,19 @@ def parse_pdf_transactions(
     on_ocr_progress: Callable[[int, int], None] | None = None,
     max_ocr_pages: int | None = None,
 ) -> PdfParseResult:
+    result = _parse_pdf_transactions(raw_bytes, on_ocr_progress, max_ocr_pages)
+    if result.parse_metrics.get("statement_no_activity"):
+        page_texts = result.source_page_texts or ()
+        if len(page_texts) != _read_pdf_page_count(raw_bytes) or not all(text.strip() for text in page_texts):
+            raise InvalidFileContentError("Cannot confirm an empty statement: some PDF pages could not be read.")
+    return result
+
+
+def _parse_pdf_transactions(
+    raw_bytes: bytes,
+    on_ocr_progress: Callable[[int, int], None] | None = None,
+    max_ocr_pages: int | None = None,
+) -> PdfParseResult:
     try:
         reference_month_year = text_extraction.read_pdf_creation_month_year(raw_bytes)
     except InvalidFileContentError as exc:
@@ -281,6 +295,11 @@ def parse_pdf_transactions(
                     exc, textract_attempted=0, native_text_detected=1,
                     ocr_retry_skipped=1, ocr_retry_skip_reason="financial_validation_failed",
                 )
+        if has_complete_santander_inactive_summary(native_pages):
+            return _with_parse_observability(
+                _empty_statement_result(native_pages, structural=True),
+                extraction_provider="native_pdf_text", native_text_detected=1, textract_attempted=0,
+            )
         native_grid = parse_native_unicred_grid(raw_bytes, native_pages)
         if native_grid is not None:
             return _with_parse_observability(
@@ -570,7 +589,7 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
             page for page in extraction.pages if segmentation.page_texts[page.page_number - 1]
         ])
     is_monthly = infer_pdf_layout("\n".join(segmentation.page_texts)).layout_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
-    if textract_mode == "text" or is_monthly:
+    if textract_mode == "text" or is_monthly or has_explicit_no_activity(segmentation.page_texts):
         text_mode_result = _parse_scanned_pdf_with_textract_text_pages(statement_extraction)
         text_mode_metrics = dict(text_mode_result.parse_metrics)
         text_mode_metrics["extraction_provider"] = "aws_textract"
@@ -747,6 +766,21 @@ def _parse_pdf_transactions_from_page_texts(
     return replace(result, source_page_texts=segmentation.source_page_texts, document_parts=segmentation.parts or None)
 
 
+def _empty_statement_result(page_texts: list[str], *, structural: bool = False) -> PdfParseResult:
+    joined_text = "\n".join(page_texts)
+    return PdfParseResult(
+        transactions=[], canonical_transactions=[], layout=infer_pdf_layout(joined_text),
+        extracted_text=joined_text, source_page_texts=tuple(page_texts),
+        parse_metrics={
+            "statement_no_activity": 1,
+            "selected_parser": "layout_confirmed_no_activity" if structural else "explicit_no_activity",
+            "parser_selection_reason": "complete_inactive_account_summary" if structural else "statement_declares_no_activity",
+            "page_count": len(page_texts), "extracted_char_count": len(joined_text),
+            "flattened_line_count": len(joined_text.splitlines()),
+        },
+    )
+
+
 def _parse_statement_page_texts(
     page_texts: list[str],
     *,
@@ -774,6 +808,8 @@ def _parse_statement_page_texts(
         )
     layout = infer_pdf_layout(joined_text)
     layout_profile = get_layout_profile(layout.layout_name)
+    if has_explicit_no_activity(page_texts):
+        return _empty_statement_result(page_texts)
     cross_page_split = detect_cross_page_transaction_split(page_texts, layout_profile=layout_profile)
     if cross_page_split is not None:
         raise CrossPageTransactionSplitError(
@@ -1127,6 +1163,8 @@ def _should_treat_grouped_date_line_as_description_continuation(
 
 
 def _should_try_ocr_reparse(result: PdfParseResult, *, page_count: int) -> bool:
+    if result.parse_metrics.get("statement_no_activity"):
+        return False
     if page_count < 2:
         return False
     if result.layout.layout_name != "generic_statement_ptbr":

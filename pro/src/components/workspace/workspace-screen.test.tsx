@@ -77,6 +77,49 @@ const completedBatch: Batch = {
 };
 
 describe("WorkspaceScreen", () => {
+  it("conclui extrato sem movimentação com aviso e download disponível", async () => {
+    const batch: Batch = {
+      ...completedBatch,
+      conversions: [
+        {
+          ...completedBatch.conversions[0],
+          noActivity: true,
+          transactions: [],
+          transactionCount: 0,
+          downloadUrl: "/convert-report/an_empty?format=ofx",
+        },
+      ],
+    };
+    const repository: WorkspaceRepository = {
+      getBatch: vi.fn(async () => batch),
+      saveTransactions: vi.fn(),
+      markReviewed: vi.fn(),
+      retryConversion: vi.fn(),
+      exportBatch: vi.fn(async () => ({
+        fileName: "lote.zip",
+        conversionCount: 1,
+      })),
+    };
+    render(<WorkspaceScreen batchId={batch.id} repository={repository} />);
+    expect(
+      await screen.findByText("Extrato sem movimentação no período."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "A conversão foi concluída. Você pode baixar o OFX sem lançamentos.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Baixar OFX" })).toHaveAttribute(
+      "href",
+      "/convert-report/an_empty?format=ofx",
+    );
+    expect(
+      screen.getByRole("button", { name: "Marcar revisado" }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByText("Conversão interrompida"),
+    ).not.toBeInTheDocument();
+  });
   it("mantém a linha excluída no lugar e permite restaurar sem perder seus valores", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     const repository = createMockWorkspaceRepository({ latencyMs: 0 });

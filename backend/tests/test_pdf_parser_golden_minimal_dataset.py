@@ -136,7 +136,7 @@ def test_pdf_parser_golden_negative_unsupported_layout_message(monkeypatch) -> N
         )
 
 
-def test_pdf_parser_golden_negative_no_pattern_quasi_real_message(monkeypatch) -> None:
+def test_pdf_parser_golden_explicit_no_movements_is_a_successful_empty_statement(monkeypatch) -> None:
     sample_text = "\n".join(
         [
             "BANCO EXEMPLO S.A.",
@@ -146,12 +146,9 @@ def test_pdf_parser_golden_negative_no_pattern_quasi_real_message(monkeypatch) -
             "SALDO FINAL DISPONIVEL",
         ]
     )
-    with pytest.raises(InvalidFileContentError, match="no recognizable transaction row pattern"):
-        _run_pdf_parser_scenario(
-            monkeypatch=monkeypatch,
-            sample_text=sample_text,
-            layout_override=None,
-        )
+    result = _run_pdf_parser_scenario(monkeypatch=monkeypatch, sample_text=sample_text, layout_override=None)
+    assert result.transactions == []
+    assert result.parse_metrics["statement_no_activity"] == 1
 
 
 def test_pdf_parser_golden_negative_no_pattern_message(monkeypatch) -> None:
@@ -214,6 +211,7 @@ def _run_pdf_parser_scenario(
     else:
         raise ValueError("sample_text or sample_pages must be provided")
     monkeypatch.setattr(pdf_parser_module, "_extract_pdf_page_texts", lambda raw_bytes: pages)
+    monkeypatch.setattr(pdf_parser_module, "_read_pdf_page_count", lambda raw_bytes: len(pages))
     if layout_override is not None:
         monkeypatch.setattr(pdf_parser_module, "infer_pdf_layout", lambda text: layout_override)
     return parse_pdf_transactions(b"%PDF synthetic")

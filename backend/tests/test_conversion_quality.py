@@ -1,11 +1,28 @@
 from types import SimpleNamespace
 
+import pytest
+
 from app.application.conversion_quality import (
     QUALITY_RULE_VERSION,
     assess_conversion_quality,
     build_line_quality_issues,
     sanitize_failure_diagnostics,
 )
+
+
+@pytest.mark.parametrize("parser", ["explicit_no_activity", "layout_confirmed_no_activity"])
+def test_confirmed_empty_statement_is_clean_without_transaction_quality_warnings(parser):
+    result = assess_conversion_quality(status="Sucesso", conversion_type="pdf-conversion", transactions_count=0,
+        selected_parser=parser, layout_name="generic_statement_ptbr")
+    assert result.status == "clean"
+    assert result.reason_codes == ()
+
+
+def test_unconfirmed_empty_result_still_requires_review():
+    result = assess_conversion_quality(status="Sucesso", conversion_type="pdf-conversion", transactions_count=0,
+        selected_parser="tabular", layout_name="generic_statement_ptbr")
+    assert result.status == "review"
+    assert "no_transactions" in result.reason_codes
 
 
 def test_pdf_is_clean_only_with_specific_high_confidence_layout() -> None:

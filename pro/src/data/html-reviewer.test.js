@@ -13,6 +13,82 @@ const script = readFileSync(
 );
 
 describe("revisor HTML do OFX Simples", () => {
+  it("informa extrato sem movimentação e mantém o download habilitado após reabrir", async () => {
+    const dom = new JSDOM(html, {
+      url: "https://ofx.test/ofx-convert.html",
+      runScripts: "outside-only",
+      pretendToBeVisual: true,
+    });
+    dom.window.fetch = vi.fn(async () => new Response("[]"));
+    dom.window.OfxSession = {
+      getCurrentUser: vi.fn(async () => ({
+        email: "owner@test",
+        quota_remaining: 10,
+        quota_limit: 50,
+      })),
+      request: vi.fn(async () => new Response("{}")),
+    };
+    Object.defineProperty(dom.window.performance, "getEntriesByType", {
+      value: () => [{ type: "reload" }],
+    });
+    dom.window.sessionStorage.setItem(
+      "ofxsimples_ofx_convert_view_state_ofx_v1",
+      JSON.stringify({
+        processing_id: "an_empty",
+        analysis: {
+          analysis_id: "an_empty",
+          transactions_total: 0,
+          preview_transactions: [],
+          pdf_processing_metrics: { statement_no_activity: 1, page_count: 1 },
+        },
+        preview_rows: [],
+        original_rows: [],
+      }),
+    );
+    try {
+      dom.window.eval(script);
+      await vi.waitFor(() =>
+        expect(
+          dom.window.document.querySelector("#kpis").textContent,
+        ).toContain("Extrato sem movimentação no período"),
+      );
+      expect(dom.window.document.querySelector("#kpis").textContent).toContain(
+        "Você pode baixar o OFX sem lançamentos",
+      );
+      const download = dom.window.document.querySelector(
+        "#download-ofx-btn, #download-report-btn",
+      );
+      expect(download.disabled).toBe(false);
+      expect(
+        dom.window.document.querySelector("#opening-balance-input").value,
+      ).toBe("");
+      expect(
+        dom.window.document.querySelector("#closing-balance-input").value,
+      ).toBe("");
+      dom.window.OfxSession.request.mockResolvedValueOnce(
+        new Response("{}", { status: 409 }),
+      );
+      download.click();
+      const settingsCall = await vi.waitFor(() => {
+        const call = dom.window.OfxSession.request.mock.calls.find(
+          ([url, init]) =>
+            url.includes("/convert-edits/") && init?.method === "POST",
+        );
+        expect(call).toBeDefined();
+        return call;
+      });
+      const settings = JSON.parse(settingsCall[1].body);
+      expect(settings.opening_balance).toBeNull();
+      expect(settings.closing_balance).toBeNull();
+      expect(
+        dom.window.document
+          .querySelector("#download-section")
+          .classList.contains("hidden"),
+      ).toBe(false);
+    } finally {
+      dom.window.close();
+    }
+  });
   it.each([true, false])(
     "preserva edição e saldos com ordem de origem disponível: %s",
     async (newConversion) => {

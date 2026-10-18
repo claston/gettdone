@@ -84,6 +84,8 @@ class AIRecoveryShadowDispatcher:
         layout_name = str(getattr(analysis, "layout_inference_name", None) or "").strip()
         layout_family, statement_type = _layout_metadata(layout_name)
         metrics = getattr(analysis, "pdf_processing_metrics", None)
+        if _metric(metrics, "statement_no_activity") == 1 and not analysis.transactions_total:
+            return AIRecoveryDispatchResult(status="skipped", reason="statement_no_activity")
         selected_parser = _metric(metrics, "selected_parser")
         page_count = _optional_int(_metric(metrics, "page_count"))
         issue_codes = _issue_codes(analysis)
