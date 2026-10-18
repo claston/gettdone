@@ -6,7 +6,7 @@ import type {
   Transaction,
   WorkspaceRepository,
 } from "@/domain/workspace";
-import { sortTransactionsByDate, countEdited } from "@/domain/workspace";
+import { orderTransactionsForReview, countEdited } from "@/domain/workspace";
 import { createProApiClient } from "./pro-api-client";
 
 interface HttpWorkspaceRepositoryOptions {
@@ -15,6 +15,9 @@ interface HttpWorkspaceRepositoryOptions {
 }
 
 interface ApiTransaction {
+  transaction_id?: string | null;
+  source_sequence?: number | null;
+  source_subsequence?: number;
   source_page?: number | null;
   date?: string;
   description?: string;
@@ -167,6 +170,10 @@ export function createHttpWorkspaceRepository(
       context.rowCount = rows.length;
       context.savedTransactions = transactions.map((transaction) => ({
         ...transaction,
+        sourceSequence:
+          rows[serverOrder.indexOf(transaction.id)].source_sequence ?? null,
+        sourceSubsequence:
+          rows[serverOrder.indexOf(transaction.id)].source_subsequence ?? 0,
         balance:
           rows[serverOrder.indexOf(transaction.id)].running_balance ?? null,
       }));
@@ -248,7 +255,7 @@ export function createHttpWorkspaceRepository(
           const rowId = context.rowIds.get(transaction.id);
           return {
             action: "update",
-            row_id: rowId,
+            row_id: transaction.sourceSequence != null ? transaction.id : rowId,
             date: toIsoDate(transaction.date),
             description: transaction.description,
             credit: transaction.credit,
@@ -257,7 +264,13 @@ export function createHttpWorkspaceRepository(
         });
       for (const [localId, rowId] of context.rowIds) {
         if (!currentIds.has(localId))
-          edits.push({ action: "delete", row_id: rowId });
+          edits.push({
+            action: "delete",
+            row_id:
+              originalById.get(localId)?.sourceSequence != null
+                ? localId
+                : rowId,
+          });
       }
       const serverOrder: Array<string | null> = Array(context.rowCount).fill(
         null,
@@ -276,6 +289,9 @@ export function createHttpWorkspaceRepository(
         const position = nextIndex < 0 ? serverOrder.length : nextIndex;
         edits.push({
           action: "insert",
+          ...(transaction.sourceSequence != null
+            ? { transaction_id: transaction.id }
+            : {}),
           insert_position: position,
           date: toIsoDate(transaction.date),
           description: transaction.description,
@@ -392,17 +408,18 @@ function mapConversion({
       analysisId,
       updatedAt: analysis?.updated_at ?? null,
       rowIds: new Map(
-        remoteTransactions.map((transaction) => [
-          transaction.id,
-          transaction.id,
-        ]),
+        (analysis?.preview_transactions ?? []).flatMap((row, index) =>
+          row.is_deleted
+            ? []
+            : [[row.transaction_id ?? `row_${index + 1}`, `row_${index + 1}`]],
+        ),
       ),
       rowCount: analysis?.preview_transactions?.length ?? 0,
       persistedTransactions: remoteTransactions,
     };
     contexts.set(job.job_id, context);
   }
-  const transactions = sortTransactionsByDate(
+  const transactions = orderTransactionsForReview(
     context?.savedTransactions ??
       context?.persistedTransactions ??
       remoteTransactions,
@@ -446,13 +463,15 @@ function mapTransaction(row: ApiTransaction, index: number): Transaction {
     fieldStates[amount >= 0 ? "credit" : "debit"] = "SUSPECTED";
   }
   return {
-    id: `row_${index + 1}`,
+    id: row.transaction_id ?? `row_${index + 1}`,
     date: toBrazilianDate(String(row.date ?? "")),
     description: String(row.description ?? ""),
     credit: amount > 0 ? amount : null,
     debit: amount < 0 ? Math.abs(amount) : null,
     balance: row.running_balance == null ? null : Number(row.running_balance),
     sourcePage: row.source_page ?? null,
+    sourceSequence: row.source_sequence ?? null,
+    sourceSubsequence: row.source_subsequence ?? 0,
     fieldStates,
   };
 }
@@ -485,7 +504,10 @@ function toIsoDate(value: string): string {
 
 function resolveTransactionPeriod(transactions: Transaction[]): string {
   if (!transactions.length) return "Período indisponível";
-  return `${transactions[0].date}–${transactions.at(-1)?.date ?? transactions[0].date}`;
+  const dates = transactions
+    .map((row) => row.date)
+    .sort((a, b) => toIsoDate(a).localeCompare(toIsoDate(b)));
+  return `${dates[0]}–${dates.at(-1)}`;
 }
 
 function resolveBatchPeriod(conversions: Conversion[]): string {

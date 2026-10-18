@@ -35,6 +35,10 @@ class Insight(BaseModel):
 
 
 class TransactionPreview(BaseModel):
+    transaction_id: str | None = None
+    source_sequence: int | None = None
+    source_subsequence: int = 0
+    source_line: int | None = None
     source_page: int | None = None
     date: str
     description: str

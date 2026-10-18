@@ -807,6 +807,47 @@
     },
     "TransactionPreview": {
       "properties": {
+        "transaction_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transaction Id"
+        },
+        "source_sequence": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Sequence"
+        },
+        "source_subsequence": {
+          "default": 0,
+          "title": "Source Subsequence",
+          "type": "integer"
+        },
+        "source_line": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Line"
+        },
         "source_page": {
           "anyOf": [
             {

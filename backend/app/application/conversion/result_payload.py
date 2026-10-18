@@ -83,6 +83,10 @@ def build_analyze_response(
         insights=insights,
         preview_transactions=[
             TransactionPreview(
+                transaction_id=row.transaction_id,
+                source_sequence=row.source_sequence,
+                source_subsequence=row.source_subsequence,
+                source_line=row.source_line,
                 source_page=row.source_page,
                 date=row.date,
                 description=row.description,

@@ -18,6 +18,10 @@ class TransactionRow:
     is_deleted: bool = False
     warning_types: list[str] = field(default_factory=list)
     source_page: int | None = None
+    source_line: int | None = None
+    transaction_id: str | None = None
+    source_sequence: int | None = None
+    source_subsequence: int = 0
 
 
 @dataclass
@@ -38,6 +42,7 @@ class CanonicalTransaction:
     layout_name: str | None = None
     source_page: int | None = None
     source_line: int | None = None
+    source_sequence: int | None = None
     source_parser: str | None = None
     running_balance: float | None = None
     document_id: str | None = None

@@ -4,6 +4,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from time import perf_counter
 from typing import Callable, Protocol
+from uuid import NAMESPACE_URL, uuid5
 
 from app.application.conversion.uploaded_document import UploadedDocument, ingest_uploaded_document
 from app.application.conversion_quality import build_line_quality_issues
@@ -158,6 +159,16 @@ class ConversionPipeline:
         transaction_warning_types = parsed_document.warning_types or [[] for _ in parsed_transactions]
         transaction_running_balances = parsed_document.running_balances or [None for _ in parsed_transactions]
         canonical_transactions = list(parsed_document.canonical_transactions or [])
+        # Physical provenance survives parser-specific accounting reordering.
+        # Never sort the accounting rows themselves to serve the reviewer.
+        def source_key(index: int) -> tuple[int, int, int]:
+            row = canonical_transactions[index] if index < len(canonical_transactions) else None
+            sequence = row.source_sequence if row and row.source_sequence is not None else index + 1
+            return (row.source_page or 1, row.source_line or sequence, sequence) if row else (1, sequence, sequence)
+
+        source_sequences = {
+            index: sequence for sequence, index in enumerate(sorted(range(len(parsed_transactions)), key=source_key), start=1)
+        }
 
         document_type_classification = self.document_type_classifier(
             filename=filename,
@@ -248,6 +259,10 @@ class ConversionPipeline:
             running_balances=transaction_running_balances,
             source_pages=[canonical_transactions[idx].source_page if idx < len(canonical_transactions) else None
                           for idx in kept_indices],
+            source_lines=[canonical_transactions[idx].source_line if idx < len(canonical_transactions) else None
+                          for idx in kept_indices],
+            source_sequences=[source_sequences[idx] for idx in kept_indices],
+            analysis_id=analysis_id,
         )
         report_rows = _build_transaction_rows(
             transactions=transactions,
@@ -256,6 +271,10 @@ class ConversionPipeline:
             running_balances=transaction_running_balances,
             source_pages=[canonical_transactions[idx].source_page if idx < len(canonical_transactions) else None
                           for idx in kept_indices],
+            source_lines=[canonical_transactions[idx].source_line if idx < len(canonical_transactions) else None
+                          for idx in kept_indices],
+            source_sequences=[source_sequences[idx] for idx in kept_indices],
+            analysis_id=analysis_id,
         )
 
         total_inflows = round(sum(item.amount for item in transactions if item.amount > 0), 2)
@@ -364,6 +383,9 @@ def _build_transaction_rows(
     warning_types: list[list[str]],
     running_balances: list[float | None],
     source_pages: list[int | None] | None = None,
+    source_lines: list[int | None] | None = None,
+    source_sequences: list[int] | None = None,
+    analysis_id: str | None = None,
 ) -> list[TransactionRow]:
     return [
         TransactionRow(
@@ -375,6 +397,10 @@ def _build_transaction_rows(
             running_balance=running_balances[idx] if idx < len(running_balances) else None,
             warning_types=warning_types[idx] if idx < len(warning_types) else [],
             source_page=source_pages[idx] if source_pages and idx < len(source_pages) else None,
+            source_line=source_lines[idx] if source_lines else None,
+            source_sequence=source_sequences[idx] if source_sequences else None,
+            transaction_id=(f"txn_{uuid5(NAMESPACE_URL, f'{analysis_id}:{source_sequences[idx]}').hex}"
+                            if source_sequences else None),
         )
         for idx, item in enumerate(transactions)
     ]

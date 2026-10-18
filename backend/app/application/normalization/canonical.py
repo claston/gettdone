@@ -54,7 +54,7 @@ def build_canonical_transactions(
 ) -> list[CanonicalTransaction]:
     _ = layout_used_fallback
     return [
-        from_normalized_transaction(
+        _with_source_sequence(from_normalized_transaction(
             row.transaction,
             bank_name=bank_name,
             layout_name=layout_name,
@@ -64,6 +64,11 @@ def build_canonical_transactions(
             running_balance=row.running_balance,
             external_reference_id=row.external_reference_id,
             confidence=layout_confidence,
-        )
-        for row in rows
+        ), index + 1)
+        for index, row in enumerate(rows)
     ]
+
+
+def _with_source_sequence(transaction: CanonicalTransaction, sequence: int) -> CanonicalTransaction:
+    transaction.source_sequence = sequence
+    return transaction

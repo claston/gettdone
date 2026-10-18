@@ -374,12 +374,26 @@ class TempAnalysisStorage:
                     reconciliation_status="unmatched",
                     is_deleted=False,
                 )
+                if all(row.source_sequence is not None for row in preview_rows):
+                    anchor_id = edit.get("anchor_transaction_id")
+                    anchor = next((row for row in preview_rows if row.transaction_id == anchor_id), None) if anchor_id else None
+                    if anchor_id and anchor is None:
+                        raise ValueError("Anchor transaction not found.")
+                    new_row.transaction_id = str(edit.get("transaction_id") or f"txn_{uuid4().hex}")
+                    if any(row.transaction_id == new_row.transaction_id for row in preview_rows):
+                        raise ValueError("Transaction ID already exists.")
+                    new_row.source_sequence = anchor.source_sequence if anchor else 0
+                    new_row.source_subsequence = 1 + max(
+                        (row.source_subsequence for row in preview_rows if row.source_sequence == new_row.source_sequence), default=0,
+                    )
                 preview_rows.insert(insert_position, new_row)
                 report_rows.insert(insert_position, TransactionRow(**asdict(new_row)))
                 continue
 
             row_id_raw = edit.get("row_id")
-            row_index = self._resolve_row_index(row_id_raw, max_index=len(preview_rows))
+            stable_index = next((idx for idx, row in enumerate(preview_rows)
+                                 if row.transaction_id is not None and row.transaction_id == row_id_raw), None)
+            row_index = stable_index if stable_index is not None else self._resolve_row_index(row_id_raw, max_index=len(preview_rows))
 
             if action == "delete":
                 if row_index >= len(report_rows):
@@ -812,6 +826,10 @@ class TempAnalysisStorage:
                     category=str(item.get("category") or "Outros"),
                     reconciliation_status=str(item.get("reconciliation_status") or "unmatched"),
                     source_page=item.get("source_page") if isinstance(item.get("source_page"), int) else None,
+                    source_line=item.get("source_line") if isinstance(item.get("source_line"), int) else None,
+                    transaction_id=item.get("transaction_id") if isinstance(item.get("transaction_id"), str) else None,
+                    source_sequence=item.get("source_sequence") if isinstance(item.get("source_sequence"), int) else None,
+                    source_subsequence=int(item.get("source_subsequence") or 0),
                     running_balance=(
                         float(item.get("running_balance"))
                         if item.get("running_balance") is not None
