@@ -1,14 +1,18 @@
+import hashlib
 import json
+import os
 import re
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Callable
 from uuid import uuid4
 
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
+from app.application.analysis_lock import locked_analysis
 from app.application.bank_identity import resolve_conversion_model_label
 from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConflictError, AnalysisNotFoundError
 from app.application.export_artifact_service import ExportArtifactService
@@ -269,6 +273,40 @@ class TempAnalysisStorage:
         items.sort(key=lambda item: item["created_at"], reverse=True)
         return items[: max(1, min(limit, 100))]
 
+    @locked_analysis
+    def get_convert_edit_operation(self, analysis_id: str, operation_id: str) -> dict[str, object] | None:
+        content, _ = self._read_analysis_metadata(analysis_id=analysis_id, metadata_filename="analysis.json")
+        receipts = content.get("edit_operations") or {}
+        receipt = receipts.get(operation_id)
+        if receipt is None:
+            return None
+        if receipt["updated_at"] != content.get("updated_at"):
+            raise AnalysisEditConflictError
+        return self._edit_result(analysis_id, content, operation_id)
+
+    @staticmethod
+    def _edit_result(analysis_id: str, content: dict, operation_id: str | None = None) -> dict[str, object]:
+        return {
+            "processing_id": analysis_id,
+            "operation_id": operation_id,
+            **{key: content.get(key) for key in (
+                "transactions_total", "total_inflows", "total_outflows", "net_total",
+                "preview_transactions", "updated_at", "opening_balance", "closing_balance",
+            )},
+        }
+
+    @staticmethod
+    def _write_metadata(path: Path, content: dict) -> None:
+        # Readers must never interpret a partially written JSON document as a 404.
+        with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, suffix=".tmp", delete=False) as target:
+            temporary = Path(target.name)
+            json.dump(content, target, ensure_ascii=True, indent=2)
+        try:
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    @locked_analysis
     def apply_convert_edits(
         self,
         analysis_id: str,
@@ -279,6 +317,7 @@ class TempAnalysisStorage:
         bank_branch: str | None = None,
         account_number: str | None = None,
         bank_code: str | None = None,
+        operation_id: str | None = None,
     ) -> dict[str, object]:
         analysis_dir = self._resolve_analysis_dir(analysis_id)
         if self._is_expired(analysis_dir):
@@ -293,6 +332,17 @@ class TempAnalysisStorage:
             content = json.loads(metadata_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             raise AnalysisNotFoundError from None
+
+        operation_hash = hashlib.sha256(json.dumps({
+            "edits": edits, "expected_updated_at": expected_updated_at,
+            "opening_balance": opening_balance, "closing_balance": closing_balance,
+            "bank_branch": bank_branch, "account_number": account_number, "bank_code": bank_code,
+        }, sort_keys=True).encode()).hexdigest()
+        receipts = content.get("edit_operations") or {}
+        if operation_id and operation_id in receipts:
+            if receipts[operation_id]["hash"] != operation_hash:
+                raise AnalysisEditConflictError
+            return self.get_convert_edit_operation(analysis_id, operation_id)
 
         preview_rows = self._parse_transaction_rows(content.get("preview_transactions", []))
         report_rows_raw = content.get("report_transactions") or content.get("preview_transactions", [])
@@ -434,7 +484,6 @@ class TempAnalysisStorage:
         content["updated_at"] = new_updated_at
         self._refresh_structured_result_content(content, preview_rows=preview_rows, report_rows=report_rows)
 
-        metadata_path.write_text(json.dumps(content, ensure_ascii=True, indent=2), encoding="utf-8")
         self._write_report_workbook(analysis_dir, content=content, report_rows=report_rows, preview_rows=preview_rows)
         self.export_artifact_service.write_convert_artifacts(
             analysis_dir,
@@ -448,17 +497,11 @@ class TempAnalysisStorage:
             bank_code=effective_overrides.get("bank_code"),
         )
 
-        return {
-            "processing_id": analysis_id,
-            "transactions_total": len(active_rows),
-            "total_inflows": total_inflows,
-            "total_outflows": total_outflows,
-            "net_total": net_total,
-            "preview_transactions": [asdict(item) for item in preview_rows],
-            "updated_at": new_updated_at,
-            "opening_balance": opening_balance_value,
-            "closing_balance": closing_balance_value,
-        }
+        if operation_id:
+            receipts[operation_id] = {"hash": operation_hash, "updated_at": new_updated_at}
+            content["edit_operations"] = dict(list(receipts.items())[-64:])
+        self._write_metadata(metadata_path, content)
+        return self._edit_result(analysis_id, content, operation_id)
 
     def save_reconcile_report(
         self,
@@ -664,7 +707,7 @@ class TempAnalysisStorage:
         if requested_overrides:
             self._apply_convert_overrides_to_content(content, requested_overrides)
             self._refresh_structured_result_content(content, preview_rows=report_rows, report_rows=report_rows)
-            metadata_path.write_text(json.dumps(content, ensure_ascii=True, indent=2), encoding="utf-8")
+            self._write_metadata(metadata_path, content)
 
         self.export_artifact_service.write_convert_artifacts(
             analysis_dir,
@@ -953,7 +996,7 @@ class TempAnalysisStorage:
 
         content["owner_identity_type"] = identity_type
         content["owner_identity_id"] = identity_id
-        metadata_path.write_text(json.dumps(content, ensure_ascii=True, indent=2), encoding="utf-8")
+        self._write_metadata(metadata_path, content)
 
     def _assert_analysis_owner(
         self,

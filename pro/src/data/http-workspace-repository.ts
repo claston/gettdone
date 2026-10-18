@@ -64,6 +64,23 @@ interface ConversionContext {
   rowCount: number;
   persistedTransactions: Transaction[];
   savedTransactions?: Transaction[];
+  pendingSave?: PendingSave;
+}
+
+interface PendingSave {
+  body: string;
+  operationId: string;
+  transactions: Transaction[];
+  serverOrder: Array<string | null>;
+}
+
+class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
 }
 
 const originalFieldStates = (): Transaction["fieldStates"] => ({
@@ -102,9 +119,62 @@ export function createHttpWorkspaceRepository(
       if (response.status === 409)
         message =
           "Este documento foi alterado em outra sessão. Suas edições continuam na tela; confira a outra sessão antes de recarregar.";
-      throw new Error(message);
+      throw new ApiRequestError(message, response.status);
     }
     return response;
+  };
+
+  const finishSave = async (context: ConversionContext) => {
+    const pending = context.pendingSave!;
+    const path = `/api/pro/convert-edits/${encodeURIComponent(context.analysisId!)}`;
+    let response: Response;
+    try {
+      response = await request(path, { method: "POST", body: pending.body });
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status < 500) {
+        context.pendingSave = undefined;
+        throw error;
+      }
+      // A lost response does not tell us whether the write committed. Keep the
+      // identical operation until confirmed, even if the user keeps editing.
+      try {
+        response = await request(`${path}/operations/${pending.operationId}`);
+      } catch {
+        throw error;
+      }
+    }
+    const result = (await response.json()) as {
+      operation_id?: string | null;
+      updated_at?: string | null;
+      preview_transactions?: ApiTransaction[];
+    };
+    if (result.operation_id && result.operation_id !== pending.operationId)
+      throw new Error(
+        "A confirmação da gravação não corresponde à alteração enviada.",
+      );
+    const { transactions, serverOrder } = pending;
+    const currentIds = new Set(transactions.map((row) => row.id));
+    context.updatedAt = result.updated_at ?? context.updatedAt;
+    if (result.preview_transactions?.length === serverOrder.length) {
+      const rows = result.preview_transactions;
+      context.rowIds = new Map(
+        serverOrder.flatMap((id, index) =>
+          id && currentIds.has(id) && !rows[index].is_deleted
+            ? [[id, `row_${index + 1}`] as const]
+            : [],
+        ),
+      );
+      context.rowCount = rows.length;
+      context.savedTransactions = transactions.map((transaction) => ({
+        ...transaction,
+        balance:
+          rows[serverOrder.indexOf(transaction.id)].running_balance ?? null,
+      }));
+    } else {
+      context.savedTransactions = transactions;
+    }
+    context.persistedTransactions = context.savedTransactions;
+    context.pendingSave = undefined;
   };
 
   const getBatch = async (batchId: string): Promise<Batch> => {
@@ -157,6 +227,7 @@ export function createHttpWorkspaceRepository(
       const context = requireContext(contexts, conversionId);
       if (!context.analysisId)
         throw new Error("A conversão ainda não possui resultado editável.");
+      if (context.pendingSave) await finishSave(context);
       const currentIds = new Set(
         transactions.map((transaction) => transaction.id),
       );
@@ -213,46 +284,30 @@ export function createHttpWorkspaceRepository(
         });
         serverOrder.splice(position, 0, transaction.id);
       });
-      if (!edits.length) return transactions;
-      const response = await request(
-        `/api/pro/convert-edits/${encodeURIComponent(context.analysisId)}`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            edits,
-            expected_updated_at: context.updatedAt,
-            batch_id: context.batchId,
-            job_id: conversionId,
-          }),
-        },
-      );
-      const result = (await response.json()) as {
-        updated_at?: string | null;
-        preview_transactions?: ApiTransaction[];
-      };
-      context.updatedAt = result.updated_at ?? context.updatedAt;
-      if (result.preview_transactions?.length === serverOrder.length) {
-        const rows = result.preview_transactions;
-        context.rowIds = new Map(
-          serverOrder.flatMap((id, index) =>
-            id && currentIds.has(id) && !rows[index].is_deleted
-              ? [[id, `row_${index + 1}`] as const]
-              : [],
-          ),
+      if (!edits.length) {
+        const savedById = new Map(
+          context.persistedTransactions.map((row) => [row.id, row]),
         );
-        context.rowCount = rows.length;
-        context.savedTransactions = transactions.map((transaction) => {
-          const serverIndex = serverOrder.indexOf(transaction.id);
-          return {
-            ...transaction,
-            balance: rows[serverIndex].running_balance ?? null,
-          };
-        });
-      } else {
-        context.savedTransactions = transactions;
+        return transactions.map((row) => ({
+          ...row,
+          balance: savedById.get(row.id)?.balance ?? row.balance,
+        }));
       }
-      context.persistedTransactions = context.savedTransactions;
-      return context.savedTransactions;
+      const operationId = crypto.randomUUID();
+      context.pendingSave = {
+        operationId,
+        transactions: structuredClone(transactions),
+        serverOrder,
+        body: JSON.stringify({
+          operation_id: operationId,
+          edits,
+          expected_updated_at: context.updatedAt,
+          batch_id: context.batchId,
+          job_id: conversionId,
+        }),
+      };
+      await finishSave(context);
+      return context.savedTransactions!;
     },
 
     async markReviewed(conversionId: string) {

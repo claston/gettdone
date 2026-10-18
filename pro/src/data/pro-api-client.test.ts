@@ -10,12 +10,31 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("ProApiClient", () => {
+  it("verifica novamente a sessão depois de dez minutos com a aba aberta", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+    try {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockImplementation(async () => jsonResponse({}));
+      const client = createProApiClient({ apiUrl: "/", fetcher });
+      await client.request("/api/pro/conversion-batches/batch-1");
+      now.mockReturnValue(1000 + 10 * 60 * 1000);
+      await client.request("/api/pro/conversion-batches/batch-1");
+      expect(
+        fetcher.mock.calls.filter(([url]) => url === "/auth/me"),
+      ).toHaveLength(2);
+    } finally {
+      now.mockRestore();
+    }
+  });
   it.each([
     [
       400,
       "Missing or invalid identity context. Start an anonymous session or authenticate.",
     ],
     [403, "Access denied for this analysis."],
+    [404, "Conversion job not found."],
+    [404, "Analysis not found"],
   ])(
     "recupera a sessão expirada antes de repetir uma gravação com %s",
     async (status, detail) => {

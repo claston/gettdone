@@ -63,6 +63,9 @@ class ReportService:
             limit=limit,
         )
 
+    def get_convert_edit_operation(self, analysis_id: str, operation_id: str) -> dict[str, object] | None:
+        return self.storage.get_convert_edit_operation(analysis_id, operation_id)
+
     def apply_convert_edits(
         self,
         analysis_id: str,
@@ -73,6 +76,7 @@ class ReportService:
         bank_branch: str | None = None,
         account_number: str | None = None,
         bank_code: str | None = None,
+        operation_id: str | None = None,
     ) -> dict[str, object]:
         return self.storage.apply_convert_edits(
             analysis_id=analysis_id,
@@ -83,6 +87,7 @@ class ReportService:
             bank_branch=bank_branch,
             account_number=account_number,
             bank_code=bank_code,
+            operation_id=operation_id,
         )
 
     def save_reconcile_report(

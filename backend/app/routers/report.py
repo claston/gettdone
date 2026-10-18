@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
 from app.application import (
@@ -267,6 +267,12 @@ def get_convert_report(
 
 
 @router.post("/convert-edits/{processing_id}", response_model=ConvertEditsResponse)
+@router.get("/convert-edits/{processing_id}/operations/{operation_id}", response_model=ConvertEditsResponse)
+@router.get(
+    "/api/pro/convert-edits/{processing_id}/operations/{operation_id}",
+    response_model=ConvertEditsResponse,
+    dependencies=[Depends(require_pro_browser_request)],
+)
 @router.post(
     "/api/pro/convert-edits/{processing_id}",
     response_model=ConvertEditsResponse,
@@ -274,7 +280,8 @@ def get_convert_report(
 )
 def apply_convert_edits(
     processing_id: str,
-    payload: ConvertEditsRequest,
+    request: Request,
+    payload: ConvertEditsRequest | None = None,
     service: ReportService = Depends(get_report_service),
     async_service: ReportService | None = Depends(get_async_conversion_report_service),
     runtime: ConversionRuntimeConfig = Depends(get_conversion_runtime_config),
@@ -286,8 +293,14 @@ def apply_convert_edits(
     anonymous_cookie_token: str | None = Cookie(default=None, alias=ANONYMOUS_IDENTITY_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
     batch_service: ConversionBatchService | None = Depends(get_conversion_batch_service),
+    operation_id: str | None = None,
 ) -> ConvertEditsResponse:
     try:
+        confirming = request.method == "GET"
+        if confirming:
+            payload = ConvertEditsRequest(edits=[], operation_id=operation_id)
+        elif payload is None:
+            raise HTTPException(status_code=400, detail="Edit payload is required.")
         resolved_user_token = resolve_user_token_with_session(
             access_control_service=access_control_service,
             authorization=authorization,
@@ -319,15 +332,22 @@ def apply_convert_edits(
             identity=identity,
             access_control_service=access_control_service,
         )
+        if confirming:
+            result = active_service.get_convert_edit_operation(processing_id, operation_id)
+            if result is None:
+                raise HTTPException(status_code=404, detail="Edit operation not found.")
+            return ConvertEditsResponse(**result)
+        operation_options = {"operation_id": payload.operation_id} if payload.operation_id else {}
         result = active_service.apply_convert_edits(
             analysis_id=processing_id,
-            edits=[item.model_dump() for item in payload.edits],
+            edits=[item.model_dump(exclude_none=True) for item in payload.edits],
             expected_updated_at=payload.expected_updated_at,
             opening_balance=payload.opening_balance,
             closing_balance=payload.closing_balance,
             bank_branch=payload.bank_branch,
             account_number=payload.account_number,
             bank_code=payload.bank_code,
+            **operation_options,
         )
         if payload.job_id and batch_service:
             try:
@@ -336,6 +356,8 @@ def apply_convert_edits(
                 # Artifacts are already committed. Never report a failed save after success,
                 # which would make a retry conflict with the newly persisted version.
                 logger.exception("conversion_batch_analysis_sync_failed job_id=%s", payload.job_id)
+        logger.info("conversion_edit_saved processing_id=%s job_id=%s operation_id=%s version=%s",
+                    processing_id, payload.job_id, payload.operation_id, result.get("updated_at"))
         return ConvertEditsResponse(**result)
     except AnalysisNotFoundError:
         raise HTTPException(status_code=404, detail="Analysis not found")
