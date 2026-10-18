@@ -9,9 +9,29 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
+from dataclasses import asdict
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
+
+
+def page_evidence(number: int):
+    width, height = (800, 600) if number % 3 == 0 else (600, 800)
+    lines = [(f"Synthetic statement - page {number}", 40, height - 65, 22)]
+    if number == 6:
+        return width, height, [], {}
+    if number == 3:
+        lines.append(("Continuation of Page 2 transaction 10", 40, height - 85, 8))
+    references = {}
+    for index in range(20):
+        baseline = height - 110 - index * 20
+        lines.append((f"Page {number} transaction {index}", 40, baseline, 9))
+        references[index] = [(number, len(lines))]
+        if number == 2 and index == 10:
+            lines.append(("Multiline source continuation", 40, baseline - 8, 6))
+            references[index].extend([(number, len(lines)), (3, 2)])
+    return width, height, lines, references
 
 
 def synthetic_pdf(count: int) -> bytes:
@@ -22,14 +42,14 @@ def synthetic_pdf(count: int) -> bytes:
         page_id = len(objects) + 1
         content_id = page_id + 1
         kids.append(f"{page_id} 0 R")
-        landscape = number % 3 == 0
-        width, height = (800, 600) if landscape else (600, 800)
+        width, height, lines, _ = page_evidence(number)
         image = number == 6
         resources = "/XObject << /Scan 3 0 R >>" if image else "/Font << /F1 3 0 R >>"
         # Image-only pages use a self-contained inline bitmap, independent of OCR.
         content = (b"q 500 0 0 500 25 25 cm BI /W 2 /H 2 /CS /G /BPC 8 /F /AHx ID 00808000> EI Q" if image else
-                   f"BT /F1 22 Tf 40 {height - 65} Td (Synthetic statement - page {number}) Tj ET".encode())
-        objects.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] /Resources << {resources if not image else ''} >> /Contents {content_id} 0 R >>".encode())
+                   "\n".join(f"BT /F1 {font} Tf {x} {y} Td ({text}) Tj ET" for text, x, y, font in lines).encode())
+        rotation = "/Rotate 90 /CropBox [20 30 780 590]" if number == 3 else ""
+        objects.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] {rotation} /Resources << {resources if not image else ''} >> /Contents {content_id} 0 R >>".encode())
         objects.append(f"<< /Length {len(content)} >>\nstream\n".encode() + content + b"\nendstream")
     objects[0] = b"<< /Type /Catalog /Pages 2 0 R >>"
     objects[1] = f"<< /Type /Pages /Count {count} /Kids [{' '.join(kids)}] >>".encode()
@@ -46,6 +66,39 @@ def synthetic_pdf(count: int) -> bytes:
     return bytes(output)
 
 
+def bind_fixture_regions(raw: bytes, transactions: list[dict]) -> None:
+    """Use production native geometry, rather than invented browser rectangles."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+    from app.application.models import CanonicalTransaction, NormalizedTransaction
+    from app.application.parsers.pdf.models import PdfParseResult
+    from app.application.pdf_layout_inference import PdfLayoutInference
+    from app.application.transaction_source_regions import bind_transaction_source_regions
+
+    pages = [page_evidence(number) for number in range(1, 31)]
+    canonical = []
+    for row in transactions:
+        number = row.get("source_page")
+        index = int(row["transaction_id"].rsplit("-", 1)[-1]) if number else 0
+        refs = pages[number - 1][3].get(index, []) if number else []
+        canonical.append(CanonicalTransaction("2026-10-18", row["description"], 10, "inflow",
+            source_page=number, source_line=refs[0][1] if refs else None, source_line_refs=tuple(refs)))
+    parsed = PdfParseResult(
+        transactions=[NormalizedTransaction("2026-10-18", row["description"], 10, "inflow") for row in transactions],
+        canonical_transactions=canonical, layout=PdfLayoutInference("generic_statement_ptbr", 0.25, True),
+        extracted_text="", parse_metrics={}, source_page_texts=tuple("\n".join(line[0] for line in page[2]) for page in pages),
+    )
+    bound = bind_transaction_source_regions(parsed, raw)
+    for row, transaction in zip(transactions, bound.canonical_transactions, strict=True):
+        row["source_regions"] = [asdict(region) for region in transaction.source_regions]
+        if row["transaction_id"] == "tx-2-0":
+            row["source_regions"] = []  # Legacy page-only compatibility.
+        if row["transaction_id"] == "tx-6-0":
+            # Synthetic OCR box on the actual image-only page.
+            row["source_regions"] = [{"page": 6, "left": 25 / 800, "top": 75 / 600,
+                                      "width": 500 / 800, "height": 500 / 600}]
+    assert len(next(row for row in transactions if row["transaction_id"] == "tx-2-10")["source_regions"]) == 3
+
+
 def run(base_url: str) -> None:
     transactions = [
         {"transaction_id": f"tx-{page}-{index}", "source_page": page,
@@ -54,6 +107,8 @@ def run(base_url: str) -> None:
          "warning_types": ["synthetic"] if page == 2 else []}
         for page in range(2, 30) if page != 8 for index in range(20)
     ] + [{"transaction_id": "manual", "date": "2026-10-18", "description": "Manual without origin", "amount": 1}]
+    long_pdf, short_pdf = synthetic_pdf(30), synthetic_pdf(2)
+    bind_fixture_regions(long_pdf, transactions)
 
     def job(identifier: str, pages: int, rows: list[dict]) -> dict:
         return {"job_id": identifier, "filename": f"{identifier}.pdf", "status": "completed", "analysis_id": f"analysis-{identifier}",
@@ -82,7 +137,7 @@ def run(base_url: str) -> None:
                 if "/short/" in path and downloads.count(path) == 1:
                     route.fulfill(status=403, json={"detail": "Synthetic expired access"})
                     return
-                route.fulfill(content_type="application/pdf", body=synthetic_pdf(2 if "/short/" in path else 30))
+                route.fulfill(content_type="application/pdf", body=short_pdf if "/short/" in path else long_pdf)
             elif path == "/api/pro/conversion-batches/sync-test":
                 route.fulfill(json=batch)
             elif "/convert-edits/" in path:
@@ -155,19 +210,78 @@ def run(base_url: str) -> None:
         aligned(9)
         page.get_by_role("button", name="Localizar origem de Page 2 transaction 0 no PDF (página 2)").click()
         expect(page.locator(".pdf-controls strong")).to_have_text("2")
+        expect(page.locator(".pdf-source-highlight")).to_have_count(0)
+        expect(page.get_by_text("Página de origem aberta. A região exata não está disponível para este lançamento.")).to_have_count(1)
         assert len(downloads) == 1
         page.get_by_role("button", name="Aumentar zoom").click()
         expect(page.locator(".pdf-controls strong")).to_have_text("2")
         page.get_by_role("button", name="Ajustar à largura").click()
+
+        def locate(identifier: str):
+            page.locator(f"tr[data-transaction-id='{identifier}'] button[title='Destacar origem no PDF']").click()
+
+        def verify_overlay(identifier: str, number: int):
+            overlays = page.locator(f"[data-pdf-page='{number}'] .pdf-source-highlight[data-source-transaction='{identifier}']")
+            expect(overlays.first).to_be_visible()
+            for overlay in overlays.all():
+                # Read real canvas pixels under each overlay: source glyphs must
+                # be present, including on the intrinsically rotated page.
+                try:
+                    page.wait_for_function("""el => {
+                    const slot = el.parentElement, canvas = slot.querySelector('canvas');
+                    if (!canvas) return false;
+                    const left = parseFloat(el.style.left) / 100, top = parseFloat(el.style.top) / 100;
+                    const width = parseFloat(el.style.width) / 100, height = parseFloat(el.style.height) / 100;
+                    const data = canvas.getContext('2d').getImageData(Math.floor(left * canvas.width), Math.floor(top * canvas.height), Math.max(1, Math.floor(width * canvas.width)), Math.max(1, Math.floor(height * canvas.height))).data;
+                    // Small glyphs can be mostly antialiased gray at fit width.
+                    let ink = 0; for (let i = 0; i < data.length; i += 4) if (data[i] < 240 && data[i+1] < 240 && data[i+2] < 240 && data[i+3]) ink++;
+                    return ink > 8;
+                    }""", arg=overlay.element_handle(), timeout=10000)
+                except Exception:
+                    print("REGION_DEBUG", overlay.evaluate("""el => {
+                        const canvas = el.parentElement.querySelector('canvas');
+                        const left = parseFloat(el.style.left) / 100, top = parseFloat(el.style.top) / 100;
+                        const width = parseFloat(el.style.width) / 100, height = parseFloat(el.style.height) / 100;
+                        const data = canvas.getContext('2d').getImageData(Math.floor(left * canvas.width), Math.floor(top * canvas.height), Math.max(1, Math.floor(width * canvas.width)), Math.max(1, Math.floor(height * canvas.height))).data;
+                        let dark = 0, gray = 0, min = 255; for(let i=0;i<data.length;i+=4) { min = Math.min(min,data[i]); if(data[i]<100)dark++; if(data[i]<240)gray++; }
+                        return {style: el.getAttribute('style'), canvas:[canvas.width,canvas.height], dark, gray, min, slot:el.parentElement.getBoundingClientRect().toJSON()};
+                    }"""), flush=True)
+                    page.screenshot(path=str(evidence / "region-debug.png"))
+                    raise
+
+        locate("tx-6-0")
+        verify_overlay("tx-6-0", 6)
+        locate("tx-2-10")
+        verify_overlay("tx-2-10", 2)
+        expect(page.locator("[data-pdf-page='2'] .pdf-source-highlight")).to_have_count(2)
+        region_before = page.locator("[data-pdf-page='2'] .pdf-source-highlight").first.get_attribute("style")
+        selected_input = page.locator("tr[data-transaction-id='tx-2-10'] input").nth(1)
+        selected_input.fill("Edited source anchor")
+        selected_input.press("Tab")
+        assert page.locator("[data-pdf-page='2'] .pdf-source-highlight").first.get_attribute("style") == region_before
+        locate("tx-2-10")
+        assert len(downloads) == 1
+        page.get_by_role("button", name="Próxima página", exact=True).click()
+        expect(page.locator(".pdf-controls strong")).to_have_text("3")
+        verify_overlay("tx-2-10", 3)
+        locate("tx-3-10")
+        expect(page.locator(".pdf-source-highlight[data-source-transaction='tx-2-10']")).to_have_count(0)
+        verify_overlay("tx-3-10", 3)
+        page.get_by_role("button", name="Aumentar zoom").click()
+        verify_overlay("tx-3-10", 3)
+        page.get_by_role("button", name="Ajustar à largura").click()
+        verify_overlay("tx-3-10", 3)
         page.screenshot(path=str(evidence / "desktop.png"))
         page.set_viewport_size({"width": 390, "height": 844})
         expect(stage).to_be_visible()
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        verify_overlay("tx-3-10", 3)
         page.screenshot(path=str(evidence / "mobile.png"))
         stage.focus()
         stage.press("PageDown")
         page.set_viewport_size({"width": 1600, "height": 1000})
         page.get_by_role("option", name=re.compile("short.pdf")).click()
+        expect(page.locator(".pdf-source-highlight")).to_have_count(0)
         expect(page.get_by_role("button", name="Recarregar PDF")).to_be_visible()
         expect(page.get_by_role("table", name="Lançamentos extraídos")).to_be_visible()
         page.get_by_role("button", name="Recarregar PDF").click()
@@ -176,9 +290,18 @@ def run(base_url: str) -> None:
         page.get_by_role("option", name=re.compile("long.pdf")).click()
         expect(page.locator(".pdf-controls")).to_contain_text("de 30")
         expect(page.locator('input[value="Preserved edit"]')).to_have_count(1)
+        expect(page.locator('input[value="Edited source anchor"]')).to_have_count(1)
+        expect(page.locator(".pdf-source-highlight")).to_have_count(0)
         assert not any("review" in path for path in writes)
         assert errors == [], errors
-        print(json.dumps({"result": "PASS", "pages": 30, "transactions": len(transactions), "checks": ["real wheel scroll and grid alignment", "bounded canvases", "automatic synchronization without controls or banner", "unmatched pages", "filters", "grouped layout", "image-only page", "editing focus and resume", "explicit origin navigation", "no document reload", "zoom", "mobile 390px", "keyboard", "document switch preserving edits", "expired access and retry", "Promise.withResolvers fallback", "no review writes", "no browser errors"]}))
+        print(json.dumps({"result": "PASS", "pages": 30, "transactions": len(transactions), "checks": [
+            "real wheel scroll and grid alignment", "bounded canvases", "automatic synchronization without controls or banner",
+            "unmatched pages", "filters", "grouped layout", "image-only page", "editing focus and resume",
+            "explicit origin navigation", "no document reload", "zoom", "mobile 390px", "keyboard",
+            "document switch preserving edits", "expired access and retry", "Promise.withResolvers fallback",
+            "no review writes", "no browser errors", "source overlays over real canvas ink", "multiline and multipage regions",
+            "intrinsic page rotation and crop", "stable origin after editing", "legacy page-only fallback", "cleared document selection",
+        ]}))
         browser.close()
 
 

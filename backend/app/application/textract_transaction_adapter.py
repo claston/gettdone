@@ -7,6 +7,7 @@ from app.application.errors import InvalidFileContentError
 from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.normalization.pdf_amount_tokens import find_amount_tokens, parse_pdf_amount
 from app.application.normalization.pdf_row_date_rules import parse_row_date
+from app.application.source_regions import evidence_regions
 
 
 @dataclass(frozen=True)
@@ -86,6 +87,7 @@ def _from_header_tables(extraction: RawDocumentExtraction) -> list[CanonicalTran
                         external_reference_id=_optional_cell(row, mapping, "document"),
                         warnings=[],
                         confidence=_row_confidence(row),
+                        source_regions=evidence_regions(page.page_number, row, words=page.words),
                     )
                 )
     return rows
@@ -113,6 +115,7 @@ def _from_table_rows(extraction: RawDocumentExtraction) -> list[CanonicalTransac
                         source_parser="textract_table_row",
                         warnings=["textract_table_row_candidate", "textract_layout_inferred"],
                         confidence=_row_confidence(row),
+                        source_regions=evidence_regions(page.page_number, row, words=page.words),
                     )
                 )
     return rows
@@ -153,6 +156,7 @@ def _from_line_windows(extraction: RawDocumentExtraction) -> list[CanonicalTrans
                     source_parser="textract_line_window",
                     warnings=["textract_line_window_candidate", "manual_review_recommended"],
                     confidence=round(sum(confidence_values) / len(confidence_values), 3) if confidence_values else None,
+                    source_regions=evidence_regions(page.page_number, window, words=page.words),
                 )
             )
             index += len(window)

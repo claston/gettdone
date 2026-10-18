@@ -21,6 +21,7 @@ from app.application.parsers.service import ParsedDocument, ParsingService
 from app.application.pdf_parser import parse_pdf_transactions
 from app.application.reconciliation import ReconciliationResult
 from app.application.reconciliation import reconcile_transactions as default_reconcile_transactions
+from app.application.source_regions import SourceRegion
 
 OcrProgressCallback = Callable[[int, int], None]
 PdfParser = Callable[..., object]
@@ -262,6 +263,8 @@ class ConversionPipeline:
             source_lines=[canonical_transactions[idx].source_line if idx < len(canonical_transactions) else None
                           for idx in kept_indices],
             source_sequences=[source_sequences[idx] for idx in kept_indices],
+            source_regions=[canonical_transactions[idx].source_regions if idx < len(canonical_transactions) else []
+                            for idx in kept_indices],
             analysis_id=analysis_id,
         )
         report_rows = _build_transaction_rows(
@@ -274,6 +277,8 @@ class ConversionPipeline:
             source_lines=[canonical_transactions[idx].source_line if idx < len(canonical_transactions) else None
                           for idx in kept_indices],
             source_sequences=[source_sequences[idx] for idx in kept_indices],
+            source_regions=[canonical_transactions[idx].source_regions if idx < len(canonical_transactions) else []
+                            for idx in kept_indices],
             analysis_id=analysis_id,
         )
 
@@ -385,6 +390,7 @@ def _build_transaction_rows(
     source_pages: list[int | None] | None = None,
     source_lines: list[int | None] | None = None,
     source_sequences: list[int] | None = None,
+    source_regions: list[list[SourceRegion]] | None = None,
     analysis_id: str | None = None,
 ) -> list[TransactionRow]:
     return [
@@ -399,6 +405,7 @@ def _build_transaction_rows(
             source_page=source_pages[idx] if source_pages and idx < len(source_pages) else None,
             source_line=source_lines[idx] if source_lines else None,
             source_sequence=source_sequences[idx] if source_sequences else None,
+            source_regions=list(source_regions[idx]) if source_regions else [],
             transaction_id=(f"txn_{uuid5(NAMESPACE_URL, f'{analysis_id}:{source_sequences[idx]}').hex}"
                             if source_sequences else None),
         )

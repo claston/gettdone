@@ -132,6 +132,7 @@ class WiseLayoutParser:
                         date=transaction_date.isoformat(), description=match[1], amount=float(amount),
                         running_balance=float(balance), external_reference_id=reference,
                         source_page=pending[0].page_number, source_line=pending[0].line_number, has_explicit_amount_sign=True,
+                        source_line_refs=tuple((part.page_number, part.line_number) for part in [*pending, line]),
                     ))
                     financials.append((amount, balance))
                     references.add(reference)

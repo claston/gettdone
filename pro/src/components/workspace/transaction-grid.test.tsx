@@ -45,7 +45,8 @@ describe("grid page anchors", () => {
         conversion,
         activePage: 1,
         groupByPage,
-        onSourcePage: locate,
+        onSourcePage: vi.fn(),
+        onLocateTransaction: locate,
         onUpdate: update,
         onGroupChange: vi.fn(),
         onAdd: vi.fn(),
@@ -70,13 +71,14 @@ describe("grid page anchors", () => {
       const before = container.scrollTop;
       rerender(<TransactionGrid {...props} activePage={2} />);
       expect(input).toHaveFocus();
+      expect(locate).not.toHaveBeenCalled();
       expect(container.scrollTop).toBe(before);
       act(() => input.blur());
       expect(container.scrollTop).toBeGreaterThan(before);
       fireEvent.click(
         screen.getByRole("button", { name: /Localizar origem de Linha 2/ }),
       );
-      expect(locate).toHaveBeenCalledExactlyOnceWith(2);
+      expect(locate).toHaveBeenCalledExactlyOnceWith("2");
       expect(screen.getByDisplayValue("Edição preservada")).toBeInTheDocument();
       expect(update).toHaveBeenCalledTimes(1);
     },
@@ -87,6 +89,7 @@ describe("grid page anchors", () => {
       activePage: 4,
       groupByPage: false,
       onSourcePage: vi.fn(),
+      onLocateTransaction: vi.fn(),
       onUpdate: vi.fn(),
       onGroupChange: vi.fn(),
       onAdd: vi.fn(),
@@ -106,5 +109,35 @@ describe("grid page anchors", () => {
       screen.getByText(/Página 2: nenhum lançamento visível neste filtro/),
     ).toBeInTheDocument();
     expect(screen.getAllByRole("row")).toHaveLength(1);
+  });
+  it("locates by stable ID and retains the chosen row on its continuation page", () => {
+    const locate = vi.fn();
+    const multi = {
+      ...row("2", 1),
+      sourceRegions: [
+        { page: 1, left: 0.1, top: 0.8, width: 0.6, height: 0.03 },
+        { page: 2, left: 0.1, top: 0.1, width: 0.6, height: 0.03 },
+      ],
+    };
+    render(
+      <TransactionGrid
+        conversion={{ ...conversion, transactions: [multi] }}
+        activePage={2}
+        locatedTransactionId="2"
+        groupByPage={false}
+        onSourcePage={vi.fn()}
+        onLocateTransaction={locate}
+        onUpdate={vi.fn()}
+        onGroupChange={vi.fn()}
+        onAdd={vi.fn()}
+        onRemove={vi.fn()}
+        onRestore={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTitle("Destacar origem no PDF"));
+    expect(locate).toHaveBeenCalledExactlyOnceWith("2");
+    expect(
+      screen.queryByText(/sem lançamentos associados/),
+    ).not.toBeInTheDocument();
   });
 });

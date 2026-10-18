@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from app.application.source_regions import SourceRegion
+
 if TYPE_CHECKING:
     from app.application.structured_conversion import StructuredConversionResult
 
@@ -22,6 +24,7 @@ class TransactionRow:
     transaction_id: str | None = None
     source_sequence: int | None = None
     source_subsequence: int = 0
+    source_regions: list[SourceRegion] = field(default_factory=list)
 
 
 @dataclass
@@ -49,6 +52,8 @@ class CanonicalTransaction:
     external_reference_id: str | None = None
     warnings: list[str] = field(default_factory=list)
     confidence: float | None = None
+    source_regions: list[SourceRegion] = field(default_factory=list)
+    source_line_refs: tuple[tuple[int, int], ...] = ()
 
 
 @dataclass

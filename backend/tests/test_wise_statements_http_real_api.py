@@ -72,6 +72,9 @@ def test_http_wise_worker_review_report_and_export_preserve_balances_and_currenc
             assert job["status"] == "completed", job
             analysis = job["result"]["analysis"]
             assert analysis["transactions_total"] == expected_count
+            original_regions = analysis["preview_transactions"][0]["source_regions"] if expected_count else []
+            if kind == "wise_brl":
+                assert original_regions
             if currency:
                 assert analysis["closing_balance"] == expected_balance
                 assert analysis["pdf_processing_metrics"]["canonical_warning_transactions_count"] == 0
@@ -81,6 +84,10 @@ def test_http_wise_worker_review_report_and_export_preserve_balances_and_currenc
                 "edits": [], "expected_updated_at": analysis["updated_at"], "account_number": "12345678",
             })
             assert edited.status_code == 200, edited.text
+            if kind == "wise_brl":
+                assert edited.json()["preview_transactions"][0]["source_regions"] == original_regions
+                reopened = owner.get(f"/api/conversion-batches/{batch_id}").json()
+                assert reopened["jobs"][0]["result"]["analysis"]["preview_transactions"][0]["source_regions"] == original_regions
             if currency:
                 assert edited.json()["closing_balance"] == expected_balance
             for query in ["", "&account_number=87654321"]:

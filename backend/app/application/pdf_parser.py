@@ -206,7 +206,9 @@ def parse_pdf_transactions(
         page_texts = result.source_page_texts or ()
         if len(page_texts) != _read_pdf_page_count(raw_bytes) or not all(text.strip() for text in page_texts):
             raise InvalidFileContentError("Cannot confirm an empty statement: some PDF pages could not be read.")
-    return result
+    from app.application.transaction_source_regions import bind_transaction_source_regions
+
+    return bind_transaction_source_regions(result, raw_bytes)
 
 
 def _parse_pdf_transactions(

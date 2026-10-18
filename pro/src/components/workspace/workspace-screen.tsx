@@ -39,6 +39,7 @@ import type {
 import { useWorkspaceController } from "./use-workspace-controller";
 import { DocumentViewer } from "./document-viewer";
 import { TransactionGrid } from "./transaction-grid";
+import { sourceLocation, type PdfNavigationRequest } from "./source-location";
 
 interface WorkspaceScreenProps {
   batchId: string;
@@ -314,11 +315,9 @@ export function WorkspaceScreen({
   const [focusMode, setFocusMode] = useState(true);
   const [groupByPage, setGroupByPage] = useState(false);
   const [pages, setPages] = useState<Record<string, number>>({});
-  const [navigation, setNavigation] = useState<{
-    id: string;
-    page: number;
-    token: number;
-  } | null>(null);
+  const [navigation, setNavigation] = useState<
+    (PdfNavigationRequest & { id: string }) | null
+  >(null);
   const [readyDocument, setReadyDocument] = useState<string | null>(null);
 
   useEffect(() => {
@@ -361,6 +360,15 @@ export function WorkspaceScreen({
   }
 
   const { batch, activeConversion } = controller;
+  const activeNavigation =
+    navigation?.id ===
+      `${activeConversion?.id}:${activeConversion?.pdf?.url}` &&
+    (!navigation.transactionId ||
+      activeConversion?.transactions.some(
+        (row) => row.id === navigation.transactionId,
+      ))
+      ? navigation
+      : null;
   const reviewed = batch.conversions.filter(
     (item) => item.status === "REVIEWED" || item.status === "EXPORTED",
   ).length;
@@ -479,8 +487,14 @@ export function WorkspaceScreen({
           activeId={activeConversion?.id ?? ""}
           collapsed={navigatorCollapsed}
           onCollapse={() => setNavigatorCollapsed((value) => !value)}
-          onSelect={controller.selectConversion}
-          onNext={controller.goToNextPending}
+          onSelect={(id) => {
+            setNavigation(null);
+            controller.selectConversion(id);
+          }}
+          onNext={() => {
+            setNavigation(null);
+            controller.goToNextPending();
+          }}
         />
         {activeConversion ? (
           <div className="review-stage">
@@ -488,9 +502,7 @@ export function WorkspaceScreen({
               key={`viewer-${activeConversion.id}`}
               conversion={activeConversion}
               repository={activeRepository}
-              navigation={
-                navigation?.id === activeConversion.id ? navigation : null
-              }
+              navigation={activeNavigation}
               onAvailability={(available) =>
                 setReadyDocument(
                   available
@@ -572,14 +584,32 @@ export function WorkspaceScreen({
                     ? (pages[activeConversion.id] ?? 1)
                     : null
                 }
+                onLocateTransaction={(transactionId) => {
+                  const transaction = activeConversion.transactions.find(
+                    (row) => row.id === transactionId,
+                  );
+                  const target = transaction && sourceLocation(transaction);
+                  if (!target) return;
+                  setPages((current) => ({
+                    ...current,
+                    [activeConversion.id]: target.page,
+                  }));
+                  setNavigation((current) => ({
+                    ...target,
+                    id: `${activeConversion.id}:${activeConversion.pdf?.url}`,
+                    token: (current?.token ?? 0) + 1,
+                  }));
+                }}
+                locatedTransactionId={activeNavigation?.transactionId}
                 onSourcePage={(page) => {
                   setPages((current) => ({
                     ...current,
                     [activeConversion.id]: page,
                   }));
                   setNavigation((current) => ({
-                    id: activeConversion.id,
+                    id: `${activeConversion.id}:${activeConversion.pdf?.url}`,
                     page,
+                    regions: [],
                     token: (current?.token ?? 0) + 1,
                   }));
                 }}
@@ -613,7 +643,13 @@ export function WorkspaceScreen({
         >
           <Undo2 size={14} /> Desfazer
         </button>
-        <button className="footer-action" onClick={controller.goToNextPending}>
+        <button
+          className="footer-action"
+          onClick={() => {
+            setNavigation(null);
+            controller.goToNextPending();
+          }}
+        >
           Próxima pendente <Redo2 size={14} />
         </button>
       </footer>

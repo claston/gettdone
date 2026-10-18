@@ -1,4 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.application.source_regions import SourceRegion
 
 
 class ReconciliationSummary(BaseModel):
@@ -40,6 +42,7 @@ class TransactionPreview(BaseModel):
     source_subsequence: int = 0
     source_line: int | None = None
     source_page: int | None = None
+    source_regions: list[SourceRegion] = Field(default_factory=list)
     date: str
     description: str
     amount: float

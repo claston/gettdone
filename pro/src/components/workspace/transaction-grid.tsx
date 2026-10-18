@@ -15,6 +15,7 @@ import type {
 } from "@/domain/workspace";
 import { TransactionDialog } from "./transaction-dialog";
 import { usePageSync } from "./use-page-sync";
+import { sourceLocation } from "./source-location";
 
 function EditableCell({
   transaction,
@@ -80,6 +81,8 @@ export function TransactionGrid({
   groupByPage,
   onGroupChange,
   onSourcePage,
+  onLocateTransaction,
+  locatedTransactionId,
   activePage,
 }: {
   conversion: Conversion;
@@ -94,6 +97,8 @@ export function TransactionGrid({
   groupByPage: boolean;
   onGroupChange(value: boolean): void;
   onSourcePage(page: number): void;
+  onLocateTransaction(transactionId: string): void;
+  locatedTransactionId?: string;
   activePage: number | null;
 }) {
   const [filter, setFilter] = useState<TransactionFilter>("ALL");
@@ -102,7 +107,13 @@ export function TransactionGrid({
   const [query, setQuery] = useState("");
   const rowElements = useRef(new Map<string, HTMLTableRowElement>());
   const visible = filterTransactions(conversion.transactions, filter);
-  const targetId = visible.find((row) => row.sourcePage === activePage)?.id;
+  const belongsToPage = (row: Transaction) =>
+    row.sourcePage === activePage ||
+    row.sourceRegions?.some((region) => region.page === activePage);
+  const located = visible.find(
+    (row) => row.id === locatedTransactionId && belongsToPage(row),
+  );
+  const targetId = located?.id ?? visible.find(belongsToPage)?.id;
   const follow = useCallback((id: string) => {
     const row = rowElements.current.get(id);
     const container = scroll.current;
@@ -113,9 +124,7 @@ export function TransactionGrid({
       32;
   }, []);
   const sync = usePageSync(activePage, targetId, follow);
-  const hasPageRows = conversion.transactions.some(
-    (row) => row.sourcePage === activePage,
-  );
+  const hasPageRows = conversion.transactions.some(belongsToPage);
   const groups = groupByPage
     ? Array.from(new Set(visible.map((row) => row.sourcePage ?? null)))
         .sort((a, b) => (a ?? Infinity) - (b ?? Infinity))
@@ -270,99 +279,104 @@ export function TransactionGrid({
                     </td>
                   </tr>
                 )}
-                {group.rows.map((transaction) => (
-                  <tr
-                    data-transaction-id={transaction.id}
-                    data-source-page={transaction.sourcePage ?? undefined}
-                    key={transaction.id}
-                    ref={(node) => {
-                      if (node) rowElements.current.set(transaction.id, node);
-                      else rowElements.current.delete(transaction.id);
-                    }}
-                    className={`${transactionHasState(transaction, "SUSPECTED") ? "suspected-row" : ""} ${transaction.isDeleted ? "deleted-row" : ""} ${transaction.id === matchId ? "located-row" : ""}`}
-                  >
-                    <td>
-                      <EditableCell
-                        transaction={transaction}
-                        field="date"
-                        onCommit={onUpdate}
-                      />
-                    </td>
-                    <td>
-                      <EditableCell
-                        transaction={transaction}
-                        field="description"
-                        onCommit={onUpdate}
-                      />
-                      {transaction.isDeleted && (
-                        <span className="deleted-badge">Excluído</span>
-                      )}
-                    </td>
-                    <td>
-                      <EditableCell
-                        transaction={transaction}
-                        field="credit"
-                        onCommit={onUpdate}
-                      />
-                    </td>
-                    <td>
-                      <EditableCell
-                        transaction={transaction}
-                        field="debit"
-                        onCommit={onUpdate}
-                      />
-                    </td>
-                    <td>
-                      <EditableCell
-                        transaction={transaction}
-                        field="balance"
-                        onCommit={onUpdate}
-                      />
-                    </td>
-                    <td>
-                      {transaction.sourcePage != null &&
-                      Number.isInteger(transaction.sourcePage) &&
-                      transaction.sourcePage > 0 &&
-                      conversion.pdf ? (
-                        <button
-                          className="row-action"
-                          aria-label={`Localizar origem de ${transaction.description} no PDF (página ${transaction.sourcePage})`}
-                          onClick={() => onSourcePage(transaction.sourcePage!)}
-                        >
-                          <ExternalLink size={14} />
-                        </button>
-                      ) : (
-                        <span
-                          className="source-unavailable"
-                          title="Sem página de origem disponível"
-                          aria-label="Sem página de origem disponível"
-                        >
-                          —
-                        </span>
-                      )}
-                      {transaction.isDeleted ? (
-                        <button
-                          className="row-action"
-                          aria-label={`Restaurar ${transaction.description}`}
-                          onClick={() => onRestore(transaction.id)}
-                        >
-                          <RotateCcw size={14} />
-                        </button>
-                      ) : (
-                        <button
-                          className="row-action"
-                          aria-label={`Remover ${transaction.description}`}
-                          onClick={() =>
-                            window.confirm("Remover este lançamento?") &&
-                            onRemove(transaction.id)
-                          }
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {group.rows.map((transaction) => {
+                  const location = sourceLocation(transaction);
+                  return (
+                    <tr
+                      data-transaction-id={transaction.id}
+                      data-source-page={transaction.sourcePage ?? undefined}
+                      key={transaction.id}
+                      ref={(node) => {
+                        if (node) rowElements.current.set(transaction.id, node);
+                        else rowElements.current.delete(transaction.id);
+                      }}
+                      className={`${transactionHasState(transaction, "SUSPECTED") ? "suspected-row" : ""} ${transaction.isDeleted ? "deleted-row" : ""} ${transaction.id === matchId ? "located-row" : ""}`}
+                    >
+                      <td>
+                        <EditableCell
+                          transaction={transaction}
+                          field="date"
+                          onCommit={onUpdate}
+                        />
+                      </td>
+                      <td>
+                        <EditableCell
+                          transaction={transaction}
+                          field="description"
+                          onCommit={onUpdate}
+                        />
+                        {transaction.isDeleted && (
+                          <span className="deleted-badge">Excluído</span>
+                        )}
+                      </td>
+                      <td>
+                        <EditableCell
+                          transaction={transaction}
+                          field="credit"
+                          onCommit={onUpdate}
+                        />
+                      </td>
+                      <td>
+                        <EditableCell
+                          transaction={transaction}
+                          field="debit"
+                          onCommit={onUpdate}
+                        />
+                      </td>
+                      <td>
+                        <EditableCell
+                          transaction={transaction}
+                          field="balance"
+                          onCommit={onUpdate}
+                        />
+                      </td>
+                      <td>
+                        {location && conversion.pdf ? (
+                          <button
+                            className="row-action"
+                            aria-label={`Localizar origem de ${transaction.description} no PDF (página ${location.page})`}
+                            title={
+                              location.regions.length
+                                ? "Destacar origem no PDF"
+                                : "Abrir página de origem no PDF"
+                            }
+                            onClick={() => onLocateTransaction(transaction.id)}
+                          >
+                            <ExternalLink size={14} />
+                          </button>
+                        ) : (
+                          <span
+                            className="source-unavailable"
+                            title="Sem página de origem disponível"
+                            aria-label="Sem página de origem disponível"
+                          >
+                            —
+                          </span>
+                        )}
+                        {transaction.isDeleted ? (
+                          <button
+                            className="row-action"
+                            aria-label={`Restaurar ${transaction.description}`}
+                            onClick={() => onRestore(transaction.id)}
+                          >
+                            <RotateCcw size={14} />
+                          </button>
+                        ) : (
+                          <button
+                            className="row-action"
+                            aria-label={`Remover ${transaction.description}`}
+                            onClick={() =>
+                              window.confirm("Remover este lançamento?") &&
+                              onRemove(transaction.id)
+                            }
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </Fragment>
             ))}
           </tbody>

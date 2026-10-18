@@ -66,6 +66,7 @@ class _MultilineCandidate:
     source_page: int
     source_line: int
     has_strong_evidence: bool
+    source_line_refs: tuple[tuple[int, int], ...]
 
 
 def parse_multiline_transaction_rows(
@@ -119,6 +120,7 @@ def _assemble_candidate(
     amount_role: str | None = None
     running_balance: float | None = None
 
+    source_line_refs = [(date_line.page_number, date_line.line_number)]
     stop_index = min(len(lines), start_index + _MAX_TRANSACTION_SPAN_LINES + 1)
     for index in range(start_index + 1, stop_index):
         current = lines[index]
@@ -138,6 +140,7 @@ def _assemble_candidate(
 
         selected_amount = _select_amount_line(current.text, layout_profile=layout_profile)
         if selected_amount is not None:
+            source_line_refs.append((current.page_number, current.line_number))
             selected_token, selected_role, selected_balance = selected_amount
             if amount_token is None:
                 amount_token = selected_token
@@ -153,9 +156,11 @@ def _assemble_candidate(
             break
         stripped = current.text.strip()
         if description_parts and external_reference_id is None and _is_document_reference(stripped):
+            source_line_refs.append((current.page_number, current.line_number))
             external_reference_id = stripped
             continue
         if stripped:
+            source_line_refs.append((current.page_number, current.line_number))
             description_parts.append(stripped)
 
     description = " ".join(part for part in description_parts if part).strip()
@@ -179,6 +184,7 @@ def _assemble_candidate(
         source_page=date_line.page_number,
         source_line=date_line.line_number,
         has_strong_evidence=has_strong_evidence,
+        source_line_refs=tuple(source_line_refs),
     )
 
 
@@ -240,6 +246,7 @@ def _build_parsed_row(
         ),
         source_page=candidate.source_page,
         source_line=candidate.source_line,
+        source_line_refs=candidate.source_line_refs,
         running_balance=candidate.running_balance,
         external_reference_id=candidate.external_reference_id,
         has_explicit_amount_sign=has_amount_token_explicit_sign(candidate.amount_token),
