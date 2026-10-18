@@ -1,14 +1,18 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { DashboardPage } from "./placeholder-page";
+import { DashboardPage } from "./dashboard-page";
 
 describe("DashboardPage", () => {
-  it("não apresenta métricas ou lotes fictícios como dados do usuário", () => {
-    render(<DashboardPage />);
+  it("não apresenta métricas ou lotes fictícios como dados do usuário", async () => {
+    render(
+      <DashboardPage
+        service={{ list: async () => ({ items: [], nextCursor: null }) }}
+      />,
+    );
 
     expect(
-      screen.getByRole("heading", { name: "Dashboard em construção" }),
+      await screen.findByText("Nenhum lote de conversão encontrado."),
     ).toBeInTheDocument();
     expect(screen.queryByText("Bom trabalho, Ana")).not.toBeInTheDocument();
     expect(

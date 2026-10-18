@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -99,6 +102,24 @@ class ConversionBatchResponse(BaseModel):
     created: bool | None = None
     uploads: list[ConversionUploadResponse] | None = None
     jobs: list[ConversionBatchJobResponse]
+
+
+class ConversionBatchSummaryResponse(BaseModel):
+    batch_id: str
+    status: str
+    created_at: datetime
+    expires_at: datetime
+    is_expired: bool
+    files_count: int
+    completed_count: int
+    failed_count: int
+    pending_count: int
+    first_job_id: str | None
+
+
+class ConversionBatchListResponse(BaseModel):
+    items: list[ConversionBatchSummaryResponse]
+    next_cursor: str | None = None
 
 
 class ConversionRuntimeResponse(BaseModel):
@@ -311,6 +332,58 @@ def submit_conversion_batch(
         files_count=len(snapshot.jobs),
     )
     return _snapshot_response(snapshot)
+
+
+@router.get("/api/pro/conversion-batches", response_model=ConversionBatchListResponse)
+def list_conversion_batches(
+    response: Response,
+    limit: int = Query(default=20, ge=1, le=50),
+    cursor: str | None = Query(default=None, max_length=500),
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    runtime: ConversionRuntimeConfig = Depends(get_conversion_runtime_config),
+    rollout_policy: AsyncConversionRolloutPolicy = Depends(get_async_conversion_rollout_policy),
+    service: ConversionBatchService | None = Depends(get_conversion_batch_service),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
+) -> ConversionBatchListResponse:
+    identity = _resolve_identity(access_control_service=access_control_service, anonymous_cookie_token=None,
+                                 anonymous_fingerprint=None, user_token=None, authorization=authorization,
+                                 access_cookie_token=access_cookie_token)
+    if identity.identity_type != "user":
+        raise HTTPException(status_code=401, detail="An authenticated user session is required.")
+    active = _require_async_service(runtime, service, rollout_policy=rollout_policy,
+                                   identity=identity, access_control_service=access_control_service)
+    before = None
+    if cursor:
+        try:
+            raw = base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True)
+            created, batch_id = json.loads(raw)
+            created_at = datetime.fromisoformat(created)
+            if created_at.tzinfo is None or not re.fullmatch(r"batch_[A-Za-z0-9_-]{1,80}", batch_id):
+                raise ValueError("Invalid cursor")
+            before = (created_at.astimezone(timezone.utc), batch_id)
+        except (ValueError, TypeError, binascii.Error):
+            raise HTTPException(status_code=400, detail="Invalid pagination cursor.") from None
+    summaries = active.repository.list_for_owner(identity_type=identity.identity_type, identity_id=identity.identity_id,
+                                                 limit=limit + 1, before=before)
+    now = datetime.now(timezone.utc)
+    items = []
+    for summary in summaries[:limit]:
+        expired = summary.expires_at <= now or summary.first_job_id is None
+        items.append(ConversionBatchSummaryResponse(
+            batch_id=summary.batch_id, status="expired" if expired else summary.status,
+            created_at=summary.created_at, expires_at=summary.expires_at, is_expired=expired,
+            files_count=summary.files_count, completed_count=summary.completed_count,
+            failed_count=summary.failed_count, pending_count=summary.pending_count,
+            first_job_id=None if expired else summary.first_job_id,
+        ))
+    next_cursor = None
+    if len(summaries) > limit:
+        last = summaries[limit - 1]
+        next_cursor = base64.urlsafe_b64encode(json.dumps([last.created_at.isoformat(), last.batch_id]).encode()).decode().rstrip("=")
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Cookie, Authorization"
+    return ConversionBatchListResponse(items=items, next_cursor=next_cursor)
 
 
 @router.get("/api/conversion-batches/{batch_id}", response_model=ConversionBatchResponse)

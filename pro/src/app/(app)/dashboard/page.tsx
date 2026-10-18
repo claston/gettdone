@@ -1,4 +1,4 @@
-import { DashboardPage } from "@/components/placeholder-page";
+import { DashboardPage } from "@/components/dashboard-page";
 
 export default function Page() {
   return <DashboardPage />;
