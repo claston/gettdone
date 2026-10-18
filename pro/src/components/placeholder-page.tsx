@@ -1,4 +1,4 @@
-import { ArrowRight, FileStack, Plus, Sparkles } from "lucide-react";
+import { ArrowRight, Plus, Sparkles } from "lucide-react";
 import Link from "next/link";
 
 export function PlaceholderPage({
@@ -35,47 +35,6 @@ export function PlaceholderPage({
         >
           Abrir workspace de demonstração <ArrowRight size={16} />
         </Link>
-      </section>
-    </main>
-  );
-}
-
-export function DashboardPage() {
-  return (
-    <main className="standard-page dashboard-page">
-      <div className="page-title">
-        <div>
-          <span className="eyebrow">OFX Simples PRO</span>
-          <h1>Visão geral</h1>
-          <p>
-            Este ambiente autenticado exibe somente dados reais da sua conta.
-          </p>
-        </div>
-        <Link href="/conversions" className="primary-button">
-          <Plus size={16} /> Nova conversão
-        </Link>
-      </div>
-      <section className="placeholder-card">
-        <span className="placeholder-icon">
-          <FileStack size={24} />
-        </span>
-        <h2>Dashboard em construção</h2>
-        <p>
-          Histórico, lotes recentes e indicadores aparecerão aqui quando a
-          integração do dashboard estiver pronta. Nenhuma métrica fictícia é
-          apresentada como dado da sua conta.
-        </p>
-        <div className="placeholder-actions">
-          <Link href="/conversions" className="primary-button">
-            <Plus size={16} /> Criar conversão real
-          </Link>
-          <Link
-            href="/demo/review/batch-setembro-2026"
-            className="secondary-button"
-          >
-            Ver demonstração com dados fictícios <ArrowRight size={16} />
-          </Link>
-        </div>
       </section>
     </main>
   );

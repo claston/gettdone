@@ -1311,6 +1311,81 @@ button.save-indicator {
   border-radius: 6px;
   color: var(--ink-500);
 }
+.batch-history-card {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.batch-history-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 22px;
+  font-size: 18px;
+}
+.history-table-scroll {
+  overflow-x: auto;
+}
+.batch-history-table {
+  width: 100%;
+  min-width: 600px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+.batch-history-table th,
+.batch-history-table td {
+  padding: 16px 22px;
+  border-top: 1px solid var(--line);
+}
+.batch-history-table th {
+  background: var(--surface-muted);
+  color: var(--ink-500);
+  font-size: 11px;
+}
+.batch-history-table small {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--ink-500);
+}
+.history-status {
+  display: inline-block;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: var(--surface-muted);
+}
+.history-status.expired,
+.history-unavailable {
+  color: var(--ink-500);
+}
+.history-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 24px;
+  color: var(--ink-500);
+}
+.history-pagination {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 22px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.history-demo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 20px;
+  color: var(--ink-500);
+  font-size: 12px;
+}
 .transaction-search input {
   min-width: 0;
   width: 100%;

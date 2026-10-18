@@ -956,7 +956,7 @@ export function WorkspaceScreen({
       />
       <header className="workspace-header">
         <div className="batch-heading">
-          <Link href="/conversions" className="back-link">
+          <Link href="/dashboard" className="back-link">
             <ChevronLeft size={16} /> Lotes
           </Link>
           <div>

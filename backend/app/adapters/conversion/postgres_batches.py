@@ -7,7 +7,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Iterator
 from uuid import uuid4
 
-from app.application.conversion.contracts.batches import ConversionBatchSnapshot, ConversionBatchSubmission, ConversionOutboxEvent
+from app.application.conversion.contracts.batches import (
+    ConversionBatchSnapshot,
+    ConversionBatchSubmission,
+    ConversionBatchSummary,
+    ConversionOutboxEvent,
+)
 from app.application.conversion.contracts.documents import ConversionDocumentReference
 from app.application.conversion.contracts.jobs import (
     ConversionJobFailure,
@@ -176,6 +181,42 @@ class PostgresConversionBatchRepository:
                 if cursor.fetchone() is None:
                     return None
             return self._snapshot(conn, batch_id)
+
+    def list_for_owner(self, *, identity_type: str, identity_id: str, limit: int,
+                       before: tuple[datetime, str] | None = None) -> tuple[ConversionBatchSummary, ...]:
+        # Bound the owner-scoped headers first. Never select job result_payload,
+        # uploaded document references or financial rows for the dashboard.
+        boundary = " AND (created_at < %s OR (created_at = %s AND batch_id < %s))" if before else ""
+        params: list[object] = [identity_type, identity_id]
+        if before:
+            params.extend([before[0], before[0], before[1]])
+        params.extend([limit, self._normalize_datetime(self.clock())])
+        with self._connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(f"""
+                    WITH owned_batches AS (
+                        SELECT batch_id, status, files_count, created_at, expires_at FROM {self._batches_table}
+                        WHERE identity_type = %s AND identity_id = %s{boundary}
+                        ORDER BY created_at DESC, batch_id DESC LIMIT %s
+                    )
+                    SELECT b.batch_id, b.status, b.files_count, b.created_at, b.expires_at,
+                        SUM(CASE WHEN j.status = 'completed' THEN 1 ELSE 0 END) AS completed_count,
+                        SUM(CASE WHEN j.status IN ('failed', 'expired') THEN 1 ELSE 0 END) AS failed_count,
+                        SUM(CASE WHEN j.status NOT IN ('completed', 'failed', 'expired') THEN 1 ELSE 0 END) AS pending_count,
+                        MAX(j.expires_at) AS job_expires_at,
+                        MIN(CASE WHEN j.status <> 'expired' AND j.expires_at > %s THEN j.job_id END) AS first_job_id
+                    FROM owned_batches b LEFT JOIN {self._jobs_table} j ON j.batch_id = b.batch_id
+                    GROUP BY b.batch_id, b.status, b.files_count, b.created_at, b.expires_at
+                    ORDER BY b.created_at DESC, b.batch_id DESC
+                """, tuple(params))
+                rows = cursor.fetchall()
+        return tuple(ConversionBatchSummary(
+            batch_id=row["batch_id"], status=row["status"], created_at=row["created_at"],
+            expires_at=min(row["expires_at"], row["job_expires_at"] or row["expires_at"]),
+            files_count=row["files_count"], completed_count=int(row["completed_count"] or 0),
+            failed_count=int(row["failed_count"] or 0), pending_count=int(row["pending_count"] or 0),
+            first_job_id=row["first_job_id"],
+        ) for row in rows)
 
     def mark_uploaded(self, job_id: str) -> ConversionJobRecord:
         return self._transition(job_id, ConversionJobStatus.UPLOADED, {ConversionJobStatus.UPLOADING})

@@ -25,6 +25,19 @@ class ConversionBatchSubmission:
 
 
 @dataclass(frozen=True, slots=True)
+class ConversionBatchSummary:
+    batch_id: str
+    status: str
+    created_at: datetime
+    expires_at: datetime
+    files_count: int
+    completed_count: int
+    failed_count: int
+    pending_count: int
+    first_job_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class ConversionOutboxEvent:
     event_id: str
     job_id: str
@@ -34,6 +47,11 @@ class ConversionOutboxEvent:
 
 
 class ConversionBatchRepository(Protocol):
+    def list_for_owner(
+        self, *, identity_type: str, identity_id: str, limit: int,
+        before: tuple[datetime, str] | None = None,
+    ) -> tuple[ConversionBatchSummary, ...]: ...
+
     def create(self, *, batch: ConversionBatch, jobs: list[ConversionJob]) -> ConversionBatchSubmission: ...
 
     def get(self, job_id: str) -> ConversionJobRecord | None: ...
