@@ -76,6 +76,8 @@ class ReconcileIntakeResponse(BaseModel):
 
 
 class ConvertEditPatch(BaseModel):
+    transaction_id: str | None = Field(default=None, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
+    anchor_transaction_id: str | None = Field(default=None, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
     row_id: str | None = None
     action: str = "update"
     insert_position: int | None = None

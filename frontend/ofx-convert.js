@@ -1627,14 +1627,14 @@
   function setPreviewRows(rows) {
     state.previewRows = (rows || []).map((row, idx) => ({
       ...row,
-      rowId: row.rowId || `row_${idx + 1}`,
+      rowId: row.transaction_id || row.rowId || `row_${idx + 1}`,
     }));
   }
 
   function setOriginalRows(rows) {
     state.originalRows = (rows || []).map((row, idx) => ({
       ...row,
-      rowId: row.rowId || `row_${idx + 1}`,
+      rowId: row.transaction_id || row.rowId || `row_${idx + 1}`,
     }));
   }
 
@@ -1902,7 +1902,8 @@
         state.analysisSnapshot.updated_at = payload.updated_at || state.analysisSnapshot.updated_at || null;
         renderKpis(state.analysisSnapshot);
       }
-      markChangedRow(isDraft ? "row_1" : rowId, isDraft ? "new" : "changed");
+      const insertedRow = isDraft ? state.previewRows[0] : null;
+      markChangedRow(insertedRow ? insertedRow.rowId : rowId, isDraft ? "new" : "changed");
       renderRows();
       persistCurrentViewState();
       setStatus("Linha atualizada na prévia.", "success");
@@ -1918,9 +1919,15 @@
       return;
     }
 
+    // Compute balances in accounting order, then use immutable source order
+    // only for display. Legacy conversions retain their existing array order.
     const displayedRunningBalances = buildDisplayedRunningBalances(rows);
-    reviewRows.innerHTML = rows
-      .map((row, index) => {
+    const balancesById = new Map(rows.map((row, index) => [row.rowId, displayedRunningBalances[index]]));
+    const displayRows = rows.every((row) => row.source_sequence != null)
+      ? [...rows].sort((a, b) => a.source_sequence - b.source_sequence || (a.source_subsequence || 0) - (b.source_subsequence || 0))
+      : rows;
+    reviewRows.innerHTML = displayRows
+      .map((row) => {
         const rowClass =
           row.rowId === state.lastChangedRowId
             ? state.lastChangedRowKind === "new"
@@ -1962,7 +1969,7 @@
         const debitMarkup = debitAmount !== null
           ? `<span class="amount-debit">${formatCurrency(debitAmount)}</span>`
           : '<span class="amount-empty">—</span>';
-        const runningBalanceAmount = displayedRunningBalances[index];
+        const runningBalanceAmount = balancesById.get(row.rowId);
         const runningBalanceMarkup = runningBalanceAmount !== null
           ? `<span class="amount-balance">${formatCurrency(runningBalanceAmount)}</span>`
           : '<span class="amount-empty">—</span>';

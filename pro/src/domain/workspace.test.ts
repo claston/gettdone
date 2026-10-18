@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   filterTransactions,
+  orderTransactionsForReview,
   nextPendingConversion,
   sortConversionsForReview,
   validateTransactionField,
@@ -42,6 +43,49 @@ const transaction = (
 });
 
 describe("workspace domain", () => {
+  it("mantém a ordem do arquivo em datas descendentes e ao editar uma data", () => {
+    const rows = [
+      {
+        ...transaction("ORIGINAL"),
+        id: "third",
+        date: "29/04/2026",
+        sourceSequence: 3,
+      },
+      {
+        ...transaction("ORIGINAL"),
+        id: "second",
+        date: "30/04/2026",
+        sourceSequence: 2,
+      },
+      {
+        ...transaction("ORIGINAL"),
+        id: "first",
+        date: "30/04/2026",
+        sourceSequence: 1,
+      },
+      {
+        ...transaction("EDITED"),
+        id: "manual",
+        sourceSequence: 1,
+        sourceSubsequence: 1,
+      },
+    ];
+    expect(orderTransactionsForReview(rows).map((row) => row.id)).toEqual([
+      "first",
+      "manual",
+      "second",
+      "third",
+    ]);
+    rows[2].date = "01/04/2026";
+    expect(orderTransactionsForReview(rows).map((row) => row.id)).toEqual([
+      "first",
+      "manual",
+      "second",
+      "third",
+    ]);
+    expect(rows[0].id).toBe("third");
+  });
+
   it("prioriza conversões que precisam de revisão", () => {
     const sorted = sortConversionsForReview([
       conversion("ready", "READY"),

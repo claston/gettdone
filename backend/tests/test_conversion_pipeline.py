@@ -4,6 +4,52 @@ from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.parsers.service import ParsingService
 
 
+def test_new_source_order_is_physical_and_independent_from_accounting_order(tmp_path) -> None:
+    from dataclasses import replace
+
+    from app.application.storage_service import TempAnalysisStorage
+
+    document = ingest_uploaded_document(filename="extrato.csv", raw_bytes=(
+        b"date,description,amount\n2026-04-29,TERCEIRO,5\n2026-04-30,SEGUNDO,10\n2026-04-30,PRIMEIRO,-2\n"
+    ))
+    parsed = ParsingService().parse(document)
+    parsed = replace(parsed, canonical_transactions=[
+        CanonicalTransaction(date=row.date, description=row.description, amount=row.amount, type=row.type,
+                             source_page=page, source_line=line)
+        for row, page, line in zip(parsed.transactions, [2, 1, 1], [1, 20, 10], strict=True)
+    ])
+    result = ConversionPipeline().run_parsed_document(document=document, parsed_document=parsed,
+                                                     analysis_id="an_source_order", parse_ms=1)
+    rows = result.analysis_data.preview_transactions
+    assert [row.source_sequence for row in rows] == [3, 2, 1]
+    assert [row.description for row in rows] == ["TERCEIRO", "SEGUNDO", "PRIMEIRO"]
+    assert [row.source_line for row in rows] == [1, 20, 10]
+    original_ids = [row.transaction_id for row in rows]
+    assert len(set(original_ids)) == 3
+    storage = TempAnalysisStorage(root_dir=tmp_path)
+    storage.save_analysis(result.analysis_data)
+    edited = storage.apply_convert_edits("an_source_order", [{
+        "row_id": original_ids[2], "date": "2026-04-01", "description": "EDITADO", "debit": 2,
+    }])
+    assert [row["transaction_id"] for row in edited["preview_transactions"]] == original_ids
+    assert [row["source_sequence"] for row in edited["preview_transactions"]] == [3, 2, 1]
+    anchor = original_ids[2]
+    for number in range(2):
+        inserted = storage.apply_convert_edits("an_source_order", [{
+            "action": "insert", "transaction_id": f"manual-{number}", "anchor_transaction_id": anchor,
+            "date": "2026-04-30", "description": "MANUAL", "credit": 8,
+        }])
+    manual = [row for row in inserted["preview_transactions"] if row["transaction_id"].startswith("manual-")]
+    assert [(row["source_sequence"], row["source_subsequence"]) for row in manual] == [(1, 1), (1, 2)]
+    assert all(row["source_page"] is None for row in manual)
+    deleted = storage.apply_convert_edits("an_source_order", [{"action": "delete", "row_id": anchor}])
+    assert next(row for row in deleted["preview_transactions"] if row["transaction_id"] == anchor)["is_deleted"]
+    restored = storage.apply_convert_edits("an_source_order", [{
+        "action": "restore", "row_id": anchor, "date": "2026-04-30", "description": "RESTAURADO", "debit": 2,
+    }])
+    assert next(row for row in restored["preview_transactions"] if row["transaction_id"] == anchor)["source_sequence"] == 1
+
+
 def test_conversion_pipeline_builds_analysis_data_without_storage() -> None:
     raw = b"date,description,amount\n2026-04-01,PIX recebido cliente,300.00\n"
 

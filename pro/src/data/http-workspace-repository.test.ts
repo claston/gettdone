@@ -59,6 +59,58 @@ const batchPayload = {
 };
 
 describe("HttpWorkspaceRepository", () => {
+  it("usa ordem de origem e ID estável na gravação sem expor uma coluna de sequência", async () => {
+    const original = structuredClone(batchPayload);
+    const rows = original.jobs[0].result!.analysis.preview_transactions.map(
+      (row, index) => ({
+        ...row,
+        transaction_id: `txn-${index}`,
+        source_sequence: 2 - index,
+        source_subsequence: 0,
+      }),
+    );
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (url, init) => {
+        if (String(url).endsWith("/auth/me")) return jsonResponse({});
+        if (init?.method === "POST")
+          return jsonResponse({
+            updated_at: "saved",
+            preview_transactions: rows,
+          });
+        return jsonResponse({
+          ...original,
+          jobs: [
+            {
+              ...original.jobs[0],
+              result: {
+                ...original.jobs[0].result,
+                analysis: {
+                  ...original.jobs[0].result!.analysis,
+                  preview_transactions: rows,
+                },
+              },
+            },
+          ],
+        });
+      });
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+    const batch = await repository.getBatch("batch-real");
+    const displayed = batch.conversions[0].transactions;
+    expect(displayed.map((row) => row.id)).toEqual(["txn-1", "txn-0"]);
+    expect(batch.period).toBe("01/10/2026–02/10/2026");
+    await repository.saveTransactions("job-ready", [
+      { ...displayed[0], description: "Corrigida" },
+      displayed[1],
+    ]);
+    const write = fetcher.mock.calls.find(
+      ([, init]) => init?.method === "POST",
+    )!;
+    expect(JSON.parse(String(write[1]?.body)).edits).toEqual([
+      expect.objectContaining({ row_id: "txn-1", description: "Corrigida" }),
+    ]);
+  });
+
   it("confirma uma inclusão após perda da resposta sem reenviar a inclusão", async () => {
     let operationId = "";
     const rows = batchPayload.jobs[0].result!.analysis.preview_transactions;

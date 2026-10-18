@@ -8,7 +8,7 @@ import {
   nextPendingConversion,
   parseBrazilianCurrency,
   sortConversionsForReview,
-  sortTransactionsByDate,
+  orderTransactionsForReview,
   validateTransactionField,
 } from "@/domain/workspace";
 import type {
@@ -277,7 +277,7 @@ export function useWorkspaceController(
           if (!pending.current.has(conversionId))
             changeRows(
               conversionId,
-              sortTransactionsByDate(saved ?? transactions),
+              orderTransactionsForReview(saved ?? transactions),
             );
         }
         setStatus(conversionId, "SAVED");
@@ -390,6 +390,19 @@ export function useWorkspaceController(
           ...draft,
           balance: null,
           sourcePage: null,
+          ...(previous.some((row) => row.sourceSequence != null)
+            ? {
+                sourceSequence: 0,
+                sourceSubsequence:
+                  1 +
+                  Math.max(
+                    0,
+                    ...previous
+                      .filter((row) => row.sourceSequence === 0)
+                      .map((row) => row.sourceSubsequence ?? 0),
+                  ),
+              }
+            : {}),
           fieldStates: { ...emptyStates },
         },
         ...previous,

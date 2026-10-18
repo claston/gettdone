@@ -53,6 +53,43 @@ def test_http_edit_operation_survives_lost_response_and_rejects_other_owner(tmp_
     assert "Incluído" in report.text
 
 
+def test_http_stable_transaction_id_preserves_source_order_after_edit_and_insert(tmp_path) -> None:
+    from app.application import ReportService, TempAnalysisStorage
+    from app.application.conversion_pipeline import ConversionPipeline
+
+    def configure(access):
+        data = ConversionPipeline().run(filename="extrato.csv", raw_bytes=(
+            b"date,description,amount\n2026-04-30,PRIMEIRO,10\n2026-04-30,SEGUNDO,-2\n2026-04-29,TERCEIRO,5\n"
+        ), analysis_id="an_order_http").analysis_data
+        storage = TempAnalysisStorage(root_dir=tmp_path / "results")
+        storage.save_analysis(data)
+        owner = access.resolve_identity(anonymous_fingerprint="fp-owner", user_token=None)
+        storage.set_convert_owner(data.analysis_id, owner.identity_type, owner.identity_id)
+        app.dependency_overrides[get_report_service] = lambda: ReportService(storage)
+
+    with _run_http_server(configure) as base_url:
+        url = f"{base_url}/convert-edits/an_order_http"
+        params = {"anonymous_fingerprint": "fp-owner"}
+        snapshot = httpx.post(url, params=params, json={"edits": []}).json()
+        first = snapshot["preview_transactions"][0]["transaction_id"]
+        saved = httpx.post(url, params=params, json={"expected_updated_at": snapshot["updated_at"], "edits": [
+            {"row_id": first, "date": "2026-04-01", "description": "CORRIGIDO", "credit": 10},
+            {"action": "insert", "transaction_id": "manual-http", "anchor_transaction_id": first,
+             "date": "2026-04-30", "description": "MANUAL", "credit": 8},
+        ]})
+        report = httpx.get(f"{base_url}/convert-report/an_order_http", params={**params, "format": "csv"})
+    assert saved.status_code == report.status_code == 200
+    rows = saved.json()["preview_transactions"]
+    assert rows[0]["transaction_id"] == first
+    assert rows[0]["source_sequence"] == 1
+    assert rows[-1]["transaction_id"] == "manual-http"
+    assert rows[-1]["source_sequence"] == 1
+    assert rows[-1]["source_subsequence"] == 1
+    assert [row["description"] for row in sorted(rows, key=lambda row: (row["source_sequence"], row["source_subsequence"]))] == [
+        "CORRIGIDO", "MANUAL", "SEGUNDO", "TERCEIRO",
+    ]
+
+
 class _InMemoryConnCtx:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn

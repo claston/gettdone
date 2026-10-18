@@ -77,6 +77,57 @@ const completedBatch: Batch = {
 };
 
 describe("WorkspaceScreen", () => {
+  it("mantém a posição de origem ao corrigir a data sem mostrar a sequência interna", async () => {
+    const batch = structuredClone(completedBatch);
+    const original = batch.conversions[0].transactions[0];
+    batch.conversions[0].transactions = [
+      {
+        ...original,
+        id: "first",
+        description: "PRIMEIRO",
+        date: "30/04/2026",
+        sourceSequence: 1,
+      },
+      {
+        ...original,
+        id: "second",
+        description: "SEGUNDO",
+        date: "30/04/2026",
+        sourceSequence: 2,
+      },
+      {
+        ...original,
+        id: "third",
+        description: "TERCEIRO",
+        date: "29/04/2026",
+        sourceSequence: 3,
+      },
+    ];
+    const repository: WorkspaceRepository = {
+      getBatch: vi.fn().mockResolvedValue(batch),
+      saveTransactions: vi.fn().mockImplementation(async (_id, rows) => rows),
+      markReviewed: vi.fn(),
+      retryConversion: vi.fn(),
+      exportBatch: vi.fn(),
+    };
+    render(<WorkspaceScreen batchId={batch.id} repository={repository} />);
+    const first = (await screen.findAllByDisplayValue("30/04/2026"))[0];
+    fireEvent.change(first, { target: { value: "01/04/2026" } });
+    fireEvent.blur(first);
+    await waitFor(() => expect(screen.getByText("Salvo")).toBeInTheDocument(), {
+      timeout: 2000,
+    });
+    expect(screen.getAllByRole("row")[1]).toContainElement(
+      screen.getByDisplayValue("PRIMEIRO"),
+    );
+    expect(screen.getAllByRole("row")[2]).toContainElement(
+      screen.getByDisplayValue("SEGUNDO"),
+    );
+    expect(
+      screen.getAllByRole("columnheader").map((cell) => cell.textContent),
+    ).toEqual(["Data", "Descrição", "Crédito", "Débito", "Saldo", "Ações"]);
+  });
+
   it("valida a inclusão e permite cancelar sem alterar o documento", async () => {
     const repository: WorkspaceRepository = {
       getBatch: vi.fn().mockResolvedValue(completedBatch),

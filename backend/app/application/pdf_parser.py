@@ -1271,14 +1271,7 @@ def _build_pdf_parse_result(
         running_balance_order = resolve_bradesco_split_day_order(canonical_transactions, source_page_texts)
     if running_balance_order != list(range(len(parsed_rows))):
         parsed_rows = [parsed_rows[index] for index in running_balance_order]
-        canonical_transactions = build_canonical_transactions(
-            parsed_rows,
-            bank_name=layout_profile.bank if layout_profile is not None else None,
-            layout_name=layout.layout_name,
-            layout_used_fallback=layout.used_fallback,
-            layout_confidence=layout.confidence,
-            source_parser=selected_parser,
-        )
+        canonical_transactions = [canonical_transactions[index] for index in running_balance_order]
     transactions = [item.transaction for item in parsed_rows]
     balance_checked_count, balance_failed_count = annotate_balance_consistency(
         canonical_transactions,

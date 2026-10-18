@@ -22,6 +22,8 @@ export interface Transaction {
   debit: number | null;
   balance: number | null;
   sourcePage?: number | null;
+  sourceSequence?: number | null;
+  sourceSubsequence?: number;
   fieldStates: Record<TransactionField, TransactionFieldState>;
 }
 
@@ -86,6 +88,21 @@ export function sortTransactionsByDate(
   const key = (date: string) => date.split("/").reverse().join("-");
   return [...transactions].sort((a, b) =>
     key(a.date).localeCompare(key(b.date)),
+  );
+}
+
+export function orderTransactionsForReview(
+  transactions: Transaction[],
+): Transaction[] {
+  if (
+    !transactions.length ||
+    transactions.some((row) => row.sourceSequence == null)
+  )
+    return sortTransactionsByDate(transactions);
+  return [...transactions].sort(
+    (a, b) =>
+      a.sourceSequence! - b.sourceSequence! ||
+      (a.sourceSubsequence ?? 0) - (b.sourceSubsequence ?? 0),
   );
 }
 
