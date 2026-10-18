@@ -6,52 +6,39 @@ import {
   Check,
   CheckCircle2,
   ChevronLeft,
-  ChevronRight,
   Clock3,
   Download,
-  ExternalLink,
   FileText,
   Filter,
   LoaderCircle,
   Menu,
-  Minus,
   PanelLeftClose,
   PanelLeftOpen,
-  Plus,
   Redo2,
   RefreshCw,
   RotateCcw,
   Search,
-  Trash2,
   Undo2,
   XCircle,
   Zap,
 } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useOptionalProSession } from "@/components/pro-session-gate";
 import {
   resolveWorkspaceRepository,
   type WorkspaceDataMode,
 } from "@/data/workspace-repository";
-import {
-  filterTransactions,
-  formatCurrency,
-  sortConversionsForReview,
-  transactionHasState,
-} from "@/domain/workspace";
+import { sortConversionsForReview } from "@/domain/workspace";
 import type {
   Conversion,
   SaveStatus,
-  Transaction,
-  TransactionField,
-  TransactionDraft,
-  TransactionFilter,
   WorkspaceRepository,
 } from "@/domain/workspace";
 import { useWorkspaceController } from "./use-workspace-controller";
-import { TransactionDialog } from "./transaction-dialog";
+import { DocumentViewer } from "./document-viewer";
+import { TransactionGrid } from "./transaction-grid";
 
 interface WorkspaceScreenProps {
   batchId: string;
@@ -306,584 +293,6 @@ function ConversionNavigator({
   );
 }
 
-function DocumentViewer({
-  conversion,
-  repository,
-  page,
-  setPage,
-}: {
-  conversion: Conversion;
-  repository: WorkspaceRepository;
-  page: number;
-  setPage(page: number): void;
-}) {
-  const [zoom, setZoom] = useState<"page-width" | number>("page-width");
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const [documentError, setDocumentError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  const isDemo = conversion.pdf?.url.startsWith("/mock-statement");
-  const pdfUrl = conversion.pdf?.url;
-  useEffect(() => {
-    if (!pdfUrl || isDemo || !repository.loadDocument) return;
-    const abort = new AbortController();
-    let url: string | undefined;
-    void repository
-      .loadDocument(conversion.id, abort.signal)
-      .then((blob) => {
-        if (abort.signal.aborted) return;
-        url = URL.createObjectURL(blob);
-        setBlobUrl(url);
-      })
-      .catch(() => {
-        if (!abort.signal.aborted)
-          setDocumentError(
-            "Não foi possível carregar o PDF. Tente novamente; suas edições continuam na tela.",
-          );
-      });
-    return () => {
-      abort.abort();
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [conversion.id, pdfUrl, isDemo, repository, attempt]);
-
-  const format = conversion.fileName.split(".").pop()?.toUpperCase();
-  if (!conversion.pdf && conversion.status !== "FAILED" && format !== "PDF") {
-    return (
-      <section
-        className="pdf-panel viewer-state"
-        aria-label="Documento original"
-      >
-        <FileText size={30} />
-        <h3>Arquivo original em {format || "formato de dados"}</h3>
-        <p>Este formato não possui visualização em PDF.</p>
-        <p>
-          {conversion.status === "PROCESSING"
-            ? "Os lançamentos aparecerão ao lado quando o processamento terminar."
-            : "Os lançamentos extraídos estão disponíveis ao lado para revisão."}
-        </p>
-      </section>
-    );
-  }
-
-  if (!conversion.pdf || conversion.status === "FAILED") {
-    return (
-      <div className="viewer-state error">
-        <XCircle size={30} />
-        <h3>Não foi possível processar o arquivo</h3>
-        <p>O restante do lote continua disponível.</p>
-      </div>
-    );
-  }
-
-  const previewRows = [
-    ["02/09/2026", "PIX recebido — Comércio Horizonte", "145,90", "38.566,07"],
-    ["03/09/2026", "Pagamento de boleto", "− 283,13", "38.282,94"],
-    ["04/09/2026", "Transferência entre contas", "− 420,36", "37.862,58"],
-    ["05/09/2026", "Tarifa pacote de serviços", "− 557,59", "37.304,99"],
-    ["06/09/2026", "Recebimento via cartão", "694,82", "37.999,81"],
-    ["09/09/2026", "PIX enviado — Fornecedor Delta", "− 832,05", "37.167,76"],
-    ["10/09/2026", "Aplicação automática", "− 969,28", "36.198,48"],
-    ["11/09/2026", "Resgate de investimento", "1.106,51", "37.304,99"],
-    ["12/09/2026", "TED recebida", "1.243,74", "38.548,73"],
-  ];
-  return (
-    <section className="pdf-panel" aria-label="Documento original">
-      <div className="panel-toolbar">
-        <div className="toolbar-title">
-          <FileText size={16} />
-          <span>{conversion.fileName}</span>
-          {conversion.status === "PROCESSING" && (
-            <span className="pdf-processing-status" role="status">
-              <LoaderCircle className="spin" size={12} /> Processando dados
-            </span>
-          )}
-        </div>
-        <div className="pdf-controls">
-          <button
-            className="icon-button"
-            onClick={() => setPage(Math.max(1, page - 1))}
-            disabled={page === 1}
-            aria-label="Página anterior"
-          >
-            <ChevronLeft size={17} />
-          </button>
-          <span>
-            Página <strong>{page}</strong> de {conversion.pdf.pageCount}
-          </span>
-          <button
-            className="icon-button"
-            onClick={() =>
-              setPage(Math.min(conversion.pdf!.pageCount, page + 1))
-            }
-            disabled={page === conversion.pdf.pageCount}
-            aria-label="Próxima página"
-          >
-            <ChevronRight size={17} />
-          </button>
-          <span className="toolbar-divider" />
-          <button
-            className="icon-button"
-            onClick={() =>
-              setZoom((value) =>
-                Math.max(70, (typeof value === "number" ? value : 100) - 10),
-              )
-            }
-            aria-label="Diminuir zoom"
-          >
-            <Minus size={16} />
-          </button>
-          <button className="zoom-label" onClick={() => setZoom("page-width")}>
-            {zoom === "page-width" ? "Ajustar" : `${zoom}%`}
-          </button>
-          <button
-            className="icon-button"
-            onClick={() =>
-              setZoom((value) =>
-                Math.min(160, (typeof value === "number" ? value : 100) + 10),
-              )
-            }
-            aria-label="Aumentar zoom"
-          >
-            <Plus size={16} />
-          </button>
-          {(blobUrl || isDemo) && (
-            <a
-              className="icon-button"
-              href={`${blobUrl ?? conversion.pdf.url}#page=${page}`}
-              target="_blank"
-              rel="noreferrer"
-              aria-label="Abrir PDF original"
-            >
-              <ExternalLink size={15} />
-            </a>
-          )}
-        </div>
-      </div>
-      <div className="pdf-stage">
-        <div
-          className="pdf-document"
-          style={{ width: zoom === "page-width" ? "100%" : `${zoom}%` }}
-          role="document"
-          aria-label="Visualizador do extrato original"
-        >
-          {conversion.pdf.url.startsWith("/mock-statement") ? (
-            <>
-              <div className="mock-pdf-brand">
-                <strong>{conversion.bankName}</strong>
-                <span>Extrato de conta corrente</span>
-              </div>
-              <div className="mock-pdf-summary">
-                <div>
-                  <small>Agência</small>
-                  <strong>0192</strong>
-                </div>
-                <div>
-                  <small>Conta</small>
-                  <strong>45.810-7</strong>
-                </div>
-                <div>
-                  <small>Período</small>
-                  <strong>01/09/2026–30/09/2026</strong>
-                </div>
-              </div>
-              <h3>Movimentação da conta</h3>
-              <div className="mock-pdf-table">
-                <div className="mock-pdf-row head">
-                  <span>Data</span>
-                  <span>Histórico</span>
-                  <span>Valor (R$)</span>
-                  <span>Saldo (R$)</span>
-                </div>
-                {previewRows.map((row, index) => (
-                  <div
-                    key={`${page}-${index}`}
-                    className={`mock-pdf-row ${index === 1 || index === 7 ? "highlight" : ""}`}
-                  >
-                    <span>{row[0]}</span>
-                    <span>{row[1]}</span>
-                    <span>{row[2]}</span>
-                    <span>{row[3]}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="mock-pdf-total">
-                <span>Saldo final do período</span>
-                <strong>R$ 38.548,73</strong>
-              </div>
-              <footer>
-                <span>Documento demonstrativo · OFX Simples PRO</span>
-                <span>
-                  Página {page} de {conversion.pdf.pageCount}
-                </span>
-              </footer>
-            </>
-          ) : documentError ? (
-            <div className="viewer-state error" role="alert">
-              <AlertCircle size={28} />
-              <p>{documentError}</p>
-              <button
-                className="secondary-button"
-                onClick={() => {
-                  setDocumentError(null);
-                  setBlobUrl(null);
-                  setAttempt((value) => value + 1);
-                }}
-              >
-                Recarregar PDF
-              </button>
-            </div>
-          ) : blobUrl ? (
-            <iframe
-              className="real-pdf-frame"
-              src={`${blobUrl}#page=${page}&zoom=${zoom === "page-width" ? "page-width" : zoom}`}
-              title={`Extrato original ${conversion.fileName}`}
-            />
-          ) : (
-            <div className="viewer-state" role="status">
-              <LoaderCircle className="spin" size={28} />
-              <p>Carregando PDF…</p>
-            </div>
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function EditableCell({
-  transaction,
-  field,
-  onCommit,
-}: {
-  transaction: Transaction;
-  field: TransactionField;
-  onCommit(
-    transactionId: string,
-    field: TransactionField,
-    value: string,
-  ): string | null;
-}) {
-  const rawValue = transaction[field];
-  const formatted =
-    typeof rawValue === "number" ? formatCurrency(rawValue) : (rawValue ?? "");
-  const [value, setValue] = useState(String(formatted));
-  const [previousFormatted, setPreviousFormatted] = useState(String(formatted));
-  const [error, setError] = useState<string | null>(null);
-
-  if (String(formatted) !== previousFormatted && String(formatted) !== value) {
-    setPreviousFormatted(String(formatted));
-    setValue(String(formatted));
-  }
-
-  const commit = (nextValue: string) => {
-    const validationError = onCommit(transaction.id, field, nextValue);
-    setError(validationError);
-  };
-
-  return (
-    <div className="editable-wrap">
-      <input
-        aria-label={`${{ date: "Data", description: "Descrição", credit: "Crédito", debit: "Débito", balance: "Saldo" }[field]} de ${transaction.description}`}
-        readOnly={field === "balance" || transaction.isDeleted}
-        className={`${transaction.fieldStates[field] === "SUSPECTED" ? "is-suspected" : ""} ${transaction.fieldStates[field] === "EDITED" ? "is-edited" : ""} ${error ? "is-invalid" : ""}`}
-        value={value}
-        onChange={(event) => {
-          const nextValue = event.target.value;
-          setValue(nextValue);
-          if (field === "description") commit(nextValue);
-        }}
-        onBlur={() =>
-          field !== "description" && field !== "balance" && commit(value)
-        }
-        aria-invalid={Boolean(error)}
-        title={error ?? undefined}
-      />
-      {transaction.fieldStates[field] === "SUSPECTED" && (
-        <span className="field-dot" title="Campo suspeito" />
-      )}
-    </div>
-  );
-}
-
-function TransactionGrid({
-  conversion,
-  onUpdate,
-  onAdd,
-  onRemove,
-  onRestore,
-  groupByPage,
-  onGroupChange,
-  onSourcePage,
-}: {
-  conversion: Conversion;
-  onUpdate(
-    transactionId: string,
-    field: TransactionField,
-    value: string,
-  ): string | null;
-  onAdd(draft: TransactionDraft): void;
-  onRemove(transactionId: string): void;
-  onRestore(transactionId: string): void;
-  groupByPage: boolean;
-  onGroupChange(value: boolean): void;
-  onSourcePage(page: number): void;
-}) {
-  const [filter, setFilter] = useState<TransactionFilter>("ALL");
-  const [adding, setAdding] = useState(false);
-  const scroll = useRef<HTMLDivElement>(null);
-  const [query, setQuery] = useState("");
-  const rowElements = useRef(new Map<string, HTMLTableRowElement>());
-  const visible = filterTransactions(conversion.transactions, filter);
-  const groups = groupByPage
-    ? Array.from(new Set(visible.map((row) => row.sourcePage ?? null)))
-        .sort((a, b) => (a ?? Infinity) - (b ?? Infinity))
-        .map((page) => ({
-          page,
-          rows: visible.filter((row) => (row.sourcePage ?? null) === page),
-        }))
-    : [{ page: null, rows: visible }];
-  const normalize = (value: string) =>
-    value
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLocaleLowerCase("pt-BR");
-  const search = normalize(query.trim());
-  const matchId = search
-    ? groups
-        .flatMap((group) => group.rows)
-        .find((row) => normalize(row.description).includes(search))?.id
-    : undefined;
-  useEffect(() => {
-    if (matchId)
-      rowElements.current
-        .get(matchId)
-        ?.scrollIntoView?.({ block: "center", behavior: "smooth" });
-  }, [matchId, groupByPage]);
-  const suspected = conversion.transactions.filter((item) =>
-    transactionHasState(item, "SUSPECTED"),
-  ).length;
-  const edited = conversion.transactions.filter((item) =>
-    transactionHasState(item, "EDITED"),
-  ).length;
-
-  return (
-    <section className="transactions-panel">
-      <div className="panel-toolbar transactions-toolbar">
-        <div className="toolbar-title">
-          <span>Lançamentos</span>
-          <span className="count-chip">{conversion.transactionCount}</span>
-        </div>
-        <select
-          aria-label="Organizar lançamentos"
-          value={groupByPage ? "PAGES" : "CONTINUOUS"}
-          onChange={(event) => onGroupChange(event.target.value === "PAGES")}
-        >
-          <option value="CONTINUOUS">Lista contínua</option>
-          <option value="PAGES">Separar por páginas</option>
-        </select>
-        <label className="transaction-search">
-          <Search size={14} aria-hidden="true" />
-          <input
-            type="search"
-            aria-label="Buscar lançamentos"
-            placeholder="Buscar texto"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <span className="sr-only" role="status">
-            {search
-              ? matchId
-                ? "Primeira ocorrência localizada"
-                : "Nenhuma ocorrência neste filtro"
-              : ""}
-          </span>
-        </label>
-        <button
-          className="secondary-button small"
-          onClick={() => setAdding(true)}
-        >
-          <Plus size={14} /> Adicionar
-        </button>
-      </div>
-      <div className="transaction-filters" aria-label="Filtros de lançamentos">
-        <button
-          className={filter === "ALL" ? "active" : ""}
-          onClick={() => setFilter("ALL")}
-        >
-          Todos <span>{conversion.transactions.length}</span>
-        </button>
-        <button
-          className={filter === "SUSPECTED" ? "active" : ""}
-          onClick={() => setFilter("SUSPECTED")}
-        >
-          Suspeitos <span>{suspected}</span>
-        </button>
-        <button
-          className={filter === "EDITED" ? "active" : ""}
-          onClick={() => setFilter("EDITED")}
-        >
-          Alterados <span>{edited}</span>
-        </button>
-      </div>
-      <div className="table-scroll" ref={scroll}>
-        <table aria-label="Lançamentos extraídos">
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th>Descrição</th>
-              <th>Crédito</th>
-              <th>Débito</th>
-              <th>Saldo</th>
-              <th>
-                <span className="sr-only">Ações</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {groups.map((group) => (
-              <Fragment key={group.page ?? "unknown"}>
-                {groupByPage && (
-                  <tr className="source-page-heading">
-                    <td colSpan={6}>
-                      {group.page === null ? (
-                        "Sem página de origem · lançamentos manuais ou arquivos anteriores"
-                      ) : (
-                        <button
-                          onClick={() => onSourcePage(group.page!)}
-                          aria-label={`Ver página ${group.page} no PDF`}
-                        >
-                          Página {group.page} <ExternalLink size={12} />
-                        </button>
-                      )}
-                      <span> · {group.rows.length} lanç.</span>
-                    </td>
-                  </tr>
-                )}
-                {group.rows.map((transaction) => (
-                  <tr
-                    key={transaction.id}
-                    ref={(node) => {
-                      if (node) rowElements.current.set(transaction.id, node);
-                      else rowElements.current.delete(transaction.id);
-                    }}
-                    className={`${transactionHasState(transaction, "SUSPECTED") ? "suspected-row" : ""} ${transaction.isDeleted ? "deleted-row" : ""} ${transaction.id === matchId ? "located-row" : ""}`}
-                  >
-                    <td>
-                      <EditableCell
-                        transaction={transaction}
-                        field="date"
-                        onCommit={onUpdate}
-                      />
-                    </td>
-                    <td>
-                      <EditableCell
-                        transaction={transaction}
-                        field="description"
-                        onCommit={onUpdate}
-                      />
-                      {transaction.isDeleted && (
-                        <span className="deleted-badge">Excluído</span>
-                      )}
-                    </td>
-                    <td>
-                      <EditableCell
-                        transaction={transaction}
-                        field="credit"
-                        onCommit={onUpdate}
-                      />
-                    </td>
-                    <td>
-                      <EditableCell
-                        transaction={transaction}
-                        field="debit"
-                        onCommit={onUpdate}
-                      />
-                    </td>
-                    <td>
-                      <EditableCell
-                        transaction={transaction}
-                        field="balance"
-                        onCommit={onUpdate}
-                      />
-                    </td>
-                    <td>
-                      {transaction.isDeleted ? (
-                        <button
-                          className="row-action"
-                          aria-label={`Restaurar ${transaction.description}`}
-                          onClick={() => onRestore(transaction.id)}
-                        >
-                          <RotateCcw size={14} />
-                        </button>
-                      ) : (
-                        <button
-                          className="row-action"
-                          aria-label={`Remover ${transaction.description}`}
-                          onClick={() =>
-                            window.confirm("Remover este lançamento?") &&
-                            onRemove(transaction.id)
-                          }
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-        {visible.length === 0 && (
-          <div className="empty-table" role="status">
-            {conversion.noActivity && conversion.transactions.length === 0 ? (
-              <>
-                <p>Extrato sem movimentação no período.</p>
-                <p>
-                  A conversão foi concluída. Você pode baixar o OFX sem
-                  lançamentos.
-                </p>
-              </>
-            ) : (
-              "Nenhum lançamento neste filtro."
-            )}
-          </div>
-        )}
-      </div>
-      <footer className="grid-legend">
-        <span>
-          <i className="legend-suspect" /> Campo suspeito
-        </span>
-        <span>
-          <i className="legend-edited" /> Campo alterado
-        </span>
-        <span>
-          {search
-            ? matchId
-              ? "Primeira ocorrência"
-              : "Nenhuma ocorrência neste filtro"
-            : "Edite diretamente nas células"}
-        </span>
-      </footer>
-      {adding && (
-        <TransactionDialog
-          initialDate={
-            conversion.transactions[0]?.date ??
-            new Date().toLocaleDateString("pt-BR")
-          }
-          onClose={() => setAdding(false)}
-          onAdd={(draft) => {
-            setFilter("ALL");
-            onGroupChange(false);
-            onAdd(draft);
-            if (scroll.current) scroll.current.scrollTop = 0;
-          }}
-        />
-      )}
-    </section>
-  );
-}
-
 export function WorkspaceScreen({
   batchId,
   initialConversionId,
@@ -905,6 +314,12 @@ export function WorkspaceScreen({
   const [focusMode, setFocusMode] = useState(true);
   const [groupByPage, setGroupByPage] = useState(false);
   const [pages, setPages] = useState<Record<string, number>>({});
+  const [navigation, setNavigation] = useState<{
+    id: string;
+    page: number;
+    token: number;
+  } | null>(null);
+  const [readyDocument, setReadyDocument] = useState<string | null>(null);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1073,6 +488,16 @@ export function WorkspaceScreen({
               key={`viewer-${activeConversion.id}`}
               conversion={activeConversion}
               repository={activeRepository}
+              navigation={
+                navigation?.id === activeConversion.id ? navigation : null
+              }
+              onAvailability={(available) =>
+                setReadyDocument(
+                  available
+                    ? `${activeConversion.id}:${activeConversion.pdf?.url}`
+                    : null,
+                )
+              }
               page={pages[activeConversion.id] ?? 1}
               setPage={(page) =>
                 setPages((current) => ({
@@ -1139,12 +564,25 @@ export function WorkspaceScreen({
                 onRestore={controller.restoreTransaction}
                 groupByPage={groupByPage}
                 onGroupChange={setGroupByPage}
-                onSourcePage={(page) =>
+                activePage={
+                  activeConversion.pdf &&
+                  (activeConversion.pdf.url.startsWith("/mock-statement") ||
+                    readyDocument ===
+                      `${activeConversion.id}:${activeConversion.pdf.url}`)
+                    ? (pages[activeConversion.id] ?? 1)
+                    : null
+                }
+                onSourcePage={(page) => {
                   setPages((current) => ({
                     ...current,
                     [activeConversion.id]: page,
-                  }))
-                }
+                  }));
+                  setNavigation((current) => ({
+                    id: activeConversion.id,
+                    page,
+                    token: (current?.token ?? 0) + 1,
+                  }));
+                }}
               />
             )}
           </div>

@@ -65,6 +65,33 @@ O seletor **Organizar lançamentos** alterna entre lista contínua e separação
 
 O PDF privado é carregado pelo mesmo cliente autenticado das APIs, com renovação de sessão e botão para recarregar em caso de falha. Somente o documento aberto fica em um blob temporário no navegador, liberado ao trocar de arquivo. Cookies e verificação de proprietário continuam obrigatórios.
 
+### Acompanhamento do PDF por página
+
+O visualizador controlado usa React-PDF **9.2.1** e PDF.js **4.8.69**, com importação exclusiva do cliente (`next/dynamic`, `ssr: false`). Essa combinação aceita React 19 e Node >=18, preservando o mínimo atual do PRO (20.9); CI e Render continuam em Node **24.21.0**. A versão 10.2 foi avaliada, mas seu PDF.js exige Node >=20.16 ou >=22.3. O Node 21 local gera avisos das ferramentas existentes; para reproduzir o deploy, use Node 24.21.0.
+
+O `predev`/`prebuild` copia o worker **legacy**, cMaps e fontes de `pdfjs-dist` para `public/pdfjs/<versão>/`, ignorado pelo Git e ESLint. Não há CDN nem envio do PDF a outro serviço. O worker legacy e o complemento local de `Promise.withResolvers` preservam a base de navegadores do Next (Chrome/Edge 111+, Firefox 111+, Safari 16.4+). O smoke em Chromium também remove essa API antes de iniciar o app para verificar o complemento; versões antigas de cada navegador ainda exigem homologação própria. Referências: [React-PDF 9](https://github.com/wojtekmaj/react-pdf/blob/v9.2.1/packages/react-pdf/README.md) e [PDF.js](https://mozilla.github.io/pdf.js/getting_started/).
+
+Com **Sincronizar PDF e lançamentos** ativo, uma linha de leitura fixa próxima ao topo do visualizador determina a página atual. A grade vai até o primeiro lançamento visível cuja `sourcePage` corresponde à página, usando o ID estável. Funciona na lista contínua e na separação por páginas; a ordem por procedência é preservada. O acompanhamento pausa enquanto uma célula editável mantém foco e retoma na última página ao sair da edição. Desligar o controle permite rolagem independente. Os botões de localização de cada lançamento e dos cabeçalhos continuam sendo ações explícitas, inclusive com acompanhamento desligado.
+
+Páginas sem lançamentos ou sem resultados no filtro mostram avisos sem limpar filtros nem deslocar a grade para outra página. Lançamentos manuais/antigos sem `sourcePage` continuam editáveis e indicam ausência de origem. Falhas de acesso/renderização oferecem nova tentativa sem descartar a revisão. Visitar páginas não salva nem marca lançamentos como revisados.
+
+As dimensões das páginas são lidas antes da apresentação; apenas páginas na área de leitura e próximas dela mantêm canvases (densidade limitada a 1,5). Espaços com dimensões reais mantêm a rolagem estável, inclusive com páginas de tamanhos diferentes. Zoom e redimensionamento preservam página e posição proporcional dentro dela. A camada de texto e links internos está desativada nesta entrega; PDFs escaneados são exibidos normalmente e o original pode ser aberto para consulta adicional.
+
+Esta entrega localiza **páginas**, sem identificar ou destacar a região de cada transação. O próximo passo é associar regiões reais da extração a IDs de transação, independentemente dos campos editáveis; `source_line` não é usado como coordenada. Não há alteração de API, banco, parser, cálculos, OFX ou regras de revisão.
+
+Para validar em navegador real com dados exclusivamente sintéticos:
+
+```powershell
+cd pro
+$env:NEXT_PUBLIC_API_URL = "/"
+npm run build
+npm run start -- -H 127.0.0.1 -p 3100
+# Em outro terminal, na raiz do repositório:
+backend\venv\Scripts\python.exe scripts/smoke_pro_pdf_sync.py
+```
+
+O script usa o Playwright Python existente, intercepta autenticação/API, gera um PDF de 30 páginas (incluindo página só com imagem) e 541 lançamentos. Confere rolagem real, alinhamento da grade, filtros, pausa/retomada, origem explícita, ausência de recarga ao navegar, zoom, teclado, largura móvel de 390px, troca de documento, acesso expirado/retry e ausência de gravação de revisão. Capturas sintéticas ficam em `tmp/pro-pdf-sync/`. Nenhum PDF privado participa dos testes.
+
 As edições do PRO também atualizam o snapshot em `conversion_jobs.result_payload`, preservando os metadados da instituição, para que o lote reaberto apresente as linhas e a versão salvas. O backend deve ser atualizado antes do frontend; o worker deve receber a mesma versão para que novas conversões incluam `source_page`. Conflitos reais com outra sessão não são sobrescritos automaticamente.
 
 ## Configuração

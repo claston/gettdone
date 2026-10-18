@@ -28,3 +28,5 @@ backend/.env.dev
 local/
 doc/backlog-v1-conversor-pdf-multiformato.md
 .pr_body_*.md
+
+/pro/public/pdfjs/
