@@ -95,6 +95,12 @@ def test_edit_operation_confirms_and_replays_insert_without_duplication(tmp_path
         status = client.get("/convert-edits/an_convert123/operations/save-insert-123?anonymous_fingerprint=fp-owner")
         assert status.status_code == 200
         assert status.json() == first.json()
+        pro_read = client.get("/api/pro/convert-edits/an_convert123/operations/save-insert-123?anonymous_fingerprint=fp-owner")
+        assert pro_read.status_code == 200
+        assert pro_read.json() == first.json()
+        denied_pro_read = client.get(
+            "/api/pro/convert-edits/an_convert123/operations/save-insert-123?anonymous_fingerprint=fp-other")
+        assert denied_pro_read.status_code == 403
         read_with_body = client.request("GET",
             "/convert-edits/an_convert123/operations/save-insert-123?anonymous_fingerprint=fp-owner",
             json={"edits": [{**request["edits"][0], "credit": 99}]})
