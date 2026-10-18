@@ -8,6 +8,7 @@ from openpyxl.utils import get_column_letter
 from app.application.bank_resolver import resolve_bank_code
 from app.application.models import AnalysisData, NormalizedTransaction, TransactionRow
 from app.application.ofx_writer import build_ofx_statement
+from app.application.parsers.pdf.layout_specific.wise import WISE_CURRENCIES
 
 
 class ExportArtifactService:
@@ -65,6 +66,7 @@ class ExportArtifactService:
                 bank_branch=bank_branch,
                 account_number=account_number,
                 bank_id=resolved_bank_code,
+                currency=WISE_CURRENCIES.get(layout_inference_name),
             ),
             encoding="utf-8",
         )

@@ -36,6 +36,7 @@ from app.application.parsers.pdf.layout_specific.stone import StoneLayoutParser
 from app.application.parsers.pdf.layout_specific.topazio import TopazioLayoutParser
 from app.application.parsers.pdf.layout_specific.trust_srm import TrustSrmLayoutParser
 from app.application.parsers.pdf.layout_specific.unicred import UnicredLayoutParser
+from app.application.parsers.pdf.layout_specific.wise import WiseLayoutParser
 from app.application.parsers.pdf.models import _PdfLine
 
 
@@ -99,5 +100,6 @@ DEFAULT_PDF_LAYOUT_PARSER_REGISTRY = PdfLayoutParserRegistry(
         TrustSrmLayoutParser(),
         StoneLayoutParser(),
         SisprimeLayoutParser(),
+        WiseLayoutParser(),
     )
 )

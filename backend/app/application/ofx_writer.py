@@ -12,6 +12,7 @@ def build_ofx_statement(
     bank_branch: str | None = None,
     account_number: str | None = None,
     bank_id: str | None = None,
+    currency: str | None = None,
 ) -> str:
     normalized_account_type = str(account_type or "").strip().lower()
     is_credit_card_statement = normalized_account_type in {"credit_card", "credit-card", "card", "cc"}
@@ -55,6 +56,7 @@ def build_ofx_statement(
         "",
         "<OFX>",
         *message_open_lines,
+        *([f"        <CURDEF>{currency}"] if currency in {"BRL", "USD"} else []),
         *(
             [
                 "        <CCACCTFROM>",

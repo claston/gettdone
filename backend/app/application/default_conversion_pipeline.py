@@ -18,6 +18,7 @@ from app.application.parsers.pdf.layout_specific.digital_credit_card import (
     extract_invoice_financials,
 )
 from app.application.parsers.pdf.layout_specific.modern_accounts import BRADESCO_EMPRESAS_LAYOUT
+from app.application.parsers.pdf.layout_specific.wise import WISE_CURRENCIES, extract_wise_metadata
 from app.application.parsers.service import ParsingService
 from app.application.pdf_parser import parse_pdf_transactions
 
@@ -76,6 +77,8 @@ def _resolve_opening_balance(
     extracted_text: str | None = None,
     layout_name: str | None = None,
 ) -> float | None:
+    if layout_name in WISE_CURRENCIES and not rows:
+        return float(extract_wise_metadata(extracted_text or "").closing_balance)
     if layout_name == BRADESCO_CARD_WEB_LAYOUT:
         return None
     if layout_name == DIGITAL_CREDIT_CARD_LAYOUT:

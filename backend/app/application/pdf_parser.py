@@ -87,6 +87,7 @@ from app.application.parsers.pdf.layout_specific.unicred import (
     UNICRED_MODERN_CURRENT_LAYOUT,
     parse_unicred_textract_rows,
 )
+from app.application.parsers.pdf.layout_specific.wise import WISE_CURRENCIES
 from app.application.parsers.pdf.models import PdfParseResult, _ParsedTransaction, _PdfLine, _TabularColumnPositions
 from app.application.parsers.pdf.multiline_transaction_assembler import parse_multiline_transaction_rows
 from app.application.parsers.pdf.native_accounts_payable import PARSER as ACCOUNTS_PAYABLE_PARSER
@@ -339,7 +340,7 @@ def _parse_pdf_transactions(
     using_native_text = bool(native_pages) and page_texts == native_pages
     try:
         primary_result = _parse_pdf_transactions_from_page_texts(
-            page_texts, context=LayoutSpecificParseContext(reference_month_year=reference_month_year)
+            page_texts, context=LayoutSpecificParseContext(reference_month_year=reference_month_year, is_native_text=using_native_text)
         )
     except InvalidFileContentError as native_parse_error:
         if isinstance(
@@ -832,6 +833,12 @@ def _parse_statement_page_texts(
         context=context or LayoutSpecificParseContext(),
     )
     if specialized_selection is not None:
+        if layout.layout_name in WISE_CURRENCIES and not specialized_selection.rows:
+            if context is None or not context.is_native_text:
+                raise PdfFinancialValidationError(
+                    "Não foi possível confirmar a ausência de movimentações pelo OCR. Envie o PDF original baixado da Wise."
+                )
+            return _empty_statement_result(page_texts, structural=True)
         specialized_rows = _adjust_forward_year_rollover_rows(
             specialized_selection.rows,
             line_texts=_extract_line_texts(lines),
@@ -3677,7 +3684,7 @@ def _try_parse_native_layout_text(
         return _parse_pdf_transactions_from_page_texts(
             layout_pages,
             preserve_layout_spacing=True,
-            context=LayoutSpecificParseContext(reference_month_year=reference_month_year),
+            context=LayoutSpecificParseContext(reference_month_year=reference_month_year, is_native_text=True),
         )
     except InvalidFileContentError:
         return None

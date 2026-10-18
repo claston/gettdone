@@ -9,6 +9,7 @@ from app.application.parsers.pdf.models import _ParsedTransaction, _PdfLine
 @dataclass(frozen=True, slots=True)
 class LayoutSpecificParseContext:
     reference_month_year: tuple[int, int] | None = None
+    is_native_text: bool = False
 
 
 @dataclass(frozen=True, slots=True)

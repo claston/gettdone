@@ -1,0 +1,31 @@
+layout_profile:
+  profile_name: wise_extrato_usd_v1
+  bank: Wise
+  layout_family: wise_extrato_conta_multimoeda
+  statement_type: conta_pagamento_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Wise"
+      - "Extrato em USD"
+      - "Titular da Conta"
+      - "Número da conta"
+      - "Descrição Entrada Saída Valor"
+    optional_keywords:
+      - "Gerado em:"
+      - "wise.com/help"
+      - "GMT"
+    negative_keywords:
+      - "Extrato em BRL"
+    min_score_hint: 0.70
+  table_detection:
+    header_keywords:
+      - "Descrição"
+      - "Entrada"
+      - "Saída"
+      - "Valor"
+    expected_column_order:
+      - description
+      - credit
+      - debit
+      - balance
