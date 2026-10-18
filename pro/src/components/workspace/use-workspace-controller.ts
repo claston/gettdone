@@ -45,6 +45,7 @@ export interface WorkspaceController {
   ): string | null;
   addTransaction(draft: TransactionDraft): void;
   removeTransaction(transactionId: string): void;
+  restoreTransaction(transactionId: string): void;
   retrySave(): void;
   undo(): void;
   markReviewed(): Promise<void>;
@@ -108,7 +109,8 @@ export function useWorkspaceController(
           ? {
               ...item,
               transactions,
-              transactionCount: transactions.length,
+              transactionCount: transactions.filter((row) => !row.isDeleted)
+                .length,
               editedCount: countEdited(transactions),
               suspectedCount: countSuspected(transactions),
               reviewStatus: "IN_REVIEW",
@@ -348,6 +350,7 @@ export function useWorkspaceController(
         (transaction) => transaction.id === transactionId,
       );
       if (!existing || existing[field] === parsedValue) return null;
+      if (existing.isDeleted) return "Restaure o lançamento antes de editar.";
       if (field === "balance") return "O saldo é recalculado após a gravação.";
       if (
         (field === "credit" || field === "debit") &&
@@ -390,6 +393,7 @@ export function useWorkspaceController(
           ...draft,
           balance: null,
           sourcePage: null,
+          isDeleted: false,
           ...(previous.some((row) => row.sourceSequence != null)
             ? {
                 sourceSequence: 0,
@@ -418,7 +422,24 @@ export function useWorkspaceController(
       const previous = activeConversion.transactions;
       replaceTransactions(
         activeConversion.id,
-        previous.filter((item) => item.id !== transactionId),
+        previous.map((item) =>
+          item.id === transactionId ? { ...item, isDeleted: true } : item,
+        ),
+        previous,
+      );
+    },
+    [activeConversion, replaceTransactions],
+  );
+
+  const restoreTransaction = useCallback(
+    (transactionId: string) => {
+      if (!activeConversion) return;
+      const previous = activeConversion.transactions;
+      replaceTransactions(
+        activeConversion.id,
+        previous.map((item) =>
+          item.id === transactionId ? { ...item, isDeleted: false } : item,
+        ),
         previous,
       );
     },
@@ -548,6 +569,7 @@ export function useWorkspaceController(
       updateField,
       addTransaction,
       removeTransaction,
+      restoreTransaction,
       retrySave,
       undo,
       markReviewed,
@@ -569,6 +591,7 @@ export function useWorkspaceController(
       loadState,
       markReviewed,
       removeTransaction,
+      restoreTransaction,
       refreshBatch,
       refreshError,
       refreshState,

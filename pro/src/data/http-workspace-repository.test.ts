@@ -59,6 +59,85 @@ const batchPayload = {
 };
 
 describe("HttpWorkspaceRepository", () => {
+  it("mantém excluída a linha nova removida antes do primeiro autosave", async () => {
+    const rows = batchPayload.jobs[0].result!.analysis.preview_transactions;
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse(batchPayload))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updated_at: "saved",
+          preview_transactions: [
+            rows[0],
+            { ...rows[0], is_deleted: true },
+            rows[1],
+          ],
+        }),
+      );
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+    const batch = await repository.getBatch("batch-real");
+    const original = batch.conversions[0].transactions;
+    const saved = await repository.saveTransactions("job-ready", [
+      ...original,
+      { ...original[0], id: "new-deleted", isDeleted: true },
+    ]);
+    expect(saved).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "new-deleted", isDeleted: true }),
+      ]),
+    );
+    const payload = JSON.parse(String(fetcher.mock.calls[2][1]?.body));
+    expect(
+      payload.edits.map((edit: { action: string }) => edit.action),
+    ).toEqual(["insert", "delete"]);
+  });
+
+  it("persiste exclusão e restauração com os mesmos IDs sem reinserir a linha", async () => {
+    const original = structuredClone(batchPayload);
+    const rows = original.jobs[0].result!.analysis.preview_transactions;
+    const writes: Array<{ edits: Array<Record<string, unknown>> }> = [];
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (url, init) => {
+        if (String(url).endsWith("/auth/me")) return jsonResponse({});
+        if (init?.method === "POST") {
+          const payload = JSON.parse(String(init.body));
+          writes.push(payload);
+          for (const edit of payload.edits)
+            rows[Number(edit.row_id.replace("row_", "")) - 1].is_deleted =
+              edit.action === "delete";
+          return jsonResponse({
+            updated_at: `v${writes.length}`,
+            preview_transactions: rows,
+          });
+        }
+        return jsonResponse(original);
+      });
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+    const batch = await repository.getBatch("batch-real");
+    const [first, second] = batch.conversions[0].transactions;
+    const deleted = await repository.saveTransactions("job-ready", [
+      { ...first, isDeleted: true },
+      second,
+    ]);
+    expect(deleted?.[0].isDeleted).toBe(true);
+    expect(
+      (await repository.getBatch("batch-real")).conversions[0].transactionCount,
+    ).toBe(1);
+    await repository.saveTransactions("job-ready", [first, second]);
+    expect(writes.map((write) => write.edits[0].action)).toEqual([
+      "delete",
+      "restore",
+    ]);
+    expect(writes.every((write) => write.edits[0].row_id === "row_1")).toBe(
+      true,
+    );
+    expect(
+      (await repository.getBatch("batch-real")).conversions[0].transactionCount,
+    ).toBe(2);
+  });
+
   it("usa ordem de origem e ID estável na gravação sem expor uma coluna de sequência", async () => {
     const original = structuredClone(batchPayload);
     const rows = original.jobs[0].result!.analysis.preview_transactions.map(
@@ -530,10 +609,12 @@ describe("HttpWorkspaceRepository", () => {
       fetcher,
     });
     const batch = await repository.getBatch("batch-real");
-    const [first, second] = batch.conversions[0].transactions;
+    const [deleted, first, second] = batch.conversions[0].transactions;
 
+    expect(deleted.isDeleted).toBe(true);
     expect(first.id).toBe("row_2");
     await repository.saveTransactions("job-ready", [
+      deleted,
       { ...first, description: "PIX corrigido" },
       second,
     ]);

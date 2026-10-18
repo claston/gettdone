@@ -77,6 +77,90 @@ const completedBatch: Batch = {
 };
 
 describe("WorkspaceScreen", () => {
+  it("mantém a linha excluída no lugar e permite restaurar sem perder seus valores", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const repository = createMockWorkspaceRepository({ latencyMs: 0 });
+    try {
+      render(
+        <WorkspaceScreen
+          batchId="batch-setembro-2026"
+          repository={repository}
+        />,
+      );
+      const input = (
+        await screen.findAllByDisplayValue("Pagamento de boleto")
+      )[0];
+      const row = input.closest("tr")!;
+      const originalIndex = screen.getAllByRole("row").indexOf(row);
+      fireEvent.click(within(row).getByRole("button", { name: /Remover/ }));
+      expect(input).toBeInTheDocument();
+      expect(row).toHaveClass("deleted-row");
+      expect(input).toHaveAttribute("readonly");
+      expect(within(row).getByText("Excluído")).toBeInTheDocument();
+      fireEvent.click(within(row).getByRole("button", { name: /Restaurar/ }));
+      expect(row).not.toHaveClass("deleted-row");
+      expect(input).not.toHaveAttribute("readonly");
+      expect(screen.getAllByRole("row").indexOf(row)).toBe(originalIndex);
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
+  it("localiza a primeira ocorrência sem ocultar outras linhas e ignora acentos", async () => {
+    const batch = structuredClone(completedBatch);
+    const original = batch.conversions[0].transactions[0];
+    batch.conversions[0].transactions = [
+      { ...original, id: "one", description: "Crédito salário" },
+      { ...original, id: "two", description: "Outro crédito" },
+      { ...original, id: "three", description: "Pagamento" },
+    ];
+    const scrollIntoView = vi.fn();
+    const descriptor = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollIntoView",
+    );
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    try {
+      const repository: WorkspaceRepository = {
+        getBatch: vi.fn().mockResolvedValue(batch),
+        saveTransactions: vi.fn(),
+        markReviewed: vi.fn(),
+        retryConversion: vi.fn(),
+        exportBatch: vi.fn(),
+      };
+      render(<WorkspaceScreen batchId={batch.id} repository={repository} />);
+      const locator = await screen.findByRole("searchbox", {
+        name: "Buscar lançamentos",
+      });
+      locator.focus();
+      fireEvent.change(locator, { target: { value: "CREDITO" } });
+      expect(screen.getAllByRole("row")).toHaveLength(4);
+      expect(
+        screen.getByDisplayValue("Crédito salário").closest("tr"),
+      ).toHaveClass("located-row");
+      expect(
+        screen.getByDisplayValue("Outro crédito").closest("tr"),
+      ).not.toHaveClass("located-row");
+      expect(scrollIntoView).toHaveBeenCalled();
+      expect(locator).toHaveFocus();
+      expect(repository.saveTransactions).not.toHaveBeenCalled();
+      fireEvent.change(locator, { target: { value: "inexistente" } });
+      expect(document.querySelector(".located-row")).toBeNull();
+      expect(screen.getAllByRole("row")).toHaveLength(4);
+    } finally {
+      if (descriptor)
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "scrollIntoView",
+          descriptor,
+        );
+      else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+    }
+  });
+
   it("mantém a posição de origem ao corrigir a data sem mostrar a sequência interna", async () => {
     const batch = structuredClone(completedBatch);
     const original = batch.conversions[0].transactions[0];

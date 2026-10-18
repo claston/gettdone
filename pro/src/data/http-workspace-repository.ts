@@ -162,14 +162,15 @@ export function createHttpWorkspaceRepository(
       const rows = result.preview_transactions;
       context.rowIds = new Map(
         serverOrder.flatMap((id, index) =>
-          id && currentIds.has(id) && !rows[index].is_deleted
-            ? [[id, `row_${index + 1}`] as const]
-            : [],
+          id && currentIds.has(id) ? [[id, `row_${index + 1}`] as const] : [],
         ),
       );
       context.rowCount = rows.length;
       context.savedTransactions = transactions.map((transaction) => ({
         ...transaction,
+        isDeleted: Boolean(
+          rows[serverOrder.indexOf(transaction.id)].is_deleted,
+        ),
         sourceSequence:
           rows[serverOrder.indexOf(transaction.id)].source_sequence ?? null,
         sourceSubsequence:
@@ -248,13 +249,19 @@ export function createHttpWorkspaceRepository(
           if (!context.rowIds.has(row.id)) return false;
           const original = originalById.get(row.id);
           return (
-            !original || fields.some((field) => row[field] !== original[field])
+            !original ||
+            fields.some((field) => row[field] !== original[field]) ||
+            Boolean(row.isDeleted) !== Boolean(original.isDeleted)
           );
         })
         .map((transaction) => {
           const rowId = context.rowIds.get(transaction.id);
           return {
-            action: "update",
+            action: transaction.isDeleted
+              ? "delete"
+              : originalById.get(transaction.id)?.isDeleted
+                ? "restore"
+                : "update",
             row_id: transaction.sourceSequence != null ? transaction.id : rowId,
             date: toIsoDate(transaction.date),
             description: transaction.description,
@@ -299,6 +306,8 @@ export function createHttpWorkspaceRepository(
           debit: transaction.debit,
         });
         serverOrder.splice(position, 0, transaction.id);
+        if (transaction.isDeleted)
+          edits.push({ action: "delete", row_id: `row_${position + 1}` });
       });
       if (!edits.length) {
         const savedById = new Map(
@@ -392,9 +401,9 @@ function mapConversion({
     job.filename.split(".").pop() ??
     ""
   ).toLowerCase();
-  const remoteTransactions = (analysis?.preview_transactions ?? [])
-    .map(mapTransaction)
-    .filter((_, index) => !analysis?.preview_transactions?.[index].is_deleted);
+  const remoteTransactions = (analysis?.preview_transactions ?? []).map(
+    mapTransaction,
+  );
   const analysisId = job.analysis_id ?? job.result?.processing_id ?? null;
   let context = contexts.get(job.job_id);
   // A loaded document is an editing snapshot. Polling other jobs must not
@@ -408,11 +417,10 @@ function mapConversion({
       analysisId,
       updatedAt: analysis?.updated_at ?? null,
       rowIds: new Map(
-        (analysis?.preview_transactions ?? []).flatMap((row, index) =>
-          row.is_deleted
-            ? []
-            : [[row.transaction_id ?? `row_${index + 1}`, `row_${index + 1}`]],
-        ),
+        (analysis?.preview_transactions ?? []).map((row, index) => [
+          row.transaction_id ?? `row_${index + 1}`,
+          `row_${index + 1}`,
+        ]),
       ),
       rowCount: analysis?.preview_transactions?.length ?? 0,
       persistedTransactions: remoteTransactions,
@@ -424,8 +432,10 @@ function mapConversion({
       context?.persistedTransactions ??
       remoteTransactions,
   );
-  const suspectedCount = transactions.filter((transaction) =>
-    Object.values(transaction.fieldStates).includes("SUSPECTED"),
+  const suspectedCount = transactions.filter(
+    (transaction) =>
+      !transaction.isDeleted &&
+      Object.values(transaction.fieldStates).includes("SUSPECTED"),
   ).length;
   const status = mapStatus(job, suspectedCount);
   return {
@@ -437,7 +447,7 @@ function mapConversion({
     period: resolveTransactionPeriod(transactions),
     status,
     reviewStatus: status === "REVIEWED" ? "REVIEWED" : "PENDING",
-    transactionCount: transactions.length,
+    transactionCount: transactions.filter((row) => !row.isDeleted).length,
     suspectedCount,
     editedCount: countEdited(transactions),
     pdf:
@@ -472,6 +482,7 @@ function mapTransaction(row: ApiTransaction, index: number): Transaction {
     sourcePage: row.source_page ?? null,
     sourceSequence: row.source_sequence ?? null,
     sourceSubsequence: row.source_subsequence ?? 0,
+    isDeleted: Boolean(row.is_deleted),
     fieldStates,
   };
 }

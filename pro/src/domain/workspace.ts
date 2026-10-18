@@ -24,6 +24,7 @@ export interface Transaction {
   sourcePage?: number | null;
   sourceSequence?: number | null;
   sourceSubsequence?: number;
+  isDeleted?: boolean;
   fieldStates: Record<TransactionField, TransactionFieldState>;
 }
 
@@ -136,6 +137,8 @@ export function transactionHasState(
   transaction: Transaction,
   state: TransactionFieldState,
 ): boolean {
+  if (state === "SUSPECTED" && transaction.isDeleted) return false;
+  if (state === "EDITED" && transaction.isDeleted) return true;
   return Object.values(transaction.fieldStates).includes(state);
 }
 
