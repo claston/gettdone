@@ -90,6 +90,7 @@ class PdfProcessingMetrics(BaseModel):
     ocr_unresolved_rows: int = 0
     ocr_annotations_detected: int = 0
     opening_balance_ambiguous: int = 0
+    statement_no_activity: int = 0
     inline_decision: str = ""
     tabular_decision: str = ""
     columnar_decision: str = ""

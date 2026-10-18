@@ -80,6 +80,19 @@ def _analysis() -> AnalysisData:
     )
 
 
+def test_confirmed_no_activity_is_not_sent_for_ai_transaction_recovery():
+    calls: list[str] = []
+    dispatcher = AIRecoveryShadowDispatcher(config=_config("shadow"), bucket="test-bucket",
+        request_publisher=_Publisher(calls), queue_publisher=_Queue(calls), parser_release="test")
+    analysis = replace(_analysis(), transactions_total=0, preview_transactions=[], report_transactions=[],
+        pdf_processing_metrics={"statement_no_activity": 1, "selected_parser": "explicit_no_activity", "page_count": 1})
+    result = dispatcher.dispatch(document=UploadedDocument(filename="empty.pdf", raw_bytes=b"pdf", file_type="pdf"),
+        analysis=analysis, page_texts=("Sem movimentação",), source_layout_lines=None)
+    assert result.status == "skipped"
+    assert result.reason == "statement_no_activity"
+    assert calls == []
+
+
 def _config(mode: str, *, bedrock_enabled: bool = False) -> AIRecoveryConfig:
     return AIRecoveryConfig.from_mapping(
         {

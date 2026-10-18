@@ -22,6 +22,17 @@ from app.application.structured_conversion import build_structured_conversion_re
 _SAFE_ANALYSIS_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 
 
+def _is_confirmed_empty_statement(content: dict[str, object]) -> bool:
+    metrics = content.get("pdf_processing_metrics")
+    return (
+        content.get("transactions_total") == 0
+        and isinstance(metrics, dict)
+        and metrics.get("statement_no_activity") == 1
+        and content.get("preview_transactions") == []
+        and content.get("report_transactions") == []
+    )
+
+
 class TempAnalysisStorage:
     def __init__(
         self,
@@ -349,7 +360,7 @@ class TempAnalysisStorage:
         report_rows = self._parse_transaction_rows(report_rows_raw)
         current_updated_at = str(content.get("updated_at") or "").strip()
 
-        if len(preview_rows) == 0 or len(report_rows) == 0:
+        if (len(preview_rows) == 0 or len(report_rows) == 0) and not _is_confirmed_empty_statement(content):
             raise AnalysisNotFoundError
         if expected_updated_at and current_updated_at and expected_updated_at != current_updated_at:
             raise AnalysisEditConflictError
@@ -684,7 +695,7 @@ class TempAnalysisStorage:
 
         report_rows_raw = content.get("report_transactions") or content.get("preview_transactions", [])
         report_rows = self._parse_transaction_rows(report_rows_raw)
-        if not report_rows:
+        if not report_rows and not _is_confirmed_empty_statement(content):
             raise AnalysisNotFoundError
 
         persisted_overrides = self._extract_convert_overrides(content)
@@ -761,11 +772,16 @@ class TempAnalysisStorage:
         return normalized
 
     def _extract_convert_overrides(self, content: dict[str, object]) -> dict[str, float | str | None]:
+        empty_statement = _is_confirmed_empty_statement(content)
         opening_raw = content.get("convert_opening_balance")
+        if opening_raw is None and empty_statement:
+            opening_raw = content.get("opening_balance")
         opening_balance = float(opening_raw) if opening_raw is not None else None
         closing_raw = content.get("convert_closing_balance")
+        if closing_raw is None and empty_statement:
+            closing_raw = content.get("closing_balance")
         closing_balance = float(closing_raw) if closing_raw is not None else None
-        source = content if content.get("file_type") == "ofx" else {}
+        source = content if content.get("file_type") == "ofx" or empty_statement else {}
         branch = str(content.get("convert_bank_branch") or source.get("bank_branch") or "").strip() or None
         account = str(content.get("convert_account_number") or source.get("account_number") or "").strip() or None
         code = str(content.get("convert_bank_code") or source.get("bank_code") or "").strip() or None

@@ -33,7 +33,10 @@ interface ApiAnalysis {
   bank_code?: string | null;
   transactions_total?: number;
   updated_at?: string | null;
-  pdf_processing_metrics?: { page_count?: number } | null;
+  pdf_processing_metrics?: {
+    page_count?: number;
+    statement_no_activity?: number;
+  } | null;
   preview_transactions?: ApiTransaction[];
 }
 
@@ -461,6 +464,7 @@ function mapConversion({
     downloadUrl: analysisId
       ? `${apiUrl}/convert-report/${encodeURIComponent(analysisId)}?format=ofx`
       : undefined,
+    noActivity: analysis?.pdf_processing_metrics?.statement_no_activity === 1,
     transactions,
   };
 }

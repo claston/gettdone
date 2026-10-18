@@ -585,6 +585,11 @@
           "title": "Opening Balance Ambiguous",
           "type": "integer"
         },
+        "statement_no_activity": {
+          "default": 0,
+          "title": "Statement No Activity",
+          "type": "integer"
+        },
         "inline_decision": {
           "default": "",
           "title": "Inline Decision",

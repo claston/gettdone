@@ -42,6 +42,7 @@ export interface Conversion {
   editedCount: number;
   pdf: PdfDocument | null;
   downloadUrl?: string;
+  noActivity?: boolean;
   transactions: Transaction[];
 }
 

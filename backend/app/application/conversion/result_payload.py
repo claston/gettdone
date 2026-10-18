@@ -31,6 +31,12 @@ def build_analyze_response(
             description=f"Extrato {extension.upper()} processado com parser real e normalizacao inicial.",
         )
     ]
+    if _metrics_get(analysis_data.pdf_processing_metrics, "statement_no_activity", 0) == 1:
+        insights.append(Insight(
+            type="statement_no_activity",
+            title="Extrato sem movimentação no período",
+            description="A conversão foi concluída. Você pode baixar o OFX sem lançamentos.",
+        ))
     review_insight = _build_export_review_insight(
         extension=extension,
         pdf_processing_metrics=analysis_data.pdf_processing_metrics,
