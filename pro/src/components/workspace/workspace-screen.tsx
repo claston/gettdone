@@ -584,7 +584,7 @@ function EditableCell({
     <div className="editable-wrap">
       <input
         aria-label={`${{ date: "Data", description: "Descrição", credit: "Crédito", debit: "Débito", balance: "Saldo" }[field]} de ${transaction.description}`}
-        readOnly={field === "balance"}
+        readOnly={field === "balance" || transaction.isDeleted}
         className={`${transaction.fieldStates[field] === "SUSPECTED" ? "is-suspected" : ""} ${transaction.fieldStates[field] === "EDITED" ? "is-edited" : ""} ${error ? "is-invalid" : ""}`}
         value={value}
         onChange={(event) => {
@@ -610,6 +610,7 @@ function TransactionGrid({
   onUpdate,
   onAdd,
   onRemove,
+  onRestore,
   groupByPage,
   onGroupChange,
   onSourcePage,
@@ -622,6 +623,7 @@ function TransactionGrid({
   ): string | null;
   onAdd(draft: TransactionDraft): void;
   onRemove(transactionId: string): void;
+  onRestore(transactionId: string): void;
   groupByPage: boolean;
   onGroupChange(value: boolean): void;
   onSourcePage(page: number): void;
@@ -629,6 +631,8 @@ function TransactionGrid({
   const [filter, setFilter] = useState<TransactionFilter>("ALL");
   const [adding, setAdding] = useState(false);
   const scroll = useRef<HTMLDivElement>(null);
+  const [query, setQuery] = useState("");
+  const rowElements = useRef(new Map<string, HTMLTableRowElement>());
   const visible = filterTransactions(conversion.transactions, filter);
   const groups = groupByPage
     ? Array.from(new Set(visible.map((row) => row.sourcePage ?? null)))
@@ -638,6 +642,23 @@ function TransactionGrid({
           rows: visible.filter((row) => (row.sourcePage ?? null) === page),
         }))
     : [{ page: null, rows: visible }];
+  const normalize = (value: string) =>
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("pt-BR");
+  const search = normalize(query.trim());
+  const matchId = search
+    ? groups
+        .flatMap((group) => group.rows)
+        .find((row) => normalize(row.description).includes(search))?.id
+    : undefined;
+  useEffect(() => {
+    if (matchId)
+      rowElements.current
+        .get(matchId)
+        ?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  }, [matchId, groupByPage]);
   const suspected = conversion.transactions.filter((item) =>
     transactionHasState(item, "SUSPECTED"),
   ).length;
@@ -660,6 +681,23 @@ function TransactionGrid({
           <option value="CONTINUOUS">Lista contínua</option>
           <option value="PAGES">Separar por páginas</option>
         </select>
+        <label className="transaction-search">
+          <Search size={14} aria-hidden="true" />
+          <input
+            type="search"
+            aria-label="Buscar lançamentos"
+            placeholder="Buscar texto"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <span className="sr-only" role="status">
+            {search
+              ? matchId
+                ? "Primeira ocorrência localizada"
+                : "Nenhuma ocorrência neste filtro"
+              : ""}
+          </span>
+        </label>
         <button
           className="secondary-button small"
           onClick={() => setAdding(true)}
@@ -724,11 +762,11 @@ function TransactionGrid({
                 {group.rows.map((transaction) => (
                   <tr
                     key={transaction.id}
-                    className={
-                      transactionHasState(transaction, "SUSPECTED")
-                        ? "suspected-row"
-                        : ""
-                    }
+                    ref={(node) => {
+                      if (node) rowElements.current.set(transaction.id, node);
+                      else rowElements.current.delete(transaction.id);
+                    }}
+                    className={`${transactionHasState(transaction, "SUSPECTED") ? "suspected-row" : ""} ${transaction.isDeleted ? "deleted-row" : ""} ${transaction.id === matchId ? "located-row" : ""}`}
                   >
                     <td>
                       <EditableCell
@@ -743,6 +781,9 @@ function TransactionGrid({
                         field="description"
                         onCommit={onUpdate}
                       />
+                      {transaction.isDeleted && (
+                        <span className="deleted-badge">Excluído</span>
+                      )}
                     </td>
                     <td>
                       <EditableCell
@@ -766,16 +807,26 @@ function TransactionGrid({
                       />
                     </td>
                     <td>
-                      <button
-                        className="row-action"
-                        aria-label={`Remover ${transaction.description}`}
-                        onClick={() =>
-                          window.confirm("Remover este lançamento?") &&
-                          onRemove(transaction.id)
-                        }
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      {transaction.isDeleted ? (
+                        <button
+                          className="row-action"
+                          aria-label={`Restaurar ${transaction.description}`}
+                          onClick={() => onRestore(transaction.id)}
+                        >
+                          <RotateCcw size={14} />
+                        </button>
+                      ) : (
+                        <button
+                          className="row-action"
+                          aria-label={`Remover ${transaction.description}`}
+                          onClick={() =>
+                            window.confirm("Remover este lançamento?") &&
+                            onRemove(transaction.id)
+                          }
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -794,7 +845,13 @@ function TransactionGrid({
         <span>
           <i className="legend-edited" /> Campo alterado
         </span>
-        <span>Edite diretamente nas células</span>
+        <span>
+          {search
+            ? matchId
+              ? "Primeira ocorrência"
+              : "Nenhuma ocorrência neste filtro"
+            : "Edite diretamente nas células"}
+        </span>
       </footer>
       {adding && (
         <TransactionDialog
@@ -1067,6 +1124,7 @@ export function WorkspaceScreen({
                 onUpdate={controller.updateField}
                 onAdd={controller.addTransaction}
                 onRemove={controller.removeTransaction}
+                onRestore={controller.restoreTransaction}
                 groupByPage={groupByPage}
                 onGroupChange={setGroupByPage}
                 onSourcePage={(page) =>
