@@ -1,4 +1,5 @@
 "use client";
+import type { PdfNavigationRequest } from "./source-location";
 import dynamic from "next/dynamic";
 import { useState } from "react";
 import type { Conversion, WorkspaceRepository } from "@/domain/workspace";
@@ -14,7 +15,7 @@ export function RealDocumentViewer(props: {
   repository: WorkspaceRepository;
   page: number;
   setPage(page: number): void;
-  navigation: { page: number; token: number } | null;
+  navigation: PdfNavigationRequest | null;
   onAvailability(available: boolean): void;
 }) {
   const [attempt, setAttempt] = useState(0);

@@ -1155,6 +1155,14 @@ button.save-indicator {
 .pdf-page-slot canvas {
   display: block;
 }
+.pdf-source-highlight {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  outline: 2px solid #1664c0;
+  background: rgb(52 144 255 / 18%);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 65%);
+}
 .pdf-toolbar {
   height: auto;
   min-height: 43px;

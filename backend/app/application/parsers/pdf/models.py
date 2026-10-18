@@ -1,8 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.application.document_extraction_models import ExtractedLine, RawDocumentExtraction
 from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.pdf_layout_inference import PdfLayoutInference
+from app.application.source_regions import SourceRegion
 
 
 @dataclass(frozen=True)
@@ -43,3 +44,5 @@ class _ParsedTransaction:
     external_reference_id: str | None = None
     has_explicit_amount_sign: bool = False
     raw_amount_token: str | None = None
+    source_regions: list[SourceRegion] = field(default_factory=list)
+    source_line_refs: tuple[tuple[int, int], ...] = ()

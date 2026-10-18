@@ -8,6 +8,7 @@ from app.application.normalization.pdf_row_date_rules import parse_row_date
 from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf.layout_specific.shared import build_parsed_transaction
 from app.application.parsers.pdf.models import _ParsedTransaction
+from app.application.source_regions import evidence_regions
 
 _AMOUNT = re.compile(r"^[+-]?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}[+-]?$")
 _DATE = re.compile(r"^\d{1,2}/\d{1,2}(?:/\d{2,4})?$")
@@ -100,6 +101,7 @@ def parse_itau_monthly_ocr(pages: list[ExtractedPage]) -> MonthlyOcrResult:
                 amount=amount, source_page=page.page_number, source_line=description.line_index,
                 running_balance=parse_pdf_amount(balances[0].text) if len(balances) == 1 else None,
                 has_explicit_amount_sign=True,
+                source_regions=evidence_regions(page.page_number, [description, value, *balances], words=page.words),
             ))
         unused_amounts = sum(
             credit_left <= value.bbox["left"] < balance_left and value.id not in used_amounts for value in amounts

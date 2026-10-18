@@ -17,6 +17,7 @@ from app.application.bank_identity import resolve_conversion_model_label
 from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConflictError, AnalysisNotFoundError
 from app.application.export_artifact_service import ExportArtifactService
 from app.application.models import AnalysisData, BeforeAfterRow, TransactionRow
+from app.application.source_regions import parse_source_regions
 from app.application.structured_conversion import build_structured_conversion_result_from_analysis_data
 
 _SAFE_ANALYSIS_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
@@ -842,6 +843,7 @@ class TempAnalysisStorage:
                     category=str(item.get("category") or "Outros"),
                     reconciliation_status=str(item.get("reconciliation_status") or "unmatched"),
                     source_page=item.get("source_page") if isinstance(item.get("source_page"), int) else None,
+                    source_regions=parse_source_regions(item.get("source_regions")),
                     source_line=item.get("source_line") if isinstance(item.get("source_line"), int) else None,
                     transaction_id=item.get("transaction_id") if isinstance(item.get("transaction_id"), str) else None,
                     source_sequence=item.get("source_sequence") if isinstance(item.get("source_sequence"), int) else None,

@@ -4,6 +4,7 @@ from app.application.models import NormalizedTransaction
 from app.application.normalization.date import infer_default_statement_year
 from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf.models import _ParsedTransaction, _PdfLine
+from app.application.source_regions import SourceRegion
 
 
 def build_parsed_transaction(
@@ -16,6 +17,8 @@ def build_parsed_transaction(
     running_balance: float | None = None,
     external_reference_id: str | None = None,
     has_explicit_amount_sign: bool = False,
+    source_regions: list[SourceRegion] | None = None,
+    source_line_refs: tuple[tuple[int, int], ...] = (),
 ) -> _ParsedTransaction:
     return _ParsedTransaction(
         transaction=NormalizedTransaction(
@@ -29,6 +32,8 @@ def build_parsed_transaction(
         running_balance=running_balance,
         external_reference_id=external_reference_id,
         has_explicit_amount_sign=has_explicit_amount_sign,
+        source_regions=list(source_regions or []),
+        source_line_refs=source_line_refs,
     )
 
 

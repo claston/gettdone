@@ -31,9 +31,9 @@ def test_adapter_extracts_transactions_from_table_header_with_accents() -> None:
                                 ExtractedCell(1, 4, "Débito"),
                             ],
                             [
-                                ExtractedCell(2, 1, "01/04/2026"),
-                                ExtractedCell(2, 2, "PIX RECEBIDO"),
-                                ExtractedCell(2, 3, "10,00"),
+                                ExtractedCell(2, 1, "01/04/2026", bbox={"left": 0.1, "top": 0.3, "width": 0.1, "height": 0.02}),
+                                ExtractedCell(2, 2, "PIX RECEBIDO", bbox={"left": 0.2, "top": 0.3, "width": 0.3, "height": 0.04}),
+                                ExtractedCell(2, 3, "10,00", bbox={"left": 0.7, "top": 0.3, "width": 0.1, "height": 0.02}),
                                 ExtractedCell(2, 4, ""),
                             ],
                         ],
@@ -48,6 +48,8 @@ def test_adapter_extracts_transactions_from_table_header_with_accents() -> None:
     assert len(result.transactions) == 1
     assert result.transactions[0].amount == 10.0
     assert result.canonical_transactions[0].source_parser == "textract_table"
+    assert len(result.canonical_transactions[0].source_regions) == 3
+    assert result.canonical_transactions[0].source_regions[1].height == 0.04
 
 
 def test_adapter_extracts_transactions_from_table_header_without_accents() -> None:

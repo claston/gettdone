@@ -57,6 +57,23 @@ def _analysis() -> AnalysisData:
     )
 
 
+def test_regions_survive_s3_reload_and_a_subsequent_edit(tmp_path):
+    from dataclasses import asdict
+
+    from app.application.source_regions import SourceRegion
+
+    client = FakeS3Client()
+    storage = S3AnalysisStorage(root_dir=tmp_path / "worker", bucket="private", s3_client=client)
+    analysis = _analysis()
+    region = SourceRegion(1, 0.1, 0.2, 0.7, 0.03)
+    analysis.preview_transactions[0].source_regions = [region]
+    storage.save_analysis(analysis)
+    restarted = S3AnalysisStorage(root_dir=tmp_path / "api", bucket="private", s3_client=client)
+    saved = restarted.apply_convert_edits(analysis.analysis_id, [{"row_id": "row_1", "date": "2026-08-02",
+        "description": "EDITED AFTER RELOAD", "credit": 100}], operation_id="region-edit")
+    assert saved["preview_transactions"][0]["source_regions"] == [asdict(region)]
+
+
 def test_s3_edit_receipt_is_committed_last_and_survives_a_new_api_process(tmp_path: Path) -> None:
     client = FakeS3Client()
     storage = S3AnalysisStorage(root_dir=tmp_path / "api1", bucket="private", s3_client=client)

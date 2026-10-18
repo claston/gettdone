@@ -24,8 +24,18 @@ export interface Transaction {
   sourcePage?: number | null;
   sourceSequence?: number | null;
   sourceSubsequence?: number;
+  sourceRegions?: readonly SourceRegion[];
   isDeleted?: boolean;
   fieldStates: Record<TransactionField, TransactionFieldState>;
+}
+
+/** Unit coordinates on the original visible page, including intrinsic rotation/crop. */
+export interface SourceRegion {
+  readonly page: number;
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
 }
 
 export interface Conversion {

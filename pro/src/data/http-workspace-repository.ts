@@ -1,3 +1,4 @@
+import { validSourceRegions } from "@/domain/source-regions";
 import type {
   Batch,
   Conversion,
@@ -19,6 +20,7 @@ interface ApiTransaction {
   source_sequence?: number | null;
   source_subsequence?: number;
   source_page?: number | null;
+  source_regions?: unknown;
   date?: string;
   description?: string;
   amount?: number;
@@ -484,6 +486,7 @@ function mapTransaction(row: ApiTransaction, index: number): Transaction {
     debit: amount < 0 ? Math.abs(amount) : null,
     balance: row.running_balance == null ? null : Number(row.running_balance),
     sourcePage: row.source_page ?? null,
+    sourceRegions: validSourceRegions(row.source_regions),
     sourceSequence: row.source_sequence ?? null,
     sourceSubsequence: row.source_subsequence ?? 0,
     isDeleted: Boolean(row.is_deleted),

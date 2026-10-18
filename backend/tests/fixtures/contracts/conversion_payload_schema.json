@@ -782,6 +782,39 @@
       "title": "ReconciliationSummary",
       "type": "object"
     },
+    "SourceRegion": {
+      "properties": {
+        "page": {
+          "title": "Page",
+          "type": "integer"
+        },
+        "left": {
+          "title": "Left",
+          "type": "number"
+        },
+        "top": {
+          "title": "Top",
+          "type": "number"
+        },
+        "width": {
+          "title": "Width",
+          "type": "number"
+        },
+        "height": {
+          "title": "Height",
+          "type": "number"
+        }
+      },
+      "required": [
+        "page",
+        "left",
+        "top",
+        "width",
+        "height"
+      ],
+      "title": "SourceRegion",
+      "type": "object"
+    },
     "TopExpense": {
       "properties": {
         "description": {
@@ -864,6 +897,13 @@
           ],
           "default": null,
           "title": "Source Page"
+        },
+        "source_regions": {
+          "items": {
+            "$ref": "#/$defs/SourceRegion"
+          },
+          "title": "Source Regions",
+          "type": "array"
         },
         "date": {
           "title": "Date",

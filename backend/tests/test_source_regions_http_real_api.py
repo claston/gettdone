@@ -1,0 +1,52 @@
+"""Exercise additive provenance through real HTTP, conversion and review storage."""
+import httpx
+import pytest
+
+from app.application.default_conversion_pipeline import build_default_conversion_pipeline
+from app.application.report_service import ReportService
+from app.application.storage_service import TempAnalysisStorage
+from app.dependencies import get_analysis_repository, get_conversion_processing_pipeline, get_report_service
+from app.main import app
+from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
+from tests.test_convert_edits_http_real_api import _run_http_server
+from tests.test_wise_statements import wise_lines
+
+pytestmark = pytest.mark.real_http
+
+
+@pytest.mark.parametrize("file_type", ["csv", "pdf"])
+def test_http_conversion_report_edit_and_negative_paths_keep_source_regions(tmp_path, monkeypatch, file_type):
+    monkeypatch.setenv("TEXTRACT_ENABLED", "false")
+    monkeypatch.setenv("PDF_OCR_ENABLED", "false")
+    storage = TempAnalysisStorage(root_dir=tmp_path / "analyses")
+
+    def configure(_access):
+        app.dependency_overrides[get_analysis_repository] = lambda: storage
+        app.dependency_overrides[get_conversion_processing_pipeline] = lambda: build_default_conversion_pipeline()
+        app.dependency_overrides[get_report_service] = lambda: ReportService(storage)
+
+    raw = (b"date,description,amount\n2026-04-01,RECEBIMENTO,40\n" if file_type == "csv"
+           else generate_native_text_pdf((tuple(wise_lines()),)))
+    with _run_http_server(configure) as base_url, httpx.Client(base_url=base_url, timeout=20) as client:
+        response = client.post("/convert", data={"anonymous_fingerprint": "fp-regions"},
+                               files={"file": (f"synthetic.{file_type}", raw, "text/csv" if file_type == "csv" else "application/pdf")})
+        assert response.status_code == 200, response.text
+        analysis = response.json()["analysis"]
+        analysis_id = analysis["analysis_id"]
+        row = analysis["preview_transactions"][0]
+        assert bool(row["source_regions"]) == (file_type == "pdf")
+        params = {"anonymous_fingerprint": "fp-regions"}
+        report = client.get(f"/report/{analysis_id}", params=params)
+        assert report.status_code == 200 and report.content.startswith(b"PK")
+        edited = client.post(f"/convert-edits/{analysis_id}", params=params, json={
+            "expected_updated_at": analysis["updated_at"], "edits": [{"row_id": row["transaction_id"],
+                "date": "2026-04-02", "description": "EDITED SOURCE TEST", "credit": 55,
+                "source_regions": [{"page": 99, "left": 0, "top": 0, "width": 1, "height": 1}]}],
+        })
+        assert edited.status_code == 200, edited.text
+        saved = next(item for item in edited.json()["preview_transactions"] if item["transaction_id"] == row["transaction_id"])
+        assert saved["source_regions"] == row["source_regions"]
+        assert client.get("/report/an_region_nonexistent", params=params).status_code == 404
+        assert client.get(f"/report/{analysis_id}", params={"anonymous_fingerprint": "other-owner"}).status_code == 403
+        # This historical route is intentionally disabled in the current app.
+        assert client.post("/analyze", files={"file": ("data.csv", raw)}).status_code == 405

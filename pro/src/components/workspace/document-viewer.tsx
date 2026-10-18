@@ -1,4 +1,5 @@
 "use client";
+import type { PdfNavigationRequest } from "./source-location";
 import { useState } from "react";
 import {
   FileText,
@@ -25,7 +26,7 @@ export function DocumentViewer({
   repository: WorkspaceRepository;
   page: number;
   setPage(page: number): void;
-  navigation: { page: number; token: number } | null;
+  navigation: PdfNavigationRequest | null;
   onAvailability(available: boolean): void;
 }) {
   const [zoom, setZoom] = useState<"page-width" | number>("page-width");

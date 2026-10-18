@@ -9,6 +9,30 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+it("preserva regiões de origem ao salvar sem enviá-las como campos editáveis", async () => {
+  const payload = structuredClone(batchPayload);
+  const region = { page: 1, left: 0.1, top: 0.4, width: 0.6, height: 0.02 };
+  Object.assign(payload.jobs[0].result!.analysis.preview_transactions[0], {
+    source_regions: [region, { ...region, width: -1 }],
+  });
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(jsonResponse({}))
+    .mockResolvedValueOnce(jsonResponse(payload))
+    .mockResolvedValueOnce(jsonResponse({ updated_at: "saved" }));
+  const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+  const batch = await repository.getBatch("batch-real");
+  const rows = batch.conversions[0].transactions;
+  expect(rows[0].sourceRegions).toEqual([region]);
+  const saved = await repository.saveTransactions("job-ready", [
+    { ...rows[0], description: "Editado" },
+    ...rows.slice(1),
+  ]);
+  expect(saved?.[0].sourceRegions).toEqual([region]);
+  expect(fetcher.mock.calls.at(-1)?.[1]?.body).not.toContain("source_regions");
+  expect(fetcher.mock.calls.at(-1)?.[1]?.body).not.toContain("sourceRegions");
+});
+
 const batchPayload = {
   batch_id: "batch-real",
   status: "completed",

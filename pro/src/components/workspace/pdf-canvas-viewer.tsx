@@ -1,8 +1,11 @@
 "use client";
+import type { PdfNavigationRequest } from "./source-location";
 import "./pdf-browser-support";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import type { PDFDocumentProxy } from "pdfjs-dist";
+import { validSourceRegions, regionScrollPosition } from "./source-location";
+import { PdfSourceHighlights } from "./pdf-source-highlights";
 import {
   activePageAt,
   pageLayout,
@@ -32,7 +35,7 @@ export default function PdfCanvasViewer({
   name: string;
   page: number;
   onPage(page: number): void;
-  navigation: { page: number; token: number } | null;
+  navigation: PdfNavigationRequest | null;
   retry(): void;
   onAvailability(available: boolean): void;
 }) {
@@ -49,7 +52,11 @@ export default function PdfCanvasViewer({
   );
   const previousBoxes = useRef(boxes);
   const position = useRef(0);
-  const appliedNavigation = useRef<number | null>(navigation?.token ?? null);
+  const appliedNavigation = useRef<number | null>(null);
+  const selectedRegions = useMemo(
+    () => validSourceRegions(navigation?.regions, sizes.length),
+    [navigation, sizes.length],
+  );
   const initialPage = useRef(page);
   const onPageRef = useRef(onPage);
   useLayoutEffect(() => {
@@ -103,14 +110,26 @@ export default function PdfCanvasViewer({
       navigation.page > boxes.length
     )
       return;
-    stage.current.scrollTop = boxes[navigation.page - 1].top;
+    const box = boxes[navigation.page - 1];
+    const region = selectedRegions.find(
+      (item) => item.page === navigation.page,
+    );
+    stage.current.scrollTop = region
+      ? regionScrollPosition(box, region, stage.current.clientHeight)
+      : box.top;
+    if (region)
+      stage.current.scrollLeft = Math.max(
+        0,
+        (region.left + region.width / 2) * box.width -
+          stage.current.clientWidth / 2,
+      );
     position.current = stage.current.scrollTop;
     setViewport({
       top: stage.current.scrollTop,
       height: stage.current.clientHeight,
     });
     onPageRef.current(navigation.page);
-  }, [navigation, boxes]);
+  }, [navigation, boxes, selectedRegions]);
   const fail = () => {
     if (alive.current) {
       setError(true);
@@ -162,6 +181,13 @@ export default function PdfCanvasViewer({
   }, [page]);
   return (
     <>
+      {navigation?.transactionId && sizes.length > 0 && !error && (
+        <span className="sr-only" role="status">
+          {selectedRegions.length
+            ? "Origem do lançamento destacada no PDF."
+            : "Página de origem aberta. A região exata não está disponível para este lançamento."}
+        </span>
+      )}
       <div className="panel-toolbar pdf-toolbar">
         <span className="toolbar-title" title={name}>
           {name}
@@ -275,6 +301,14 @@ export default function PdfCanvasViewer({
                     />
                   ) : (
                     <span className="pdf-placeholder">Página {index + 1}</span>
+                  )}
+                  {near && (
+                    <PdfSourceHighlights
+                      regions={selectedRegions.filter(
+                        (region) => region.page === index + 1,
+                      )}
+                      transactionId={navigation?.transactionId}
+                    />
                   )}
                 </div>
               );
