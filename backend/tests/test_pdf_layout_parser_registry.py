@@ -125,5 +125,7 @@ def test_default_layout_parser_registry_contains_current_specific_families() -> 
             "stone_extrato_conta_corrente_a4_v1",
             "sisprime_extrato_conta_debito_credito_saldo_v1",
             "iugu_movimentacao_bancaria_v1",
+            "wise_extrato_brl_v1",
+            "wise_extrato_usd_v1",
         }
     )
