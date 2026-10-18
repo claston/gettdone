@@ -1136,11 +1136,108 @@ button.save-indicator {
   color: #303946;
   transition: width 0.15s ease;
 }
-.real-pdf-frame {
-  width: 100%;
-  min-height: 690px;
-  border: 0;
-  background: #fff;
+.pdf-continuous {
+  padding: 0 12px;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+}
+.pdf-page-slot {
+  position: relative;
+  margin: 0 auto 16px;
+  background: white;
+  box-shadow: 0 2px 7px #0002;
+}
+.pdf-placeholder {
+  display: block;
+  padding: 16px;
+  color: var(--ink-500);
+}
+.pdf-page-slot canvas {
+  display: block;
+}
+.pdf-toolbar {
+  height: auto;
+  min-height: 43px;
+  flex-wrap: wrap;
+  padding-block: 5px;
+}
+.page-sync-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 7px 12px;
+  font-size: 10px;
+  color: var(--ink-500);
+  border-bottom: 1px solid var(--line);
+}
+.page-sync-controls label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.source-unavailable {
+  display: inline-block;
+  padding: 5px;
+  color: var(--ink-500);
+}
+@media (max-width: 1000px) {
+  .workspace {
+    min-width: 0;
+  }
+  .workspace .review-stage {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(240px, 42%) minmax(0, 1fr);
+  }
+  .workspace .conversion-panel {
+    width: 185px;
+  }
+}
+@media (max-width: 600px) {
+  .workspace {
+    grid-template-columns: 40px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) 31px;
+  }
+  .workspace .review-rail {
+    padding-inline: 2px;
+  }
+  .workspace .workspace-header {
+    display: flex;
+    flex-wrap: wrap;
+    padding: 7px;
+    gap: 5px;
+  }
+  .workspace .header-actions {
+    flex-wrap: wrap;
+    gap: 3px;
+  }
+  .workspace .batch-heading h1 {
+    font-size: 12px;
+  }
+  .workspace .workspace-footer > span {
+    display: none;
+  }
+  .workspace .conversion-panel {
+    width: 48px;
+  }
+  .workspace .conversion-panel:not(.collapsed) .conversion-tools,
+  .workspace .conversion-panel:not(.collapsed) .panel-heading > div,
+  .workspace .conversion-panel:not(.collapsed) .conversion-main,
+  .workspace .conversion-panel:not(.collapsed) .conversion-state,
+  .workspace .conversion-panel:not(.collapsed) .next-pending {
+    display: none;
+  }
+  .workspace .conversion-card {
+    display: block;
+    padding: 2px;
+  }
+  .transactions-toolbar {
+    height: auto;
+    min-height: 43px;
+    flex-wrap: wrap;
+    padding-block: 5px;
+  }
 }
 .mock-pdf-brand {
   display: flex;

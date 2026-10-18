@@ -382,9 +382,8 @@ describe("WorkspaceScreen", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Recarregar PDF" }),
     );
-    await waitFor(() =>
-      expect(document.querySelector("iframe")?.src).toContain("blob:test-pdf"),
-    );
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(document.querySelector("iframe")).toBeNull();
     expect(repository.loadDocument).toHaveBeenCalledTimes(2);
     unmount();
     expect(revoke).toHaveBeenCalledWith("blob:test-pdf");
