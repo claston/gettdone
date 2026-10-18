@@ -59,6 +59,87 @@ const batchPayload = {
 };
 
 describe("HttpWorkspaceRepository", () => {
+  it("confirma uma inclusão após perda da resposta sem reenviar a inclusão", async () => {
+    let operationId = "";
+    const rows = batchPayload.jobs[0].result!.analysis.preview_transactions;
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (url, init) => {
+        if (String(url).endsWith("/auth/me")) return jsonResponse({});
+        if (init?.method === "POST") {
+          operationId = JSON.parse(String(init.body)).operation_id;
+          throw new TypeError("Resposta perdida");
+        }
+        if (String(url).includes("/operations/"))
+          return jsonResponse({
+            operation_id: operationId,
+            updated_at: "v2",
+            preview_transactions: [...rows, rows[0]],
+          });
+        return jsonResponse(batchPayload);
+      });
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+    const batch = await repository.getBatch("batch-real");
+    const original = batch.conversions[0].transactions;
+    const pending = [...original, { ...original[0], id: "new-row" }];
+    await expect(
+      repository.saveTransactions("job-ready", pending),
+    ).resolves.toHaveLength(3);
+    await repository.saveTransactions("job-ready", pending);
+    expect(
+      fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
+    ).toHaveLength(1);
+    expect(
+      fetcher.mock.calls.some(([url]) =>
+        String(url).endsWith(`/operations/${operationId}`),
+      ),
+    ).toBe(true);
+  });
+
+  it("reutiliza a operação pendente antes de gravar novas edições após falha de rede", async () => {
+    const writes: Record<string, unknown>[] = [];
+    let connected = false;
+    const rows = batchPayload.jobs[0].result!.analysis.preview_transactions;
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (url, init) => {
+        if (String(url).endsWith("/auth/me")) return jsonResponse({});
+        if (String(url).includes("/operations/"))
+          throw new TypeError("Offline");
+        if (init?.method === "POST") {
+          const payload = JSON.parse(String(init.body));
+          writes.push(payload);
+          if (!connected) throw new TypeError("Offline");
+          return jsonResponse({
+            operation_id: payload.operation_id,
+            updated_at: `v${writes.length}`,
+            preview_transactions: [...rows, rows[0]],
+          });
+        }
+        return jsonResponse(batchPayload);
+      });
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+    const batch = await repository.getBatch("batch-real");
+    const original = batch.conversions[0].transactions;
+    const added = { ...original[0], id: "new-row" };
+    await expect(
+      repository.saveTransactions("job-ready", [...original, added]),
+    ).rejects.toThrow("Offline");
+    connected = true;
+    await repository.saveTransactions("job-ready", [
+      ...original,
+      { ...added, description: "Correção posterior" },
+    ]);
+    expect(writes[1]).toEqual(writes[0]);
+    expect(writes[2].operation_id).not.toBe(writes[0].operation_id);
+    expect(writes[2].edits).toEqual([
+      expect.objectContaining({
+        action: "update",
+        description: "Correção posterior",
+      }),
+    ]);
+  });
+
   it("preserva versões e IDs após inserção no início, ordenação e polling antigo", async () => {
     const original = structuredClone(batchPayload);
     const rows = original.jobs[0].result!.analysis.preview_transactions;

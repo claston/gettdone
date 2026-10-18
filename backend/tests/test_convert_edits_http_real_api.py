@@ -20,6 +20,39 @@ from app.main import app
 pytestmark = pytest.mark.real_http
 
 
+def test_http_edit_operation_survives_lost_response_and_rejects_other_owner(tmp_path) -> None:
+    from app.application import ReportService, TempAnalysisStorage
+    from app.application.models import AnalysisData, TransactionRow
+
+    def configure(access):
+        storage = TempAnalysisStorage(root_dir=tmp_path / "results", ttl_seconds=3600)
+        rows = [TransactionRow(date="2026-04-01", description="Original", amount=10,
+                               category="Outros", reconciliation_status="unmatched")]
+        storage.save_analysis(AnalysisData(analysis_id="an_receipt_http", file_type="pdf", upload_filename="extrato.pdf",
+                                          transactions_total=1,
+                                          total_inflows=10, total_outflows=0, net_total=10,
+                                          preview_transactions=rows, report_transactions=rows))
+        owner = access.resolve_identity(anonymous_fingerprint="fp-owner", user_token=None)
+        storage.set_convert_owner("an_receipt_http", owner.identity_type, owner.identity_id)
+        app.dependency_overrides[get_report_service] = lambda: ReportService(storage)
+
+    with _run_http_server(configure) as base_url:
+        url = f"{base_url}/convert-edits/an_receipt_http"
+        params = {"anonymous_fingerprint": "fp-owner"}
+        payload = {"operation_id": "http-save-1", "edits": [{"action": "insert", "insert_position": 0,
+                   "date": "2026-04-02", "description": "Incluído", "credit": 20}]}
+        first = httpx.post(url, params=params, json=payload)
+        confirmed = httpx.get(f"{url}/operations/http-save-1", params=params)
+        repeated = httpx.post(url, params=params, json=payload)
+        denied = httpx.get(f"{url}/operations/http-save-1", params={"anonymous_fingerprint": "fp-other"})
+        report = httpx.get(f"{base_url}/convert-report/an_receipt_http", params={**params, "format": "csv"})
+    assert first.status_code == confirmed.status_code == repeated.status_code == report.status_code == 200
+    assert first.json() == confirmed.json() == repeated.json()
+    assert first.json()["transactions_total"] == 2
+    assert denied.status_code == 403
+    assert "Incluído" in report.text
+
+
 class _InMemoryConnCtx:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn

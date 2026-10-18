@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
+from app.application.analysis_lock import locked_analysis
 from app.application.errors import AnalysisNotFoundError
 from app.application.models import AnalysisData
 from app.application.storage_service import TempAnalysisStorage
@@ -75,10 +77,12 @@ class S3AnalysisStorage(TempAnalysisStorage):
         self._upload_analysis(data.analysis_id)
         return expires_at
 
+    @locked_analysis
     def get_report_path(self, analysis_id: str) -> Path:
         self._materialize_analysis(analysis_id)
         return super().get_report_path(analysis_id)
 
+    @locked_analysis
     def get_convert_report_path(self, analysis_id: str, file_format: str, **kwargs) -> Path:
         self._materialize_analysis(analysis_id)
         path = super().get_convert_report_path(analysis_id, file_format, **kwargs)
@@ -86,15 +90,18 @@ class S3AnalysisStorage(TempAnalysisStorage):
             self._upload_analysis(analysis_id)
         return path
 
+    @locked_analysis
     def get_upload_filename(self, analysis_id: str) -> str | None:
         self._materialize_analysis(analysis_id)
         return super().get_upload_filename(analysis_id)
 
+    @locked_analysis
     def set_report_owner(self, analysis_id: str, identity_type: str, identity_id: str) -> None:
         self._materialize_analysis(analysis_id)
         super().set_report_owner(analysis_id, identity_type, identity_id)
         self._upload_analysis(analysis_id)
 
+    @locked_analysis
     def assert_report_owner(
         self,
         analysis_id: str,
@@ -111,15 +118,23 @@ class S3AnalysisStorage(TempAnalysisStorage):
             allow_unowned=allow_unowned,
         )
 
+    @locked_analysis
     def set_convert_owner(self, analysis_id: str, identity_type: str, identity_id: str) -> None:
         self._materialize_analysis(analysis_id)
         super().set_convert_owner(analysis_id, identity_type, identity_id)
         self._upload_analysis(analysis_id)
 
+    @locked_analysis
     def assert_convert_owner(self, analysis_id: str, identity_type: str, identity_id: str) -> None:
         self._materialize_analysis(analysis_id)
         super().assert_convert_owner(analysis_id, identity_type, identity_id)
 
+    @locked_analysis
+    def get_convert_edit_operation(self, analysis_id: str, operation_id: str) -> dict[str, object] | None:
+        self._materialize_analysis(analysis_id)
+        return super().get_convert_edit_operation(analysis_id, operation_id)
+
+    @locked_analysis
     def apply_convert_edits(self, analysis_id: str, edits: list[dict[str, object]], **kwargs) -> dict[str, object]:
         self._materialize_analysis(analysis_id)
         result = super().apply_convert_edits(analysis_id, edits, **kwargs)
@@ -136,15 +151,18 @@ class S3AnalysisStorage(TempAnalysisStorage):
         self._upload_analysis(analysis_id)
         return analysis_id, expires_at
 
+    @locked_analysis
     def get_reconcile_report_path(self, analysis_id: str, file_format: str) -> Path:
         self._materialize_analysis(analysis_id)
         return super().get_reconcile_report_path(analysis_id, file_format)
 
+    @locked_analysis
     def set_reconcile_owner(self, analysis_id: str, identity_type: str, identity_id: str) -> None:
         self._materialize_analysis(analysis_id)
         super().set_reconcile_owner(analysis_id, identity_type, identity_id)
         self._upload_analysis(analysis_id)
 
+    @locked_analysis
     def assert_reconcile_owner(
         self,
         analysis_id: str,
@@ -165,7 +183,7 @@ class S3AnalysisStorage(TempAnalysisStorage):
         analysis_dir = self._resolve_analysis_dir(analysis_id)
         if not analysis_dir.exists():
             return
-        for path in analysis_dir.rglob("*"):
+        for path in sorted(analysis_dir.rglob("*"), key=lambda item: item.name == "analysis.json"):
             if not path.is_file():
                 continue
             relative = path.relative_to(analysis_dir).as_posix()
@@ -206,7 +224,13 @@ class S3AnalysisStorage(TempAnalysisStorage):
                     if callable(close):
                         close()
                 analysis_dir.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(raw_bytes)
+                with NamedTemporaryFile(dir=analysis_dir, suffix=".tmp", delete=False) as temporary:
+                    temporary_path = Path(temporary.name)
+                    temporary.write(raw_bytes)
+                try:
+                    os.replace(temporary_path, target)
+                finally:
+                    temporary_path.unlink(missing_ok=True)
             if not response.get("IsTruncated"):
                 break
             continuation_token = str(response.get("NextContinuationToken") or "").strip() or None

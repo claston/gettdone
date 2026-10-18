@@ -86,6 +86,7 @@ class ConvertEditPatch(BaseModel):
 
 
 class ConvertEditsRequest(BaseModel):
+    operation_id: str | None = Field(default=None, min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
     batch_id: str | None = None
     job_id: str | None = None
     edits: list[ConvertEditPatch]
@@ -98,6 +99,7 @@ class ConvertEditsRequest(BaseModel):
 
 
 class ConvertEditsResponse(BaseModel):
+    operation_id: str | None = None
     processing_id: str
     transactions_total: int
     total_inflows: float

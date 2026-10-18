@@ -14,11 +14,15 @@ export function createProApiClient(options: ProApiClientOptions): ProApiClient {
   const apiUrl = options.apiUrl.replace(/\/+$/, "");
   const fetcher = options.fetcher ?? fetch;
   let bootstrapPromise: Promise<void> | null = null;
+  let bootstrapExpiresAt = 0;
   let refreshPromise: Promise<void> | null = null;
 
   const bootstrap = async (force = false) => {
-    if (force) bootstrapPromise = null;
+    // Access cookies expire after 15 minutes. Recheck before the next write
+    // instead of keeping a successful bootstrap for the lifetime of the tab.
+    if (force || Date.now() >= bootstrapExpiresAt) bootstrapPromise = null;
     if (!bootstrapPromise) {
+      bootstrapExpiresAt = Date.now() + 10 * 60 * 1000;
       bootstrapPromise = fetcher(`${apiUrl}/auth/me`, {
         method: "GET",
         credentials: "include",
@@ -109,7 +113,11 @@ export function createProApiClient(options: ProApiClientOptions): ProApiClient {
       if (
         response.status === 401 ||
         (response.status === 404 &&
-          path.startsWith("/api/pro/conversion-batches/")) ||
+          (path.startsWith("/api/pro/conversion-batches") ||
+            path.startsWith("/api/pro/convert-edits/")) &&
+          !(await response.clone().text()).includes(
+            "Edit operation not found.",
+          )) ||
         (response.status === 400 &&
           path.startsWith("/api/pro/convert-edits/") &&
           (await response.clone().text()).includes(

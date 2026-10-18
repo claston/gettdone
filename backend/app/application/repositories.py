@@ -43,6 +43,8 @@ class ReportRepository(Protocol):
 
     def list_convert_history(self, identity_type: str, identity_id: str, limit: int = 20) -> list[dict[str, str]]: ...
 
+    def get_convert_edit_operation(self, analysis_id: str, operation_id: str) -> dict[str, object] | None: ...
+
     def apply_convert_edits(
         self,
         analysis_id: str,
@@ -53,6 +55,7 @@ class ReportRepository(Protocol):
         bank_branch: str | None = None,
         account_number: str | None = None,
         bank_code: str | None = None,
+        operation_id: str | None = None,
     ) -> dict[str, object]: ...
 
     def save_reconcile_report(

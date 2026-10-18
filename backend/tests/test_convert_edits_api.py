@@ -79,6 +79,42 @@ def build_client_with_user_owner(tmp_path: Path) -> tuple[TestClient, str]:
     return TestClient(app), user.token
 
 
+def test_edit_operation_confirms_and_replays_insert_without_duplication(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+    url = "/convert-edits/an_convert123?anonymous_fingerprint=fp-owner"
+    request = {"operation_id": "save-insert-123", "edits": [{
+        "action": "insert", "insert_position": 0, "date": "2026-04-03", "description": "NOVO", "credit": 12,
+    }]}
+    try:
+        first = client.post(url, json=request)
+        assert first.status_code == 200
+        repeated = client.post(url, json=request)
+        assert repeated.status_code == 200
+        assert repeated.json() == first.json()
+        assert repeated.json()["transactions_total"] == 3
+        status = client.get("/convert-edits/an_convert123/operations/save-insert-123?anonymous_fingerprint=fp-owner")
+        assert status.status_code == 200
+        assert status.json() == first.json()
+        pro_read = client.get("/api/pro/convert-edits/an_convert123/operations/save-insert-123?anonymous_fingerprint=fp-owner")
+        assert pro_read.status_code == 200
+        assert pro_read.json() == first.json()
+        denied_pro_read = client.get(
+            "/api/pro/convert-edits/an_convert123/operations/save-insert-123?anonymous_fingerprint=fp-other")
+        assert denied_pro_read.status_code == 403
+        read_with_body = client.request("GET",
+            "/convert-edits/an_convert123/operations/save-insert-123?anonymous_fingerprint=fp-owner",
+            json={"edits": [{**request["edits"][0], "credit": 99}]})
+        assert read_with_body.json() == first.json()
+        changed = {**request, "edits": [{**request["edits"][0], "credit": 99}]}
+        assert client.post(url, json=changed).status_code == 409
+        assert client.get("/convert-edits/an_convert123/operations/save-insert-123?anonymous_fingerprint=fp-other").status_code == 403
+        missing = client.get("/convert-edits/an_convert123/operations/not-saved?anonymous_fingerprint=fp-owner")
+        assert missing.status_code == 404
+        assert missing.json()["detail"] == "Edit operation not found."
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_convert_edits_updates_preview_and_csv_artifact(tmp_path: Path) -> None:
     client = build_client(tmp_path)
 
