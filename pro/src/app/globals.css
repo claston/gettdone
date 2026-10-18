@@ -1161,7 +1161,7 @@ button.save-indicator {
   flex-wrap: wrap;
   padding-block: 5px;
 }
-.page-sync-controls {
+.page-sync-notice {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1170,12 +1170,6 @@ button.save-indicator {
   font-size: 10px;
   color: var(--ink-500);
   border-bottom: 1px solid var(--line);
-}
-.page-sync-controls label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  cursor: pointer;
 }
 .source-unavailable {
   display: inline-block;

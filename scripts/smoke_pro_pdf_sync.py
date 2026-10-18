@@ -110,7 +110,7 @@ def run(base_url: str) -> None:
             expect(page.locator(".pdf-controls strong")).to_have_text(str(number))
 
         def aligned(number: int):
-            expect(page.get_by_text(f"Acompanhando página {number} · localização por página")).to_be_visible()
+            expect(page.locator(".pdf-controls strong")).to_have_text(str(number))
             page.wait_for_function("n => { const row = document.querySelector(`tr[data-source-page='${n}']`); const grid = document.querySelector('.table-scroll'); return Math.abs(row.getBoundingClientRect().top - grid.getBoundingClientRect().top - 32) < 3; }", arg=number)
 
         wheel_to(7)
@@ -118,18 +118,15 @@ def run(base_url: str) -> None:
         assert 0 < page.locator("canvas").count() < 10
         assert writes == []
         assert len(downloads) == 1
-        toggle = page.get_by_role("checkbox", name="Sincronizar PDF e lançamentos")
+        expect(page.get_by_role("checkbox", name="Sincronizar PDF e lançamentos")).to_have_count(0)
+        expect(page.get_by_text(re.compile("Acompanhando página"))).to_have_count(0)
         wheel_to(30)
         page.get_by_role("button", name="Diminuir zoom").click()
         expect(page.locator(".pdf-controls strong")).to_have_text("30")
         page.get_by_role("button", name="Ajustar à largura").click()
         wheel_to(7)
         aligned(7)
-        toggle.uncheck()
-        before = grid.evaluate("el => el.scrollTop")
         wheel_to(9)
-        assert grid.evaluate("el => el.scrollTop") == before
-        toggle.check()
         aligned(9)
         wheel_to(8)
         expect(page.get_by_text("Página 8: sem lançamentos associados")).to_be_visible()
@@ -149,14 +146,12 @@ def run(base_url: str) -> None:
         input_field = page.get_by_role("textbox", name="Descrição de Preserved edit", exact=True)
         before = grid.evaluate("el => el.scrollTop")
         wheel_to(9)
-        expect(page.get_by_text("Acompanhamento pausado durante a edição")).to_be_visible()
         expect(input_field).to_be_focused()
         assert grid.evaluate("el => el.scrollTop") == before
         input_field.press("Tab")
         expect(page.locator('input[value="Preserved edit"]')).to_be_visible()
         # Leaving the editor explicitly resumes at the current PDF page.
-        toggle.focus()
-        expect(page.get_by_text("Acompanhamento pausado durante a edição")).to_have_count(0)
+        page.get_by_role("button", name="Ajustar à largura").focus()
         aligned(9)
         page.get_by_role("button", name="Localizar origem de Page 2 transaction 0 no PDF (página 2)").click()
         expect(page.locator(".pdf-controls strong")).to_have_text("2")
@@ -183,7 +178,7 @@ def run(base_url: str) -> None:
         expect(page.locator('input[value="Preserved edit"]')).to_have_count(1)
         assert not any("review" in path for path in writes)
         assert errors == [], errors
-        print(json.dumps({"result": "PASS", "pages": 30, "transactions": len(transactions), "checks": ["real wheel scroll and grid alignment", "bounded canvases", "toggle", "unmatched pages", "filters", "grouped layout", "image-only page", "editing focus and resume", "explicit origin navigation", "no document reload", "zoom", "mobile 390px", "keyboard", "document switch preserving edits", "expired access and retry", "Promise.withResolvers fallback", "no review writes", "no browser errors"]}))
+        print(json.dumps({"result": "PASS", "pages": 30, "transactions": len(transactions), "checks": ["real wheel scroll and grid alignment", "bounded canvases", "automatic synchronization without controls or banner", "unmatched pages", "filters", "grouped layout", "image-only page", "editing focus and resume", "explicit origin navigation", "no document reload", "zoom", "mobile 390px", "keyboard", "document switch preserving edits", "expired access and retry", "Promise.withResolvers fallback", "no review writes", "no browser errors"]}))
         browser.close()
 
 

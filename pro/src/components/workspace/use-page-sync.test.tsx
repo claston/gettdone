@@ -15,14 +15,18 @@ describe("page synchronization", () => {
   });
   it("follows pages once, pauses during editing and resumes at the latest page", () => {
     const follow = vi.fn();
-    const { result } = renderHook(() => usePageSync(1, "row-1", follow));
+    const { result, rerender } = renderHook(
+      ({ page, id }) => usePageSync(page, id, follow),
+      { initialProps: { page: 1, id: "row-1" } },
+    );
     expect(follow).toHaveBeenCalledWith("row-1");
     act(() => result.current.setEditing(true));
-    expect(result.current.paused).toBe(true);
-    act(() => result.current.setEnabled(false));
-    act(() => result.current.setEditing(false));
+    expect(result.current.editing).toBe(true);
+    rerender({ page: 2, id: "row-2" });
     expect(follow).toHaveBeenCalledTimes(1);
-    act(() => result.current.setEnabled(true));
+    act(() => result.current.setEditing(false));
+    expect(follow).toHaveBeenLastCalledWith("row-2");
+    rerender({ page: 2, id: "row-2" });
     expect(follow).toHaveBeenCalledTimes(2);
   });
   it("ignores unmatched and filtered pages and keeps the latest pending target", () => {

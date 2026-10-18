@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { Conversion, Transaction } from "@/domain/workspace";
 import { TransactionGrid } from "./transaction-grid";
@@ -53,23 +53,26 @@ describe("grid page anchors", () => {
         onRestore: vi.fn(),
       };
       const { rerender } = render(<TransactionGrid {...props} />);
+      expect(
+        screen.queryByRole("checkbox", {
+          name: "Sincronizar PDF e lançamentos",
+        }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText(/Acompanhando página/)).not.toBeInTheDocument();
       const container = document.querySelector(".table-scroll") as HTMLElement;
       const second = screen.getByDisplayValue("Linha 2").closest("tr")!;
       vi.spyOn(second, "getBoundingClientRect").mockReturnValue({
         top: 400,
       } as DOMRect);
       const input = screen.getByDisplayValue("Linha 1");
-      input.focus();
+      act(() => input.focus());
       fireEvent.change(input, { target: { value: "Edição preservada" } });
       const before = container.scrollTop;
       rerender(<TransactionGrid {...props} activePage={2} />);
       expect(input).toHaveFocus();
       expect(container.scrollTop).toBe(before);
-      expect(
-        screen.getByText("Acompanhamento pausado durante a edição"),
-      ).toBeInTheDocument();
-      input.blur();
-      // React updates following blur are observed after the next interaction.
+      act(() => input.blur());
+      expect(container.scrollTop).toBeGreaterThan(before);
       fireEvent.click(
         screen.getByRole("button", { name: /Localizar origem de Linha 2/ }),
       );
@@ -103,7 +106,5 @@ describe("grid page anchors", () => {
       screen.getByText(/Página 2: nenhum lançamento visível neste filtro/),
     ).toBeInTheDocument();
     expect(screen.getAllByRole("row")).toHaveLength(1);
-    fireEvent.click(screen.getByRole("checkbox"));
-    expect(screen.getByText("Navegação independente")).toBeInTheDocument();
   });
 });

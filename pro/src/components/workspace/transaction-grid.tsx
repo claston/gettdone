@@ -187,33 +187,12 @@ export function TransactionGrid({
           <Plus size={14} /> Adicionar
         </button>
       </div>
-      {activePage !== null && (
-        <div className="page-sync-controls">
-          <label>
-            <input
-              type="checkbox"
-              checked={sync.enabled}
-              onChange={(event) => sync.setEnabled(event.target.checked)}
-            />{" "}
-            Sincronizar PDF e lançamentos
-          </label>
-          <span role="status">
-            {!sync.enabled
-              ? "Navegação independente"
-              : sync.paused
-                ? "Acompanhamento pausado durante a edição"
-                : !targetId
-                  ? hasPageRows
-                    ? `Página ${activePage}: nenhum lançamento visível neste filtro`
-                    : `Página ${activePage}: sem lançamentos associados`
-                  : `Acompanhando página ${activePage} · localização por página`}
-          </span>
+      {activePage !== null && !targetId && !sync.editing && (
+        <div className="page-sync-notice" role="status">
+          {hasPageRows
+            ? `Página ${activePage}: nenhum lançamento visível neste filtro`
+            : `Página ${activePage}: sem lançamentos associados`}
         </div>
-      )}
-      {conversion.pdf && activePage === null && (
-        <p className="page-sync-controls" role="status">
-          Acompanhamento aguardando o PDF. A revisão continua disponível.
-        </p>
       )}
       <div className="transaction-filters" aria-label="Filtros de lançamentos">
         <button
