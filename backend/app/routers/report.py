@@ -271,7 +271,6 @@ def get_convert_report(
 @router.get(
     "/api/pro/convert-edits/{processing_id}/operations/{operation_id}",
     response_model=ConvertEditsResponse,
-    dependencies=[Depends(require_pro_browser_request)],
 )
 @router.post(
     "/api/pro/convert-edits/{processing_id}",
