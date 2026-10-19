@@ -47,3 +47,4 @@ class _ParsedTransaction:
     raw_amount_token: str | None = None
     source_regions: list[SourceRegion] = field(default_factory=list)
     source_line_refs: tuple[tuple[int, int], ...] = ()
+    warnings: list[str] = field(default_factory=list)

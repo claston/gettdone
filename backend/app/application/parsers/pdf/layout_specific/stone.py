@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from app.application.errors import OcrFinancialAmbiguityError
 from app.application.normalization.pdf_amount_tokens import find_amount_tokens, parse_pdf_amount
 from app.application.normalization.pdf_row_date_rules import parse_row_date
 from app.application.parsers.pdf.layout_specific.contract import (
@@ -14,6 +15,7 @@ from app.application.parsers.pdf.layout_specific.shared import (
     infer_default_statement_year_from_lines,
     normalize_text,
 )
+from app.application.parsers.pdf.layout_specific.stone_ocr import resolve_stone_ocr_rows
 from app.application.parsers.pdf.models import _ParsedTransaction, _PdfLine
 
 STONE_CURRENT_ACCOUNT_A4_LAYOUT = "stone_extrato_conta_corrente_a4_v1"
@@ -35,13 +37,16 @@ class StoneLayoutParser:
         lines: list[_PdfLine],
         context: LayoutSpecificParseContext,
     ) -> LayoutSpecificParseResult | None:
-        _ = context
         if layout_name not in self.layout_names:
             return None
 
         rows = _parse_statement_rows(lines)
         if not rows:
             return None
+        if context.source_extraction is not None:
+            rows = resolve_stone_ocr_rows(rows, context.source_extraction)
+        elif any(row.running_balance is None and "$" in row.transaction.description for row in rows):
+            raise OcrFinancialAmbiguityError("Não foi possível separar valor e saldo no extrato Stone. Confira o PDF original.")
         return LayoutSpecificParseResult(
             rows=rows,
             selected_parser="layout_specific_stone_statement",
@@ -203,7 +208,7 @@ def _append_row(
         build_parsed_transaction(
             date=date,
             description=description,
-            amount=_resolve_amount_sign(amount, description=description),
+            amount=_resolve_amount_sign(amount, description=description, description_parts=description_parts),
             source_page=source.page_number,
             source_line=source.line_number,
             running_balance=running_balance,
@@ -212,11 +217,14 @@ def _append_row(
     )
 
 
-def _resolve_amount_sign(amount: float, *, description: str) -> float:
+def _resolve_amount_sign(amount: float, *, description: str, description_parts: list[str]) -> float:
     normalized = normalize_text(description)
-    if normalized.startswith("SAIDA"):
+    standalone_types = {normalize_text(part) for part in description_parts} & {"SAIDA", "ENTRADA"}
+    if len(standalone_types) > 1:
+        raise OcrFinancialAmbiguityError("O OCR identificou tipos de movimentação conflitantes no extrato Stone.")
+    if standalone_types == {"SAIDA"} or (not standalone_types and re.match(r"^SAIDA\b", normalized)):
         return -abs(amount)
-    if normalized.startswith("ENTRADA"):
+    if standalone_types == {"ENTRADA"} or (not standalone_types and re.match(r"^ENTRADA\b", normalized)):
         return abs(amount)
     return amount
 

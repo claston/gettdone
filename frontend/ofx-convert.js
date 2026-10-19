@@ -2095,6 +2095,8 @@
     if (value === "accounts_payable_pending") return "Pendente";
     if (value === "accounts_payable_partial") return "Parcial / pendente";
     const key = String(value || "").trim().toLowerCase();
+    if (key === "ocr_amount_recovered_from_balances") return "Valor recuperado";
+    if (key === "ocr_balance_recovered_from_context") return "Saldo recuperado";
     if (key === "balance_consistency_failed") {
       return "Saldo inconsistente";
     }
@@ -2114,6 +2116,8 @@
   }
 
   function mapWarningTypeExplanation(value) {
+    if (value === "ocr_amount_recovered_from_balances") return "O valor ilegível da tarifa foi recuperado pela conferência dos saldos e movimentos vizinhos. Confira no documento original antes de exportar.";
+    if (value === "ocr_balance_recovered_from_context") return "Um dígito ilegível do saldo foi recuperado pela conferência dos saldos e movimentos vizinhos. Confira no documento original antes de exportar.";
     if (value === "accounts_payable_pending") return "Conta em aberto: valor total com data de vencimento, ainda sem pagamento confirmado.";
     if (value === "accounts_payable_partial") return "Conta parcialmente paga: valor total com data de vencimento; o valor em aberto está no histórico.";
     const key = String(value || "").trim().toLowerCase();

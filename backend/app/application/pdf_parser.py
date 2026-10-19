@@ -603,6 +603,7 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
         ])
     is_monthly = infer_pdf_layout("\n".join(segmentation.page_texts)).layout_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
     if (textract_mode == "text" or is_monthly or has_explicit_no_activity(segmentation.page_texts)
+            or infer_pdf_layout("\n".join(segmentation.page_texts)).layout_name == _STONE_CURRENT_ACCOUNT_A4_LAYOUT
             or detect_financial_report("\n".join(segmentation.page_texts))):
         text_mode_result = _parse_scanned_pdf_with_textract_text_pages(statement_extraction)
         text_mode_metrics = dict(text_mode_result.parse_metrics)
@@ -737,8 +738,9 @@ def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
                 columnar_transactions_count=0,
             )
     try:
-        return _parse_pdf_transactions_from_page_texts(page_texts)
-    except (CrossPageTransactionSplitError, UnsupportedDocumentContentError, PdfFinancialValidationError):
+        result = _parse_pdf_transactions_from_page_texts(page_texts, context=LayoutSpecificParseContext(source_extraction=extraction))
+        return replace(result, source_extraction=extraction, source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
+    except (CrossPageTransactionSplitError, UnsupportedDocumentContentError, PdfFinancialValidationError, OcrFinancialAmbiguityError):
         raise
     except InvalidFileContentError:
         adapted = adapt_textract_extraction_to_transactions(extraction)

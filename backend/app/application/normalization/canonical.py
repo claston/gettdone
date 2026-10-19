@@ -71,6 +71,7 @@ def build_canonical_transactions(
             confidence=layout_confidence,
             source_regions=list(getattr(row, "source_regions", [])),
             source_line_refs=getattr(row, "source_line_refs", ()),
+            warnings=list(getattr(row, "warnings", [])),
         ), index + 1)
         for index, row in enumerate(rows)
     ]
