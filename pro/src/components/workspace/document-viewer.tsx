@@ -1,5 +1,8 @@
 "use client";
-import type { PdfNavigationRequest } from "./source-location";
+import type {
+  PdfNavigationRequest,
+  PdfReadingPosition,
+} from "./source-location";
 import { useState } from "react";
 import {
   FileText,
@@ -21,6 +24,7 @@ export function DocumentViewer({
   setPage,
   navigation,
   onAvailability,
+  onReadingPosition,
 }: {
   conversion: Conversion;
   repository: WorkspaceRepository;
@@ -28,6 +32,7 @@ export function DocumentViewer({
   setPage(page: number): void;
   navigation: PdfNavigationRequest | null;
   onAvailability(available: boolean): void;
+  onReadingPosition?(position: PdfReadingPosition): void;
 }) {
   const [zoom, setZoom] = useState<"page-width" | number>("page-width");
   const isDemo = conversion.pdf?.url.startsWith("/mock-statement");
@@ -40,6 +45,7 @@ export function DocumentViewer({
         setPage={setPage}
         navigation={navigation}
         onAvailability={onAvailability}
+        onReadingPosition={onReadingPosition}
       />
     );
   }

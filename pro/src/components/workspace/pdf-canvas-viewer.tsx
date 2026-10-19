@@ -1,10 +1,17 @@
 "use client";
-import type { PdfNavigationRequest } from "./source-location";
+import type {
+  PdfNavigationRequest,
+  PdfReadingPosition,
+} from "./source-location";
 import "./pdf-browser-support";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { validSourceRegions, regionScrollPosition } from "./source-location";
+import {
+  validSourceRegions,
+  regionScrollPosition,
+  pdfReadingPosition,
+} from "./source-location";
 import { PdfSourceHighlights } from "./pdf-source-highlights";
 import {
   activePageAt,
@@ -30,6 +37,7 @@ export default function PdfCanvasViewer({
   navigation,
   retry,
   onAvailability,
+  onReadingPosition,
 }: {
   url: string;
   name: string;
@@ -38,6 +46,7 @@ export default function PdfCanvasViewer({
   navigation: PdfNavigationRequest | null;
   retry(): void;
   onAvailability(available: boolean): void;
+  onReadingPosition?(position: PdfReadingPosition): void;
 }) {
   const stage = useRef<HTMLDivElement>(null);
   const alive = useRef(true);
@@ -52,20 +61,26 @@ export default function PdfCanvasViewer({
   );
   const previousBoxes = useRef(boxes);
   const position = useRef(0);
-  const appliedNavigation = useRef<number | null>(null);
+  const userScrolling = useRef(false);
+  const scrollFrame = useRef<number | null>(null);
+  const appliedNavigation = useRef<PdfNavigationRequest | null>(null);
   const selectedRegions = useMemo(
     () => validSourceRegions(navigation?.regions, sizes.length),
     [navigation, sizes.length],
   );
   const initialPage = useRef(page);
   const onPageRef = useRef(onPage);
+  const onReadingRef = useRef(onReadingPosition);
   useLayoutEffect(() => {
     onPageRef.current = onPage;
-  }, [onPage]);
+    onReadingRef.current = onReadingPosition;
+  }, [onPage, onReadingPosition]);
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
+      if (scrollFrame.current !== null)
+        cancelAnimationFrame(scrollFrame.current);
     };
   }, []);
   useEffect(() => {
@@ -81,6 +96,7 @@ export default function PdfCanvasViewer({
   useLayoutEffect(() => {
     const element = stage.current;
     if (!element || !boxes.length) return;
+    userScrolling.current = false;
     const previous = previousBoxes.current;
     const anchor = previous.length
       ? readingAnchor(previous, position.current)
@@ -99,11 +115,14 @@ export default function PdfCanvasViewer({
     if (
       !navigation ||
       !boxes.length ||
-      appliedNavigation.current === navigation.token ||
+      appliedNavigation.current === navigation ||
       !stage.current
     )
       return;
-    appliedNavigation.current = navigation.token;
+    // Clearing a selection can restart its token. Identity still distinguishes
+    // a new request while resize/zoom reuse the already applied request.
+    appliedNavigation.current = navigation;
+    if (navigation.scroll === false) return;
     if (
       !Number.isInteger(navigation.page) ||
       navigation.page < 1 ||
@@ -114,15 +133,29 @@ export default function PdfCanvasViewer({
     const region = selectedRegions.find(
       (item) => item.page === navigation.page,
     );
-    stage.current.scrollTop = region
-      ? regionScrollPosition(box, region, stage.current.clientHeight)
+    userScrolling.current = false;
+    const top = region
+      ? regionScrollPosition(
+          box,
+          region,
+          stage.current.clientHeight,
+          navigation.origin === "grid",
+        )
       : box.top;
-    if (region)
-      stage.current.scrollLeft = Math.max(
-        0,
-        (region.left + region.width / 2) * box.width -
-          stage.current.clientWidth / 2,
-      );
+    const smooth =
+      navigation.origin === "grid" &&
+      Math.abs(stage.current.scrollTop - top) <
+        stage.current.clientHeight * 1.5 &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const left = region
+      ? Math.max(
+          0,
+          (region.left + region.width / 2) * box.width -
+            stage.current.clientWidth / 2,
+        )
+      : stage.current.scrollLeft;
+    // Use one command so horizontal centering cannot cancel vertical animation.
+    stage.current.scrollTo({ top, left, behavior: smooth ? "smooth" : "auto" });
     position.current = stage.current.scrollTop;
     setViewport({
       top: stage.current.scrollTop,
@@ -156,6 +189,7 @@ export default function PdfCanvasViewer({
   };
   const go = (target: number) => {
     if (!stage.current || !boxes[target - 1]) return;
+    userScrolling.current = false;
     stage.current.scrollTop = boxes[target - 1].top;
     position.current = stage.current.scrollTop;
     setViewport({
@@ -163,6 +197,7 @@ export default function PdfCanvasViewer({
       height: stage.current.clientHeight,
     });
     onPage(target);
+    onReadingRef.current?.({ page: target, fraction: 0 });
   };
   const reportedPage = useRef(page);
   const onScroll = () => {
@@ -170,11 +205,31 @@ export default function PdfCanvasViewer({
     if (!element || !boxes.length) return;
     position.current = element.scrollTop;
     setViewport({ top: element.scrollTop, height: element.clientHeight });
-    const active = activePageAt(boxes, element.scrollTop, element.clientHeight);
-    if (active !== reportedPage.current) {
-      reportedPage.current = active;
-      onPageRef.current(active);
-    }
+    if (!userScrolling.current || scrollFrame.current !== null) return;
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = null;
+      if (!userScrolling.current || !alive.current) return;
+      const active = activePageAt(
+        boxes,
+        element.scrollTop,
+        element.clientHeight,
+      );
+      if (active !== reportedPage.current) {
+        reportedPage.current = active;
+        onPageRef.current(active);
+      }
+      onReadingRef.current?.(
+        pdfReadingPosition(boxes, element.scrollTop, element.clientHeight),
+      );
+    });
+  };
+  const startUserScroll = () => {
+    if (!userScrolling.current && stage.current)
+      stage.current.scrollTo({
+        top: stage.current.scrollTop,
+        behavior: "auto",
+      });
+    userScrolling.current = true;
   };
   useLayoutEffect(() => {
     reportedPage.current = page;
@@ -250,6 +305,29 @@ export default function PdfCanvasViewer({
         className="pdf-stage pdf-continuous"
         ref={stage}
         onScroll={onScroll}
+        onWheel={startUserScroll}
+        onTouchStart={startUserScroll}
+        onPointerDown={(event) => {
+          if (
+            event.pointerType === "touch" ||
+            event.target === event.currentTarget
+          )
+            startUserScroll();
+        }}
+        onKeyDown={(event) => {
+          if (
+            [
+              "ArrowDown",
+              "ArrowUp",
+              "PageDown",
+              "PageUp",
+              "Home",
+              "End",
+              " ",
+            ].includes(event.key)
+          )
+            startUserScroll();
+        }}
         tabIndex={0}
         role="region"
         aria-label="Visualizador do extrato original"

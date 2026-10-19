@@ -166,7 +166,7 @@ def run(base_url: str) -> None:
 
         def aligned(number: int):
             expect(page.locator(".pdf-controls strong")).to_have_text(str(number))
-            page.wait_for_function("n => { const row = document.querySelector(`tr[data-source-page='${n}']`); const grid = document.querySelector('.table-scroll'); return Math.abs(row.getBoundingClientRect().top - grid.getBoundingClientRect().top - 32) < 3; }", arg=number)
+            page.wait_for_function("n => { const row = document.querySelector(`tr.source-active-row[data-source-page='${n}']`) || document.querySelector(`tr[data-source-page='${n}']`); const grid = document.querySelector('.table-scroll'); return Math.abs(row.getBoundingClientRect().top - grid.getBoundingClientRect().top - 32) < 3; }", arg=number)
 
         wheel_to(7)
         aligned(7)
@@ -185,6 +185,7 @@ def run(base_url: str) -> None:
         aligned(9)
         wheel_to(8)
         expect(page.get_by_text("Página 8: sem lançamentos associados")).to_be_visible()
+        expect(page.locator("tr.source-active-row")).to_have_count(0)
 
         page.get_by_role("button", name=re.compile("Suspeitos")).click()
         wheel_to(9)
@@ -203,6 +204,11 @@ def run(base_url: str) -> None:
         wheel_to(9)
         expect(input_field).to_be_focused()
         assert grid.evaluate("el => el.scrollTop") == before
+        frozen_pdf = stage.evaluate("el => el.scrollTop")
+        page.locator("tr[data-transaction-id='tx-6-1']").hover()
+        page.wait_for_timeout(200)
+        expect(input_field).to_be_focused()
+        assert stage.evaluate("el => el.scrollTop") == frozen_pdf
         input_field.press("Tab")
         expect(page.locator('input[value="Preserved edit"]')).to_be_visible()
         # Leaving the editor explicitly resumes at the current PDF page.
@@ -219,6 +225,7 @@ def run(base_url: str) -> None:
 
         def locate(identifier: str):
             page.locator(f"tr[data-transaction-id='{identifier}'] button[title='Destacar origem no PDF']").click()
+            expect(page.locator("tr.source-active-row")).to_have_attribute("data-transaction-id", identifier)
 
         def verify_overlay(identifier: str, number: int):
             overlays = page.locator(f"[data-pdf-page='{number}'] .pdf-source-highlight[data-source-transaction='{identifier}']")
@@ -249,6 +256,64 @@ def run(base_url: str) -> None:
                     page.screenshot(path=str(evidence / "region-debug.png"))
                     raise
 
+        # Mouse movement selects and highlights a row without the origin button.
+        writes_before_sync = list(writes)
+        page.locator("tr[data-transaction-id='tx-2-5']").hover()
+        expect(page.locator("tr.source-active-row")).to_have_attribute("data-transaction-id", "tx-2-5")
+        verify_overlay("tx-2-5", 2)
+        page.wait_for_function("""() => {
+            const el = document.querySelector('.pdf-stage'), region = document.querySelector(".pdf-source-highlight[data-source-transaction='tx-2-5']");
+            return region && Math.abs(region.getBoundingClientRect().top + region.getBoundingClientRect().height / 2 - el.getBoundingClientRect().top - Math.min(120, el.clientHeight * 0.2)) < 2;
+        }""")
+        grid_before = grid.evaluate("el => el.scrollTop")
+        page.wait_for_timeout(350)
+        assert grid.evaluate("el => el.scrollTop") == grid_before
+        assert len(downloads) == 1
+
+        # Real wheel scrolling of the table drives PDF navigation, without a
+        # programmatic PDF scroll pulling the table back to its previous row.
+        grid.hover()
+        page.mouse.wheel(0, 220)
+        page.wait_for_function("() => { const row = document.querySelector('tr.source-active-row'); return row && row.dataset.transactionId !== 'tx-2-5'; }")
+        table_selected = page.locator("tr.source-active-row").get_attribute("data-transaction-id")
+        assert table_selected
+        expect(page.locator(f".pdf-source-highlight[data-source-transaction='{table_selected}']").first).to_be_visible()
+        page.wait_for_timeout(500)
+        assert page.locator("tr.source-active-row").get_attribute("data-transaction-id") == table_selected
+        steady_grid = grid.evaluate("el => el.scrollTop")
+        page.wait_for_timeout(250)
+        assert grid.evaluate("el => el.scrollTop") == steady_grid
+
+        # PDF scrolling selects another transaction inside the same page, and
+        # highlights both views. The automatic table scroll must not move PDF.
+        source = next(row for row in transactions if row["transaction_id"] == "tx-2-15")["source_regions"][0]
+        stage.hover()
+        delta = stage.evaluate("""(el, r) => {
+            const slot = el.querySelector(`[data-pdf-page='${r.page}']`);
+            return slot.getBoundingClientRect().top - el.getBoundingClientRect().top + (r.top + r.height / 2) * slot.getBoundingClientRect().height - Math.min(120, el.clientHeight * 0.2);
+        }""", source)
+        page.mouse.wheel(0, delta)
+        expect(page.locator("tr.source-active-row")).to_have_attribute("data-transaction-id", "tx-2-15")
+        verify_overlay("tx-2-15", 2)
+        aligned(2)
+        steady_pdf = stage.evaluate("el => el.scrollTop")
+        page.wait_for_timeout(350)
+        assert abs(stage.evaluate("el => el.scrollTop") - steady_pdf) < 2
+        assert writes == writes_before_sync
+
+        # Reselecting the current file clears selection without remounting PDF.
+        # New hover requests still navigate even when their token restarts.
+        for identifier in ("tx-2-6", "tx-2-7"):
+            page.get_by_role("option", name=re.compile("long.pdf")).click()
+            expect(page.locator(".pdf-source-highlight")).to_have_count(0)
+            page.locator(f"tr[data-transaction-id='{identifier}']").hover()
+            verify_overlay(identifier, 2)
+            page.wait_for_function("""id => {
+                const el = document.querySelector('.pdf-stage'), region = document.querySelector(`.pdf-source-highlight[data-source-transaction='${id}']`);
+                return region && Math.abs(region.getBoundingClientRect().top + region.getBoundingClientRect().height / 2 - el.getBoundingClientRect().top - Math.min(120, el.clientHeight * 0.2)) < 2;
+            }""", arg=identifier)
+        assert len(downloads) == 1
+
         locate("tx-6-0")
         verify_overlay("tx-6-0", 6)
         locate("tx-2-10")
@@ -261,9 +326,13 @@ def run(base_url: str) -> None:
         assert page.locator("[data-pdf-page='2'] .pdf-source-highlight").first.get_attribute("style") == region_before
         locate("tx-2-10")
         assert len(downloads) == 1
-        page.get_by_role("button", name="Próxima página", exact=True).click()
+        # Editing pauses the inverse follow, retaining the selected transaction's
+        # multiple original regions while reading its continuation page.
+        selected_input.focus()
+        wheel_to(3)
         expect(page.locator(".pdf-controls strong")).to_have_text("3")
         verify_overlay("tx-2-10", 3)
+        page.get_by_role("button", name="Ajustar à largura").focus()
         locate("tx-3-10")
         expect(page.locator(".pdf-source-highlight[data-source-transaction='tx-2-10']")).to_have_count(0)
         verify_overlay("tx-3-10", 3)
@@ -301,6 +370,9 @@ def run(base_url: str) -> None:
             "document switch preserving edits", "expired access and retry", "Promise.withResolvers fallback",
             "no review writes", "no browser errors", "source overlays over real canvas ink", "multiline and multipage regions",
             "intrinsic page rotation and crop", "stable origin after editing", "legacy page-only fallback", "cleared document selection",
+            "hover highlight without clicking", "table wheel drives PDF", "PDF wheel follows transactions within a page",
+            "stationary pointer does not change the followed row", "no bidirectional scroll feedback", "hover paused during editing",
+            "navigation after clearing and reselecting the current document",
         ]}))
         browser.close()
 

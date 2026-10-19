@@ -39,7 +39,11 @@ import type {
 import { useWorkspaceController } from "./use-workspace-controller";
 import { DocumentViewer } from "./document-viewer";
 import { TransactionGrid } from "./transaction-grid";
-import { sourceLocation, type PdfNavigationRequest } from "./source-location";
+import {
+  sourceLocation,
+  type PdfNavigationRequest,
+  type PdfReadingPosition,
+} from "./source-location";
 
 interface WorkspaceScreenProps {
   batchId: string;
@@ -319,6 +323,9 @@ export function WorkspaceScreen({
     (PdfNavigationRequest & { id: string }) | null
   >(null);
   const [readyDocument, setReadyDocument] = useState<string | null>(null);
+  const [reading, setReading] = useState<
+    (PdfReadingPosition & { id: string }) | null
+  >(null);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -489,10 +496,12 @@ export function WorkspaceScreen({
           onCollapse={() => setNavigatorCollapsed((value) => !value)}
           onSelect={(id) => {
             setNavigation(null);
+            setReading(null);
             controller.selectConversion(id);
           }}
           onNext={() => {
             setNavigation(null);
+            setReading(null);
             controller.goToNextPending();
           }}
         />
@@ -503,6 +512,20 @@ export function WorkspaceScreen({
               conversion={activeConversion}
               repository={activeRepository}
               navigation={activeNavigation}
+              onReadingPosition={(position) => {
+                const id = `${activeConversion.id}:${activeConversion.pdf?.url}`;
+                setReading({ ...position, id });
+                setNavigation((current) =>
+                  current?.id === id && current.origin === "grid"
+                    ? {
+                        ...current,
+                        origin: "pdf",
+                        scroll: false,
+                        token: current.token + 1,
+                      }
+                    : current,
+                );
+              }}
               onAvailability={(available) =>
                 setReadyDocument(
                   available
@@ -584,24 +607,36 @@ export function WorkspaceScreen({
                     ? (pages[activeConversion.id] ?? 1)
                     : null
                 }
-                onLocateTransaction={(transactionId) => {
+                onLocateTransaction={(transactionId, options) => {
                   const transaction = activeConversion.transactions.find(
                     (row) => row.id === transactionId,
                   );
                   const target = transaction && sourceLocation(transaction);
                   if (!target) return;
-                  setPages((current) => ({
-                    ...current,
-                    [activeConversion.id]: target.page,
-                  }));
+                  if (options?.scroll !== false)
+                    setPages((current) => ({
+                      ...current,
+                      [activeConversion.id]: target.page,
+                    }));
                   setNavigation((current) => ({
                     ...target,
+                    ...options,
+                    origin: options?.origin ?? "grid",
                     id: `${activeConversion.id}:${activeConversion.pdf?.url}`,
                     token: (current?.token ?? 0) + 1,
                   }));
                 }}
                 locatedTransactionId={activeNavigation?.transactionId}
+                onClearSource={() => setNavigation(null)}
+                followPdf={activeNavigation?.origin !== "grid"}
+                readingPosition={
+                  reading?.id ===
+                  `${activeConversion.id}:${activeConversion.pdf?.url}`
+                    ? reading
+                    : undefined
+                }
                 onSourcePage={(page) => {
+                  setReading(null);
                   setPages((current) => ({
                     ...current,
                     [activeConversion.id]: page,
@@ -647,6 +682,7 @@ export function WorkspaceScreen({
           className="footer-action"
           onClick={() => {
             setNavigation(null);
+            setReading(null);
             controller.goToNextPending();
           }}
         >
