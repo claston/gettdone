@@ -9,6 +9,37 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+it("preserva eventos especializados e escolhe Excel em vez de OFX bancário", async () => {
+  const payload = structuredClone(batchPayload);
+  const report = {
+    document_type: "fiscal_summary",
+    origin: "GDOOR",
+    notice: "Emissão não é recebimento.",
+    events: [],
+    validations: [],
+    export: {
+      available_formats: ["csv", "xlsx"],
+      requires_destination_account: false,
+    },
+  };
+  Object.assign(payload.jobs[0].result!.analysis, {
+    financial_document: report,
+  });
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(jsonResponse({}))
+    .mockResolvedValueOnce(jsonResponse(payload));
+  const repository = createHttpWorkspaceRepository({
+    apiUrl: "https://api.example.test",
+    fetcher,
+  });
+  const batch = await repository.getBatch("batch-real");
+  expect(batch.conversions[0].financialDocument).toEqual(report);
+  expect(batch.conversions[0].downloadUrl).toBe(
+    "https://api.example.test/convert-report/an_real?format=xlsx",
+  );
+});
+
 it("preserva regiões de origem ao salvar sem enviá-las como campos editáveis", async () => {
   const payload = structuredClone(batchPayload);
   const region = { page: 1, left: 0.1, top: 0.4, width: 0.6, height: 0.02 };

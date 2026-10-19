@@ -621,9 +621,12 @@ def export_conversion_batch(
         for record in snapshot.jobs:
             if record.result is None:
                 continue
+            analysis = (record.result.payload or {}).get("analysis") or {}
+            file_format = "xlsx" if analysis.get("financial_document") is not None else "ofx"
             report_path = _find_convert_report(
                 record.result.analysis_id,
                 candidates=candidates,
+                file_format=file_format,
             )
             if report_path is None:
                 continue
@@ -631,6 +634,7 @@ def export_conversion_batch(
                 filename=record.job.document.filename,
                 analysis_id=record.result.analysis_id,
                 used_names=used_names,
+                file_format=file_format,
             )
             archive.writestr(archive_name, report_path.read_bytes())
             exported += 1
@@ -674,23 +678,23 @@ def _owned_snapshot(
     return snapshot
 
 
-def _find_convert_report(analysis_id: str, *, candidates: list[ReportService]) -> Path | None:
+def _find_convert_report(analysis_id: str, *, candidates: list[ReportService], file_format: str = "ofx") -> Path | None:
     for candidate in candidates:
         try:
-            return candidate.get_convert_report_path(analysis_id, file_format="ofx")
+            return candidate.get_convert_report_path(analysis_id, file_format=file_format)
         except AnalysisNotFoundError:
             continue
     return None
 
 
-def _unique_export_name(*, filename: str, analysis_id: str, used_names: set[str]) -> str:
+def _unique_export_name(*, filename: str, analysis_id: str, used_names: set[str], file_format: str = "ofx") -> str:
     stem = Path(filename).stem.strip() or analysis_id
     sanitized = "".join(character if character.isalnum() or character in {"-", "_"} else "-" for character in stem)
     base = sanitized.strip("-") or analysis_id
-    candidate = f"{base}.ofx"
+    candidate = f"{base}.{file_format}"
     suffix = 2
     while candidate.lower() in used_names:
-        candidate = f"{base}-{suffix}.ofx"
+        candidate = f"{base}-{suffix}.{file_format}"
         suffix += 1
     used_names.add(candidate.lower())
     return candidate

@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+from app.application.conversion.contracts.financial_documents import FinancialDocumentPayload
 from app.application.source_regions import SourceRegion
 
 
@@ -160,6 +161,7 @@ class AnalyzeResponse(BaseModel):
     account_number: str | None = None
     bank_code: str | None = None
     document_parts: list[dict[str, object]] = []
+    financial_document: FinancialDocumentPayload | None = None
 
 
 class ConvertResponse(BaseModel):

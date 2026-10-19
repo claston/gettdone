@@ -7,6 +7,7 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
+from app.application.financial_document_detection import detect_financial_report
 from app.application.normalization.text import normalize_upper_text
 from app.application.unsupported_document_detection import (
     ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE,
@@ -29,7 +30,7 @@ FINANCIAL_SPREADSHEET = "financial_spreadsheet"
 OTHER_DOCUMENT = "other"
 UNKNOWN_DOCUMENT = "unknown"
 
-DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-10-16.4"
+DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-10-19.1"
 
 _PDF_PREVIEW_PAGE_LIMIT = 3
 _PDF_PREVIEW_CHAR_LIMIT = 16_000
@@ -58,6 +59,10 @@ def classify_document_type(
 
     if extension == "ofx" or "<OFX" in normalized_text:
         return _classification(BANK_STATEMENT, 1.0, "ofx_structure")
+
+    financial_report = detect_financial_report(text)
+    if financial_report is not None:
+        return _classification(financial_report[0], 0.99, financial_report[1])
 
     unsupported_type = detect_unsupported_document_type(text)
     if unsupported_type == ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE:

@@ -33,6 +33,7 @@ class ParsedDocument:
     account_number: str | None = None
     source_extraction: RawDocumentExtraction | None = None
     document_parts: list[dict[str, object]] | None = None
+    financial_document: dict | None = None
 
 
 class ParsingService:
@@ -115,6 +116,7 @@ class ParsingService:
                 source_layout_lines=getattr(result, "source_layout_lines", None),
                 source_extraction=getattr(result, "source_extraction", None),
                 document_parts=getattr(result, "document_parts", None),
+                financial_document=getattr(result, "financial_document", None),
                 parse_metrics=result.parse_metrics,
                 canonical_transactions=result.canonical_transactions,
             )

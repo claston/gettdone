@@ -13,6 +13,134 @@ const script = readFileSync(
 );
 
 describe("revisor HTML do OFX Simples", () => {
+  it.each(["receivables_report", "investment_statement", "fiscal_summary"])(
+    "preserva a semântica e os formatos ao reabrir %s",
+    async (documentType) => {
+      const dom = new JSDOM(html, {
+        url: "https://ofx.test/ofx-convert.html",
+        runScripts: "outside-only",
+        pretendToBeVisual: true,
+      });
+      const receipt = documentType === "receivables_report";
+      const rows = [
+        {
+          date: "2026-09-01",
+          description: "Documento de exemplo",
+          amount: 100,
+        },
+      ];
+      const report = {
+        document_type: documentType,
+        notice: "Campos de origem preservados.",
+        validations: [],
+        events: [
+          {
+            description: "Documento de exemplo",
+            event_type: receipt ? "receipt" : "fiscal_document",
+            amount: "100.00",
+            status: "issued",
+            reference: "0001",
+            source_refs: [{ page: 1, line: 4 }],
+          },
+        ],
+        export: {
+          available_formats: receipt ? ["csv", "xlsx", "ofx"] : ["csv", "xlsx"],
+          requires_destination_account: receipt,
+          reason: "OFX indisponível.",
+        },
+      };
+      dom.window.fetch = vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ banks: [{ code: "237", label: "Bradesco" }] }),
+          ),
+      );
+      dom.window.OfxSession = {
+        getCurrentUser: vi.fn(async () => ({
+          email: "owner@test",
+          quota_remaining: 10,
+          quota_limit: 50,
+        })),
+        request: vi.fn(
+          async () =>
+            new Response(JSON.stringify({ detail: "Resposta de teste" }), {
+              status: 400,
+            }),
+        ),
+      };
+      Object.defineProperty(dom.window.performance, "getEntriesByType", {
+        value: () => [{ type: "reload" }],
+      });
+      dom.window.sessionStorage.setItem(
+        "ofxsimples_ofx_convert_view_state_ofx_v1",
+        JSON.stringify({
+          processing_id: "an_report",
+          analysis: {
+            analysis_id: "an_report",
+            document_type: documentType,
+            financial_document: report,
+            preview_transactions: rows,
+            total_inflows: receipt ? 100 : 0,
+            total_outflows: 0,
+          },
+          preview_rows: rows,
+          original_rows: rows,
+        }),
+      );
+      try {
+        dom.window.eval(script);
+        await vi.waitFor(() =>
+          expect(
+            dom.window.document.querySelector("#kpis").textContent,
+          ).toContain(report.notice),
+        );
+        const document = dom.window.document;
+        const headers = [
+          ...document.querySelectorAll("#review-section thead th"),
+        ].map((cell) => cell.textContent);
+        expect(headers).toContain("Valor");
+        expect(headers).not.toContain("Crédito");
+        expect(document.querySelector("#closing-balance-input")).toBeNull();
+        expect(document.querySelector('[data-action="edit-row"]')).toBeNull();
+        expect(document.querySelector("#add-row-btn").hidden).toBe(true);
+        const ofxButton = document.querySelector("#download-ofx-btn");
+        expect(ofxButton.disabled).toBe(!receipt);
+        expect(document.querySelector("#download-excel-btn").disabled).toBe(
+          false,
+        );
+        if (receipt) {
+          for (const [id, value] of [
+            ["bank-code-select", "237"],
+            ["bank-branch-input", "1234"],
+            ["account-number-input", "56789"],
+          ]) {
+            const input = document.getElementById(id);
+            input.value = value;
+            input.dispatchEvent(
+              new dom.window.Event("change", { bubbles: true }),
+            );
+          }
+          ofxButton.click();
+          const call = await vi.waitFor(() => {
+            const result = dom.window.OfxSession.request.mock.calls.find(
+              ([url]) => url.includes("/convert-report/"),
+            );
+            expect(result).toBeDefined();
+            return result;
+          });
+          expect(call[0]).toContain("account_number=56789");
+          expect(call[0]).not.toContain("closing_balance");
+          expect(
+            dom.window.OfxSession.request.mock.calls.some(([url]) =>
+              url.includes("/convert-edits/"),
+            ),
+          ).toBe(false);
+        }
+      } finally {
+        dom.window.close();
+      }
+    },
+  );
   it("informa extrato sem movimentação e mantém o download habilitado após reabrir", async () => {
     const dom = new JSDOM(html, {
       url: "https://ofx.test/ofx-convert.html",

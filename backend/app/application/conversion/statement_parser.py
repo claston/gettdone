@@ -77,6 +77,7 @@ class LegacyExtractedDocumentStatementParser:
                 "bank_branch": parsed_document.bank_branch,
                 "account_number": parsed_document.account_number,
                 "document_parts": parsed_document.document_parts,
+                "financial_document": parsed_document.financial_document,
             },
         )
 
@@ -115,6 +116,7 @@ def resolve_legacy_parsed_statement(parsed_statement: ParsedBankStatement) -> Pa
         account_number=metadata.get("account_number"),
         source_extraction=parsed_statement.source_extraction,
         document_parts=metadata.get("document_parts"),
+        financial_document=metadata.get("financial_document"),
     )
 
 

@@ -31,6 +31,9 @@ def build_analyze_response(
             description=f"Extrato {extension.upper()} processado com parser real e normalizacao inicial.",
         )
     ]
+    if analysis_data.financial_document is not None:
+        insights = [Insight(type="financial_document_extracted", title="Relatório identificado e extraído",
+                            description=analysis_data.financial_document["notice"])]
     if _metrics_get(analysis_data.pdf_processing_metrics, "statement_no_activity", 0) == 1:
         insights.append(Insight(
             type="statement_no_activity",
@@ -129,6 +132,7 @@ def build_analyze_response(
         account_number=analysis_data.account_number,
         bank_code=analysis_data.bank_code,
         document_parts=analysis_data.document_parts,
+        financial_document=analysis_data.financial_document,
     )
 
 

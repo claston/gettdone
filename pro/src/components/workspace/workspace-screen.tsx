@@ -44,6 +44,7 @@ import type {
 import { useWorkspaceController } from "./use-workspace-controller";
 import { DocumentViewer } from "./document-viewer";
 import { TransactionGrid } from "./transaction-grid";
+import { FinancialReportReview } from "./financial-report-review";
 import {
   sourceLocation,
   transactionRegions,
@@ -551,7 +552,8 @@ export function WorkspaceScreen({
               href={activeConversion.downloadUrl}
               download
             >
-              <Download size={15} /> Baixar OFX
+              <Download size={15} /> Baixar{" "}
+              {activeConversion.financialDocument ? "Excel" : "OFX"}
             </a>
           )}
           <button
@@ -728,6 +730,13 @@ export function WorkspaceScreen({
                     : "Atualizar agora"}
                 </button>
               </section>
+            ) : activeConversion.financialDocument ? (
+              <FinancialReportReview
+                key={activeConversion.id}
+                report={activeConversion.financialDocument}
+                downloadUrl={activeConversion.downloadUrl}
+                onSource={(id) => selectPdfTransaction(id)}
+              />
             ) : (
               <TransactionGrid
                 key={`grid-${activeConversion.id}`}

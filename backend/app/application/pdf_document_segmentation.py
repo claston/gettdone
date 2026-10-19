@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from app.application.document_type_classifier import BANK_RECEIPT, BANK_STATEMENT, FISCAL_INVOICE, UNKNOWN_DOCUMENT, classify_document_type
 from app.application.errors import UnsupportedDocumentContentError
+from app.application.financial_document_detection import FISCAL_SUMMARY, INVESTMENT_STATEMENT, RECEIVABLES_REPORT
 from app.application.normalization.text import normalize_upper_text
 
 _DATE_PATTERN = (
@@ -37,7 +38,8 @@ def segment_pdf_pages(page_texts: list[str] | tuple[str, ...]) -> SegmentedPdf:
                      "Envie cada extrato separadamente para evitar misturar lançamentos."),
         )
     has_statement = BANK_STATEMENT in kinds
-    has_annex = any(kind in {FISCAL_INVOICE, BANK_RECEIPT} for kind in kinds)
+    annex_types = {FISCAL_INVOICE, BANK_RECEIPT, FISCAL_SUMMARY, INVESTMENT_STATEMENT, RECEIVABLES_REPORT}
+    has_annex = any(kind in annex_types for kind in kinds)
     if not has_statement or not has_annex:
         return SegmentedPdf(source, source, [])
 

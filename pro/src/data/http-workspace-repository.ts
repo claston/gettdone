@@ -4,6 +4,7 @@ import type {
   Conversion,
   ConversionStatus,
   ExportResult,
+  FinancialDocument,
   Transaction,
   WorkspaceRepository,
 } from "@/domain/workspace";
@@ -31,6 +32,7 @@ interface ApiTransaction {
 }
 
 interface ApiAnalysis {
+  financial_document?: FinancialDocument | null;
   file_type?: string;
   bank_name?: string | null;
   bank_code?: string | null;
@@ -508,8 +510,9 @@ function mapConversion({
             fileName: job.filename,
           },
     downloadUrl: analysisId
-      ? `${apiUrl}/convert-report/${encodeURIComponent(analysisId)}?format=ofx`
+      ? `${apiUrl}/convert-report/${encodeURIComponent(analysisId)}?format=${analysis?.financial_document ? "xlsx" : "ofx"}`
       : undefined,
+    financialDocument: analysis?.financial_document,
     noActivity: analysis?.pdf_processing_metrics?.statement_no_activity === 1,
     transactions,
   };

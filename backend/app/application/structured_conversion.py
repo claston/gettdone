@@ -105,6 +105,7 @@ class StructuredConversionResult:
     timestamps: StructuredResultTimestamps
     contract_version: str = STRUCTURED_CONVERSION_CONTRACT_VERSION
     metrics: dict[str, Any] | None = None
+    financial_document: dict | None = None
 
 
 def build_structured_conversion_result_from_analysis_data(
@@ -160,7 +161,7 @@ def build_structured_conversion_result_from_analysis_data(
             potential_duplicates=analysis_data.potential_duplicates,
         ),
         transactions=[
-            _build_structured_transaction(row=row, index=index)
+            _build_structured_transaction(row=row, index=index, financial_document=analysis_data.financial_document)
             for index, row in enumerate(report_rows, start=1)
         ],
         before_after=[
@@ -171,12 +172,15 @@ def build_structured_conversion_result_from_analysis_data(
             recommended_review=recommendation_code == "review_recommended",
             recommendation_code=recommendation_code,
             recommendation_reason=recommendation_reason,
+            available_formats=(analysis_data.financial_document["export"]["available_formats"]
+                               if analysis_data.financial_document else ["json", "ofx", "csv", "xlsx"]),
         ),
         timestamps=StructuredResultTimestamps(
             updated_at=analysis_data.updated_at,
             expires_at=expires_at,
         ),
         metrics=metrics,
+        financial_document=analysis_data.financial_document,
     )
 
 
@@ -184,10 +188,14 @@ def _build_structured_transaction(
     *,
     row: TransactionRow,
     index: int,
+    financial_document: dict | None = None,
 ) -> StructuredConversionTransaction:
     transaction_type = "inflow" if float(row.amount) >= 0 else "outflow"
+    if financial_document is not None:
+        event = financial_document["events"][index - 1]
+        transaction_type = event["event_type"]
     return StructuredConversionTransaction(
-        transaction_id=f"txn_{index:04d}",
+        transaction_id=row.transaction_id if financial_document else f"txn_{index:04d}",
         date=row.date,
         description=row.description,
         amount=row.amount,

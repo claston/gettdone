@@ -15,6 +15,8 @@ from app.application.errors import (
     PdfFinancialValidationError,
     UnsupportedDocumentContentError,
 )
+from app.application.financial_document_detection import detect_financial_report
+from app.application.financial_event_projection import parse_financial_pdf_pages
 from app.application.layout_profiles.registry import DeclarativeLayoutProfile, get_layout_profile
 from app.application.models import CanonicalTransaction as CanonicalTransaction
 from app.application.models import NormalizedTransaction
@@ -165,6 +167,7 @@ def _with_parse_observability(
         source_layout_lines=result.source_layout_lines,
         source_extraction=result.source_extraction,
         document_parts=result.document_parts,
+        financial_document=result.financial_document,
     )
 
 
@@ -285,6 +288,7 @@ def _parse_pdf_transactions(
                     parse_metrics=fallback_metrics,
                     source_page_texts=fallback_result.source_page_texts,
                     document_parts=fallback_result.document_parts,
+                    financial_document=fallback_result.financial_document,
                 ),
                 textract_attempted=textract_attempted,
                 native_text_detected=native_text_detected,
@@ -392,6 +396,9 @@ def _parse_pdf_transactions(
             native_text_detected=native_text_detected,
             reference_month_year=reference_month_year,
         )
+    if primary_result.financial_document is not None:
+        return _with_parse_observability(primary_result, textract_attempted=textract_attempted,
+                                         native_text_detected=native_text_detected)
     if using_native_text:
         primary_result = _maybe_upgrade_native_parse_with_layout_text(raw_bytes=raw_bytes, baseline_result=primary_result)
     primary_result = _with_parse_observability(
@@ -479,6 +486,7 @@ def _retry_insufficient_native_text_with_ocr(
             extracted_text=ocr_result.extracted_text,
             parse_metrics=parse_metrics,
             source_page_texts=ocr_result.source_page_texts,
+            financial_document=ocr_result.financial_document,
         ),
         textract_attempted=textract_attempted,
         native_text_detected=native_text_detected,
@@ -540,6 +548,7 @@ def _retry_native_parse_failure_with_ocr(
             extracted_text=ocr_result.extracted_text,
             parse_metrics=parse_metrics,
             source_page_texts=ocr_result.source_page_texts,
+            financial_document=ocr_result.financial_document,
         ),
         textract_attempted=textract_attempted,
         native_text_detected=native_text_detected,
@@ -593,7 +602,8 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
             page for page in extraction.pages if segmentation.page_texts[page.page_number - 1]
         ])
     is_monthly = infer_pdf_layout("\n".join(segmentation.page_texts)).layout_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
-    if textract_mode == "text" or is_monthly or has_explicit_no_activity(segmentation.page_texts):
+    if (textract_mode == "text" or is_monthly or has_explicit_no_activity(segmentation.page_texts)
+            or detect_financial_report("\n".join(segmentation.page_texts))):
         text_mode_result = _parse_scanned_pdf_with_textract_text_pages(statement_extraction)
         text_mode_metrics = dict(text_mode_result.parse_metrics)
         text_mode_metrics["extraction_provider"] = "aws_textract"
@@ -612,6 +622,7 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
             source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages),
             source_extraction=extraction,
             document_parts=segmentation.parts or text_mode_result.document_parts,
+            financial_document=text_mode_result.financial_document,
         )
     adapted = adapt_textract_extraction_to_transactions(statement_extraction)
     inferred_layout = infer_pdf_layout(adapted.extracted_text)
@@ -791,6 +802,9 @@ def _parse_statement_page_texts(
     preserve_layout_spacing: bool = False,
     context: LayoutSpecificParseContext | None = None,
 ) -> PdfParseResult:
+    financial_result = parse_financial_pdf_pages(page_texts, native=bool(context and context.is_native_text))
+    if financial_result is not None:
+        return financial_result
     joined_text = "\n".join(page_texts)
     unsupported_document_type = detect_unsupported_document_type(joined_text)
     if has_accounts_payable_title(joined_text):
