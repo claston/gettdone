@@ -6,6 +6,7 @@ from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
 from app.application.bank_resolver import resolve_bank_code
+from app.application.financial_document_export import write_financial_artifacts, write_financial_workbook
 from app.application.models import AnalysisData, NormalizedTransaction, TransactionRow
 from app.application.ofx_writer import build_ofx_statement
 from app.application.parsers.pdf.layout_specific.wise import WISE_CURRENCIES
@@ -19,6 +20,9 @@ class ExportArtifactService:
         report_rows: list[TransactionRow],
         snapshot: AnalysisData,
     ) -> None:
+        if snapshot.financial_document is not None:
+            write_financial_workbook(output_path, snapshot.financial_document)
+            return
         workbook = Workbook()
         sheet = workbook.active
         sheet.title = "Transacoes"
@@ -41,7 +45,12 @@ class ExportArtifactService:
         bank_branch: str | None = None,
         account_number: str | None = None,
         bank_code: str | None = None,
+        financial_document: dict | None = None,
     ) -> None:
+        if financial_document is not None:
+            write_financial_artifacts(output_dir, financial_document, bank_code=bank_code,
+                                      bank_branch=bank_branch, account_number=account_number)
+            return
         active_rows = self._active_rows(report_rows)
         ofx_rows = [item for item in active_rows if not self._is_opening_balance_row(item)]
         normalized_transactions = [

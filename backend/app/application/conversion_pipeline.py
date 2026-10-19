@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+from decimal import Decimal
 from time import perf_counter
 from typing import Callable, Protocol
 from uuid import NAMESPACE_URL, uuid5
@@ -15,10 +18,12 @@ from app.application.document_type_classifier import (
     DocumentTypeClassification,
     classify_document_type,
 )
+from app.application.financial_event_projection import event_amount, event_date
 from app.application.models import AnalysisData, BeforeAfterRow, NormalizedTransaction, TransactionRow
 from app.application.normalization.transaction_normalizer import normalize_transactions as default_normalize_transactions
 from app.application.parsers.service import ParsedDocument, ParsingService
 from app.application.pdf_parser import parse_pdf_transactions
+from app.application.pdf_representation_classifier import classify_pdf_representation
 from app.application.reconciliation import ReconciliationResult
 from app.application.reconciliation import reconcile_transactions as default_reconcile_transactions
 from app.application.source_regions import SourceRegion
@@ -151,6 +156,9 @@ class ConversionPipeline:
         filename = document.filename
         raw_bytes = document.raw_bytes
         extension = document.file_type
+
+        if parsed_document.financial_document is not None:
+            return self._run_financial_document(document, parsed_document, analysis_id, parse_ms)
 
         parsed_transactions = parsed_document.transactions
         layout_inference_name = parsed_document.layout_inference_name
@@ -379,6 +387,49 @@ class ConversionPipeline:
             top_expenses_rows=top_expenses_rows,
             parse_ms=parse_ms,
         )
+
+
+    def _run_financial_document(self, document, parsed, analysis_id, parse_ms) -> ProcessingResult:
+        financial = deepcopy(parsed.financial_document)
+        digest = hashlib.sha256(document.raw_bytes).hexdigest()
+        financial["source_document_sha256"] = digest
+        classification = self.document_type_classifier(document.filename, document.raw_bytes, extracted_text=parsed.extracted_text)
+        financial["classification"] = {"document_type": classification.document_type, "confidence": classification.confidence,
+                                       "evidence": classification.evidence, "version": classification.classifier_version}
+        financial["representation"] = classify_pdf_representation(document.raw_bytes).representation
+        semantic = DocumentClassification(semantic_type=financial["document_type"], confidence=classification.confidence,
+                                          evidence=list(classification.evidence))
+        rows = []
+        for index, event in enumerate(financial["events"]):
+            event["event_id"] = f"{digest[:16]}_{event['event_id']}"
+            canonical = (parsed.canonical_transactions or [])[index]
+            rows.append(TransactionRow(
+                date=event_date(event), description=event["description"], amount=event_amount(event),
+                category=event["event_type"], reconciliation_status="not_applicable" if event["cash_effect"] is None else "unmatched",
+                source_page=canonical.source_page, source_line=canonical.source_line, source_regions=canonical.source_regions,
+                source_sequence=index + 1, transaction_id=event["event_id"],
+            ))
+        cash = [Decimal(e["cash_effect"]) for e in financial["events"] if e["cash_effect"] is not None]
+        inflows = sum((value for value in cash if value > 0), Decimal("0"))
+        outflows = sum((value for value in cash if value < 0), Decimal("0"))
+        metrics = self.build_pdf_processing_metrics(extension="pdf", parse_metrics=parsed.parse_metrics,
+            parse_ms=parse_ms, classify_ms=0, normalize_ms=0, reconcile_ms=0, total_ms=parse_ms)
+        data = AnalysisData(
+            analysis_id=analysis_id, file_type=document.file_type, upload_filename=document.filename,
+            transactions_total=len(rows), total_inflows=float(inflows), total_outflows=float(outflows), net_total=float(inflows + outflows),
+            preview_transactions=rows, report_transactions=rows, semantic_type=semantic.semantic_type,
+            semantic_confidence=semantic.confidence, semantic_evidence=semantic.evidence,
+            document_type=classification.document_type, document_type_confidence=classification.confidence,
+            document_type_evidence=classification.evidence, document_classification_version=classification.classifier_version,
+            layout_inference_name=parsed.layout_inference_name, layout_inference_confidence=parsed.layout_inference_confidence,
+            pdf_processing_metrics=metrics, financial_document=financial, document_parts=list(parsed.document_parts or []),
+            updated_at=datetime.now(timezone.utc).isoformat(),
+        )
+        return ProcessingResult(analysis_data=data, document=document, parsed_document=parsed, classification=semantic,
+            document_type_classification=classification, parse_ms=parse_ms, top_expenses_rows=[],
+            operational_summary=OperationalPipelineSummary(total_volume=float(sum(map(abs, cash), Decimal("0"))),
+                inflow_count=sum(value > 0 for value in cash), outflow_count=sum(value < 0 for value in cash),
+                reconciled_entries=0, unmatched_entries=len(cash)))
 
 
 def _build_transaction_rows(

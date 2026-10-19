@@ -54,7 +54,31 @@ export interface Conversion {
   pdf: PdfDocument | null;
   downloadUrl?: string;
   noActivity?: boolean;
+  financialDocument?: FinancialDocument | null;
   transactions: Transaction[];
+}
+
+export interface FinancialDocument {
+  document_type: string;
+  origin: string | null;
+  notice: string;
+  events: Array<{
+    event_id: string;
+    event_type: string;
+    status: string;
+    reference: string | null;
+    description: string;
+    dates: Record<string, string>;
+    amount: string;
+    cash_effect: string | null;
+    source_refs: Array<{ page: number; line: number }>;
+  }>;
+  validations: Array<{ code: string; status: string }>;
+  export: {
+    available_formats: string[];
+    requires_destination_account: boolean;
+    reason?: string;
+  };
 }
 
 export interface QuotaSummary {

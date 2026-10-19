@@ -17,6 +17,7 @@ class PdfParseResult:
     source_layout_lines: tuple[tuple[ExtractedLine, ...], ...] | None = None
     source_extraction: RawDocumentExtraction | None = None
     document_parts: list[dict[str, object]] | None = None
+    financial_document: dict | None = None
 
 
 @dataclass(frozen=True)

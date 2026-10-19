@@ -12,6 +12,11 @@ DOCUMENT_TYPES = frozenset(
         "bank_receipt",
         "credit_card_statement",
         "financial_spreadsheet",
+        "receivables_report",
+        "investment_statement",
+        "fiscal_summary",
+        "investment_summary",
+        "accounts_payable_report",
         "other",
         "unknown",
     }

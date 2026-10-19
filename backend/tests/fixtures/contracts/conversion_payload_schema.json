@@ -307,6 +307,17 @@
           },
           "title": "Document Parts",
           "type": "array"
+        },
+        "financial_document": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FinancialDocumentPayload"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -382,6 +393,366 @@
         "count"
       ],
       "title": "CategorySummary",
+      "type": "object"
+    },
+    "FinancialDocumentPayload": {
+      "properties": {
+        "schema_version": {
+          "const": "financial_events_v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "document_type": {
+          "title": "Document Type",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Origin"
+        },
+        "representation": {
+          "title": "Representation",
+          "type": "string"
+        },
+        "extraction_method": {
+          "title": "Extraction Method",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/FinancialEvent"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "observations": {
+          "items": {
+            "$ref": "#/$defs/FinancialObservation"
+          },
+          "title": "Observations",
+          "type": "array"
+        },
+        "validations": {
+          "items": {
+            "$ref": "#/$defs/FinancialValidation"
+          },
+          "title": "Validations",
+          "type": "array"
+        },
+        "notice": {
+          "title": "Notice",
+          "type": "string"
+        },
+        "export": {
+          "$ref": "#/$defs/FinancialExportPolicy"
+        },
+        "source_document_sha256": {
+          "title": "Source Document Sha256",
+          "type": "string"
+        },
+        "classification": {
+          "additionalProperties": true,
+          "title": "Classification",
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_version",
+        "document_type",
+        "evidence",
+        "origin",
+        "representation",
+        "extraction_method",
+        "metadata",
+        "events",
+        "observations",
+        "validations",
+        "notice",
+        "export",
+        "source_document_sha256",
+        "classification"
+      ],
+      "title": "FinancialDocumentPayload",
+      "type": "object"
+    },
+    "FinancialEvent": {
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "event_type": {
+          "title": "Event Type",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "reference": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reference"
+        },
+        "counterparty": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Counterparty"
+        },
+        "dates": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Dates",
+          "type": "object"
+        },
+        "amounts": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Amounts",
+          "type": "object"
+        },
+        "amount": {
+          "title": "Amount",
+          "type": "string"
+        },
+        "amount_basis": {
+          "title": "Amount Basis",
+          "type": "string"
+        },
+        "currency": {
+          "title": "Currency",
+          "type": "string"
+        },
+        "cash_effect": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Cash Effect"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "source_refs": {
+          "items": {
+            "$ref": "#/$defs/FinancialSourceReference"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "attributes": {
+          "additionalProperties": true,
+          "title": "Attributes",
+          "type": "object"
+        }
+      },
+      "required": [
+        "event_id",
+        "event_type",
+        "status",
+        "reference",
+        "counterparty",
+        "dates",
+        "amounts",
+        "amount",
+        "amount_basis",
+        "currency",
+        "cash_effect",
+        "description",
+        "source_refs",
+        "attributes"
+      ],
+      "title": "FinancialEvent",
+      "type": "object"
+    },
+    "FinancialExportPolicy": {
+      "properties": {
+        "available_formats": {
+          "items": {
+            "enum": [
+              "csv",
+              "xlsx",
+              "ofx"
+            ],
+            "type": "string"
+          },
+          "title": "Available Formats",
+          "type": "array"
+        },
+        "ofx_profile": {
+          "anyOf": [
+            {
+              "const": "receipts",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ofx Profile"
+        },
+        "requires_destination_account": {
+          "title": "Requires Destination Account",
+          "type": "boolean"
+        },
+        "supports_row_edits": {
+          "title": "Supports Row Edits",
+          "type": "boolean"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "available_formats",
+        "ofx_profile",
+        "requires_destination_account",
+        "supports_row_edits",
+        "reason"
+      ],
+      "title": "FinancialExportPolicy",
+      "type": "object"
+    },
+    "FinancialObservation": {
+      "properties": {
+        "observation_type": {
+          "title": "Observation Type",
+          "type": "string"
+        },
+        "dates": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Dates",
+          "type": "object"
+        },
+        "amounts": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Amounts",
+          "type": "object"
+        },
+        "attributes": {
+          "additionalProperties": true,
+          "title": "Attributes",
+          "type": "object"
+        },
+        "source_refs": {
+          "items": {
+            "$ref": "#/$defs/FinancialSourceReference"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "observation_type",
+        "dates",
+        "amounts",
+        "attributes",
+        "source_refs"
+      ],
+      "title": "FinancialObservation",
+      "type": "object"
+    },
+    "FinancialSourceReference": {
+      "properties": {
+        "page": {
+          "minimum": 1,
+          "title": "Page",
+          "type": "integer"
+        },
+        "line": {
+          "minimum": 1,
+          "title": "Line",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "page",
+        "line"
+      ],
+      "title": "FinancialSourceReference",
+      "type": "object"
+    },
+    "FinancialValidation": {
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "actual": {
+          "title": "Actual",
+          "type": "string"
+        },
+        "expected": {
+          "title": "Expected",
+          "type": "string"
+        },
+        "source_refs": {
+          "items": {
+            "$ref": "#/$defs/FinancialSourceReference"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "code",
+        "status",
+        "actual",
+        "expected",
+        "source_refs"
+      ],
+      "title": "FinancialValidation",
       "type": "object"
     },
     "Insight": {

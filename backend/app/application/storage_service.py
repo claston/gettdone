@@ -14,8 +14,9 @@ from openpyxl.utils import get_column_letter
 
 from app.application.analysis_lock import locked_analysis
 from app.application.bank_identity import resolve_conversion_model_label
-from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConflictError, AnalysisNotFoundError
+from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConflictError, AnalysisNotFoundError, InvalidFileContentError
 from app.application.export_artifact_service import ExportArtifactService
+from app.application.financial_document_export import assert_financial_export
 from app.application.models import AnalysisData, BeforeAfterRow, TransactionRow
 from app.application.source_regions import parse_source_regions, validate_review_regions
 from app.application.structured_conversion import build_structured_conversion_result_from_analysis_data
@@ -93,6 +94,7 @@ class TempAnalysisStorage:
             bank_branch=data.bank_branch if data.file_type == "ofx" else None,
             account_number=data.account_number if data.file_type == "ofx" else None,
             bank_code=data.bank_code if data.file_type == "ofx" else None,
+            **({"financial_document": data.financial_document} if data.financial_document is not None else {}),
         )
         return expires_at.isoformat()
 
@@ -117,6 +119,13 @@ class TempAnalysisStorage:
         bank_code: str | None = None,
     ) -> Path:
         analysis_dir = self._resolve_analysis_dir(analysis_id)
+        content, _ = self._read_analysis_metadata(analysis_id=analysis_id, metadata_filename="analysis.json")
+        financial_document = content.get("financial_document")
+        if financial_document is not None:
+            persisted = self._extract_convert_overrides(content)
+            assert_financial_export(financial_document, file_format,
+                bank_code=bank_code or persisted.get("bank_code"), bank_branch=bank_branch or persisted.get("bank_branch"),
+                account_number=account_number or persisted.get("account_number"))
         if file_format == "ofx" and (
             closing_balance is not None
             or (str(bank_branch or "").strip() != "")
@@ -270,6 +279,11 @@ class TempAnalysisStorage:
             file_type = str(content.get("file_type") or "").strip().lower()
             conversion_type = f"{file_type}-ofx" if file_type else "pdf-ofx"
             status = "Sucesso" if (analysis_dir / "converted.ofx").exists() else "Processando"
+            if content.get("financial_document") is not None:
+                conversion_type = f"{file_type}-xlsx"
+                status = "Sucesso" if (analysis_dir / "converted.xlsx").exists() else "Processando"
+                model = {"receivables_report": "Títulos recebidos", "investment_statement": "Investimentos CDB",
+                         "fiscal_summary": "Resumo fiscal"}.get(str(content.get("document_type")), "Relatório financeiro")
 
             items.append(
                 {
@@ -344,6 +358,12 @@ class TempAnalysisStorage:
             content = json.loads(metadata_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             raise AnalysisNotFoundError from None
+
+        if content.get("financial_document") is not None:
+            raise InvalidFileContentError(
+                "A edição de relatórios especializados ainda não está disponível. "
+                "Os campos extraídos estão preservados no CSV e no Excel."
+            )
 
         operation_hash = hashlib.sha256(json.dumps({
             "edits": edits, "expected_updated_at": expected_updated_at,
@@ -551,6 +571,7 @@ class TempAnalysisStorage:
             bank_branch=effective_overrides.get("bank_branch"),
             account_number=effective_overrides.get("account_number"),
             bank_code=effective_overrides.get("bank_code"),
+            **({"financial_document": content["financial_document"]} if content.get("financial_document") is not None else {}),
         )
 
         if operation_id:
@@ -775,6 +796,7 @@ class TempAnalysisStorage:
             bank_branch=effective_overrides.get("bank_branch"),
             account_number=effective_overrides.get("account_number"),
             bank_code=effective_overrides.get("bank_code"),
+            **({"financial_document": content["financial_document"]} if content.get("financial_document") is not None else {}),
         )
 
     def _normalize_convert_overrides(
@@ -946,6 +968,7 @@ class TempAnalysisStorage:
             if isinstance(content.get("semantic_evidence"), list)
             else None,
             document_type=str(content.get("document_type") or "").strip() or None,
+            financial_document=content.get("financial_document"),
             document_type_confidence=(
                 float(content["document_type_confidence"])
                 if content.get("document_type_confidence") is not None

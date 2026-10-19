@@ -19,6 +19,7 @@ from app.application.conversion.conversion_runtime_config import (
     ConversionArchitectureMode,
     ConversionRuntimeConfig,
 )
+from app.application.errors import InvalidFileContentError
 from app.dependencies import (
     get_access_control_service,
     get_async_conversion_report_service,
@@ -232,6 +233,8 @@ def get_convert_report(
             bank_code=bank_code if file_format == "ofx" else None,
         )
         upload_filename = active_service.get_upload_filename(processing_id)
+    except InvalidFileContentError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except AnalysisNotFoundError:
         raise HTTPException(status_code=404, detail="Analysis not found")
     except AnalysisAccessDeniedError:
@@ -364,7 +367,7 @@ def apply_convert_edits(
         raise HTTPException(status_code=403, detail="Access denied for this analysis.")
     except AnalysisEditConflictError:
         raise HTTPException(status_code=409, detail="Analysis changed since last load. Refresh and try again.")
-    except ValueError as exc:
+    except (ValueError, InvalidFileContentError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except InvalidUserTokenError:
         raise HTTPException(

@@ -159,6 +159,11 @@
     if (downloadCsvBtn) {
       downloadCsvBtn.disabled = isDisabled;
     }
+    const report = financialDocument(state.analysisSnapshot);
+    if (report && !report.export.available_formats.includes("ofx")) {
+      if (downloadOfxBtn) downloadOfxBtn.disabled = true;
+      if (defaultDownloadBtn && outputFormat === "ofx") defaultDownloadBtn.disabled = true;
+    }
   }
 
   function isDraftRowId(rowId) {
@@ -1211,6 +1216,10 @@
   }
 
   function renderKpis(analysis) {
+    if (financialDocument(analysis)) {
+      renderFinancialDocumentKpis(analysis);
+      return;
+    }
     if (isPayablesReport(analysis)) {
       renderPayablesKpis(analysis);
       return;
@@ -1410,6 +1419,41 @@
     return Boolean(analysis && analysis.document_type === "accounts_payable_report");
   }
 
+  function financialDocument(analysis) {
+    return analysis && analysis.financial_document ? analysis.financial_document : null;
+  }
+
+  function renderFinancialDocumentKpis(analysis) {
+    const report = financialDocument(analysis);
+    const failed = report.validations.filter((item) => item.status === "failed").length;
+    const fiscal = report.document_type === "fiscal_summary";
+    const labels = { receivables_report: "Títulos recebidos", investment_statement: "Investimentos CDB", fiscal_summary: "Resumo fiscal" };
+    const fields = report.export.requires_destination_account ? `
+      <div class="ofx-meta-row">
+        <p class="kpi-hint">Conta de destino dos recebimentos para exportação OFX</p>
+        <div class="ofx-meta-fields">
+          <select id="bank-code-select" class="kpi-edit-input" aria-label="Banco de destino">${bankCodeOptions.map((item) =>
+            `<option value="${item.code}"${item.code === state.bankCodeOverride ? " selected" : ""}>${item.label}</option>`).join("")}</select>
+          <input id="bank-branch-input" class="kpi-edit-input" aria-label="Agência de destino" placeholder="Agência" value="${escapeAttr(state.bankBranchOverride || "")}" />
+          <input id="account-number-input" class="kpi-edit-input" aria-label="Conta de destino" placeholder="Conta" value="${escapeAttr(state.accountNumberOverride || "")}" />
+        </div>
+      </div>` : "";
+    const total = report.events.reduce((sum, event) => sum + Number(event.amount || 0), 0);
+    kpis.innerHTML = `
+      <section class="review-warning-card" role="status">
+        <h3>${escapeAttr(labels[report.document_type] || "Relatório financeiro")}</h3>
+        <p>${escapeAttr(report.notice)}</p>
+        ${failed ? `<p>${failed} validação(ões) com diferença. Confira os detalhes no Excel.</p>` : ""}
+        <p>Os campos de origem são preservados. Confira datas, valores e situações no Excel.</p>
+      </section>${fields}
+      <article class="kpi"><p class="kpi-label">Eventos listados</p><p class="kpi-value">${report.events.length}</p></article>
+      ${fiscal
+        ? `<article class="kpi"><p class="kpi-label">Valor dos documentos listados</p><p class="kpi-value">${formatCurrency(total)}</p></article>`
+        : `<article class="kpi"><p class="kpi-label">Recebimentos / resgates</p><p class="kpi-value">${formatCurrency(analysis.total_inflows)}</p></article>
+           <article class="kpi"><p class="kpi-label">Pagamentos / aplicações</p><p class="kpi-value">${formatCurrency(Math.abs(analysis.total_outflows))}</p></article>`}
+      <p class="kpi-hint">${fiscal ? "Emissão fiscal não comprova recebimento." : "Este relatório não informa saldo da conta corrente."} Formatos: ${escapeAttr(report.export.available_formats.join(", ").toUpperCase())}.</p>`;
+  }
+
   function renderPayablesKpis(analysis) {
     const rows = (state.previewRows || []).filter((row) => row && !row.is_deleted);
     const pending = rows.filter((row) => (row.warning_types || []).some((value) =>
@@ -1557,7 +1601,7 @@
   }
 
   function buildDisplayedRunningBalances(rows) {
-    if (isPayablesReport(state.analysisSnapshot)) {
+    if (isPayablesReport(state.analysisSnapshot) || financialDocument(state.analysisSnapshot)) {
       return (rows || []).map(() => null);
     }
     const displayed = [];
@@ -1758,6 +1802,7 @@
   }
 
   function startInsertRow() {
+    if (financialDocument(state.analysisSnapshot)) return;
     if (!state.processingId) {
       setStatus("Converta um arquivo antes de adicionar linhas.", "error");
       return;
@@ -1802,6 +1847,7 @@
   }
 
   function startEditingRow(rowId) {
+    if (financialDocument(state.analysisSnapshot)) return;
     const row = state.previewRows.find((item) => item.rowId === rowId);
     if (!row) {
       return;
@@ -1926,6 +1972,27 @@
   }
 
   function renderRows() {
+    const report = financialDocument(state.analysisSnapshot);
+    if (addRowBtn) {
+      addRowBtn.hidden = Boolean(report);
+      addRowBtn.disabled = Boolean(report);
+    }
+    const headings = report ? ["Data", "Evento", "Valor", "Situação", "Referência", "Origem"]
+      : ["Data", "Histórico", "Crédito", "Débito", "Saldo", "Ações"];
+    const table = reviewRows.closest("table");
+    if (table) table.querySelectorAll("thead th").forEach((cell, index) => { cell.textContent = headings[index]; });
+    if (report) {
+      const types = { receipt: "Recebimento de título", investment_application: "Aplicação CDB", investment_redemption: "Resgate CDB", fiscal_document: "Documento fiscal" };
+      const statuses = { paid: "Pago", confirmed: "Confirmado", issued: "Emitido", voided: "Inutilizado", cancelled: "Cancelado", unknown: "Não identificado" };
+      reviewRows.innerHTML = report.events.map((event, index) => `<tr>
+        <td>${formatDate((state.previewRows[index] || {}).date)}</td>
+        <td>${escapeAttr(types[event.event_type] || event.event_type)} — ${escapeAttr(event.counterparty || event.description)}</td>
+        <td>${formatCurrency(Number(event.amount))}</td><td>${escapeAttr(statuses[event.status] || event.status)}</td>
+        <td>${escapeAttr(event.reference || "—")}</td>
+        <td>${escapeAttr(event.source_refs.map((ref) => `Pág. ${ref.page}, linha ${ref.line}`).join("; "))}</td></tr>`).join("")
+        || '<tr><td colspan="6">Sem movimentos; posições disponíveis no Excel.</td></tr>';
+      return;
+    }
     const rows = (state.previewRows || []).filter((row) => !isOpeningBalanceRow(row));
     if (!rows || rows.length === 0) {
       reviewRows.innerHTML = '<tr><td colspan="6">Nenhuma transação para exibir.</td></tr>';
@@ -2736,6 +2803,11 @@
     const selectedFormat = String(formatOverride || outputFormat).trim().toLowerCase();
     const requestedFormat = ["excel", "csv"].includes(selectedFormat) ? selectedFormat : "ofx";
     const downloadConfig = resolveDownloadConfig(requestedFormat);
+    const report = financialDocument(state.analysisSnapshot);
+    if (report && !report.export.available_formats.includes(downloadConfig.reportFormat)) {
+      setStatus(report.export.reason, "error");
+      return;
+    }
     if (!downloadConfig.targetId) {
       setStatus("Converta um arquivo antes de baixar.", "error");
       return;
@@ -2750,7 +2822,18 @@
       if (downloadConfig.reportFormat) {
         query.set("format", downloadConfig.reportFormat);
       }
-      if (requestedFormat === "ofx" && !isPayablesReport(state.analysisSnapshot)) {
+      if (requestedFormat === "ofx" && report) {
+        const bankCode = normalizeDigits(state.bankCodeOverride || "").slice(0, 3);
+        const branch = normalizeDigits(state.bankBranchOverride || "");
+        const account = normalizeDigits(state.accountNumberOverride || "");
+        if (!bankCode || !branch || !account) {
+          setStatus("Informe banco, agência e conta de destino para exportar os recebimentos em OFX.", "error");
+          return;
+        }
+        query.set("bank_code", bankCode);
+        query.set("bank_branch", branch);
+        query.set("account_number", account);
+      } else if (requestedFormat === "ofx" && !isPayablesReport(state.analysisSnapshot)) {
         const openingBalance = isNoActivityStatement(state.analysisSnapshot) && state.openingBalanceOverride == null
           ? NaN : Number(state.openingBalanceOverride);
         const closingBalance = isNoActivityStatement(state.analysisSnapshot) && state.closingBalanceOverride == null
