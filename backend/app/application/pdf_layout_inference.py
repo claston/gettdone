@@ -262,6 +262,14 @@ def _score_declarative_layout_profile(
     *,
     negative_evidence_text: str,
 ) -> float:
+    is_btg_summary = profile.profile_name == "btg_pactual_extrato_conta_corrente_resumo_v1"
+    if is_btg_summary:
+        if not (
+            re.search(r"\bBANCO 208\b", normalized_text)
+            and "EXTRATO CONTA CORRENTE" in normalized_text
+            and "DATA DE LANCAMENTO DESCRICAO DO LANCAMENTO ENTRADAS/SAIDAS SALDO" in normalized_text
+        ):
+            return 0.0
     if profile.profile_name == "bradesco_extrato_cartao_web_usd_brl_v1":
         header = normalized_text.split("DETALHE DO EXTRATO", 1)[0]
         if not (
@@ -277,6 +285,10 @@ def _score_declarative_layout_profile(
         structure_score=structure_score,
         negative_evidence_text=negative_evidence_text,
     )
+    if is_btg_summary:
+        # A continuation page still identifies this format; let its financial
+        # validator reject missing summaries instead of using generic parsing.
+        score = max(score, 0.96)
     if score < profile.min_score_hint:
         return 0.0
     return score

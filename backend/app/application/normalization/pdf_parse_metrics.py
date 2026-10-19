@@ -1,5 +1,6 @@
 _HIGH_CONFIDENCE_LAYOUT_SPECIFIC_PARSERS = {
     "layout_specific_bradesco_card_web",
+    "layout_specific_btg_summary",
     "layout_specific_santander_statement",
     "layout_specific_wise",
 }
