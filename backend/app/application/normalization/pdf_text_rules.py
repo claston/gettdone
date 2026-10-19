@@ -90,7 +90,7 @@ def should_skip_transaction_description(description: str) -> bool:
         return False
     if any(hint in normalized_description for hint in IGNORED_TRANSACTION_HINTS):
         return True
-    if normalized_description == "SALDO":
+    if normalized_description.replace(" ", "") == "SALDO":
         return True
     if normalized_description.startswith("SALDO "):
         return True
