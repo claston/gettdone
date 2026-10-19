@@ -5,6 +5,14 @@ from app.application.document_type_classifier import BANK_RECEIPT, BANK_STATEMEN
 from app.application.errors import UnsupportedDocumentContentError
 from app.application.normalization.text import normalize_upper_text
 
+_DATE_PATTERN = (
+    r"(?:\d{1,2}/\d{1,2}(?:/\d{2,4})?|\d{4}-\d{2}-\d{2}|"
+    r"\d{1,2}\s+(?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+20\d{2})\b"
+)
+_MOVEMENT_DATE_PREFIX = re.compile(rf"^{_DATE_PATTERN}")
+_PERIOD_DATE_RANGE = re.compile(rf"^{_DATE_PATTERN}\s+(?:A|ATE|[-–])\s+{_DATE_PATTERN}")
+_MOVEMENT_HEADER = re.compile(r"^DATA(?:\s+(?:DESCRICAO|HISTORICO|DOCUMENTO|VALOR|SALDO)\b|$)")
+
 
 @dataclass(frozen=True)
 class SegmentedPdf:
@@ -72,10 +80,28 @@ def _has_statement_title(text: str) -> bool:
 
 
 def _statement_identity(text: str) -> str | None:
-    normalized = normalize_upper_text(text)
+    normalized = _statement_header(text)
     account = re.search(r"\b(?:CC|C/C|CONTA(?: CORRENTE)?)\s*[:.]?\s*(\d[\d.]*[-/]\d+|\d{4,})(?![\d,.])\b", normalized)
     if account is None:
         return None
     agency = re.search(r"\b(?:AG|AGENCIA)\s*[:.]?\s*(\d{3,6}(?:-\d)?)", normalized)
+    if agency is None:
+        # Native Nubank exports put the agency value before the column labels.
+        agency = re.search(r"(?<![\d./-])(\d{3,6}(?:-\d)?)\s+(?:(?:CPF|CNPJ)\s+)?AGENCIA\s+CONTA\b", normalized)
     period = re.search(r"\b(?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+20\d{2}\b", normalized)
     return "|".join((agency.group(1) if agency else "", account.group(1), period.group(0) if period else ""))
+
+
+def _statement_header(text: str) -> str:
+    """Keep counterparty bank details out of the statement owner's identity."""
+    header = []
+    for raw_line in text.splitlines():
+        line = normalize_upper_text(raw_line)
+        movement_date = _MOVEMENT_DATE_PREFIX.match(line) and not _PERIOD_DATE_RANGE.match(line)
+        if movement_date or _MOVEMENT_HEADER.match(line):
+            break
+        header.append(line)
+        # Nubank repeats this period/currency header even on continuation pages.
+        if "VALORES EM R$" in line:
+            break
+    return " ".join(header)
