@@ -1,0 +1,61 @@
+layout_profile:
+  schema_version: 2
+  profile_name: btg_pactual_extrato_conta_corrente_resumo_v1
+  bank: BTG Pactual
+  layout_family: btg_pactual_extrato_conta_corrente_resumo
+  statement_type: conta_corrente_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Extrato conta corrente"
+      - "Resumo do saldo"
+      - "Saldo de abertura"
+      - "Saldo de fechamento"
+      - "Saldo bloqueado"
+      - "Total de entradas"
+      - "Total de saídas"
+      - "Data de lançamento"
+      - "Descrição do lançamento"
+      - "Entradas/Saídas"
+      - "Banco 208"
+      - "PDF gerado em"
+    optional_keywords:
+      - "BTG Pactual"
+      - "Recebíveis de cartão"
+      - "Fale com nossa central de atendimento"
+    min_score_hint: 0.90
+  table_detection:
+    header_keywords:
+      - "Data de lançamento"
+      - "Descrição do lançamento"
+      - "Entradas/Saídas"
+      - "Saldo"
+    expected_column_order:
+      - date
+      - description
+      - amount
+      - balance
+  parsing:
+    date_formats:
+      - "dd/MM/yyyy"
+    amount_locale: pt-BR
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-{amount}"
+    positive_patterns:
+      - "{amount_without_minus}"
+    ignore_rows:
+      - "Saldo de abertura"
+      - "Saldo de fechamento"
+      - "Saldo bloqueado"
+      - "Total de entradas"
+      - "Total de saídas"
+    opening_balance_rows:
+      - "Saldo de abertura"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+      - balance

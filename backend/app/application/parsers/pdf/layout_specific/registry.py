@@ -15,6 +15,7 @@ from app.application.parsers.pdf.layout_specific.bradesco_card_web import Brades
 from app.application.parsers.pdf.layout_specific.bradesco_net_empresa import BradescoNetEmpresaLayoutParser
 from app.application.parsers.pdf.layout_specific.bradesco_unificado import BradescoUnificadoLayoutParser
 from app.application.parsers.pdf.layout_specific.btg_pactual import BtgPactualLayoutParser
+from app.application.parsers.pdf.layout_specific.btg_summary import BtgSummaryLayoutParser
 from app.application.parsers.pdf.layout_specific.contract import (
     LayoutSpecificParseContext,
     LayoutSpecificParseResult,
@@ -95,6 +96,7 @@ DEFAULT_PDF_LAYOUT_PARSER_REGISTRY = PdfLayoutParserRegistry(
         UnicredLayoutParser(),
         TopazioLayoutParser(),
         BtgPactualLayoutParser(),
+        BtgSummaryLayoutParser(),
         PagBankLayoutParser(),
         ModernAccountLayoutParser(),
         TrustSrmLayoutParser(),

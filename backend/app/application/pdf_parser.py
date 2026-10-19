@@ -72,6 +72,7 @@ from app.application.parsers.pdf import text_extraction
 from app.application.parsers.pdf.empty_statement import has_complete_santander_inactive_summary, has_explicit_no_activity
 from app.application.parsers.pdf.layout_specific.bradesco_card_web import BRADESCO_CARD_WEB_LAYOUT, BRADESCO_CARD_WEB_PARSER
 from app.application.parsers.pdf.layout_specific.bradesco_daily_order import resolve_bradesco_split_day_order
+from app.application.parsers.pdf.layout_specific.btg_summary import BTG_SUMMARY_LAYOUT, BTG_SUMMARY_PARSER
 from app.application.parsers.pdf.layout_specific.contract import (
     LayoutSpecificParseContext,
     LayoutSpecificParseResult,
@@ -822,8 +823,8 @@ def _parse_statement_page_texts(
         )
     lines = _flatten_statement_lines(page_texts, preserve_layout_spacing=preserve_layout_spacing)
     lines = _normalize_caixa_web_ocr_lines(lines, layout_name=layout.layout_name)
-    if layout.layout_name in {DIGITAL_CREDIT_CARD_LAYOUT, BRADESCO_CARD_WEB_LAYOUT}:
-        # Keep invalid source dates visible to the invoice's financial validation.
+    if layout.layout_name in {DIGITAL_CREDIT_CARD_LAYOUT, BRADESCO_CARD_WEB_LAYOUT, BTG_SUMMARY_LAYOUT}:
+        # Keep invalid source dates visible to the layout's financial validation.
         invalid_date_candidates_skipped = 0
     else:
         lines, invalid_date_candidates_skipped = _filter_invalid_leading_date_candidate_lines(lines)
@@ -3712,7 +3713,7 @@ def _try_parse_native_layout_text(
 
 def _maybe_upgrade_native_parse_with_layout_text(*, raw_bytes: bytes, baseline_result: PdfParseResult) -> PdfParseResult:
     if baseline_result.parse_metrics.get("selected_parser") in {
-        DIGITAL_CREDIT_CARD_PARSER, ACCOUNTS_PAYABLE_PARSER, BRADESCO_CARD_WEB_PARSER,
+        DIGITAL_CREDIT_CARD_PARSER, ACCOUNTS_PAYABLE_PARSER, BRADESCO_CARD_WEB_PARSER, BTG_SUMMARY_PARSER,
     }:
         # All movements already reconcile with printed document totals. A generic
         # layout candidate must not replace that result based only on row count.
