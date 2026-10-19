@@ -25,6 +25,7 @@ export interface Transaction {
   sourceSequence?: number | null;
   sourceSubsequence?: number;
   sourceRegions?: readonly SourceRegion[];
+  reviewRegions?: readonly SourceRegion[];
   isDeleted?: boolean;
   fieldStates: Record<TransactionField, TransactionFieldState>;
 }

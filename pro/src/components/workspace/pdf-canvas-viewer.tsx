@@ -13,6 +13,8 @@ import {
   pdfReadingPosition,
 } from "./source-location";
 import { PdfSourceHighlights } from "./pdf-source-highlights";
+import { PdfInteractionLayer } from "./pdf-interaction-layer";
+import type { PdfReviewControls } from "./pdf-interactions";
 import {
   activePageAt,
   pageLayout,
@@ -38,6 +40,7 @@ export default function PdfCanvasViewer({
   retry,
   onAvailability,
   onReadingPosition,
+  review,
 }: {
   url: string;
   name: string;
@@ -47,6 +50,7 @@ export default function PdfCanvasViewer({
   retry(): void;
   onAvailability(available: boolean): void;
   onReadingPosition?(position: PdfReadingPosition): void;
+  review?: PdfReviewControls;
 }) {
   const stage = useRef<HTMLDivElement>(null);
   const alive = useRef(true);
@@ -67,6 +71,9 @@ export default function PdfCanvasViewer({
   const selectedRegions = useMemo(
     () => validSourceRegions(navigation?.regions, sizes.length),
     [navigation, sizes.length],
+  );
+  const selectedTransaction = review?.transactions.find(
+    (row) => row.id === review.selectedId,
   );
   const initialPage = useRef(page);
   const onPageRef = useRef(onPage);
@@ -231,6 +238,21 @@ export default function PdfCanvasViewer({
       });
     userScrolling.current = true;
   };
+  const stopMotion = () => {
+    const element = stage.current;
+    if (!element || !boxes.length) return;
+    userScrolling.current = false;
+    element.scrollTo({
+      top: element.scrollTop,
+      left: element.scrollLeft,
+      behavior: "auto",
+    });
+    position.current = element.scrollTop;
+    setViewport({ top: element.scrollTop, height: element.clientHeight });
+    onPageRef.current(
+      activePageAt(boxes, element.scrollTop, element.clientHeight),
+    );
+  };
   useLayoutEffect(() => {
     reportedPage.current = page;
   }, [page]);
@@ -301,6 +323,46 @@ export default function PdfCanvasViewer({
           </a>
         </div>
       </div>
+      {review && !error && sizes.length > 0 && (
+        <div className="pdf-mark-toolbar">
+          <button
+            type="button"
+            className="secondary-button small"
+            disabled={!selectedTransaction || selectedTransaction.isDeleted}
+            aria-pressed={Boolean(review.drawingFor)}
+            onClick={
+              review.drawingFor
+                ? review.onCancelDrawing
+                : () => {
+                    stopMotion();
+                    review.onStartDrawing();
+                  }
+            }
+          >
+            {review.drawingFor ? "Cancelar marcação" : "Marcar no PDF"}
+          </button>
+          {Boolean(selectedTransaction?.reviewRegions?.length) && (
+            <button
+              type="button"
+              className="secondary-button small"
+              disabled={review.paused || Boolean(review.drawingFor)}
+              onClick={review.onClearRegions}
+            >
+              Limpar marcações
+            </button>
+          )}
+          <span
+            className="pdf-mark-label"
+            title={selectedTransaction?.description}
+          >
+            {review.drawingFor
+              ? `Desenhe um retângulo para ${review.drawingFor.description}. Esc cancela.`
+              : selectedTransaction
+                ? selectedTransaction.description
+                : "Selecione um lançamento para marcar no PDF"}
+          </span>
+        </div>
+      )}
       <div
         className="pdf-stage pdf-continuous"
         ref={stage}
@@ -315,6 +377,11 @@ export default function PdfCanvasViewer({
             startUserScroll();
         }}
         onKeyDown={(event) => {
+          if (event.key === "Escape" && review?.drawingFor) {
+            event.preventDefault();
+            review.onCancelDrawing();
+            return;
+          }
           if (
             [
               "ArrowDown",
@@ -380,12 +447,21 @@ export default function PdfCanvasViewer({
                   ) : (
                     <span className="pdf-placeholder">Página {index + 1}</span>
                   )}
+                  {near && review && (
+                    <PdfInteractionLayer
+                      key={review.drawingFor?.id ?? "browse"}
+                      page={index + 1}
+                      review={review}
+                      onGestureStart={stopMotion}
+                    />
+                  )}
                   {near && (
                     <PdfSourceHighlights
                       regions={selectedRegions.filter(
                         (region) => region.page === index + 1,
                       )}
                       transactionId={navigation?.transactionId}
+                      manualRegions={selectedTransaction?.reviewRegions}
                     />
                   )}
                 </div>

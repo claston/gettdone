@@ -95,6 +95,7 @@ def build_analyze_response(
                 source_line=row.source_line,
                 source_page=row.source_page,
                 source_regions=row.source_regions,
+                review_regions=row.review_regions,
                 date=row.date,
                 description=row.description,
                 amount=row.amount,

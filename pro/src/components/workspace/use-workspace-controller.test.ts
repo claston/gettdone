@@ -6,6 +6,39 @@ import { useWorkspaceController } from "./use-workspace-controller";
 afterEach(() => vi.useRealTimers());
 
 describe("edição e autosave", () => {
+  it("salva e desfaz marcações sem alterar campos financeiros", async () => {
+    const repository = createMockWorkspaceRepository({ latencyMs: 0 });
+    const save = vi
+      .spyOn(repository, "saveTransactions")
+      .mockResolvedValue(undefined);
+    const { result } = renderHook(() =>
+      useWorkspaceController("batch-setembro-2026", repository),
+    );
+    await waitFor(() => expect(result.current.loadState).toBe("READY"));
+    const row = structuredClone(
+      result.current.activeConversion!.transactions[0],
+    );
+    vi.useFakeTimers();
+    const region = { page: 1, left: 0.1, top: 0.2, width: 0.7, height: 0.03 };
+    act(() => {
+      expect(result.current.setReviewRegions(row.id, [region])).toBeNull();
+    });
+    expect(result.current.activeConversion!.transactions[0]).toEqual({
+      ...row,
+      reviewRegions: [region],
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(701));
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0][1][0].reviewRegions).toEqual([region]);
+    act(() => result.current.undo());
+    expect(
+      result.current.activeConversion!.transactions.find(
+        (item) => item.id === row.id,
+      )?.reviewRegions ?? [],
+    ).toEqual([]);
+    await act(async () => vi.advanceTimersByTimeAsync(701));
+    expect(result.current.saveStatus).toBe("SAVED");
+  });
   it("mantém a edição mais recente após uma falha e a envia na nova tentativa", async () => {
     const repository = createMockWorkspaceRepository({ latencyMs: 0 });
     let rejectSave: ((reason: Error) => void) | undefined;

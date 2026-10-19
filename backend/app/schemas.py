@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.application.conversion.contracts.payloads import (
     AnalyzeResponse as AnalyzeResponse,
@@ -30,6 +30,7 @@ from app.application.conversion.contracts.payloads import (
 from app.application.conversion.contracts.payloads import (
     TransactionPreview as TransactionPreview,
 )
+from app.application.source_regions import SourceRegion, validate_review_regions
 
 
 class ReconcileSummary(BaseModel):
@@ -85,6 +86,12 @@ class ConvertEditPatch(BaseModel):
     description: str | None = None
     credit: float | None = None
     debit: float | None = None
+    review_regions: list[SourceRegion] | None = Field(default=None, max_length=50)
+
+    @field_validator("review_regions", mode="before")
+    @classmethod
+    def valid_review_regions(cls, value):
+        return validate_review_regions(value)
 
 
 class ConvertEditsRequest(BaseModel):

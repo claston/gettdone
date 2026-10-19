@@ -86,8 +86,16 @@ def test_http_wise_worker_review_report_and_export_preserve_balances_and_currenc
             assert edited.status_code == 200, edited.text
             if kind == "wise_brl":
                 assert edited.json()["preview_transactions"][0]["source_regions"] == original_regions
+                marker = {"page": 1, "left": 0.1, "top": 0.2, "width": 0.5, "height": 0.03}
+                marked = owner.post(f"/convert-edits/{job['analysis_id']}", json={
+                    "batch_id": batch_id, "job_id": job["job_id"], "expected_updated_at": edited.json()["updated_at"],
+                    "edits": [{"row_id": analysis["preview_transactions"][0]["transaction_id"],
+                               "action": "annotate", "review_regions": [marker]}],
+                })
+                assert marked.status_code == 200, marked.text
                 reopened = owner.get(f"/api/conversion-batches/{batch_id}").json()
                 assert reopened["jobs"][0]["result"]["analysis"]["preview_transactions"][0]["source_regions"] == original_regions
+                assert reopened["jobs"][0]["result"]["analysis"]["preview_transactions"][0]["review_regions"] == [marker]
             if currency:
                 assert edited.json()["closing_balance"] == expected_balance
             for query in ["", "&account_number=87654321"]:

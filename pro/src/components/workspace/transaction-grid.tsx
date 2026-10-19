@@ -25,6 +25,7 @@ import { usePageSync } from "./use-page-sync";
 import {
   sourceLocation,
   transactionAtReadingPosition,
+  transactionRegions,
   type PdfReadingPosition,
   type SourceSelectionOptions,
 } from "./source-location";
@@ -98,6 +99,12 @@ export function TransactionGrid({
   readingPosition,
   followPdf = true,
   onClearSource,
+  filterValue,
+  onFilterChange,
+  onSelectTransaction,
+  onEditingChange,
+  syncPaused = false,
+  selectedFromPdf = false,
   activePage,
 }: {
   conversion: Conversion;
@@ -120,9 +127,18 @@ export function TransactionGrid({
   readingPosition?: PdfReadingPosition;
   followPdf?: boolean;
   onClearSource?(): void;
+  filterValue?: TransactionFilter;
+  onFilterChange?(value: TransactionFilter): void;
+  onSelectTransaction?(id: string, editing?: boolean): void;
+  onEditingChange?(editing: boolean): void;
+  syncPaused?: boolean;
+  selectedFromPdf?: boolean;
   activePage: number | null;
 }) {
-  const [filter, setFilter] = useState<TransactionFilter>("ALL");
+  const [localFilter, setLocalFilter] = useState<TransactionFilter>("ALL");
+  const filter = filterValue ?? localFilter;
+  const setFilter = (value: TransactionFilter) =>
+    onFilterChange ? onFilterChange(value) : setLocalFilter(value);
   const [adding, setAdding] = useState(false);
   const scroll = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
@@ -144,7 +160,7 @@ export function TransactionGrid({
     cancelHover();
     pointer.current = null;
     userScrolling.current = false;
-  }, [visible, groupByPage, cancelHover]);
+  }, [visible, groupByPage, cancelHover, syncPaused]);
   useEffect(() => {
     if (
       locatedTransactionId &&
@@ -171,12 +187,14 @@ export function TransactionGrid({
   }, [cancelHover]);
   const belongsToPage = (row: Transaction) =>
     row.sourcePage === activePage ||
-    row.sourceRegions?.some((region) => region.page === activePage);
+    transactionRegions(row).some((region) => region.page === activePage);
   const located = visible.find(
-    (row) => row.id === locatedTransactionId && belongsToPage(row),
+    (row) =>
+      row.id === locatedTransactionId &&
+      (selectedFromPdf || belongsToPage(row)),
   );
   const readingTarget =
-    readingPosition?.page === activePage
+    !selectedFromPdf && readingPosition?.page === activePage
       ? transactionAtReadingPosition(visible, readingPosition)
       : undefined;
   const targetId =
@@ -193,10 +211,16 @@ export function TransactionGrid({
       container.getBoundingClientRect().top -
       32;
   }, []);
-  const sync = usePageSync(activePage, targetId, follow, followPdf);
+  const sync = usePageSync(
+    activePage,
+    targetId,
+    follow,
+    followPdf && !syncPaused,
+  );
   useEffect(() => {
     if (
       followPdf &&
+      !syncPaused &&
       !sync.editing &&
       readingTarget &&
       readingTarget.id !== locatedTransactionId
@@ -204,6 +228,7 @@ export function TransactionGrid({
       onLocateTransaction(readingTarget.id, { origin: "pdf", scroll: false });
   }, [
     followPdf,
+    syncPaused,
     sync.editing,
     readingTarget,
     locatedTransactionId,
@@ -212,6 +237,7 @@ export function TransactionGrid({
   useEffect(() => {
     if (
       followPdf &&
+      !syncPaused &&
       !sync.editing &&
       readingPosition?.page === activePage &&
       !readingTarget &&
@@ -220,6 +246,7 @@ export function TransactionGrid({
       onClearSource?.();
   }, [
     followPdf,
+    syncPaused,
     sync.editing,
     readingPosition,
     activePage,
@@ -235,6 +262,7 @@ export function TransactionGrid({
     if (
       !userScrolling.current ||
       editing.current ||
+      syncPaused ||
       activePage === null ||
       scrollFrame.current !== null
     )
@@ -406,6 +434,16 @@ export function TransactionGrid({
             startUserScroll();
         }}
         onFocusCapture={(event) => {
+          const id = (event.target as HTMLElement).closest<HTMLTableRowElement>(
+            "tr[data-transaction-id]",
+          )?.dataset.transactionId;
+          if (
+            id &&
+            (event.target as HTMLElement).matches(
+              "input, textarea, [contenteditable=true]",
+            )
+          )
+            if (id !== locatedTransactionId) onSelectTransaction?.(id, true);
           if (
             (event.target as HTMLElement).matches(
               "input:not([readonly]), textarea, [contenteditable=true]",
@@ -414,6 +452,7 @@ export function TransactionGrid({
             editing.current = true;
             cancelHover();
             sync.setEditing(true);
+            onEditingChange?.(true);
           }
         }}
         onBlurCapture={(event) => {
@@ -427,6 +466,7 @@ export function TransactionGrid({
           ) {
             editing.current = false;
             sync.setEditing(false);
+            onEditingChange?.(false);
           }
         }}
       >
@@ -469,6 +509,14 @@ export function TransactionGrid({
                     <tr
                       data-transaction-id={transaction.id}
                       data-source-page={transaction.sourcePage ?? undefined}
+                      onClick={(event) => {
+                        if (
+                          !syncPaused &&
+                          (event.target === event.currentTarget ||
+                            (event.target as HTMLElement).tagName === "TD")
+                        )
+                          onSelectTransaction?.(transaction.id);
+                      }}
                       aria-current={
                         transaction.id === locatedTransactionId
                           ? "true"
@@ -484,6 +532,7 @@ export function TransactionGrid({
                         if (
                           event.pointerType === "touch" ||
                           editing.current ||
+                          syncPaused ||
                           activePage === null ||
                           !location
                         )

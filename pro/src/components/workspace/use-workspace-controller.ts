@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { validSourceRegions } from "@/domain/source-regions";
 
 import {
   countEdited,
@@ -20,6 +21,7 @@ import type {
   TransactionField,
   TransactionDraft,
   WorkspaceRepository,
+  SourceRegion,
 } from "@/domain/workspace";
 
 type LoadState = "LOADING" | "READY" | "ERROR";
@@ -44,6 +46,10 @@ export interface WorkspaceController {
     value: string,
   ): string | null;
   addTransaction(draft: TransactionDraft): void;
+  setReviewRegions(
+    transactionId: string,
+    regions: SourceRegion[],
+  ): string | null;
   removeTransaction(transactionId: string): void;
   restoreTransaction(transactionId: string): void;
   retrySave(): void;
@@ -383,6 +389,41 @@ export function useWorkspaceController(
     [activeConversion, replaceTransactions],
   );
 
+  const setReviewRegions = useCallback(
+    (transactionId: string, regions: SourceRegion[]) => {
+      if (!activeConversion?.pdf) return "Selecione um arquivo PDF.";
+      const previous =
+        batchRef.current?.conversions.find(
+          (item) => item.id === activeConversion.id,
+        )?.transactions ?? activeConversion.transactions;
+      const row = previous.find((item) => item.id === transactionId);
+      if (!row || row.isDeleted) return "Selecione um lançamento ativo.";
+      if (regions.length > 50) return "Use até 50 marcações por lançamento.";
+      const valid = validSourceRegions(regions);
+      if (valid.length !== regions.length)
+        return "Marcação fora dos limites do PDF.";
+      regions = valid.filter(
+        (region, index) =>
+          valid.findIndex(
+            (item) => JSON.stringify(item) === JSON.stringify(region),
+          ) === index,
+      );
+      if (JSON.stringify(regions) === JSON.stringify(row.reviewRegions ?? []))
+        return null;
+      replaceTransactions(
+        activeConversion.id,
+        previous.map((item) =>
+          item.id === transactionId
+            ? { ...item, reviewRegions: regions }
+            : item,
+        ),
+        previous,
+      );
+      return null;
+    },
+    [activeConversion, replaceTransactions],
+  );
+
   const addTransaction = useCallback(
     (draft: TransactionDraft) => {
       if (!activeConversion) return;
@@ -567,6 +608,7 @@ export function useWorkspaceController(
       exportResult,
       selectConversion,
       updateField,
+      setReviewRegions,
       addTransaction,
       removeTransaction,
       restoreTransaction,
@@ -602,6 +644,7 @@ export function useWorkspaceController(
       selectConversion,
       undo,
       updateField,
+      setReviewRegions,
     ],
   );
 }
