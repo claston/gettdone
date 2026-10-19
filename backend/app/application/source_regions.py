@@ -39,6 +39,25 @@ def parse_source_regions(value: object) -> list[SourceRegion]:
     return regions
 
 
+def validate_review_regions(value: object, page_count: int | None = None) -> list[SourceRegion]:
+    """Reject a malformed reviewer write entirely; extraction evidence stays immutable."""
+    if not isinstance(value, list) or len(value) > 50:
+        raise ValueError("Informe até 50 marcações por lançamento.")
+    regions = []
+    for item in value:
+        try:
+            region = item if isinstance(item, SourceRegion) else SourceRegion(**{
+                key: item[key] for key in ("page", "left", "top", "width", "height")
+            })
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("Marcação fora dos limites do PDF.") from exc
+        if region.page > (page_count if type(page_count) is int and page_count > 0 else 10000):
+            raise ValueError("Página da marcação não existe no PDF.")
+        if region not in regions:
+            regions.append(region)
+    return regions
+
+
 def evidence_regions(page: int, items, *, words=()) -> list[SourceRegion]:
     """Only boxes belonging to evidence actually consumed by a parser."""
     by_id = {word.id: word for word in words}

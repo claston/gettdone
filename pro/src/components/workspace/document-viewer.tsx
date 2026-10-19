@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import type { Conversion, WorkspaceRepository } from "@/domain/workspace";
 import { RealDocumentViewer } from "./real-document-viewer";
+import type { PdfReviewControls } from "./pdf-interactions";
 
 export function DocumentViewer({
   conversion,
@@ -25,6 +26,7 @@ export function DocumentViewer({
   navigation,
   onAvailability,
   onReadingPosition,
+  review,
 }: {
   conversion: Conversion;
   repository: WorkspaceRepository;
@@ -33,6 +35,7 @@ export function DocumentViewer({
   navigation: PdfNavigationRequest | null;
   onAvailability(available: boolean): void;
   onReadingPosition?(position: PdfReadingPosition): void;
+  review?: PdfReviewControls;
 }) {
   const [zoom, setZoom] = useState<"page-width" | number>("page-width");
   const isDemo = conversion.pdf?.url.startsWith("/mock-statement");
@@ -46,6 +49,7 @@ export function DocumentViewer({
         navigation={navigation}
         onAvailability={onAvailability}
         onReadingPosition={onReadingPosition}
+        review={review}
       />
     );
   }

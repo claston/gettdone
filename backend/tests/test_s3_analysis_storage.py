@@ -72,6 +72,11 @@ def test_regions_survive_s3_reload_and_a_subsequent_edit(tmp_path):
     saved = restarted.apply_convert_edits(analysis.analysis_id, [{"row_id": "row_1", "date": "2026-08-02",
         "description": "EDITED AFTER RELOAD", "credit": 100}], operation_id="region-edit")
     assert saved["preview_transactions"][0]["source_regions"] == [asdict(region)]
+    marked = restarted.apply_convert_edits(analysis.analysis_id,
+        [{"row_id": "row_1", "action": "annotate", "review_regions": [asdict(region)]}], operation_id="manual-mark")
+    reopened = S3AnalysisStorage(root_dir=tmp_path / "api-reopened", bucket="private", s3_client=client)
+    assert reopened.get_convert_edit_operation(analysis.analysis_id, "manual-mark") == marked
+    assert marked["preview_transactions"][0]["review_regions"] == [asdict(region)]
 
 
 def test_s3_edit_receipt_is_committed_last_and_survives_a_new_api_process(tmp_path: Path) -> None:

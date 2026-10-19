@@ -43,6 +43,7 @@ class TransactionPreview(BaseModel):
     source_line: int | None = None
     source_page: int | None = None
     source_regions: list[SourceRegion] = Field(default_factory=list)
+    review_regions: list[SourceRegion] = Field(default_factory=list)
     date: str
     description: str
     amount: float

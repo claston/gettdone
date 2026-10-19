@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { useState } from "react";
 import type { Conversion, WorkspaceRepository } from "@/domain/workspace";
 import { useAuthorizedDocument } from "./use-authorized-document";
+import type { PdfReviewControls } from "./pdf-interactions";
 
 const PdfCanvasViewer = dynamic(() => import("./pdf-canvas-viewer"), {
   ssr: false,
@@ -21,6 +22,7 @@ export function RealDocumentViewer(props: {
   navigation: PdfNavigationRequest | null;
   onAvailability(available: boolean): void;
   onReadingPosition?(position: PdfReadingPosition): void;
+  review?: PdfReviewControls;
 }) {
   const [attempt, setAttempt] = useState(0);
   return (
@@ -58,6 +60,7 @@ function AuthorizedPdf({
           retry={retry}
           onAvailability={props.onAvailability}
           onReadingPosition={props.onReadingPosition}
+          review={props.review}
         />
       ) : (
         <div className="viewer-state" role={state.error ? "alert" : "status"}>

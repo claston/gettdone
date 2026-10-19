@@ -46,6 +46,26 @@ def test_http_conversion_report_edit_and_negative_paths_keep_source_regions(tmp_
         assert edited.status_code == 200, edited.text
         saved = next(item for item in edited.json()["preview_transactions"] if item["transaction_id"] == row["transaction_id"])
         assert saved["source_regions"] == row["source_regions"]
+        if file_type == "pdf":
+            report_before = client.get(f"/report/{analysis_id}", params=params).content
+            marker = {"page": 1, "left": 0.1, "top": 0.6, "width": 0.7, "height": 0.03}
+            patch = {"row_id": row["transaction_id"], "action": "annotate", "review_regions": [marker]}
+            invalid = client.post(f"/convert-edits/{analysis_id}", params=params,
+                json={"edits": [{**patch, "review_regions": [{**marker, "width": 2}]}]})
+            assert invalid.status_code == 400, invalid.text
+            assert client.post(f"/convert-edits/{analysis_id}", params={"anonymous_fingerprint": "other-owner"},
+                json={"edits": [patch]}).status_code == 403
+            marked = client.post(f"/convert-edits/{analysis_id}", params=params,
+                json={"expected_updated_at": edited.json()["updated_at"], "operation_id": "mark-http", "edits": [patch]})
+            assert marked.status_code == 200, marked.text
+            marked_row = next(item for item in marked.json()["preview_transactions"] if item["transaction_id"] == row["transaction_id"])
+            assert marked_row["review_regions"] == [marker]
+            assert marked_row["source_regions"] == row["source_regions"]
+            assert marked_row["amount"] == saved["amount"]
+            assert client.get(f"/report/{analysis_id}", params=params).content == report_before
+            cleared = client.post(f"/convert-edits/{analysis_id}", params=params,
+                json={"expected_updated_at": marked.json()["updated_at"], "edits": [{**patch, "review_regions": []}]})
+            assert cleared.status_code == 200 and cleared.json()["preview_transactions"][0]["review_regions"] == []
         assert client.get("/report/an_region_nonexistent", params=params).status_code == 404
         assert client.get(f"/report/{analysis_id}", params={"anonymous_fingerprint": "other-owner"}).status_code == 403
         # This historical route is intentionally disabled in the current app.

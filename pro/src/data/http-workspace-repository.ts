@@ -21,6 +21,7 @@ interface ApiTransaction {
   source_subsequence?: number;
   source_page?: number | null;
   source_regions?: unknown;
+  review_regions?: unknown;
   date?: string;
   description?: string;
   amount?: number;
@@ -161,6 +162,29 @@ export function createHttpWorkspaceRepository(
         "A confirmação da gravação não corresponde à alteração enviada.",
       );
     const { transactions, serverOrder } = pending;
+    const originalById = new Map(
+      context.persistedTransactions.map((row) => [row.id, row]),
+    );
+    const manualRows = transactions.filter(
+      (row) =>
+        (row.reviewRegions?.length ?? 0) > 0 ||
+        JSON.stringify(row.reviewRegions ?? []) !==
+          JSON.stringify(originalById.get(row.id)?.reviewRegions ?? []),
+    );
+    if (
+      manualRows.some((row) => {
+        const server =
+          result.preview_transactions?.[serverOrder.indexOf(row.id)];
+        return (
+          !Array.isArray(server?.review_regions) ||
+          JSON.stringify(validSourceRegions(server.review_regions)) !==
+            JSON.stringify(row.reviewRegions ?? [])
+        );
+      })
+    )
+      throw new Error(
+        "Não foi possível confirmar as marcações. Verifique se a API está atualizada e tente salvar novamente.",
+      );
     const currentIds = new Set(transactions.map((row) => row.id));
     context.updatedAt = result.updated_at ?? context.updatedAt;
     if (result.preview_transactions?.length === serverOrder.length) {
@@ -256,22 +280,39 @@ export function createHttpWorkspaceRepository(
           return (
             !original ||
             fields.some((field) => row[field] !== original[field]) ||
+            JSON.stringify(row.reviewRegions ?? []) !==
+              JSON.stringify(original.reviewRegions ?? []) ||
             Boolean(row.isDeleted) !== Boolean(original.isDeleted)
           );
         })
         .map((transaction) => {
           const rowId = context.rowIds.get(transaction.id);
+          const original = originalById.get(transaction.id);
+          const regionsChanged =
+            JSON.stringify(transaction.reviewRegions ?? []) !==
+            JSON.stringify(original?.reviewRegions ?? []);
+          const annotationsOnly =
+            regionsChanged &&
+            original &&
+            !transaction.isDeleted &&
+            !original.isDeleted &&
+            fields.every((field) => transaction[field] === original[field]);
           return {
-            action: transaction.isDeleted
-              ? "delete"
-              : originalById.get(transaction.id)?.isDeleted
-                ? "restore"
-                : "update",
+            action: annotationsOnly
+              ? "annotate"
+              : transaction.isDeleted
+                ? "delete"
+                : originalById.get(transaction.id)?.isDeleted
+                  ? "restore"
+                  : "update",
             row_id: transaction.sourceSequence != null ? transaction.id : rowId,
             date: toIsoDate(transaction.date),
             description: transaction.description,
             credit: transaction.credit,
             debit: transaction.debit,
+            ...(regionsChanged
+              ? { review_regions: transaction.reviewRegions ?? [] }
+              : {}),
           };
         });
       for (const [localId, rowId] of context.rowIds) {
@@ -309,6 +350,9 @@ export function createHttpWorkspaceRepository(
           description: transaction.description,
           credit: transaction.credit,
           debit: transaction.debit,
+          ...(transaction.reviewRegions?.length
+            ? { review_regions: transaction.reviewRegions }
+            : {}),
         });
         serverOrder.splice(position, 0, transaction.id);
         if (transaction.isDeleted)
@@ -487,6 +531,7 @@ function mapTransaction(row: ApiTransaction, index: number): Transaction {
     balance: row.running_balance == null ? null : Number(row.running_balance),
     sourcePage: row.source_page ?? null,
     sourceRegions: validSourceRegions(row.source_regions),
+    reviewRegions: validSourceRegions(row.review_regions),
     sourceSequence: row.source_sequence ?? null,
     sourceSubsequence: row.source_subsequence ?? 0,
     isDeleted: Boolean(row.is_deleted),

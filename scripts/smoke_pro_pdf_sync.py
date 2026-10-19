@@ -121,7 +121,7 @@ def run(base_url: str) -> None:
     evidence.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        context = browser.new_context(viewport={"width": 1600, "height": 1000}, device_scale_factor=1)
+        context = browser.new_context(viewport={"width": 1600, "height": 1000}, device_scale_factor=1, has_touch=True)
         context.add_init_script("delete Promise.withResolvers;")
         page = context.new_page()
         errors: list[str] = []
@@ -143,7 +143,17 @@ def run(base_url: str) -> None:
             elif "/convert-edits/" in path:
                 writes.append(path)
                 payload = route.request.post_data_json
-                route.fulfill(json={"operation_id": payload.get("operation_id"), "updated_at": "2026-10-18T12:00:00Z"})
+                analysis = batch["jobs"][0]["result"]["analysis"]
+                rows = analysis["preview_transactions"]
+                for edit in payload.get("edits", []):
+                    row = next(item for item in rows if item["transaction_id"] == edit["row_id"])
+                    if "review_regions" in edit:
+                        row["review_regions"] = edit["review_regions"]
+                    if edit.get("action") != "annotate":
+                        row["date"], row["description"] = edit["date"], edit["description"]
+                        row["amount"] = edit.get("credit") or -(edit.get("debit") or 0)
+                analysis["updated_at"] = f"2026-10-18T12:00:{len(writes):02d}Z"
+                route.fulfill(json={"operation_id": payload.get("operation_id"), "updated_at": analysis["updated_at"], "preview_transactions": rows})
             elif path.startswith("/api/") or path.startswith("/auth/"):
                 writes.append(path)
                 route.fulfill(status=404, json={"detail": "Unexpected request"})
@@ -159,10 +169,17 @@ def run(base_url: str) -> None:
         grid = page.locator(".table-scroll")
 
         def wheel_to(number: int):
-            delta = stage.evaluate("(el, n) => el.querySelector(`[data-pdf-page='${n}']`).getBoundingClientRect().top - el.getBoundingClientRect().top", number)
             stage.hover()
+            page.wait_for_function("""el => {
+                const now = performance.now(), previous = el.__smokeReadingPosition;
+                if (!previous || Math.abs(previous.top - el.scrollTop) > 0.5) { el.__smokeReadingPosition = {top: el.scrollTop, at: now}; return false; }
+                return now - previous.at > 100;
+            }""", arg=stage.element_handle())
+            delta = stage.evaluate("(el, n) => el.querySelector(`[data-pdf-page='${n}']`).getBoundingClientRect().top - el.getBoundingClientRect().top", number)
             page.mouse.wheel(0, delta)
             expect(page.locator(".pdf-controls strong")).to_have_text(str(number))
+            if number < 30:
+                page.wait_for_function("n => { const el = document.querySelector('.pdf-stage'), slot = el.querySelector(`[data-pdf-page='${n}']`); return Math.abs(slot.getBoundingClientRect().top - el.getBoundingClientRect().top) < 2; }", arg=number)
 
         def aligned(number: int):
             expect(page.locator(".pdf-controls strong")).to_have_text(str(number))
@@ -362,6 +379,114 @@ def run(base_url: str) -> None:
         expect(page.locator('input[value="Edited source anchor"]')).to_have_count(1)
         expect(page.locator(".pdf-source-highlight")).to_have_count(0)
         assert not any("review" in path for path in writes)
+
+        def pdf_target(identifier: str, number: int, kind="extracted"):
+            return page.locator(f"[data-pdf-page='{number}'] button[data-pdf-target='{identifier}'][data-region-kind='{kind}']").first
+
+        def evidence_rect(identifier: str, number: int):
+            source = next(row for row in transactions if row["transaction_id"] == identifier)["source_regions"][0]
+            return page.locator(f"[data-pdf-page='{number}']").evaluate("""(el, r) => {
+                const b = el.getBoundingClientRect();
+                return {x: b.left + r.left * b.width - 3, y: b.top + r.top * b.height - 3,
+                    width: r.width * b.width + 6, height: r.height * b.height + 6};
+            }""", source)
+
+        # Direct PDF interaction selects the exact reviewer row without moving
+        # the PDF to a reading-line estimate or saving any financial edits.
+        locate("tx-2-9")
+        target = pdf_target("tx-2-7", 2)
+        target.scroll_into_view_if_needed()
+        unchanged_pdf = stage.evaluate("el => el.scrollTop")
+        unchanged_writes = len(writes)
+        target.hover()
+        expect(page.locator("tr.source-active-row")).to_have_attribute("data-transaction-id", "tx-2-7")
+        verify_overlay("tx-2-7", 2)
+        assert abs(stage.evaluate("el => el.scrollTop") - unchanged_pdf) < 2
+        pdf_target("tx-2-9", 2).click()
+        expect(page.locator("tr.source-active-row")).to_have_attribute("data-transaction-id", "tx-2-9")
+        assert len(writes) == unchanged_writes
+        original_row = next(row for row in transactions if row["transaction_id"] == "tx-2-9")
+        original_finances = {key: original_row[key] for key in ("date", "description", "amount", "source_regions")}
+
+        # Draw over another real line: the manually associated transaction must
+        # win pointer selection over automatic evidence inside its rectangle.
+        rectangle = evidence_rect("tx-2-12", 2)
+        page.get_by_role("button", name="Marcar no PDF", exact=True).click()
+        page.mouse.move(rectangle["x"], rectangle["y"])
+        page.mouse.down()
+        page.mouse.move(rectangle["x"] + rectangle["width"], rectangle["y"] + rectangle["height"], steps=6)
+        page.mouse.up()
+        expect(page.get_by_role("button", name="Marcar no PDF", exact=True)).to_be_visible()
+        expect(page.locator(".pdf-source-highlight.is-manual")).to_have_count(1)
+        expect(page.get_by_text("Salvo", exact=True)).to_be_visible()
+        assert len(original_row["review_regions"]) == 1
+        pdf_target("tx-2-9", 2, "manual").click()
+        expect(page.locator("tr.source-active-row")).to_have_attribute("data-transaction-id", "tx-2-9")
+        verify_overlay("tx-2-9", 2)
+        assert {key: original_row[key] for key in original_finances} == original_finances
+
+        # A full reload fetches the persisted reviewer metadata, not UI cache.
+        page.reload()
+        expect(page.locator(".pdf-controls")).to_contain_text("de 30", timeout=60000)
+        locate("tx-2-9")
+        expect(page.locator(".pdf-source-highlight.is-manual")).to_have_count(1)
+        verify_overlay("tx-2-9", 2)
+        page.get_by_role("button", name="Marcar no PDF", exact=True).click()
+        wheel_to(3)
+        expect(page.locator("tr.source-active-row")).to_have_attribute("data-transaction-id", "tx-2-9")
+        rectangle = evidence_rect("tx-3-8", 3)
+        page.mouse.move(rectangle["x"], rectangle["y"])
+        page.mouse.down()
+        page.mouse.move(rectangle["x"] + rectangle["width"], rectangle["y"] + rectangle["height"], steps=6)
+        page.mouse.up()
+        if page.get_by_role("button", name="Cancelar marcação", exact=True).count():
+            print("MANUAL_SECOND_DEBUG", {"rectangle": rectangle, "stage": stage.bounding_box(),
+                "selected": page.locator("tr.source-active-row").get_attribute("data-transaction-id"),
+                "layers": page.locator(".pdf-interaction-layer[data-drawing-for]").count()}, flush=True)
+            page.screenshot(path=str(evidence / "manual-debug.png"))
+        expect(page.get_by_role("button", name="Marcar no PDF", exact=True)).to_be_visible()
+        expect(page.get_by_text("Salvo", exact=True)).to_be_visible()
+        assert len(original_row["review_regions"]) == 2
+        pdf_target("tx-2-9", 3, "manual").click()
+        expect(page.locator("tr.source-active-row")).to_have_attribute("data-transaction-id", "tx-2-9")
+        verify_overlay("tx-2-9", 3)
+
+        # Cancel a draft before pointer-up: no metadata write may occur.
+        unchanged_writes = len(writes)
+        page.get_by_role("button", name="Marcar no PDF", exact=True).click()
+        page.mouse.move(rectangle["x"], rectangle["y"])
+        page.mouse.down()
+        page.mouse.move(rectangle["x"] + rectangle["width"], rectangle["y"] + rectangle["height"])
+        page.keyboard.press("Escape")
+        page.mouse.up()
+        page.wait_for_timeout(800)
+        assert len(writes) == unchanged_writes
+        assert len(original_row["review_regions"]) == 2
+        page.get_by_role("button", name="Limpar marcações", exact=True).click()
+        expect(page.get_by_text("Salvo", exact=True)).to_be_visible()
+        assert original_row["review_regions"] == []
+        page.get_by_role("button", name="Desfazer", exact=True).click()
+        expect(page.get_by_text("Salvo", exact=True)).to_be_visible()
+        assert len(original_row["review_regions"]) == 2
+
+        # Real touch events in a narrow viewport draw in the same normalized
+        # coordinate system, without turning the gesture into native panning.
+        page.set_viewport_size({"width": 390, "height": 844})
+        rectangle = evidence_rect("tx-3-14", 3)
+        page.get_by_role("button", name="Marcar no PDF", exact=True).click()
+        touch = context.new_cdp_session(page)
+        touch.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": rectangle["x"], "y": rectangle["y"]}]})
+        touch.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": rectangle["x"] + rectangle["width"], "y": rectangle["y"] + rectangle["height"]}]})
+        touch.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+        expect(page.get_by_role("button", name="Marcar no PDF", exact=True)).to_be_visible()
+        expect(page.get_by_text("Salvo", exact=True)).to_be_visible()
+        assert len(original_row["review_regions"]) == 3
+        assert {key: original_row[key] for key in original_finances} == original_finances
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        page.screenshot(path=str(evidence / "manual-mobile.png"))
+        page.set_viewport_size({"width": 1600, "height": 1000})
+        page.screenshot(path=str(evidence / "manual-desktop.png"))
+        assert not any("review" in path for path in writes)
         assert errors == [], errors
         print(json.dumps({"result": "PASS", "pages": 30, "transactions": len(transactions), "checks": [
             "real wheel scroll and grid alignment", "bounded canvases", "automatic synchronization without controls or banner",
@@ -373,6 +498,10 @@ def run(base_url: str) -> None:
             "hover highlight without clicking", "table wheel drives PDF", "PDF wheel follows transactions within a page",
             "stationary pointer does not change the followed row", "no bidirectional scroll feedback", "hover paused during editing",
             "navigation after clearing and reselecting the current document",
+            "direct PDF hover and click select the reviewer row", "manual rectangle association and autosave",
+            "manual association overrides overlapping automatic hit target", "manual marks survive a full reload",
+            "manual marks across intrinsically rotated/cropped pages", "cancelled draft does not save",
+            "clear and undo manual marks", "real touch drawing at mobile width", "manual marks preserve financial values and extraction evidence",
         ]}))
         browser.close()
 

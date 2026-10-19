@@ -30,17 +30,23 @@ import {
   resolveWorkspaceRepository,
   type WorkspaceDataMode,
 } from "@/data/workspace-repository";
-import { sortConversionsForReview } from "@/domain/workspace";
+import {
+  sortConversionsForReview,
+  filterTransactions,
+} from "@/domain/workspace";
 import type {
   Conversion,
   SaveStatus,
   WorkspaceRepository,
+  TransactionFilter,
+  SourceRegion,
 } from "@/domain/workspace";
 import { useWorkspaceController } from "./use-workspace-controller";
 import { DocumentViewer } from "./document-viewer";
 import { TransactionGrid } from "./transaction-grid";
 import {
   sourceLocation,
+  transactionRegions,
   type PdfNavigationRequest,
   type PdfReadingPosition,
 } from "./source-location";
@@ -326,10 +332,56 @@ export function WorkspaceScreen({
   const [reading, setReading] = useState<
     (PdfReadingPosition & { id: string }) | null
   >(null);
+  const [transactionFilter, setTransactionFilter] =
+    useState<TransactionFilter>("ALL");
+  const [editingDocument, setEditingDocument] = useState<string | null>(null);
+  const [marking, setMarking] = useState<{
+    document: string;
+    transactionId: string;
+  } | null>(null);
+  const [markError, setMarkError] = useState<string | null>(null);
+  const activeConversion = controller.activeConversion;
+  const activeNavigation = useMemo(() => {
+    if (
+      !activeConversion ||
+      navigation?.id !== `${activeConversion.id}:${activeConversion.pdf?.url}`
+    )
+      return null;
+    const row = activeConversion.transactions.find(
+      (item) => item.id === navigation.transactionId,
+    );
+    if (navigation.transactionId && !row) return null;
+    if (row) {
+      const regions = transactionRegions(row);
+      if (JSON.stringify(regions) !== JSON.stringify(navigation.regions))
+        return { ...navigation, regions, scroll: false };
+    }
+    return navigation;
+  }, [activeConversion, navigation]);
+
+  if (
+    marking &&
+    (marking.document !== activeConversion?.id ||
+      marking.transactionId !== activeNavigation?.transactionId ||
+      !activeConversion?.transactions.some(
+        (row) => row.id === marking.transactionId && !row.isDeleted,
+      ))
+  )
+    setMarking(null);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (document.querySelector("dialog[open]")) return;
+      if (
+        marking &&
+        (event.key === "Escape" ||
+          ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z"))
+      ) {
+        event.preventDefault();
+        setMarking(null);
+        setMarkError(null);
+        return;
+      }
       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
         event.preventDefault();
         void controller.markReviewed();
@@ -341,7 +393,7 @@ export function WorkspaceScreen({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [controller]);
+  }, [controller, marking]);
 
   if (controller.loadState === "LOADING") {
     return (
@@ -366,16 +418,62 @@ export function WorkspaceScreen({
     );
   }
 
-  const { batch, activeConversion } = controller;
-  const activeNavigation =
-    navigation?.id ===
-      `${activeConversion?.id}:${activeConversion?.pdf?.url}` &&
-    (!navigation.transactionId ||
-      activeConversion?.transactions.some(
-        (row) => row.id === navigation.transactionId,
-      ))
-      ? navigation
+  const { batch } = controller;
+  const selectedTransaction = activeConversion?.transactions.find(
+    (row) => row.id === activeNavigation?.transactionId,
+  );
+  const drawingFor =
+    marking?.document === activeConversion?.id &&
+    marking?.transactionId === selectedTransaction?.id &&
+    selectedTransaction &&
+    !selectedTransaction.isDeleted
+      ? {
+          id: selectedTransaction.id,
+          description: selectedTransaction.description,
+        }
       : null;
+  const selectPdfTransaction = (
+    id: string,
+    page = activeConversion ? (pages[activeConversion.id] ?? 1) : 1,
+    fromEditor = false,
+  ) => {
+    if (!activeConversion) return;
+    const row = activeConversion.transactions.find((item) => item.id === id);
+    if (!row || row.isDeleted) return;
+    setMarking(null);
+    if (!fromEditor) setReading(null);
+    setPages((current) => ({ ...current, [activeConversion.id]: page }));
+    setNavigation((current) => ({
+      ...(sourceLocation(row) ?? { transactionId: row.id, regions: [] }),
+      page,
+      scroll: false,
+      origin: fromEditor ? "pdf" : "pdf-selection",
+      id: `${activeConversion.id}:${activeConversion.pdf?.url}`,
+      token: (current?.token ?? 0) + 1,
+    }));
+  };
+  const changeReviewRegions = (regions: SourceRegion[]) => {
+    if (!selectedTransaction || !activeConversion) return;
+    const error = controller.setReviewRegions(selectedTransaction.id, regions);
+    setMarkError(error);
+    if (!error) {
+      setMarking(null);
+      setReading(null);
+      setNavigation(
+        (current) =>
+          current && {
+            ...current,
+            regions: transactionRegions({
+              ...selectedTransaction,
+              reviewRegions: regions,
+            }),
+            origin: "pdf-selection",
+            scroll: false,
+            token: current.token + 1,
+          },
+      );
+    }
+  };
   const reviewed = batch.conversions.filter(
     (item) => item.status === "REVIEWED" || item.status === "EXPORTED",
   ).length;
@@ -497,11 +595,19 @@ export function WorkspaceScreen({
           onSelect={(id) => {
             setNavigation(null);
             setReading(null);
+            setMarking(null);
+            setMarkError(null);
+            setEditingDocument(null);
+            setTransactionFilter("ALL");
             controller.selectConversion(id);
           }}
           onNext={() => {
             setNavigation(null);
             setReading(null);
+            setMarking(null);
+            setMarkError(null);
+            setEditingDocument(null);
+            setTransactionFilter("ALL");
             controller.goToNextPending();
           }}
         />
@@ -512,11 +618,44 @@ export function WorkspaceScreen({
               conversion={activeConversion}
               repository={activeRepository}
               navigation={activeNavigation}
+              review={{
+                transactions: filterTransactions(
+                  activeConversion.transactions,
+                  transactionFilter,
+                ),
+                selectedId: activeNavigation?.transactionId,
+                drawingFor,
+                paused: editingDocument === activeConversion.id,
+                onSelect: selectPdfTransaction,
+                onStartDrawing: () => {
+                  if (selectedTransaction && !selectedTransaction.isDeleted) {
+                    setMarkError(null);
+                    setEditingDocument(null);
+                    setMarking({
+                      document: activeConversion.id,
+                      transactionId: selectedTransaction.id,
+                    });
+                  }
+                },
+                onCancelDrawing: () => {
+                  setMarking(null);
+                  setMarkError(null);
+                },
+                onCreateRegion: (region) =>
+                  changeReviewRegions([
+                    ...(selectedTransaction?.reviewRegions ?? []),
+                    region,
+                  ]),
+                onClearRegions: () => changeReviewRegions([]),
+              }}
               onReadingPosition={(position) => {
+                if (drawingFor) return;
                 const id = `${activeConversion.id}:${activeConversion.pdf?.url}`;
                 setReading({ ...position, id });
                 setNavigation((current) =>
-                  current?.id === id && current.origin === "grid"
+                  current?.id === id &&
+                  (current.origin === "grid" ||
+                    current.origin === "pdf-selection")
                     ? {
                         ...current,
                         origin: "pdf",
@@ -599,6 +738,21 @@ export function WorkspaceScreen({
                 onRestore={controller.restoreTransaction}
                 groupByPage={groupByPage}
                 onGroupChange={setGroupByPage}
+                filterValue={transactionFilter}
+                onFilterChange={(value) => {
+                  setTransactionFilter(value);
+                  setMarking(null);
+                  setMarkError(null);
+                  setReading(null);
+                }}
+                onSelectTransaction={(id, editing) =>
+                  selectPdfTransaction(id, undefined, editing)
+                }
+                onEditingChange={(editing) =>
+                  setEditingDocument(editing ? activeConversion.id : null)
+                }
+                syncPaused={Boolean(drawingFor)}
+                selectedFromPdf={activeNavigation?.origin === "pdf-selection"}
                 activePage={
                   activeConversion.pdf &&
                   (activeConversion.pdf.url.startsWith("/mock-statement") ||
@@ -608,6 +762,7 @@ export function WorkspaceScreen({
                     : null
                 }
                 onLocateTransaction={(transactionId, options) => {
+                  setMarking(null);
                   const transaction = activeConversion.transactions.find(
                     (row) => row.id === transactionId,
                   );
@@ -627,7 +782,10 @@ export function WorkspaceScreen({
                   }));
                 }}
                 locatedTransactionId={activeNavigation?.transactionId}
-                onClearSource={() => setNavigation(null)}
+                onClearSource={() => {
+                  setNavigation(null);
+                  setMarking(null);
+                }}
                 followPdf={activeNavigation?.origin !== "grid"}
                 readingPosition={
                   reading?.id ===
@@ -636,6 +794,7 @@ export function WorkspaceScreen({
                     : undefined
                 }
                 onSourcePage={(page) => {
+                  setMarking(null);
                   setReading(null);
                   setPages((current) => ({
                     ...current,
@@ -658,6 +817,12 @@ export function WorkspaceScreen({
           </div>
         )}
       </div>
+
+      {markError && (
+        <div className="pdf-mark-error" role="alert">
+          {markError}
+        </div>
+      )}
 
       <footer className="workspace-footer">
         <span>
@@ -683,6 +848,10 @@ export function WorkspaceScreen({
           onClick={() => {
             setNavigation(null);
             setReading(null);
+            setMarking(null);
+            setMarkError(null);
+            setEditingDocument(null);
+            setTransactionFilter("ALL");
             controller.goToNextPending();
           }}
         >

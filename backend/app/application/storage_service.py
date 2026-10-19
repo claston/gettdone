@@ -17,7 +17,7 @@ from app.application.bank_identity import resolve_conversion_model_label
 from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConflictError, AnalysisNotFoundError
 from app.application.export_artifact_service import ExportArtifactService
 from app.application.models import AnalysisData, BeforeAfterRow, TransactionRow
-from app.application.source_regions import parse_source_regions
+from app.application.source_regions import parse_source_regions, validate_review_regions
 from app.application.structured_conversion import build_structured_conversion_result_from_analysis_data
 
 _SAFE_ANALYSIS_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
@@ -368,8 +368,14 @@ class TempAnalysisStorage:
 
         for edit in edits:
             action = str(edit.get("action") or "update").strip().lower()
-            if action not in {"update", "delete", "restore", "insert"}:
+            if action not in {"update", "delete", "restore", "insert", "annotate"}:
                 raise ValueError("Invalid edit action.")
+            review_regions = None
+            if "review_regions" in edit:
+                if content.get("file_type") != "pdf":
+                    raise ValueError("Marcações estão disponíveis apenas para PDFs.")
+                review_regions = validate_review_regions(edit["review_regions"],
+                    (content.get("pdf_processing_metrics") or {}).get("page_count"))
 
             if action == "insert":
                 amount = self._build_amount_from_credit_debit(edit.get("credit"), edit.get("debit"))
@@ -385,6 +391,7 @@ class TempAnalysisStorage:
                     category="Outros",
                     reconciliation_status="unmatched",
                     is_deleted=False,
+                    review_regions=review_regions or [],
                 )
                 if all(row.source_sequence is not None for row in preview_rows):
                     anchor_id = edit.get("anchor_transaction_id")
@@ -406,6 +413,16 @@ class TempAnalysisStorage:
             stable_index = next((idx for idx, row in enumerate(preview_rows)
                                  if row.transaction_id is not None and row.transaction_id == row_id_raw), None)
             row_index = stable_index if stable_index is not None else self._resolve_row_index(row_id_raw, max_index=len(preview_rows))
+
+            if review_regions is not None:
+                preview_rows[row_index].review_regions = list(review_regions)
+                report_rows[row_index].review_regions = list(review_regions)
+            if action == "annotate":
+                if review_regions is None:
+                    raise ValueError("Informe as marcações do lançamento.")
+                if preview_rows[row_index].is_deleted:
+                    raise ValueError("Restaure o lançamento antes de marcar.")
+                continue
 
             if action == "delete":
                 if row_index >= len(report_rows):
@@ -438,6 +455,19 @@ class TempAnalysisStorage:
             preview_target.description = description
             preview_target.amount = amount
             preview_target.is_deleted = False
+
+        if edits and all(str(edit.get("action") or "").strip().lower() == "annotate" for edit in edits) and all(value is None for value in (
+                opening_balance, closing_balance, bank_branch, account_number, bank_code)):
+            # Reviewer geometry must never recalculate balances or regenerate
+            # financial artifacts. Versioning/receipts still protect concurrent edits.
+            content["preview_transactions"] = [asdict(item) for item in preview_rows]
+            content["report_transactions"] = [asdict(item) for item in report_rows]
+            content["updated_at"] = self.now_provider().isoformat()
+            if operation_id:
+                receipts[operation_id] = {"hash": operation_hash, "updated_at": content["updated_at"]}
+                content["edit_operations"] = dict(list(receipts.items())[-64:])
+            self._write_metadata(metadata_path, content)
+            return self._edit_result(analysis_id, content, operation_id)
 
         requested_overrides = self._normalize_convert_overrides(
             opening_balance=opening_balance,
@@ -844,6 +874,7 @@ class TempAnalysisStorage:
                     reconciliation_status=str(item.get("reconciliation_status") or "unmatched"),
                     source_page=item.get("source_page") if isinstance(item.get("source_page"), int) else None,
                     source_regions=parse_source_regions(item.get("source_regions")),
+                    review_regions=parse_source_regions(item.get("review_regions")),
                     source_line=item.get("source_line") if isinstance(item.get("source_line"), int) else None,
                     transaction_id=item.get("transaction_id") if isinstance(item.get("transaction_id"), str) else None,
                     source_sequence=item.get("source_sequence") if isinstance(item.get("source_sequence"), int) else None,

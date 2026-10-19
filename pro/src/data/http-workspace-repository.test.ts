@@ -82,6 +82,73 @@ const batchPayload = {
   ],
 };
 
+it("salva e limpa marcações separadamente da origem e confirma o eco da API", async () => {
+  const region = { page: 1, left: 0.1, top: 0.5, width: 0.7, height: 0.03 };
+  const markedRows =
+    batchPayload.jobs[0].result!.analysis.preview_transactions.map(
+      (row, index) => ({ ...row, review_regions: index ? [] : [region] }),
+    );
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(jsonResponse({}))
+    .mockResolvedValueOnce(jsonResponse(batchPayload))
+    .mockResolvedValueOnce(
+      jsonResponse({ updated_at: "marked", preview_transactions: markedRows }),
+    )
+    .mockResolvedValueOnce(
+      jsonResponse({
+        updated_at: "cleared",
+        preview_transactions: markedRows.map((row) => ({
+          ...row,
+          review_regions: [],
+        })),
+      }),
+    );
+  const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+  const batch = await repository.getBatch("batch-real");
+  const rows = batch.conversions[0].transactions;
+  const marked = await repository.saveTransactions("job-ready", [
+    { ...rows[0], reviewRegions: [region] },
+    ...rows.slice(1),
+  ]);
+  const patch = JSON.parse(String(fetcher.mock.calls.at(-1)?.[1]?.body))
+    .edits[0];
+  expect(patch.action).toBe("annotate");
+  expect(patch.review_regions).toEqual([region]);
+  expect(patch).not.toHaveProperty("source_regions");
+  expect(marked?.[0].reviewRegions).toEqual([region]);
+  expect(marked?.[0].credit).toBe(rows[0].credit);
+  const cleared = await repository.saveTransactions(
+    "job-ready",
+    marked!.map((row) => ({ ...row, reviewRegions: [] })),
+  );
+  expect(cleared?.[0].reviewRegions).toEqual([]);
+  expect(
+    JSON.parse(String(fetcher.mock.calls.at(-1)?.[1]?.body)).edits[0]
+      .review_regions,
+  ).toEqual([]);
+});
+
+it("não informa sucesso se uma API antiga descartar a marcação", async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(jsonResponse({}))
+    .mockResolvedValueOnce(jsonResponse(batchPayload))
+    .mockResolvedValueOnce(jsonResponse({ updated_at: "old" }));
+  const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+  const batch = await repository.getBatch("batch-real");
+  const rows = batch.conversions[0].transactions;
+  await expect(
+    repository.saveTransactions("job-ready", [
+      {
+        ...rows[0],
+        reviewRegions: [{ page: 1, left: 0, top: 0, width: 0.5, height: 0.1 }],
+      },
+      ...rows.slice(1),
+    ]),
+  ).rejects.toThrow(/confirmar as marcações/);
+});
+
 describe("HttpWorkspaceRepository", () => {
   it("mapeia a declaração de ausência de movimentação sem marcar falha", async () => {
     const payload = structuredClone(batchPayload);

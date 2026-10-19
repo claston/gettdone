@@ -25,6 +25,7 @@ class TransactionRow:
     source_sequence: int | None = None
     source_subsequence: int = 0
     source_regions: list[SourceRegion] = field(default_factory=list)
+    review_regions: list[SourceRegion] = field(default_factory=list)
 
 
 @dataclass

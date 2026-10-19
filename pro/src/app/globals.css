@@ -1163,6 +1163,79 @@ button.save-indicator {
   background: rgb(52 144 255 / 18%);
   box-shadow: 0 0 0 1px rgb(255 255 255 / 65%);
 }
+.pdf-source-highlight.is-manual {
+  outline-style: dashed;
+}
+.pdf-interaction-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.pdf-region-target {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  border-radius: 1px;
+  background: transparent;
+  color: inherit;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.pdf-region-target:hover {
+  background: rgb(52 144 255 / 12%);
+  box-shadow: 0 0 0 2px rgb(22 100 192 / 45%);
+}
+.pdf-region-target[data-region-kind="manual"] {
+  outline: 1px dashed rgb(22 100 192 / 55%);
+  background: rgb(52 144 255 / 5%);
+}
+.pdf-region-target:focus-visible {
+  outline: 2px solid #1664c0;
+  outline-offset: 2px;
+}
+.pdf-interaction-layer.is-drawing {
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none;
+  outline: none;
+}
+.pdf-manual-draft {
+  position: absolute;
+  pointer-events: none;
+  outline: 2px dashed #1664c0;
+  background: rgb(52 144 255 / 20%);
+}
+.pdf-mark-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 10px;
+}
+.pdf-mark-label {
+  min-width: 0;
+  flex: 1 1 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-500);
+}
+.pdf-mark-error {
+  position: fixed;
+  bottom: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 90vw;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: white;
+  color: var(--red-600);
+  box-shadow: 0 3px 12px #0003;
+  z-index: 50;
+}
 .pdf-toolbar {
   height: auto;
   min-height: 43px;

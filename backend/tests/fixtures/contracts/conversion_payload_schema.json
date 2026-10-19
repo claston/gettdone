@@ -905,6 +905,13 @@
           "title": "Source Regions",
           "type": "array"
         },
+        "review_regions": {
+          "items": {
+            "$ref": "#/$defs/SourceRegion"
+          },
+          "title": "Review Regions",
+          "type": "array"
+        },
         "date": {
           "title": "Date",
           "type": "string"

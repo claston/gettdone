@@ -12,7 +12,7 @@ export interface PdfSourceLocation {
 export interface PdfNavigationRequest extends PdfSourceLocation {
   token: number;
   scroll?: boolean;
-  origin?: "grid" | "pdf";
+  origin?: "grid" | "pdf" | "pdf-selection";
 }
 
 export type SourceSelectionOptions = Pick<
@@ -52,12 +52,15 @@ export function pdfReadingPosition(
 }
 
 export function transactionAtReadingPosition<
-  T extends Pick<Transaction, "id" | "sourcePage" | "sourceRegions">,
+  T extends Pick<
+    Transaction,
+    "id" | "sourcePage" | "sourceRegions" | "reviewRegions"
+  >,
 >(rows: readonly T[], position: PdfReadingPosition): T | undefined {
   let selected: T | undefined;
   let distance = Infinity;
   for (const row of rows) {
-    for (const region of validSourceRegions(row.sourceRegions)) {
+    for (const region of transactionRegions(row)) {
       if (region.page !== position.page) continue;
       const candidate = Math.abs(
         region.top + region.height / 2 - position.fraction,
@@ -72,12 +75,29 @@ export function transactionAtReadingPosition<
 }
 
 export function sourceLocation(
-  transaction: Pick<Transaction, "id" | "sourcePage" | "sourceRegions">,
+  transaction: Pick<
+    Transaction,
+    "id" | "sourcePage" | "sourceRegions" | "reviewRegions"
+  >,
 ): PdfSourceLocation | null {
-  const regions = validSourceRegions(transaction.sourceRegions);
+  const regions = transactionRegions(transaction);
   const page = regions[0]?.page ?? transaction.sourcePage;
   if (!page || !Number.isInteger(page) || page < 1) return null;
   return { page, transactionId: transaction.id, regions };
+}
+
+export function transactionRegions(
+  transaction: Pick<Transaction, "sourceRegions" | "reviewRegions">,
+) {
+  return validSourceRegions([
+    ...(transaction.reviewRegions ?? []),
+    ...(transaction.sourceRegions ?? []),
+  ]).filter(
+    (region, index, all) =>
+      all.findIndex(
+        (item) => JSON.stringify(item) === JSON.stringify(region),
+      ) === index,
+  );
 }
 
 export function regionScrollPosition(
