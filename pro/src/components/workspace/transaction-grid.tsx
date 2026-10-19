@@ -1,5 +1,12 @@
 "use client";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Search, Plus, ExternalLink, RotateCcw, Trash2 } from "lucide-react";
 import {
   filterTransactions,
@@ -15,7 +22,12 @@ import type {
 } from "@/domain/workspace";
 import { TransactionDialog } from "./transaction-dialog";
 import { usePageSync } from "./use-page-sync";
-import { sourceLocation } from "./source-location";
+import {
+  sourceLocation,
+  transactionAtReadingPosition,
+  type PdfReadingPosition,
+  type SourceSelectionOptions,
+} from "./source-location";
 
 function EditableCell({
   transaction,
@@ -83,6 +95,9 @@ export function TransactionGrid({
   onSourcePage,
   onLocateTransaction,
   locatedTransactionId,
+  readingPosition,
+  followPdf = true,
+  onClearSource,
   activePage,
 }: {
   conversion: Conversion;
@@ -97,8 +112,14 @@ export function TransactionGrid({
   groupByPage: boolean;
   onGroupChange(value: boolean): void;
   onSourcePage(page: number): void;
-  onLocateTransaction(transactionId: string): void;
+  onLocateTransaction(
+    transactionId: string,
+    options?: SourceSelectionOptions,
+  ): void;
   locatedTransactionId?: string;
+  readingPosition?: PdfReadingPosition;
+  followPdf?: boolean;
+  onClearSource?(): void;
   activePage: number | null;
 }) {
   const [filter, setFilter] = useState<TransactionFilter>("ALL");
@@ -106,24 +127,147 @@ export function TransactionGrid({
   const scroll = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const rowElements = useRef(new Map<string, HTMLTableRowElement>());
-  const visible = filterTransactions(conversion.transactions, filter);
+  const visible = useMemo(
+    () => filterTransactions(conversion.transactions, filter),
+    [conversion.transactions, filter],
+  );
+  const userScrolling = useRef(false);
+  const editing = useRef(false);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollFrame = useRef<number | null>(null);
+  const pointer = useRef<{ x: number; y: number; id: string } | null>(null);
+  const cancelHover = useCallback(() => {
+    if (hoverTimer.current !== null) clearTimeout(hoverTimer.current);
+    hoverTimer.current = null;
+  }, []);
+  useEffect(() => {
+    cancelHover();
+    pointer.current = null;
+    userScrolling.current = false;
+  }, [visible, groupByPage, cancelHover]);
+  useEffect(() => {
+    if (
+      locatedTransactionId &&
+      !visible.some((row) => row.id === locatedTransactionId)
+    )
+      onClearSource?.();
+  }, [visible, locatedTransactionId, onClearSource]);
+  useEffect(
+    () => () => {
+      cancelHover();
+      if (scrollFrame.current !== null)
+        cancelAnimationFrame(scrollFrame.current);
+    },
+    [cancelHover],
+  );
+  useEffect(() => {
+    if (!scroll.current || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      userScrolling.current = false;
+      cancelHover();
+    });
+    observer.observe(scroll.current);
+    return () => observer.disconnect();
+  }, [cancelHover]);
   const belongsToPage = (row: Transaction) =>
     row.sourcePage === activePage ||
     row.sourceRegions?.some((region) => region.page === activePage);
   const located = visible.find(
     (row) => row.id === locatedTransactionId && belongsToPage(row),
   );
-  const targetId = located?.id ?? visible.find(belongsToPage)?.id;
+  const readingTarget =
+    readingPosition?.page === activePage
+      ? transactionAtReadingPosition(visible, readingPosition)
+      : undefined;
+  const targetId =
+    (followPdf ? readingTarget?.id : undefined) ??
+    located?.id ??
+    visible.find(belongsToPage)?.id;
   const follow = useCallback((id: string) => {
     const row = rowElements.current.get(id);
     const container = scroll.current;
     if (!row || !container) return;
+    userScrolling.current = false;
     container.scrollTop +=
       row.getBoundingClientRect().top -
       container.getBoundingClientRect().top -
       32;
   }, []);
-  const sync = usePageSync(activePage, targetId, follow);
+  const sync = usePageSync(activePage, targetId, follow, followPdf);
+  useEffect(() => {
+    if (
+      followPdf &&
+      !sync.editing &&
+      readingTarget &&
+      readingTarget.id !== locatedTransactionId
+    )
+      onLocateTransaction(readingTarget.id, { origin: "pdf", scroll: false });
+  }, [
+    followPdf,
+    sync.editing,
+    readingTarget,
+    locatedTransactionId,
+    onLocateTransaction,
+  ]);
+  useEffect(() => {
+    if (
+      followPdf &&
+      !sync.editing &&
+      readingPosition?.page === activePage &&
+      !readingTarget &&
+      locatedTransactionId
+    )
+      onClearSource?.();
+  }, [
+    followPdf,
+    sync.editing,
+    readingPosition,
+    activePage,
+    readingTarget,
+    locatedTransactionId,
+    onClearSource,
+  ]);
+  const startUserScroll = () => {
+    cancelHover();
+    userScrolling.current = true;
+  };
+  const onGridScroll = () => {
+    if (
+      !userScrolling.current ||
+      editing.current ||
+      activePage === null ||
+      scrollFrame.current !== null
+    )
+      return;
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = null;
+      const container = scroll.current;
+      if (!container || !userScrolling.current || editing.current) return;
+      const bounds = container.getBoundingClientRect();
+      const bottom =
+        container.scrollTop > 0 &&
+        container.scrollTop + container.clientHeight >=
+          container.scrollHeight - 1;
+      const line = bottom
+        ? bounds.bottom
+        : bounds.top + Math.min(120, container.clientHeight * 0.2);
+      let selected: string | undefined;
+      let distance = Infinity;
+      for (const row of visible) {
+        const element = rowElements.current.get(row.id);
+        if (!element || !sourceLocation(row)) continue;
+        const rect = element.getBoundingClientRect();
+        if (rect.bottom < bounds.top || rect.top > bounds.bottom) continue;
+        const candidate = Math.abs(rect.top + rect.height / 2 - line);
+        if (candidate < distance) {
+          distance = candidate;
+          selected = row.id;
+        }
+      }
+      if (selected && selected !== locatedTransactionId)
+        onLocateTransaction(selected, { origin: "grid", scroll: true });
+    });
+  };
   const hasPageRows = conversion.transactions.some(belongsToPage);
   const groups = groupByPage
     ? Array.from(new Set(visible.map((row) => row.sourcePage ?? null)))
@@ -145,10 +289,12 @@ export function TransactionGrid({
         .find((row) => normalize(row.description).includes(search))?.id
     : undefined;
   useEffect(() => {
-    if (matchId && !sync.editing)
+    if (matchId && !sync.editing) {
+      userScrolling.current = false;
       rowElements.current
         .get(matchId)
         ?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    }
   }, [matchId, groupByPage, sync.editing]);
   const suspected = conversion.transactions.filter((item) =>
     transactionHasState(item, "SUSPECTED"),
@@ -226,13 +372,49 @@ export function TransactionGrid({
       <div
         className="table-scroll"
         ref={scroll}
+        onWheel={startUserScroll}
+        onTouchStart={startUserScroll}
+        onPointerDown={(event) => {
+          cancelHover();
+          // Clicking a cell/action is not a scrolling gesture. Only direct
+          // scrollbar interaction and touch may claim scroll ownership here.
+          userScrolling.current = false;
+          if (
+            event.pointerType === "touch" ||
+            event.target === event.currentTarget
+          )
+            startUserScroll();
+        }}
+        onScroll={onGridScroll}
+        onPointerLeave={() => {
+          cancelHover();
+          pointer.current = null;
+        }}
+        onKeyDownCapture={(event) => {
+          if (
+            !editing.current &&
+            [
+              "ArrowDown",
+              "ArrowUp",
+              "PageDown",
+              "PageUp",
+              "Home",
+              "End",
+              " ",
+            ].includes(event.key)
+          )
+            startUserScroll();
+        }}
         onFocusCapture={(event) => {
           if (
             (event.target as HTMLElement).matches(
               "input:not([readonly]), textarea, [contenteditable=true]",
             )
-          )
+          ) {
+            editing.current = true;
+            cancelHover();
             sync.setEditing(true);
+          }
         }}
         onBlurCapture={(event) => {
           const next = event.relatedTarget as HTMLElement | null;
@@ -242,8 +424,10 @@ export function TransactionGrid({
             !next.matches(
               "input:not([readonly]), textarea, [contenteditable=true]",
             )
-          )
+          ) {
+            editing.current = false;
             sync.setEditing(false);
+          }
         }}
       >
         <table aria-label="Lançamentos extraídos">
@@ -285,12 +469,56 @@ export function TransactionGrid({
                     <tr
                       data-transaction-id={transaction.id}
                       data-source-page={transaction.sourcePage ?? undefined}
+                      aria-current={
+                        transaction.id === locatedTransactionId
+                          ? "true"
+                          : undefined
+                      }
                       key={transaction.id}
                       ref={(node) => {
                         if (node) rowElements.current.set(transaction.id, node);
                         else rowElements.current.delete(transaction.id);
                       }}
-                      className={`${transactionHasState(transaction, "SUSPECTED") ? "suspected-row" : ""} ${transaction.isDeleted ? "deleted-row" : ""} ${transaction.id === matchId ? "located-row" : ""}`}
+                      className={`${transactionHasState(transaction, "SUSPECTED") ? "suspected-row" : ""} ${transaction.isDeleted ? "deleted-row" : ""} ${transaction.id === matchId ? "located-row" : ""} ${transaction.id === locatedTransactionId ? "source-active-row" : ""}`}
+                      onPointerMove={(event) => {
+                        if (
+                          event.pointerType === "touch" ||
+                          editing.current ||
+                          activePage === null ||
+                          !location
+                        )
+                          return;
+                        const previous = pointer.current;
+                        if (
+                          previous &&
+                          (previous.id === transaction.id ||
+                            Math.hypot(
+                              previous.x - event.clientX,
+                              previous.y - event.clientY,
+                            ) < 2)
+                        )
+                          return;
+                        pointer.current = {
+                          id: transaction.id,
+                          x: event.clientX,
+                          y: event.clientY,
+                        };
+                        cancelHover();
+                        hoverTimer.current = setTimeout(() => {
+                          if (
+                            !editing.current &&
+                            transaction.id !== locatedTransactionId
+                          )
+                            onLocateTransaction(transaction.id, {
+                              origin: "grid",
+                              scroll: true,
+                            });
+                        }, 110);
+                      }}
+                      onPointerLeave={() => {
+                        cancelHover();
+                        pointer.current = null;
+                      }}
                     >
                       <td>
                         <EditableCell

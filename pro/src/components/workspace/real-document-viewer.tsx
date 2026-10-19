@@ -1,5 +1,8 @@
 "use client";
-import type { PdfNavigationRequest } from "./source-location";
+import type {
+  PdfNavigationRequest,
+  PdfReadingPosition,
+} from "./source-location";
 import dynamic from "next/dynamic";
 import { useState } from "react";
 import type { Conversion, WorkspaceRepository } from "@/domain/workspace";
@@ -17,6 +20,7 @@ export function RealDocumentViewer(props: {
   setPage(page: number): void;
   navigation: PdfNavigationRequest | null;
   onAvailability(available: boolean): void;
+  onReadingPosition?(position: PdfReadingPosition): void;
 }) {
   const [attempt, setAttempt] = useState(0);
   return (
@@ -53,6 +57,7 @@ function AuthorizedPdf({
           navigation={props.navigation}
           retry={retry}
           onAvailability={props.onAvailability}
+          onReadingPosition={props.onReadingPosition}
         />
       ) : (
         <div className="viewer-state" role={state.error ? "alert" : "status"}>

@@ -1513,6 +1513,17 @@ button.save-indicator {
 .table-scroll tr.located-row td:first-child {
   box-shadow: inset 3px 0 #d18b00;
 }
+.table-scroll tr.source-active-row td {
+  background: #e9f2ff;
+}
+.table-scroll tr.source-active-row td:first-child {
+  box-shadow: inset 3px 0 #3974c6;
+}
+@media (hover: hover) {
+  .table-scroll tr[data-transaction-id]:hover td {
+    background: #edf4ff;
+  }
+}
 .count-chip {
   min-width: 22px;
   padding: 2px 6px;

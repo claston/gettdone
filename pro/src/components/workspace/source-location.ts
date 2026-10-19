@@ -1,6 +1,6 @@
 import type { SourceRegion, Transaction } from "@/domain/workspace";
 import { validSourceRegions } from "@/domain/source-regions";
-import type { PageBox } from "./pdf-navigation";
+import { activePageAt, type PageBox } from "./pdf-navigation";
 
 export { validSourceRegions } from "@/domain/source-regions";
 
@@ -11,6 +11,64 @@ export interface PdfSourceLocation {
 }
 export interface PdfNavigationRequest extends PdfSourceLocation {
   token: number;
+  scroll?: boolean;
+  origin?: "grid" | "pdf";
+}
+
+export type SourceSelectionOptions = Pick<
+  PdfNavigationRequest,
+  "scroll" | "origin"
+>;
+export interface PdfReadingPosition {
+  page: number;
+  fraction: number;
+}
+
+export function pdfReadingPosition(
+  pages: PageBox[],
+  top: number,
+  height: number,
+): PdfReadingPosition {
+  const page = activePageAt(pages, top, height);
+  const box = pages[page - 1];
+  const atEnd =
+    page === pages.length &&
+    top > 0 &&
+    top + height >= box.top + box.height - 1;
+  return {
+    page,
+    fraction: box
+      ? atEnd
+        ? 1
+        : Math.max(
+            0,
+            Math.min(
+              1,
+              (top + Math.min(120, height * 0.2) - box.top) / box.height,
+            ),
+          )
+      : 0,
+  };
+}
+
+export function transactionAtReadingPosition<
+  T extends Pick<Transaction, "id" | "sourcePage" | "sourceRegions">,
+>(rows: readonly T[], position: PdfReadingPosition): T | undefined {
+  let selected: T | undefined;
+  let distance = Infinity;
+  for (const row of rows) {
+    for (const region of validSourceRegions(row.sourceRegions)) {
+      if (region.page !== position.page) continue;
+      const candidate = Math.abs(
+        region.top + region.height / 2 - position.fraction,
+      );
+      if (candidate < distance) {
+        selected = row;
+        distance = candidate;
+      }
+    }
+  }
+  return selected ?? rows.find((row) => row.sourcePage === position.page);
 }
 
 export function sourceLocation(
@@ -26,11 +84,14 @@ export function regionScrollPosition(
   box: PageBox,
   region: SourceRegion,
   viewportHeight: number,
+  alignReadingLine = false,
 ): number {
   return Math.max(
     box.top,
     box.top +
       (region.top + region.height / 2) * box.height -
-      viewportHeight * 0.35,
+      (alignReadingLine
+        ? Math.min(120, viewportHeight * 0.2)
+        : viewportHeight * 0.35),
   );
 }

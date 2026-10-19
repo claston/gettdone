@@ -3,6 +3,16 @@ import { describe, expect, it, vi } from "vitest";
 import { usePageSync } from "./use-page-sync";
 
 describe("page synchronization", () => {
+  it("lets table interaction lead without pulling it back to the PDF target", () => {
+    const follow = vi.fn();
+    const { rerender } = renderHook(
+      ({ enabled }) => usePageSync(1, "a", follow, enabled),
+      { initialProps: { enabled: false } },
+    );
+    expect(follow).not.toHaveBeenCalled();
+    rerender({ enabled: true });
+    expect(follow).toHaveBeenCalledExactlyOnceWith("a");
+  });
   it("follows the previous page again after visiting an unmatched page", () => {
     const follow = vi.fn();
     const { rerender } = renderHook(
