@@ -1741,6 +1741,8 @@ def _parse_grouped_statement_lines(
             line=line,
             layout_profile=layout_profile,
         )
+        if layout_profile is None and description_parts and index > 0:
+            grouped_value_line = _with_adjacent_grouped_amount_sign(grouped_value_line, previous=lines[index - 1])
         inherited_date_transaction = _parse_grouped_inherited_date_line(
             current_date=current_date,
             line=grouped_value_line,
@@ -3210,11 +3212,27 @@ def _update_grouped_section_state(
 
 
 def _handle_grouped_ignored_line(*, normalized_line: str, description_parts: list[str]) -> tuple[list[str], bool]:
-    if normalized_line in {"-", "--"}:
+    if normalized_line in {"+", "-", "−", "--"}:
         return description_parts, True
     if should_ignore_grouped_line(normalized_line):
         return [], True
     return description_parts, False
+
+
+def _with_adjacent_grouped_amount_sign(line: _PdfLine, *, previous: _PdfLine) -> _PdfLine:
+    """Recover a split sign before a currency value, avoiding bare document placeholders."""
+    sign = previous.text.strip()
+    if (
+        sign not in {"+", "-", "−"}
+        or previous.page_number != line.page_number
+        or previous.line_number + 1 != line.line_number
+        or not is_amount_only_row(line.text)
+        or not re.match(r"^(?:R|US)\$\s*", line.text.strip())
+        or has_explicit_amount_sign(line.text)
+        or re.search(r"[+\-\u2212]", line.text)
+    ):
+        return line
+    return replace(line, text=f"{sign} {line.text}")
 
 
 def _handle_grouped_amount_only_line(
