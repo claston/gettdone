@@ -1166,11 +1166,28 @@ button.save-indicator {
 .pdf-source-highlight.is-manual {
   outline-style: dashed;
 }
+.pdf-reading-marker {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  min-height: 6px;
+  background: rgb(52 144 255 / 15%);
+  border-block: 1px solid rgb(22 100 192 / 55%);
+}
+.pdf-reading-marker::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  border-block: 6px solid transparent;
+  border-left: 9px solid #1664c0;
+}
 .pdf-interaction-layer {
   position: absolute;
   inset: 0;
   z-index: 3;
-  pointer-events: none;
+  pointer-events: auto;
 }
 .pdf-region-target {
   position: absolute;

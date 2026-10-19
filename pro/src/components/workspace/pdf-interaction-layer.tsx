@@ -5,6 +5,7 @@ import type { SourceRegion } from "@/domain/workspace";
 import {
   dragRegion,
   regionTargets,
+  targetAtPoint,
   type PdfReviewControls,
 } from "./pdf-interactions";
 
@@ -22,6 +23,7 @@ export function PdfInteractionLayer({
     null,
   );
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingTarget = useRef<string | null>(null);
   const lastPointer = useRef<{ x: number; y: number } | null>(null);
   const latest = useRef(review);
   const layer = useRef<HTMLDivElement>(null);
@@ -36,6 +38,7 @@ export function PdfInteractionLayer({
   const cancelHover = () => {
     if (timer.current !== null) clearTimeout(timer.current);
     timer.current = null;
+    pendingTarget.current = null;
   };
   useEffect(
     () => () => {
@@ -65,6 +68,9 @@ export function PdfInteractionLayer({
     const stage = layer.current?.closest<HTMLElement>(".pdf-stage");
     if (!stage) return;
     const cancelMovedDraft = () => {
+      if (timer.current !== null) clearTimeout(timer.current);
+      timer.current = null;
+      pendingTarget.current = null;
       const origin = scrollOrigin.current;
       if (
         start.current &&
@@ -138,8 +144,59 @@ export function PdfInteractionLayer({
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={(event) => {
-        if (start.current?.pointerId === event.pointerId)
+        if (start.current && start.current.pointerId === event.pointerId) {
           setDraft(drawAt(event));
+          return;
+        }
+        if (
+          review.drawingFor ||
+          review.paused ||
+          event.pointerType === "touch" ||
+          event.buttons
+        )
+          return;
+        const previous = lastPointer.current;
+        if (
+          previous &&
+          Math.hypot(previous.x - event.clientX, previous.y - event.clientY) < 2
+        )
+          return;
+        lastPointer.current = { x: event.clientX, y: event.clientY };
+        const direct = (event.target as HTMLElement).closest<HTMLElement>(
+          "[data-pdf-target]",
+        )?.dataset.pdfTarget;
+        const targetId =
+          direct ??
+          targetAtPoint(
+            targets,
+            localPoint(event),
+            event.currentTarget.getBoundingClientRect(),
+          )?.transactionId;
+        if (!targetId || targetId === review.selectedId) {
+          cancelHover();
+          return;
+        }
+        if (pendingTarget.current === targetId) return;
+        cancelHover();
+        pendingTarget.current = targetId;
+        timer.current = setTimeout(() => {
+          pendingTarget.current = null;
+          timer.current = null;
+          const current = latest.current;
+          if (
+            !current.paused &&
+            !current.drawingFor &&
+            current.selectedId !== targetId &&
+            regionTargets(current.transactions, page).some(
+              (target) => target.transactionId === targetId,
+            )
+          )
+            current.onSelect(targetId, page);
+        }, 110);
+      }}
+      onPointerLeave={() => {
+        cancelHover();
+        lastPointer.current = null;
       }}
       onPointerUp={(event) => {
         if (!start.current || start.current.pointerId !== event.pointerId)
@@ -182,31 +239,6 @@ export function PdfInteractionLayer({
               width: `${target.region.width * 100}%`,
               height: `${target.region.height * 100}%`,
             }}
-            onPointerMove={(event) => {
-              if (event.pointerType === "touch" || event.buttons) return;
-              const previous = lastPointer.current;
-              if (
-                previous &&
-                Math.hypot(
-                  previous.x - event.clientX,
-                  previous.y - event.clientY,
-                ) < 2
-              )
-                return;
-              lastPointer.current = { x: event.clientX, y: event.clientY };
-              cancelHover();
-              if (review.selectedId !== target.transactionId)
-                timer.current = setTimeout(() => {
-                  const current = latest.current;
-                  if (
-                    !current.paused &&
-                    !current.drawingFor &&
-                    current.selectedId !== target.transactionId
-                  )
-                    current.onSelect(target.transactionId, page);
-                }, 110);
-            }}
-            onPointerLeave={cancelHover}
             onClick={() => {
               cancelHover();
               review.onSelect(target.transactionId, page);

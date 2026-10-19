@@ -235,6 +235,7 @@ def run(base_url: str) -> None:
         expect(page.locator(".pdf-controls strong")).to_have_text("2")
         expect(page.locator(".pdf-source-highlight")).to_have_count(0)
         expect(page.get_by_text("Página de origem aberta. A região exata não está disponível para este lançamento.")).to_have_count(1)
+        expect(page.locator(".pdf-reading-marker")).to_have_count(0)
         assert len(downloads) == 1
         page.get_by_role("button", name="Aumentar zoom").click()
         expect(page.locator(".pdf-controls strong")).to_have_text("2")
@@ -247,6 +248,22 @@ def run(base_url: str) -> None:
         def verify_overlay(identifier: str, number: int):
             overlays = page.locator(f"[data-pdf-page='{number}'] .pdf-source-highlight[data-source-transaction='{identifier}']")
             expect(overlays.first).to_be_visible()
+            # The automatic ruler spans the physical page and covers the same
+            # source lines, including rotated/cropped pages and any zoom level.
+            page.wait_for_function("""({id, number}) => {
+                const slot = document.querySelector(`[data-pdf-page='${number}']`);
+                const markers = [...slot.querySelectorAll(`[data-pdf-reading-marker][data-source-transaction='${id}']`)];
+                const sources = [...slot.querySelectorAll(`.pdf-source-highlight[data-source-transaction='${id}']`)];
+                const box = slot.getBoundingClientRect();
+                return sources.length && sources.every(source => {
+                    const rect = source.getBoundingClientRect(), center = rect.top + rect.height / 2;
+                    return markers.some(marker => { const band = marker.getBoundingClientRect();
+                        return Math.abs(band.left - box.left) < 1 && Math.abs(band.width - box.width) < 1 &&
+                            center >= band.top - 1 && center <= band.bottom + 1 &&
+                            getComputedStyle(marker).pointerEvents === 'none' &&
+                            getComputedStyle(marker, '::before').borderLeftWidth === '9px'; });
+                });
+            }""", arg={"id": identifier, "number": number})
             for overlay in overlays.all():
                 # Read real canvas pixels under each overlay: source glyphs must
                 # be present, including on the intrinsically rotated page.
@@ -287,11 +304,24 @@ def run(base_url: str) -> None:
         assert grid.evaluate("el => el.scrollTop") == grid_before
         assert len(downloads) == 1
 
+        # PDF margin hover follows an existing line without a click or drawing.
+        point = page.locator("[data-pdf-page='2']").evaluate("""(el, r) => {
+            const b = el.getBoundingClientRect();
+            return {x: b.right - 12, y: b.top + (r.top + r.height / 2) * b.height};
+        }""", next(row for row in transactions if row["transaction_id"] == "tx-2-7")["source_regions"][0])
+        stationary_pdf = stage.evaluate("el => el.scrollTop")
+        page.mouse.move(point["x"], point["y"], steps=5)
+        expect(page.locator("tr.source-active-row")).to_have_attribute("data-transaction-id", "tx-2-7")
+        verify_overlay("tx-2-7", 2)
+        assert abs(stage.evaluate("el => el.scrollTop") - stationary_pdf) < 2
+        assert writes == writes_before_sync
+        page.screenshot(path=str(evidence / "reading-marker-desktop.png"))
+
         # Real wheel scrolling of the table drives PDF navigation, without a
         # programmatic PDF scroll pulling the table back to its previous row.
         grid.hover()
         page.mouse.wheel(0, 220)
-        page.wait_for_function("() => { const row = document.querySelector('tr.source-active-row'); return row && row.dataset.transactionId !== 'tx-2-5'; }")
+        page.wait_for_function("() => { const row = document.querySelector('tr.source-active-row'); return row && row.dataset.transactionId !== 'tx-2-7'; }")
         table_selected = page.locator("tr.source-active-row").get_attribute("data-transaction-id")
         assert table_selected
         expect(page.locator(f".pdf-source-highlight[data-source-transaction='{table_selected}']").first).to_be_visible()
@@ -502,6 +532,8 @@ def run(base_url: str) -> None:
             "manual association overrides overlapping automatic hit target", "manual marks survive a full reload",
             "manual marks across intrinsically rotated/cropped pages", "cancelled draft does not save",
             "clear and undo manual marks", "real touch drawing at mobile width", "manual marks preserve financial values and extraction evidence",
+            "automatic full-width reading marker follows the blue row",
+            "PDF margin hover follows a real line without clicks or manual drawing",
         ]}))
         browser.close()
 

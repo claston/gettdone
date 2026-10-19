@@ -92,3 +92,45 @@ export function dragRegion(
     ])[0] ?? null
   );
 }
+
+/** Read across a known line even when the pointer is beside its glyphs.
+ * Empty headers/footers and page-only provenance never acquire an invented row.
+ */
+export function targetAtPoint(
+  targets: readonly PdfRegionTarget[],
+  point: { x: number; y: number },
+  size: { width: number; height: number },
+): PdfRegionTarget | undefined {
+  if (
+    ![point.x, point.y, size.width, size.height].every(Number.isFinite) ||
+    size.width <= 0 ||
+    size.height <= 0 ||
+    point.x < 0 ||
+    point.y < 0 ||
+    point.x > size.width ||
+    point.y > size.height
+  )
+    return;
+  let selected: PdfRegionTarget | undefined;
+  let vertical = Infinity;
+  let horizontal = Infinity;
+  // Targets use DOM paint order; explicit manual associations win overlaps.
+  for (let index = targets.length - 1; index >= 0; index--) {
+    const target = targets[index];
+    const region = target.region;
+    const top = region.top * size.height;
+    const bottom = (region.top + region.height) * size.height;
+    if (point.y < top - 6 || point.y > bottom + 6) continue;
+    const left = region.left * size.width;
+    const right = (region.left + region.width) * size.width;
+    const dx = Math.max(left - point.x, 0, point.x - right);
+    if (!dx && point.y >= top && point.y <= bottom) return target;
+    const dy = Math.abs(point.y - (top + bottom) / 2);
+    if (dy < vertical || (dy === vertical && dx < horizontal)) {
+      selected = target;
+      vertical = dy;
+      horizontal = dx;
+    }
+  }
+  return selected;
+}
