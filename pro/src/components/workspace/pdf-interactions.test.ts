@@ -1,11 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { dragRegion, regionTargets } from "./pdf-interactions";
+import { dragRegion, regionTargets, targetAtPoint } from "./pdf-interactions";
 import {
   sourceLocation,
   transactionAtReadingPosition,
 } from "./source-location";
 
 describe("PDF reviewer geometry", () => {
+  it("finds an existing line across the page width and preserves manual priority at any zoom", () => {
+    const region = { page: 2, left: 0.1, top: 0.2, width: 0.4, height: 0.02 };
+    const targets = regionTargets(
+      [
+        { id: "source", description: "Original", sourceRegions: [region] },
+        { id: "manual", description: "Association", reviewRegions: [region] },
+        { id: "legacy", description: "Page only", sourcePage: 2 },
+      ],
+      2,
+    );
+    for (const scale of [1, 2]) {
+      const size = { width: 500 * scale, height: 1000 * scale };
+      expect(
+        targetAtPoint(targets, { x: 450 * scale, y: 210 * scale }, size)
+          ?.transactionId,
+      ).toBe("manual");
+      expect(
+        targetAtPoint(targets, { x: 150 * scale, y: 210 * scale }, size)
+          ?.transactionId,
+      ).toBe("manual");
+      expect(
+        targetAtPoint(targets, { x: 450 * scale, y: 100 * scale }, size),
+      ).toBeUndefined();
+      expect(
+        targetAtPoint([], { x: 450 * scale, y: 210 * scale }, size),
+      ).toBeUndefined();
+    }
+  });
+
   it("uses a manual association without replacing the original extraction evidence", () => {
     const original = { page: 1, left: 0.1, top: 0.2, width: 0.5, height: 0.03 };
     const manual = { ...original, page: 2 };

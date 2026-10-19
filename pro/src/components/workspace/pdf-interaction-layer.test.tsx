@@ -37,6 +37,46 @@ afterEach(() => {
 });
 
 describe("interactive PDF evidence", () => {
+  it("follows a line from the page margin without a click, but ignores blank areas, scrolling and editing", () => {
+    class TestPointerEvent extends MouseEvent {
+      pointerId = 1;
+      pointerType = "mouse";
+    }
+    vi.stubGlobal("PointerEvent", TestPointerEvent);
+    vi.useFakeTimers();
+    const review = controls();
+    const { container, rerender } = render(
+      <div className="pdf-stage">
+        <PdfInteractionLayer page={2} review={review} />
+      </div>,
+    );
+    const stage = container.firstElementChild as HTMLElement;
+    const layer = stage.firstElementChild as HTMLElement;
+    vi.spyOn(layer, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 500, 1000),
+    );
+    fireEvent.pointerMove(layer, { clientX: 475, clientY: 215 });
+    act(() => vi.advanceTimersByTime(150));
+    expect(review.onSelect).toHaveBeenCalledExactlyOnceWith("stable", 2);
+    expect(review.onCreateRegion).not.toHaveBeenCalled();
+    vi.mocked(review.onSelect).mockClear();
+    fireEvent.pointerMove(layer, { clientX: 475, clientY: 30 });
+    act(() => vi.advanceTimersByTime(150));
+    expect(review.onSelect).not.toHaveBeenCalled();
+    fireEvent.pointerMove(layer, { clientX: 475, clientY: 217 });
+    fireEvent.scroll(stage);
+    act(() => vi.advanceTimersByTime(150));
+    expect(review.onSelect).not.toHaveBeenCalled();
+    fireEvent.pointerMove(layer, { clientX: 475, clientY: 220 });
+    rerender(
+      <div className="pdf-stage">
+        <PdfInteractionLayer page={2} review={{ ...review, paused: true }} />
+      </div>,
+    );
+    act(() => vi.advanceTimersByTime(150));
+    expect(review.onSelect).not.toHaveBeenCalled();
+  });
+
   it("does not save a draft if its page scrolls during the gesture", () => {
     class TestPointerEvent extends MouseEvent {
       pointerId = 1;
