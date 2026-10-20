@@ -22,8 +22,11 @@ AMOUNT_SUFFIX_TOKEN = (
     rf"\s+{SIGN_TOKEN}(?!\s*(?:\d|{CURRENCY_TOKEN}))|\s*[CD](?!\w))?"
 )
 AMOUNT_VALUE_TOKEN = rf"\(?{AMOUNT_PREFIX_TOKEN}{NUMBER_TOKEN}{AMOUNT_SUFFIX_TOKEN}\)?"
+# A monetary field cannot begin inside a reference such as UUID...B4 or
+# 080----85. Otherwise its numeric tail is swallowed as a spaced thousands group.
+AMOUNT_START_BOUNDARY = r"(?<![\w,./+\-\u2212])"
 AMOUNT_TOKEN_PATTERN = re.compile(
-    rf"(?<![\d,.])(?P<amount>{AMOUNT_VALUE_TOKEN})(?![\d,.])",
+    rf"{AMOUNT_START_BOUNDARY}(?P<amount>{AMOUNT_VALUE_TOKEN})(?![\d,.])",
     flags=re.IGNORECASE,
 )
 LOOSE_AMOUNT_PATTERN = re.compile(rf"^{AMOUNT_VALUE_TOKEN}$", flags=re.IGNORECASE)
@@ -73,7 +76,7 @@ def has_amount_token_explicit_sign(token: AmountToken) -> bool:
 
 
 def parse_pdf_amount(raw: str) -> float:
-    cleaned = raw.strip()
+    cleaned = raw.replace("\u00a0", " ").strip()
     suffix_match = re.search(r"\s*([CD])$", cleaned, flags=re.IGNORECASE)
     suffix = suffix_match.group(1).upper() if suffix_match is not None else None
     if suffix is not None:
@@ -141,7 +144,7 @@ def _compile_declared_amount_pattern(raw_pattern: str) -> re.Pattern[str] | None
     before_pattern = _compile_declared_amount_literal(before)
     after_pattern = _compile_declared_amount_literal(after)
     return re.compile(
-        rf"(?<![\d,.]){before_pattern}(?P<amount>{AMOUNT_VALUE_TOKEN}){after_pattern}(?![\d,.])",
+        rf"{AMOUNT_START_BOUNDARY}{before_pattern}(?P<amount>{AMOUNT_VALUE_TOKEN}){after_pattern}(?![\d,.])",
         flags=re.IGNORECASE,
     )
 

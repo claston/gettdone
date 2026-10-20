@@ -1,4 +1,6 @@
-﻿from app.application.normalization.pdf_amount_tokens import (
+﻿import pytest
+
+from app.application.normalization.pdf_amount_tokens import (
     find_amount_tokens,
     find_profile_amount_tokens,
     has_amount_token_explicit_sign,
@@ -126,3 +128,39 @@ def test_find_profile_amount_tokens_applies_declared_credit_suffix() -> None:
     assert len(tokens) == 1
     assert tokens[0].role_hint == "credit"
     assert parse_amount_token(tokens[0]) == 125.4
+
+
+@pytest.mark.parametrize("reference", [
+    "ABCDEF12-1234-4ABC-9876-ABCDEF0000B4",
+    "ABCDEF12-1234-4ABC-9876-ABCDEF0000A9",
+    "080----85", "DOC/85", "DOC_85", "REF85",
+])
+@pytest.mark.parametrize("declared", [False, True])
+def test_identifier_suffix_is_not_part_of_a_spaced_monetary_amount(reference, declared):
+    text = f"CREDITO CLIENTE {reference} 134,46 1.134,46"
+    tokens = (find_profile_amount_tokens(text, negative_patterns=("-{amount}",), positive_patterns=("+{amount}",))
+              if declared else find_amount_tokens(text))
+    assert [parse_amount_token(token) for token in tokens] == [134.46, 1134.46]
+    assert text[:tokens[0].start].strip().endswith(reference)
+    assert all(text[token.start:token.end] == token.value for token in tokens)
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("-1 234,56", -1234.56), ("+1 234,56", 1234.56), ("−1 234,56", -1234.56),
+    ("R$ 1 234,56", 1234.56), ("-R$ 1 234,56", -1234.56), ("R$ -1 234,56", -1234.56),
+    ("US$ 1,234.56", 1234.56), ("1\u00a0234,56 D", -1234.56),
+    ("(1 234,56)", -1234.56), ("1 234,56-", -1234.56),
+])
+def test_identifier_boundaries_preserve_complete_valid_currency_formats(value, expected):
+    tokens = find_amount_tokens(f"PAGAMENTO REFERENCIA-85 {value} 2.000,00")
+    assert [parse_amount_token(token) for token in tokens] == [expected, 2000]
+
+
+@pytest.mark.parametrize("reference", ["080----85", "ABCDEF12-1234-4ABC-9876-ABCDEF0000A9"])
+@pytest.mark.parametrize("suffix,expected", [("CR", 134.46), ("DB", -134.46)])
+def test_declared_credit_debit_markers_preserve_identifier_boundaries(reference, suffix, expected):
+    text = f"CLIENTE {reference} 134,46 {suffix}"
+    tokens = find_profile_amount_tokens(text, negative_patterns=("{amount} DB",), positive_patterns=("{amount} CR",))
+    assert len(tokens) == 1
+    assert parse_amount_token(tokens[0]) == expected
+    assert text[:tokens[0].start].strip().endswith(reference)
