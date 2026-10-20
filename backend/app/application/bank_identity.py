@@ -7,7 +7,15 @@ from app.application.layout_profiles.registry import get_layout_profile
 from app.application.normalization.text import normalize_upper_text
 
 _GENERIC_LAYOUT_NAMES = {"generic_statement_ptbr"}
+VERIFIED_STATEMENT_BANKS = {
+    "xp_digital_descending_v1": "Banco XP",
+    "banrisul_extrato_op_doc_sis_v1": "Banrisul",
+    "itau_receipt_ocr_daily_controls_v1": "Itau",
+    "caixa_ocr_columns_validated_v1": "Caixa Economica Federal",
+    "sicredi_ocr_columns_partial_v1": "Sicredi",
+}
 _LEGACY_LAYOUT_BANK_NAMES = {
+    **VERIFIED_STATEMENT_BANKS,
     "ailos_extrato_credito_debito_saldo_v1": "Civia",
     "bb_statement_ptbr": "Banco do Brasil",
     "bradesco_statement_ptbr": "Bradesco",

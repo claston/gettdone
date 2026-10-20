@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Iterable
 
-QUALITY_RULE_VERSION = "2026-10-18.v2"
+QUALITY_RULE_VERSION = "2026-10-20.v1"
 PDF_LAYOUT_CONFIDENCE_THRESHOLD = 0.95
 
 
@@ -29,7 +29,7 @@ def assess_conversion_quality(
     parser_confidence_band: str | None = None,
     parser_coverage_rate: float | None = None,
 ) -> ConversionQualityAssessment:
-    del parser_confidence_band, parser_coverage_rate
+    del parser_coverage_rate
     normalized_status = str(status or "").strip().casefold()
     if normalized_status in {"processando", "processing", "pending"}:
         return ConversionQualityAssessment("processing", None, QUALITY_RULE_VERSION, ())
@@ -45,7 +45,10 @@ def assess_conversion_quality(
         return ConversionQualityAssessment("clean", None, QUALITY_RULE_VERSION, ())
 
     reasons: list[str] = []
-    if max(0, int(transactions_count or 0)) == 0:
+    validated_positions = (selected_parser == "financial_report" and layout_name == "investment_statement_events_v1"
+                           and layout_confidence is not None and layout_confidence >= PDF_LAYOUT_CONFIDENCE_THRESHOLD
+                           and parser_confidence_band == "high")
+    if max(0, int(transactions_count or 0)) == 0 and not validated_positions:
         reasons.append("no_transactions")
     if max(0, int(warning_count or 0)) > 0:
         reasons.append("row_warnings")

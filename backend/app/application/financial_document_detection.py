@@ -12,6 +12,8 @@ def detect_financial_report(text: str) -> tuple[str, str] | None:
     lines = [normalize_upper_text(line) for line in text.splitlines() if line.strip()]
     header = " ".join(lines[:12])
     normalized = " ".join(lines)
+    if "SICOOB" in header and "CAPTACAO REMUNERADA" in header and "EXTRATO CONSOLIDADO" in header and "REM116" in normalized:
+        return INVESTMENT_STATEMENT, "sicoob_rem116_period_summary"
     # A counterparty or appendix cannot change the identity of the first document.
     if any(re.match(r"^EXTRATO (?:DE )?(?:CONTA|BANCARIO|MENSAL)", line) for line in lines[:6]):
         return None

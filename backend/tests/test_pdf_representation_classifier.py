@@ -97,7 +97,7 @@ def _vector_outline_pdf(*, producer: str = "Microsoft: Print To PDF") -> bytes:
     return _write_pdf(writer)
 
 
-def _full_page_raster_pdf(*, producer: str = "Microsoft: Print To PDF") -> bytes:
+def _full_page_raster_pdf(*, producer: str = "Microsoft: Print To PDF", image_width=595, image_height=842) -> bytes:
     writer = PdfWriter()
     page = writer.add_blank_page(width=595, height=842)
     image = DecodedStreamObject()
@@ -106,8 +106,8 @@ def _full_page_raster_pdf(*, producer: str = "Microsoft: Print To PDF") -> bytes
         {
             NameObject("/Type"): NameObject("/XObject"),
             NameObject("/Subtype"): NameObject("/Image"),
-            NameObject("/Width"): NumberObject(595),
-            NameObject("/Height"): NumberObject(842),
+            NameObject("/Width"): NumberObject(image_width),
+            NameObject("/Height"): NumberObject(image_height),
             NameObject("/ColorSpace"): NameObject("/DeviceGray"),
             NameObject("/BitsPerComponent"): NumberObject(8),
         }
@@ -195,6 +195,13 @@ def test_classifies_blank_pdf_without_structural_evidence_as_unknown() -> None:
     assert result.creation_method == "unknown"
     assert result.confidence == 0.2
     assert result.requires_visual_extraction is False
+
+
+def test_narrow_receipt_image_on_a4_is_raster_even_with_large_white_margins():
+    result = classify_pdf_representation(_full_page_raster_pdf(image_width=308, image_height=1264))
+    assert result.representation == "raster_images"
+    assert result.requires_visual_extraction is True
+    assert "document_raster_present" in result.evidence
 
 
 def test_returns_unknown_instead_of_failing_for_invalid_pdf() -> None:

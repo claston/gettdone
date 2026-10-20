@@ -13,6 +13,8 @@ ELIGIBLE_FAILURE_SUBCODES = frozenset(
         "insufficient_text",
         "ocr_no_usable_transactions",
         "unsupported_document_type",
+        "financial_validation_failed",
+        "ocr_financial_ambiguity",
     }
 )
 

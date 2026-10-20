@@ -1425,9 +1425,12 @@
 
   function renderFinancialDocumentKpis(analysis) {
     const report = financialDocument(analysis);
+    const observations = Array.isArray(report.observations) ? report.observations : [];
     const failed = report.validations.filter((item) => item.status === "failed").length;
     const fiscal = report.document_type === "fiscal_summary";
-    const labels = { receivables_report: "Títulos recebidos", investment_statement: "Investimentos CDB", fiscal_summary: "Resumo fiscal" };
+    const labels = { receivables_report: "Títulos recebidos", investment_statement: "Investimentos", fiscal_summary: "Resumo fiscal" };
+    const summaryOnly = report.events.length === 0 && observations.length > 0;
+    const periodAmounts = Object.assign({}, ...observations.map((item) => item.amounts || {}));
     const fields = report.export.requires_destination_account ? `
       <div class="ofx-meta-row">
         <p class="kpi-hint">Conta de destino dos recebimentos para exportação OFX</p>
@@ -1446,8 +1449,11 @@
         ${failed ? `<p>${failed} validação(ões) com diferença. Confira os detalhes no Excel.</p>` : ""}
         <p>Os campos de origem são preservados. Confira datas, valores e situações no Excel.</p>
       </section>${fields}
-      <article class="kpi"><p class="kpi-label">Eventos listados</p><p class="kpi-value">${report.events.length}</p></article>
-      ${fiscal
+      <article class="kpi"><p class="kpi-label">${summaryOnly ? "Campos do resumo" : "Eventos listados"}</p><p class="kpi-value">${summaryOnly ? observations.length : report.events.length}</p></article>
+      ${summaryOnly
+        ? `<article class="kpi"><p class="kpi-label">Aplicações no período</p><p class="kpi-value">${formatCurrency(Number(periodAmounts.applications || 0))}</p></article>
+           <article class="kpi"><p class="kpi-label">Resgates líquidos no período</p><p class="kpi-value">${formatCurrency(Number(periodAmounts.net_redemptions || 0))}</p></article>`
+        : fiscal
         ? `<article class="kpi"><p class="kpi-label">Valor dos documentos listados</p><p class="kpi-value">${formatCurrency(total)}</p></article>`
         : `<article class="kpi"><p class="kpi-label">Recebimentos / resgates</p><p class="kpi-value">${formatCurrency(analysis.total_inflows)}</p></article>
            <article class="kpi"><p class="kpi-label">Pagamentos / aplicações</p><p class="kpi-value">${formatCurrency(Math.abs(analysis.total_outflows))}</p></article>`}
@@ -1982,6 +1988,19 @@
     const table = reviewRows.closest("table");
     if (table) table.querySelectorAll("thead th").forEach((cell, index) => { cell.textContent = headings[index]; });
     if (report) {
+      const observations = Array.isArray(report.observations) ? report.observations : [];
+      if (report.events.length === 0 && observations.length > 0) {
+        if (table) table.querySelectorAll("thead th").forEach((cell, index) => {
+          cell.textContent = ["Período / data", "Campo", "Valor", "Natureza", "Referência", "Origem"][index];
+        });
+        reviewRows.innerHTML = observations.map((item) => `<tr>
+          <td>${formatDate(item.dates.as_of || item.dates.period_end)}</td>
+          <td>${escapeAttr((item.attributes || {}).label || "Posição do período")}</td>
+          <td>${formatCurrency(Number(Object.values(item.amounts)[0]))}</td>
+          <td>Resumo do período</td><td>Sem data de movimento individual</td>
+          <td>${escapeAttr(item.source_refs.map((ref) => `Pág. ${ref.page}, linha ${ref.line}`).join("; "))}</td></tr>`).join("");
+        return;
+      }
       const types = { receipt: "Recebimento de título", investment_application: "Aplicação CDB", investment_redemption: "Resgate CDB", fiscal_document: "Documento fiscal" };
       const statuses = { paid: "Pago", confirmed: "Confirmado", issued: "Emitido", voided: "Inutilizado", cancelled: "Cancelado", unknown: "Não identificado" };
       reviewRows.innerHTML = report.events.map((event, index) => `<tr>
@@ -2098,6 +2117,11 @@
     if (key === "ocr_amount_recovered_from_balances") return "Valor recuperado";
     if (key === "ocr_amount_recovered_from_summary") return "Valor recuperado";
     if (key === "ocr_balance_recovered_from_context") return "Saldo recuperado";
+    if (key === "partial_statement") return "Trecho de extrato";
+    if (key === "partial_statement_unpaired_credit") return "Tarifa fora do trecho";
+    if (key === "ocr_numeric_separator_normalized") return "Separador conferido";
+    if (key === "ocr_balance_sign_validated_from_ledger") return "Sinal do saldo conferido";
+    if (key === "ocr_direction_normalized") return "Tipo conferido";
     if (key === "balance_consistency_failed") {
       return "Saldo inconsistente";
     }
@@ -2117,6 +2141,11 @@
   }
 
   function mapWarningTypeExplanation(value) {
+    if (value === "partial_statement") return "Este arquivo contém parte do extrato. Os lançamentos e saldos se referem apenas ao trecho enviado; outros movimentos podem estar nas páginas restantes.";
+    if (value === "partial_statement_unpaired_credit") return "A tarifa associada ao primeiro crédito está fora deste trecho. O valor bruto foi preservado; a conferência dos saldos começa no próximo par completo de tarifa e crédito.";
+    if (value === "ocr_numeric_separator_normalized") return "O OCR trocou um separador de milhares. A escrita numérica foi normalizada e conferida pelos saldos das linhas vizinhas.";
+    if (value === "ocr_balance_sign_validated_from_ledger") return "O sinal do saldo não foi lido pelo OCR e foi confirmado pela sequência dos lançamentos e saldos impressos.";
+    if (value === "ocr_direction_normalized") return "O OCR trocou um caractere na coluna Entrada/Saída. O tipo foi normalizado pela coluna e conferido pelos saldos.";
     if (value === "ocr_amount_recovered_from_balances") return "O valor ilegível da tarifa foi recuperado pela conferência dos saldos e movimentos vizinhos. Confira no documento original antes de exportar.";
     if (value === "ocr_amount_recovered_from_summary") return "O valor foi recuperado pela conferência independente do resumo mensal e do saldo diário. Confira no documento original antes de exportar.";
     if (value === "ocr_balance_recovered_from_context") return "Um dígito ilegível do saldo foi recuperado pela conferência dos saldos e movimentos vizinhos. Confira no documento original antes de exportar.";

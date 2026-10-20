@@ -47,6 +47,8 @@ from app.application.errors import (
     InvalidFileContentError,
     InvalidUserTokenError,
     MaxPagesPerFileExceededError,
+    OcrFinancialAmbiguityError,
+    PdfFinancialValidationError,
     QuotaExceededError,
     UnsupportedDocumentContentError,
     UnsupportedFileTypeError,
@@ -767,6 +769,7 @@ class DocumentConversionPipeline:
             error_subcode=error_subcode,
             exception_class=exception_class,
             parse_observability=parse_observability,
+            source_extraction=getattr(exc, "_ocr_source_extraction", None),
             document_classification=document_classification,
             document_processing_decision=document_processing_decision,
             pdf_representation_classification=runtime.pdf_representation_classification,
@@ -949,6 +952,7 @@ class DocumentConversionPipeline:
         error_subcode: str | None,
         exception_class: str,
         parse_observability: dict[str, object],
+        source_extraction=None,
         document_classification=None,
         document_processing_decision: str | None = None,
         pdf_representation_classification=None,
@@ -967,6 +971,7 @@ class DocumentConversionPipeline:
                 document_classification=document_classification,
                 document_processing_decision=document_processing_decision,
                 pdf_representation_classification=pdf_representation_classification,
+                **({"source_extraction": source_extraction} if source_extraction is not None else {}),
             )
         except Exception as exc:  # recovery capture must never change the conversion failure
             logger.warning("ai_recovery_failure_dispatch_failed error_type=%s", exc.__class__.__name__)
@@ -1242,6 +1247,10 @@ def _resolve_effective_ocr_observability(
 
 def _resolve_error_observability(exc: Exception) -> tuple[str | None, str | None, str]:
     exception_class = exc.__class__.__name__
+    if isinstance(exc, PdfFinancialValidationError):
+        return "parse", "financial_validation_failed", exception_class
+    if isinstance(exc, OcrFinancialAmbiguityError):
+        return "parse", "ocr_financial_ambiguity", exception_class
     if isinstance(exc, FileTooLargeError):
         return "upload_validation", "upload_size_limit_exceeded", exception_class
     if isinstance(exc, MaxPagesPerFileExceededError):

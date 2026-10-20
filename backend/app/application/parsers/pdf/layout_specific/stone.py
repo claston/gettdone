@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from app.application.errors import OcrFinancialAmbiguityError
 from app.application.normalization.pdf_amount_tokens import find_amount_tokens, parse_pdf_amount
@@ -47,6 +47,15 @@ class StoneLayoutParser:
             rows = resolve_stone_ocr_rows(rows, context.source_extraction)
         elif any(row.running_balance is None and "$" in row.transaction.description for row in rows):
             raise OcrFinancialAmbiguityError("Não foi possível separar valor e saldo no extrato Stone. Confira o PDF original.")
+        counters = [re.search(r"PAGINA\s+(\d+)\s+DE\s+(\d+)", normalize_text(line.text)) for line in lines]
+        counters = [match for match in counters if match]
+        if counters and (int(counters[0][1]) != 1 or int(counters[-1][1]) != int(counters[-1][2])):
+            warnings = [*rows[0].warnings, "partial_statement"]
+            if (int(counters[0][1]) > 1 and len(rows) >= 3 and rows[0].transaction.amount > 0
+                    and rows[1].transaction.amount < 0 and "TARIFA" in normalize_text(rows[1].transaction.description)
+                    and rows[1].running_balance == rows[2].running_balance):
+                warnings.append("partial_statement_unpaired_credit")
+            rows[0] = replace(rows[0], warnings=warnings)
         return LayoutSpecificParseResult(
             rows=rows,
             selected_parser="layout_specific_stone_statement",

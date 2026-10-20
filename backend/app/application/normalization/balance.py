@@ -262,6 +262,15 @@ def annotate_balance_consistency(
                 amounts_since_balance = current.amount if descending else 0.0
             continue
 
+        if (descending and current.running_balance is not None
+                and "partial_statement_unpaired_credit" in previous_balance_row.warnings
+                and current.layout_name == _STONE_RUNNING_BALANCE_LAYOUT):
+            # The first credit's fee is on a preceding, absent page. Its gross
+            # amount cannot bridge to the next pair's net balance.
+            previous_balance_row = current
+            amounts_since_balance = current.amount
+            continue
+
         if descending:
             if _is_stone_fee_credit_pair(
                 previous_balance_row,
