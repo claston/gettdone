@@ -29,6 +29,7 @@ LABELS = {
     "owner_name": "Titular", "owner_tax_id": "CPF/CNPJ do titular", "period_start": "Início do período",
     "period_end": "Fim do período", "source_bank_branch": "Agência de origem", "source_account_number": "Conta de origem",
     "product_account": "Conta do produto",
+    "product": "Produto",
 }
 
 

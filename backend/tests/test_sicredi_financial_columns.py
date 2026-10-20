@@ -83,3 +83,17 @@ def test_negative_printed_amount_in_credit_column_is_not_made_positive():
 def test_invalid_transaction_date_cannot_be_silently_dropped():
     with pytest.raises(PdfFinancialValidationError):
         parse(html_text().replace("02/09/2026", "32/09/2026"))
+
+
+def test_matrix_without_printed_debit_credit_totals_still_uses_actual_columns():
+    text = matrix_text().replace("DEBITOS.............: 7.564,91\n", "").replace("CREDITOS............: 2.600,00", "")
+    result = parse(text)
+    assert result.parse_metrics["selected_parser"] == "layout_specific_sicredi_matrix"
+    assert [row.amount for row in result.transactions] == [2600, -250, -11.61, -7303.3]
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+
+
+def test_matrix_without_totals_still_rejects_inconsistent_printed_closing_balance():
+    text = matrix_text().replace("DEBITOS.............: 7.564,91\n", "").replace("CREDITOS............: 2.600,00", "")
+    with pytest.raises(PdfFinancialValidationError):
+        parse(text.replace("SALDO ATUAL......: -982,78 -982,78", "SALDO ATUAL......: -981,78 -981,78"))

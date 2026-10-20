@@ -15,6 +15,8 @@ def detect_financial_report(text: str) -> tuple[str, str] | None:
     # A counterparty or appendix cannot change the identity of the first document.
     if any(re.match(r"^EXTRATO (?:DE )?(?:CONTA|BANCARIO|MENSAL)", line) for line in lines[:6]):
         return None
+    if "EXTRATO DE RENDIMENTOS" in header and "CAIXINHAS PJ" in header:
+        return INVESTMENT_STATEMENT, "nubank_rdb_caixinhas_columns"
     if (
         "TITULOS PAGOS POR CONTA CREDITO" in header
         and all(marker in normalized for marker in ("PAGADOR", "VALOR DO TITULO", "VALOR COBRADO", "DT DE PAG"))

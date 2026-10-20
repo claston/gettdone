@@ -58,6 +58,10 @@ def parse_financial_report_pages(page_texts: list[str]) -> dict | None:
     if detected is None:
         return None
     kind, evidence = detected
+    if evidence == "nubank_rdb_caixinhas_columns":
+        from app.application.parsers.pdf.nubank_rdb import parse_nubank_rdb_pages
+
+        return parse_nubank_rdb_pages(page_texts)
     lines = [(line.strip(), {"page": page, "line": number})
              for page, content in enumerate(page_texts, 1)
              for number, line in enumerate(content.splitlines(), 1) if line.strip()]

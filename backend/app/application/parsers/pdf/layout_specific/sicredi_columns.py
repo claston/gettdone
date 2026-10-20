@@ -51,7 +51,9 @@ def _matrix(lines):
         amounts = {_money(token.value) for line, text in zip(lines, texts, strict=True) if text.startswith(prefix)
                    for token in find_amount_tokens(line.text)}
         if not amounts:
-            return None  # Other matrix templates keep their existing parser.
+            if kind == "closing":
+                return None  # Other matrix templates keep their existing parser.
+            continue  # Some matrix statements print closing/carry balances, but no period totals.
         summaries[kind] = _single(amounts)
     headers = [line for line in lines if re.search(r"\bDATA\s+DOCUMENTO\s+HISTORICO\s{2,}DEBITO\s+CREDITO\s+SALDO", line.text)]
     if not headers:
@@ -112,7 +114,9 @@ def _matrix(lines):
             source_line_refs=((line.page_number, line.line_number),)))
     debits = -sum((Decimal(str(row.transaction.amount)) for row in rows if row.transaction.amount < 0), Decimal(0))
     credits = sum((Decimal(str(row.transaction.amount)) for row in rows if row.transaction.amount > 0), Decimal(0))
-    if not rows or running != summaries["closing"] or debits != summaries["debits"] or credits != summaries["credits"]:
+    if (not rows or running != summaries["closing"]
+            or "debits" in summaries and debits != summaries["debits"]
+            or "credits" in summaries and credits != summaries["credits"]):
         _fail()
     return rows
 
