@@ -54,6 +54,7 @@ def run(base: str):
     events, errors, documents, exports, writes = [], [], [], [], []
     receipts = {}
     reads = 0
+    poll_outage = True
     save_attempts = 0
     export_attempts = 0
     metrics = {}
@@ -77,7 +78,10 @@ def run(base: str):
                 route.fulfill(content_type="application/pdf", body=large_pdf if "/doc-00/" in path else small_pdf)
             elif path == "/api/pro/conversion-batches/workspace-mvp":
                 reads += 1
-                if reads == 2:
+                # Keep the simulated outage active until the test explicitly
+                # restores the service. A single failed poll can auto-recover
+                # before a slower browser reaches the error/retry assertion.
+                if reads >= 2 and poll_outage:
                     route.fulfill(status=503, json={"detail": "Synthetic polling outage"})
                     return
                 if reads >= 3:
@@ -156,6 +160,7 @@ def run(base: str):
 
             page.get_by_role("option").filter(has_text="synthetic-03.pdf").click()
             expect(page.get_by_role("alert").filter(has_text="Synthetic polling outage")).to_be_visible(timeout=10000)
+            poll_outage = False
             page.get_by_role("button", name="Tentar atualizar novamente").click()
             expect(page.get_by_role("option").filter(has_text="synthetic-01.pdf")).to_contain_text("Pronto", timeout=10000)
             page.get_by_role("option").filter(has_text="synthetic-00.pdf").click()
