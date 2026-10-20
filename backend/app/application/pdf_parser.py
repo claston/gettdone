@@ -89,6 +89,11 @@ from app.application.parsers.pdf.layout_specific.digital_credit_card import (
 from app.application.parsers.pdf.layout_specific.itau_monthly_ocr import parse_itau_monthly_ocr
 from app.application.parsers.pdf.layout_specific.modern_accounts import BRADESCO_EMPRESAS_LAYOUT
 from app.application.parsers.pdf.layout_specific.registry import DEFAULT_PDF_LAYOUT_PARSER_REGISTRY
+from app.application.parsers.pdf.layout_specific.santander_ocr import (
+    SANTANDER_OCR_LAYOUT,
+    is_santander_consolidated_scan,
+    parse_santander_ocr,
+)
 from app.application.parsers.pdf.layout_specific.unicred import (
     UNICRED_MODERN_CURRENT_LAYOUT,
     parse_unicred_textract_rows,
@@ -651,6 +656,7 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
                 _STONE_CURRENT_ACCOUNT_A4_LAYOUT, "nubank_statement_ptbr", "banco_inter_extrato_conta_corrente_saldo_transacao_v1",
             }
             or is_ailos_statement(statement_extraction)
+            or is_santander_consolidated_scan(statement_extraction)
             or detect_financial_report("\n".join(segmentation.page_texts))):
         text_mode_result = _parse_scanned_pdf_with_textract_text_pages(statement_extraction)
         text_mode_metrics = dict(text_mode_result.parse_metrics)
@@ -735,6 +741,21 @@ def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
         raise InvalidFileContentError("Nao foi possivel extrair transacoes do OCR para revisao.")
     joined_text = "\n".join(page_texts)
     inferred_layout = infer_pdf_layout(joined_text)
+    if is_santander_consolidated_scan(extraction):
+        rows, controls = parse_santander_ocr(extraction)
+        result = _build_pdf_parse_result(
+            parsed_rows=rows, layout=PdfLayoutInference(SANTANDER_OCR_LAYOUT, .99, False), layout_profile=None,
+            selected_parser="layout_specific_santander_ocr_columns",
+            parser_selection_reason="santander_cash_columns_daily_balances_and_monthly_totals_validated",
+            inline_decision="not_applicable_layout_specific", tabular_decision="not_applicable_layout_specific",
+            columnar_decision="not_applicable_layout_specific", joined_text=joined_text, source_page_texts=tuple(page_texts),
+            page_count=len(page_texts), flattened_line_count=sum(len(page.lines) for page in extraction.pages),
+            invalid_date_candidates_skipped=0, grouped_transactions_count=0, inline_candidates_count=0, inline_transactions_count=0,
+            tabular_candidates_count=0, tabular_transactions_count=0, columnar_candidates_count=0, columnar_transactions_count=0,
+        )
+        return replace(result, source_extraction=extraction,
+                       source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages),
+                       parse_metrics={**result.parse_metrics, **controls})
     if is_ailos_statement(extraction):
         result = _build_pdf_parse_result(parsed_rows=parse_ailos_ocr(extraction),
             layout=PdfLayoutInference(AILOS_LAYOUT,.99,False),layout_profile=None,

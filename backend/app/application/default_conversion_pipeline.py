@@ -18,6 +18,7 @@ from app.application.parsers.pdf.layout_specific.digital_credit_card import (
     extract_invoice_financials,
 )
 from app.application.parsers.pdf.layout_specific.modern_accounts import BRADESCO_EMPRESAS_LAYOUT
+from app.application.parsers.pdf.layout_specific.santander_ocr import SANTANDER_OCR_LAYOUT, extract_santander_summary_opening
 from app.application.parsers.pdf.layout_specific.wise import WISE_CURRENCIES, extract_wise_metadata
 from app.application.parsers.service import ParsingService
 from app.application.pdf_parser import parse_pdf_transactions
@@ -83,6 +84,10 @@ def _resolve_opening_balance(
         return None
     if layout_name == DIGITAL_CREDIT_CARD_LAYOUT:
         return float(extract_invoice_financials(extracted_text or "").opening_balance)
+    if layout_name == SANTANDER_OCR_LAYOUT:
+        printed = extract_santander_summary_opening(extracted_text or "")
+        if printed is not None:
+            return printed
     if layout_name == "nubank_statement_ptbr":
         printed = _nubank_summary_balance(extracted_text, "SALDO INICIAL")
         if printed is not None:
