@@ -2104,7 +2104,7 @@
       return "Modelo genérico";
     }
     if (key === "manual_review_recommended") {
-      return "Revisao manual";
+      return "Revisão manual";
     }
     if (key === "textract_layout_inferred") {
       return "Layout inferido";

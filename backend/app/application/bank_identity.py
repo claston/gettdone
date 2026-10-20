@@ -8,6 +8,7 @@ from app.application.normalization.text import normalize_upper_text
 
 _GENERIC_LAYOUT_NAMES = {"generic_statement_ptbr"}
 _LEGACY_LAYOUT_BANK_NAMES = {
+    "ailos_extrato_credito_debito_saldo_v1": "Civia",
     "bb_statement_ptbr": "Banco do Brasil",
     "bradesco_statement_ptbr": "Bradesco",
     "caixa_statement_ptbr": "Caixa Economica Federal",

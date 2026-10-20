@@ -552,7 +552,7 @@ def test_non_clean_pdf_is_forwarded_to_best_effort_canonical_capture(caplog) -> 
         assert event["pdf_representation"] == "vector_outlines"
         assert event["pdf_creation_method"] == "virtual_print"
         assert event["pdf_representation_confidence"] == 0.99
-        assert event["pdf_classification_version"] == "pdf_representation_v1"
+        assert event["pdf_classification_version"] == pdf_classification.classifier_version
         assert event["pdf_classification_evidence"] == ["native_text_absent", "dense_vector_paths"]
     assert "ai_recovery_dispatch_result status=queued reason=eligible" in caplog.text
 
@@ -604,7 +604,7 @@ def test_failed_conversion_persists_document_type_classification() -> None:
     assert recorded["pdf_representation"] == "raster_images"
     assert recorded["pdf_creation_method"] == "scanner"
     assert recorded["pdf_representation_confidence"] == 0.97
-    assert recorded["pdf_classification_version"] == "pdf_representation_v1"
+    assert recorded["pdf_classification_version"] == pdf_classification.classifier_version
 
 
 def test_rejected_document_is_forwarded_to_recovery_with_classification_metadata() -> None:

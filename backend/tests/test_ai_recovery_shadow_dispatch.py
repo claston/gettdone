@@ -131,6 +131,7 @@ def test_shadow_dispatch_publishes_original_pdf_before_queue_message() -> None:
             representation="vector_outlines",
             creation_method="virtual_print",
             confidence=0.99,
+            classifier_version="pdf_representation_v1",
             evidence=("native_text_absent", "dense_vector_paths"),
             requires_visual_extraction=True,
         ),
