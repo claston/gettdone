@@ -7,7 +7,9 @@ from io import BytesIO
 from pypdf import PdfReader
 from pypdf.generic import ContentStream
 
-CLASSIFIER_VERSION = "pdf_representation_v1"
+from app.application.native_text_quality import assess_native_text_quality, has_raster_with_invisible_text
+
+CLASSIFIER_VERSION = "pdf_representation_v2"
 
 _VIRTUAL_PRINTER_PRODUCERS = (
     ("microsoft print to pdf", "producer_microsoft_print_to_pdf"),
@@ -55,13 +57,19 @@ def classify_pdf_representation(raw_bytes: bytes) -> PdfRepresentationClassifica
         evidence = ["native_text_present"]
         if full_page_raster or dense_vector_paths:
             evidence.append("non_text_page_content_present")
+            hidden_layer = full_page_raster and any(has_raster_with_invisible_text(page, reader) for page in sampled_pages)
+            quality = assess_native_text_quality(raw_bytes, [page.extract_text() or "" for page in sampled_pages], reader=reader)
+            if hidden_layer:
+                evidence.extend(("full_page_raster_present", "invisible_text_layer_present"))
+            evidence.extend(item for item in quality.evidence if item not in evidence)
             if producer_marker:
                 evidence.append(producer_marker)
             return PdfRepresentationClassification(
                 representation="mixed",
-                creation_method=creation_method if producer_marker else "direct_export",
+                creation_method=creation_method if producer_marker else "unknown" if hidden_layer else "direct_export",
                 confidence=0.9,
                 evidence=tuple(evidence),
+                requires_visual_extraction=quality.requires_visual_extraction,
             )
         if producer_marker:
             evidence.append(producer_marker)

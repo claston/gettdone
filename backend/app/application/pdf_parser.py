@@ -1,3 +1,4 @@
+import hashlib
 import os
 import re
 from dataclasses import replace
@@ -20,13 +21,14 @@ from app.application.financial_event_projection import parse_financial_pdf_pages
 from app.application.layout_profiles.registry import DeclarativeLayoutProfile, get_layout_profile
 from app.application.models import CanonicalTransaction as CanonicalTransaction
 from app.application.models import NormalizedTransaction
+from app.application.native_text_quality import assess_native_text_quality, prepare_visual_ocr_pdf
 from app.application.normalization.balance import (
     annotate_balance_consistency,
     resolve_ascending_running_balance_order,
     resolve_descending_running_balance,
     uses_descending_running_balance,
 )
-from app.application.normalization.canonical import build_canonical_transactions
+from app.application.normalization.canonical import build_canonical_transactions, from_normalized_transaction
 from app.application.normalization.canonical_metrics import build_canonical_quality_metrics
 from app.application.normalization.date import infer_default_statement_year
 from app.application.normalization.pdf_amount_tokens import (
@@ -72,6 +74,7 @@ from app.application.normalization.pdf_text_rules import should_ignore_line, sho
 from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf import text_extraction
 from app.application.parsers.pdf.empty_statement import has_complete_santander_inactive_summary, has_explicit_no_activity
+from app.application.parsers.pdf.layout_specific.ailos_ocr import AILOS_LAYOUT, is_ailos_statement, parse_ailos_ocr
 from app.application.parsers.pdf.layout_specific.bradesco_card_web import BRADESCO_CARD_WEB_LAYOUT, BRADESCO_CARD_WEB_PARSER
 from app.application.parsers.pdf.layout_specific.bradesco_daily_order import resolve_bradesco_split_day_order
 from app.application.parsers.pdf.layout_specific.btg_summary import BTG_SUMMARY_LAYOUT, BTG_SUMMARY_PARSER
@@ -180,6 +183,22 @@ def _attach_parse_observability(exc: Exception, **values: object) -> Exception:
     return exc
 
 
+def _original_visual_provenance(result, original, visual):
+    metrics = {**result.parse_metrics, "native_text_layer_ignored":1}
+    canonical = result.canonical_transactions
+    if not metrics.get("financial_controls_validated"):
+        canonical = canonical if canonical is not None else [from_normalized_transaction(row) for row in result.transactions]
+        canonical = [replace(row,warnings=list(dict.fromkeys((*row.warnings,"manual_review_recommended")))) for row in canonical]
+        metrics.update(build_canonical_quality_metrics(canonical))
+        metrics.update(confidence_band="low",export_recommendation="review_recommended",
+                       export_recommendation_reason="unverified_visual_recovery")
+    source = result.source_extraction
+    if source is not None:
+        source = replace(source, document_hash=hashlib.sha256(original).hexdigest(),
+                         metrics={**source.metrics,"visual_input_sha256":hashlib.sha256(visual).hexdigest()})
+    return replace(result,parse_metrics=metrics,source_extraction=source,canonical_transactions=canonical)
+
+
 def _should_skip_ocr_retry_for_native_parse_error(exc: InvalidFileContentError) -> bool:
     detail = str(exc)
     missing_signals_match = re.search(r"missing_signals=([a-z_,-]+)", detail)
@@ -233,18 +252,36 @@ def _parse_pdf_transactions(
         native_pages = []
         native_read_error = exc
     native_text_detected = bool(native_pages)
+    native_quality = assess_native_text_quality(raw_bytes, native_pages)
+    quality_metrics = native_quality.metrics()
     textract_enabled = is_textract_enabled()
     textract_forced = is_textract_forced() if textract_enabled else False
-    textract_attempted = textract_enabled and (not native_pages or textract_forced)
+    textract_attempted = textract_enabled and (not native_pages or textract_forced or native_quality.requires_visual_extraction)
+
+    if native_quality.requires_visual_extraction:
+        _enforce_ocr_page_limit(page_count=_read_pdf_page_count(raw_bytes), max_ocr_pages=max_ocr_pages)
+        visual_bytes = prepare_visual_ocr_pdf(raw_bytes)
+        if not textract_enabled:
+            if not is_pdf_ocr_enabled():
+                raise _attach_parse_observability(OcrFinancialAmbiguityError(
+                    "Não foi possível validar a camada de texto deste PDF. Reenvie o extrato original baixado da instituição."),
+                    native_text_detected=1, textract_attempted=0, **quality_metrics)
+            visual_result = _parse_scanned_pdf_with_local_ocr_adapter(visual_bytes, on_ocr_progress=on_ocr_progress)
+            visual_result = _original_visual_provenance(visual_result,raw_bytes,visual_bytes)
+            return _with_parse_observability(visual_result, native_text_detected=1, textract_attempted=0, **quality_metrics)
 
     if textract_attempted:
         _enforce_ocr_page_limit(page_count=len(native_pages), max_ocr_pages=max_ocr_pages)
         try:
-            textract_result = _parse_scanned_pdf_with_textract_gateway(raw_bytes)
+            textract_result = _parse_scanned_pdf_with_textract_gateway(
+                visual_bytes if native_quality.requires_visual_extraction else raw_bytes)
+            if native_quality.requires_visual_extraction:
+                textract_result = _original_visual_provenance(textract_result,raw_bytes,visual_bytes)
             return _with_parse_observability(
                 textract_result,
                 textract_attempted=textract_attempted,
                 native_text_detected=native_text_detected,
+                **quality_metrics,
             )
         except UnsupportedDocumentContentError as unsupported_error:
             raise _attach_parse_observability(
@@ -253,10 +290,11 @@ def _parse_pdf_transactions(
                 native_text_detected=native_text_detected,
                 ocr_retry_skipped=1,
                 ocr_retry_skip_reason="unsupported_document_type",
+                **quality_metrics,
             )
         except InvalidFileContentError as textract_error:
             if isinstance(textract_error, (UnsupportedDocumentContentError, OcrFinancialAmbiguityError, PdfFinancialValidationError)):
-                raise
+                raise _attach_parse_observability(textract_error, native_text_detected=native_text_detected, **quality_metrics)
             if not is_pdf_ocr_enabled():
                 raise _attach_parse_observability(
                     textract_error,
@@ -264,10 +302,14 @@ def _parse_pdf_transactions(
                     textract_used=0,
                     textract_error_type=textract_error.__class__.__name__,
                     native_text_detected=native_text_detected,
+                    **quality_metrics,
                 )
             _enforce_ocr_page_limit(page_count=len(native_pages), max_ocr_pages=max_ocr_pages)
             try:
-                fallback_result = _parse_scanned_pdf_with_local_ocr_adapter(raw_bytes, on_ocr_progress=on_ocr_progress)
+                fallback_result = _parse_scanned_pdf_with_local_ocr_adapter(
+                    visual_bytes if native_quality.requires_visual_extraction else raw_bytes, on_ocr_progress=on_ocr_progress)
+                if native_quality.requires_visual_extraction:
+                    fallback_result = _original_visual_provenance(fallback_result,raw_bytes,visual_bytes)
             except InvalidFileContentError as fallback_error:
                 raise _attach_parse_observability(
                     fallback_error,
@@ -275,6 +317,7 @@ def _parse_pdf_transactions(
                     textract_used=0,
                     textract_error_type=textract_error.__class__.__name__,
                     native_text_detected=native_text_detected,
+                    **quality_metrics,
                 ) from textract_error
             fallback_metrics = dict(fallback_result.parse_metrics)
             fallback_metrics["textract_used"] = 0
@@ -292,6 +335,7 @@ def _parse_pdf_transactions(
                 ),
                 textract_attempted=textract_attempted,
                 native_text_detected=native_text_detected,
+                **quality_metrics,
             )
 
     if native_pages:
@@ -606,6 +650,7 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
             or infer_pdf_layout("\n".join(segmentation.page_texts)).layout_name in {
                 _STONE_CURRENT_ACCOUNT_A4_LAYOUT, "nubank_statement_ptbr", "banco_inter_extrato_conta_corrente_saldo_transacao_v1",
             }
+            or is_ailos_statement(statement_extraction)
             or detect_financial_report("\n".join(segmentation.page_texts))):
         text_mode_result = _parse_scanned_pdf_with_textract_text_pages(statement_extraction)
         text_mode_metrics = dict(text_mode_result.parse_metrics)
@@ -690,6 +735,17 @@ def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
         raise InvalidFileContentError("Nao foi possivel extrair transacoes do OCR para revisao.")
     joined_text = "\n".join(page_texts)
     inferred_layout = infer_pdf_layout(joined_text)
+    if is_ailos_statement(extraction):
+        result = _build_pdf_parse_result(parsed_rows=parse_ailos_ocr(extraction),
+            layout=PdfLayoutInference(AILOS_LAYOUT,.99,False),layout_profile=None,
+            selected_parser="layout_specific_ailos_ocr",parser_selection_reason="ailos_visual_financial_columns_all_balances_and_totals_validated",
+            inline_decision="not_applicable_layout_specific",tabular_decision="not_applicable_layout_specific",
+            columnar_decision="not_applicable_layout_specific",joined_text=joined_text,source_page_texts=tuple(page_texts),
+            page_count=len(page_texts),flattened_line_count=sum(len(page.lines) for page in extraction.pages),
+            invalid_date_candidates_skipped=0,grouped_transactions_count=0,inline_candidates_count=0,inline_transactions_count=0,
+            tabular_candidates_count=0,tabular_transactions_count=0,columnar_candidates_count=0,columnar_transactions_count=0)
+        return replace(result,source_extraction=extraction,source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages),
+                       parse_metrics={**result.parse_metrics,"financial_controls_validated":1})
     if inferred_layout.layout_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT:
         monthly = parse_itau_monthly_ocr(extraction.pages)
         if monthly.rows:
