@@ -141,6 +141,9 @@ def infer_pdf_layout(text: str) -> PdfLayoutInference:
         for profile in load_layout_profiles()
     }
     specific_scores.update(declarative_scores)
+    if ("EXTRATO SICREDI DO PERIODO DE" in normalized and "SALDO INICIAL (R$):" in normalized
+            and "SALDO FINAL (R$):" in normalized and "DOCUMENTO CREDITO (R$) DEBITO (R$) SALDO (R$)" in normalized):
+        specific_scores["sicredi_extrato_html_totais_diarios_v1"] = 0.99
     specific_scores[SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT_NAME] = max(
         specific_scores.get(SANTANDER_CONSOLIDATED_INTELLIGENT_LAYOUT_NAME, 0.0),
         _score_santander_pf_consolidated_intelligent(normalized),

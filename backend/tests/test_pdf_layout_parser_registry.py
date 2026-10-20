@@ -116,6 +116,8 @@ def test_default_layout_parser_registry_contains_current_specific_families() -> 
             "banrisul_extrato_cartao_credito_simples_v1",
             "bradesco_empresas_negocios_extrato_lancamentos_v1",
             "sicredi_extrato_conta_corrente_moderno_movimentacoes_v1",
+            "sicredi_extrato_html_totais_diarios_v1",
+            "sicredi_matricial_paisagem_conta_corrente_v1",
             "picpay_extrato_conta_grouped_2025_v1",
             "neon_extrato_por_periodo_moderno_v1",
             "nubank_statement_ptbr",

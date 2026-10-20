@@ -16,6 +16,7 @@ _LEGACY_LAYOUT_BANK_NAMES = {
     "nubank_statement_ptbr": "Nubank",
     "santander_statement_ptbr": "Santander",
     "sicredi_statement_ptbr": "Sicredi",
+    "sicredi_extrato_html_totais_diarios_v1": "Sicredi",
 }
 _TEXT_BANK_HINTS = (
     ("BANCO DO BRASIL", "Banco do Brasil"),
