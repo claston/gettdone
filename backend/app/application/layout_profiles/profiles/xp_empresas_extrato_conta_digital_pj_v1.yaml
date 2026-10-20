@@ -1,0 +1,44 @@
+layout_profile:
+  schema_version: 2
+  profile_name: xp_empresas_extrato_conta_digital_pj_v1
+  bank: Banco XP
+  layout_family: xp_empresas_conta_digital_pj
+  statement_type: conta_pj_extrato
+  confidence: high
+  classifier:
+    required_keywords:
+      - "Extrato da Conta Digital PJ"
+      - "Saldo inicial"
+      - "Entradas"
+      - "Saldo final"
+      - "Saldo do dia"
+    optional_keywords:
+      - "XP Empresas"
+      - "Fale conosco"
+    min_score_hint: 0.70
+  table_detection:
+    header_keywords:
+      - "Valor"
+    expected_column_order:
+      - date_group
+      - description
+      - amount
+  parsing:
+    date_formats:
+      - "dd/MM/yyyy"
+    amount_locale: pt-BR
+    decimal_separator: ","
+    thousands_separator: "."
+    negative_patterns:
+      - "-R$ {amount}"
+    positive_patterns:
+      - "R$ {amount_without_minus}"
+    opening_balance_rows:
+      - "Saldo inicial"
+    opening_balance_policy: skip
+    required_transaction_fields:
+      - date
+      - description
+      - amount
+    optional_transaction_fields:
+      - balance
