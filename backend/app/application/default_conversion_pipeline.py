@@ -20,6 +20,7 @@ from app.application.parsers.pdf.layout_specific.digital_credit_card import (
 from app.application.parsers.pdf.layout_specific.modern_accounts import BRADESCO_EMPRESAS_LAYOUT
 from app.application.parsers.pdf.layout_specific.santander_ocr import SANTANDER_OCR_LAYOUT, extract_santander_summary_opening
 from app.application.parsers.pdf.layout_specific.wise import WISE_CURRENCIES, extract_wise_metadata
+from app.application.parsers.pdf.layout_specific.xp_empresas import extract_xp_account_metadata
 from app.application.parsers.service import ParsingService
 from app.application.pdf_parser import parse_pdf_transactions
 
@@ -402,6 +403,9 @@ def _resolve_inferred_bank_code(
 
 
 def _extract_bank_account_metadata(extracted_text: str | None) -> tuple[str | None, str | None]:
+    xp_account = extract_xp_account_metadata(extracted_text or "")
+    if xp_account is not None:
+        return xp_account
     raw_lines = [line.strip() for line in str(extracted_text or "").splitlines() if line.strip()]
     if not raw_lines:
         return None, None

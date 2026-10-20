@@ -265,6 +265,14 @@ def _score_declarative_layout_profile(
     *,
     negative_evidence_text: str,
 ) -> float:
+    if profile.profile_name == "xp_empresas_extrato_conta_digital_pj_v1":
+        # The logo is outlined in some native PDFs. Require XP's institutional
+        # contacts or its header; an XP mention in a payment is not a bank identity.
+        institution = normalized_text.startswith("XP EMPRESAS ") or (
+            "4003-3710" in normalized_text and "0800-772-0202" in normalized_text
+        )
+        statement = "EXTRATO DA CONTA DIGITAL PJ" in normalized_text or "SALDO DO DIA" in normalized_text
+        return 0.99 if institution and statement else 0.0
     is_btg_summary = profile.profile_name == "btg_pactual_extrato_conta_corrente_resumo_v1"
     if is_btg_summary:
         if not (

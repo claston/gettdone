@@ -21,6 +21,13 @@ class BankRecord:
 
 _EXTRA_BANK_RECORDS = (
     BankRecord(
+        code="348",
+        name="Banco XP S.A.",
+        short_name="Banco XP",
+        aliases=("XP Empresas", "Banco XP S.A."),
+        active=True,
+    ),
+    BankRecord(
         code="084",
         name="SISPRIME DO BRASIL - COOPERATIVA DE CRÉDITO",
         short_name="Sisprime do Brasil",
