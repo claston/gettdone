@@ -210,3 +210,5 @@ Falhas futuras de validação OCR passam a guardar suas linhas/palavras no mesmo
 para permitir diagnosticar a causa sem depender de uma nova execução do serviço.
 
 Valida??o registrada: su?te completa com **2242 aprovados, 1 ignorado e 2 xfail**; ap?s o ?ltimo refinamento da regra de posi??es, **25 testes focados aprovados**. Ruff, sintaxe JavaScript, UTF-8/mojibake e `git diff --check` passaram. Os dois avisos de deprecia??o do FastAPI j? existiam.
+
+A pr?via tamb?m foi verificada com relat?rios legados sem `observations` e com o resumo Sicoob sem eventos: **127 testes do frontend aprovados**, al?m de lint e TypeScript.

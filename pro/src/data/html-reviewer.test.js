@@ -13,7 +13,12 @@ const script = readFileSync(
 );
 
 describe("revisor HTML do OFX Simples", () => {
-  it.each(["receivables_report", "investment_statement", "fiscal_summary"])(
+  it.each([
+    "receivables_report",
+    "investment_statement",
+    "fiscal_summary",
+    "investment_period_summary",
+  ])(
     "preserva a semântica e os formatos ao reabrir %s",
     async (documentType) => {
       const dom = new JSDOM(html, {
@@ -22,13 +27,16 @@ describe("revisor HTML do OFX Simples", () => {
         pretendToBeVisual: true,
       });
       const receipt = documentType === "receivables_report";
-      const rows = [
-        {
-          date: "2026-09-01",
-          description: "Documento de exemplo",
-          amount: 100,
-        },
-      ];
+      const summary = documentType === "investment_period_summary";
+      const rows = summary
+        ? []
+        : [
+            {
+              date: "2026-09-01",
+              description: "Documento de exemplo",
+              amount: 100,
+            },
+          ];
       const report = {
         document_type: documentType,
         notice: "Campos de origem preservados.",
@@ -49,6 +57,24 @@ describe("revisor HTML do OFX Simples", () => {
           reason: "OFX indisponível.",
         },
       };
+      if (summary) {
+        report.document_type = "investment_statement";
+        report.events = [];
+        report.observations = [
+          {
+            dates: { period_end: "2025-01-31" },
+            amounts: { applications: "200.00" },
+            attributes: { label: "Aplicações" },
+            source_refs: [{ page: 1, line: 8 }],
+          },
+          {
+            dates: { period_end: "2025-01-31" },
+            amounts: { net_redemptions: "100.00" },
+            attributes: { label: "Resgates líquidos" },
+            source_refs: [{ page: 1, line: 9 }],
+          },
+        ];
+      }
       dom.window.fetch = vi.fn(
         async () =>
           new Response(
@@ -103,6 +129,20 @@ describe("revisor HTML do OFX Simples", () => {
         expect(document.querySelector("#closing-balance-input")).toBeNull();
         expect(document.querySelector('[data-action="edit-row"]')).toBeNull();
         expect(document.querySelector("#add-row-btn").hidden).toBe(true);
+        if (summary) {
+          expect(document.querySelector("#kpis").textContent).toContain(
+            "Campos do resumo",
+          );
+          expect(document.querySelector("#kpis").textContent).toContain(
+            "Aplicações no período",
+          );
+          expect(
+            document.querySelector("#review-section tbody").textContent,
+          ).toContain("Resgates líquidos");
+          expect(
+            document.querySelector("#review-section tbody").textContent,
+          ).toContain("Sem data de movimento individual");
+        }
         const ofxButton = document.querySelector("#download-ofx-btn");
         expect(ofxButton.disabled).toBe(!receipt);
         expect(document.querySelector("#download-excel-btn").disabled).toBe(

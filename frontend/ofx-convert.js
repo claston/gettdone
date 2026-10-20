@@ -1425,11 +1425,12 @@
 
   function renderFinancialDocumentKpis(analysis) {
     const report = financialDocument(analysis);
+    const observations = Array.isArray(report.observations) ? report.observations : [];
     const failed = report.validations.filter((item) => item.status === "failed").length;
     const fiscal = report.document_type === "fiscal_summary";
     const labels = { receivables_report: "Títulos recebidos", investment_statement: "Investimentos", fiscal_summary: "Resumo fiscal" };
-    const summaryOnly = report.events.length === 0 && report.observations.length > 0;
-    const periodAmounts = Object.assign({}, ...report.observations.map((item) => item.amounts || {}));
+    const summaryOnly = report.events.length === 0 && observations.length > 0;
+    const periodAmounts = Object.assign({}, ...observations.map((item) => item.amounts || {}));
     const fields = report.export.requires_destination_account ? `
       <div class="ofx-meta-row">
         <p class="kpi-hint">Conta de destino dos recebimentos para exportação OFX</p>
@@ -1448,7 +1449,7 @@
         ${failed ? `<p>${failed} validação(ões) com diferença. Confira os detalhes no Excel.</p>` : ""}
         <p>Os campos de origem são preservados. Confira datas, valores e situações no Excel.</p>
       </section>${fields}
-      <article class="kpi"><p class="kpi-label">${summaryOnly ? "Campos do resumo" : "Eventos listados"}</p><p class="kpi-value">${summaryOnly ? report.observations.length : report.events.length}</p></article>
+      <article class="kpi"><p class="kpi-label">${summaryOnly ? "Campos do resumo" : "Eventos listados"}</p><p class="kpi-value">${summaryOnly ? observations.length : report.events.length}</p></article>
       ${summaryOnly
         ? `<article class="kpi"><p class="kpi-label">Aplicações no período</p><p class="kpi-value">${formatCurrency(Number(periodAmounts.applications || 0))}</p></article>
            <article class="kpi"><p class="kpi-label">Resgates líquidos no período</p><p class="kpi-value">${formatCurrency(Number(periodAmounts.net_redemptions || 0))}</p></article>`
@@ -1987,11 +1988,12 @@
     const table = reviewRows.closest("table");
     if (table) table.querySelectorAll("thead th").forEach((cell, index) => { cell.textContent = headings[index]; });
     if (report) {
-      if (report.events.length === 0 && report.observations.length > 0) {
+      const observations = Array.isArray(report.observations) ? report.observations : [];
+      if (report.events.length === 0 && observations.length > 0) {
         if (table) table.querySelectorAll("thead th").forEach((cell, index) => {
           cell.textContent = ["Período / data", "Campo", "Valor", "Natureza", "Referência", "Origem"][index];
         });
-        reviewRows.innerHTML = report.observations.map((item) => `<tr>
+        reviewRows.innerHTML = observations.map((item) => `<tr>
           <td>${formatDate(item.dates.as_of || item.dates.period_end)}</td>
           <td>${escapeAttr((item.attributes || {}).label || "Posição do período")}</td>
           <td>${formatCurrency(Number(Object.values(item.amounts)[0]))}</td>
