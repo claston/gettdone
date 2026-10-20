@@ -16,6 +16,7 @@ from app.application.parsers.pdf.layout_specific.contract import (
     LayoutSpecificParseContext,
     LayoutSpecificParseResult,
 )
+from app.application.parsers.pdf.layout_specific.inter_ocr import parse_inter_ocr
 from app.application.parsers.pdf.layout_specific.shared import build_parsed_transaction, normalize_text
 from app.application.parsers.pdf.models import _ParsedTransaction, _PdfLine
 
@@ -67,6 +68,9 @@ class InterLayoutParser:
         elif layout_name == INTER_CREDIT_CARD_LAYOUT:
             rows = _parse_credit_card_rows(lines)
         elif layout_name == INTER_RUNNING_BALANCE_LAYOUT:
+            if context.source_extraction is not None:
+                return LayoutSpecificParseResult(parse_inter_ocr(context.source_extraction), "layout_specific_inter_ocr",
+                                                "inter_ocr_financial_columns_and_all_daily_balances_validated")
             rows = _parse_grouped_rows(lines, include_running_balance=True)
         elif layout_name == INTER_FIXED_INCOME_LAYOUT:
             rows = _parse_fixed_income_rows(lines)
