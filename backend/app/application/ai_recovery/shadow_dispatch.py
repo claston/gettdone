@@ -445,6 +445,8 @@ def _deterministic_artifact(analysis, *, selected_parser: object) -> dict[str, o
         "textract_attempted", "textract_used", "native_text_detected", "canonical_warning_count",
         "canonical_transactions_count", "export_recommendation", "export_recommendation_reason",
         "partial_statement", "financial_controls_validated",
+        "printed_balance_checks", "balance_validation_status", "statement_rows_expected",
+        "statement_rows_parsed", "statement_row_coverage_rate", "balance_consistency_checked",
         "parser_selection_reason",
         "confidence_band",
         "canonical_warning_transactions_count",

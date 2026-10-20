@@ -18,9 +18,11 @@ DATE = r"\d{2}/\d{2}/\d{4}"
 class VerifiedStatement:
     rows: list
     layout: str
-    opening: Decimal
-    closing: Decimal
+    opening: Decimal | None
+    closing: Decimal | None
     partial: bool = False
+    printed_balance_checks: int = 0
+    candidate_rows: int = 0
 
 
 def fail(message="Não foi possível conferir todos os lançamentos e saldos impressos. Envie o extrato original completo."):
@@ -40,6 +42,11 @@ def day(value, pattern="%d/%m/%Y"):
 
 def identify_verified_statement(text):
     normalized = normalize_upper_text(text)
+    if "BVP-PORTAL BANRISUL" in normalized and "MOVIMENTOS DA CONTA CORRENTE" in normalized:
+        return "banrisul_portal_monthly_v1"
+    if ("RELATORIO DE CONTA CORRENTE" in normalized and "SANTANDER" in normalized
+            and "DEBITO" in normalized and "CREDITO" in normalized):
+        return "santander_mister_contador_signed_report_v1"
     if "BANCO XP S.A" in normalized and "SALDO DISPONIVEL NO FINAL DO PERIODO FILTRADO" in normalized:
         return "xp_digital_descending_v1"
     if (
@@ -58,6 +65,10 @@ def identify_verified_statement(text):
 def parse_verified_statement(pages):
     text = "\n".join(pages)
     kind = identify_verified_statement(text)
+    if kind in {"banrisul_portal_monthly_v1", "santander_mister_contador_signed_report_v1"}:
+        from app.application.parsers.pdf.followup_native import parse_followup_native
+
+        return parse_followup_native(pages, kind)
     if kind is None:
         # These exports discard the debit/credit columns and bank identity. A
         # description alone cannot determine every direction (e.g. transfers).

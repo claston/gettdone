@@ -351,6 +351,12 @@ def _parse_pdf_transactions(
 
     if native_pages:
         report_identity = detect_financial_report("\n".join(native_pages))
+        if report_identity and report_identity[1] == "btg_fund_positions_and_lots":
+            from app.application.parsers.pdf.btg_fund_positions import read_btg_native_pages
+
+            return _with_parse_observability(
+                parse_financial_pdf_pages(read_btg_native_pages(raw_bytes), native=True),
+                extraction_provider="native_pdfium_text", native_text_detected=1, textract_attempted=0)
         if (identify_verified_statement("\n".join(native_pages))
                 or report_identity and report_identity[1] == "sicoob_rem116_period_summary"):
             # These forms print field values out of content-stream order. Layout
@@ -913,8 +919,12 @@ def _parse_pdf_transactions_from_page_texts(
     preserve_layout_spacing: bool = False,
     context: LayoutSpecificParseContext | None = None,
 ) -> PdfParseResult:
+    if identify_verified_statement("\n".join(page_texts)):
+        # Statement continuations may have no date/header on the next page.
+        # The strict reader validates every physical page before generic segmentation.
+        return _parse_statement_page_texts(page_texts, preserve_layout_spacing=preserve_layout_spacing, context=context)
     report = detect_financial_report("\n".join(page_texts))
-    if report is not None and report[1] in {"nubank_rdb_caixinhas_columns", "sicoob_rem116_period_summary"}:
+    if report is not None and report[1] in {"nubank_rdb_caixinhas_columns", "sicoob_rem116_period_summary", "btg_fund_positions_and_lots"}:
         # An income-only final RDB page may resemble a bank statement. Preserve
         # the complete typed report before the bank/appendix page segmentation.
         return parse_financial_pdf_pages(page_texts, native=bool(context and context.is_native_text))
@@ -930,18 +940,26 @@ def _build_verified_statement_result(statement, pages):
         statement.rows[0] = replace(statement.rows[0], warnings=[*statement.rows[0].warnings, "partial_statement"])
     result = _build_pdf_parse_result(
         parsed_rows=statement.rows, layout=PdfLayoutInference(statement.layout, .99, False),
-        layout_profile=None, selected_parser="layout_specific_verified_statement",
-        parser_selection_reason="explicit_amount_roles_and_all_printed_ledger_controls_validated",
+        layout_profile=None, selected_parser=("layout_specific_verified_statement" if statement.opening is not None
+                                             else "layout_specific_signed_report"),
+        parser_selection_reason=("explicit_amount_roles_and_all_printed_ledger_controls_validated"
+                                 if statement.opening is not None else "explicit_signs_and_complete_dated_row_coverage"),
         inline_decision="not_applicable_layout_specific", tabular_decision="not_applicable_layout_specific",
         columnar_decision="not_applicable_layout_specific", joined_text="\n".join(pages),
         source_page_texts=tuple(pages), page_count=len(pages),
         flattened_line_count=sum(len(p.splitlines()) for p in pages), invalid_date_candidates_skipped=0,
         grouped_transactions_count=0, inline_candidates_count=0, inline_transactions_count=0,
         tabular_candidates_count=0, tabular_transactions_count=0, columnar_candidates_count=0,
-        columnar_transactions_count=0, balance_checkpoints={0: float(statement.opening)},
+        columnar_transactions_count=0,
+        balance_checkpoints={0: float(statement.opening)} if statement.opening is not None else {},
     )
-    return _with_parse_observability(result, verified_opening_balance=float(statement.opening),
-        verified_closing_balance=float(statement.closing), financial_controls_validated=1,
+    controls = (dict(verified_opening_balance=float(statement.opening), verified_closing_balance=float(statement.closing))
+                if statement.opening is not None and statement.closing is not None else {})
+    return _with_parse_observability(result, **controls, financial_controls_validated=int(bool(controls)),
+        balance_validation_status="validated" if controls else "not_available",
+        printed_balance_checks=statement.printed_balance_checks,
+        statement_rows_expected=statement.candidate_rows or len(statement.rows), statement_rows_parsed=len(statement.rows),
+        statement_row_coverage_rate=len(statement.rows) / (statement.candidate_rows or len(statement.rows)),
         partial_statement=int(statement.partial))
 
 

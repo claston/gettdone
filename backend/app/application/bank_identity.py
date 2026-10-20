@@ -8,6 +8,11 @@ from app.application.normalization.text import normalize_upper_text
 
 _GENERIC_LAYOUT_NAMES = {"generic_statement_ptbr"}
 VERIFIED_STATEMENT_BANKS = {
+    "stone_credit_debit_ocr_v1": "Stone",
+    "bradesco_ocr_columns_validated_v1": "Bradesco",
+    "banrisul_portal_ocr_v1": "Banrisul",
+    "banrisul_portal_monthly_v1": "Banrisul",
+    "santander_mister_contador_signed_report_v1": "Santander",
     "xp_digital_descending_v1": "Banco XP",
     "banrisul_extrato_op_doc_sis_v1": "Banrisul",
     "itau_receipt_ocr_daily_controls_v1": "Itau",

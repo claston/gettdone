@@ -12,6 +12,17 @@ from app.application.source_regions import evidence_regions
 def parse_controlled_ocr(extraction):
     texts = ["\n".join(line.text for line in page.lines) for page in extraction.pages]
     text = normalize_upper_text("\n".join(texts))
+    from app.application.parsers.pdf.followup_ocr import (
+        parse_banrisul_columns,
+        parse_bradesco_columns,
+        parse_stone_credit_debit,
+    )
+    if "BVP-PORTAL BANRISUL" in text:
+        return parse_banrisul_columns(extraction)
+    if "BRADESCO" in text and "EXTRATO MENSAL / POR PERIODO" in text and "NET EMPRESA" in text:
+        return parse_bradesco_columns(extraction)
+    if "STONE" in text and "EXTRATO DE CONTA CORRENTE" in text and "LANCAMENTO" in text:
+        return parse_stone_credit_debit(extraction)
     if "SICREDI" in text and "EXTRATO DE CONTA CORRENTE" in text:
         if re.search(r"CONTINUA NA PAGINA\s+\d+", normalize_upper_text(texts[-1])):
             return _sicredi_fragment(extraction)

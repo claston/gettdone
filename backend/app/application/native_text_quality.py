@@ -19,7 +19,8 @@ class NativeTextQuality:
     def metrics(self):
         if not self.requires_visual_extraction:
             return {}
-        return {"native_text_quality_requires_visual": 1, "native_text_quality_reason": "embedded_ocr_text_unreliable"}
+        reason = "unmapped_font_glyphs" if "unmapped_font_glyphs" in self.evidence else "embedded_ocr_text_unreliable"
+        return {"native_text_quality_requires_visual": 1, "native_text_quality_reason": reason}
 
 
 def _text_signals(text):
@@ -78,6 +79,12 @@ def has_raster_with_invisible_text(page, reader):
 
 
 def assess_native_text_quality(raw_bytes, page_texts, *, reader=None):
+    # Type3 fonts without a Unicode map can yield thousands of placeholder
+    # squares. Character count alone must not suppress visual extraction.
+    for text in page_texts:
+        unmapped = sum(text.count(character) for character in ("\u25a1", "\ufffd"))
+        if unmapped >= 30 and unmapped / max(1, len(text)) >= .12:
+            return NativeTextQuality(True, ("embedded_text_quality_low", "unmapped_font_glyphs"))
     if not _text_signals("\n".join(page_texts)):
         return NativeTextQuality()
     try:

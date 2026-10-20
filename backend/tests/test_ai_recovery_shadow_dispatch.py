@@ -93,6 +93,24 @@ def test_confirmed_no_activity_is_not_sent_for_ai_transaction_recovery():
     assert calls == []
 
 
+def test_capture_preserves_ledger_and_row_coverage_status_without_extra_metadata():
+    calls = []
+    publisher = _Publisher(calls)
+    dispatcher = AIRecoveryShadowDispatcher(config=_config("active"), bucket="test-bucket",
+        request_publisher=publisher, queue_publisher=None, parser_release="test")
+    metrics = {**_analysis().pdf_processing_metrics, "balance_validation_status":"not_available",
+        "printed_balance_checks":0, "statement_rows_expected":12, "statement_rows_parsed":12,
+        "statement_row_coverage_rate":1.0, "private_note":"excluded"}
+    dispatcher.dispatch(document=UploadedDocument(filename="input.pdf",raw_bytes=b"pdf",file_type="pdf"),
+        analysis=replace(_analysis(),pdf_processing_metrics=metrics), page_texts=("synthetic",), source_layout_lines=None)
+    captured = json.loads(publisher.artifacts.deterministic_artifact)["parser_metrics"]
+    assert captured["balance_validation_status"] == "not_available"
+    assert captured["printed_balance_checks"] == 0
+    assert captured["statement_rows_expected"] == captured["statement_rows_parsed"] == 12
+    assert captured["statement_row_coverage_rate"] == 1
+    assert "private_note" not in captured
+
+
 def _config(mode: str, *, bedrock_enabled: bool = False) -> AIRecoveryConfig:
     return AIRecoveryConfig.from_mapping(
         {

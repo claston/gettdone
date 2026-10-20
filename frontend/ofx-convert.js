@@ -1431,6 +1431,10 @@
     const labels = { receivables_report: "Títulos recebidos", investment_statement: "Investimentos", fiscal_summary: "Resumo fiscal" };
     const summaryOnly = report.events.length === 0 && observations.length > 0;
     const periodAmounts = Object.assign({}, ...observations.map((item) => item.amounts || {}));
+    const hasPeriodFlows = ["applications", "net_redemptions"].every((key) =>
+      Object.prototype.hasOwnProperty.call(periodAmounts, key));
+    const summaryAmount = (key) => periodAmounts[key] == null ? "Não informado" : formatCurrency(Number(periodAmounts[key]));
+    const fundPositions = Array.isArray(report.evidence) && report.evidence.includes("btg_fund_positions_and_lots");
     const fields = report.export.requires_destination_account ? `
       <div class="ofx-meta-row">
         <p class="kpi-hint">Conta de destino dos recebimentos para exportação OFX</p>
@@ -1451,13 +1455,13 @@
       </section>${fields}
       <article class="kpi"><p class="kpi-label">${summaryOnly ? "Campos do resumo" : "Eventos listados"}</p><p class="kpi-value">${summaryOnly ? observations.length : report.events.length}</p></article>
       ${summaryOnly
-        ? `<article class="kpi"><p class="kpi-label">Aplicações no período</p><p class="kpi-value">${formatCurrency(Number(periodAmounts.applications || 0))}</p></article>
-           <article class="kpi"><p class="kpi-label">Resgates líquidos no período</p><p class="kpi-value">${formatCurrency(Number(periodAmounts.net_redemptions || 0))}</p></article>`
+        ? `<article class="kpi"><p class="kpi-label">${hasPeriodFlows ? "Aplicações no período" : "Saldo bruto final"}</p><p class="kpi-value">${summaryAmount(hasPeriodFlows ? "applications" : "closing_gross")}</p></article>
+           <article class="kpi"><p class="kpi-label">${hasPeriodFlows ? "Resgates líquidos no período" : "Saldo líquido final"}</p><p class="kpi-value">${summaryAmount(hasPeriodFlows ? "net_redemptions" : "closing_net")}</p></article>`
         : fiscal
         ? `<article class="kpi"><p class="kpi-label">Valor dos documentos listados</p><p class="kpi-value">${formatCurrency(total)}</p></article>`
         : `<article class="kpi"><p class="kpi-label">Recebimentos / resgates</p><p class="kpi-value">${formatCurrency(analysis.total_inflows)}</p></article>
            <article class="kpi"><p class="kpi-label">Pagamentos / aplicações</p><p class="kpi-value">${formatCurrency(Math.abs(analysis.total_outflows))}</p></article>`}
-      <p class="kpi-hint">${fiscal ? "Emissão fiscal não comprova recebimento." : "Este relatório não informa saldo da conta corrente."} Formatos: ${escapeAttr(report.export.available_formats.join(", ").toUpperCase())}.</p>`;
+      <p class="kpi-hint">${fiscal ? "Emissão fiscal não comprova recebimento." : fundPositions ? "Posições de investimentos não representam movimentações bancárias." : "Este relatório não informa saldo da conta corrente."} Formatos: ${escapeAttr(report.export.available_formats.join(", ").toUpperCase())}.</p>`;
   }
 
   function renderPayablesKpis(analysis) {
@@ -1997,7 +2001,8 @@
           <td>${formatDate(item.dates.as_of || item.dates.period_end)}</td>
           <td>${escapeAttr((item.attributes || {}).label || "Posição do período")}</td>
           <td>${formatCurrency(Number(Object.values(item.amounts)[0]))}</td>
-          <td>Resumo do período</td><td>Sem data de movimento individual</td>
+          <td>${item.observation_type === "investment_lot" ? "Lote de aquisição" : "Posição / resumo do período"}</td>
+          <td>${item.dates.application ? `Compra em ${formatDate(item.dates.application)}` : "Sem data de movimento individual"}</td>
           <td>${escapeAttr(item.source_refs.map((ref) => `Pág. ${ref.page}, linha ${ref.line}`).join("; "))}</td></tr>`).join("");
         return;
       }
