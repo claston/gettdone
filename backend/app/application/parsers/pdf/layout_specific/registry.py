@@ -28,6 +28,7 @@ from app.application.parsers.pdf.layout_specific.inter import InterLayoutParser
 from app.application.parsers.pdf.layout_specific.itau import ItauLayoutParser
 from app.application.parsers.pdf.layout_specific.iugu import IuguLayoutParser
 from app.application.parsers.pdf.layout_specific.modern_accounts import ModernAccountLayoutParser
+from app.application.parsers.pdf.layout_specific.nubank_ocr import NubankOcrLayoutParser
 from app.application.parsers.pdf.layout_specific.pagbank import PagBankLayoutParser
 from app.application.parsers.pdf.layout_specific.santander_credit_card import SantanderCreditCardLayoutParser
 from app.application.parsers.pdf.layout_specific.santander_statement import SantanderStatementLayoutParser
@@ -99,6 +100,7 @@ DEFAULT_PDF_LAYOUT_PARSER_REGISTRY = PdfLayoutParserRegistry(
         BtgSummaryLayoutParser(),
         PagBankLayoutParser(),
         ModernAccountLayoutParser(),
+        NubankOcrLayoutParser(),
         TrustSrmLayoutParser(),
         StoneLayoutParser(),
         SisprimeLayoutParser(),

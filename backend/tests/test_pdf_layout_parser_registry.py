@@ -118,6 +118,7 @@ def test_default_layout_parser_registry_contains_current_specific_families() -> 
             "sicredi_extrato_conta_corrente_moderno_movimentacoes_v1",
             "picpay_extrato_conta_grouped_2025_v1",
             "neon_extrato_por_periodo_moderno_v1",
+            "nubank_statement_ptbr",
             "banco_bv_extrato_periodo_grouped_v1",
             "banco_bv_extrato_conta_corrente_saldo_dia_v1",
             "asaas_extrato_conta_digital_movimentacoes_v1",
