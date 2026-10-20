@@ -99,6 +99,7 @@ from app.application.parsers.pdf.layout_specific.unicred import (
     parse_unicred_textract_rows,
 )
 from app.application.parsers.pdf.layout_specific.wise import WISE_CURRENCIES
+from app.application.parsers.pdf.layout_specific.xp_empresas import XP_LAYOUT, XP_PARSER
 from app.application.parsers.pdf.models import PdfParseResult, _ParsedTransaction, _PdfLine, _TabularColumnPositions
 from app.application.parsers.pdf.multiline_transaction_assembler import parse_multiline_transaction_rows
 from app.application.parsers.pdf.native_accounts_payable import PARSER as ACCOUNTS_PAYABLE_PARSER
@@ -921,7 +922,7 @@ def _parse_statement_page_texts(
     )
     lines = _flatten_statement_lines(page_texts, preserve_layout_spacing=preserve_layout_spacing)
     lines = _normalize_caixa_web_ocr_lines(lines, layout_name=layout.layout_name)
-    if layout.layout_name in {DIGITAL_CREDIT_CARD_LAYOUT, BRADESCO_CARD_WEB_LAYOUT, BTG_SUMMARY_LAYOUT,
+    if layout.layout_name in {DIGITAL_CREDIT_CARD_LAYOUT, BRADESCO_CARD_WEB_LAYOUT, BTG_SUMMARY_LAYOUT, XP_LAYOUT,
                              _SICREDI_MATRIX_LANDSCAPE_LAYOUT, "sicredi_extrato_html_totais_diarios_v1"}:
         # Keep invalid source dates visible to the layout's financial validation.
         invalid_date_candidates_skipped = 0
@@ -3813,6 +3814,7 @@ def _try_parse_native_layout_text(
 def _maybe_upgrade_native_parse_with_layout_text(*, raw_bytes: bytes, baseline_result: PdfParseResult) -> PdfParseResult:
     if baseline_result.parse_metrics.get("selected_parser") in {
         DIGITAL_CREDIT_CARD_PARSER, ACCOUNTS_PAYABLE_PARSER, BRADESCO_CARD_WEB_PARSER, BTG_SUMMARY_PARSER,
+        XP_PARSER,
         "layout_specific_sicredi_matrix", "layout_specific_sicredi_html",
     }:
         # All movements already reconcile with printed document totals. A generic

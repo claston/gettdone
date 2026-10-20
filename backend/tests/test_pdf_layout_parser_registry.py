@@ -131,5 +131,6 @@ def test_default_layout_parser_registry_contains_current_specific_families() -> 
             "iugu_movimentacao_bancaria_v1",
             "wise_extrato_brl_v1",
             "wise_extrato_usd_v1",
+            "xp_empresas_extrato_conta_digital_pj_v1",
         }
     )
