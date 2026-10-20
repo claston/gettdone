@@ -223,6 +223,10 @@ class ConversionPipeline:
             extracted_text,
             layout_inference_name,
         )
+        if parse_metrics and parse_metrics.get("selected_parser") == "layout_specific_itau_monthly_native":
+            # Its cover balance includes automatic investments; the native parser
+            # independently validates and exposes the current-account balances.
+            opening_balance = float(parse_metrics["native_cash_opening_balance"])
         if is_payables_report or (parse_metrics and parse_metrics.get("opening_balance_ambiguous")):
             opening_balance = None
         kept_indices = [

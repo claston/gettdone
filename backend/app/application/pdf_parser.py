@@ -104,6 +104,8 @@ from app.application.parsers.pdf.models import PdfParseResult, _ParsedTransactio
 from app.application.parsers.pdf.multiline_transaction_assembler import parse_multiline_transaction_rows
 from app.application.parsers.pdf.native_accounts_payable import PARSER as ACCOUNTS_PAYABLE_PARSER
 from app.application.parsers.pdf.native_accounts_payable import VALIDATION_MESSAGE, parse_native_accounts_payable
+from app.application.parsers.pdf.native_itau_monthly import PARSER as ITAU_NATIVE_MONTHLY_PARSER
+from app.application.parsers.pdf.native_itau_monthly import parse_native_itau_monthly
 from app.application.parsers.pdf.native_unicred_grid import UNICRED_NATIVE_COLUMNS_LAYOUT, parse_native_unicred_grid
 from app.application.pdf_document_segmentation import segment_pdf_pages
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
@@ -345,6 +347,27 @@ def _parse_pdf_transactions(
             )
 
     if native_pages:
+        monthly = parse_native_itau_monthly(raw_bytes, native_pages)
+        if monthly is not None:
+            layout_name = _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
+            return _with_parse_observability(
+                _build_pdf_parse_result(
+                    parsed_rows=monthly.rows, layout=PdfLayoutInference(layout_name, 0.99, False),
+                    layout_profile=get_layout_profile(layout_name), selected_parser=ITAU_NATIVE_MONTHLY_PARSER,
+                    parser_selection_reason="native_columns_cash_and_investment_controls_validated",
+                    inline_decision="not_applicable_layout_specific", tabular_decision="not_applicable_layout_specific",
+                    columnar_decision="not_applicable_layout_specific", joined_text="\n".join(monthly.source_pages),
+                    source_page_texts=monthly.source_pages, page_count=len(monthly.source_pages),
+                    flattened_line_count=sum(len(page.splitlines()) for page in monthly.source_pages),
+                    invalid_date_candidates_skipped=0, grouped_transactions_count=0,
+                    inline_candidates_count=0, inline_transactions_count=0,
+                    tabular_candidates_count=0, tabular_transactions_count=0,
+                    columnar_candidates_count=0, columnar_transactions_count=0,
+                    balance_checkpoints={0: float(monthly.opening)},
+                ),
+                native_cash_opening_balance=float(monthly.opening), native_cash_closing_balance=float(monthly.closing),
+                extraction_provider="native_pdfium_text", native_text_detected=1, textract_attempted=0,
+            )
         if has_accounts_payable_title("\n".join(native_pages)):
             try:
                 return parse_native_accounts_payable(raw_bytes)
@@ -856,6 +879,11 @@ def _parse_pdf_transactions_from_page_texts(
     preserve_layout_spacing: bool = False,
     context: LayoutSpecificParseContext | None = None,
 ) -> PdfParseResult:
+    report = detect_financial_report("\n".join(page_texts))
+    if report is not None and report[1] == "nubank_rdb_caixinhas_columns":
+        # An income-only final RDB page may resemble a bank statement. Preserve
+        # the complete typed report before the bank/appendix page segmentation.
+        return parse_financial_pdf_pages(page_texts, native=bool(context and context.is_native_text))
     segmentation = segment_pdf_pages(page_texts)
     selected_pages = list(segmentation.page_texts)
     enforce_document_routing(classify_document_type("extracted.pdf", b"", extracted_text="\n".join(selected_pages)))
