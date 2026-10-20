@@ -27,7 +27,8 @@ from tests.test_convert_edits_http_real_api import _run_http_server
 
 def configure_ocr(monkeypatch, extraction, mode="text"):
     blocks = [{"Id": line.id, "BlockType": "LINE", "Page": page.page_number, "Text": line.text,
-        "Confidence": 99, "Geometry": {"BoundingBox": {key.title(): value for key, value in (line.bbox or {}).items()}}}
+        "Confidence": line.confidence if line.confidence is not None else 99,
+        "Geometry": {"BoundingBox": {key.title(): value for key, value in (line.bbox or {}).items()}}}
         for page in extraction.pages for line in page.lines]
     monkeypatch.setenv("TEXTRACT_ENABLED", "true")
     monkeypatch.setenv("TEXTRACT_FORCE", "true")
