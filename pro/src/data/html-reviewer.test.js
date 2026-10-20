@@ -18,6 +18,7 @@ describe("revisor HTML do OFX Simples", () => {
     "investment_statement",
     "fiscal_summary",
     "investment_period_summary",
+    "fund_positions",
   ])(
     "preserva a semântica e os formatos ao reabrir %s",
     async (documentType) => {
@@ -27,7 +28,8 @@ describe("revisor HTML do OFX Simples", () => {
         pretendToBeVisual: true,
       });
       const receipt = documentType === "receivables_report";
-      const summary = documentType === "investment_period_summary";
+      const positions = documentType === "fund_positions";
+      const summary = documentType === "investment_period_summary" || positions;
       const rows = summary
         ? []
         : [
@@ -74,6 +76,32 @@ describe("revisor HTML do OFX Simples", () => {
             source_refs: [{ page: 1, line: 9 }],
           },
         ];
+        if (positions) {
+          report.evidence = ["btg_fund_positions_and_lots"];
+          report.observations = [
+            {
+              observation_type: "fund_position",
+              dates: { as_of: "2025-01-31" },
+              amounts: { closing_gross: "110.00" },
+              attributes: { label: "Saldo bruto final" },
+              source_refs: [{ page: 3, line: 10 }],
+            },
+            {
+              observation_type: "fund_position",
+              dates: { as_of: "2025-01-31" },
+              amounts: { closing_net: "108.00" },
+              attributes: { label: "Saldo líquido final" },
+              source_refs: [{ page: 3, line: 10 }],
+            },
+            {
+              observation_type: "investment_lot",
+              dates: { as_of: "2025-01-31", application: "2024-10-15" },
+              amounts: { net: "43.00" },
+              attributes: { label: "Saldo líquido do lote" },
+              source_refs: [{ page: 5, line: 10 }],
+            },
+          ];
+        }
       }
       dom.window.fetch = vi.fn(
         async () =>
@@ -129,7 +157,20 @@ describe("revisor HTML do OFX Simples", () => {
         expect(document.querySelector("#closing-balance-input")).toBeNull();
         expect(document.querySelector('[data-action="edit-row"]')).toBeNull();
         expect(document.querySelector("#add-row-btn").hidden).toBe(true);
-        if (summary) {
+        if (positions) {
+          expect(document.querySelector("#kpis").textContent).toContain(
+            "Saldo bruto final",
+          );
+          expect(document.querySelector("#kpis").textContent).toContain(
+            "Saldo líquido final",
+          );
+          expect(document.querySelector("#kpis").textContent).not.toContain(
+            "Aplicações no período",
+          );
+          expect(
+            document.querySelector("#review-section tbody").textContent,
+          ).toContain("15-10-2024");
+        } else if (summary) {
           expect(document.querySelector("#kpis").textContent).toContain(
             "Campos do resumo",
           );

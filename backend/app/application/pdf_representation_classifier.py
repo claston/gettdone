@@ -9,7 +9,7 @@ from pypdf.generic import ContentStream
 
 from app.application.native_text_quality import assess_native_text_quality, has_raster_with_invisible_text
 
-CLASSIFIER_VERSION = "pdf_representation_v3"
+CLASSIFIER_VERSION = "pdf_representation_v4"
 
 _VIRTUAL_PRINTER_PRODUCERS = (
     ("microsoft print to pdf", "producer_microsoft_print_to_pdf"),
@@ -55,10 +55,10 @@ def classify_pdf_representation(raw_bytes: bytes) -> PdfRepresentationClassifica
 
     if extracted_chars > 0:
         evidence = ["native_text_present"]
+        quality = assess_native_text_quality(raw_bytes, [page.extract_text() or "" for page in sampled_pages], reader=reader)
         if full_page_raster or dense_vector_paths:
             evidence.append("non_text_page_content_present")
             hidden_layer = full_page_raster and any(has_raster_with_invisible_text(page, reader) for page in sampled_pages)
-            quality = assess_native_text_quality(raw_bytes, [page.extract_text() or "" for page in sampled_pages], reader=reader)
             if hidden_layer:
                 evidence.extend(("full_page_raster_present", "invisible_text_layer_present"))
             evidence.extend(item for item in quality.evidence if item not in evidence)
@@ -73,11 +73,13 @@ def classify_pdf_representation(raw_bytes: bytes) -> PdfRepresentationClassifica
             )
         if producer_marker:
             evidence.append(producer_marker)
+        evidence.extend(quality.evidence)
         return PdfRepresentationClassification(
             representation="native_text",
             creation_method=creation_method if producer_marker else "direct_export",
             confidence=0.99,
             evidence=tuple(evidence),
+            requires_visual_extraction=quality.requires_visual_extraction,
         )
 
     common_evidence = ["native_text_absent"]

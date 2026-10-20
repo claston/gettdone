@@ -58,6 +58,10 @@ def parse_financial_report_pages(page_texts: list[str]) -> dict | None:
     if detected is None:
         return None
     kind, evidence = detected
+    if evidence == "btg_fund_positions_and_lots":
+        from app.application.parsers.pdf.btg_fund_positions import parse_btg_fund_positions
+
+        return parse_btg_fund_positions(page_texts)
     if evidence == "sicoob_rem116_period_summary":
         from app.application.parsers.pdf.sicoob_summary import parse_sicoob_summary
 
