@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.application.bank_catalog import normalize_bank_code, resolve_bank_code_from_name
+from app.application.bank_identity import VERIFIED_STATEMENT_BANKS
 from app.application.layout_profiles.registry import get_layout_profile
 
 DEFAULT_BANK_CODE = "000"
@@ -21,4 +22,4 @@ def resolve_bank_code(
         if resolved is not None:
             return resolved
 
-    return DEFAULT_BANK_CODE
+    return resolve_bank_code_from_name(VERIFIED_STATEMENT_BANKS.get(str(layout_inference_name or ""))) or DEFAULT_BANK_CODE

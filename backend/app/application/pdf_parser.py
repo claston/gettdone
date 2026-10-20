@@ -107,6 +107,8 @@ from app.application.parsers.pdf.native_accounts_payable import VALIDATION_MESSA
 from app.application.parsers.pdf.native_itau_monthly import PARSER as ITAU_NATIVE_MONTHLY_PARSER
 from app.application.parsers.pdf.native_itau_monthly import parse_native_itau_monthly
 from app.application.parsers.pdf.native_unicred_grid import UNICRED_NATIVE_COLUMNS_LAYOUT, parse_native_unicred_grid
+from app.application.parsers.pdf.ocr_statement_controls import parse_controlled_ocr
+from app.application.parsers.pdf.verified_statements import identify_verified_statement, parse_verified_statement
 from app.application.pdf_document_segmentation import segment_pdf_pages
 from app.application.pdf_layout_inference import PdfLayoutInference, infer_pdf_layout
 from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE, extract_pdf_page_texts_with_ocr, is_pdf_ocr_enabled
@@ -302,7 +304,8 @@ def _parse_pdf_transactions(
             )
         except InvalidFileContentError as textract_error:
             if isinstance(textract_error, (UnsupportedDocumentContentError, OcrFinancialAmbiguityError, PdfFinancialValidationError)):
-                raise _attach_parse_observability(textract_error, native_text_detected=native_text_detected, **quality_metrics)
+                raise _attach_parse_observability(textract_error, textract_attempted=1,
+                    native_text_detected=native_text_detected, **quality_metrics)
             if not is_pdf_ocr_enabled():
                 raise _attach_parse_observability(
                     textract_error,
@@ -347,6 +350,17 @@ def _parse_pdf_transactions(
             )
 
     if native_pages:
+        report_identity = detect_financial_report("\n".join(native_pages))
+        if (identify_verified_statement("\n".join(native_pages))
+                or report_identity and report_identity[1] == "sicoob_rem116_period_summary"):
+            # These forms print field values out of content-stream order. Layout
+            # extraction preserves their association without sending text PDFs to OCR.
+            prepared = _read_layout_native_pdf_page_texts(raw_bytes)
+            return _with_parse_observability(
+                _parse_pdf_transactions_from_page_texts(prepared, preserve_layout_spacing=True,
+                    context=LayoutSpecificParseContext(is_native_text=True)),
+                extraction_provider="native_pdf_text", native_text_detected=1, textract_attempted=0,
+            )
         monthly = parse_native_itau_monthly(raw_bytes, native_pages)
         if monthly is not None:
             layout_name = _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
@@ -682,7 +696,15 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
             or is_ailos_statement(statement_extraction)
             or is_santander_consolidated_scan(statement_extraction)
             or detect_financial_report("\n".join(segmentation.page_texts))):
-        text_mode_result = _parse_scanned_pdf_with_textract_text_pages(statement_extraction)
+        try:
+            text_mode_result = _parse_scanned_pdf_with_textract_text_pages(statement_extraction)
+        except InvalidFileContentError as exc:
+            # Textract succeeded; a later financial validation is not a failure
+            # to run OCR. Keep these facts in both failure logs and captures.
+            setattr(exc, "_ocr_source_extraction", extraction)
+            raise _attach_parse_observability(exc, textract_attempted=1, textract_used=1,
+                extraction_provider="aws_textract", page_count=len(extraction.pages),
+                ocr_result_received=1, ocr_validation_failed=1) from exc
         text_mode_metrics = dict(text_mode_result.parse_metrics)
         text_mode_metrics["extraction_provider"] = "aws_textract"
         text_mode_metrics["textract_enabled"] = 1
@@ -765,6 +787,11 @@ def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
         raise InvalidFileContentError("Nao foi possivel extrair transacoes do OCR para revisao.")
     joined_text = "\n".join(page_texts)
     inferred_layout = infer_pdf_layout(joined_text)
+    controlled = parse_controlled_ocr(extraction)
+    if controlled is not None:
+        result = _build_verified_statement_result(controlled, page_texts)
+        return replace(result, source_extraction=extraction,
+                       source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
     if is_santander_consolidated_scan(extraction):
         rows, controls = parse_santander_ocr(extraction)
         result = _build_pdf_parse_result(
@@ -854,10 +881,17 @@ def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
             layout=inferred_layout,
             extracted_text=adapted.extracted_text,
             parse_metrics={
+                **build_canonical_quality_metrics(adapted.canonical_transactions),
                 "selected_parser": str(adapted.parse_metrics.get("selected_parser") or "textract_line_window"),
                 "parser_selection_reason": "textract_text_fallback",
+                "confidence_band": "low", "export_recommendation": "review_recommended",
+                "export_recommendation_reason": "ocr_fallback_requires_review",
+                "page_count": len(extraction.pages), "extracted_char_count": len(adapted.extracted_text),
+                "extraction_provider": "aws_textract",
             },
             source_page_texts=tuple(page_texts),
+            source_extraction=extraction,
+            source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages),
         )
 
 
@@ -880,7 +914,7 @@ def _parse_pdf_transactions_from_page_texts(
     context: LayoutSpecificParseContext | None = None,
 ) -> PdfParseResult:
     report = detect_financial_report("\n".join(page_texts))
-    if report is not None and report[1] == "nubank_rdb_caixinhas_columns":
+    if report is not None and report[1] in {"nubank_rdb_caixinhas_columns", "sicoob_rem116_period_summary"}:
         # An income-only final RDB page may resemble a bank statement. Preserve
         # the complete typed report before the bank/appendix page segmentation.
         return parse_financial_pdf_pages(page_texts, native=bool(context and context.is_native_text))
@@ -889,6 +923,26 @@ def _parse_pdf_transactions_from_page_texts(
     enforce_document_routing(classify_document_type("extracted.pdf", b"", extracted_text="\n".join(selected_pages)))
     result = _parse_statement_page_texts(selected_pages, preserve_layout_spacing=preserve_layout_spacing, context=context)
     return replace(result, source_page_texts=segmentation.source_page_texts, document_parts=segmentation.parts or None)
+
+
+def _build_verified_statement_result(statement, pages):
+    if statement.partial:
+        statement.rows[0] = replace(statement.rows[0], warnings=[*statement.rows[0].warnings, "partial_statement"])
+    result = _build_pdf_parse_result(
+        parsed_rows=statement.rows, layout=PdfLayoutInference(statement.layout, .99, False),
+        layout_profile=None, selected_parser="layout_specific_verified_statement",
+        parser_selection_reason="explicit_amount_roles_and_all_printed_ledger_controls_validated",
+        inline_decision="not_applicable_layout_specific", tabular_decision="not_applicable_layout_specific",
+        columnar_decision="not_applicable_layout_specific", joined_text="\n".join(pages),
+        source_page_texts=tuple(pages), page_count=len(pages),
+        flattened_line_count=sum(len(p.splitlines()) for p in pages), invalid_date_candidates_skipped=0,
+        grouped_transactions_count=0, inline_candidates_count=0, inline_transactions_count=0,
+        tabular_candidates_count=0, tabular_transactions_count=0, columnar_candidates_count=0,
+        columnar_transactions_count=0, balance_checkpoints={0: float(statement.opening)},
+    )
+    return _with_parse_observability(result, verified_opening_balance=float(statement.opening),
+        verified_closing_balance=float(statement.closing), financial_controls_validated=1,
+        partial_statement=int(statement.partial))
 
 
 def _empty_statement_result(page_texts: list[str], *, structural: bool = False) -> PdfParseResult:
@@ -916,6 +970,9 @@ def _parse_statement_page_texts(
     if financial_result is not None:
         return financial_result
     joined_text = "\n".join(page_texts)
+    verified = parse_verified_statement(page_texts)
+    if verified is not None:
+        return _build_verified_statement_result(verified, page_texts)
     unsupported_document_type = detect_unsupported_document_type(joined_text)
     if has_accounts_payable_title(joined_text):
         raise PdfFinancialValidationError(VALIDATION_MESSAGE)
@@ -1482,6 +1539,7 @@ def _build_pdf_parse_result(
     parse_metrics["multiline_overlap_count"] = multiline_overlap_count
     parse_metrics["multiline_coverage_gain"] = multiline_coverage_gain
     parse_metrics["multiline_conflict_count"] = multiline_conflict_count
+    parse_metrics["partial_statement"] = int(any("partial_statement" in row.warnings for row in canonical_transactions))
     return PdfParseResult(
         transactions=transactions,
         canonical_transactions=canonical_transactions,

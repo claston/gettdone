@@ -30,6 +30,13 @@ LABELS = {
     "period_end": "Fim do período", "source_bank_branch": "Agência de origem", "source_account_number": "Conta de origem",
     "product_account": "Conta do produto",
     "product": "Produto",
+    "amounts.opening_gross": "Saldo bruto anterior", "amounts.applications": "Aplicações no período",
+    "amounts.gross_income": "Rendimentos brutos", "amounts.net_redemptions": "Resgates líquidos",
+    "amounts.withheld_irrf": "Imposto de renda retido", "amounts.withheld_iof": "IOF retido",
+    "amounts.net_income": "Rendimento líquido", "amounts.closing_gross": "Saldo bruto final",
+    "amounts.expected_irrf": "Imposto de renda previsto", "amounts.expected_iof": "IOF previsto",
+    "amounts.closing_net": "Saldo líquido final", "dates.period_start": "Início do período",
+    "dates.period_end": "Fim do período", "dates.as_of": "Data da posição", "attributes.label": "Campo impresso",
 }
 
 

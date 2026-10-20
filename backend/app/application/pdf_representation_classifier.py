@@ -9,7 +9,7 @@ from pypdf.generic import ContentStream
 
 from app.application.native_text_quality import assess_native_text_quality, has_raster_with_invisible_text
 
-CLASSIFIER_VERSION = "pdf_representation_v2"
+CLASSIFIER_VERSION = "pdf_representation_v3"
 
 _VIRTUAL_PRINTER_PRODUCERS = (
     ("microsoft print to pdf", "producer_microsoft_print_to_pdf"),
@@ -107,6 +107,15 @@ def classify_pdf_representation(raw_bytes: bytes) -> PdfRepresentationClassifica
             evidence=tuple(evidence),
             requires_visual_extraction=True,
         )
+
+    if not has_fonts and _has_document_raster_image(sampled_pages):
+        # Scanned till/ATM receipts are narrow images placed on an A4 page.
+        # Their aspect ratio need not match the surrounding paper.
+        evidence = [*common_evidence, "document_raster_present"]
+        if producer_marker:
+            evidence.append(producer_marker)
+        return PdfRepresentationClassification("raster_images", creation_method, .9, tuple(evidence),
+                                               requires_visual_extraction=True)
 
     if producer_marker:
         common_evidence.append(producer_marker)
@@ -235,3 +244,23 @@ def _has_full_page_raster_image(pages: list[object]) -> bool:
 
 def _dereference(value):
     return value.get_object() if hasattr(value, "get_object") else value
+
+
+def _has_document_raster_image(pages):
+    def contains(resources, area, visited):
+        resources = _dereference(resources)
+        if not resources or id(resources) in visited:
+            return False
+        visited.add(id(resources))
+        for obj in _dereference(resources.get("/XObject", {})).values():
+            obj = _dereference(obj)
+            if obj.get("/Subtype") == "/Image":
+                width, height = float(obj.get("/Width", 0)), float(obj.get("/Height", 0))
+                if min(width, height) >= 200 and width * height >= area * .5:
+                    return True
+            elif obj.get("/Subtype") == "/Form" and contains(obj.get("/Resources", {}), area, visited):
+                return True
+        return False
+
+    return sum(contains(page.get("/Resources", {}), float(page.mediabox.width * page.mediabox.height), set())
+               for page in pages) >= max(1, (len(pages) + 1) // 2)

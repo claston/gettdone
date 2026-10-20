@@ -145,6 +145,7 @@ class AIRecoveryShadowDispatcher:
         error_subcode: str | None,
         exception_class: str,
         parse_observability: dict[str, object] | None = None,
+        source_extraction=None,
         document_classification=None,
         document_processing_decision: str | None = None,
         pdf_representation_classification=None,
@@ -179,7 +180,10 @@ class AIRecoveryShadowDispatcher:
             "schema_version": "deterministic_statement_v1",
             "analysis_id": analysis_id,
             "selected_parser": selected_parser,
-            "parser_metrics": {},
+            "parser_metrics": {name: observability[name] for name in (
+                "textract_attempted", "textract_used", "native_text_detected", "extraction_provider", "page_count",
+                "ocr_result_received", "ocr_validation_failed", "ocr_retry_skipped", "ocr_retry_skip_reason",
+            ) if name in observability and isinstance(observability[name], (str, int, float, bool))},
             "opening_balance": None,
             "closing_balance": None,
             "transactions": [],
@@ -201,7 +205,10 @@ class AIRecoveryShadowDispatcher:
             analysis_id=analysis_id,
             page_count=int(page_count),
             deterministic_artifact=deterministic_artifact,
-            source_evidence=_source_evidence(None, None),
+            source_evidence=_source_evidence(
+                tuple("\n".join(line.text for line in page.lines) for page in source_extraction.pages)
+                if source_extraction else None,
+                tuple(tuple(page.lines) for page in source_extraction.pages) if source_extraction else None, source_extraction),
             layout_profile=layout_name,
             layout_family=layout_family or "unknown",
             statement_type=statement_type or "unknown",
@@ -435,6 +442,9 @@ def _deterministic_artifact(analysis, *, selected_parser: object) -> dict[str, o
         )
     metrics = getattr(analysis, "pdf_processing_metrics", None)
     safe_metric_names = (
+        "textract_attempted", "textract_used", "native_text_detected", "canonical_warning_count",
+        "canonical_transactions_count", "export_recommendation", "export_recommendation_reason",
+        "partial_statement", "financial_controls_validated",
         "parser_selection_reason",
         "confidence_band",
         "canonical_warning_transactions_count",

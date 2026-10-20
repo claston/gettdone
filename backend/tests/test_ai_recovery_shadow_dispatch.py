@@ -230,6 +230,7 @@ def test_shadow_dispatch_stores_successful_generic_conversion() -> None:
 
 
 def test_shadow_dispatch_stores_allowlisted_conversion_failure() -> None:
+    from app.application.document_extraction_models import ExtractedLine, ExtractedPage, RawDocumentExtraction
     calls: list[str] = []
     publisher = _Publisher(calls)
     dispatcher = AIRecoveryShadowDispatcher(
@@ -251,7 +252,10 @@ def test_shadow_dispatch_stores_allowlisted_conversion_failure() -> None:
         error_stage="parse",
         error_subcode="no_transaction_row_pattern",
         exception_class="InvalidFileContentError",
-        parse_observability={},
+        parse_observability={"textract_attempted": 1, "textract_used": 1, "ocr_validation_failed": 1,
+                             "sensitive_unlisted_field": "must not be captured"},
+        source_extraction=RawDocumentExtraction("aws_textract", "synthetic", [ExtractedPage(1, lines=[
+            ExtractedLine("line1", 1, 1, "OCR evidence for manual review")])], {}),
     )
 
     assert result.status == "stored"
@@ -262,6 +266,10 @@ def test_shadow_dispatch_stores_allowlisted_conversion_failure() -> None:
     assert reference.issue_codes == ["no_transaction_row_pattern"]
     deterministic = json.loads(publisher.artifacts.deterministic_artifact)
     assert deterministic["transactions"] == []
+    assert deterministic["parser_metrics"] == {"textract_attempted": 1, "textract_used": 1, "ocr_validation_failed": 1}
+    evidence = json.loads(publisher.artifacts.source_evidence)
+    assert evidence["pages"][0]["text"] == "OCR evidence for manual review"
+    assert evidence["pages"][0]["lines"][0]["id"] == "line1"
     assert deterministic["failure"] == {
         "error_stage": "parse",
         "error_subcode": "no_transaction_row_pattern",

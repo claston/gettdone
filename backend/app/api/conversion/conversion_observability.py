@@ -16,6 +16,7 @@ from app.application import (
     UnsupportedFileTypeError,
 )
 from app.application.conversion import document_preflight_service as document_preflight_service_module
+from app.application.errors import OcrFinancialAmbiguityError, PdfFinancialValidationError
 
 logger = logging.getLogger(__name__)
 TEXT_PDF_MAX_PAGES_PER_FILE = document_preflight_service_module.TEXT_PDF_MAX_PAGES_PER_FILE
@@ -258,6 +259,10 @@ def _resolve_effective_ocr_observability(
 
 def _resolve_error_observability(exc: Exception) -> tuple[str | None, str | None, str]:
     exception_class = exc.__class__.__name__
+    if isinstance(exc, PdfFinancialValidationError):
+        return "parse", "financial_validation_failed", exception_class
+    if isinstance(exc, OcrFinancialAmbiguityError):
+        return "parse", "ocr_financial_ambiguity", exception_class
     if isinstance(exc, FileTooLargeError):
         return "upload_validation", "upload_size_limit_exceeded", exception_class
     if isinstance(exc, MaxPagesPerFileExceededError):

@@ -1,4 +1,5 @@
 """Synthetic OCR evidence; no production PDFs, names or account identifiers."""
+
 from dataclasses import replace
 
 import pytest
@@ -13,47 +14,89 @@ def stone_extraction(kind="missing_fee"):
 
     def add(text, x, y, width=0.075):
         number = len(lines) + 1
-        lines.append(ExtractedLine(id=f"line-{number}", page_number=1, line_index=number, text=text,
-            bbox={"left": x, "top": y, "width": width, "height": 0.008}, confidence=98))
+        lines.append(
+            ExtractedLine(
+                id=f"line-{number}",
+                page_number=1,
+                line_index=number,
+                text=text,
+                bbox={"left": x, "top": y, "width": width, "height": 0.008},
+                confidence=98,
+            )
+        )
 
-    add("Extrato de conta corrente", .05, .03, .3)
-    add("Stone Instituição de Pagamento S.A.", .05, .06, .4)
-    add("Período: de 01/04/2026 a 30/04/2026", .05, .09, .4)
-    for label, x in (("DATA", .05), ("TIPO", .125), ("DESCRIÇÃO", .20), ("VALOR", .48), ("SALDO", .59), ("CONTRAPARTE", .70)):
-        add(label, x, .14)
+    add("Extrato de conta corrente", 0.05, 0.03, 0.3)
+    add("Stone Instituição de Pagamento S.A.", 0.05, 0.06, 0.4)
+    add("Período: de 01/04/2026 a 30/04/2026", 0.05, 0.09, 0.4)
+    for label, x in (("DATA", 0.05), ("TIPO", 0.125), ("DESCRIÇÃO", 0.20), ("VALOR", 0.48), ("SALDO", 0.59), ("CONTRAPARTE", 0.70)):
+        add(label, x, 0.14)
     if kind == "type_after_name":
-        records = [("Entrada", "Antecipação", "19,63", "4.884,67"),
-                   ("Saída", "Transferência Pix", "102,00", "4.865,04"),
-                   ("Saída", "Tarifa", "0,03", "4.967,04"),
-                   ("Entrada", "Pix Maquininha", "5,99", "4.967,04"),
-                   ("Entrada", "Antecipação", "20,00", "4.961,08")]
+        records = [
+            ("Entrada", "Antecipação", "19,63", "4.884,67"),
+            ("Saída", "Transferência Pix", "102,00", "4.865,04"),
+            ("Saída", "Tarifa", "0,03", "4.967,04"),
+            ("Entrada", "Pix Maquininha", "5,99", "4.967,04"),
+            ("Entrada", "Antecipação", "20,00", "4.961,08"),
+        ]
     elif kind == "malformed_balance":
-        records = [("Entrada", "Antecipação", "40,53", "10.168,87"),
-                   ("Saída", "Tarifa", "0,34", "0.128,34"),
-                   ("Entrada", "Pix Maquininha", "52,99", "10.128,34"),
-                   ("Entrada", "Antecipação", "121,62", "10.075,69"),
-                   ("Entrada", "Antecipação", "297,56", "9.954,07")]
+        records = [
+            ("Entrada", "Antecipação", "40,53", "10.168,87"),
+            ("Saída", "Tarifa", "0,34", "0.128,34"),
+            ("Entrada", "Pix Maquininha", "52,99", "10.128,34"),
+            ("Entrada", "Antecipação", "121,62", "10.075,69"),
+            ("Entrada", "Antecipação", "297,56", "9.954,07"),
+        ]
+    elif kind == "older_fee_pair":
+        records = [
+            ("Entrada", "Antecipação", "145,85", "5.735,76"),
+            ("Saída", "Tarifa", None, "5.589,91"),
+            ("Entrada", "Pix Maquininha", "23,99", "5.589,91"),
+            ("Saída", "Tarifa", "0,12", "5.566,07"),
+            ("Entrada", "Pix Maquininha", "19,99", "5.566,07"),
+            ("Entrada", "Antecipação", "20,00", "5.546,20"),
+        ]
     else:
-        records = [("Entrada", "Antecipação", "145,85", "5.735,76"),
-                   ("Saída", "Tarifa", None, "5.589,91"),
-                   ("Entrada", "Pix Maquininha", "23,99", "5.589,91"),
-                   ("Entrada", "Antecipação", "52,03", "5.566,07"),
-                   ("Entrada", "Antecipação", "19,63", "5.514,04")]
+        records = [
+            ("Entrada", "Antecipação", "145,85", "5.735,76"),
+            ("Saída", "Tarifa", None, "5.589,91"),
+            ("Entrada", "Pix Maquininha", "23,99", "5.589,91"),
+            ("Entrada", "Antecipação", "52,03", "5.566,07"),
+            ("Entrada", "Antecipação", "19,63", "5.514,04"),
+        ]
     for index, (direction, description, amount, balance) in enumerate(records):
-        y = .23 + index * .12
-        add("23/04/26", .05, y)
+        y = 0.23 + index * 0.12
+        add("23/04/26", 0.05, y)
         if kind == "type_after_name" and index == 1:
-            add("CLIENTE EXEMPLO", .20, y - .006, .2)
-        add(direction, .125, y)
-        add(description, .20, y + .006, .2)
-        add("R$" if amount is None else f"R$ {amount}", .48, y + .003)
-        add(f"R$ {balance}", .59, y + .004)
-    return RawDocumentExtraction(provider="aws_textract", document_hash="synthetic-stone",
-        pages=[ExtractedPage(page_number=1, lines=lines)], metrics={})
+            add("CLIENTE EXEMPLO", 0.20, y - 0.006, 0.2)
+        add(direction, 0.125, y)
+        add(description, 0.20, y + 0.006, 0.2)
+        add("R$" if amount is None else f"R$ {amount}", 0.48, y + 0.003)
+        add(f"R$ {balance}", 0.59, y + 0.004)
+    return RawDocumentExtraction(
+        provider="aws_textract", document_hash="synthetic-stone", pages=[ExtractedPage(page_number=1, lines=lines)], metrics={}
+    )
 
 
 def parse(extraction):
     return pdf_parser._parse_scanned_pdf_with_textract_text_pages(extraction)
+
+
+def test_missing_fee_cell_can_be_recovered_across_page_boundary_with_complete_ledger_witnesses():
+    extraction = stone_extraction()
+    lines = extraction.pages[0].lines
+    # First three records on one page, remaining independent witnesses on the next.
+    split = next(i for i, line in enumerate(lines) if line.text == "23/04/26" and line.bbox["top"] > 0.5)
+    first = [line for line in lines[:split] if line.text != "R$"]
+    second = [*lines[:9], *lines[split:]]
+    pages = [
+        replace(extraction.pages[0], lines=first),
+        replace(extraction.pages[0], page_number=2, lines=[replace(line, page_number=2) for line in second]),
+    ]
+    result = parse(replace(extraction, pages=pages))
+    fee = result.canonical_transactions[1]
+    assert fee.amount == -0.15
+    assert {page for page, _ in fee.source_line_refs} == {1, 2}
+    assert {region.page for region in fee.source_regions} == {1, 2}
 
 
 def change_line(extraction, before, after, occurrence=0):
@@ -76,7 +119,7 @@ def test_missing_fee_uses_its_own_balance_and_verified_credit_pair():
     result = parse(stone_extraction())
     assert len(result.transactions) == 5
     row = result.canonical_transactions[1]
-    assert row.amount == -.15 and row.running_balance == 5589.91
+    assert row.amount == -0.15 and row.running_balance == 5589.91
     assert row.description == "Saída Tarifa"
     assert "ocr_amount_recovered_from_balances" in row.warnings
     assert row.source_regions and len(row.source_line_refs) >= 5
@@ -85,24 +128,36 @@ def test_missing_fee_uses_its_own_balance_and_verified_credit_pair():
     assert result.source_extraction == stone_extraction()
 
 
+def test_recovered_fee_with_an_older_fee_credit_pair_requires_its_independent_next_balance():
+    result = parse(stone_extraction("older_fee_pair"))
+    assert result.canonical_transactions[1].amount == -0.15
+    assert result.parse_metrics["balance_consistency_failed"] == 0
+    broken = change_line(stone_extraction("older_fee_pair"), "R$ 5.546,20", "R$ 5.546,21")
+    with pytest.raises(OcrFinancialAmbiguityError):
+        parse(broken)
+
+
 def test_invalid_leading_zero_balance_is_recovered_only_with_independent_witnesses():
     extraction = stone_extraction("malformed_balance")
     result = parse(extraction)
     row = result.canonical_transactions[1]
-    assert row.amount == -.34 and row.running_balance == 10128.34
+    assert row.amount == -0.34 and row.running_balance == 10128.34
     assert "ocr_balance_recovered_from_context" in row.warnings
     assert result.parse_metrics["balance_consistency_failed"] == 0
     assert result.source_extraction == extraction
     assert any(line.text == "R$ 0.128,34" for line in extraction.pages[0].lines)
 
 
-@pytest.mark.parametrize("before,after", [
-    ("R$ 5.589,91", "R$ 5.580,00"),
-    ("R$ 5.735,76", "R$ 5.736,76"),
-    ("R$ 5.514,04", "R$ 5.513,04"),
-    ("Pix Maquininha", "Transferência Pix"),
-    ("Tarifa", "Pagamento"),
-])
+@pytest.mark.parametrize(
+    "before,after",
+    [
+        ("R$ 5.589,91", "R$ 5.580,00"),
+        ("R$ 5.735,76", "R$ 5.736,76"),
+        ("R$ 5.514,04", "R$ 5.513,04"),
+        ("Pix Maquininha", "Transferência Pix"),
+        ("Tarifa", "Pagamento"),
+    ],
+)
 def test_missing_value_with_inconsistent_or_unrelated_context_requires_review(before, after):
     extraction = change_line(stone_extraction(), before, after)
     with pytest.raises(OcrFinancialAmbiguityError):
@@ -151,9 +206,9 @@ def test_missing_columns_cannot_turn_a_balance_into_a_movement(label):
 @pytest.mark.parametrize("marker", ["R$", "$"])
 def test_missing_geometry_cannot_turn_a_balance_into_a_movement(marker):
     extraction = change_line(stone_extraction(), "R$", marker)
-    extraction = replace(extraction, pages=[replace(extraction.pages[0], lines=[
-        replace(line, bbox=None) for line in extraction.pages[0].lines
-    ])])
+    extraction = replace(
+        extraction, pages=[replace(extraction.pages[0], lines=[replace(line, bbox=None) for line in extraction.pages[0].lines])]
+    )
     with pytest.raises(OcrFinancialAmbiguityError):
         parse(extraction)
 
@@ -169,8 +224,11 @@ def test_handwritten_amount_is_not_used_as_printed_evidence(raw):
     extraction = change_line(stone_extraction(), "R$", raw)
     page = extraction.pages[0]
     line = next(line for line in page.lines if line.text == raw)
-    page = replace(page, lines=[replace(item, word_ids=("handwritten-value",)) if item == line else item for item in page.lines],
-        words=[ExtractedWord(id="handwritten-value", page_number=1, word_index=1, text="0,15", text_type="HANDWRITING")])
+    page = replace(
+        page,
+        lines=[replace(item, word_ids=("handwritten-value",)) if item == line else item for item in page.lines],
+        words=[ExtractedWord(id="handwritten-value", page_number=1, word_index=1, text="0,15", text_type="HANDWRITING")],
+    )
     with pytest.raises(OcrFinancialAmbiguityError):
         parse(replace(extraction, pages=[page]))
 

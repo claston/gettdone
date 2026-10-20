@@ -58,6 +58,10 @@ def parse_financial_report_pages(page_texts: list[str]) -> dict | None:
     if detected is None:
         return None
     kind, evidence = detected
+    if evidence == "sicoob_rem116_period_summary":
+        from app.application.parsers.pdf.sicoob_summary import parse_sicoob_summary
+
+        return parse_sicoob_summary(page_texts)
     if evidence == "nubank_rdb_caixinhas_columns":
         from app.application.parsers.pdf.nubank_rdb import parse_nubank_rdb_pages
 

@@ -25,6 +25,22 @@ def test_unconfirmed_empty_result_still_requires_review():
     assert "no_transactions" in result.reason_codes
 
 
+def test_validated_investment_positions_do_not_require_invented_transactions_to_be_clean():
+    result = assess_conversion_quality(status="Sucesso", conversion_type="pdf-conversion", transactions_count=0,
+        selected_parser="financial_report", layout_name="investment_statement_events_v1", layout_confidence=.99,
+        parser_confidence_band="high")
+    assert result.status == "clean"
+    assert "no_transactions" not in result.reason_codes
+
+
+@pytest.mark.parametrize("band", ["low", None])
+def test_unverified_positions_still_require_review_even_with_a_recognized_report_layout(band):
+    result = assess_conversion_quality(status="Sucesso", conversion_type="pdf-conversion", transactions_count=0,
+        selected_parser="financial_report", layout_name="investment_statement_events_v1", layout_confidence=.99,
+        parser_confidence_band=band)
+    assert result.status == "review" and "no_transactions" in result.reason_codes
+
+
 def test_pdf_is_clean_only_with_specific_high_confidence_layout() -> None:
     assessment = assess_conversion_quality(
         status="Sucesso",
