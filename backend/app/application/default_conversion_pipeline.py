@@ -83,6 +83,10 @@ def _resolve_opening_balance(
         return None
     if layout_name == DIGITAL_CREDIT_CARD_LAYOUT:
         return float(extract_invoice_financials(extracted_text or "").opening_balance)
+    if layout_name == "nubank_statement_ptbr":
+        printed = _nubank_summary_balance(extracted_text, "SALDO INICIAL")
+        if printed is not None:
+            return printed
     labeled_balance = _extract_labeled_balance(
         extracted_text,
         labels=_opening_balance_labels(layout_name),
@@ -151,6 +155,10 @@ def _resolve_closing_balance(
         return None
     if layout_name == BRADESCO_EMPRESAS_LAYOUT:
         return resolve_bradesco_period_closing(rows)
+    if layout_name == "nubank_statement_ptbr":
+        printed = _nubank_summary_balance(extracted_text, "SALDO FINAL DO PERIODO")
+        if printed is not None:
+            return printed
     labeled_balance = _extract_labeled_balance(
         extracted_text,
         labels=_closing_balance_labels(layout_name),
@@ -183,6 +191,21 @@ def _resolve_closing_balance(
         )
         return round(float(opening_balance) + transaction_total, 2)
     return None
+
+
+def _nubank_summary_balance(extracted_text: str | None, label: str) -> float | None:
+    lines = (extracted_text or "").splitlines()
+    found = set()
+    for index, line in enumerate(lines):
+        normalized = _normalize_text_for_profile(line)
+        if normalized == "MOVIMENTACOES":
+            break
+        if normalized != label or index + 1 >= len(lines):
+            continue
+        value = lines[index + 1].strip()
+        if re.fullmatch(r"(?:R\$\s*)?[+-]?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}", value):
+            found.add(float(value.replace("R$", "").replace(" ", "").replace(".", "").replace(",", ".")))
+    return next(iter(found)) if len(found) == 1 else None
 
 
 def _opening_balance_labels(layout_name: str | None) -> tuple[str, ...]:

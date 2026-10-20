@@ -603,7 +603,9 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
         ])
     is_monthly = infer_pdf_layout("\n".join(segmentation.page_texts)).layout_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
     if (textract_mode == "text" or is_monthly or has_explicit_no_activity(segmentation.page_texts)
-            or infer_pdf_layout("\n".join(segmentation.page_texts)).layout_name == _STONE_CURRENT_ACCOUNT_A4_LAYOUT
+            or infer_pdf_layout("\n".join(segmentation.page_texts)).layout_name in {
+                _STONE_CURRENT_ACCOUNT_A4_LAYOUT, "nubank_statement_ptbr",
+            }
             or detect_financial_report("\n".join(segmentation.page_texts))):
         text_mode_result = _parse_scanned_pdf_with_textract_text_pages(statement_extraction)
         text_mode_metrics = dict(text_mode_result.parse_metrics)
