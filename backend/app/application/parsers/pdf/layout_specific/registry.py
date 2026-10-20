@@ -33,6 +33,7 @@ from app.application.parsers.pdf.layout_specific.pagbank import PagBankLayoutPar
 from app.application.parsers.pdf.layout_specific.santander_credit_card import SantanderCreditCardLayoutParser
 from app.application.parsers.pdf.layout_specific.santander_statement import SantanderStatementLayoutParser
 from app.application.parsers.pdf.layout_specific.sicoob import SicoobLayoutParser
+from app.application.parsers.pdf.layout_specific.sicredi_columns import SicrediColumnLayoutParser
 from app.application.parsers.pdf.layout_specific.sisprime import SisprimeLayoutParser
 from app.application.parsers.pdf.layout_specific.stone import StoneLayoutParser
 from app.application.parsers.pdf.layout_specific.topazio import TopazioLayoutParser
@@ -94,6 +95,7 @@ DEFAULT_PDF_LAYOUT_PARSER_REGISTRY = PdfLayoutParserRegistry(
         CoraLayoutParser(),
         CresolLayoutParser(),
         SicoobLayoutParser(),
+        SicrediColumnLayoutParser(),
         UnicredLayoutParser(),
         TopazioLayoutParser(),
         BtgPactualLayoutParser(),
