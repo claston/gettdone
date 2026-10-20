@@ -73,6 +73,7 @@ from app.application.normalization.pdf_tabular_rules import (
 from app.application.normalization.pdf_text_rules import should_ignore_line, should_skip_transaction_description
 from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf import text_extraction
+from app.application.parsers.pdf.caixa_invoice_ocr import is_caixa_invoice, parse_caixa_invoice
 from app.application.parsers.pdf.empty_statement import has_complete_santander_inactive_summary, has_explicit_no_activity
 from app.application.parsers.pdf.layout_specific.ailos_ocr import AILOS_LAYOUT, is_ailos_statement, parse_ailos_ocr
 from app.application.parsers.pdf.layout_specific.bradesco_card_web import BRADESCO_CARD_WEB_LAYOUT, BRADESCO_CARD_WEB_PARSER
@@ -104,6 +105,7 @@ from app.application.parsers.pdf.models import PdfParseResult, _ParsedTransactio
 from app.application.parsers.pdf.multiline_transaction_assembler import parse_multiline_transaction_rows
 from app.application.parsers.pdf.native_accounts_payable import PARSER as ACCOUNTS_PAYABLE_PARSER
 from app.application.parsers.pdf.native_accounts_payable import VALIDATION_MESSAGE, parse_native_accounts_payable
+from app.application.parsers.pdf.native_cash_columns import parse_native_cash_columns
 from app.application.parsers.pdf.native_itau_monthly import PARSER as ITAU_NATIVE_MONTHLY_PARSER
 from app.application.parsers.pdf.native_itau_monthly import parse_native_itau_monthly
 from app.application.parsers.pdf.native_unicred_grid import UNICRED_NATIVE_COLUMNS_LAYOUT, parse_native_unicred_grid
@@ -350,6 +352,19 @@ def _parse_pdf_transactions(
             )
 
     if native_pages:
+        try:
+            controlled_native = parse_native_cash_columns(raw_bytes, native_pages)
+        except PdfFinancialValidationError as exc:
+            raise _attach_parse_observability(exc, native_text_detected=1, textract_attempted=0,
+                ocr_retry_skipped=1, ocr_retry_skip_reason="financial_validation_failed")
+        if controlled_native is not None:
+            statement, source_pages = controlled_native
+            return _with_parse_observability(
+                _build_verified_statement_result(statement, source_pages),
+                selected_parser="layout_specific_native_cash_columns",
+                parser_selection_reason="native_cash_columns_and_all_printed_totals_validated",
+                extraction_provider="native_pdfium_text", native_text_detected=1, textract_attempted=0,
+            )
         report_identity = detect_financial_report("\n".join(native_pages))
         if report_identity and report_identity[1] == "btg_fund_positions_and_lots":
             from app.application.parsers.pdf.btg_fund_positions import read_btg_native_pages
@@ -793,6 +808,16 @@ def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
         raise InvalidFileContentError("Nao foi possivel extrair transacoes do OCR para revisao.")
     joined_text = "\n".join(page_texts)
     inferred_layout = infer_pdf_layout(joined_text)
+    if is_caixa_invoice(extraction):
+        statement = parse_caixa_invoice(extraction)
+        result = _build_verified_statement_result(statement, page_texts)
+        result = _with_parse_observability(result, selected_parser="layout_specific_caixa_invoice_ocr",
+            parser_selection_reason="invoice_financial_sections_card_subtotals_and_global_total_validated",
+            export_recommendation="review_recommended" if any(row.warnings for row in statement.rows) else "safe_to_export",
+            export_recommendation_reason=("invoice_fee_date_requires_review" if any(row.warnings for row in statement.rows)
+                                          else "invoice_controls_validated"))
+        return replace(result, source_extraction=extraction,
+                       source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
     controlled = parse_controlled_ocr(extraction)
     if controlled is not None:
         result = _build_verified_statement_result(controlled, page_texts)

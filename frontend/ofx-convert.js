@@ -2123,6 +2123,7 @@
     if (key === "ocr_amount_recovered_from_summary") return "Valor recuperado";
     if (key === "ocr_balance_recovered_from_context") return "Saldo recuperado";
     if (key === "partial_statement") return "Trecho de extrato";
+    if (key === "invoice_due_date_used_for_undated_fee") return "Data da anuidade";
     if (key === "partial_statement_unpaired_credit") return "Tarifa fora do trecho";
     if (key === "ocr_numeric_separator_normalized") return "Separador conferido";
     if (key === "ocr_balance_sign_validated_from_ledger") return "Sinal do saldo conferido";
@@ -2147,6 +2148,7 @@
 
   function mapWarningTypeExplanation(value) {
     if (value === "partial_statement") return "Este arquivo contém parte do extrato. Os lançamentos e saldos se referem apenas ao trecho enviado; outros movimentos podem estar nas páginas restantes.";
+    if (value === "invoice_due_date_used_for_undated_fee") return "Esta anuidade não tem data impressa. Foi usada a data de vencimento da fatura. Confira ou ajuste a data antes de exportar.";
     if (value === "partial_statement_unpaired_credit") return "A tarifa associada ao primeiro crédito está fora deste trecho. O valor bruto foi preservado; a conferência dos saldos começa no próximo par completo de tarifa e crédito.";
     if (value === "ocr_numeric_separator_normalized") return "O OCR trocou um separador de milhares. A escrita numérica foi normalizada e conferida pelos saldos das linhas vizinhas.";
     if (value === "ocr_balance_sign_validated_from_ledger") return "O sinal do saldo não foi lido pelo OCR e foi confirmado pela sequência dos lançamentos e saldos impressos.";

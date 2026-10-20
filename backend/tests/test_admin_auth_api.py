@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi.testclient import TestClient
 
 from app.application.access_control import AccessControlService
@@ -345,15 +347,20 @@ def test_admin_user_role_history_tracks_actor_and_transitions(tmp_path) -> None:
 
 
 def test_admin_can_see_login_counts_and_history_by_auth_method(tmp_path) -> None:
+    now = datetime.now(timezone.utc)
     service = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
         token_secret="test-secret",
         admin_emails={"admin@example.com"},
+        now_provider=lambda: now,
     )
     service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
     user = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
     service.record_successful_login(user_id=user.user_id, auth_method="local_password")
+    # This test checks chronological history; tied wall-clock readings exercise a different case.
+    now += timedelta(seconds=1)
     service.record_successful_login(user_id=user.user_id, auth_method="google_oauth")
+    now += timedelta(seconds=1)
     service.record_successful_login(user_id=user.user_id, auth_method="google_oauth")
     app.dependency_overrides[get_access_control_service] = lambda: service
     client = TestClient(app)

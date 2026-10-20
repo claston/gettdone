@@ -557,6 +557,7 @@ def _resolve_ofx_account_type(
         if layout_name in {
             DIGITAL_CREDIT_CARD_LAYOUT,
             BRADESCO_CARD_WEB_LAYOUT,
+            "caixa_fatura_cartao_visa_ocr_v1",
             "banco_inter_fatura_cartao_despesas_v1",
             "sicoob_fatura_cartao_credito_movimentos_v1",
             "sicoob_cartao_lancamentos_futuros_v1",
