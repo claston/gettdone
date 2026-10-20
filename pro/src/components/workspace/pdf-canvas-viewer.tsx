@@ -15,6 +15,8 @@ import {
 import { PdfSourceHighlights } from "./pdf-source-highlights";
 import { PdfInteractionLayer } from "./pdf-interaction-layer";
 import type { PdfReviewControls } from "./pdf-interactions";
+import { usePdfSearch } from "./use-pdf-search";
+import type { PdfSearchMatch } from "./pdf-search";
 import {
   activePageAt,
   pageLayout,
@@ -33,6 +35,7 @@ const options = {
 
 export default function PdfCanvasViewer({
   url,
+  blob,
   name,
   page,
   onPage,
@@ -43,6 +46,7 @@ export default function PdfCanvasViewer({
   review,
 }: {
   url: string;
+  blob: Blob;
   name: string;
   page: number;
   onPage(page: number): void;
@@ -58,6 +62,9 @@ export default function PdfCanvasViewer({
   const [error, setError] = useState(false);
   const [width, setWidth] = useState(600);
   const [zoom, setZoom] = useState(1);
+  const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
+  const search = usePdfSearch(document);
+  const appliedSearch = useRef<PdfSearchMatch | undefined>(undefined);
   const [viewport, setViewport] = useState({ top: 0, height: 800 });
   const boxes = useMemo(
     () => pageLayout(sizes, Math.max(100, width - 24) * zoom),
@@ -170,6 +177,37 @@ export default function PdfCanvasViewer({
     });
     onPageRef.current(navigation.page);
   }, [navigation, boxes, selectedRegions]);
+  useLayoutEffect(() => {
+    const match = search.activeMatch;
+    const element = stage.current;
+    if (
+      !match ||
+      !element ||
+      !boxes[match.page - 1] ||
+      appliedSearch.current === match
+    )
+      return;
+    appliedSearch.current = match;
+    userScrolling.current = false;
+    const box = boxes[match.page - 1];
+    const region = match.regions[0];
+    element.scrollTo({
+      top: region
+        ? regionScrollPosition(box, region, element.clientHeight)
+        : box.top,
+      left: region
+        ? Math.max(
+            0,
+            (region.left + region.width / 2) * box.width -
+              element.clientWidth / 2,
+          )
+        : 0,
+      behavior: "auto",
+    });
+    position.current = element.scrollTop;
+    setViewport({ top: element.scrollTop, height: element.clientHeight });
+    onPageRef.current(match.page);
+  }, [search.activeMatch, boxes]);
   const fail = () => {
     if (alive.current) {
       setError(true);
@@ -188,6 +226,7 @@ export default function PdfCanvasViewer({
       }
       if (alive.current) {
         setSizes(dimensions);
+        setDocument(pdf);
         onAvailability(true);
       }
     } catch {
@@ -323,6 +362,64 @@ export default function PdfCanvasViewer({
           </a>
         </div>
       </div>
+      {!error && sizes.length > 0 && (
+        <div className="pdf-search" role="search" aria-label="Busca no PDF">
+          <input
+            type="search"
+            aria-label="Buscar no PDF"
+            placeholder="Buscar no PDF"
+            maxLength={120}
+            value={search.query}
+            onChange={(event) => search.setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                event.stopPropagation();
+                search.next(event.shiftKey ? -1 : 1);
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                search.setQuery("");
+              }
+            }}
+          />
+          <button
+            className="icon-button"
+            aria-label="Ocorrência anterior no PDF"
+            disabled={!search.matches.length || search.busy}
+            onClick={() => search.next(-1)}
+          >
+            ‹
+          </button>
+          <button
+            className="icon-button"
+            aria-label="Próxima ocorrência no PDF"
+            disabled={!search.matches.length || search.busy}
+            onClick={() => search.next(1)}
+          >
+            ›
+          </button>
+          <span role="status">
+            {search.busy
+              ? "Buscando…"
+              : search.query.trim()
+                ? search.error
+                  ? "Não foi possível buscar."
+                  : search.matches.length
+                    ? `${search.index + 1} de ${search.matches.length}${search.truncated ? "+" : ""}`
+                    : search.hasText
+                      ? "Nenhuma ocorrência."
+                      : "PDF sem texto pesquisável."
+                : ""}
+          </span>
+          {search.error && (
+            <button className="secondary-button small" onClick={search.retry}>
+              Tentar busca novamente
+            </button>
+          )}
+        </div>
+      )}
       {review && !error && sizes.length > 0 && (
         <div className="pdf-mark-toolbar">
           <button
@@ -410,7 +507,7 @@ export default function PdfCanvasViewer({
           </div>
         ) : (
           <Document
-            file={url}
+            file={blob}
             options={options}
             onLoadSuccess={loaded}
             onLoadError={fail}
@@ -464,6 +561,25 @@ export default function PdfCanvasViewer({
                       manualRegions={selectedTransaction?.reviewRegions}
                     />
                   )}
+                  {near &&
+                    !search.busy &&
+                    search.matches
+                      .filter((match) => match.page === index + 1)
+                      .flatMap((match, occurrence) =>
+                        match.regions.map((region, fragment) => (
+                          <div
+                            key={`search:${occurrence}:${fragment}`}
+                            className={`pdf-search-highlight ${match === search.activeMatch ? "is-active" : ""}`}
+                            aria-hidden="true"
+                            style={{
+                              left: `${region.left * 100}%`,
+                              top: `${region.top * 100}%`,
+                              width: `${region.width * 100}%`,
+                              height: `${region.height * 100}%`,
+                            }}
+                          />
+                        )),
+                      )}
                 </div>
               );
             })}

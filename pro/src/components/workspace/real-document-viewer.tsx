@@ -50,9 +50,10 @@ function AuthorizedPdf({
       className="pdf-panel controlled-pdf"
       aria-label="Documento original"
     >
-      {state.url ? (
+      {state.url && state.blob ? (
         <PdfCanvasViewer
           url={state.url}
+          blob={state.blob}
           name={conversion.fileName}
           page={props.page}
           onPage={props.setPage}

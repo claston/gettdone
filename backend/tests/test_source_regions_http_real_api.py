@@ -14,7 +14,7 @@ from tests.test_wise_statements import wise_lines
 pytestmark = pytest.mark.real_http
 
 
-@pytest.mark.parametrize("file_type", ["csv", "pdf"])
+@pytest.mark.parametrize("file_type", ["csv", "pdf", "sicoob"])
 def test_http_conversion_report_edit_and_negative_paths_keep_source_regions(tmp_path, monkeypatch, file_type):
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
     monkeypatch.setenv("PDF_OCR_ENABLED", "false")
@@ -27,6 +27,11 @@ def test_http_conversion_report_edit_and_negative_paths_keep_source_regions(tmp_
 
     raw = (b"date,description,amount\n2026-04-01,RECEBIMENTO,40\n" if file_type == "csv"
            else generate_native_text_pdf((tuple(wise_lines()),)))
+    if file_type == "sicoob":
+        from tests.fixtures.sicoob_source_pdf import sicoob_source_pdf
+
+        raw = sicoob_source_pdf()
+        file_type = "pdf"
     with _run_http_server(configure) as base_url, httpx.Client(base_url=base_url, timeout=20) as client:
         response = client.post("/convert", data={"anonymous_fingerprint": "fp-regions"},
                                files={"file": (f"synthetic.{file_type}", raw, "text/csv" if file_type == "csv" else "application/pdf")})

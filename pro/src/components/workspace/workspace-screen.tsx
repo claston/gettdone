@@ -26,6 +26,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { useOptionalProSession } from "@/components/pro-session-gate";
+import { emitWorkspaceEvent } from "@/domain/workspace-events";
 import {
   resolveWorkspaceRepository,
   type WorkspaceDataMode,
@@ -45,6 +46,7 @@ import { useWorkspaceController } from "./use-workspace-controller";
 import { DocumentViewer } from "./document-viewer";
 import { TransactionGrid } from "./transaction-grid";
 import { FinancialReportReview } from "./financial-report-review";
+import { ReviewPanels } from "./review-panels";
 import {
   sourceLocation,
   transactionRegions,
@@ -341,6 +343,10 @@ export function WorkspaceScreen({
     transactionId: string;
   } | null>(null);
   const [markError, setMarkError] = useState<string | null>(null);
+  useEffect(() => {
+    if (transactionFilter === "SUSPECTED")
+      emitWorkspaceEvent(activeRepository, "suspicious_filter_used");
+  }, [transactionFilter, activeRepository]);
   const activeConversion = controller.activeConversion;
   const activeNavigation = useMemo(() => {
     if (
@@ -373,6 +379,26 @@ export function WorkspaceScreen({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (document.querySelector("dialog[open]")) return;
+      if (controller.actionBusy || controller.exportState === "EXPORTING")
+        return;
+      if (event.altKey && ["PageDown", "PageUp"].includes(event.key)) {
+        const ordered = sortConversionsForReview(
+          controller.batch?.conversions ?? [],
+        );
+        const index = ordered.findIndex(
+          (row) => row.id === controller.activeConversion?.id,
+        );
+        const next =
+          ordered[
+            (index + (event.key === "PageDown" ? 1 : -1) + ordered.length) %
+              ordered.length
+          ];
+        if (next) {
+          event.preventDefault();
+          controller.selectConversion(next.id);
+        }
+        return;
+      }
       if (
         marking &&
         (event.key === "Escape" ||
@@ -385,9 +411,25 @@ export function WorkspaceScreen({
       }
       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
         event.preventDefault();
-        void controller.markReviewed();
+        // Commit the focused amount/date before checking the save guard. A
+        // draft must never be left behind by the review shortcut.
+        if (event.target instanceof HTMLInputElement) event.target.blur();
+        setTimeout(() => {
+          if (
+            !document.querySelector(
+              '.transactions-panel input[aria-invalid="true"]',
+            )
+          )
+            void controller.markReviewed();
+        }, 0);
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+        if (
+          (event.target as HTMLElement).matches(
+            "input, textarea, [contenteditable=true]",
+          )
+        )
+          return;
         event.preventDefault();
         controller.undo();
       }
@@ -415,6 +457,9 @@ export function WorkspaceScreen({
         <AlertCircle size={30} />
         <h1>Não foi possível abrir o lote</h1>
         <p>{controller.loadError}</p>
+        <button className="secondary-button" onClick={controller.retryLoad}>
+          Tentar abrir novamente
+        </button>
       </main>
     );
   }
@@ -481,7 +526,10 @@ export function WorkspaceScreen({
   const pending = batch.conversions.filter(
     (item) => item.status === "NEEDS_REVIEW" || item.status === "READY",
   ).length;
-  const progress = Math.round((reviewed / batch.conversions.length) * 100);
+  const progress = Math.round(
+    (reviewed / Math.max(1, batch.conversions.length)) * 100,
+  );
+  const busy = controller.actionBusy || controller.exportState === "EXPORTING";
   const canReview = !["DIRTY", "SAVING", "ERROR"].includes(
     controller.saveStatus,
   );
@@ -549,7 +597,10 @@ export function WorkspaceScreen({
           {activeConversion?.downloadUrl && (
             <a
               className="secondary-button"
-              href={activeConversion.downloadUrl}
+              href={
+                canReview && !busy ? activeConversion.downloadUrl : undefined
+              }
+              aria-disabled={!canReview || busy}
               download
             >
               <Download size={15} /> Baixar{" "}
@@ -566,7 +617,7 @@ export function WorkspaceScreen({
           <button
             className="secondary-button"
             onClick={() => void controller.exportBatch()}
-            disabled={controller.exportState === "EXPORTING"}
+            disabled={busy}
           >
             <Download size={15} />{" "}
             {controller.exportState === "EXPORTING"
@@ -578,9 +629,9 @@ export function WorkspaceScreen({
             onClick={() => void controller.markReviewed()}
             disabled={
               !activeConversion ||
+              busy ||
               !canReview ||
-              activeConversion.status === "PROCESSING" ||
-              activeConversion.status === "FAILED"
+              !["READY", "NEEDS_REVIEW"].includes(activeConversion.status)
             }
           >
             <CheckCircle2 size={16} /> Marcar revisado
@@ -588,7 +639,48 @@ export function WorkspaceScreen({
         </div>
       </header>
 
-      <div className="workspace-body">
+      <div className="workspace-alerts">
+        {batch.conversions.length > 0 &&
+          reviewed === batch.conversions.length && (
+            <div className="workspace-complete" role="status">
+              Revisão do lote concluída. Você já pode exportar os arquivos.
+            </div>
+          )}
+        {controller.exportError && (
+          <div role="alert">
+            <span>{controller.exportError}</span>
+            <button
+              className="secondary-button small"
+              onClick={() => void controller.exportBatch()}
+            >
+              Tentar exportar novamente
+            </button>
+          </div>
+        )}
+        {controller.actionError && (
+          <div role="alert">
+            <span>{controller.actionError}</span>
+            <button
+              className="secondary-button small"
+              onClick={controller.retryAction}
+            >
+              Tentar ação novamente
+            </button>
+          </div>
+        )}
+        {controller.refreshError && (
+          <div role="alert">
+            <span>{controller.refreshError}</span>
+            <button
+              className="secondary-button small"
+              onClick={() => void controller.refreshBatch()}
+            >
+              Tentar atualizar novamente
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="workspace-body" inert={busy}>
         <ConversionNavigator
           conversions={batch.conversions}
           activeId={activeConversion?.id ?? ""}
@@ -614,7 +706,7 @@ export function WorkspaceScreen({
           }}
         />
         {activeConversion ? (
-          <div className="review-stage">
+          <ReviewPanels>
             <DocumentViewer
               key={`viewer-${activeConversion.id}`}
               conversion={activeConversion}
@@ -818,7 +910,7 @@ export function WorkspaceScreen({
                 }}
               />
             )}
-          </div>
+          </ReviewPanels>
         ) : (
           <div className="viewer-state">
             <FileText size={28} />
@@ -835,6 +927,9 @@ export function WorkspaceScreen({
 
       <footer className="workspace-footer">
         <span>
+          <kbd>Alt</kbd> + <kbd>↑/↓</kbd> linhas · <kbd>PgUp/PgDn</kbd> arquivos
+        </span>
+        <span>
           <kbd>↑</kbd>
           <kbd>↓</kbd> navegar arquivos
         </span>
@@ -848,12 +943,13 @@ export function WorkspaceScreen({
         <button
           className="footer-action"
           onClick={controller.undo}
-          disabled={!controller.canUndo}
+          disabled={busy || !controller.canUndo}
         >
           <Undo2 size={14} /> Desfazer
         </button>
         <button
           className="footer-action"
+          disabled={busy}
           onClick={() => {
             setNavigation(null);
             setReading(null);
@@ -878,10 +974,7 @@ export function WorkspaceScreen({
               {controller.exportResult.conversionCount} conversões
             </span>
           </div>
-          <button
-            onClick={() => window.location.reload()}
-            aria-label="Fechar aviso"
-          >
+          <button onClick={controller.dismissExport} aria-label="Fechar aviso">
             ×
           </button>
         </div>

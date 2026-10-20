@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
 
 from app.application import AccessControlService, InvalidUserTokenError
-from app.application.product_telemetry import CLIENT_PRODUCT_EVENT_TYPES
+from app.application.product_telemetry import CLIENT_PRODUCT_EVENT_TYPES, WORKSPACE_EVENT_TYPES
 from app.dependencies import get_access_control_service
 from app.routers.auth_session import (
     ANONYMOUS_IDENTITY_COOKIE_NAME,
@@ -11,6 +11,7 @@ from app.routers.auth_session import (
     resolve_anonymous_fingerprint_with_cookie,
     resolve_user_token_with_session,
 )
+from app.routers.pro_security import PRO_CLIENT_HEADER_NAME, require_pro_browser_request
 from app.schemas import ProductEventRequest
 
 router = APIRouter()
@@ -19,6 +20,7 @@ router = APIRouter()
 @router.post("/telemetry/events", status_code=status.HTTP_202_ACCEPTED)
 def record_client_product_event(
     payload: ProductEventRequest,
+    request: Request,
     authorization: str | None = Header(default=None),
     access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     anonymous_cookie_token: str | None = Cookie(default=None, alias=ANONYMOUS_IDENTITY_COOKIE_NAME),
@@ -27,6 +29,9 @@ def record_client_product_event(
     event_type = payload.event_type.strip().lower()
     if event_type not in CLIENT_PRODUCT_EVENT_TYPES:
         raise HTTPException(status_code=400, detail="Unsupported product event type.")
+    workspace_event = event_type in WORKSPACE_EVENT_TYPES
+    if workspace_event:
+        require_pro_browser_request(request, request.headers.get(PRO_CLIENT_HEADER_NAME))
     try:
         user_token = resolve_user_token_with_session(
             access_control_service=access_control_service,
@@ -34,6 +39,8 @@ def record_client_product_event(
             explicit_user_token=None,
             access_cookie_token=access_cookie_token,
         )
+        if workspace_event and not user_token:
+            raise HTTPException(status_code=401, detail="A registered product identity is required.")
         anonymous_fingerprint = ""
         if not user_token:
             anonymous_fingerprint = resolve_anonymous_fingerprint_with_cookie(
@@ -53,7 +60,7 @@ def record_client_product_event(
     access_control_service.record_product_event(
         identity=identity,
         event_type=event_type,
-        page_path=payload.page_path,
-        plan_code=payload.plan_code,
+        page_path="/review" if workspace_event else payload.page_path,
+        plan_code=None if workspace_event else payload.plan_code,
     )
     return Response(status_code=status.HTTP_202_ACCEPTED, headers={"Cache-Control": "no-store"})

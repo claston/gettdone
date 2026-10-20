@@ -1,3 +1,5 @@
+import type { WorkspaceEvent } from "./workspace-events";
+
 export type ConversionStatus =
   "PROCESSING" | "READY" | "NEEDS_REVIEW" | "REVIEWED" | "EXPORTED" | "FAILED";
 
@@ -103,6 +105,7 @@ export interface ExportResult {
 }
 
 export interface WorkspaceRepository {
+  recordEvent?(event: WorkspaceEvent): void;
   loadDocument?(conversionId: string, signal?: AbortSignal): Promise<Blob>;
   getBatch(batchId: string): Promise<Batch>;
   saveTransactions(

@@ -12,6 +12,10 @@ describe("buildBackendProxyRewrites", () => {
     expect(buildBackendProxyRewrites("https://api.ofxsimples.com.br/")).toEqual(
       [
         {
+          source: "/telemetry/events",
+          destination: "https://api.ofxsimples.com.br/telemetry/events",
+        },
+        {
           source: "/api/conversion-runtime",
           destination: "https://api.ofxsimples.com.br/api/conversion-runtime",
         },

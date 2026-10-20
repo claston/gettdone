@@ -53,6 +53,41 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: /
+
+      - name: Set up Python for browser acceptance
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install browser acceptance dependencies
+        working-directory: .
+        run: |
+          python -m pip install -r backend/requirements.txt playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Browser acceptance and performance budgets
+        working-directory: .
+        run: |
+          mkdir -p tmp/pro-workspace-acceptance
+          npm --prefix pro run start -- -H 127.0.0.1 -p 3100 > tmp/pro-workspace-acceptance/server.log 2>&1 &
+          pro_pid=$!
+          trap 'kill "$pro_pid"' EXIT
+          python scripts/smoke_pro_workspace.py --url http://127.0.0.1:3100
+          python scripts/smoke_pro_pdf_sync.py --url http://127.0.0.1:3100
+
+      - name: Preserve synthetic browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pro-workspace-acceptance
+          path: |
+            tmp/pro-workspace-acceptance/
+            tmp/pro-pdf-sync/
+          if-no-files-found: ignore
 
   pdf-golden:
     runs-on: ubuntu-latest
