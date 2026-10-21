@@ -30,7 +30,7 @@ FINANCIAL_SPREADSHEET = "financial_spreadsheet"
 OTHER_DOCUMENT = "other"
 UNKNOWN_DOCUMENT = "unknown"
 
-DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-10-19.1"
+DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-10-21.1"
 
 _PDF_PREVIEW_PAGE_LIMIT = 3
 _PDF_PREVIEW_CHAR_LIMIT = 16_000
@@ -59,6 +59,10 @@ def classify_document_type(
 
     if extension == "ofx" or "<OFX" in normalized_text:
         return _classification(BANK_STATEMENT, 1.0, "ofx_structure")
+
+    if ("COMPROVANTE DE PAGAMENTO DE TITULOS" in normalized_text
+            and "VALOR" in normalized_text and "DATA DO PAGAMENTO" in normalized_text):
+        return _classification(BANK_RECEIPT, 0.99, "receipt_payment_title")
 
     financial_report = detect_financial_report(text)
     if financial_report is not None:

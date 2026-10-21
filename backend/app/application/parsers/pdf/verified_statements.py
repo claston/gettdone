@@ -41,6 +41,11 @@ def day(value, pattern="%d/%m/%Y"):
 
 
 def identify_verified_statement(text):
+    from app.application.parsers.pdf.signed_statement_variants import identify_variant
+
+    variant = identify_variant(text)
+    if variant:
+        return variant
     normalized = normalize_upper_text(text)
     if "BVP-PORTAL BANRISUL" in normalized and "MOVIMENTOS DA CONTA CORRENTE" in normalized:
         return "banrisul_portal_monthly_v1"
@@ -65,6 +70,10 @@ def identify_verified_statement(text):
 def parse_verified_statement(pages):
     text = "\n".join(pages)
     kind = identify_verified_statement(text)
+    from app.application.parsers.pdf.signed_statement_variants import identify_variant, parse_variant
+
+    if kind and kind == identify_variant(text):
+        return parse_variant(pages, kind)
     if kind in {"banrisul_portal_monthly_v1", "santander_mister_contador_signed_report_v1"}:
         from app.application.parsers.pdf.followup_native import parse_followup_native
 
@@ -121,7 +130,9 @@ def _bb(pages, kind):
     pending_label = ""
     period = re.search(r"PERIODO:\s*(\d{2})\s+A\s+(\d{2}/\d{2}/\d{4})", normalize_upper_text("\n".join(pages)))
     if period is None:
-        fail()
+        from app.application.parsers.pdf.signed_statement_variants import parse_bb_split
+
+        return parse_bb_split(pages, kind)
     end = day(period[2])
     start = day(period[1] + period[2][2:])
     for page, line, raw in _lines(pages):
