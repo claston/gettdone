@@ -1,9 +1,40 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { expireProSession, forgetProSession } from "@/data/pro-session-cache";
 
 import { ProSessionGate } from "./pro-session-gate";
 
+afterEach(() => forgetProSession());
+
 describe("ProSessionGate", () => {
+  it("encerra a visualização protegida quando a renovação confirma uma sessão expirada", async () => {
+    const authService = {
+      currentUser: vi.fn().mockResolvedValue({
+        user_id: "usr-1",
+        name: "Canário",
+        email: "canario@example.com",
+      }),
+      login: vi.fn(),
+      logout: vi.fn(),
+    };
+    render(
+      <ProSessionGate authService={authService}>
+        <div>Dados da sessão</div>
+      </ProSessionGate>,
+    );
+    await screen.findByText("Dados da sessão");
+    act(() => expireProSession());
+    expect(
+      screen.getByRole("heading", { name: "Entre no OFX Simples PRO" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Dados da sessão")).not.toBeInTheDocument();
+  });
   it("solicita login quando o visitante ainda é anônimo", async () => {
     const authService = {
       currentUser: vi.fn().mockResolvedValue(null),

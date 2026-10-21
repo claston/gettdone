@@ -24,13 +24,20 @@ export function RealDocumentViewer(props: {
   onReadingPosition?(position: PdfReadingPosition): void;
   review?: PdfReviewControls;
 }) {
-  const [attempt, setAttempt] = useState(0);
+  const [retryState, setRetryState] = useState({
+    id: props.conversion.id,
+    attempt: 0,
+  });
+  const attempt =
+    retryState.id === props.conversion.id ? retryState.attempt : 0;
   return (
     <AuthorizedPdf
       key={`${props.conversion.id}:${props.conversion.pdf?.url}:${attempt}`}
       {...props}
       attempt={attempt}
-      retry={() => setAttempt((value) => value + 1)}
+      retry={() =>
+        setRetryState({ id: props.conversion.id, attempt: attempt + 1 })
+      }
     />
   );
 }

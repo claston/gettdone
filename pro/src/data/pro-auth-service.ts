@@ -3,6 +3,12 @@ import {
   PRO_CLIENT_HEADER_VALUE,
   readApiError,
 } from "./pro-api-client";
+import {
+  expireProSession,
+  forgetProSession,
+  invalidateProSessionCaches,
+  rememberProSession,
+} from "./pro-session-cache";
 
 export interface ProUser {
   user_id: string;
@@ -49,7 +55,10 @@ export function createProAuthService(
           credentials: "include",
           headers,
         });
-        if (response.status === 401) return null;
+        if (response.status === 401) {
+          expireProSession();
+          return null;
+        }
       }
       if (!response.ok) {
         throw new Error(
@@ -59,7 +68,9 @@ export function createProAuthService(
           ),
         );
       }
-      return (await response.json()) as ProUser;
+      const user = (await response.json()) as ProUser;
+      rememberProSession(user.user_id);
+      return user;
     },
 
     async login(email, password) {
@@ -82,7 +93,10 @@ export function createProAuthService(
           ),
         );
       }
-      return (await response.json()) as ProUser;
+      const user = (await response.json()) as ProUser;
+      invalidateProSessionCaches();
+      rememberProSession(user.user_id);
+      return user;
     },
 
     async logout() {
@@ -96,6 +110,7 @@ export function createProAuthService(
           await readApiError(response, "Não foi possível encerrar sua sessão."),
         );
       }
+      forgetProSession();
     },
   };
 }

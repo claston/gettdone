@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createBatchHistoryService } from "./batch-history-service";
+import { invalidateProSessionCaches } from "./pro-session-cache";
 
 const json = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), { status });
@@ -42,5 +43,8 @@ describe("BatchHistoryService", () => {
     expect(result.items[0].reviewUrl).toBe("/review/batch-1/job-1");
     expect(result.items[1].reviewUrl).toBeNull();
     expect(result.nextCursor).toBe("next");
+    expect(service.getCachedPage?.("cursor+value")).toEqual(result);
+    invalidateProSessionCaches();
+    expect(service.getCachedPage?.("cursor+value")).toBeUndefined();
   });
 });

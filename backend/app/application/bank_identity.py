@@ -14,6 +14,8 @@ VERIFIED_STATEMENT_BANKS = {
     "recovery_btg_investment_cash_v1": "BTG Pactual",
     "recovery_btg_card_invoice_v1": "BTG Pactual",
     "banco_do_brasil_extrato_conta_corrente_lancamentos_v1": "Banco do Brasil",
+    "bradesco_totalbank_signed_daily_v1": "Bradesco",
+    "bb_cash_rende_facil_combined_v1": "Banco do Brasil",
     "bradesco_extrato_unificado_conta_corrente_native_v1": "Bradesco",
     "bradesco_extrato_movimentacao_periodo_native_v1": "Bradesco",
     "caixa_fatura_cartao_visa_ocr_v1": "Caixa Economica Federal",
@@ -144,6 +146,9 @@ def _match_bank_name_in_text(extracted_text: str | None) -> str | None:
     normalized_text = normalize_upper_text(extracted_text or "")
     if not normalized_text:
         return None
+
+    if re.search(r"(?<![A-Z0-9./-])(?:WWW\.)?BB\.COM\.BR\s*-\s*CENTRAL DE ATENDIMENTO BB", normalized_text):
+        return "Banco do Brasil"
 
     header_candidate = _match_unlisted_institution_header(extracted_text)
     if header_candidate is not None:

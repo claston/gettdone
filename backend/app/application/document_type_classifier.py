@@ -63,6 +63,10 @@ def classify_document_type(
     if extension == "ofx" or "<OFX" in normalized_text:
         return _classification(BANK_STATEMENT, 1.0, "ofx_structure")
 
+    if ("COMPROVANTE DE PAGAMENTO DE TITULOS" in normalized_text
+            and "VALOR" in normalized_text and "DATA DO PAGAMENTO" in normalized_text):
+        return _classification(BANK_RECEIPT, 0.99, "receipt_payment_title")
+
     financial_report = detect_financial_report(text)
     if financial_report is not None:
         return _classification(financial_report[0], 0.99, financial_report[1])

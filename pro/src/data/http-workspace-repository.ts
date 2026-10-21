@@ -9,8 +9,13 @@ import type {
   Transaction,
   WorkspaceRepository,
 } from "@/domain/workspace";
-import { orderTransactionsForReview, countEdited } from "@/domain/workspace";
+import {
+  orderTransactionsForReview,
+  countEdited,
+  countSuspected,
+} from "@/domain/workspace";
 import { createProApiClient } from "./pro-api-client";
+import { proSessionCacheVersion } from "./pro-session-cache";
 
 interface HttpWorkspaceRepositoryOptions {
   apiUrl: string;
@@ -110,6 +115,40 @@ export function createHttpWorkspaceRepository(
   const fetcher = options.fetcher ?? fetch;
   const apiClient = createProApiClient({ apiUrl, fetcher });
   const contexts = new Map<string, ConversionContext>();
+  const documents = new Map<string, Blob>();
+  const batches = new Map<string, Batch>();
+  let cacheVersion = proSessionCacheVersion();
+
+  const synchronizeSession = () => {
+    if (cacheVersion === proSessionCacheVersion()) return;
+    contexts.clear();
+    documents.clear();
+    batches.clear();
+    cacheVersion = proSessionCacheVersion();
+  };
+  const updateCachedConversion = (
+    id: string,
+    update: (conversion: Conversion) => Conversion,
+  ) => {
+    for (const [batchId, batch] of batches)
+      batches.set(batchId, {
+        ...batch,
+        conversions: batch.conversions.map((item) =>
+          item.id === id ? update(item) : item,
+        ),
+      });
+  };
+  const cacheDocument = (id: string, blob: Blob) => {
+    if (blob.size > 64 * 1024 * 1024) return;
+    documents.delete(id);
+    documents.set(id, blob);
+    while (
+      documents.size > 12 ||
+      [...documents.values()].reduce((total, item) => total + item.size, 0) >
+        64 * 1024 * 1024
+    )
+      documents.delete(documents.keys().next().value!);
+  };
 
   const request = async (path: string, init: RequestInit = {}) => {
     const response = await apiClient.request(path, {
@@ -215,13 +254,36 @@ export function createHttpWorkspaceRepository(
     }
     context.persistedTransactions = context.savedTransactions;
     context.pendingSave = undefined;
+    updateCachedConversion(
+      [...contexts].find(([, value]) => value === context)?.[0] ?? "",
+      (item) => ({
+        ...item,
+        transactions: context.savedTransactions!,
+        transactionCount: context.savedTransactions!.filter(
+          (row) => !row.isDeleted,
+        ).length,
+        suspectedCount: countSuspected(context.savedTransactions!),
+        editedCount: countEdited(context.savedTransactions!),
+        reviewStatus: "IN_REVIEW",
+        status:
+          item.status === "REVIEWED" || item.status === "EXPORTED"
+            ? countSuspected(context.savedTransactions!)
+              ? "NEEDS_REVIEW"
+              : "READY"
+            : item.status,
+      }),
+    );
   };
 
   const getBatch = async (batchId: string): Promise<Batch> => {
+    synchronizeSession();
+    const version = cacheVersion;
     const response = await request(
       `/api/pro/conversion-batches/${encodeURIComponent(batchId)}`,
     );
     const payload = (await response.json()) as ApiBatch;
+    if (version !== proSessionCacheVersion())
+      throw new DOMException("Session changed", "AbortError");
     const conversions = payload.jobs.map((job) =>
       mapConversion({ apiUrl, batchId: payload.batch_id, job, contexts }),
     );
@@ -236,7 +298,7 @@ export function createHttpWorkspaceRepository(
       ? Math.min(...remaining)
       : Math.max(0, limit - conversions.length);
     const period = resolveBatchPeriod(conversions);
-    return {
+    const batch: Batch = {
       id: payload.batch_id,
       name: `Lote ${period}`,
       clientName: "Workspace OFX Simples PRO",
@@ -249,10 +311,18 @@ export function createHttpWorkspaceRepository(
       },
       conversions,
     };
+    batches.delete(batchId);
+    batches.set(batchId, batch);
+    while (batches.size > 3) batches.delete(batches.keys().next().value!);
+    return batch;
   };
 
   return {
     getBatch,
+    getCachedBatch(batchId) {
+      synchronizeSession();
+      return batches.get(batchId);
+    },
     recordEvent(event) {
       if (!workspaceEvents.includes(event)) return;
       void request("/telemetry/events", {
@@ -261,13 +331,27 @@ export function createHttpWorkspaceRepository(
       }).catch(() => {});
     },
 
-    async loadDocument(conversionId, signal) {
+    async loadDocument(conversionId, signal, options) {
+      synchronizeSession();
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
       const context = requireContext(contexts, conversionId);
+      if (options?.reload) documents.delete(conversionId);
+      const cached = documents.get(conversionId);
+      if (cached) {
+        documents.delete(conversionId);
+        documents.set(conversionId, cached);
+        return cached;
+      }
+      const version = cacheVersion;
       const response = await request(
         `/api/pro/conversion-batches/${encodeURIComponent(context.batchId)}/jobs/${encodeURIComponent(conversionId)}/document`,
         { signal, headers: { Accept: "application/pdf" } },
       );
-      return response.blob();
+      const blob = await response.blob();
+      if (signal?.aborted || version !== proSessionCacheVersion())
+        throw new DOMException("Aborted", "AbortError");
+      cacheDocument(conversionId, blob);
+      return blob;
     },
 
     async saveTransactions(conversionId: string, transactions: Transaction[]) {
@@ -400,6 +484,11 @@ export function createHttpWorkspaceRepository(
         `/api/pro/conversion-batches/${encodeURIComponent(context.batchId)}/jobs/${encodeURIComponent(conversionId)}/review`,
         { method: "POST", body: "{}" },
       );
+      updateCachedConversion(conversionId, (item) => ({
+        ...item,
+        status: "REVIEWED",
+        reviewStatus: "REVIEWED",
+      }));
     },
 
     async retryConversion(conversionId: string) {
@@ -408,6 +497,8 @@ export function createHttpWorkspaceRepository(
         `/api/pro/conversion-batches/${encodeURIComponent(context.batchId)}/jobs/${encodeURIComponent(conversionId)}/retry`,
         { method: "POST", body: "{}" },
       );
+      documents.delete(conversionId);
+      batches.delete(context.batchId);
     },
 
     async exportBatch(batchId: string): Promise<ExportResult> {

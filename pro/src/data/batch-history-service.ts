@@ -1,4 +1,5 @@
 import { createProApiClient } from "./pro-api-client";
+import { proSessionCacheVersion } from "./pro-session-cache";
 
 export interface BatchHistoryItem {
   id: string;
@@ -20,6 +21,7 @@ export interface BatchHistoryPage {
 
 export interface BatchHistoryService {
   list(cursor?: string, signal?: AbortSignal): Promise<BatchHistoryPage>;
+  getCachedPage?(cursor?: string): BatchHistoryPage | undefined;
 }
 
 interface ApiSummary {
@@ -40,8 +42,22 @@ export function createBatchHistoryService(options: {
   fetcher?: typeof fetch;
 }): BatchHistoryService {
   const client = createProApiClient(options);
+  const pages = new Map<string, BatchHistoryPage>();
+  let version = proSessionCacheVersion();
+  const synchronizeSession = () => {
+    if (version !== proSessionCacheVersion()) {
+      pages.clear();
+      version = proSessionCacheVersion();
+    }
+  };
   return {
+    getCachedPage(cursor) {
+      synchronizeSession();
+      return pages.get(cursor ?? "");
+    },
     async list(cursor, signal) {
+      synchronizeSession();
+      const requestVersion = version;
       const query = new URLSearchParams({ limit: "20" });
       if (cursor) query.set("cursor", cursor);
       const response = await client.request(
@@ -62,7 +78,9 @@ export function createBatchHistoryService(options: {
         items: ApiSummary[];
         next_cursor: string | null;
       };
-      return {
+      if (signal?.aborted || requestVersion !== proSessionCacheVersion())
+        throw new DOMException("Aborted", "AbortError");
+      const page: BatchHistoryPage = {
         nextCursor: payload.next_cursor,
         items: payload.items.map((item) => ({
           id: item.batch_id,
@@ -80,6 +98,14 @@ export function createBatchHistoryService(options: {
               : `/review/${encodeURIComponent(item.batch_id)}/${encodeURIComponent(item.first_job_id)}`,
         })),
       };
+      pages.delete(cursor ?? "");
+      pages.set(cursor ?? "", page);
+      while (pages.size > 5) pages.delete(pages.keys().next().value!);
+      return page;
     },
   };
 }
+
+export const batchHistoryService = createBatchHistoryService({
+  apiUrl: process.env.NEXT_PUBLIC_API_URL ?? "/",
+});
