@@ -48,6 +48,8 @@ def run(base: str):
                 route.fulfill(json={"user_id": "synthetic", "name": "Synthetic", "email": "synthetic@example.invalid"})
             elif path == "/telemetry/events":
                 route.fulfill(status=202)
+            elif path == "/api/pro/conversion-batches":
+                route.fulfill(json={"items": [], "next_cursor": None})
             elif path.endswith("/document"):
                 route.fulfill(content_type="application/pdf", body=synthetic_pdf(2))
             elif path == "/api/pro/conversion-batches/report-review":

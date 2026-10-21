@@ -4,7 +4,7 @@ import { ArrowRight, FileStack, LoaderCircle, Plus } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
-  createBatchHistoryService,
+  batchHistoryService,
   type BatchHistoryPage,
   type BatchHistoryService,
 } from "@/data/batch-history-service";
@@ -25,14 +25,7 @@ const dateLabel = (value: string) =>
   });
 
 export function DashboardPage({ service }: { service?: BatchHistoryService }) {
-  const defaultService = useMemo(
-    () =>
-      createBatchHistoryService({
-        apiUrl: process.env.NEXT_PUBLIC_API_URL ?? "/",
-      }),
-    [],
-  );
-  const activeService = service ?? defaultService;
+  const activeService = service ?? batchHistoryService;
   const [cursors, setCursors] = useState<Array<string | undefined>>([
     undefined,
   ]);
@@ -47,9 +40,10 @@ export function DashboardPage({ service }: { service?: BatchHistoryService }) {
     page: BatchHistoryPage | null;
     error: string | null;
   } | null>(null);
-  const loading = result?.request !== request;
-  const page = loading ? null : result.page;
-  const error = loading ? null : result.error;
+  const current = result?.request === request ? result : null;
+  const page = current?.page ?? activeService.getCachedPage?.(cursor) ?? null;
+  const loading = !current && !page;
+  const error = current?.error ?? null;
 
   useEffect(() => {
     const abort = new AbortController();
@@ -88,11 +82,21 @@ export function DashboardPage({ service }: { service?: BatchHistoryService }) {
         <h2>
           <FileStack size={20} /> Seus lotes
         </h2>
+        {!current && page && (
+          <p className="history-state" role="status">
+            Atualizando lotes…
+          </p>
+        )}
+        {error && page && (
+          <p className="history-state" role="alert">
+            {error}
+          </p>
+        )}
         {loading ? (
           <p className="history-state" role="status">
             <LoaderCircle className="spin" size={18} /> Carregando lotes…
           </p>
-        ) : error ? (
+        ) : error && !page ? (
           <div className="history-state" role="alert">
             <p>{error}</p>
             <button
