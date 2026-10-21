@@ -20,6 +20,11 @@ INVESTMENT_SUMMARY_USER_MESSAGE = (
     "Envie um extrato com as movimentações da conta."
 )
 ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE = "accounts_payable_report"
+NOTARY_RECEIPT_DOCUMENT_TYPE = "notary_receipt"
+NOTARY_RECEIPT_USER_MESSAGE = (
+    "Este arquivo é um recibo de cartório, não um extrato bancário. "
+    "Envie o extrato da conta em PDF, CSV, XLSX ou OFX."
+)
 
 _BILLING_REPORT_TITLE = "RELATORIO DE FATURAMENTO"
 _MONTH_NAMES = (
@@ -71,6 +76,8 @@ def detect_unsupported_document_type(text: str) -> str | None:
 
     normalized_text = "\n".join(normalized_lines)
     header_text = " ".join(normalized_lines[:6])
+    if "RECIBO DE CANCELAMENTO DE PROTESTO" in header_text and "CARTORIO" in header_text:
+        return NOTARY_RECEIPT_DOCUMENT_TYPE
     if _is_accounts_payable_report(normalized_lines):
         return ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE
     if _BILLING_REPORT_TITLE in header_text and _is_billing_report(normalized_text):

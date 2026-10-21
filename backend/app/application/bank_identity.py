@@ -8,6 +8,12 @@ from app.application.normalization.text import normalize_upper_text
 
 _GENERIC_LAYOUT_NAMES = {"generic_statement_ptbr"}
 VERIFIED_STATEMENT_BANKS = {
+    "recovery_inter_printed_values_v1": "Banco Inter",
+    "recovery_cresol_descending_daily_v1": "Cresol",
+    "recovery_cresol_colmeia_daily_v1": "Cresol",
+    "recovery_btg_investment_cash_v1": "BTG Pactual",
+    "recovery_btg_card_invoice_v1": "BTG Pactual",
+    "banco_do_brasil_extrato_conta_corrente_lancamentos_v1": "Banco do Brasil",
     "bradesco_totalbank_signed_daily_v1": "Bradesco",
     "bb_cash_rende_facil_combined_v1": "Banco do Brasil",
     "bradesco_extrato_unificado_conta_corrente_native_v1": "Bradesco",

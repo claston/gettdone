@@ -41,6 +41,11 @@ def day(value, pattern="%d/%m/%Y"):
 
 
 def identify_verified_statement(text):
+    from app.application.parsers.pdf.afternoon_statements import identify_afternoon_statement
+
+    afternoon = identify_afternoon_statement(text)
+    if afternoon:
+        return afternoon
     from app.application.parsers.pdf.signed_statement_variants import identify_variant
 
     variant = identify_variant(text)
@@ -55,8 +60,8 @@ def identify_verified_statement(text):
     if "BANCO XP S.A" in normalized and "SALDO DISPONIVEL NO FINAL DO PERIODO FILTRADO" in normalized:
         return "xp_digital_descending_v1"
     if (
-        "EXTRATO DE CONTA CORRENTE" in normalized
-        and "DIA LOTE DOCUMENTO HISTORICO VALOR" in normalized
+        "EXTRATODECONTACORRENTE" in normalized.replace(" ", "")
+        and "DIALOTEDOCUMENTOHISTORICOVALOR" in normalized.replace(" ", "")
         and re.search(rf"{NUMBER}\s*\([+-]\)", text)
     ):
         return "banco_do_brasil_extrato_conta_corrente_lancamentos_v1"
@@ -70,6 +75,10 @@ def identify_verified_statement(text):
 def parse_verified_statement(pages):
     text = "\n".join(pages)
     kind = identify_verified_statement(text)
+    if kind and kind.startswith("recovery_"):
+        from app.application.parsers.pdf.afternoon_statements import parse_afternoon_statement
+
+        return parse_afternoon_statement(pages, kind)
     from app.application.parsers.pdf.signed_statement_variants import identify_variant, parse_variant
 
     if kind and kind == identify_variant(text):
@@ -136,6 +145,12 @@ def _bb(pages, kind):
     end = day(period[2])
     start = day(period[1] + period[2][2:])
     for page, line, raw in _lines(pages):
+        if closing is not None and normalize_upper_text(raw).startswith((
+            "INFORMACOES ADICIONAIS", "LANCAMENTOS FUTUROS", "APLICACOES FINANCEIRAS",
+        )):
+            # Account positions and future placeholders follow the final cash
+            # balance. They are not part of the validated historical ledger.
+            break
         match = re.match(rf"^({DATE})\s+(.+?)\s+({NUMBER})\s*\(([+-])\)$", raw)
         if not match:
             if re.match(rf"^{DATE}\b", raw):
@@ -199,8 +214,10 @@ def _xp(pages, kind):
     in_footer = False
     currency = re.compile(rf"(-?)R\$\s*({NUMBER})")
     for page, line, raw in _lines(pages):
-        match = re.match(r"^(\d{2}/\d{2}/\d{2})\s+às\s+(\d{2}:\d{2}:\d{2})\s+(.+)$", raw, re.I)
+        match = re.match(r"^(\d{2}/\d{2}/\d{2})\s+às\s+(\d{1,2}:\s*\d{1,2}:\s*\d{1,2})\s+(.+)$", raw, re.I)
         if not match:
+            if re.match(r"^\d{2}/\d{2}/\d{2}\b", raw):
+                fail()
             if normalize_upper_text(raw).startswith(("EXTRATO SIMPLES", "IMPORTANTE:")):
                 in_footer = True
             if rows and not in_footer and rows[-1].source_page == page:
