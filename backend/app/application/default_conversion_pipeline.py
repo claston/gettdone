@@ -564,6 +564,7 @@ def _resolve_ofx_account_type(
             "banrisul_fatura_cartao_historico_transacoes_v1",
             "banrisul_extrato_cartao_credito_simples_v1",
             "itau_empresas_fatura_cartao_mastercard_v1",
+            "unicred_fatura_cartao_tracked_native_v1",
         }:
             return "credit_card"
 

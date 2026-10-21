@@ -74,7 +74,14 @@ from app.application.normalization.pdf_text_rules import should_ignore_line, sho
 from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf import text_extraction
 from app.application.parsers.pdf.caixa_invoice_ocr import is_caixa_invoice, parse_caixa_invoice
+from app.application.parsers.pdf.caixa_manager_ocr import is_caixa_manager
 from app.application.parsers.pdf.empty_statement import has_complete_santander_inactive_summary, has_explicit_no_activity
+from app.application.parsers.pdf.late_statement_variants import (
+    UNICRED_CARD,
+    identify_late_statement,
+    parse_late_statement,
+    read_unicred_invoice_pages,
+)
 from app.application.parsers.pdf.layout_specific.ailos_ocr import AILOS_LAYOUT, is_ailos_statement, parse_ailos_ocr
 from app.application.parsers.pdf.layout_specific.bradesco_card_web import BRADESCO_CARD_WEB_LAYOUT, BRADESCO_CARD_WEB_PARSER
 from app.application.parsers.pdf.layout_specific.bradesco_daily_order import resolve_bradesco_split_day_order
@@ -353,6 +360,14 @@ def _parse_pdf_transactions(
             )
 
     if native_pages:
+        late_kind = identify_late_statement("\n".join(native_pages))
+        if late_kind:
+            prepared = (read_unicred_invoice_pages(raw_bytes) if late_kind == UNICRED_CARD
+                        else _read_layout_native_pdf_page_texts(raw_bytes))
+            statement = parse_late_statement(prepared, late_kind)
+            return _with_parse_observability(_build_verified_statement_result(statement, prepared),
+                extraction_provider="native_pdfium_text" if late_kind == UNICRED_CARD else "native_pdf_text",
+                native_text_detected=1, textract_attempted=0)
         try:
             controlled_native = parse_native_cash_columns(raw_bytes, native_pages)
         except PdfFinancialValidationError as exc:
@@ -715,6 +730,7 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
             or infer_pdf_layout("\n".join(segmentation.page_texts)).layout_name in {
                 _STONE_CURRENT_ACCOUNT_A4_LAYOUT, "nubank_statement_ptbr", "banco_inter_extrato_conta_corrente_saldo_transacao_v1",
             }
+            or is_caixa_manager(statement_extraction)
             or is_ailos_statement(statement_extraction)
             or is_santander_consolidated_scan(statement_extraction)
             or detect_financial_report("\n".join(segmentation.page_texts))):
@@ -958,7 +974,7 @@ def _parse_pdf_transactions_from_page_texts(
     preserve_layout_spacing: bool = False,
     context: LayoutSpecificParseContext | None = None,
 ) -> PdfParseResult:
-    if identify_verified_statement("\n".join(page_texts)):
+    if identify_verified_statement("\n".join(page_texts)) or identify_late_statement("\n".join(page_texts)):
         # Statement continuations may have no date/header on the next page.
         # The strict reader validates every physical page before generic segmentation.
         return _parse_statement_page_texts(page_texts, preserve_layout_spacing=preserve_layout_spacing, context=context)
@@ -1027,7 +1043,8 @@ def _parse_statement_page_texts(
     if financial_result is not None:
         return financial_result
     joined_text = "\n".join(page_texts)
-    verified = parse_verified_statement(page_texts)
+    late_kind = identify_late_statement(joined_text)
+    verified = parse_late_statement(page_texts, late_kind) if late_kind else parse_verified_statement(page_texts)
     if verified is not None:
         return _build_verified_statement_result(verified, page_texts)
     unsupported_document_type = detect_unsupported_document_type(joined_text)
