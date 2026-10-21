@@ -109,6 +109,7 @@ from app.application.parsers.pdf.native_cash_columns import parse_native_cash_co
 from app.application.parsers.pdf.native_itau_monthly import PARSER as ITAU_NATIVE_MONTHLY_PARSER
 from app.application.parsers.pdf.native_itau_monthly import parse_native_itau_monthly
 from app.application.parsers.pdf.native_unicred_grid import UNICRED_NATIVE_COLUMNS_LAYOUT, parse_native_unicred_grid
+from app.application.parsers.pdf.ocr_numeric_separator_recovery import parse_with_ocr_separator_recovery
 from app.application.parsers.pdf.ocr_statement_controls import parse_controlled_ocr
 from app.application.parsers.pdf.verified_statements import identify_verified_statement, parse_verified_statement
 from app.application.pdf_document_segmentation import segment_pdf_pages
@@ -529,7 +530,7 @@ def _parse_pdf_transactions(
         return primary_result
 
     try:
-        ocr_result = _parse_pdf_transactions_from_page_texts(
+        ocr_result = _parse_ocr_text_pages(
             ocr_pages, context=LayoutSpecificParseContext(reference_month_year=reference_month_year)
         )
     except InvalidFileContentError as ocr_error:
@@ -575,7 +576,7 @@ def _retry_insufficient_native_text_with_ocr(
 
     try:
         reference_month_year = text_extraction.read_pdf_creation_month_year(raw_bytes)
-        ocr_result = _parse_pdf_transactions_from_page_texts(
+        ocr_result = _parse_ocr_text_pages(
             ocr_pages, context=LayoutSpecificParseContext(reference_month_year=reference_month_year)
         )
     except InvalidFileContentError as ocr_error:
@@ -637,7 +638,7 @@ def _retry_native_parse_failure_with_ocr(
         )
 
     try:
-        ocr_result = _parse_pdf_transactions_from_page_texts(
+        ocr_result = _parse_ocr_text_pages(
             ocr_pages, context=LayoutSpecificParseContext(reference_month_year=reference_month_year)
         )
     except InvalidFileContentError as ocr_error:
@@ -745,7 +746,13 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
             document_parts=segmentation.parts or text_mode_result.document_parts,
             financial_document=text_mode_result.financial_document,
         )
-    adapted = adapt_textract_extraction_to_transactions(statement_extraction)
+    result = parse_with_ocr_separator_recovery(statement_extraction, lambda current: _parse_textract_tables(current, gateway_metrics))
+    return replace(result, source_page_texts=_textract_page_texts(extraction), source_extraction=extraction,
+                   source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages), document_parts=segmentation.parts or None)
+
+
+def _parse_textract_tables(extraction, gateway_metrics) -> PdfParseResult:
+    adapted = adapt_textract_extraction_to_transactions(extraction)
     inferred_layout = infer_pdf_layout(adapted.extracted_text)
     canonical_transactions = adapted.canonical_transactions
     balance_checked_count, balance_failed_count = annotate_balance_consistency(canonical_transactions)
@@ -786,7 +793,6 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
         source_page_texts=_textract_page_texts(extraction),
         source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages),
         source_extraction=extraction,
-        document_parts=segmentation.parts or None,
     )
 
 
@@ -803,6 +809,10 @@ def _textract_page_texts(extraction) -> tuple[str, ...]:
 
 
 def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
+    return parse_with_ocr_separator_recovery(extraction, _parse_textract_text_pages)
+
+
+def _parse_textract_text_pages(extraction) -> PdfParseResult:
     page_texts = list(_textract_page_texts(extraction))
     if not any(page_texts):
         raise InvalidFileContentError("Nao foi possivel extrair transacoes do OCR para revisao.")
@@ -935,7 +945,11 @@ def _parse_scanned_pdf_with_local_ocr_adapter(
     if not ocr_pages:
         raise InvalidFileContentError(PDF_OCR_DISABLED_MESSAGE)
 
-    return _parse_pdf_transactions_from_page_texts(ocr_pages)
+    return _parse_ocr_text_pages(ocr_pages)
+
+
+def _parse_ocr_text_pages(page_texts, *, context=None):
+    return parse_with_ocr_separator_recovery(page_texts, lambda pages: _parse_pdf_transactions_from_page_texts(pages, context=context))
 
 
 def _parse_pdf_transactions_from_page_texts(
