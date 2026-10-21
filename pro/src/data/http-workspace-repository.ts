@@ -1,4 +1,5 @@
 import { validSourceRegions } from "@/domain/source-regions";
+import { workspaceEvents } from "@/domain/workspace-events";
 import type {
   Batch,
   Conversion,
@@ -252,6 +253,13 @@ export function createHttpWorkspaceRepository(
 
   return {
     getBatch,
+    recordEvent(event) {
+      if (!workspaceEvents.includes(event)) return;
+      void request("/telemetry/events", {
+        method: "POST",
+        body: JSON.stringify({ event_type: event, page_path: "/review" }),
+      }).catch(() => {});
+    },
 
     async loadDocument(conversionId, signal) {
       const context = requireContext(contexts, conversionId);

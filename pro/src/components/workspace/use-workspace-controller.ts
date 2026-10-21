@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { validSourceRegions } from "@/domain/source-regions";
+import { emitWorkspaceEvent } from "@/domain/workspace-events";
 
 import {
   countEdited,
@@ -39,6 +40,12 @@ export interface WorkspaceController {
   canUndo: boolean;
   exportState: "IDLE" | "EXPORTING" | "DONE" | "ERROR";
   exportResult: ExportResult | null;
+  exportError: string | null;
+  actionError: string | null;
+  actionBusy: boolean;
+  retryLoad(): void;
+  retryAction(): void;
+  dismissExport(): void;
   selectConversion(id: string): void;
   updateField(
     transactionId: string,
@@ -80,6 +87,7 @@ export function useWorkspaceController(
   const [activeId, setActiveId] = useState(initialConversionId ?? "");
   const [loadState, setLoadState] = useState<LoadState>("LOADING");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [refreshState, setRefreshState] = useState<RefreshState>("IDLE");
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>(
@@ -93,12 +101,19 @@ export function useWorkspaceController(
     "IDLE" | "EXPORTING" | "DONE" | "ERROR"
   >("IDLE");
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const actionLock = useRef(false);
+  const lastAction = useRef<"review" | "retry">("review");
+  const exportPromise = useRef<Promise<void> | null>(null);
+  const openedBatch = useRef<string | null>(null);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const batchRef = useRef<Batch | null>(null);
   const saveStatusesRef = useRef<Record<string, SaveStatus>>({});
   const refreshPromiseRef = useRef<Promise<void> | null>(null);
   const pending = useRef(new Map<string, Transaction[]>());
-  const saving = useRef(new Set<string>());
+  const saving = useRef(new Map<string, Promise<boolean>>());
 
   const setStatus = useCallback((id: string, status: SaveStatus) => {
     saveStatusesRef.current = { ...saveStatusesRef.current, [id]: status };
@@ -150,6 +165,11 @@ export function useWorkspaceController(
           ) ?? sortConversionsForReview(loadedBatch.conversions)[0];
         setActiveId(initial?.id ?? "");
         setLoadState("READY");
+        if (openedBatch.current !== batchId) {
+          openedBatch.current = batchId;
+          emitWorkspaceEvent(repository, "workspace_opened");
+          if (initial) emitWorkspaceEvent(repository, "conversion_selected");
+        }
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -164,7 +184,7 @@ export function useWorkspaceController(
       active = false;
       Object.values(activeTimers).forEach(clearTimeout);
     };
-  }, [batchId, initialConversionId, repository]);
+  }, [batchId, initialConversionId, repository, loadAttempt]);
 
   useEffect(() => {
     batchRef.current = batch;
@@ -260,46 +280,52 @@ export function useWorkspaceController(
     batch?.conversions.find((item) => item.id === activeId) ?? null;
 
   const persist = useCallback(
-    async (conversionId: string) => {
-      if (saving.current.has(conversionId)) return;
-      saving.current.add(conversionId);
+    (conversionId: string): Promise<boolean> => {
+      const inFlight = saving.current.get(conversionId);
+      if (inFlight) return inFlight;
       clearTimeout(timers.current[conversionId]);
       setStatus(conversionId, "SAVING");
       setSaveErrors((current) => ({ ...current, [conversionId]: null }));
-      try {
-        while (pending.current.has(conversionId)) {
-          const transactions = pending.current.get(conversionId)!;
-          pending.current.delete(conversionId);
-          let saved: Transaction[] | void;
-          try {
-            saved = await repository.saveTransactions(
-              conversionId,
-              transactions,
-            );
-          } catch (error) {
+      const promise = (async () => {
+        try {
+          while (pending.current.has(conversionId)) {
+            const transactions = pending.current.get(conversionId)!;
+            pending.current.delete(conversionId);
+            let saved: Transaction[] | void;
+            try {
+              saved = await repository.saveTransactions(
+                conversionId,
+                transactions,
+              );
+            } catch (error) {
+              if (!pending.current.has(conversionId))
+                pending.current.set(conversionId, transactions);
+              throw error;
+            }
+            clearTimeout(timers.current[conversionId]);
             if (!pending.current.has(conversionId))
-              pending.current.set(conversionId, transactions);
-            throw error;
+              changeRows(
+                conversionId,
+                orderTransactionsForReview(saved ?? transactions),
+              );
           }
+          setStatus(conversionId, "SAVED");
+          return true;
+        } catch (error) {
           clearTimeout(timers.current[conversionId]);
-          if (!pending.current.has(conversionId))
-            changeRows(
-              conversionId,
-              orderTransactionsForReview(saved ?? transactions),
-            );
+          setStatus(conversionId, "ERROR");
+          setSaveErrors((current) => ({
+            ...current,
+            [conversionId]:
+              error instanceof Error ? error.message : "Falha ao salvar.",
+          }));
+          return false;
         }
-        setStatus(conversionId, "SAVED");
-      } catch (error) {
-        clearTimeout(timers.current[conversionId]);
-        setStatus(conversionId, "ERROR");
-        setSaveErrors((current) => ({
-          ...current,
-          [conversionId]:
-            error instanceof Error ? error.message : "Falha ao salvar.",
-        }));
-      } finally {
+      })().finally(() => {
         saving.current.delete(conversionId);
-      }
+      });
+      saving.current.set(conversionId, promise);
+      return promise;
     },
     [repository, changeRows, setStatus],
   );
@@ -325,6 +351,11 @@ export function useWorkspaceController(
       transactions: Transaction[],
       previous: Transaction[],
     ) => {
+      if (
+        !pending.current.has(conversionId) &&
+        !saving.current.has(conversionId)
+      )
+        emitWorkspaceEvent(repository, "transaction_edited");
       setHistory((current) => ({
         ...current,
         [conversionId]: [
@@ -335,7 +366,7 @@ export function useWorkspaceController(
       changeRows(conversionId, transactions);
       queueSave(conversionId, transactions);
     },
-    [queueSave, changeRows],
+    [queueSave, changeRows, repository],
   );
 
   const updateField = useCallback(
@@ -509,7 +540,10 @@ export function useWorkspaceController(
 
   const selectConversion = useCallback(
     (id: string) => {
+      if (id !== activeId)
+        emitWorkspaceEvent(repository, "conversion_selected");
       setActiveId(id);
+      setActionError(null);
       if (typeof window !== "undefined") {
         window.history.replaceState(
           null,
@@ -518,7 +552,7 @@ export function useWorkspaceController(
         );
       }
     },
-    [batchId, reviewBasePath],
+    [batchId, reviewBasePath, activeId, repository],
   );
 
   const goToNextPending = useCallback(() => {
@@ -528,64 +562,152 @@ export function useWorkspaceController(
   }, [activeConversion, batch, selectConversion]);
 
   const markReviewed = useCallback(async () => {
-    if (!activeConversion) return;
-    const status = saveStatuses[activeConversion.id] ?? "IDLE";
+    if (
+      !activeConversion ||
+      actionLock.current ||
+      exportPromise.current ||
+      !["READY", "NEEDS_REVIEW"].includes(activeConversion.status)
+    )
+      return;
+    const status = saveStatusesRef.current[activeConversion.id] ?? "IDLE";
     if (["DIRTY", "SAVING", "ERROR"].includes(status)) return;
-    await repository.markReviewed(activeConversion.id);
-    setBatch((current) =>
-      current
-        ? {
-            ...current,
-            conversions: current.conversions.map((item) =>
-              item.id === activeConversion.id
-                ? {
-                    ...item,
-                    status: "REVIEWED",
-                    reviewStatus: "REVIEWED",
-                    suspectedCount: 0,
-                  }
-                : item,
-            ),
-          }
-        : current,
-    );
-    const currentBatch = batchRef.current;
-    if (currentBatch) {
-      const next = nextPendingConversion(
-        currentBatch.conversions,
-        activeConversion.id,
+    actionLock.current = true;
+    lastAction.current = "review";
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      await repository.markReviewed(activeConversion.id);
+      emitWorkspaceEvent(repository, "conversion_reviewed");
+      const current = batchRef.current;
+      if (current) {
+        const next: Batch = {
+          ...current,
+          conversions: current.conversions.map((item) =>
+            item.id === activeConversion.id
+              ? {
+                  ...item,
+                  status: "REVIEWED",
+                  reviewStatus: "REVIEWED",
+                  suspectedCount: 0,
+                }
+              : item,
+          ),
+        };
+        batchRef.current = next;
+        setBatch(next);
+      }
+      const currentBatch = batchRef.current;
+      if (currentBatch) {
+        const next = nextPendingConversion(
+          currentBatch.conversions,
+          activeConversion.id,
+        );
+        if (next) selectConversion(next.id);
+      }
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível confirmar a revisão.",
       );
-      if (next) selectConversion(next.id);
+    } finally {
+      actionLock.current = false;
+      setActionBusy(false);
     }
-  }, [activeConversion, repository, saveStatuses, selectConversion]);
+  }, [activeConversion, repository, selectConversion]);
 
   const retryConversion = useCallback(async () => {
-    if (!activeConversion) return;
-    await repository.retryConversion(activeConversion.id);
-    setBatch((current) =>
-      current
-        ? {
-            ...current,
-            conversions: current.conversions.map((item) =>
-              item.id === activeConversion.id
-                ? { ...item, status: "PROCESSING" }
-                : item,
-            ),
-          }
-        : current,
-    );
+    if (
+      !activeConversion ||
+      activeConversion.status !== "FAILED" ||
+      actionLock.current ||
+      exportPromise.current
+    )
+      return;
+    actionLock.current = true;
+    lastAction.current = "retry";
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      await repository.retryConversion(activeConversion.id);
+      setBatch((current) =>
+        current
+          ? {
+              ...current,
+              conversions: current.conversions.map((item) =>
+                item.id === activeConversion.id
+                  ? { ...item, status: "PROCESSING" }
+                  : item,
+              ),
+            }
+          : current,
+      );
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível reprocessar o arquivo.",
+      );
+    } finally {
+      actionLock.current = false;
+      setActionBusy(false);
+    }
   }, [activeConversion, repository]);
 
-  const exportBatch = useCallback(async () => {
-    setExportState("EXPORTING");
-    try {
-      const result = await repository.exportBatch(batchId);
-      setExportResult(result);
-      setExportState("DONE");
-    } catch {
-      setExportState("ERROR");
+  const flushSaves = useCallback(async () => {
+    while (pending.current.size || saving.current.size) {
+      const ids = new Set([
+        ...pending.current.keys(),
+        ...saving.current.keys(),
+      ]);
+      for (const id of ids) {
+        if (!(await persist(id))) {
+          selectConversion(id);
+          throw new Error(
+            "Não foi possível salvar todas as alterações. Confira o arquivo selecionado e tente exportar novamente.",
+          );
+        }
+      }
     }
-  }, [batchId, repository]);
+  }, [persist, selectConversion]);
+
+  const exportBatch = useCallback((): Promise<void> => {
+    if (exportPromise.current) return exportPromise.current;
+    if (actionLock.current) return Promise.resolve();
+    setExportState("EXPORTING");
+    setExportResult(null);
+    setExportError(null);
+    emitWorkspaceEvent(repository, "batch_export_requested");
+    const promise = (async () => {
+      try {
+        await flushSaves();
+        const result = await repository.exportBatch(batchId);
+        setExportResult(result);
+        setExportState("DONE");
+      } catch (error) {
+        setExportState("ERROR");
+        setExportError(
+          error instanceof Error
+            ? error.message
+            : "Não foi possível exportar o lote.",
+        );
+      }
+    })().finally(() => {
+      exportPromise.current = null;
+    });
+    exportPromise.current = promise;
+    return promise;
+  }, [batchId, repository, flushSaves]);
+
+  const retryLoad = useCallback(() => setLoadAttempt((value) => value + 1), []);
+  const retryAction = useCallback(() => {
+    void (lastAction.current === "review" ? markReviewed() : retryConversion());
+  }, [markReviewed, retryConversion]);
+  const dismissExport = useCallback(() => {
+    setExportState("IDLE");
+    setExportResult(null);
+    setExportError(null);
+  }, []);
 
   return useMemo(
     () => ({
@@ -606,6 +728,12 @@ export function useWorkspaceController(
         : false,
       exportState,
       exportResult,
+      exportError,
+      actionError,
+      actionBusy,
+      retryLoad,
+      retryAction,
+      dismissExport,
       selectConversion,
       updateField,
       setReviewRegions,
@@ -627,6 +755,12 @@ export function useWorkspaceController(
       exportBatch,
       exportResult,
       exportState,
+      exportError,
+      actionError,
+      actionBusy,
+      retryLoad,
+      retryAction,
+      dismissExport,
       goToNextPending,
       history,
       loadError,

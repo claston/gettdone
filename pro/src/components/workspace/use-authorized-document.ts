@@ -6,7 +6,11 @@ export function useAuthorizedDocument(
   repository: WorkspaceRepository,
   attempt: number,
 ) {
-  const [state, setState] = useState<{ url?: string; error?: string }>({});
+  const [state, setState] = useState<{
+    url?: string;
+    blob?: Blob;
+    error?: string;
+  }>({});
   useEffect(() => {
     const abort = new AbortController();
     let url: string | undefined;
@@ -16,7 +20,7 @@ export function useAuthorizedDocument(
         const blob = await repository.loadDocument(id, abort.signal);
         if (abort.signal.aborted) return;
         url = URL.createObjectURL(blob);
-        setState({ url });
+        setState({ url, blob });
       } catch {
         if (!abort.signal.aborted)
           setState({

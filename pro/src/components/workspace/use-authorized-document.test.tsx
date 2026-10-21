@@ -34,6 +34,7 @@ describe("authorized PDF lifecycle", () => {
     rerender({ id: "new" });
     expect(signal.aborted).toBe(true);
     await waitFor(() => expect(result.current.url).toBe("blob:new"));
+    expect(result.current.blob).toBeInstanceOf(Blob);
     await act(async () => finish(new Blob(["old"])));
     expect(create).toHaveBeenCalledTimes(1);
     unmount();

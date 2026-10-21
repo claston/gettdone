@@ -1,8 +1,10 @@
 "use client";
 import {
   Fragment,
+  memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -30,7 +32,7 @@ import {
   type SourceSelectionOptions,
 } from "./source-location";
 
-function EditableCell({
+const EditableCell = memo(function EditableCell({
   transaction,
   field,
   onCommit,
@@ -83,7 +85,7 @@ function EditableCell({
       )}
     </div>
   );
-}
+});
 
 export function TransactionGrid({
   conversion,
@@ -135,6 +137,14 @@ export function TransactionGrid({
   selectedFromPdf?: boolean;
   activePage: number | null;
 }) {
+  const updateRef = useRef(onUpdate);
+  useLayoutEffect(() => {
+    updateRef.current = onUpdate;
+  }, [onUpdate]);
+  const commitField = useCallback(
+    (...args: Parameters<typeof onUpdate>) => updateRef.current(...args),
+    [],
+  );
   const [localFilter, setLocalFilter] = useState<TransactionFilter>("ALL");
   const filter = filterValue ?? localFilter;
   const setFilter = (value: TransactionFilter) =>
@@ -419,6 +429,30 @@ export function TransactionGrid({
           pointer.current = null;
         }}
         onKeyDownCapture={(event) => {
+          if (event.altKey && ["ArrowDown", "ArrowUp"].includes(event.key)) {
+            const currentRow = (
+              event.target as HTMLElement
+            ).closest<HTMLTableRowElement>("tr[data-transaction-id]");
+            const currentIndex = visible.findIndex(
+              (row) => row.id === currentRow?.dataset.transactionId,
+            );
+            const next =
+              visible[currentIndex + (event.key === "ArrowDown" ? 1 : -1)];
+            if (currentIndex >= 0 && next) {
+              event.preventDefault();
+              const inputs = Array.from(currentRow!.querySelectorAll("input"));
+              const field = Math.max(
+                0,
+                inputs.indexOf(event.target as HTMLInputElement),
+              );
+              const target = rowElements.current
+                .get(next.id)
+                ?.querySelectorAll<HTMLInputElement>("input")[field];
+              target?.focus();
+              target?.scrollIntoView({ block: "nearest" });
+            }
+            return;
+          }
           if (
             !editing.current &&
             [
@@ -573,14 +607,14 @@ export function TransactionGrid({
                         <EditableCell
                           transaction={transaction}
                           field="date"
-                          onCommit={onUpdate}
+                          onCommit={commitField}
                         />
                       </td>
                       <td>
                         <EditableCell
                           transaction={transaction}
                           field="description"
-                          onCommit={onUpdate}
+                          onCommit={commitField}
                         />
                         {transaction.isDeleted && (
                           <span className="deleted-badge">Excluído</span>
@@ -590,21 +624,21 @@ export function TransactionGrid({
                         <EditableCell
                           transaction={transaction}
                           field="credit"
-                          onCommit={onUpdate}
+                          onCommit={commitField}
                         />
                       </td>
                       <td>
                         <EditableCell
                           transaction={transaction}
                           field="debit"
-                          onCommit={onUpdate}
+                          onCommit={commitField}
                         />
                       </td>
                       <td>
                         <EditableCell
                           transaction={transaction}
                           field="balance"
-                          onCommit={onUpdate}
+                          onCommit={commitField}
                         />
                       </td>
                       <td>
