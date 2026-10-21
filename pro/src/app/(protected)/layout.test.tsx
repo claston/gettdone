@@ -1,7 +1,11 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import ReviewLayout from "./layout";
+import ProtectedLayout from "./layout";
+
+vi.mock("@/components/session-prefetch", () => ({
+  SessionPrefetch: () => null,
+}));
 
 vi.mock("@/components/pro-session-gate", () => ({
   ProSessionGate: ({ children }: { children: React.ReactNode }) => (
@@ -9,12 +13,12 @@ vi.mock("@/components/pro-session-gate", () => ({
   ),
 }));
 
-describe("ReviewLayout", () => {
-  it("protege o workspace real sem afetar as rotas de demonstração", () => {
+describe("ProtectedLayout", () => {
+  it("compartilha a proteção da sessão entre a revisão e o dashboard sem afetar a demonstração", () => {
     render(
-      <ReviewLayout>
+      <ProtectedLayout>
         <span>Workspace real</span>
-      </ReviewLayout>,
+      </ProtectedLayout>,
     );
 
     expect(screen.getByTestId("session-gate")).toContainElement(

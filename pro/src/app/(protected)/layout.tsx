@@ -1,14 +1,15 @@
-import { AppShell } from "@/components/app-shell";
 import { ProSessionGate } from "@/components/pro-session-gate";
+import { SessionPrefetch } from "@/components/session-prefetch";
 
-export default function StandardLayout({
+export default function ProtectedLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
     <ProSessionGate>
-      <AppShell>{children}</AppShell>
+      <SessionPrefetch />
+      {children}
     </ProSessionGate>
   );
 }

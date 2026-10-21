@@ -1,5 +1,6 @@
 """Bind original extraction evidence to transactions, without financial matching."""
 import logging
+import re
 from collections import Counter, defaultdict
 from contextlib import closing
 from dataclasses import replace
@@ -68,6 +69,7 @@ def _native_line_regions(raw_bytes: bytes, source_pages: tuple[str, ...]) -> dic
                 offset = 0
                 lines = []
                 fragments = []
+                word_fragments = []
                 for raw_line in characters.splitlines(keepends=True):
                     text = _text(raw_line)
                     if text:
@@ -78,6 +80,13 @@ def _native_line_regions(raw_bytes: bytes, source_pages: tuple[str, ...]) -> dic
                         region = _visible_region(page_index + 1, rect, page.get_bbox(), page.get_rotation())
                         lines.append((text, region))
                         fragments.append((text, rect))
+                        by_offset = {index - offset: box for index, box in zip(indices, rects, strict=True)}
+                        for word in re.finditer(r"\S+", raw_line):
+                            boxes = [by_offset[index] for index in range(word.start(), word.end())]
+                            word_fragments.append((word[0], (
+                                min(box[0] for box in boxes), min(box[1] for box in boxes),
+                                max(box[2] for box in boxes), max(box[3] for box in boxes),
+                            )))
                     offset += len(raw_line)
                 original = [(index, _text(line)) for index, line in enumerate(source.splitlines(), 1) if _text(line)]
                 _bind_exact_lines(result, page_index + 1, original, lines)
@@ -86,6 +95,13 @@ def _native_line_regions(raw_bytes: bytes, source_pages: tuple[str, ...]) -> dic
                 # fragments, then require the same exact original line text.
                 spatial = _spatial_lines(fragments, page_index + 1, page.get_bbox(), page.get_rotation())
                 _bind_exact_lines(result, page_index + 1, original, spatial)
+                if any((page_index + 1, number) not in result for number, _ in original):
+                    # A centered date/amount can share a raw PDFium line with
+                    # text from both lines of a wrapped cell. Reassemble words
+                    # instead, allowing the different font baselines to overlap.
+                    # Exact, unique source text is still required for binding.
+                    wrapped = _spatial_lines(word_fragments, page_index + 1, page.get_bbox(), page.get_rotation(), minimum_overlap=.15)
+                    _bind_exact_lines(result, page_index + 1, original, wrapped)
     return result
 
 
@@ -107,14 +123,14 @@ def _bind_exact_lines(result, page, original, lines):
                 result.setdefault((page, number), matches)
 
 
-def _spatial_lines(fragments, page, crop, rotation):
+def _spatial_lines(fragments, page, crop, rotation, *, minimum_overlap=.7):
     groups = []
     for text, rect in sorted(fragments, key=lambda item: (-item[1][3], item[1][0])):
         left, bottom, right, top = rect
         for group in reversed(groups):
             _, gb, _, gt = group[0][1]
             overlap = min(top, gt) - max(bottom, gb)
-            if overlap >= min(top-bottom, gt-gb) * .7 and overlap > 0:
+            if overlap >= min(top-bottom, gt-gb) * minimum_overlap and overlap > 0:
                 # Overlapping objects may be duplicate/hidden text. Do not
                 # collapse them into a newly invented line association.
                 if all(right <= other[1][0] or left >= other[1][2] for other in group):

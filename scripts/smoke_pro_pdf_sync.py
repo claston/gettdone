@@ -131,6 +131,8 @@ def run(base_url: str) -> None:
             path = route.request.url.split(base_url)[-1]
             if path == "/auth/me":
                 route.fulfill(json={"user_id": "synthetic", "name": "Synthetic User", "email": "synthetic@example.invalid"})
+            elif path.startswith("/api/pro/conversion-batches?"):
+                route.fulfill(json={"items": [], "next_cursor": None})
             elif path.endswith("/document"):
                 assert route.request.headers.get("x-ofx-pro-client") == "web"
                 downloads.append(path)
