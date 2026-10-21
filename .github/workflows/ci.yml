@@ -76,7 +76,7 @@ jobs:
           npm --prefix pro run start -- -H 127.0.0.1 -p 3100 > tmp/pro-workspace-acceptance/server.log 2>&1 &
           pro_pid=$!
           trap 'kill "$pro_pid"' EXIT
-          python scripts/smoke_pro_workspace.py --url http://127.0.0.1:3100
+          python scripts/smoke_pro_workspace.py --url http://127.0.0.1:3100 --save-receipt-delay-ms 6000
           python scripts/smoke_pro_pdf_sync.py --url http://127.0.0.1:3100
           python scripts/smoke_pro_financial_reports.py --url http://127.0.0.1:3100
           python scripts/smoke_pro_idle_navigation.py --url http://127.0.0.1:3100

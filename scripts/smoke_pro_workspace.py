@@ -19,7 +19,7 @@ from playwright.sync_api import expect, sync_playwright
 from smoke_pro_pdf_sync import bind_fixture_regions, synthetic_pdf
 
 
-def run(base: str):
+def run(base: str, *, save_receipt_delay_ms: int = 0):
     deadline = time.monotonic() + 30
     while True:
         try:
@@ -55,7 +55,9 @@ def run(base: str):
     receipts = {}
     reads = 0
     poll_outage = True
+    save_outage = True
     save_attempts = 0
+    save_receipt_reads = 0
     export_attempts = 0
     metrics = {}
 
@@ -66,7 +68,7 @@ def run(base: str):
         page.on("pageerror", lambda error: errors.append({"message": error.message, "stack": error.stack}))
 
         def intercept(route):
-            nonlocal reads, save_attempts, export_attempts
+            nonlocal reads, save_attempts, save_receipt_reads, export_attempts
             path = urlsplit(route.request.url).path
             if path == "/auth/me":
                 route.fulfill(json={"user_id": "synthetic", "name": "Synthetic", "email": "synthetic@example.invalid"})
@@ -93,11 +95,15 @@ def run(base: str):
                 route.fulfill(json=batch)
             elif "/convert-edits/" in path:
                 if "/operations/" in path:
+                    save_receipt_reads += 1
                     receipt = receipts.get(path.rsplit("/",1)[-1])
+                    if not receipt and save_receipt_delay_ms:
+                        # Simulate a slow acknowledgement lookup after a lost write.
+                        time.sleep(save_receipt_delay_ms / 1000)
                     route.fulfill(status=200 if receipt else 404, json=receipt or {"detail": "Edit operation not found."})
                     return
                 save_attempts += 1
-                if save_attempts == 1:
+                if save_outage:
                     route.fulfill(status=503, json={"detail": "Synthetic save outage"})
                     return
                 payload = route.request.post_data_json
@@ -150,13 +156,20 @@ def run(base: str):
             page.locator("canvas").first.evaluate("node => node.dataset.acceptance = 'original'")
 
             cell = page.locator("tr[data-transaction-id='tx-2-1'] input").nth(1)
-            started = time.perf_counter()
-            cell.fill("Synthetic corrected description")
-            expect(cell).to_have_value("Synthetic corrected description")
-            metrics["edit_ms"] = round((time.perf_counter()-started)*1000)
-            assert metrics["edit_ms"] < 1000, metrics
-            cell.press("Tab")
+            # A failed POST is uncertain until the operation receipt lookup ends.
+            # Start listening before editing: autosave can run before blur.
+            with page.expect_response(lambda response: response.request.method == "GET"
+                    and "/convert-edits/" in urlsplit(response.url).path
+                    and "/operations/" in urlsplit(response.url).path, timeout=15000) as receipt_response:
+                started = time.perf_counter()
+                cell.fill("Synthetic corrected description")
+                expect(cell).to_have_value("Synthetic corrected description")
+                metrics["edit_ms"] = round((time.perf_counter()-started)*1000)
+                assert metrics["edit_ms"] < 1000, metrics
+                cell.press("Tab")
+            assert receipt_response.value.status == 404
             expect(page.get_by_role("button", name="Falha ao salvar · tentar novamente")).to_be_visible()
+            assert save_attempts >= 1 and save_receipt_reads >= 1 and writes == []
             assert page.locator("canvas[data-acceptance='original']").count() == 1
             assert len(documents) == 1
 
@@ -167,6 +180,7 @@ def run(base: str):
             expect(page.get_by_role("option").filter(has_text="synthetic-01.pdf")).to_contain_text("Pronto", timeout=10000)
             page.get_by_role("option").filter(has_text="synthetic-00.pdf").click()
             expect(cell).to_have_value("Synthetic corrected description")
+            save_outage = False
             page.get_by_role("button", name="Falha ao salvar · tentar novamente").click()
             expect(page.get_by_text("Salvo", exact=True)).to_be_visible()
             assert jobs[0]["result"]["analysis"]["preview_transactions"][1]["description"] == "Synthetic corrected description"
@@ -226,13 +240,15 @@ def run(base: str):
             page.screenshot(path=str(output / "mobile.png"))
             summary = {"result": "PASS", "documents": 12, "large_document_rows": len(rows), "metrics": metrics,
                        "budgets_ms": {"open_ms": 12000, "edit_ms": 1000}, "save_attempts": save_attempts,
+                       "save_receipt_reads": save_receipt_reads, "save_receipt_delay_ms": save_receipt_delay_ms,
                        "poll_reads": reads, "reviewed": 12, "exported": 12, "event_types": sorted(expected)}
             (output / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
             print(json.dumps(summary))
         except Exception:
             page.screenshot(path=str(output / "failure.png"))
             (output / "failure.html").write_text(page.content(), encoding="utf-8")
-            print(json.dumps({"browser_errors": errors, "metrics": metrics}), flush=True)
+            print(json.dumps({"browser_errors": errors, "metrics": metrics, "save_attempts": save_attempts,
+                              "save_receipt_reads": save_receipt_reads, "save_receipt_delay_ms": save_receipt_delay_ms}), flush=True)
             raise
         finally:
             browser.close()
@@ -241,4 +257,8 @@ def run(base: str):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default="http://127.0.0.1:3100")
-    run(parser.parse_args().url.rstrip("/"))
+    parser.add_argument("--save-receipt-delay-ms", type=int, default=0)
+    args = parser.parse_args()
+    if not 0 <= args.save_receipt_delay_ms <= 10000:
+        parser.error("--save-receipt-delay-ms must be between 0 and 10000")
+    run(args.url.rstrip("/"), save_receipt_delay_ms=args.save_receipt_delay_ms)

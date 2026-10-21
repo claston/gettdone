@@ -29,6 +29,10 @@ VERIFIED_STATEMENT_BANKS = {
     "itau_receipt_ocr_daily_controls_v1": "Itau",
     "caixa_ocr_columns_validated_v1": "Caixa Economica Federal",
     "sicredi_ocr_columns_partial_v1": "Sicredi",
+    "viacredi_av_extrato_especial_signed_v1": "Viacredi",
+    "banco_do_brasil_zero_date_daily_controls_v1": "Banco do Brasil",
+    "unicred_fatura_cartao_tracked_native_v1": "Unicred",
+    "caixa_gerenciador_periodo_financial_controls_ocr_v1": "Caixa Economica Federal",
 }
 _LEGACY_LAYOUT_BANK_NAMES = {
     **VERIFIED_STATEMENT_BANKS,

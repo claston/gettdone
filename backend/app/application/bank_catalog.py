@@ -20,6 +20,11 @@ class BankRecord:
 
 
 _EXTRA_BANK_RECORDS = (
+    # Ailos confirms 085 for its cooperatives: https://www.ailos.coop.br/perguntas
+    BankRecord(
+        code="085", name="Ailos", short_name="Ailos",
+        aliases=("Ailos", "Cecred", "Viacredi", "Viacredi Alto Vale", "Viacredi AV"), active=True,
+    ),
     BankRecord(
         code="348",
         name="Banco XP S.A.",

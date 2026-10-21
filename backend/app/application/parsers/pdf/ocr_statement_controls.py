@@ -10,6 +10,10 @@ from app.application.source_regions import evidence_regions
 
 
 def parse_controlled_ocr(extraction):
+    from app.application.parsers.pdf.caixa_manager_ocr import is_caixa_manager, parse_caixa_manager
+
+    if is_caixa_manager(extraction):
+        return parse_caixa_manager(extraction)
     texts = ["\n".join(line.text for line in page.lines) for page in extraction.pages]
     text = normalize_upper_text("\n".join(texts))
     from app.application.parsers.pdf.followup_ocr import (
