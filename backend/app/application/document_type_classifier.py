@@ -130,6 +130,12 @@ def classify_document_type(
             evidence=card_evidence,
         )
 
+    if layout_inference_confidence is not None and layout_inference_confidence >= .99:
+        if layout_inference_name in {"bb_excel_horizontal_pages_v1", "banco_amazonia_native_icon_signs_v1"}:
+            return _classification(BANK_STATEMENT, .99, "verified_native_ledger_layout")
+        if layout_inference_name == "billing_excel_horizontal_pages_v1":
+            return _classification(FINANCIAL_SPREADSHEET, .99, "verified_payment_ledger_spreadsheet")
+
     statement_evidence = _bank_statement_evidence(
         normalized_text,
         layout_inference_name=layout_inference_name,

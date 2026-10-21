@@ -361,6 +361,8 @@ def _parse_pdf_transactions(
             )
 
     if native_pages:
+        from app.application.parsers.pdf.split_sheet_native import parse_split_sheet_native
+
         late_kind = identify_late_statement("\n".join(native_pages))
         if late_kind:
             prepared = (read_unicred_invoice_pages(raw_bytes) if late_kind == UNICRED_CARD
@@ -370,6 +372,13 @@ def _parse_pdf_transactions(
                 extraction_provider="native_pdfium_text" if late_kind == UNICRED_CARD else "native_pdf_text",
                 native_text_detected=1, textract_attempted=0)
         try:
+            split_sheet = parse_split_sheet_native(raw_bytes, native_pages)
+            if split_sheet is not None:
+                statement, source_pages = split_sheet
+                return _with_parse_observability(
+                    _build_verified_statement_result(statement, source_pages),
+                    extraction_provider="native_pdf_text", native_text_detected=1, textract_attempted=0,
+                )
             controlled_native = parse_native_cash_columns(raw_bytes, native_pages)
         except PdfFinancialValidationError as exc:
             raise _attach_parse_observability(exc, native_text_detected=1, textract_attempted=0,
