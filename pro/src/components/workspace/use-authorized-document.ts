@@ -17,7 +17,9 @@ export function useAuthorizedDocument(
     void (async () => {
       try {
         if (!repository.loadDocument) throw new Error("Documento indisponível");
-        const blob = await repository.loadDocument(id, abort.signal);
+        const blob = await repository.loadDocument(id, abort.signal, {
+          reload: attempt > 0,
+        });
         if (abort.signal.aborted) return;
         url = URL.createObjectURL(blob);
         setState({ url, blob });

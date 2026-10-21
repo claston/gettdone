@@ -20,6 +20,18 @@ const item: BatchHistoryItem = {
 };
 
 describe("histórico de lotes no dashboard", () => {
+  it("mostra o histórico já carregado enquanto o servidor atualiza em segundo plano", async () => {
+    const cached = { items: [item], nextCursor: null };
+    const service: BatchHistoryService = {
+      getCachedPage: () => cached,
+      list: vi.fn(() => new Promise<typeof cached>(() => {})),
+    };
+    render(<DashboardPage service={service} />);
+    expect(
+      screen.getByRole("link", { name: "Abrir lote" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Carregando lotes…")).not.toBeInTheDocument();
+  });
   it("lista lotes reais com reabertura, paginação e expirados sem link", async () => {
     const service: BatchHistoryService = {
       list: vi
