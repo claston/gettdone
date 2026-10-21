@@ -77,6 +77,56 @@ const completedBatch: Batch = {
 };
 
 describe("WorkspaceScreen", () => {
+  it("abre a página de origem do evento mesmo quando seu ID difere da projeção bancária", async () => {
+    const batch: Batch = {
+      ...completedBatch,
+      conversions: [
+        {
+          ...completedBatch.conversions[0],
+          pdf: { url: "/mock-statement", pageCount: 3 },
+          financialDocument: {
+            document_type: "receivables_report",
+            origin: "Banco sintético",
+            notice: "Relatório de recebimentos.",
+            validations: [],
+            export: {
+              available_formats: ["xlsx"],
+              requires_destination_account: false,
+            },
+            events: [
+              {
+                event_id: "event-original",
+                event_type: "receipt",
+                status: "paid",
+                reference: "123",
+                description: "Recebimento sintético",
+                dates: { payment: "2026-10-14" },
+                amount: "100",
+                cash_effect: "100",
+                source_refs: [{ page: 2, line: 4 }],
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const repository = {
+      ...createMockWorkspaceRepository({ latencyMs: 0 }),
+      getBatch: vi.fn(async () => batch),
+    };
+    render(<WorkspaceScreen batchId={batch.id} repository={repository} />);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Ver origem do evento Recebimento sintético",
+      }),
+    );
+    expect(
+      within(screen.getByLabelText("Documento original")).getByText("2", {
+        selector: "strong",
+      }),
+    ).toBeVisible();
+  });
+
   it("conclui extrato sem movimentação com aviso e download disponível", async () => {
     const batch: Batch = {
       ...completedBatch,

@@ -126,6 +126,8 @@ As edições do PRO também atualizam o snapshot em `conversion_jobs.result_payl
 
 ### Busca, painéis e conclusão do lote — OFX-33
 
+Relatórios de recebimentos, documentos fiscais e investimentos usam um painel próprio de eventos: cabeçalho com tipo/quantidade, linhas compactas, valores alinhados, referência junto à descrição e rolagem independente. A conta de destino aparece ao escolher **Exportar OFX** nos relatórios que permitem esse formato; documentos fiscais e posições de investimento mantêm suas restrições de exportação. A verificação de navegador `scripts/smoke_pro_financial_reports.py` cobre desktop, 390 px, conta de destino, navegação até a origem e posições sem movimentos, com dados sintéticos.
+
 **Buscar no PDF** consulta a camada textual localmente, ignora caixa/acentos e permite navegar entre até 500 ocorrências (o indicador `500+` informa o limite). A busca destaca as caixas dos fragmentos originais, inclusive em páginas com recorte/rotação, sem alterar a seleção da revisão nem os dados. Enter/Shift+Enter avançam/voltam; Esc limpa a consulta. O índice é construído sob demanda, reutilizado apenas no documento atual e descartado ao trocar de arquivo. PDFs sem texto recebem um aviso; a busca não chama OCR nem envia a consulta ao servidor.
 
 O separador entre PDF e lançamentos permite arrastar, usar setas esquerda/direita (5 pontos percentuais), Home/End (25%/75%) e Enter/clique duplo (restaurar 45%). Os botões recolhem cada painel sem desmontar seu conteúdo. Em telas estreitas, ambos continuam empilhados. Alt+↑/↓ muda a linha mantendo a coluna em edição; Alt+PageUp/PageDown muda o arquivo. Ctrl+Enter confirma revisão somente depois de validar que não há gravação pendente; campos com erro não concluem o documento.

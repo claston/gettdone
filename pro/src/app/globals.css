@@ -2042,6 +2042,176 @@ kbd {
     );
   gap: 0;
 }
+
+.financial-report-panel {
+  overflow: hidden;
+}
+.financial-report-toolbar {
+  height: auto;
+  min-height: 62px;
+  flex-wrap: wrap;
+  padding-block: 10px;
+}
+.financial-report-title h2 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--ink-900);
+}
+.financial-report-title > span {
+  color: var(--ink-500);
+  font-size: 10px;
+}
+.financial-report-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.financial-report-notice {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--blue-50);
+  color: var(--ink-700);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.financial-report-notice p {
+  margin: 0 0 5px;
+}
+.financial-report-notice summary {
+  width: fit-content;
+  color: var(--blue-700);
+  cursor: pointer;
+}
+.financial-destination {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-height: 45%;
+  overflow: auto;
+  margin: 10px 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 10px;
+}
+.financial-destination legend {
+  padding-inline: 4px;
+  font-weight: 700;
+}
+.financial-destination-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.financial-destination label {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+}
+.financial-destination input {
+  width: 100%;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink-900);
+}
+.financial-destination input:focus-visible {
+  outline: 2px solid var(--blue-600);
+}
+.table-scroll .financial-events-table {
+  min-width: 590px;
+}
+.financial-events-table th:nth-child(1) {
+  width: 82px;
+}
+.financial-events-table th:nth-child(2) {
+  width: auto;
+}
+.financial-events-table th:nth-child(3) {
+  width: 94px;
+  text-align: right;
+}
+.financial-events-table th:nth-child(4) {
+  width: 100px;
+}
+.financial-events-table th:nth-child(5) {
+  width: 80px;
+}
+.financial-events-table td {
+  padding: 10px 8px;
+  background: var(--surface);
+  color: var(--ink-700);
+  font-size: 11px;
+  line-height: 1.45;
+  vertical-align: middle;
+}
+.financial-event-date,
+.financial-event-amount {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.financial-event-amount {
+  text-align: right;
+  font-weight: 700;
+}
+.financial-event-description > span {
+  display: block;
+}
+.financial-event-type,
+.financial-event-reference {
+  color: var(--ink-500);
+  font-size: 9px;
+}
+.financial-event-text {
+  margin-block: 3px;
+  overflow-wrap: anywhere;
+  color: var(--ink-900);
+}
+.financial-event-status {
+  display: inline-block;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: var(--surface-muted);
+  font-size: 9px;
+}
+.financial-source-link {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 5px 7px;
+  background: var(--surface);
+  color: var(--blue-700);
+  font-size: 10px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.financial-source-link:hover {
+  background: var(--blue-50);
+}
+.financial-event-status[data-status="paid"],
+.financial-event-status[data-status="confirmed"],
+.financial-event-status[data-status="issued"] {
+  background: var(--green-100);
+  color: var(--green-600);
+}
+.financial-event-status[data-status="cancelled"],
+.financial-event-status[data-status="voided"] {
+  background: var(--red-100);
+  color: var(--red-600);
+}
+.financial-report-empty {
+  padding: 30px 20px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-500);
+}
+@media (max-width: 600px) {
+  .financial-destination-fields {
+    grid-template-columns: 1fr;
+  }
+}
 .resizable-panels > :first-child {
   grid-column: 1;
 }
