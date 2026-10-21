@@ -377,7 +377,12 @@ def _parse_pdf_transactions(
                 or report_identity and report_identity[1] == "sicoob_rem116_period_summary"):
             # These forms print field values out of content-stream order. Layout
             # extraction preserves their association without sending text PDFs to OCR.
-            prepared = _read_layout_native_pdf_page_texts(raw_bytes)
+            if identify_verified_statement("\n".join(native_pages)) == "recovery_cresol_colmeia_daily_v1":
+                from app.application.parsers.pdf.native_horizontal_text import read_horizontal_native_pages
+
+                prepared = read_horizontal_native_pages(raw_bytes)
+            else:
+                prepared = _read_layout_native_pdf_page_texts(raw_bytes)
             return _with_parse_observability(
                 _parse_pdf_transactions_from_page_texts(prepared, preserve_layout_spacing=True,
                     context=LayoutSpecificParseContext(is_native_text=True)),
@@ -958,6 +963,10 @@ def _parse_pdf_transactions_from_page_texts(
     preserve_layout_spacing: bool = False,
     context: LayoutSpecificParseContext | None = None,
 ) -> PdfParseResult:
+    from app.application.unsupported_document_detection import NOTARY_RECEIPT_DOCUMENT_TYPE, NOTARY_RECEIPT_USER_MESSAGE
+
+    if detect_unsupported_document_type("\n".join(page_texts)) == NOTARY_RECEIPT_DOCUMENT_TYPE:
+        raise UnsupportedDocumentContentError(document_type=NOTARY_RECEIPT_DOCUMENT_TYPE, message=NOTARY_RECEIPT_USER_MESSAGE)
     if identify_verified_statement("\n".join(page_texts)):
         # Statement continuations may have no date/header on the next page.
         # The strict reader validates every physical page before generic segmentation.

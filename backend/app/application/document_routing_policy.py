@@ -10,12 +10,14 @@ from pypdf.errors import PdfReadError
 from app.application.document_type_classifier import (
     FISCAL_INVOICE,
     INVESTMENT_SUMMARY,
+    NOTARY_RECEIPT,
     PAYMENT_REPORT,
     DocumentTypeClassification,
 )
 from app.application.errors import UnsupportedDocumentContentError
 from app.application.unsupported_document_detection import (
     INVESTMENT_SUMMARY_USER_MESSAGE,
+    NOTARY_RECEIPT_USER_MESSAGE,
     PAYMENT_REPORT_USER_MESSAGE,
 )
 
@@ -43,6 +45,8 @@ class DocumentRoutingDecision:
 def decide_document_routing(
     classification: DocumentTypeClassification,
 ) -> DocumentRoutingDecision:
+    if classification.document_type == NOTARY_RECEIPT and classification.confidence >= 0.90:
+        return DocumentRoutingDecision(DocumentRoutingAction.REJECT, "high_confidence_notary_receipt")
     if classification.document_type == FISCAL_INVOICE and classification.confidence >= FISCAL_INVOICE_REJECTION_MIN_CONFIDENCE:
         return DocumentRoutingDecision(
             action=DocumentRoutingAction.REJECT,
@@ -70,6 +74,7 @@ def enforce_document_routing(
     decision = decide_document_routing(classification)
     if decision.action == DocumentRoutingAction.REJECT:
         message = {
+            NOTARY_RECEIPT: NOTARY_RECEIPT_USER_MESSAGE,
             PAYMENT_REPORT: PAYMENT_REPORT_USER_MESSAGE,
             INVESTMENT_SUMMARY: INVESTMENT_SUMMARY_USER_MESSAGE,
             FISCAL_INVOICE: FISCAL_INVOICE_REJECTION_MESSAGE,

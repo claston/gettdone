@@ -8,7 +8,7 @@ from app.application.normalization.text import normalize_upper_text
 _NO_ACTIVITY = re.compile(
     r"^(?:SEM|NAO (?:HOUVE|HA|EXISTE[M]?|FORAM ENCONTRAD[OA]S)|NENHUM[A]?) "
     r"(?:MOVIMENTAC(?:AO|OES)|MOVIMENTOS?|LANCAMENTOS?|TRANSAC(?:AO|OES))"
-    r"(?: (?:NO|NESTE|NESSE|DO|PARA O|EM) PERIODO(?: (?:CONSULTADO|SELECIONADO|INFORMADO|SOLICITADO))?)?[.!]*$"
+    r"(?: (?:NO|NESTE|NESSE|DO|PARA O|EM) (?:PERIODO|MES)(?: (?:CONSULTADO|SELECIONADO|INFORMADO|SOLICITADO))?)?[.!]*$"
 )
 _MONEY = re.compile(r"(?<!\d)\d[\d. ]*[,.]\d{2}(?!\d)")
 _DATE = re.compile(r"\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b")
@@ -32,6 +32,10 @@ def has_explicit_no_activity(page_texts: list[str] | tuple[str, ...]) -> bool:
         if not any(_NO_ACTIVITY.fullmatch(line) for line in lines):
             return False
         for line in lines:
+            if re.fullmatch(r"(?:ENTRADAS|SAIDAS):\s*R\$\s*0,00", line):
+                continue
+            if re.fullmatch(r"[A-Z]+ 20\d{2} \(\d{2}/\d{2}/20\d{2} \d{2}/\d{2}/20\d{2}\)", line):
+                continue
             # Balances are context, including nonzero balances on inactive accounts.
             # Other monetary values may be unparsed transactions: keep the usual
             # parser/error path instead of claiming that there was no activity.

@@ -30,6 +30,7 @@ _CURRENCY_AMOUNT_PATTERN = re.compile(
     flags=re.IGNORECASE,
 )
 _CREDIT_DESCRIPTION_TOKENS = (
+    "CRED DOM ARRANJO",
     "CREDITO",
     "RECEBIMENTO",
     "CRED PIX",
@@ -159,7 +160,12 @@ def _line_position(line: ExtractedLine) -> tuple[float, float] | None:
 
 def _parse_transaction_rows(lines: list[_PdfLine], *, fallback_year: int) -> list[_ParsedTransaction]:
     rows: list[_ParsedTransaction] = []
+    previous_balance = None
     for line in lines:
+        if not rows and normalize_text(line.text).startswith("SALDO EM "):
+            opening = _CURRENCY_AMOUNT_PATTERN.search(line.text)
+            if opening is not None:
+                previous_balance = parse_pdf_amount(opening.group(0))
         match = _DATE_ROW_PATTERN.match(line.text)
         if match is None:
             continue
@@ -181,8 +187,9 @@ def _parse_transaction_rows(lines: list[_PdfLine], *, fallback_year: int) -> lis
             parsed_amount=parse_pdf_amount(amount_match.group(0)),
             has_explicit_sign=has_explicit_amount_sign,
             running_balance=running_balance,
-            previous_running_balance=_latest_running_balance(rows),
+            previous_running_balance=previous_balance,
         )
+        previous_balance = running_balance
         rows.append(
             build_parsed_transaction(
                 date=parse_row_date(match.group("date"), fallback_year=fallback_year),
@@ -212,28 +219,21 @@ def _resolve_transaction_amount(
     if has_explicit_sign:
         return parsed_amount
 
+    if balance_delta is not None and abs(abs(balance_delta) - abs(parsed_amount)) <= 0.01:
+        return balance_delta
+
     normalized_description = normalize_text(description)
     if any(token in normalized_description for token in _CREDIT_DESCRIPTION_TOKENS):
         return abs(parsed_amount)
     if any(token in normalized_description for token in _DEBIT_DESCRIPTION_TOKENS):
         return -abs(parsed_amount)
 
-    if balance_delta is not None:
-        if abs(abs(balance_delta) - abs(parsed_amount)) <= 0.01:
-            return balance_delta
     return parsed_amount
 
 
 def _clean_description(rest: str, *, amount_start: int) -> str:
     description = rest[:amount_start]
     return re.sub(r"\s+", " ", description).strip(" -|;")
-
-
-def _latest_running_balance(rows: list[_ParsedTransaction]) -> float | None:
-    for row in reversed(rows):
-        if row.running_balance is not None:
-            return row.running_balance
-    return None
 
 
 def _resolve_fallback_year(

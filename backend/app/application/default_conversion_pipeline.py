@@ -555,6 +555,7 @@ def _resolve_ofx_account_type(
         layout_name = str(layout_inference_name or "").strip().lower()
 
         if layout_name in {
+            "recovery_btg_card_invoice_v1",
             DIGITAL_CREDIT_CARD_LAYOUT,
             BRADESCO_CARD_WEB_LAYOUT,
             "caixa_fatura_cartao_visa_ocr_v1",
