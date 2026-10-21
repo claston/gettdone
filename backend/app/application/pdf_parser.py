@@ -3,6 +3,7 @@ import os
 import re
 from dataclasses import replace
 from datetime import datetime
+from decimal import Decimal
 from typing import Callable
 
 from app.application.cross_page_transaction_detection import detect_cross_page_transaction_split
@@ -714,6 +715,7 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
     if (textract_mode == "text" or is_monthly or has_explicit_no_activity(segmentation.page_texts)
             or infer_pdf_layout("\n".join(segmentation.page_texts)).layout_name in {
                 _STONE_CURRENT_ACCOUNT_A4_LAYOUT, "nubank_statement_ptbr", "banco_inter_extrato_conta_corrente_saldo_transacao_v1",
+                "btg_pactual_conta_corrente_pj_v1",
             }
             or is_ailos_statement(statement_extraction)
             or is_santander_consolidated_scan(statement_extraction)
@@ -809,15 +811,40 @@ def _textract_page_texts(extraction) -> tuple[str, ...]:
 
 
 def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
-    return parse_with_ocr_separator_recovery(extraction, _parse_textract_text_pages)
+    segmentation = segment_pdf_pages(_textract_page_texts(extraction))
+    statement_extraction = extraction
+    if segmentation.parts:
+        statement_extraction = replace(extraction, pages=[
+            page for page in extraction.pages if segmentation.page_texts[page.page_number - 1]
+        ])
+    result = parse_with_ocr_separator_recovery(statement_extraction, _parse_textract_text_pages)
+    return replace(result, source_page_texts=segmentation.source_page_texts,
+                   source_extraction=extraction, source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages),
+                   parse_metrics={**result.parse_metrics, "page_count": len(segmentation.source_page_texts)},
+                   document_parts=segmentation.parts or result.document_parts)
 
 
 def _parse_textract_text_pages(extraction) -> PdfParseResult:
+    from app.application.parsers.pdf.btg_pj_ocr import parse_btg_pj
+
     page_texts = list(_textract_page_texts(extraction))
     if not any(page_texts):
         raise InvalidFileContentError("Nao foi possivel extrair transacoes do OCR para revisao.")
     joined_text = "\n".join(page_texts)
     inferred_layout = infer_pdf_layout(joined_text)
+    btg = parse_btg_pj(extraction)
+    if btg is not None:
+        result = _build_verified_statement_result(btg, page_texts)
+        mismatch = bool(result.parse_metrics.get("balance_consistency_failed")) or (
+            btg.opening + sum((Decimal(str(row.transaction.amount)) for row in btg.rows), Decimal(0)) != btg.closing)
+        return _with_parse_observability(result,
+            selected_parser="layout_specific_btg_pj_ocr",
+            parser_selection_reason="geometry_signed_amounts_printed_totals_and_descending_order",
+            printed_opening_balance=float(btg.opening), printed_closing_balance=float(btg.closing),
+            financial_controls_validated=int(not mismatch),
+            balance_validation_status="inconsistent_printed_balances" if mismatch else "validated",
+            export_recommendation="review_recommended" if mismatch else "safe_to_export",
+            export_recommendation_reason="inconsistent_printed_balances" if mismatch else "all_printed_controls_validated")
     if is_caixa_invoice(extraction):
         statement = parse_caixa_invoice(extraction)
         result = _build_verified_statement_result(statement, page_texts)
@@ -994,6 +1021,10 @@ def _build_verified_statement_result(statement, pages):
     )
     controls = (dict(verified_opening_balance=float(statement.opening), verified_closing_balance=float(statement.closing))
                 if statement.opening is not None and statement.closing is not None else {})
+    if statement.layout == "bb_cash_rende_facil_combined_v1":
+        return _with_parse_observability(result, financial_controls_validated=0,
+            balance_validation_status="combined_cash_investment_not_comparable",
+            export_recommendation="review_recommended", export_recommendation_reason="combined_cash_investment_balance_not_comparable")
     return _with_parse_observability(result, **controls, financial_controls_validated=int(bool(controls)),
         balance_validation_status="validated" if controls else "not_available",
         printed_balance_checks=statement.printed_balance_checks,
