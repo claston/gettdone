@@ -8,6 +8,8 @@ from app.application.normalization.text import normalize_upper_text
 
 _GENERIC_LAYOUT_NAMES = {"generic_statement_ptbr"}
 VERIFIED_STATEMENT_BANKS = {
+    "bb_excel_horizontal_pages_v1": "Banco do Brasil",
+    "banco_amazonia_native_icon_signs_v1": "Banco da Amazônia",
     "bradesco_extrato_unificado_conta_corrente_native_v1": "Bradesco",
     "bradesco_extrato_movimentacao_periodo_native_v1": "Bradesco",
     "caixa_fatura_cartao_visa_ocr_v1": "Caixa Economica Federal",
@@ -107,6 +109,9 @@ def resolve_bank_name(
     extracted_text: str | None = None,
 ) -> str | None:
     layout_name = str(layout_inference_name or "").strip()
+    if layout_name == "billing_excel_horizontal_pages_v1":
+        # Counterparty names in this ledger do not identify its issuer.
+        return None
     if layout_name:
         profile = get_layout_profile(layout_name)
         if profile is not None and profile.bank:
