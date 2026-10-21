@@ -10,6 +10,14 @@ _GENERIC_LAYOUT_NAMES = {"generic_statement_ptbr"}
 VERIFIED_STATEMENT_BANKS = {
     "bb_excel_horizontal_pages_v1": "Banco do Brasil",
     "banco_amazonia_native_icon_signs_v1": "Banco da Amazônia",
+    "recovery_inter_printed_values_v1": "Banco Inter",
+    "recovery_cresol_descending_daily_v1": "Cresol",
+    "recovery_cresol_colmeia_daily_v1": "Cresol",
+    "recovery_btg_investment_cash_v1": "BTG Pactual",
+    "recovery_btg_card_invoice_v1": "BTG Pactual",
+    "banco_do_brasil_extrato_conta_corrente_lancamentos_v1": "Banco do Brasil",
+    "bradesco_totalbank_signed_daily_v1": "Bradesco",
+    "bb_cash_rende_facil_combined_v1": "Banco do Brasil",
     "bradesco_extrato_unificado_conta_corrente_native_v1": "Bradesco",
     "bradesco_extrato_movimentacao_periodo_native_v1": "Bradesco",
     "caixa_fatura_cartao_visa_ocr_v1": "Caixa Economica Federal",
@@ -23,6 +31,10 @@ VERIFIED_STATEMENT_BANKS = {
     "itau_receipt_ocr_daily_controls_v1": "Itau",
     "caixa_ocr_columns_validated_v1": "Caixa Economica Federal",
     "sicredi_ocr_columns_partial_v1": "Sicredi",
+    "viacredi_av_extrato_especial_signed_v1": "Viacredi",
+    "banco_do_brasil_zero_date_daily_controls_v1": "Banco do Brasil",
+    "unicred_fatura_cartao_tracked_native_v1": "Unicred",
+    "caixa_gerenciador_periodo_financial_controls_ocr_v1": "Caixa Economica Federal",
 }
 _LEGACY_LAYOUT_BANK_NAMES = {
     **VERIFIED_STATEMENT_BANKS,
@@ -143,6 +155,9 @@ def _match_bank_name_in_text(extracted_text: str | None) -> str | None:
     normalized_text = normalize_upper_text(extracted_text or "")
     if not normalized_text:
         return None
+
+    if re.search(r"(?<![A-Z0-9./-])(?:WWW\.)?BB\.COM\.BR\s*-\s*CENTRAL DE ATENDIMENTO BB", normalized_text):
+        return "Banco do Brasil"
 
     header_candidate = _match_unlisted_institution_header(extracted_text)
     if header_candidate is not None:

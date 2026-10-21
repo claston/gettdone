@@ -229,6 +229,8 @@ class ConversionPipeline:
             opening_balance = float(parse_metrics["native_cash_opening_balance"])
         if parse_metrics and parse_metrics.get("financial_controls_validated") and "verified_opening_balance" in parse_metrics:
             opening_balance = float(parse_metrics["verified_opening_balance"])
+        if parse_metrics and "printed_opening_balance" in parse_metrics:
+            opening_balance = float(parse_metrics["printed_opening_balance"])
         if is_payables_report or (parse_metrics and parse_metrics.get("opening_balance_ambiguous")):
             opening_balance = None
         kept_indices = [
@@ -306,6 +308,8 @@ class ConversionPipeline:
         )
         if parse_metrics and parse_metrics.get("financial_controls_validated") and "verified_closing_balance" in parse_metrics:
             closing_balance = float(parse_metrics["verified_closing_balance"])
+        if parse_metrics and "printed_closing_balance" in parse_metrics:
+            closing_balance = float(parse_metrics["printed_closing_balance"])
         bank_name = parsed_document.bank_name or self.resolve_bank_name(
             extension, layout_inference_name, extracted_text
         )

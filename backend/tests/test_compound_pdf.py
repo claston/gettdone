@@ -6,12 +6,12 @@ from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from app.application.default_conversion_pipeline import build_default_conversion_pipeline
-from app.application.document_extraction_models import ExtractedLine, ExtractedPage, ExtractedWord
+from app.application.document_extraction_models import ExtractedLine, ExtractedPage, ExtractedWord, RawDocumentExtraction
 from app.application.document_type_classifier import classify_document_type
 from app.application.errors import UnsupportedDocumentContentError
 from app.application.parsers.pdf.layout_specific.itau_monthly_ocr import parse_itau_monthly_ocr
 from app.application.pdf_document_segmentation import segment_pdf_pages
-from app.application.pdf_parser import parse_pdf_transactions
+from app.application.pdf_parser import _parse_scanned_pdf_with_textract_text_pages, parse_pdf_transactions
 
 STATEMENT = ("Itaú\nExtrato mensal\nConta corrente\nAg 1234 CC 12345-6 jun 2026\nData Descrição Entradas Saídas Saldo\n"
              "05/06 PIX RECEBIDO 350,00\nSaldo anterior 1,00")
@@ -108,6 +108,34 @@ def test_monthly_ocr_uses_columns_and_word_positions_without_filtering_all_handw
     assert result.rows[0].source_page == 1
     assert result.unresolved_rows == 0
     assert result.annotations_detected > 0
+
+
+def test_textract_text_entrypoint_segments_before_monthly_geometry_and_keeps_annex_provenance():
+    page = _monthly_page()
+    # A printed statement identity and an ambiguous consolidated opening.
+    page.lines.extend([
+        _line("identity", "ItaúEmpresas extrato mensal Conta Corrente Movimentação créditos débitos", .02, .01),
+        _line("opening", "Saldo anterior", .35, .12),
+    ])
+    invoice = ExtractedPage(2, [_line("invoice", INVOICE, .1, .1)])
+    receipt = ExtractedPage(3, [_line("receipt", RECEIPT, .1, .1)])
+    extraction = RawDocumentExtraction("aws_textract", "synthetic", [page, invoice, receipt], {})
+    result = _parse_scanned_pdf_with_textract_text_pages(extraction)
+    assert [row.amount for row in result.transactions] == [350, -20]
+    assert all(row.source_page == 1 for row in result.canonical_transactions)
+    assert "PRESTADOR" not in result.extracted_text
+    assert len(result.source_page_texts) == result.parse_metrics["page_count"] == 3
+    assert result.source_extraction is extraction
+    assert [part["document_type"] for part in result.document_parts] == ["bank_statement", "fiscal_invoice", "bank_receipt"]
+    assert [part["included_in_statement"] for part in result.document_parts] == [True, False, False]
+    assert result.parse_metrics["export_recommendation"] == "review_recommended"
+    assert result.parse_metrics["opening_balance_ambiguous"] == 1
+
+
+def test_textract_text_standalone_invoice_still_rejected():
+    extraction = RawDocumentExtraction("aws_textract", "synthetic", [ExtractedPage(1, [_line("invoice", INVOICE, .1, .1)])], {})
+    with pytest.raises(UnsupportedDocumentContentError):
+        _parse_scanned_pdf_with_textract_text_pages(extraction)
 
 
 def test_monthly_ocr_reports_unresolved_row_instead_of_inventing_a_value():
@@ -219,3 +247,16 @@ def test_standalone_nfse_is_rejected_without_transaction_or_ocr(monkeypatch):
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
     with pytest.raises(UnsupportedDocumentContentError):
         build_default_conversion_pipeline().run(filename="invoice.pdf", raw_bytes=native_pdf([INVOICE]), analysis_id="an_invoice")
+
+
+@pytest.mark.parametrize("receipt_first", [False, True])
+def test_payment_receipt_annex_does_not_hide_native_statement(monkeypatch, receipt_first):
+    monkeypatch.setenv("TEXTRACT_ENABLED", "false")
+    statement = "EXTRATO DE CONTA CORRENTE\n01/06/2026 PIX RECEBIDO 350,00\n02/06/2026 PIX ENVIADO -20,00\nSALDO FINAL 330,00"
+    receipt = "COMPROVANTE DE PAGAMENTO DE TITULOS\nVALOR COBRADO 101,20\nDATA DO PAGAMENTO 02/09/2026"
+    raw = native_pdf([receipt, statement] if receipt_first else [statement, receipt])
+    result = build_default_conversion_pipeline().run(filename="compound.pdf", raw_bytes=raw, analysis_id="an_payment_annex")
+    assert result.analysis_data.transactions_total == 2
+    assert [row.amount for row in result.analysis_data.report_transactions] == [350, -20]
+    assert any(part["document_type"] == "bank_receipt" and not part["included_in_statement"]
+               for part in result.analysis_data.document_parts)

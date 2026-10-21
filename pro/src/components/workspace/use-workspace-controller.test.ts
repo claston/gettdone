@@ -6,6 +6,55 @@ import { useWorkspaceController } from "./use-workspace-controller";
 afterEach(() => vi.useRealTimers());
 
 describe("edição e autosave", () => {
+  it("reabre o lote da memória enquanto atualiza sem apagar edição ou seleção recentes", async () => {
+    const repository = createMockWorkspaceRepository({ latencyMs: 0 });
+    const batch = await repository.getBatch("batch-setembro-2026");
+    let finish!: (value: typeof batch) => void;
+    repository.getCachedBatch = () => batch;
+    repository.getBatch = vi.fn(
+      () =>
+        new Promise<typeof batch>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { result } = renderHook(() =>
+      useWorkspaceController(batch.id, repository),
+    );
+    expect(result.current.loadState).toBe("READY");
+    const row = result.current.activeConversion!.transactions[0];
+    const conversionId = result.current.activeConversion!.id;
+    act(() =>
+      result.current.updateField(
+        row.id,
+        "description",
+        "Edição durante atualização",
+      ),
+    );
+    const other = batch.conversions.find((item) => item.id !== conversionId)!;
+    act(() => result.current.selectConversion(other.id));
+    await act(async () => finish(batch));
+    expect(result.current.activeConversion!.id).toBe(other.id);
+    expect(
+      result.current.batch!.conversions.find(
+        (item) => item.id === conversionId,
+      )!.transactions[0].description,
+    ).toBe("Edição durante atualização");
+  });
+
+  it("mantém o lote já aberto disponível quando a atualização demora ou falha", async () => {
+    const repository = createMockWorkspaceRepository({ latencyMs: 0 });
+    const batch = await repository.getBatch("batch-setembro-2026");
+    repository.getCachedBatch = () => batch;
+    repository.getBatch = vi
+      .fn()
+      .mockRejectedValue(new Error("Servidor temporariamente indisponível"));
+    const { result } = renderHook(() =>
+      useWorkspaceController(batch.id, repository),
+    );
+    await waitFor(() => expect(result.current.refreshState).toBe("ERROR"));
+    expect(result.current.loadState).toBe("READY");
+    expect(result.current.activeConversion).not.toBeNull();
+  });
   it("salva e desfaz marcações sem alterar campos financeiros", async () => {
     const repository = createMockWorkspaceRepository({ latencyMs: 0 });
     const save = vi

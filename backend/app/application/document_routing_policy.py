@@ -8,14 +8,17 @@ from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
 from app.application.document_type_classifier import (
+    BANK_RECEIPT,
     FISCAL_INVOICE,
     INVESTMENT_SUMMARY,
+    NOTARY_RECEIPT,
     PAYMENT_REPORT,
     DocumentTypeClassification,
 )
 from app.application.errors import UnsupportedDocumentContentError
 from app.application.unsupported_document_detection import (
     INVESTMENT_SUMMARY_USER_MESSAGE,
+    NOTARY_RECEIPT_USER_MESSAGE,
     PAYMENT_REPORT_USER_MESSAGE,
 )
 
@@ -43,6 +46,10 @@ class DocumentRoutingDecision:
 def decide_document_routing(
     classification: DocumentTypeClassification,
 ) -> DocumentRoutingDecision:
+    if classification.document_type == NOTARY_RECEIPT and classification.confidence >= 0.90:
+        return DocumentRoutingDecision(DocumentRoutingAction.REJECT, "high_confidence_notary_receipt")
+    if classification.document_type == BANK_RECEIPT and "receipt_payment_title" in classification.evidence:
+        return DocumentRoutingDecision(DocumentRoutingAction.REJECT, "unsupported_payment_receipt")
     if classification.document_type == FISCAL_INVOICE and classification.confidence >= FISCAL_INVOICE_REJECTION_MIN_CONFIDENCE:
         return DocumentRoutingDecision(
             action=DocumentRoutingAction.REJECT,
@@ -70,6 +77,9 @@ def enforce_document_routing(
     decision = decide_document_routing(classification)
     if decision.action == DocumentRoutingAction.REJECT:
         message = {
+            NOTARY_RECEIPT: NOTARY_RECEIPT_USER_MESSAGE,
+            BANK_RECEIPT: ("Este arquivo é um comprovante de pagamento de títulos. "
+                           "Comprovantes de pagamento ainda não são suportados; envie o extrato bancário com os lançamentos da conta."),
             PAYMENT_REPORT: PAYMENT_REPORT_USER_MESSAGE,
             INVESTMENT_SUMMARY: INVESTMENT_SUMMARY_USER_MESSAGE,
             FISCAL_INVOICE: FISCAL_INVOICE_REJECTION_MESSAGE,
@@ -86,8 +96,8 @@ def enforce_document_routing(
 def enforce_initial_document_routing(
     classification: DocumentTypeClassification, *, filename: str, raw_bytes: bytes,
 ) -> DocumentRoutingDecision:
-    if classification.document_type == FISCAL_INVOICE and filename.lower().endswith(".pdf"):
-        # A native invoice at the front of a compound PDF must not hide a later statement.
+    if classification.document_type in {FISCAL_INVOICE, BANK_RECEIPT} and filename.lower().endswith(".pdf"):
+        # A native annex in a compound PDF must not hide its statement.
         from app.application.pdf_document_segmentation import segment_pdf_pages
 
         try:

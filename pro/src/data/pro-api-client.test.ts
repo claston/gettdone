@@ -10,7 +10,28 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("ProApiClient", () => {
-  it("verifica novamente a sessão depois de dez minutos com a aba aberta", async () => {
+  it("verifica novamente a sessão antes de gravar depois de dez minutos", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+    try {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockImplementation(async () => jsonResponse({}));
+      const client = createProApiClient({ apiUrl: "/", fetcher });
+      await client.request("/api/pro/conversion-batches/batch-1", {
+        method: "POST",
+      });
+      now.mockReturnValue(1000 + 10 * 60 * 1000);
+      await client.request("/api/pro/conversion-batches/batch-1", {
+        method: "POST",
+      });
+      expect(
+        fetcher.mock.calls.filter(([url]) => url === "/auth/me"),
+      ).toHaveLength(2);
+    } finally {
+      now.mockRestore();
+    }
+  });
+  it("consulta diretamente o servidor após inatividade sem uma verificação de sessão na frente da leitura", async () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(1000);
     try {
       const fetcher = vi
@@ -18,11 +39,12 @@ describe("ProApiClient", () => {
         .mockImplementation(async () => jsonResponse({}));
       const client = createProApiClient({ apiUrl: "/", fetcher });
       await client.request("/api/pro/conversion-batches/batch-1");
-      now.mockReturnValue(1000 + 10 * 60 * 1000);
+      now.mockReturnValue(1000 + 20 * 60 * 1000);
       await client.request("/api/pro/conversion-batches/batch-1");
       expect(
         fetcher.mock.calls.filter(([url]) => url === "/auth/me"),
-      ).toHaveLength(2);
+      ).toHaveLength(1);
+      expect(fetcher).toHaveBeenCalledTimes(3);
     } finally {
       now.mockRestore();
     }

@@ -537,6 +537,8 @@
       billing_report: "Relatório de faturamento",
       bank_receipt: "Comprovante bancário",
       credit_card_statement: "Fatura de cartão",
+      prepaid_card_statement: "Extrato de cartão pré-pago",
+      notary_receipt: "Recibo de cartório",
       financial_spreadsheet: "Planilha financeira",
       other: "Outro documento",
       unknown: "Desconhecido",

@@ -106,7 +106,12 @@ export interface ExportResult {
 
 export interface WorkspaceRepository {
   recordEvent?(event: WorkspaceEvent): void;
-  loadDocument?(conversionId: string, signal?: AbortSignal): Promise<Blob>;
+  loadDocument?(
+    conversionId: string,
+    signal?: AbortSignal,
+    options?: { reload?: boolean },
+  ): Promise<Blob>;
+  getCachedBatch?(batchId: string): Batch | undefined;
   getBatch(batchId: string): Promise<Batch>;
   saveTransactions(
     conversionId: string,

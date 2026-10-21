@@ -13,6 +13,7 @@ from app.application.unsupported_document_detection import (
     ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE,
     BILLING_REPORT_DOCUMENT_TYPE,
     INVESTMENT_SUMMARY_DOCUMENT_TYPE,
+    NOTARY_RECEIPT_DOCUMENT_TYPE,
     PAYMENT_REPORT_DOCUMENT_TYPE,
     detect_unsupported_document_type,
     has_accounts_payable_title,
@@ -26,11 +27,13 @@ INVESTMENT_SUMMARY = "investment_summary"
 ACCOUNTS_PAYABLE_REPORT = "accounts_payable_report"
 BANK_RECEIPT = "bank_receipt"
 CREDIT_CARD_STATEMENT = "credit_card_statement"
+PREPAID_CARD_STATEMENT = "prepaid_card_statement"
+NOTARY_RECEIPT = "notary_receipt"
 FINANCIAL_SPREADSHEET = "financial_spreadsheet"
 OTHER_DOCUMENT = "other"
 UNKNOWN_DOCUMENT = "unknown"
 
-DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-10-19.1"
+DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-10-21.1"
 
 _PDF_PREVIEW_PAGE_LIMIT = 3
 _PDF_PREVIEW_CHAR_LIMIT = 16_000
@@ -60,6 +63,10 @@ def classify_document_type(
     if extension == "ofx" or "<OFX" in normalized_text:
         return _classification(BANK_STATEMENT, 1.0, "ofx_structure")
 
+    if ("COMPROVANTE DE PAGAMENTO DE TITULOS" in normalized_text
+            and "VALOR" in normalized_text and "DATA DO PAGAMENTO" in normalized_text):
+        return _classification(BANK_RECEIPT, 0.99, "receipt_payment_title")
+
     financial_report = detect_financial_report(text)
     if financial_report is not None:
         return _classification(financial_report[0], 0.99, financial_report[1])
@@ -75,6 +82,26 @@ def classify_document_type(
         return _classification(PAYMENT_REPORT, 0.99, "payment_report_structure")
     if unsupported_type == INVESTMENT_SUMMARY_DOCUMENT_TYPE:
         return _classification(INVESTMENT_SUMMARY, 0.99, "investment_summary_structure")
+    if unsupported_type == NOTARY_RECEIPT_DOCUMENT_TYPE:
+        return _classification(NOTARY_RECEIPT, 0.99, "notary_protest_cancellation_receipt")
+
+    from app.application.parsers.pdf.afternoon_statements import (
+        ALELO,
+        BTG_INVESTMENT,
+        BTG_INVOICE,
+        COLMEIA,
+        CRESOL_DESCENDING,
+        INTER,
+        identify_afternoon_statement,
+    )
+
+    explicit = layout_inference_name or identify_afternoon_statement(text)
+    if explicit in {INTER, CRESOL_DESCENDING, COLMEIA, BTG_INVESTMENT}:
+        return _classification(BANK_STATEMENT, 0.99, "explicit_cash_ledger_structure")
+    if explicit == BTG_INVOICE:
+        return _classification(CREDIT_CARD_STATEMENT, 0.99, "btg_card_invoice_structure")
+    if explicit == ALELO:
+        return _classification(PREPAID_CARD_STATEMENT, 0.99, "alelo_prepaid_card_structure")
 
     invoice_evidence = _invoice_evidence(normalized_text, text)
     if _has_strong_invoice_identity(invoice_evidence):
