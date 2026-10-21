@@ -73,7 +73,7 @@ describe("grid page anchors", () => {
     ).mockReturnValue({ top: 50, bottom: 90, height: 40 } as DOMRect);
     container.scrollTop = 100;
     fireEvent.pointerDown(
-      screen.getByRole("button", { name: /Localizar origem de Linha 2/ }),
+      screen.getByRole("button", { name: "Remover Linha 2" }),
     );
     fireEvent.scroll(container);
     act(() => vi.advanceTimersByTime(40));
@@ -177,6 +177,7 @@ describe("grid page anchors", () => {
   it.each([false, true])(
     "follows visible provenance in layout grouped=%s, preserving focus and edits",
     (groupByPage) => {
+      vi.useFakeTimers();
       const locate = vi.fn();
       const update = vi.fn();
       const props = {
@@ -213,10 +214,16 @@ describe("grid page anchors", () => {
       expect(container.scrollTop).toBe(before);
       act(() => input.blur());
       expect(container.scrollTop).toBeGreaterThan(before);
-      fireEvent.click(
-        screen.getByRole("button", { name: /Localizar origem de Linha 2/ }),
-      );
-      expect(locate).toHaveBeenCalledExactlyOnceWith("2");
+      fireEvent.pointerMove(second, {
+        pointerType: "mouse",
+        clientX: 400,
+        clientY: 440,
+      });
+      act(() => vi.advanceTimersByTime(120));
+      expect(locate).toHaveBeenCalledExactlyOnceWith("2", {
+        origin: "grid",
+        scroll: true,
+      });
       expect(screen.getByDisplayValue("Edição preservada")).toBeInTheDocument();
       expect(update).toHaveBeenCalledTimes(1);
     },
@@ -239,8 +246,8 @@ describe("grid page anchors", () => {
       screen.getByText(/Página 4: sem lançamentos associados/),
     ).toBeInTheDocument();
     expect(
-      screen.getByLabelText("Sem página de origem disponível"),
-    ).toBeInTheDocument();
+      screen.getByDisplayValue("Linha 3").closest("tr"),
+    ).not.toHaveAttribute("data-source-page");
     fireEvent.click(screen.getByRole("button", { name: /Suspeitos/ }));
     rerender(<TransactionGrid {...props} activePage={2} />);
     expect(
@@ -248,7 +255,7 @@ describe("grid page anchors", () => {
     ).toBeInTheDocument();
     expect(screen.getAllByRole("row")).toHaveLength(1);
   });
-  it("locates by stable ID and retains the chosen row on its continuation page", () => {
+  it("retains the chosen row on its continuation page without a per-row origin button", () => {
     const locate = vi.fn();
     const multi = {
       ...row("2", 1),
@@ -272,8 +279,15 @@ describe("grid page anchors", () => {
         onRestore={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByTitle("Destacar origem no PDF"));
-    expect(locate).toHaveBeenCalledExactlyOnceWith("2");
+    expect(
+      screen.queryByRole("button", { name: /Localizar origem/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTitle("Destacar origem no PDF"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Remover Linha 2" }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByText(/sem lançamentos associados/),
     ).not.toBeInTheDocument();

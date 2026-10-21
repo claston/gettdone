@@ -189,6 +189,25 @@ def run(base_url: str) -> None:
 
         wheel_to(7)
         aligned(7)
+        expect(page.get_by_role("button", name=re.compile("Localizar origem de"))).to_have_count(0)
+        original_view = page.evaluate("({ratio: devicePixelRatio, width: innerWidth, grid: document.querySelector('.table-scroll').clientWidth})")
+        stage.focus()
+        stage.press("Control+=")
+        expect(page.get_by_role("button", name="Ajustar à largura")).to_have_text("110%")
+        expect(page.locator(".pdf-controls strong")).to_have_text("7")
+        stage.press("Control+-")
+        expect(page.get_by_role("button", name="Ajustar à largura")).to_have_text("100%")
+        stage.press("Control+0")
+        stage.hover()
+        page.keyboard.down("Control")
+        page.mouse.wheel(0, -100)
+        page.keyboard.up("Control")
+        page.wait_for_function("Number(document.querySelector('.zoom-label').textContent.replace('%', '')) > 100")
+        assert page.evaluate("({ratio: devicePixelRatio, width: innerWidth, grid: document.querySelector('.table-scroll').clientWidth})") == original_view
+        expect(page.locator(".pdf-controls strong")).to_have_text("7")
+        stage.press("Control+0")
+        expect(page.get_by_role("button", name="Ajustar à largura")).to_have_text("100%")
+        assert len(downloads) == 1
         assert 0 < page.locator("canvas").count() < 10
         assert writes == []
         assert len(downloads) == 1
@@ -233,7 +252,7 @@ def run(base_url: str) -> None:
         # Leaving the editor explicitly resumes at the current PDF page.
         page.get_by_role("button", name="Ajustar à largura").focus()
         aligned(9)
-        page.get_by_role("button", name="Localizar origem de Page 2 transaction 0 no PDF (página 2)").click()
+        page.locator("tr[data-transaction-id='tx-2-0']").hover()
         expect(page.locator(".pdf-controls strong")).to_have_text("2")
         expect(page.locator(".pdf-source-highlight")).to_have_count(0)
         expect(page.get_by_text("Página de origem aberta. A região exata não está disponível para este lançamento.")).to_have_count(1)
@@ -244,7 +263,9 @@ def run(base_url: str) -> None:
         page.get_by_role("button", name="Ajustar à largura").click()
 
         def locate(identifier: str):
-            page.locator(f"tr[data-transaction-id='{identifier}'] button[title='Destacar origem no PDF']").click()
+            page.get_by_role("button", name="Ajustar à largura").focus()
+            page.get_by_role("button", name="Ajustar à largura").hover()
+            page.locator(f"tr[data-transaction-id='{identifier}']").hover()
             expect(page.locator("tr.source-active-row")).to_have_attribute("data-transaction-id", identifier)
 
         def verify_overlay(identifier: str, number: int):
@@ -335,15 +356,16 @@ def run(base_url: str) -> None:
 
         # PDF scrolling selects another transaction inside the same page, and
         # highlights both views. The automatic table scroll must not move PDF.
-        source = next(row for row in transactions if row["transaction_id"] == "tx-2-15")["source_regions"][0]
+        pdf_selected = "tx-2-15" if table_selected != "tx-2-15" else "tx-2-17"
+        source = next(row for row in transactions if row["transaction_id"] == pdf_selected)["source_regions"][0]
         stage.hover()
         delta = stage.evaluate("""(el, r) => {
             const slot = el.querySelector(`[data-pdf-page='${r.page}']`);
             return slot.getBoundingClientRect().top - el.getBoundingClientRect().top + (r.top + r.height / 2) * slot.getBoundingClientRect().height - Math.min(120, el.clientHeight * 0.2);
         }""", source)
         page.mouse.wheel(0, delta)
-        expect(page.locator("tr.source-active-row")).to_have_attribute("data-transaction-id", "tx-2-15")
-        verify_overlay("tx-2-15", 2)
+        expect(page.locator("tr.source-active-row")).to_have_attribute("data-transaction-id", pdf_selected)
+        verify_overlay(pdf_selected, 2)
         aligned(2)
         steady_pdf = stage.evaluate("el => el.scrollTop")
         page.wait_for_timeout(350)
@@ -523,7 +545,8 @@ def run(base_url: str) -> None:
         print(json.dumps({"result": "PASS", "pages": 30, "transactions": len(transactions), "checks": [
             "real wheel scroll and grid alignment", "bounded canvases", "automatic synchronization without controls or banner",
             "unmatched pages", "filters", "grouped layout", "image-only page", "editing focus and resume",
-            "explicit origin navigation", "no document reload", "zoom", "mobile 390px", "keyboard",
+            "automatic origin navigation without per-row buttons", "no document reload", "zoom", "mobile 390px", "keyboard",
+            "Ctrl+wheel zoom changes only the PDF", "Ctrl plus/minus/reset keeps the current PDF page",
             "document switch preserving edits", "expired access and retry", "Promise.withResolvers fallback",
             "no review writes", "no browser errors", "source overlays over real canvas ink", "multiline and multipage regions",
             "intrinsic page rotation and crop", "stable origin after editing", "legacy page-only fallback", "cleared document selection",

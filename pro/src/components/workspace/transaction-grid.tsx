@@ -642,28 +642,6 @@ export function TransactionGrid({
                         />
                       </td>
                       <td>
-                        {location && conversion.pdf ? (
-                          <button
-                            className="row-action"
-                            aria-label={`Localizar origem de ${transaction.description} no PDF (página ${location.page})`}
-                            title={
-                              location.regions.length
-                                ? "Destacar origem no PDF"
-                                : "Abrir página de origem no PDF"
-                            }
-                            onClick={() => onLocateTransaction(transaction.id)}
-                          >
-                            <ExternalLink size={14} />
-                          </button>
-                        ) : (
-                          <span
-                            className="source-unavailable"
-                            title="Sem página de origem disponível"
-                            aria-label="Sem página de origem disponível"
-                          >
-                            —
-                          </span>
-                        )}
                         {transaction.isDeleted ? (
                           <button
                             className="row-action"
