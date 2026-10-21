@@ -26,6 +26,7 @@ export function FinancialReportReview({
   onSource?(eventId: string): void;
 }) {
   const [account, setAccount] = useState(["", "", ""]);
+  const [showAccount, setShowAccount] = useState(false);
   const failed = report.validations.filter(
     (item) => item.status === "failed",
   ).length;
@@ -39,64 +40,99 @@ export function FinancialReportReview({
   };
   const types: Record<string, string> = {
     receipt: "Recebimento de título",
-    investment_application: "Aplicação CDB",
-    investment_redemption: "Resgate CDB",
+    investment_application: "Aplicação",
+    investment_redemption: "Resgate",
     fiscal_document: "Documento fiscal",
   };
+  const titles: Record<string, string> = {
+    receivables_report: "Relatório de recebimentos",
+    investment_statement: "Extrato de investimentos",
+    fiscal_summary: "Resumo fiscal",
+  };
+  const canExportOfx =
+    !!base && report.export.available_formats.includes("ofx");
   return (
-    <section className="transaction-grid" aria-label="Relatório especializado">
-      <div className="page-sync-notice" role="status">
+    <section
+      className="transactions-panel financial-report-panel"
+      aria-label="Relatório especializado"
+    >
+      <div className="panel-toolbar financial-report-toolbar">
+        <div className="financial-report-title">
+          <h2>{titles[report.document_type] ?? "Relatório do documento"}</h2>
+          <span>
+            {report.origin ?? "Documento financeiro"} · {report.events.length}{" "}
+            {report.events.length === 1 ? "evento" : "eventos"}
+          </span>
+        </div>
+        {base && (
+          <div className="financial-report-downloads">
+            {report.export.available_formats
+              .filter((format) => format !== "ofx")
+              .map((format) => (
+                <a
+                  className="secondary-button small"
+                  key={format}
+                  href={downloadUrl(base, format)}
+                  download
+                >
+                  Baixar {format === "xlsx" ? "Excel" : format.toUpperCase()}
+                </a>
+              ))}
+            {canExportOfx && (
+              <button
+                type="button"
+                className="secondary-button small"
+                aria-expanded={showAccount}
+                onClick={() => setShowAccount((value) => !value)}
+              >
+                Exportar OFX
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="financial-report-notice" role="status">
         <p>{report.notice}</p>
         {failed > 0 && (
           <p>
             {failed} validação(ões) com diferença. Confira os totais no Excel.
           </p>
         )}
-        <p>
-          Os campos de origem são preservados. Datas, impostos, posições e
-          situações estão disponíveis no Excel.
-        </p>
+        <details>
+          <summary>Dados disponíveis no Excel</summary>
+          <p>
+            Os campos de origem são preservados. Datas, impostos, posições e
+            situações estão disponíveis no Excel.
+          </p>
+        </details>
       </div>
-      {base && (
-        <div className="header-actions">
-          {report.export.available_formats
-            .filter((format) => format !== "ofx")
-            .map((format) => (
-              <a
-                className="secondary-button"
-                key={format}
-                href={downloadUrl(base, format)}
-                download
-              >
-                Baixar {format === "xlsx" ? "Excel" : format.toUpperCase()}
-              </a>
-            ))}
-        </div>
-      )}
-      {base && report.export.available_formats.includes("ofx") && (
-        <fieldset>
+      {base && canExportOfx && showAccount && (
+        <fieldset className="financial-destination">
           <legend>Conta de destino dos recebimentos para exportação OFX</legend>
-          {["Banco de destino", "Agência de destino", "Conta de destino"].map(
-            (label, index) => (
-              <label key={label}>
-                {label}
-                <input
-                  aria-label={label}
-                  inputMode="numeric"
-                  value={account[index]}
-                  onChange={(event) =>
-                    setAccount((current) =>
-                      current.map((value, position) =>
-                        position === index
-                          ? event.target.value.replace(/\D/g, "")
-                          : value,
-                      ),
-                    )
-                  }
-                />
-              </label>
-            ),
-          )}
+          <div className="financial-destination-fields">
+            {["Banco de destino", "Agência de destino", "Conta de destino"].map(
+              (label, index) => (
+                <label key={label}>
+                  {label}
+                  <input
+                    aria-label={label}
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={account[index]}
+                    onChange={(event) =>
+                      setAccount((current) =>
+                        current.map((value, position) =>
+                          position === index
+                            ? event.target.value.replace(/\D/g, "")
+                            : value,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+              ),
+            )}
+          </div>
           {account.every(Boolean) && (
             <a
               className="secondary-button"
@@ -109,19 +145,19 @@ export function FinancialReportReview({
         </fieldset>
       )}
       <div className="table-scroll">
-        <table aria-label="Eventos do relatório">
+        <table
+          className="financial-events-table"
+          aria-label="Eventos do relatório"
+        >
           <thead>
             <tr>
-              {[
-                "Data",
-                "Evento",
-                "Valor",
-                "Situação",
-                "Referência",
-                "Origem",
-              ].map((label) => (
-                <th key={label}>{label}</th>
-              ))}
+              {["Data", "Evento", "Valor", "Situação", "Origem"].map(
+                (label) => (
+                  <th key={label} scope="col">
+                    {label}
+                  </th>
+                ),
+              )}
             </tr>
           </thead>
           <tbody>
@@ -133,18 +169,38 @@ export function FinancialReportReview({
                 event.dates.issue;
               return (
                 <tr key={event.event_id}>
-                  <td>{rawDate?.split("-").reverse().join("/")}</td>
-                  <td>
-                    {types[event.event_type] ?? event.event_type} —{" "}
-                    {event.description}
+                  <td className="financial-event-date">
+                    {rawDate?.split("-").reverse().join("/") ?? "—"}
                   </td>
-                  <td>{formatCurrency(Number(event.amount))}</td>
-                  <td>{statuses[event.status] ?? event.status}</td>
-                  <td>{event.reference ?? "—"}</td>
+                  <td className="financial-event-description">
+                    <span className="financial-event-type">
+                      {types[event.event_type] ?? "Evento financeiro"}
+                    </span>
+                    <span className="financial-event-text">
+                      {event.description}
+                    </span>
+                    {event.reference && (
+                      <span className="financial-event-reference">
+                        Referência: {event.reference}
+                      </span>
+                    )}
+                  </td>
+                  <td className="financial-event-amount">
+                    {formatCurrency(Number(event.amount))}
+                  </td>
                   <td>
-                    {onSource ? (
+                    <span
+                      className="financial-event-status"
+                      data-status={event.status}
+                    >
+                      {statuses[event.status] ?? "Não identificado"}
+                    </span>
+                  </td>
+                  <td>
+                    {onSource && event.source_refs.length > 0 ? (
                       <button
-                        className="row-action"
+                        className="financial-source-link"
+                        aria-label={`Ver origem do evento ${event.description}`}
                         onClick={() => onSource(event.event_id)}
                       >
                         Página {event.source_refs[0]?.page}
@@ -152,7 +208,7 @@ export function FinancialReportReview({
                     ) : (
                       event.source_refs
                         .map((ref) => `Pág. ${ref.page}, linha ${ref.line}`)
-                        .join("; ")
+                        .join("; ") || "—"
                     )}
                   </td>
                 </tr>
@@ -160,10 +216,16 @@ export function FinancialReportReview({
             })}
           </tbody>
         </table>
+        {report.events.length === 0 && (
+          <div className="financial-report-empty">
+            <strong>Sem movimentos neste período</strong>
+            <p>
+              As posições e os demais dados do documento estão disponíveis no
+              Excel.
+            </p>
+          </div>
+        )}
       </div>
-      {report.events.length === 0 && (
-        <p>Sem movimentos; posições disponíveis no Excel.</p>
-      )}
     </section>
   );
 }

@@ -78,6 +78,7 @@ jobs:
           trap 'kill "$pro_pid"' EXIT
           python scripts/smoke_pro_workspace.py --url http://127.0.0.1:3100
           python scripts/smoke_pro_pdf_sync.py --url http://127.0.0.1:3100
+          python scripts/smoke_pro_financial_reports.py --url http://127.0.0.1:3100
 
       - name: Preserve synthetic browser evidence
         if: always()
@@ -87,6 +88,7 @@ jobs:
           path: |
             tmp/pro-workspace-acceptance/
             tmp/pro-pdf-sync/
+            tmp/pro-financial-reports/
           if-no-files-found: ignore
 
   pdf-golden:

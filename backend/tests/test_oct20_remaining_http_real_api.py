@@ -15,6 +15,8 @@ pytestmark = pytest.mark.real_http
 def case(kind):
     if kind == "itau":
         return monthly_pdf(shuffled=True), [200, -200, -50, 50], 10
+    if kind == "itau_cash":
+        return monthly_pdf(cash_only=True, appendix=True, shuffled=True), [200, -50], 1150
     if kind == "sicredi":
         text = matrix_text().replace("DEBITOS.............: 7.564,91\n", "").replace("CREDITOS............: 2.600,00", "")
         return generate_native_text_pdf((tuple(text.splitlines()),)), [2600, -250, -11.61, -7303.3], -982.78
@@ -34,7 +36,7 @@ def assert_result(analysis, kind, expected, closing):
         assert analysis["financial_document"]["events"][1]["amounts"]["irrf"] == "4.00"
 
 
-@pytest.mark.parametrize("kind", ["rdb", "itau", "sicredi", "csv"])
+@pytest.mark.parametrize("kind", ["rdb", "itau", "itau_cash", "sicredi", "csv"])
 def test_public_remaining_formats_preserve_financial_semantics_and_downloads(kind, tmp_path, monkeypatch):
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
     monkeypatch.setenv("PDF_OCR_ENABLED", "false")
@@ -62,7 +64,7 @@ def test_public_remaining_formats_preserve_financial_semantics_and_downloads(kin
         assert client.post("/analyze").status_code == 405
 
 
-@pytest.mark.parametrize("kind", ["rdb", "itau", "sicredi"])
+@pytest.mark.parametrize("kind", ["rdb", "itau", "itau_cash", "sicredi"])
 def test_worker_uses_the_same_remaining_statement_controls(kind, tmp_path, monkeypatch):
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
     monkeypatch.setenv("PDF_OCR_ENABLED", "false")

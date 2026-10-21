@@ -827,7 +827,26 @@ export function WorkspaceScreen({
                 key={activeConversion.id}
                 report={activeConversion.financialDocument}
                 downloadUrl={activeConversion.downloadUrl}
-                onSource={(id) => selectPdfTransaction(id)}
+                onSource={(id) => {
+                  const event = activeConversion.financialDocument?.events.find(
+                    (item) => item.event_id === id,
+                  );
+                  const page = event?.source_refs[0]?.page;
+                  if (!page) return;
+                  setMarking(null);
+                  setReading(null);
+                  setPages((current) => ({
+                    ...current,
+                    [activeConversion.id]: page,
+                  }));
+                  setNavigation((current) => ({
+                    page,
+                    regions: [],
+                    origin: "grid",
+                    id: `${activeConversion.id}:${activeConversion.pdf?.url}`,
+                    token: (current?.token ?? 0) + 1,
+                  }));
+                }}
               />
             ) : (
               <TransactionGrid

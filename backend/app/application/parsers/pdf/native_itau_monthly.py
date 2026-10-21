@@ -162,6 +162,8 @@ def parse_native_itau_monthly(raw: bytes, page_texts: list[str]) -> NativeMonthl
                     else:
                         groups.append([box])
                 for cells in groups:
+                    if finished:
+                        break  # Same-page debit summaries/investment appendices repeat ledger values.
                     anchor = cells[0]
                     description = " ".join(tp.get_text_bounded(history.left - 1, anchor.bottom - 2,
                         credit.left - 2, anchor.top + 2).split())
@@ -216,12 +218,19 @@ def parse_native_itau_monthly(raw: bytes, page_texts: list[str]) -> NativeMonthl
                         amount=float(amount), running_balance=float(amounts["balance"]) if "balance" in amounts else None,
                         source_page=page_index + 1, source_line=source, has_explicit_amount_sign=True,
                         source_regions=[region], source_line_refs=((page_index + 1, source),) if source else ()))
-    if not rows or not finished or printed_closing is None or automatic_totals is None:
+    if not rows or not finished or printed_closing is None:
         _fail()
     first = next((index for index, row in enumerate(rows) if row.running_balance is not None), None)
     if first is None:
         _fail()
     opening = Decimal(str(rows[first].running_balance)) - sum((Decimal(str(row.transaction.amount)) for row in rows[:first + 1]))
+    if automatic_totals is None:
+        # Cash-only editions omit the automatic-investment section entirely.
+        # Its absence is valid only when no such movement/position is inferred.
+        if opening != summary[2] or any(normalize_upper_text(row.transaction.description).startswith(
+                ("APL APLIC AUT MAIS", "RES APLIC AUT MAIS")) for row in rows):
+            _fail()
+        automatic_totals = (Decimal(0), Decimal(0))
     cash, investment = opening, summary[2] - opening
     incoming = outgoing = Decimal(0)
     automatic_in = automatic_out = Decimal(0)

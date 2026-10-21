@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { FinancialDocument } from "@/domain/workspace";
 import { FinancialReportReview } from "./financial-report-review";
 
@@ -72,6 +72,7 @@ describe("FinancialReportReview", () => {
     expect(
       screen.queryByRole("link", { name: "Baixar OFX" }),
     ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Exportar OFX" }));
     for (const [label, value] of [
       ["Banco de destino", "237"],
       ["Agência de destino", "1234"],
@@ -87,5 +88,23 @@ describe("FinancialReportReview", () => {
       "/convert-report/an_titles?format=ofx&bank_code=237&bank_branch=1234&account_number=56789",
     );
     expect(link.getAttribute("href")).not.toContain("closing_balance");
+  });
+
+  it("organiza o relatório em painel próprio e mantém referências junto à descrição", () => {
+    const onSource = vi.fn();
+    render(<FinancialReportReview report={fiscal} onSource={onSource} />);
+    expect(
+      screen.getByRole("heading", { name: "Resumo fiscal" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("columnheader", { name: "Referência" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Referência: 0001")).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Ver origem do evento Documento fiscal 0001",
+      }),
+    );
+    expect(onSource).toHaveBeenCalledWith("event-1");
   });
 });
