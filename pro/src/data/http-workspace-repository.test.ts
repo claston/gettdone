@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createHttpWorkspaceRepository } from "./http-workspace-repository";
+import { invalidateProSessionCaches } from "./pro-session-cache";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -8,6 +9,133 @@ function jsonResponse(body: unknown, status = 200): Response {
     headers: { "Content-Type": "application/json" },
   });
 }
+
+describe("documentos e lotes já abertos", () => {
+  it("reabre o PDF depois de vinte minutos sem baixar nem verificar a sessão novamente", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+    try {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(jsonResponse({}))
+        .mockResolvedValueOnce(jsonResponse(batchPayload))
+        .mockResolvedValueOnce(new Response("%PDF-1.4"));
+      const repository = createHttpWorkspaceRepository({
+        apiUrl: "/",
+        fetcher,
+      });
+      await repository.getBatch("batch-real");
+      const first = await repository.loadDocument!("job-ready");
+      now.mockReturnValue(1000 + 20 * 60 * 1000);
+      expect(await repository.loadDocument!("job-ready")).toBe(first);
+      expect(fetcher).toHaveBeenCalledTimes(3);
+      expect(repository.getCachedBatch?.("batch-real")?.id).toBe("batch-real");
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("refaz o download quando o usuário pede para recarregar o PDF", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse(batchPayload))
+      .mockResolvedValueOnce(new Response("first"))
+      .mockResolvedValueOnce(new Response("second"));
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+    await repository.getBatch("batch-real");
+    const first = await repository.loadDocument!("job-ready");
+    const second = await repository.loadDocument!("job-ready", undefined, {
+      reload: true,
+    });
+    expect(second).not.toBe(first);
+    expect(fetcher).toHaveBeenCalledTimes(4);
+  });
+
+  it("não devolve documentos nem lotes da sessão anterior", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse(batchPayload))
+      .mockResolvedValueOnce(new Response("%PDF-1.4"));
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+    await repository.getBatch("batch-real");
+    await repository.loadDocument!("job-ready");
+    invalidateProSessionCaches();
+    expect(repository.getCachedBatch?.("batch-real")).toBeUndefined();
+    await expect(repository.loadDocument!("job-ready")).rejects.toThrow();
+  });
+
+  it("não usa uma resposta cancelada como documento disponível", async () => {
+    let finish!: (response: Response) => void;
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse(batchPayload))
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            finish = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(new Response("%PDF-1.4"));
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+    await repository.getBatch("batch-real");
+    const abort = new AbortController();
+    const loading = repository.loadDocument!("job-ready", abort.signal);
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+    abort.abort();
+    finish(new Response("stale document"));
+    await expect(loading).rejects.toMatchObject({ name: "AbortError" });
+    await repository.loadDocument!("job-ready");
+    expect(fetcher).toHaveBeenCalledTimes(4);
+  });
+
+  it("mostra as edições confirmadas quando o lote é reaberto da memória", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse(batchPayload))
+      .mockResolvedValueOnce(jsonResponse({ updated_at: "saved" }));
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+    const batch = await repository.getBatch("batch-real");
+    await repository.saveTransactions(
+      "job-ready",
+      batch.conversions[0].transactions.map((row, index) =>
+        index ? row : { ...row, description: "Descrição salva" },
+      ),
+    );
+    expect(
+      repository.getCachedBatch?.("batch-real")?.conversions[0].transactions[0]
+        .description,
+    ).toBe("Descrição salva");
+  });
+
+  it("limita os PDFs em memória e remove primeiro o menos recentemente usado", async () => {
+    const payload = {
+      ...batchPayload,
+      jobs: Array.from({ length: 13 }, (_, i) => ({
+        ...batchPayload.jobs[0],
+        job_id: `job-${i}`,
+      })),
+    };
+    let downloads = 0;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (url) => {
+      if (String(url).endsWith("/auth/me")) return jsonResponse({});
+      if (String(url).endsWith("/document")) {
+        downloads++;
+        return new Response("%PDF-1.4");
+      }
+      return jsonResponse(payload);
+    });
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+    await repository.getBatch("batch-real");
+    for (let i = 0; i < 13; i++) await repository.loadDocument!(`job-${i}`);
+    await repository.loadDocument!("job-12");
+    expect(downloads).toBe(13);
+    await repository.loadDocument!("job-0");
+    expect(downloads).toBe(14);
+  });
+});
 
 it("preserva eventos especializados e escolhe Excel em vez de OFX bancário", async () => {
   const payload = structuredClone(batchPayload);

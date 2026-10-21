@@ -150,6 +150,16 @@ São 12 documentos sintéticos, um com 541 lançamentos. O teste abre o lote, ed
 
 Publicação: atualizar API e worker antes do PRO. A melhoria de coordenadas beneficia conversões novas; resultados antigos sem regiões precisam de nova conversão para ganhar o destaque automático e continuam revisáveis pelo fallback por página ou pelas marcações manuais. Não há backfill nem alteração financeira. O PRO anterior ignora os novos eventos/campos. Rollback: reverter o frontend e/ou o associador de coordenadas; eventos e evidências já armazenados continuam compatíveis com a API existente.
 
+### Navegação após inatividade e linhas com texto quebrado
+
+Revisão e dashboard usam o mesmo layout autenticado, preservado na navegação. Leituras autenticadas consultam diretamente o endpoint e renovam a sessão quando ele indicar expiração; gravações continuam verificando a sessão após dez minutos. A autenticação e a propriedade dos documentos continuam validadas no servidor.
+
+Na sessão atual, o repository reutiliza até 12 PDFs (limite total de 64 MiB) e três snapshots de lote. O dashboard mantém até cinco páginas de histórico e antecipa a primeira enquanto a revisão está aberta. A reabertura mostra os dados disponíveis e atualiza em segundo plano, preservando edições locais; saves confirmados atualizam o snapshot. Logout, expiração confirmada ou troca de usuário invalidam esses caches. Não há persistência de PDFs ou tokens em localStorage. **Recarregar PDF** ignora o cache e faz um novo download.
+
+Para PDFs nativos cujas células quebram em duas linhas, o associador recompõe palavras pelas coordenadas antes de exigir igualdade exata com a linha original. Isso cobre datas/valores centralizados junto a descrições menores, incluindo as primeiras linhas. Não altera valores, não chama OCR e não reprocessa conversões antigas automaticamente; para elas, as novas coordenadas exigem uma nova conversão iniciada pelo usuário.
+
+`backend\venv\Scripts\python.exe scripts/smoke_pro_idle_navigation.py` valida as duas primeiras linhas em um PDF sintético com células quebradas, simula 20 minutos de inatividade e mantém respostas do backend pendentes. Cada troca de PDF já aberto, ida ao dashboard e reabertura do lote deve concluir em até 2 s no cenário controlado, sem novo download dos PDFs nem perda da edição salva. Evidências sintéticas ficam em `tmp/pro-idle-navigation/` e são preservadas na CI. Esse orçamento não mede latência de produção nem evita a espera necessária para documentos ainda não abertos.
+
 ## Configuração
 
 Copie `.env.example` para `.env.local` e ajuste `NEXT_PUBLIC_API_URL` para apontar ao backend. A autenticação usa cookies de sessão e todas as requisições são enviadas com credenciais. Os endpoints mutáveis do PRO exigem o cabeçalho `X-OFX-Pro-Client: web` e uma origem exata permitida pelo backend; isso não substitui a validação de propriedade do lote por identidade.

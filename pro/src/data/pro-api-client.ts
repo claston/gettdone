@@ -1,3 +1,9 @@
+import {
+  expireProSession,
+  hasVerifiedProSession,
+  proSessionVerifiedAt,
+} from "./pro-session-cache";
+
 export const PRO_CLIENT_HEADER_NAME = "X-OFX-Pro-Client";
 export const PRO_CLIENT_HEADER_VALUE = "web";
 
@@ -16,12 +22,26 @@ export function createProApiClient(options: ProApiClientOptions): ProApiClient {
   let bootstrapPromise: Promise<void> | null = null;
   let bootstrapExpiresAt = 0;
   let refreshPromise: Promise<void> | null = null;
+  let sessionEstablished = false;
+  let bootstrapPending = false;
 
   const bootstrap = async (force = false) => {
+    if (bootstrapPending && bootstrapPromise) return bootstrapPromise;
+    if (
+      !force &&
+      hasVerifiedProSession() &&
+      Date.now() < proSessionVerifiedAt() + 10 * 60 * 1000
+    ) {
+      sessionEstablished = true;
+      bootstrapExpiresAt = proSessionVerifiedAt() + 10 * 60 * 1000;
+      bootstrapPromise ??= Promise.resolve();
+      return bootstrapPromise;
+    }
     // Access cookies expire after 15 minutes. Recheck before the next write
     // instead of keeping a successful bootstrap for the lifetime of the tab.
     if (force || Date.now() >= bootstrapExpiresAt) bootstrapPromise = null;
     if (!bootstrapPromise) {
+      bootstrapPending = true;
       bootstrapExpiresAt = Date.now() + 10 * 60 * 1000;
       bootstrapPromise = fetcher(`${apiUrl}/auth/me`, {
         method: "GET",
@@ -65,6 +85,7 @@ export function createProApiClient(options: ProApiClientOptions): ProApiClient {
             );
           }
 
+          expireProSession();
           const anonymousResponse = await fetcher(
             `${apiUrl}/auth/pro/anonymous-session`,
             {
@@ -88,9 +109,15 @@ export function createProApiClient(options: ProApiClientOptions): ProApiClient {
             );
           }
         })
+        .then(() => {
+          sessionEstablished = true;
+        })
         .catch((error: unknown) => {
           bootstrapPromise = null;
           throw error;
+        })
+        .finally(() => {
+          bootstrapPending = false;
         });
     }
     return bootstrapPromise;
@@ -108,7 +135,13 @@ export function createProApiClient(options: ProApiClientOptions): ProApiClient {
 
   return {
     async request(path: string, init: RequestInit = {}) {
-      await bootstrap();
+      const isRead = ["GET", "HEAD"].includes(
+        (init.method ?? "GET").toUpperCase(),
+      );
+      // Reads are authorized by their own endpoint. Avoid serializing them
+      // behind /auth/me after idle; an expired cookie still triggers renewal.
+      if (!isRead || (!sessionEstablished && !hasVerifiedProSession()))
+        await bootstrap();
       let response = await execute(path, init);
       if (
         response.status === 401 ||

@@ -73,6 +73,8 @@ def run(base: str):
             elif path == "/telemetry/events":
                 events.append(route.request.post_data_json)
                 route.fulfill(status=202)
+            elif path == "/api/pro/conversion-batches":
+                route.fulfill(json={"items": [], "next_cursor": None})
             elif path.endswith("/document"):
                 documents.append(path)
                 route.fulfill(content_type="application/pdf", body=large_pdf if "/doc-00/" in path else small_pdf)

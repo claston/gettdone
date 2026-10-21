@@ -16,6 +16,10 @@ import {
   type ProAuthService,
   type ProUser,
 } from "@/data/pro-auth-service";
+import {
+  PRO_SESSION_EXPIRED_EVENT,
+  rememberProSession,
+} from "@/data/pro-session-cache";
 
 interface ProSessionContextValue {
   user: ProUser;
@@ -61,11 +65,21 @@ export function ProSessionGate({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const expired = () => {
+      setUser(null);
+      setStatus("anonymous");
+    };
+    window.addEventListener(PRO_SESSION_EXPIRED_EVENT, expired);
+    return () => window.removeEventListener(PRO_SESSION_EXPIRED_EVENT, expired);
+  }, []);
+
+  useEffect(() => {
     let active = true;
     void activeService
       .currentUser()
       .then((currentUser) => {
         if (!active) return;
+        if (currentUser) rememberProSession(currentUser.user_id);
         setUser(currentUser);
         setStatus(currentUser ? "authenticated" : "anonymous");
       })
@@ -90,6 +104,7 @@ export function ProSessionGate({
     setError(null);
     try {
       const authenticatedUser = await activeService.login(email, password);
+      rememberProSession(authenticatedUser.user_id);
       setPassword("");
       setUser(authenticatedUser);
       setStatus("authenticated");

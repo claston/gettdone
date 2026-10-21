@@ -79,6 +79,7 @@ jobs:
           python scripts/smoke_pro_workspace.py --url http://127.0.0.1:3100
           python scripts/smoke_pro_pdf_sync.py --url http://127.0.0.1:3100
           python scripts/smoke_pro_financial_reports.py --url http://127.0.0.1:3100
+          python scripts/smoke_pro_idle_navigation.py --url http://127.0.0.1:3100
 
       - name: Preserve synthetic browser evidence
         if: always()
@@ -89,6 +90,7 @@ jobs:
             tmp/pro-workspace-acceptance/
             tmp/pro-pdf-sync/
             tmp/pro-financial-reports/
+            tmp/pro-idle-navigation/
           if-no-files-found: ignore
 
   pdf-golden:

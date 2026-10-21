@@ -152,27 +152,55 @@ export function useWorkspaceController(
   useEffect(() => {
     let active = true;
     const activeTimers = timers.current;
-    setLoadState("LOADING");
+    const cached = repository.getCachedBatch?.(batchId);
+    const showBatch = (loadedBatch: Batch) => {
+      const current = batchRef.current;
+      const merged =
+        current?.id === batchId
+          ? mergeRefreshedBatch(current, loadedBatch, saveStatusesRef.current)
+          : loadedBatch;
+      setBatch(merged);
+      batchRef.current = merged;
+      const initial =
+        loadedBatch.conversions.find(
+          (item) => item.id === initialConversionId,
+        ) ?? sortConversionsForReview(loadedBatch.conversions)[0];
+      setActiveId((id) =>
+        loadedBatch.conversions.some((item) => item.id === id)
+          ? id
+          : (initial?.id ?? ""),
+      );
+      setLoadState("READY");
+      if (openedBatch.current !== batchId) {
+        openedBatch.current = batchId;
+        emitWorkspaceEvent(repository, "workspace_opened");
+        if (initial) emitWorkspaceEvent(repository, "conversion_selected");
+      }
+    };
+    setLoadError(null);
+    setRefreshError(null);
+    if (cached) {
+      showBatch(cached);
+      setRefreshState("REFRESHING");
+    } else setLoadState("LOADING");
     repository
       .getBatch(batchId)
       .then((loadedBatch) => {
         if (!active) return;
-        setBatch(loadedBatch);
-        batchRef.current = loadedBatch;
-        const initial =
-          loadedBatch.conversions.find(
-            (item) => item.id === initialConversionId,
-          ) ?? sortConversionsForReview(loadedBatch.conversions)[0];
-        setActiveId(initial?.id ?? "");
-        setLoadState("READY");
-        if (openedBatch.current !== batchId) {
-          openedBatch.current = batchId;
-          emitWorkspaceEvent(repository, "workspace_opened");
-          if (initial) emitWorkspaceEvent(repository, "conversion_selected");
-        }
+        showBatch(loadedBatch);
+        setRefreshState("IDLE");
       })
       .catch((error: unknown) => {
         if (!active) return;
+        if (cached) {
+          setRefreshError(
+            error instanceof Error
+              ? error.message
+              : "Não foi possível atualizar o lote.",
+          );
+          setRefreshState("ERROR");
+          return;
+        }
         setLoadError(
           error instanceof Error
             ? error.message
