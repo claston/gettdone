@@ -114,6 +114,7 @@ def _descending(pages, kind):
     text = "\n".join(pages)
     bounds = _period(text)
     rows, controls, openings = [], {}, []
+    blocked = 0
     for page, line, raw in _lines(pages):
         normalized = upper(raw)
         if normalized.startswith("SALDO ANTERIOR:"):
@@ -138,6 +139,11 @@ def _descending(pages, kind):
             if values[0][1] not in {"+", "-"}:
                 fail()
             description = dated[2][:values[0].start()].strip()
+            if upper(description).startswith("DEPOSITOS EM CHEQUES BLOQUEADOS -"):
+                if value <= 0:
+                    fail()
+                blocked += 1
+                continue
             rows.append(_row(page, line, date, description, value))
     opening = _one(openings)
     if not rows or any(a.transaction.date < b.transaction.date for a, b in zip(rows, rows[1:])):
@@ -162,7 +168,7 @@ def _descending(pages, kind):
         summary = _CURRENCY.search(upper(text), header.end())
         if summary is None or _signed_currency(summary) != running:
             fail()
-    return VerifiedStatement(rows, kind, opening, running, printed_balance_checks=len(controls) + 1)
+    return VerifiedStatement(rows, kind, opening, running, printed_balance_checks=len(controls) + 1, non_cash_entries=blocked)
 
 
 def _signed_currency(match):
@@ -272,21 +278,39 @@ def _alelo(pages, kind):
         fail()
     bounds = day(period[1]), day(period[2])
     rows = []
-    amount_pattern = re.compile(r"(-?)R\$\s*((?:\d{1,3}(?:,\d{3})+|\d{1,3}(?:\.\d{3})+|\d+),\d{2})$")
-    for page, line, raw in _lines(pages):
-        dated = re.match(r"^(\d{2}/\d{2}/\d{2})\s+(.+)$", raw)
-        if dated is None:
-            continue
-        value = amount_pattern.search(dated[2])
-        if value is None:
-            fail()
+    amount_pattern = re.compile(r"(-?)R\$\s*((?:\d{1,3}(?:,\d{3})+|\d{1,3}(?:\.\d{3})+|\d+),\d{2})(?![\w.,])")
+    pending, refs, date = [], [], None
+
+    def finish():
+        if not pending:
+            return
+        raw = " ".join(pending)
+        values = list(amount_pattern.finditer(raw))
+        if len(values) != 1 or raw.count("R$") != 1:
+            fail("Não foi possível associar o valor à linha do cartão Alelo. Envie o extrato completo e legível.")
+        value = values[0]
         # This portal prints both 1.000,00 and 1,000,00. Validate grouping
         # before removing separators; malformed OCR must not become money.
         integer, cents = value[2].rsplit(",", 1)
         amount = Decimal(integer.replace(",", "").replace(".", "") + "." + cents) * (-1 if value[1] else 1)
-        date = _within(day(dated[1], "%d/%m/%y"), bounds)
-        description = dated[2][:value.start()].strip()
-        rows.append(_row(page, line, date, description, amount))
+        description = (raw[:value.start()] + " " + raw[value.end():]).strip()
+        if not description:
+            fail()
+        rows.append(replace(_row(refs[0][0], refs[0][1], date, description, amount), source_line_refs=tuple(refs)))
+
+    for page, line, raw in _lines(pages):
+        dated = re.match(r"^(\d{2}/\d{2}/\d{2})(?:\s+(.+))?$", raw)
+        if dated:
+            finish()
+            date = _within(day(dated[1], "%d/%m/%y"), bounds)
+            pending, refs = [dated[2] or ""], [(page, line)]
+        elif upper(raw).startswith(("SALDO NO DIA", "ALELO - PORTAL", "EXTRATO CARTAO", "CARTAO ")):
+            finish()
+            pending, refs = [], []
+        elif pending:
+            pending.append(raw)
+            refs.append((page, line))
+    finish()
     if not rows or any(a.transaction.date < b.transaction.date for a, b in zip(rows, rows[1:])):
         fail()
     rows.reverse()

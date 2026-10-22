@@ -8,6 +8,20 @@ from app.application.normalization.text import normalize_upper_text
 
 _GENERIC_LAYOUT_NAMES = {"generic_statement_ptbr"}
 VERIFIED_STATEMENT_BANKS = {
+    "credisis_signed_cash_controls_v1": "CrediSIS",
+    "banco_do_brasil_autoatendimento_cd_ocr_v1": "Banco do Brasil",
+    "sicoob_sisbr_descending_cd_ocr_v1": "Sicoob",
+    "banco_do_brasil_sisbb_movim_origem_cd_v1": "Banco do Brasil",
+    "sicredi_native_signed_value_balance_v1": "Sicredi",
+    "tribanco_online_conta_vinculada_v1": "Tribanco",
+    "mercado_pago_extrato_periodo_al_v1": "Mercado Pago",
+    "caixa_web_data_efetiva_signed_v1": "Caixa Economica Federal",
+    "infinitepay_movimentacoes_data_hora_ocr_v1": "InfinitePay",
+    "pagbank_extrato_financeiro_disponivel_ocr_v1": "PagBank",
+    "recovery_alelo_prepaid_statement_v1": "Alelo",
+    "sumup_extrato_periodo_data_hora_v1": "SumUp Bank",
+    "cresol_posicao_consolidada_sem_movimento_v1": "Cresol",
+    "bradesco_extrato_mensal_dia_historico_valor_ocr_v1": "Bradesco",
     "bb_excel_horizontal_pages_v1": "Banco do Brasil",
     "banco_amazonia_native_icon_signs_v1": "Banco da Amazônia",
     "recovery_inter_printed_values_v1": "Banco Inter",
@@ -121,7 +135,7 @@ def resolve_bank_name(
     extracted_text: str | None = None,
 ) -> str | None:
     layout_name = str(layout_inference_name or "").strip()
-    if layout_name == "billing_excel_horizontal_pages_v1":
+    if layout_name in {"billing_excel_horizontal_pages_v1", "conta_azul_relatorio_extrato_valor_saldo_v1"}:
         # Counterparty names in this ledger do not identify its issuer.
         return None
     if layout_name:

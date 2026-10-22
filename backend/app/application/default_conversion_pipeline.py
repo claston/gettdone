@@ -330,6 +330,7 @@ def _build_pdf_processing_metrics(
         "opening_balance_ambiguous": int(parse_metrics.get("opening_balance_ambiguous", 0)),
         "statement_no_activity": int(parse_metrics.get("statement_no_activity", 0)),
         "partial_statement": int(parse_metrics.get("partial_statement", 0)),
+        "non_cash_entries_excluded": int(parse_metrics.get("non_cash_entries_excluded", 0)),
         "financial_controls_validated": int(parse_metrics.get("financial_controls_validated", 0)),
         "printed_balance_checks": int(parse_metrics.get("printed_balance_checks", 0)),
         "balance_validation_status": str(parse_metrics.get("balance_validation_status", "not_evaluated")),

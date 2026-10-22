@@ -12,6 +12,10 @@ from app.application.models import NormalizedTransaction
 from app.application.ofx_writer import build_ofx_statement
 
 LABELS = {
+    "dates.transaction": "Data da transação",
+    "amounts.signed_value": "Valor com sinal", "attributes.subaccount": "Conta do relatório",
+    "attributes.printed_account": "Conta impressa", "attributes.time": "Horário",
+    "amounts.available": "Disponível", "amounts.receivables": "A receber", "amounts.blocked": "Bloqueado",
     "event_id": "ID do evento", "event_type": "Tipo de evento", "status": "Situação", "reference": "Referência",
     "counterparty": "Contraparte", "amount": "Valor", "amount_basis": "Base do valor", "currency": "Moeda",
     "cash_effect": "Efeito financeiro", "description": "Descrição", "source_refs": "Origem (página e linha)",

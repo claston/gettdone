@@ -82,12 +82,36 @@ def _viacredi(pages, kind):
     return VerifiedStatement(rows, kind, opening, running, printed_balance_checks=checks)
 
 
+def _bb_lines(pages):
+    """Join a year glyph emitted on the next physical page, never infer it."""
+    lines = [[page, line, raw, ()] for page, line, raw in _lines(pages)]
+    for index, item in enumerate(lines):
+        page, line, raw, _ = item
+        fragment = re.match(r"^(\d{2}/\d{2}/\d{3})(\s+.+)$", raw)
+        if fragment is None:
+            continue
+        for candidate in lines[index+1:]:
+            other_page, other_line, other_raw, _ = candidate
+            if upper(other_raw).startswith(("EXTRATO", "CLIENTE", "AGENCIA", "LANCAMENTOS", "DIA ")):
+                continue
+            glyph = re.fullmatch(r"(\d)(?:\s+(.*))?", other_raw)
+            if other_page != page+1 or glyph is None:
+                fail("Uma data foi cortada na paginação do extrato Banco do Brasil. Envie o PDF completo.")
+            item[2] = fragment[1] + glyph[1] + fragment[2]
+            item[3] = ((other_page, other_line),)
+            candidate[2] = glyph[2] or ""
+            break
+        else:
+            fail()
+    return lines
+
+
 def _bb_zero(pages, kind):
     rows, opening, running, closing = [], None, None, None
     pending, pending_date, pending_refs = [], None, []
     checks = 0
     opening_date = None
-    for page, line, raw in _lines(pages):
+    for page, line, raw, extra_refs in _bb_lines(pages):
         normalized = upper(raw)
         if closing is not None and normalized.startswith(("INFORMACOES ADICIONAIS", "LANCAMENTOS FUTUROS", "APLICACOES FINANCEIRAS")):
             break
@@ -133,7 +157,7 @@ def _bb_zero(pages, kind):
             if pending_date <= opening_date or rows and pending_date < rows[-1].transaction.date:
                 fail()
             pending = [rest[:signed.start()].strip() if signed else rest]
-            pending_refs = [(page, line)]
+            pending_refs = [(page, line), *extra_refs]
         elif pending:
             if normalized.startswith(("EXTRATO", "CLIENTE", "AGENCIA", "DIA ", "LANCAMENTOS")):
                 continue

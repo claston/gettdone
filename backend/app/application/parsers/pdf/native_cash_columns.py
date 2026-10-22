@@ -91,6 +91,37 @@ def _summary(text):
     return start, end, result
 
 
+def parse_santander_inactive_cash(pages):
+    """Two cash boundary rows with no movements; investments stay outside this scope."""
+    text = upper("\n".join(pages))
+    if _kind(pages) != SANTANDER_OCR_LAYOUT:
+        return None
+    try:
+        start, end = _period(text)
+    except OcrFinancialAmbiguityError:
+        return None
+    section = re.search(
+        r"CONTA CORRENTE\s+(?:MOVIMENTACAO\s+)?DATA DESCRICAO .*?SALDO \(R\$\)"
+        r"(?:\s+CREDITOS DEBITOS)?\s+(.*?)\s+SALDOS POR PERIODO", text)
+    if not section:
+        return None
+    previous = (start-timedelta(days=1)).strftime("%d/%m")
+    final = end.strftime("%d/%m")
+    body = section[1].split("SE SUA EMPRESA", 1)[0].rstrip(' \"“”\ufffd\x93')
+    rows = re.fullmatch(rf"SALDO EM {previous}\s+([+-]?{NUMBER}-?)\s+SALDO EM {final}\s+([+-]?{NUMBER}-?)", body)
+    if not rows or _value(rows[1]) != _value(rows[2]):
+        return None
+    balance = _value(rows[1])
+    for date in (previous, final):
+        matches = re.findall(rf"SALDO DE CONTA CORRENTE EM {date}\s+([+-]?{NUMBER}-?)", text)
+        if len(matches) != 1 or _value(matches[0]) != balance:
+            return None
+    for ordinal, page in enumerate(pages, 1):
+        if re.findall(r"PAGINA:\s*(\d+)/(\d+)", upper(page)) != [(str(ordinal), str(len(pages)))]:
+            return None
+    return VerifiedStatement([], SANTANDER_OCR_LAYOUT, balance, balance, printed_balance_checks=4)
+
+
 def _source_lines(tp, text):
     result, offset = [], 0
     for number, line in enumerate(text.splitlines(keepends=True), 1):
@@ -105,6 +136,9 @@ def parse_native_cash_columns(raw, page_texts):
     kind = _kind(page_texts)
     if kind is None:
         return None
+    inactive = parse_santander_inactive_cash(page_texts)
+    if inactive is not None:
+        return inactive, tuple(page_texts)
     import pypdfium2 as pdfium
 
     santander = kind == SANTANDER_OCR_LAYOUT

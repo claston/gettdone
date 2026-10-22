@@ -4,18 +4,42 @@ import re
 from dataclasses import replace
 from decimal import Decimal
 
+from app.application.errors import PdfFinancialValidationError
 from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf.verified_statements import NUMBER, VerifiedStatement, _row, day, fail, money
 from app.application.source_regions import evidence_regions
 
 
 def parse_controlled_ocr(extraction):
-    from app.application.parsers.pdf.caixa_manager_ocr import is_caixa_manager, parse_caixa_manager
+    from app.application.parsers.pdf.bb_cash_ocr import is_bb_cash_ocr, parse_bb_cash_ocr
+    from app.application.parsers.pdf.infinitepay_ocr import parse_infinitepay
+    from app.application.sweep_statement_detection import INFINITEPAY, identify_sweep_statement
 
+    if identify_sweep_statement("\n".join(line.text for page in extraction.pages for line in page.lines)) == INFINITEPAY:
+        return parse_infinitepay(extraction)
+    from app.application.parsers.pdf.bradesco_monthly_ocr import parse_bradesco_monthly
+    from app.application.parsers.pdf.caixa_manager_ocr import is_caixa_manager, parse_caixa_manager
+    from app.application.structured_statement_detection import BRADESCO_MONTHLY_OCR, is_bradesco_monthly_ocr
+
+    if is_bradesco_monthly_ocr("\n".join(line.text for page in extraction.pages for line in page.lines)):
+        try:
+            return parse_bradesco_monthly(extraction)
+        except PdfFinancialValidationError as exc:
+            observability = dict(getattr(exc, "_parse_observability", {}) or {})
+            observability.update(layout_inference_name=BRADESCO_MONTHLY_OCR, layout_inference_confidence=.99,
+                                 selected_parser="layout_specific_bradesco_monthly_ocr")
+            setattr(exc, "_parse_observability", observability)
+            raise
     if is_caixa_manager(extraction):
         return parse_caixa_manager(extraction)
     texts = ["\n".join(line.text for line in page.lines) for page in extraction.pages]
     text = normalize_upper_text("\n".join(texts))
+    if is_bb_cash_ocr(text):
+        return parse_bb_cash_ocr(extraction)
+    if "SICOOB SISBR" in text and "EXTRATO DE CONTA CORRENTE" in text:
+        from app.application.parsers.pdf.sicoob_sisbr_ocr import parse_sicoob
+
+        return parse_sicoob(extraction)
     from app.application.parsers.pdf.followup_ocr import (
         parse_banrisul_columns,
         parse_bradesco_columns,
