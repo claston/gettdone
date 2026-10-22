@@ -23,6 +23,7 @@ class VerifiedStatement:
     partial: bool = False
     printed_balance_checks: int = 0
     candidate_rows: int = 0
+    opening_inferred: bool = False
 
 
 def fail(message="Não foi possível conferir todos os lançamentos e saldos impressos. Envie o extrato original completo."):
@@ -41,6 +42,11 @@ def day(value, pattern="%d/%m/%Y"):
 
 
 def identify_verified_statement(text):
+    from app.application.structured_statement_detection import identify_structured_statement
+
+    structured = identify_structured_statement(text)
+    if structured:
+        return structured
     from app.application.parsers.pdf.afternoon_statements import identify_afternoon_statement
 
     afternoon = identify_afternoon_statement(text)
@@ -75,6 +81,12 @@ def identify_verified_statement(text):
 def parse_verified_statement(pages):
     text = "\n".join(pages)
     kind = identify_verified_statement(text)
+    from app.application.structured_statement_detection import identify_structured_statement
+
+    if kind and kind == identify_structured_statement(text):
+        from app.application.parsers.pdf.structured_statement_variants import parse_structured_statement
+
+        return parse_structured_statement(pages, kind)
     if kind and kind.startswith("recovery_"):
         from app.application.parsers.pdf.afternoon_statements import parse_afternoon_statement
 

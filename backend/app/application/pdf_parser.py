@@ -362,6 +362,19 @@ def _parse_pdf_transactions(
 
     if native_pages:
         from app.application.parsers.pdf.split_sheet_native import parse_split_sheet_native
+        from app.application.structured_statement_detection import CONTA_AZUL, SUMUP_PERIOD, identify_structured_statement
+
+        structured_kind = identify_structured_statement("\n".join(native_pages))
+        if structured_kind:
+            prepared = (_read_layout_native_pdf_page_texts(raw_bytes)
+                        if structured_kind in {CONTA_AZUL, SUMUP_PERIOD} else native_pages)
+            if len(prepared) != _read_pdf_page_count(raw_bytes) or not all(page.strip() for page in prepared):
+                raise PdfFinancialValidationError("Há uma página sem texto legível. Envie o documento completo.")
+            return _with_parse_observability(
+                _parse_pdf_transactions_from_page_texts(prepared, preserve_layout_spacing=True,
+                    context=LayoutSpecificParseContext(is_native_text=True)),
+                extraction_provider="native_pdf_text", native_text_detected=1, textract_attempted=0,
+            )
 
         late_kind = identify_late_statement("\n".join(native_pages))
         if late_kind:
@@ -724,6 +737,8 @@ def is_textract_forced() -> bool:
 
 
 def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult:
+    from app.application.structured_statement_detection import is_bradesco_monthly_ocr
+
     gateway = TextractGateway()
     gateway_result = gateway.analyze_pdf(raw_bytes=raw_bytes)
     extraction = map_textract_blocks_to_extraction(
@@ -741,7 +756,8 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
             page for page in extraction.pages if segmentation.page_texts[page.page_number - 1]
         ])
     is_monthly = infer_pdf_layout("\n".join(segmentation.page_texts)).layout_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
-    if (textract_mode == "text" or is_monthly or has_explicit_no_activity(segmentation.page_texts)
+    if (textract_mode == "text" or is_monthly or is_bradesco_monthly_ocr("\n".join(_textract_page_texts(extraction)))
+            or has_explicit_no_activity(segmentation.page_texts)
             or infer_pdf_layout("\n".join(segmentation.page_texts)).layout_name in {
                 _STONE_CURRENT_ACCOUNT_A4_LAYOUT, "nubank_statement_ptbr", "banco_inter_extrato_conta_corrente_saldo_transacao_v1",
                 "btg_pactual_conta_corrente_pj_v1",
@@ -841,6 +857,14 @@ def _textract_page_texts(extraction) -> tuple[str, ...]:
 
 
 def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
+    from app.application.structured_statement_detection import is_bradesco_monthly_ocr
+
+    if is_bradesco_monthly_ocr("\n".join(_textract_page_texts(extraction))):
+        # An unreadable continuation is evidence of an incomplete ledger. Keep
+        # every physical page for the strict reader, before appendix filtering.
+        result = _parse_textract_text_pages(extraction)
+        return replace(result, source_extraction=extraction, source_page_texts=_textract_page_texts(extraction),
+                       source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
     segmentation = segment_pdf_pages(_textract_page_texts(extraction))
     statement_extraction = extraction
     if segmentation.parts:
@@ -1036,13 +1060,24 @@ def _parse_pdf_transactions_from_page_texts(
 
 
 def _build_verified_statement_result(statement, pages):
+    if not statement.rows:
+        if statement.opening is None or statement.opening != statement.closing:
+            raise PdfFinancialValidationError("Não foi possível confirmar os saldos do extrato sem movimentação.")
+        result = _empty_statement_result(pages)
+        return replace(result, layout=PdfLayoutInference(statement.layout, .99, False), parse_metrics={
+            **result.parse_metrics, "selected_parser": "layout_confirmed_no_activity",
+            "financial_controls_validated": 1, "balance_validation_status": "validated",
+            "verified_opening_balance": float(statement.opening), "verified_closing_balance": float(statement.closing),
+            "printed_balance_checks": statement.printed_balance_checks,
+        })
     if statement.partial:
         statement.rows[0] = replace(statement.rows[0], warnings=[*statement.rows[0].warnings, "partial_statement"])
     result = _build_pdf_parse_result(
         parsed_rows=statement.rows, layout=PdfLayoutInference(statement.layout, .99, False),
         layout_profile=None, selected_parser=("layout_specific_verified_statement" if statement.opening is not None
                                              else "layout_specific_signed_report"),
-        parser_selection_reason=("explicit_amount_roles_and_all_printed_ledger_controls_validated"
+        parser_selection_reason=("explicit_signs_printed_closing_and_derived_opening" if statement.opening_inferred
+                                 else "explicit_amount_roles_and_all_printed_ledger_controls_validated"
                                  if statement.opening is not None else "explicit_signs_and_complete_dated_row_coverage"),
         inline_decision="not_applicable_layout_specific", tabular_decision="not_applicable_layout_specific",
         columnar_decision="not_applicable_layout_specific", joined_text="\n".join(pages),
@@ -1059,8 +1094,12 @@ def _build_verified_statement_result(statement, pages):
         return _with_parse_observability(result, financial_controls_validated=0,
             balance_validation_status="combined_cash_investment_not_comparable",
             export_recommendation="review_recommended", export_recommendation_reason="combined_cash_investment_balance_not_comparable")
-    return _with_parse_observability(result, **controls, financial_controls_validated=int(bool(controls)),
-        balance_validation_status="validated" if controls else "not_available",
+    return _with_parse_observability(result, **controls,
+        financial_controls_validated=int(bool(controls) and not statement.opening_inferred),
+        balance_validation_status=("opening_inferred_from_closing" if statement.opening_inferred
+                                   else "validated" if controls else "not_available"),
+        **(dict(export_recommendation="review_recommended", export_recommendation_reason="opening_inferred_from_closing")
+           if statement.opening_inferred else {}),
         printed_balance_checks=statement.printed_balance_checks,
         statement_rows_expected=statement.candidate_rows or len(statement.rows), statement_rows_parsed=len(statement.rows),
         statement_row_coverage_rate=len(statement.rows) / (statement.candidate_rows or len(statement.rows)),

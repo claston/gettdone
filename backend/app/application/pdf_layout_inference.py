@@ -120,6 +120,11 @@ class PdfLayoutInference:
 
 
 def infer_pdf_layout(text: str) -> PdfLayoutInference:
+    from app.application.structured_statement_detection import identify_structured_statement
+
+    structured = identify_structured_statement(text)
+    if structured:
+        return PdfLayoutInference(layout_name=structured, confidence=0.99, used_fallback=False)
     normalized = _normalize_text(text)
     normalized_lines = _normalize_non_empty_lines(text)
     specific_scores = {
