@@ -16,6 +16,7 @@ import { PdfSourceHighlights } from "./pdf-source-highlights";
 import { PdfInteractionLayer } from "./pdf-interaction-layer";
 import type { PdfReviewControls } from "./pdf-interactions";
 import { usePdfSearch } from "./use-pdf-search";
+import { usePdfZoom } from "./use-pdf-zoom";
 import type { PdfSearchMatch } from "./pdf-search";
 import {
   activePageAt,
@@ -61,7 +62,10 @@ export default function PdfCanvasViewer({
   const [sizes, setSizes] = useState<PageSize[]>([]);
   const [error, setError] = useState(false);
   const [width, setWidth] = useState(600);
-  const [zoom, setZoom] = useState(1);
+  const { zoom, increase, decrease, reset } = usePdfZoom(
+    stage,
+    sizes.length > 0 && !error,
+  );
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
   const search = usePdfSearch(document);
   const appliedSearch = useRef<PdfSearchMatch | undefined>(undefined);
@@ -332,14 +336,16 @@ export default function PdfCanvasViewer({
             className="icon-button"
             aria-label="Diminuir zoom"
             disabled={zoom <= 0.5}
-            onClick={() => setZoom((value) => Math.max(0.5, value - 0.1))}
+            onClick={decrease}
+            title="Diminuir zoom do PDF (Ctrl/Cmd + −)"
           >
             −
           </button>
           <button
             className="zoom-label"
             aria-label="Ajustar à largura"
-            onClick={() => setZoom(1)}
+            onClick={reset}
+            title="Ajustar à largura (Ctrl/Cmd + 0)"
           >
             {Math.round(zoom * 100)}%
           </button>
@@ -347,7 +353,8 @@ export default function PdfCanvasViewer({
             className="icon-button"
             aria-label="Aumentar zoom"
             disabled={zoom >= 2}
-            onClick={() => setZoom((value) => Math.min(2, value + 0.1))}
+            onClick={increase}
+            title="Aumentar zoom do PDF (Ctrl/Cmd + +). Ctrl/Cmd + roda do mouse também amplia o PDF."
           >
             +
           </button>
@@ -464,9 +471,18 @@ export default function PdfCanvasViewer({
         className="pdf-stage pdf-continuous"
         ref={stage}
         onScroll={onScroll}
-        onWheel={startUserScroll}
+        onWheel={(event) => {
+          if (!event.ctrlKey && !event.metaKey) startUserScroll();
+        }}
         onTouchStart={startUserScroll}
         onPointerDown={(event) => {
+          if (
+            event.pointerType !== "touch" &&
+            !(event.target as HTMLElement).closest(
+              "button, a, input, textarea, select",
+            )
+          )
+            event.currentTarget.focus({ preventScroll: true });
           if (
             event.pointerType === "touch" ||
             event.target === event.currentTarget

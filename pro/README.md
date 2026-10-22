@@ -150,6 +150,12 @@ São 12 documentos sintéticos, um com 541 lançamentos. O teste abre o lote, ed
 
 Publicação: atualizar API e worker antes do PRO. A melhoria de coordenadas beneficia conversões novas; resultados antigos sem regiões precisam de nova conversão para ganhar o destaque automático e continuam revisáveis pelo fallback por página ou pelas marcações manuais. Não há backfill nem alteração financeira. O PRO anterior ignora os novos eventos/campos. Rollback: reverter o frontend e/ou o associador de coordenadas; eventos e evidências já armazenados continuam compatíveis com a API existente.
 
+### Zoom do PDF com mouse e teclado
+
+No visualizador, **Ctrl + roda do mouse** amplia/reduz o PDF (Command no Mac). A pinça do trackpad também é tratada quando o navegador a envia como Ctrl + roda. A roda sem modificador continua rolando o documento. Com foco no PDF, use **Ctrl/Cmd + `+`**, **Ctrl/Cmd + `−`** e **Ctrl/Cmd + `0`** para ampliar, reduzir e ajustar à largura. `+`, `−` e `0` também funcionam sem modificador quando o foco está no visualizador. Os atalhos modificados funcionam com o ponteiro sobre o painel, desde que nenhum campo de texto esteja em edição.
+
+O zoom permanece entre 50% e 200%, mantém a página/posição de leitura e não amplia a interface inteira. Campos de busca/edição e controles fora do visualizador preservam o comportamento normal do teclado. Os botões de zoom continuam disponíveis, com dicas dos atalhos. O destaque de origem é automático ao percorrer as linhas; o botão repetido de origem foi removido das ações de cada lançamento. Marcação manual no PDF e navegação por página continuam disponíveis.
+
 ### Navegação após inatividade e linhas com texto quebrado
 
 Revisão e dashboard usam o mesmo layout autenticado, preservado na navegação. Leituras autenticadas consultam diretamente o endpoint e renovam a sessão quando ele indicar expiração; gravações continuam verificando a sessão após dez minutos. A autenticação e a propriedade dos documentos continuam validadas no servidor.
