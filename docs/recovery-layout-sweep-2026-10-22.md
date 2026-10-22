@@ -58,7 +58,10 @@ depósitos bloqueados, trechos parciais, corte de seção, relatórios com vári
 contas, diagnósticos e upload/download por HTTP real. O fluxo público atual usa
 `POST /convert`; `POST /analyze` responde 405.
 
-Validação final: `2630 passed, 1 skipped, 2 xfailed, 8 warnings` em 123,07 s,
+A identificação InfinitePay exige o domínio completo, com testes para rejeitar
+prefixos, sufixos e subdomínios diferentes do endereço reconhecido.
+
+Validação final: `2636 passed, 1 skipped, 2 xfailed, 8 warnings` em 130,20 s,
 com a suíte completa do backend (`-n 4 --dist=worksteal`). Ruff, verificação de
 texto UTF-8/mojibake e navegação do frontend passaram. Os oito avisos são da
 API de ciclo de vida do FastAPI já usada pela aplicação.

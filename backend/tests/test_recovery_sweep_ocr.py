@@ -7,7 +7,19 @@ import pytest
 from app.application import pdf_parser
 from app.application.document_extraction_models import ExtractedLine, ExtractedPage, RawDocumentExtraction
 from app.application.errors import PdfFinancialValidationError
-from app.application.sweep_statement_detection import INFINITEPAY
+from app.application.sweep_statement_detection import INFINITEPAY, identify_sweep_statement
+
+
+@pytest.mark.parametrize("domain", ["infinitepay.io", "ajuda@infinitepay.io", "https://www.infinitepay.io/ajuda"])
+def test_infinitepay_identity_requires_complete_domain(domain):
+    text = f"{domain}\nTipo de transação Detalhe Valor (R$)"
+    assert identify_sweep_statement(text) == INFINITEPAY
+
+
+@pytest.mark.parametrize("domain", ["infinitepay.io.example.org", "notinfinitepay.io", "other.infinitepay.io"])
+def test_infinitepay_identity_rejects_similar_domains(domain):
+    text = f"{domain}\nTipo de transação Detalhe Valor (R$)"
+    assert identify_sweep_statement(text) is None
 
 
 def test_itau_scanned_monthly_missing_pages_cannot_be_unknown_or_exported():

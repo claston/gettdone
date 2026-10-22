@@ -1,5 +1,7 @@
 """Institution and column fingerprints for recovery statement variants."""
 
+import re
+
 from app.application.normalization.text import normalize_upper_text as upper
 
 BB_SISBB = "banco_do_brasil_sisbb_movim_origem_cd_v1"
@@ -42,7 +44,9 @@ def identify_sweep_statement(text):
         )
     ):
         return CAIXA
-    if "INFINITEPAY.IO" in compact and all(marker in normalized for marker in ("TIPO DE TRANSACAO", "DETALHE", "VALOR (R$)")):
+    if re.search(r"(?<![A-Z0-9.-])(?:WWW\.)?INFINITEPAY\.IO(?![A-Z0-9.-])", normalized) and all(
+        marker in normalized for marker in ("TIPO DE TRANSACAO", "DETALHE", "VALOR (R$)")
+    ):
         return INFINITEPAY
     if "PAGBANK" in normalized and "EXTRATO FINANCEIRO" in normalized and "PAGSEGURO" in normalized:
         return PAGBANK
