@@ -121,9 +121,24 @@ def test_checkout_creates_intent_and_sends_admin_and_customer_emails() -> None:
         assert payload["admin_delivery_mode"] == "dry_run"
         assert payload["customer_delivery_mode"] == "dry_run"
         assert payload["intent_id"].startswith("chk_")
+        assert payload["billing_period"] == "monthly"
+        assert payload["message"] == "Pedido recebido. Enviaremos o link de pagamento por e-mail."
         assert len(fake_contact.sent_emails) == 2
         assert fake_contact.sent_emails[0]["to_email"] == "support@ofxsimples.com"
         assert fake_contact.sent_emails[1]["to_email"] == "erica@example.com"
+        admin_email, customer_email = fake_contact.sent_emails
+        assert admin_email["subject"] == f"[Compra] Novo pedido {payload['intent_id']} - Profissional"
+        assert admin_email["reply_to"] == "erica@example.com"
+        assert "Observações:\nPlease contact me on WhatsApp" in admin_email["text"]
+        assert "enviar o link de pagamento e, após a confirmação do pagamento, ativar o plano" in admin_email["text"]
+        assert customer_email["subject"] == "Recebemos seu pedido do plano Profissional"
+        assert "Enviaremos o link de pagamento por e-mail." in customer_email["text"]
+        assert "A ativação do plano será feita pela nossa equipe após a confirmação do pagamento." in customer_email["text"]
+        for email in fake_contact.sent_emails:
+            assert f"Pedido: {payload['intent_id']}" in email["text"]
+            assert "Plano: Profissional" in email["text"]
+            assert "Valor: R$ 39,90/mês" in email["text"]
+            assert "monthly" not in email["text"]
     finally:
         app.dependency_overrides.clear()
 

@@ -158,34 +158,35 @@ async def create_checkout_intent(
         raise HTTPException(status_code=400, detail=str(exc))
 
     plan_price = _format_price_brl(int(intent["price_cents"]))
-    admin_subject = f"[Checkout] New order {intent['id']} - {intent['plan_name']}"
+    billing_period_label = {"monthly": "mês"}.get(str(intent["billing_period"]), str(intent["billing_period"]))
+    admin_subject = f"[Compra] Novo pedido {intent['id']} - {intent['plan_name']}"
     admin_text_lines = [
-        "A new plan order was received.",
+        "Recebemos um novo pedido de plano no OFX Simples.",
         "",
-        f"Order: {intent['id']}",
-        f"User ID: {user.user_id}",
-        f"Plan: {intent['plan_name']} ({intent['plan_code']})",
-        f"Price: {plan_price}/{intent['billing_period']}",
-        f"Name: {clean_name}",
-        f"Email: {clean_email}",
+        f"Pedido: {intent['id']}",
+        f"ID do usuário: {user.user_id}",
+        f"Plano: {intent['plan_name']} ({intent['plan_code']})",
+        f"Valor: {plan_price}/{billing_period_label}",
+        f"Nome: {clean_name}",
+        f"E-mail: {clean_email}",
         f"WhatsApp: {clean_whatsapp}",
-        f"Document: {clean_document or '-'}",
+        f"Documento: {clean_document or '-'}",
         "",
-        "Notes:",
+        "Observações:",
         clean_notes or "-",
         "",
-        "Next step: send payment link and, after payment, activate the plan.",
+        "Próximo passo: enviar o link de pagamento e, após a confirmação do pagamento, ativar o plano.",
     ]
-    customer_subject = f"We received your plan order ({intent['plan_name']})"
+    customer_subject = f"Recebemos seu pedido do plano {intent['plan_name']}"
     customer_text_lines = [
-        "We received your plan order at OFX Simples.",
+        "Recebemos seu pedido de plano no OFX Simples.",
         "",
-        f"Order: {intent['id']}",
-        f"Plan: {intent['plan_name']}",
-        f"Price: {plan_price}/{intent['billing_period']}",
+        f"Pedido: {intent['id']}",
+        f"Plano: {intent['plan_name']}",
+        f"Valor: {plan_price}/{billing_period_label}",
         "",
-        "Our team will send your payment link by email.",
-        "Plan activation is manual after payment confirmation.",
+        "Enviaremos o link de pagamento por e-mail.",
+        "A ativação do plano será feita pela nossa equipe após a confirmação do pagamento.",
     ]
 
     try:
@@ -222,7 +223,7 @@ async def create_checkout_intent(
         next_step=_next_step_for_status(status),
         admin_delivery_mode=admin_delivery.delivery_mode,
         customer_delivery_mode=customer_delivery.delivery_mode,
-        message="Order received. We will send your payment link by email.",
+        message="Pedido recebido. Enviaremos o link de pagamento por e-mail.",
     )
 
 
