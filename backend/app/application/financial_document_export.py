@@ -12,6 +12,8 @@ from app.application.models import NormalizedTransaction
 from app.application.ofx_writer import build_ofx_statement
 
 LABELS = {
+    "amounts.fee": "Taxa", "attributes.printed_status": "Situação impressa",
+    "attributes.acquirer": "Adquirente", "attributes.establishment": "Estabelecimento", "attributes.nsu": "NSU",
     "dates.transaction": "Data da transação",
     "amounts.signed_value": "Valor com sinal", "attributes.subaccount": "Conta do relatório",
     "attributes.printed_account": "Conta impressa", "attributes.time": "Horário",

@@ -430,6 +430,10 @@ def _parse_pdf_transactions(
                 extraction_provider="native_pdfium_text", native_text_detected=1, textract_attempted=0,
             )
         report_identity = detect_financial_report("\n".join(native_pages))
+        if report_identity and report_identity[1] == "pagbank_sales_gross_fee_net_status":
+            return _with_parse_observability(
+                parse_financial_pdf_pages(_read_layout_native_pdf_page_texts(raw_bytes), native=True),
+                extraction_provider="native_pdf_text", native_text_detected=1, textract_attempted=0)
         if report_identity and report_identity[1] == "btg_fund_positions_and_lots":
             from app.application.parsers.pdf.btg_fund_positions import read_btg_native_pages
 
@@ -445,9 +449,10 @@ def _parse_pdf_transactions(
 
                 prepared = read_horizontal_native_pages(raw_bytes)
             else:
+                from app.application.parsers.pdf.final_native_statements import BB_ENGLISH, BRB, ITAU
                 from app.application.sweep_statement_detection import CAIXA, TRIBANCO
 
-                prepared = (native_pages if identify_verified_statement("\n".join(native_pages)) in {CAIXA, TRIBANCO}
+                prepared = (native_pages if identify_verified_statement("\n".join(native_pages)) in {CAIXA, TRIBANCO, BB_ENGLISH, BRB, ITAU}
                             else _read_layout_native_pdf_page_texts(raw_bytes))
             return _with_parse_observability(
                 _parse_pdf_transactions_from_page_texts(prepared, preserve_layout_spacing=True,
@@ -766,6 +771,7 @@ def is_textract_forced() -> bool:
 
 def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult:
     from app.application.parsers.pdf.bb_cash_ocr import is_bb_cash_ocr
+    from app.application.parsers.pdf.final_ocr_statements import identify_final_ocr
     from app.application.structured_statement_detection import is_bradesco_monthly_ocr
     from app.application.sweep_statement_detection import identify_sweep_statement
 
@@ -787,6 +793,7 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
         ])
     is_monthly = infer_pdf_layout("\n".join(segmentation.page_texts)).layout_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
     if (textract_mode == "text" or is_monthly or is_bradesco_monthly_ocr("\n".join(_textract_page_texts(extraction)))
+            or identify_final_ocr("\n".join(_textract_page_texts(extraction)))
             or identify_sweep_statement("\n".join(_textract_page_texts(extraction)))
             or "SICOOB SISBR" in normalize_upper_text("\n".join(_textract_page_texts(extraction)))
             or is_bb_cash_ocr("\n".join(_textract_page_texts(extraction)))
@@ -1150,11 +1157,12 @@ def _build_verified_statement_result(statement, pages):
         grouped_transactions_count=0, inline_candidates_count=0, inline_transactions_count=0,
         tabular_candidates_count=0, tabular_transactions_count=0, columnar_candidates_count=0,
         columnar_transactions_count=0,
-        balance_checkpoints={0: float(statement.opening)} if statement.opening is not None else {},
+        balance_checkpoints=(statement.balance_checkpoints if statement.balance_checkpoints is not None
+                             else {0: float(statement.opening)} if statement.opening is not None else {}),
     )
     controls = (dict(verified_opening_balance=float(statement.opening), verified_closing_balance=float(statement.closing))
                 if statement.opening is not None and statement.closing is not None else {})
-    if statement.layout == "bb_cash_rende_facil_combined_v1":
+    if statement.layout in {"bb_cash_rende_facil_combined_v1", "itau_empresas_cash_combined_positions_v1"}:
         return _with_parse_observability(result, financial_controls_validated=0,
             balance_validation_status="combined_cash_investment_not_comparable",
             export_recommendation="review_recommended", export_recommendation_reason="combined_cash_investment_balance_not_comparable")

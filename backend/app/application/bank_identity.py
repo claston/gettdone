@@ -8,6 +8,11 @@ from app.application.normalization.text import normalize_upper_text
 
 _GENERIC_LAYOUT_NAMES = {"generic_statement_ptbr"}
 VERIFIED_STATEMENT_BANKS = {
+    "sicredi_signed_balance_columns_ocr_v1": "Sicredi",
+    "caixa_internet_independent_periods_ocr_v1": "Caixa Economica Federal",
+    "bb_english_bank_statement_v1": "Banco do Brasil",
+    "itau_empresas_cash_combined_positions_v1": "Itau",
+    "brb_monthly_displaced_history_v1": "BRB",
     "credisis_signed_cash_controls_v1": "CrediSIS",
     "banco_do_brasil_autoatendimento_cd_ocr_v1": "Banco do Brasil",
     "sicoob_sisbr_descending_cd_ocr_v1": "Sicoob",
