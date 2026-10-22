@@ -961,6 +961,46 @@
           "title": "Statement No Activity",
           "type": "integer"
         },
+        "partial_statement": {
+          "default": 0,
+          "title": "Partial Statement",
+          "type": "integer"
+        },
+        "non_cash_entries_excluded": {
+          "default": 0,
+          "title": "Non Cash Entries Excluded",
+          "type": "integer"
+        },
+        "financial_controls_validated": {
+          "default": 0,
+          "title": "Financial Controls Validated",
+          "type": "integer"
+        },
+        "printed_balance_checks": {
+          "default": 0,
+          "title": "Printed Balance Checks",
+          "type": "integer"
+        },
+        "balance_validation_status": {
+          "default": "not_evaluated",
+          "title": "Balance Validation Status",
+          "type": "string"
+        },
+        "statement_rows_expected": {
+          "default": 0,
+          "title": "Statement Rows Expected",
+          "type": "integer"
+        },
+        "statement_rows_parsed": {
+          "default": 0,
+          "title": "Statement Rows Parsed",
+          "type": "integer"
+        },
+        "statement_row_coverage_rate": {
+          "default": 0,
+          "title": "Statement Row Coverage Rate",
+          "type": "number"
+        },
         "inline_decision": {
           "default": "",
           "title": "Inline Decision",

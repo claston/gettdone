@@ -96,6 +96,14 @@ class PdfProcessingMetrics(BaseModel):
     ocr_annotations_detected: int = 0
     opening_balance_ambiguous: int = 0
     statement_no_activity: int = 0
+    partial_statement: int = 0
+    non_cash_entries_excluded: int = 0
+    financial_controls_validated: int = 0
+    printed_balance_checks: int = 0
+    balance_validation_status: str = "not_evaluated"
+    statement_rows_expected: int = 0
+    statement_rows_parsed: int = 0
+    statement_row_coverage_rate: float = 0
     inline_decision: str = ""
     tabular_decision: str = ""
     columnar_decision: str = ""

@@ -12,6 +12,8 @@ def detect_financial_report(text: str) -> tuple[str, str] | None:
     lines = [normalize_upper_text(line) for line in text.splitlines() if line.strip()]
     header = " ".join(lines[:12])
     normalized = " ".join(lines)
+    if "INFORMATIVO MENSAL CDB" in header and "CDB CAIXA" in header:
+        return INVESTMENT_STATEMENT, "caixa_monthly_cdb_positions"
     if ("BTG PACTUAL" in header and "INVESTIMENTO" in header
             and "FUNDO DE INVESTIMENTO" in normalized and "EXTRATO" in header):
         return INVESTMENT_STATEMENT, "btg_fund_positions_and_lots"

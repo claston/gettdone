@@ -125,7 +125,28 @@ def parse_bradesco_columns(extraction):
     seed = None
     current = None
     rows, checks, candidates = [], 0, 0
+    printed_totals = []
+    pages = []
     for page in extraction.pages:
+        latest = min((line.bbox["top"] for line in page.lines if line.bbox and upper(line.text) == "ULTIMOS LANCAMENTOS"), default=1)
+        total = [line for line in page.lines if line.bbox and upper(line.text) == "TOTAL" and line.bbox["top"] < latest]
+        if len(total) > 1:
+            fail()
+        cutoff = latest
+        if total:
+            near = _near(page, total[0])
+            printed_totals.append((
+                _value(_one(near, columns["CREDITO"]-.02, columns["DEBITO"]-.03).text),
+                _value(_one(near, columns["DEBITO"]-.03, columns["SALDO"]-.03).text),
+                _value(_one(near, columns["SALDO"]-.03, 1).text),
+            ))
+            cutoff = total[0].bbox["top"]-.0035
+        if any(line.bbox and line.bbox["left"] < columns["LANCAMENTO"]-.03
+               and re.match(r"\d{1,2}/\d{2}/\d{3,4}", line.text) and not re.fullmatch(DATE, line.text)
+               for line in page.lines if line.bbox and line.bbox["top"] < cutoff):
+            fail("Uma data Bradesco foi cortada ou está ilegível. Envie o extrato completo sem recortar a margem.")
+        pages.append(replace(page, lines=[line for line in page.lines if not line.bbox or line.bbox["top"] < cutoff]))
+    for page in pages:
         labels = _labels(page)
         opening = labels.get("SALDO ANTERIOR")
         if opening:
@@ -171,6 +192,11 @@ def parse_bradesco_columns(extraction):
                                      running, reference=anchor.text), page, cells))
     if not rows or checks != candidates:
         fail()
+    if printed_totals:
+        credits = sum((Decimal(str(r.transaction.amount)) for r in rows if r.transaction.amount > 0), Decimal(0))
+        debits = sum((Decimal(str(r.transaction.amount)) for r in rows if r.transaction.amount < 0), Decimal(0))
+        if printed_totals != [(credits, debits, running)]:
+            fail("Os totais do período Bradesco não fecham com os lançamentos extraídos.")
     return VerifiedStatement(rows, "bradesco_ocr_columns_validated_v1", seed, running,
                              partial=counters[-1][0] != total, printed_balance_checks=checks, candidate_rows=candidates)
 

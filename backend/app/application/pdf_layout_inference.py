@@ -120,12 +120,21 @@ class PdfLayoutInference:
 
 
 def infer_pdf_layout(text: str) -> PdfLayoutInference:
+    from app.application.sweep_statement_detection import identify_sweep_statement
+
+    sweep = identify_sweep_statement(text)
+    if sweep:
+        return PdfLayoutInference(layout_name=sweep, confidence=0.99, used_fallback=False)
     from app.application.structured_statement_detection import identify_structured_statement
 
     structured = identify_structured_statement(text)
     if structured:
         return PdfLayoutInference(layout_name=structured, confidence=0.99, used_fallback=False)
     normalized = _normalize_text(text)
+    if (re.search(r"CONTA CORRENTE E APLICA(?:COES|GOES) AUTOMATICAS", normalized)
+            and "SALDO APLIC AUT MAIS" in normalized
+            and all(re.search(label + r" R(?:\$|S)(?!\w)", normalized) for label in ("ENTRADAS", "SAIDAS", "SALDO"))):
+        return PdfLayoutInference("itau_empresas_extrato_mensal_conta_corrente_aplicacoes_automaticas_v1", .99, False)
     normalized_lines = _normalize_non_empty_lines(text)
     specific_scores = {
         layout_name: _score_layout_profile(layout_name, normalized, terms)

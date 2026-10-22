@@ -12,6 +12,7 @@ from app.application.source_regions import evidence_regions
 
 _NUMBER = r"(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}"
 _MONEY = re.compile(rf"^[+\-−]?\s*R?\$\s*{_NUMBER}$")
+_BALANCE_MONEY = re.compile(rf"^[+\-−]?\s*(?:R?\$\s*)?{_NUMBER}$")
 _DAILY = re.compile(rf"^(\d{{1,2}} DE (?:{FULL_MONTH_PATTERN}) DE \d{{4}}) SALDO DO DIA:\s*([+\-−]?\s*(?:R?\$\s*)?{_NUMBER})$")
 _PERIOD = re.compile(r"^PERIODO:\s*(\d{2}/\d{2}/\d{4}) A (\d{2}/\d{2}/\d{4})$")
 _MESSAGE = "Não foi possível conferir todas as linhas e os saldos do extrato Banco Inter. Confira se o PDF está completo e legível."
@@ -40,7 +41,7 @@ def parse_inter_ocr(extraction):
     positions = {normalize_upper_text(line.text): line for line in first.lines if line.bbox
                  and normalize_upper_text(line.text) in {"VALOR", "SALDO POR TRANSACAO"}}
     if len(positions) != 2:
-        raise OcrFinancialAmbiguityError(_MESSAGE)
+        raise OcrFinancialAmbiguityError("Falta o cabeçalho das colunas do extrato Banco Inter. Inclua a primeira página do documento.")
     amount_x = positions["VALOR"].bbox["left"]
     balance_x = positions["SALDO POR TRANSACAO"].bbox["left"]
     if not .05 < balance_x - amount_x < .3:
@@ -84,7 +85,7 @@ def parse_inter_ocr(extraction):
         amounts = [line for line in body if amount_left <= line.item.bbox["left"] < balance_left
                    and _MONEY.fullmatch(line.item.text.strip())]
         balances = [line for line in body if line.item.bbox["left"] >= balance_left
-                    and _MONEY.fullmatch(line.item.text.strip())]
+                    and _BALANCE_MONEY.fullmatch(line.item.text.strip())]
         used_balances = set()
         events = [(line.item.bbox["top"], "date", line, match) for line, match in headers]
         events.extend((line.item.bbox["top"], "movement", line, None) for line in amounts)

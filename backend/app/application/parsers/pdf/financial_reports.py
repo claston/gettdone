@@ -58,6 +58,15 @@ def parse_financial_report_pages(page_texts: list[str]) -> dict | None:
     if detected is None:
         return None
     kind, evidence = detected
+    if evidence == "caixa_monthly_cdb_positions":
+        error = PdfFinancialValidationError(
+            "Este documento informa posições de CDB da Caixa, não lançamentos da conta corrente. "
+            "Envie o extrato de movimentações do investimento; datas de aplicação e vencimento não são movimentações bancárias.")
+        setattr(error, "_parse_observability", {
+            "layout_inference_name": "caixa_monthly_cdb_positions_v1", "layout_inference_confidence": .99,
+            "selected_parser": "financial_report_unsupported_positions",
+        })
+        raise error
     if evidence == "btg_fund_positions_and_lots":
         from app.application.parsers.pdf.btg_fund_positions import parse_btg_fund_positions
 

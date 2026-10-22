@@ -24,6 +24,7 @@ class VerifiedStatement:
     printed_balance_checks: int = 0
     candidate_rows: int = 0
     opening_inferred: bool = False
+    non_cash_entries: int = 0
 
 
 def fail(message="Não foi possível conferir todos os lançamentos e saldos impressos. Envie o extrato original completo."):
@@ -42,6 +43,11 @@ def day(value, pattern="%d/%m/%Y"):
 
 
 def identify_verified_statement(text):
+    from app.application.sweep_statement_detection import identify_sweep_statement
+
+    sweep = identify_sweep_statement(text)
+    if sweep:
+        return sweep
     from app.application.structured_statement_detection import identify_structured_statement
 
     structured = identify_structured_statement(text)
@@ -81,6 +87,14 @@ def identify_verified_statement(text):
 def parse_verified_statement(pages):
     text = "\n".join(pages)
     kind = identify_verified_statement(text)
+    from app.application.sweep_statement_detection import identify_sweep_statement
+
+    if kind == "banco_inter_extrato_conta_corrente_saldo_transacao_v1":
+        return None
+    if kind and kind == identify_sweep_statement(text):
+        from app.application.parsers.pdf.sweep_native_statements import parse_sweep_statement
+
+        return parse_sweep_statement(pages, kind)
     from app.application.structured_statement_detection import identify_structured_statement
 
     if kind and kind == identify_structured_statement(text):
@@ -148,6 +162,7 @@ def _row(page, line, date, description, amount, balance=None, reference=None):
 
 def _bb(pages, kind):
     rows, opening, running, closing = [], None, None, None
+    blocked = 0
     pending_label = ""
     period = re.search(r"PERIODO:\s*(\d{2})\s+A\s+(\d{2}/\d{2}/\d{4})", normalize_upper_text("\n".join(pages)))
     if period is None:
@@ -163,6 +178,9 @@ def _bb(pages, kind):
             # Account positions and future placeholders follow the final cash
             # balance. They are not part of the validated historical ledger.
             break
+        if "DEPOSITO BLOQUEAD." in normalize_upper_text(raw) and re.search(rf"{NUMBER}\s*\*$", raw):
+            blocked += 1
+            continue
         match = re.match(rf"^({DATE})\s+(.+?)\s+({NUMBER})\s*\(([+-])\)$", raw)
         if not match:
             if re.match(rf"^{DATE}\b", raw):
@@ -212,7 +230,7 @@ def _bb(pages, kind):
             rows.append(_row(page, line, date, description, amount, reference=reference))
     if not rows or closing is None:
         fail()
-    return VerifiedStatement(rows, kind, opening, closing)
+    return VerifiedStatement(rows, kind, opening, closing, non_cash_entries=blocked)
 
 
 def _xp(pages, kind):

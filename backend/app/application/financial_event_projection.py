@@ -9,7 +9,7 @@ from app.application.pdf_layout_inference import PdfLayoutInference
 
 def event_date(event: dict) -> str:
     dates = event["dates"]
-    for role in ("payment", "redemption", "application", "issue"):
+    for role in ("transaction", "payment", "redemption", "application", "issue"):
         if role in dates:
             return dates[role]
     raise ValueError("Financial event has no transaction date.")
@@ -23,6 +23,11 @@ def parse_financial_pdf_pages(page_texts: list[str], *, native: bool = False) ->
     document = parse_financial_report_pages(page_texts)
     if document is None:
         return None
+    return project_financial_document(document, page_texts, native=native)
+
+
+def project_financial_document(document, page_texts, *, native=False):
+    """Project a typed report without changing the meaning of its financial events."""
     document["representation"] = "native_text" if native else "ocr_text"
     document["extraction_method"] = document["representation"]
     events = document["events"]

@@ -8,6 +8,17 @@ from app.application.normalization.text import normalize_upper_text
 
 _GENERIC_LAYOUT_NAMES = {"generic_statement_ptbr"}
 VERIFIED_STATEMENT_BANKS = {
+    "credisis_signed_cash_controls_v1": "CrediSIS",
+    "banco_do_brasil_autoatendimento_cd_ocr_v1": "Banco do Brasil",
+    "sicoob_sisbr_descending_cd_ocr_v1": "Sicoob",
+    "banco_do_brasil_sisbb_movim_origem_cd_v1": "Banco do Brasil",
+    "sicredi_native_signed_value_balance_v1": "Sicredi",
+    "tribanco_online_conta_vinculada_v1": "Tribanco",
+    "mercado_pago_extrato_periodo_al_v1": "Mercado Pago",
+    "caixa_web_data_efetiva_signed_v1": "Caixa Economica Federal",
+    "infinitepay_movimentacoes_data_hora_ocr_v1": "InfinitePay",
+    "pagbank_extrato_financeiro_disponivel_ocr_v1": "PagBank",
+    "recovery_alelo_prepaid_statement_v1": "Alelo",
     "sumup_extrato_periodo_data_hora_v1": "SumUp Bank",
     "cresol_posicao_consolidada_sem_movimento_v1": "Cresol",
     "bradesco_extrato_mensal_dia_historico_valor_ocr_v1": "Bradesco",
