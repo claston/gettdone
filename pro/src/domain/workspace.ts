@@ -112,7 +112,7 @@ export interface WorkspaceRepository {
     options?: { reload?: boolean },
   ): Promise<Blob>;
   getCachedBatch?(batchId: string): Batch | undefined;
-  getBatch(batchId: string): Promise<Batch>;
+  getBatch(batchId: string, signal?: AbortSignal): Promise<Batch>;
   saveTransactions(
     conversionId: string,
     transactions: Transaction[],

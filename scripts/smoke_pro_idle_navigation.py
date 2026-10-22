@@ -50,6 +50,7 @@ def run(base: str):
         browser = playwright.chromium.launch(headless=True)
         context = browser.new_context(viewport={"width": 1600, "height": 1000})
         page = context.new_page()
+        page.clock.install()
         page.on("pageerror", lambda error: errors.append(str(error)))
 
         def intercept(route):
@@ -133,10 +134,43 @@ def run(base: str):
         assert held, "Expected pending background refreshes"
         assert errors == [], errors
         page.screenshot(path=str(evidence / "review-pending.png"))
+        # Exercise actual browser fetch cancellation and the retry controls,
+        # using virtual time instead of waiting thirty seconds per deadline.
+        page.clock.fast_forward(30_001)
+        timeout = page.get_by_role("alert").filter(has_text="A consulta do lote demorou demais")
+        expect(timeout).to_be_visible()
+        expect(page.locator("tr[data-transaction-id='tx-1'] input").nth(1)).to_have_value("Synthetic confirmed edit")
+        idle = False
+        page.get_by_role("button", name="Tentar atualizar novamente").click()
+        expect(timeout).to_have_count(0)
+        expect(page.get_by_role("button", name="Atualizar dados do lote")).to_be_enabled()
+
+        jobs[1]["status"] = "running"
+        page.get_by_role("button", name="Atualizar dados do lote").click()
+        second = options.get_by_role("option").filter(has_text="second.pdf")
+        expect(second).to_contain_text("Processando")
+        idle = True
+        with page.expect_request(lambda request: urlsplit(request.url).path ==
+                                 "/api/pro/conversion-batches/idle-navigation"):
+            page.clock.run_for(2501)
+        expect(page.get_by_role("button", name="Atualizar dados do lote")).to_be_disabled()
+        page.clock.fast_forward(30_001)
+        expect(timeout).to_be_visible()
+        page.screenshot(path=str(evidence / "polling-timeout.png"))
+        idle = False
+        jobs[1]["status"] = "completed"
+        page.clock.run_for(2501)
+        expect(second).to_contain_text("Pronto")
+        expect(timeout).to_have_count(0)
+        expect(page.locator("tr[data-transaction-id='tx-1'] input").nth(1)).to_have_value("Synthetic confirmed edit")
+        assert len(downloads) == 2
+        assert errors == [], errors
         result = {"result": "PASS", "metrics": metrics, "pdf_downloads": len(downloads),
                   "pending_refreshes": len(held), "checks": ["first two wrapped rows highlight on hover",
                       "20-minute idle", "cached PDF switch", "dashboard without auth gate remount",
-                      "cached batch reopens during backend delay", "confirmed edit preserved", "no JavaScript errors"]}
+                      "cached batch reopens during backend delay", "confirmed edit preserved", "no JavaScript errors",
+                      "30-second deadline and manual retry", "pending polling times out and resumes automatically",
+                      "editing snapshot and PDF downloads preserved after timeout"]}
         (evidence / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
         print(json.dumps(result))
         idle = False

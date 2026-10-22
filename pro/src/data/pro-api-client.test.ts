@@ -10,6 +10,28 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("ProApiClient", () => {
+  it("não renova nem repete uma consulta cancelada que retorna 404 atrasado", async () => {
+    let finish!: (response: Response) => void;
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            finish = resolve;
+          }),
+      );
+    const client = createProApiClient({ apiUrl: "/", fetcher });
+    const abort = new AbortController();
+    const loading = client.request("/api/pro/conversion-batches/batch-1", {
+      signal: abort.signal,
+    });
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    abort.abort();
+    finish(jsonResponse({ detail: "Conversion batch not found." }, 404));
+    await expect(loading).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
   it("verifica novamente a sessão antes de gravar depois de dez minutos", async () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(1000);
     try {

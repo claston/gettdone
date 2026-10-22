@@ -135,6 +135,11 @@ export function createProApiClient(options: ProApiClientOptions): ProApiClient {
 
   return {
     async request(path: string, init: RequestInit = {}) {
+      const checkAbort = () => {
+        if (init.signal?.aborted)
+          throw new DOMException("Aborted", "AbortError");
+      };
+      checkAbort();
       const isRead = ["GET", "HEAD"].includes(
         (init.method ?? "GET").toUpperCase(),
       );
@@ -142,7 +147,9 @@ export function createProApiClient(options: ProApiClientOptions): ProApiClient {
       // behind /auth/me after idle; an expired cookie still triggers renewal.
       if (!isRead || (!sessionEstablished && !hasVerifiedProSession()))
         await bootstrap();
+      checkAbort();
       let response = await execute(path, init);
+      checkAbort();
       if (
         response.status === 401 ||
         (response.status === 404 &&
@@ -162,12 +169,14 @@ export function createProApiClient(options: ProApiClientOptions): ProApiClient {
             "Access denied for this analysis.",
           ))
       ) {
+        checkAbort();
         if (!refreshPromise) {
           refreshPromise = bootstrap(true).finally(() => {
             refreshPromise = null;
           });
         }
         await refreshPromise;
+        checkAbort();
         response = await execute(path, init);
       }
       return response;
