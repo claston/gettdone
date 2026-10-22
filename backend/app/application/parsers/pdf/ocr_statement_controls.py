@@ -11,6 +11,11 @@ from app.application.source_regions import evidence_regions
 
 
 def parse_controlled_ocr(extraction):
+    from app.application.parsers.pdf.final_ocr_statements import parse_final_ocr
+
+    final = parse_final_ocr(extraction)
+    if final is not None:
+        return final
     from app.application.parsers.pdf.bb_cash_ocr import is_bb_cash_ocr, parse_bb_cash_ocr
     from app.application.parsers.pdf.infinitepay_ocr import parse_infinitepay
     from app.application.sweep_statement_detection import INFINITEPAY, identify_sweep_statement

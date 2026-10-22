@@ -2156,7 +2156,7 @@
   }
 
   function mapWarningTypeExplanation(value) {
-    if (value === "combined_cash_investment_balance_not_comparable") return "Os controles incluem conta corrente e Rende Fácil. Eles não validam isoladamente o saldo da conta corrente; eventuais diferenças podem incluir rendimentos.";
+    if (value === "combined_cash_investment_balance_not_comparable") return "Os controles incluem conta corrente e aplicações automáticas. Eles não validam isoladamente o saldo da conta corrente; eventuais diferenças podem incluir rendimentos.";
     if (value === "printed_summary_balance_mismatch") return "O saldo inicial e os totais de entradas e saídas não fecham com o saldo final impresso. Os valores foram preservados para conferência no documento original.";
     if (value === "partial_statement") return "Este arquivo contém parte do extrato. Os lançamentos e saldos se referem apenas ao trecho enviado; outros movimentos podem estar nas páginas restantes.";
     if (value === "invoice_due_date_used_for_undated_fee") return "Esta anuidade não tem data impressa. Foi usada a data de vencimento da fatura. Confira ou ajuste a data antes de exportar.";

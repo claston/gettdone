@@ -25,6 +25,7 @@ class VerifiedStatement:
     candidate_rows: int = 0
     opening_inferred: bool = False
     non_cash_entries: int = 0
+    balance_checkpoints: dict[int, float] | None = None
 
 
 def fail(message="Não foi possível conferir todos os lançamentos e saldos impressos. Envie o extrato original completo."):
@@ -43,6 +44,11 @@ def day(value, pattern="%d/%m/%Y"):
 
 
 def identify_verified_statement(text):
+    from app.application.parsers.pdf.final_native_statements import identify_final_native
+
+    final = identify_final_native(text)
+    if final:
+        return final
     from app.application.sweep_statement_detection import identify_sweep_statement
 
     sweep = identify_sweep_statement(text)
@@ -87,6 +93,10 @@ def identify_verified_statement(text):
 def parse_verified_statement(pages):
     text = "\n".join(pages)
     kind = identify_verified_statement(text)
+    from app.application.parsers.pdf.final_native_statements import identify_final_native, parse_final_native
+
+    if kind and kind == identify_final_native(text):
+        return parse_final_native(pages, kind)
     from app.application.sweep_statement_detection import identify_sweep_statement
 
     if kind == "banco_inter_extrato_conta_corrente_saldo_transacao_v1":

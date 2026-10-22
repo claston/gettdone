@@ -58,6 +58,10 @@ def parse_financial_report_pages(page_texts: list[str]) -> dict | None:
     if detected is None:
         return None
     kind, evidence = detected
+    if evidence == "pagbank_sales_gross_fee_net_status":
+        from app.application.parsers.pdf.acquirer_sales import parse_sales_pages
+
+        return parse_sales_pages(page_texts)
     if evidence == "caixa_monthly_cdb_positions":
         error = PdfFinancialValidationError(
             "Este documento informa posições de CDB da Caixa, não lançamentos da conta corrente. "

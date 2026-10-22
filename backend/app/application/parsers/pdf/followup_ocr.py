@@ -110,9 +110,23 @@ def parse_stone_credit_debit(extraction):
 
 
 def parse_bradesco_columns(extraction):
+    from app.application.parsers.pdf.final_ocr_statements import column_slope
+
+    def value(text):
+        if re.fullmatch(r"-?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}", text.strip()):
+            return Decimal(text.strip().replace(",", ""))
+        return _value(text)
+
     columns = _headers(extraction.pages[0], ("DATA", "LANCAMENTO", "DCTO.", "CREDITO", "DEBITO", "SALDO"))
     if not columns:
         fail("O trecho Bradesco começa sem cabeçalho e data de movimento. Inclua a primeira página do extrato.")
+    slopes = {}
+    def position_y(page, line):
+        if page.page_number not in slopes:
+            slopes[page.page_number] = column_slope(page.lines, columns["CREDITO"]-.02, columns["SALDO"]-.03)
+        return line.bbox["top"]-slopes[page.page_number]*line.bbox["left"]
+    def near(page, anchor):
+        return [line for line in page.lines if line.bbox and abs(position_y(page, line)-position_y(page, anchor)) < .006]
     counters = []
     for page in extraction.pages:
         matches = re.findall(r"FOLHA\s+(\d+)\s*/\s*(\d+)", " ".join(upper(line.text) for line in page.lines))
@@ -129,18 +143,18 @@ def parse_bradesco_columns(extraction):
     pages = []
     for page in extraction.pages:
         latest = min((line.bbox["top"] for line in page.lines if line.bbox and upper(line.text) == "ULTIMOS LANCAMENTOS"), default=1)
-        total = [line for line in page.lines if line.bbox and upper(line.text) == "TOTAL" and line.bbox["top"] < latest]
-        if len(total) > 1:
+        page_totals = [line for line in page.lines if line.bbox and upper(line.text) == "TOTAL" and line.bbox["top"] < latest]
+        if len(page_totals) > 1:
             fail()
         cutoff = latest
-        if total:
-            near = _near(page, total[0])
+        if page_totals:
+            total_cells = near(page, page_totals[0])
             printed_totals.append((
-                _value(_one(near, columns["CREDITO"]-.02, columns["DEBITO"]-.03).text),
-                _value(_one(near, columns["DEBITO"]-.03, columns["SALDO"]-.03).text),
-                _value(_one(near, columns["SALDO"]-.03, 1).text),
+                value(_one(total_cells, columns["CREDITO"]-.02, columns["DEBITO"]-.03).text),
+                value(_one(total_cells, columns["DEBITO"]-.03, columns["SALDO"]-.03).text),
+                value(_one(total_cells, columns["SALDO"]-.03, 1).text),
             ))
-            cutoff = total[0].bbox["top"]-.0035
+            cutoff = page_totals[0].bbox["top"]-.0035
         if any(line.bbox and line.bbox["left"] < columns["LANCAMENTO"]-.03
                and re.match(r"\d{1,2}/\d{2}/\d{3,4}", line.text) and not re.fullmatch(DATE, line.text)
                for line in page.lines if line.bbox and line.bbox["top"] < cutoff):
@@ -152,7 +166,7 @@ def parse_bradesco_columns(extraction):
         if opening:
             if seed is not None or rows:
                 fail()
-            seed = running = _value(_one(_near(page, opening), columns["SALDO"] - .03, 1).text)
+            seed = running = value(_one(near(page, opening), columns["SALDO"] - .03, 1).text)
         anchors = [line for line in page.lines if line.bbox
                    and columns["DCTO."] - .025 < line.bbox["left"] < columns["CREDITO"] - .03
                    and re.fullmatch(r"\d{1,10}", line.text)]
@@ -165,8 +179,8 @@ def parse_bradesco_columns(extraction):
             fail("O trecho Bradesco contém um valor sem documento ou data associado. Envie o trecho completo.")
         candidates += len(anchors)
         for index, anchor in enumerate(anchors):
-            near = _near(page, anchor)
-            dates = [line for line in near if line.bbox["left"] < columns["LANCAMENTO"] - .03
+            aligned = near(page, anchor)
+            dates = [line for line in aligned if line.bbox["left"] < columns["LANCAMENTO"] - .03
                      and re.fullmatch(DATE, line.text)]
             if dates:
                 if len(dates) != 1 or current and day(dates[0].text) < current:
@@ -174,19 +188,19 @@ def parse_bradesco_columns(extraction):
                 current = day(dates[0].text)
             if current is None or seed is None:
                 fail("Falta a data ou o saldo anterior no começo do trecho Bradesco. Inclua a primeira página.")
-            value = _one(near, columns["CREDITO"] - .02, columns["SALDO"] - .03)
-            balance = _one(near, columns["SALDO"] - .03, 1)
-            amount = abs(_value(value.text)) * (-1 if value.bbox["left"] >= columns["DEBITO"] - .03 else 1)
-            if amount > 0 and _value(value.text) < 0:
+            amount_cell = _one(aligned, columns["CREDITO"] - .02, columns["SALDO"] - .03)
+            balance = _one(aligned, columns["SALDO"] - .03, 1)
+            amount = abs(value(amount_cell.text)) * (-1 if amount_cell.bbox["left"] >= columns["DEBITO"] - .03 else 1)
+            if amount > 0 and value(amount_cell.text) < 0:
                 fail()
             running += amount
-            if running != _value(balance.text):
+            if running != value(balance.text):
                 fail("Os lançamentos Bradesco não fecham com os saldos impressos.")
             checks += 1
-            y = anchor.bbox["top"]
-            lower = (anchors[index-1].bbox["top"] + y) / 2 if index else y - .01
-            higher = (anchors[index+1].bbox["top"] + y) / 2 if index+1 < len(anchors) else y + .01
-            cells = [line for line in page.lines if line.bbox and lower <= line.bbox["top"] < higher]
+            y = position_y(page, anchor)
+            lower = (position_y(page, anchors[index-1]) + y) / 2 if index else y - .01
+            higher = (position_y(page, anchors[index+1]) + y) / 2 if index+1 < len(anchors) else y + .015
+            cells = [line for line in page.lines if line.bbox and lower <= position_y(page, line) < higher]
             description = " ".join(line.text for line in cells if columns["LANCAMENTO"]-.02 <= line.bbox["left"] < columns["DCTO."]-.02)
             rows.append(_source(_row(page.page_number, anchor.line_index, current, description, amount,
                                      running, reference=anchor.text), page, cells))
