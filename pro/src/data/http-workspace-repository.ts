@@ -275,14 +275,19 @@ export function createHttpWorkspaceRepository(
     );
   };
 
-  const getBatch = async (batchId: string): Promise<Batch> => {
+  const getBatch = async (
+    batchId: string,
+    signal?: AbortSignal,
+  ): Promise<Batch> => {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     synchronizeSession();
     const version = cacheVersion;
     const response = await request(
       `/api/pro/conversion-batches/${encodeURIComponent(batchId)}`,
+      { signal },
     );
     const payload = (await response.json()) as ApiBatch;
-    if (version !== proSessionCacheVersion())
+    if (signal?.aborted || version !== proSessionCacheVersion())
       throw new DOMException("Session changed", "AbortError");
     const conversions = payload.jobs.map((job) =>
       mapConversion({ apiUrl, batchId: payload.batch_id, job, contexts }),

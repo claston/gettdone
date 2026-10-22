@@ -11,6 +11,30 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("documentos e lotes já abertos", () => {
+  it("não substitui o snapshot com uma resposta de lote cancelada em trânsito", async () => {
+    let finish!: (response: Response) => void;
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse(batchPayload))
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            finish = resolve;
+          }),
+      );
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+    const original = await repository.getBatch("batch-real");
+    const abort = new AbortController();
+    const loading = repository.getBatch("batch-real", abort.signal);
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+    abort.abort();
+    const stale = structuredClone(batchPayload);
+    stale.jobs[0].filename = "resposta-antiga.pdf";
+    finish(jsonResponse(stale));
+    await expect(loading).rejects.toMatchObject({ name: "AbortError" });
+    expect(repository.getCachedBatch?.("batch-real")).toBe(original);
+  });
   it("reabre o PDF depois de vinte minutos sem baixar nem verificar a sessão novamente", async () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(1000);
     try {

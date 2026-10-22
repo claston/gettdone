@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { validSourceRegions } from "@/domain/source-regions";
 import { emitWorkspaceEvent } from "@/domain/workspace-events";
+import { loadWorkspaceBatch } from "@/data/load-workspace-batch";
 
 import {
   countEdited,
@@ -112,6 +113,7 @@ export function useWorkspaceController(
   const batchRef = useRef<Batch | null>(null);
   const saveStatusesRef = useRef<Record<string, SaveStatus>>({});
   const refreshPromiseRef = useRef<Promise<void> | null>(null);
+  const refreshAbortRef = useRef<AbortController | null>(null);
   const pending = useRef(new Map<string, Transaction[]>());
   const saving = useRef(new Map<string, Promise<boolean>>());
 
@@ -151,6 +153,7 @@ export function useWorkspaceController(
 
   useEffect(() => {
     let active = true;
+    const abort = new AbortController();
     const activeTimers = timers.current;
     const cached = repository.getCachedBatch?.(batchId);
     const showBatch = (loadedBatch: Batch) => {
@@ -183,8 +186,7 @@ export function useWorkspaceController(
       showBatch(cached);
       setRefreshState("REFRESHING");
     } else setLoadState("LOADING");
-    repository
-      .getBatch(batchId)
+    loadWorkspaceBatch(repository, batchId, abort.signal)
       .then((loadedBatch) => {
         if (!active) return;
         showBatch(loadedBatch);
@@ -210,6 +212,7 @@ export function useWorkspaceController(
       });
     return () => {
       active = false;
+      abort.abort();
       Object.values(activeTimers).forEach(clearTimeout);
     };
   }, [batchId, initialConversionId, repository, loadAttempt]);
@@ -242,9 +245,11 @@ export function useWorkspaceController(
 
     setRefreshState("REFRESHING");
     setRefreshError(null);
-    const refreshPromise = repository
-      .getBatch(batchId)
+    const abort = new AbortController();
+    refreshAbortRef.current = abort;
+    const refreshPromise = loadWorkspaceBatch(repository, batchId, abort.signal)
       .then((loadedBatch) => {
+        if (abort.signal.aborted) return;
         setBatch((current) => {
           const merged = mergeRefreshedBatch(
             current,
@@ -263,6 +268,7 @@ export function useWorkspaceController(
         setRefreshState("IDLE");
       })
       .catch((error: unknown) => {
+        if (abort.signal.aborted) return;
         setRefreshError(
           error instanceof Error
             ? error.message
@@ -271,11 +277,23 @@ export function useWorkspaceController(
         setRefreshState("ERROR");
       })
       .finally(() => {
-        refreshPromiseRef.current = null;
+        if (refreshAbortRef.current === abort) {
+          refreshAbortRef.current = null;
+          refreshPromiseRef.current = null;
+        }
       });
     refreshPromiseRef.current = refreshPromise;
     return refreshPromise;
   }, [batchId, repository]);
+
+  useEffect(
+    () => () => {
+      refreshAbortRef.current?.abort();
+      refreshAbortRef.current = null;
+      refreshPromiseRef.current = null;
+    },
+    [batchId, repository],
+  );
 
   const hasProcessing = Boolean(
     batch?.conversions.some((item) => item.status === "PROCESSING"),
