@@ -2,6 +2,27 @@
 
 The AI recovery benchmark sends labeled PDF statements to Amazon Bedrock. It is intentionally separate from the user conversion flow and makes no calls unless `--allow-bedrock-call` is present.
 
+## Production capture and the AI page budget
+
+When recovery is enabled (`AI_RECOVERY_MODE=shadow` or `active`) and
+`AI_RECOVERY_BEDROCK_ENABLED=false`, eligible PDFs are saved to the private
+recovery bucket without a page-count ceiling. The complete original PDF and
+available evidence are preserved, including failures in 17- or 22-page statements.
+The capture manifest records the original page count. No SQS diagnosis message is
+published in this mode.
+
+`AI_RECOVERY_MAX_PAGES` remains a paid-diagnosis budget (at most 15 pages) and is
+enforced when Bedrock invocation is enabled. The Bedrock analyzer also validates
+this budget before making a provider call, including when an archived large PDF
+is submitted for diagnosis later. The offline benchmark keeps its 15-page limit.
+
+Other capture eligibility rules, input-size checks and the existing one-day
+request retention are unchanged. This change removes the page-count discrepancy;
+it does not make every dashboard review reason eligible for capture or backfill
+requests skipped before deployment. Existing small-document manifests remain
+valid. On rollback, leave diagnosis disabled: older consumers reject manifests
+for PDFs above 15 pages, while the archived objects can expire normally.
+
 ## Data handling
 
 - Keep PDFs and manifests in approved private storage, outside this public repository.

@@ -3,11 +3,14 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta, timezone
+from io import BytesIO
 from typing import Any
 
 import pytest
+from pypdf import PdfReader, PdfWriter
 
 from app.adapters.ai_recovery.s3_request_publisher import S3AIRecoveryRequestPublisher
+from app.application.ai_recovery.config import AIRecoveryConfig
 from app.application.ai_recovery.request_publishing import (
     AIRecoveryObjectCollisionError,
     AIRecoveryRequestIntegrityError,
@@ -15,6 +18,8 @@ from app.application.ai_recovery.request_publishing import (
     build_ai_recovery_request_artifacts,
 )
 from app.application.ai_recovery.schemas import AIRecoveryVersionSet
+from app.application.ai_recovery.shadow_dispatch import AIRecoveryShadowDispatcher
+from app.application.conversion.uploaded_document import UploadedDocument
 
 
 class _PreconditionFailed(Exception):
@@ -57,6 +62,36 @@ def _versions() -> AIRecoveryVersionSet:
         output_schema_version="nova_statement_v2",
         comparator_version="statement_comparator_v1",
     )
+
+
+def test_capture_publishes_complete_twenty_two_page_failure_package_to_s3() -> None:
+    writer = PdfWriter()
+    for _ in range(22):
+        writer.add_blank_page(width=595, height=842)
+    buffer = BytesIO()
+    writer.write(buffer)
+    original = buffer.getvalue()
+    client = _FakeS3Client()
+    dispatcher = AIRecoveryShadowDispatcher(
+        config=AIRecoveryConfig.from_mapping({"AI_RECOVERY_MODE": "shadow", "AI_RECOVERY_BEDROCK_ENABLED": "false"}),
+        bucket="private-ai-recovery", request_publisher=S3AIRecoveryRequestPublisher(bucket="private-ai-recovery", s3_client=client),
+        queue_publisher=None, parser_release="release-123",
+    )
+
+    result = dispatcher.dispatch_failure(
+        document=UploadedDocument(filename="large.pdf", file_type="pdf", raw_bytes=original),
+        analysis_id="an_large123", page_count=22, error_stage="parse", error_subcode="financial_validation_failed",
+        exception_class="PdfFinancialValidationError",
+    )
+
+    assert result.status == "stored"
+    assert result.reason == "bedrock_disabled"
+    assert len(client.put_calls) == 4
+    assert client.put_calls[-1]["Key"] == result.ready_key
+    manifest = json.loads(client.put_calls[-1]["Body"])
+    stored_pdf = client.objects[("private-ai-recovery", manifest["document"]["key"])]["Body"]
+    assert stored_pdf == original
+    assert len(PdfReader(BytesIO(stored_pdf)).pages) == manifest["document"]["page_count"] == 22
 
 
 def _artifacts():

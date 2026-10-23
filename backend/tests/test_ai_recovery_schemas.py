@@ -131,6 +131,7 @@ def test_ai_recovery_request_manifest_contains_only_refs_versions_and_safe_metad
         lambda payload: payload.update({"idempotency_key": "invalid"}),
         lambda payload: payload["document"].update({"sha256": "invalid"}),
         lambda payload: payload["document"].update({"size_bytes": (25 * 1024 * 1024) + 1}),
+        lambda payload: payload["document"].update({"page_count": 0}),
         lambda payload: payload.update({"expires_at": payload["created_at"]}),
         lambda payload: payload["deterministic_artifact"].update({"issue_codes": []}),
         lambda payload: payload.update({"raw_pdf": "not-allowed"}),
@@ -142,3 +143,21 @@ def test_ai_recovery_request_manifest_rejects_unsafe_or_unversioned_inputs(mutat
 
     with pytest.raises(ValidationError):
         AIRecoveryRequestManifest.model_validate(payload)
+
+
+@pytest.mark.parametrize("page_count", [17, 22, 250])
+def test_capture_manifest_preserves_large_document_page_count(page_count: int) -> None:
+    payload = _request_payload()
+    payload["document"]["page_count"] = page_count
+
+    request = AIRecoveryRequestManifest.model_validate(payload)
+
+    assert request.document.page_count == page_count
+
+
+def test_nova_output_still_rejects_more_than_fifteen_examined_pages() -> None:
+    payload = _statement_payload()
+    payload["document"]["pages_examined"] = 16
+
+    with pytest.raises(ValidationError):
+        NovaStatementV2.model_validate(payload)

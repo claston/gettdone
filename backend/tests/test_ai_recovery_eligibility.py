@@ -10,7 +10,7 @@ from app.application.ai_recovery.eligibility import (
 
 
 def _config(mode: str = "active") -> AIRecoveryConfig:
-    return AIRecoveryConfig.from_mapping({"AI_RECOVERY_MODE": mode})
+    return AIRecoveryConfig.from_mapping({"AI_RECOVERY_MODE": mode, "AI_RECOVERY_BEDROCK_ENABLED": "true"})
 
 
 def _case_1_context(**overrides: object) -> AIRecoveryEligibilityContext:
@@ -250,3 +250,39 @@ def test_legacy_content_failure_contract_remains_backward_compatible() -> None:
 
     assert decision.eligible is True
     assert decision.case == AIRecoveryEligibilityCase.CONTENT_EXTRACTION_FAILURE
+
+
+@pytest.mark.parametrize("mode", ["shadow", "active"])
+@pytest.mark.parametrize("page_count", [17, 22, 250])
+@pytest.mark.parametrize("case", list(AIRecoveryEligibilityCase))
+def test_capture_without_bedrock_accepts_large_pdfs_for_each_recovery_case(
+    mode: str, page_count: int, case: AIRecoveryEligibilityCase,
+) -> None:
+    if case == AIRecoveryEligibilityCase.CONTENT_EXTRACTION_FAILURE:
+        context = AIRecoveryEligibilityContext(
+            file_type="pdf", page_count=page_count, error_stage="parse", error_subcode="financial_validation_failed",
+        )
+    elif case == AIRecoveryEligibilityCase.GENERIC_LAYOUT_CONVERSION:
+        context = _generic_context(page_count=page_count)
+    else:
+        context = _case_1_context(page_count=page_count, layout_confidence=0.98)
+
+    decision = assess_ai_recovery_eligibility(
+        config=AIRecoveryConfig.from_mapping({"AI_RECOVERY_MODE": mode, "AI_RECOVERY_BEDROCK_ENABLED": "false"}),
+        context=context,
+    )
+
+    assert decision.eligible is True
+    assert decision.case == case
+
+
+@pytest.mark.parametrize("mode", ["shadow", "active"])
+def test_bedrock_enabled_keeps_the_configured_page_budget(mode: str) -> None:
+    decision = assess_ai_recovery_eligibility(
+        config=AIRecoveryConfig.from_mapping({
+            "AI_RECOVERY_MODE": mode, "AI_RECOVERY_BEDROCK_ENABLED": "true", "AI_RECOVERY_MAX_PAGES": "8",
+        }),
+        context=_generic_context(page_count=9),
+    )
+
+    assert decision.reason == AIRecoveryEligibilityReason.PAGE_LIMIT_EXCEEDED

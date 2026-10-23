@@ -210,7 +210,8 @@ class AIRecoveryDocumentReference(StrictContractModel):
     sha256: Sha256Hex
     content_type: Literal["application/pdf"]
     size_bytes: int = Field(ge=1, le=MAX_AI_RECOVERY_PDF_BYTES)
-    page_count: int = Field(ge=1, le=15)
+    # Captured documents can exceed the independently enforced Bedrock page budget.
+    page_count: int = Field(ge=1)
 
 
 class DeterministicArtifactReference(StrictContractModel):
