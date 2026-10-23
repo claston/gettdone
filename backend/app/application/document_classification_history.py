@@ -6,6 +6,7 @@ import re
 DOCUMENT_TYPES = frozenset(
     {
         "bank_statement",
+        "bank_collection_return",
         "fiscal_invoice",
         "billing_report",
         "payment_report",

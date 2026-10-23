@@ -44,6 +44,11 @@ def day(value, pattern="%d/%m/%Y"):
 
 
 def identify_verified_statement(text):
+    from app.application.parsers.pdf.uniprime_ocr import LAYOUT as UNIPRIME_LAYOUT
+    from app.application.parsers.pdf.uniprime_ocr import is_uniprime_statement
+
+    if is_uniprime_statement(text):
+        return UNIPRIME_LAYOUT
     from app.application.parsers.pdf.final_native_statements import identify_final_native
 
     final = identify_final_native(text)
@@ -93,6 +98,8 @@ def identify_verified_statement(text):
 def parse_verified_statement(pages):
     text = "\n".join(pages)
     kind = identify_verified_statement(text)
+    if kind == "uniprime_conta_corrente_ocr_v1":
+        fail("Este modelo Uniprime exige as coordenadas da tabela para conferir valores e saldos. Envie o PDF original para revisão.")
     from app.application.parsers.pdf.final_native_statements import identify_final_native, parse_final_native
 
     if kind and kind == identify_final_native(text):

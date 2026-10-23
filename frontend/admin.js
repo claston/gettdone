@@ -533,6 +533,7 @@
   function documentTypeLabel(documentType) {
     const labels = {
       bank_statement: "Extrato bancário",
+      bank_collection_return: "Retorno de cobrança CNAB",
       fiscal_invoice: "Nota fiscal",
       billing_report: "Relatório de faturamento",
       bank_receipt: "Comprovante bancário",

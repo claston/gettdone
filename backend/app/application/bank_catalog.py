@@ -20,6 +20,13 @@ class BankRecord:
 
 
 _EXTRA_BANK_RECORDS = (
+    # Uniprime do Iguaçu confirms its clearing institution as 099 (page 5):
+    # https://www.uniprime.com.br/uploads/singular-demonstrativo/2024/08/iguacu-2024-1724933264.pdf
+    BankRecord(
+        code="099", name="Uniprime Central Nacional - Central Nacional de Cooperativa de Crédito",
+        short_name="Uniprime", aliases=("Uniprime", "Uniprime Central", "Uniprime Central Nacional", "Uniprime do Iguaçu"),
+        active=True,
+    ),
     # Ailos confirms 085 for its cooperatives: https://www.ailos.coop.br/perguntas
     BankRecord(
         code="085", name="Ailos", short_name="Ailos",

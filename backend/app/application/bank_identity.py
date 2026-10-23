@@ -8,6 +8,7 @@ from app.application.normalization.text import normalize_upper_text
 
 _GENERIC_LAYOUT_NAMES = {"generic_statement_ptbr"}
 VERIFIED_STATEMENT_BANKS = {
+    "uniprime_conta_corrente_ocr_v1": "Uniprime",
     "sicredi_signed_balance_columns_ocr_v1": "Sicredi",
     "caixa_internet_independent_periods_ocr_v1": "Caixa Economica Federal",
     "bb_english_bank_statement_v1": "Banco do Brasil",

@@ -11,6 +11,11 @@ from app.application.source_regions import evidence_regions
 
 
 def parse_controlled_ocr(extraction):
+    from app.application.parsers.pdf.uniprime_ocr import parse_uniprime
+
+    uniprime = parse_uniprime(extraction)
+    if uniprime is not None:
+        return uniprime
     from app.application.parsers.pdf.final_ocr_statements import parse_final_ocr
 
     final = parse_final_ocr(extraction)

@@ -386,6 +386,9 @@ def _parse_pdf_transactions(
             )
 
     if native_pages:
+        from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
+
+        validate_statement_completeness(native_pages)
         from app.application.parsers.pdf.split_sheet_native import parse_split_sheet_native
         from app.application.structured_statement_detection import CONTA_AZUL, SUMUP_PERIOD, identify_structured_statement
 
@@ -772,6 +775,7 @@ def is_textract_forced() -> bool:
 def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult:
     from app.application.parsers.pdf.bb_cash_ocr import is_bb_cash_ocr
     from app.application.parsers.pdf.final_ocr_statements import identify_final_ocr
+    from app.application.parsers.pdf.uniprime_ocr import is_uniprime_statement
     from app.application.structured_statement_detection import is_bradesco_monthly_ocr
     from app.application.sweep_statement_detection import identify_sweep_statement
 
@@ -785,6 +789,7 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
     )
     gateway_metrics = dict(gateway_result.get("metrics") or {})
     textract_mode = str(gateway_metrics.get("textract_mode") or "").strip().lower()
+    _validate_ocr_statement_source(extraction)
     segmentation = segment_pdf_pages(_textract_page_texts(extraction))
     statement_extraction = extraction
     if segmentation.parts:
@@ -797,6 +802,7 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
             or identify_sweep_statement("\n".join(_textract_page_texts(extraction)))
             or "SICOOB SISBR" in normalize_upper_text("\n".join(_textract_page_texts(extraction)))
             or is_bb_cash_ocr("\n".join(_textract_page_texts(extraction)))
+            or is_uniprime_statement("\n".join(_textract_page_texts(extraction)))
             or has_explicit_no_activity(segmentation.page_texts)
             or infer_pdf_layout("\n".join(segmentation.page_texts)).layout_name in {
                 _STONE_CURRENT_ACCOUNT_A4_LAYOUT, "nubank_statement_ptbr", "banco_inter_extrato_conta_corrente_saldo_transacao_v1",
@@ -904,9 +910,33 @@ def _textract_page_texts(extraction) -> tuple[str, ...]:
     )
 
 
+def _validate_ocr_statement_source(extraction):
+    """Validate before segmentation/table adapters and preserve successful OCR."""
+    from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
+    from app.application.structured_statement_detection import BRADESCO_MONTHLY_OCR, is_bradesco_monthly_ocr
+
+    pages = _textract_page_texts(extraction)
+    try:
+        validate_statement_completeness(pages)
+        if "02RETORNO01COBRANCA" in normalize_upper_text("\n".join(pages)):
+            classification = classify_document_type("extracted.pdf", b"", extracted_text="\n".join(pages))
+            if classification.document_type == "bank_collection_return":
+                enforce_document_routing(classification)
+    except InvalidFileContentError as exc:
+        setattr(exc, "_ocr_source_extraction", extraction)
+        layout = infer_pdf_layout("\n".join(pages))
+        if is_bradesco_monthly_ocr("\n".join(pages)):
+            layout = PdfLayoutInference(BRADESCO_MONTHLY_OCR, .99, False)
+        raise _attach_parse_observability(exc, textract_attempted=1, textract_used=1,
+            extraction_provider="aws_textract", page_count=len(extraction.pages), ocr_result_received=1,
+            ocr_validation_failed=1, layout_inference_name=layout.layout_name,
+            layout_inference_confidence=layout.confidence) from exc
+
+
 def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
     from app.application.structured_statement_detection import is_bradesco_monthly_ocr
 
+    _validate_ocr_statement_source(extraction)
     if is_bradesco_monthly_ocr("\n".join(_textract_page_texts(extraction))):
         # An unreadable continuation is evidence of an incomplete ledger. Keep
         # every physical page for the strict reader, before appendix filtering.
@@ -945,6 +975,7 @@ def _parse_textract_text_pages_impl(extraction) -> PdfParseResult:
     from app.application.sweep_statement_detection import PAGBANK, identify_sweep_statement
 
     page_texts = list(_textract_page_texts(extraction))
+    _validate_ocr_statement_source(extraction)
     if not any(page_texts):
         raise InvalidFileContentError("Nao foi possivel extrair transacoes do OCR para revisao.")
     joined_text = "\n".join(page_texts)
@@ -1108,7 +1139,13 @@ def _parse_pdf_transactions_from_page_texts(
     preserve_layout_spacing: bool = False,
     context: LayoutSpecificParseContext | None = None,
 ) -> PdfParseResult:
+    from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
     from app.application.unsupported_document_detection import NOTARY_RECEIPT_DOCUMENT_TYPE, NOTARY_RECEIPT_USER_MESSAGE
+
+    validate_statement_completeness(page_texts)
+    classification = classify_document_type("statement.pdf", b"", extracted_text="\n".join(page_texts))
+    if classification.document_type == "bank_collection_return":
+        enforce_document_routing(classification)
 
     if detect_unsupported_document_type("\n".join(page_texts)) == NOTARY_RECEIPT_DOCUMENT_TYPE:
         raise UnsupportedDocumentContentError(document_type=NOTARY_RECEIPT_DOCUMENT_TYPE, message=NOTARY_RECEIPT_USER_MESSAGE)

@@ -722,11 +722,18 @@ class DocumentConversionPipeline:
         ocr_attempted = runtime.ocr_pages_processed > 0 or bool(ocr_context)
         parse_observability = dict(getattr(exc, "_parse_observability", {}) or {})
         document_classification = getattr(exc, "_document_type_classification", None)
-        if document_classification is None:
+        if document_classification is None or document_classification.document_type == "unknown":
             try:
+                source_extraction = getattr(exc, "_ocr_source_extraction", None)
+                ocr_text = "\n".join(
+                    line.text for page in getattr(source_extraction, "pages", ()) for line in page.lines
+                )
                 document_classification = classify_document_type(
                     filename=request.document.filename,
                     raw_bytes=request.document.raw_bytes,
+                    extracted_text=ocr_text or None,
+                    layout_inference_name=parse_observability.get("layout_inference_name"),
+                    layout_inference_confidence=parse_observability.get("layout_inference_confidence"),
                 )
             except Exception as classification_exc:
                 logger.warning(

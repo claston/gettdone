@@ -120,6 +120,11 @@ class PdfLayoutInference:
 
 
 def infer_pdf_layout(text: str) -> PdfLayoutInference:
+    from app.application.parsers.pdf.uniprime_ocr import LAYOUT as UNIPRIME_LAYOUT
+    from app.application.parsers.pdf.uniprime_ocr import is_uniprime_statement
+
+    if is_uniprime_statement(text):
+        return PdfLayoutInference(UNIPRIME_LAYOUT, .99, False)
     from app.application.sweep_statement_detection import identify_sweep_statement
 
     sweep = identify_sweep_statement(text)

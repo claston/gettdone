@@ -20,6 +20,7 @@ from app.application.unsupported_document_detection import (
 )
 
 BANK_STATEMENT = "bank_statement"
+BANK_COLLECTION_RETURN = "bank_collection_return"
 FISCAL_INVOICE = "fiscal_invoice"
 BILLING_REPORT = "billing_report"
 PAYMENT_REPORT = "payment_report"
@@ -33,7 +34,7 @@ FINANCIAL_SPREADSHEET = "financial_spreadsheet"
 OTHER_DOCUMENT = "other"
 UNKNOWN_DOCUMENT = "unknown"
 
-DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-10-21.1"
+DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-10-23.1"
 
 _PDF_PREVIEW_PAGE_LIMIT = 3
 _PDF_PREVIEW_CHAR_LIMIT = 16_000
@@ -62,6 +63,11 @@ def classify_document_type(
 
     if extension == "ofx" or "<OFX" in normalized_text:
         return _classification(BANK_STATEMENT, 1.0, "ofx_structure")
+
+    # A printed CNAB 400 record may wrap across several PDF text objects.
+    if (any(re.match(r"02RETORNO01COBRANCA(?:\s|\d|$)", normalize_upper_text(line)) for line in text.splitlines())
+            and re.search(r"\d{40,}", text)):
+        return _classification(BANK_COLLECTION_RETURN, .99, "cnab_400_collection_return_header")
 
     if ("COMPROVANTE DE PAGAMENTO DE TITULOS" in normalized_text
             and "VALOR" in normalized_text and "DATA DO PAGAMENTO" in normalized_text):
