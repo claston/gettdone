@@ -75,10 +75,14 @@ def test_worker_uses_the_same_remaining_statement_controls(kind, tmp_path, monke
         assert report.status_code == (400 if kind == "rdb" else 200), report.text
 
 
-def test_public_inconsistent_monthly_statement_does_not_export_a_partial_ledger(tmp_path, monkeypatch):
+def test_public_inconsistent_monthly_statement_exports_readable_ledger_with_review(tmp_path, monkeypatch):
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
     monkeypatch.setenv("PDF_OCR_ENABLED", "false")
     with public_client(tmp_path) as client:
         result = client.post("/convert", data={"anonymous_fingerprint": "fp-remaining-invalid"},
                              files={"file": ("itau.pdf", monthly_pdf(wrong_total=True), "application/pdf")})
-        assert result.status_code == 400, result.text
+        assert result.status_code == 200, result.text
+        analysis = result.json()["analysis"]
+        assert analysis["transactions_total"] > 0
+        assert analysis["pdf_processing_metrics"]["export_recommendation"] == "review_recommended"
+        assert any("financial_validation_failed" in row["warning_types"] for row in analysis["preview_transactions"])

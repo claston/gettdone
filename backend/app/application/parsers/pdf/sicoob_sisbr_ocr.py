@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.followup_ocr import _headers, _source
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
 LAYOUT = "sicoob_sisbr_descending_cd_ocr_v1"
@@ -106,7 +107,7 @@ def parse_sicoob(extraction):
         running += Decimal(str(row.transaction.amount))
         if index + 1 == len(rows) or rows[index + 1].transaction.date != row.transaction.date:
             if controls.get(row.transaction.date) != running:
-                fail("Os valores Sicoob não fecham com o saldo diário impresso. Confira o documento original.")
+                financial_mismatch("Os valores Sicoob não fecham com o saldo diário impresso. Confira o documento original.")
             rows[index] = replace(row, running_balance=float(running))
     closing = re.search(rf"SALDO EM CONTA:\s*({NUMBER})\s*([CD])", text)
     if not closing or money(closing[1]) * (-1 if closing[2] == "D" else 1) != running:

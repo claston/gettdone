@@ -1,3 +1,4 @@
+
 """Ailos/Civia visual statement: explicit credit/debit columns and every balance."""
 
 import re
@@ -7,6 +8,7 @@ from app.application.errors import InvalidFileContentError, OcrFinancialAmbiguit
 from app.application.normalization.date import parse_statement_date
 from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf.layout_specific.shared import build_parsed_transaction
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.source_regions import evidence_regions
 
 AILOS_LAYOUT = "ailos_extrato_credito_debito_saldo_v1"
@@ -133,7 +135,7 @@ def parse_ailos_ocr(extraction):
             amount = values["credit"] if "credit" in values else -abs(values["debit"])
             running += amount
             if running != values["balance"]:
-                raise PdfFinancialValidationError(_MESSAGE)
+                financial_mismatch(_MESSAGE)
             credits += max(amount, Decimal(0))
             debits += max(-amount, Decimal(0))
             description = [match[2]] if match[2] else []
@@ -173,6 +175,8 @@ def parse_ailos_ocr(extraction):
         }
         if any(line.id not in used_values | allowed for line in monetary):
             raise OcrFinancialAmbiguityError(_MESSAGE)
-    if not rows or totals is None or (credits, -debits, running) != (totals["credit"], totals["debit"], totals["balance"]):
+    if not rows or totals is None:
         raise PdfFinancialValidationError(_MESSAGE)
+    if (credits, -debits, running) != (totals["credit"], totals["debit"], totals["balance"]):
+        financial_mismatch(_MESSAGE)
     return rows

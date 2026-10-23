@@ -2,7 +2,6 @@ import re
 from dataclasses import dataclass, field
 
 from app.application.document_extraction_models import ExtractedLine, ExtractedPage
-from app.application.errors import PdfFinancialValidationError
 from app.application.normalization.date import infer_default_statement_year
 from app.application.normalization.pdf_amount_tokens import parse_pdf_amount
 from app.application.normalization.pdf_row_date_rules import parse_row_date
@@ -26,11 +25,6 @@ class MonthlyOcrResult:
 def parse_itau_monthly_ocr(pages: list[ExtractedPage]) -> MonthlyOcrResult:
     """Read this layout's printed financial columns; never use pen marks as amount signs."""
     result = MonthlyOcrResult()
-    counters = [re.findall(r"(?<!\d)(\d{3})/(\d{3})(?!\d)", " ".join(line.text for line in page.lines)) for page in pages]
-    if any(counters):
-        expected = [[(f"{i:03}", f"{len(pages):03}")] for i in range(1, len(pages)+1)]
-        if counters != expected:
-            raise PdfFinancialValidationError("Faltam páginas do extrato mensal Itaú. Envie todas as páginas indicadas no cabeçalho.")
     year = infer_default_statement_year([line.text for page in pages for line in page.lines])
     if year is None:
         years = {int(value) for page in pages for line in page.lines for value in re.findall(r"\b(20\d{2})\b", line.text)}

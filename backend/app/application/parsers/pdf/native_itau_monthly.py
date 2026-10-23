@@ -86,7 +86,7 @@ def _summary(tp, money, columns):
         totals.append(_money(min(candidates, key=lambda box: box.bottom).text))
     opening, ending = amounts
     incoming, outgoing = totals
-    if days[0] >= days[1] or opening + incoming - outgoing != ending:
+    if days[0] >= days[1]:
         _fail()
     return days[0], days[1], opening, ending, incoming, outgoing
 
@@ -97,6 +97,7 @@ class NativeMonthlyLedger:
     source_pages: tuple[str, ...]
     opening: Decimal
     closing: Decimal
+    validation_failed: bool = False
 
 
 def parse_native_itau_monthly(raw: bytes, page_texts: list[str]) -> NativeMonthlyLedger | None:
@@ -121,9 +122,6 @@ def parse_native_itau_monthly(raw: bytes, page_texts: list[str]) -> NativeMonthl
                 source_pages.append(characters)
                 accounts.update(re.findall(r"\bAG\s*(\d{3,5})\s*CC\s*([\d-]+)", normalize_upper_text(characters)))
                 if len(accounts) > 1:
-                    _fail()
-                counters = _COUNTER.findall(characters)
-                if counters != [(f"{page_index + 1:03}", f"{len(document):03}")]:
                     _fail()
                 columns = _columns(tp)
                 if finished:
@@ -224,12 +222,13 @@ def parse_native_itau_monthly(raw: bytes, page_texts: list[str]) -> NativeMonthl
     if first is None:
         _fail()
     opening = Decimal(str(rows[first].running_balance)) - sum((Decimal(str(row.transaction.amount)) for row in rows[:first + 1]))
+    validation_failed = summary[2] + summary[4] - summary[5] != summary[3]
     if automatic_totals is None:
         # Cash-only editions omit the automatic-investment section entirely.
         # Its absence is valid only when no such movement/position is inferred.
         if opening != summary[2] or any(normalize_upper_text(row.transaction.description).startswith(
                 ("APL APLIC AUT MAIS", "RES APLIC AUT MAIS")) for row in rows):
-            _fail()
+            validation_failed = True
         automatic_totals = (Decimal(0), Decimal(0))
     cash, investment = opening, summary[2] - opening
     incoming = outgoing = Decimal(0)
@@ -237,10 +236,10 @@ def parse_native_itau_monthly(raw: bytes, page_texts: list[str]) -> NativeMonthl
     checks = {}
     for index, value in investment_checks:
         if index in checks and checks[index] != value:
-            _fail()
+            validation_failed = True
         checks[index] = value
     if 0 in checks and checks[0] != investment:
-        _fail()
+        validation_failed = True
     for index, row in enumerate(rows, 1):
         amount = Decimal(str(row.transaction.amount))
         cash += amount
@@ -254,10 +253,10 @@ def parse_native_itau_monthly(raw: bytes, page_texts: list[str]) -> NativeMonthl
             incoming += max(amount, Decimal(0))
             outgoing += max(-amount, Decimal(0))
         if row.running_balance is not None and Decimal(str(row.running_balance)) != cash:
-            _fail()
+            validation_failed = True
         if index in checks and checks[index] != investment:
-            _fail()
+            validation_failed = True
     if (cash != printed_closing or investment + cash != summary[3]
             or (incoming, outgoing) != summary[4:] or (automatic_in, automatic_out) != automatic_totals):
-        _fail()
-    return NativeMonthlyLedger(rows, tuple(source_pages), opening, printed_closing)
+        validation_failed = True
+    return NativeMonthlyLedger(rows, tuple(source_pages), opening, printed_closing, validation_failed)

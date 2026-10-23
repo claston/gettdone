@@ -7,6 +7,7 @@ from statistics import median
 
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.followup_ocr import _headers, _source
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
 LAYOUT = "banco_do_brasil_autoatendimento_cd_ocr_v1"
@@ -171,7 +172,7 @@ def parse_bb_cash_ocr(extraction):
             balance = value(balances[0]) if balances and not unreadable_balance_sign else None
             if balance is not None:
                 if balance != running:
-                    fail("Os valores do Banco do Brasil não fecham com o saldo impresso. Confira o documento original.")
+                    financial_mismatch("Os valores do Banco do Brasil não fecham com o saldo impresso. Confira o documento original.")
                 checks += 1
             refs = [
                 item

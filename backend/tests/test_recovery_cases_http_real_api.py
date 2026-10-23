@@ -63,15 +63,24 @@ def test_recovery_ledgers_keep_all_cash_rows_through_normalization_and_exports(k
 def test_recovery_invalid_documents_have_actionable_errors_over_real_http(kind, tmp_path, monkeypatch):
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
     monkeypatch.setenv("PDF_OCR_ENABLED", "false")
-    text = ("02RETORNO01COBRANCA" + "0" * 300 if kind == "cnab"
-            else "Santander EXTRATO CONSOLIDADO INTELIGENTE\nPagina: 2/17")
+    from tests.test_statement_review_policy import SANTANDER
+
+    text = "02RETORNO01COBRANCA" + "0" * 300 if kind == "cnab" else SANTANDER
     raw = generate_native_text_pdf((text.splitlines(),))
     with public_client(tmp_path) as client:
         response = client.post("/convert", data={"anonymous_fingerprint": "fp-recovery-invalid"},
                                files={"file": ("input.pdf", raw, "application/pdf")})
-        assert response.status_code == 400, response.text
         if kind == "cnab":
+            assert response.status_code == 400, response.text
             assert response.json()["detail"]["document_type"] == "bank_collection_return"
             assert "CNAB" in response.text
         else:
-            assert "páginas" in response.text and "completo" in response.text
+            assert response.status_code == 200, response.text
+            analysis = response.json()["analysis"]
+            assert [row["amount"] for row in analysis["preview_transactions"]] == [50, -20]
+            assert analysis["pdf_processing_metrics"]["partial_statement"] == 1
+            assert analysis["pdf_processing_metrics"]["export_recommendation"] == "review_recommended"
+            assert "partial_statement" in analysis["preview_transactions"][0]["warning_types"]
+            report = client.get(f"/convert-report/{analysis['analysis_id']}", params={
+                "anonymous_fingerprint": "fp-recovery-invalid", "format": "ofx"})
+            assert report.status_code == 200 and report.text.count("<STMTTRN>") == 2

@@ -5,6 +5,7 @@ from dataclasses import replace
 
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.followup_ocr import _headers, _source
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
 LAYOUT = "uniprime_conta_corrente_ocr_v1"
@@ -79,7 +80,7 @@ def parse_uniprime(extraction):
                 amount = balance - running
                 warnings = ["manual_review_recommended", "amount_sign_from_printed_balances"]
             if running + amount != balance:
-                fail()
+                financial_mismatch()
             history = [line for line in cells if columns["HISTORICO"] - .015 <= line.bbox["left"] < columns["VALOR"] - .025]
             if not history:
                 fail()

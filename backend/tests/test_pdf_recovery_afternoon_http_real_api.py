@@ -80,8 +80,10 @@ def test_invalid_balances_and_notary_receipt_have_specific_errors_over_http(tmp_
         owner = {"anonymous_fingerprint": "fp-afternoon-negative"}
         bad = native([inter_page().replace("722,10", "722,11")])
         response = client.post("/convert", data=owner, files={"file": ("inter.pdf", bad, "application/pdf")})
-        assert response.status_code == 400
-        assert "conferir" in response.json()["detail"]
+        assert response.status_code == 200, response.text
+        analysis = response.json()["analysis"]
+        assert analysis["transactions_total"] > 0
+        assert "financial_validation_failed" in analysis["preview_transactions"][0]["warning_types"]
         receipt = native(["CARTÓRIO DE NOTAS E PROTESTO\nRECIBO DE CANCELAMENTO DE PROTESTO N 123\nTotal R$ 20,00"])
         response = client.post("/convert", data=owner, files={"file": ("recibo.pdf", receipt, "application/pdf")})
         assert response.status_code == 400

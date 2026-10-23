@@ -57,9 +57,6 @@ def _portal(pages, kind):
             rows[-1] = replace(rows[-1], running_balance=float(running),
                                source_line_refs=(*rows[-1].source_line_refs, (page, line)))
             checked += 1
-    counters = re.findall(r"PAGINA:\s*(\d+)\b", text)
-    if counters and list(map(int, counters)) != list(range(1, len(pages) + 1)):
-        fail("As páginas Banrisul precisam estar completas e em sequência.")
     if not rows or len(rows) != candidates or not checked or rows[-1].running_balance is None:
         fail()
     return VerifiedStatement(rows, kind, seed, running, printed_balance_checks=checked, candidate_rows=candidates)

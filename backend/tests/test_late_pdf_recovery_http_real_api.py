@@ -46,8 +46,11 @@ def test_http_csv_compatibility_negative_control_and_legacy_route(tmp_path, monk
         owner = {"anonymous_fingerprint": "fp-late-negative"}
         raw = native([p.replace("50,00-", "51,00-") for p in viacredi_pages()])
         response = client.post("/convert", data=owner, files={"file": ("bad.pdf", raw, "application/pdf")})
-        assert response.status_code == 400
-        assert "conferir" in response.json()["detail"]
+        assert response.status_code == 200, response.text
+        analysis = response.json()["analysis"]
+        assert analysis["transactions_total"] > 0
+        assert analysis["pdf_processing_metrics"]["export_recommendation"] == "review_recommended"
+        assert any("financial_validation_failed" in row["warning_types"] for row in analysis["preview_transactions"])
         csv = b"date,description,amount\n2026-09-01,Example,100\n2026-09-02,Expense,-10\n"
         response = client.post("/convert", data=owner, files={"file": ("sample.csv", csv, "text/csv")})
         assert response.status_code == 200, response.text

@@ -58,8 +58,15 @@ def test_santander_native_uses_cash_summary_and_columns_even_for_payment_named_c
 def test_incomplete_or_inconsistent_native_cash_columns_cannot_fall_back_to_generic(builder, before, after, monkeypatch):
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
     monkeypatch.setenv("PDF_OCR_ENABLED", "false")
-    with pytest.raises(PdfFinancialValidationError):
-        parse_pdf_transactions(positioned_pdf(change_cells(builder(), before, after)))
+    raw = positioned_pdf(change_cells(builder(), before, after))
+    if (before, after) in {("200,00", "201,00"), ("23,78", "23,79")}:
+        result = parse_pdf_transactions(raw)
+        assert len(result.transactions) == len(parse_pdf_transactions(positioned_pdf(builder())).transactions)
+        assert result.parse_metrics["financial_controls_validated"] == 0
+        assert "financial_validation_failed" in result.canonical_transactions[0].warnings
+    else:
+        with pytest.raises(PdfFinancialValidationError):
+            parse_pdf_transactions(raw)
 
 
 def test_offsetting_movements_cannot_disappear_even_when_closing_balance_stays_equal(monkeypatch):
@@ -90,6 +97,11 @@ def test_native_cash_ledger_identity_dates_signs_and_page_sequence_are_verified(
     else:
         for index, cells in enumerate(pages, 1):
             cells.append((25, 20, f"{index:03}/004"))
+    if defect == "wrong_counter":
+        result = parse_pdf_transactions(positioned_pdf(pages))
+        assert result.parse_metrics["partial_statement"] == 1
+        assert result.parse_metrics["financial_controls_validated"] == 0
+        return
     with pytest.raises(PdfFinancialValidationError) as caught:
         parse_pdf_transactions(positioned_pdf(pages))
     assert caught.value._parse_observability["ocr_retry_skip_reason"] == "financial_validation_failed"

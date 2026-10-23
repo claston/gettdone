@@ -85,8 +85,16 @@ def test_receipts_are_not_omitted_and_daily_totals_never_become_transaction_bala
 ])
 def test_inconsistent_daily_or_statement_controls_cannot_fall_back_to_generic(before, after, occurrence):
     extraction = change_text(nubank_extraction(), before, after, occurrence=occurrence)
-    with pytest.raises((PdfFinancialValidationError, OcrFinancialAmbiguityError)):
-        parse(extraction)
+    if before in {"1.234,74", "+2.457,10", "2.457,10", "2.821,35", "335,75"}:
+        result = parse(extraction)
+        expected = [1234.75 if before == "1.234,74" else 1234.74, 1222.36, 1100, -400,
+                    -335.74 if before == "335,75" else -335.75]
+        assert [row.amount for row in result.transactions] == expected
+        assert result.parse_metrics["financial_controls_validated"] == 0
+        assert "financial_validation_failed" in result.canonical_transactions[0].warnings
+    else:
+        with pytest.raises((PdfFinancialValidationError, OcrFinancialAmbiguityError)):
+            parse(extraction)
 
 
 def test_amount_at_a_different_vertical_position_is_not_assigned_to_a_movement():

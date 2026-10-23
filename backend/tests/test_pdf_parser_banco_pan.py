@@ -24,7 +24,7 @@ Extrato emitido em 07/08/2024 às 19:09h Página 2 de 10
 """
 
 
-def test_parse_banco_pan_descending_statement_without_false_balance_warnings() -> None:
+def test_parse_banco_pan_descending_fragment_warns_only_about_possible_missing_pages() -> None:
     result = pdf_parser_module._parse_pdf_transactions_from_page_texts([PAN_STATEMENT_TEXT])
 
     assert result.layout.layout_name == "banco_pan_extrato_conta_pix_saldo_v1"
@@ -34,4 +34,6 @@ def test_parse_banco_pan_descending_statement_without_false_balance_warnings() -
     assert [row.running_balance for row in result.canonical_transactions] == [1517.83, 1417.83, 1438.33]
     assert result.parse_metrics["balance_consistency_checked"] == 2
     assert result.parse_metrics["balance_consistency_failed"] == 0
-    assert result.parse_metrics["canonical_warning_count"] == 0
+    assert result.parse_metrics["partial_statement"] == 1
+    assert result.parse_metrics["export_recommendation"] == "review_recommended"
+    assert "financial_validation_failed" not in result.canonical_transactions[0].warnings

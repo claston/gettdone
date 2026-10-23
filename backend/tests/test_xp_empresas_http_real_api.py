@@ -54,7 +54,7 @@ def test_public_xp_conversion_reports_and_csv_compatibility(tmp_path, monkeypatc
         assert csv.json()["analysis"]["transactions_total"] == 1
 
 
-def test_http_xp_refuses_inconsistent_daily_balance(tmp_path, monkeypatch):
+def test_http_xp_converts_inconsistent_daily_balance_with_review(tmp_path, monkeypatch):
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
     monkeypatch.setenv("PDF_OCR_ENABLED", "false")
     pages = [page.replace("Saldo do dia R$ 1.150,00", "Saldo do dia R$ 1.151,00") for page in xp_pages()]
@@ -62,8 +62,11 @@ def test_http_xp_refuses_inconsistent_daily_balance(tmp_path, monkeypatch):
         response = client.post("/convert", data={"anonymous_fingerprint": "fp-xp-invalid"}, files={
             "file": ("xp.pdf", xp_pdf(pages), "application/pdf"),
         })
-        assert response.status_code == 400, response.text
-        assert "XP Empresas" in response.text
+        assert response.status_code == 200, response.text
+        analysis = response.json()["analysis"]
+        assert analysis["transactions_total"] > 0
+        assert analysis["pdf_processing_metrics"]["export_recommendation"] == "review_recommended"
+        assert any("financial_validation_failed" in row["warning_types"] for row in analysis["preview_transactions"])
 
 
 def test_xp_worker_preserves_financials_and_ofx(tmp_path, monkeypatch):

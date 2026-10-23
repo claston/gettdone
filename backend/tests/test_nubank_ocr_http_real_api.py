@@ -89,17 +89,24 @@ def test_public_nubank_ocr_upload_and_reports(mode, tmp_path, monkeypatch):
         assert client.post("/analyze").status_code == 405
 
 
-def test_inconsistent_daily_totals_are_rejected_over_http(monkeypatch):
+def test_inconsistent_daily_totals_convert_with_review_over_http(tmp_path, monkeypatch):
     raw = configure_ocr(monkeypatch, "text", invalid=True)
 
+    storage = TempAnalysisStorage(root_dir=tmp_path / "analyses")
+
     def configure(_access):
+        app.dependency_overrides[get_analysis_repository] = lambda: storage
+        app.dependency_overrides[get_report_service] = lambda: ReportService(storage)
         app.dependency_overrides[get_conversion_processing_pipeline] = lambda: build_default_conversion_pipeline()
 
     with _run_http_server(configure) as base_url, httpx.Client(base_url=base_url, timeout=20) as client:
         response = client.post("/convert", data={"anonymous_fingerprint": "fp-nubank-invalid"},
                                files={"file": ("nubank.pdf", raw, "application/pdf")})
-        assert response.status_code == 400, response.text
-        assert "Nubank" in response.text
+        assert response.status_code == 200, response.text
+        analysis = response.json()["analysis"]
+        assert [row["amount"] for row in analysis["preview_transactions"]] == [1234.75, 1222.36, 1100, -400, -335.75]
+        assert "financial_validation_failed" in analysis["preview_transactions"][0]["warning_types"]
+        assert analysis["pdf_processing_metrics"]["export_recommendation"] == "review_recommended"
 
 
 @pytest.mark.parametrize("mode", ["text", "analysis"])

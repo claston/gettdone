@@ -57,8 +57,14 @@ def test_unconfirmed_visual_extraction_never_returns_to_bad_hidden_text(failure,
             data={"anonymous_fingerprint": "fp-ailos-invalid"},
             files={"file": ("ailos.pdf", layered_pdf(pages=2), "application/pdf")},
         )
-        assert response.status_code == 400, response.text
-        assert "camada de texto" in response.text if failure == "unavailable" else "Ailos/Civia" in response.text
+        if failure == "unavailable":
+            assert response.status_code == 400, response.text
+            assert "camada de texto" in response.text
+        else:
+            assert response.status_code == 200, response.text
+            analysis = response.json()["analysis"]
+            assert [row["amount"] for row in analysis["preview_transactions"]] == [100, -50.01, -10]
+            assert "financial_validation_failed" in analysis["preview_transactions"][0]["warning_types"]
 
 
 @pytest.mark.parametrize("mode", ["text", "analysis"])

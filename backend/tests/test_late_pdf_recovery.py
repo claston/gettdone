@@ -48,8 +48,14 @@ def test_late_native_exports_validate_signed_rows_and_all_controls(pages, amount
     (unicred_invoice_pages(), "Página 3 de 4", "Página 2 de 4"),
 ])
 def test_late_exports_cannot_hide_missing_fields_or_contradictory_controls(pages, before, after):
-    with pytest.raises(PdfFinancialValidationError):
-        parse([page.replace(before, after) for page in pages])
+    changed = [page.replace(before, after) for page in pages]
+    if before.startswith(("PAG", "Página")):
+        result = parse(changed)
+        assert len(result.transactions) == len(parse(pages).transactions)
+        assert result.parse_metrics["partial_statement"] == 1
+    else:
+        with pytest.raises(PdfFinancialValidationError):
+            parse(changed)
 
 
 @pytest.mark.parametrize("rotated", [False, True])
@@ -125,8 +131,13 @@ def test_tracked_invoice_missing_bonus_cannot_be_silently_dropped(monkeypatch):
 
 @pytest.mark.parametrize("pages", [viacredi_pages()[:1], viacredi_pages()[1:], unicred_invoice_pages()[:-1]])
 def test_incomplete_native_statements_cannot_pass_financial_validation(pages):
-    with pytest.raises(PdfFinancialValidationError):
-        parse(pages)
+    if "UNICRED" in "\n".join(pages).upper():
+        result = parse(pages)
+        assert len(result.transactions) == 5
+        assert result.parse_metrics["partial_statement"] == 1
+    else:
+        with pytest.raises(PdfFinancialValidationError):
+            parse(pages)
 
 
 def test_bb_retains_split_source_references_and_never_assigns_a_zero_date_to_a_transaction():

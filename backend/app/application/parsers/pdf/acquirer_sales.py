@@ -14,14 +14,10 @@ def parse_sales_pages(pages):
     if not period:
         fail()
     start, end = day(period[1]), day(period[2])
-    events, checks, counters = [], [], []
+    events, checks = [], []
     totals, printed = defaultdict(lambda: Decimal(0)), {}
     current = None
     for page, content in enumerate(pages, 1):
-        counter = re.findall(r"PAGINA\s+(\d+)\s*DE\s*(\d+)", upper(content))
-        if len(counter) != 1:
-            fail("Não foi possível conferir as páginas do relatório de vendas.")
-        counters.append(tuple(map(int, counter[0])))
         lines = content.splitlines()
         for number, raw in enumerate(lines, 1):
             if "VALOR LIQUIDO DO DIA:" in upper(raw):
@@ -67,7 +63,7 @@ def parse_sales_pages(pages):
                 status="pending" if upper(status) == "AGUARDANDO PAGAMENTO" else "approved", refs=refs,
                 attributes={"time": stamp_match[2], "acquirer": acquirer, "establishment": establishment,
                             "nsu": nsu, "printed_status": status}))
-    if not events or counters != [(n, len(pages)) for n in range(1, len(pages) + 1)] or set(totals) != set(printed):
+    if not events or set(totals) != set(printed):
         fail("Falta uma página ou um total diário no relatório de vendas.")
     checks.extend(_check(f"sales_daily_net_{date}", total, printed[date]) for date, total in sorted(totals.items()))
     events.sort(key=lambda event: (event["dates"]["transaction"], event["attributes"]["time"]))

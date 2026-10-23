@@ -10,7 +10,6 @@ _NUMBER = r"(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}"
 _MONEY = re.compile(rf"R\$\s*({_NUMBER})")
 _DATE = re.compile(r"^(\d{2}/\d{2}/\d{4})\s+(.*)$")
 _PERIOD = re.compile(r"PERIODO:\s*(\d{2}) ([A-Z]{3}) (\d{4}) A (\d{2}) ([A-Z]{3}) (\d{4})")
-_PAGE = re.compile(r"PAGINA\s+(?:DE\s*)?(\d+)\s+(?:DE\s+)?(\d+)")
 _MONTHS = ("JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ")
 _MESSAGE = "Não foi possível conferir todas as operações, os impostos e as páginas do extrato Nubank Caixinhas PJ."
 
@@ -40,9 +39,6 @@ def parse_nubank_rdb_pages(pages: list[str]) -> dict:
         _fail()
     for number, page in enumerate(pages, 1):
         normalized = normalize_upper_text(page)
-        counters = _PAGE.findall(normalized)
-        if counters != [(str(number), str(len(pages)))]:
-            _fail()
         match = _PERIOD.search(normalized)
         if match is None:
             _fail()

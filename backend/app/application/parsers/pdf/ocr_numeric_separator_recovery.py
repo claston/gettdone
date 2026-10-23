@@ -43,7 +43,8 @@ def parse_with_ocr_separator_recovery(source, parse):
 
 def _financially_confirmed(candidate, baseline, source):
     metrics = candidate.parse_metrics
-    if metrics.get("balance_consistency_failed", 0) or metrics.get("ocr_unresolved_rows", 0):
+    if (metrics.get("balance_consistency_failed", 0) or metrics.get("ocr_unresolved_rows", 0)
+            or metrics.get("statement_validation_failed", 0)):
         return False
     rows = candidate.canonical_transactions or []
     if not rows:

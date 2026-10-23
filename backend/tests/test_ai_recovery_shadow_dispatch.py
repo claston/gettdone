@@ -36,6 +36,24 @@ class _Queue:
         return "message-1"
 
 
+@pytest.mark.parametrize("warning", ["partial_statement", "financial_validation_failed"])
+def test_recognized_statement_converted_for_review_is_still_captured_without_bedrock(warning):
+    calls = []
+    publisher = _Publisher(calls)
+    dispatcher = AIRecoveryShadowDispatcher(config=_config("active"), bucket="test-bucket",
+        request_publisher=publisher, queue_publisher=None, parser_release="test")
+    analysis = _analysis()
+    analysis.quality_issues = []
+    analysis.pdf_processing_metrics = {"page_count": 1, "selected_parser": "layout_specific_verified_statement",
+        "partial_statement": int(warning == "partial_statement"), "canonical_warning_types_list": [warning],
+        "balance_consistency_failed": 0}
+    result = dispatcher.dispatch(document=UploadedDocument(filename="partial.pdf", raw_bytes=b"pdf", file_type="pdf"),
+        analysis=analysis, page_texts=("Extrato para revisão",), source_layout_lines=None)
+    assert result.status == "stored" and result.reason == "bedrock_disabled"
+    assert calls == ["s3"]
+    assert warning in publisher.artifacts.manifest.deterministic_artifact.issue_codes
+
+
 def _analysis() -> AnalysisData:
     row = TransactionRow(
         date="2026-09-01",

@@ -11,6 +11,7 @@ from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf.layout_specific.contract import LayoutSpecificParseContext, LayoutSpecificParseResult
 from app.application.parsers.pdf.layout_specific.shared import build_parsed_transaction
 from app.application.parsers.pdf.models import _ParsedTransaction, _PdfLine
+from app.application.parsers.pdf.statement_review import financial_mismatch
 
 WISE_CURRENCIES = {"wise_extrato_brl_v1": "BRL", "wise_extrato_usd_v1": "USD"}
 _MONTHS = {name: number for number, name in enumerate((
@@ -91,14 +92,10 @@ class WiseLayoutParser:
         for page_number in page_numbers:
             page = [line for line in lines if line.page_number == page_number]
             counters = [match for line in page if (match := _PAGE.fullmatch(line.text.strip()))]
-            if len(counters) != 1:
-                _fail()
-            counter = counters[0]
-            if int(counter[2]) != page_number or int(counter[3]) != len(page_numbers):
-                _fail()
-            if document_reference is not None and counter[1] != document_reference:
-                _fail()
-            document_reference = counter[1]
+            for counter in counters:
+                if document_reference is not None and counter[1] != document_reference:
+                    _fail()
+                document_reference = counter[1]
             table_started = False
             footer_started = False
             for line in page:
@@ -144,7 +141,7 @@ class WiseLayoutParser:
         if pending or not final_footer:
             _fail()
         if rows and financials[0][1] != metadata.closing_balance:
-            _fail()
+            financial_mismatch(_ERROR)
         for index in range(len(rows) - 1):
             if rows[index].transaction.date < rows[index + 1].transaction.date:
                 _fail()

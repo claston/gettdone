@@ -8,6 +8,7 @@ from decimal import Decimal
 from app.application.errors import PdfFinancialValidationError
 from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf.layout_specific.shared import build_parsed_transaction
+from app.application.parsers.pdf.statement_review import financial_mismatch
 
 NUMBER = r"(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}"
 MONEY = re.compile(rf"(?<![\w.,])({NUMBER})(-?)(?![\d,.])")
@@ -292,9 +293,9 @@ def _xp(pages, kind):
     for row in rows:
         running += Decimal(str(row.transaction.amount))
         if running != Decimal(str(row.running_balance)):
-            fail()
+            financial_mismatch()
     if running != money(printed[1]):
-        fail()
+        financial_mismatch()
     return VerifiedStatement(rows, kind, opening, running)
 
 

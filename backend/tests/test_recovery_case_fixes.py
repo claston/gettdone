@@ -2,7 +2,6 @@
 
 import pytest
 
-from app.application import pdf_parser
 from app.application.document_routing_policy import enforce_document_routing
 from app.application.document_type_classifier import classify_document_type
 from app.application.errors import PdfFinancialValidationError, UnsupportedDocumentContentError
@@ -70,9 +69,10 @@ def test_mercado_pago_duplicate_id_requires_explicit_pix_refund(refund):
     ["Santander EXTRATO CONSOLIDADO INTELIGENTE\nPagina: 1/3"],
     ["Bradesco Extrato Mensal\nPágina:\n3\nde\n8", "Página:\n4\nde\n8"],
 ])
-def test_printed_missing_pages_fail_before_generic_parser(pages):
-    with pytest.raises(PdfFinancialValidationError, match="páginas.*completo"):
-        pdf_parser._parse_pdf_transactions_from_page_texts(pages)
+def test_printed_missing_pages_are_review_signals(pages):
+    from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
+
+    assert validate_statement_completeness(pages)
 
 
 def test_cnab_return_is_classified_and_explained_instead_of_unknown():

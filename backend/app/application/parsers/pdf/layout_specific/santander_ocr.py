@@ -1,3 +1,4 @@
+
 """Santander consolidated scan: cash columns, daily balances and monthly controls."""
 
 import calendar
@@ -10,6 +11,7 @@ from app.application.errors import InvalidFileContentError, OcrFinancialAmbiguit
 from app.application.normalization.date import FULL_MONTH_TO_NUMBER, parse_statement_date
 from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf.layout_specific.shared import build_parsed_transaction
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.source_regions import evidence_regions
 
 SANTANDER_OCR_LAYOUT = "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
@@ -132,9 +134,10 @@ def _summary(cells):
             raise OcrFinancialAmbiguityError(_MESSAGE)
         controls[kind] = value
         witnesses.extend((source, value_cell))
-    if (controls["credit"] < 0 or controls["debit"] < 0
-            or controls["opening"] + controls["credit"] - controls["debit"] != controls["closing"]):
+    if controls["credit"] < 0 or controls["debit"] < 0:
         raise PdfFinancialValidationError(_MESSAGE)
+    if controls["opening"] + controls["credit"] - controls["debit"] != controls["closing"]:
+        financial_mismatch(_MESSAGE)
     return start, end, controls, witnesses
 
 
@@ -178,8 +181,10 @@ def _read_movements(extraction, cells, start, end, controls):
         for label in [*opening_labels, *closing_labels]:
             value_cell, value = _aligned_value(label, positioned, balance_left)
             kind = "opening" if label in opening_labels else "closing"
-            if value != controls[kind] or kind == "opening" and opened:
+            if kind == "opening" and opened:
                 raise PdfFinancialValidationError(_MESSAGE)
+            if value != controls[kind]:
+                financial_mismatch(_MESSAGE)
             opened |= kind == "opening"
             closed |= kind == "closing"
             used.add(value_cell.line.id)
@@ -271,19 +276,24 @@ def _recover_and_validate(rows, marks, controls, summary_witnesses):
                     if (gap > 0 and gap == controls["credit"] - totals["credit"] and new_digits.endswith(old_digits)
                             and len(new_digits) == len(old_digits) + 1 and new_digits[0] in "123456789"):
                         candidates.append((row, new_amount))
-            row, amount = _one(candidates)
-            totals[row.kind] += abs(amount) - abs(row.amount or Decimal(0))
-            row.amount = amount
-            row.warnings.append("ocr_amount_recovered_from_summary")
-            row.witnesses.extend([*summary_witnesses, *previous_witness, *[cell for item in group for cell in item.witnesses]])
-            recovered.append(row)
+            if not candidates and all(row.amount is not None for row in group):
+                financial_mismatch(_MESSAGE)
+            else:
+                row, amount = _one(candidates)
+                totals[row.kind] += abs(amount) - abs(row.amount or Decimal(0))
+                row.amount = amount
+                row.warnings.append("ocr_amount_recovered_from_summary")
+                row.witnesses.extend([*summary_witnesses, *previous_witness, *[cell for item in group for cell in item.witnesses]])
+                recovered.append(row)
         if sum((row.amount or Decimal(0) for row in group), previous) != closing:
-            raise PdfFinancialValidationError(_MESSAGE)
+            financial_mismatch(_MESSAGE)
         previous = closing
         previous_witness = [group[-1].balance_cell]
-    if (any(row.amount is None for row in missing) or totals["credit"] != controls["credit"]
-            or totals["debit"] != controls["debit"] or previous != controls["closing"]):
+    if any(row.amount is None for row in missing):
         raise PdfFinancialValidationError(_MESSAGE)
+    if (totals["credit"] != controls["credit"] or totals["debit"] != controls["debit"]
+            or previous != controls["closing"]):
+        financial_mismatch(_MESSAGE)
     for mark in marks:
         matching = [row for row in recovered if row.kind == "credit" and row.anchor.page.page_number == mark.page.page_number
                     and row.anchor.line.bbox["top"] + .006 < mark.line.bbox["top"] < row.anchor.line.bbox["top"] + .018

@@ -1,3 +1,4 @@
+
 """Nubank OCR: printed amount column, daily sections and statement controls."""
 import re
 from dataclasses import dataclass, replace
@@ -10,6 +11,7 @@ from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf.layout_specific.contract import LayoutSpecificParseContext, LayoutSpecificParseResult
 from app.application.parsers.pdf.layout_specific.shared import build_parsed_transaction
 from app.application.parsers.pdf.models import _PdfLine
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.source_regions import evidence_regions
 
 NUBANK_LAYOUT = "nubank_statement_ptbr"
@@ -52,7 +54,7 @@ def _summary(extraction):
     inflows = abs(next(iter(values["TOTAL DE ENTRADAS"])))
     outflows = abs(next(iter(values["TOTAL DE SAIDAS"])))
     if opening + inflows - outflows != closing:
-        raise PdfFinancialValidationError(_MESSAGE)
+        financial_mismatch(_MESSAGE)
     return next(iter(periods)), opening, closing, inflows, outflows
 
 
@@ -103,6 +105,8 @@ def _events(stream, extraction):
         if _DATE.fullmatch(text):
             events.append(_Event(index, "date", source))
         if not _MONEY.fullmatch(item.text.strip()):
+            if item.bbox and item.bbox["left"] >= .7:
+                raise OcrFinancialAmbiguityError(_MESSAGE)
             continue
         if not item.bbox or item.bbox["left"] < .7:
             raise OcrFinancialAmbiguityError(_MESSAGE)
@@ -145,7 +149,7 @@ def _parse(extraction):
 
     def check_section():
         if section is not None and actual != expected:
-            raise PdfFinancialValidationError(_MESSAGE)
+            financial_mismatch(_MESSAGE)
 
     for offset, event in enumerate(events):
         if event.kind == "date":
@@ -165,8 +169,10 @@ def _parse(extraction):
             section_source = (event.label, event.value)
         elif event.kind == "balance":
             check_section()
-            if not rows or rows[-1].transaction.date != day or balance + daily_net != amount:
+            if not rows or rows[-1].transaction.date != day:
                 raise PdfFinancialValidationError(_MESSAGE)
+            if balance + daily_net != amount:
+                financial_mismatch(_MESSAGE)
             row = rows[-1]
             sources = (event.label, event.value)
             rows[-1] = replace(row, running_balance=float(amount),
@@ -189,11 +195,13 @@ def _parse(extraction):
                 source_page=event.label.page, source_line=event.label.number, has_explicit_amount_sign=True,
                 source_regions=_regions(witnesses, extraction), source_line_refs=tuple((line.page, line.number) for line in witnesses)))
     check_section()
-    if not rows or not closed_day or balance != closing:
+    if not rows or not closed_day:
         raise PdfFinancialValidationError(_MESSAGE)
+    if balance != closing:
+        financial_mismatch(_MESSAGE)
     if (sum((Decimal(str(row.transaction.amount)) for row in rows if row.transaction.amount > 0), Decimal(0)) != inflows
             or -sum((Decimal(str(row.transaction.amount)) for row in rows if row.transaction.amount < 0), Decimal(0)) != outflows):
-        raise PdfFinancialValidationError(_MESSAGE)
+        financial_mismatch(_MESSAGE)
     return rows
 
 

@@ -285,6 +285,23 @@ def _parse_pdf_transactions(
     on_ocr_progress: Callable[[int, int], None] | None = None,
     max_ocr_pages: int | None = None,
 ) -> PdfParseResult:
+    from app.application.parsers.pdf.statement_review import statement_review_scope
+
+    with statement_review_scope():
+        return _parse_pdf_transactions_with_review(raw_bytes, on_ocr_progress, max_ocr_pages)
+
+
+def _parse_pdf_transactions_with_review(raw_bytes, on_ocr_progress, max_ocr_pages):
+    from app.application.parsers.pdf.statement_review import apply_statement_review
+
+    return apply_statement_review(_parse_pdf_transactions_strict(raw_bytes, on_ocr_progress, max_ocr_pages))
+
+
+def _parse_pdf_transactions_strict(
+    raw_bytes: bytes,
+    on_ocr_progress: Callable[[int, int], None] | None = None,
+    max_ocr_pages: int | None = None,
+) -> PdfParseResult:
     try:
         reference_month_year = text_extraction.read_pdf_creation_month_year(raw_bytes)
     except InvalidFileContentError as exc:
@@ -469,7 +486,8 @@ def _parse_pdf_transactions(
                 _build_pdf_parse_result(
                     parsed_rows=monthly.rows, layout=PdfLayoutInference(layout_name, 0.99, False),
                     layout_profile=get_layout_profile(layout_name), selected_parser=ITAU_NATIVE_MONTHLY_PARSER,
-                    parser_selection_reason="native_columns_cash_and_investment_controls_validated",
+                    parser_selection_reason=("native_columns_cash_and_investment_controls_require_review" if monthly.validation_failed
+                                             else "native_columns_cash_and_investment_controls_validated"),
                     inline_decision="not_applicable_layout_specific", tabular_decision="not_applicable_layout_specific",
                     columnar_decision="not_applicable_layout_specific", joined_text="\n".join(monthly.source_pages),
                     source_page_texts=monthly.source_pages, page_count=len(monthly.source_pages),
@@ -481,6 +499,7 @@ def _parse_pdf_transactions(
                     balance_checkpoints={0: float(monthly.opening)},
                 ),
                 native_cash_opening_balance=float(monthly.opening), native_cash_closing_balance=float(monthly.closing),
+                statement_validation_failed=int(monthly.validation_failed),
                 extraction_provider="native_pdfium_text", native_text_detected=1, textract_attempted=0,
             )
         if has_accounts_payable_title("\n".join(native_pages)):
@@ -934,6 +953,19 @@ def _validate_ocr_statement_source(extraction):
 
 
 def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
+    from app.application.parsers.pdf.statement_review import statement_review_scope
+
+    with statement_review_scope():
+        return _parse_scanned_pdf_with_textract_text_pages_review(extraction)
+
+
+def _parse_scanned_pdf_with_textract_text_pages_review(extraction):
+    from app.application.parsers.pdf.statement_review import apply_statement_review
+
+    return apply_statement_review(_parse_scanned_pdf_with_textract_text_pages_strict(extraction))
+
+
+def _parse_scanned_pdf_with_textract_text_pages_strict(extraction) -> PdfParseResult:
     from app.application.structured_statement_detection import is_bradesco_monthly_ocr
 
     _validate_ocr_statement_source(extraction)
@@ -957,8 +989,17 @@ def _parse_scanned_pdf_with_textract_text_pages(extraction) -> PdfParseResult:
 
 
 def _parse_textract_text_pages(extraction) -> PdfParseResult:
+    from app.application.parsers.pdf.statement_review import statement_review_attempt
+
+    with statement_review_attempt():
+        return _parse_textract_text_pages_attempt(extraction)
+
+
+def _parse_textract_text_pages_attempt(extraction) -> PdfParseResult:
+    from app.application.parsers.pdf.statement_review import apply_statement_review
+
     try:
-        return _parse_textract_text_pages_impl(extraction)
+        return apply_statement_review(_parse_textract_text_pages_impl(extraction))
     except InvalidFileContentError as exc:
         layout = infer_pdf_layout("\n".join(_textract_page_texts(extraction)))
         existing = dict(getattr(exc, "_parse_observability", {}) or {})
@@ -1139,6 +1180,19 @@ def _parse_pdf_transactions_from_page_texts(
     preserve_layout_spacing: bool = False,
     context: LayoutSpecificParseContext | None = None,
 ) -> PdfParseResult:
+    from app.application.parsers.pdf.statement_review import apply_statement_review, statement_review_attempt
+
+    with statement_review_attempt():
+        return apply_statement_review(_parse_pdf_transactions_from_page_texts_strict(
+            page_texts, preserve_layout_spacing=preserve_layout_spacing, context=context))
+
+
+def _parse_pdf_transactions_from_page_texts_strict(
+    page_texts: list[str],
+    *,
+    preserve_layout_spacing: bool = False,
+    context: LayoutSpecificParseContext | None = None,
+) -> PdfParseResult:
     from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
     from app.application.unsupported_document_detection import NOTARY_RECEIPT_DOCUMENT_TYPE, NOTARY_RECEIPT_USER_MESSAGE
 
@@ -1290,10 +1344,7 @@ def _parse_statement_page_texts(
     flattened_line_count = len(lines)
     lines = _scope_profile_transaction_lines(lines, layout_profile=layout_profile)
     specialized_selection = _parse_layout_specific_statement_rows(
-        lines=lines,
-        layout=layout,
-        context=context or LayoutSpecificParseContext(),
-    )
+        lines=lines, layout=layout, context=context or LayoutSpecificParseContext())
     if specialized_selection is not None:
         if layout.layout_name in WISE_CURRENCIES and not specialized_selection.rows:
             if context is None or not context.is_native_text:

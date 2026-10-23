@@ -64,16 +64,6 @@ def parse_controlled_ocr(extraction):
     if "SICREDI" in text and "EXTRATO DE CONTA CORRENTE" in text:
         if re.search(r"CONTINUA NA PAGINA\s+\d+", normalize_upper_text(texts[-1])):
             return _sicredi_fragment(extraction)
-    if "STONE" in text and "EXTRATO DE CONTA CORRENTE" in text:
-        counters = [re.findall(r"PAGINA\s+(\d+)\s+DE\s+(\d+)", normalize_upper_text(page)) for page in texts]
-        if counters and any(counters):
-            total = int(next(c[0][1] for c in counters if c))
-            first = int(next(c[0][0] for c in counters if c))
-            if counters != [[(str(i), str(total))] for i in range(first, first + len(counters))]:
-                fail(
-                    "Falta uma página entre os trechos do extrato Stone. "
-                    "Envie páginas consecutivas para conferir os saldos nas quebras de página."
-                )
     if "BCO ITAU EXTRATO CTA CORRENTE" in text and "DIAHISTORICO" in text:
         return _itau(extraction)
     if "CAIXA" in text and "REM BASICA" in text and "CRED JUROS" in text:

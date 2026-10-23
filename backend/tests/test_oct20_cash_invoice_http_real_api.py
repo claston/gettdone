@@ -60,7 +60,7 @@ def test_corrected_cash_and_invoice_public_http_reports_all_exports_and_negative
 
 
 @pytest.mark.parametrize("kind", ["unified", "santander", "caixa"])
-def test_bad_financial_controls_return_actionable_error_in_real_http(kind, tmp_path, monkeypatch):
+def test_bad_financial_controls_convert_with_review_in_real_http(kind, tmp_path, monkeypatch):
     if kind == "caixa":
         raw = configure_ocr(monkeypatch, modify(caixa_invoice(), "5,00C", "5,00D"))
     else:
@@ -72,8 +72,11 @@ def test_bad_financial_controls_return_actionable_error_in_real_http(kind, tmp_p
     with public_client(tmp_path) as client:
         response = client.post("/convert", data={"anonymous_fingerprint":"fp-bad-cash-invoice"},
                                files={"file":(kind+".pdf",raw,"application/pdf")})
-        assert response.status_code == 400, response.text
-        assert "conferir" in response.text.lower()
+        assert response.status_code == 200, response.text
+        analysis = response.json()["analysis"]
+        assert analysis["transactions_total"] > 0
+        assert analysis["pdf_processing_metrics"]["export_recommendation"] == "review_recommended"
+        assert any("financial_validation_failed" in row["warning_types"] for row in analysis["preview_transactions"])
 
 
 @pytest.mark.parametrize("kind", ["unified", "santander", "caixa"])

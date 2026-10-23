@@ -79,8 +79,15 @@ def test_caixa_invoice_pipeline_retains_debt_balances_and_credit_card_account_ty
     ("R$ 265,00", "R$ 266,00"), ("LOJA EXEMPLO", ""),
 ])
 def test_caixa_invoice_missing_or_inconsistent_controls_cannot_become_generic_transactions(before, after):
-    with pytest.raises(PdfFinancialValidationError):
-        pdf_parser._parse_scanned_pdf_with_textract_text_pages(modify(caixa_invoice(), before, after))
+    source = modify(caixa_invoice(), before, after)
+    if before in {"200,00D", "5,00C", "R$ 265,00"}:
+        result = pdf_parser._parse_scanned_pdf_with_textract_text_pages(source)
+        assert len(result.transactions) == 5
+        assert result.parse_metrics["financial_controls_validated"] == 0
+        assert "financial_validation_failed" in result.canonical_transactions[0].warnings
+    else:
+        with pytest.raises(PdfFinancialValidationError):
+            pdf_parser._parse_scanned_pdf_with_textract_text_pages(source)
 
 
 def test_caixa_invoice_missing_geometry_is_not_silently_dropped():

@@ -12,6 +12,7 @@ from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf.layout_specific.contract import LayoutSpecificParseContext, LayoutSpecificParseResult
 from app.application.parsers.pdf.layout_specific.shared import build_parsed_transaction
 from app.application.parsers.pdf.models import _PdfLine
+from app.application.parsers.pdf.statement_review import financial_mismatch
 
 MATRIX_LAYOUT = "sicredi_matricial_paisagem_conta_corrente_v1"
 HTML_LAYOUT = "sicredi_extrato_html_totais_diarios_v1"
@@ -78,7 +79,7 @@ def _matrix(lines):
             continue
         if "DETRANSPORTE" in text.replace(" ", ""):
             if _single({_money(token.value) for token in find_amount_tokens(line.text)}) != running:
-                _fail()
+                financial_mismatch(_MESSAGE)
         match = _DATE.fullmatch(line.text)
         if match is None:
             continue
@@ -106,7 +107,7 @@ def _matrix(lines):
         amount = -abs(values["debit"]) if "debit" in values else abs(values["credit"])
         running += amount
         if "balance" in values and values["balance"] != running:
-            _fail()
+            financial_mismatch(_MESSAGE)
         description = line.text[len(match[1]) + len(line.text) - len(line.text.lstrip()):tokens[0].start].strip()
         rows.append(build_parsed_transaction(date=day, description=" ".join(description.split()), amount=float(amount),
             running_balance=float(values["balance"]) if "balance" in values else None,
@@ -114,10 +115,12 @@ def _matrix(lines):
             source_line_refs=((line.page_number, line.line_number),)))
     debits = -sum((Decimal(str(row.transaction.amount)) for row in rows if row.transaction.amount < 0), Decimal(0))
     credits = sum((Decimal(str(row.transaction.amount)) for row in rows if row.transaction.amount > 0), Decimal(0))
-    if (not rows or running != summaries["closing"]
+    if not rows:
+        _fail()
+    if (running != summaries["closing"]
             or "debits" in summaries and debits != summaries["debits"]
             or "credits" in summaries and credits != summaries["credits"]):
-        _fail()
+        financial_mismatch()
     return rows
 
 
@@ -166,8 +169,10 @@ def _html(lines):
             incoming = sum((amount for amount in amounts[:-1] if amount > 0), Decimal(0))
             outgoing = -sum((amount for amount in amounts[:-1] if amount < 0), Decimal(0))
             if text.startswith("TOTAL DO DIA"):
-                if not rows or day is None or (incoming, outgoing, amounts[-1]) != (daily_in, daily_out, running + daily_in - daily_out):
+                if not rows or day is None:
                     _fail()
+                if (incoming, outgoing, amounts[-1]) != (daily_in, daily_out, running + daily_in - daily_out):
+                    financial_mismatch()
                 row = rows[-1]
                 rows[-1] = replace(row, running_balance=float(amounts[-1]),
                     source_line_refs=(*row.source_line_refs, (line.page_number, line.line_number)))
@@ -175,9 +180,10 @@ def _html(lines):
             else:
                 credits = sum((Decimal(str(row.transaction.amount)) for row in rows if row.transaction.amount > 0), Decimal(0))
                 debits = -sum((Decimal(str(row.transaction.amount)) for row in rows if row.transaction.amount < 0), Decimal(0))
-                if (day is not None or (incoming, outgoing, amounts[-1]) != (credits, debits, bounds["closing"])
-                        or running != bounds["closing"]):
+                if day is not None:
                     _fail()
+                if ((incoming, outgoing, amounts[-1]) != (credits, debits, bounds["closing"]) or running != bounds["closing"]):
+                    financial_mismatch()
                 closed = True
             continue
         match = _DATE.fullmatch(line.text)

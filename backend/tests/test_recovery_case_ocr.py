@@ -150,7 +150,14 @@ def test_ocr_rejections_happen_before_segmentation_or_table_fallback_and_keep_ev
     monkeypatch.setattr(pdf_parser, "TextractGateway", lambda: SimpleNamespace(
         analyze_pdf=lambda **kwargs: {"metrics": {"textract_mode": mode}}))
     monkeypatch.setattr(pdf_parser, "map_textract_blocks_to_extraction", lambda **kwargs: source)
-    expected = UnsupportedDocumentContentError if text.startswith("02RETORNO") else PdfFinancialValidationError
+    if not text.startswith("02RETORNO"):
+        # No rows are present in this fixture: the page count itself is no
+        # longer a refusal, and readable-row recovery is tested separately.
+        from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
+
+        assert validate_statement_completeness([text])
+        return
+    expected = UnsupportedDocumentContentError
     with pytest.raises(expected) as error:
         pdf_parser._parse_scanned_pdf_with_textract_gateway(b"synthetic")
     assert error.value._ocr_source_extraction is source

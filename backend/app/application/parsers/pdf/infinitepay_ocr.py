@@ -4,6 +4,7 @@ import re
 from dataclasses import replace
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
 from app.application.parsers.pdf.verified_statements import NUMBER, VerifiedStatement, _row, day, fail, money
 from app.application.source_regions import evidence_regions
 from app.application.sweep_statement_detection import INFINITEPAY
@@ -21,7 +22,7 @@ def _date(text):
 
 
 def parse_infinitepay(extraction):
-    rows, counters, current = [], [], None
+    rows, current = [], None
     periods = set()
     for page in extraction.pages:
         for line in page.lines:
@@ -53,10 +54,6 @@ def parse_infinitepay(extraction):
         table_top = min(item.bbox["top"] for item in lines if upper(item.text) == "HORA")
         if not 0.03 < time_x < value_x - 0.2:
             fail()
-        counter = re.findall(r"PAGINA (\d+) DE (\d+)", upper(" ".join(line.text for line in lines)))
-        if len(counter) != 1:
-            fail()
-        counters.append(tuple(map(int, counter[0])))
         footer = min(
             (item.bbox["top"] for item in lines if "CENTRAL DE AJUDA" in upper(item.text) or "PAGINA " in upper(item.text)), default=1
         )
@@ -130,7 +127,6 @@ def parse_infinitepay(extraction):
             fail()
     if not rows or any(a.transaction.date > b.transaction.date for a, b in zip(rows, rows[1:])):
         fail()
-    first, total = counters[0]
-    if counters != [(n, total) for n in range(first, first + len(counters))] or counters[-1][0] > total:
-        fail("Falta uma página entre os trechos InfinitePay. Envie páginas consecutivas.")
-    return VerifiedStatement(rows, INFINITEPAY, None, None, partial=first != 1 or counters[-1][0] != total)
+    return VerifiedStatement(rows, INFINITEPAY, None, None,
+                             partial=validate_statement_completeness(["\n".join(line.text for line in page.lines)
+                                                                      for page in extraction.pages]))

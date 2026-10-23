@@ -4,6 +4,7 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _lines, _row, day, fail, money
 
 VIACREDI = "viacredi_av_extrato_especial_signed_v1"
@@ -42,10 +43,6 @@ def _viacredi(pages, kind):
     rows, opening, running = [], None, None
     checks = 0
     terminal = False
-    for page_index, content in enumerate(pages, 1):
-        counters = re.findall(r"\bPAG\s+(\d+)\b", upper(content))
-        if counters != [str(page_index)]:
-            fail("Falta uma página ou a sequência do extrato Viacredi está incorreta. Envie o extrato completo.")
     pattern = re.compile(rf"^(\d{{2}}/\d{{2}}/\d{{2}})\s+(.+?)\s+({NUMBER})\s+([CD])(?:\s+({NUMBER})(-?))?$")
     for page, line, raw in _lines(pages):
         normalized = upper(raw)
@@ -55,7 +52,7 @@ def _viacredi(pages, kind):
             if opening is None:
                 opening = running = value
             elif value != running:
-                fail()
+                financial_mismatch()
         if "AVISO: ESTE EXTRATO SERA TARIFADO" in normalized:
             terminal = True
             continue
@@ -72,7 +69,7 @@ def _viacredi(pages, kind):
         balance = money(match[5]) * (-1 if match[6] else 1) if match[5] else None
         if balance is not None:
             if running != balance:
-                fail()
+                financial_mismatch()
             checks += 1
         reference = re.search(r"\s+([\d.]+)$", match[2])
         description = match[2][:reference.start()].strip() if reference else match[2]
@@ -129,7 +126,7 @@ def _bb_zero(pages, kind):
                 fail()
             value = money(signed[1]) * (-1 if signed[2] == "-" else 1)
             if value != running:
-                fail()
+                financial_mismatch()
             rows[-1] = replace(rows[-1], running_balance=float(value), source_line_refs=(*rows[-1].source_line_refs, (page, line)))
             checks += 1
             continue
@@ -203,9 +200,6 @@ def _unicred_card(pages, kind):
     summaries = {}
     in_summary = False
     for page_number, page_text in enumerate(pages, 1):
-        counter = re.findall(r"PAGINA(\d+)DE(\d+)", compact(page_text))
-        if counter != [(str(page_number), str(len(pages)))] and not (page_number == 1 and not counter):
-            fail("Falta uma página ou a sequência da fatura Unicred está incorreta. Envie a fatura completa.")
         for raw in page_text.splitlines():
             label = compact(raw)
             if label == "RESUMODAFATURA":
