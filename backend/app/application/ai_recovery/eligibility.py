@@ -128,7 +128,8 @@ def assess_ai_recovery_eligibility(
         return _ineligible(AIRecoveryEligibilityReason.PAGE_COUNT_UNKNOWN, eligibility_case)
     if context.page_count < 1:
         return _ineligible(AIRecoveryEligibilityReason.INVALID_PAGE_COUNT, eligibility_case)
-    if context.page_count > config.max_pages:
+    # The page budget limits paid diagnosis, not capture for manual review.
+    if config.bedrock_invocation_enabled and context.page_count > config.max_pages:
         return _ineligible(AIRecoveryEligibilityReason.PAGE_LIMIT_EXCEEDED, eligibility_case)
 
     if eligibility_case == AIRecoveryEligibilityCase.RECOGNIZED_LAYOUT_DIVERGENCE:

@@ -82,6 +82,20 @@ class _Bedrock:
         }
 
 
+def test_diagnostic_analyzer_rejects_large_captured_pdf_before_calling_bedrock() -> None:
+    client = _Bedrock()
+    analyzer = BedrockNovaDiagnosticAnalyzer(
+        client=client, model_id="us.amazon.nova-2-lite-v1:0", timeout_seconds=25,
+        max_pages=15, max_output_tokens=16000, prompt="Return JSON only.",
+    )
+
+    with pytest.raises(AIExtractionError) as exc_info:
+        analyzer.analyze(filename="large.pdf", raw_bytes=b"%PDF large", page_count=22, deterministic_artifact={})
+
+    assert exc_info.value.code == AIExtractionErrorCode.INVALID_DOCUMENT
+    assert client.request is None
+
+
 def test_diagnostic_analyzer_sends_original_pdf_and_parser_output_to_nova() -> None:
     client = _Bedrock()
     analyzer = BedrockNovaDiagnosticAnalyzer(

@@ -5,6 +5,8 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+import pytest
+
 from app.application.ai_recovery.config import AIRecoveryConfig
 from app.application.ai_recovery.shadow_dispatch import AIRecoveryShadowDispatcher
 from app.application.conversion.uploaded_document import UploadedDocument
@@ -118,6 +120,57 @@ def _config(mode: str, *, bedrock_enabled: bool = False) -> AIRecoveryConfig:
             "AI_RECOVERY_BEDROCK_ENABLED": str(bedrock_enabled).lower(),
         }
     )
+
+
+@pytest.mark.parametrize("page_count", [17, 22])
+@pytest.mark.parametrize("failed", [False, True])
+def test_large_pdf_capture_preserves_all_pages_without_queueing(page_count: int, failed: bool) -> None:
+    calls: list[str] = []
+    publisher = _Publisher(calls)
+    dispatcher = AIRecoveryShadowDispatcher(
+        config=_config("shadow"), bucket="private-ai-recovery", request_publisher=publisher,
+        queue_publisher=_Queue(calls), parser_release="release-123",
+    )
+    original = b"%PDF original-private-document"
+    document = UploadedDocument(filename="large.pdf", file_type="pdf", raw_bytes=original)
+    if failed:
+        result = dispatcher.dispatch_failure(
+            document=document, analysis_id="an_large123", page_count=page_count,
+            error_stage="parse", error_subcode="financial_validation_failed", exception_class="PdfFinancialValidationError",
+        )
+    else:
+        analysis = replace(_analysis(), pdf_processing_metrics={**_analysis().pdf_processing_metrics, "page_count": page_count})
+        result = dispatcher.dispatch(
+            document=document, analysis=analysis, page_texts=tuple(f"Page {i + 1}" for i in range(page_count)),
+            source_layout_lines=None,
+        )
+        evidence = json.loads(publisher.artifacts.source_evidence)
+        assert len(evidence["pages"]) == page_count
+        assert evidence["pages"][-1]["page"] == page_count
+
+    assert result.status == "stored"
+    assert result.reason == "bedrock_disabled"
+    assert calls == ["s3"]
+    assert publisher.artifacts.manifest.document.page_count == page_count
+    assert publisher.artifacts.pdf_bytes == original
+
+
+def test_large_pdf_is_not_published_or_queued_when_bedrock_is_enabled() -> None:
+    calls: list[str] = []
+    dispatcher = AIRecoveryShadowDispatcher(
+        config=_config("shadow", bedrock_enabled=True), bucket="private-ai-recovery",
+        request_publisher=_Publisher(calls), queue_publisher=_Queue(calls), parser_release="release-123",
+    )
+
+    result = dispatcher.dispatch_failure(
+        document=UploadedDocument(filename="large.pdf", file_type="pdf", raw_bytes=b"%PDF large"),
+        analysis_id="an_large123", page_count=22, error_stage="parse", error_subcode="financial_validation_failed",
+        exception_class="PdfFinancialValidationError",
+    )
+
+    assert result.status == "skipped"
+    assert result.reason == "page_limit_exceeded"
+    assert calls == []
 
 
 def test_shadow_dispatch_publishes_original_pdf_before_queue_message() -> None:
