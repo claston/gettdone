@@ -100,6 +100,26 @@ def _analysis() -> AnalysisData:
     )
 
 
+@pytest.mark.parametrize("unregistered", [False, True])
+def test_review_recommendation_alone_is_captured_for_a_recognized_layout(unregistered):
+    calls = []
+    publisher = _Publisher(calls)
+    dispatcher = AIRecoveryShadowDispatcher(config=_config("active"), bucket="test-bucket",
+        request_publisher=publisher, queue_publisher=None, parser_release="test")
+    analysis = _analysis()
+    analysis.quality_issues = []
+    if unregistered:
+        analysis.layout_inference_name = "recovery_cresol_descending_daily_v1"
+        analysis.document_type = "bank_statement"
+    analysis.pdf_processing_metrics = {"page_count": 95, "selected_parser": "layout_specific_sicoob",
+        "export_recommendation": "review_recommended", "export_recommendation_reason": "medium_confidence_band",
+        "canonical_warning_types_list": [], "balance_consistency_failed": 0}
+    result = dispatcher.dispatch(document=UploadedDocument(filename="review.pdf", raw_bytes=b"pdf", file_type="pdf"),
+        analysis=analysis, page_texts=("Extrato para revisão",), source_layout_lines=None)
+    assert result.status == "stored" and calls == ["s3"]
+    assert "manual_review_recommended" in publisher.artifacts.manifest.deterministic_artifact.issue_codes
+
+
 def test_confirmed_no_activity_is_not_sent_for_ai_transaction_recovery():
     calls: list[str] = []
     dispatcher = AIRecoveryShadowDispatcher(config=_config("shadow"), bucket="test-bucket",

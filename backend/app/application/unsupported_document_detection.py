@@ -20,6 +20,10 @@ INVESTMENT_SUMMARY_USER_MESSAGE = (
     "Envie um extrato com as movimentações da conta."
 )
 ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE = "accounts_payable_report"
+OPEN_PAYABLES_USER_MESSAGE = (
+    "Este relatório contém títulos a pagar, sem comprovação de pagamento. "
+    "Envie o extrato bancário para converter movimentações realizadas."
+)
 NOTARY_RECEIPT_DOCUMENT_TYPE = "notary_receipt"
 NOTARY_RECEIPT_USER_MESSAGE = (
     "Este arquivo é um recibo de cartório, não um extrato bancário. "
@@ -93,6 +97,8 @@ def _is_accounts_payable_report(lines: tuple[str, ...]) -> bool:
     if not _has_primary_payable_title(lines):
         return False
     text = " ".join(lines)
+    if is_open_payables_report("\n".join(lines)):
+        return True
     return all(marker in text for marker in (
         "VENCIMENTO", "PAGAMENTO", "FORNECEDOR", "VALOR TOTAL", "EM ABERTO", "SITUACAO",
     ))
@@ -102,10 +108,18 @@ def has_accounts_payable_title(text: str) -> bool:
     return _has_primary_payable_title(tuple(normalize_upper_text(line) for line in text.splitlines() if line.strip()))
 
 
+def is_open_payables_report(text: str) -> bool:
+    lines = tuple(normalize_upper_text(line) for line in text.splitlines() if line.strip())
+    compact = " ".join(lines)
+    return (_has_primary_payable_title(lines) and any(line.startswith("NOTAS A PAGAR") for line in lines[:6])
+            and "FORNECEDOR" in compact and "VENCIMENTO" in compact
+            and any(marker in compact for marker in ("SALDO A PAGAR", "SITUACAO: A PAGAR", "SITUACAO A PAGAR")))
+
+
 def _has_primary_payable_title(lines: tuple[str, ...]) -> bool:
     title_index = next(
         (index for index, line in enumerate(lines[:6])
-         if re.match(r"^RELATORIO DE CONTAS A PAGAR\b", line)),
+         if re.match(r"^(?:RELATORIO DE CONTAS A PAGAR|NOTAS A PAGAR)\b", line)),
         None,
     )
     if title_index is None:

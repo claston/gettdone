@@ -17,7 +17,7 @@ from app.application.source_regions import evidence_regions
 SANTANDER_OCR_LAYOUT = "santander_negocios_empresas_extrato_consolidado_inteligente_conta_corrente_v1"
 _MONEY = re.compile(r"^[+\-−]?(?:\d{1,3}(?:\.\d{3})+|\d+)[,.]\d{2}[\-−]?$")
 _MESSAGE = "Não foi possível conferir as colunas, os saldos diários e o resumo do extrato Santander. Confira o documento original."
-_HEADINGS = re.compile(r"^(?:PIX\b|IOF\b|RESGATE\b|APLICACAO\b|DEBITO\b|TARIFA\b|TED\b|DOC\b|PAGAMENTO\b)")
+_HEADINGS = re.compile(r"^(?:PIX\b|IOF\b|RESGATE\b|APLICACAO\b|DEBITO\b|TARIF\s*A\b|TED\b|DOC\b|PAGAMENTO\b|PGTO\b|JUROS\b)")
 
 
 @dataclass
@@ -169,7 +169,9 @@ def _read_movements(extraction, cells, start, end, controls):
         amount_left = credit_x - .065
         desc_left = (headers["DATA"].line.bbox["left"] + headers["DESCRICAO"].line.bbox["left"]) / 2
         description_right = amount_left - .12
-        positioned = [cell for cell in page_cells if cell.line.bbox and cell.line.bbox["top"] > top + .005]
+        positioned = [cell for cell in page_cells if cell.line.bbox and cell.line.bbox["top"] > top + .005
+                      and not re.fullmatch(r"PAG(?:INA|\.)?\s*:?\s*\d+(?:\s*(?:/|DE)\s*\d+)?",
+                                           normalize_upper_text(cell.line.text))]
         if any(not cell.line.bbox and _MONEY.fullmatch(cell.line.text.strip()) for cell in page_cells):
             raise OcrFinancialAmbiguityError(_MESSAGE)
         closing_labels = [cell for cell in positioned if normalize_upper_text(cell.line.text) == "SALDO EM " + end.strftime("%d/%m")]
@@ -225,7 +227,7 @@ def _read_movements(extraction, cells, start, end, controls):
                 amount = abs(amount) if kind == "credit" else -abs(amount)
                 used.add(amount_cell.line.id)
             balance_candidates = [cell for cell in positioned if cell.line.bbox["left"] >= balance_left
-                                  and abs(cell.line.bbox["top"] - y) <= .006]
+                                  and abs(cell.line.bbox["top"] - y) <= .008]
             balance_cell = _one(balance_candidates) if balance_candidates else None
             if balance_cell:
                 if not _printed(balance_cell):
@@ -249,7 +251,7 @@ def _read_movements(extraction, cells, start, end, controls):
 def _recover_and_validate(rows, marks, controls, summary_witnesses):
     groups = []
     for row in rows:
-        if not groups or groups[-1][0].day != row.day:
+        if not groups or groups[-1][0].day != row.day or groups[-1][-1].balance_cell is not None:
             groups.append([])
         groups[-1].append(row)
     totals = {kind: sum((abs(row.amount) for row in rows if row.kind == kind and row.amount is not None), Decimal(0))
@@ -259,9 +261,13 @@ def _recover_and_validate(rows, marks, controls, summary_witnesses):
     previous_witness = []
     recovered = []
     for group in groups:
-        if group[-1].balance_cell is None or any(row.balance_cell for row in group[:-1]):
-            raise OcrFinancialAmbiguityError(_MESSAGE)
-        closing = _money(group[-1].balance_cell.line.text)
+        if group[-1].balance_cell is None:
+            if any(row.amount is None for row in group):
+                raise OcrFinancialAmbiguityError(_MESSAGE)
+            financial_mismatch(_MESSAGE)
+            closing = sum((row.amount for row in group), previous)
+        else:
+            closing = _money(group[-1].balance_cell.line.text)
         gap = closing - previous - sum((row.amount for row in group if row.amount is not None), Decimal(0))
         if gap:
             candidates = []
@@ -288,7 +294,7 @@ def _recover_and_validate(rows, marks, controls, summary_witnesses):
         if sum((row.amount or Decimal(0) for row in group), previous) != closing:
             financial_mismatch(_MESSAGE)
         previous = closing
-        previous_witness = [group[-1].balance_cell]
+        previous_witness = [group[-1].balance_cell] if group[-1].balance_cell else []
     if any(row.amount is None for row in missing):
         raise PdfFinancialValidationError(_MESSAGE)
     if (totals["credit"] != controls["credit"] or totals["debit"] != controls["debit"]

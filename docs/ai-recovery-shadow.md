@@ -1,7 +1,11 @@
 # Captura temporária de requests de diagnóstico
 
-Este fluxo observa conversões de PDF que terminaram com transações, layout específico reconhecido e
-`balance_consistency_failed`. Ele é separado da conversão normal: qualquer falha de captura é registrada,
+Este fluxo observa falhas de conteúdo e conversões de PDF que terminaram com transações e indicação
+de revisão. Isso inclui layout genérico, divergências de saldo, paginação incompleta e
+`export_recommendation=review_recommended`, mesmo sem outros códigos de erro. Nesse último caso,
+a captura registra `manual_review_recommended`. Um leitor específico sem perfil declarativo também
+pode ser capturado quando o documento foi classificado como `bank_statement`.
+Qualquer falha de captura é registrada,
 mas não altera o OFX nem a resposta entregue ao usuário.
 
 O Bedrock está desativado. O runtime pode preservar o material restrito por 24 horas para análise futura,

@@ -83,6 +83,13 @@ def _has_statement_title(text: str) -> bool:
 
 def _statement_identity(text: str) -> str | None:
     normalized = _statement_header(text)
+    columns = re.search(
+        r"\bAGENCIA\s+CONTA(?: CORRENTE)?\s+(\d{3,6}(?:-\d)?)\s+"
+        r"(\d[\d.]*[-/]\d+|\d{4,})(?![\d,.])\b", normalized,
+    )
+    if columns:
+        period = re.search(r"\b(?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+20\d{2}\b", normalized)
+        return "|".join((columns[1], columns[2], period[0] if period else ""))
     account = re.search(r"\b(?:CC|C/C|CONTA(?: CORRENTE)?)\s*[:.]?\s*(\d[\d.]*[-/]\d+|\d{4,})(?![\d,.])\b", normalized)
     if account is None:
         return None

@@ -83,6 +83,8 @@ class AIRecoveryShadowDispatcher:
     ) -> AIRecoveryDispatchResult:
         layout_name = str(getattr(analysis, "layout_inference_name", None) or "").strip()
         layout_family, statement_type = _layout_metadata(layout_name)
+        if not statement_type and getattr(analysis, "document_type", None) == "bank_statement" and not _is_generic_layout(layout_name):
+            layout_family, statement_type = layout_name, "conta_corrente_extrato"
         metrics = getattr(analysis, "pdf_processing_metrics", None)
         if _metric(metrics, "statement_no_activity") == 1 and not analysis.transactions_total:
             return AIRecoveryDispatchResult(status="skipped", reason="statement_no_activity")
@@ -415,6 +417,8 @@ def _issue_codes(analysis) -> tuple[str, ...]:
         codes.extend(str(item or "").strip().lower() for item in warning_types)
     if _optional_int(_metric(metrics, "balance_consistency_failed")):
         codes.append("balance_consistency_failed")
+    if str(_metric(metrics, "export_recommendation") or "").strip().lower() == "review_recommended":
+        codes.append("manual_review_recommended")
     return tuple(dict.fromkeys(code for code in codes if code))
 
 

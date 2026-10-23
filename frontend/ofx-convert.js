@@ -2136,6 +2136,8 @@
     if (key === "ocr_amount_recovered_from_summary") return "Valor recuperado";
     if (key === "ocr_balance_recovered_from_context") return "Saldo recuperado";
     if (key === "partial_statement") return "Possível extrato incompleto";
+    if (key === "shared_operation_reference") return "Referência de operação compartilhada";
+    if (key === "ocr_date_year_completed") return "Ano completado pelo extrato";
     if (key === "financial_validation_failed") return "Conferência pendente";
     if (key === "combined_cash_investment_balance_not_comparable") return "Saldo com aplicações";
     if (key === "printed_summary_balance_mismatch") return "Resumo com divergência";
@@ -2166,6 +2168,8 @@
     if (value === "combined_cash_investment_balance_not_comparable") return "Os controles incluem conta corrente e aplicações automáticas. Eles não validam isoladamente o saldo da conta corrente; eventuais diferenças podem incluir rendimentos.";
     if (value === "printed_summary_balance_mismatch") return "O saldo inicial e os totais de entradas e saídas não fecham com o saldo final impresso. Os valores foram preservados para conferência no documento original.";
     if (value === "partial_statement") return "A numeração indica que o arquivo pode estar incompleto. As páginas omitidas podem conter anexos ou outros lançamentos. Os movimentos disponíveis foram convertidos; confira o período e os saldos antes de exportar.";
+    if (value === "shared_operation_reference") return "Há movimentos com a mesma referência de operação. Eles foram preservados como aparecem no extrato, pois podem representar retenções, liberações ou outros eventos relacionados. Confira os lançamentos antes de exportar.";
+    if (value === "ocr_date_year_completed") return "O OCR cortou o último dígito de um ano. A data foi completada com o único ano informado nas demais datas do extrato. Confira a data no documento original.";
     if (value === "financial_validation_failed") return "Os movimentos legíveis foram convertidos, mas não foi possível confirmar todos os saldos e totais impressos. Confira os valores no documento original antes de exportar.";
     if (value === "invoice_due_date_used_for_undated_fee") return "Esta anuidade não tem data impressa. Foi usada a data de vencimento da fatura. Confira ou ajuste a data antes de exportar.";
     if (value === "partial_statement_unpaired_credit") return "A tarifa associada ao primeiro crédito está fora deste trecho. O valor bruto foi preservado; a conferência dos saldos começa no próximo par completo de tarifa e crédito.";

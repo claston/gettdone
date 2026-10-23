@@ -225,12 +225,14 @@ def _bb(pages, kind):
         normalized = normalize_upper_text(description)
         compact = re.sub(r"\s", "", normalized)
         if "SALDOANTERIOR" in compact:
-            if opening is not None or rows or date >= start:
+            if opening is not None or rows or date > start:
                 fail()
             opening = running = amount
         elif "SALDODODIA" in compact or compact == "SALDO":
-            if amount != running or not start <= date <= end:
+            if not start <= date <= end:
                 fail()
+            if amount != running:
+                financial_mismatch()
             if rows:
                 rows[-1] = replace(rows[-1], running_balance=float(amount), source_line_refs=(*rows[-1].source_line_refs, (page, line)))
             if compact == "SALDO":

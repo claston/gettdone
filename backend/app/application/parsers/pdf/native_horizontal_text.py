@@ -1,4 +1,4 @@
-"""Read horizontal native glyphs in the Colmeia export, excluding diagonal watermarks."""
+"""Read horizontal native glyphs, excluding diagonal watermarks."""
 
 from contextlib import closing
 from math import pi
@@ -8,7 +8,7 @@ from app.application.parsers.pdf.native_unicred_grid import _PDFIUM_LOCK
 from app.application.parsers.pdf.verified_statements import fail
 
 
-def read_horizontal_native_pages(raw):
+def read_horizontal_native_pages(raw, *, word_gap_ratio=.5):
     import pypdfium2 as pdfium
 
     pages = []
@@ -30,7 +30,7 @@ def read_horizontal_native_pages(raw):
                 if not chars:
                     fail()
                 tolerance = median(c[3] for c in chars) * .4
-                gap = median(c[2]-c[1] for c in chars) * .5
+                gap = median(c[2]-c[1] for c in chars) * word_gap_ratio
                 groups = []
                 for y, left, right, height, char in sorted(chars, key=lambda c: (-c[0], c[1])):
                     group = next((g for g in groups if abs(g[0]-y) < tolerance), None)

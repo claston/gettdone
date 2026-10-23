@@ -127,14 +127,17 @@ from app.application.textract_extraction_mapper import map_textract_blocks_to_ex
 from app.application.textract_gateway import TextractGateway
 from app.application.textract_transaction_adapter import adapt_textract_extraction_to_transactions
 from app.application.unsupported_document_detection import (
+    ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE,
     BILLING_REPORT_DOCUMENT_TYPE,
     BILLING_REPORT_USER_MESSAGE,
     INVESTMENT_SUMMARY_DOCUMENT_TYPE,
     INVESTMENT_SUMMARY_USER_MESSAGE,
+    OPEN_PAYABLES_USER_MESSAGE,
     PAYMENT_REPORT_DOCUMENT_TYPE,
     PAYMENT_REPORT_USER_MESSAGE,
     detect_unsupported_document_type,
     has_accounts_payable_title,
+    is_open_payables_report,
 )
 
 _SANTANDER_IB_EMPRESARIAL_365_MOBILE_GROUPED_LAYOUT = "santander_empresarial_extrato_365_dias_mobile_grouped_v1"
@@ -460,6 +463,18 @@ def _parse_pdf_transactions_strict(
             return _with_parse_observability(
                 parse_financial_pdf_pages(read_btg_native_pages(raw_bytes), native=True),
                 extraction_provider="native_pdfium_text", native_text_detected=1, textract_attempted=0)
+        bb_layouts = {"banco_do_brasil_extrato_conta_corrente_lancamentos_v1",
+                      "banco_do_brasil_extrato_conta_corrente_lancamentos_simplificado_v1"}
+        if (b"%%EOF" in raw_bytes[-1024:] and (infer_pdf_layout("\n".join(native_pages)).layout_name in bb_layouts
+                or identify_verified_statement("\n".join(native_pages)) in bb_layouts)):
+            from app.application.parsers.pdf.native_horizontal_text import read_horizontal_native_pages
+
+            prepared = read_horizontal_native_pages(raw_bytes, word_gap_ratio=.2)
+            if identify_verified_statement("\n".join(prepared)) in bb_layouts:
+                return _with_parse_observability(
+                    _parse_pdf_transactions_from_page_texts(prepared, preserve_layout_spacing=True,
+                        context=LayoutSpecificParseContext(is_native_text=True)),
+                    extraction_provider="native_pdfium_horizontal_text", native_text_detected=1, textract_attempted=0)
         if (identify_verified_statement("\n".join(native_pages))
                 or report_identity and report_identity[1] == "sicoob_rem116_period_summary"):
             # These forms print field values out of content-stream order. Layout
@@ -502,6 +517,9 @@ def _parse_pdf_transactions_strict(
                 statement_validation_failed=int(monthly.validation_failed),
                 extraction_provider="native_pdfium_text", native_text_detected=1, textract_attempted=0,
             )
+        if is_open_payables_report("\n".join(native_pages)):
+            raise UnsupportedDocumentContentError(document_type=ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE,
+                                                  message=OPEN_PAYABLES_USER_MESSAGE)
         if has_accounts_payable_title("\n".join(native_pages)):
             try:
                 return parse_native_accounts_payable(raw_bytes)
@@ -1027,6 +1045,17 @@ def _parse_textract_text_pages_impl(extraction) -> PdfParseResult:
 
         result = project_financial_document(parse_pagbank_financial(extraction), page_texts)
         return replace(result, source_extraction=extraction, source_layout_lines=tuple(tuple(p.lines) for p in extraction.pages))
+    from app.application.parsers.pdf.banpara_ocr import parse_banpara_ocr
+    from app.application.parsers.pdf.bb_signed_ocr import parse_bb_signed_ocr
+
+    for reader, parser in ((parse_bb_signed_ocr, "layout_specific_bb_signed_ocr"),
+                           (parse_banpara_ocr, "layout_specific_banpara_ocr")):
+        statement = reader(extraction)
+        if statement is not None:
+            result = _build_verified_statement_result(statement, page_texts)
+            return replace(_with_parse_observability(result, selected_parser=parser,
+                extraction_provider="aws_textract", textract_used=1), source_extraction=extraction,
+                source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
     btg = parse_btg_pj(extraction)
     if btg is not None:
         result = _build_verified_statement_result(btg, page_texts)
@@ -1293,6 +1322,9 @@ def _parse_statement_page_texts(
     preserve_layout_spacing: bool = False,
     context: LayoutSpecificParseContext | None = None,
 ) -> PdfParseResult:
+    if is_open_payables_report("\n".join(page_texts)):
+        raise UnsupportedDocumentContentError(document_type=ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE,
+                                              message=OPEN_PAYABLES_USER_MESSAGE)
     financial_result = parse_financial_pdf_pages(page_texts, native=bool(context and context.is_native_text))
     if financial_result is not None:
         return financial_result
