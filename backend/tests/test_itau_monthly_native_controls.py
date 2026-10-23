@@ -5,7 +5,6 @@ from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from app.application.default_conversion_pipeline import build_default_conversion_pipeline
-from app.application.errors import PdfFinancialValidationError
 from app.application.pdf_parser import parse_pdf_transactions
 
 
@@ -95,11 +94,14 @@ def test_native_monthly_columns_keep_all_movements_and_separate_investment_posit
 
 
 @pytest.mark.parametrize("defect", ["wrong_balance", "wrong_total", "missing_row"])
-def test_native_monthly_controls_refuse_partial_or_inconsistent_cash_ledgers(defect, monkeypatch):
+def test_native_monthly_controls_warn_and_preserve_available_cash_movements(defect, monkeypatch):
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
     monkeypatch.setenv("PDF_OCR_ENABLED", "false")
-    with pytest.raises(PdfFinancialValidationError):
-        parse_pdf_transactions(monthly_pdf(**{defect: True}))
+    result = parse_pdf_transactions(monthly_pdf(**{defect: True}))
+    assert [row.amount for row in result.transactions] == ([200, -50, 50] if defect == "missing_row" else [200, -200, -50, 50])
+    assert result.parse_metrics["export_recommendation"] == "review_recommended"
+    assert result.parse_metrics["financial_controls_validated"] == 0
+    assert "financial_validation_failed" in result.canonical_transactions[0].warnings
 
 
 @pytest.mark.parametrize("cash_only", [False, True])
@@ -124,5 +126,7 @@ def test_native_monthly_cash_only_accepts_absent_automatic_totalizer(monkeypatch
 def test_native_monthly_keeps_controls_for_cash_only_or_missing_automatic_totals(defect, monkeypatch):
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
     monkeypatch.setenv("PDF_OCR_ENABLED", "false")
-    with pytest.raises(PdfFinancialValidationError):
-        parse_pdf_transactions(monthly_pdf(cash_only=defect != "missing_auto_totals", **{defect: True}))
+    result = parse_pdf_transactions(monthly_pdf(cash_only=defect != "missing_auto_totals", **{defect: True}))
+    assert [row.amount for row in result.transactions] == ([200, -200, -50, 50] if defect == "missing_auto_totals" else [200, -50])
+    assert result.parse_metrics["export_recommendation"] == "review_recommended"
+    assert result.parse_metrics["financial_controls_validated"] == 0

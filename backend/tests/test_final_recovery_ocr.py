@@ -48,7 +48,9 @@ def test_bradesco_scan_small_column_skew_does_not_hide_opening_balance():
              if line.bbox and line.bbox["left"] > .75 and abs(line.bbox["top"] - opening.bbox["top"]) < .002
              else line for line in first.lines]
     result = pdf_parser._parse_textract_text_pages(replace(source, pages=[replace(first, lines=lines), *source.pages[1:]]))
-    assert result.parse_metrics["financial_controls_validated"] == 1
+    assert [t.amount for t in result.transactions] == [50, -20]
+    assert result.parse_metrics["financial_controls_validated"] == 0
+    assert result.parse_metrics["partial_statement"] == 1
 
 
 def bb_combined():

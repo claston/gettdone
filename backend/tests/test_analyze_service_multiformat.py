@@ -7,6 +7,7 @@ from openpyxl import Workbook
 from app.application import default_conversion_pipeline as default_conversion_pipeline_module
 from app.application.analysis_response_builder import build_analyze_response, persist_conversion_result
 from app.application.default_conversion_pipeline import build_default_conversion_pipeline
+from app.application.document_type_classifier import DOCUMENT_TYPE_CLASSIFIER_VERSION
 from app.application.models import CanonicalTransaction, NormalizedTransaction
 from app.application.pdf_layout_inference import PdfLayoutInference
 from app.application.pdf_parser import PdfParseResult
@@ -227,7 +228,7 @@ def test_analyze_service_uses_pdf_content_with_layout_inference(tmp_path, monkey
     assert result.document_type == "bank_statement"
     assert result.document_type_confidence is not None
     assert "statement_layout" in (result.document_type_evidence or [])
-    assert result.document_classification_version == "2026-10-21.1"
+    assert result.document_classification_version == DOCUMENT_TYPE_CLASSIFIER_VERSION
     assert result.pdf_processing_metrics is not None
     assert result.pdf_processing_metrics.selected_parser == "grouped"
     assert result.pdf_processing_metrics.grouped_transactions_count == 2

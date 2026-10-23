@@ -90,6 +90,17 @@ Textract para PDF escaneado:
 - Se quiser forcar Textract mesmo quando o PDF tiver texto nativo, use `TEXTRACT_FORCE=true`.
 - A imagem Lambda usa Textract como caminho de OCR e nao inclui o binario Tesseract; o fallback local continua opcional no runtime legado do Render.
 
+## Conversão com revisão
+
+A conversão preserva os lançamentos legíveis mesmo quando a numeração sugere páginas ausentes,
+anexos foram omitidos ou os saldos e totais não puderam ser conferidos. Esses sinais geram avisos
+e recomendação de revisão; não bloqueiam a prévia nem o download dos relatórios. A mesma política
+se aplica aos layouts nativos e ao OCR, com reaproveitamento da extração já disponível.
+
+Os valores do documento são preservados para conferência. O aviso de possível extrato incompleto
+não afirma que faltam lançamentos: as páginas omitidas podem conter apenas informações adicionais.
+Formatos não suportados e arquivos sem transações legíveis continuam recebendo uma explicação de erro.
+
 ## Rodar frontend
 
 ```powershell

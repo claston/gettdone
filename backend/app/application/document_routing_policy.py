@@ -8,6 +8,7 @@ from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
 from app.application.document_type_classifier import (
+    BANK_COLLECTION_RETURN,
     BANK_RECEIPT,
     FISCAL_INVOICE,
     INVESTMENT_SUMMARY,
@@ -46,6 +47,8 @@ class DocumentRoutingDecision:
 def decide_document_routing(
     classification: DocumentTypeClassification,
 ) -> DocumentRoutingDecision:
+    if classification.document_type == BANK_COLLECTION_RETURN and classification.confidence >= .90:
+        return DocumentRoutingDecision(DocumentRoutingAction.REJECT, "unsupported_cnab_collection_return")
     if classification.document_type == NOTARY_RECEIPT and classification.confidence >= 0.90:
         return DocumentRoutingDecision(DocumentRoutingAction.REJECT, "high_confidence_notary_receipt")
     if classification.document_type == BANK_RECEIPT and "receipt_payment_title" in classification.evidence:
@@ -77,6 +80,8 @@ def enforce_document_routing(
     decision = decide_document_routing(classification)
     if decision.action == DocumentRoutingAction.REJECT:
         message = {
+            BANK_COLLECTION_RETURN: ("Este arquivo é um retorno de cobrança CNAB, com registros posicionais. "
+                                     "Envie o extrato bancário com os lançamentos da conta para conciliar."),
             NOTARY_RECEIPT: NOTARY_RECEIPT_USER_MESSAGE,
             BANK_RECEIPT: ("Este arquivo é um comprovante de pagamento de títulos. "
                            "Comprovantes de pagamento ainda não são suportados; envie o extrato bancário com os lançamentos da conta."),

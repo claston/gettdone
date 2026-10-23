@@ -129,8 +129,13 @@ def test_damaged_wise_statement_never_falls_back_to_partial_generic_conversion(m
         lines.remove("12345678")
     else:
         lines = [line.replace("TRANSFER-100005", "TRANSFER-100006") for line in lines]
-    with pytest.raises(InvalidFileContentError):
-        convert(lines)
+    if mutation in {"missing_page", "closing_mismatch"}:
+        result = convert(lines)
+        assert result.transactions_total == 6
+        assert result.pdf_processing_metrics["export_recommendation"] == "review_recommended"
+    else:
+        with pytest.raises(InvalidFileContentError):
+            convert(lines)
 
 
 def test_wise_empty_requires_complete_table_and_document():

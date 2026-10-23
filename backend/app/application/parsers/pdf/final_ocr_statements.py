@@ -8,6 +8,7 @@ from app.application.errors import PdfFinancialValidationError
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.final_native_statements import MONTHS
 from app.application.parsers.pdf.followup_ocr import _headers, _source
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
 SICREDI = "sicredi_signed_balance_columns_ocr_v1"
@@ -80,9 +81,6 @@ def _bb(extraction):
     month, year = MONTHS.index(period[1])+1, int(period[2])
     signed = re.compile(rf"({NUMBER})\s*([CD])(?:\s*\2)?", re.I)
     for page in extraction.pages:
-        counters = re.findall(r"PAG\.\s*(\d+)", upper(" ".join(line.text for line in page.lines)))
-        if counters != [str(page.page_number)]:
-            fail("Não foi possível conferir a sequência de páginas Banco do Brasil.")
         columns = _headers(page, ("DATA", "ORIGEM", "HISTORICO", "DOCUMENTO", "LOTE", "VALOR R$"))
         if not columns:
             fail("Falta um cabeçalho de colunas do Banco do Brasil.")
@@ -259,7 +257,7 @@ def _caixa(extraction):
                     if opening is None:
                         opening = running
                 elif running != printed:
-                    fail("Um saldo diário Caixa não fecha dentro do mesmo período.")
+                    financial_mismatch("Um saldo diário Caixa não fecha dentro do mesmo período.")
                 checks += 1
                 continue
             if running is None:
@@ -268,7 +266,7 @@ def _caixa(extraction):
                 if opening is None:
                     opening = running
             if running + amount != printed:
-                fail("Os valores Caixa não fecham dentro do mesmo período.")
+                financial_mismatch("Os valores Caixa não fecham dentro do mesmo período.")
             rows.append(_source(_row(page.page_number, anchor.line_index, date, description, amount, printed), page, cells))
             running = printed
             checks += 1

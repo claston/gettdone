@@ -6,7 +6,7 @@ import pytest
 
 from app.application import pdf_parser
 from app.application.document_extraction_models import ExtractedLine, ExtractedPage, RawDocumentExtraction
-from app.application.errors import PdfFinancialValidationError
+from app.application.errors import InvalidFileContentError, PdfFinancialValidationError
 from app.application.sweep_statement_detection import INFINITEPAY, identify_sweep_statement
 
 
@@ -22,7 +22,7 @@ def test_infinitepay_identity_rejects_similar_domains(domain):
     assert identify_sweep_statement(text) is None
 
 
-def test_itau_scanned_monthly_missing_pages_cannot_be_unknown_or_exported():
+def test_itau_scanned_monthly_without_readable_movements_keeps_ocr_evidence():
     source = extraction(
         [
             ("Conta Corrente e Aplicações Automáticas", 0.1, 0.03),
@@ -31,7 +31,7 @@ def test_itau_scanned_monthly_missing_pages_cannot_be_unknown_or_exported():
             ("extrato mensal jun 2026 001/006", 0.1, 0.02),
         ]
     )
-    with pytest.raises(PdfFinancialValidationError, match="páginas") as error:
+    with pytest.raises(InvalidFileContentError) as error:
         pdf_parser._parse_textract_text_pages(source)
     assert error.value._parse_observability["layout_inference_name"].startswith("itau_empresas_extrato_mensal_")
     assert error.value._ocr_source_extraction is source

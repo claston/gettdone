@@ -76,20 +76,27 @@ def test_public_sicredi_upload_and_reports(kind, tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("kind", ["matrix", "html"])
-def test_sicredi_inconsistent_controls_rejected_over_http(kind, monkeypatch):
+def test_sicredi_inconsistent_controls_convert_with_review_over_http(kind, tmp_path, monkeypatch):
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
     monkeypatch.setenv("PDF_OCR_ENABLED", "false")
     text = matrix_text().replace("7.564,91", "7.564,92") if kind == "matrix" else html_text().replace("R$ 91,87", "R$ 91,88")
     raw = generate_native_text_pdf((tuple(text.splitlines()),))
 
+    storage = TempAnalysisStorage(root_dir=tmp_path / "analyses")
+
     def configure(_access):
+        app.dependency_overrides[get_analysis_repository] = lambda: storage
+        app.dependency_overrides[get_report_service] = lambda: ReportService(storage)
         app.dependency_overrides[get_conversion_processing_pipeline] = lambda: build_default_conversion_pipeline()
 
     with _run_http_server(configure) as base_url, httpx.Client(base_url=base_url, timeout=20) as client:
         response = client.post("/convert", data={"anonymous_fingerprint": "fp-sicredi-invalid"},
                                files={"file": ("sicredi.pdf", raw, "application/pdf")})
-        assert response.status_code == 400, response.text
-        assert "Sicredi" in response.text
+        assert response.status_code == 200, response.text
+        analysis = response.json()["analysis"]
+        assert analysis["transactions_total"] == (4 if kind == "matrix" else 8)
+        assert "financial_validation_failed" in analysis["preview_transactions"][0]["warning_types"]
+        assert analysis["pdf_processing_metrics"]["export_recommendation"] == "review_recommended"
 
 
 @pytest.mark.parametrize("kind", ["matrix", "html"])

@@ -115,8 +115,15 @@ def test_two_independent_controls_uniquely_restore_missing_fee_and_one_leading_d
     ("IOF ADICIONAL AUTOMATICO", "VALOR ILEGÍVEL", 2),
 ])
 def test_inconsistent_or_ambiguous_document_cannot_fall_back_to_generic(before, after, page):
-    with pytest.raises((OcrFinancialAmbiguityError, PdfFinancialValidationError)):
-        parse(change(santander_extraction(damaged=True), before, after, page=page))
+    source = change(santander_extraction(damaged=True), before, after, page=page)
+    if before == "IOF ADICIONAL AUTOMATICO":
+        result = parse(source)
+        assert [row.amount for row in result.transactions] == [-100, 100.16, 1234.56, -1234.56, 300, -300]
+        assert result.parse_metrics["financial_controls_validated"] == 0
+        assert "financial_validation_failed" in result.canonical_transactions[0].warnings
+    else:
+        with pytest.raises((OcrFinancialAmbiguityError, PdfFinancialValidationError)):
+            parse(source)
 
 
 def test_missing_geometry_cannot_silently_drop_a_financial_cell():

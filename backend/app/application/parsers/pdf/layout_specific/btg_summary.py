@@ -11,6 +11,7 @@ from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf.layout_specific.contract import LayoutSpecificParseContext, LayoutSpecificParseResult
 from app.application.parsers.pdf.layout_specific.shared import build_parsed_transaction
 from app.application.parsers.pdf.models import _ParsedTransaction, _PdfLine
+from app.application.parsers.pdf.statement_review import financial_mismatch
 
 BTG_SUMMARY_LAYOUT = "btg_pactual_extrato_conta_corrente_resumo_v1"
 BTG_SUMMARY_PARSER = "layout_specific_btg_summary"
@@ -78,7 +79,7 @@ def _summary(lines: list[_PdfLine]) -> _Summary:
     if start > end or opening_date != start or closing_date != end or min(inflows, outflows) < 0:
         _fail()
     if opening + inflows - outflows != closing:
-        _fail()
+        financial_mismatch(_MESSAGE)
     return _Summary(start, end, opening, closing, inflows, outflows)
 
 
@@ -110,9 +111,6 @@ def _ledger_row(pending: list[_PdfLine]) -> _LedgerRow | None:
 
 
 def _page_rows(page: list[_PdfLine], *, ordinal: int, total_pages: int) -> list[_LedgerRow]:
-    counters = [match for line in page if (match := _PAGE.search(line.text.strip()))]
-    if len(counters) != 1 or (int(counters[0][1]), int(counters[0][2])) != (ordinal, total_pages):
-        _fail()
     headers = []
     for index, line in enumerate(page):
         if normalize_upper_text(line.text) == _TABLE:
@@ -163,20 +161,26 @@ class BtgSummaryLayoutParser:
                   for row in _page_rows([line for line in lines if line.page_number == page], ordinal=ordinal, total_pages=len(pages))]
         if len(ledger) < 3 or ledger[0].kind != "FECHAMENTO" or ledger[-1].kind != "ABERTURA":
             _fail()
-        if (ledger[0].day, ledger[0].balance) != (summary.end, summary.closing):
+        if ledger[0].day != summary.end:
             _fail()
-        if (ledger[-1].day, ledger[-1].balance) != (summary.start, summary.opening):
+        if ledger[0].balance != summary.closing:
+            financial_mismatch(_MESSAGE)
+        if ledger[-1].day != summary.start:
             _fail()
+        if ledger[-1].balance != summary.opening:
+            financial_mismatch(_MESSAGE)
         movements = ledger[1:-1]
         if any(row.kind != "movement" or not summary.start <= row.day <= summary.end for row in movements):
             _fail()
         if sum((row.amount for row in movements if row.amount > 0), Decimal(0)) != summary.inflows:
-            _fail()
+            financial_mismatch(_MESSAGE)
         if -sum((row.amount for row in movements if row.amount < 0), Decimal(0)) != summary.outflows:
-            _fail()
+            financial_mismatch(_MESSAGE)
         for newer, older in zip(ledger, ledger[1:]):
-            if newer.day < older.day or newer.balance != older.balance + newer.amount:
+            if newer.day < older.day:
                 _fail()
+            if newer.balance != older.balance + newer.amount:
+                financial_mismatch(_MESSAGE)
         # Accounting consumers use oldest first; provenance retains the PDF's physical order.
         rows: list[_ParsedTransaction] = [build_parsed_transaction(
             date=row.day.isoformat(), description=row.description, amount=float(row.amount), running_balance=float(row.balance),

@@ -5,6 +5,7 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import (
     DATE,
     NUMBER,
@@ -101,8 +102,10 @@ def _inter(pages, kind):
         amount, balance = money(match[3]), money(match[4])
         if opening is None:
             opening = running = balance - amount
-        if running + amount != balance or rows and date < rows[-1].transaction.date:
+        if rows and date < rows[-1].transaction.date:
             fail()
+        if running + amount != balance:
+            financial_mismatch()
         rows.append(_row(page, line, date, match[2], amount, balance))
         running = balance
     if not rows:
@@ -331,7 +334,7 @@ def _btg_invoice(pages, kind):
         values = [money(m[1]) for m in re.finditer(re.escape(label) + rf"\s*-?R\$\s*({NUMBER})", text)]
         summaries[name] = _one(values)
     if summaries["opening"] - summaries["payments"] + summaries["expenses"] != summaries["closing"]:
-        fail()
+        financial_mismatch()
     rows, cards, card_totals = [], {}, {}
     card = None
     pending_foreign = None

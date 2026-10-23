@@ -2,9 +2,12 @@
 
 import re
 from dataclasses import replace
+from datetime import date as calendar_date
+from datetime import timedelta
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _lines, _row, day, fail, money
 from app.application.sweep_statement_detection import BB_SISBB, CAIXA, CREDISIS, MERCADO_PAGO, SICREDI, TRIBANCO
 
@@ -42,13 +45,6 @@ def _continue(rows, page, line, raw):
         transaction=replace(previous.transaction, description=previous.transaction.description + " " + raw),
         source_line_refs=(*previous.source_line_refs, (page, line)),
     )
-
-
-def _counter_pages(pages, pattern):
-    for index, text in enumerate(pages, 1):
-        matches = re.findall(pattern, "\n".join(upper(line) for line in text.splitlines()), re.MULTILINE)
-        if matches != [(str(index), str(len(pages)))]:
-            fail("Falta uma página ou a sequência do extrato está incorreta. Envie o documento completo.")
 
 
 def _sisbb(pages, kind):
@@ -99,7 +95,7 @@ def _sisbb(pages, kind):
             balance = values[1] if len(values) == 2 else None
             if balance is not None:
                 if running != balance:
-                    fail()
+                    financial_mismatch()
                 checks += 1
             description = " ".join([*prefix, description])
             row = _row(page, line, date, description, values[0], balance, reference[1])
@@ -113,28 +109,54 @@ def _sisbb(pages, kind):
 
 def _sicredi(pages, kind):
     text = "\n".join(pages)
-    bounds = re.search(rf"PERIODO DE\s+({DATE})\s+A\s+({DATE})", upper(text))
+    period_pattern = rf"PERIODO DE\s+({DATE})\s+A\s+({DATE})"
+    bounds = re.search(period_pattern, upper(text))
     if bounds is None:
         fail()
+    for field in (r"COOPERATIVA:\s*([\d.-]+)", r"CONTA:\s*([\d.-]+)"):
+        if len(set(re.findall(field, upper(text)))) > 1:
+            fail("Há contas diferentes no mesmo arquivo Sicredi. Envie um extrato por conta.")
     start, end = day(bounds[1]), day(bounds[2])
     rows, opening, running, checks = [], None, None, 0
+    period_seen, period_opened, future = False, False, False
     for page, line, raw in _lines(pages):
         label = upper(raw)
+        period = re.search(period_pattern, label)
+        if period:
+            new_start, new_end = day(period[1]), day(period[2])
+            if new_start > new_end:
+                fail()
+            if period_seen and (new_start, new_end) != (start, end):
+                if not period_opened or new_start != (calendar_date.fromisoformat(end) + timedelta(days=1)).isoformat():
+                    fail("Os períodos do Sicredi não são consecutivos. Envie o extrato completo da mesma conta.")
+                if not re.search(r"CONTA:\s*[\d.-]+", upper(text)):
+                    fail("Não foi possível confirmar a conta dos períodos Sicredi. Envie um arquivo por conta.")
+                period_opened = False
+            start, end, period_seen, future = new_start, new_end, True, False
         if label.startswith("LANCAMENTOS FUTUROS"):
-            break
+            future = True
+        if future:
+            continue
         if label.startswith("SALDO ANTERIOR"):
             values = re.findall(rf"[+-]?{NUMBER}", raw)
-            if len(values) != 1 or opening is not None:
+            if len(values) != 1 or period_opened:
                 fail()
-            opening = running = money(values[0])
+            balance = money(values[0])
+            if opening is None:
+                opening = running = balance
+            elif running != balance:
+                financial_mismatch()
+            period_opened = True
         dated = re.match(rf"^({DATE})\s+(.+?)\s+([+-]?{NUMBER})\s+([+-]?{NUMBER})$", raw)
         if not dated:
             if re.match(rf"^{DATE}\b", raw):
                 fail()
             continue
         date, description, amount, balance = day(dated[1]), dated[2], money(dated[3]), money(dated[4])
-        if running is None or not start <= date <= end or running + amount != balance:
+        if not period_opened or running is None or not start <= date <= end:
             fail()
+        if running + amount != balance:
+            financial_mismatch()
         # An overlapping text object repeats a prefix, not the transaction.
         for size in range(len(description) // 2, 8, -1):
             prefix = description[:size]
@@ -144,12 +166,13 @@ def _sicredi(pages, kind):
         running = balance
         rows.append(_row(page, line, date, description, amount, balance))
         checks += 1
+    if not period_opened:
+        fail()
     _ordered(rows)
     return VerifiedStatement(rows, kind, opening, running, printed_balance_checks=checks)
 
 
 def _tribanco(pages, kind):
-    _counter_pages(pages, r"/EXTRATO\s+(\d+)/(\d+)")
     rows, opening, running, current, checks = [], None, None, None, 0
     last_control = False
     for page, line, raw in _lines(pages):
@@ -195,7 +218,6 @@ def _tribanco(pages, kind):
 
 
 def _mercado_pago(pages, kind):
-    _counter_pages(pages, r"^\s*(\d+)/(\d+)\s*$")
     text = upper("\n".join(pages))
     period = re.search(r"DE (\d{2}-\d{2}-\d{4}) AL (\d{2}-\d{2}-\d{4})", text)
     if not period:
@@ -209,7 +231,7 @@ def _mercado_pago(pages, kind):
         if len(values) != 1:
             fail()
         summary[key] = values[0]
-    rows, running, references = [], summary["opening"], set()
+    rows, running, references = [], summary["opening"], {}
     prefix, prefix_refs = [], []
     description_columns = {}
     for page, content in enumerate(pages, 1):
@@ -227,7 +249,7 @@ def _mercado_pago(pages, kind):
                 active = False
             if not active:
                 continue
-            if re.match(r"^(PIX (?:RECEBIDO|ENVIADO)\b|PAGAMENTO (?:DE CONTA|COM QR PIX)\b)", label):
+            if re.match(r"^(PIX (?:RECEBIDO|ENVIADO)\b|REEMBOLSO DE PIX ENVIADO\b|PAGAMENTO (?:DE CONTA|COM QR PIX)\b)", label):
                 prefix.append(raw)
                 prefix_refs.append((page, line))
             elif rows and page in description_columns and not re.fullmatch(r"\d+/\d+", raw):
@@ -242,21 +264,30 @@ def _mercado_pago(pages, kind):
         date = day(dated[1], "%d-%m-%Y")
         description = dated[2][: values[0].start()].strip()
         reference = re.search(r"\s+(\d+)$", description)
-        if not reference or reference[1] in references or not start <= date <= end:
+        if not reference or not start <= date <= end:
             fail()
-        references.add(reference[1])
         amount, balance = map(_currency, values)
+        description = " ".join([*prefix, description[: reference.start()].strip()])
+        previous = references.get(reference[1], [])
+        if previous:
+            original = previous[0]
+            if (len(previous) != 1 or not re.match(r"^PIX ENVIADO\b", upper(original.transaction.description))
+                    or not re.match(r"^REEMBOLSO DE PIX ENVIADO\b", upper(description))
+                    or original.transaction.amount >= 0 or amount != -Decimal(str(original.transaction.amount))
+                    or day(original.transaction.date, "%Y-%m-%d") > date):
+                fail()
         running += amount
         if running != balance:
-            fail()
-        row = _row(page, line, date, " ".join([*prefix, description[: reference.start()].strip()]), amount, balance, reference[1])
+            financial_mismatch()
+        row = _row(page, line, date, description, amount, balance, reference[1])
         rows.append(replace(row, source_line_refs=(*prefix_refs, *row.source_line_refs)))
+        references.setdefault(reference[1], []).append(row)
         prefix, prefix_refs = [], []
     _ordered(rows)
     credits = sum((Decimal(str(r.transaction.amount)) for r in rows if r.transaction.amount > 0), Decimal(0))
     debits = sum((Decimal(str(r.transaction.amount)) for r in rows if r.transaction.amount < 0), Decimal(0))
     if running != summary["closing"] or credits != summary["credit"] or debits != summary["debit"]:
-        fail()
+        financial_mismatch()
     return VerifiedStatement(rows, kind, summary["opening"], running, printed_balance_checks=len(rows) + 3)
 
 
@@ -294,7 +325,7 @@ def _caixa(pages, kind):
             amount, balance = map(_currency, values)
             running += amount
             if running != balance:
-                fail()
+                financial_mismatch()
             description = joined[: values[0].start()].strip()
             rows.append(replace(_row(page, line, current, description, amount, balance), source_line_refs=tuple(refs)))
             checks += 1
@@ -308,7 +339,6 @@ def _caixa(pages, kind):
 def _credisis(pages, kind):
     # Pending deposits have no available cash effect. Keep the count visible;
     # only their later release enters the signed cash ledger.
-    _counter_pages(pages, r"PAGINA\s+(\d+)\s*/\s*(\d+)")
     rows, opening, closing, blocked = [], None, None, 0
     active = True
     for page, line, raw in _lines(pages):
@@ -350,9 +380,9 @@ def _credisis(pages, kind):
     for row in rows:
         running += Decimal(str(row.transaction.amount))
         if running != Decimal(str(row.running_balance)):
-            fail()
+            financial_mismatch()
     if running != closing:
-        fail()
+        financial_mismatch()
     return VerifiedStatement(
         [r for r in rows if r.transaction.amount != 0], kind, opening, closing, printed_balance_checks=len(rows), non_cash_entries=blocked
     )

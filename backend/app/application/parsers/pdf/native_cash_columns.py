@@ -10,6 +10,7 @@ from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.layout_specific.santander_ocr import SANTANDER_OCR_LAYOUT, _period
 from app.application.parsers.pdf.native_itau_monthly import _boxes
 from app.application.parsers.pdf.native_unicred_grid import _PDFIUM_LOCK, _read_history, _TextBox
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.text_extraction import read_layout_native_pdf_page_texts
 from app.application.parsers.pdf.verified_statements import NUMBER, VerifiedStatement, _row, fail, money
 from app.application.source_regions import SourceRegion
@@ -87,7 +88,7 @@ def _summary(text):
         result[key] = values.pop()
     if (min(result["credit"], result["debit"]) < 0
             or result["opening"]+result["credit"]-result["debit"] != result["closing"]):
-        _fail()
+        financial_mismatch(_MESSAGE)
     return start, end, result
 
 
@@ -115,9 +116,6 @@ def parse_santander_inactive_cash(pages):
     for date in (previous, final):
         matches = re.findall(rf"SALDO DE CONTA CORRENTE EM {date}\s+([+-]?{NUMBER}-?)", text)
         if len(matches) != 1 or _value(matches[0]) != balance:
-            return None
-    for ordinal, page in enumerate(pages, 1):
-        if re.findall(r"PAGINA:\s*(\d+)/(\d+)", upper(page)) != [(str(ordinal), str(len(pages)))]:
             return None
     return VerifiedStatement([], SANTANDER_OCR_LAYOUT, balance, balance, printed_balance_checks=4)
 
@@ -151,7 +149,7 @@ def parse_native_cash_columns(raw, page_texts):
         if period is None:
             _fail()
         start, end = _date(period[1], None), _date(period[2], None)
-    rows, source_pages, counters, accounts = [], [], [], set()
+    rows, source_pages, accounts = [], [], set()
     opening = opening_date = printed_closing = printed_totals = current = None
     finished = False
     checks = 0
@@ -161,8 +159,6 @@ def parse_native_cash_columns(raw, page_texts):
                 text = "".join(chr(pdfium.raw.FPDFText_GetUnicode(tp, i)) for i in range(tp.count_chars()))
                 source_pages.append(text)
                 normalized = upper(text)
-                counter_pattern = r"PAGINA:\s*(\d+)/(\d+)" if santander else r"\b(\d{3})/(\d{3})\b"
-                counters.extend(tuple(map(int, m)) for m in re.findall(counter_pattern, normalized))
                 accounts.update(re.findall(r"AGENCIA:\s*(\d{3,5})\s+CONTA:\s*([\d.-]+)", normalized))
                 if len(accounts) > 1:
                     _fail()
@@ -230,7 +226,7 @@ def parse_native_cash_columns(raw, page_texts):
                             _fail()
                         opening = amounts["balance"]
                         if santander and opening != controls["opening"]:
-                            _fail()
+                            financial_mismatch(_MESSAGE)
                         if not santander and current is None:
                             _fail()
                         opening_date = start-timedelta(days=1) if santander else current
@@ -291,8 +287,6 @@ def parse_native_cash_columns(raw, page_texts):
                 terminal_y = anchor.bottom if finished else 0
                 if any(id(box) not in used_references and box.bottom > terminal_y for box in references):
                     _fail()
-    if counters and counters != [(i, len(source_pages)) for i in range(1, len(source_pages)+1)]:
-        _fail()
     if not finished or not rows or opening is None:
         _fail()
     running = opening
@@ -300,10 +294,10 @@ def parse_native_cash_columns(raw, page_texts):
         running += Decimal(str(row.transaction.amount))
         if row.running_balance is not None:
             if Decimal(str(row.running_balance)) != running:
-                _fail()
+                financial_mismatch(_MESSAGE)
             checks += 1
     totals = (sum((Decimal(str(row.transaction.amount)) for row in rows if row.transaction.amount > 0), Decimal(0)),
               sum((-Decimal(str(row.transaction.amount)) for row in rows if row.transaction.amount < 0), Decimal(0)))
     if running != printed_closing or totals != printed_totals or santander and running != controls["closing"]:
-        _fail()
+        financial_mismatch(_MESSAGE)
     return VerifiedStatement(rows, kind, opening, running, printed_balance_checks=checks, candidate_rows=len(rows)), tuple(source_pages)

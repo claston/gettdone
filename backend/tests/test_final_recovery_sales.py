@@ -44,5 +44,10 @@ def test_sales_report_keeps_divergence_visible_without_changing_source_amount():
 @pytest.mark.parametrize("old,new", [("Página 1 de 1", "Página 1 de 2"), ("R$ 5,00  R$ 95,00", "R$ 95,00"),
                                      ("30/06/2026 16:30", "31/06/2026 16:30"), ("30/06/2026 16:30", "01/07/2026 16:30")])
 def test_sales_report_rejects_missing_pages_columns_and_invalid_dates(old, new):
-    with pytest.raises(PdfFinancialValidationError):
-        pdf_parser._parse_pdf_transactions_from_page_texts([sales_report().replace(old, new)])
+    pages = [sales_report().replace(old, new)]
+    if old.startswith("Página"):
+        result = pdf_parser._parse_pdf_transactions_from_page_texts(pages)
+        assert result.parse_metrics["partial_statement"] == 1
+    else:
+        with pytest.raises(PdfFinancialValidationError):
+            pdf_parser._parse_pdf_transactions_from_page_texts(pages)

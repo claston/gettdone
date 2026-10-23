@@ -121,6 +121,11 @@ def test_bradesco_monthly_ocr_keeps_day_columns_and_suffix_debit_sign():
 def test_known_structures_reject_corrupted_values_and_missing_pages(factory, before, after):
     pages = factory()
     assert any(before in page for page in pages)
+    if "Página" in before:
+        result = parse([page.replace(before, after) for page in pages])
+        assert result.parse_metrics["partial_statement"] == 1
+        assert result.parse_metrics["export_recommendation"] == "review_recommended"
+        return
     with pytest.raises(PdfFinancialValidationError):
         parse([page.replace(before, after) for page in pages])
 
@@ -172,6 +177,12 @@ def test_bradesco_ocr_rejects_inconsistent_or_unreadable_ledger(mutation):
             replace(lines[0], text="bradesco", page_number=2),
             replace(lines[-1], text="Página: 2 de 2", page_number=2),
         ]))
+    if mutation == "missing_page":
+        result = pdf_parser._parse_textract_text_pages(replace(extraction, pages=pages))
+        assert len(result.transactions) == 2
+        assert result.parse_metrics["partial_statement"] == 1
+        assert result.parse_metrics["export_recommendation"] == "review_recommended"
+        return
     with pytest.raises(PdfFinancialValidationError) as error:
         pdf_parser._parse_textract_text_pages(replace(extraction, pages=pages))
     assert error.value._parse_observability["layout_inference_name"] == "bradesco_extrato_mensal_dia_historico_valor_ocr_v1"

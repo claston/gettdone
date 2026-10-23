@@ -17,10 +17,6 @@ def parse_bradesco_monthly(extraction):
     rows, opening, running, current_date = [], None, None, None
     checks, last_control = 0, -1
     for number, page in enumerate(extraction.pages, 1):
-        text = upper(" ".join(line.text for line in page.lines))
-        counters = re.findall(r"\bPAGINA:\s*(\d+)\s+DE\s+(\d+)\b", text)
-        if counters != [(str(number), str(len(extraction.pages)))]:
-            fail("Não foi possível conferir as páginas do extrato mensal Bradesco. Envie o documento completo e legível.")
         lines = sorted((line for line in page.lines if line.bbox), key=lambda line: (line.bbox["top"], line.bbox["left"]))
         headers = {label: next((line for line in lines if upper(line.text) == label), None)
                    for label in ("DIA", "HISTORICO", "N.DOCTO", "VALOR")}
@@ -34,7 +30,7 @@ def parse_bradesco_monthly(extraction):
                 months.append((line.bbox["top"], MONTHS[match[1]], int(match[2])))
         if not months:
             fail()
-        footer_y = min(line.bbox["top"] for line in lines if re.search(r"PAGINA:", upper(line.text)))
+        footer_y = min((line.bbox["top"] for line in lines if re.search(r"PAGINA:", upper(line.text))), default=1)
         values = [line for line in lines if headers["VALOR"].bbox["top"] < line.bbox["top"] < footer_y
                   and line.bbox["left"] >= value_x - .04 and re.search(r"\d[,.]\d", line.text)]
         if any(not VALUE.fullmatch(line.text) or line.confidence is not None and line.confidence < 85 for line in values):

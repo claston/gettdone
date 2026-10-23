@@ -442,11 +442,12 @@ def test_parse_santander_pf_consolidated_intelligent_uses_existing_specialized_p
               PIX ENVIADO - 21,00-
         Extrato_PF_A4_Inteligente - 27/11/2024
         BALP_UY_M3FM4156_MXDD0926.PIM -
+        Página: 1/2
         """,
         """
         EXTRATO CONSOLIDADO INTELIGENTE
         setembro/2026
-        Página: 2/11
+        Página: 2/2
         02/09 PAGAMENTO DE BOLETO - 50,00-
               PIX RECEBIDO - 75,00
         SALDO EM 30/09 204,00
@@ -1727,11 +1728,12 @@ def test_parse_santander_consolidated_intelligent_multiline_rows_across_pages(
         IOF ADICIONAL - AUTOMATICO
         PERIODO: 01/01 A 31/01/26
         - 109,33-
+        Pagina: 1/2
         """,
         """
         EXTRATO CONSOLIDADO INTELIGENTE
         fevereiro/2026
-        Pagina: 3/10
+        Pagina: 2/2
         Data Descricao No Documento Movimentos (R$) Saldo (R$)
         Creditos Debitos
         JUROS SALDO UTILIZ ATE LIMITE

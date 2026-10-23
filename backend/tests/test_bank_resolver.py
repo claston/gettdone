@@ -1,6 +1,10 @@
 from app.application.bank_resolver import resolve_bank_code
 
 
+def test_uniprime_ocr_profile_resolves_its_clearing_bank():
+    assert resolve_bank_code(layout_inference_name="uniprime_conta_corrente_ocr_v1") == "099"
+
+
 def test_resolve_bank_code_from_layout_profile_bank_name() -> None:
     assert resolve_bank_code(layout_inference_name="banco_do_brasil_extrato_conta_corrente_lancamentos_v1") == "001"
 

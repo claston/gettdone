@@ -1,15 +1,65 @@
 """Banco do Brasil cash columns from the auto-service print template."""
 
 import re
+from dataclasses import replace
 from decimal import Decimal
 from statistics import median
 
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.followup_ocr import _headers, _source
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
 LAYOUT = "banco_do_brasil_autoatendimento_cd_ocr_v1"
-_MONEY = re.compile(rf"({NUMBER}|\d+\.\d{{2}})\s*([CD])?", re.IGNORECASE)
+_MONEY = re.compile(rf"({NUMBER}|\d+\.\d{{2}})\s*(?:[Il|]\s+(?=[CD]))?([CD])?", re.IGNORECASE)
+
+
+def _columns(page):
+    keys = ("HISTORICO", "DOCUMENTO", "VALOR R$", "SALDO")
+    columns = _headers(page, keys)
+    if columns:
+        return columns
+    others = _headers(page, keys[1:])
+    if not others:
+        return None
+    headers = [line for line in page.lines if line.bbox and upper(line.text) == "DOCUMENTO"]
+    candidates = [word for word in page.words if word.bbox and upper(word.text) == "HISTORICO"
+                  and len(headers) == 1 and abs(word.bbox["top"] - headers[0].bbox["top"]) < .006
+                  and word.bbox["left"] < others["DOCUMENTO"]]
+    if len(candidates) == 1:
+        return {**others, "HISTORICO": candidates[0].bbox["left"]}
+    return None
+
+
+def _column_lines(page, columns):
+    """Separate merged column cells using their words, retaining source line IDs."""
+    result = []
+    for line in page.lines:
+        if not line.bbox:
+            continue
+        words = sorted([word for word in page.words if word.id in line.word_ids and word.bbox],
+                       key=lambda word: word.bbox["left"])
+        if words and line.bbox["left"] >= columns["DOCUMENTO"] - .07:
+            groups = {}
+            for word in words:
+                x = word.bbox["left"]
+                column = "balance" if x >= columns["SALDO"] - .03 else "amount" if x >= columns["VALOR R$"] - .035 else "document"
+                groups.setdefault(column, []).append(word)
+            if len(groups) > 1:
+                for group in groups.values():
+                    left = min(word.bbox["left"] for word in group)
+                    right = max(word.bbox["left"] + word.bbox["width"] for word in group)
+                    result.append(replace(line, text=" ".join(word.text for word in group),
+                                          bbox={**line.bbox, "left": left, "width": right-left}))
+                continue
+        if line.bbox["left"] < columns["HISTORICO"] - .02 < line.bbox["left"] + line.bbox["width"]:
+            words = [word for word in words if columns["HISTORICO"] - .02 <= word.bbox["left"] < columns["DOCUMENTO"] - .07]
+            if words:
+                left = min(word.bbox["left"] for word in words)
+                right = max(word.bbox["left"] + word.bbox["width"] for word in words)
+                line = replace(line, text=" ".join(word.text for word in words), bbox={**line.bbox, "left": left, "width": right-left})
+        result.append(line)
+    return result
 
 
 def is_bb_cash_ocr(text):
@@ -24,7 +74,7 @@ def is_bb_cash_ocr(text):
 
 
 def parse_bb_cash_ocr(extraction):
-    columns = _headers(extraction.pages[0], ("HISTORICO", "DOCUMENTO", "VALOR R$", "SALDO"))
+    columns = _columns(extraction.pages[0])
     if not columns:
         fail()
     base_columns = columns
@@ -46,6 +96,7 @@ def parse_bb_cash_ocr(extraction):
         if abs(offset) > 0.08 or any(abs(item.bbox["left"] - date_x) > 0.02 for item in dates):
             fail()
         columns = {key: value + offset for key, value in base_columns.items()}
+        lines = _column_lines(page, columns)
         boundary = (columns["VALOR R$"] + columns["SALDO"]) / 2
         for index, anchor in enumerate(dates):
             top = anchor.bbox["top"]
@@ -53,6 +104,20 @@ def parse_bb_cash_ocr(extraction):
             cells = [item for item in lines if top - 0.005 <= item.bbox["top"] < bottom]
             history = [item for item in cells if columns["HISTORICO"] - 0.02 <= item.bbox["left"] < columns["DOCUMENTO"] - 0.07]
             label = upper(" ".join(item.text for item in history))
+            # Textract can emit lot + history as a single WORD as well as a
+            # single LINE. These exact control labels have no monetary value
+            # or document reference, so recognize the printed marker itself.
+            controls = [item for item in cells if abs(item.bbox["top"]-top) < .006
+                        and re.fullmatch(r"(?:0{5})?(?:000SALDOANTERIOR|999SALDO)", upper(item.text).replace(" ", ""))]
+            if len(controls) == 1:
+                label = "SALDO ANTERIOR" if "ANTERIOR" in upper(controls[0].text) else "999 SALDO"
+            baseline_label = upper(" ".join(item.text for item in history if abs(item.bbox["top"]-top) < .006)).replace(" ", "")
+            if (len(controls) == 1 and label == "999 SALDO") or baseline_label.removeprefix("999") == "SALDO":
+                # The final date has no next anchor; limits, CET and footer
+                # balances below it belong to another financial section.
+                cells = [item for item in cells if abs(item.bbox["top"] - top) < .006]
+                history = [item for item in history if item in cells]
+                label = "999 SALDO"
             values = [item for item in cells if item.bbox["left"] > columns["DOCUMENTO"] + 0.05 and _MONEY.fullmatch(item.text.strip())]
             amounts = [item for item in values if item.bbox["left"] + item.bbox["width"] / 2 < boundary]
             balances = [item for item in values if item not in amounts]
@@ -107,7 +172,7 @@ def parse_bb_cash_ocr(extraction):
             balance = value(balances[0]) if balances and not unreadable_balance_sign else None
             if balance is not None:
                 if balance != running:
-                    fail("Os valores do Banco do Brasil não fecham com o saldo impresso. Confira o documento original.")
+                    financial_mismatch("Os valores do Banco do Brasil não fecham com o saldo impresso. Confira o documento original.")
                 checks += 1
             refs = [
                 item
@@ -124,8 +189,6 @@ def parse_bb_cash_ocr(extraction):
                 _row(page.page_number, anchor.line_index, day(anchor.text), description, amount, balance, refs[0].text), page, cells
             )
             if _MONEY.fullmatch(amounts[0].text.strip())[2] is None or unreadable_balance_sign:
-                from dataclasses import replace
-
                 row = replace(row, warnings=[*row.warnings, "manual_review_recommended", "amount_sign_from_explicit_pix_label"])
             rows.append(row)
     if not rows or closing is None or not checks or any(a.transaction.date > b.transaction.date for a, b in zip(rows, rows[1:])):

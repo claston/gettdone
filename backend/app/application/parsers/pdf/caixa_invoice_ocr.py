@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import VerifiedStatement, _row, fail
 from app.application.source_regions import evidence_regions
 
@@ -124,16 +125,20 @@ def parse_caixa_invoice(extraction):
                 _printed(page, [anchor])
                 matches = list(_SIGNED.finditer(anchor.text))
                 closing = _signed(_one(matches)[0])
-                if closing != -due_amount or card_open or section_open:
+                if card_open or section_open:
                     _fail()
+                if closing != -due_amount:
+                    financial_mismatch(_MESSAGE)
                 checks += 1
                 break
             near = [line for line in body if _near(line, anchor)]
             amounts = [line for line in near if line.bbox["left"] >= value_left]
             if label.startswith("TOTAL FINAL (CARTAO"):
                 _printed(page, near)
-                if section_open or not card_open or -_signed(_one(amounts).text) != card_expenses:
+                if section_open or not card_open:
                     _fail()
+                if -_signed(_one(amounts).text) != card_expenses:
+                    financial_mismatch(_MESSAGE)
                 used.update(line.id for line in near)
                 card_open = False
                 card_expenses = Decimal(0)
@@ -143,8 +148,10 @@ def parse_caixa_invoice(extraction):
             if label.startswith("TOTAL COMPRAS"):
                 _printed(page, near)
                 expected = "installments" if label.startswith("TOTAL COMPRAS PARCELADAS") else "purchases"
-                if section != expected or not section_open or -_signed(_one(amounts).text) != section_expenses:
+                if section != expected or not section_open:
                     _fail()
+                if -_signed(_one(amounts).text) != section_expenses:
+                    financial_mismatch(_MESSAGE)
                 used.update(line.id for line in near)
                 section_open = False
                 section_expenses = Decimal(0)
@@ -224,7 +231,8 @@ def parse_caixa_invoice(extraction):
             if any(line.id not in used and line.bbox["left"] >= value_left and _SIGNED.fullmatch(line.text.strip())
                    and line.bbox["top"] < anchor.bbox["top"] for line in body):
                 _fail()
-    if (not financial_pages or not rows or opening is None or closing is None
-            or opening+sum((Decimal(str(row.transaction.amount)) for row in rows), Decimal(0)) != closing):
+    if not financial_pages or not rows or opening is None or closing is None:
         _fail()
+    if opening+sum((Decimal(str(row.transaction.amount)) for row in rows), Decimal(0)) != closing:
+        financial_mismatch(_MESSAGE)
     return VerifiedStatement(rows, LAYOUT, opening, closing, printed_balance_checks=checks, candidate_rows=len(rows))

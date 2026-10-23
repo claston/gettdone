@@ -68,8 +68,10 @@ def test_stone_credit_debit_variant_keeps_all_pages_signs_and_shared_net_fee_bal
 def test_stone_numeric_ocr_error_cannot_be_replaced_with_a_balance_difference():
     ext = stone_old()
     ext.pages[0].lines[9] = ExtractedLine("wrong", 1, 10, "31,00", bbox=ext.pages[0].lines[9].bbox)
-    with pytest.raises(PdfFinancialValidationError):
-        _parse_scanned_pdf_with_textract_text_pages(ext)
+    result = _parse_scanned_pdf_with_textract_text_pages(ext)
+    assert [r.amount for r in result.transactions] == [100, -5, -31]
+    assert result.parse_metrics["financial_controls_validated"] == 0
+    assert "financial_validation_failed" in result.canonical_transactions[0].warnings
 
 
 def test_bradesco_uses_columns_over_description_and_preserves_dateless_page_continuation():
@@ -93,8 +95,10 @@ def test_bradesco_missing_page_cannot_receive_a_validated_closing_balance():
     ext = bradesco()
     old = ext.pages[1].lines[1]
     ext.pages[1].lines[1] = ExtractedLine(old.id, 2, old.line_index, "Folha 3/10", bbox=old.bbox)
-    with pytest.raises(PdfFinancialValidationError):
-        _parse_scanned_pdf_with_textract_text_pages(ext)
+    result = _parse_scanned_pdf_with_textract_text_pages(ext)
+    assert [r.amount for r in result.transactions] == [50, -20]
+    assert result.parse_metrics["partial_statement"] == 1
+    assert result.parse_metrics["financial_controls_validated"] == 0
 
 
 def test_bradesco_cannot_drop_two_offsetting_rows_without_document_numbers():

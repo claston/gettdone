@@ -4,6 +4,8 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 from app.application.source_regions import evidence_regions
 
@@ -103,7 +105,7 @@ def parse_stone_credit_debit(extraction):
             rows[index] = replace(row, running_balance=None)
         else:
             if running != Decimal(str(row.running_balance)):
-                fail("Os valores Stone não fecham com os saldos impressos, inclusive nas quebras de página.")
+                financial_mismatch("Os valores Stone não fecham com os saldos impressos, inclusive nas quebras de página.")
             checks += 1
     return VerifiedStatement(rows, "stone_credit_debit_ocr_v1", opening, running,
                              printed_balance_checks=checks, candidate_rows=candidates)
@@ -127,15 +129,6 @@ def parse_bradesco_columns(extraction):
         return line.bbox["top"]-slopes[page.page_number]*line.bbox["left"]
     def near(page, anchor):
         return [line for line in page.lines if line.bbox and abs(position_y(page, line)-position_y(page, anchor)) < .006]
-    counters = []
-    for page in extraction.pages:
-        matches = re.findall(r"FOLHA\s+(\d+)\s*/\s*(\d+)", " ".join(upper(line.text) for line in page.lines))
-        if len(matches) != 1:
-            fail("Não foi possível conferir a sequência de páginas Bradesco.")
-        counters.append(tuple(map(int, matches[0])))
-    first, total = counters[0]
-    if counters != [(n, total) for n in range(first, first + len(counters))] or first != 1:
-        fail("Inclua a primeira página e mantenha as páginas Bradesco em sequência.")
     seed = None
     current = None
     rows, checks, candidates = [], 0, 0
@@ -195,7 +188,7 @@ def parse_bradesco_columns(extraction):
                 fail()
             running += amount
             if running != value(balance.text):
-                fail("Os lançamentos Bradesco não fecham com os saldos impressos.")
+                financial_mismatch("Os lançamentos Bradesco não fecham com os saldos impressos.")
             checks += 1
             y = position_y(page, anchor)
             lower = (position_y(page, anchors[index-1]) + y) / 2 if index else y - .01
@@ -210,9 +203,11 @@ def parse_bradesco_columns(extraction):
         credits = sum((Decimal(str(r.transaction.amount)) for r in rows if r.transaction.amount > 0), Decimal(0))
         debits = sum((Decimal(str(r.transaction.amount)) for r in rows if r.transaction.amount < 0), Decimal(0))
         if printed_totals != [(credits, debits, running)]:
-            fail("Os totais do período Bradesco não fecham com os lançamentos extraídos.")
+            financial_mismatch("Os totais do período Bradesco não fecham com os lançamentos extraídos.")
     return VerifiedStatement(rows, "bradesco_ocr_columns_validated_v1", seed, running,
-                             partial=counters[-1][0] != total, printed_balance_checks=checks, candidate_rows=candidates)
+                             partial=validate_statement_completeness(["\n".join(line.text for line in page.lines)
+                                                                      for page in extraction.pages]),
+                             printed_balance_checks=checks, candidate_rows=candidates)
 
 
 def parse_banrisul_columns(extraction):

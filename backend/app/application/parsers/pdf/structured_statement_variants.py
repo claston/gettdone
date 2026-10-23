@@ -6,6 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import NUMBER, VerifiedStatement, _lines, _row, day, fail, money
 from app.application.structured_statement_detection import CONTA_AZUL, CRESOL_INACTIVE, SANTANDER_GROUPED, SUMUP_PERIOD
 
@@ -27,13 +28,6 @@ def _signed(value):
 def _append(row, text, page, line):
     return replace(row, transaction=replace(row.transaction, description=row.transaction.description + " " + text),
                    source_line_refs=(*row.source_line_refs, (page, line)))
-
-
-def _pagination(pages):
-    for index, page in enumerate(pages, 1):
-        counters = re.findall(r"\bPAGINA\s*:?\s*(\d+)\s+DE\s+(\d+)\b", upper(page))
-        if counters != [(str(index), str(len(pages)))]:
-            fail("Não foi possível conferir a sequência de páginas. Envie o documento completo e legível.")
 
 
 def _sumup(pages, kind):
@@ -117,7 +111,6 @@ def _santander(pages, kind):
 def _cresol_inactive(pages, kind):
     if len(pages) != 1:
         fail()
-    _pagination(pages)
     text = upper(pages[0])
     period = re.search(rf"PERIODO DE ({DATE}) A ({DATE})", text)
     opening = re.search(rf"([+-])\s*R\$\s*({NUMBER})\s*SALDO ANTERIOR:", text)
@@ -142,7 +135,6 @@ def _cresol_inactive(pages, kind):
 
 
 def _conta_azul(pages, kind):
-    _pagination(pages)
     text = upper("\n".join(pages))
     period = re.search(rf"RELATORIO DE EXTRATO\s+({DATE}) A ({DATE})", text)
     if period is None:
@@ -197,7 +189,7 @@ def _conta_azul(pages, kind):
                     opening = running = balance - amount
                 running += amount
                 if running != balance:
-                    fail()
+                    financial_mismatch()
                 description = " ".join(part for part in (description, counterparty) if part)
                 rows.append(_row(page, line, date, description, amount, balance))
             elif in_table and raw.strip() and columns is not None:

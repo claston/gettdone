@@ -11,6 +11,7 @@ from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf.layout_specific.contract import LayoutSpecificParseContext, LayoutSpecificParseResult
 from app.application.parsers.pdf.layout_specific.shared import build_parsed_transaction
 from app.application.parsers.pdf.models import _ParsedTransaction, _PdfLine
+from app.application.parsers.pdf.statement_review import financial_mismatch
 
 XP_LAYOUT = "xp_empresas_extrato_conta_digital_pj_v1"
 XP_PARSER = "layout_specific_xp_empresas"
@@ -76,8 +77,10 @@ def _read_summary(lines: list[_PdfLine]) -> tuple[date, date, Decimal, Decimal, 
         _fail()
     start, end = map(_date, periods[0])
     opening, inflows, outflows, closing = amounts
-    if start > end or inflows < 0 or outflows > 0 or opening + inflows + outflows != closing:
+    if start > end or inflows < 0 or outflows > 0:
         _fail()
+    if opening + inflows + outflows != closing:
+        financial_mismatch(_MESSAGE)
     return start, end, opening, inflows, outflows, closing
 
 
@@ -139,7 +142,7 @@ class XpEmpresasLayoutParser:
                 _fail()
             balance += sum((amount for _, _, amount in group.movements), Decimal(0))
             if balance != group.balance:
-                _fail()
+                financial_mismatch(_MESSAGE)
             for index, (line, description, amount) in enumerate(group.movements):
                 is_last = index == len(group.movements) - 1
                 refs = [group.heading, line]
@@ -153,5 +156,5 @@ class XpEmpresasLayoutParser:
                     source_line_refs=tuple(dict.fromkeys((part.page_number, part.line_number) for part in refs)),
                 ))
         if balance != closing:
-            _fail()
+            financial_mismatch(_MESSAGE)
         return LayoutSpecificParseResult(rows, XP_PARSER, "xp_summary_totals_and_daily_balances_validated")

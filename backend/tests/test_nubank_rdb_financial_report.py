@@ -56,8 +56,14 @@ def test_native_rdb_pipeline_keeps_investment_semantics(monkeypatch):
     ("Sem transações em processamento no período.", "01/09/2026 Aplicação R$ 10,00"),
 ])
 def test_rdb_ambiguous_rows_or_missing_pages_cannot_fall_back_to_bank_parser(before, after):
-    with pytest.raises(PdfFinancialValidationError):
-        _parse_pdf_transactions_from_page_texts([page.replace(before, after) for page in rdb_pages()])
+    pages = [page.replace(before, after) for page in rdb_pages()]
+    if before.startswith("Página"):
+        result = _parse_pdf_transactions_from_page_texts(pages)
+        assert len(result.financial_document["events"]) == 2
+        assert result.parse_metrics["partial_statement"] == 1
+    else:
+        with pytest.raises(PdfFinancialValidationError):
+            _parse_pdf_transactions_from_page_texts(pages)
 
 
 def test_rdb_missing_last_page_is_refused():

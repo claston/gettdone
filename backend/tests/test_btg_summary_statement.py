@@ -187,8 +187,14 @@ def test_btg_financial_ambiguities_do_not_fall_back_to_generic_conversion(defect
         pages[1] = pages[1].replace("2 / 2", "")
     else:
         pages[1] = pages[1].replace("04/06/2026 Saldo de abertura", "04/06/2026 LINHA INCOMPLETA\n04/06/2026 Saldo de abertura")
-    with pytest.raises(PdfFinancialValidationError, match="BTG"):
-        _parse_pdf_transactions_from_page_texts(pages)
+    if defect in {"wrong_page_count", "missing_page_counter"}:
+        result = _parse_pdf_transactions_from_page_texts(pages)
+        assert len(result.transactions) == 13
+        if defect == "wrong_page_count":
+            assert result.parse_metrics["partial_statement"] == 1
+    else:
+        with pytest.raises(PdfFinancialValidationError, match="BTG"):
+            _parse_pdf_transactions_from_page_texts(pages)
 
 
 def test_invalid_native_btg_date_remains_visible_to_financial_validation(monkeypatch):

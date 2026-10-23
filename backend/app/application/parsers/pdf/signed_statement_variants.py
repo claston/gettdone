@@ -4,6 +4,7 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import NUMBER, VerifiedStatement, _lines, _row, day, fail, money
 
 TOTALBANK = "bradesco_totalbank_signed_daily_v1"
@@ -66,7 +67,7 @@ def _totalbank(pages, kind):
         indices = [i for i, row in enumerate(rows) if row.transaction.date == date]
         running += sum((Decimal(str(rows[i].transaction.amount)) for i in indices), Decimal(0))
         if running != control:
-            fail()
+            financial_mismatch()
         if indices:
             rows[indices[-1]] = replace(rows[indices[-1]], running_balance=float(control))
     return VerifiedStatement(rows, kind, opening, running, printed_balance_checks=len(controls))

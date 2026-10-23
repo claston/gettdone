@@ -1535,6 +1535,12 @@
     const balanceFailed = Number(metrics.balance_consistency_failed || 0);
     const unresolvedRows = Number(metrics.ocr_unresolved_rows || 0);
     const warningTypes = Array.isArray(metrics.canonical_warning_types_list) ? metrics.canonical_warning_types_list : [];
+    if (warningTypes.includes("partial_statement")) {
+      list.push(mapWarningTypeExplanation("partial_statement"));
+    }
+    if (warningTypes.includes("financial_validation_failed")) {
+      list.push(mapWarningTypeExplanation("financial_validation_failed"));
+    }
     if (warningTypes.includes("combined_cash_investment_balance_not_comparable")) {
       list.push("Os saldos impressos incluem conta corrente e Rende Fácil. Eles não foram usados para conferir apenas a conta corrente. Não há saldo inicial ou final mensal confirmado.");
     }
@@ -2129,7 +2135,8 @@
     if (key === "ocr_amount_recovered_from_balances") return "Valor recuperado";
     if (key === "ocr_amount_recovered_from_summary") return "Valor recuperado";
     if (key === "ocr_balance_recovered_from_context") return "Saldo recuperado";
-    if (key === "partial_statement") return "Trecho de extrato";
+    if (key === "partial_statement") return "Possível extrato incompleto";
+    if (key === "financial_validation_failed") return "Conferência pendente";
     if (key === "combined_cash_investment_balance_not_comparable") return "Saldo com aplicações";
     if (key === "printed_summary_balance_mismatch") return "Resumo com divergência";
     if (key === "invoice_due_date_used_for_undated_fee") return "Data da anuidade";
@@ -2158,7 +2165,8 @@
   function mapWarningTypeExplanation(value) {
     if (value === "combined_cash_investment_balance_not_comparable") return "Os controles incluem conta corrente e aplicações automáticas. Eles não validam isoladamente o saldo da conta corrente; eventuais diferenças podem incluir rendimentos.";
     if (value === "printed_summary_balance_mismatch") return "O saldo inicial e os totais de entradas e saídas não fecham com o saldo final impresso. Os valores foram preservados para conferência no documento original.";
-    if (value === "partial_statement") return "Este arquivo contém parte do extrato. Os lançamentos e saldos se referem apenas ao trecho enviado; outros movimentos podem estar nas páginas restantes.";
+    if (value === "partial_statement") return "A numeração indica que o arquivo pode estar incompleto. As páginas omitidas podem conter anexos ou outros lançamentos. Os movimentos disponíveis foram convertidos; confira o período e os saldos antes de exportar.";
+    if (value === "financial_validation_failed") return "Os movimentos legíveis foram convertidos, mas não foi possível confirmar todos os saldos e totais impressos. Confira os valores no documento original antes de exportar.";
     if (value === "invoice_due_date_used_for_undated_fee") return "Esta anuidade não tem data impressa. Foi usada a data de vencimento da fatura. Confira ou ajuste a data antes de exportar.";
     if (value === "partial_statement_unpaired_credit") return "A tarifa associada ao primeiro crédito está fora deste trecho. O valor bruto foi preservado; a conferência dos saldos começa no próximo par completo de tarifa e crédito.";
     if (value === "ocr_numeric_separator_normalized") return "O OCR trocou um separador de milhares. A escrita numérica foi normalizada e conferida pelos saldos das linhas vizinhas.";

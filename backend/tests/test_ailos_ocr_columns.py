@@ -109,8 +109,15 @@ def test_ailos_financial_columns_keep_all_movements_and_independent_controls():
     ],
 )
 def test_ailos_unconfirmed_dates_values_or_summary_are_not_corrected_by_balance_difference(before, after):
-    with pytest.raises((OcrFinancialAmbiguityError, PdfFinancialValidationError)):
-        parse(change(ailos_extraction(), before, after))
+    source = change(ailos_extraction(), before, after)
+    if before in {"-50,00", "1.050,00", "-60,00", "1.000,00"}:
+        result = parse(source)
+        assert [row.amount for row in result.transactions] == [100, -50.01 if before == "-50,00" else -50, -10]
+        assert result.parse_metrics["financial_controls_validated"] == 0
+        assert "financial_validation_failed" in result.canonical_transactions[0].warnings
+    else:
+        with pytest.raises((OcrFinancialAmbiguityError, PdfFinancialValidationError)):
+            parse(source)
 
 
 def test_missing_opening_label_cannot_bypass_specific_financial_validation():
