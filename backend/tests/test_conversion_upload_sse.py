@@ -1,6 +1,8 @@
 import json
+import time
 from io import BytesIO
 
+import pytest
 from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
@@ -12,7 +14,13 @@ from app.application import (
     UnsupportedDocumentContentError,
 )
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult
-from app.dependencies import get_access_control_service, get_legacy_conversion_runner, get_report_service
+from app.dependencies import (
+    close_conversion_capacity_controller,
+    get_access_control_service,
+    get_conversion_capacity_controller,
+    get_legacy_conversion_runner,
+    get_report_service,
+)
 from app.main import app
 from app.schemas import (
     AnalyzeResponse,
@@ -25,6 +33,26 @@ from app.schemas import (
     TopExpense,
     TransactionPreview,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_sse_lifespan_and_require_capacity_release():
+    # Each client previously reused a process-global slot without a lifespan.
+    # A completed stream can arrive just before its worker releases that slot.
+    # Await the real release and assert it, rather than relaxing capacity limits.
+    saved_overrides = dict(app.dependency_overrides)
+    close_conversion_capacity_controller()
+    try:
+        with TestClient(app):
+            yield
+            controller = get_conversion_capacity_controller()
+            deadline = time.monotonic() + 2
+            while controller.active_count and time.monotonic() < deadline:
+                time.sleep(.005)
+            assert controller.active_count == 0, "SSE conversion leaked its capacity lease"
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(saved_overrides)
 
 
 def _build_conversion_result(analysis: AnalyzeResponse) -> ConversionPipelineResult:
