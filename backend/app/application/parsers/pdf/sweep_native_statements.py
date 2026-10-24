@@ -269,19 +269,26 @@ def _mercado_pago(pages, kind):
         amount, balance = map(_currency, values)
         description = " ".join([*prefix, description[: reference.start()].strip()])
         previous = references.get(reference[1], [])
+        shared_reference = False
         if previous:
-            original = previous[0]
-            if (len(previous) != 1 or not re.match(r"^PIX ENVIADO\b", upper(original.transaction.description))
+            original = rows[previous[0]]
+            shared_reference = (len(previous) != 1 or not re.match(r"^PIX ENVIADO\b", upper(original.transaction.description))
                     or not re.match(r"^REEMBOLSO DE PIX ENVIADO\b", upper(description))
                     or original.transaction.amount >= 0 or amount != -Decimal(str(original.transaction.amount))
-                    or day(original.transaction.date, "%Y-%m-%d") > date):
-                fail()
+                    or day(original.transaction.date, "%Y-%m-%d") > date)
+            if shared_reference:
+                for index in previous:
+                    earlier = rows[index]
+                    rows[index] = replace(earlier, warnings=list(dict.fromkeys(
+                        [*earlier.warnings, "manual_review_recommended", "shared_operation_reference"])))
         running += amount
         if running != balance:
             financial_mismatch()
         row = _row(page, line, date, description, amount, balance, reference[1])
+        if shared_reference:
+            row = replace(row, warnings=["manual_review_recommended", "shared_operation_reference"])
         rows.append(replace(row, source_line_refs=(*prefix_refs, *row.source_line_refs)))
-        references.setdefault(reference[1], []).append(row)
+        references.setdefault(reference[1], []).append(len(rows) - 1)
         prefix, prefix_refs = [], []
     _ordered(rows)
     credits = sum((Decimal(str(r.transaction.amount)) for r in rows if r.transaction.amount > 0), Decimal(0))

@@ -114,6 +114,38 @@ def _inter(pages, kind):
 
 
 def _descending(pages, kind):
+    from app.application.pdf_document_segmentation import _statement_identity
+
+    groups = []
+    identities = set()
+    for index, page in enumerate(pages):
+        bounds = _period(page)
+        identity = _statement_identity(page)
+        if identity:
+            identities.add(tuple(identity.split("|")[:2]))
+        if groups and groups[-1][0] == bounds:
+            groups[-1][2].append(page)
+        else:
+            groups.append((bounds, index, [page]))
+    if len(identities) > 1:
+        fail("Este arquivo contém contas Cresol diferentes. Envie cada conta separadamente.")
+    if len(groups) == 1:
+        return _descending_period(pages, kind)
+    statements = []
+    for bounds, offset, block in sorted(groups, key=lambda group: group[0]):
+        statement = _descending_period(block, kind)
+        if statements and statements[-1].closing != statement.opening:
+            financial_mismatch()
+        statement = replace(statement, rows=[replace(row, source_page=row.source_page + offset,
+            source_line_refs=tuple((page + offset, line) for page, line in row.source_line_refs)) for row in statement.rows])
+        statements.append(statement)
+    rows = sorted([row for statement in statements for row in statement.rows], key=lambda row: row.transaction.date)
+    return VerifiedStatement(rows, kind, statements[0].opening, statements[-1].closing,
+        printed_balance_checks=sum(statement.printed_balance_checks for statement in statements),
+        non_cash_entries=sum(statement.non_cash_entries for statement in statements))
+
+
+def _descending_period(pages, kind):
     text = "\n".join(pages)
     bounds = _period(text)
     rows, controls, openings = [], {}, []
@@ -161,16 +193,18 @@ def _descending(pages, kind):
         last_in_day = index + 1 == len(rows) or rows[index + 1].transaction.date != date
         if last_in_day:
             if controls.get(date) != running:
-                fail()
-            rows[index] = replace(row, running_balance=float(running))
+                financial_mismatch()
+            rows[index] = replace(row, running_balance=float(controls[date]) if date in controls else None)
     if set(controls) != {r.transaction.date for r in rows}:
-        fail()
+        financial_mismatch()
     # The first monetary cell is the printed cash closing, not the credit limit.
     header = re.search(r"SALDO EM CONTA\s+LIMITE DE CREDITO\s+SALDO DISPONIVEL\s+", upper(text))
     if header:
         summary = _CURRENCY.search(upper(text), header.end())
-        if summary is None or _signed_currency(summary) != running:
+        if summary is None:
             fail()
+        if _signed_currency(summary) != running:
+            financial_mismatch()
     return VerifiedStatement(rows, kind, opening, running, printed_balance_checks=len(controls) + 1, non_cash_entries=blocked)
 
 

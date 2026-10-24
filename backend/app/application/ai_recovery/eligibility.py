@@ -19,7 +19,7 @@ ELIGIBLE_FAILURE_SUBCODES = frozenset(
 )
 
 ELIGIBLE_RECOGNIZED_LAYOUT_ISSUES = frozenset({
-    "balance_consistency_failed", "partial_statement", "financial_validation_failed",
+    "balance_consistency_failed", "partial_statement", "financial_validation_failed", "manual_review_recommended",
 })
 ELIGIBLE_STATEMENT_TYPES = frozenset(
     {

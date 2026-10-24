@@ -60,9 +60,10 @@ def test_mercado_pago_refund_label_can_be_the_whole_description():
 
 
 @pytest.mark.parametrize("refund", ["Pix recebido TESTE", "Reembolso de pagamento TESTE", "Pix enviado TESTE"])
-def test_mercado_pago_duplicate_id_requires_explicit_pix_refund(refund):
-    with pytest.raises(PdfFinancialValidationError):
-        parse_verified_statement([mercado_pago_page(refund=refund)])
+def test_mercado_pago_shared_id_preserves_printed_events_for_review(refund):
+    statement = parse_verified_statement([mercado_pago_page(refund=refund)])
+    assert [row.transaction.amount for row in statement.rows] == [50, -20, 20]
+    assert all("shared_operation_reference" in row.warnings for row in statement.rows[1:])
 
 
 @pytest.mark.parametrize("pages", [
@@ -120,8 +121,9 @@ def test_sicredi_future_section_does_not_hide_the_next_month():
 def test_mercado_pago_third_use_of_operation_id_is_not_a_second_refund():
     page = mercado_pago_page().replace("Entradas: R$ 70,00", "Entradas: R$ 90,00").replace("Saldo final: R$ 60,00", "Saldo final: R$ 80,00")
     page = page.replace("Mercado Pago Instituição", "05-07-2026 Reembolso de Pix enviado 1002 R$ 20,00 R$ 80,00\nMercado Pago Instituição")
-    with pytest.raises(PdfFinancialValidationError):
-        parse_verified_statement([page])
+    statement = parse_verified_statement([page])
+    assert [row.transaction.amount for row in statement.rows] == [50, -20, 20, 20]
+    assert all("shared_operation_reference" in row.warnings for row in statement.rows[1:])
 
 
 def test_complete_printed_counter_sequence_and_unrelated_counters_are_allowed():
