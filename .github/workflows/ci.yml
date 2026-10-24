@@ -88,11 +88,21 @@ jobs:
           cache: pip
           cache-dependency-path: scripts/requirements-pro-browser.txt
 
-      - name: Install browser acceptance dependencies
+      - name: Install browser Python dependencies
         working-directory: .
-        run: |
-          python -m pip install -r scripts/requirements-pro-browser.txt
-          python -m playwright install --with-deps --only-shell chromium
+        run: python -m pip install -r scripts/requirements-pro-browser.txt
+
+      - name: Prefer official Ubuntu HTTPS archive
+        working-directory: .
+        run: sudo python3 scripts/configure_pro_apt_mirror.py
+
+      - name: Install browser operating system dependencies
+        working-directory: .
+        run: python -m playwright install-deps chromium
+
+      - name: Install headless Chromium
+        working-directory: .
+        run: python -m playwright install --only-shell chromium
 
       - name: Browser acceptance and performance budgets
         working-directory: .

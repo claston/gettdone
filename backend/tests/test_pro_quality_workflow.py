@@ -115,7 +115,8 @@ def test_workflow_preserves_validation_and_isolates_browser_resources():
     assert "npm run build" in browser and "NEXT_PUBLIC_API_URL: /" in browser
     assert "suite: [workspace, pdf]" in browser and "fail-fast: false" in browser
     assert "run_pro_browser_suite.py" in browser and "--suite" in browser
-    assert "--with-deps --only-shell chromium" in browser
+    assert "playwright install-deps chromium" in browser
+    assert "playwright install --only-shell chromium" in browser
     assert "requirements-pro-browser.txt" in browser
     assert "-r backend/requirements.txt" not in browser
     assert 'trap ' in browser and 'kill "$pro_pid"' in browser

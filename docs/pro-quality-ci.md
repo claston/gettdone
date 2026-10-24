@@ -38,7 +38,15 @@ O cache pip tem chave baseada nessa lista. O navegador instalado é apenas o
 Chromium headless shell que os scripts já usavam (`launch(headless=True)` sem
 `channel`). `--only-shell` evita baixar o Chromium de interface gráfica, conforme
 a [documentação do Playwright](https://playwright.dev/python/docs/browsers#chromium-headless-shell).
-As bibliotecas do sistema continuam sendo instaladas com `--with-deps`.
+As bibliotecas do sistema continuam sendo instaladas com `install-deps chromium`.
+Python, pacotes do sistema e navegador aparecem em etapas separadas para medir
+exatamente a origem de um atraso.
+
+A lista de espelhos já fornecida pelo runner passa a priorizar
+`https://archive.ubuntu.com/ubuntu/`; Azure e security continuam como fallbacks.
+Somente as prioridades 1 e 2 dos dois endereços conhecidos são trocadas. As
+assinaturas, versões e dependências exigidas pelo APT são preservadas. O formato
+é o do [configurador oficial do runner](https://github.com/actions/runner-images/blob/main/images/ubuntu/scripts/build/configure-apt-sources.sh).
 
 O gate agregado usa `always()` e verifica explicitamente os resultados de todas
 as dependências: um job pulado pode aparecer como aprovado nas regras do GitHub,
@@ -57,6 +65,14 @@ A comparação da versão nova deve medir desde o início do primeiro job PRO at
 o término de `pro-quality`, incluindo filas entre jobs. A duração de poucos
 segundos do agregador isolado não representa o tempo total do gate. Tempos de
 fila, download e runner variam; cache frio deve ser identificado na medição.
+
+No primeiro push da otimização, o conjunto PRO terminou em **108 segundos**
+([CI 40057404489](https://github.com/claston/gettdone/actions/runs/40057404489)),
+22% abaixo dos 138 segundos da base. Outra execução levou 463 segundos: o
+espelho Azure baixou 25,9 MB em 6min21s, a 68,1 kB/s; os cenários passaram.
+Esse atraso motivou a preferência do arquivo oficial HTTPS, sem retirar nenhum
+pacote ou teste. O problema do espelho também está registrado no
+[repositório dos runners](https://github.com/actions/runner-images/issues/12949).
 
 A paralelização troca tempo de espera por mais runners simultâneos, com alguma
 repetição de instalação e build. Não há teste ignorado por caminho alterado,
