@@ -343,6 +343,14 @@ export function TransactionGrid({
 
   return (
     <section className="transactions-panel">
+      {conversion.partialStatement && (
+        <div className="page-sync-notice" role="status">
+          Extrato parcial: o arquivo pode ter páginas ausentes ou um limite de
+          consulta do banco. Os movimentos disponíveis foram convertidos.
+          Confira o período e os saldos; se o banco informar limite de consulta,
+          baixe o extrato consolidado completo.
+        </div>
+      )}
       <div className="panel-toolbar transactions-toolbar">
         <div className="toolbar-title">
           <span>Lançamentos</span>

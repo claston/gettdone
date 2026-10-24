@@ -1151,7 +1151,13 @@
   }
 
   function normalizeAccountDisplay(value) {
-    return normalizeDashedNumeric(value, 6, 1);
+    // BCB DICT: up to 20 digits, including the check digit. Preserve leading zeros.
+    const sanitized = String(value || "").replace(/[^\d-]/g, "");
+    const hyphen = sanitized.indexOf("-");
+    if (hyphen < 0) return normalizeDigits(sanitized).slice(0, 20);
+    const checkDigit = normalizeDigits(sanitized.slice(hyphen + 1)).slice(0, 1);
+    const account = normalizeDigits(sanitized.slice(0, hyphen)).slice(0, 20 - checkDigit.length);
+    return `${account}-${checkDigit}`;
   }
 
   function normalizeTextToken(value) {
@@ -2179,7 +2185,7 @@
   function mapWarningTypeExplanation(value) {
     if (value === "combined_cash_investment_balance_not_comparable") return "Os controles incluem conta corrente e aplicações automáticas. Eles não validam isoladamente o saldo da conta corrente; eventuais diferenças podem incluir rendimentos.";
     if (value === "printed_summary_balance_mismatch") return "O saldo inicial e os totais de entradas e saídas não fecham com o saldo final impresso. Os valores foram preservados para conferência no documento original.";
-    if (value === "partial_statement") return "A numeração indica que o arquivo pode estar incompleto. As páginas omitidas podem conter anexos ou outros lançamentos. Os movimentos disponíveis foram convertidos; confira o período e os saldos antes de exportar.";
+    if (value === "partial_statement") return "O arquivo pode estar incompleto por páginas ausentes ou limite de consulta do banco. Os movimentos disponíveis foram convertidos; confira o período e os saldos. Se o banco informar limite de consulta, baixe o extrato consolidado completo.";
     if (value === "shared_operation_reference") return "Há movimentos com a mesma referência de operação. Eles foram preservados como aparecem no extrato, pois podem representar retenções, liberações ou outros eventos relacionados. Confira os lançamentos antes de exportar.";
     if (value === "ocr_date_year_completed") return "O OCR cortou o último dígito de um ano. A data foi completada com o único ano informado nas demais datas do extrato. Confira a data no documento original.";
     if (value === "financial_validation_failed") return "Os movimentos legíveis foram convertidos, mas não foi possível confirmar todos os saldos e totais impressos. Confira os valores no documento original antes de exportar.";

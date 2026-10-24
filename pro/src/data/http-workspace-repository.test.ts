@@ -333,6 +333,28 @@ it("não informa sucesso se uma API antiga descartar a marcação", async () => 
 });
 
 describe("HttpWorkspaceRepository", () => {
+  it("preserva a indicação de extrato parcial recebida do worker", async () => {
+    const payload = structuredClone(batchPayload);
+    const analysis = {
+      ...payload.jobs[0].result!.analysis,
+      pdf_processing_metrics: { partial_statement: 1 },
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...payload,
+          jobs: [{ ...payload.jobs[0], result: { analysis } }],
+        }),
+      );
+    const batch = await createHttpWorkspaceRepository({
+      apiUrl: "/",
+      fetcher,
+    }).getBatch("batch-real");
+    expect(batch.conversions[0].partialStatement).toBe(true);
+    expect(batch.conversions[0].transactions.length).toBeGreaterThan(0);
+  });
   it("mapeia a declaração de ausência de movimentação sem marcar falha", async () => {
     const payload = structuredClone(batchPayload);
     payload.jobs = [payload.jobs[0]];

@@ -45,6 +45,11 @@ def day(value, pattern="%d/%m/%Y"):
 
 
 def identify_verified_statement(text):
+    from app.application.parsers.pdf.nubank_credit_card import LAYOUT as NUBANK_CARD_LAYOUT
+    from app.application.parsers.pdf.nubank_credit_card import is_nubank_invoice
+
+    if is_nubank_invoice(text):
+        return NUBANK_CARD_LAYOUT
     from app.application.parsers.pdf.uniprime_ocr import LAYOUT as UNIPRIME_LAYOUT
     from app.application.parsers.pdf.uniprime_ocr import is_uniprime_statement
 
@@ -99,6 +104,10 @@ def identify_verified_statement(text):
 def parse_verified_statement(pages):
     text = "\n".join(pages)
     kind = identify_verified_statement(text)
+    if kind == "nubank_fatura_cartao_credito_v1":
+        from app.application.parsers.pdf.nubank_credit_card import parse_nubank_invoice
+
+        return parse_nubank_invoice(pages)
     if kind == "uniprime_conta_corrente_ocr_v1":
         fail("Este modelo Uniprime exige as coordenadas da tabela para conferir valores e saldos. Envie o PDF original para revisão.")
     from app.application.parsers.pdf.final_native_statements import identify_final_native, parse_final_native

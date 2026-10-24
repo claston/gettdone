@@ -143,7 +143,7 @@ describe("FinancialReportReview", () => {
     for (const [label, value] of [
       ["Banco de destino", "237"],
       ["Agência de destino", "1234"],
-      ["Conta de destino", "56789"],
+      ["Conta de destino", "0001234567890123456789"],
     ]) {
       fireEvent.change(screen.getByRole("textbox", { name: label }), {
         target: { value },
@@ -152,7 +152,7 @@ describe("FinancialReportReview", () => {
     const link = screen.getByRole("link", { name: "Baixar OFX" });
     expect(link).toHaveAttribute(
       "href",
-      "/convert-report/an_titles?format=ofx&bank_code=237&bank_branch=1234&account_number=56789",
+      "/convert-report/an_titles?format=ofx&bank_code=237&bank_branch=1234&account_number=0001234567890123456789",
     );
     expect(link.getAttribute("href")).not.toContain("closing_balance");
   });

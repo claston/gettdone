@@ -56,6 +56,7 @@ export interface Conversion {
   pdf: PdfDocument | null;
   downloadUrl?: string;
   noActivity?: boolean;
+  partialStatement?: boolean;
   financialDocument?: FinancialDocument | null;
   transactions: Transaction[];
 }

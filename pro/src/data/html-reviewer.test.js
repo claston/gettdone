@@ -14,6 +14,75 @@ const script = readFileSync(
 
 describe("revisor HTML do OFX Simples", () => {
   it.each([
+    "123456789",
+    "00012345678-9",
+    "0001234567890123456-8",
+    "00012345678901234567",
+  ])("preserva a conta %s ao reabrir, editar e exportar", async (account) => {
+    const dom = new JSDOM(html, {
+      url: "https://ofx.test/ofx-convert.html",
+      runScripts: "outside-only",
+      pretendToBeVisual: true,
+    });
+    const rows = [{ date: "2026-09-30", description: "PIX", amount: 100 }];
+    dom.window.fetch = vi.fn(async () => new Response("[]"));
+    dom.window.OfxSession = {
+      getCurrentUser: vi.fn(async () => ({
+        email: "owner@test",
+        quota_remaining: 10,
+        quota_limit: 50,
+      })),
+      request: vi.fn(async () => new Response("{}", { status: 409 })),
+    };
+    Object.defineProperty(dom.window.performance, "getEntriesByType", {
+      value: () => [{ type: "reload" }],
+    });
+    dom.window.sessionStorage.setItem(
+      "ofxsimples_ofx_convert_view_state_ofx_v1",
+      JSON.stringify({
+        processing_id: "an_account",
+        account_number_override: account,
+        analysis: {
+          analysis_id: "an_account",
+          account_number: account,
+          preview_transactions: rows,
+          transactions_total: 1,
+        },
+        preview_rows: rows,
+        original_rows: rows,
+      }),
+    );
+    try {
+      dom.window.eval(script);
+      const input = await vi.waitFor(() => {
+        const element = dom.window.document.querySelector(
+          "#account-number-input",
+        );
+        expect(element).not.toBeNull();
+        return element;
+      });
+      expect(input.value).toBe(account);
+      input.value = account;
+      input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+      input.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+      expect(input.value).toBe(account);
+      dom.window.document.querySelector("#download-ofx-btn").click();
+      const call = await vi.waitFor(() => {
+        const found = dom.window.OfxSession.request.mock.calls.find(
+          ([url, init]) =>
+            url.includes("/convert-edits/") && init?.method === "POST",
+        );
+        expect(found).toBeDefined();
+        return found;
+      });
+      expect(JSON.parse(call[1].body).account_number).toBe(
+        account.replace(/\D/g, ""),
+      );
+    } finally {
+      dom.window.close();
+    }
+  });
+  it.each([
     "receivables_report",
     "investment_statement",
     "fiscal_summary",

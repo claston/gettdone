@@ -9,6 +9,10 @@ def validate_statement_completeness(pages) -> bool:
     """Return possible incompleteness; omitted pages may contain only annexes."""
     observed = []
     joined = upper("\n".join(pages))
+    if ("SANTANDER" in joined
+            and re.search(r"VOCE ALCANCOU O NUMERO MAXIMO DE CONSULTAS\b", joined)
+            and "PARA VER TODOS OS LANCAMENTOS" in joined):
+        return True
     bare_counter_layout = any(bank in joined for bank in ("MERCADO PAGO", "BTG PACTUAL"))
     for physical, page in enumerate(pages, 1):
         text = "\n".join(upper(line) for line in page.splitlines())
