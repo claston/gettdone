@@ -405,6 +405,9 @@ def _parse_pdf_transactions_strict(
             )
 
     if native_pages:
+        if detect_financial_report("\n".join(native_pages)) == ("investment_statement", "xp_investment_account_ledger"):
+            return _with_parse_observability(parse_financial_pdf_pages(native_pages, native=True),
+                native_text_detected=1, textract_attempted=0, extraction_provider="native_pdf_text")
         title_result = parse_native_title_report(raw_bytes, native_pages)
         if title_result is not None:
             return _with_parse_observability(title_result, native_text_detected=1, textract_attempted=0,
@@ -804,6 +807,7 @@ def is_textract_forced() -> bool:
 def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult:
     from app.application.parsers.pdf.bb_cash_ocr import is_bb_cash_ocr
     from app.application.parsers.pdf.final_ocr_statements import identify_final_ocr
+    from app.application.parsers.pdf.sicredi_combined_ocr import is_sicredi_combined
     from app.application.parsers.pdf.uniprime_ocr import is_uniprime_statement
     from app.application.structured_statement_detection import is_bradesco_monthly_ocr
     from app.application.sweep_statement_detection import identify_sweep_statement
@@ -828,6 +832,7 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
     is_monthly = infer_pdf_layout("\n".join(segmentation.page_texts)).layout_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
     if (textract_mode == "text" or is_monthly or is_bradesco_monthly_ocr("\n".join(_textract_page_texts(extraction)))
             or identify_final_ocr("\n".join(_textract_page_texts(extraction)))
+            or is_sicredi_combined("\n".join(_textract_page_texts(extraction)))
             or identify_sweep_statement("\n".join(_textract_page_texts(extraction)))
             or "SICOOB SISBR" in normalize_upper_text("\n".join(_textract_page_texts(extraction)))
             or is_bb_cash_ocr("\n".join(_textract_page_texts(extraction)))

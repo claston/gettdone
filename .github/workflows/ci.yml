@@ -125,6 +125,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -159,3 +161,22 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -m "not pdf_golden" -q -n 4 --dist=worksteal
+
+      - name: PDF product compatibility gate against base revision
+        working-directory: .
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          baseline_ref="$BASE_SHA"
+          if [ -z "$baseline_ref" ] || [ "$baseline_ref" = "0000000000000000000000000000000000000000" ]; then
+            baseline_ref="origin/main"
+          fi
+          python scripts/check_pdf_compatibility.py --base-ref "$baseline_ref"
+
+      - name: Preserve fictional PDF compatibility reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-compatibility-${{ github.event_name }}
+          path: tmp/pdf-compatibility/
+          if-no-files-found: ignore

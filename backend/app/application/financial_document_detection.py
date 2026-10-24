@@ -12,6 +12,10 @@ def detect_financial_report(text: str) -> tuple[str, str] | None:
     lines = [normalize_upper_text(line) for line in text.splitlines() if line.strip()]
     header = " ".join(lines[:12])
     normalized = " ".join(lines)
+    if ("EXTRATO DA CONTA INVESTIMENTO" in header and "XP INVESTIMENTOS" in normalized
+            and "XPI.COM.BR" in normalized and "TRANSACOES NO PERIODO" in normalized
+            and "LIQUIDACAO" in normalized):
+        return INVESTMENT_STATEMENT, "xp_investment_account_ledger"
     if "RELATORIO DE VENDAS" in header and all(
         marker in normalized for marker in ("ADQUIRENTE", "STATUS", "VALOR BRUTO", "TAXA", "VALOR LIQUIDO", "PAGBANK")
     ):

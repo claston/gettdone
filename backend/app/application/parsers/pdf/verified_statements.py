@@ -225,12 +225,14 @@ def _bb(pages, kind):
         normalized = normalize_upper_text(description)
         compact = re.sub(r"\s", "", normalized)
         if "SALDOANTERIOR" in compact:
-            if opening is not None or rows or date > start:
+            if opening is not None or rows:
                 fail()
+            if date > start:
+                financial_mismatch()
             opening = running = amount
         elif "SALDODODIA" in compact or compact == "SALDO":
             if not start <= date <= end:
-                fail()
+                financial_mismatch()
             if amount != running:
                 financial_mismatch()
             if rows:
@@ -238,8 +240,10 @@ def _bb(pages, kind):
             if compact == "SALDO":
                 closing = amount
         else:
-            if running is None or closing is not None or not start <= date <= end or rows and date < rows[-1].transaction.date:
+            if running is None or closing is not None or rows and date < rows[-1].transaction.date:
                 fail()
+            if not start <= date <= end:
+                financial_mismatch()
             running += amount
             columns = re.match(r"^(\d{5})\s+(\d+)\s+(.+)$", description)
             reference = columns[2] if columns else None

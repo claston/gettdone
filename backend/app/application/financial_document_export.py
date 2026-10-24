@@ -15,6 +15,8 @@ LABELS = {
     "amounts.fee": "Taxa", "attributes.printed_status": "Situação impressa",
     "attributes.acquirer": "Adquirente", "attributes.establishment": "Estabelecimento", "attributes.nsu": "NSU",
     "dates.transaction": "Data da transação",
+    "dates.settlement": "Data de liquidação", "amounts.movement": "Valor da movimentação",
+    "amounts.balance": "Saldo impresso", "amounts.projected": "Valor projetado",
     "amounts.signed_value": "Valor com sinal", "attributes.subaccount": "Conta do relatório",
     "attributes.printed_account": "Conta impressa", "attributes.time": "Horário",
     "amounts.available": "Disponível", "amounts.receivables": "A receber", "amounts.blocked": "Bloqueado",

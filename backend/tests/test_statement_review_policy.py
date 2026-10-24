@@ -8,6 +8,8 @@ from app.application.parsers.pdf.statement_completeness import validate_statemen
 from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
 from tests.test_recovery_case_fixes import mercado_pago_page
 
+pytestmark = pytest.mark.pdf_acceptance
+
 SANTANDER = """Santander
 EXTRATO CONSOLIDADO INTELIGENTE
 setembro/2026
