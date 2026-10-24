@@ -14,7 +14,7 @@ permanecem fora do Git; as regressões versionadas usam dados fictícios.
 | BB com marca d’água | Ler os glifos horizontais e aceitar saldo anterior impresso na data inicial do período. |
 | Banpará | Separar valor e saldo por coordenadas, incluindo movimentos com data e descrição em células distintas. Recusar valor sem data legível associada. |
 | Bradesco | Preservar pagamentos cuja descrição inclui “BRADESCO NET EMPRESA”; o nome do banco isoladamente não identifica ruído. |
-| Notas a Pagar | Classificar títulos em aberto como `accounts_payable_report` e explicar a recusa, sem criar transações com datas de vencimento ou subtotais. |
+| Contas a pagar / receber | Identificar o relatório e mapear colunas por nomes e geometria, sem perfil por ERP. Exportar títulos e campos originais para Excel/CSV, sem efeito de caixa ou OFX. |
 
 Inconsistências aritméticas e sinais de arquivo incompleto geram revisão sem
 alterar os valores legíveis. Datas, valores ou sinais sem associação confiável

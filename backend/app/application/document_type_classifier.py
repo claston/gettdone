@@ -9,6 +9,7 @@ from pypdf import PdfReader
 
 from app.application.financial_document_detection import detect_financial_report
 from app.application.normalization.text import normalize_upper_text
+from app.application.title_report_detection import identify_title_report, title_report_confidence
 from app.application.unsupported_document_detection import (
     ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE,
     BILLING_REPORT_DOCUMENT_TYPE,
@@ -34,7 +35,7 @@ FINANCIAL_SPREADSHEET = "financial_spreadsheet"
 OTHER_DOCUMENT = "other"
 UNKNOWN_DOCUMENT = "unknown"
 
-DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-10-23.2"
+DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-10-23.3"
 
 _PDF_PREVIEW_PAGE_LIMIT = 3
 _PDF_PREVIEW_CHAR_LIMIT = 16_000
@@ -76,6 +77,12 @@ def classify_document_type(
     financial_report = detect_financial_report(text)
     if financial_report is not None:
         return _classification(financial_report[0], 0.99, financial_report[1])
+
+    title_report = identify_title_report(text)
+    if title_report:
+        confidence = title_report_confidence(text)
+        return _classification(title_report, confidence,
+            title_report + ("_structure" if confidence >= .9 else "_title"))
 
     unsupported_type = detect_unsupported_document_type(text)
     if unsupported_type == ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE:

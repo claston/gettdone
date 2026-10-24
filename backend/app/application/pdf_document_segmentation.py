@@ -38,7 +38,8 @@ def segment_pdf_pages(page_texts: list[str] | tuple[str, ...]) -> SegmentedPdf:
                      "Envie cada extrato separadamente para evitar misturar lançamentos."),
         )
     has_statement = BANK_STATEMENT in kinds
-    annex_types = {FISCAL_INVOICE, BANK_RECEIPT, FISCAL_SUMMARY, INVESTMENT_STATEMENT, RECEIVABLES_REPORT}
+    annex_types = {FISCAL_INVOICE, BANK_RECEIPT, FISCAL_SUMMARY, INVESTMENT_STATEMENT, RECEIVABLES_REPORT,
+                   "accounts_payable_report", "accounts_receivable_report"}
     has_annex = any(kind in annex_types for kind in kinds)
     if not has_statement or not has_annex:
         return SegmentedPdf(source, source, [])

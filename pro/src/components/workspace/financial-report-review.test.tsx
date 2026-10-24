@@ -29,6 +29,73 @@ const fiscal: FinancialDocument = {
 };
 
 describe("FinancialReportReview", () => {
+  it("não apresenta emissão como vencimento quando o título não informa data de vencimento", () => {
+    const report: FinancialDocument = {
+      ...fiscal,
+      document_type: "accounts_receivable_report",
+      events: [
+        {
+          ...fiscal.events[0],
+          event_type: "receivable_title",
+          dates: { issue: "2026-07-01", payment: "2026-07-12" },
+        },
+      ],
+    };
+    render(<FinancialReportReview report={report} />);
+    expect(
+      screen.getByRole("columnheader", { name: "Emissão" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("01/07/2026")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("columnheader", { name: "Vencimento" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each(["payable", "receivable"])(
+    "exibe títulos %s com vencimento, contraparte e saldo sem OFX",
+    (kind) => {
+      const report: FinancialDocument = {
+        ...fiscal,
+        document_type:
+          kind === "payable"
+            ? "accounts_payable_report"
+            : "accounts_receivable_report",
+        events: [
+          {
+            ...fiscal.events[0],
+            event_type: `${kind}_title`,
+            status: "partial",
+            amount: "100.00",
+            dates: { due: "2026-07-10", payment: "2026-07-12" },
+            counterparty: "EMPRESA TESTE",
+            amounts: { outstanding: "30.00" },
+          },
+        ],
+      };
+      render(
+        <FinancialReportReview
+          report={report}
+          downloadUrl="/convert-report/an_titles?format=xlsx"
+        />,
+      );
+      expect(
+        screen.getByRole("columnheader", { name: "Vencimento" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("10/07/2026")).toBeInTheDocument();
+      expect(screen.getByText("EMPRESA TESTE")).toBeInTheDocument();
+      expect(screen.getByText("Parcial")).toBeInTheDocument();
+      expect(
+        screen.getByRole("link", { name: "Baixar CSV" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("link", { name: "Baixar Excel" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Exportar OFX" }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
   it("apresenta registros fiscais sem crédito bancário, edição ou OFX", () => {
     render(
       <FinancialReportReview

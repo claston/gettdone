@@ -282,7 +282,8 @@ class TempAnalysisStorage:
             if content.get("financial_document") is not None:
                 conversion_type = f"{file_type}-xlsx"
                 status = "Sucesso" if (analysis_dir / "converted.xlsx").exists() else "Processando"
-                model = {"receivables_report": "Títulos recebidos", "investment_statement": "Investimentos CDB",
+                model = {"receivables_report": "Títulos recebidos", "accounts_payable_report": "Contas a pagar",
+                         "accounts_receivable_report": "Contas a receber", "investment_statement": "Investimentos CDB",
                          "fiscal_summary": "Resumo fiscal"}.get(str(content.get("document_type")), "Relatório financeiro")
 
             items.append(

@@ -9,6 +9,8 @@ from app.application.pdf_layout_inference import PdfLayoutInference
 
 def event_date(event: dict) -> str:
     dates = event["dates"]
+    if event["event_type"] in {"payable_title", "receivable_title"}:
+        return next(dates[role] for role in ("due", "issue", "movement", "payment") if role in dates)
     for role in ("transaction", "payment", "redemption", "application", "issue"):
         if role in dates:
             return dates[role]

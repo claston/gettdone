@@ -1428,7 +1428,9 @@
     const observations = Array.isArray(report.observations) ? report.observations : [];
     const failed = report.validations.filter((item) => item.status === "failed").length;
     const fiscal = report.document_type === "fiscal_summary";
-    const labels = { receivables_report: "Títulos recebidos", investment_statement: "Investimentos", fiscal_summary: "Resumo fiscal" };
+    const labels = { receivables_report: "Títulos recebidos", investment_statement: "Investimentos", fiscal_summary: "Resumo fiscal",
+      accounts_payable_report: "Contas a pagar", accounts_receivable_report: "Contas a receber" };
+    const titleReport = ["accounts_payable_report", "accounts_receivable_report"].includes(report.document_type);
     const summaryOnly = report.events.length === 0 && observations.length > 0;
     const periodAmounts = Object.assign({}, ...observations.map((item) => item.amounts || {}));
     const hasPeriodFlows = ["applications", "net_redemptions"].every((key) =>
@@ -1457,6 +1459,9 @@
       ${summaryOnly
         ? `<article class="kpi"><p class="kpi-label">${hasPeriodFlows ? "Aplicações no período" : "Saldo bruto final"}</p><p class="kpi-value">${summaryAmount(hasPeriodFlows ? "applications" : "closing_gross")}</p></article>
            <article class="kpi"><p class="kpi-label">${hasPeriodFlows ? "Resgates líquidos no período" : "Saldo líquido final"}</p><p class="kpi-value">${summaryAmount(hasPeriodFlows ? "net_redemptions" : "closing_net")}</p></article>`
+        : titleReport
+        ? `<article class="kpi"><p class="kpi-label">Valor dos títulos</p><p class="kpi-value">${formatCurrency(total)}</p></article>
+           <article class="kpi"><p class="kpi-label">Saldo em aberto informado</p><p class="kpi-value">${report.events.every((event) => event.amounts.outstanding != null) ? formatCurrency(report.events.reduce((sum, event) => sum + Number(event.amounts.outstanding), 0)) : "Não informado"}</p></article>`
         : fiscal
         ? `<article class="kpi"><p class="kpi-label">Valor dos documentos listados</p><p class="kpi-value">${formatCurrency(total)}</p></article>`
         : `<article class="kpi"><p class="kpi-label">Recebimentos / resgates</p><p class="kpi-value">${formatCurrency(analysis.total_inflows)}</p></article>
@@ -2019,15 +2024,22 @@
           <td>${escapeAttr(item.source_refs.map((ref) => `Pág. ${ref.page}, linha ${ref.line}`).join("; "))}</td></tr>`).join("");
         return;
       }
-      const types = { receipt: "Recebimento de título", investment_application: "Aplicação CDB", investment_redemption: "Resgate CDB", fiscal_document: "Documento fiscal" };
-      const statuses = { paid: "Pago", confirmed: "Confirmado", issued: "Emitido", voided: "Inutilizado", cancelled: "Cancelado", unknown: "Não identificado" };
+      const types = { receipt: "Recebimento de título", investment_application: "Aplicação CDB", investment_redemption: "Resgate CDB", fiscal_document: "Documento fiscal",
+        payable_title: "Título a pagar", receivable_title: "Título a receber" };
+      const statuses = { paid: "Pago", confirmed: "Confirmado", issued: "Emitido", voided: "Inutilizado", cancelled: "Cancelado", unknown: "Não identificado",
+        settled: "Liquidado no relatório", pending: "Em aberto", partial: "Parcial" };
+      const titleReport = ["accounts_payable_report", "accounts_receivable_report"].includes(report.document_type);
+      const titleDateRole = titleReport ? ["due", "issue", "movement"].find((role) => report.events.some((event) => event.dates?.[role])) : undefined;
+      if (titleReport && table) {
+        table.querySelector("thead th").textContent = { due: "Vencimento", issue: "Emissão", movement: "Data do movimento" }[titleDateRole] || "Data informada";
+      }
       reviewRows.innerHTML = report.events.map((event, index) => `<tr>
-        <td>${formatDate((state.previewRows[index] || {}).date)}</td>
+        <td>${formatDate(titleReport ? event.dates[titleDateRole] : (state.previewRows[index] || {}).date)}</td>
         <td>${escapeAttr(types[event.event_type] || event.event_type)} — ${escapeAttr(event.counterparty || event.description)}</td>
         <td>${formatCurrency(Number(event.amount))}</td><td>${escapeAttr(statuses[event.status] || event.status)}</td>
         <td>${escapeAttr(event.reference || "—")}</td>
         <td>${escapeAttr(event.source_refs.map((ref) => `Pág. ${ref.page}, linha ${ref.line}`).join("; "))}</td></tr>`).join("")
-        || '<tr><td colspan="6">Sem movimentos; posições disponíveis no Excel.</td></tr>';
+        || `<tr><td colspan="6">${titleReport ? "Nenhum título listado." : "Sem movimentos; posições disponíveis no Excel."}</td></tr>`;
       return;
     }
     const rows = (state.previewRows || []).filter((row) => !isOpeningBalanceRow(row));
