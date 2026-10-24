@@ -73,6 +73,9 @@ export interface FinancialDocument {
     dates: Record<string, string>;
     amount: string;
     cash_effect: string | null;
+    counterparty?: string | null;
+    amounts?: Record<string, string>;
+    attributes?: Record<string, unknown>;
     source_refs: Array<{ page: number; line: number }>;
   }>;
   validations: Array<{ code: string; status: string }>;

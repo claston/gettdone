@@ -9,7 +9,6 @@ from pypdf.generic import ArrayObject, DecodedStreamObject, NameObject
 
 from app.application import pdf_parser
 from app.application.document_type_classifier import classify_document_type
-from app.application.errors import UnsupportedDocumentContentError
 from app.application.pdf_document_segmentation import _statement_identity, segment_pdf_pages
 from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
 from tests.test_santander_ocr_controls import santander_extraction
@@ -68,9 +67,12 @@ def test_open_payables_report_is_classified_before_bank_transaction_parsing():
             "01/07/2026 10/07/2026 1001 FORNECEDOR TESTE 50,00 50,00\nSubtotal: 50,00 50,00")
     assert classify_document_type("report.pdf", b"", extracted_text=text).document_type == "accounts_payable_report"
     raw = generate_native_text_pdf((text.splitlines(),))
-    with pytest.raises(UnsupportedDocumentContentError) as error:
+    from app.application.errors import InvalidFileContentError
+
+    # A text-only table without usable column spacing is recognized but cannot
+    # become bank movements. Generic title conversion is covered with grids.
+    with pytest.raises(InvalidFileContentError):
         pdf_parser.parse_pdf_transactions(raw)
-    assert error.value.document_type == "accounts_payable_report"
     from app.application.unsupported_document_detection import is_open_payables_report
 
     assert not is_open_payables_report("Extrato de Conta Corrente\n" + text)

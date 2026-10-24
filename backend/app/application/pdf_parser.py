@@ -77,6 +77,8 @@ from app.application.parsers.pdf import text_extraction
 from app.application.parsers.pdf.caixa_invoice_ocr import is_caixa_invoice, parse_caixa_invoice
 from app.application.parsers.pdf.caixa_manager_ocr import is_caixa_manager
 from app.application.parsers.pdf.empty_statement import has_complete_santander_inactive_summary, has_explicit_no_activity
+from app.application.parsers.pdf.generic_title_reports import MESSAGE as TITLE_REPORT_VALIDATION_MESSAGE
+from app.application.parsers.pdf.generic_title_reports import parse_native_title_report, parse_ocr_title_report
 from app.application.parsers.pdf.late_statement_variants import (
     UNICRED_CARD,
     identify_late_statement,
@@ -112,7 +114,6 @@ from app.application.parsers.pdf.layout_specific.xp_empresas import XP_LAYOUT, X
 from app.application.parsers.pdf.models import PdfParseResult, _ParsedTransaction, _PdfLine, _TabularColumnPositions
 from app.application.parsers.pdf.multiline_transaction_assembler import parse_multiline_transaction_rows
 from app.application.parsers.pdf.native_accounts_payable import PARSER as ACCOUNTS_PAYABLE_PARSER
-from app.application.parsers.pdf.native_accounts_payable import VALIDATION_MESSAGE, parse_native_accounts_payable
 from app.application.parsers.pdf.native_cash_columns import parse_native_cash_columns
 from app.application.parsers.pdf.native_itau_monthly import PARSER as ITAU_NATIVE_MONTHLY_PARSER
 from app.application.parsers.pdf.native_itau_monthly import parse_native_itau_monthly
@@ -126,18 +127,16 @@ from app.application.pdf_ocr import PDF_OCR_DISABLED_MESSAGE, extract_pdf_page_t
 from app.application.textract_extraction_mapper import map_textract_blocks_to_extraction
 from app.application.textract_gateway import TextractGateway
 from app.application.textract_transaction_adapter import adapt_textract_extraction_to_transactions
+from app.application.title_report_detection import identify_title_report
 from app.application.unsupported_document_detection import (
-    ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE,
     BILLING_REPORT_DOCUMENT_TYPE,
     BILLING_REPORT_USER_MESSAGE,
     INVESTMENT_SUMMARY_DOCUMENT_TYPE,
     INVESTMENT_SUMMARY_USER_MESSAGE,
-    OPEN_PAYABLES_USER_MESSAGE,
     PAYMENT_REPORT_DOCUMENT_TYPE,
     PAYMENT_REPORT_USER_MESSAGE,
     detect_unsupported_document_type,
     has_accounts_payable_title,
-    is_open_payables_report,
 )
 
 _SANTANDER_IB_EMPRESARIAL_365_MOBILE_GROUPED_LAYOUT = "santander_empresarial_extrato_365_dias_mobile_grouped_v1"
@@ -406,6 +405,10 @@ def _parse_pdf_transactions_strict(
             )
 
     if native_pages:
+        title_result = parse_native_title_report(raw_bytes, native_pages)
+        if title_result is not None:
+            return _with_parse_observability(title_result, native_text_detected=1, textract_attempted=0,
+                                            extraction_provider="native_pdfium_text")
         from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
 
         validate_statement_completeness(native_pages)
@@ -517,17 +520,6 @@ def _parse_pdf_transactions_strict(
                 statement_validation_failed=int(monthly.validation_failed),
                 extraction_provider="native_pdfium_text", native_text_detected=1, textract_attempted=0,
             )
-        if is_open_payables_report("\n".join(native_pages)):
-            raise UnsupportedDocumentContentError(document_type=ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE,
-                                                  message=OPEN_PAYABLES_USER_MESSAGE)
-        if has_accounts_payable_title("\n".join(native_pages)):
-            try:
-                return parse_native_accounts_payable(raw_bytes)
-            except PdfFinancialValidationError as exc:
-                raise _attach_parse_observability(
-                    exc, textract_attempted=0, native_text_detected=1,
-                    ocr_retry_skipped=1, ocr_retry_skip_reason="financial_validation_failed",
-                )
         if has_complete_santander_inactive_summary(native_pages):
             return _with_parse_observability(
                 _empty_statement_result(native_pages, structural=True),
@@ -1038,6 +1030,10 @@ def _parse_textract_text_pages_impl(extraction) -> PdfParseResult:
     if not any(page_texts):
         raise InvalidFileContentError("Nao foi possivel extrair transacoes do OCR para revisao.")
     joined_text = "\n".join(page_texts)
+    title_result = parse_ocr_title_report(extraction)
+    if title_result is not None:
+        return replace(_with_parse_observability(title_result, extraction_provider="aws_textract", textract_used=1),
+                       source_extraction=extraction, source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
     inferred_layout = infer_pdf_layout(joined_text)
     if identify_sweep_statement(joined_text) == PAGBANK:
         from app.application.financial_event_projection import project_financial_document
@@ -1322,9 +1318,6 @@ def _parse_statement_page_texts(
     preserve_layout_spacing: bool = False,
     context: LayoutSpecificParseContext | None = None,
 ) -> PdfParseResult:
-    if is_open_payables_report("\n".join(page_texts)):
-        raise UnsupportedDocumentContentError(document_type=ACCOUNTS_PAYABLE_REPORT_DOCUMENT_TYPE,
-                                              message=OPEN_PAYABLES_USER_MESSAGE)
     financial_result = parse_financial_pdf_pages(page_texts, native=bool(context and context.is_native_text))
     if financial_result is not None:
         return financial_result
@@ -1334,8 +1327,8 @@ def _parse_statement_page_texts(
     if verified is not None:
         return _build_verified_statement_result(verified, page_texts)
     unsupported_document_type = detect_unsupported_document_type(joined_text)
-    if has_accounts_payable_title(joined_text):
-        raise PdfFinancialValidationError(VALIDATION_MESSAGE)
+    if identify_title_report(joined_text) or has_accounts_payable_title(joined_text):
+        raise PdfFinancialValidationError(TITLE_REPORT_VALIDATION_MESSAGE)
     if unsupported_document_type == BILLING_REPORT_DOCUMENT_TYPE:
         raise UnsupportedDocumentContentError(
             document_type=unsupported_document_type,

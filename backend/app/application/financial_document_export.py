@@ -22,6 +22,11 @@ LABELS = {
     "counterparty": "Contraparte", "amount": "Valor", "amount_basis": "Base do valor", "currency": "Moeda",
     "cash_effect": "Efeito financeiro", "description": "Descrição", "source_refs": "Origem (página e linha)",
     "dates.payment": "Data do pagamento", "dates.due": "Vencimento", "dates.application": "Data da aplicação",
+    "dates.movement": "Data do movimento", "amounts.outstanding": "Saldo em aberto",
+    "amounts.settled": "Valor pago / recebido informado", "amounts.discount": "Desconto",
+    "amounts.interest": "Juros", "amounts.fine": "Multa", "attributes.reported_status": "Situação informada",
+    "attributes.source_fields": "Campos originais", "attributes.category": "Categoria / centro de custo",
+    "attributes.tax_id": "CPF/CNPJ da contraparte",
     "dates.redemption": "Data do resgate", "dates.maturity": "Vencimento do investimento", "dates.issue": "Emissão",
     "amounts.original": "Valor original", "amounts.collected": "Valor cobrado", "amounts.adjustment": "Oscilação",
     "amounts.principal": "Principal", "amounts.gross": "Valor bruto", "amounts.net": "Valor líquido",
@@ -64,6 +69,7 @@ def _flatten(event):
     row = {key: value for key, value in event.items() if key not in {"dates", "amounts", "attributes"}}
     for section in ("dates", "amounts", "attributes"):
         row.update({f"{section}.{key}": value for key, value in event.get(section, {}).items()})
+    row.update({f"source.{key}": value for key, value in event.get("attributes", {}).get("source_fields", {}).items()})
     return {key: json.dumps(value, ensure_ascii=False) if isinstance(value, (list, dict)) else value for key, value in row.items()}
 
 
@@ -91,6 +97,10 @@ def write_financial_workbook(path: Path, document: dict):
     workbook = Workbook()
     workbook.remove(workbook.active)
     _sheet(workbook, "Eventos", [_flatten(event) for event in document["events"]], default_headers=("event_type", "amount", "cash_effect"))
+    original_rows = [{"ID do título": event["event_id"], **event["attributes"]["source_fields"]}
+                     for event in document["events"] if event.get("attributes", {}).get("source_fields")]
+    if original_rows:
+        _sheet(workbook, "Campos originais", original_rows)
     details = [{"event_id": event.get("event_id"), "field": key, "value": value}
                for event in document["events"] for key, value in _flatten(event).items()]
     details = [dict(item, field=LABELS.get(item["field"], item["field"])) for item in details]

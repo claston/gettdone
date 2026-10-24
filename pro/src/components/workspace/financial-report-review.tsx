@@ -37,18 +37,40 @@ export function FinancialReportReview({
     unknown: "Não identificado",
     confirmed: "Confirmado",
     paid: "Pago",
+    settled: "Liquidado no relatório",
+    pending: "Em aberto",
+    partial: "Parcial",
   };
   const types: Record<string, string> = {
     receipt: "Recebimento de título",
     investment_application: "Aplicação",
     investment_redemption: "Resgate",
     fiscal_document: "Documento fiscal",
+    payable_title: "Título a pagar",
+    receivable_title: "Título a receber",
   };
   const titles: Record<string, string> = {
     receivables_report: "Relatório de recebimentos",
     investment_statement: "Extrato de investimentos",
     fiscal_summary: "Resumo fiscal",
+    accounts_payable_report: "Contas a pagar",
+    accounts_receivable_report: "Contas a receber",
   };
+  const titleReport = [
+    "accounts_payable_report",
+    "accounts_receivable_report",
+  ].includes(report.document_type);
+  const titleDateRole = ["due", "issue", "movement"].find((role) =>
+    report.events.some((event) => event.dates[role]),
+  );
+  const titleDateLabels: Record<string, string> = {
+    due: "Vencimento",
+    issue: "Emissão",
+    movement: "Data do movimento",
+  };
+  const dateLabel = titleReport
+    ? (titleDateLabels[titleDateRole ?? ""] ?? "Data informada")
+    : "Data";
   const canExportOfx =
     !!base && report.export.available_formats.includes("ofx");
   return (
@@ -151,22 +173,29 @@ export function FinancialReportReview({
         >
           <thead>
             <tr>
-              {["Data", "Evento", "Valor", "Situação", "Origem"].map(
-                (label) => (
-                  <th key={label} scope="col">
-                    {label}
-                  </th>
-                ),
-              )}
+              {[
+                dateLabel,
+                titleReport ? "Título / contraparte" : "Evento",
+                "Valor",
+                ...(titleReport ? ["Em aberto"] : []),
+                "Situação",
+                "Origem",
+              ].map((label) => (
+                <th key={label} scope="col">
+                  {label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {report.events.map((event) => {
-              const rawDate =
-                event.dates.payment ??
-                event.dates.redemption ??
-                event.dates.application ??
-                event.dates.issue;
+              const rawDate = titleReport
+                ? event.dates[titleDateRole ?? "due"]
+                : (event.dates.payment ??
+                  event.dates.redemption ??
+                  event.dates.application ??
+                  event.dates.issue ??
+                  event.dates.movement);
               return (
                 <tr key={event.event_id}>
                   <td className="financial-event-date">
@@ -179,6 +208,11 @@ export function FinancialReportReview({
                     <span className="financial-event-text">
                       {event.description}
                     </span>
+                    {titleReport &&
+                      event.counterparty &&
+                      event.counterparty !== event.description && (
+                        <span>{event.counterparty}</span>
+                      )}
                     {event.reference && (
                       <span className="financial-event-reference">
                         Referência: {event.reference}
@@ -188,6 +222,13 @@ export function FinancialReportReview({
                   <td className="financial-event-amount">
                     {formatCurrency(Number(event.amount))}
                   </td>
+                  {titleReport && (
+                    <td>
+                      {event.amounts?.outstanding != null
+                        ? formatCurrency(Number(event.amounts.outstanding))
+                        : "Não informado"}
+                    </td>
+                  )}
                   <td>
                     <span
                       className="financial-event-status"
@@ -218,7 +259,11 @@ export function FinancialReportReview({
         </table>
         {report.events.length === 0 && (
           <div className="financial-report-empty">
-            <strong>Sem movimentos neste período</strong>
+            <strong>
+              {titleReport
+                ? "Nenhum título listado"
+                : "Sem movimentos neste período"}
+            </strong>
             <p>
               As posições e os demais dados do documento estão disponíveis no
               Excel.

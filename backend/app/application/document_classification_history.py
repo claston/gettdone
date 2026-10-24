@@ -20,6 +20,7 @@ DOCUMENT_TYPES = frozenset(
         "fiscal_summary",
         "investment_summary",
         "accounts_payable_report",
+        "accounts_receivable_report",
         "other",
         "unknown",
     }
