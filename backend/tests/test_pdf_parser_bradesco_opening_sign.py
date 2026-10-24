@@ -115,6 +115,7 @@ def test_later_real_discrepancy_in_latest_section_remains_visible() -> None:
     assert "balance_consistency_failed" in result.canonical_transactions[3].warnings
 
 
+@pytest.mark.pdf_acceptance
 def test_native_pdf_and_pipeline_preserve_transactions_and_closing_balance_without_ocr(monkeypatch) -> None:
     monkeypatch.setattr(pdf_parser_module, "is_textract_enabled", lambda: True)
     monkeypatch.setattr(pdf_parser_module, "is_textract_forced", lambda: False)

@@ -11,6 +11,11 @@ from app.application.source_regions import evidence_regions
 
 
 def parse_controlled_ocr(extraction):
+    from app.application.parsers.pdf.sicredi_combined_ocr import parse_sicredi_combined
+
+    sicredi = parse_sicredi_combined(extraction)
+    if sicredi is not None:
+        return sicredi
     from app.application.parsers.pdf.uniprime_ocr import parse_uniprime
 
     uniprime = parse_uniprime(extraction)

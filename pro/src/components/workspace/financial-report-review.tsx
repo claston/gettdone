@@ -45,6 +45,7 @@ export function FinancialReportReview({
     receipt: "Recebimento de título",
     investment_application: "Aplicação",
     investment_redemption: "Resgate",
+    investment_movement: "Movimentação de investimento",
     fiscal_document: "Documento fiscal",
     payable_title: "Título a pagar",
     receivable_title: "Título a receber",

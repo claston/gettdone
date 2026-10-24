@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Iterable
 
-QUALITY_RULE_VERSION = "2026-10-20.v1"
+QUALITY_RULE_VERSION = "2026-10-23.v2"
 PDF_LAYOUT_CONFIDENCE_THRESHOLD = 0.95
 
 
@@ -60,6 +60,8 @@ def assess_conversion_quality(
     if layout_confidence is not None:
         score = max(0.0, min(1.0, float(layout_confidence)))
     if is_pdf:
+        if parser_confidence_band in {"low", "medium"}:
+            reasons.append("parser_requires_review")
         normalized_layout = str(layout_name or "").strip().casefold()
         if not normalized_layout or normalized_layout.startswith("generic"):
             reasons.append("generic_layout")

@@ -17,6 +17,7 @@ from app.application.source_regions import SourceRegion
 
 BRADESCO_UNIFIED = "bradesco_extrato_unificado_conta_corrente_native_v1"
 BRADESCO_MOVEMENTS = "bradesco_extrato_movimentacao_periodo_native_v1"
+BRADESCO_MONTHLY = "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
 _MONEY = re.compile(rf"(?<![\w.,])[+-]?{NUMBER}-?(?![\d,.])")
 _DATE = re.compile(r"(?<!\d)\d{2}/\d{2}(?:/\d{2}(?:\d{2})?)?(?!\d)")
 _MESSAGE = "Não foi possível conferir todas as colunas, os lançamentos e os totais da conta corrente. Envie o extrato original completo."
@@ -29,6 +30,9 @@ def _fail():
 def _kind(pages):
     text = upper("\n".join(pages))
     header = upper(pages[0]) if pages else ""
+    compact = re.sub(r"\s+", "", text)
+    if all(marker in compact for marker in ("EXTRATOMENSAL/PORPERIODO", "EXTRATODE:", "LANCAMENTO", "DCTO.", "SALDOANTERIOR")):
+        return BRADESCO_MONTHLY
     if ("EXTRATO UNIFICADO - PESSOA JURIDICA" in header and "BRADESCO" in text
             and re.search(r"\bDOCTO\b", text)):
         return BRADESCO_UNIFIED
@@ -42,7 +46,8 @@ def _kind(pages):
 
 
 def _columns(tp, text, santander):
-    patterns = [r"\bData\b", r"Descri[cç][aã]o" if santander else r"Hist[oó]rico", r"Documento" if santander else r"Docto",
+    patterns = [r"\bData\b", r"Descri[cç][aã]o" if santander else r"Hist[oó]rico|Lan[cç]amento",
+                r"Documento" if santander else r"Docto|Dcto\.",
                 r"Cr[eé]ditos?", r"D[eé]bitos?", r"Saldo(?: \(R\$\))?"]
     choices = [_boxes(tp, text, re.compile(pattern, re.IGNORECASE)) for pattern in patterns]
     for anchor in choices[0]:
@@ -153,6 +158,7 @@ def parse_native_cash_columns(raw, page_texts):
     opening = opening_date = printed_closing = printed_totals = current = None
     finished = False
     checks = 0
+    previous_columns = None
     with _PDFIUM_LOCK, pdfium.PdfDocument(raw) as document:
         for page_index in range(len(document)):
             with closing(document[page_index]) as page, closing(page.get_textpage()) as tp:
@@ -164,27 +170,45 @@ def parse_native_cash_columns(raw, page_texts):
                     _fail()
                 columns = _columns(tp, text, santander)
                 if finished:
-                    if columns is not None:
+                    if columns is not None and kind != BRADESCO_MONTHLY:
                         _fail()
                     continue
+                latest_boxes = _boxes(tp, text, re.compile(r"[ÚUuú]ltimos\s+Lan[cç]amentos", re.I)) if kind == BRADESCO_MONTHLY else []
+                cutoff = max((box.top for box in latest_boxes), default=0)
+                if cutoff and columns is not None and columns[0].top < cutoff:
+                    columns = None
+                continued_monthly = columns is None and kind == BRADESCO_MONTHLY and previous_columns is not None
+                if continued_monthly:
+                    columns = previous_columns
                 if columns is None:
                     if opening is not None:
                         _fail()
                     continue
+                previous_columns = columns
                 if page.get_rotation():
                     _fail()
                 date_col, history, reference, credit, debit, balance = columns
+                if kind == BRADESCO_MONTHLY and opening is None:
+                    # A sequential text PDF may print the same header without
+                    # placing its values in those columns. Preserve the existing
+                    # text reader, including independently balanced sections.
+                    openings = _boxes(tp, text, re.compile(r"SALDO\s+ANTERIOR", re.I))
+                    first_opening = max(openings, key=lambda box: box.bottom) if openings else None
+                    opening_values = [box for box in _boxes(tp, text, _MONEY)
+                                      if first_opening and abs(box.bottom-first_opening.bottom) < 3]
+                    if not any((box.left+box.right)/2 >= (debit.right+balance.left)/2 for box in opening_values):
+                        return None
                 characters = [_TextBox(char, *tp.get_charbox(i, loose=True)) for i, char in enumerate(text)
                               if char not in {"\r", "\n", "\x00"}]
 
                 def bounded(left, bottom, right, top):
                     return " ".join(_read_history(characters, left, bottom, right, top).split())
 
-                header_bottom = min(box.bottom for box in columns)
+                header_bottom = page.get_height() if continued_monthly else min(box.bottom for box in columns)
                 history_left = date_col.right+5
                 boundary = (credit.right+debit.left)/2, (debit.right+balance.left)/2
                 values = [box for box in _boxes(tp, text, _MONEY)
-                          if box.left > reference.right+3 and box.top < header_bottom-1]
+                          if box.left > reference.right+3 and box.top < header_bottom-1 and box.bottom > cutoff]
                 dates = [box for box in _boxes(tp, text, _DATE)
                          if box.left < date_col.right+5 and box.right < reference.left-5 and box.top < header_bottom-1]
                 if dates:
@@ -196,7 +220,8 @@ def parse_native_cash_columns(raw, page_texts):
                     else:
                         groups.append([box])
                 references = [box for box in _boxes(tp, text, re.compile(r"(?<!\w)\d{1,12}(?!\w)"))
-                              if reference.left-8 <= box.left and box.right < credit.left-3 and box.top < header_bottom-1]
+                              if reference.left-8 <= box.left and box.right < credit.left-3
+                              and box.top < header_bottom-1 and box.bottom > cutoff]
                 used_references = set()
                 lines = _source_lines(tp, text)
                 width, height = page.get_size()
@@ -264,8 +289,15 @@ def parse_native_cash_columns(raw, page_texts):
                     if (current <= opening_date or rows and current.isoformat() < rows[-1].transaction.date
                             or start and not start <= current <= end):
                         _fail()
-                    bottom = groups[index+1][0].top+1 if index+1 < len(groups) else max(0, anchor.bottom-12)
-                    description = bounded(history_left, bottom, reference.left-3, anchor.top+1)
+                    if kind == BRADESCO_MONTHLY:
+                        # A wrapped history can start above or continue below
+                        # the amount baseline; use adjacent monetary row bands.
+                        top = (groups[index-1][0].bottom+anchor.bottom)/2 if index else header_bottom-1
+                        bottom = (groups[index+1][0].bottom+anchor.bottom)/2 if index+1 < len(groups) else max(0, anchor.bottom-12)
+                    else:
+                        top = anchor.top+1
+                        bottom = groups[index+1][0].top+1 if index+1 < len(groups) else max(0, anchor.bottom-12)
+                    description = bounded(history_left, bottom, reference.left-3, top)
                     same_line = bounded(history_left, anchor.bottom-1, reference.left-3, anchor.top+1)
                     if not same_line or not description or "SALDO" in upper(description[:6]):
                         _fail()
@@ -279,8 +311,8 @@ def parse_native_cash_columns(raw, page_texts):
                         _fail()
                     amount = amounts["credit"] if "credit" in amounts else -abs(amounts["debit"])
                     source = min(lines, key=lambda value: abs(value[1]-anchor.bottom))[0]
-                    region = SourceRegion(page_index+1, history_left/width, max(0, height-anchor.top-2)/height,
-                        (max(box.right for box in cells)-history_left)/width, (anchor.top+2-bottom)/height)
+                    region = SourceRegion(page_index+1, history_left/width, max(0, height-top-2)/height,
+                        (max(box.right for box in cells)-history_left)/width, (top+2-bottom)/height)
                     row = _row(page_index+1, source, current.isoformat(), description, amount, amounts.get("balance"),
                                refs[0].text if refs else None)
                     rows.append(replace(row, source_regions=[region]))

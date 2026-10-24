@@ -2024,7 +2024,7 @@
           <td>${escapeAttr(item.source_refs.map((ref) => `Pág. ${ref.page}, linha ${ref.line}`).join("; "))}</td></tr>`).join("");
         return;
       }
-      const types = { receipt: "Recebimento de título", investment_application: "Aplicação CDB", investment_redemption: "Resgate CDB", fiscal_document: "Documento fiscal",
+      const types = { receipt: "Recebimento de título", investment_application: "Aplicação CDB", investment_redemption: "Resgate CDB", investment_movement: "Movimentação de investimento", fiscal_document: "Documento fiscal",
         payable_title: "Título a pagar", receivable_title: "Título a receber" };
       const statuses = { paid: "Pago", confirmed: "Confirmado", issued: "Emitido", voided: "Inutilizado", cancelled: "Cancelado", unknown: "Não identificado",
         settled: "Liquidado no relatório", pending: "Em aberto", partial: "Parcial" };
