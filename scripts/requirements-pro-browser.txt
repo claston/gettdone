@@ -1,0 +1,6 @@
+# Geometry and fixture versions are checked against backend/requirements.txt.
+# Browser interception does not use the API, database, OCR or AWS clients.
+playwright==1.64.1
+pytest==8.3.5
+pypdf==5.4.0
+pypdfium2==5.8.0
