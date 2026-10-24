@@ -26,6 +26,7 @@ from app.routers import (
     convert_router,
     health_router,
     plans_router,
+    pro_organization_router,
     reconcile_router,
     report_router,
     telemetry_router,
@@ -104,6 +105,7 @@ app.include_router(client_router)
 app.include_router(checkout_router)
 app.include_router(contact_router)
 app.include_router(conversion_batches_router)
+app.include_router(pro_organization_router)
 app.include_router(reconcile_router)
 app.include_router(report_router)
 app.include_router(telemetry_router)

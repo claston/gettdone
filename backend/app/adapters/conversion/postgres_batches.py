@@ -11,6 +11,7 @@ from app.application.conversion.contracts.batches import (
     ConversionBatchSnapshot,
     ConversionBatchSubmission,
     ConversionBatchSummary,
+    ConversionFileSummary,
     ConversionOutboxEvent,
 )
 from app.application.conversion.contracts.documents import ConversionDocumentReference
@@ -181,6 +182,28 @@ class PostgresConversionBatchRepository:
                 if cursor.fetchone() is None:
                     return None
             return self._snapshot(conn, batch_id)
+
+    def list_files_for_owner(self, *, identity_type: str, identity_id: str, limit: int,
+                             before: tuple[datetime, str] | None = None) -> tuple[ConversionFileSummary, ...]:
+        boundary = " AND (j.created_at < %s OR (j.created_at = %s AND j.job_id < %s))" if before else ""
+        params: list[object] = [identity_type, identity_id]
+        if before:
+            params.extend([before[0], before[0], before[1]])
+        params.append(limit)
+        with self._connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(f"""
+                    SELECT j.job_id, j.batch_id, j.status, j.created_at, j.expires_at,
+                        j.document->>'filename' AS filename
+                    FROM {self._jobs_table} j JOIN {self._batches_table} b ON b.batch_id = j.batch_id
+                    WHERE b.identity_type = %s AND b.identity_id = %s{boundary}
+                    ORDER BY j.created_at DESC, j.job_id DESC LIMIT %s
+                """, tuple(params))
+                rows = cursor.fetchall()
+        return tuple(ConversionFileSummary(
+            job_id=row["job_id"], batch_id=row["batch_id"], filename=row["filename"], status=row["status"],
+            created_at=self._normalize_datetime(row["created_at"]), expires_at=self._normalize_datetime(row["expires_at"]),
+        ) for row in rows)
 
     def list_for_owner(self, *, identity_type: str, identity_id: str, limit: int,
                        before: tuple[datetime, str] | None = None) -> tuple[ConversionBatchSummary, ...]:

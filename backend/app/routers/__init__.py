@@ -7,6 +7,7 @@ from app.routers.contact import router as contact_router
 from app.routers.conversion_batches import router as conversion_batches_router
 from app.routers.health import router as health_router
 from app.routers.plans import router as plans_router
+from app.routers.pro_organization import router as pro_organization_router
 from app.routers.reconcile import router as reconcile_router
 from app.routers.report import router as report_router
 from app.routers.telemetry import router as telemetry_router
@@ -23,6 +24,7 @@ __all__ = [
     "convert_router",
     "health_router",
     "plans_router",
+    "pro_organization_router",
     "reconcile_router",
     "report_router",
     "telemetry_router",

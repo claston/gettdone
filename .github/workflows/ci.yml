@@ -123,6 +123,7 @@ jobs:
             tmp/pro-pdf-sync/
             tmp/pro-financial-reports/
             tmp/pro-idle-navigation/
+            tmp/pro-organization/
             tmp/pro-browser-suites/
           if-no-files-found: ignore
 
@@ -173,6 +174,20 @@ jobs:
 
   lint-and-tests:
     runs-on: ubuntu-latest
+    services:
+      postgres-organization:
+        image: postgres:16
+        env:
+          POSTGRES_DB: ofx24_test
+          POSTGRES_USER: ofx24_test
+          POSTGRES_PASSWORD: local-ci-test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ofx24_test -d ofx24_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend
@@ -213,6 +228,11 @@ jobs:
 
       - name: Lint (Ruff)
         run: python -m ruff check .
+
+      - name: Validate PRO organization PostgreSQL upgrade and rollback
+        env:
+          PRO_ORGANIZATION_TEST_DATABASE_URL: postgresql://ofx24_test:local-ci-test-only@127.0.0.1:5432/ofx24_test
+        run: python -m pytest tests/test_pro_organization_postgres.py -q
 
       - name: Run tests
         run: python -m pytest -m "not pdf_golden" -q -n 4 --dist=worksteal

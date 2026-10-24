@@ -55,7 +55,7 @@ def test_browser_suites_cover_all_current_scenarios_once_with_slow_receipt():
     commands = [command for suite in ["workspace", "pdf"] for command in runner()["commands"](suite, "http://local")]
     files = [Path(command[1]).name for command in commands]
     assert Counter(files) == Counter(["smoke_pro_workspace.py", "smoke_pro_idle_navigation.py",
-                                     "smoke_pro_pdf_sync.py", "smoke_pro_financial_reports.py"])
+                                     "smoke_pro_pdf_sync.py", "smoke_pro_financial_reports.py", "smoke_pro_organization.py"])
     workspace = next(command for command in commands if command[1].endswith("smoke_pro_workspace.py"))
     assert workspace[-2:] == ["--save-receipt-delay-ms", "6000"]
 
@@ -70,9 +70,9 @@ def test_suite_runs_serially_and_reports_failure_without_omitting_later_scenario
 
     result = runner()["run"]("workspace", "http://local", output=tmp_path, execute=execute, ready=lambda url: None)
     assert result == 1
-    assert len(calls) == 2
+    assert len(calls) == 3
     summary = json.loads((tmp_path / "suite-workspace.json").read_text())
-    assert [case["returncode"] for case in summary["scenarios"]] == [1, 0]
+    assert [case["returncode"] for case in summary["scenarios"]] == [1, 0, 0]
 
 
 def test_suite_returns_success_only_after_both_scenarios_pass(tmp_path):

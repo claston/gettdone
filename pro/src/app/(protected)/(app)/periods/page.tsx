@@ -1,10 +1,9 @@
-import { PlaceholderPage } from "@/components/placeholder-page";
+import { OrganizationPage } from "@/components/organization/organization-page";
 
 export default function Page() {
   return (
-    <PlaceholderPage
-      title="Competências"
-      description="Encontre rapidamente os extratos de cada período contábil."
-    />
+    <main>
+      <OrganizationPage mode="periods" />
+    </main>
   );
 }

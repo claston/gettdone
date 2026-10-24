@@ -9,6 +9,7 @@ from app.application.conversion.contracts.batches import (
     ConversionBatchSnapshot,
     ConversionBatchSubmission,
     ConversionBatchSummary,
+    ConversionFileSummary,
     ConversionOutboxEvent,
 )
 from app.application.conversion.contracts.jobs import (
@@ -107,6 +108,19 @@ class InMemoryConversionBatchRepository:
 
     def mark_uploaded(self, job_id: str) -> ConversionJobRecord:
         return self._transition(job_id, ConversionJobStatus.UPLOADED, {ConversionJobStatus.UPLOADING})
+
+    def list_files_for_owner(self, *, identity_type: str, identity_id: str, limit: int,
+                             before: tuple[datetime, str] | None = None) -> tuple[ConversionFileSummary, ...]:
+        with self._lock:
+            owned = {batch.batch_id for batch in self._batches.values()
+                     if (batch.identity_type, batch.identity_id) == (identity_type, identity_id)}
+            records = sorted((row for row in self._jobs.values() if row.job.batch_id in owned
+                              and (before is None or (row.created_at, row.job.job_id) < before)),
+                             key=lambda row: (row.created_at, row.job.job_id), reverse=True)[:limit]
+            return tuple(ConversionFileSummary(
+                job_id=row.job.job_id, batch_id=row.job.batch_id, filename=row.job.document.filename,
+                status=row.status.value, created_at=row.created_at, expires_at=row.expires_at,
+            ) for row in records)
 
     def mark_queued(self, job_id: str) -> ConversionJobRecord:
         return self._transition(
