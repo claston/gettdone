@@ -38,6 +38,30 @@ O downgrade remove apenas a constraint e as duas colunas adicionadas. Se for
 necessário reverter somente o comportamento, é preferível manter a migration e
 definir `batch_conversion_enabled = FALSE`, evitando perda da configuração.
 
+## Falhas parciais de upload
+
+O PRO aguarda o término de todas as tentativas de upload. Ao submeter o lote,
+informa `failed_upload_job_ids` somente quando algum envio falhou. O backend
+valida que esses jobs pertencem ao lote e ainda estão em upload (ou já foram
+marcados com a mesma falha numa submissão anterior), registra `upload_failed`
+e enfileira os demais arquivos após verificar seus uploads. Omitir o campo
+preserva o contrato anterior. Repetir a submissão não duplica os jobs na fila.
+
+Falhas de upload não entram no worker nem consomem cota. O workspace orienta
+selecionar o arquivo novamente em Nova conversão; retry do worker é rejeitado
+nesses casos, porque o documento pode não existir no armazenamento. Um lote
+com todos os uploads falhos permanece consultável com status `failed`.
+
+Publicar primeiro o backend e depois o frontend PRO. A mudança não exige
+migração nem atualização do worker. Para rollback, reverter primeiro o frontend;
+manter o backend novo é compatível com clientes antigos e preserva a orientação
+de reenvio para os lotes que já receberam `upload_failed`.
+
+Verificação: enviar dois arquivos e provocar falha no POST de um deles ao
+armazenamento. O outro deve concluir, abrir para revisão e aparecer sozinho no
+ZIP. O arquivo que falhou deve apresentar a opção de novo envio. Repetir com
+todos os uploads falhos e confirmar ausência de enfileiramento e consumo.
+
 ## Verificação pós-deploy
 
 1. Confirme que os planos pagos atuais expõem `batch_conversion_enabled=true` e

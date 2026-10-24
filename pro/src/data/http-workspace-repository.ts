@@ -56,6 +56,7 @@ interface ApiJob {
   job_id: string;
   filename: string;
   status: string;
+  error_code?: string | null;
   analysis_id?: string | null;
   reviewed_at?: string | null;
   result?: {
@@ -602,6 +603,7 @@ function mapConversion({
     bankCode: analysis?.bank_code?.trim() || undefined,
     period: resolveTransactionPeriod(transactions),
     status,
+    errorCode: job.error_code,
     reviewStatus: status === "REVIEWED" ? "REVIEWED" : "PENDING",
     transactionCount: transactions.filter((row) => !row.isDeleted).length,
     suspectedCount,

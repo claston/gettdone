@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+import pytest
+
 from app.application.access_control import IdentityContext
 from app.application.conversion.conversion_batch_repository import InMemoryConversionBatchRepository
 from app.application.conversion.conversion_batch_service import (
@@ -144,6 +146,72 @@ def test_batch_service_submit_is_idempotent_after_jobs_are_queued() -> None:
     service.submit(batch_id=prepared.snapshot.batch.batch_id, identity=identity, trace_id="trace-456")
 
     assert len(publisher.calls) == 2
+
+
+@pytest.mark.parametrize("failed_indices", [(0,), (1,), (0, 1)])
+def test_batch_service_isolates_upload_failures_and_replays_submit(failed_indices) -> None:
+    uploads = FakeDirectUploadService()
+    publisher = FakePublisher(calls=[])
+    service = ConversionBatchService(
+        repository=InMemoryConversionBatchRepository(), direct_upload_service=uploads, queue_publisher=publisher,
+    )
+    identity = IdentityContext(identity_type="user", identity_id="usr_123", quota_limit=20)
+    prepared = service.create(identity=identity, files=_files(2), idempotency_key="partial-upload")
+    failed_ids = [prepared.snapshot.jobs[index].job.job_id for index in failed_indices]
+
+    for _ in range(2):
+        submitted = service.submit(
+            batch_id=prepared.snapshot.batch.batch_id, identity=identity, trace_id="trace-partial",
+            failed_upload_job_ids=failed_ids,
+        )
+    for index, record in enumerate(submitted.jobs):
+        if index in failed_indices:
+            assert record.status == ConversionJobStatus.FAILED
+            assert record.failure.code == "upload_failed"
+            assert record.job.document.storage_key not in uploads.verified
+            with pytest.raises(ValueError, match="upload"):
+                service.retry(batch_id=prepared.snapshot.batch.batch_id, job_id=record.job.job_id, identity=identity, trace_id="retry")
+        else:
+            assert record.status == ConversionJobStatus.QUEUED
+    assert len(publisher.calls) == 2 - len(failed_indices)
+    assert len(uploads.verified) == 2 - len(failed_indices)
+
+
+def test_batch_service_rejects_foreign_failure_ids_before_changing_any_job() -> None:
+    uploads = FakeDirectUploadService()
+    publisher = FakePublisher(calls=[])
+    service = ConversionBatchService(
+        repository=InMemoryConversionBatchRepository(), direct_upload_service=uploads, queue_publisher=publisher,
+    )
+    identity = IdentityContext(identity_type="user", identity_id="usr_123", quota_limit=20)
+    prepared = service.create(identity=identity, files=_files(2), idempotency_key="own-batch")
+    other = service.create(identity=identity, files=_files(1), idempotency_key="other-batch")
+
+    with pytest.raises(ValueError):
+        service.submit(
+            batch_id=prepared.snapshot.batch.batch_id, identity=identity, trace_id="trace-partial",
+            failed_upload_job_ids=[prepared.snapshot.jobs[0].job.job_id, other.snapshot.jobs[0].job.job_id],
+        )
+    assert uploads.verified == []
+    assert publisher.calls == []
+    assert all(service.repository.get(row.job.job_id).status == ConversionJobStatus.UPLOADING for row in prepared.snapshot.jobs)
+
+
+def test_batch_service_cannot_report_queued_job_as_upload_failure() -> None:
+    publisher = FakePublisher(calls=[])
+    service = ConversionBatchService(
+        repository=InMemoryConversionBatchRepository(), direct_upload_service=FakeDirectUploadService(), queue_publisher=publisher,
+    )
+    identity = IdentityContext(identity_type="user", identity_id="usr_123", quota_limit=20)
+    prepared = service.create(identity=identity, files=_files(1), idempotency_key="queued-upload")
+    batch_id = prepared.snapshot.batch.batch_id
+    service.submit(batch_id=batch_id, identity=identity, trace_id="trace")
+    with pytest.raises(ValueError):
+        service.submit(
+            batch_id=batch_id, identity=identity, trace_id="trace", failed_upload_job_ids=[prepared.snapshot.jobs[0].job.job_id],
+        )
+    assert service.repository.get(prepared.snapshot.jobs[0].job.job_id).status == ConversionJobStatus.QUEUED
+    assert len(publisher.calls) == 1
 
 
 def test_batch_service_replays_transactional_outbox_after_sqs_failure() -> None:

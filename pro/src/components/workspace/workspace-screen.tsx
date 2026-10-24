@@ -777,17 +777,32 @@ export function WorkspaceScreen({
             {activeConversion.status === "FAILED" ? (
               <section className="transactions-panel viewer-state error">
                 <RotateCcw size={28} />
-                <h3>Conversão interrompida</h3>
-                <p>
-                  Tente processar este arquivo novamente sem bloquear o restante
-                  do lote.
-                </p>
-                <button
-                  className="primary-button"
-                  onClick={() => void controller.retryConversion()}
-                >
-                  Tentar novamente
-                </button>
+                {activeConversion.errorCode === "upload_failed" ? (
+                  <>
+                    <h3>Falha no envio do arquivo</h3>
+                    <p>
+                      Selecione este arquivo novamente em Nova conversão. Os
+                      demais arquivos do lote continuam sendo processados.
+                    </p>
+                    <Link className="primary-button" href="/conversions">
+                      Enviar arquivo novamente
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <h3>Conversão interrompida</h3>
+                    <p>
+                      Tente processar este arquivo novamente sem bloquear o
+                      restante do lote.
+                    </p>
+                    <button
+                      className="primary-button"
+                      onClick={() => void controller.retryConversion()}
+                    >
+                      Tentar novamente
+                    </button>
+                  </>
+                )}
               </section>
             ) : activeConversion.status === "PROCESSING" ? (
               <section className="transactions-panel viewer-state">

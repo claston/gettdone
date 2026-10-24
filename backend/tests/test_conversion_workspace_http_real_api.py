@@ -220,6 +220,87 @@ def test_http_ofx_batch_preserves_bank_metadata_through_worker_and_export(tmp_pa
                 assert foreign.status_code == 404
 
 
+@pytest.mark.parametrize("failed_indices", [(0,), (1,), (0, 1)])
+def test_http_partial_upload_preserves_valid_reports_and_charges_only_processed_files(tmp_path: Path, failed_indices) -> None:
+    from io import BytesIO
+    from zipfile import ZipFile
+
+    raw = (
+        "<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKACCTFROM>"
+        "<BANKID>033\n<ACCTID>000123\n</BANKACCTFROM><BANKTRANLIST><STMTTRN>"
+        "<DTPOSTED>20261001000000\n<TRNAMT>25.00\n<MEMO>PIX RECEBIDO\n"
+        "<TRNTYPE>CREDIT\n</STMTTRN></BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>"
+    ).encode()
+
+    class UploadedStore:
+        def load(self, reference):
+            assert int(reference.filename.removesuffix(".ofx")) not in failed_indices
+            return ingest_uploaded_document(reference.filename, raw)
+
+    with _run_pro_upload_http_server(tmp_path) as (base_url, publisher, token):
+        service = app.dependency_overrides[get_conversion_batch_service]()
+        access = app.dependency_overrides[get_access_control_service]()
+        identity = access.resolve_identity(user_token=token, anonymous_fingerprint=None)
+        initial_quota = access.get_remaining_quota(identity)
+        storage = TempAnalysisStorage(root_dir=tmp_path / "analyses", ttl_seconds=3600)
+        reports = ReportService(storage=storage)
+        processor = ConversionLambdaProcessor(
+            repository=service.repository, document_store=UploadedStore(),
+            pipeline=DocumentConversionPipeline(
+                report_service=reports, access_control_service=access,
+                processing_pipeline=build_default_conversion_pipeline(), analysis_repository=storage,
+            ),
+        )
+        app.dependency_overrides[get_async_conversion_report_service] = lambda: reports
+        app.dependency_overrides[get_report_service] = lambda: reports
+        with httpx.Client(base_url=base_url, headers={
+            "Authorization": f"Bearer {token}", "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web",
+        }) as owner:
+            created = owner.post("/api/pro/conversion-batches", headers={"Idempotency-Key": "partial-upload-http"}, json={
+                "files": [{"filename": f"{index}.ofx", "content_type": "application/x-ofx", "size_bytes": len(raw),
+                           "sha256_hex": hashlib.sha256(raw).hexdigest()} for index in range(2)],
+            })
+            assert created.status_code == 201, created.text
+            batch_id = created.json()["batch_id"]
+            jobs = created.json()["jobs"]
+            submit_url = f"/api/pro/conversion-batches/{batch_id}/submit"
+            rejected = owner.post(submit_url, json={"failed_upload_job_ids": [jobs[0]["job_id"], "job_foreign"]})
+            assert rejected.status_code == 409
+            assert publisher.calls == []
+            failures = {"failed_upload_job_ids": [jobs[index]["job_id"] for index in failed_indices]}
+            for _ in range(2):
+                submitted = owner.post(submit_url, json=failures)
+                assert submitted.status_code == 202, submitted.text
+            assert len(publisher.calls) == 2 - len(failed_indices)
+            assert access.get_remaining_quota(identity) == initial_quota
+            for job_id in publisher.calls:
+                processor.process(job_id=job_id, expected_batch_id=batch_id, trace_id="partial-http",
+                                  receive_count=1, lease_owner="partial-worker")
+            reloaded = owner.get(f"/api/pro/conversion-batches/{batch_id}")
+            assert reloaded.status_code == 200, reloaded.text
+            expected_status = "failed" if len(failed_indices) == 2 else "completed_with_errors"
+            assert reloaded.json()["status"] == expected_status
+            for index, job in enumerate(reloaded.json()["jobs"]):
+                if index in failed_indices:
+                    assert job["status"] == "failed" and job["error_code"] == "upload_failed"
+                    retry = owner.post(f"/api/pro/conversion-batches/{batch_id}/jobs/{job['job_id']}/retry", json={})
+                    assert retry.status_code == 409
+                else:
+                    assert job["status"] == "completed", job
+                    report = owner.get(f"/report/{job['analysis_id']}")
+                    assert report.status_code == 200, report.text
+            assert access.get_remaining_quota(identity) == initial_quota - len(publisher.calls)
+            export = owner.get(f"/api/pro/conversion-batches/{batch_id}/export")
+            if len(failed_indices) == 2:
+                assert export.status_code == 409
+            else:
+                assert export.status_code == 200, export.text
+                with ZipFile(BytesIO(export.content)) as archive:
+                    assert len(archive.namelist()) == 1
+                    assert b"<STMTTRN>" in archive.read(archive.namelist()[0])
+            assert owner.get("/report/an_unknown").status_code == 404
+
+
 class FakeAccessControl:
     def resolve_identity(self, *, anonymous_fingerprint, user_token):
         if anonymous_fingerprint != "workspace-owner" or user_token not in {None, ""}:
