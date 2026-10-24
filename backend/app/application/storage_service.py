@@ -84,6 +84,7 @@ class TempAnalysisStorage:
             report_rows=report_rows,
             snapshot=data,
         )
+        preserve_bank_metadata = data.file_type == "ofx" or (data.file_type == "pdf" and data.financial_document is None)
         self.export_artifact_service.write_convert_artifacts(
             analysis_dir,
             report_rows=report_rows,
@@ -91,9 +92,9 @@ class TempAnalysisStorage:
             layout_inference_name=data.layout_inference_name,
             opening_balance=data.opening_balance,
             closing_balance=data.closing_balance,
-            bank_branch=data.bank_branch if data.file_type == "ofx" else None,
-            account_number=data.account_number if data.file_type == "ofx" else None,
-            bank_code=data.bank_code if data.file_type == "ofx" else None,
+            bank_branch=data.bank_branch if preserve_bank_metadata else None,
+            account_number=data.account_number if preserve_bank_metadata else None,
+            bank_code=data.bank_code if preserve_bank_metadata else None,
             **({"financial_document": data.financial_document} if data.financial_document is not None else {}),
         )
         return expires_at.isoformat()
@@ -835,7 +836,9 @@ class TempAnalysisStorage:
         if closing_raw is None and empty_statement:
             closing_raw = content.get("closing_balance")
         closing_balance = float(closing_raw) if closing_raw is not None else None
-        source = content if content.get("file_type") == "ofx" or empty_statement else {}
+        preserve_bank_metadata = (content.get("file_type") == "ofx"
+                                  or content.get("file_type") == "pdf" and content.get("financial_document") is None)
+        source = content if preserve_bank_metadata or empty_statement else {}
         branch = str(content.get("convert_bank_branch") or source.get("bank_branch") or "").strip() or None
         account = str(content.get("convert_account_number") or source.get("account_number") or "").strip() or None
         code = str(content.get("convert_bank_code") or source.get("bank_code") or "").strip() or None

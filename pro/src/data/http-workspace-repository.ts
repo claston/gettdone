@@ -47,6 +47,7 @@ interface ApiAnalysis {
   pdf_processing_metrics?: {
     page_count?: number;
     statement_no_activity?: number;
+    partial_statement?: number;
   } | null;
   preview_transactions?: ApiTransaction[];
 }
@@ -618,6 +619,7 @@ function mapConversion({
       : undefined,
     financialDocument: analysis?.financial_document,
     noActivity: analysis?.pdf_processing_metrics?.statement_no_activity === 1,
+    partialStatement: analysis?.pdf_processing_metrics?.partial_statement === 1,
     transactions,
   };
 }

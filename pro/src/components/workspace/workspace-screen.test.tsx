@@ -170,6 +170,28 @@ describe("WorkspaceScreen", () => {
       screen.queryByText("Conversão interrompida"),
     ).not.toBeInTheDocument();
   });
+
+  it("explica o extrato parcial e preserva os movimentos disponíveis", async () => {
+    const batch: Batch = {
+      ...completedBatch,
+      conversions: [
+        { ...completedBatch.conversions[0], partialStatement: true },
+      ],
+    };
+    const repository = {
+      ...createMockWorkspaceRepository({ latencyMs: 0 }),
+      getBatch: vi.fn(async () => batch),
+    };
+    render(<WorkspaceScreen batchId={batch.id} repository={repository} />);
+    expect(await screen.findByText(/Extrato parcial:/)).toHaveTextContent(
+      "extrato consolidado completo",
+    );
+    expect(
+      screen.getByDisplayValue(
+        batch.conversions[0].transactions[0].description,
+      ),
+    ).toBeInTheDocument();
+  });
   it("mantém a linha excluída no lugar e permite restaurar sem perder seus valores", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     const repository = createMockWorkspaceRepository({ latencyMs: 0 });

@@ -479,7 +479,7 @@ def _extract_bank_account_metadata_from_header(raw_lines: list[str]) -> tuple[st
             candidate = _extract_value_from_line(
                 line,
                 min_len=4,
-                max_len=14,
+                max_len=20,
                 label_pattern=r"\b(?:CONTA(?:\s+CORRENTE)?|C/C|CC)\b",
             )
             allow_next_line = bool(
@@ -489,7 +489,7 @@ def _extract_bank_account_metadata_from_header(raw_lines: list[str]) -> tuple[st
                 candidate = _extract_header_identifier_from_next_line(
                     normalized_lines[idx + 1],
                     min_len=4,
-                    max_len=14,
+                    max_len=20,
                 )
             if candidate:
                 account = candidate
@@ -556,6 +556,7 @@ def _resolve_ofx_account_type(
         layout_name = str(layout_inference_name or "").strip().lower()
 
         if layout_name in {
+            "nubank_fatura_cartao_credito_v1",
             "recovery_btg_card_invoice_v1",
             DIGITAL_CREDIT_CARD_LAYOUT,
             BRADESCO_CARD_WEB_LAYOUT,

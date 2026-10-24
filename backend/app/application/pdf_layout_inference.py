@@ -120,6 +120,11 @@ class PdfLayoutInference:
 
 
 def infer_pdf_layout(text: str) -> PdfLayoutInference:
+    from app.application.parsers.pdf.nubank_credit_card import LAYOUT as NUBANK_CARD_LAYOUT
+    from app.application.parsers.pdf.nubank_credit_card import is_nubank_invoice
+
+    if is_nubank_invoice(text):
+        return PdfLayoutInference(NUBANK_CARD_LAYOUT, .99, False)
     from app.application.parsers.pdf.uniprime_ocr import LAYOUT as UNIPRIME_LAYOUT
     from app.application.parsers.pdf.uniprime_ocr import is_uniprime_statement
 
