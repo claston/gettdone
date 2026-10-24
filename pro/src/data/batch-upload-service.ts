@@ -115,7 +115,7 @@ export function createBatchUploadService(
         );
       }
 
-      await Promise.all(
+      const uploadResults = await Promise.allSettled(
         files.map(async (file, index) => {
           const upload = uploads[index];
           const form = new FormData();
@@ -134,6 +134,9 @@ export function createBatchUploadService(
           }
         }),
       );
+      const failedUploadJobIds = uploadResults.flatMap((result, index) =>
+        result.status === "rejected" ? [uploads[index].job_id] : [],
+      );
 
       const submittedResponse = await apiClient.request(
         `/api/pro/conversion-batches/${encodeURIComponent(prepared.batch_id)}/submit`,
@@ -143,7 +146,11 @@ export function createBatchUploadService(
             Accept: "application/json",
             "Content-Type": "application/json",
           },
-          body: "{}",
+          body: JSON.stringify(
+            failedUploadJobIds.length
+              ? { failed_upload_job_ids: failedUploadJobIds }
+              : {},
+          ),
         },
       );
       if (!submittedResponse.ok) {

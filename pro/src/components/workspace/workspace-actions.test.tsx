@@ -13,6 +13,32 @@ import { WorkspaceScreen } from "./workspace-screen";
 
 afterEach(() => vi.useRealTimers());
 
+it("orienta novo envio quando o upload falha sem oferecer retry do worker", async () => {
+  const repository = createMockWorkspaceRepository({ latencyMs: 0 });
+  const batch = await repository.getBatch("batch-setembro-2026");
+  const failed = batch.conversions[0];
+  failed.status = "FAILED";
+  failed.errorCode = "upload_failed";
+  failed.pdf = null;
+  vi.spyOn(repository, "getBatch").mockResolvedValue(batch);
+  render(
+    <WorkspaceScreen
+      batchId={batch.id}
+      initialConversionId={failed.id}
+      repository={repository}
+    />,
+  );
+  expect(
+    await screen.findByText("Falha no envio do arquivo"),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("link", { name: "Enviar arquivo novamente" }),
+  ).toHaveAttribute("href", "/conversions");
+  expect(
+    screen.queryByRole("button", { name: "Tentar novamente" }),
+  ).not.toBeInTheDocument();
+});
+
 it("atualiza o processamento sem sobrescrever uma correção pendente", async () => {
   const repository = createMockWorkspaceRepository({ latencyMs: 0 });
   const original = await repository.getBatch("batch-setembro-2026");

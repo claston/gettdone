@@ -71,6 +71,10 @@ class ConversionBatchIdentityRequest(BaseModel):
     user_token: str | None = Field(default=None, max_length=500)
 
 
+class SubmitConversionBatchRequest(ConversionBatchIdentityRequest):
+    failed_upload_job_ids: list[str] = Field(default_factory=list, max_length=12)
+
+
 class ConversionUploadResponse(BaseModel):
     job_id: str
     filename: str
@@ -264,7 +268,7 @@ def create_conversion_batch(
 def submit_conversion_batch(
     http_request: Request,
     batch_id: str,
-    request: ConversionBatchIdentityRequest,
+    request: SubmitConversionBatchRequest,
     x_request_id: str | None = Header(default=None, alias="X-Request-ID"),
     authorization: str | None = Header(default=None),
     access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
@@ -305,7 +309,10 @@ def submit_conversion_batch(
     )
     trace_id = (x_request_id or "").strip()[:128] or f"trace-{uuid4().hex}"
     try:
-        snapshot = active_service.submit(batch_id=batch_id, identity=identity, trace_id=trace_id)
+        snapshot = active_service.submit(
+            batch_id=batch_id, identity=identity, trace_id=trace_id,
+            failed_upload_job_ids=request.failed_upload_job_ids,
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Conversion batch not found.") from exc
     except ValueError as exc:

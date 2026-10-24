@@ -11,6 +11,33 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("documentos e lotes já abertos", () => {
+  it("preserva o motivo de falha de upload para orientar o reenvio", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          batch_id: "batch-partial",
+          status: "processing",
+          jobs: [
+            {
+              job_id: "job-failed",
+              filename: "falha.pdf",
+              status: "failed",
+              error_code: "upload_failed",
+            },
+          ],
+        }),
+      );
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+    const batch = await repository.getBatch("batch-partial");
+    expect(batch.conversions[0]).toMatchObject({
+      status: "FAILED",
+      errorCode: "upload_failed",
+      pdf: null,
+    });
+  });
+
   it("não substitui o snapshot com uma resposta de lote cancelada em trânsito", async () => {
     let finish!: (response: Response) => void;
     const fetcher = vi

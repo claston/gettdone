@@ -49,6 +49,7 @@ export interface Conversion {
   bankCode?: string;
   period: string;
   status: ConversionStatus;
+  errorCode?: string | null;
   reviewStatus: ReviewStatus;
   transactionCount: number;
   suspectedCount: number;

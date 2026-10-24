@@ -117,6 +117,7 @@ class ConversionBatchService:
         batch_id: str,
         identity: IdentityContext,
         trace_id: str,
+        failed_upload_job_ids: list[str] | None = None,
     ) -> ConversionBatchSnapshot:
         snapshot = self.repository.get_for_owner(
             batch_id,
@@ -126,7 +127,27 @@ class ConversionBatchService:
         if snapshot is None:
             raise KeyError(f"Conversion batch not found: {batch_id}")
 
+        failed_uploads = set(failed_upload_job_ids or ())
+        owned_jobs = {record.job.job_id: record for record in snapshot.jobs}
+        if not failed_uploads <= owned_jobs.keys():
+            raise ValueError("Upload failure references a job outside this batch.")
+        for job_id in failed_uploads:
+            record = owned_jobs[job_id]
+            already_failed = (
+                record.status == ConversionJobStatus.FAILED
+                and record.failure is not None and record.failure.code == "upload_failed"
+            )
+            if record.status != ConversionJobStatus.UPLOADING and not already_failed:
+                raise ValueError("Only uploading jobs can be reported as upload failures.")
+
         for record in snapshot.jobs:
+            if record.job.job_id in failed_uploads:
+                if record.status == ConversionJobStatus.UPLOADING:
+                    self.repository.mark_failed(
+                        record.job.job_id, code="upload_failed",
+                        message="Não foi possível enviar este arquivo. Selecione-o novamente em Nova conversão.",
+                    )
+                continue
             current = record
             if current.status == ConversionJobStatus.UPLOADING:
                 self.direct_upload_service.verify_uploaded(current.job.document)
@@ -163,8 +184,11 @@ class ConversionBatchService:
             identity_type=identity.identity_type,
             identity_id=identity.identity_id,
         )
-        if snapshot is None or not any(record.job.job_id == job_id for record in snapshot.jobs):
+        record = next((record for record in snapshot.jobs if record.job.job_id == job_id), None) if snapshot else None
+        if record is None:
             raise KeyError(f"Conversion job not found: {job_id}")
+        if record.failure is not None and record.failure.code == "upload_failed":
+            raise ValueError("A failed upload must be uploaded again before processing.")
         self.repository.retry_failed(job_id)
         self.repository.stage_for_queue(job_id, trace_id=trace_id)
         self.dispatch_pending_outbox()
