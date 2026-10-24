@@ -25,7 +25,7 @@ const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/conversions", label: "Conversões", icon: FileStack },
   { href: "/clients", label: "Clientes", icon: Users },
-  { href: "/periods", label: "Competências", icon: CalendarDays },
+  { href: "/periods", label: "Períodos", icon: CalendarDays },
   { href: "/reconciliation", label: "Conciliação", icon: Landmark, soon: true },
 ];
 

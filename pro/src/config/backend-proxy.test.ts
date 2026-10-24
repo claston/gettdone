@@ -24,6 +24,17 @@ describe("buildBackendProxyRewrites", () => {
           destination:
             "https://api.ofxsimples.com.br/api/pro/conversion-batches/:path*",
         },
+        ...[
+          "catalog",
+          "clients/:path*",
+          "accounts/:path*",
+          "periods/:path*",
+          "conversions",
+          "batches/:path*",
+        ].map((path) => ({
+          source: `/api/pro/organization/${path}`,
+          destination: `https://api.ofxsimples.com.br/api/pro/organization/${path}`,
+        })),
         {
           source: "/api/pro/convert-edits/:path*",
           destination:

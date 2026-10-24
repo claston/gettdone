@@ -622,3 +622,7 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
         now_iso=service.now_provider().isoformat(),
         true_value=service._true_value(),
     )
+    from app.application.organization_schema_v1 import organization_schema_v1
+
+    for statement in organization_schema_v1():
+        conn.execute(statement)

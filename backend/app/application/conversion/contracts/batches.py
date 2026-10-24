@@ -38,6 +38,16 @@ class ConversionBatchSummary:
 
 
 @dataclass(frozen=True, slots=True)
+class ConversionFileSummary:
+    job_id: str
+    batch_id: str
+    filename: str
+    status: str
+    created_at: datetime
+    expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class ConversionOutboxEvent:
     event_id: str
     job_id: str
@@ -47,6 +57,11 @@ class ConversionOutboxEvent:
 
 
 class ConversionBatchRepository(Protocol):
+    def list_files_for_owner(
+        self, *, identity_type: str, identity_id: str, limit: int,
+        before: tuple[datetime, str] | None = None,
+    ) -> tuple[ConversionFileSummary, ...]: ...
+
     def list_for_owner(
         self, *, identity_type: str, identity_id: str, limit: int,
         before: tuple[datetime, str] | None = None,
