@@ -481,6 +481,7 @@ a {
 }
 .upload-file-list li {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 15px;
   padding: 10px 12px;
@@ -491,12 +492,18 @@ a {
   color: var(--ink-500);
   white-space: nowrap;
 }
-.upload-security-note {
+.upload-file-list li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.upload-file-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: var(--green-600);
-  font-size: 11px;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.upload-file-remove {
+  padding: 6px 9px;
 }
 .upload-error {
   margin: 0;

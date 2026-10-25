@@ -12,6 +12,93 @@ vi.mock("next/navigation", () => ({
 describe("NewConversionForm", () => {
   beforeEach(() => push.mockReset());
 
+  it("permite retirar só um arquivo de um lote com 13 e enviar os 12 restantes", async () => {
+    const files = Array.from(
+      { length: 13 },
+      (_, index) =>
+        new File([`conteúdo ${index}`], `extrato-${index + 1}.pdf`, {
+          type: "application/pdf",
+        }),
+    );
+    const service = {
+      createAndSubmit: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Selecione entre 1 e 12 arquivos."))
+        .mockResolvedValueOnce({ batchId: "batch-twelve" }),
+    };
+    render(<NewConversionForm service={service} />);
+    fireEvent.change(screen.getByLabelText("Selecionar arquivos"), {
+      target: { files },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Criar lote" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Selecione entre 1 e 12 arquivos.",
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remover extrato-7.pdf" }),
+    );
+    expect(screen.queryByText("extrato-7.pdf")).not.toBeInTheDocument();
+    expect(screen.getByText("12 arquivos selecionados")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Criar lote" }));
+
+    await waitFor(() =>
+      expect(push).toHaveBeenCalledWith("/review/batch-twelve"),
+    );
+    expect(service.createAndSubmit).toHaveBeenLastCalledWith(
+      files.filter((_, index) => index !== 6),
+    );
+  });
+
+  it("desabilita a remoção durante o envio do lote", async () => {
+    let finish!: (result: { batchId: string }) => void;
+    const service = {
+      createAndSubmit: vi.fn(
+        () =>
+          new Promise<{ batchId: string }>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    };
+    render(<NewConversionForm service={service} />);
+    fireEvent.change(screen.getByLabelText("Selecionar arquivos"), {
+      target: { files: [new File(["a"], "extrato.pdf")] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Criar lote" }));
+    expect(
+      screen.getByRole("button", { name: "Remover extrato.pdf" }),
+    ).toBeDisabled();
+    expect(screen.getByLabelText("Selecionar arquivos")).toBeDisabled();
+    finish({ batchId: "batch-uploading" });
+    await waitFor(() =>
+      expect(push).toHaveBeenCalledWith("/review/batch-uploading"),
+    );
+  });
+
+  it("remove só a ocorrência escolhida e permite selecionar o mesmo arquivo novamente", () => {
+    const file = new File(["conteúdo"], "extrato.pdf");
+    render(<NewConversionForm service={{ createAndSubmit: vi.fn() }} />);
+    const input = screen.getByLabelText("Selecionar arquivos");
+    fireEvent.change(input, { target: { files: [file, file] } });
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Remover extrato.pdf" })[0],
+    );
+    expect(screen.getByText("1 arquivo selecionado")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remover extrato.pdf" }),
+    );
+    expect(
+      screen.queryByRole("list", { name: "Arquivos selecionados" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Criar lote" })).toBeDisabled();
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(
+      screen.getByRole("button", { name: "Remover extrato.pdf" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Criar lote" })).toBeEnabled();
+  });
+
   it("envia os arquivos e abre o lote real retornado pelo backend", async () => {
     const service = {
       createAndSubmit: vi.fn().mockResolvedValue({ batchId: "batch-real" }),
