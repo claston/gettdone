@@ -594,7 +594,12 @@ function mapConversion({
       !transaction.isDeleted &&
       Object.values(transaction.fieldStates).includes("SUSPECTED"),
   ).length;
-  const status = mapStatus(job, suspectedCount);
+  const partialStatement =
+    analysis?.pdf_processing_metrics?.partial_statement === 1 ||
+    (analysis?.preview_transactions ?? []).some((row) =>
+      row.warning_types?.includes("partial_statement"),
+    );
+  const status = mapStatus(job, suspectedCount, partialStatement);
   return {
     id: job.job_id,
     batchId,
@@ -621,7 +626,7 @@ function mapConversion({
       : undefined,
     financialDocument: analysis?.financial_document,
     noActivity: analysis?.pdf_processing_metrics?.statement_no_activity === 1,
-    partialStatement: analysis?.pdf_processing_metrics?.partial_statement === 1,
+    partialStatement,
     transactions,
   };
 }
@@ -629,7 +634,16 @@ function mapConversion({
 function mapTransaction(row: ApiTransaction, index: number): Transaction {
   const amount = Number(row.amount ?? 0);
   const fieldStates = originalFieldStates();
-  if ((row.warning_types ?? []).length > 0) {
+  const warningTypes = row.warning_types ?? [];
+  const fieldWarnings = warningTypes.filter(
+    (code) =>
+      code !== "partial_statement" &&
+      !(
+        code === "manual_review_recommended" &&
+        warningTypes.includes("partial_statement")
+      ),
+  );
+  if (fieldWarnings.length > 0) {
     fieldStates.description = "SUSPECTED";
     fieldStates[amount >= 0 ? "credit" : "debit"] = "SUSPECTED";
   }
@@ -650,11 +664,15 @@ function mapTransaction(row: ApiTransaction, index: number): Transaction {
   };
 }
 
-function mapStatus(job: ApiJob, suspectedCount: number): ConversionStatus {
+function mapStatus(
+  job: ApiJob,
+  suspectedCount: number,
+  partialStatement: boolean,
+): ConversionStatus {
   if (job.status === "failed" || job.status === "expired") return "FAILED";
   if (job.status !== "completed") return "PROCESSING";
   if (job.reviewed_at || job.result?.reviewed_at) return "REVIEWED";
-  return suspectedCount > 0 ? "NEEDS_REVIEW" : "READY";
+  return suspectedCount > 0 || partialStatement ? "NEEDS_REVIEW" : "READY";
 }
 
 function requireContext(

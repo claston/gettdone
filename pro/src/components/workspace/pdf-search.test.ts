@@ -64,3 +64,48 @@ it("respeita a transformação da página e não estima caixas para PDFs sem tex
     findPdfPageMatches({ ...page, text: "pix ".repeat(1000) }, "pix", 501),
   ).toHaveLength(501);
 });
+
+it("busca palavras divididas em fragmentos e nomes unidos pela extração", () => {
+  const page = indexPdfPage(
+    1,
+    {
+      items: [
+        item("Per", 30, 700),
+        item("í", 45, 700),
+        item("odo", 48, 700),
+        item("CLIENTE SINTÉTICO DE", 30, 600),
+        item("TESTE", 30, 580),
+      ],
+      styles: {},
+      lang: null,
+    },
+    viewport,
+  );
+  expect(findPdfPageMatches(page, "período")).toHaveLength(1);
+  const [match] = findPdfPageMatches(page, "CLIENTE SINTETICO DETESTE");
+  expect(match.regions).toHaveLength(2);
+  expect(match.regions[0].top).toBeLessThan(match.regions[1].top);
+});
+
+it("destaca texto mesmo quando a fonte informa ascensão e descida iguais a zero", () => {
+  const page = indexPdfPage(
+    1,
+    {
+      items: [item("PIX RECEBIDO", 30, 600)],
+      styles: {
+        test: {
+          ascent: 0,
+          descent: 0,
+          vertical: false,
+          fontFamily: "sans-serif",
+        },
+      },
+      lang: null,
+    },
+    viewport,
+  );
+  const [match] = findPdfPageMatches(page, "PIX RECEBIDO");
+  expect(match.regions).toHaveLength(1);
+  expect(match.regions[0].height).toBeGreaterThan(0);
+  expect(match.regions[0].top).toBeLessThan((800 - 600) / 800);
+});

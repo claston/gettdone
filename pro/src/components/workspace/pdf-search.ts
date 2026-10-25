@@ -20,6 +20,11 @@ export const normalizePdfQuery = (value: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+// PDF font runs can split a word; layout extraction can also join wrapped
+// names. Compare characters while keeping each fragment's original geometry.
+const searchableText = (value: string) =>
+  normalizePdfQuery(value).replace(/\s/g, "");
+
 export function indexPdfPage(
   page: number,
   content: TextContent,
@@ -29,9 +34,8 @@ export function indexPdfPage(
   const spans: PdfSearchPage["spans"] = [];
   for (const item of content.items) {
     if (!("str" in item)) continue;
-    const normalized = normalizePdfQuery(item.str);
+    const normalized = searchableText(item.str);
     if (!normalized) continue;
-    if (text) text += " ";
     const start = text.length;
     text += normalized;
     spans.push({
@@ -54,8 +58,18 @@ function itemRegion(
     vertical = Math.hypot(c, d);
   if (!horizontal || !vertical || !item.width || !item.height) return;
   const font = content.styles[item.fontName];
-  const ascent = font?.ascent ?? 1,
-    descent = font?.descent ?? 0;
+  let ascent = font?.ascent ?? 1;
+  let descent = font?.descent ?? 0;
+  // Some embedded fonts report both metrics as zero. The text item's own
+  // position and height still provide geometry for the search highlight.
+  if (
+    !Number.isFinite(ascent) ||
+    !Number.isFinite(descent) ||
+    ascent <= descent
+  ) {
+    ascent = 1;
+    descent = 0;
+  }
   const points = [0, 1].flatMap((x) =>
     [descent, ascent].map((y) =>
       viewport.convertToViewportPoint(
@@ -94,7 +108,7 @@ export function findPdfPageMatches(
   query: string,
   limit = 500,
 ): PdfSearchMatch[] {
-  const needle = normalizePdfQuery(query);
+  const needle = searchableText(query);
   if (!needle) return [];
   const matches: PdfSearchMatch[] = [];
   let start = 0;
