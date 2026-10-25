@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from app.application.balance_checks import BalanceCheck
 from app.application.source_regions import SourceRegion
 
 if TYPE_CHECKING:
@@ -26,6 +27,7 @@ class TransactionRow:
     source_subsequence: int = 0
     source_regions: list[SourceRegion] = field(default_factory=list)
     review_regions: list[SourceRegion] = field(default_factory=list)
+    balance_check: BalanceCheck | None = None
 
 
 @dataclass
@@ -55,6 +57,7 @@ class CanonicalTransaction:
     confidence: float | None = None
     source_regions: list[SourceRegion] = field(default_factory=list)
     source_line_refs: tuple[tuple[int, int], ...] = ()
+    balance_check: BalanceCheck | None = None
 
 
 @dataclass
@@ -103,3 +106,4 @@ class AnalysisData:
     structured_result: StructuredConversionResult | None = None
     document_parts: list[dict[str, object]] = field(default_factory=list)
     financial_document: dict | None = None
+    statement_balance_check: BalanceCheck | None = None

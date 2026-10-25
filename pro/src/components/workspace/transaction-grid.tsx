@@ -23,6 +23,11 @@ import type {
   TransactionFilter,
 } from "@/domain/workspace";
 import { TransactionDialog } from "./transaction-dialog";
+import { BalanceReviewNotice, TransactionReviewNote } from "./balance-review";
+import {
+  fieldReviewWarnings,
+  reviewWarningText,
+} from "@/domain/review-warnings";
 import { usePageSync } from "./use-page-sync";
 import {
   sourceLocation,
@@ -78,10 +83,23 @@ const EditableCell = memo(function EditableCell({
           field !== "description" && field !== "balance" && commit(value)
         }
         aria-invalid={Boolean(error)}
-        title={error ?? undefined}
+        aria-describedby={
+          fieldReviewWarnings(transaction.warningTypes ?? []).length
+            ? `review-${transaction.id}`
+            : undefined
+        }
+        title={
+          error ??
+          (transaction.fieldStates[field] === "SUSPECTED"
+            ? reviewWarningText(transaction.warningTypes ?? [])
+            : undefined)
+        }
       />
       {transaction.fieldStates[field] === "SUSPECTED" && (
-        <span className="field-dot" title="Campo suspeito" />
+        <span
+          className="field-dot"
+          title={reviewWarningText(transaction.warningTypes ?? [])}
+        />
       )}
     </div>
   );
@@ -334,6 +352,16 @@ export function TransactionGrid({
         ?.scrollIntoView?.({ block: "center", behavior: "smooth" });
     }
   }, [matchId, groupByPage, sync.editing]);
+  const referenceRows = useMemo(() => {
+    const rows = new Map<string, Transaction | null>();
+    for (const row of conversion.transactions) {
+      if (row.sourcePage == null || row.sourceLine == null || row.isDeleted)
+        continue;
+      const key = `${row.sourcePage}:${row.sourceLine}`;
+      rows.set(key, rows.has(key) ? null : row);
+    }
+    return rows;
+  }, [conversion.transactions]);
   const suspected = conversion.transactions.filter((item) =>
     transactionHasState(item, "SUSPECTED"),
   ).length;
@@ -343,6 +371,7 @@ export function TransactionGrid({
 
   return (
     <section className="transactions-panel">
+      <BalanceReviewNotice conversion={conversion} />
       {conversion.partialStatement && (
         <div className="page-sync-notice" role="status">
           Extrato parcial: o arquivo pode ter páginas ausentes ou um limite de
@@ -547,6 +576,9 @@ export function TransactionGrid({
                 )}
                 {group.rows.map((transaction) => {
                   const location = sourceLocation(transaction);
+                  const reference = referenceRows.get(
+                    `${transaction.balanceCheck?.referencePage}:${transaction.balanceCheck?.referenceLine}`,
+                  );
                   return (
                     <tr
                       data-transaction-id={transaction.id}
@@ -623,6 +655,18 @@ export function TransactionGrid({
                           transaction={transaction}
                           field="description"
                           onCommit={commitField}
+                        />
+                        <TransactionReviewNote
+                          transaction={transaction}
+                          onShowReference={
+                            reference
+                              ? () =>
+                                  onLocateTransaction(reference.id, {
+                                    origin: "grid",
+                                    scroll: true,
+                                  })
+                              : undefined
+                          }
                         />
                         {transaction.isDeleted && (
                           <span className="deleted-badge">Excluído</span>

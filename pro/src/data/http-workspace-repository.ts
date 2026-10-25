@@ -1,7 +1,13 @@
 import { validSourceRegions } from "@/domain/source-regions";
+import {
+  documentReviewWarnings,
+  fieldReviewWarnings,
+  requiresDocumentReview,
+} from "@/domain/review-warnings";
 import { workspaceEvents } from "@/domain/workspace-events";
 import type {
   Batch,
+  BalanceCheck,
   Conversion,
   ConversionStatus,
   ExportResult,
@@ -23,10 +29,12 @@ interface HttpWorkspaceRepositoryOptions {
 }
 
 interface ApiTransaction {
+  balance_check?: unknown;
   transaction_id?: string | null;
   source_sequence?: number | null;
   source_subsequence?: number;
   source_page?: number | null;
+  source_line?: number | null;
   source_regions?: unknown;
   review_regions?: unknown;
   date?: string;
@@ -38,6 +46,7 @@ interface ApiTransaction {
 }
 
 interface ApiAnalysis {
+  statement_balance_check?: unknown;
   financial_document?: FinancialDocument | null;
   file_type?: string;
   bank_name?: string | null;
@@ -269,7 +278,8 @@ export function createHttpWorkspaceRepository(
         reviewStatus: "IN_REVIEW",
         status:
           item.status === "REVIEWED" || item.status === "EXPORTED"
-            ? countSuspected(context.savedTransactions!)
+            ? countSuspected(context.savedTransactions!) ||
+              requiresDocumentReview(item)
               ? "NEEDS_REVIEW"
               : "READY"
             : item.status,
@@ -599,7 +609,23 @@ function mapConversion({
     (analysis?.preview_transactions ?? []).some((row) =>
       row.warning_types?.includes("partial_statement"),
     );
-  const status = mapStatus(job, suspectedCount, partialStatement);
+  const reviewWarnings = [
+    ...new Set(
+      (analysis?.preview_transactions ?? []).flatMap(
+        (row) => row.warning_types ?? [],
+      ),
+    ),
+  ];
+  const statementBalanceCheck = mapBalanceCheck(
+    analysis?.statement_balance_check,
+  );
+  const status = mapStatus(
+    job,
+    suspectedCount,
+    partialStatement ||
+      Boolean(statementBalanceCheck) ||
+      reviewWarnings.some((code) => documentReviewWarnings.has(code)),
+  );
   return {
     id: job.job_id,
     batchId,
@@ -627,6 +653,8 @@ function mapConversion({
     financialDocument: analysis?.financial_document,
     noActivity: analysis?.pdf_processing_metrics?.statement_no_activity === 1,
     partialStatement,
+    reviewWarnings,
+    statementBalanceCheck,
     transactions,
   };
 }
@@ -635,15 +663,10 @@ function mapTransaction(row: ApiTransaction, index: number): Transaction {
   const amount = Number(row.amount ?? 0);
   const fieldStates = originalFieldStates();
   const warningTypes = row.warning_types ?? [];
-  const fieldWarnings = warningTypes.filter(
-    (code) =>
-      code !== "partial_statement" &&
-      !(
-        code === "manual_review_recommended" &&
-        warningTypes.includes("partial_statement")
-      ),
-  );
-  if (fieldWarnings.length > 0) {
+  const fieldWarnings = fieldReviewWarnings(warningTypes);
+  if (fieldWarnings.includes("balance_consistency_failed"))
+    fieldStates.balance = "SUSPECTED";
+  if (fieldWarnings.some((code) => code !== "balance_consistency_failed")) {
     fieldStates.description = "SUSPECTED";
     fieldStates[amount >= 0 ? "credit" : "debit"] = "SUSPECTED";
   }
@@ -655,24 +678,69 @@ function mapTransaction(row: ApiTransaction, index: number): Transaction {
     debit: amount < 0 ? Math.abs(amount) : null,
     balance: row.running_balance == null ? null : Number(row.running_balance),
     sourcePage: row.source_page ?? null,
+    sourceLine: row.source_line ?? null,
     sourceRegions: validSourceRegions(row.source_regions),
     reviewRegions: validSourceRegions(row.review_regions),
     sourceSequence: row.source_sequence ?? null,
     sourceSubsequence: row.source_subsequence ?? 0,
     isDeleted: Boolean(row.is_deleted),
     fieldStates,
+    warningTypes,
+    balanceCheck: mapBalanceCheck(row.balance_check),
+  };
+}
+
+function mapBalanceCheck(value: unknown): BalanceCheck | undefined {
+  if (!value || typeof value !== "object") return;
+  const check = value as Record<string, unknown>;
+  if (
+    ![
+      "reference_balance",
+      "credits_total",
+      "debits_total",
+      "expected_balance",
+      "reported_balance",
+      "difference",
+      "movements_count",
+    ].every(
+      (key) => typeof check[key] === "number" && Number.isFinite(check[key]),
+    ) ||
+    !["ascending", "descending"].includes(String(check.order))
+  )
+    return;
+  return {
+    referenceBalance: check.reference_balance as number,
+    creditsTotal: check.credits_total as number,
+    debitsTotal: check.debits_total as number,
+    expectedBalance: check.expected_balance as number,
+    reportedBalance: check.reported_balance as number,
+    difference: check.difference as number,
+    movementsCount: check.movements_count as number,
+    order: check.order as BalanceCheck["order"],
+    referenceDate:
+      typeof check.reference_date === "string"
+        ? toBrazilianDate(check.reference_date)
+        : undefined,
+    referencePage:
+      typeof check.reference_page === "number"
+        ? check.reference_page
+        : undefined,
+    referenceLine:
+      typeof check.reference_line === "number"
+        ? check.reference_line
+        : undefined,
   };
 }
 
 function mapStatus(
   job: ApiJob,
   suspectedCount: number,
-  partialStatement: boolean,
+  hasDocumentWarning: boolean,
 ): ConversionStatus {
   if (job.status === "failed" || job.status === "expired") return "FAILED";
   if (job.status !== "completed") return "PROCESSING";
   if (job.reviewed_at || job.result?.reviewed_at) return "REVIEWED";
-  return suspectedCount > 0 || partialStatement ? "NEEDS_REVIEW" : "READY";
+  return suspectedCount > 0 || hasDocumentWarning ? "NEEDS_REVIEW" : "READY";
 }
 
 function requireContext(

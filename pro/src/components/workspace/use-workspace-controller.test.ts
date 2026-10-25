@@ -6,6 +6,37 @@ import { useWorkspaceController } from "./use-workspace-controller";
 afterEach(() => vi.useRealTimers());
 
 describe("edição e autosave", () => {
+  it("mantém a revisão documental necessária ao editar um arquivo já revisado", async () => {
+    const repository = createMockWorkspaceRepository({ latencyMs: 0 });
+    const batch = await repository.getBatch("batch-setembro-2026");
+    repository.getBatch = vi.fn().mockResolvedValue(batch);
+    const conversion = batch.conversions[0];
+    conversion.status = "REVIEWED";
+    conversion.reviewWarnings = ["printed_summary_balance_mismatch"];
+    conversion.transactions = conversion.transactions.map((row) => ({
+      ...row,
+      fieldStates: {
+        date: "ORIGINAL",
+        description: "ORIGINAL",
+        credit: "ORIGINAL",
+        debit: "ORIGINAL",
+        balance: "ORIGINAL",
+      },
+    }));
+    const { result } = renderHook(() =>
+      useWorkspaceController(batch.id, repository),
+    );
+    await waitFor(() => expect(result.current.loadState).toBe("READY"));
+    act(() => result.current.selectConversion(conversion.id));
+    act(() =>
+      result.current.updateField(
+        conversion.transactions[0].id,
+        "description",
+        "Descrição revisada",
+      ),
+    );
+    expect(result.current.activeConversion?.status).toBe("NEEDS_REVIEW");
+  });
   it("reabre o lote da memória enquanto atualiza sem apagar edição ou seleção recentes", async () => {
     const repository = createMockWorkspaceRepository({ latencyMs: 0 });
     const batch = await repository.getBatch("batch-setembro-2026");

@@ -1,5 +1,6 @@
 from typing import Protocol, Sequence
 
+from app.application.balance_checks import make_balance_check
 from app.application.models import CanonicalTransaction
 
 _DESCENDING_RUNNING_BALANCE_LAYOUTS = {
@@ -202,6 +203,7 @@ def annotate_balance_consistency(
     failed_count = 0
     previous_balance_row: CanonicalTransaction | None = None
     amounts_since_balance = 0.0
+    movements_since_balance: list[float] = []
     tolerance = 0.01
     descending = resolve_descending_running_balance(canonical_transactions)
 
@@ -218,6 +220,7 @@ def annotate_balance_consistency(
                     running_balance=checkpoint,
                 )
                 amounts_since_balance = current.amount
+                movements_since_balance = [current.amount]
                 continue
 
             checked_count += 1
@@ -226,8 +229,11 @@ def annotate_balance_consistency(
                 failed_count += 1
                 if "balance_consistency_failed" not in current.warnings:
                     current.warnings.append("balance_consistency_failed")
+                current.balance_check = make_balance_check(reference_balance=checkpoint, movements=[current.amount],
+                    expected_balance=expected_current_balance, reported_balance=current.running_balance)
             previous_balance_row = current
             amounts_since_balance = current.amount if descending else 0.0
+            movements_since_balance = [current.amount] if descending else []
             continue
 
         if (
@@ -240,6 +246,7 @@ def annotate_balance_consistency(
             # statement/period, so balances on the two sides are unrelated.
             previous_balance_row = current
             amounts_since_balance = current.amount
+            movements_since_balance = [current.amount]
             continue
 
         if (
@@ -254,12 +261,14 @@ def annotate_balance_consistency(
             # date jump therefore starts an independent daily balance chain.
             previous_balance_row = current
             amounts_since_balance = 0.0
+            movements_since_balance = []
             continue
 
         if previous_balance_row is None:
             if current.running_balance is not None:
                 previous_balance_row = current
                 amounts_since_balance = current.amount if descending else 0.0
+                movements_since_balance = [current.amount] if descending else []
             continue
 
         if (descending and current.running_balance is not None
@@ -269,6 +278,7 @@ def annotate_balance_consistency(
             # amount cannot bridge to the next pair's net balance.
             previous_balance_row = current
             amounts_since_balance = current.amount
+            movements_since_balance = [current.amount]
             continue
 
         if descending:
@@ -278,13 +288,16 @@ def annotate_balance_consistency(
                 tolerance=tolerance,
             ):
                 amounts_since_balance += current.amount
+                movements_since_balance.append(current.amount)
                 continue
             if current.running_balance is None:
                 amounts_since_balance += current.amount
+                movements_since_balance.append(current.amount)
                 continue
             expected_current_balance = previous_balance_row.running_balance - amounts_since_balance
         else:
             amounts_since_balance += current.amount
+            movements_since_balance.append(current.amount)
             if current.running_balance is None:
                 continue
             expected_current_balance = previous_balance_row.running_balance + amounts_since_balance
@@ -294,7 +307,11 @@ def annotate_balance_consistency(
             failed_count += 1
             if "balance_consistency_failed" not in current.warnings:
                 current.warnings.append("balance_consistency_failed")
+            current.balance_check = make_balance_check(reference_balance=previous_balance_row.running_balance,
+                movements=movements_since_balance, expected_balance=expected_current_balance,
+                reported_balance=current.running_balance, descending=descending, reference=previous_balance_row)
         previous_balance_row = current
         amounts_since_balance = current.amount if descending else 0.0
+        movements_since_balance = [current.amount] if descending else []
 
     return checked_count, failed_count

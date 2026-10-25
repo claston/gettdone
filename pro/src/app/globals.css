@@ -1840,6 +1840,53 @@ button.save-indicator {
   border-radius: 50%;
   background: #e6a11d;
 }
+
+.balance-review-notice {
+  display: block;
+  flex-shrink: 0;
+  max-height: 45%;
+  overflow: auto;
+  background: #fff8e7;
+  color: #754100;
+  border-bottom: 1px solid #ffe0a0;
+}
+.balance-review-notice summary {
+  cursor: pointer;
+  margin-top: 4px;
+}
+.balance-review-notice p {
+  margin: 4px 0 0;
+}
+.balance-equation {
+  line-height: 1.5;
+}
+.balance-calculation {
+  font-variant-numeric: tabular-nums;
+}
+.transaction-review-note {
+  margin: 4px 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #855000;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.transaction-review-note summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.transaction-review-note p {
+  margin: 4px 0;
+}
+.transaction-review-note button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #1268da;
+  text-decoration: underline;
+  font-size: inherit;
+  cursor: pointer;
+}
 .row-action {
   width: 25px;
   height: 25px;
