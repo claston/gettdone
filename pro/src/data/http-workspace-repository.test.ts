@@ -365,6 +365,12 @@ describe("HttpWorkspaceRepository", () => {
     const analysis = {
       ...payload.jobs[0].result!.analysis,
       pdf_processing_metrics: { partial_statement: 1 },
+      preview_transactions: [
+        {
+          ...payload.jobs[0].result!.analysis.preview_transactions[0],
+          warning_types: ["manual_review_recommended", "partial_statement"],
+        },
+      ],
     };
     const fetcher = vi
       .fn<typeof fetch>()
@@ -381,6 +387,38 @@ describe("HttpWorkspaceRepository", () => {
     }).getBatch("batch-real");
     expect(batch.conversions[0].partialStatement).toBe(true);
     expect(batch.conversions[0].transactions.length).toBeGreaterThan(0);
+    expect(batch.conversions[0].status).toBe("NEEDS_REVIEW");
+    expect(batch.conversions[0].suspectedCount).toBe(0);
+    expect(
+      Object.values(batch.conversions[0].transactions[0].fieldStates),
+    ).not.toContain("SUSPECTED");
+  });
+  it("mantém alertas do lançamento e o estado revisado em extratos parciais", async () => {
+    const payload = structuredClone(batchPayload);
+    const job = payload.jobs[0];
+    job.result!.analysis.preview_transactions[0].warning_types = [
+      "manual_review_recommended",
+      "partial_statement",
+      "balance_consistency_failed",
+    ];
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...payload,
+          jobs: [{ ...job, reviewed_at: "2026-10-24T12:00:00Z" }],
+        }),
+      );
+    const batch = await createHttpWorkspaceRepository({
+      apiUrl: "/",
+      fetcher,
+    }).getBatch("batch-real");
+    expect(batch.conversions[0]).toMatchObject({
+      partialStatement: true,
+      status: "REVIEWED",
+      suspectedCount: 2,
+    });
   });
   it("mapeia a declaração de ausência de movimentação sem marcar falha", async () => {
     const payload = structuredClone(batchPayload);

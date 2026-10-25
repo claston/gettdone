@@ -17,6 +17,31 @@ Isso vale mesmo quando todas as páginas físicas estão presentes. Os movimento
 legíveis continuam disponíveis para revisão e exportação. HTML e PRO explicam
 que o usuário deve conferir o período e obter o extrato consolidado completo.
 
+No PRO, `partial_statement` é um aviso do arquivo: mantém o status **Revisar**,
+mas não torna suspeitos a descrição e o valor da primeira linha. O aviso geral
+era registrado nessa linha por compatibilidade com o contrato de conversão.
+Outros alertas do lançamento continuam sendo considerados, e uma revisão já
+confirmada continua válida.
+
+No extrato do Aplicativo Santander Empresas, a extração pode unir a data à
+descrição e dobrar descrições em várias linhas. As regiões de origem agora
+aceitam diferenças de espaços, exigindo os mesmos caracteres do PDF original.
+Quando a ordem completa da página coincide, ela desambigua linhas repetidas;
+caso contrário, o trecho precisa ser único e respeitar os limites das linhas
+nativas. A rotação é aplicada às coordenadas depois da leitura. Não há associação
+por semelhança de nomes ou valores, nem alteração de datas, valores ou saldos.
+
+A busca no visualizador também ignora espaços introduzidos ou omitidos entre
+fragmentos de texto, incluindo letras acentuadas separadas e nomes quebrados.
+As caixas destacadas continuam vindo dos fragmentos originais. Fontes que
+informam ascensão e descida zeradas usam a posição e a altura do próprio trecho
+de texto; essas métricas incompletas não fazem mais o destaque desaparecer.
+
+O frontend corrigido reconhece os avisos de extrato parcial já salvos. As novas
+coordenadas exigem o processamento pelo worker atualizado; conversões antigas
+sem regiões precisam ser refeitas. Não há reprocessamento automático nem
+migração dos lotes existentes, e o PDF original não é modificado.
+
 O HTML aceita até 20 dígitos de conta, incluindo o verificador, com hífen opcional
 e zeros iniciais preservados. Esse limite usa como referência o campo
 `AccountNumber` do [DICT do Banco Central](https://github.com/bacen/pix-dict-api/blob/master/openapi/schemas.yaml),

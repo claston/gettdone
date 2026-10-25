@@ -2,7 +2,7 @@
 import logging
 import re
 from collections import Counter, defaultdict
-from contextlib import closing
+from contextlib import closing, contextmanager
 from dataclasses import replace
 
 from app.application.parsers.pdf.models import PdfParseResult
@@ -48,6 +48,17 @@ def _text(value: str) -> str:
     return " ".join(value.split())
 
 
+@contextmanager
+def _native_page(document, index):
+    with closing(document[index]) as page:
+        rotation = page.get_rotation()
+        # Rotation affects PDFium's text ordering. Read the original text order
+        # and apply the visible rotation only when converting its rectangles.
+        page.set_rotation(0)
+        with closing(page.get_textpage()) as textpage:
+            yield page, textpage, rotation
+
+
 def _native_line_regions(raw_bytes: bytes, source_pages: tuple[str, ...]) -> dict[tuple[int, int], list[SourceRegion]]:
     import pypdfium2 as pdfium
 
@@ -61,7 +72,7 @@ def _native_line_regions(raw_bytes: bytes, source_pages: tuple[str, ...]) -> dic
         for page_index, source in enumerate(source_pages):
             if not source.strip():
                 continue
-            with closing(document[page_index]) as page, closing(page.get_textpage()) as textpage:
+            with _native_page(document, page_index) as (page, textpage, rotation):
                 # Raw Unicode preserves indices used by get_charbox, unlike
                 # get_text_range, which can insert or exclude characters.
                 characters = "".join(chr(pdfium.raw.FPDFText_GetUnicode(textpage, index))
@@ -70,14 +81,16 @@ def _native_line_regions(raw_bytes: bytes, source_pages: tuple[str, ...]) -> dic
                 lines = []
                 fragments = []
                 word_fragments = []
+                character_boxes = {}
                 for raw_line in characters.splitlines(keepends=True):
                     text = _text(raw_line)
                     if text:
                         indices = [offset + index for index, char in enumerate(raw_line) if not char.isspace()]
                         rects = [textpage.get_charbox(index) for index in indices]
+                        character_boxes.update(zip(indices, rects, strict=True))
                         rect = (min(r[0] for r in rects), min(r[1] for r in rects),
                                 max(r[2] for r in rects), max(r[3] for r in rects))
-                        region = _visible_region(page_index + 1, rect, page.get_bbox(), page.get_rotation())
+                        region = _visible_region(page_index + 1, rect, page.get_bbox(), rotation)
                         lines.append((text, region))
                         fragments.append((text, rect))
                         by_offset = {index - offset: box for index, box in zip(indices, rects, strict=True)}
@@ -93,19 +106,25 @@ def _native_line_regions(raw_bytes: bytes, source_pages: tuple[str, ...]) -> dic
                 # Layout extraction can join columns which PDFium emits as
                 # separate text objects. Reassemble only geometrically aligned
                 # fragments, then require the same exact original line text.
-                spatial = _spatial_lines(fragments, page_index + 1, page.get_bbox(), page.get_rotation())
+                spatial = _spatial_lines(fragments, page_index + 1, page.get_bbox(), rotation)
                 _bind_exact_lines(result, page_index + 1, original, spatial)
                 if any((page_index + 1, number) not in result for number, _ in original):
                     # A centered date/amount can share a raw PDFium line with
                     # text from both lines of a wrapped cell. Reassemble words
                     # instead, allowing the different font baselines to overlap.
                     # Exact, unique source text is still required for binding.
-                    wrapped = _spatial_lines(word_fragments, page_index + 1, page.get_bbox(), page.get_rotation(), minimum_overlap=.15)
+                    wrapped = _spatial_lines(word_fragments, page_index + 1, page.get_bbox(), rotation, minimum_overlap=.15)
                     _bind_exact_lines(result, page_index + 1, original, wrapped)
+                _bind_character_stream(result, page_index + 1, original, characters, character_boxes,
+                                       page.get_bbox(), rotation)
     return result
 
 
 def _bind_exact_lines(result, page, original, lines):
+    # Extractors can omit spaces at column/font boundaries. All non-whitespace
+    # characters must still agree exactly; this is not financial/fuzzy matching.
+    original = [(number, "".join(text.split())) for number, text in original]
+    lines = [("".join(text.split()), region) for text, region in lines]
     if [line for _, line in original] == [line for line, _ in lines]:
         # Equality of the entire stream disambiguates repeated rows.
         for (number, _), (_, region) in zip(original, lines, strict=True):
@@ -121,6 +140,39 @@ def _bind_exact_lines(result, page, original, lines):
             matches = candidates[line]
             if counts[line] == 1 and len(matches) == 1 and matches[0]:
                 result.setdefault((page, number), matches)
+
+
+def _bind_character_stream(result, page, original, characters, boxes, crop, rotation):
+    indices = [index for index, char in enumerate(characters) if not char.isspace()]
+    native = "".join(characters[index] for index in indices)
+    source = [(number, "".join(text.split())) for number, text in original]
+    same_stream = "".join(text for _, text in source) == native
+    counts = Counter(text for _, text in source)
+    boundaries = {0}
+    offset = 0
+    for line in characters.splitlines():
+        offset += len("".join(line.split()))
+        boundaries.add(offset)
+    offset = 0
+    for number, text in source:
+        start = offset if same_stream else native.find(text)
+        offset += len(text)
+        if (page, number) in result or start < 0:
+            continue
+        end = start + len(text)
+        if not same_stream and (counts[text] != 1 or native.find(text, start + 1) >= 0
+                                or start not in boundaries or end not in boundaries):
+            continue
+        # A layout extractor can fold both description lines into a single
+        # row. Keep the original character boxes, even across native lines.
+        rects = [boxes[index] for index in indices[start:end] if index in boxes]
+        if not rects or len(rects) != len(text):
+            continue
+        rect = (min(r[0] for r in rects), min(r[1] for r in rects),
+                max(r[2] for r in rects), max(r[3] for r in rects))
+        region = _visible_region(page, rect, crop, rotation)
+        if region:
+            result[page, number] = [region]
 
 
 def _spatial_lines(fragments, page, crop, rotation, *, minimum_overlap=.7):
