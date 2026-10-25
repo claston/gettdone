@@ -1,6 +1,6 @@
 "use client";
 
-import { FilePlus2, LoaderCircle, ShieldCheck, Upload } from "lucide-react";
+import { FilePlus2, LoaderCircle, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
@@ -72,9 +72,9 @@ export function NewConversionForm({
         <label className="upload-dropzone">
           <FilePlus2 size={28} />
           <strong>Escolher arquivos</strong>
-          <span>
+          <span aria-live="polite">
             {files.length
-              ? `${files.length} arquivo(s) selecionado(s)`
+              ? `${files.length} ${files.length === 1 ? "arquivo selecionado" : "arquivos selecionados"}`
               : "Nenhum arquivo selecionado"}
           </span>
           <input
@@ -84,30 +84,41 @@ export function NewConversionForm({
             accept="application/pdf,text/csv,application/x-ofx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.pdf,.csv,.xlsx,.ofx"
             disabled={submitting}
             onChange={(event) => {
-              setFiles(Array.from(event.target.files ?? []));
+              setFiles(Array.from(event.currentTarget.files ?? []));
               setError(null);
+              event.currentTarget.value = "";
             }}
           />
         </label>
 
         {files.length > 0 && (
           <ul className="upload-file-list" aria-label="Arquivos selecionados">
-            {files.map((file) => (
-              <li key={`${file.name}-${file.size}-${file.lastModified}`}>
+            {files.map((file, index) => (
+              <li
+                key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
+              >
                 <span>{file.name}</span>
-                <small>{formatFileSize(file.size)}</small>
+                <div className="upload-file-actions">
+                  <small>{formatFileSize(file.size)}</small>
+                  <button
+                    type="button"
+                    className="secondary-button upload-file-remove"
+                    aria-label={`Remover ${file.name}`}
+                    disabled={submitting}
+                    onClick={() => {
+                      setFiles((current) =>
+                        current.filter((_, fileIndex) => fileIndex !== index),
+                      );
+                      setError(null);
+                    }}
+                  >
+                    <X size={14} /> Remover
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
         )}
-
-        <div className="upload-security-note">
-          <ShieldCheck size={17} />
-          <span>
-            O navegador não recebe credenciais do backend nem acessa o banco de
-            dados.
-          </span>
-        </div>
 
         {error && (
           <p className="upload-error" role="alert">
