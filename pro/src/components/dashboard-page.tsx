@@ -24,7 +24,13 @@ const dateLabel = (value: string) =>
     timeStyle: "short",
   });
 
-export function DashboardPage({ service }: { service?: BatchHistoryService }) {
+export function DashboardPage({
+  service,
+  embedded = false,
+}: {
+  service?: BatchHistoryService;
+  embedded?: boolean;
+}) {
   const activeService = service ?? batchHistoryService;
   const [cursors, setCursors] = useState<Array<string | undefined>>([
     undefined,
@@ -67,20 +73,22 @@ export function DashboardPage({ service }: { service?: BatchHistoryService }) {
   }, [request]);
 
   return (
-    <main className="standard-page dashboard-page">
-      <div className="page-title">
-        <div>
-          <span className="eyebrow">OFX Simples PRO</span>
-          <h1>Visão geral</h1>
-          <p>Retome a revisão dos seus lotes de conversão.</p>
+    <section className="standard-page dashboard-page">
+      {!embedded && (
+        <div className="page-title">
+          <div>
+            <span className="eyebrow">OFX Simples PRO</span>
+            <h1>Visão geral</h1>
+            <p>Retome a revisão dos seus lotes de conversão.</p>
+          </div>
+          <Link href="/conversions" className="primary-button">
+            <Plus size={16} /> Nova conversão
+          </Link>
         </div>
-        <Link href="/conversions" className="primary-button">
-          <Plus size={16} /> Nova conversão
-        </Link>
-      </div>
+      )}
       <section className="batch-history-card" aria-label="Seus lotes">
         <h2>
-          <FileStack size={20} /> Seus lotes
+          <FileStack size={20} /> {embedded ? "Seus lotes" : "Lotes recentes"}
         </h2>
         {!current && page && (
           <p className="history-state" role="status">
@@ -125,74 +133,82 @@ export function DashboardPage({ service }: { service?: BatchHistoryService }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {page.items.map((item) => (
-                    <tr key={item.id}>
-                      <td>
-                        {dateLabel(item.createdAt)}
-                        <small>
-                          {item.isExpired
-                            ? "Arquivos expirados"
-                            : `Disponível até ${dateLabel(item.expiresAt)}`}
-                        </small>
-                      </td>
-                      <td>{item.fileCount}</td>
-                      <td>
-                        <span
-                          className={`history-status ${item.isExpired ? "expired" : ""}`}
-                        >
-                          {statuses[item.status] ?? "Em processamento"}
-                        </span>
-                      </td>
-                      <td>
-                        {item.completedCount} de {item.fileCount}
-                        {item.failedCount > 0 && (
-                          <small>{item.failedCount} com falha</small>
-                        )}
-                        {item.pendingCount > 0 && (
-                          <small>{item.pendingCount} pendente(s)</small>
-                        )}
-                      </td>
-                      <td>
-                        {item.reviewUrl ? (
-                          <Link
-                            href={item.reviewUrl}
-                            className="secondary-button small"
+                  {(embedded ? page.items : page.items.slice(0, 5)).map(
+                    (item) => (
+                      <tr key={item.id}>
+                        <td>
+                          {dateLabel(item.createdAt)}
+                          <small>
+                            {item.isExpired
+                              ? "Arquivos expirados"
+                              : `Disponível até ${dateLabel(item.expiresAt)}`}
+                          </small>
+                        </td>
+                        <td>{item.fileCount}</td>
+                        <td>
+                          <span
+                            className={`history-status ${item.isExpired ? "expired" : ""}`}
                           >
-                            Abrir lote <ArrowRight size={14} />
-                          </Link>
-                        ) : (
-                          <span className="history-unavailable">
-                            Indisponível
+                            {statuses[item.status] ?? "Em processamento"}
                           </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td>
+                          {item.completedCount} de {item.fileCount}
+                          {item.failedCount > 0 && (
+                            <small>{item.failedCount} com falha</small>
+                          )}
+                          {item.pendingCount > 0 && (
+                            <small>{item.pendingCount} pendente(s)</small>
+                          )}
+                        </td>
+                        <td>
+                          {item.reviewUrl ? (
+                            <Link
+                              href={
+                                embedded
+                                  ? `${item.reviewUrl}?return_to=${encodeURIComponent("/conversions?view=batches")}`
+                                  : item.reviewUrl
+                              }
+                              className="secondary-button small"
+                            >
+                              Abrir lote <ArrowRight size={14} />
+                            </Link>
+                          ) : (
+                            <span className="history-unavailable">
+                              Indisponível
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ),
+                  )}
                 </tbody>
               </table>
             </div>
-            <nav
-              className="history-pagination"
-              aria-label="Paginação dos lotes"
-            >
-              <button
-                className="secondary-button small"
-                disabled={cursors.length === 1}
-                onClick={() => setCursors((current) => current.slice(0, -1))}
+            {embedded && (
+              <nav
+                className="history-pagination"
+                aria-label="Paginação dos lotes"
               >
-                Anterior
-              </button>
-              <span>Página {cursors.length}</span>
-              <button
-                className="secondary-button small"
-                disabled={!page.nextCursor}
-                onClick={() =>
-                  setCursors((current) => [...current, page.nextCursor!])
-                }
-              >
-                Próxima
-              </button>
-            </nav>
+                <button
+                  className="secondary-button small"
+                  disabled={cursors.length === 1}
+                  onClick={() => setCursors((current) => current.slice(0, -1))}
+                >
+                  Anterior
+                </button>
+                <span>Página {cursors.length}</span>
+                <button
+                  className="secondary-button small"
+                  disabled={!page.nextCursor}
+                  onClick={() =>
+                    setCursors((current) => [...current, page.nextCursor!])
+                  }
+                >
+                  Próxima
+                </button>
+              </nav>
+            )}
           </>
         ) : (
           <div className="history-state">
@@ -203,12 +219,19 @@ export function DashboardPage({ service }: { service?: BatchHistoryService }) {
           </div>
         )}
       </section>
-      <Link
-        href="/demo/review/batch-setembro-2026"
-        className="history-demo-link"
-      >
-        Ver demonstração com dados fictícios <ArrowRight size={14} />
-      </Link>
-    </main>
+      {!embedded && (
+        <Link href="/conversions?view=batches" className="secondary-button">
+          Ver todos os lotes <ArrowRight size={14} />
+        </Link>
+      )}
+      {!embedded && (
+        <Link
+          href="/demo/review/batch-setembro-2026"
+          className="history-demo-link"
+        >
+          Ver demonstração com dados fictícios <ArrowRight size={14} />
+        </Link>
+      )}
+    </section>
   );
 }

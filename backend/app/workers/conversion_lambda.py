@@ -94,6 +94,9 @@ class ConversionLambdaProcessor:
             )
             payload = result.payload or {}
             if result.status == ConversionPipelineStatus.COMPLETED:
+                from app.application.organization_suggestions import build_source_evidence
+
+                payload = {**payload, "organization_source": build_source_evidence(payload.get("analysis") or {})}
                 analysis_id = str(payload.get("processing_id") or payload.get("analysis_id") or "").strip()
                 if not analysis_id:
                     raise RuntimeError("Completed conversion result does not contain an analysis id.")

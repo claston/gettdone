@@ -22,6 +22,8 @@ def run(base: str) -> None:
         for index, filename in enumerate(["extrato-semana.pdf", "extrato-mensal.csv", "arquivo-expirado.pdf"], 1)]
     writes = []
     errors = []
+    organization_available = True
+    conflict_once = True
 
     def intercept(route):
         url = urlsplit(route.request.url)
@@ -30,21 +32,34 @@ def run(base: str) -> None:
                 "plan_name": "Pro Escritório", "quota_remaining": 4990, "quota_limit": 5000, "quota_mode": "pages"})
             return
         if url.path == "/api/pro/conversion-batches":
-            route.fulfill(json={"items": [], "next_cursor": None})
+            route.fulfill(json={"items": [{"batch_id": "batch-browser", "status": "completed", "created_at": "2026-10-01T12:00:00Z",
+                "expires_at": "2027-12-01T00:00:00Z", "is_expired": False, "files_count": 3, "completed_count": 2,
+                "failed_count": 1, "pending_count": 0, "first_job_id": "job-1"}], "next_cursor": None})
+            return
+        if url.path == "/api/pro/conversion-batches/batch-browser":
+            route.fulfill(json={"batch_id": "batch-browser", "status": "completed", "jobs": [
+                {"job_id": item["job_id"], "filename": item["filename"], "status": "failed" if item["is_expired"] else "completed",
+                 "analysis_id": f"an-{item['job_id']}", "result": {"analysis": {"file_type": "csv", "preview_transactions": [
+                     {"transaction_id": "tx1", "date": "2026-10-01", "description": "PIX sintético", "amount": 12.0}
+                 ]}}} for item in files]})
+            return
+        if url.path == "/telemetry/events":
+            route.fulfill(status=204)
             return
         prefix = "/api/pro/organization/"
-        if not url.path.startswith(prefix):
+        if not url.path.startswith(prefix) and url.path != "/api/pro/conversions":
             route.continue_()
             return
         method = route.request.method
-        path = url.path.removeprefix(prefix)
+        path = "conversions" if url.path == "/api/pro/conversions" else url.path.removeprefix(prefix)
         if method != "GET":
             assert route.request.headers.get("x-ofx-pro-client") == "web"
             body = route.request.post_data_json
             assert not {"owner_user_id", "organization_id", "user_token"} & body.keys()
             writes.append(path)
         if path == "catalog":
-            route.fulfill(json=catalog)
+            route.fulfill(json=catalog if organization_available else {"detail": "Organização desabilitada"},
+                          status=200 if organization_available else 503)
         elif path == "conversions":
             query = parse_qs(url.query)
             selected = [item for item in files if
@@ -53,8 +68,28 @@ def run(base: str) -> None:
                 and (not query.get("account_id") or item["context"]["account_id"] == query["account_id"][0])
                 and (not query.get("period_id") or query["period_id"][0] in item["context"]["period_ids"])]
             route.fulfill(json={"items": selected, "next_cursor": None})
+        elif path == "contexts/bulk":
+            nonlocal conflict_once
+            outcomes = []
+            for change in body["items"]:
+                item = next(row for row in files if row["job_id"] == change["job_id"])
+                context = change["context"]
+                if item["job_id"] == "job-2" and conflict_once:
+                    outcomes.append({"job_id": item["job_id"], "status": 409, "error": "Alterado por outra sessão."})
+                    conflict_once = False
+                else:
+                    assert item["context"]["version"] == context["expected_version"]
+                    item["context"] = {key: context[key] for key in ("client_id", "account_id", "period_ids")}
+                    item["context"]["version"] = context["expected_version"] + 1
+                    outcomes.append({"job_id": item["job_id"], "status": 200, "context": item["context"]})
+            route.fulfill(json={"items": outcomes})
+        elif path.endswith("/suggestions"):
+            route.fulfill(json={"clients": [{"id": "clients-1", "basis": "holder_tax_id", "confidence": "strong",
+                "evidence": "CPF/CNPJ do titular: 12345678000190"}], "accounts": [], "period": {
+                    "start_date": "2026-09-20", "end_date": "2026-10-04", "basis": "movement_dates", "document_coverage": False,
+                    "evidence": "Datas dos lançamentos; sugestão de trabalho, não comprovação de cobertura documental."}})
         elif path in catalog and method == "POST":
-            item = {"id": f"{path}-1", **body}
+            item = {"id": f"{path}-{len(catalog[path]) + 1}", **body}
             catalog[path].append(item)
             route.fulfill(status=201, json=item)
         elif path.endswith("/context") and method == "PUT":
@@ -124,11 +159,60 @@ def run(base: str) -> None:
             expect(page.get_by_role("heading", name="Períodos de trabalho", exact=True)).to_be_visible()
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Mobile horizontal overflow"
             page.screenshot(path=str(output / "mobile.png"), full_page=True)
+            page.set_viewport_size({"width": 1440, "height": 1000})
+            page.goto(base + "/conversions")
+            expect(page.get_by_role("button", name="Lotes", exact=True)).to_have_attribute("aria-pressed", "true")
+            expect(page.get_by_role("link", name="Abrir lote")).to_have_attribute(
+                "href", "/review/batch-browser/job-1?return_to=%2Fconversions%3Fview%3Dbatches")
+            expect(page.locator(".mobile-menu")).to_be_hidden()
+            page.get_by_role("button", name="Todos os arquivos", exact=True).click()
+            page.get_by_label("Selecionar extrato-semana.pdf").check()
+            page.get_by_label("Selecionar extrato-mensal.csv").check()
+            page.get_by_label("Período para os selecionados").select_option("periods-1")
+            page.get_by_role("button", name="Aplicar organização").click()
+            expect(page.get_by_text("extrato-mensal.csv: Alterado por outra sessão.")).to_be_visible()
+            expect(page.get_by_label("Selecionar extrato-mensal.csv")).to_be_checked()
+            expect(page.get_by_label("Selecionar extrato-semana.pdf")).not_to_be_checked()
+            page.get_by_role("button", name="Aplicar organização").click()
+            expect(page.get_by_label("Selecionar extrato-mensal.csv")).not_to_be_checked()
+            file = page.get_by_role("article", name="extrato-mensal.csv")
+            file.get_by_role("button", name="Organizar", exact=True).click()
+            file.get_by_role("button", name="Buscar sugestões").click()
+            expect(file.get_by_text("CPF/CNPJ do titular: 12345678000190")).to_be_visible()
+            file.get_by_role("button", name="Usar cliente Empresa Aurora").click()
+            file.get_by_label("Nome do período sugerido").fill("Recorte ajustado")
+            file.get_by_label("Fim do trabalho").fill("2026-10-03")
+            file.get_by_role("button", name="Criar período e selecionar").click()
+            expect(file.get_by_text("Período selecionado. Salve a organização para confirmar o vínculo.")).to_be_visible()
+            assert files[1]["context"]["client_id"] is None, "Suggestion confirmed before save"
+            file.get_by_role("button", name="Salvar organização").click()
+            expect(file.get_by_text("Organização salva.", exact=True)).to_be_visible()
+            page.get_by_label("Filtrar por cliente").select_option("clients-1")
+            page.get_by_label("Filtrar por período").select_option("periods-1")
+            page.get_by_role("button", name="Lotes", exact=True).click()
+            page.get_by_role("button", name="Todos os arquivos", exact=True).click()
+            expect(page.get_by_label("Filtrar por cliente")).to_have_value("clients-1")
+            file = page.get_by_role("article", name="extrato-mensal.csv")
+            file.get_by_role("link", name="Abrir revisão").click()
+            page.get_by_role("link", name="Voltar às conversões").click()
+            expect(page.get_by_label("Filtrar por cliente")).to_have_value("clients-1")
+            expect(page.get_by_label("Filtrar por período")).to_have_value("periods-1")
+            page.screenshot(path=str(output / "v2-desktop.png"), full_page=True)
+            page.set_viewport_size({"width": 390, "height": 844})
+            expect(page.locator(".mobile-menu")).to_be_visible()
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "V2 mobile overflow"
+            page.screenshot(path=str(output / "v2-mobile.png"), full_page=True)
+            organization_available = False
+            page.goto(base + "/conversions?view=files")
+            expect(page.get_by_role("article", name="extrato-semana.pdf")).to_be_visible()
+            expect(page.get_by_label("Filtrar por cliente")).to_have_count(0)
+            expect(page.get_by_role("button", name="Organizar", exact=True)).to_have_count(0)
+            expect(page.get_by_role("article", name="extrato-semana.pdf").get_by_role("link", name="Abrir revisão")).to_be_visible()
             assert not errors, errors
             (output / "summary.json").write_text(json.dumps({"writes": writes, "browser_errors": errors,
                 "account_number": catalog["accounts"][0]["account_number"], "context_version": files[0]["context"]["version"]},
                 ensure_ascii=False, indent=2), encoding="utf-8")
-            print("PRO organization browser acceptance passed: desktop, mobile, independent filters, manual association, reload and expiry.")
+            print("PRO organization browser acceptance passed: desktop/mobile, filters, bulk conflicts, suggestions, review return and independent converter.")
         finally:
             browser.close()
 

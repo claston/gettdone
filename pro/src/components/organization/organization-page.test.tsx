@@ -28,6 +28,10 @@ const catalog: OrganizationCatalog = {
 };
 function mockService(): OrganizationService {
   return {
+    suggestions: vi
+      .fn()
+      .mockResolvedValue({ clients: [], accounts: [], period: null }),
+    organizeBulk: vi.fn(),
     catalog: vi.fn().mockResolvedValue(catalog),
     listConversions: vi.fn().mockResolvedValue({
       items: [
@@ -63,6 +67,100 @@ function mockService(): OrganizationService {
   };
 }
 
+it("mantém arquivos e revisão acessíveis quando organização está indisponível", async () => {
+  const service = mockService();
+  vi.mocked(service.catalog).mockRejectedValue(
+    new Error("Organização indisponível"),
+  );
+  render(<OrganizationPage mode="conversions" service={service} independent />);
+  const file = await screen.findByRole("article", { name: "extrato.pdf" });
+  expect(
+    within(file).getByRole("link", { name: "Abrir revisão" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByLabelText("Filtrar por cliente"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(file).queryByRole("button", { name: "Organizar" }),
+  ).not.toBeInTheDocument();
+  expect(service.listConversions).toHaveBeenCalledWith(
+    { client: "", account: "", period: "", organization: false },
+    undefined,
+    expect.any(AbortSignal),
+  );
+});
+
+it("organiza seleção sem apagar períodos existentes e informa conflitos por arquivo", async () => {
+  const service = mockService();
+  vi.mocked(service.organizeBulk).mockResolvedValue({
+    items: [
+      { job_id: "job-a", status: 409, error: "Alterado por outra sessão" },
+    ],
+  });
+  render(<OrganizationPage mode="conversions" service={service} />);
+  fireEvent.click(await screen.findByLabelText("Selecionar extrato.pdf"));
+  fireEvent.change(screen.getByLabelText("Período para os selecionados"), {
+    target: { value: "period-a" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Aplicar organização" }));
+  expect(
+    await screen.findByText(/extrato.pdf: Alterado por outra sessão/),
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText("Selecionar extrato.pdf")).toBeChecked();
+  expect(service.organizeBulk).toHaveBeenCalledWith([
+    expect.objectContaining({
+      job_id: "job-a",
+      context: expect.objectContaining({
+        period_ids: ["period-a"],
+        version: 0,
+      }),
+    }),
+  ]);
+});
+
+it("mostra evidência e só confirma sugestão ao salvar", async () => {
+  const service = mockService();
+  vi.mocked(service.suggestions).mockResolvedValue({
+    clients: [
+      {
+        id: "client-a",
+        basis: "holder_tax_id",
+        confidence: "strong",
+        evidence: "CPF/CNPJ do titular: 12345678000190",
+      },
+    ],
+    accounts: [],
+    period: null,
+  });
+  render(<OrganizationPage mode="conversions" service={service} />);
+  const file = await screen.findByRole("article", { name: "extrato.pdf" });
+  fireEvent.click(within(file).getByRole("button", { name: "Organizar" }));
+  fireEvent.click(
+    within(file).getByRole("button", { name: "Buscar sugestões" }),
+  );
+  expect(
+    await screen.findByText("CPF/CNPJ do titular: 12345678000190"),
+  ).toBeInTheDocument();
+  expect(service.organize).not.toHaveBeenCalled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Usar cliente Empresa A" }),
+  );
+  expect(within(file).getByLabelText("Cliente do arquivo")).toHaveValue(
+    "client-a",
+  );
+  expect(service.organize).not.toHaveBeenCalled();
+  fireEvent.click(
+    within(file).getByRole("button", { name: "Salvar organização" }),
+  );
+  await waitFor(() =>
+    expect(service.organize).toHaveBeenCalledWith(
+      "batch-a",
+      "job-a",
+      expect.objectContaining({ client_id: "client-a" }),
+    ),
+  );
+});
+
 it("mantém conversões sem cliente e combina cliente e período independentemente", async () => {
   const service = mockService();
   render(<OrganizationPage mode="clients" service={service} />);
@@ -70,7 +168,9 @@ it("mantém conversões sem cliente e combina cliente e período independentemen
   expect(
     within(file).getByText("Sem cliente", { selector: "span" }),
   ).toBeInTheDocument();
-  expect(within(file).getByText("Período a confirmar")).toBeInTheDocument();
+  expect(
+    within(file).getByText("Período de trabalho não definido"),
+  ).toBeInTheDocument();
   expect(
     within(file).getByRole("link", { name: "Abrir revisão" }),
   ).toHaveAttribute("href", "/review/batch-a/job-a");
