@@ -9,7 +9,7 @@ RUN python -m pip install --only-binary=:all: --target /build/site-packages -r r
 # Keep compression, XML, SQLite, ctypes and dbm support, including real package
 # metadata and licenses. No package database is deleted or rewritten to hide CVEs.
 RUN set -eu; mkdir -p /runtime-libs /runtime-status \
-    && for package in libbz2-1.0 libffi8 libgdbm6t64 liblzma5 libsqlite3-0 libcrypt1; do \
+    && for package in libbz2-1.0 libffi8 libgdbm6t64 libdb5.3t64 liblzma5 libsqlite3-0 libcrypt1; do \
          dpkg-query -s "$package" > "/runtime-status/$package"; \
          dpkg-query -L "$package" | grep -E '/lib[^/]+\.so(\.|$)' | while IFS= read -r library; do \
            cp --parents --dereference "$library" /runtime-libs; \
