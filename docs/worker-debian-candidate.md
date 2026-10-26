@@ -18,6 +18,9 @@ detectar dependências ausentes. O worker não oferece terminal interativo.
 O PyPDF da candidata é 6.21.2, corrigindo os achados detectados no 5.4.0.
 Essa mudança fica restrita à candidata e roda a suíte completa separadamente
 na esteira; os arquivos de dependências de produção não mudam nesta PR.
+O código de extração e preflight preserva explicitamente a falha por fonte
+nula, pois o PyPDF novo pode retornar texto incompleto nesse caso. O sinal
+de falha e o motivo da tentativa de OCR continuam compatíveis com o PyPDF atual.
 
 ## Validação na esteira
 
@@ -44,7 +47,8 @@ O Trivy examina pacotes do sistema e bibliotecas Python. Qualquer achado HIGH
 ou CRITICAL, inclusive sem correção, bloqueia o artefato de imagem aprovado.
 Não há exceção por CVE nem `ignore-unfixed`. O relatório JSON e o SBOM são
 preservados mesmo quando o scan bloqueia a candidata. O arquivo Docker é
-gerado somente depois do sucesso dos testes e do scan.
+gerado somente depois do sucesso dos testes e do scan, incluindo a confirmação
+de que o scanner reconheceu o inventário Debian e a versão candidata do PyPDF.
 
 ## Promoção e rollback
 

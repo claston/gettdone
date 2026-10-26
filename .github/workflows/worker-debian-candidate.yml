@@ -106,7 +106,21 @@ jobs:
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/artifacts:/out" \
             "$TRIVY_IMAGE" image --image-src docker --scanners vuln --pkg-types os,library \
-            --severity HIGH,CRITICAL --exit-code 1 --format json --output /out/vulnerabilities.json "$CANDIDATE_IMAGE"
+            --severity HIGH,CRITICAL --exit-code 1 --list-all-pkgs --format json --output /out/vulnerabilities.json "$CANDIDATE_IMAGE"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("artifacts/vulnerabilities.json").read_text())
+          results = report.get("Results", [])
+          os_packages = [p for r in results if r.get("Class") == "os-pkgs" for p in r.get("Packages", [])]
+          python_packages = [p for r in results if r.get("Type") == "python-pkg" for p in r.get("Packages", [])]
+          if report.get("Metadata", {}).get("OS", {}).get("Family") != "debian" or not os_packages:
+              raise SystemExit("Scanner did not recognize the Debian package inventory.")
+          expected = next(line.split("==")[1] for line in Path("backend/requirements-worker-debian.txt").read_text().splitlines() if line.startswith("pypdf=="))
+          if not any(p.get("Name") == "pypdf" and p.get("Version") == expected for p in python_packages):
+              raise SystemExit("Scanner did not recognize the candidate Python package inventory.")
+          print(f"Scan coverage verified: {len(os_packages)} OS packages; {len(python_packages)} Python packages.")
+          PY
       - name: Save approved candidate for isolated Lambda validation
         run: docker save "$CANDIDATE_IMAGE" -o artifacts/worker-debian-candidate.tar
       - name: Upload runtime and security evidence
