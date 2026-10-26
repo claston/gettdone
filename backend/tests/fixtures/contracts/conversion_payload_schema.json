@@ -2,6 +2,17 @@
   "$defs": {
     "AnalyzeResponse": {
       "properties": {
+        "statement_balance_check": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BalanceCheck"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "analysis_id": {
           "title": "Analysis Id",
           "type": "string"
@@ -337,6 +348,94 @@
         "expires_at"
       ],
       "title": "AnalyzeResponse",
+      "type": "object"
+    },
+    "BalanceCheck": {
+      "properties": {
+        "reference_balance": {
+          "title": "Reference Balance",
+          "type": "number"
+        },
+        "credits_total": {
+          "title": "Credits Total",
+          "type": "number"
+        },
+        "debits_total": {
+          "title": "Debits Total",
+          "type": "number"
+        },
+        "expected_balance": {
+          "title": "Expected Balance",
+          "type": "number"
+        },
+        "reported_balance": {
+          "title": "Reported Balance",
+          "type": "number"
+        },
+        "difference": {
+          "title": "Difference",
+          "type": "number"
+        },
+        "movements_count": {
+          "title": "Movements Count",
+          "type": "integer"
+        },
+        "order": {
+          "default": "ascending",
+          "enum": [
+            "ascending",
+            "descending"
+          ],
+          "title": "Order",
+          "type": "string"
+        },
+        "reference_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Date"
+        },
+        "reference_page": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Page"
+        },
+        "reference_line": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Line"
+        }
+      },
+      "required": [
+        "reference_balance",
+        "credits_total",
+        "debits_total",
+        "expected_balance",
+        "reported_balance",
+        "difference",
+        "movements_count"
+      ],
+      "title": "BalanceCheck",
       "type": "object"
     },
     "BeforeAfterPreview": {
@@ -1256,6 +1355,17 @@
     },
     "TransactionPreview": {
       "properties": {
+        "balance_check": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BalanceCheck"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "transaction_id": {
           "anyOf": [
             {

@@ -13,6 +13,7 @@ from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
 from app.application.analysis_lock import locked_analysis
+from app.application.balance_checks import parse_balance_check
 from app.application.bank_identity import resolve_conversion_model_label
 from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConflictError, AnalysisNotFoundError, InvalidFileContentError
 from app.application.export_artifact_service import ExportArtifactService
@@ -320,6 +321,7 @@ class TempAnalysisStorage:
             **{key: content.get(key) for key in (
                 "transactions_total", "total_inflows", "total_outflows", "net_total",
                 "preview_transactions", "updated_at", "opening_balance", "closing_balance",
+                "statement_balance_check",
             )},
         }
 
@@ -893,6 +895,7 @@ class TempAnalysisStorage:
                 continue
             parsed.append(
                 TransactionRow(
+                    balance_check=parse_balance_check(item.get("balance_check")),
                     date=str(item.get("date") or ""),
                     description=str(item.get("description") or ""),
                     amount=float(item.get("amount") or 0.0),
@@ -1012,6 +1015,7 @@ class TempAnalysisStorage:
             ofx_account_type=str(content.get("ofx_account_type") or "").strip() or None,
             opening_balance=float(content["opening_balance"]) if content.get("opening_balance") is not None else None,
             closing_balance=float(content["closing_balance"]) if content.get("closing_balance") is not None else None,
+            statement_balance_check=parse_balance_check(content.get("statement_balance_check")),
             bank_name=str(content.get("bank_name") or "").strip() or None,
             bank_branch=str(content.get("bank_branch") or "").strip() or None,
             account_number=str(content.get("account_number") or "").strip() or None,

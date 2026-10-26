@@ -1,4 +1,5 @@
 "use client";
+import { requiresDocumentReview } from "@/domain/review-warnings";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { validSourceRegions } from "@/domain/source-regions";
@@ -139,7 +140,7 @@ export function useWorkspaceController(
               reviewStatus: "IN_REVIEW",
               status:
                 item.status === "REVIEWED" || item.status === "EXPORTED"
-                  ? countSuspected(transactions)
+                  ? countSuspected(transactions) || requiresDocumentReview(item)
                     ? "NEEDS_REVIEW"
                     : "READY"
                   : item.status,

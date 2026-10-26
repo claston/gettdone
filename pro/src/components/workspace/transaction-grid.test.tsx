@@ -36,6 +36,89 @@ const conversion: Conversion = {
 };
 
 describe("grid page anchors", () => {
+  it("não escolhe um lançamento de referência quando a origem é ambígua", () => {
+    const reference = { ...row("1", 1), sourceLine: 10 };
+    const current = {
+      ...row("2", 1),
+      sourceLine: 20,
+      warningTypes: ["balance_consistency_failed"],
+      balanceCheck: {
+        referenceBalance: 1000,
+        creditsTotal: 0,
+        debitsTotal: 100,
+        expectedBalance: 900,
+        reportedBalance: 880,
+        difference: -20,
+        movementsCount: 1,
+        order: "ascending" as const,
+        referencePage: 1,
+        referenceLine: 10,
+      },
+    };
+    render(
+      <TransactionGrid
+        activePage={1}
+        conversion={{
+          ...conversion,
+          transactions: [reference, { ...reference, id: "duplicate" }, current],
+        }}
+        groupByPage={false}
+        onSourcePage={vi.fn()}
+        onLocateTransaction={vi.fn()}
+        onUpdate={vi.fn()}
+        onGroupChange={vi.fn()}
+        onAdd={vi.fn()}
+        onRemove={vi.fn()}
+        onRestore={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText(/Saldo não confere/));
+    expect(
+      screen.queryByRole("button", { name: "Ver lançamento de referência" }),
+    ).not.toBeInTheDocument();
+  });
+  it("abre o lançamento de referência pela posição original sem alterar valores", () => {
+    const locate = vi.fn(),
+      update = vi.fn();
+    const first = { ...row("1", 1), sourceLine: 10 };
+    const current = {
+      ...row("2", 1),
+      sourceLine: 20,
+      warningTypes: ["balance_consistency_failed"],
+      balanceCheck: {
+        referenceBalance: 1000,
+        creditsTotal: 0,
+        debitsTotal: 100,
+        expectedBalance: 900,
+        reportedBalance: 880,
+        difference: -20,
+        movementsCount: 1,
+        order: "ascending" as const,
+        referencePage: 1,
+        referenceLine: 10,
+      },
+    };
+    render(
+      <TransactionGrid
+        activePage={1}
+        conversion={{ ...conversion, transactions: [first, current] }}
+        groupByPage={false}
+        onSourcePage={vi.fn()}
+        onLocateTransaction={locate}
+        onUpdate={update}
+        onGroupChange={vi.fn()}
+        onAdd={vi.fn()}
+        onRemove={vi.fn()}
+        onRestore={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText(/Saldo não confere/));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ver lançamento de referência" }),
+    );
+    expect(locate).toHaveBeenCalledWith("1", { origin: "grid", scroll: true });
+    expect(update).not.toHaveBeenCalled();
+  });
   afterEach(() => vi.useRealTimers());
   it("lets real table scrolling lead the PDF but ignores scrolls produced by following it", () => {
     vi.useFakeTimers();

@@ -9,6 +9,7 @@ from time import perf_counter
 from typing import Callable, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
+from app.application.balance_checks import BalanceCheck, statement_balance_check
 from app.application.conversion.uploaded_document import UploadedDocument, ingest_uploaded_document
 from app.application.conversion_quality import build_line_quality_issues
 from app.application.document_classifier import DocumentClassification, classify_document
@@ -281,6 +282,8 @@ class ConversionPipeline:
             source_sequences=[source_sequences[idx] for idx in kept_indices],
             source_regions=[canonical_transactions[idx].source_regions if idx < len(canonical_transactions) else []
                             for idx in kept_indices],
+            balance_checks=[canonical_transactions[idx].balance_check if idx < len(canonical_transactions) else None
+                            for idx in kept_indices],
             analysis_id=analysis_id,
         )
         report_rows = _build_transaction_rows(
@@ -294,6 +297,8 @@ class ConversionPipeline:
                           for idx in kept_indices],
             source_sequences=[source_sequences[idx] for idx in kept_indices],
             source_regions=[canonical_transactions[idx].source_regions if idx < len(canonical_transactions) else []
+                            for idx in kept_indices],
+            balance_checks=[canonical_transactions[idx].balance_check if idx < len(canonical_transactions) else None
                             for idx in kept_indices],
             analysis_id=analysis_id,
         )
@@ -376,6 +381,9 @@ class ConversionPipeline:
             ofx_account_type=ofx_account_type,
             opening_balance=opening_balance,
             closing_balance=closing_balance,
+            statement_balance_check=(statement_balance_check(opening_balance, total_inflows, total_outflows,
+                closing_balance, len(transactions)) if any("printed_summary_balance_mismatch" in row.warnings
+                for row in selected_canonical_transactions) else None),
             bank_name=bank_name,
             bank_branch=bank_branch,
             account_number=account_number,
@@ -454,6 +462,7 @@ def _build_transaction_rows(
     source_lines: list[int | None] | None = None,
     source_sequences: list[int] | None = None,
     source_regions: list[list[SourceRegion]] | None = None,
+    balance_checks: list[BalanceCheck | None] | None = None,
     analysis_id: str | None = None,
 ) -> list[TransactionRow]:
     return [
@@ -469,6 +478,7 @@ def _build_transaction_rows(
             source_line=source_lines[idx] if source_lines else None,
             source_sequence=source_sequences[idx] if source_sequences else None,
             source_regions=list(source_regions[idx]) if source_regions else [],
+            balance_check=balance_checks[idx] if balance_checks else None,
             transaction_id=(f"txn_{uuid5(NAMESPACE_URL, f'{analysis_id}:{source_sequences[idx]}').hex}"
                             if source_sequences else None),
         )

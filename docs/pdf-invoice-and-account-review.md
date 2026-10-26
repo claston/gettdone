@@ -42,6 +42,42 @@ coordenadas exigem o processamento pelo worker atualizado; conversões antigas
 sem regiões precisam ser refeitas. Não há reprocessamento automático nem
 migração dos lotes existentes, e o PDF original não é modificado.
 
+Na conferência de saldos, o PRO mostra um aviso no topo e o cálculo em cada linha
+afetada. A comparação identifica saldo de referência (data e página, quando
+disponíveis), créditos, débitos, quantidade de movimentos, saldo esperado, saldo
+registrado e diferença (`registrado - esperado`). Por exemplo, R$ 1.000,00 +
+R$ 200,00 - R$ 100,00 resulta em R$ 1.100,00; um saldo registrado de R$ 1.099,00
+gera diferença de -R$ 1,00. Em ordem decrescente, o aviso explica que a conta
+desfaz os movimentos para chegar ao saldo anterior. Quando a posição de origem
+identifica uma única linha, há um botão para abrir o lançamento de referência.
+
+Um alerta `balance_consistency_failed` marca o saldo, sem atribuir um problema de
+leitura à descrição ou ao valor. `printed_summary_balance_mismatch` e
+`financial_validation_failed` são avisos do arquivo. Outros motivos de revisão
+continuam visíveis e recebem orientação textual, inclusive em conversões antigas
+sem comparação numérica. Os avisos não determinam, sozinhos, qual valor corrigir.
+
+As comparações são capturadas no próprio validador como `balance_check`, e a
+conferência do fechamento fica em `statement_balance_check`. São campos opcionais
+nos JSONs existentes, preservados após edições e ignorados como entrada do
+cliente. As regras de validação e a tolerância existente não mudam; nenhum saldo
+ou lançamento é corrigido automaticamente. A interface identifica esses números
+como valores da conferência registrada, que podem anteceder as alterações do
+usuário.
+
+Lotes BTG antigos com a ordem contábil preservada recebem os detalhes ao serem
+lidos pela API, sem alterar o snapshot, refazer OCR ou consumir páginas. A
+reconstrução é restrita a esse leitor: outros layouts podem ter checkpoints ou
+reinícios diários ausentes dos snapshots antigos. Nesses casos, a interface
+explica o motivo sem inventar valores de comparação. Novas conversões guardam
+a evidência do validador para todos os layouts suportados.
+
+Para publicar, atualize a API antes do worker e do PRO, de modo que a gravação de
+edições preserve os campos opcionais. Não há migração SQL. O rollback consiste
+em publicar as versões anteriores; dados financeiros e relatórios permanecem
+compatíveis, embora versões antigas possam deixar de preservar os detalhes
+opcionais ao editar.
+
 O HTML aceita até 20 dígitos de conta, incluindo o verificador, com hífen opcional
 e zeros iniciais preservados. Esse limite usa como referência o campo
 `AccountNumber` do [DICT do Banco Central](https://github.com/bacen/pix-dict-api/blob/master/openapi/schemas.yaml),

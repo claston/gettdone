@@ -17,6 +17,8 @@ export interface PdfDocument {
 }
 
 export interface Transaction {
+  balanceCheck?: BalanceCheck;
+  warningTypes?: readonly string[];
   id: string;
   date: string;
   description: string;
@@ -24,6 +26,7 @@ export interface Transaction {
   debit: number | null;
   balance: number | null;
   sourcePage?: number | null;
+  sourceLine?: number | null;
   sourceSequence?: number | null;
   sourceSubsequence?: number;
   sourceRegions?: readonly SourceRegion[];
@@ -42,6 +45,8 @@ export interface SourceRegion {
 }
 
 export interface Conversion {
+  statementBalanceCheck?: BalanceCheck;
+  reviewWarnings?: readonly string[];
   id: string;
   batchId: string;
   fileName: string;
@@ -60,6 +65,20 @@ export interface Conversion {
   partialStatement?: boolean;
   financialDocument?: FinancialDocument | null;
   transactions: Transaction[];
+}
+
+export interface BalanceCheck {
+  referenceBalance: number;
+  creditsTotal: number;
+  debitsTotal: number;
+  expectedBalance: number;
+  reportedBalance: number;
+  difference: number;
+  movementsCount: number;
+  order: "ascending" | "descending";
+  referenceDate?: string;
+  referencePage?: number;
+  referenceLine?: number;
 }
 
 export interface FinancialDocument {

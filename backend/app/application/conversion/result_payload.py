@@ -48,6 +48,7 @@ def build_analyze_response(
         insights.append(review_insight)
 
     return AnalyzeResponse(
+        statement_balance_check=analysis_data.statement_balance_check,
         analysis_id=analysis_data.analysis_id,
         file_type=extension,
         semantic_type=analysis_data.semantic_type,
@@ -106,6 +107,7 @@ def build_analyze_response(
                 category=row.category,
                 reconciliation_status=row.reconciliation_status,
                 warning_types=list(row.warning_types or []),
+                balance_check=row.balance_check,
             )
             for row in analysis_data.preview_transactions
         ],

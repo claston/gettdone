@@ -16,6 +16,7 @@ from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Re
 from pydantic import BaseModel, Field
 
 from app.application import AccessControlService, InvalidUserTokenError, QuotaExceededError, ReportService
+from app.application.balance_checks import enrich_legacy_conversion_result
 from app.application.conversion.async_conversion_rollout import AsyncConversionRolloutPolicy
 from app.application.conversion.contracts.batches import ConversionBatchSnapshot
 from app.application.conversion.contracts.documents import ConversionDocumentStore
@@ -921,7 +922,7 @@ def _snapshot_response(snapshot: ConversionBatchSnapshot) -> ConversionBatchResp
                 analysis_id=record.result.analysis_id if record.result else None,
                 error_code=record.failure.code if record.failure else None,
                 error_message=record.failure.message if record.failure else None,
-                result=record.result.payload if record.result else None,
+                result=enrich_legacy_conversion_result(record.result.payload) if record.result else None,
                 reviewed_at=(
                     str(record.result.payload.get("reviewed_at") or "").strip() or None
                     if record.result and record.result.payload

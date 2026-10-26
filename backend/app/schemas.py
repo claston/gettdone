@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.application.balance_checks import BalanceCheck
 from app.application.conversion.contracts.payloads import (
     AnalyzeResponse as AnalyzeResponse,
 )
@@ -108,6 +109,7 @@ class ConvertEditsRequest(BaseModel):
 
 
 class ConvertEditsResponse(BaseModel):
+    statement_balance_check: BalanceCheck | None = None
     operation_id: str | None = None
     processing_id: str
     transactions_total: int

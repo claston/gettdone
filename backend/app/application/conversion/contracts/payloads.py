@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+from app.application.balance_checks import BalanceCheck
 from app.application.conversion.contracts.financial_documents import FinancialDocumentPayload
 from app.application.source_regions import SourceRegion
 
@@ -38,6 +39,7 @@ class Insight(BaseModel):
 
 
 class TransactionPreview(BaseModel):
+    balance_check: BalanceCheck | None = None
     transaction_id: str | None = None
     source_sequence: int | None = None
     source_subsequence: int = 0
@@ -136,6 +138,7 @@ class PdfProcessingMetrics(BaseModel):
 
 
 class AnalyzeResponse(BaseModel):
+    statement_balance_check: BalanceCheck | None = None
     analysis_id: str
     file_type: str
     semantic_type: str | None = None

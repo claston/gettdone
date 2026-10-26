@@ -360,6 +360,61 @@ it("não informa sucesso se uma API antiga descartar a marcação", async () => 
 });
 
 describe("HttpWorkspaceRepository", () => {
+  it("explica divergências de saldo sem marcar descrição e valor como erros de leitura", async () => {
+    const check = {
+      reference_balance: 1000,
+      credits_total: 0,
+      debits_total: 100,
+      expected_balance: 900,
+      reported_balance: 880,
+      difference: -20,
+      movements_count: 1,
+      order: "ascending",
+      reference_date: "2026-08-01",
+      reference_page: 2,
+      reference_line: 10,
+    };
+    const payload = structuredClone(batchPayload);
+    const analysis = {
+      ...payload.jobs[0].result!.analysis,
+      statement_balance_check: check,
+      preview_transactions: [
+        {
+          ...payload.jobs[0].result!.analysis.preview_transactions[0],
+          warning_types: [
+            "balance_consistency_failed",
+            "printed_summary_balance_mismatch",
+          ],
+          balance_check: check,
+        },
+      ],
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...payload,
+          jobs: [{ ...payload.jobs[0], result: { analysis } }],
+        }),
+      );
+    const {
+      conversions: [conversion],
+    } = await createHttpWorkspaceRepository({ apiUrl: "/", fetcher }).getBatch(
+      "batch-real",
+    );
+    expect(conversion.transactions[0].fieldStates).toMatchObject({
+      balance: "SUSPECTED",
+      description: "ORIGINAL",
+      credit: "ORIGINAL",
+    });
+    expect(conversion.transactions[0].balanceCheck).toMatchObject({
+      expectedBalance: 900,
+      reportedBalance: 880,
+      difference: -20,
+    });
+    expect(conversion.statementBalanceCheck?.difference).toBe(-20);
+  });
   it("preserva a indicação de extrato parcial recebida do worker", async () => {
     const payload = structuredClone(batchPayload);
     const analysis = {
