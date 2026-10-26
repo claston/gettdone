@@ -879,7 +879,7 @@
       appendTableCell(row, item.model || "Não identificado");
       appendTableCell(row, formatDocumentOrigin(item));
       appendTableCell(row, item.status || "Não informado");
-      appendTableCell(row, item.issue_reason || "Revisão recomendada");
+      appendTableCell(row, item.issue_reason || "Motivo detalhado não registrado no histórico");
       appendTableCell(
         row,
         canonicalCaptureDescription(item.canonical_capture_status, item.canonical_capture_reason),
