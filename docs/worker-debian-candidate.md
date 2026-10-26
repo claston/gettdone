@@ -73,3 +73,40 @@ anterior pela stack CloudFormation, sem migração de dados. Não apagar a image
 anterior antes de concluir a observação da nova versão.
 
 Docker local não é necessário para esse fluxo; o build ocorre no GitHub Actions.
+
+## Canário AWS aprovado em 26/10/2026
+
+A invocação real foi executada às 07:29 (America/Sao_Paulo), em `us-east-1`,
+na função temporária `gettdone-worker-image-canary`, arquitetura `x86_64`,
+com o digest aprovado:
+
+`sha256:737cd4fb2e9cc40a92607358378ff408990bd67d4b00064735d0d5827213c11f`
+
+O `ResolvedImageUri` da Lambda confirmou esse digest. A invocação retornou
+HTTP **200**, sem `FunctionError`, e a resposta:
+
+```json
+{"status":"passed","checks":["csv","xlsx","ofx","pdf","pdfium","psycopg"],"postgres":"not_configured"}
+```
+
+O PostgreSQL remoto não foi configurado; a transação SQL já passou no banco
+descartável da esteira. O request ID foi
+`fe627a89-d313-4736-a5b3-2c96a1f3dc6d`: duração de 7.845,81 ms,
+inicialização de 1.797,05 ms e memória máxima usada de 114 MB (1.024 MB alocados).
+
+A função usou somente a role exclusiva
+`/gettdone/GettDoneWorkerImageCanaryRole`, com `AWSLambdaBasicExecutionRole`,
+e as variáveis `WORKER_IMAGE_CANARY=1`, `TEXTRACT_ENABLED=false`,
+`PDF_OCR_ENABLED=false` e `AWS_EC2_METADATA_DISABLED=true`.
+Não recebeu banco, bucket ou credenciais de produção, nem filas ou tráfego real.
+A policy do repositório ECR já permitia a leitura pela Lambda e não foi alterada.
+
+A função, a role e o grupo de logs criados para o teste foram excluídos com
+sucesso; uma consulta posterior confirmou `ResourceNotFoundException` para
+a função. A imagem no ECR foi preservada. As evidências locais estão em
+`tmp/worker-lambda-canary-5d7b/` (configuração, resposta e log da invocação).
+O usuário deve remover a policy temporária `GettDoneWorkerImageCanaryTemporary`
+do bootstrap; essa credencial não tem permissão para remover a própria policy.
+
+Este resultado conclui a validação do canário. Merge e promoção para produção
+continuam sujeitos à autorização e revisão, com rollback pelo digest anterior.
