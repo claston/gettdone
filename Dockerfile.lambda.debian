@@ -1,0 +1,22 @@
+# A separate candidate: production continues to use Dockerfile.lambda until promotion.
+ARG PYTHON_IMAGE=python:3.12-slim-trixie@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704
+FROM ${PYTHON_IMAGE} AS build
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
+WORKDIR /build
+COPY backend/requirements-worker.txt backend/requirements-worker-debian.txt ./
+RUN python -m pip install --only-binary=:all: --target /build/site-packages -r requirements-worker-debian.txt
+
+FROM ${PYTHON_IMAGE} AS runtime
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/var/task APP_RUNTIME_TMP_DIR=/tmp/gettdone
+ARG APP_RELEASE=local
+ENV APP_RELEASE=${APP_RELEASE}
+WORKDIR /var/task
+COPY --from=build /build/site-packages /var/task
+COPY backend/app/__init__.py /var/task/app/__init__.py
+COPY backend/app/adapters /var/task/app/adapters
+COPY backend/app/application /var/task/app/application
+COPY backend/app/data /var/task/app/data
+COPY backend/app/workers /var/task/app/workers
+RUN python -m app.workers.worker_image_contract
+ENTRYPOINT ["/usr/local/bin/python", "-m", "awslambdaric"]
+CMD ["app.workers.conversion_lambda.lambda_handler"]
