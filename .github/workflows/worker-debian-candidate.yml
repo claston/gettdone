@@ -21,7 +21,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  candidate-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install application test dependencies and candidate versions
+        run: |
+          python -m pip install -r backend/requirements.txt
+          python -m pip install --only-binary=:all: -r backend/requirements-worker-debian.txt
+      - name: Run full suite with candidate PDF reader
+        run: python -m pytest backend/tests -q --basetemp "$RUNNER_TEMP/pytest-worker-candidate"
+      - name: Clean test temporary directory
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/pytest-worker-candidate"
   validate-image:
+    needs: candidate-tests
     runs-on: ubuntu-latest
     timeout-minutes: 25
     services:
@@ -70,7 +92,7 @@ jobs:
             --image "$CANDIDATE_IMAGE" --output artifacts/runtime.json \
             --database-url postgresql://worker_canary:synthetic_only@127.0.0.1:5432/worker_canary
           docker image inspect "$CANDIDATE_IMAGE" > artifacts/image-inspect.json
-          docker run --rm --entrypoint /usr/local/bin/python "$CANDIDATE_IMAGE" \
+          docker run --rm --entrypoint /usr/local/bin/python3.12 "$CANDIDATE_IMAGE" \
             -c 'import importlib.metadata,json; print(json.dumps(sorted((d.metadata["Name"],d.version) for d in importlib.metadata.distributions())))' \
             > artifacts/python-packages.json
       - name: Generate SBOM

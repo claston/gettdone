@@ -1,9 +1,23 @@
-# Imagem candidata do worker: Debian slim
+# Imagem candidata do worker: Debian distroless
 
-A candidata usa Python 3.12 em Debian Trixie slim e o Runtime Interface Client
-oficial `awslambdaric`. A base e o cliente estão fixados por digest/versão.
+A candidata usa Python 3.12 em Debian Trixie distroless e o Runtime Interface
+Client oficial `awslambdaric`. As bases e o cliente estão fixados por digest/versão.
 `Dockerfile.lambda` e o workflow de deploy continuam usando a imagem atual;
 esta alteração não publica nem atualiza a função de produção.
+
+O build parte do Python oficial slim; o runtime usa distroless `cc-debian13`
+sem shell, gerenciador de pacotes ou ferramentas de administração. São copiados
+o interpretador, a biblioteca padrão e as bibliotecas nativas necessárias.
+Os pacotes nativos adicionais preservam seu status original do dpkg e as
+licenças, permitindo inventário e scan reais. Nenhum banco de pacotes é apagado.
+Os módulos opcionais de terminal (`curses`, `readline`) e a extensão `_uuid`
+ficam fora; `uuid` mantém o fallback Python e a geração por `os.urandom`.
+Todas as extensões nativas restantes são carregadas durante o build para
+detectar dependências ausentes. O worker não oferece terminal interativo.
+
+O PyPDF da candidata é 6.21.2, corrigindo os achados detectados no 5.4.0.
+Essa mudança fica restrita à candidata e roda a suíte completa separadamente
+na esteira; os arquivos de dependências de produção não mudam nesta PR.
 
 ## Validação na esteira
 

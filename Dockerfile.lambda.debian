@@ -1,22 +1,44 @@
 # A separate candidate: production continues to use Dockerfile.lambda until promotion.
 ARG PYTHON_IMAGE=python:3.12-slim-trixie@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704
+ARG RUNTIME_IMAGE=gcr.io/distroless/cc-debian13:nonroot@sha256:3ee00291cf386ec52a552e6a858d555debd74776eb4bfa53fa3df2cd6677515e
 FROM ${PYTHON_IMAGE} AS build
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
 WORKDIR /build
-COPY backend/requirements-worker.txt backend/requirements-worker-debian.txt ./
+COPY backend/requirements-worker-debian.txt ./
 RUN python -m pip install --only-binary=:all: --target /build/site-packages -r requirements-worker-debian.txt
+# Keep compression, XML, SQLite, ctypes and dbm support, including real package
+# metadata and licenses. No package database is deleted or rewritten to hide CVEs.
+RUN set -eu; mkdir -p /runtime-libs /runtime-status \
+    && for package in libbz2-1.0 libffi8 libgdbm6t64 liblzma5 libsqlite3-0 libcrypt1; do \
+         dpkg-query -s "$package" > "/runtime-status/$package"; \
+         dpkg-query -L "$package" | grep -E '/lib[^/]+\.so(\.|$)' | while IFS= read -r library; do \
+           cp --parents --dereference "$library" /runtime-libs; \
+         done; \
+         cp --parents "/usr/share/doc/$package/copyright" /runtime-libs; \
+       done \
+    && rm -rf /usr/local/lib/python3.12/site-packages \
+    && rm -f /usr/local/lib/python3.12/lib-dynload/_curses*.so \
+             /usr/local/lib/python3.12/lib-dynload/readline*.so \
+             /usr/local/lib/python3.12/lib-dynload/_uuid*.so
 
-FROM ${PYTHON_IMAGE} AS runtime
+FROM ${RUNTIME_IMAGE} AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/var/task APP_RUNTIME_TMP_DIR=/tmp/gettdone
+ENV LD_LIBRARY_PATH=/usr/local/lib
 ARG APP_RELEASE=local
 ENV APP_RELEASE=${APP_RELEASE}
 WORKDIR /var/task
+COPY --from=build /usr/local/bin/python3.12 /usr/local/bin/python3.12
+COPY --from=build /usr/local/lib/libpython3.12.so.1.0 /usr/local/lib/libpython3.12.so.1.0
+COPY --from=build /usr/local/lib/python3.12 /usr/local/lib/python3.12
+COPY --from=build /runtime-libs/ /
+COPY --from=build /runtime-status/ /var/lib/dpkg/status.d/
 COPY --from=build /build/site-packages /var/task
 COPY backend/app/__init__.py /var/task/app/__init__.py
 COPY backend/app/adapters /var/task/app/adapters
 COPY backend/app/application /var/task/app/application
 COPY backend/app/data /var/task/app/data
 COPY backend/app/workers /var/task/app/workers
-RUN python -m app.workers.worker_image_contract
-ENTRYPOINT ["/usr/local/bin/python", "-m", "awslambdaric"]
+RUN ["/usr/local/bin/python3.12", "-c", "import ctypes, glob; [ctypes.CDLL(path) for path in glob.glob('/usr/local/lib/python3.12/lib-dynload/*.so')]"]
+RUN ["/usr/local/bin/python3.12", "-m", "app.workers.worker_image_contract"]
+ENTRYPOINT ["/usr/local/bin/python3.12", "-m", "awslambdaric"]
 CMD ["app.workers.conversion_lambda.lambda_handler"]

@@ -20,10 +20,12 @@ def test_candidate_cannot_publish_or_deploy_and_keeps_security_gate():
 def test_candidate_preserves_handler_architecture_and_restricted_context():
     candidate = (ROOT / "Dockerfile.lambda.debian").read_text(encoding="utf-8")
     assert 'CMD ["app.workers.conversion_lambda.lambda_handler"]' in candidate
-    assert 'ENTRYPOINT ["/usr/local/bin/python", "-m", "awslambdaric"]' in candidate
+    assert 'ENTRYPOINT ["/usr/local/bin/python3.12", "-m", "awslambdaric"]' in candidate
     assert "python:3.12-slim-trixie@sha256:" in candidate
     assert "--only-binary=:all:" in candidate
-    assert "python -m app.workers.worker_image_contract" in candidate
+    assert '"-m", "app.workers.worker_image_contract"' in candidate
+    assert "gcr.io/distroless/cc-debian13:nonroot@sha256:" in candidate
+    assert "COPY --from=build /runtime-status/ /var/lib/dpkg/status.d/" in candidate
     original = set((ROOT / "Dockerfile.lambda.dockerignore").read_text(encoding="utf-8").splitlines())
     separate = set((ROOT / "Dockerfile.lambda.debian.dockerignore").read_text(encoding="utf-8").splitlines())
     assert original - {"!Dockerfile.lambda"} <= separate
