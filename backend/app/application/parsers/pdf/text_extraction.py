@@ -1,4 +1,7 @@
+from collections.abc import Mapping
 from io import BytesIO
+
+from pypdf.generic import NullObject
 
 from app.application.errors import InvalidFileContentError
 from app.application.parsers.pdf.reader import open_pdf_reader
@@ -17,7 +20,10 @@ def read_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
         ) from exc
 
     try:
-        pages = [(page.extract_text() or "").strip() for page in reader.pages]
+        pages = []
+        for page in reader.pages:
+            validate_native_pdf_fonts(page)
+            pages.append((page.extract_text() or "").strip())
     except Exception as exc:
         raise _build_native_text_error(
             "Unable to extract native PDF text.",
@@ -40,7 +46,10 @@ def read_layout_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
         ) from exc
 
     try:
-        pages = [(page.extract_text(extraction_mode="layout") or "").strip() for page in reader.pages]
+        pages = []
+        for page in reader.pages:
+            validate_native_pdf_fonts(page)
+            pages.append((page.extract_text(extraction_mode="layout") or "").strip())
     except Exception as exc:
         raise _build_native_text_error(
             "Unable to extract native PDF text in layout mode.",
@@ -48,6 +57,25 @@ def read_layout_native_pdf_page_texts(raw_bytes: bytes) -> list[str]:
             pdf_structure_read_ok=True,
         ) from exc
     return [item for item in pages if item]
+
+
+def validate_native_pdf_fonts(page) -> None:
+    # PyPDF 6 can silently return incomplete text for a null font; preserve the
+    # extraction-failure signal used by preflight and the OCR retry policy.
+    if not isinstance(page, Mapping):
+        return
+    resources = page.get("/Resources")
+    if hasattr(resources, "get_object"):
+        resources = resources.get_object()
+    fonts = resources.get("/Font") if isinstance(resources, Mapping) else None
+    if hasattr(fonts, "get_object"):
+        fonts = fonts.get_object()
+    if isinstance(fonts, Mapping):
+        for font in fonts.values():
+            if hasattr(font, "get_object"):
+                font = font.get_object()
+            if font is None or isinstance(font, NullObject):
+                raise TypeError("PDF page contains a null font resource.")
 
 
 def _build_native_text_error(
