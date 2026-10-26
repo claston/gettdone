@@ -10,7 +10,7 @@ sem shell, gerenciador de pacotes ou ferramentas de administração. São copiad
 o interpretador, a biblioteca padrão e as bibliotecas nativas necessárias.
 Os pacotes nativos adicionais preservam seu status original do dpkg e as
 licenças, permitindo inventário e scan reais. Nenhum banco de pacotes é apagado.
-Os módulos opcionais de terminal (`curses`, `readline`) e a extensão `_uuid`
+Os módulos opcionais de terminal (`curses`, `readline`), GUI (`tkinter`) e a extensão `_uuid`
 ficam fora; `uuid` mantém o fallback Python e a geração por `os.urandom`.
 Todas as extensões nativas restantes são carregadas durante o build para
 detectar dependências ausentes. O worker não oferece terminal interativo.

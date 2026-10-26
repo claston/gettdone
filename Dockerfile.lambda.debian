@@ -17,8 +17,10 @@ RUN set -eu; mkdir -p /runtime-libs /runtime-status \
          cp --parents "/usr/share/doc/$package/copyright" /runtime-libs; \
        done \
     && rm -rf /usr/local/lib/python3.12/site-packages \
+              /usr/local/lib/python3.12/tkinter \
     && rm -f /usr/local/lib/python3.12/lib-dynload/_curses*.so \
              /usr/local/lib/python3.12/lib-dynload/readline*.so \
+             /usr/local/lib/python3.12/lib-dynload/_tkinter*.so \
              /usr/local/lib/python3.12/lib-dynload/_uuid*.so
 
 FROM ${RUNTIME_IMAGE} AS runtime
