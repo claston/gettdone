@@ -16,6 +16,10 @@ def validate_statement_completeness(pages) -> bool:
     bare_counter_layout = any(bank in joined for bank in ("MERCADO PAGO", "BTG PACTUAL"))
     for physical, page in enumerate(pages, 1):
         text = "\n".join(upper(line) for line in page.splitlines())
+        continuation = re.findall(r"(?m)^\s*CONTINUA NA PAGINA\s+(\d+)\s*$", text)
+        if any(int(number) != physical + 1 or int(number) > len(pages) for number in continuation):
+            return True
+        text = re.sub(r"(?m)^\s*CONTINUA NA PAGINA\s+\d+\s*$", "", text)
         matches = re.findall(r"\b(?:PAGINA|FOLHA)\s*:?\s*(?:DE\s*)?(\d+)\s*(?:/|DE)\s*(\d+)\b", text)
         if not matches:
             matches = re.findall(r"EXTRATO MENSAL[^\n]*?\b(\d{3})\s*[/|]\s*(\d{3})(?!\d)", text)
@@ -32,7 +36,7 @@ def validate_statement_completeness(pages) -> bool:
             number, total = map(int, matches[0])
             observed.append((physical, number, total))
         else:
-            singles = re.findall(r"\b(?:PAGINA\s*:?|PAG\.?)\s+(\d+)\b", text)
+            singles = re.findall(r"\b(?:PAGINA|PAG\.?)\s*:?\s*(\d+)\b", text)
             if singles and (len(singles) != 1 or int(singles[0]) != physical):
                 return True
     return any(number != physical or total != len(pages) for physical, number, total in observed)

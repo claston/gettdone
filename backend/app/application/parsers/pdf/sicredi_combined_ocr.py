@@ -3,6 +3,7 @@ import re
 from dataclasses import replace
 from statistics import median
 
+from app.application.normalization.ocr_numeric_separators import normalize_ocr_numeric_separators
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.followup_ocr import _headers, _source
 from app.application.parsers.pdf.statement_review import financial_mismatch
@@ -10,6 +11,15 @@ from app.application.parsers.pdf.verified_statements import DATE, NUMBER, Verifi
 
 LAYOUT = "sicredi_signed_balance_columns_ocr_v1"
 VALUE = re.compile(rf"[+-]?{NUMBER}")
+
+
+def _normalize_decimal_separators(text):
+    value = text.strip()
+    if re.fullmatch(r"[+-]?\d+\.\d{2}", value):
+        return value.replace(".", ",")
+    if re.fullmatch(r"[+-]?\d{1,3}(?:,\d{3})+\.\d{2}", value):
+        return value.replace(",", "").replace(".", ",")
+    return normalize_ocr_numeric_separators(text)
 
 
 def is_sicredi_combined(text):
@@ -29,9 +39,16 @@ def parse_sicredi_combined(extraction):
     for original in extraction.pages:
         lines = []
         annotated = set()
-        words = {word.id: word for word in original.words}
+        merged_roles = {}
+        precision_recovered = set()
+        words = {word.id: replace(word, text=_normalize_decimal_separators(word.text)) for word in original.words}
         for line in original.lines:
-            mark = re.fullmatch(rf"[A-Za-z¥*✓✔]\s*([+-]{NUMBER})", line.text.strip())
+            # Textract can use a decimal dot in an otherwise Brazilian monetary
+            # column (including the opening balance). Preserve every digit/sign.
+            normalized = _normalize_decimal_separators(line.text)
+            if normalized != line.text:
+                line = replace(line, text=normalized)
+            mark = re.fullmatch(rf"[A-Za-z¥*✓✔(]\s*([+-]{NUMBER})", line.text.strip())
             if mark:
                 # A margin X joined to an otherwise explicit signed amount is
                 # an annotation, not an inferred digit or sign.
@@ -41,9 +58,16 @@ def parse_sicredi_combined(extraction):
             # using its original WORD coordinates, never guessed column widths.
             if re.fullmatch(rf"{VALUE.pattern}\s+{VALUE.pattern}", line.text.strip()):
                 cells = [words[key] for key in line.word_ids if key in words]
-                if len(cells) != 2 or any(not VALUE.fullmatch(cell.text) for cell in cells):
-                    fail("As colunas de valor e saldo Sicredi não estão separadas no OCR.")
-                lines.extend(replace(line, id=cell.id, text=cell.text, bbox=cell.bbox, word_ids=(cell.id,)) for cell in cells)
+                if len(cells) == 2 and all(VALUE.fullmatch(cell.text) for cell in cells):
+                    lines.extend(replace(line, id=cell.id, text=cell.text, bbox=cell.bbox, word_ids=(cell.id,)) for cell in cells)
+                else:
+                    # OCR can emit the entire value/balance pair as one WORD.
+                    # Token order supplies the roles; both retain the original
+                    # shared evidence box, without invented column coordinates.
+                    for role, token in zip(("value", "balance"), line.text.split(), strict=True):
+                        cell = replace(line, id=f"{line.id}:{role}", text=token)
+                        merged_roles[cell.id] = role
+                        lines.append(cell)
             else:
                 if re.match(rf"^{DATE}(?:\s|$)", line.text):
                     date_words = [words[key] for key in line.word_ids if key in words and words[key].text == line.text[:10]]
@@ -62,6 +86,10 @@ def parse_sicredi_combined(extraction):
         columns = found or columns
         if columns is None:
             fail("Falta o cabeçalho das colunas Sicredi.")
+        for line in lines:
+            if line.id in merged_roles and (not line.bbox or line.bbox["left"] > columns["VALOR"] + .06
+                                            or line.bbox["left"] + line.bbox["width"] < columns["SALDO"]):
+                fail("A célula OCR mesclada não cobre as duas colunas financeiras Sicredi.")
         header_y = max((line.bbox["top"] for line in lines if line.bbox and upper(line.text) == "DATA"), default=0)
         stop = min((line.bbox["top"] for line in lines if line.bbox and upper(line.text).startswith("LANCAMENTOS FUTUROS")), default=1)
         body = [line for line in lines if line.bbox and header_y < line.bbox["top"] < stop]
@@ -70,7 +98,8 @@ def parse_sicredi_combined(extraction):
         # Monetary columns are right aligned. Their right edges remain separate
         # even when short negative values start to the right of a centered header
         # or a photographed page has perspective distortion.
-        edges = [center(line) for line in body if line.bbox["left"] >= columns["VALOR"]-.08 and VALUE.fullmatch(line.text)]
+        edges = [center(line) for line in body if line.id not in merged_roles
+                 and line.bbox["left"] >= columns["VALOR"]-.08 and VALUE.fullmatch(line.text)]
         if len(edges) < 2:
             fail("As colunas financeiras Sicredi não estão legíveis.")
         boundary = (min(edges)+max(edges))/2
@@ -106,8 +135,23 @@ def parse_sicredi_combined(extraction):
             low = (position(anchors[index-1])+y)/2 if index else y-.015
             high = (position(anchors[index+1])+y)/2 if index+1 < len(anchors) else stop
             cells = [line for line in body if low <= position(line) < high]
-            values = [line for line in cells if columns["VALOR"]-.08 <= center(line) < boundary and VALUE.fullmatch(line.text)]
-            balances = [line for line in cells if center(line) >= boundary and VALUE.fullmatch(line.text)]
+            values = [line for line in cells if VALUE.fullmatch(line.text) and (
+                merged_roles.get(line.id) == "value" or line.id not in merged_roles
+                and columns["VALOR"]-.08 <= center(line) < boundary)]
+            balances = [line for line in cells if VALUE.fullmatch(line.text) and (
+                merged_roles.get(line.id) == "balance" or line.id not in merged_roles and center(line) >= boundary)]
+            if not values and len(balances) == 1:
+                suspects = [(line, match) for line in cells
+                            if columns["VALOR"]-.08 <= center(line) < boundary
+                            and (match := re.fullmatch(rf"([+-]?{NUMBER})\d", line.text.strip()))]
+                if len(suspects) == 1:
+                    line, match = suspects[0]
+                    # An OCR mark after the two printed cents may become a third
+                    # digit. Keep those observed cents only when two independent
+                    # running balances confirm them exactly; always flag review.
+                    if running + money(match[1]) == money(balances[0].text):
+                        values = [replace(line, text=match[1])]
+                        precision_recovered.add(line.id)
             if len(values) != 1 or len(balances) != 1:
                 fail("Um movimento Sicredi está sem valor ou saldo legível associado.")
             value, balance = values[0], balances[0]
@@ -143,10 +187,13 @@ def parse_sicredi_combined(extraction):
                                      reference=" ".join(refs) or None), page, cells))
             if month_recovered or annotated.intersection((value.id, balance.id)):
                 rows[-1] = replace(rows[-1], warnings=["manual_review_recommended"])
+            if value.id in precision_recovered:
+                rows[-1] = replace(rows[-1], warnings=[*rows[-1].warnings, "manual_review_recommended", "ocr_amount_precision_recovered"])
             running = printed
             checks += 1
             used.update((value.id, balance.id))
-        monetary = {line.id for line in body if line.bbox["left"] >= columns["VALOR"]-.08 and VALUE.fullmatch(line.text)}
+        monetary = {line.id for line in body if line.bbox["left"] >= columns["VALOR"]-.08
+                    and (VALUE.fullmatch(line.text) or line.id in precision_recovered)}
         if used != monetary:
             fail("Um valor Sicredi está sem movimento associado.")
         if stop != 1:

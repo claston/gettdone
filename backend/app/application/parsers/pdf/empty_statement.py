@@ -1,9 +1,12 @@
 """Positive evidence of an empty statement, never a fallback for extraction failure."""
 
 import re
+from datetime import datetime
 
 from app.application.bank_identity import resolve_bank_name
 from app.application.normalization.text import normalize_upper_text
+
+CAIXA_PERSONAL_INACTIVE_LAYOUT = "caixa_pessoal_sem_movimentacao_v1"
 
 _NO_ACTIVITY = re.compile(
     r"^(?:SEM|NAO (?:HOUVE|HA|EXISTE[M]?|FORAM ENCONTRAD[OA]S)|NENHUM[A]?) "
@@ -14,6 +17,46 @@ _MONEY = re.compile(r"(?<!\d)\d[\d. ]*[,.]\d{2}(?!\d)")
 _DATE = re.compile(r"\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b")
 _LEADING_DATE = re.compile(r"^\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?\b")
 _BALANCE_LINE = re.compile(r"^(?:\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?\s+)?SALDO\b")
+
+
+def caixa_personal_inactive_balance(page_texts) -> float | None:
+    """A known native template whose bank logo is an image, never an empty fallback."""
+    if len(page_texts) != 1:
+        return None
+    lines = [normalize_upper_text(line).strip() for line in page_texts[0].splitlines() if line.strip()]
+    joined = " ".join(lines)
+    if not all(marker in joined for marker in (
+        "EXTRATO #PESSOAL", "SALDO PROPRIO", "SALDO BLOQUEADO", "LIMITE CONTRATADO",
+        "SUJEITO A ALTERACAO ATE O FINAL DO EXPEDIENTE BANCARIO",
+    )):
+        return None
+    if not re.search(r"\bCONTA:\s*\d{4}/\d{4}/\d{8,20}-\d\b", joined):
+        return None
+    if not any(_NO_ACTIVITY.fullmatch(line) for line in lines):
+        return None
+    amount = r"(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}"
+    period = re.compile(
+        r"^MOVIMENTACOES DESDE O DIA (\d{2}/\d{2}/\d{4}) ATE O DIA (\d{2}/\d{2}/\d{4}) "
+        rf"SALDO ANTERIOR A \1 R\$ ({amount}) ([CD])$"
+    )
+    balances = [match for line in lines if (match := period.fullmatch(line))]
+    if len(balances) != 1:
+        return None
+    match = balances[0]
+    try:
+        if datetime.strptime(match[1], "%d/%m/%Y") > datetime.strptime(match[2], "%d/%m/%Y"):
+            return None
+    except ValueError:
+        return None
+    snapshots = [line for line in lines if re.fullmatch(rf"R\$ {amount} [CD]", line)]
+    if len(snapshots) != 1 or lines.count("SALDO:") != 1:
+        return None
+    for line in lines:
+        if line == match[0] or line in snapshots or re.fullmatch(rf"LIMITE CONTRATADO R\$ {amount} [CD]", line):
+            continue
+        if (_MONEY.search(_DATE.sub("", line)) or _LEADING_DATE.match(line)) and not _BALANCE_LINE.match(line):
+            return None
+    return float(match[3].replace(".", "").replace(",", ".")) * (-1 if match[4] == "D" else 1)
 
 
 def has_explicit_no_activity(page_texts: list[str] | tuple[str, ...]) -> bool:
