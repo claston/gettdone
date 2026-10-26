@@ -8,6 +8,14 @@ on:
         required: true
         type: boolean
         default: false
+      image_source:
+        description: Build main or promote the exact Debian image approved in PR 488
+        required: true
+        type: choice
+        default: build-main
+        options:
+          - build-main
+          - pr488-debian-canary
 
 concurrency:
   group: deploy-worker-ecr-production
@@ -61,6 +69,33 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/verify_worker_release_gates.py
 
+      - name: Verify the approved PR 488 candidate evidence
+        if: inputs.image_source == 'pr488-debian-canary'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          run_id = "40254942573"
+          run = json.loads(subprocess.check_output(["gh", "api", f"repos/{repo}/actions/runs/{run_id}"]))
+          expected_sha = "5d7bf8946f38b95fdd10f0d70437b6c1e7955a72"
+          tested_merge_sha = "adf55e74a24679b9a4aaec2f895fdf7a653f1132"
+          if (run.get("head_sha") != expected_sha or run.get("status") != "completed"
+                  or run.get("conclusion") != "success" or run.get("path") != ".github/workflows/worker-debian-candidate.yml"):
+              raise SystemExit("The exact approved candidate CI run has not passed.")
+          pages = json.loads(subprocess.check_output([
+              "gh", "api", f"repos/{repo}/actions/runs/{run_id}/jobs?filter=latest&per_page=100", "--paginate", "--slurp"]))
+          passed = {job["name"] for page in pages for job in page["jobs"]
+                    if job.get("status") == "completed" and job.get("conclusion") == "success"}
+          if not {"candidate-tests", "validate-image"} <= passed:
+              raise SystemExit("Required candidate runtime/security gates did not pass.")
+          print(f"Approved candidate evidence verified: run {run_id}, head {expected_sha}, tested merge {tested_merge_sha}.")
+          PY
+
       - name: Configure temporary AWS credentials
         uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
         with:
@@ -73,6 +108,8 @@ jobs:
 
       - name: Resolve ECR and CloudFormation targets
         id: target
+        env:
+          IMAGE_SOURCE: ${{ inputs.image_source }}
         shell: bash
         run: |
           set -euo pipefail
@@ -128,6 +165,25 @@ jobs:
               echo "::notice::Reusing existing immutable image ${image_tag}."
             fi
           fi
+
+          case "${IMAGE_SOURCE}" in
+            build-main) ;;
+            pr488-debian-canary)
+              image_tag="candidate-debian-5d7bf8946f38"
+              approved_digest="sha256:737cd4fb2e9cc40a92607358378ff408990bd67d4b00064735d0d5827213c11f"
+              existing_digest="$(aws ecr describe-images \
+                --repository-name "${repository_name}" \
+                --image-ids "imageDigest=${approved_digest}" \
+                --query 'imageDetails[0].imageDigest' --output text)"
+              if [ "${existing_digest}" != "${approved_digest}" ]; then
+                echo "::error::The approved PR 488 image is missing or has a different digest."
+                exit 1
+              fi
+              image_exists=true
+              echo "::notice::Promoting the approved PR 488 canary digest without rebuilding or retagging."
+              ;;
+            *) echo "::error::Unsupported image source."; exit 1 ;;
+          esac
 
           echo "::add-mask::${account_id}"
           {
@@ -290,6 +346,38 @@ jobs:
             exit 1
           fi
 
+      - name: Record rollback image
+        if: steps.image.outputs.needs_update == 'true'
+        env:
+          PREVIOUS_IMAGE_URI: ${{ steps.target.outputs.current_image_uri }}
+          TARGET_IMAGE_URI: ${{ steps.image.outputs.image_uri }}
+          IMAGE_SOURCE: ${{ inputs.image_source }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          previous, target = os.environ["PREVIOUS_IMAGE_URI"], os.environ["TARGET_IMAGE_URI"]
+          if not re.fullmatch(r".+@sha256:[0-9a-f]{64}", previous):
+              raise SystemExit("The previous production image must be recorded by immutable digest before deployment.")
+          evidence = {"stack_name": os.environ["WORKER_STACK_NAME"], "region": os.environ["AWS_REGION"],
+                      "previous_image_uri": previous, "target_image_uri": target,
+                      "image_source": os.environ["IMAGE_SOURCE"], "workflow_commit": os.environ["GITHUB_SHA"],
+                      "run_id": os.environ["GITHUB_RUN_ID"]}
+          (Path(os.environ["RUNNER_TEMP"]) / "worker-image-rollback.json").write_text(json.dumps(evidence, indent=2))
+          PY
+
+      - name: Preserve rollback evidence before changing production
+        if: steps.image.outputs.needs_update == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: worker-image-rollback-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/worker-image-rollback.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Create and validate worker image change set
         id: change_set
         if: steps.image.outputs.needs_update == 'true'
@@ -413,6 +501,8 @@ jobs:
           PREVIOUS_OUTBOX_DISPATCHER: ${{ steps.target.outputs.outbox_dispatcher }}
           IMAGE_TAG: ${{ steps.target.outputs.image_tag }}
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          IMAGE_SOURCE: ${{ inputs.image_source }}
+          PREVIOUS_IMAGE_URI: ${{ steps.target.outputs.current_image_uri }}
         shell: bash
         run: |
           set -euo pipefail
@@ -454,7 +544,9 @@ jobs:
             echo "## Worker deployment"
             echo ""
             echo "- Image tag: ${IMAGE_TAG}"
+            echo "- Image source: ${IMAGE_SOURCE}"
             echo "- Image digest: ${IMAGE_DIGEST}"
+            echo "- Previous image for rollback: ${PREVIOUS_IMAGE_URI}"
             echo "- Stack status: ${stack_status}"
             echo "- Queue trigger preserved: ${queue_trigger}"
             echo "- Outbox dispatcher preserved: ${outbox_dispatcher}"
