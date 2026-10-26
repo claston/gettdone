@@ -1,4 +1,11 @@
+import json
+import os
+import shutil
+import subprocess
+import textwrap
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "deploy-worker-ecr.yml"
@@ -104,3 +111,131 @@ def test_worker_deploy_preserves_stack_parameters_and_validates_change_set():
     assert "cloudformation wait stack-update-complete" in workflow
     assert "EnableQueueTrigger" in workflow
     assert "EnableOutboxDispatcher" in workflow
+
+
+def test_approved_pr488_promotion_selects_the_canary_digest_without_a_build():
+    workflow = _workflow()
+    assert "image_source:" in workflow
+    assert "default: build-main" in workflow
+    assert "pr488-debian-canary" in workflow
+    assert "sha256:737cd4fb2e9cc40a92607358378ff408990bd67d4b00064735d0d5827213c11f" in workflow
+    assert 'image_exists=true' in workflow
+    assert 'The approved PR 488 image is missing or has a different digest' in workflow
+    assert 'Unsupported image source' in workflow
+
+
+def test_approved_promotion_requires_the_exact_candidate_ci_and_preserves_production_approval():
+    workflow = _workflow()
+    assert "40254942573" in workflow
+    assert "adf55e74a24679b9a4aaec2f895fdf7a653f1132" in workflow
+    assert '"candidate-tests", "validate-image"' in workflow
+    assert "environment: production-worker" in workflow
+    assert "scripts/verify_worker_release_gates.py" in workflow
+
+
+def test_promotion_records_a_durable_rollback_before_executing_cloudformation():
+    workflow = _workflow()
+    assert "worker-image-rollback-${{ github.run_id }}-${{ github.run_attempt }}" in workflow
+    assert "worker-image-rollback.json" in workflow
+    assert '"previous_image_uri"' in workflow
+    assert '"target_image_uri"' in workflow
+    assert workflow.index("Record rollback image") < workflow.index("Execute worker image change set")
+    assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in workflow
+
+
+def _step_script(name):
+    block = _workflow().split(f"      - name: {name}\n", 1)[1].split("\n      - name:", 1)[0]
+    return textwrap.dedent(block.split("        run: |\n", 1)[1]).strip("\n")
+
+
+def _python_step(name):
+    lines = _step_script(name).splitlines()
+    assert lines[0] == "python3 - <<'PY'" and lines[-1] == "PY"
+    return compile("\n".join(lines[1:-1]), name, "exec")
+
+
+@pytest.mark.parametrize("mutation", [None, "sha", "status", "conclusion", "path", "jobs"])
+def test_candidate_evidence_executes_and_rejects_other_or_incomplete_runs(monkeypatch, mutation):
+    run = {"head_sha": "5d7bf8946f38b95fdd10f0d70437b6c1e7955a72", "status": "completed",
+           "conclusion": "success", "path": ".github/workflows/worker-debian-candidate.yml"}
+    jobs = [{"name": name, "status": "completed", "conclusion": "success"}
+            for name in ("candidate-tests", "validate-image")]
+    if mutation == "sha":
+        run["head_sha"] = "0" * 40
+    elif mutation in {"status", "conclusion", "path"}:
+        run[mutation] = "incorrect"
+    elif mutation == "jobs":
+        jobs[-1]["conclusion"] = "skipped"
+    monkeypatch.setenv("GITHUB_REPOSITORY", "claston/gettdone")
+    monkeypatch.setattr(subprocess, "check_output", lambda args: json.dumps([{"jobs": jobs}] if "--slurp" in args else run).encode())
+    code = _python_step("Verify the approved PR 488 candidate evidence")
+    if mutation:
+        with pytest.raises(SystemExit):
+            exec(code, {})
+    else:
+        exec(code, {})
+
+
+@pytest.mark.parametrize("previous", ["repository@sha256:" + "a" * 64, "repository:mutable-tag", ""])
+def test_rollback_record_requires_an_immutable_previous_image(monkeypatch, tmp_path, previous):
+    for key, value in {"PREVIOUS_IMAGE_URI": previous, "TARGET_IMAGE_URI": "repository@sha256:" + "b" * 64,
+                       "WORKER_STACK_NAME": "worker", "AWS_REGION": "us-east-1", "IMAGE_SOURCE": "pr488-debian-canary",
+                       "GITHUB_SHA": "c" * 40, "GITHUB_RUN_ID": "42", "RUNNER_TEMP": str(tmp_path)}.items():
+        monkeypatch.setenv(key, value)
+    code = _python_step("Record rollback image")
+    path = tmp_path / "worker-image-rollback.json"
+    if "@sha256:" not in previous:
+        with pytest.raises(SystemExit):
+            exec(code, {})
+        assert not path.exists()
+    else:
+        exec(code, {})
+        record = json.loads(path.read_text())
+        assert record["previous_image_uri"] == previous
+        assert record["target_image_uri"] == "repository@sha256:" + "b" * 64
+
+
+@pytest.mark.parametrize("source,present,expected", [
+    ("pr488-debian-canary", "yes", True), ("pr488-debian-canary", "no", False),
+    ("pr488-debian-canary", "wrong", False), ("unsupported", "yes", False),
+])
+def test_real_target_shell_selects_only_the_approved_digest_and_never_falls_back_to_build(tmp_path, source, present, expected):
+    script = _step_script("Resolve ECR and CloudFormation targets")
+    bash = "C:/Program Files/Git/bin/bash.exe" if os.name == "nt" else shutil.which("bash")
+    assert bash, "Bash is required to validate the deployment selection guard"
+    output = tmp_path / "outputs"
+    stub = r'''
+    aws() {
+      case "$*" in
+        'sts get-caller-identity --query Arn --output text') echo arn:aws:sts::111122223333:assumed-role/deploy/test ;;
+        'sts get-caller-identity --query Account --output text') echo 111122223333 ;;
+        *ConversionImageRepositoryUri*) echo 111122223333.dkr.ecr.us-east-1.amazonaws.com/foundation-images ;;
+        *ConversionImageRepositoryName*) echo foundation-images ;;
+        *ConversionImageUri*) echo repository@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
+        *EnableQueueTrigger*) echo true ;;
+        *EnableOutboxDispatcher*) echo false ;;
+        *imageTag=release-*) return 1 ;;
+        *imageDigest=sha256:*)
+          case "$FAKE_CANDIDATE" in
+            yes) echo sha256:737cd4fb2e9cc40a92607358378ff408990bd67d4b00064735d0d5827213c11f ;;
+            wrong) echo sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
+            *) return 1 ;;
+          esac ;;
+        *) echo 'Unexpected AWS operation' >&2; return 1 ;;
+      esac
+    }
+    '''
+    result = subprocess.run([bash, "-c", stub + script], capture_output=True, text=True, timeout=20,
+                            env={**os.environ, "IMAGE_SOURCE": source, "FAKE_CANDIDATE": present,
+                                 "AWS_REGION": "us-east-1", "FOUNDATION_STACK_NAME": "foundation",
+                                 "WORKER_STACK_NAME": "worker", "GITHUB_SHA": "c" * 40,
+                                 "GITHUB_OUTPUT": output.as_posix()})
+    if not expected:
+        assert result.returncode != 0
+        assert not output.exists(), "An invalid promotion must not fall back to the build path"
+    else:
+        assert result.returncode == 0, result.stderr
+        values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+        assert values["image_exists"] == "true"
+        assert values["existing_digest"] == "sha256:737cd4fb2e9cc40a92607358378ff408990bd67d4b00064735d0d5827213c11f"
+        assert values["image_tag"] == "candidate-debian-5d7bf8946f38"
