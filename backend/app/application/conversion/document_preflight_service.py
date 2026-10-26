@@ -8,6 +8,7 @@ from pypdf import PdfReader
 from app.application.conversion.contracts.preflight import DocumentPreflightPolicy, DocumentPreflightResult
 from app.application.errors import FileTooLargeError, MaxPagesPerFileExceededError
 from app.application.parsers.pdf.reader import open_pdf_reader
+from app.application.parsers.pdf.text_extraction import validate_native_pdf_fonts
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +172,7 @@ def _build_pdf_preflight_result(reader: PdfReader) -> DocumentPreflightResult:
     extracted_chars = 0
     try:
         for page in reader.pages:
+            validate_native_pdf_fonts(page)
             extracted_chars += len((page.extract_text() or "").strip())
     except Exception as exc:
         logger.warning(
