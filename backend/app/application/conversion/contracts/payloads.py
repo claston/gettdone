@@ -97,6 +97,8 @@ class PdfProcessingMetrics(BaseModel):
     ocr_unresolved_rows: int = 0
     ocr_annotations_detected: int = 0
     opening_balance_ambiguous: int = 0
+    opening_balance_ambiguity_reason: str = ""
+    scheduled_entries_excluded: int = 0
     statement_no_activity: int = 0
     partial_statement: int = 0
     non_cash_entries_excluded: int = 0

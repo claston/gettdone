@@ -31,6 +31,9 @@ OUVIDORIA: 0800-722-0048
 
 
 def test_parse_pdf_transactions_supports_btg_pj_current_account(monkeypatch) -> None:
+    # This unit supplies text instead of PDF bytes; native geometry has its own
+    # real-PDF regression coverage in test_followup_conversion_recovery.py.
+    monkeypatch.setattr("app.application.parsers.pdf.followup_native_tables.parse_followup_native_tables", lambda *args: None)
     monkeypatch.setattr(
         pdf_parser_module,
         "_read_native_pdf_page_texts",

@@ -1562,7 +1562,14 @@
       list.push(`${unresolvedRows} linha(s) com valores ambíguos ficaram fora da conversão. Compare o resultado com o PDF original antes de exportar.`);
     }
     if (Number(metrics.opening_balance_ambiguous || 0) > 0) {
-      list.push("O saldo inicial pode incluir aplicações e não foi usado como saldo da conta corrente. Confira e informe o saldo correto antes de exportar.");
+      list.push(metrics.opening_balance_ambiguity_reason === "conflicting_printed_balances"
+        ? "O extrato apresenta saldos iniciais diferentes. Confira qual saldo corresponde ao período antes de exportar."
+        : "O saldo inicial pode incluir aplicações e não foi usado como saldo da conta corrente. Confira e informe o saldo correto antes de exportar.");
+    }
+    for (const warning of ["date_year_from_statement_period", "native_amount_recovered_from_balances",
+      "scheduled_transactions_excluded", "pending_deposits_excluded", "ocr_duplicate_sign_normalized",
+      "amount_sign_from_printed_balances"]) {
+      if (warningTypes.includes(warning)) list.push(mapWarningTypeExplanation(warning));
     }
 
     if (
@@ -2147,6 +2154,13 @@
   }
 
   function mapWarningTypeLabel(value) {
+    if (value === "date_year_from_statement_period") return "Ano conferido no período";
+    if (value === "native_amount_recovered_from_balances") return "Centavos conferidos pelos saldos";
+    if (value === "scheduled_transactions_excluded") return "Agendamentos separados";
+    if (value === "pending_deposits_excluded") return "Depósitos bloqueados";
+    if (value === "ocr_duplicate_sign_normalized") return "Sinal duplicado conferido";
+    if (value === "amount_sign_from_printed_balances") return "Sinal conferido pelos saldos";
+    if (value === "opening_balance_ambiguous") return "Saldo inicial a conferir";
     if (value === "accounts_payable_pending") return "Pendente";
     if (value === "accounts_payable_partial") return "Parcial / pendente";
     const key = String(value || "").trim().toLowerCase();
@@ -2183,6 +2197,13 @@
   }
 
   function mapWarningTypeExplanation(value) {
+    if (value === "date_year_from_statement_period") return "O ano cortado na coluna de data foi completado com o único ano compatível com o período impresso e os dígitos visíveis. Confira a data no documento original.";
+    if (value === "native_amount_recovered_from_balances") return "Os centavos cortados no PDF foram recuperados pela diferença entre dois saldos impressos, preservando todos os dígitos visíveis. Confira o valor no documento original.";
+    if (value === "scheduled_transactions_excluded") return "Os movimentos agendados foram separados dos lançamentos já efetivados e não entraram no arquivo exportado.";
+    if (value === "pending_deposits_excluded") return "Os depósitos identificados como bloqueados ou pendentes não entraram como dinheiro disponível na conta. Confira a liberação no banco.";
+    if (value === "ocr_duplicate_sign_normalized") return "O OCR repetiu o sinal de um valor. O sinal duplicado foi normalizado e conferido pelos dois saldos impressos da operação.";
+    if (value === "amount_sign_from_printed_balances") return "O sinal não estava legível na leitura. A direção do movimento foi confirmada pela diferença entre os saldos impressos antes e depois dele, sem alterar os dígitos do valor.";
+    if (value === "opening_balance_ambiguous") return "O extrato apresenta saldos iniciais diferentes. Confira qual saldo corresponde ao período antes de exportar.";
     if (value === "combined_cash_investment_balance_not_comparable") return "Os controles incluem conta corrente e aplicações automáticas. Eles não validam isoladamente o saldo da conta corrente; eventuais diferenças podem incluir rendimentos.";
     if (value === "printed_summary_balance_mismatch") return "O saldo inicial e os totais de entradas e saídas não fecham com o saldo final impresso. Os valores foram preservados para conferência no documento original.";
     if (value === "partial_statement") return "O arquivo pode estar incompleto por páginas ausentes ou limite de consulta do banco. Os movimentos disponíveis foram convertidos; confira o período e os saldos. Se o banco informar limite de consulta, baixe o extrato consolidado completo.";
@@ -2191,7 +2212,7 @@
     if (value === "financial_validation_failed") return "Os movimentos legíveis foram convertidos, mas não foi possível confirmar todos os saldos e totais impressos. Confira os valores no documento original antes de exportar.";
     if (value === "invoice_due_date_used_for_undated_fee") return "Esta anuidade não tem data impressa. Foi usada a data de vencimento da fatura. Confira ou ajuste a data antes de exportar.";
     if (value === "partial_statement_unpaired_credit") return "A tarifa associada ao primeiro crédito está fora deste trecho. O valor bruto foi preservado; a conferência dos saldos começa no próximo par completo de tarifa e crédito.";
-    if (value === "ocr_numeric_separator_normalized") return "O OCR trocou um separador de milhares. A escrita numérica foi normalizada e conferida pelos saldos das linhas vizinhas.";
+    if (value === "ocr_numeric_separator_normalized") return "O OCR trocou ou omitiu um separador numérico. A escrita foi normalizada e conferida pelos saldos das linhas vizinhas, sem alterar os dígitos.";
     if (value === "ocr_balance_sign_validated_from_ledger") return "O sinal do saldo não foi lido pelo OCR e foi confirmado pela sequência dos lançamentos e saldos impressos.";
     if (value === "ocr_direction_normalized") return "O OCR trocou um caractere na coluna Entrada/Saída. O tipo foi normalizado pela coluna e conferido pelos saldos.";
     if (value === "ocr_amount_recovered_from_balances") return "O valor ilegível da tarifa foi recuperado pela conferência dos saldos e movimentos vizinhos. Confira no documento original antes de exportar.";

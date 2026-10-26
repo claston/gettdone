@@ -11,6 +11,11 @@ from app.application.source_regions import evidence_regions
 
 
 def parse_controlled_ocr(extraction):
+    from app.application.parsers.pdf.period_cash_columns_ocr import parse_period_cash_columns
+
+    columns = parse_period_cash_columns(extraction)
+    if columns is not None:
+        return columns
     from app.application.parsers.pdf.sicredi_combined_ocr import parse_sicredi_combined
 
     sicredi = parse_sicredi_combined(extraction)
@@ -47,6 +52,11 @@ def parse_controlled_ocr(extraction):
             raise
     if is_caixa_manager(extraction):
         return parse_caixa_manager(extraction)
+    from app.application.parsers.pdf.caixa_web_ocr import parse_caixa_web_ocr
+
+    caixa_web = parse_caixa_web_ocr(extraction)
+    if caixa_web is not None:
+        return caixa_web
     texts = ["\n".join(line.text for line in page.lines) for page in extraction.pages]
     text = normalize_upper_text("\n".join(texts))
     if is_bb_cash_ocr(text):

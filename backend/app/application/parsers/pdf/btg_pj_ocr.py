@@ -10,9 +10,9 @@ from app.application.source_regions import evidence_regions
 LAYOUT = "btg_pactual_conta_corrente_pj_v1"
 
 
-def parse_btg_pj(extraction):
+def parse_btg_pj(extraction, *, native=False):
     text = upper("\n".join(line.text for page in extraction.pages for line in page.lines))
-    if ("CONTA CORRENTE PJ" not in text or "ENTRADAS / SAIDAS (R$)" not in text
+    if ("CONTACORRENTEPJ" not in re.sub(r"[\s-]+", "", text) or "ENTRADAS / SAIDAS (R$)" not in text
             or not re.search(r"\bBTG\b|\bBTGPACTUAL\.COM\b", text)):
         return None
     rows, balances, totals = [], {}, {"TOTAL DE ENTRADAS": set(), "TOTAL DE SAIDAS": set()}
@@ -68,13 +68,16 @@ def parse_btg_pj(extraction):
                     totals[label].add(money(candidates[0].text.removeprefix("R$").strip()))
     if not rows or set(balances) != {"SALDO DE ABERTURA", "SALDO DE FECHAMENTO"}:
         fail()
-    if any(a.transaction.date < b.transaction.date for a, b in zip(rows, rows[1:])):
+    dates = [row.transaction.date for row in rows]
+    ascending = native and dates == sorted(dates)
+    if not ascending and dates != sorted(dates, reverse=True):
         fail()
     incoming = sum((Decimal(str(row.transaction.amount)) for row in rows if row.transaction.amount > 0), Decimal(0))
     outgoing = sum((-Decimal(str(row.transaction.amount)) for row in rows if row.transaction.amount < 0), Decimal(0))
     if totals != {"TOTAL DE ENTRADAS": {incoming}, "TOTAL DE SAIDAS": {outgoing}}:
         fail("Os lançamentos extraídos não correspondem aos totais impressos do BTG. Envie o extrato original completo.")
-    rows.reverse()  # Preserve accounting order within the descending dates as well.
+    if not ascending:
+        rows.reverse()  # Preserve accounting order within the descending dates as well.
     if balances["SALDO DE ABERTURA"] + incoming - outgoing != balances["SALDO DE FECHAMENTO"]:
         rows[-1] = replace(rows[-1], warnings=[*rows[-1].warnings, "printed_summary_balance_mismatch"])
     return VerifiedStatement(rows, LAYOUT, balances["SALDO DE ABERTURA"], balances["SALDO DE FECHAMENTO"])

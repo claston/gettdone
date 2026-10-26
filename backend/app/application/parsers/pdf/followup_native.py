@@ -5,6 +5,7 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _lines, _row, day, fail, money
 
 
@@ -18,22 +19,35 @@ def _portal(pages, kind):
     if any("BVP-PORTAL BANRISUL" not in normalize_upper_text(page) for page in pages):
         fail("Envie apenas as páginas do mesmo extrato Banrisul, na ordem original.")
     text = normalize_upper_text("\n".join(pages))
-    periods = set(re.findall(r"PERIODO:\s*(\d{2})/(\d{4})", text))
-    if len(periods) != 1:
-        fail()
-    month, year = map(int, next(iter(periods)))
-    if not 1 <= month <= 12:
-        fail()
-    end = f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
-    start = f"{year:04d}-{month:02d}-01"
+    ranges = {(day(match[1]), day(match[2])) for match in re.finditer(rf"PERIODO:\s*({DATE})\s+ATE\s+({DATE})", text)}
+    if ranges:
+        if len(ranges) != 1:
+            fail()
+        start, end = ranges.pop()
+        if start > end:
+            fail()
+    else:
+        periods = set(re.findall(r"PERIODO:\s*(\d{2})/(\d{4})\b", text))
+        if len(periods) != 1:
+            fail()
+        month, year = map(int, next(iter(periods)))
+        if not 1 <= month <= 12:
+            fail()
+        end = f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
+        start = f"{year:04d}-{month:02d}-01"
     opening = re.findall(rf"SALDO ANT EM\s+({DATE})\s+({NUMBER})(-?)", text)
     if len(opening) != 1 or day(opening[0][0]) >= start:
         fail()
     seed = money(opening[0][1]) * (-1 if opening[0][2] else 1)
     running, current = seed, None
-    rows, checked, candidates = [], 0, 0
-    for page, line, raw in _lines(pages):
-        match = re.fullmatch(rf"(?:({DATE})\s+)?(\d{{4}})\s+(.+?)\s+([A-Z0-9]{{6}})\s+({NUMBER})(-?)\s+([A-Z]{{3}})(?:\s+\d+)?", raw)
+    rows, checked, candidates, scheduled = [], 0, 0, 0
+    source_lines = _lines(pages)
+    for index, (page, line, raw) in enumerate(source_lines):
+        if normalize_upper_text(raw).strip("- ") == "MOVIMENTOS FUTUROS DA CONTA CORRENTE":
+            scheduled = sum(bool(re.match(rf"^{DATE}\s+\d{{4}}\s+", item[2])) for item in source_lines[index + 1:])
+            break
+        match = re.fullmatch(rf"(?:({DATE})\s+)?(\d{{4}})\s+(.+?)\s+([A-Z0-9]{{6}})\s+({NUMBER})(-?)"
+                             r"(?:\s+([A-Z]{3})(?:\s+\d+)?)?", raw)
         candidate = re.match(rf"^(?:{DATE}\s+)?\d{{4}}\s+\D", raw)
         if candidate:
             candidates += 1
@@ -42,8 +56,10 @@ def _portal(pages, kind):
         if match:
             if match[1]:
                 date = day(match[1])
-                if not start <= date <= end or current and date < current:
+                if current and date < current:
                     fail()
+                if not start <= date <= end:
+                    financial_mismatch("Há movimentos Banrisul fora do período impresso. Confira o documento original.")
                 current = date
             if current is None:
                 fail()
@@ -59,7 +75,8 @@ def _portal(pages, kind):
             checked += 1
     if not rows or len(rows) != candidates or not checked or rows[-1].running_balance is None:
         fail()
-    return VerifiedStatement(rows, kind, seed, running, printed_balance_checks=checked, candidate_rows=candidates)
+    return VerifiedStatement(rows, kind, seed, running, printed_balance_checks=checked, candidate_rows=candidates,
+                             scheduled_entries_excluded=scheduled)
 
 
 def _signed_report(pages, kind):

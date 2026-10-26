@@ -11,7 +11,7 @@ from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
 LAYOUT = "banco_do_brasil_autoatendimento_cd_ocr_v1"
-_MONEY = re.compile(rf"({NUMBER}|\d+\.\d{{2}})\s*(?:[Il|]\s+(?=[CD]))?([CD])?", re.IGNORECASE)
+_MONEY = re.compile(rf"({NUMBER}|\d+\.\d{{2}})\s*(?:[Il|]\s*(?=[CD]|$))?([CD])?", re.IGNORECASE)
 
 
 def _columns(page):
@@ -59,7 +59,18 @@ def _column_lines(page, columns):
                 right = max(word.bbox["left"] + word.bbox["width"] for word in words)
                 line = replace(line, text=" ".join(word.text for word in words), bbox={**line.bbox, "left": left, "width": right-left})
         result.append(line)
-    return result
+    normalized = []
+    for line in result:
+        pair = re.fullmatch(rf"({NUMBER}\s*[CD])\s+({NUMBER}\s*[CD]?)", line.text.strip(), re.I)
+        if pair:
+            if (line.bbox["left"] > columns["VALOR R$"] + .06
+                    or line.bbox["left"] + line.bbox["width"] < columns["SALDO"] - .03):
+                fail("A célula BB mesclada não cobre as duas colunas financeiras.")
+            normalized.extend(replace(line, id=line.id + ":" + role, text=value)
+                              for role, value in (("amount", pair[1]), ("balance", pair[2])))
+        else:
+            normalized.append(line)
+    return normalized
 
 
 def is_bb_cash_ocr(text):
@@ -101,7 +112,12 @@ def parse_bb_cash_ocr(extraction):
         for index, anchor in enumerate(dates):
             top = anchor.bbox["top"]
             bottom = dates[index + 1].bbox["top"] - 0.005 if index + 1 < len(dates) else 1
-            cells = [item for item in lines if top - 0.005 <= item.bbox["top"] < bottom]
+            lower = top - .005
+            native = extraction.provider == "native_pdfium_text"
+            if native:
+                lower = (dates[index - 1].bbox["top"] + top) / 2 if index else top - .02
+                bottom = (dates[index + 1].bbox["top"] + top) / 2 if index + 1 < len(dates) else 1
+            cells = [item for item in lines if lower <= item.bbox["top"] < bottom]
             history = [item for item in cells if columns["HISTORICO"] - 0.02 <= item.bbox["left"] < columns["DOCUMENTO"] - 0.07]
             label = upper(" ".join(item.text for item in history))
             # Textract can emit lot + history as a single WORD as well as a
@@ -115,12 +131,15 @@ def parse_bb_cash_ocr(extraction):
             if (len(controls) == 1 and label == "999 SALDO") or baseline_label.removeprefix("999") == "SALDO":
                 # The final date has no next anchor; limits, CET and footer
                 # balances below it belong to another financial section.
-                cells = [item for item in cells if abs(item.bbox["top"] - top) < .006]
+                cells = [item for item in cells if abs(item.bbox["top"] - top) < (.018 if native else .006)]
                 history = [item for item in history if item in cells]
                 label = "999 SALDO"
             values = [item for item in cells if item.bbox["left"] > columns["DOCUMENTO"] + 0.05 and _MONEY.fullmatch(item.text.strip())]
-            amounts = [item for item in values if item.bbox["left"] + item.bbox["width"] / 2 < boundary]
+            amounts = [item for item in values if item.id.endswith(":amount") or not item.id.endswith(":balance")
+                       and item.bbox["left"] + item.bbox["width"] / 2 < boundary]
             balances = [item for item in values if item not in amounts]
+
+            inferred_signs = set()
 
             def value(cell):
                 signed = _MONEY.fullmatch(cell.text.strip())
@@ -130,17 +149,24 @@ def parse_bb_cash_ocr(extraction):
                         item.text.upper()
                         for item in cells
                         if item.text.upper() in {"C", "D"}
-                        and abs(item.bbox["top"] - cell.bbox["top"]) < 0.006
-                        and 0 <= item.bbox["left"] - (cell.bbox["left"] + cell.bbox["width"]) < 0.035
+                        and abs(item.bbox["top"] - cell.bbox["top"]) < (0.018 if extraction.provider == "native_pdfium_text" else .006)
+                        and -0.012 <= item.bbox["left"] - (cell.bbox["left"] + cell.bbox["width"]) < 0.035
+                        and not any(other is not cell
+                                    and abs(item.bbox["left"] - (other.bbox["left"] + other.bbox["width"]))
+                                    <= abs(item.bbox["left"] - (cell.bbox["left"] + cell.bbox["width"]))
+                                    for other in values if _MONEY.fullmatch(other.text.strip())[2] is None)
                     ]
                     if len(signs) == 1:
                         return amount * (-1 if signs[0] == "D" else 1)
                     if signs:
                         fail()
+                    if re.search(r"[Il|]\s*$", cell.text):
+                        fail("A marca junto ao valor Banco do Brasil está sem indicador C/D independente.")
                     # Both the numeric history code and its explicit received
                     # label must agree; the complete printed ledger still closes.
                     if cell not in amounts or not label.startswith(("821 PIX RECEBIDO", "144 PIX ENVIADO")):
                         fail("Um valor Banco do Brasil está sem indicador C/D legível. Envie uma digitalização mais nítida.")
+                    inferred_signs.add(cell.id)
                     return amount * (-1 if label.startswith("144 PIX ENVIADO") else 1)
                 return amount * (-1 if signed[2].upper() == "D" else 1)
 
@@ -185,10 +211,15 @@ def parse_bb_cash_ocr(extraction):
             if len(refs) != 1:
                 fail()
             description = re.sub(r"^\d{3}\s+", "", " ".join(item.text for item in history))
+            movement_dates = [item for item in cells if native and .17 < item.bbox["left"] < .29
+                              and re.fullmatch(DATE, item.text) and abs(item.bbox["top"] - top) < .008]
+            if len(movement_dates) > 1:
+                fail()
+            date = movement_dates[0].text if movement_dates else anchor.text
             row = _source(
-                _row(page.page_number, anchor.line_index, day(anchor.text), description, amount, balance, refs[0].text), page, cells
+                _row(page.page_number, anchor.line_index, day(date), description, amount, balance, refs[0].text), page, cells
             )
-            if _MONEY.fullmatch(amounts[0].text.strip())[2] is None or unreadable_balance_sign:
+            if amounts[0].id in inferred_signs or unreadable_balance_sign:
                 row = replace(row, warnings=[*row.warnings, "manual_review_recommended", "amount_sign_from_explicit_pix_label"])
             rows.append(row)
     if not rows or closing is None or not checks or any(a.transaction.date > b.transaction.date for a, b in zip(rows, rows[1:])):
