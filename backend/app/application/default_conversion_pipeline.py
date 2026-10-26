@@ -411,6 +411,13 @@ def _resolve_inferred_bank_code(
 
 
 def _extract_bank_account_metadata(extracted_text: str | None) -> tuple[str | None, str | None]:
+    from app.application.parsers.pdf.empty_statement import caixa_personal_inactive_balance
+
+    text = str(extracted_text or "")
+    if caixa_personal_inactive_balance([text]) is not None:
+        account = re.search(r"\bCONTA:\s*(\d{4})/\d{4}/(\d{8,20}-\d)\b", text, re.I)
+        if account:
+            return account[1], account[2]
     xp_account = extract_xp_account_metadata(extracted_text or "")
     if xp_account is not None:
         return xp_account
