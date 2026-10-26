@@ -2,10 +2,10 @@ import json
 import os
 import shutil
 import subprocess
+import textwrap
 from pathlib import Path
 
 import pytest
-import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "deploy-worker-ecr.yml"
@@ -143,10 +143,13 @@ def test_promotion_records_a_durable_rollback_before_executing_cloudformation():
     assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in workflow
 
 
+def _step_script(name):
+    block = _workflow().split(f"      - name: {name}\n", 1)[1].split("\n      - name:", 1)[0]
+    return textwrap.dedent(block.split("        run: |\n", 1)[1]).strip("\n")
+
+
 def _python_step(name):
-    data = yaml.load(_workflow(), Loader=yaml.BaseLoader)
-    step = next(step for step in data["jobs"]["deploy-worker"]["steps"] if step["name"] == name)
-    lines = step["run"].splitlines()
+    lines = _step_script(name).splitlines()
     assert lines[0] == "python3 - <<'PY'" and lines[-1] == "PY"
     return compile("\n".join(lines[1:-1]), name, "exec")
 
@@ -197,9 +200,7 @@ def test_rollback_record_requires_an_immutable_previous_image(monkeypatch, tmp_p
     ("pr488-debian-canary", "wrong", False), ("unsupported", "yes", False),
 ])
 def test_real_target_shell_selects_only_the_approved_digest_and_never_falls_back_to_build(tmp_path, source, present, expected):
-    data = yaml.load(_workflow(), Loader=yaml.BaseLoader)
-    script = next(s["run"] for s in data["jobs"]["deploy-worker"]["steps"]
-                  if s["name"] == "Resolve ECR and CloudFormation targets")
+    script = _step_script("Resolve ECR and CloudFormation targets")
     bash = "C:/Program Files/Git/bin/bash.exe" if os.name == "nt" else shutil.which("bash")
     assert bash, "Bash is required to validate the deployment selection guard"
     output = tmp_path / "outputs"
