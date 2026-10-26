@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       deploy:
-        description: Build, publish and deploy the worker image from main
+        description: Confirm deployment of the selected worker image to production
         required: true
         type: boolean
         default: false
       image_source:
-        description: Build main or promote the exact Debian image approved in PR 488
+        description: Build a new Debian image from main or select the historical PR 488 digest
         required: true
         type: choice
         default: build-main
@@ -37,6 +37,20 @@ jobs:
     environment: production-worker
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: worker_canary
+          POSTGRES_USER: worker_canary
+          POSTGRES_PASSWORD: synthetic_only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U worker_canary -d worker_canary"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      WORKER_IMAGE: gettdone-worker:${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      TRIVY_IMAGE: aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
 
     steps:
       - name: Validate deployment configuration
@@ -67,6 +81,7 @@ jobs:
       - name: Require successful product gates for the release commit
         env:
           GH_TOKEN: ${{ github.token }}
+          WORKER_IMAGE_SOURCE: ${{ inputs.image_source }}
         run: python3 scripts/verify_worker_release_gates.py
 
       - name: Verify the approved PR 488 candidate evidence
@@ -95,6 +110,74 @@ jobs:
               raise SystemExit("Required candidate runtime/security gates did not pass.")
           print(f"Approved candidate evidence verified: run {run_id}, head {expected_sha}, tested merge {tested_merge_sha}.")
           PY
+
+      - name: Set up Docker Buildx
+        if: inputs.image_source == 'build-main'
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Build Debian worker image locally
+        id: build
+        if: inputs.image_source == 'build-main'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile.lambda
+          push: false
+          load: true
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          build-args: APP_RELEASE=${{ github.sha }}
+          tags: ${{ env.WORKER_IMAGE }}
+          cache-from: type=gha,scope=conversion-worker-debian
+          cache-to: type=gha,mode=min,scope=conversion-worker-debian
+
+      - name: Validate Debian runtime
+        if: inputs.image_source == 'build-main'
+        run: |
+          python3 scripts/smoke_worker_candidate_image.py \
+            --image "$WORKER_IMAGE" --output artifacts/runtime.json \
+            --database-url postgresql://worker_canary:synthetic_only@127.0.0.1:5432/worker_canary
+          docker image inspect "$WORKER_IMAGE" > artifacts/image-inspect.json
+
+      - name: Generate Debian image SBOM
+        if: ${{ always() && inputs.image_source == 'build-main' }}
+        run: |
+          mkdir -p artifacts
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/artifacts:/out" \
+            "$TRIVY_IMAGE" image --image-src docker --scanners vuln \
+            --format cyclonedx --output /out/sbom.cdx.json "$WORKER_IMAGE"
+
+      - name: Block HIGH and CRITICAL Debian image vulnerabilities
+        if: inputs.image_source == 'build-main'
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/artifacts:/out" \
+            "$TRIVY_IMAGE" image --image-src docker --scanners vuln --pkg-types os,library \
+            --severity HIGH,CRITICAL --exit-code 1 --list-all-pkgs --format json --output /out/vulnerabilities.json "$WORKER_IMAGE"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("artifacts/vulnerabilities.json").read_text())
+          results = report.get("Results", [])
+          native = [p for r in results if r.get("Class") == "os-pkgs" for p in r.get("Packages", [])]
+          packages = [p for r in results if r.get("Type") == "python-pkg" for p in r.get("Packages", [])]
+          if report.get("Metadata", {}).get("OS", {}).get("Family") != "debian" or not native:
+              raise SystemExit("Scanner did not recognize the Debian package inventory.")
+          expected = next(line.split("==")[1] for line in Path("backend/requirements-worker.txt").read_text().splitlines()
+                          if line.startswith("pypdf=="))
+          if not any(p.get("Name") == "pypdf" and p.get("Version") == expected for p in packages):
+              raise SystemExit("Scanner did not recognize the production Python package inventory.")
+          print(f"Scan coverage verified: {len(native)} OS packages; {len(packages)} Python packages.")
+          PY
+
+      - name: Preserve Debian runtime and security evidence
+        if: ${{ always() && inputs.image_source == 'build-main' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: worker-debian-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          retention-days: 30
+          if-no-files-found: error
 
       - name: Configure temporary AWS credentials
         uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
@@ -126,7 +209,7 @@ jobs:
             --query "Stacks[0].Outputs[?OutputKey=='ConversionImageRepositoryName'].OutputValue | [0]" \
             --output text)"
           registry="${account_id}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-          image_tag="release-${GITHUB_SHA::12}"
+          image_tag="release-${GITHUB_SHA::12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           execution_role_arn="arn:${partition}:iam::${account_id}:role/gettdone/GettDoneWorkerImageCloudFormationExecutionRole"
 
           if [ -z "${repository_uri}" ] || [ "${repository_uri}" = "None" ] || \
@@ -155,16 +238,6 @@ jobs:
 
           image_exists=false
           existing_digest=""
-          if existing_digest="$(aws ecr describe-images \
-            --repository-name "${repository_name}" \
-            --image-ids "imageTag=${image_tag}" \
-            --query 'imageDetails[0].imageDigest' \
-            --output text 2>/dev/null)"; then
-            if [[ "${existing_digest}" == sha256:* ]]; then
-              image_exists=true
-              echo "::notice::Reusing existing immutable image ${image_tag}."
-            fi
-          fi
 
           case "${IMAGE_SOURCE}" in
             build-main) ;;
@@ -199,12 +272,8 @@ jobs:
             echo "outbox_dispatcher=${outbox_dispatcher}"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: Set up Docker Buildx
-        if: steps.target.outputs.image_exists != 'true'
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-
       - name: Log in to Amazon ECR
-        if: steps.target.outputs.image_exists != 'true'
+        if: inputs.image_source == 'build-main'
         shell: bash
         run: |
           set -euo pipefail
@@ -212,29 +281,27 @@ jobs:
             --username AWS \
             --password-stdin "${{ steps.target.outputs.registry }}"
 
-      - name: Build and push immutable worker image
-        id: build
-        if: steps.target.outputs.image_exists != 'true'
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          file: ./Dockerfile.lambda
-          push: true
-          platforms: linux/amd64
-          provenance: false
-          sbom: false
-          build-args: |
-            APP_RELEASE=${{ github.sha }}
-          tags: ${{ steps.target.outputs.repository_uri }}:${{ steps.target.outputs.image_tag }}
-          cache-from: type=gha,scope=conversion-worker
-          cache-to: type=gha,mode=min,scope=conversion-worker
+      - name: Publish validated Debian image
+        id: publish
+        if: inputs.image_source == 'build-main'
+        env:
+          REPOSITORY_URI: ${{ steps.target.outputs.repository_uri }}
+          REPOSITORY_NAME: ${{ steps.target.outputs.repository_name }}
+          IMAGE_TAG: ${{ steps.target.outputs.image_tag }}
+        run: |
+          set -euo pipefail
+          docker tag "$WORKER_IMAGE" "${REPOSITORY_URI}:${IMAGE_TAG}"
+          docker push "${REPOSITORY_URI}:${IMAGE_TAG}"
+          digest="$(aws ecr describe-images --repository-name "$REPOSITORY_NAME" \
+            --image-ids "imageTag=$IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text)"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Resolve immutable image URI
         id: image
         env:
           IMAGE_EXISTS: ${{ steps.target.outputs.image_exists }}
           EXISTING_DIGEST: ${{ steps.target.outputs.existing_digest }}
-          BUILT_DIGEST: ${{ steps.build.outputs.digest }}
+          BUILT_DIGEST: ${{ steps.publish.outputs.digest }}
           REPOSITORY_URI: ${{ steps.target.outputs.repository_uri }}
           CURRENT_IMAGE_URI: ${{ steps.target.outputs.current_image_uri }}
         shell: bash

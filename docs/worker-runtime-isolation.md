@@ -22,11 +22,15 @@ O template de infraestrutura também deve remover essa variável do ambiente da
 Lambda. Publicar somente a nova imagem não apaga variáveis já configuradas na
 função.
 
-O estágio final da imagem atualiza os pacotes do Amazon Linux 2023 usando uma
-versão de repositório explícita. Essa atualização mantém correções do sistema
-operacional reproduzíveis e deve ocorrer antes da validação do contrato do
-worker. O deploy automatizado aguarda o scan do ECR e bloqueia a publicação se
-houver findings `CRITICAL` ou `HIGH`; esse bloqueio não deve ser ignorado.
+O runtime padrão usa Debian distroless com bases fixadas por digest e o cliente
+oficial da Lambda. O inventário Debian e as licenças das bibliotecas nativas
+são preservados. Os testes do runtime, SBOM e gate Trivy antecedem a publicação;
+o gate ECR também bloqueia findings `CRITICAL` ou `HIGH` antes da atualização.
+Esses bloqueios não devem ser ignorados.
+
+O fluxo recomendado roda inteiramente no GitHub Actions e está descrito em
+[Releases padrão do worker Debian](worker-debian-releases.md). Os exemplos
+locais abaixo são opcionais e não exigem instalar Docker para o fluxo normal.
 
 ## Build e validação local
 
@@ -38,7 +42,7 @@ docker build --platform linux/amd64 -f Dockerfile.lambda `
   --build-arg APP_RELEASE=$CommitSha `
   -t gettdone-worker:manual-$($CommitSha.Substring(0, 12)) .
 
-docker run --rm --entrypoint python `
+docker run --rm --entrypoint /usr/local/bin/python3.12 `
   gettdone-worker:manual-$($CommitSha.Substring(0, 12)) `
   -m app.workers.worker_image_contract
 ```

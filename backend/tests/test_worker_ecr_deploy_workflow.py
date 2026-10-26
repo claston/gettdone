@@ -143,6 +143,23 @@ def test_promotion_records_a_durable_rollback_before_executing_cloudformation():
     assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in workflow
 
 
+def test_normal_release_tests_and_scans_the_actual_image_before_aws_and_push():
+    workflow = _workflow()
+    assert "push: false" in workflow and "load: true" in workflow
+    assert "Build Debian worker image locally" in workflow
+    assert "scripts/smoke_worker_candidate_image.py" in workflow
+    assert "--severity HIGH,CRITICAL --exit-code 1" in workflow
+    assert "--pkg-types os,library" in workflow and "--ignore-unfixed" not in workflow
+    assert "worker_canary" in workflow and "image: postgres:16" in workflow
+    assert workflow.index("Build Debian worker image locally") < workflow.index("Validate Debian runtime")
+    assert workflow.index("Validate Debian runtime") < workflow.index("Configure temporary AWS credentials")
+    assert workflow.index("Block HIGH and CRITICAL") < workflow.index("Configure temporary AWS credentials")
+    assert workflow.index("Block HIGH and CRITICAL") < workflow.index("Publish validated Debian image")
+    assert "steps.publish.outputs.digest" in workflow
+    assert "WORKER_IMAGE_SOURCE: ${{ inputs.image_source }}" in workflow
+    assert 'release-${GITHUB_SHA::12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}' in workflow
+
+
 def _step_script(name):
     block = _workflow().split(f"      - name: {name}\n", 1)[1].split("\n      - name:", 1)[0]
     return textwrap.dedent(block.split("        run: |\n", 1)[1]).strip("\n")
@@ -197,7 +214,7 @@ def test_rollback_record_requires_an_immutable_previous_image(monkeypatch, tmp_p
 
 @pytest.mark.parametrize("source,present,expected", [
     ("pr488-debian-canary", "yes", True), ("pr488-debian-canary", "no", False),
-    ("pr488-debian-canary", "wrong", False), ("unsupported", "yes", False),
+    ("pr488-debian-canary", "wrong", False), ("unsupported", "yes", False), ("build-main", "yes", True),
 ])
 def test_real_target_shell_selects_only_the_approved_digest_and_never_falls_back_to_build(tmp_path, source, present, expected):
     script = _step_script("Resolve ECR and CloudFormation targets")
@@ -229,6 +246,7 @@ def test_real_target_shell_selects_only_the_approved_digest_and_never_falls_back
                             env={**os.environ, "IMAGE_SOURCE": source, "FAKE_CANDIDATE": present,
                                  "AWS_REGION": "us-east-1", "FOUNDATION_STACK_NAME": "foundation",
                                  "WORKER_STACK_NAME": "worker", "GITHUB_SHA": "c" * 40,
+                                 "GITHUB_RUN_ID": "42", "GITHUB_RUN_ATTEMPT": "1",
                                  "GITHUB_OUTPUT": output.as_posix()})
     if not expected:
         assert result.returncode != 0
@@ -236,6 +254,36 @@ def test_real_target_shell_selects_only_the_approved_digest_and_never_falls_back
     else:
         assert result.returncode == 0, result.stderr
         values = dict(line.split("=", 1) for line in output.read_text().splitlines())
-        assert values["image_exists"] == "true"
-        assert values["existing_digest"] == "sha256:737cd4fb2e9cc40a92607358378ff408990bd67d4b00064735d0d5827213c11f"
-        assert values["image_tag"] == "candidate-debian-5d7bf8946f38"
+        if source == "build-main":
+            assert values["image_exists"] == "false"
+            assert values["existing_digest"] == ""
+            assert values["image_tag"] == "release-cccccccccccc-42-1"
+        else:
+            assert values["image_exists"] == "true"
+            assert values["existing_digest"] == "sha256:737cd4fb2e9cc40a92607358378ff408990bd67d4b00064735d0d5827213c11f"
+            assert values["image_tag"] == "candidate-debian-5d7bf8946f38"
+
+
+@pytest.mark.parametrize("mutation", [None, "os", "os_packages", "python"])
+def test_production_scanner_guard_refuses_incomplete_or_wrong_inventory(monkeypatch, tmp_path, mutation):
+    report = {"Metadata": {"OS": {"Family": "debian"}}, "Results": [
+        {"Class": "os-pkgs", "Packages": [{"Name": "libc6"}]},
+        {"Type": "python-pkg", "Packages": [{"Name": "pypdf", "Version": "6.21.2"}]}]}
+    if mutation == "os":
+        report["Metadata"]["OS"]["Family"] = "unknown"
+    elif mutation == "os_packages":
+        report["Results"][0]["Packages"] = []
+    elif mutation == "python":
+        report["Results"][1]["Packages"][0]["Version"] = "5.4.0"
+    (tmp_path / "artifacts").mkdir()
+    (tmp_path / "backend").mkdir()
+    (tmp_path / "artifacts/vulnerabilities.json").write_text(json.dumps(report))
+    (tmp_path / "backend/requirements-worker.txt").write_text("pypdf==6.21.2\n")
+    source = _step_script("Block HIGH and CRITICAL Debian image vulnerabilities").split("python3 - <<'PY'\n", 1)[1]
+    code = compile(source.rsplit("\nPY", 1)[0], "production-scan-guard", "exec")
+    monkeypatch.chdir(tmp_path)
+    if mutation:
+        with pytest.raises(SystemExit):
+            exec(code, {})
+    else:
+        exec(code, {})
