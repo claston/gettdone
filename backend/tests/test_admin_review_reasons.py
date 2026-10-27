@@ -50,14 +50,15 @@ def _update(service, identity_type, **values):
 
 
 @pytest.mark.parametrize("identity_type", ["registered", "anonymous"])
-def test_attention_explains_persisted_confidence_and_every_warning(history, identity_type):
+def test_attention_explains_objective_warnings_without_confidence_as_reason(history, identity_type):
     _record(history, identity_type, canonical_warning_transactions_count=2, balance_consistency_failed=1,
             warning_types=["partial_statement", "financial_validation_failed", "future_warning"])
     payload = AdminDashboardResponse(**AdminDashboardService(history).get_dashboard(days=7)).model_dump()
     item = payload["recent_attention"][0]
     reason = item["issue_reason"]
-    assert "Confiança do parser média" in reason
-    assert "Cobertura registrada do parser: 62,5%" in reason
+    assert "Confiança do parser" not in reason
+    assert "Cobertura registrada do parser" not in reason
+    assert "parser_requires_review" not in item["quality_reason_codes"]
     assert "Documento parcial ou incompleto" in reason
     assert "Validação financeira não conferiu" in reason
     assert "Alerta registrado: future_warning" in reason
@@ -74,9 +75,26 @@ def test_attention_explains_persisted_confidence_and_every_warning(history, iden
 
 
 @pytest.mark.parametrize("identity_type", ["registered", "anonymous"])
+def test_historical_confidence_review_retains_stored_reason_and_diagnostics(history, identity_type):
+    _record(history, identity_type)
+    _update(history, identity_type, quality_status="review", quality_score=0.99,
+            quality_reason_codes_json='["parser_requires_review"]', quality_rule_version="historical.v1")
+    dashboard = AdminDashboardService(history)
+    item = dashboard.get_dashboard()["recent_attention"][0]
+    assert item["quality_status"] == "review"
+    assert item["quality_reason_codes"] == ["parser_requires_review"]
+    assert item["quality_rule_version"] == "historical.v1"
+    assert item["quality_assessment_source"] == "stored"
+    assert "Confiança do parser média" in item["issue_reason"]
+    assert "Cobertura registrada do parser: 62,5%" in item["issue_reason"]
+    assert dashboard.get_attention_export_rows()[0]["issue_reason"] == item["issue_reason"]
+
+
+@pytest.mark.parametrize("identity_type", ["registered", "anonymous"])
 def test_historical_review_does_not_invent_missing_parser_diagnostics(history, identity_type):
     _record(history, identity_type)
     _update(history, identity_type, parser_confidence_band=None, parser_coverage_rate=None,
+            quality_status="review", quality_reason_codes_json='["parser_requires_review"]',
             quality_rule_version="historical.v1", warning_types_json=None)
     item = AdminDashboardService(history).get_dashboard()["recent_attention"][0]
     assert "Confiança e causa detalhada do parser não registradas no histórico" in item["issue_reason"]
@@ -89,7 +107,8 @@ def test_historical_review_does_not_invent_missing_parser_diagnostics(history, i
 @pytest.mark.parametrize("identity_type", ["registered", "anonymous"])
 def test_stored_review_without_reason_is_explicitly_missing_not_reassessed(history, identity_type):
     _record(history, identity_type)
-    _update(history, identity_type, quality_reason_codes_json="[]", quality_rule_version="historical.v1")
+    _update(history, identity_type, quality_status="review",
+            quality_reason_codes_json="[]", quality_rule_version="historical.v1")
     before = AdminDashboardService(history).get_dashboard()["recent_attention"][0]
     assert before["quality_reason_codes"] == []
     assert before["issue_reason"] == "Revisão registrada sem motivo detalhado no histórico"
@@ -101,23 +120,49 @@ def test_stored_review_without_reason_is_explicitly_missing_not_reassessed(histo
 
 
 @pytest.mark.parametrize("identity_type", ["registered", "anonymous"])
-def test_only_unassessed_legacy_history_uses_current_rule_and_marks_reconstruction(history, identity_type):
-    _record(history, identity_type)
+@pytest.mark.parametrize("warning_count", [0, 1])
+def test_only_unassessed_legacy_history_uses_current_rule_and_marks_reconstruction(history, identity_type, warning_count):
+    _record(history, identity_type, canonical_warning_transactions_count=warning_count)
     _update(history, identity_type, quality_status=None, quality_score=None,
             quality_reason_codes_json=None, quality_rule_version=None)
     dashboard = AdminDashboardService(history)
-    item = dashboard.get_dashboard()["recent_attention"][0]
-    assert item["quality_status"] == "review"
-    assert item["quality_reason_codes"] == ["parser_requires_review"]
-    assert item["quality_assessment_source"] == "recalculated"
-    assert "Avaliação reconstruída" in item["issue_reason"]
-    assert QUALITY_RULE_VERSION in item["issue_reason"]
+    payload = dashboard.get_dashboard()
+    if warning_count:
+        item = payload["recent_attention"][0]
+        assert item["quality_status"] == "review"
+        assert item["quality_reason_codes"] == ["row_warnings"]
+        assert item["quality_assessment_source"] == "recalculated"
+        assert "Avaliação reconstruída" in item["issue_reason"]
+        assert QUALITY_RULE_VERSION in item["issue_reason"]
+        assert "Confiança do parser" not in item["issue_reason"]
+    else:
+        assert payload["summary"]["clean_conversion_count"] == 1
+        assert payload["recent_attention"] == []
+        assert dashboard.get_attention_export_rows() == []
     # A dashboard read must never backfill the stored assessment.
     table = "user_conversions" if identity_type == "registered" else "anonymous_conversion_events"
     with history._connect() as conn:
         row = conn.execute(f"SELECT quality_status, quality_reason_codes_json FROM {table}").fetchone()
     assert row["quality_status"] is None
     assert row["quality_reason_codes_json"] is None
+
+
+@pytest.mark.parametrize("identity_type", ["registered", "anonymous"])
+@pytest.mark.parametrize("band", ["medium", "low"])
+def test_new_confidence_only_conversion_is_clean_in_dashboard_and_export(history, identity_type, band):
+    _record(history, identity_type, parser_confidence_band=band)
+    dashboard = AdminDashboardService(history)
+    payload = dashboard.get_dashboard()
+    assert payload["summary"]["clean_conversion_count"] == 1
+    assert payload["summary"]["review_count"] == 0
+    assert payload["recent_attention"] == []
+    assert dashboard.get_attention_export_rows() == []
+    table = "user_conversions" if identity_type == "registered" else "anonymous_conversion_events"
+    with history._connect() as conn:
+        row = conn.execute(f"SELECT quality_status, quality_rule_version, quality_reason_codes_json FROM {table}").fetchone()
+    assert row["quality_status"] == "clean"
+    assert row["quality_rule_version"] == QUALITY_RULE_VERSION
+    assert json.loads(row["quality_reason_codes_json"]) == []
 
 
 def test_attention_retains_unknown_quality_codes_and_all_layout_reasons(history):

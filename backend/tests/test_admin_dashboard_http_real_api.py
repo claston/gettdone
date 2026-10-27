@@ -155,8 +155,9 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
     assert attention["parser_coverage_rate"] == 0.75
     assert attention["warning_types"] == ["partial_statement"]
     assert attention["quality_assessment_source"] == "stored"
-    assert "Confiança do parser média" in attention["issue_reason"]
-    assert "75,0%" in attention["issue_reason"]
+    assert "parser_requires_review" not in attention["quality_reason_codes"]
+    assert "Confiança do parser" not in attention["issue_reason"]
+    assert "Cobertura registrada do parser" not in attention["issue_reason"]
     assert "Documento parcial ou incompleto" in attention["issue_reason"]
     assert attention_export.status_code == 200
     assert attention_export.headers["content-type"].startswith("text/csv")
