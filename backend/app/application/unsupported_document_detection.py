@@ -159,6 +159,11 @@ def _is_investment_summary(lines: tuple[str, ...]) -> bool:
             return False
 
     compact_text = " ".join(lines)
+    if all(marker in compact_text for marker in (
+        "DADOS DA CONSULTA", "INVESTIMENTOS BRADESCO", "MODALIDADE", "TOTAL APLICADO (R$)",
+        "VALOR PRINCIPAL (R$)", "RESGATE BRUTO (R$)", "RESGATE LIQUIDO (R$)",
+    )) and "EXTRATO DE" not in header_text:
+        return True
     if (
         "EXTRATO" in header_text
         and re.search(r"\bCDB\b", header_text)

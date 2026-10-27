@@ -432,6 +432,10 @@ def _parse_pdf_transactions_strict(
             statement, pages = complete_table
             return _with_parse_observability(_build_verified_statement_result(statement, pages),
                 native_text_detected=1, textract_attempted=0, extraction_provider="native_pdf_layout_text")
+        inactive = _explicit_inactive_result(native_pages)
+        if inactive is not None:
+            return _with_parse_observability(inactive, native_text_detected=1, textract_attempted=0,
+                                            extraction_provider="native_pdf_text")
         from app.application.parsers.pdf.followup_native_tables import parse_followup_native_tables
 
         native_table = parse_followup_native_tables(raw_bytes, native_pages)
@@ -855,6 +859,10 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
     gateway_metrics = dict(gateway_result.get("metrics") or {})
     textract_mode = str(gateway_metrics.get("textract_mode") or "").strip().lower()
     _validate_ocr_statement_source(extraction)
+    inactive = _explicit_inactive_result(_textract_page_texts(extraction))
+    if inactive is not None:
+        return replace(inactive, source_extraction=extraction,
+                       source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
     segmentation = segment_pdf_pages(_textract_page_texts(extraction))
     daily_fragment = is_daily_cd_fragment(extraction)
     if daily_fragment:
@@ -1020,6 +1028,10 @@ def _parse_scanned_pdf_with_textract_text_pages_strict(extraction) -> PdfParseRe
     from app.application.structured_statement_detection import is_bradesco_monthly_ocr
 
     _validate_ocr_statement_source(extraction)
+    inactive = _explicit_inactive_result(_textract_page_texts(extraction))
+    if inactive is not None:
+        return replace(inactive, source_extraction=extraction,
+                       source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
     if is_bradesco_monthly_ocr("\n".join(_textract_page_texts(extraction))) or is_daily_cd_fragment(extraction):
         # An unreadable continuation is evidence of an incomplete ledger. Keep
         # every physical page for the strict reader, before appendix filtering.
@@ -1347,6 +1359,18 @@ def _build_verified_statement_result(statement, pages):
         statement_rows_expected=statement.candidate_rows or len(statement.rows), statement_rows_parsed=len(statement.rows),
         statement_row_coverage_rate=len(statement.rows) / (statement.candidate_rows or len(statement.rows)),
         partial_statement=int(statement.partial))
+
+
+def _explicit_inactive_result(page_texts):
+    from app.application.parsers.pdf.explicit_inactive import recognize_explicit_inactive
+
+    recognized = recognize_explicit_inactive(page_texts)
+    if recognized is None:
+        return None
+    layout, controls = recognized
+    result = _empty_statement_result(page_texts, structural=True)
+    return replace(result, layout=PdfLayoutInference(layout, .99, False),
+                   parse_metrics={**result.parse_metrics, **controls})
 
 
 def _empty_statement_result(page_texts: list[str], *, structural: bool = False) -> PdfParseResult:
