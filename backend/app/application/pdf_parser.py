@@ -415,6 +415,20 @@ def _parse_pdf_transactions_strict(
         from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
 
         validate_statement_completeness(native_pages)
+        from app.application.parsers.pdf.followup_native_tables import parse_followup_native_tables
+
+        native_table = parse_followup_native_tables(raw_bytes, native_pages)
+        if native_table is not None:
+            statement, source = native_table
+            pages = tuple("\n".join(line.text for line in page.lines) for page in source.pages)
+            result = _build_verified_statement_result(statement, pages)
+            # BTG's original native text keeps header labels with their values.
+            # Column fragments alone can make the print date hide the account.
+            header_text = "\n".join(native_pages) if statement.layout == "btg_pactual_conta_corrente_pj_v1" else result.extracted_text
+            result = replace(result, extracted_text=header_text, source_extraction=source,
+                             source_layout_lines=tuple(tuple(page.lines) for page in source.pages))
+            return _with_parse_observability(result, extraction_provider="native_pdfium_text",
+                native_text_detected=1, textract_attempted=0, native_coordinates_used=1, extracted_char_count=len(header_text))
         from app.application.parsers.pdf.split_sheet_native import parse_split_sheet_native
         from app.application.structured_statement_detection import CONTA_AZUL, SUMUP_PERIOD, identify_structured_statement
 
@@ -1264,6 +1278,10 @@ def _build_verified_statement_result(statement, pages):
         statement.rows[0] = replace(statement.rows[0], warnings=[*statement.rows[0].warnings, "partial_statement"])
     if statement.non_cash_entries:
         statement.rows[0] = replace(statement.rows[0], warnings=[*statement.rows[0].warnings, "pending_deposits_excluded"])
+    if statement.scheduled_entries_excluded:
+        statement.rows[0] = replace(statement.rows[0], warnings=[*statement.rows[0].warnings, "scheduled_transactions_excluded"])
+    if statement.opening_ambiguity_reason:
+        statement.rows[0] = replace(statement.rows[0], warnings=[*statement.rows[0].warnings, "opening_balance_ambiguous"])
     result = _build_pdf_parse_result(
         parsed_rows=statement.rows, layout=PdfLayoutInference(statement.layout, .99, False),
         layout_profile=None, selected_parser=("layout_specific_verified_statement" if statement.opening is not None
@@ -1288,8 +1306,11 @@ def _build_verified_statement_result(statement, pages):
             balance_validation_status="combined_cash_investment_not_comparable",
             export_recommendation="review_recommended", export_recommendation_reason="combined_cash_investment_balance_not_comparable")
     return _with_parse_observability(result, **controls,
-        financial_controls_validated=int(bool(controls) and not statement.opening_inferred),
+        financial_controls_validated=int(bool(controls) and not statement.opening_inferred and not statement.opening_ambiguity_reason),
+        opening_balance_ambiguous=int(bool(statement.opening_ambiguity_reason)),
+        opening_balance_ambiguity_reason=statement.opening_ambiguity_reason,
         balance_validation_status=("opening_inferred_from_closing" if statement.opening_inferred
+                                   else statement.opening_ambiguity_reason if statement.opening_ambiguity_reason
                                    else "validated" if controls else "not_available"),
         **(dict(export_recommendation="review_recommended", export_recommendation_reason=(
                 "opening_inferred_from_closing" if statement.opening_inferred else "partial_statement" if statement.partial
@@ -1297,6 +1318,7 @@ def _build_verified_statement_result(statement, pages):
            if statement.opening_inferred or statement.partial or not controls or statement.non_cash_entries else {}),
         printed_balance_checks=statement.printed_balance_checks,
         non_cash_entries_excluded=statement.non_cash_entries,
+        scheduled_entries_excluded=statement.scheduled_entries_excluded,
         statement_rows_expected=statement.candidate_rows or len(statement.rows), statement_rows_parsed=len(statement.rows),
         statement_row_coverage_rate=len(statement.rows) / (statement.candidate_rows or len(statement.rows)),
         partial_statement=int(statement.partial))
@@ -1360,7 +1382,9 @@ def _parse_statement_page_texts(
                        parse_metrics={**result.parse_metrics, "financial_controls_validated": 1,
                                       "verified_opening_balance": inactive_balance, "verified_closing_balance": inactive_balance,
                                       "balance_validation_status": "explicit_no_activity_period_balance"})
-    if has_explicit_no_activity(page_texts):
+    from app.application.parsers.pdf.empty_statement import has_stone_no_activity
+
+    if has_explicit_no_activity(page_texts) or has_stone_no_activity(page_texts):
         return _empty_statement_result(page_texts)
     cross_page_split = detect_cross_page_transaction_split(page_texts, layout_profile=layout_profile)
     if cross_page_split is not None:

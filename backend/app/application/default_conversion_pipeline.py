@@ -328,6 +328,8 @@ def _build_pdf_processing_metrics(
         "ocr_unresolved_rows": int(parse_metrics.get("ocr_unresolved_rows", 0)),
         "ocr_annotations_detected": int(parse_metrics.get("ocr_annotations_detected", 0)),
         "opening_balance_ambiguous": int(parse_metrics.get("opening_balance_ambiguous", 0)),
+        "opening_balance_ambiguity_reason": str(parse_metrics.get("opening_balance_ambiguity_reason", "")),
+        "scheduled_entries_excluded": int(parse_metrics.get("scheduled_entries_excluded", 0)),
         "statement_no_activity": int(parse_metrics.get("statement_no_activity", 0)),
         "partial_statement": int(parse_metrics.get("partial_statement", 0)),
         "non_cash_entries_excluded": int(parse_metrics.get("non_cash_entries_excluded", 0)),

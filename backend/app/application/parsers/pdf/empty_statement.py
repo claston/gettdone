@@ -87,6 +87,26 @@ def has_explicit_no_activity(page_texts: list[str] | tuple[str, ...]) -> bool:
     return True
 
 
+def has_stone_no_activity(page_texts) -> bool:
+    if len(page_texts) != 1:
+        return False
+    lines = [normalize_upper_text(line).strip() for line in page_texts[0].splitlines() if line.strip()]
+    joined = " ".join(lines)
+    markers = ("STONE", "EXTRATO DE CONTA CORRENTE", "AGENCIA", "CONTA", "DATA", "TIPO",
+               "LANCAMENTO", "VALOR (R$)", "SALDO (R$)", "CONTRAPARTE", "INFORMACOES DO COMPROVANTE")
+    if not all(marker in joined for marker in markers) or lines.count("NAO HA DADOS A SEREM EXIBIDOS") != 1:
+        return False
+    period = re.search(r"PERIODO\s+(\d{2}/\d{2}/\d{4})\s+ATE\s+(\d{2}/\d{2}/\d{4})", joined)
+    if period is None:
+        return False
+    try:
+        if datetime.strptime(period[1], "%d/%m/%Y") > datetime.strptime(period[2], "%d/%m/%Y"):
+            return False
+    except ValueError:
+        return False
+    return not any(_MONEY.search(_DATE.sub("", line)) or _LEADING_DATE.match(line) for line in lines)
+
+
 def has_complete_santander_inactive_summary(page_texts: list[str] | tuple[str, ...]) -> bool:
     """Recognize the complete native PJ template that omits inactive accounts' movements.
 
