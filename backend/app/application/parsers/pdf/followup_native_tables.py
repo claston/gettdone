@@ -31,6 +31,9 @@ def _kind(text):
         return "account_detail"
     if all(marker in compact for marker in ("REVOLUT", "EXTRATOEMBRL", "RESUMODOSALDO", "VALORESDESCONTADOS", "VALORESRECEBIDOS")):
         return "revolut"
+    if (all(marker in compact for marker in ("EXTRATODECONTACORRENTE", "LANCAMENTOS", "DIA", "HISTORICO", "VALOR",
+                                            "SALDOANTERIOR", "SALDODIA")) and "LOTE" not in compact):
+        return "three_column_cd"
     return None
 
 
@@ -45,7 +48,18 @@ def parse_followup_native_tables(raw, page_texts):
         statement = parse_mercado_pago_inactive(raw, source)
         # Active or unproven documents retain the existing strict ledger path.
         return (statement, source) if statement is not None else None
-    if kind == "ndd":
+    if kind == "three_column_cd":
+        from statistics import median
+
+        from app.application.parsers.pdf.three_column_cd_native import parse_three_column_cd
+
+        dates = [line for page in source.pages for line in page.lines if re.fullmatch(DATE, line.text)]
+        headers = {upper(line.text): line.bbox for line in source.pages[0].lines}
+        if dates and "HISTORICO" in headers and "VALOR" in headers:
+            source = read_native_table_source(raw, decorative_history=(headers["HISTORICO"]["left"] - .01,
+                headers["VALOR"]["left"] - .03, median(line.bbox["height"] for line in dates) * 2))
+        statement = parse_three_column_cd(source)
+    elif kind == "ndd":
         from app.application.parsers.pdf.ndd_native import parse_ndd_native
 
         statement = parse_ndd_native(source)

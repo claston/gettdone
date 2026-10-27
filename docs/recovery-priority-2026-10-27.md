@@ -1,8 +1,8 @@
 # Recuperação prioritária de 27/10/2026
 
-Esta alteração trata oito documentos do recorte de recuperação encerrado em
+Esta alteração trata doze documentos do recorte de recuperação encerrado em
 27/10/2026 às 09:09, horário de São Paulo. Os originais e diagnósticos foram
-consultados em leitura; somente os oito PDFs autorizados foram copiados para
+consultados em leitura; somente os doze PDFs autorizados foram copiados para
 `local/`, ignorado pelo Git. Os testes versionados usam dados fictícios.
 
 ## InfinitePay: trecho nativo de relatório
@@ -180,6 +180,68 @@ XLSX e CSV preservam todos os movimentos; o OFX não publica `LEDGERBAL`.
 A reprodução reutiliza o OCR já capturado. Nenhuma nova chamada OCR remota,
 alteração do original ou reprocessamento histórico em produção foi realizado.
 
+## Lote C07, C15, C44 e C47
+
+Os quatro casos foram tratados em conjunto, com testes focados durante os
+ajustes e uma única execução completa para fechar o lote.
+
+### C07: Banco do Nordeste digitalizado
+
+O original comprova Banco do Nordeste; a triagem anterior o associou a Banco
+do Brasil por texto de outra parte do documento. Há **38 movimentos**, com
+**38 saldos por movimento conferidos**, em vez das 48 linhas capturadas pelo
+leitor genérico. A captura incluía referências isoladas e valores de posições,
+limites e investimentos depois do fim do livro.
+
+O título da coluna de histórico é centralizado e as descrições começam mais
+à esquerda, especialmente na segunda página. A seleção agora usa os limites
+das células de data e documento, preservando descrições e referências. O
+detalhamento do saldo e os investimentos continuam fora dos movimentos. Os
+avisos existentes de sinal deduzido dos saldos e sinal OCR repetido permanecem;
+não se altera um número para fazê-lo fechar.
+
+### C15: BB com período impresso incompatível
+
+Os **8 movimentos** e os **5 controles de saldo** fecham aritmeticamente. Porém,
+o cabeçalho indica um período em outubro e o livro contém movimentos de
+setembro. Datas, valores e aviso de validação financeira são preservados.
+Este caso foi conferido, mas continua exigindo revisão do documento de origem;
+a correção do lote não remove essa inconsistência real.
+
+### C44: tabela sintética com três colunas
+
+O próprio arquivo informa ser sintético. Tem colunas Dia/Histórico/Valor,
+sinais C/D e **10 movimentos**, com **4 controles de saldo**. A versão corrente
+acrescentava um movimento indevido ao não reconhecer `Saldo Dia` como controle.
+O modelo estrutural `dated_cd_three_column_statement_v1` separa controles e
+movimentos e confere todos os valores; não atribui um banco sem identificação.
+
+Letras grandes da marca d'água interferiam no agrupamento dos glifos. Para
+este modelo, somente letras e hífens decorativos maiores que a altura das
+linhas, inteiramente dentro da coluna de histórico, podem ser excluídos antes
+do agrupamento. A quantidade fica nas métricas da extração. Algarismos e
+outros símbolos nessa situação impedem a conversão. Datas e valores monetários
+permanecem nas suas colunas e precisam ter cobertura completa.
+
+### C47: Santander com saldo negativo e bloqueio
+
+Os **223 movimentos** são preservados, com **18 controles impressos**. Um saldo
+negativo tinha o hífen em outro objeto de texto do PDF; a leitura sequencial
+perdia esse sinal. O leitor agora associa um hífen somente quando ele está
+imediatamente à direita do valor e na mesma linha visual. Um hífen em outra
+linha não altera o valor; diferenças reais continuam em revisão.
+
+O resumo também imprime saldo bruto, bloqueio e saldo total após o bloqueio.
+Quando esse total explícito existe, ele é a referência de fechamento da conta
+convertida. A relação entre bruto, bloqueio e total também é conferida. O
+resultado elimina os falsos conflitos sem modificar movimentos ou apagar uma
+divergência real do resumo. Investimentos e demais anexos continuam separados.
+
+XLSX, CSV e OFX dos quatro casos são confrontados com os movimentos conferidos.
+Os originais e a extração OCR armazenada permanecem privados em `local/`.
+Nenhum OCR remoto novo, alteração de produção ou reprocessamento histórico foi
+executado.
+
 ## Validação e compatibilidade
 
 - TDD: a primeira execução dos novos testes apresentou 12 falhas e 7 sucessos,
@@ -203,6 +265,10 @@ alteração do original ou reprocessamento histórico em produção foi realizad
   diários entre páginas, referências repetidas, diferenças reais e regressões
   de identidade bancária, leitores Sicoob, evidências de origem e rejeição de
   investimentos com fontes sem coordenadas.
+- Lote C07/C15/C44/C47: TDD reproduziu 11 falhas e 3 sucessos nos cenários
+  iniciais; o controle adicional de bloqueio reproduziu outra falha antes do
+  ajuste. Os testes focados finais também cobrem HTTP, exportações, marcas
+  decorativas, sinais separados e preservação do conflito real de período.
 - Os testes HTTP reais cobrem `/convert`, `/report/{id}`, CSV, XLSX, OFX, sinais,
   quantidades, ausência de saldos não comprovados, relatório inexistente `404`
   e o endpoint legado `/analyze`, que permanece desativado com `405`.

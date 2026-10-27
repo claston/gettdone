@@ -67,6 +67,23 @@ def _value(raw):
     return money(raw.strip("+-")) * (-1 if "-" in raw else 1)
 
 
+def _cash_boxes(tp, text):
+    values = _boxes(tp, text, _MONEY)
+    signs = _boxes(tp, text, re.compile("-"))
+    result = []
+    for value in values:
+        if "-" not in value.text:
+            nearby = [sign for sign in signs if 0 <= sign.left - value.right <= 3
+                      and abs((sign.top + sign.bottom - value.top - value.bottom) / 2) < 1.5]
+            if len(nearby) > 1 or nearby and value.text.startswith("+"):
+                _fail()
+            if nearby:
+                value = replace(value, text=value.text + "-", right=nearby[0].right,
+                                top=max(value.top, nearby[0].top), bottom=min(value.bottom, nearby[0].bottom))
+        result.append(value)
+    return result
+
+
 def _date(raw, year):
     try:
         if len(raw) == 5:
@@ -91,6 +108,16 @@ def _summary(text):
         if len(values) != 1:
             _fail()
         result[key] = values.pop()
+    total_label = r"SALDO TOTAL DE CONTA CORRENTE(?: EM)?\s+" + end.strftime("%d/%m")
+    cash_totals = {_value(m[1]) for m in re.finditer(total_label + rf"\s+([+-]?{NUMBER}-?)(?![\d,.])", upper(text))}
+    if cash_totals:
+        blocked = {_value(m[1]) for m in re.finditer(rf"SALDO BLOQUEIO DIA\s+([+-]?{NUMBER}-?)(?![\d,.])", upper(text))}
+        if len(cash_totals) != 1 or len(blocked) > 1 or blocked and min(blocked) < 0:
+            _fail()
+        cash_closing = cash_totals.pop()
+        if result["closing"] - (blocked.pop() if blocked else 0) != cash_closing:
+            financial_mismatch(_MESSAGE)
+        result["closing"] = cash_closing
     if (min(result["credit"], result["debit"]) < 0
             or result["opening"]+result["credit"]-result["debit"] != result["closing"]):
         financial_mismatch(_MESSAGE)
@@ -223,7 +250,7 @@ def parse_native_cash_columns(raw, page_texts):
                         header_bottom = min(header_bottom, counters[0].bottom)
                 history_left = date_col.right+5
                 boundary = (credit.right+debit.left)/2, (debit.right+balance.left)/2
-                values = [box for box in _boxes(tp, text, _MONEY)
+                values = [box for box in _cash_boxes(tp, text)
                           if box.left > reference.right+3 and box.top < header_bottom-1 and box.bottom > cutoff]
                 dates = [box for box in _boxes(tp, text, _DATE)
                          if box.left < date_col.right+5 and box.right < reference.left-5 and box.top < header_bottom-1]
