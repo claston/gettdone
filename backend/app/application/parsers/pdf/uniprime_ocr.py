@@ -31,6 +31,18 @@ def _value(line):
     return money(match[1]) * (-1 if match[2] == "-" else 1), match[2]
 
 
+def _cash_cells(lines, columns, *, native):
+    return [line for line in lines
+            if columns["VALOR"] - .015 <= line.bbox["left"] + (line.bbox["width"] / 2 if native else 0)
+            < columns["SALDO"] - .015 and re.search(r"\d[,\.]\d", line.text)]
+
+
+def _check_position_appendix(page, columns, *, native):
+    if (_headers(page, ("DATA", "HISTORICO", "VALOR", "SALDO"))
+            or _cash_cells(page.lines, columns, native=native)):
+        fail("Há dados de movimentação depois da posição consolidada Uniprime. Envie os extratos separados para conferência.")
+
+
 def parse_uniprime(extraction):
     text = "\n".join(line.text for page in extraction.pages for line in page.lines)
     if not is_uniprime_statement(text):
@@ -39,15 +51,37 @@ def parse_uniprime(extraction):
     columns = _headers(extraction.pages[0], ("DATA", "HISTORICO", "VALOR", "SALDO"))
     if not columns or len(periods) != 1:
         fail()
+    reference_headers = [line for line in extraction.pages[0].lines if line.bbox
+                         and re.sub(r"[^A-Z]", "", upper(line.text)) in {"NDOC", "NDOCTO", "NDOCUMENTO"}]
+    if len(reference_headers) > 1:
+        fail()
+    reference_left = columns["DATA"] + .09
+    if reference_headers:
+        reference_x = reference_headers[0].bbox["left"]
+        if not columns["DATA"] < reference_x < columns["HISTORICO"]:
+            fail()
+        reference_left = (columns["DATA"] + reference_x) / 2
     period = periods.pop()
     start, end = day(period[0]), day(period[1])
     if start > end:
         fail()
     opening = running = None
     rows, checks = [], 0
+    ledger_finished = False
     for page in extraction.pages:
         native = extraction.provider == "native_pdfium_text"
         lines = [line for line in page.lines if line.bbox]
+        if ledger_finished:
+            _check_position_appendix(replace(page, lines=lines), columns, native=native)
+            continue
+        boundaries = [line for line in lines if upper(line.text) == "CONSULTA POSICAO CONSOLIDADA"
+                      and line.bbox["left"] < columns["HISTORICO"] - .04]
+        if boundaries:
+            boundary = min(line.bbox["top"] for line in boundaries)
+            _check_position_appendix(replace(page, lines=[line for line in lines if line.bbox["top"] >= boundary]),
+                                     columns, native=native)
+            lines = [line for line in lines if line.bbox["top"] < boundary]
+            ledger_finished = True
         for label in [line for line in lines if upper(line.text).startswith("SALDO ANTERIOR")]:
             if opening is not None or rows:
                 fail()
@@ -60,10 +94,7 @@ def parse_uniprime(extraction):
             anchors = [line for line in anchors if line.bbox["top"] > header_y]
         # Every monetary cell in the movement column needs one readable date.
         # This also catches date-less rows whose net effect could cancel out.
-        cash_cells = [line for line in lines
-                      if columns["VALOR"] - .015 <= line.bbox["left"] + (line.bbox["width"] / 2 if native else 0)
-                      < columns["SALDO"] - .015
-                      and re.search(r"\d[,\.]\d", line.text)]
+        cash_cells = _cash_cells(lines, columns, native=native)
         for cell in cash_cells:
             if len([anchor for anchor in anchors if abs(anchor.bbox["top"] - cell.bbox["top"]) < .006]) != 1:
                 fail("Há um lançamento Uniprime sem data legível. Envie o documento completo e nítido.")
@@ -102,7 +133,7 @@ def parse_uniprime(extraction):
             history = [line for line in cells if columns["HISTORICO"] - .015 <= line.bbox["left"] < columns["VALOR"] - .025]
             if not history:
                 fail()
-            refs = [line for line in baseline if columns["DATA"] + .09 <= line.bbox["left"] < columns["HISTORICO"] - .025]
+            refs = [line for line in baseline if reference_left <= line.bbox["left"] < columns["HISTORICO"] - .025]
             if len(refs) > 1:
                 fail()
             row = _source(_row(page.page_number, anchor.line_index, date, " ".join(line.text for line in history),

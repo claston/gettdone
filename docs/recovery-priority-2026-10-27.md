@@ -1,8 +1,8 @@
 # Recuperação prioritária de 27/10/2026
 
-Esta alteração trata cinco documentos do recorte de recuperação encerrado em
+Esta alteração trata seis documentos do recorte de recuperação encerrado em
 27/10/2026 às 09:09, horário de São Paulo. Os originais e diagnósticos foram
-consultados em leitura; somente os cinco PDFs autorizados foram copiados para
+consultados em leitura; somente os seis PDFs autorizados foram copiados para
 `local/`, ignorado pelo Git. Os testes versionados usam dados fictícios.
 
 ## InfinitePay: trecho nativo de relatório
@@ -101,6 +101,36 @@ resolve também esse documento; não foi necessária outra alteração no parser
 O XLSX e o OFX foram conferidos com os 148 movimentos do período, excluindo os
 anexos posteriores. O resultado histórico capturado permanece inalterado.
 
+## Uniprime: extrato seguido de posição consolidada e juros
+
+O arquivo de três páginas contém o livro de janeiro nas duas primeiras e
+informações de posição consolidada/juros após o título explícito
+`Consulta Posição Consolidada`. A terceira página repete a data de impressão,
+de outro mês. Como ela não repete o cabeçalho da tabela de movimentos, o leitor
+anterior interpretava essa data como um movimento e recusava o arquivo por
+estar fora do período do extrato.
+
+A seção de movimentos termina nesse título, desde que ele esteja fora da
+coluna de descrição. Um lançamento com o mesmo texto no histórico não encerra
+a leitura. As páginas e linhas posteriores ainda são verificadas: outro
+cabeçalho de movimentos ou valores na coluna de movimentação impedem que
+operações sejam omitidas silenciosamente. Sem o delimitador explícito, uma data
+incompatível continua recusada. Sinais, centavos, recuperação identificada e
+validação financeira preservam os critérios existentes.
+
+A referência de documento usa o cabeçalho `Nº Doc` quando ele está presente,
+em vez de um deslocamento fixo a partir do título `Data`, que pode estar
+centralizado. Isso preserva números e referências textuais com seus zeros e
+evidências originais. O comportamento anterior permanece como alternativa nos
+modelos que não apresentam esse cabeçalho.
+
+O resultado local contém **50 movimentos e 50 referências**, todos conferidos
+independentemente contra o texto nativo: datas, sinais, valores, ordem e cada
+saldo impresso. Abertura e fechamento correspondem ao extrato de janeiro; o
+saldo da posição de dezembro não substitui seu fechamento. XLSX e OFX preservam
+os 50 movimentos, sem OCR remoto e sem alertas. Não há alteração do PDF original
+ou reprocessamento de resultados históricos em produção.
+
 ## Validação e compatibilidade
 
 - TDD: a primeira execução dos novos testes apresentou 12 falhas e 7 sucessos,
@@ -110,6 +140,10 @@ anexos posteriores. O resultado histórico capturado permanece inalterado.
 - Bradesco: os novos cenários reproduziram inicialmente 10 falhas e 4 sucessos;
   um teste adicional reproduziu o falso aviso de total de débito negativo.
   A validação focada final apresentou 66 sucessos, incluindo HTTP real.
+- Uniprime: o cenário inicial apresentou 5 falhas e 5 sucessos; o teste de
+  referências centralizadas falhou antes do ajuste correspondente. A validação
+  focada final apresentou 91 sucessos, incluindo HTTP, exportações, sinais,
+  centavos truncados, anexos e referências preservadas.
 - Os testes HTTP reais cobrem `/convert`, `/report/{id}`, CSV, XLSX, OFX, sinais,
   quantidades, ausência de saldos não comprovados, relatório inexistente `404`
   e o endpoint legado `/analyze`, que permanece desativado com `405`.
