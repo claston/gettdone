@@ -131,10 +131,13 @@ def test_sicredi_merged_money_cells_use_word_geometry_and_reject_handwritten_amo
 
 
 @pytest.mark.parametrize("band", ["low", "medium"])
-def test_dashboard_quality_cannot_mark_parser_review_as_clean(band):
+@pytest.mark.parametrize("warnings", [0, 1])
+def test_dashboard_quality_uses_findings_instead_of_parser_band(band, warnings):
     result = assess_conversion_quality(status="success", conversion_type="pdf-ofx", transactions_count=20,
-        layout_name="sicredi_statement_ptbr", layout_confidence=.99, selected_parser="grouped", parser_confidence_band=band)
-    assert result.status == "review"
+        layout_name="sicredi_statement_ptbr", layout_confidence=.99, selected_parser="grouped",
+        parser_confidence_band=band, warning_count=warnings)
+    assert result.status == ("review" if warnings else "clean")
+    assert result.reason_codes == (("row_warnings",) if warnings else ())
 
 
 @pytest.mark.parametrize("mismatch", [False, True])
