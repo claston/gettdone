@@ -1,8 +1,8 @@
 # Recuperação prioritária de 27/10/2026
 
-Esta alteração trata quatro documentos do recorte de recuperação encerrado em
+Esta alteração trata cinco documentos do recorte de recuperação encerrado em
 27/10/2026 às 09:09, horário de São Paulo. Os originais e diagnósticos foram
-consultados em leitura; somente os quatro PDFs autorizados foram copiados para
+consultados em leitura; somente os cinco PDFs autorizados foram copiados para
 `local/`, ignorado pelo Git. Os testes versionados usam dados fictícios.
 
 ## InfinitePay: trecho nativo de relatório
@@ -85,12 +85,21 @@ qualquer valor financeiro para forçar fechamento.
 | --- | --- |
 | Bradesco, 10 páginas | 345 movimentos; todos os saldos e totais conferidos; nenhum alerta |
 | Bradesco, 12 páginas | 376 movimentos; saldos por linha conferidos; revisão mantida por divergência real dos totais impressos |
+| Bradesco, 5 páginas | 148 movimentos preservados integralmente; saldos e totais conferidos; falso alerta eliminado pelo mesmo ajuste do total de débito |
 
 A contagem foi conferida independentemente contra as células do texto nativo,
 incluindo datas, valores, sinais, multiplicidade, ordem e cada saldo. XLSX e OFX
 preservam todos os movimentos do período. Os anexos `Últimos Lançamentos` e
 `Saldos Invest Fácil / Plus` continuam separados do livro exportado, inclusive
 quando começam na mesma página que a continuação do período.
+
+No terceiro Bradesco, a comparação independente confirmou os mesmos 148
+movimentos financeiros da captura, na mesma ordem, sem alterar datas ou valores.
+Repor isoladamente a comparação anterior do total de débito faz o aviso
+financeiro reaparecer sem mudar nenhum movimento. O ajuste já implementado
+resolve também esse documento; não foi necessária outra alteração no parser.
+O XLSX e o OFX foram conferidos com os 148 movimentos do período, excluindo os
+anexos posteriores. O resultado histórico capturado permanece inalterado.
 
 ## Validação e compatibilidade
 
