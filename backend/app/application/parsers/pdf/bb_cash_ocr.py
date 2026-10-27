@@ -21,7 +21,22 @@ def _columns(page):
         return columns
     others = _headers(page, keys[1:])
     if not others:
-        return None
+        # Native exports can join several headings into one LINE; WORD
+        # positions still identify each printed column on the same baseline.
+        documents = [word for word in page.words if word.bbox and upper(word.text) == "DOCUMENTO"]
+        if len(documents) != 1:
+            return None
+        baseline = documents[0].bbox["top"]
+        result = {}
+        for key in keys:
+            candidates = [word for word in page.words if word.bbox and upper(word.text) == key.split()[0]
+                          and abs(word.bbox["top"] - baseline) < .006]
+            if len(candidates) != 1:
+                return None
+            result[key] = candidates[0].bbox["left"]
+        if list(result.values()) != sorted(result.values()):
+            return None
+        return result
     headers = [line for line in page.lines if line.bbox and upper(line.text) == "DOCUMENTO"]
     candidates = [word for word in page.words if word.bbox and upper(word.text) == "HISTORICO"
                   and len(headers) == 1 and abs(word.bbox["top"] - headers[0].bbox["top"]) < .006
@@ -39,14 +54,26 @@ def _column_lines(page, columns):
             continue
         words = sorted([word for word in page.words if word.id in line.word_ids and word.bbox],
                        key=lambda word: word.bbox["left"])
-        if words and line.bbox["left"] >= columns["DOCUMENTO"] - .07:
+        if words and (line.bbox["left"] >= columns["DOCUMENTO"] - .07
+                      or any(word.bbox["left"] >= columns["VALOR R$"] - .035 for word in words)):
             groups = {}
+            previous_word = previous_column = None
             for word in words:
                 x = word.bbox["left"]
-                column = "balance" if x >= columns["SALDO"] - .03 else "amount" if x >= columns["VALOR R$"] - .035 else "document"
+                column = ("balance" if x >= columns["SALDO"] - .03 else "amount" if x >= columns["VALOR R$"] - .035
+                          else "document" if x >= columns["DOCUMENTO"] - .07 else "history")
+                if (word.text.upper() in {"C", "D"} and previous_word is not None
+                        and _MONEY.fullmatch(previous_word.text.strip())
+                        and 0 <= x - (previous_word.bbox["left"] + previous_word.bbox["width"]) < .025):
+                    column = previous_column
                 groups.setdefault(column, []).append(word)
+                previous_word, previous_column = word, column
             if len(groups) > 1:
                 for group in groups.values():
+                    if group[0].bbox["left"] < columns["HISTORICO"] - .02:
+                        group = [word for word in group if word.bbox["left"] >= columns["HISTORICO"] - .02]
+                    if not group:
+                        continue
                     left = min(word.bbox["left"] for word in group)
                     right = max(word.bbox["left"] + word.bbox["width"] for word in group)
                     result.append(replace(line, text=" ".join(word.text for word in group),
@@ -108,15 +135,22 @@ def parse_bb_cash_ocr(extraction):
             fail()
         columns = {key: value + offset for key, value in base_columns.items()}
         lines = _column_lines(page, columns)
-        boundary = (columns["VALOR R$"] + columns["SALDO"]) / 2
+        if rows and dates[0].bbox["top"] < .15:
+            first_y = dates[0].bbox["top"]
+            continuation = [line for line in lines if columns["HISTORICO"]-.02 <= line.bbox["left"] < columns["DOCUMENTO"]-.07
+                            and first_y-.05 <= line.bbox["top"] < first_y-.006]
+            if continuation:
+                previous = rows[-1]
+                extra = _source(previous, page, continuation)
+                rows[-1] = replace(previous, transaction=replace(previous.transaction,
+                    description=previous.transaction.description + " " + " ".join(line.text for line in continuation)),
+                    source_regions=(*previous.source_regions, *extra.source_regions),
+                    source_line_refs=(*previous.source_line_refs, *extra.source_line_refs))
         for index, anchor in enumerate(dates):
             top = anchor.bbox["top"]
             bottom = dates[index + 1].bbox["top"] - 0.005 if index + 1 < len(dates) else 1
             lower = top - .005
             native = extraction.provider == "native_pdfium_text"
-            if native:
-                lower = (dates[index - 1].bbox["top"] + top) / 2 if index else top - .02
-                bottom = (dates[index + 1].bbox["top"] + top) / 2 if index + 1 < len(dates) else 1
             cells = [item for item in lines if lower <= item.bbox["top"] < bottom]
             history = [item for item in cells if columns["HISTORICO"] - 0.02 <= item.bbox["left"] < columns["DOCUMENTO"] - 0.07]
             label = upper(" ".join(item.text for item in history))
@@ -136,7 +170,7 @@ def parse_bb_cash_ocr(extraction):
                 label = "999 SALDO"
             values = [item for item in cells if item.bbox["left"] > columns["DOCUMENTO"] + 0.05 and _MONEY.fullmatch(item.text.strip())]
             amounts = [item for item in values if item.id.endswith(":amount") or not item.id.endswith(":balance")
-                       and item.bbox["left"] + item.bbox["width"] / 2 < boundary]
+                       and item.bbox["left"] + item.bbox["width"] < columns["SALDO"] - .005]
             balances = [item for item in values if item not in amounts]
 
             inferred_signs = set()
@@ -211,7 +245,7 @@ def parse_bb_cash_ocr(extraction):
             if len(refs) != 1:
                 fail()
             description = re.sub(r"^\d{3}\s+", "", " ".join(item.text for item in history))
-            movement_dates = [item for item in cells if native and .17 < item.bbox["left"] < .29
+            movement_dates = [item for item in cells if .17 < item.bbox["left"] < .29
                               and re.fullmatch(DATE, item.text) and abs(item.bbox["top"] - top) < .008]
             if len(movement_dates) > 1:
                 fail()

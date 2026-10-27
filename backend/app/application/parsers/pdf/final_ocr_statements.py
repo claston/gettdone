@@ -1,6 +1,8 @@
 """Explicit OCR columns, row coverage and independent statement periods."""
 import re
 from dataclasses import replace
+from datetime import date as calendar_date
+from datetime import timedelta
 from decimal import Decimal
 from statistics import median
 
@@ -209,6 +211,11 @@ def _sicredi(extraction):
 def _caixa(extraction):
     rows, period, running, opening, checks = [], None, None, None, 0
     checkpoints, scopes = {}, []
+    # A queried month may print a next-month posting on its last page. Accept
+    # that explicit date only if another printed period in this PDF covers it.
+    printed_scopes = [tuple(sorted(day(value) for value in match)) for page in extraction.pages
+                      for match in re.findall(rf"LANCAMENTOS DE\s+({DATE})\s+A\s+({DATE})",
+                          upper("\n".join(line.text for line in page.lines)))]
     for page in extraction.pages:
         text = upper("\n".join(line.text for line in page.lines))
         bounds = re.search(rf"LANCAMENTOS DE\s+({DATE})\s+A\s+({DATE})", text)
@@ -247,7 +254,9 @@ def _caixa(extraction):
             balance = _one(cells, boundary, 1)
             amount, printed, date = _number(value), _number(balance), day(anchor.text)
             description = " ".join(line.text for line in cells if columns["HISTORICO"]-.03 <= line.bbox["left"] < columns["VALOR"]-.04)
-            if not period[0] <= date <= period[1] or not description:
+            next_week = (calendar_date.fromisoformat(period[1]) + timedelta(days=7)).isoformat()
+            if (not any(start <= date <= end for start, end in printed_scopes)
+                    and not period[1] < date <= next_week) or not description:
                 fail()
             used.update((value.id, balance.id))
             if upper(description) == "SALDO DIA":
@@ -267,7 +276,10 @@ def _caixa(extraction):
                     opening = running
             if running + amount != printed:
                 financial_mismatch("Os valores Caixa não fecham dentro do mesmo período.")
-            rows.append(_source(_row(page.page_number, anchor.line_index, date, description, amount, printed), page, cells))
+            row = _source(_row(page.page_number, anchor.line_index, date, description, amount, printed), page, cells)
+            if not period[0] <= date <= period[1]:
+                row = replace(row, warnings=[*row.warnings, "manual_review_recommended", "movement_date_outside_requested_period"])
+            rows.append(row)
             running = printed
             checks += 1
         values = {line.id for line in body if line.bbox["left"] >= columns["VALOR"]-.025 and VALUE.fullmatch(line.text)}

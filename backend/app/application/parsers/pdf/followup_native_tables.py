@@ -9,6 +9,9 @@ from app.application.parsers.pdf.verified_statements import DATE, day, fail
 
 def _kind(text):
     compact = re.sub(r"[\s-]+", "", upper(text))
+    if all(marker in compact for marker in ("EXTRATODECONTACORRENTE", "SALDOCONTA/RENDE+",
+                                            "RENDIMENTOPREVISTORENDE+", "ENTRADASESAIDAS")):
+        return "banestes_rende"
     if all(marker in compact for marker in ("APLICATIVOSANTANDEREMPRESAS", "PERIODOS:",
             "VOCEALCANCOUONUMEROMAXIMODECONSULTAS", "PARAVERTODOSOSLANCAMENTOS")):
         return "santander_limited"
@@ -54,6 +57,10 @@ def parse_followup_native_tables(raw, page_texts):
     if kind is None:
         return None
     source = read_native_table_source(raw)
+    if kind == "banestes_rende":
+        from app.application.parsers.pdf.banestes_rende import parse_banestes_rende
+
+        return parse_banestes_rende(source), source
     if kind == "santander_limited":
         from app.application.parsers.pdf.santander_app_limited import parse_santander_app_limited
 

@@ -16,7 +16,7 @@ from app.application.source_regions import evidence_regions
 
 NUBANK_LAYOUT = "nubank_statement_ptbr"
 _MONEY = re.compile(r"^[+\-−]?\s*(?:R\$\s*)?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}$")
-_DATE = re.compile(r"^\d{1,2} [A-Z]{3} \d{4}$")
+_DATE = re.compile(r"^\d{1,2} [A-Z]{3}\s*\d{4}$")
 _PERIOD = re.compile(rf"^(\d{{1,2}} DE (?:{FULL_MONTH_PATTERN}) DE \d{{4}}) A (\d{{1,2}} DE (?:{FULL_MONTH_PATTERN}) DE \d{{4}})$")
 _SUMMARY = {"SALDO INICIAL", "SALDO FINAL DO PERIODO", "TOTAL DE ENTRADAS", "TOTAL DE SAIDAS"}
 _MESSAGE = "Não foi possível conferir todas as linhas, os totais e os saldos do extrato Nubank. Confira se o PDF está completo e legível."
@@ -28,7 +28,7 @@ def _money(text):
 
 def _date(text):
     try:
-        return parse_statement_date(text, fallback_year=None)
+        return parse_statement_date(re.sub(r"([A-Za-z]{3})(\d{4})$", r"\1 \2", text), fallback_year=None)
     except InvalidFileContentError as exc:
         raise PdfFinancialValidationError(_MESSAGE) from exc
 
@@ -45,6 +45,24 @@ def _summary(extraction):
         key = normalize_upper_text(text)
         if key in _SUMMARY and index + 1 < stop and _MONEY.fullmatch(texts[index + 1]):
             values[key].add(_money(texts[index + 1]))
+    if any(not found for found in values.values()):
+        # Labels and values in side-by-side summary columns need not be
+        # consecutive in OCR reading order. Keep both printed final balances.
+        header_lines = sorted(page.lines, key=lambda line: line.line_index)[:stop]
+        values = {key: set() for key in _SUMMARY}
+        for label in header_lines:
+            key = normalize_upper_text(label.text)
+            if key not in _SUMMARY or not label.bbox:
+                continue
+            same_row = [line for line in header_lines if line.bbox and _MONEY.fullmatch(line.text.strip())
+                        and line.bbox["left"] >= label.bbox["left"] + label.bbox["width"] - .02
+                        and abs(line.bbox["top"] - label.bbox["top"]) < .008]
+            below = [line for line in header_lines if line.bbox and _MONEY.fullmatch(line.text.strip())
+                     and abs(line.bbox["left"]-label.bbox["left"]) < .025
+                     and .008 <= line.bbox["top"]-label.bbox["top"] < .04]
+            candidates = same_row or below
+            if len(candidates) == 1:
+                values[key].add(_money(candidates[0].text.strip()))
     periods = {(_date(match[1]), _date(match[2])) for text in texts[:stop]
                if (match := _PERIOD.fullmatch(normalize_upper_text(text)))}
     if any(len(found) != 1 for found in values.values()) or len(periods) != 1:

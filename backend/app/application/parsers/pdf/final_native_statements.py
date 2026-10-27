@@ -118,13 +118,14 @@ def _brb(pages, kind):
         if len(histories) != len(dates) or not dates:
             fail("Não foi possível associar todos os históricos aos valores do extrato BRB.")
         for (history_line, history), (line, raw) in zip(histories, dates):
-            match = re.fullmatch(rf"(\d{{2}}/\d{{2}})\s+(.+?)\s+R\$\s*([+−-])\s*({NUMBER})", raw)
+            match = re.fullmatch(rf"(\d{{2}}/\d{{2}})\s+(?:(.+?)\s+)?R\$\s*([+−-])\s*({NUMBER})", raw)
             if not match or int(match[1][3:]) != month_number:
                 fail()
             date = day(f"{match[1]}/{year}")
             amount = money(match[4]) * (-1 if match[3] in "−-" else 1)
             reference = re.search(r"DOC:\s*(\d+)", history)[1]
-            row = _row(page, line, date, f"{history} | {match[2]}", amount, reference=reference)
+            description = f"{history} | {match[2]}" if match[2] else history
+            row = _row(page, line, date, description, amount, reference=reference)
             rows.append(replace(row, source_line_refs=((page, history_line), (page, line))))
     if any(a.transaction.date < b.transaction.date for a, b in zip(rows, rows[1:])):
         fail()

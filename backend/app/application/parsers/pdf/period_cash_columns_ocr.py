@@ -6,7 +6,7 @@ from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.ocr_statement_controls import _provenance
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
-_CASH = re.compile(rf"(?:R\$\s*)?((?:[+-]\s*){{0,2}}{NUMBER})\s*([CD]?)", re.I)
+_CASH = re.compile(rf"(?:R\$\s*)?((?:[+-]\s*){{0,2}}{NUMBER})\s*([CD€]?)", re.I)
 _MONTHS = "JANEIRO FEVEREIRO MARCO ABRIL MAIO JUNHO JULHO AGOSTO SETEMBRO OUTUBRO NOVEMBRO DEZEMBRO".split()
 
 
@@ -21,10 +21,12 @@ def _value(line, *, require_sign=False):
             fail("O valor contém sinais conflitantes ou duplicados.")
         token = signs[0][0] + token[len(signs[0]):]
     value = money(token)
-    if match[2]:
+    if match[2].upper() in {"C", "D"}:
         if token.startswith(("+", "-")) and (token[0] == "-") != (match[2].upper() == "D"):
             fail()
         return abs(value) * (-1 if match[2].upper() == "D" else 1)
+    if match[2]:
+        fail("Um indicador C/D não está legível e precisa dos controles independentes da linha.")
     if require_sign and value != 0 and not match[1].lstrip().startswith(("+", "-")):
         fail("Um valor ou saldo Caixa está sem seu indicador C/D.")
     return value
@@ -36,7 +38,10 @@ def parse_period_cash_columns(source):
     caixa = all(marker in text for marker in ("GERENCIADOR", "CAIXA", "EXTRATO POR PERIODO", "DATA MOV.", "NR. DOC."))
     if not (nordeste or caixa):
         return None
-    labels = {upper(line.text): line for line in source.pages[0].lines if line.bbox}
+    labels = {}
+    for line in source.pages[0].lines:
+        if line.bbox:
+            labels.setdefault(upper(line.text), line)
     names = ("HISTORICO", "DOCUMENTO", "VALOR R$", "SALDO R$") if nordeste else ("HISTORICO", "NR. DOC.", "VALOR", "SALDO")
     if not all(key in labels for key in names):
         return None
@@ -106,8 +111,17 @@ def parse_period_cash_columns(source):
             refs = [line.text for line in cells if abs(line.bbox["left"] - ref_x) < .025 and re.fullmatch(r"\d+", line.text)]
             if not description or len(refs) != 1:
                 fail()
-            balance = _value(balances[0], require_sign=caixa)
             value = _value(amounts[0], require_sign=caixa)
+            balance_match = _CASH.fullmatch(balances[0].text.strip())
+            recovered_indicator = caixa and balance_match[2] == "€"
+            if recovered_indicator:
+                magnitude = abs(money(re.sub(r"\s", "", balance_match[1])))
+                balance = running + value
+                if (abs(balance) != magnitude or balance_match[1].lstrip().startswith(("+", "-"))
+                        and money(re.sub(r"\s", "", balance_match[1])) != balance):
+                    fail("O indicador Caixa ilegível não confere com os demais valores da linha.")
+            else:
+                balance = _value(balances[0], require_sign=caixa)
             if caixa and upper(description) == "SALDO DIA":
                 if value != 0 or balance != running:
                     fail()
@@ -119,6 +133,8 @@ def parse_period_cash_columns(source):
             if abs(amount) != abs(value) or explicit and amount != value:
                 fail("O valor do lançamento não confere com os dois saldos impressos.")
             row = _provenance(_row(page.page_number, anchor.line_index, date, description, amount, balance, refs[0]), page, cells)
+            if recovered_indicator:
+                row = replace(row, warnings=[*row.warnings, "manual_review_recommended", "balance_indicator_from_independent_controls"])
             if not explicit and amount < 0:
                 row = replace(row, warnings=[*row.warnings, "amount_sign_from_printed_balances"])
             if re.match(r"\s*([+-])\s*\1", amounts[0].text):
