@@ -53,10 +53,18 @@ def test_postgres_upgrade_runtime_rollback_and_reupgrade(tmp_path):
         identity = access.resolve_identity(anonymous_fingerprint=None, user_token=user.token)
         repository = PostgresConversionBatchRepository(database_url=dsn, database_schema=schema)
         batch = ConversionBatch.create(identity_type="user", identity_id=user.user_id, files_count=1, idempotency_key="pg-source")
-        job = ConversionJob.create(batch_id=batch.batch_id, identity=identity, idempotency_key="pg-job",
-                                   document=ConversionDocumentReference(
-            storage_key="doc_" + "a" * 24, filename="metadata-only.csv", file_type="csv", size_bytes=1, sha256_hex="a" * 64,
-        ))
+        job = ConversionJob.create(
+            batch_id=batch.batch_id,
+            identity=identity,
+            idempotency_key="pg-job",
+            document=ConversionDocumentReference(
+                storage_key="doc_" + "a" * 24,
+                filename="metadata-only.csv",
+                file_type="csv",
+                size_bytes=1,
+                sha256_hex="a" * 64,
+            ),
+        )
         repository.create(batch=batch, jobs=[job])
         summaries = repository.list_files_for_owner(identity_type="user", identity_id=user.user_id, limit=2)
         assert len(summaries) == 1 and summaries[0].filename == "metadata-only.csv"
@@ -69,6 +77,58 @@ def test_postgres_upgrade_runtime_rollback_and_reupgrade(tmp_path):
         assert context["version"] == 1
         assert service.catalog(user.user_id)["periods"][0]["start_date"] == "2026-09-20"
         assert service.contexts(user.user_id, [job.job_id])[job.job_id]["client_id"] == client["id"]
+        from app.application.conversion.contracts.jobs import ConversionJobResultReference
+        from app.application.statement_works import StatementWorkService
+
+        works = StatementWorkService(access.db, repository)
+        account = service.save_account(user.user_id, client_id=client["id"], name="Principal")
+        work = works.create(user.user_id, client["id"], period["id"])
+        assert works.create(user.user_id, client["id"], period["id"])["id"] == work["id"]
+        work = works.scope(user.user_id, work["id"], work["version"], [account["id"]])
+        work = works.attach(user.user_id, work["id"], work["version"], job.job_id, account["id"], 1)
+        repository.mark_uploaded(job.job_id)
+        repository.mark_queued(job.job_id)
+        repository.mark_running(job.job_id)
+        repository.mark_completed(
+            job.job_id,
+            result=ConversionJobResultReference(
+                analysis_id="an_pg_work",
+                payload={
+                    "analysis": {
+                        "preview_transactions": [{"transaction_id": "tx1", "date": "2026-10-01", "description": "PIX", "amount": 12}]
+                    },
+                    "reviewed_at": "2026-10-27T12:00:00Z",
+                },
+            ),
+        )
+        work = works.annotate(
+            user.user_id,
+            work["id"],
+            work["version"],
+            "evidence",
+            job.job_id,
+            {"identity_confirmed": True, "start_date": "2026-09-20", "end_date": "2026-10-04"},
+        )
+        assert work["assessment"]["can_complete"]
+        work = works.complete(user.user_id, work["id"], work["version"], work["fingerprint"], {})
+        assert not work["needs_reassessment"]
+        assert len(works.list(user.user_id)["items"]) == 1
+        work = works.reopen(user.user_id, work["id"], work["version"], "Conferência adicional")
+        work = works.complete(user.user_id, work["id"], work["version"], work["fingerprint"], {})
+        assert len(work["closings"]) == 2
+        access.close()
+        access = None
+        migrate("20261024_01")
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            assert conn.execute(sql.SQL("SELECT count(*) FROM {}.pro_clients").format(sql.Identifier(schema))).fetchone()[0] == 1
+            assert conn.execute(sql.SQL("SELECT count(*) FROM {}.conversion_jobs").format(sql.Identifier(schema))).fetchone()[0] == 1
+            assert conn.execute("SELECT to_regclass(%s)", (f"{schema}.pro_statement_works",)).fetchone()[0] is None
+        migrate("head")
+        access = AccessControlService(
+            state_file=tmp_path / "works-after.json", token_secret="postgres-organization-test", database_url=dsn, database_schema=schema
+        )
+        assert StatementWorkService(access.db, repository).list(user.user_id)["items"] == []
+        assert OrganizationService(access.db).catalog(user.user_id)["clients"][0]["id"] == client["id"]
         access.close()
         access = None
         migrate("20261012_01")

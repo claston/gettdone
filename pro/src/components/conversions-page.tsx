@@ -14,24 +14,31 @@ export function ConversionsPage({
   initialCursor,
   organization,
   batches,
+  workId,
 }: {
   initialView?: "batches" | "files";
   initialFilters?: OrganizationFilters;
   initialCursor?: string;
   organization?: OrganizationService;
   batches?: BatchHistoryService;
+  workId?: string;
 }) {
   const [view, setView] = useState(initialView);
   const [filesVisited, setFilesVisited] = useState(initialView === "files");
   const updateContext = useCallback(
     (url: string) => {
-      if (view === "files") window.history.replaceState(null, "", url);
+      if (view === "files")
+        window.history.replaceState(
+          null,
+          "",
+          `${url}${workId ? `&work=${encodeURIComponent(workId)}` : ""}`,
+        );
     },
-    [view],
+    [view, workId],
   );
   return (
     <>
-      <NewConversionForm />
+      <NewConversionForm workId={workId} />
       <nav
         className="standard-page conversion-views"
         aria-label="Visões de conversões"
@@ -50,7 +57,11 @@ export function ConversionsPage({
             onClick={() => {
               setView(key);
               if (key === "files") setFilesVisited(true);
-              window.history.replaceState(null, "", `/conversions?view=${key}`);
+              window.history.replaceState(
+                null,
+                "",
+                `/conversions?view=${key}${workId ? `&work=${encodeURIComponent(workId)}` : ""}`,
+              );
             }}
           >
             {label}

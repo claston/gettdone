@@ -123,7 +123,22 @@ export function ConversionOrganization({
           </span>
           {account && <span>{account.name}</span>}
           {periods.length ? (
-            periods.map((period) => <span key={period.id}>{period.name}</span>)
+            periods.map((period) => (
+              <span key={period.id}>
+                {period.name}
+                {item.context.client_id && (
+                  <>
+                    {" "}
+                    ·{" "}
+                    <Link
+                      href={`/works?client=${encodeURIComponent(item.context.client_id)}&period=${encodeURIComponent(period.id)}`}
+                    >
+                      Abrir trabalho
+                    </Link>
+                  </>
+                )}
+              </span>
+            ))
           ) : (
             <span>
               {item.context.period_ids.length
