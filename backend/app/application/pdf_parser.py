@@ -820,6 +820,7 @@ def is_textract_forced() -> bool:
 
 def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult:
     from app.application.parsers.pdf.bb_cash_ocr import is_bb_cash_ocr
+    from app.application.parsers.pdf.daily_cd_fragment_ocr import is_daily_cd_fragment
     from app.application.parsers.pdf.final_ocr_statements import identify_final_ocr
     from app.application.parsers.pdf.sicredi_combined_ocr import is_sicredi_combined
     from app.application.parsers.pdf.uniprime_ocr import is_uniprime_statement
@@ -838,13 +839,16 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
     textract_mode = str(gateway_metrics.get("textract_mode") or "").strip().lower()
     _validate_ocr_statement_source(extraction)
     segmentation = segment_pdf_pages(_textract_page_texts(extraction))
+    daily_fragment = is_daily_cd_fragment(extraction)
+    if daily_fragment:
+        segmentation = replace(segmentation, page_texts=_textract_page_texts(extraction), parts=[])
     statement_extraction = extraction
     if segmentation.parts:
         statement_extraction = replace(extraction, pages=[
             page for page in extraction.pages if segmentation.page_texts[page.page_number - 1]
         ])
     is_monthly = infer_pdf_layout("\n".join(segmentation.page_texts)).layout_name == _ITAU_MONTHLY_AUTOMATIC_INVESTMENTS_LAYOUT
-    if (textract_mode == "text" or is_monthly or is_bradesco_monthly_ocr("\n".join(_textract_page_texts(extraction)))
+    if (textract_mode == "text" or daily_fragment or is_monthly or is_bradesco_monthly_ocr("\n".join(_textract_page_texts(extraction)))
             or identify_final_ocr("\n".join(_textract_page_texts(extraction)))
             or is_sicredi_combined("\n".join(_textract_page_texts(extraction)))
             or identify_sweep_statement("\n".join(_textract_page_texts(extraction)))
@@ -995,10 +999,11 @@ def _parse_scanned_pdf_with_textract_text_pages_review(extraction):
 
 
 def _parse_scanned_pdf_with_textract_text_pages_strict(extraction) -> PdfParseResult:
+    from app.application.parsers.pdf.daily_cd_fragment_ocr import is_daily_cd_fragment
     from app.application.structured_statement_detection import is_bradesco_monthly_ocr
 
     _validate_ocr_statement_source(extraction)
-    if is_bradesco_monthly_ocr("\n".join(_textract_page_texts(extraction))):
+    if is_bradesco_monthly_ocr("\n".join(_textract_page_texts(extraction))) or is_daily_cd_fragment(extraction):
         # An unreadable continuation is evidence of an incomplete ledger. Keep
         # every physical page for the strict reader, before appendix filtering.
         result = _parse_textract_text_pages(extraction)

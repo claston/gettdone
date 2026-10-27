@@ -1,8 +1,8 @@
 # Recuperação prioritária de 27/10/2026
 
-Esta alteração trata sete documentos do recorte de recuperação encerrado em
+Esta alteração trata oito documentos do recorte de recuperação encerrado em
 27/10/2026 às 09:09, horário de São Paulo. Os originais e diagnósticos foram
-consultados em leitura; somente os sete PDFs autorizados foram copiados para
+consultados em leitura; somente os oito PDFs autorizados foram copiados para
 `local/`, ignorado pelo Git. Os testes versionados usam dados fictícios.
 
 ## InfinitePay: trecho nativo de relatório
@@ -151,6 +151,35 @@ transações. Documentos incompletos, colunas ausentes, valores ou datas órfão
 continuam recusados. Se houver movimentos e resumo zerado, o caminho existente
 preserva os lançamentos e sinaliza a diferença financeira real.
 
+## Trecho digitalizado sem cabeçalho: movimentos C/D e saldos diários
+
+O C38 tem cinco páginas digitalizadas, começando num saldo diário sem data e
+terminando durante os movimentos do último dia, sem fechamento. A identificação
+preliminar como Sicoob veio de uma transferência; não há cabeçalho que comprove
+o emissor. O leitor estrutural `dated_cd_daily_balance_fragment_ocr_v1` não
+atribui banco ou código bancário a partir de contrapartes.
+
+O caminho genérico devolvia apenas **107 movimentos**, com datas incorretas e
+um conflito de saldo. O novo leitor usa as coordenadas OCR armazenadas, as
+datas completas, as referências, os sinais explícitos `C/D` e os controles
+`SALDO DO DIA`. Exige um único valor legível para cada linha financeira e
+confere os movimentos entre controles, incluindo os que atravessam páginas.
+Descrições complementares, referências repetidas, multiplicidade e regiões
+originais são preservadas. Datas inválidas, valores órfãos, sinais ausentes,
+páginas ilegíveis ou movimentos sem descrição continuam recusados. Diferenças
+aritméticas legíveis preservam os movimentos e o aviso de revisão financeira.
+
+A conferência independente das evidências armazenadas e do original encontrou
+**240 movimentos, 93 saldos impressos e 92 verificações entre saldos**, sem
+divergência. Datas, sinais, valores, ordem e referências são comparados com a
+extração original. O primeiro saldo é uma referência local sem data; o último
+dia não tem saldo de fechamento. O aviso `partial_statement` permanece ativo,
+e `balance_bounds_unavailable` mantém abertura e fechamento globais ausentes.
+XLSX e CSV preservam todos os movimentos; o OFX não publica `LEDGERBAL`.
+
+A reprodução reutiliza o OCR já capturado. Nenhuma nova chamada OCR remota,
+alteração do original ou reprocessamento histórico em produção foi realizado.
+
 ## Validação e compatibilidade
 
 - TDD: a primeira execução dos novos testes apresentou 12 falhas e 7 sucessos,
@@ -169,6 +198,11 @@ preserva os lançamentos e sinaliza a diferença financeira real.
   A validação focada final apresentou 91 sucessos, incluindo HTTP real,
   exportações sem movimentos, saldos positivo/zero/negativo, imagens na tabela,
   logotipo, páginas incompletas e preservação de diferenças financeiras reais.
+- C38: os 17 testes novos falharam antes da correção. A validação focada final
+  apresentou 93 sucessos, incluindo HTTP real nos modos texto/tabelas, saldos
+  diários entre páginas, referências repetidas, diferenças reais e regressões
+  de identidade bancária, leitores Sicoob, evidências de origem e rejeição de
+  investimentos com fontes sem coordenadas.
 - Os testes HTTP reais cobrem `/convert`, `/report/{id}`, CSV, XLSX, OFX, sinais,
   quantidades, ausência de saldos não comprovados, relatório inexistente `404`
   e o endpoint legado `/analyze`, que permanece desativado com `405`.
