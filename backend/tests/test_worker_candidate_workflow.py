@@ -29,3 +29,12 @@ def test_candidate_preserves_handler_architecture_and_restricted_context():
     original = set((ROOT / "Dockerfile.lambda.dockerignore").read_text(encoding="utf-8").splitlines())
     separate = set((ROOT / "Dockerfile.lambda.debian.dockerignore").read_text(encoding="utf-8").splitlines())
     assert original - {"!Dockerfile.lambda"} <= separate
+
+
+def test_worker_debian_ci_tests_the_canonical_production_image_on_every_main_push():
+    workflow = (ROOT / ".github/workflows/worker-debian-candidate.yml").read_text(encoding="utf-8")
+    assert 'branches: [main, "feat/worker-debian-candidate"]' in workflow
+    assert "file: Dockerfile.lambda\n" in workflow
+    assert "file: Dockerfile.lambda.debian" not in workflow
+    assert "-r backend/requirements-worker.txt" in workflow
+    assert 'Path("backend/requirements-worker.txt")' in workflow

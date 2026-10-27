@@ -1,14 +1,17 @@
-name: CI | Worker Debian Candidate
+name: CI | Worker Debian Image
 
 on:
   push:
-    branches: ["feat/worker-debian-candidate"]
+    branches: [main, "feat/worker-debian-candidate"]
   pull_request:
     branches: [main]
     paths:
-      - "Dockerfile.lambda.debian*"
+      - "Dockerfile.lambda*"
       - "backend/requirements-worker*.txt"
       - "backend/app/**"
+      - "backend/tests/**"
+      - ".github/workflows/deploy-worker-ecr.yml"
+      - "scripts/verify_worker_release_gates.py"
       - "scripts/smoke_worker_candidate_image.py"
       - ".github/workflows/worker-debian-candidate.yml"
   workflow_dispatch:
@@ -33,11 +36,11 @@ jobs:
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.12"
-      - name: Install application test dependencies and candidate versions
+      - name: Install application tests and production worker dependencies
         run: |
           python -m pip install -r backend/requirements.txt
-          python -m pip install --only-binary=:all: -r backend/requirements-worker-debian.txt
-      - name: Run full suite with candidate PDF reader
+          python -m pip install --only-binary=:all: -r backend/requirements-worker.txt
+      - name: Run full suite with production worker dependencies
         run: python -m pytest backend/tests -q --basetemp "$RUNNER_TEMP/pytest-worker-candidate"
       - name: Clean test temporary directory
         if: always()
@@ -71,11 +74,11 @@ jobs:
           python-version: "3.12"
       - name: Set up Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
-      - name: Build candidate without publishing
+      - name: Build production Debian image without publishing
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: .
-          file: Dockerfile.lambda.debian
+          file: Dockerfile.lambda
           platforms: linux/amd64
           pull: true
           load: true
@@ -116,18 +119,19 @@ jobs:
           python_packages = [p for r in results if r.get("Type") == "python-pkg" for p in r.get("Packages", [])]
           if report.get("Metadata", {}).get("OS", {}).get("Family") != "debian" or not os_packages:
               raise SystemExit("Scanner did not recognize the Debian package inventory.")
-          expected = next(line.split("==")[1] for line in Path("backend/requirements-worker-debian.txt").read_text().splitlines() if line.startswith("pypdf=="))
+          expected = next(line.split("==")[1] for line in Path("backend/requirements-worker.txt").read_text().splitlines() if line.startswith("pypdf=="))
           if not any(p.get("Name") == "pypdf" and p.get("Version") == expected for p in python_packages):
               raise SystemExit("Scanner did not recognize the candidate Python package inventory.")
           print(f"Scan coverage verified: {len(os_packages)} OS packages; {len(python_packages)} Python packages.")
           PY
       - name: Save approved candidate for isolated Lambda validation
-        run: docker save "$CANDIDATE_IMAGE" -o artifacts/worker-debian-candidate.tar
+        if: github.event_name == 'workflow_dispatch'
+        run: docker save "$CANDIDATE_IMAGE" -o artifacts/worker-debian-image.tar
       - name: Upload runtime and security evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: worker-debian-candidate-${{ github.sha }}
+          name: worker-debian-image-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/
           retention-days: 7
           if-no-files-found: error

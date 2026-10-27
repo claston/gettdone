@@ -1,9 +1,12 @@
-# Imagem candidata do worker: Debian distroless
+# Histórico da candidata Debian e integração no runtime padrão
 
 A candidata usa Python 3.12 em Debian Trixie distroless e o Runtime Interface
 Client oficial `awslambdaric`. As bases e o cliente estão fixados por digest/versão.
-`Dockerfile.lambda` e o workflow de deploy continuam usando a imagem atual;
-esta alteração não publica nem atualiza a função de produção.
+Na #488, a imagem foi validada separadamente e depois promovida por digest.
+A padronização incorpora essa base em `Dockerfile.lambda` e usa
+`backend/requirements-worker.txt` para as próximas releases. Os arquivos
+separados da candidata ficam como referência histórica. O procedimento atual
+está em [Releases padrão do worker Debian](worker-debian-releases.md).
 
 O build parte do Python oficial slim; o runtime usa distroless `cc-debian13`
 sem shell, gerenciador de pacotes ou ferramentas de administração. São copiados
@@ -16,15 +19,16 @@ Todas as extensões nativas restantes são carregadas durante o build para
 detectar dependências ausentes. O worker não oferece terminal interativo.
 
 O PyPDF da candidata é 6.21.2, corrigindo os achados detectados no 5.4.0.
-Essa mudança fica restrita à candidata e roda a suíte completa separadamente
-na esteira; os arquivos de dependências de produção não mudam nesta PR.
+Na validação inicial, essa mudança ficou restrita à candidata. No padrão atual,
+o worker usa essa versão e roda a suíte completa com suas dependências reais;
+as dependências do servidor API continuam separadas.
 O código de extração e preflight preserva explicitamente a falha por fonte
 nula, pois o PyPDF novo pode retornar texto incompleto nesse caso. O sinal
 de falha e o motivo da tentativa de OCR continuam compatíveis com o PyPDF atual.
 
 ## Validação na esteira
 
-O workflow `CI | Worker Debian Candidate` constrói `Dockerfile.lambda.debian`
+O workflow `CI | Worker Debian Image` constrói `Dockerfile.lambda`
 para `linux/amd64`, sem credenciais AWS. O contexto de build segue a mesma
 lista restrita do worker atual, excluindo a API, administração e segredos.
 
@@ -108,5 +112,6 @@ a função. A imagem no ECR foi preservada. As evidências locais estão em
 O usuário deve remover a policy temporária `GettDoneWorkerImageCanaryTemporary`
 do bootstrap; essa credencial não tem permissão para remover a própria policy.
 
-Este resultado conclui a validação do canário. Merge e promoção para produção
-continuam sujeitos à autorização e revisão, com rollback pelo digest anterior.
+Esse canário fundamentou a promoção por digest da #488, concluída pela execução
+40411630896 em 26/10/2026. A padronização mantém aprovação e rollback por digest
+e acrescenta o build Debian do commit de `main` para funcionalidades novas.
