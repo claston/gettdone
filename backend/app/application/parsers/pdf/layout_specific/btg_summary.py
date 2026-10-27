@@ -159,6 +159,8 @@ class BtgSummaryLayoutParser:
         pages = sorted({line.page_number for line in lines})
         ledger = [row for ordinal, page in enumerate(pages, start=1)
                   for row in _page_rows([line for line in lines if line.page_number == page], ordinal=ordinal, total_pages=len(pages))]
+        if ledger and ledger[0].kind == "ABERTURA" and ledger[-1].kind == "FECHAMENTO":
+            ledger.reverse()
         if len(ledger) < 3 or ledger[0].kind != "FECHAMENTO" or ledger[-1].kind != "ABERTURA":
             _fail()
         if ledger[0].day != summary.end:

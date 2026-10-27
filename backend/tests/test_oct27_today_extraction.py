@@ -80,6 +80,8 @@ def test_split_day_month_and_combined_balance_keep_movements_and_exclude_project
     assert parsed.parse_metrics["financial_controls_validated"] == 1
     assert parsed.parse_metrics["verified_opening_balance"] == 100
     assert parsed.parse_metrics["verified_closing_balance"] == 140
+    assert parsed.parse_metrics["balance_bounds_unavailable"] == 1
+    assert "combined_cash_investment_balance_not_comparable" in parsed.canonical_transactions[0].warnings
     assert all(row.source_line_refs for row in parsed.canonical_transactions)
 
 

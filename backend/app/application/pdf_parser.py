@@ -432,8 +432,13 @@ def _parse_pdf_transactions_strict(
             statement, pages = complete_table
             return _with_parse_observability(_build_verified_statement_result(statement, pages),
                 native_text_detected=1, textract_attempted=0, extraction_provider="native_pdf_layout_text")
-        inactive = _explicit_inactive_result(native_pages)
+        from app.application.parsers.pdf.explicit_inactive import read_native_inactive
+
+        inactive_source = read_native_inactive(raw_bytes, native_pages)
+        inactive = _explicit_inactive_result(inactive_source[0]) if inactive_source is not None else None
         if inactive is not None:
+            inactive = replace(inactive, source_extraction=inactive_source[1],
+                               source_layout_lines=tuple(tuple(page.lines) for page in inactive_source[1].pages))
             return _with_parse_observability(inactive, native_text_detected=1, textract_attempted=0,
                                             extraction_provider="native_pdf_text")
         from app.application.parsers.pdf.followup_native_tables import parse_followup_native_tables

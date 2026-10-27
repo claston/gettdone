@@ -105,4 +105,9 @@ def parse_banestes_rende(source):
         checks += 4
     if not rows or any(a.transaction.date > b.transaction.date for a, b in zip(rows, rows[1:])):
         fail()
-    return VerifiedStatement(rows, LAYOUT, opening, closing, printed_balance_checks=checks, candidate_rows=len(rows))
+    # The printed ledger combines cash and automatic investments. Its controls
+    # validate the movements, but must not become a pure-cash OFX balance.
+    rows[0] = replace(rows[0], warnings=[*rows[0].warnings, "manual_review_recommended",
+                                       "combined_cash_investment_balance_not_comparable"])
+    return VerifiedStatement(rows, LAYOUT, opening, closing, printed_balance_checks=checks,
+                             candidate_rows=len(rows), balance_bounds_unavailable=True)

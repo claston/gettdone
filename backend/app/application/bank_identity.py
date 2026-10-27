@@ -8,6 +8,8 @@ from app.application.normalization.text import normalize_upper_text
 
 _GENERIC_LAYOUT_NAMES = {"generic_statement_ptbr"}
 VERIFIED_STATEMENT_BANKS = {
+    "banestes_conta_rende_split_date_v1": "Banestes",
+    "bradesco_net_empresa_explicit_no_activity_v1": "Bradesco",
     "pagbank_native_daily_cash_v1": "PagBank",
     "sicoob_sisbr_native_split_cd_v1": "Sicoob",
     "caixa_pessoal_sem_movimentacao_v1": "Caixa Economica Federal",

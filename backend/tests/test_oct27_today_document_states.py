@@ -70,6 +70,14 @@ def test_bradesco_explicit_inactivity_does_not_invent_a_period_balance_from_avai
     assert result.parse_metrics.get("verified_closing_balance") is None
 
 
+def test_native_inactivity_cannot_hide_a_raster_ledger_below_the_declaration():
+    from tests.test_oct27_mercado_empty import _with_image
+
+    raw = _with_image(bradesco_inactive(), body=True)
+    with pytest.raises(InvalidFileContentError):
+        pdf_parser.parse_pdf_transactions(raw)
+
+
 @pytest.mark.parametrize("factory,mutation", [(xp_inactive, "balance"), (xp_inactive, "row"),
     (bradesco_inactive, "row"), (bradesco_inactive, "partial")])
 def test_missing_or_contradictory_evidence_never_returns_a_confirmed_empty_statement(factory, mutation):

@@ -13,6 +13,26 @@ LAYOUT = "sicoob_sisbr_descending_cd_ocr_v1"
 _MONEY = re.compile(rf"(?:R\$\s*)?({NUMBER})\s*([CD])")
 
 
+def _split_date_document(page, document_x):
+    words = {word.id: word for word in page.words}
+    lines = []
+    for line in page.lines:
+        if line.bbox and line.bbox["left"] < document_x - .01 and re.match(r"^\d{2}/\d{2}\s+", line.text):
+            cells = [words[key] for key in line.word_ids if key in words and words[key].bbox]
+            groups = ([word for word in cells if word.bbox["left"] < document_x - .01],
+                      [word for word in cells if word.bbox["left"] >= document_x - .01])
+            if not all(groups) or not re.fullmatch(r"\d{2}/\d{2}", " ".join(word.text for word in groups[0])):
+                fail("Não foi possível separar a data e o documento Sicoob.")
+            for group in groups:
+                left = min(word.bbox["left"] for word in group)
+                right = max(word.bbox["left"] + word.bbox["width"] for word in group)
+                lines.append(replace(line, text=" ".join(word.text for word in group),
+                    bbox={**line.bbox, "left": left, "width": right-left}, word_ids=tuple(word.id for word in group)))
+        else:
+            lines.append(line)
+    return replace(page, lines=lines)
+
+
 def parse_sicoob(extraction):
     text = upper("\n".join(line.text for p in extraction.pages for line in p.lines))
     period = re.search(rf"PERIODO\s*:?\s*({DATE})\s+(?:A\s+)?({DATE})", text)
@@ -23,9 +43,11 @@ def parse_sicoob(extraction):
     if not columns:
         fail()
     rows, controls, current, opening, finished = [], {}, None, None, False
+    ascending = False
     for page in extraction.pages:
         if finished:
             break
+        page = _split_date_document(page, columns["DOCUMENTO"])
         lines = [item for item in page.lines if item.bbox]
         summary = min((item.bbox["top"] for item in lines if upper(item.text) == "RESUMO"), default=1)
         dates = [item for item in lines if item.bbox["left"] < columns["DOCUMENTO"] - 0.01 and re.fullmatch(r"\d{2}/\d{2}", item.text)]
@@ -63,6 +85,7 @@ def parse_sicoob(extraction):
                 if opening is not None or current >= start:
                     fail()
                 opening = amount
+                ascending = not rows and not controls
             elif label == "SALDO DO DIA":
                 if current in controls and controls[current] != amount:
                     fail()
@@ -99,7 +122,8 @@ def parse_sicoob(extraction):
         finished = summary < 1
     if opening is None or not rows or not finished or not controls:
         fail()
-    rows.reverse()
+    if not ascending:
+        rows.reverse()
     if any(a.transaction.date > b.transaction.date for a, b in zip(rows, rows[1:])):
         fail()
     running = opening
@@ -109,7 +133,7 @@ def parse_sicoob(extraction):
             if controls.get(row.transaction.date) != running:
                 financial_mismatch("Os valores Sicoob não fecham com o saldo diário impresso. Confira o documento original.")
             rows[index] = replace(row, running_balance=float(running))
-    closing = re.search(rf"SALDO EM CONTA:\s*({NUMBER})\s*([CD])", text)
+    closing = re.search(rf"SALDO EM CONTA:\s*(?:R\$\s*)?({NUMBER})\s*([CD])", text)
     if not closing or money(closing[1]) * (-1 if closing[2] == "D" else 1) != running:
         fail()
     return VerifiedStatement(rows, LAYOUT, opening, running, printed_balance_checks=len(controls) + 1)

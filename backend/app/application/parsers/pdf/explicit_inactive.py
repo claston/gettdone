@@ -8,6 +8,25 @@ XP = "xp_empresas_extrato_conta_digital_pj_v1"
 BRADESCO = "bradesco_net_empresa_explicit_no_activity_v1"
 
 
+def read_native_inactive(raw, pages):
+    text = upper("\n".join(pages))
+    if not ("EXTRATO INEXISTENTE PARA O PERIODO SELECIONADO" in text or "SMI.WSE.0004" in text):
+        return None
+    from app.application.parsers.pdf.mercado_pago_inactive import _image_in_ledger
+    from app.application.parsers.pdf.native_table_source import read_native_table_source
+
+    source = read_native_table_source(raw)
+    prepared = ["\n".join(line.text for line in page.lines) for page in source.pages]
+    recognized = recognize_explicit_inactive(prepared)
+    if recognized is None:
+        return None
+    lines = source.pages[0].lines
+    boundaries = [line.bbox["top"] for line in lines if upper(line.text).startswith(("EXTRATO DE:", "EXTRATO DA CONTA DIGITAL PJ"))]
+    if not boundaries or _image_in_ledger(raw, min(boundaries), 1):
+        return None
+    return prepared, source
+
+
 def recognize_explicit_inactive(pages):
     if len(pages) != 1:
         return None
