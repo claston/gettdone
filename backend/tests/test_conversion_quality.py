@@ -61,6 +61,31 @@ def test_pdf_is_clean_only_with_specific_high_confidence_layout() -> None:
     assert assessment.reason_codes == ()
 
 
+@pytest.mark.parametrize("band", ["high", "medium", "low", None])
+def test_parser_band_alone_does_not_create_a_quality_finding(band):
+    result = assess_conversion_quality(
+        status="Sucesso", conversion_type="pdf-ofx", transactions_count=24,
+        layout_name="banco_safra_extrato_movimentacao_lancamentos_realizados_v1",
+        layout_confidence=.992, selected_parser="tabular", parser_confidence_band=band,
+        warning_count=0, balance_failed=0,
+    )
+    assert result.status == "clean"
+    assert result.reason_codes == ()
+    assert result.score == .992
+
+
+@pytest.mark.parametrize("band", ["high", "medium", "low", None])
+def test_financial_findings_require_review_regardless_of_parser_band(band):
+    result = assess_conversion_quality(
+        status="Sucesso", conversion_type="pdf-ofx", transactions_count=24,
+        layout_name="banco_safra_extrato_movimentacao_lancamentos_realizados_v1",
+        layout_confidence=.992, selected_parser="tabular", parser_confidence_band=band,
+        warning_count=1, balance_failed=1,
+    )
+    assert result.status == "review"
+    assert result.reason_codes == ("row_warnings", "balance_inconsistency")
+
+
 def test_pdf_with_generic_or_low_confidence_layout_requires_review() -> None:
     generic = assess_conversion_quality(
         status="Sucesso",

@@ -427,6 +427,11 @@ class AdminDashboardAttentionItem(BaseModel):
     selected_parser: str | None = None
     quality_status: str | None = None
     quality_reason_codes: list[str] = Field(default_factory=list)
+    quality_rule_version: str | None = None
+    quality_assessment_source: str | None = None
+    parser_confidence_band: str | None = None
+    parser_coverage_rate: float | None = None
+    warning_types: list[str] = Field(default_factory=list)
     canonical_capture_status: str | None = None
     canonical_capture_reason: str | None = None
     issue_reason: str

@@ -190,6 +190,11 @@ class AdminDashboardService:
                     "error_stage": event.get("error_stage"),
                     "quality_status": event.get("quality_status"),
                     "quality_reason_codes": event.get("quality_reason_codes", []),
+                    "quality_rule_version": event.get("quality_rule_version"),
+                    "quality_assessment_source": event.get("quality_assessment_source"),
+                    "parser_confidence_band": event.get("parser_confidence_band"),
+                    "parser_coverage_rate": event.get("parser_coverage_rate"),
+                    "warning_types": event.get("warning_types", []),
                     "issue_reason": attention["issue_reason"],
                     "canonical_capture_status": event.get("canonical_capture_status"),
                     "canonical_capture_reason": event.get("canonical_capture_reason"),
@@ -353,6 +358,9 @@ class AdminDashboardService:
                     quality_score,
                     quality_rule_version,
                     quality_reason_codes_json,
+                    parser_confidence_band,
+                    parser_coverage_rate,
+                    warning_types_json,
                     canonical_capture_status,
                     canonical_capture_reason,
                     document_type,
@@ -395,6 +403,9 @@ class AdminDashboardService:
                     quality_score,
                     quality_rule_version,
                     quality_reason_codes_json,
+                    parser_confidence_band,
+                    parser_coverage_rate,
+                    warning_types_json,
                     canonical_capture_status,
                     canonical_capture_reason,
                     document_type,
@@ -567,6 +578,8 @@ def _row_to_event(row, *, identity_type: str) -> dict[str, object]:
         selected_parser=str(row["selected_parser"] or "") or None,
         warning_count=_as_non_negative_int(row["canonical_warning_transactions_count"]),
         balance_failed=_as_non_negative_int(row["balance_consistency_failed"]),
+        parser_confidence_band=str(row["parser_confidence_band"] or "") or None,
+        parser_coverage_rate=_as_optional_float(row["parser_coverage_rate"]),
     )
     stored_quality_status = str(row["quality_status"] or "").strip()
     stored_reasons = _json_string_list(row["quality_reason_codes_json"])
@@ -599,8 +612,13 @@ def _row_to_event(row, *, identity_type: str) -> dict[str, object]:
         "quality_score": _as_optional_float(row["quality_score"])
         if row["quality_score"] is not None
         else assessment.score,
-        "quality_rule_version": str(row["quality_rule_version"] or assessment.rule_version),
-        "quality_reason_codes": stored_reasons or list(assessment.reason_codes),
+        "quality_rule_version": (str(row["quality_rule_version"] or "") or None)
+        if stored_quality_status else assessment.rule_version,
+        "quality_assessment_source": "stored" if stored_quality_status else "recalculated",
+        "quality_reason_codes": stored_reasons if stored_quality_status else list(assessment.reason_codes),
+        "parser_confidence_band": str(row["parser_confidence_band"] or "") or None,
+        "parser_coverage_rate": _as_optional_float(row["parser_coverage_rate"]),
+        "warning_types": _json_string_list(row["warning_types_json"]),
         "canonical_capture_status": str(row["canonical_capture_status"] or "").strip() or "not_recorded",
         "canonical_capture_reason": str(row["canonical_capture_reason"] or "").strip() or None,
         "document_type": str(row["document_type"] or "").strip().lower() or None,
@@ -1265,16 +1283,45 @@ def _attention_item(event: dict[str, object], *, is_success: bool) -> dict[str, 
         "layout_confidence_missing": "Score de reconhecimento ausente",
         "layout_confidence_below_95": "Score de reconhecimento abaixo de 95%",
         "parser_missing": "Parser não identificado",
-        "parser_requires_review": "Leitura do documento recomenda revisão",
         "row_warnings": "Linhas com alerta",
         "balance_inconsistency": "Inconsistência de saldo",
         "no_transactions": "Nenhuma transação encontrada",
         "technical_failure": "Falha técnica",
     }
     for code in event.get("quality_reason_codes", []):
-        label = reason_labels.get(str(code), str(code))
+        if code == "parser_requires_review":
+            band_label = {"low": "baixa", "medium": "média", "high": "alta"}.get(event.get("parser_confidence_band"))
+            label = (
+                f"Confiança do parser {band_label}" if band_label else
+                "Confiança e causa detalhada do parser não registradas no histórico"
+            )
+            coverage = event.get("parser_coverage_rate")
+            if coverage is not None:
+                label += f"; Cobertura registrada do parser: {_percentage_label(float(coverage))}"
+        elif code == "layout_confidence_below_95" and event.get("layout_confidence") is not None:
+            label = f"Score de reconhecimento de {_percentage_label(float(event['layout_confidence']))} abaixo de 95%"
+        elif (code == "row_warnings" and warning_count > 0) or (code == "balance_inconsistency" and balance_failed > 0):
+            continue
+        else:
+            label = reason_labels.get(str(code), f"Motivo registrado: {code}")
         if label not in reasons:
             reasons.append(label)
+
+    warning_labels = {
+        "partial_statement": "Documento parcial ou incompleto",
+        "financial_validation_failed": "Validação financeira não conferiu",
+        "printed_summary_balance_mismatch": "Saldo do resumo impresso diverge dos lançamentos",
+        "balance_consistency_failed": "Saldo entre lançamentos não confere",
+        "manual_review_recommended": "Revisão manual indicada pelo parser",
+        "cross_page_transaction_split": "Lançamento dividido entre páginas",
+        "invoice_due_date_used_for_undated_fee": "Tarifa sem data própria usa o vencimento da fatura",
+    }
+    for code in event.get("warning_types", []):
+        reasons.append(warning_labels.get(str(code), f"Alerta registrado: {code}"))
+    if not reasons:
+        reasons.append("Revisão registrada sem motivo detalhado no histórico")
+    if event.get("quality_assessment_source") == "recalculated":
+        reasons.append(f"Avaliação reconstruída pela regra {event['quality_rule_version']} a partir do histórico")
 
     return {
         "processing_id": str(event["processing_id"]),
@@ -1296,10 +1343,19 @@ def _attention_item(event: dict[str, object], *, is_success: bool) -> dict[str, 
         "selected_parser": event.get("selected_parser"),
         "quality_status": event.get("quality_status"),
         "quality_reason_codes": event.get("quality_reason_codes", []),
+        "quality_rule_version": event.get("quality_rule_version"),
+        "quality_assessment_source": event.get("quality_assessment_source"),
+        "parser_confidence_band": event.get("parser_confidence_band"),
+        "parser_coverage_rate": event.get("parser_coverage_rate"),
+        "warning_types": event.get("warning_types", []),
         "canonical_capture_status": event.get("canonical_capture_status"),
         "canonical_capture_reason": event.get("canonical_capture_reason"),
-        "issue_reason": "; ".join(reasons) or "Revisão recomendada",
+        "issue_reason": "; ".join(dict.fromkeys(reasons)),
     }
+
+
+def _percentage_label(value: float) -> str:
+    return f"{value * 100:.1f}%".replace(".", ",")
 
 
 def _build_canonical_capture_summary(events: list[dict[str, object]]) -> dict[str, object]:

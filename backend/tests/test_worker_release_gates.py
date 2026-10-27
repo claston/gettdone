@@ -48,3 +48,45 @@ def test_missing_gate_and_in_progress_job_block_release():
     incomplete[0]["status"] = "in_progress"
     with pytest.raises(ValueError):
         gate["validate_jobs"](incomplete)
+
+
+@pytest.mark.parametrize("candidate_status", ["success", "failure", "missing", "job_missing", "job_skipped"])
+def test_normal_release_requires_the_exact_main_debian_runtime_ci(monkeypatch, candidate_status):
+    calls = []
+
+    def api(endpoint, *, paginate=False):
+        calls.append(endpoint)
+        if "worker-debian-candidate.yml/runs" in endpoint:
+            conclusion = "success" if candidate_status.startswith("job_") else candidate_status
+            return {"workflow_runs": [] if candidate_status == "missing" else [run(id=77, conclusion=conclusion)]}
+        if "workflows/ci.yml/runs" in endpoint:
+            return {"workflow_runs": [run()]}
+        runtime = [{"name": n, "status": "completed", "conclusion": "success"} for n in ("candidate-tests", "validate-image")]
+        if candidate_status == "job_missing":
+            runtime.pop()
+        elif candidate_status == "job_skipped":
+            runtime[-1]["conclusion"] = "skipped"
+        return [{"jobs": jobs() if "/42/" in endpoint else runtime}]
+
+    monkeypatch.setenv("GITHUB_REPOSITORY", "claston/gettdone")
+    monkeypatch.setenv("GITHUB_SHA", SHA)
+    monkeypatch.setenv("WORKER_IMAGE_SOURCE", "build-main")
+    monkeypatch.setitem(gate["main"].__globals__, "api", api)
+    if candidate_status != "success":
+        with pytest.raises(ValueError):
+            gate["main"]()
+    else:
+        gate["main"]()
+    assert any("worker-debian-candidate.yml/runs" in endpoint for endpoint in calls)
+
+
+def test_historical_digest_promotion_keeps_its_own_evidence_gate(monkeypatch):
+    def api(endpoint, *, paginate=False):
+        assert "worker-debian-candidate.yml" not in endpoint
+        return {"workflow_runs": [run()]} if "workflows/ci.yml" in endpoint else [{"jobs": jobs()}]
+
+    monkeypatch.setenv("GITHUB_REPOSITORY", "claston/gettdone")
+    monkeypatch.setenv("GITHUB_SHA", SHA)
+    monkeypatch.setenv("WORKER_IMAGE_SOURCE", "pr488-debian-canary")
+    monkeypatch.setitem(gate["main"].__globals__, "api", api)
+    gate["main"]()

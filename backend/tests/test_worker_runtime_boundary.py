@@ -63,7 +63,7 @@ def test_worker_image_uses_a_dedicated_runtime_contract() -> None:
     assert "backend/requirements.txt backend/requirements-lambda.txt" not in dockerfile
     assert "COPY backend/app /var/task/app" not in dockerfile
     assert "COPY backend/app/security_baseline.py /var/task/app/security_baseline.py" not in dockerfile
-    assert "python -m app.workers.worker_image_contract" in dockerfile
+    assert '"-m", "app.workers.worker_image_contract"' in dockerfile
     assert "from app.security_baseline" not in (BACKEND_ROOT / "app" / "workers" / "conversion_lambda.py").read_text(
         encoding="utf-8"
     )
@@ -71,13 +71,16 @@ def test_worker_image_uses_a_dedicated_runtime_contract() -> None:
     assert '"app.application.admin_dashboard_service"' in worker_contract
 
 
-def test_worker_runtime_installs_patched_amazon_linux_packages() -> None:
+def test_worker_runtime_uses_the_approved_debian_base_and_official_lambda_client() -> None:
     dockerfile = DOCKERFILE_PATH.read_text(encoding="utf-8")
-    runtime_stage = dockerfile.split("FROM ${PYTHON_IMAGE} AS runtime", maxsplit=1)[1]
-
-    assert "ARG AL2023_RELEASE=2023.12.20261012" in runtime_stage
-    assert 'dnf upgrade -y --releasever "${AL2023_RELEASE}"' in runtime_stage
-    assert "dnf clean all" in runtime_stage
+    assert "python:3.12-slim-trixie@sha256:" in dockerfile
+    assert "gcr.io/distroless/cc-debian13:nonroot@sha256:" in dockerfile
+    assert 'ENTRYPOINT ["/usr/local/bin/python3.12", "-m", "awslambdaric"]' in dockerfile
+    assert "COPY --from=build /runtime-status/ /var/lib/dpkg/status.d/" in dockerfile
+    assert "dnf " not in dockerfile and "public.ecr.aws/lambda/python" not in dockerfile
+    requirements = WORKER_REQUIREMENTS_PATH.read_text(encoding="utf-8")
+    assert "pypdf==6.21.2" in requirements
+    assert "awslambdaric==4.2.2" in requirements
 
 
 def test_worker_build_context_excludes_web_and_administrative_sources() -> None:

@@ -7,7 +7,9 @@ from pypdf import PdfReader
 
 from app.application.conversion.contracts.preflight import DocumentPreflightPolicy, DocumentPreflightResult
 from app.application.errors import FileTooLargeError, MaxPagesPerFileExceededError
+from app.application.native_text_quality import assess_native_text_quality
 from app.application.parsers.pdf.reader import open_pdf_reader
+from app.application.parsers.pdf.text_extraction import validate_native_pdf_fonts
 
 logger = logging.getLogger(__name__)
 
@@ -169,9 +171,15 @@ class DocumentPreflightService:
 def _build_pdf_preflight_result(reader: PdfReader) -> DocumentPreflightResult:
     total_pages = len(reader.pages)
     extracted_chars = 0
+    page_texts = []
     try:
         for page in reader.pages:
-            extracted_chars += len((page.extract_text() or "").strip())
+            validate_native_pdf_fonts(page)
+            if extracted_chars >= 40:
+                continue
+            text = (page.extract_text() or "").strip()
+            page_texts.append(text)
+            extracted_chars += len(text)
     except Exception as exc:
         logger.warning(
             "pdf_preflight_text_detection_failed exception_class=%s pages_count=%s",
@@ -180,6 +188,6 @@ def _build_pdf_preflight_result(reader: PdfReader) -> DocumentPreflightResult:
         )
         return DocumentPreflightResult(scanned_likely=None, estimated_pages_count=total_pages)
     return DocumentPreflightResult(
-        scanned_likely=extracted_chars < 40,
+        scanned_likely=extracted_chars < 40 or assess_native_text_quality(b"", page_texts, reader=reader).requires_visual_extraction,
         estimated_pages_count=total_pages,
     )

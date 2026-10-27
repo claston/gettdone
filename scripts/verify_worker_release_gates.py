@@ -5,6 +5,7 @@ import re
 import subprocess
 
 REQUIRED_JOBS = {"lint-and-tests", "pdf-golden", "pro-quality"}
+DEBIAN_JOBS = {"candidate-tests", "validate-image"}
 
 
 def select_ci_run(runs, sha):
@@ -18,9 +19,9 @@ def select_ci_run(runs, sha):
     return latest
 
 
-def validate_jobs(jobs):
+def validate_jobs(jobs, required=REQUIRED_JOBS):
     passed = {job["name"] for job in jobs if job.get("status") == "completed" and job.get("conclusion") == "success"}
-    missing = REQUIRED_JOBS - passed
+    missing = required - passed
     if missing:
         raise ValueError("Required release gates did not pass: " + ", ".join(sorted(missing)))
 
@@ -36,11 +37,20 @@ def main():
     repo, sha = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"]
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo) or not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("Invalid release repository or commit.")
+    source = os.environ.get("WORKER_IMAGE_SOURCE", "build-main")
+    if source not in {"build-main", "pr488-debian-canary"}:
+        raise ValueError("Invalid worker image source.")
     runs = api(f"repos/{repo}/actions/workflows/ci.yml/runs?head_sha={sha}&branch=main&event=push&per_page=100")
     run = select_ci_run(runs["workflow_runs"], sha)
     pages = api(f"repos/{repo}/actions/runs/{run['id']}/jobs?filter=latest&per_page=100", paginate=True)
     validate_jobs([job for page in pages for job in page["jobs"]])
     print(f"Release gates passed for {sha}: {', '.join(sorted(REQUIRED_JOBS))}; CI run {run['id']}.")
+    if source == "build-main":
+        runs = api(f"repos/{repo}/actions/workflows/worker-debian-candidate.yml/runs?head_sha={sha}&branch=main&event=push&per_page=100")
+        run = select_ci_run(runs["workflow_runs"], sha)
+        pages = api(f"repos/{repo}/actions/runs/{run['id']}/jobs?filter=latest&per_page=100", paginate=True)
+        validate_jobs([job for page in pages for job in page["jobs"]], required=DEBIAN_JOBS)
+        print(f"Debian runtime gates passed for {sha}: {', '.join(sorted(DEBIAN_JOBS))}; CI run {run['id']}.")
 
 
 if __name__ == "__main__":

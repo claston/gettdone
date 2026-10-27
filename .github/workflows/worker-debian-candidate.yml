@@ -1,0 +1,137 @@
+name: CI | Worker Debian Image
+
+on:
+  push:
+    branches: [main, "feat/worker-debian-candidate"]
+  pull_request:
+    branches: [main]
+    paths:
+      - "Dockerfile.lambda*"
+      - "backend/requirements-worker*.txt"
+      - "backend/app/**"
+      - "backend/tests/**"
+      - ".github/workflows/deploy-worker-ecr.yml"
+      - "scripts/verify_worker_release_gates.py"
+      - "scripts/smoke_worker_candidate_image.py"
+      - ".github/workflows/worker-debian-candidate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worker-candidate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  candidate-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install application tests and production worker dependencies
+        run: |
+          python -m pip install -r backend/requirements.txt
+          python -m pip install --only-binary=:all: -r backend/requirements-worker.txt
+      - name: Run full suite with production worker dependencies
+        run: python -m pytest backend/tests -q --basetemp "$RUNNER_TEMP/pytest-worker-candidate"
+      - name: Clean test temporary directory
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/pytest-worker-candidate"
+  validate-image:
+    needs: candidate-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: worker_canary
+          POSTGRES_USER: worker_canary
+          POSTGRES_PASSWORD: synthetic_only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U worker_canary -d worker_canary"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CANDIDATE_IMAGE: worker-debian-candidate:${{ github.sha }}
+      TRIVY_IMAGE: aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
+      - name: Build production Debian image without publishing
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+        with:
+          context: .
+          file: Dockerfile.lambda
+          platforms: linux/amd64
+          pull: true
+          load: true
+          push: false
+          provenance: false
+          sbom: false
+          tags: ${{ env.CANDIDATE_IMAGE }}
+          build-args: APP_RELEASE=${{ github.sha }}
+          cache-from: type=gha,scope=worker-debian-candidate
+          cache-to: type=gha,mode=max,scope=worker-debian-candidate
+      - name: Check official Lambda client and native dependencies
+        run: |
+          python scripts/smoke_worker_candidate_image.py \
+            --image "$CANDIDATE_IMAGE" --output artifacts/runtime.json \
+            --database-url postgresql://worker_canary:synthetic_only@127.0.0.1:5432/worker_canary
+          docker image inspect "$CANDIDATE_IMAGE" > artifacts/image-inspect.json
+          docker run --rm --entrypoint /usr/local/bin/python3.12 "$CANDIDATE_IMAGE" \
+            -c 'import importlib.metadata,json; print(json.dumps(sorted((d.metadata["Name"],d.version) for d in importlib.metadata.distributions())))' \
+            > artifacts/python-packages.json
+      - name: Generate SBOM
+        if: always()
+        run: |
+          mkdir -p artifacts
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/artifacts:/out" \
+            "$TRIVY_IMAGE" image --image-src docker --scanners vuln \
+            --format cyclonedx --output /out/sbom.cdx.json "$CANDIDATE_IMAGE"
+      - name: Block HIGH and CRITICAL vulnerabilities including unfixed findings
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/artifacts:/out" \
+            "$TRIVY_IMAGE" image --image-src docker --scanners vuln --pkg-types os,library \
+            --severity HIGH,CRITICAL --exit-code 1 --list-all-pkgs --format json --output /out/vulnerabilities.json "$CANDIDATE_IMAGE"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("artifacts/vulnerabilities.json").read_text())
+          results = report.get("Results", [])
+          os_packages = [p for r in results if r.get("Class") == "os-pkgs" for p in r.get("Packages", [])]
+          python_packages = [p for r in results if r.get("Type") == "python-pkg" for p in r.get("Packages", [])]
+          if report.get("Metadata", {}).get("OS", {}).get("Family") != "debian" or not os_packages:
+              raise SystemExit("Scanner did not recognize the Debian package inventory.")
+          expected = next(line.split("==")[1] for line in Path("backend/requirements-worker.txt").read_text().splitlines() if line.startswith("pypdf=="))
+          if not any(p.get("Name") == "pypdf" and p.get("Version") == expected for p in python_packages):
+              raise SystemExit("Scanner did not recognize the candidate Python package inventory.")
+          print(f"Scan coverage verified: {len(os_packages)} OS packages; {len(python_packages)} Python packages.")
+          PY
+      - name: Save approved candidate for isolated Lambda validation
+        if: github.event_name == 'workflow_dispatch'
+        run: docker save "$CANDIDATE_IMAGE" -o artifacts/worker-debian-image.tar
+      - name: Upload runtime and security evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: worker-debian-image-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: error

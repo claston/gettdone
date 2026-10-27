@@ -5,11 +5,10 @@ from dataclasses import dataclass
 from io import BytesIO
 
 from pypdf import PdfReader
-from pypdf.generic import ContentStream
 
-from app.application.native_text_quality import assess_native_text_quality, has_raster_with_invisible_text
+from app.application.native_text_quality import assess_native_text_quality, has_dense_vector_paths, has_raster_with_invisible_text
 
-CLASSIFIER_VERSION = "pdf_representation_v4"
+CLASSIFIER_VERSION = "pdf_representation_v5"
 
 _VIRTUAL_PRINTER_PRODUCERS = (
     ("microsoft print to pdf", "producer_microsoft_print_to_pdf"),
@@ -19,10 +18,6 @@ _VIRTUAL_PRINTER_PRODUCERS = (
     ("bullzip", "producer_bullzip"),
     ("foxit pdf printer", "producer_foxit_pdf_printer"),
 )
-_PATH_CONSTRUCTION_OPERATORS = {"m", "l", "c", "v", "y", "re", "h"}
-_PATH_PAINT_OPERATORS = {"S", "s", "f", "F", "f*", "B", "B*", "b", "b*"}
-_MIN_VECTOR_PATH_OPERATIONS = 360
-_MIN_VECTOR_PAINT_OPERATIONS = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +51,7 @@ def classify_pdf_representation(raw_bytes: bytes) -> PdfRepresentationClassifica
     if extracted_chars > 0:
         evidence = ["native_text_present"]
         quality = assess_native_text_quality(raw_bytes, [page.extract_text() or "" for page in sampled_pages], reader=reader)
+        full_page_raster = full_page_raster or "full_page_raster_present" in quality.evidence
         if full_page_raster or dense_vector_paths:
             evidence.append("non_text_page_content_present")
             hidden_layer = full_page_raster and any(has_raster_with_invisible_text(page, reader) for page in sampled_pages)
@@ -193,25 +189,7 @@ def _resources_have_fonts(resources_ref, *, visited: set[int]) -> bool:
 
 
 def _has_dense_vector_paths(pages: list[object], reader: PdfReader) -> bool:
-    for page in pages:
-        contents = page.get_contents()
-        if contents is None:
-            continue
-        operations = ContentStream(contents, reader).operations
-        construction_count = 0
-        paint_count = 0
-        for _, operator in operations:
-            normalized = operator.decode("latin-1") if isinstance(operator, bytes) else str(operator)
-            if normalized in _PATH_CONSTRUCTION_OPERATORS:
-                construction_count += 1
-            elif normalized in _PATH_PAINT_OPERATORS:
-                paint_count += 1
-        if (
-            construction_count >= _MIN_VECTOR_PATH_OPERATIONS
-            and paint_count >= _MIN_VECTOR_PAINT_OPERATIONS
-        ):
-            return True
-    return False
+    return any(has_dense_vector_paths(page, reader) for page in pages)
 
 
 def _has_full_page_raster_image(pages: list[object]) -> bool:
