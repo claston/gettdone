@@ -60,6 +60,12 @@ def test_browser_suites_cover_all_current_scenarios_once_with_slow_receipt():
     assert workspace[-2:] == ["--save-receipt-delay-ms", "6000"]
 
 
+def test_statement_works_browser_suite_uses_real_disposable_backend():
+    commands = runner()["commands"]("works", "http://local")
+    assert len(commands) == 1 and commands[0][1].endswith("smoke_statement_works.py")
+    assert "backend/requirements.txt" in job("pro-browser")
+
+
 def test_suite_runs_serially_and_reports_failure_without_omitting_later_scenario(tmp_path):
     calls = []
 
@@ -113,12 +119,12 @@ def test_workflow_preserves_validation_and_isolates_browser_resources():
     checks, browser = job("pro-checks"), job("pro-browser")
     assert all(command in checks for command in ["npm run test:run", "npm run lint", "npm run typecheck"])
     assert "npm run build" in browser and "NEXT_PUBLIC_API_URL: /" in browser
-    assert "suite: [workspace, pdf]" in browser and "fail-fast: false" in browser
+    assert "suite: [workspace, pdf, works]" in browser and "fail-fast: false" in browser
     assert "run_pro_browser_suite.py" in browser and "--suite" in browser
     assert "playwright install-deps chromium" in browser
     assert "playwright install --only-shell chromium" in browser
     assert "requirements-pro-browser.txt" in browser
-    assert "-r backend/requirements.txt" not in browser
+    assert "if: matrix.suite == 'works'" in browser and "-r backend/requirements.txt" in browser
     assert 'trap ' in browser and 'kill "$pro_pid"' in browser
     assert "if: always()" in browser and "matrix.suite" in browser
 

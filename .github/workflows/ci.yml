@@ -57,7 +57,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [workspace, pdf]
+        suite: [workspace, pdf, works]
     defaults:
       run:
         working-directory: pro
@@ -92,6 +92,11 @@ jobs:
         working-directory: .
         run: python -m pip install -r scripts/requirements-pro-browser.txt
 
+      - name: Install disposable backend for statement work acceptance
+        if: matrix.suite == 'works'
+        working-directory: .
+        run: python -m pip install -r backend/requirements.txt
+
       - name: Prefer official Ubuntu HTTPS archive
         working-directory: .
         run: sudo python3 scripts/configure_pro_apt_mirror.py
@@ -125,6 +130,7 @@ jobs:
             tmp/pro-idle-navigation/
             tmp/pro-organization/
             tmp/pro-browser-suites/
+            tmp/ofx61-browser/
           if-no-files-found: ignore
 
   # Keep the required check and worker release contract unchanged. A skipped

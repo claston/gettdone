@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NewConversionForm } from "./new-conversion-form";
+import type { StatementWorkService } from "@/data/statement-work-service";
 
 const push = vi.fn();
 
@@ -10,6 +11,44 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("NewConversionForm", () => {
+  it("retoma o vínculo do trabalho sem criar ou cobrar um segundo lote", async () => {
+    const service = {
+      createAndSubmit: vi.fn().mockResolvedValue({ batchId: "batch-once" }),
+    };
+    const workService = {
+      get: vi
+        .fn()
+        .mockResolvedValue({ id: "work_1", state: "open", version: 1 }),
+      attachBatch: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Vínculo indisponível"))
+        .mockResolvedValueOnce({}),
+    } as unknown as StatementWorkService;
+    render(
+      <NewConversionForm
+        service={service}
+        workId="work_1"
+        workService={workService}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Selecionar arquivos"), {
+      target: { files: [new File(["a"], "extrato.csv", { type: "text/csv" })] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Criar lote" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Vínculo indisponível",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retomar vínculo com o trabalho" }),
+    );
+    await waitFor(() =>
+      expect(push).toHaveBeenCalledWith(
+        "/review/batch-once?return_to=%2Fworks%2Fwork_1",
+      ),
+    );
+    expect(service.createAndSubmit).toHaveBeenCalledTimes(1);
+    expect(workService.attachBatch).toHaveBeenCalledTimes(2);
+  });
   beforeEach(() => push.mockReset());
 
   it("permite retirar só um arquivo de um lote com 13 e enviar os 12 restantes", async () => {

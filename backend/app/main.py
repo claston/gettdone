@@ -32,6 +32,7 @@ from app.routers import (
     telemetry_router,
 )
 from app.routers.pro_conversions import router as pro_conversions_router
+from app.routers.statement_works import router as statement_works_router
 from app.security_baseline import (
     is_production_env,
     parse_cors_allow_origins,
@@ -108,6 +109,7 @@ app.include_router(contact_router)
 app.include_router(conversion_batches_router)
 app.include_router(pro_organization_router)
 app.include_router(pro_conversions_router)
+app.include_router(statement_works_router)
 app.include_router(reconcile_router)
 app.include_router(report_router)
 app.include_router(telemetry_router)

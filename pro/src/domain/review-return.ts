@@ -7,6 +7,11 @@ export function reviewReturnTo(value: unknown): string {
   } catch {
     return fallback;
   }
+  if (
+    url.origin === "https://ofx.local" &&
+    /^\/works\/work_[A-Za-z0-9]+$/.test(url.pathname)
+  )
+    return url.pathname;
   if (url.origin !== "https://ofx.local" || url.pathname !== "/conversions")
     return fallback;
   const query = new URLSearchParams();

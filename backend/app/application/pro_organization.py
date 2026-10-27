@@ -185,43 +185,47 @@ class OrganizationService:
     def save_context(
         self, owner: str, *, job_id: str, client_id: str | None, account_id: str | None, period_ids: list[str], expected_version: int
     ) -> dict:
+        with self.db.connect() as conn:
+            result = self.save_context_in_connection(conn, owner, job_id=job_id, client_id=client_id, account_id=account_id,
+                                                     period_ids=period_ids, expected_version=expected_version)
+            conn.commit()
+        return result
+
+    def save_context_in_connection(
+        self, conn, owner: str, *, job_id: str, client_id: str | None, account_id: str | None, period_ids: list[str], expected_version: int
+    ) -> dict:
         periods = sorted(set(period_ids))
         if len(periods) > 50:
             raise ValueError("Selecione no máximo 50 períodos por conversão.")
         now = self._now()
-        with self.db.connect() as conn:
-            organization = self._organization(conn, owner, create=True)
-            if client_id:
-                self._entity(conn, "pro_clients", organization, client_id)
-            if account_id:
-                account = self._entity(conn, "pro_accounts", organization, account_id)
-                if account["client_id"] != client_id:
-                    raise ValueError("A conta selecionada deve pertencer ao cliente da conversão.")
-            for period in periods:
-                self._entity(conn, "pro_periods", organization, period)
-            if expected_version == 0:
-                changed = self._write(
-                    conn,
-                    """INSERT INTO pro_conversion_contexts
-                    (organization_id, job_id, client_id, account_id, version, created_by, updated_by, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?) ON CONFLICT (organization_id, job_id) DO NOTHING""",
-                    (organization, job_id, client_id, account_id, owner, owner, now, now),
-                )
-            else:
-                changed = self._write(
-                    conn,
-                    """UPDATE pro_conversion_contexts SET client_id = ?, account_id = ?,
-                    version = version + 1, updated_by = ?, updated_at = ? WHERE organization_id = ? AND job_id = ? AND version = ?""",
-                    (client_id, account_id, owner, now, organization, job_id, expected_version),
-                )
-            if changed != 1:
-                raise OrganizationConflict("A organização deste arquivo mudou. Atualize a lista antes de salvar novamente.")
-            self._write(conn, "DELETE FROM pro_conversion_periods WHERE organization_id = ? AND job_id = ?", (organization, job_id))
-            for period in periods:
-                self._write(
-                    conn,
-                    "INSERT INTO pro_conversion_periods (organization_id, job_id, period_id) VALUES (?, ?, ?)",
-                    (organization, job_id, period),
-                )
-            conn.commit()
+        organization = self._organization(conn, owner, create=True)
+        if client_id:
+            self._entity(conn, "pro_clients", organization, client_id)
+        if account_id:
+            account = self._entity(conn, "pro_accounts", organization, account_id)
+            if account["client_id"] != client_id:
+                raise ValueError("A conta selecionada deve pertencer ao cliente da conversão.")
+        for period in periods:
+            self._entity(conn, "pro_periods", organization, period)
+        if expected_version == 0:
+            changed = self._write(
+                conn,
+                """INSERT INTO pro_conversion_contexts
+                (organization_id, job_id, client_id, account_id, version, created_by, updated_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?) ON CONFLICT (organization_id, job_id) DO NOTHING""",
+                (organization, job_id, client_id, account_id, owner, owner, now, now),
+            )
+        else:
+            changed = self._write(
+                conn,
+                """UPDATE pro_conversion_contexts SET client_id = ?, account_id = ?,
+                version = version + 1, updated_by = ?, updated_at = ? WHERE organization_id = ? AND job_id = ? AND version = ?""",
+                (client_id, account_id, owner, now, organization, job_id, expected_version),
+            )
+        if changed != 1:
+            raise OrganizationConflict("A organização deste arquivo mudou. Atualize a lista antes de salvar novamente.")
+        self._write(conn, "DELETE FROM pro_conversion_periods WHERE organization_id = ? AND job_id = ?", (organization, job_id))
+        for period in periods:
+            self._write(conn, "INSERT INTO pro_conversion_periods (organization_id, job_id, period_id) VALUES (?, ?, ?)",
+                        (organization, job_id, period))
         return {"client_id": client_id, "account_id": account_id, "period_ids": periods, "version": expected_version + 1}
