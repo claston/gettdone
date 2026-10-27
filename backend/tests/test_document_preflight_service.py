@@ -1,6 +1,6 @@
 from io import BytesIO
 
-from pypdf import PdfWriter
+from pypdf import PdfReader, PdfWriter
 
 from app.application.access_control import AccessControlService
 from app.application.conversion.document_preflight_service import (
@@ -8,7 +8,7 @@ from app.application.conversion.document_preflight_service import (
     DocumentPreflightService,
 )
 from app.application.errors import MaxPagesPerFileExceededError
-from synthetic_pdf_corpus.native_text_pdf import generate_null_font_pdf
+from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf, generate_null_font_pdf
 
 
 def _build_pdf_with_pages(page_count: int) -> bytes:
@@ -34,6 +34,17 @@ def test_inspect_raw_bytes_keeps_page_count_and_marks_scan_detection_unknown_on_
     result = service.inspect_raw_bytes(filename="statement.pdf", raw_bytes=generate_null_font_pdf())
 
     assert result == DocumentPreflightResult(scanned_likely=None, estimated_pages_count=1)
+
+
+def test_preflight_checks_later_null_fonts_after_a_readable_first_page() -> None:
+    first = generate_native_text_pdf((("Extrato fictício com texto nativo suficiente para identificar a primeira página.",),))
+    writer = PdfWriter()
+    writer.add_page(PdfReader(BytesIO(first)).pages[0])
+    writer.add_page(PdfReader(BytesIO(generate_null_font_pdf())).pages[0])
+    payload = BytesIO()
+    writer.write(payload)
+    result = DocumentPreflightService().inspect_raw_bytes(filename="ficticio.pdf", raw_bytes=payload.getvalue())
+    assert result == DocumentPreflightResult(scanned_likely=None, estimated_pages_count=2)
 
 
 def test_build_policy_rejects_pdf_above_scanned_pages_limit(tmp_path) -> None:

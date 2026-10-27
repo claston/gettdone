@@ -46,6 +46,12 @@ def _run_http_server(tmp_path: Path):
         status="Sucesso",
         transactions_count=12,
         canonical_warning_transactions_count=1,
+        parser_confidence_band="medium",
+        parser_coverage_rate=0.75,
+        warning_types=["partial_statement"],
+        selected_parser="tabular",
+        layout_inference_name="synthetic_statement_v1",
+        layout_inference_confidence=0.99,
         pages_count=3,
         scanned_likely=False,
         ocr_used=False,
@@ -119,6 +125,14 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
                 f"{base_url}/admin/active-users",
                 params={"days": 7, "identity_type": "registered"},
             )
+            conversion = client.post(
+                f"{base_url}/convert",
+                files={"file": ("synthetic.csv", b"date,description,amount\n2026-09-08,SYNTHETIC,40.00\n", "text/csv")},
+            )
+            assert conversion.status_code == 200
+            report = client.get(f"{base_url}/report/{conversion.json()['processing_id']}")
+            missing_report = client.get(f"{base_url}/report/an_missing_admin_review")
+            legacy_analyze = client.post(f"{base_url}/analyze")
 
     assert unauthorized.status_code == 401
     assert login.status_code == 200
@@ -136,12 +150,26 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
     assert dashboard.json()["recent_attention"][0]["pdf_representation"] == "native_text"
     assert dashboard.json()["recent_attention"][0]["pdf_creation_method"] == "direct_export"
     assert dashboard.json()["recent_attention"][0]["pdf_representation_confidence"] == 0.99
+    attention = dashboard.json()["recent_attention"][0]
+    assert attention["parser_confidence_band"] == "medium"
+    assert attention["parser_coverage_rate"] == 0.75
+    assert attention["warning_types"] == ["partial_statement"]
+    assert attention["quality_assessment_source"] == "stored"
+    assert "parser_requires_review" not in attention["quality_reason_codes"]
+    assert "Confiança do parser" not in attention["issue_reason"]
+    assert "Cobertura registrada do parser" not in attention["issue_reason"]
+    assert "Documento parcial ou incompleto" in attention["issue_reason"]
     assert attention_export.status_code == 200
     assert attention_export.headers["content-type"].startswith("text/csv")
     assert "an_http_dashboard" in attention_export.content.decode("utf-8-sig")
+    assert "Documento parcial ou incompleto" in attention_export.content.decode("utf-8-sig")
+    assert "versao_regra_qualidade" in attention_export.content.decode("utf-8-sig")
     assert dashboard.json()["heavy_users"][0]["pages"] == 3
     assert dashboard.json()["checkout_funnel"]["plans_page_people_count"] == 1
     assert active_users.status_code == 200
+    assert report.status_code == 200
+    assert missing_report.status_code == 404
+    assert legacy_analyze.status_code == 405
     assert active_users.json()["items"][0]["plans_page_views"] == 1
     assert dashboard.json()["canonical_capture"] == {
         "candidate_count": 0,

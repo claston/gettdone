@@ -1541,8 +1541,6 @@
     const pageCount = Number(metrics.page_count || 0);
     const parser = String(metrics.selected_parser || "").trim().toLowerCase();
     const layout = String(analysis.layout_inference_name || "").trim().toLowerCase();
-    const confidenceBand = String(metrics.confidence_band || "").trim().toLowerCase();
-    const exportRecommendation = String(metrics.export_recommendation || "").trim().toLowerCase();
     const balanceFailed = Number(metrics.balance_consistency_failed || 0);
     const unresolvedRows = Number(metrics.ocr_unresolved_rows || 0);
     const warningTypes = Array.isArray(metrics.canonical_warning_types_list) ? metrics.canonical_warning_types_list : [];
@@ -1585,9 +1583,6 @@
       list.push(
         `Saldo linha a linha com inconsistências: ${balanceFailed} lançamento(s) não bateram no cálculo de saldo.`
       );
-    }
-    if (confidenceBand === "low" || exportRecommendation === "review_recommended") {
-      list.push("Recomendamos revisar os lançamentos antes de baixar o arquivo.");
     }
     return list;
   }
