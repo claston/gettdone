@@ -7,7 +7,23 @@ from app.application.parsers.pdf.ocr_statement_controls import _provenance
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
 LAYOUT = "caixa_gerenciador_periodo_financial_controls_ocr_v1"
-_MONEY = re.compile(rf"R\$\s*({NUMBER})\s*([CD]?)$", re.I)
+_MONEY = re.compile(rf"(?:[+-]\s*)?R\$\s*([+-]?{NUMBER})\s*([CD]?)$", re.I)
+
+
+def _explicit_sign(text, match):
+    signs = []
+    before = re.match(r"\s*([+-])", text)
+    if before:
+        signs.append(-1 if before[1] == "-" else 1)
+    if match[1].startswith(("+", "-")):
+        signs.append(-1 if match[1][0] == "-" else 1)
+    if len(signs) > 1:
+        fail("O valor Caixa contém sinais duplicados.")
+    if match[2]:
+        signs.append(-1 if match[2].upper() == "D" else 1)
+    if len(set(signs)) > 1:
+        fail("O valor Caixa contém sinais conflitantes.")
+    return signs[0] if signs else None
 
 
 def is_caixa_manager(extraction):
@@ -54,7 +70,7 @@ def parse_caixa_manager(extraction):
             match = _MONEY.fullmatch(seeds[0].text.strip())
             if not match[2]:
                 fail()
-            opening = running = money(match[1])*(-1 if match[2].upper() == "D" else 1)
+            opening = running = abs(money(match[1])) * _explicit_sign(seeds[0].text, match)
             used.add(seeds[0].id)
         anchors = sorted([line for line in lines if position(line)[0] < .16
                           and position(line)[1] > table_top and re.fullmatch(DATE, line.text)], key=lambda item: position(item)[1])
@@ -71,7 +87,7 @@ def parse_caixa_manager(extraction):
             balance_match = _MONEY.fullmatch(balances[0].text.strip())
             if not balance_match[2]:
                 fail()
-            balance = money(balance_match[1])*(-1 if balance_match[2].upper() == "D" else 1)
+            balance = abs(money(balance_match[1])) * _explicit_sign(balances[0].text, balance_match)
             date = day(anchor.text)
             if not start <= date <= end or rows and date < rows[-1].transaction.date:
                 fail()
@@ -87,9 +103,10 @@ def parse_caixa_manager(extraction):
             if len(amounts) != 1:
                 fail()
             parsed = _MONEY.fullmatch(amounts[0].text.strip())
-            magnitude = money(parsed[1])
+            magnitude = abs(money(parsed[1]))
             amount = balance-running
-            if abs(amount) != magnitude or parsed[2] and (amount < 0) != (parsed[2].upper() == "D"):
+            explicit = _explicit_sign(amounts[0].text, parsed)
+            if abs(amount) != magnitude or explicit is not None and amount != magnitude * explicit:
                 fail()
             description = " ".join(line.text for line in sorted(cells, key=lambda item: item.line_index)
                                    if .23 < position(line)[0] < position(labels["VALOR"])[0]-.04 and line not in cash)

@@ -64,6 +64,11 @@ ATTENTION_EXPORT_COLUMNS = (
     ("tipo_documento", "document_type"),
     ("confianca_tipo_documento", "document_type_confidence"),
     ("decisao_processamento", "document_processing_decision"),
+    ("versao_regra_qualidade", "quality_rule_version"),
+    ("origem_avaliacao_qualidade", "quality_assessment_source"),
+    ("confianca_parser", "parser_confidence_band"),
+    ("cobertura_parser", "parser_coverage_rate"),
+    ("tipos_alerta", "warning_types"),
 )
 
 
@@ -221,7 +226,7 @@ def _attention_csv_value(key: str, value: object) -> str:
         text = "cadastrada" if value == "registered" else "anônima"
     elif key == "ocr_used":
         text = "sim" if value else "não"
-    elif key == "quality_reason_codes":
+    elif key in {"quality_reason_codes", "warning_types"}:
         text = " | ".join(str(item) for item in value) if isinstance(value, list) else ""
     elif key == "layout_confidence" and value is not None:
         text = f"{float(value) * 100:.1f}%"
