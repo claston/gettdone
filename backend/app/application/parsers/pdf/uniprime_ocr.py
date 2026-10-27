@@ -10,6 +10,7 @@ from app.application.parsers.pdf.verified_statements import DATE, NUMBER, Verifi
 
 LAYOUT = "uniprime_conta_corrente_ocr_v1"
 _VALUE = re.compile(rf"({NUMBER})\s*([+-])?")
+_CLIPPED = re.compile(r"([+-]?)(\d[\d.]*,\d{1,2})(?:\.{3}|…)")
 
 
 def is_uniprime_statement(text):
@@ -17,8 +18,9 @@ def is_uniprime_statement(text):
     return all(marker in normalized for marker in ("UNIPRIME", "EXTRATO DE", "SALDO ANTERIOR", "HISTORICO", "VALOR (R$)", "SALDO (R$)"))
 
 
-def _one(cells, left, right):
-    matches = [line for line in cells if left <= line.bbox["left"] < right and _VALUE.fullmatch(line.text.strip())]
+def _one(cells, left, right, *, clipped=False, by_center=False):
+    matches = [line for line in cells if left <= line.bbox["left"] + (line.bbox["width"] / 2 if by_center else 0) < right
+               and (_VALUE.fullmatch(line.text.strip()) or clipped and _CLIPPED.fullmatch(line.text.strip()))]
     if len(matches) != 1:
         fail("Não foi possível ler todas as colunas de valor e saldo Uniprime. Envie uma cópia mais nítida.")
     return matches[0]
@@ -44,17 +46,23 @@ def parse_uniprime(extraction):
     opening = running = None
     rows, checks = [], 0
     for page in extraction.pages:
+        native = extraction.provider == "native_pdfium_text"
         lines = [line for line in page.lines if line.bbox]
         for label in [line for line in lines if upper(line.text).startswith("SALDO ANTERIOR")]:
             if opening is not None or rows:
                 fail()
             cells = [line for line in lines if abs(line.bbox["top"] - label.bbox["top"]) < .006]
-            opening = running = _value(_one(cells, columns["SALDO"], 1))[0]
+            opening = running = _value(_one(cells, columns["SALDO"] - (.015 if native else 0), 1, by_center=native))[0]
         anchors = sorted([line for line in lines if line.bbox["left"] < columns["HISTORICO"] - .1
                           and re.fullmatch(DATE, line.text)], key=lambda line: line.bbox["top"])
+        if extraction.provider == "native_pdfium_text":
+            header_y = max((line.bbox["top"] for line in lines if upper(line.text) == "DATA"), default=0)
+            anchors = [line for line in anchors if line.bbox["top"] > header_y]
         # Every monetary cell in the movement column needs one readable date.
         # This also catches date-less rows whose net effect could cancel out.
-        cash_cells = [line for line in lines if columns["VALOR"] - .015 <= line.bbox["left"] < columns["SALDO"] - .015
+        cash_cells = [line for line in lines
+                      if columns["VALOR"] - .015 <= line.bbox["left"] + (line.bbox["width"] / 2 if native else 0)
+                      < columns["SALDO"] - .015
                       and re.search(r"\d[,\.]\d", line.text)]
         for cell in cash_cells:
             if len([anchor for anchor in anchors if abs(anchor.bbox["top"] - cell.bbox["top"]) < .006]) != 1:
@@ -67,18 +75,28 @@ def parse_uniprime(extraction):
             baseline = [line for line in cells if abs(line.bbox["top"]-top) < .006]
             if running is None or not start <= date <= end:
                 fail()
-            amount_cell = _one(baseline, columns["VALOR"] - .015, columns["SALDO"] - .015)
-            balance_cell = _one(baseline, columns["SALDO"] - .015, 1)
-            amount, sign = _value(amount_cell)
+            amount_cell = _one(baseline, columns["VALOR"] - .015, columns["SALDO"] - .015,
+                               clipped=native, by_center=native)
+            balance_cell = _one(baseline, columns["SALDO"] - .015, 1, by_center=native)
             balance, _ = _value(balance_cell)
             warnings = []
+            truncated = _CLIPPED.fullmatch(amount_cell.text.strip())
+            if truncated:
+                amount, sign = balance - running, None
+                observed = truncated[2].replace(".", "")
+                if (not amount or not format(abs(amount), ".2f").replace(".", ",").startswith(observed)
+                        or truncated[1] and (amount < 0) != (truncated[1] == "-")):
+                    fail("O valor truncado Uniprime não confere com os dígitos visíveis e os dois saldos impressos.")
+                warnings = ["manual_review_recommended", "native_amount_recovered_from_balances"]
+            else:
+                amount, sign = _value(amount_cell)
             if sign is None:
                 # A missing OCR sign can only be recovered from two adjacent
                 # printed balances and the independently read exact magnitude.
-                if abs(balance - running) != amount or amount == 0:
+                if not truncated and (abs(balance - running) != amount or amount == 0):
                     fail()
                 amount = balance - running
-                warnings = ["manual_review_recommended", "amount_sign_from_printed_balances"]
+                warnings = [*warnings, "manual_review_recommended", "amount_sign_from_printed_balances"]
             if running + amount != balance:
                 financial_mismatch()
             history = [line for line in cells if columns["HISTORICO"] - .015 <= line.bbox["left"] < columns["VALOR"] - .025]

@@ -27,6 +27,8 @@ class VerifiedStatement:
     opening_inferred: bool = False
     non_cash_entries: int = 0
     balance_checkpoints: dict[int, float] | None = None
+    scheduled_entries_excluded: int = 0
+    opening_ambiguity_reason: str = ""
 
 
 def fail(message="Não foi possível conferir todos os lançamentos e saldos impressos. Envie o extrato original completo."):
@@ -205,7 +207,8 @@ def _bb(pages, kind):
             # Account positions and future placeholders follow the final cash
             # balance. They are not part of the validated historical ledger.
             break
-        if "DEPOSITO BLOQUEAD." in normalize_upper_text(raw) and re.search(rf"{NUMBER}\s*\*$", raw):
+        if ("DEPOSITO BLOQUEAD." in normalize_upper_text(raw)
+                or re.search(r"\bDEPOS CHQ IMAGEM \d+ DIAS?\b", normalize_upper_text(raw))) and re.search(rf"{NUMBER}\s*\*$", raw):
             blocked += 1
             continue
         match = re.match(rf"^({DATE})\s+(.+?)\s+({NUMBER})\s*\(([+-])\)$", raw)
