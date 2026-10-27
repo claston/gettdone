@@ -2366,3 +2366,26 @@ kbd {
   padding-top: 0;
   padding-bottom: 0;
 }
+.work-content {
+  border: 0;
+  margin: 20px 0 0;
+  padding: 0;
+  min-width: 0;
+}
+.work-content h1 {
+  font-size: 26px;
+}
+.work-content details {
+  margin: 16px 0;
+}
+.work-content summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.work-content p {
+  overflow-wrap: anywhere;
+}
+.work-content textarea {
+  max-width: 100%;
+  box-sizing: border-box;
+}

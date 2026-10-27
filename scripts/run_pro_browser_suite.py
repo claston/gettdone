@@ -1,4 +1,4 @@
-"""Run every PRO browser contract in two isolated CI suites, serially per runner."""
+"""Run PRO browser contracts in isolated CI suites, serially per runner."""
 from __future__ import annotations
 
 import argparse
@@ -14,6 +14,7 @@ SUITES = {
     "workspace": [("smoke_pro_workspace.py", ["--save-receipt-delay-ms", "6000"]),
                   ("smoke_pro_idle_navigation.py", []), ("smoke_pro_organization.py", [])],
     "pdf": [("smoke_pro_pdf_sync.py", []), ("smoke_pro_financial_reports.py", [])],
+    "works": [("smoke_statement_works.py", [])],
 }
 
 
