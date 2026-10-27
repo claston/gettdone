@@ -11,7 +11,7 @@ from app.application.parsers.pdf.verified_statements import fail
 def read_native_table_source(raw, *, decorative_history=None):
     import pypdfium2 as pdfium
 
-    pages, excluded = [], 0
+    pages, excluded, empty = [], 0, 0
     with _PDFIUM_LOCK, pdfium.PdfDocument(raw) as document:
         for page_index in range(len(document)):
             with closing(document[page_index]) as page, closing(page.get_textpage()) as tp:
@@ -34,6 +34,12 @@ def read_native_table_source(raw, *, decorative_history=None):
                     if right > left and top > bottom:
                         chars.append((left, bottom, right, top, char))
                 if not chars:
+                    # Only an object-free, visibly white page can be ignored.
+                    # Keep its page number: source references must not shift.
+                    if not list(page.get_objects()) and page.render(scale=.5).to_pil().convert("L").getextrema() == (255, 255):
+                        pages.append(ExtractedPage(page_index + 1, lines=[], words=[]))
+                        empty += 1
+                        continue
                     fail("Uma página do extrato não contém texto nativo legível.")
                 char_width = median(c[2] - c[0] for c in chars)
                 tolerance = median(c[3] - c[1] for c in chars) * .35
@@ -81,6 +87,8 @@ def read_native_table_source(raw, *, decorative_history=None):
                         add_fragment(fragment)
                 pages.append(ExtractedPage(page_index + 1, lines=lines, words=words))
     metrics = {"native_coordinates_used": 1}
+    if empty:
+        metrics["empty_native_pages_verified"] = empty
     if excluded:
         metrics["decorative_history_glyphs_excluded"] = excluded
     return RawDocumentExtraction("native_pdfium_text", hashlib.sha256(raw).hexdigest(), pages, metrics)

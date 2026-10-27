@@ -120,7 +120,9 @@ def assess_native_text_quality(raw_bytes, page_texts, *, reader=None):
     # squares. Character count alone must not suppress visual extraction.
     for text in page_texts:
         unmapped = sum(text.count(character) for character in ("\u25a1", "\ufffd", "\x00"))
-        if unmapped >= 30 and unmapped / max(1, len(text)) >= .12:
+        glyph_names = re.findall(r"(?<!\S)/(?:i?\d+)\b", text)
+        if (unmapped >= 30 and unmapped / max(1, len(text)) >= .12
+                or len(glyph_names) >= 30 and sum(map(len, glyph_names)) / max(1, len(text)) >= .25):
             return NativeTextQuality(True, ("embedded_text_quality_low", "unmapped_font_glyphs"))
     try:
         reader = reader or PdfReader(BytesIO(raw_bytes))
