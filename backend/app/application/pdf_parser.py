@@ -1328,6 +1328,8 @@ def _build_verified_statement_result(statement, pages):
             balance_validation_status="combined_cash_investment_not_comparable",
             export_recommendation="review_recommended", export_recommendation_reason="combined_cash_investment_balance_not_comparable")
     return _with_parse_observability(result, **controls,
+        **({"derived_opening_balance": float(statement.opening)}
+           if statement.opening_inferred and statement.opening is not None else {}),
         **({"balance_bounds_unavailable": 1} if statement.balance_bounds_unavailable else {}),
         financial_controls_validated=int(bool(controls) and not statement.opening_inferred and not statement.opening_ambiguity_reason),
         opening_balance_ambiguous=int(bool(statement.opening_ambiguity_reason)),

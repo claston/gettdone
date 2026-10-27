@@ -1,8 +1,8 @@
 # Recuperação prioritária de 27/10/2026
 
-Esta alteração trata vinte e dois documentos do recorte de recuperação encerrado em
+Esta alteração trata vinte e cinco documentos do recorte de recuperação encerrado em
 27/10/2026 às 09:09, horário de São Paulo. Os originais e diagnósticos foram
-consultados em leitura; somente os vinte e dois PDFs autorizados foram copiados para
+consultados em leitura; somente os vinte e cinco PDFs autorizados foram copiados para
 `local/`, ignorado pelo Git. Os testes versionados usam dados fictícios.
 
 ## InfinitePay: trecho nativo de relatório
@@ -344,10 +344,75 @@ inclusive zero, continua tendo prioridade. Trechos sem fronteiras comprovadas
 permanecem sem saldo global. A mudança usa os metadados temporários existentes,
 sem migração ou atualização de históricos.
 
-Após este lote, são **22 casos conferidos e 38 restantes**: os três prioritários
-são C04 (PagBank), C35 (Santander parcial) e C41 (Sicoob parcial); os outros 35
-têm somente recomendação técnica genérica nos metadados e ainda não foram
-conferidos individualmente contra os originais.
+## Lote final C04, C35 e C41
+
+Os três originais somam **1.449 movimentos** e **491 comparações financeiras
+independentes**, com Excel, CSV e OFX conferidos integralmente. Nenhuma operação
+foi removida por coincidência de descrição, valor ou referência.
+
+| Caso | Resultado conferido |
+| --- | --- |
+| C04, PagBank | 491 movimentos; 69 saldos diários impressos e 68 comparações entre fechamentos |
+| C35, Santander | 400 movimentos; 399 comparações entre saldos; consulta parcial preservada |
+| C41, Sicoob | 558 movimentos; 23 saldos diários e saldo final conferidos; 16 sinais corrigidos |
+
+O PagBank imprime a identificação `290 - PagSeguro Internet S/A` e três colunas
+nativas. O novo leitor exige associação completa de datas, históricos e valores
+e um fechamento por dia, inclusive quando as operações e o fechamento ficam em
+páginas diferentes. Mantém débitos repetidos e descrições quebradas. O primeiro
+saldo diário é R$ 492,80, após cinco movimentos que somam R$ 338,75: a abertura
+**derivada** é R$ 154,05. Os outros 68 fechamentos conferem e o último saldo é
+R$ 32,29. O número de abertura não é tratado como saldo anterior impresso;
+`financial_controls_validated` permanece zero e a indicação de revisão da
+abertura derivada é preservada.
+
+O diagnóstico interno aditivo `derived_opening_balance` leva o cálculo completo
+do leitor ao processamento do relatório. Isso evita subtrair somente o último
+movimento quando o primeiro saldo vem depois de várias operações. Leitores que
+não informam esse campo mantêm o caminho existente. A abertura permanece
+identificada como derivada; campos impressos e ajustes explícitos continuam
+seguindo as prioridades já existentes.
+
+O Santander contém as 15 páginas físicas, mas informa que o limite da consulta
+foi atingido e orienta obter o Extrato Consolidado. Os 400 movimentos visíveis
+abrangem somente os últimos dias do período solicitado. A indicação de documento
+parcial continua ativa; abertura global permanece ausente e o saldo após a
+última operação visível é R$ 19.521,90. A posição de conta mostrada para outra
+data não substitui os saldos do trecho. O leitor preserva os **40 valores
+impressos na coluna Documento** e mantém vazias as outras **360 referências**;
+359 dessas células recebiam indevidamente um CPF retirado do histórico.
+
+No Sicoob, o indicador C/D pode estar separado do valor, inclusive na página
+seguinte. A leitura anterior invertia 16 débitos e o fechamento calculado não
+correspondia ao documento. O leitor nativo associa cada valor ao indicador
+explícito, à data, ao histórico completo e à referência `DOC.:`, mantendo a
+evidência também nos fechamentos diários e entre páginas. Os **558 históricos e
+558 referências** foram confrontados com uma leitura independente. Abertura
+impressa de R$ 2.701,03, os 23 fechamentos diários e o saldo final de
+**−R$ 9.902,52** conferem.
+
+O falso aviso de documento parcial do Sicoob vinha de um nome de contraparte
+terminado em `INSTITUICAO DE PAG`, seguido por CNPJ iniciado em `38`. O detector
+lia esse trecho como página 38. Contadores simples agora exigem uma linha
+própria, com espaços horizontais; nomes e documentos fiscais não são contadores.
+Páginas ausentes, contadores efetivos incorretos e o limite da consulta Santander
+continuam solicitando revisão. Sinais ausentes, valores ilegíveis ou linhas sem
+associação são recusados; diferenças aritméticas legíveis mantêm os dados e o
+aviso correspondente.
+
+## Os 35 alertas da regra antiga
+
+A reaplicação de `2026-10-26.v3` aos metadados capturados confirmou **35 de 35
+conversões classificadas como limpas**. Em todas, o motivo anterior era
+`medium_confidence_band`; não havia alerta por linha, falha de saldo ou indicação
+de documento parcial. Os modelos, suas pontuações e o parser registrado atendem
+aos critérios atuais. A regra de qualidade não precisou de outra alteração.
+
+Essa conclusão se refere aos metadados capturados; os 35 originais não foram
+conferidos individualmente. O recorte termina com **25 originais conferidos e
+35 casos explicados pela regra antiga**, sem outro caso prioritário pendente.
+Os históricos de produção permanecem como foram gravados, sem backfill ou
+reprocessamento automático.
 
 ## Validação e compatibilidade
 
@@ -388,6 +453,15 @@ conferidos individualmente contra os originais.
   Os originais foram conferidos por uma leitura independente do texto nativo,
   além dos testes fictícios. Excel/CSV foram validados nos seis; OFX foi
   conferido nos quatro extratos bancários e impedido nos dois XP.
+- Lote C04/C35/C41: TDD inicial apresentou 12 falhas e 4 sucessos; os dois
+  cenários de referência Santander e os cinco cenários adicionais de abertura
+  derivada/evidência diária falharam antes dos respectivos ajustes. Os 27 testes
+  novos passaram na validação focada final, incluindo HTTP real, worker, sinais
+  entre páginas, DOC/CPF, saldos negativos, repetições e Sicoob em texto corrido.
+  Os cenários de compatibilidade Santander em texto corrido e cabeçalho Viacredi
+  também foram conferidos, preservando o aviso de consulta parcial real.
+  Os exemplos textuais legados agora exercitam a entrada de páginas de texto;
+  a integração nativa usa PDFs reais, em lugar de um cabeçalho PDF fictício.
 - Os testes HTTP reais cobrem `/convert`, `/report/{id}`, CSV, XLSX, OFX, sinais,
   quantidades, ausência de saldos não comprovados, relatório inexistente `404`
   e o endpoint legado `/analyze`, que permanece desativado com `405`.

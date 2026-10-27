@@ -9,6 +9,13 @@ from app.application.parsers.pdf.verified_statements import DATE, day, fail
 
 def _kind(text):
     compact = re.sub(r"[\s-]+", "", upper(text))
+    if all(marker in compact for marker in ("APLICATIVOSANTANDEREMPRESAS", "PERIODOS:",
+            "VOCEALCANCOUONUMEROMAXIMODECONSULTAS", "PARAVERTODOSOSLANCAMENTOS")):
+        return "santander_limited"
+    if all(marker in compact for marker in ("290PAGSEGUROINTERNETS/A", "EXTRATODACONTA", "PERIODO:", "DESCRICAO", "SALDODODIA")):
+        return "pagbank_daily"
+    if all(marker in compact for marker in ("SICOOB", "SISBR", "COOP.:", "HISTORICODEMOVIMENTACAO", "DATAHISTORICOVALOR")):
+        return "sicoob_split_cd"
     if (all(marker in compact for marker in ("EXTRATOPORPERIODO", "ORDENAR", "SALDODODIA", "SALDOANTERIOR", "COMPARTILHAR", "VOLTAR"))
             and re.search(r"\d{2} DE [A-Z]+ DE \d{4}", upper(text))):
         return "descending_cards"
@@ -47,6 +54,20 @@ def parse_followup_native_tables(raw, page_texts):
     if kind is None:
         return None
     source = read_native_table_source(raw)
+    if kind == "santander_limited":
+        from app.application.parsers.pdf.santander_app_limited import parse_santander_app_limited
+
+        statement = parse_santander_app_limited(source)
+        return (statement, source) if statement is not None else None
+    if kind == "pagbank_daily":
+        from app.application.parsers.pdf.pagbank_native_daily import parse_pagbank_native_daily
+
+        return parse_pagbank_native_daily(source), source
+    if kind == "sicoob_split_cd":
+        from app.application.parsers.pdf.sicoob_native_split_cd import parse_sicoob_native_split_cd
+
+        statement = parse_sicoob_native_split_cd(source)
+        return (statement, source) if statement is not None else None
     if kind == "descending_cards":
         from app.application.parsers.pdf.descending_web_cards import parse_descending_web_cards
 
