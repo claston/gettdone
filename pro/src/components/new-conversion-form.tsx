@@ -3,6 +3,10 @@
 import { FilePlus2, LoaderCircle, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import {
+  statementWorkService,
+  type StatementWorkService,
+} from "@/data/statement-work-service";
 
 import {
   createBatchUploadService,
@@ -11,8 +15,12 @@ import {
 
 export function NewConversionForm({
   service,
+  workId,
+  workService = statementWorkService,
 }: {
   service?: BatchUploadService;
+  workId?: string;
+  workService?: StatementWorkService;
 }) {
   const router = useRouter();
   const defaultService = useMemo(
@@ -26,14 +34,25 @@ export function NewConversionForm({
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [createdBatch, setCreatedBatch] = useState<string | null>(null);
 
   const submit = async () => {
     if (!files.length || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
-      const result = await activeService.createAndSubmit(files);
-      router.push(`/review/${encodeURIComponent(result.batchId)}`);
+      const context = workId ? await workService.get(workId) : null;
+      if (context?.state === "completed")
+        throw new Error("Reabra o trabalho antes de enviar novos extratos.");
+      const batchId =
+        createdBatch ?? (await activeService.createAndSubmit(files)).batchId;
+      if (context) {
+        setCreatedBatch(batchId);
+        await workService.attachBatch(context, batchId);
+      }
+      router.push(
+        `/review/${encodeURIComponent(batchId)}${workId ? `?return_to=${encodeURIComponent(`/works/${workId}`)}` : ""}`,
+      );
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -52,6 +71,14 @@ export function NewConversionForm({
           <span className="eyebrow">Conversão em lote</span>
           <h1>Nova conversão</h1>
           <p>Envie até 12 arquivos para converter e revisar em conjunto.</p>
+          {workId && (
+            <p>
+              Os arquivos serão vinculados ao trabalho.{" "}
+              <a href={`/works/${encodeURIComponent(workId)}`}>
+                Voltar ao trabalho
+              </a>
+            </p>
+          )}
         </div>
       </div>
 
@@ -82,7 +109,7 @@ export function NewConversionForm({
             type="file"
             multiple
             accept="application/pdf,text/csv,application/x-ofx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.pdf,.csv,.xlsx,.ofx"
-            disabled={submitting}
+            disabled={submitting || createdBatch !== null}
             onChange={(event) => {
               setFiles(Array.from(event.currentTarget.files ?? []));
               setError(null);
@@ -104,7 +131,7 @@ export function NewConversionForm({
                     type="button"
                     className="secondary-button upload-file-remove"
                     aria-label={`Remover ${file.name}`}
-                    disabled={submitting}
+                    disabled={submitting || createdBatch !== null}
                     onClick={() => {
                       setFiles((current) =>
                         current.filter((_, fileIndex) => fileIndex !== index),
@@ -138,7 +165,11 @@ export function NewConversionForm({
             ) : (
               <Upload size={16} />
             )}
-            {submitting ? "Preparando lote…" : "Criar lote"}
+            {submitting
+              ? "Preparando lote…"
+              : createdBatch
+                ? "Retomar vínculo com o trabalho"
+                : "Criar lote"}
           </button>
         </div>
       </section>

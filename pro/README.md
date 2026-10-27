@@ -28,6 +28,7 @@ Abra `http://localhost:3000/demo/review/batch-setembro-2026` para acessar o vert
 - `/conversions?view=files` (arquivos individuais; filtros de organização quando disponíveis)
 - `/clients`
 - `/periods`
+- `/works` e `/works/[workId]` (piloto de fechamento de extratos)
 - `/reconciliation`
 - `/account`
 - `/demo/review/[batchId]`
@@ -36,6 +37,12 @@ Abra `http://localhost:3000/demo/review/batch-setembro-2026` para acessar o vert
 - `/review/[batchId]/[conversionId]`
 
 ## Arquitetura de dados
+
+Trabalhos reutiliza os vínculos de cliente/conta/período e a revisão existente.
+Escopo confirmado, cobertura, pendências, conclusão com ressalvas e histórico
+versionado são descritos em [Trabalhos e fechamento](../docs/statement-works.md).
+Exige migration `20261027_01` e o flag `PRO_STATEMENT_WORKS_ENABLED` no backend;
+o conversor permanece disponível quando o piloto está desligado.
 
 Conversões reúne upload, Lotes e Todos os arquivos. O histórico completo está
 nesse módulo; Início apresenta os últimos cinco lotes e um atalho. Organização

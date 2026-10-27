@@ -56,6 +56,7 @@
   color: var(--ink-700);
 }
 .form input,
+.form textarea,
 .form select,
 .filters select {
   width: 100%;
@@ -221,6 +222,13 @@
 .shortcuts a {
   color: var(--blue-600);
   font-size: 12px;
+}
+.form textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+.form + .form {
+  margin-top: 12px;
 }
 .suggestions {
   border-bottom: 1px solid var(--line);

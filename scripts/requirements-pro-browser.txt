@@ -1,5 +1,5 @@
 # Geometry and fixture versions are checked against backend/requirements.txt.
-# Browser interception does not use the API, database, OCR or AWS clients.
+# The works suite also installs backend/requirements.txt for a disposable real HTTP backend.
 playwright==1.64.1
 pytest==8.3.5
 pypdf==5.4.0

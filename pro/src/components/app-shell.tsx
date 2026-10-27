@@ -26,6 +26,7 @@ const navigation = [
   { href: "/conversions", label: "Conversões", icon: FileStack },
   { href: "/clients", label: "Clientes", icon: Users },
   { href: "/periods", label: "Períodos", icon: CalendarDays },
+  { href: "/works", label: "Trabalhos", icon: FileStack },
   { href: "/reconciliation", label: "Conciliação", icon: Landmark, soon: true },
 ];
 

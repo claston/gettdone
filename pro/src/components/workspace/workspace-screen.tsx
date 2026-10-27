@@ -550,7 +550,11 @@ export function WorkspaceScreen({
         <div className="batch-heading">
           <Link href={reviewReturnTo(returnTo)} className="back-link">
             <ChevronLeft size={16} />{" "}
-            {returnTo ? "Voltar às conversões" : "Lotes"}
+            {returnTo
+              ? reviewReturnTo(returnTo).startsWith("/works/")
+                ? "Voltar ao trabalho"
+                : "Voltar às conversões"
+              : "Lotes"}
           </Link>
           <div>
             <span className="eyebrow">{batch.clientName}</span>
