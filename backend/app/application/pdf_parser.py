@@ -1351,6 +1351,15 @@ def _parse_statement_page_texts(
         )
     layout = infer_pdf_layout(joined_text)
     layout_profile = get_layout_profile(layout.layout_name)
+    from app.application.parsers.pdf.empty_statement import CAIXA_PERSONAL_INACTIVE_LAYOUT, caixa_personal_inactive_balance
+
+    inactive_balance = caixa_personal_inactive_balance(page_texts)
+    if inactive_balance is not None:
+        result = _empty_statement_result(page_texts)
+        return replace(result, layout=PdfLayoutInference(CAIXA_PERSONAL_INACTIVE_LAYOUT, .99, False),
+                       parse_metrics={**result.parse_metrics, "financial_controls_validated": 1,
+                                      "verified_opening_balance": inactive_balance, "verified_closing_balance": inactive_balance,
+                                      "balance_validation_status": "explicit_no_activity_period_balance"})
     if has_explicit_no_activity(page_texts):
         return _empty_statement_result(page_texts)
     cross_page_split = detect_cross_page_transaction_split(page_texts, layout_profile=layout_profile)
@@ -1501,9 +1510,31 @@ def _normalize_caixa_web_ocr_lines(lines: list[_PdfLine], *, layout_name: str) -
     if layout_name != _CAIXA_WEB_PERIOD_LAYOUT:
         return lines
 
-    statement_year = infer_default_statement_year(_extract_line_texts(lines))
+    # Native exports can wrap the signed value or the end of its description.
+    # Join only a dated Caixa row and its own continuation on the same page;
+    # never borrow cells from a following dated row or a different page.
+    joined_lines: list[_PdfLine] = []
+    index = 0
+    dated_row = re.compile(r"^\d{2}/\d{2}/\d{4}\s+\d{2}/\d{2}/\d{4}\s+\d+\s+")
+    financial_tail = re.compile(r"[\d.,]+\s+R\$\s*[\d.,]+(?:\s*[CD])?\s*$")
+    while index < len(lines):
+        line = lines[index]
+        text = line.text
+        consumed = 0
+        if dated_row.match(text) and not financial_tail.search(text):
+            candidate = text
+            for offset, following in enumerate(lines[index + 1:index + 4], 1):
+                if following.page_number != line.page_number or re.match(r"^\d{2}/\d{2}/\d{4}\b", following.text):
+                    break
+                candidate += " " + following.text.strip()
+                if financial_tail.search(candidate):
+                    text, consumed = candidate, offset
+                    break
+        joined_lines.append(replace(line, text=text))
+        index += 1 + consumed
+    statement_year = infer_default_statement_year(_extract_line_texts(joined_lines))
     normalized_lines: list[_PdfLine] = []
-    for line in lines:
+    for line in joined_lines:
         text = _CAIXA_REPEATED_DOT_MONEY_PATTERN.sub(
             lambda match: f"{match.group('integer')},{match.group('cents')}",
             line.text,
@@ -2805,6 +2836,10 @@ def _parse_tabular_statement_rows(
             tabular_profile=tabular_profile,
             column_positions=column_positions,
         )
+        if (parsed_row is None and layout_profile is not None
+                and layout_profile.profile_name == _CAIXA_WEB_PERIOD_LAYOUT
+                and re.search(r"\bSALDO (?:DO )?DIA\b", _normalize_text(line.text))):
+            is_candidate = False
         consumed = 1
         if parsed_row is None:
             recovered_row, recovered_candidate, recovered_consumed = _recover_tabular_multiline_row(
