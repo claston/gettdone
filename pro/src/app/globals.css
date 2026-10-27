@@ -2359,3 +2359,10 @@ kbd {
     display: none;
   }
 }
+.conversion-views {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 0;
+  padding-bottom: 0;
+}

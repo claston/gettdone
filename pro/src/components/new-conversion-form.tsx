@@ -51,7 +51,7 @@ export function NewConversionForm({
         <div>
           <span className="eyebrow">Conversão em lote</span>
           <h1>Nova conversão</h1>
-          <p>Envie até 12 extratos para processamento seguro pelo worker.</p>
+          <p>Envie até 12 arquivos para converter e revisar em conjunto.</p>
         </div>
       </div>
 

@@ -23,6 +23,7 @@ import {
   Zap,
 } from "lucide-react";
 import Link from "next/link";
+import { reviewReturnTo } from "@/domain/review-return";
 import { useEffect, useMemo, useState } from "react";
 
 import { useOptionalProSession } from "@/components/pro-session-gate";
@@ -60,6 +61,7 @@ interface WorkspaceScreenProps {
   repository?: WorkspaceRepository;
   dataMode?: WorkspaceDataMode;
   pollIntervalMs?: number;
+  returnTo?: string;
 }
 
 const statusContent: Record<
@@ -313,6 +315,7 @@ export function WorkspaceScreen({
   repository,
   dataMode = "api",
   pollIntervalMs,
+  returnTo,
 }: WorkspaceScreenProps) {
   const session = useOptionalProSession();
   const activeRepository = repository ?? resolveWorkspaceRepository(dataMode);
@@ -545,8 +548,9 @@ export function WorkspaceScreen({
       />
       <header className="workspace-header">
         <div className="batch-heading">
-          <Link href="/dashboard" className="back-link">
-            <ChevronLeft size={16} /> Lotes
+          <Link href={reviewReturnTo(returnTo)} className="back-link">
+            <ChevronLeft size={16} />{" "}
+            {returnTo ? "Voltar às conversões" : "Lotes"}
           </Link>
           <div>
             <span className="eyebrow">{batch.clientName}</span>

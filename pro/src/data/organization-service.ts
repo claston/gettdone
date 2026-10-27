@@ -51,12 +51,46 @@ export interface OrganizationFilters {
   client: string;
   period: string;
   account: string;
+  organization?: boolean;
+}
+export interface OrganizationSuggestion {
+  id: string;
+  client_id?: string;
+  basis: string;
+  evidence: string;
+  confidence: string;
+}
+export interface OrganizationSuggestions {
+  clients: OrganizationSuggestion[];
+  accounts: OrganizationSuggestion[];
+  period: {
+    start_date: string;
+    end_date: string;
+    basis: string;
+    document_coverage: boolean;
+    evidence: string;
+  } | null;
+}
+export interface BulkOrganizationItem {
+  batch_id: string;
+  job_id: string;
+  context: ConversionContext;
+}
+export interface BulkOrganizationResult {
+  items: Array<{
+    job_id: string;
+    status: number;
+    context?: ConversionContext;
+    error?: string;
+  }>;
 }
 export interface OrganizationPageResult {
   items: OrganizedConversion[];
   next_cursor: string | null;
 }
 export interface OrganizationService {
+  suggestions(batchId: string, jobId: string): Promise<OrganizationSuggestions>;
+  organizeBulk(items: BulkOrganizationItem[]): Promise<BulkOrganizationResult>;
   catalog(signal?: AbortSignal): Promise<OrganizationCatalog>;
   listConversions(
     filters: OrganizationFilters,
@@ -87,7 +121,10 @@ export function createOrganizationService(
     createProApiClient({ apiUrl: process.env.NEXT_PUBLIC_API_URL ?? "/" });
   const base = "/api/pro/organization";
   async function read<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await client.request(`${base}${path}`, init);
+    const response = await client.request(
+      path.startsWith("/api/") ? path : `${base}${path}`,
+      init,
+    );
     if (!response.ok)
       throw new Error(
         await readApiError(
@@ -105,6 +142,27 @@ export function createOrganizationService(
     });
   }
   return {
+    suggestions: (batchId, jobId) =>
+      read<OrganizationSuggestions>(
+        `/batches/${encodeURIComponent(batchId)}/jobs/${encodeURIComponent(jobId)}/suggestions`,
+        { cache: "no-store" },
+      ),
+    organizeBulk: (items) =>
+      read<BulkOrganizationResult>("/contexts/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: items.map(({ context, ...item }) => ({
+            ...item,
+            context: {
+              client_id: context.client_id,
+              account_id: context.account_id,
+              period_ids: context.period_ids,
+              expected_version: context.version,
+            },
+          })),
+        }),
+      }),
     catalog: (signal) =>
       read<OrganizationCatalog>("/catalog", { signal, cache: "no-store" }),
     listConversions(filters, cursor, signal) {
@@ -114,7 +172,8 @@ export function createOrganizationService(
       if (filters.period) query.set("period_id", filters.period);
       if (filters.account) query.set("account_id", filters.account);
       if (cursor) query.set("cursor", cursor);
-      return read<OrganizationPageResult>(`/conversions?${query}`, {
+      query.set("include_organization", String(filters.organization !== false));
+      return read<OrganizationPageResult>(`/api/pro/conversions?${query}`, {
         signal,
         cache: "no-store",
       });

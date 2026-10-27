@@ -25,6 +25,7 @@ Abra `http://localhost:3000/demo/review/batch-setembro-2026` para acessar o vert
 
 - `/dashboard`
 - `/conversions`
+- `/conversions?view=files` (arquivos individuais; filtros de organização quando disponíveis)
 - `/clients`
 - `/periods`
 - `/reconciliation`
@@ -35,6 +36,14 @@ Abra `http://localhost:3000/demo/review/batch-setembro-2026` para acessar o vert
 - `/review/[batchId]/[conversionId]`
 
 ## Arquitetura de dados
+
+Conversões reúne upload, Lotes e Todos os arquivos. O histórico completo está
+nesse módulo; Início apresenta os últimos cinco lotes e um atalho. Organização
+em massa, sugestões com evidência/confirmação e retorno da revisão são descritos
+em [`docs/pro-manual-organization.md`](../docs/pro-manual-organization.md).
+O conversor básico usa `/api/pro/conversions` sem depender de cadastros ou do
+flag de organização. API deve ser publicada antes do frontend; o worker novo
+preserva evidência da origem nos resultados, com fallback seguro para legados.
 
 A UI consome somente a interface `WorkspaceRepository`, definida em `src/domain/workspace.ts`. As rotas `/demo/review/*` sempre usam `src/data/mock-workspace-repository.ts`, mesmo quando a API está configurada. Assim, a demonstração continua disponível no mesmo build caso o backend esteja indisponível.
 

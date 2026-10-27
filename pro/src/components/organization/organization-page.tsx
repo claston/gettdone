@@ -10,9 +10,11 @@ import {
   type OrganizationPageResult,
   type OrganizationService,
   type OrganizedConversion,
+  type BulkOrganizationResult,
 } from "@/data/organization-service";
 import { CatalogEditor, formatDate } from "./catalog-editor";
 import { ConversionOrganization } from "./conversion-organization";
+import { BulkOrganization } from "./bulk-organization";
 import styles from "./organization.module.css";
 
 const emptyCatalog: OrganizationCatalog = {
@@ -30,9 +32,17 @@ type CatalogTab = "clients" | "accounts" | "periods";
 export function OrganizationPage({
   mode,
   service,
+  independent = false,
+  initialFilters = emptyFilters,
+  initialCursor,
+  onContextChange,
 }: {
   mode: "clients" | "periods" | "conversions";
   service?: OrganizationService;
+  independent?: boolean;
+  initialFilters?: OrganizationFilters;
+  initialCursor?: string;
+  onContextChange?(url: string): void;
 }) {
   const active = service ?? organizationService;
   const [catalog, setCatalog] = useState<OrganizationCatalog | null>(null);
@@ -41,16 +51,20 @@ export function OrganizationPage({
   const [tab, setTab] = useState<CatalogTab>(
     mode === "periods" ? "periods" : "clients",
   );
-  const [filters, setFilters] = useState(emptyFilters);
+  const [filters, setFilters] = useState(initialFilters);
   const [cursors, setCursors] = useState<Array<string | undefined>>([
-    undefined,
+    ...(initialCursor ? [undefined, initialCursor] : [undefined]),
   ]);
   const cursor = cursors.at(-1);
   const [attempt, setAttempt] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [bulkErrors, setBulkErrors] = useState<string[]>([]);
+  const [revision, setRevision] = useState(0);
+  const withOrganization = !independent || (catalog !== null && !catalogError);
   const request = useMemo(
-    () => ({ active, filters, cursor, attempt }),
-    [active, filters, cursor, attempt],
+    () => ({ active, filters, cursor, attempt, withOrganization }),
+    [active, filters, cursor, attempt, withOrganization],
   );
   const [result, setResult] = useState<{
     request: typeof request;
@@ -71,24 +85,48 @@ export function OrganizationPage({
         }
       })
       .catch((caught: unknown) => {
-        if (!abort.signal.aborted)
+        if (!abort.signal.aborted) {
+          if (independent) {
+            setFilters(emptyFilters);
+            setCursors([undefined]);
+          }
           setCatalogError(
             caught instanceof Error
               ? caught.message
               : "Não foi possível carregar clientes e períodos.",
           );
+        }
       });
     return () => abort.abort();
-  }, [active, catalogAttempt]);
+  }, [active, catalogAttempt, independent]);
 
   useEffect(() => {
     const abort = new AbortController();
     void request.active
-      .listConversions(request.filters, request.cursor, abort.signal)
+      .listConversions(
+        independent
+          ? {
+              ...(request.withOrganization ? request.filters : emptyFilters),
+              organization: request.withOrganization,
+            }
+          : request.filters,
+        request.cursor,
+        abort.signal,
+      )
       .then((page) => {
         if (!abort.signal.aborted) setResult({ request, page, error: null });
       })
       .catch((caught: unknown) => {
+        if (!abort.signal.aborted && independent && request.withOrganization) {
+          setCatalogError(
+            "Organização indisponível. Seus arquivos continuam acessíveis.",
+          );
+          setNotice("Organização indisponível. Exibindo todos os arquivos.");
+          setFilters(emptyFilters);
+          setCursors([undefined]);
+          setSelected([]);
+          return;
+        }
         if (!abort.signal.aborted)
           setResult({
             request,
@@ -100,7 +138,7 @@ export function OrganizationPage({
           });
       });
     return () => abort.abort();
-  }, [request]);
+  }, [request, independent]);
 
   const refreshCatalog = async () => {
     const value = await active.catalog();
@@ -108,6 +146,8 @@ export function OrganizationPage({
     setCatalogError(null);
   };
   const filter = (changes: Partial<OrganizationFilters>) => {
+    setSelected([]);
+    setBulkErrors([]);
     setFilters((previous) => ({ ...previous, ...changes }));
     setCursors([undefined]);
     setNotice(null);
@@ -141,6 +181,41 @@ export function OrganizationPage({
     );
   };
   const values = catalog ?? emptyCatalog;
+  const returnQuery = new URLSearchParams({ view: "files" });
+  if (filters.client) returnQuery.set("client", filters.client);
+  if (filters.account) returnQuery.set("account", filters.account);
+  if (filters.period) returnQuery.set("period", filters.period);
+  if (cursor) returnQuery.set("cursor", cursor);
+  const returnTo = independent ? `/conversions?${returnQuery}` : undefined;
+  useEffect(() => {
+    if (returnTo) onContextChange?.(returnTo);
+  }, [returnTo, onContextChange]);
+  const onBulkSaved = (result: BulkOrganizationResult) => {
+    const errors: string[] = [];
+    const failed: string[] = [];
+    let saved = 0;
+    for (const outcome of result.items) {
+      const item = current?.page?.items.find(
+        (row) => row.job_id === outcome.job_id,
+      );
+      if (!item) continue;
+      if (outcome.status === 200 && outcome.context) {
+        onSaved(item, outcome.context);
+        saved += 1;
+      } else {
+        failed.push(item.job_id);
+        errors.push(
+          `${item.filename}: ${outcome.error || "Não foi possível salvar."}`,
+        );
+      }
+    }
+    setSelected(failed);
+    setBulkErrors(errors);
+    setNotice(
+      `${saved} arquivo(s) organizado(s).${failed.length ? " Atualize a lista para conferir os conflitos antes de tentar novamente." : ""}`,
+    );
+    setRevision((value) => value + 1);
+  };
   return (
     <section
       className={`standard-page ${styles.page}`}
@@ -226,80 +301,101 @@ export function OrganizationPage({
           Atualizar conversões
         </button>
       </div>
-      {mode === "conversions" && (
+      {mode === "conversions" && withOrganization && (
         <p className={styles.shortcuts}>
           <Link href="/clients">Cadastrar clientes e contas</Link>
           <Link href="/periods">Cadastrar períodos</Link>
         </p>
       )}
-      {mode === "conversions" && catalogError && (
+      {mode === "conversions" && catalogError && !independent && (
         <p role="alert" className={styles.error}>
           {catalogError}
         </p>
       )}
-      <div className={styles.filters}>
-        <label>
-          Filtrar por cliente
-          <select
-            value={filters.client}
-            onChange={(event) =>
-              filter({ client: event.target.value, account: "" })
-            }
-          >
-            <option value="">Todos os clientes</option>
-            <option value="unassigned">Sem cliente</option>
-            {values.clients.map((client) => (
-              <option key={client.id} value={client.id}>
-                {client.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Filtrar por conta
-          <select
-            value={filters.account}
-            onChange={(event) => filter({ account: event.target.value })}
-          >
-            <option value="">Todas as contas</option>
-            {values.accounts
-              .filter(
-                (account) =>
-                  !filters.client || account.client_id === filters.client,
-              )
-              .map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name}
+      {withOrganization && (
+        <div className={styles.filters}>
+          <label>
+            Filtrar por cliente
+            <select
+              value={filters.client}
+              onChange={(event) =>
+                filter({ client: event.target.value, account: "" })
+              }
+            >
+              <option value="">Todos os clientes</option>
+              <option value="unassigned">Sem cliente</option>
+              {values.clients.map((client) => (
+                <option key={client.id} value={client.id}>
+                  {client.name}
                 </option>
               ))}
-          </select>
-        </label>
-        <label>
-          Filtrar por período
-          <select
-            value={filters.period}
-            onChange={(event) => filter({ period: event.target.value })}
+            </select>
+          </label>
+          <label>
+            Filtrar por conta
+            <select
+              value={filters.account}
+              onChange={(event) => filter({ account: event.target.value })}
+            >
+              <option value="">Todas as contas</option>
+              {values.accounts
+                .filter(
+                  (account) =>
+                    !filters.client || account.client_id === filters.client,
+                )
+                .map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label>
+            Filtrar por período
+            <select
+              value={filters.period}
+              onChange={(event) => filter({ period: event.target.value })}
+            >
+              <option value="">Todos os períodos</option>
+              {values.periods.map((period) => (
+                <option key={period.id} value={period.id}>
+                  {period.name} ({formatDate(period.start_date)} a{" "}
+                  {formatDate(period.end_date)})
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="secondary-button"
+            onClick={() => {
+              setSelected([]);
+              setBulkErrors([]);
+              setFilters(emptyFilters);
+              setCursors([undefined]);
+              setNotice(null);
+            }}
           >
-            <option value="">Todos os períodos</option>
-            {values.periods.map((period) => (
-              <option key={period.id} value={period.id}>
-                {period.name} ({formatDate(period.start_date)} a{" "}
-                {formatDate(period.end_date)})
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          className="secondary-button"
-          onClick={() => {
-            setFilters(emptyFilters);
-            setCursors([undefined]);
-            setNotice(null);
-          }}
-        >
-          Limpar filtros
-        </button>
-      </div>
+            Limpar filtros
+          </button>
+        </div>
+      )}
+      {withOrganization && catalog && selected.length > 0 && !loading && (
+        <BulkOrganization
+          items={
+            current?.page?.items.filter((item) =>
+              selected.includes(item.job_id),
+            ) ?? []
+          }
+          catalog={catalog}
+          service={active}
+          onSaved={onBulkSaved}
+        />
+      )}
+      {bulkErrors.map((error) => (
+        <p role="alert" className={styles.error} key={error}>
+          {error}
+        </p>
+      ))}
       {notice && (
         <p role="status" className={styles.success}>
           {notice}
@@ -326,11 +422,25 @@ export function OrganizationPage({
             <div className={styles.conversions}>
               {current.page.items.map((item) => (
                 <ConversionOrganization
-                  key={`${item.job_id}:${attempt}`}
+                  key={`${item.job_id}:${attempt}:${revision}`}
                   item={item}
                   catalog={values}
                   service={active}
                   available={catalog !== null && !catalogError}
+                  showOrganization={withOrganization}
+                  returnTo={returnTo}
+                  onCatalogChanged={refreshCatalog}
+                  selected={selected.includes(item.job_id)}
+                  onSelect={
+                    catalog && !catalogError
+                      ? (checked) =>
+                          setSelected((previous) =>
+                            checked
+                              ? [...previous, item.job_id]
+                              : previous.filter((id) => id !== item.job_id),
+                          )
+                      : undefined
+                  }
                   onSaved={(context) => onSaved(item, context)}
                 />
               ))}
@@ -342,7 +452,11 @@ export function OrganizationPage({
         <button
           className="secondary-button"
           disabled={loading || cursors.length === 1}
-          onClick={() => setCursors((value) => value.slice(0, -1))}
+          onClick={() => {
+            setSelected([]);
+            setBulkErrors([]);
+            setCursors((value) => value.slice(0, -1));
+          }}
         >
           Página anterior
         </button>
@@ -351,6 +465,8 @@ export function OrganizationPage({
           className="secondary-button"
           disabled={loading || !current?.page?.next_cursor}
           onClick={() => {
+            setSelected([]);
+            setBulkErrors([]);
             const next = current?.page?.next_cursor;
             if (next) setCursors((value) => [...value, next]);
           }}

@@ -1,11 +1,23 @@
-import { NewConversionForm } from "@/components/new-conversion-form";
-import { OrganizationPage } from "@/components/organization/organization-page";
+import { ConversionsPage } from "@/components/conversions-page";
 
-export default function Page() {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const query = await searchParams;
+  const value = (key: string) =>
+    typeof query[key] === "string" ? (query[key] as string) : "";
   return (
-    <>
-      <NewConversionForm />
-      <OrganizationPage mode="conversions" />
-    </>
+    <ConversionsPage
+      key={value("view")}
+      initialView={value("view") === "files" ? "files" : "batches"}
+      initialFilters={{
+        client: value("client"),
+        account: value("account"),
+        period: value("period"),
+      }}
+      initialCursor={value("cursor") || undefined}
+    />
   );
 }

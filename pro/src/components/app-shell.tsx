@@ -22,7 +22,7 @@ import { useProSession } from "@/components/pro-session-gate";
 import type { ProUser } from "@/data/pro-auth-service";
 
 const navigation = [
-  { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
+  { href: "/dashboard", label: "Início", icon: BarChart3 },
   { href: "/conversions", label: "Conversões", icon: FileStack },
   { href: "/clients", label: "Clientes", icon: Users },
   { href: "/periods", label: "Períodos", icon: CalendarDays },

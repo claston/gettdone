@@ -51,10 +51,13 @@ describe("histórico de lotes no dashboard", () => {
         })
         .mockResolvedValueOnce({ items: [item], nextCursor: "next-page" }),
     };
-    render(<DashboardPage service={service} />);
+    render(<DashboardPage service={service} embedded />);
     expect(
       await screen.findByRole("link", { name: "Abrir lote" }),
-    ).toHaveAttribute("href", item.reviewUrl);
+    ).toHaveAttribute(
+      "href",
+      `${item.reviewUrl}?return_to=${encodeURIComponent("/conversions?view=batches")}`,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Próxima" }));
     expect(await screen.findByText("Expirado")).toBeInTheDocument();
     expect(

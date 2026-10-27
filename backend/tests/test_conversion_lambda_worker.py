@@ -107,6 +107,10 @@ def test_lambda_processor_completes_job_persists_payload_and_retains_source_unti
     assert record.result is not None
     assert record.result.analysis_id == "an_worker123"
     assert record.result.payload["analysis"]["transactions_total"] == 1
+    assert record.result.payload["organization_source"]["version"] == 1
+    original_source = record.result.payload["organization_source"]
+    repository.update_analysis(record.job.job_id, analysis={"account_number": "destination-for-export"})
+    assert repository.get(record.job.job_id).result.payload["organization_source"] == original_source
     assert store.deleted == []
 
     handle_sqs_event(_event(message_id="message-duplicate"), processor=processor, request_id="lambda-request-2")
