@@ -1,8 +1,8 @@
 # Recuperação prioritária de 27/10/2026
 
-Esta alteração trata doze documentos do recorte de recuperação encerrado em
+Esta alteração trata dezesseis documentos do recorte de recuperação encerrado em
 27/10/2026 às 09:09, horário de São Paulo. Os originais e diagnósticos foram
-consultados em leitura; somente os doze PDFs autorizados foram copiados para
+consultados em leitura; somente os dezesseis PDFs autorizados foram copiados para
 `local/`, ignorado pelo Git. Os testes versionados usam dados fictícios.
 
 ## InfinitePay: trecho nativo de relatório
@@ -242,6 +242,46 @@ Os originais e a extração OCR armazenada permanecem privados em `local/`.
 Nenhum OCR remoto novo, alteração de produção ou reprocessamento histórico foi
 executado.
 
+## Lote C17, C34, C36 e C50: referências e recusa por documento
+
+Os três extratos Mercado Pago contêm **4, 140 e 207 movimentos**, totalizando
+**351**. Datas, valores, ordem, referências e cada saldo foram conferidos
+independentemente contra os campos impressos. Os IDs compartilhados correspondem
+a grupos de eventos; nenhuma linha é removida ou unificada somente por repetir
+um ID. O aviso de referência compartilhada permanece disponível para revisão.
+
+As descrições quebradas podiam perder o início ou incorporar o texto da
+operação seguinte. A leitura nativa agora usa as bordas reais das células da
+coluna de histórico. Datas e descrições agrupadas no mesmo fragmento são
+separadas pelos glifos; continuações entre páginas mantêm texto e evidências
+das duas páginas. Cada célula precisa ter uma data, uma referência e dois
+valores, e todos os valores e datas devem ser consumidos. Os campos financeiros
+são comparados com o leitor existente, que continua conferindo resumo e saldos.
+Documentos sem essa grade mantêm o leitor anterior. Uma grade reconhecida com
+linhas ambíguas não cai silenciosamente no caminho genérico.
+
+O C50 é uma **nota fiscal de serviço**, recusada corretamente pelo tipo
+`fiscal_invoice`. O painel administrativo antes mostrava qualquer insucesso
+como `Falha técnica`, inclusive essa recusa esperada. A lista de atenção agora
+inclui o tipo de documento e mostra **Recusado** com o motivo
+**Tipo de documento não suportado: Nota fiscal.** O CSV usa o mesmo resultado e
+motivo; a agregação por tipo conta o evento como recusa. Os indicadores que
+agrupam ambos os resultados são identificados como `Falhas ou recusas`.
+
+Registros antigos com `unsupported_document_type` no código ou subcódigo são
+interpretados na leitura. Quando o tipo está ausente, o diagnóstico histórico
+pode fornecer uma classificação conhecida. Sem esse dado, o motivo permanece
+genérico e nenhuma classificação é inventada. Falhas reais de processamento
+continuam sendo falhas técnicas, mesmo que o documento tenha um tipo registrado.
+Status, diagnósticos e classificações armazenados não são regravados.
+
+A resposta administrativa recebe dois campos opcionais de documento na lista
+de atenção. Não há mudança de schema, migração ou backfill. A API e os assets
+administrativos devem ser publicados juntos; o script do painel recebe nova
+versão de cache. A tela foi conferida no Chromium com dados fictícios, e os
+testes cobrem cadastrados/anônimos, históricos antigos, CSV, HTTP real e
+diagnósticos incompletos ou inválidos.
+
 ## Validação e compatibilidade
 
 - TDD: a primeira execução dos novos testes apresentou 12 falhas e 7 sucessos,
@@ -269,6 +309,11 @@ executado.
   iniciais; o controle adicional de bloqueio reproduziu outra falha antes do
   ajuste. Os testes focados finais também cobrem HTTP, exportações, marcas
   decorativas, sinais separados e preservação do conflito real de período.
+- Lote C17/C34/C36/C50: TDD do painel apresentou 6 falhas e 1 sucesso; os dois
+  testes iniciais de bordas reproduziram a perda de descrição e a associação
+  ambígua. A validação focada apresentou 78 sucessos, incluindo continuações
+  entre páginas e registros antigos. O Chromium confirmou tipo, resultado e
+  motivo legíveis na tabela administrativa.
 - Os testes HTTP reais cobrem `/convert`, `/report/{id}`, CSV, XLSX, OFX, sinais,
   quantidades, ausência de saldos não comprovados, relatório inexistente `404`
   e o endpoint legado `/analyze`, que permanece desativado com `405`.

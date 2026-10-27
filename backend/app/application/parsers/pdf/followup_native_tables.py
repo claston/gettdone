@@ -24,6 +24,8 @@ def _kind(text):
     sweep = identify_sweep_statement(text)
     if sweep == MERCADO_PAGO and all(re.search(rf"{label}:\s*R\$\s*0,00\b", upper(text)) for label in ("ENTRADAS", "SAIDAS")):
         return "mercado_inactive"
+    if sweep == MERCADO_PAGO:
+        return "mercado_grid"
     if sweep == INFINITEPAY and "HORA" in compact:
         return "infinitepay"
     if all(marker in compact for marker in ("EXTRATODECONTA", "DETALHEDOSMOVIMENTOS", "SALDOINICIAL",
@@ -42,6 +44,11 @@ def parse_followup_native_tables(raw, page_texts):
     if kind is None:
         return None
     source = read_native_table_source(raw)
+    if kind == "mercado_grid":
+        from app.application.parsers.pdf.mercado_pago_native_grid import parse_mercado_pago_native_grid
+
+        statement = parse_mercado_pago_native_grid(raw, source)
+        return (statement, source) if statement is not None else None
     if kind == "mercado_inactive":
         from app.application.parsers.pdf.mercado_pago_inactive import parse_mercado_pago_inactive
 
