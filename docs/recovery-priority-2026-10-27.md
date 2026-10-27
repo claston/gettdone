@@ -1,8 +1,8 @@
 # Recuperação prioritária de 27/10/2026
 
-Esta alteração trata seis documentos do recorte de recuperação encerrado em
+Esta alteração trata sete documentos do recorte de recuperação encerrado em
 27/10/2026 às 09:09, horário de São Paulo. Os originais e diagnósticos foram
-consultados em leitura; somente os seis PDFs autorizados foram copiados para
+consultados em leitura; somente os sete PDFs autorizados foram copiados para
 `local/`, ignorado pelo Git. Os testes versionados usam dados fictícios.
 
 ## InfinitePay: trecho nativo de relatório
@@ -131,6 +131,26 @@ saldo da posição de dezembro não substitui seu fechamento. XLSX e OFX preserv
 os 50 movimentos, sem OCR remoto e sem alertas. Não há alteração do PDF original
 ou reprocessamento de resultados históricos em produção.
 
+## Mercado Pago: extrato nativo sem movimentação
+
+O C21 contém uma única página completa, com entradas e saídas zeradas, saldos
+inicial e final iguais e tabela de movimentos vazia. O leitor anterior exigia
+pelo menos um lançamento, embora o documento fosse um extrato válido.
+
+O reconhecimento de ausência de movimentação exige identidade Mercado Pago,
+agência/conta, período válido e ordenado, os quatro controles financeiros e as
+cinco colunas nativas alinhadas. Exige também data de geração válida, posterior
+ou igual ao fim do período, e contador `1/1`. As coordenadas dos glifos comprovam
+que a região entre o cabeçalho e o rodapé está vazia; imagens ou formulários PDF
+nessa região impedem a confirmação. Um logotipo acima da tabela é permitido.
+Somente texto OCR não comprova ausência de movimentos.
+
+O resultado local preserva **zero movimentos** e os dois saldos impressos,
+com os **quatro controles conferidos**. XLSX e OFX mantêm o saldo sem criar
+transações. Documentos incompletos, colunas ausentes, valores ou datas órfãos
+continuam recusados. Se houver movimentos e resumo zerado, o caminho existente
+preserva os lançamentos e sinaliza a diferença financeira real.
+
 ## Validação e compatibilidade
 
 - TDD: a primeira execução dos novos testes apresentou 12 falhas e 7 sucessos,
@@ -144,6 +164,11 @@ ou reprocessamento de resultados históricos em produção.
   referências centralizadas falhou antes do ajuste correspondente. A validação
   focada final apresentou 91 sucessos, incluindo HTTP, exportações, sinais,
   centavos truncados, anexos e referências preservadas.
+- Mercado Pago: o cenário inicial apresentou 5 falhas e 15 sucessos. Os
+  testes adicionais de data de geração também falharam antes do ajuste.
+  A validação focada final apresentou 91 sucessos, incluindo HTTP real,
+  exportações sem movimentos, saldos positivo/zero/negativo, imagens na tabela,
+  logotipo, páginas incompletas e preservação de diferenças financeiras reais.
 - Os testes HTTP reais cobrem `/convert`, `/report/{id}`, CSV, XLSX, OFX, sinais,
   quantidades, ausência de saldos não comprovados, relatório inexistente `404`
   e o endpoint legado `/analyze`, que permanece desativado com `405`.

@@ -6,6 +6,7 @@ from openpyxl import load_workbook
 
 from tests.ocr_conversion_http_helpers import public_client
 from tests.test_oct27_bradesco_recovery import bradesco_continuation
+from tests.test_oct27_mercado_empty import mercado_empty
 from tests.test_oct27_priority_recovery import detail_statement, infinitepay_fragment
 from tests.test_oct27_uniprime_recovery import uniprime_with_position
 
@@ -17,6 +18,7 @@ pytestmark = pytest.mark.real_http
     (detail_statement, [-10, 50, -20], (100, 120)),
     (bradesco_continuation, [500, -150, -150], (-100, 100)),
     (uniprime_with_position, [-30, 50], (100, 120)),
+    (mercado_empty, [], (150, 150)),
 ])
 def test_priority_documents_keep_movements_and_balance_scope_in_all_exports(tmp_path, monkeypatch, factory, amounts, bounds):
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")

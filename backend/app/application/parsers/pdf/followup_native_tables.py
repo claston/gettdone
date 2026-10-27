@@ -19,9 +19,12 @@ def _kind(text):
         return "bb"
     if all(marker in compact for marker in ("INFINITEPAY", "HORA", "VALOR(R$)", "TOTALDEENTRADAS", "TOTALDESAIDAS")):
         return "infinitepay"
-    from app.application.sweep_statement_detection import INFINITEPAY, identify_sweep_statement
+    from app.application.sweep_statement_detection import INFINITEPAY, MERCADO_PAGO, identify_sweep_statement
 
-    if identify_sweep_statement(text) == INFINITEPAY and "HORA" in compact:
+    sweep = identify_sweep_statement(text)
+    if sweep == MERCADO_PAGO and all(re.search(rf"{label}:\s*R\$\s*0,00\b", upper(text)) for label in ("ENTRADAS", "SAIDAS")):
+        return "mercado_inactive"
+    if sweep == INFINITEPAY and "HORA" in compact:
         return "infinitepay"
     if all(marker in compact for marker in ("EXTRATODECONTA", "DETALHEDOSMOVIMENTOS", "SALDOINICIAL",
                                             "SALDOFINAL", "ENTRADAS", "SAIDAS", "TITULAR:", "PERIODO:")):
@@ -36,6 +39,12 @@ def parse_followup_native_tables(raw, page_texts):
     if kind is None:
         return None
     source = read_native_table_source(raw)
+    if kind == "mercado_inactive":
+        from app.application.parsers.pdf.mercado_pago_inactive import parse_mercado_pago_inactive
+
+        statement = parse_mercado_pago_inactive(raw, source)
+        # Active or unproven documents retain the existing strict ledger path.
+        return (statement, source) if statement is not None else None
     if kind == "ndd":
         from app.application.parsers.pdf.ndd_native import parse_ndd_native
 
