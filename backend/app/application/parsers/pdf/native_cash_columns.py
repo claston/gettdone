@@ -198,6 +198,13 @@ def parse_native_cash_columns(raw, page_texts):
                                       if first_opening and abs(box.bottom-first_opening.bottom) < 3]
                     if not any((box.left+box.right)/2 >= (debit.right+balance.left)/2 for box in opening_values):
                         return None
+                    periods = set(re.findall(r"ENTRE\s+(\d{2}/\d{2}/\d{4})\s+E\s+(\d{2}/\d{2}/\d{4})", normalized))
+                    if len(periods) != 1:
+                        _fail()
+                    first, last = next(iter(periods))
+                    start, end = _date(first, None), _date(last, None)
+                    if start > end:
+                        _fail()
                 characters = [_TextBox(char, *tp.get_charbox(i, loose=True)) for i, char in enumerate(text)
                               if char not in {"\r", "\n", "\x00"}]
 
@@ -205,6 +212,15 @@ def parse_native_cash_columns(raw, page_texts):
                     return " ".join(_read_history(characters, left, bottom, right, top).split())
 
                 header_bottom = page.get_height() if continued_monthly else min(box.bottom for box in columns)
+                if continued_monthly:
+                    # Repeated identity text above a top-of-page Folha counter
+                    # is not part of a continued ledger's document column.
+                    counters = [box for box in _boxes(tp, text, re.compile(r"\bFolha\s+\d+\s*/\s*\d+\b", re.I))
+                                if box.bottom > page.get_height() * .75]
+                    if len(counters) > 1:
+                        _fail()
+                    if counters:
+                        header_bottom = min(header_bottom, counters[0].bottom)
                 history_left = date_col.right+5
                 boundary = (credit.right+debit.left)/2, (debit.right+balance.left)/2
                 values = [box for box in _boxes(tp, text, _MONEY)
@@ -252,10 +268,10 @@ def parse_native_cash_columns(raw, page_texts):
                         opening = amounts["balance"]
                         if santander and opening != controls["opening"]:
                             financial_mismatch(_MESSAGE)
-                        if not santander and current is None:
+                        if not santander and current is None and kind != BRADESCO_MONTHLY:
                             _fail()
                         opening_date = start-timedelta(days=1) if santander else current
-                        if start and opening_date >= start:
+                        if start and opening_date is not None and opening_date >= start:
                             _fail()
                         continue
                     terminal = (label == "SALDO EM " + end.strftime("%d/%m") if santander
@@ -266,7 +282,7 @@ def parse_native_cash_columns(raw, page_texts):
                             _fail()
                         printed_closing = amounts["balance"]
                         printed_totals = ((controls["credit"], controls["debit"]) if santander
-                                          else (amounts["credit"], amounts["debit"]))
+                                          else (amounts["credit"], abs(amounts["debit"])))
                         finished = True
                         break
                     if opening is None:
@@ -286,9 +302,14 @@ def parse_native_cash_columns(raw, page_texts):
                         continue
                     if len(set(amounts) & {"credit", "debit"}) != 1 or current is None:
                         _fail()
-                    if (current <= opening_date or rows and current.isoformat() < rows[-1].transaction.date
-                            or start and not start <= current <= end):
+                    if (opening_date is not None and current <= opening_date
+                            or rows and current.isoformat() < rows[-1].transaction.date):
                         _fail()
+                    if start and not start <= current <= end:
+                        if kind == BRADESCO_MONTHLY:
+                            financial_mismatch(_MESSAGE)
+                        else:
+                            _fail()
                     if kind == BRADESCO_MONTHLY:
                         # A wrapped history can start above or continue below
                         # the amount baseline; use adjacent monetary row bands.
@@ -299,10 +320,12 @@ def parse_native_cash_columns(raw, page_texts):
                         bottom = groups[index+1][0].top+1 if index+1 < len(groups) else max(0, anchor.bottom-12)
                     description = bounded(history_left, bottom, reference.left-3, top)
                     same_line = bounded(history_left, anchor.bottom-1, reference.left-3, anchor.top+1)
-                    if not same_line or not description or "SALDO" in upper(description[:6]):
+                    if not description or "SALDO" in upper(description[:6]):
                         _fail()
                     refs = [box for box in references if abs(box.bottom-anchor.bottom) < 3]
                     if len(refs) > 1:
+                        _fail()
+                    if not same_line and (kind != BRADESCO_MONTHLY or len(refs) != 1):
                         _fail()
                     used_references.update(id(box) for box in refs)
                     if "credit" in amounts and amounts["credit"] < 0:
