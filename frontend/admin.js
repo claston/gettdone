@@ -307,7 +307,7 @@
     );
     appendMetricCard(
       dashboardSummaryNode,
-      "Falhas",
+      "Falhas ou recusas",
       formatInteger(summary.failure_count),
       "tentativas não concluídas",
       Number(summary.failure_count || 0) > 0 ? "failure" : "",
@@ -373,7 +373,7 @@
       day.className = "chart-day";
       day.setAttribute(
         "aria-label",
-        `${formatShortDate(item.date)}: ${formatInteger(conversions)} conversões, ${formatInteger(clean)} limpas com score mínimo, ${formatInteger(review)} para revisar e ${formatInteger(failures)} falhas.`,
+        `${formatShortDate(item.date)}: ${formatInteger(conversions)} conversões, ${formatInteger(clean)} limpas com score mínimo, ${formatInteger(review)} para revisar e ${formatInteger(failures)} falhas ou recusas.`,
       );
       day.appendChild(createTextElement("span", "chart-total", formatInteger(conversions)));
 
@@ -431,7 +431,7 @@
     const errors = Array.isArray(items) ? items : [];
     if (!errors.length) {
       dashboardTopErrorsNode.appendChild(
-        createTextElement("p", "empty dashboard-empty", "Nenhuma falha registrada neste período."),
+        createTextElement("p", "empty dashboard-empty", "Nenhuma recusa ou falha registrada neste período."),
       );
       return;
     }
@@ -439,7 +439,8 @@
       const row = document.createElement("div");
       row.className = "compact-list-item";
       const text = document.createElement("div");
-      const errorCode = String(item.error_code || "unknown") === "unknown" ? "Código não informado" : item.error_code;
+      const errorCode = item.error_code === "unsupported_document_type" ? "Recusa por tipo de documento"
+        : String(item.error_code || "unknown") === "unknown" ? "Código não informado" : item.error_code;
       const errorStage = String(item.error_stage || "unknown") === "unknown" ? "etapa não informada" : item.error_stage;
       text.appendChild(createTextElement("p", "", errorCode));
       text.appendChild(createTextElement("p", "muted compact", errorStage));
@@ -540,6 +541,11 @@
       credit_card_statement: "Fatura de cartão",
       prepaid_card_statement: "Extrato de cartão pré-pago",
       notary_receipt: "Recibo de cartório",
+      investment_summary: "Resumo de investimentos",
+      investment_statement: "Extrato de investimentos",
+      fiscal_summary: "Resumo fiscal",
+      receivables_report: "Relatório de recebíveis",
+      multiple_bank_statements: "Múltiplos extratos bancários",
       financial_spreadsheet: "Planilha financeira",
       other: "Outro documento",
       unknown: "Desconhecido",
@@ -865,7 +871,7 @@
     table.className = "dashboard-table";
     const head = document.createElement("thead");
     const headRow = document.createElement("tr");
-    ["Data", "Pessoa", "Banco/modelo", "Documento/OCR", "Resultado", "Motivo", "Coleta canônica", "Identificador"].forEach(function (label) {
+    ["Data", "Pessoa", "Banco/modelo", "Documento/OCR", "Tipo de documento", "Resultado", "Motivo", "Coleta canônica", "Identificador"].forEach(function (label) {
       appendTableCell(headRow, label, "th");
     });
     head.appendChild(headRow);
@@ -878,7 +884,9 @@
       appendTableCell(row, String(item.identity_type || "") === "registered" ? "Cadastrada" : "Anônima");
       appendTableCell(row, item.model || "Não identificado");
       appendTableCell(row, formatDocumentOrigin(item));
-      appendTableCell(row, item.status || "Não informado");
+      appendTableCell(row, documentTypeLabel(item.document_type));
+      const rejected = item.document_processing_decision === "rejected" || item.error_code === "unsupported_document_type";
+      appendTableCell(row, rejected ? "Recusado" : item.status || "Não informado");
       appendTableCell(row, item.issue_reason || "Motivo detalhado não registrado no histórico");
       appendTableCell(
         row,

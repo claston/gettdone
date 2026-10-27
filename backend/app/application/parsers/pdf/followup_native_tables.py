@@ -9,6 +9,16 @@ from app.application.parsers.pdf.verified_statements import DATE, day, fail
 
 def _kind(text):
     compact = re.sub(r"[\s-]+", "", upper(text))
+    if all(marker in compact for marker in ("APLICATIVOSANTANDEREMPRESAS", "PERIODOS:",
+            "VOCEALCANCOUONUMEROMAXIMODECONSULTAS", "PARAVERTODOSOSLANCAMENTOS")):
+        return "santander_limited"
+    if all(marker in compact for marker in ("290PAGSEGUROINTERNETS/A", "EXTRATODACONTA", "PERIODO:", "DESCRICAO", "SALDODODIA")):
+        return "pagbank_daily"
+    if all(marker in compact for marker in ("SICOOB", "SISBR", "COOP.:", "HISTORICODEMOVIMENTACAO", "DATAHISTORICOVALOR")):
+        return "sicoob_split_cd"
+    if (all(marker in compact for marker in ("EXTRATOPORPERIODO", "ORDENAR", "SALDODODIA", "SALDOANTERIOR", "COMPARTILHAR", "VOLTAR"))
+            and re.search(r"\d{2} DE [A-Z]+ DE \d{4}", upper(text))):
+        return "descending_cards"
     if all(marker in compact for marker in ("NDDIP", "CONTADIGITAL", "TOTALCREDITO", "TOTALDEBITO", "QUANTIDADEDEOPERACOES")):
         return "ndd"
     if all(marker in compact for marker in ("BTG", "CONTACORRENTEPJ", "ENTRADAS/SAIDAS(R$)", "SALDODEABERTURA")):
@@ -19,8 +29,23 @@ def _kind(text):
         return "bb"
     if all(marker in compact for marker in ("INFINITEPAY", "HORA", "VALOR(R$)", "TOTALDEENTRADAS", "TOTALDESAIDAS")):
         return "infinitepay"
+    from app.application.sweep_statement_detection import INFINITEPAY, MERCADO_PAGO, identify_sweep_statement
+
+    sweep = identify_sweep_statement(text)
+    if sweep == MERCADO_PAGO and all(re.search(rf"{label}:\s*R\$\s*0,00\b", upper(text)) for label in ("ENTRADAS", "SAIDAS")):
+        return "mercado_inactive"
+    if sweep == MERCADO_PAGO:
+        return "mercado_grid"
+    if sweep == INFINITEPAY and "HORA" in compact:
+        return "infinitepay"
+    if all(marker in compact for marker in ("EXTRATODECONTA", "DETALHEDOSMOVIMENTOS", "SALDOINICIAL",
+                                            "SALDOFINAL", "ENTRADAS", "SAIDAS", "TITULAR:", "PERIODO:")):
+        return "account_detail"
     if all(marker in compact for marker in ("REVOLUT", "EXTRATOEMBRL", "RESUMODOSALDO", "VALORESDESCONTADOS", "VALORESRECEBIDOS")):
         return "revolut"
+    if (all(marker in compact for marker in ("EXTRATODECONTACORRENTE", "LANCAMENTOS", "DIA", "HISTORICO", "VALOR",
+                                            "SALDOANTERIOR", "SALDODIA")) and "LOTE" not in compact):
+        return "three_column_cd"
     return None
 
 
@@ -29,7 +54,47 @@ def parse_followup_native_tables(raw, page_texts):
     if kind is None:
         return None
     source = read_native_table_source(raw)
-    if kind == "ndd":
+    if kind == "santander_limited":
+        from app.application.parsers.pdf.santander_app_limited import parse_santander_app_limited
+
+        statement = parse_santander_app_limited(source)
+        return (statement, source) if statement is not None else None
+    if kind == "pagbank_daily":
+        from app.application.parsers.pdf.pagbank_native_daily import parse_pagbank_native_daily
+
+        return parse_pagbank_native_daily(source), source
+    if kind == "sicoob_split_cd":
+        from app.application.parsers.pdf.sicoob_native_split_cd import parse_sicoob_native_split_cd
+
+        statement = parse_sicoob_native_split_cd(source)
+        return (statement, source) if statement is not None else None
+    if kind == "descending_cards":
+        from app.application.parsers.pdf.descending_web_cards import parse_descending_web_cards
+
+        return parse_descending_web_cards(source), source
+    if kind == "mercado_grid":
+        from app.application.parsers.pdf.mercado_pago_native_grid import parse_mercado_pago_native_grid
+
+        statement = parse_mercado_pago_native_grid(raw, source)
+        return (statement, source) if statement is not None else None
+    if kind == "mercado_inactive":
+        from app.application.parsers.pdf.mercado_pago_inactive import parse_mercado_pago_inactive
+
+        statement = parse_mercado_pago_inactive(raw, source)
+        # Active or unproven documents retain the existing strict ledger path.
+        return (statement, source) if statement is not None else None
+    if kind == "three_column_cd":
+        from statistics import median
+
+        from app.application.parsers.pdf.three_column_cd_native import parse_three_column_cd
+
+        dates = [line for page in source.pages for line in page.lines if re.fullmatch(DATE, line.text)]
+        headers = {upper(line.text): line.bbox for line in source.pages[0].lines}
+        if dates and "HISTORICO" in headers and "VALOR" in headers:
+            source = read_native_table_source(raw, decorative_history=(headers["HISTORICO"]["left"] - .01,
+                headers["VALOR"]["left"] - .03, median(line.bbox["height"] for line in dates) * 2))
+        statement = parse_three_column_cd(source)
+    elif kind == "ndd":
         from app.application.parsers.pdf.ndd_native import parse_ndd_native
 
         statement = parse_ndd_native(source)
@@ -54,6 +119,10 @@ def parse_followup_native_tables(raw, page_texts):
         from app.application.parsers.pdf.revolut_native import parse_revolut_native
 
         statement = parse_revolut_native(source)
+    elif kind == "account_detail":
+        from app.application.parsers.pdf.native_account_detail import parse_account_detail
+
+        statement = parse_account_detail(source)
     else:
         from app.application.parsers.pdf.infinitepay_native import parse_infinitepay_native
 

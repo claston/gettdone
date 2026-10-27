@@ -11,6 +11,11 @@ from app.application.source_regions import evidence_regions
 
 
 def parse_controlled_ocr(extraction):
+    from app.application.parsers.pdf.daily_cd_fragment_ocr import parse_daily_cd_fragment
+
+    fragment = parse_daily_cd_fragment(extraction)
+    if fragment is not None:
+        return fragment
     from app.application.parsers.pdf.period_cash_columns_ocr import parse_period_cash_columns
 
     columns = parse_period_cash_columns(extraction)

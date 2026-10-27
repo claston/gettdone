@@ -36,7 +36,9 @@ def validate_statement_completeness(pages) -> bool:
             number, total = map(int, matches[0])
             observed.append((physical, number, total))
         else:
-            singles = re.findall(r"\b(?:PAGINA|PAG\.?)\s*:?\s*(\d+)\b", text)
+            singles = re.findall(r"(?m)^[ \t]*(?:PAGINA|PAG\.?)[ \t]*:?[ \t]*(\d+)[ \t]*$", text)
+            singles += re.findall(
+                r"(?m)^VIACREDI AV - EXTRATO ESPECIAL REF\.\S+[ \t]+PAG[ \t]+(\d+)[ \t]*$", text)
             if singles and (len(singles) != 1 or int(singles[0]) != physical):
                 return True
     return any(number != physical or total != len(pages) for physical, number, total in observed)

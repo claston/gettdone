@@ -8,10 +8,10 @@ from app.application.parsers.pdf.native_unicred_grid import _PDFIUM_LOCK
 from app.application.parsers.pdf.verified_statements import fail
 
 
-def read_native_table_source(raw):
+def read_native_table_source(raw, *, decorative_history=None):
     import pypdfium2 as pdfium
 
-    pages = []
+    pages, excluded = [], 0
     with _PDFIUM_LOCK, pdfium.PdfDocument(raw) as document:
         for page_index in range(len(document)):
             with closing(document[page_index]) as page, closing(page.get_textpage()) as tp:
@@ -24,6 +24,13 @@ def read_native_table_source(raw):
                     if char.isspace() or char in {"\x00", "\xad"}:
                         continue
                     left, bottom, right, top = tp.get_charbox(index, loose=True)
+                    if decorative_history:
+                        start, end, max_height = decorative_history
+                        if start <= left / width < right / width <= end and (top - bottom) / height > max_height:
+                            if not (char.isalpha() or char == "-"):
+                                fail("Uma marca sobreposta interfere nos dados da tabela.")
+                            excluded += 1
+                            continue
                     if right > left and top > bottom:
                         chars.append((left, bottom, right, top, char))
                 if not chars:
@@ -73,4 +80,7 @@ def read_native_table_source(raw):
                     if fragment:
                         add_fragment(fragment)
                 pages.append(ExtractedPage(page_index + 1, lines=lines, words=words))
-    return RawDocumentExtraction("native_pdfium_text", hashlib.sha256(raw).hexdigest(), pages, {"native_coordinates_used": 1})
+    metrics = {"native_coordinates_used": 1}
+    if excluded:
+        metrics["decorative_history_glyphs_excluded"] = excluded
+    return RawDocumentExtraction("native_pdfium_text", hashlib.sha256(raw).hexdigest(), pages, metrics)

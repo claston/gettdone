@@ -8,6 +8,8 @@ from app.application.normalization.text import normalize_upper_text
 
 _GENERIC_LAYOUT_NAMES = {"generic_statement_ptbr"}
 VERIFIED_STATEMENT_BANKS = {
+    "pagbank_native_daily_cash_v1": "PagBank",
+    "sicoob_sisbr_native_split_cd_v1": "Sicoob",
     "caixa_pessoal_sem_movimentacao_v1": "Caixa Economica Federal",
     "nubank_fatura_cartao_credito_v1": "Nubank",
     "uniprime_conta_corrente_ocr_v1": "Uniprime",
@@ -143,7 +145,10 @@ def resolve_bank_name(
     extracted_text: str | None = None,
 ) -> str | None:
     layout_name = str(layout_inference_name or "").strip()
-    if layout_name in {"billing_excel_horizontal_pages_v1", "conta_azul_relatorio_extrato_valor_saldo_v1"}:
+    if layout_name in {"billing_excel_horizontal_pages_v1", "conta_azul_relatorio_extrato_valor_saldo_v1",
+                       "account_detail_descending_cash_v1", "dated_cd_daily_balance_fragment_ocr_v1",
+                       "descending_web_cards_daily_cash_v1",
+                       "dated_cd_three_column_statement_v1"}:
         # Counterparty names in this ledger do not identify its issuer.
         return None
     if layout_name:

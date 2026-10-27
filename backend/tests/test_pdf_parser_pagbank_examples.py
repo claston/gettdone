@@ -6,6 +6,7 @@ import pytest
 
 from app.application import pdf_parser as pdf_parser_module
 from app.application.ofx_writer import build_ofx_statement
+from app.application.parsers.pdf.layout_specific.contract import LayoutSpecificParseContext
 
 PAGBANK_EXAMPLE_CASES: dict[str, dict[str, Any]] = {
     "conta_com_saldo_diario": {
@@ -67,12 +68,12 @@ PAGBANK_EXAMPLE_CASES: dict[str, dict[str, Any]] = {
 
 
 @pytest.mark.parametrize("case_name", PAGBANK_EXAMPLE_CASES)
-def test_parse_pdf_transactions_supports_pagbank_visual_examples(case_name: str, monkeypatch) -> None:
+def test_parse_pdf_page_texts_supports_pagbank_visual_examples(case_name: str) -> None:
     case = PAGBANK_EXAMPLE_CASES[case_name]
-    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [case["text"]])
-    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [case["text"]])
-
-    result = pdf_parser_module.parse_pdf_transactions(b"%PDF synthetic")
+    # These fixtures contain text, not a PDF container or native coordinates.
+    # Native routing and geometry are covered with real PDFs in the batch tests.
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts(
+        [case["text"]], context=LayoutSpecificParseContext(is_native_text=True))
 
     assert result.layout.layout_name == case["profile"]
     assert [transaction.amount for transaction in result.transactions] == case["amounts"]

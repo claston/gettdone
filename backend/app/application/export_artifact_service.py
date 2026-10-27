@@ -46,6 +46,7 @@ class ExportArtifactService:
         account_number: str | None = None,
         bank_code: str | None = None,
         financial_document: dict | None = None,
+        balance_bounds_unavailable: bool = False,
     ) -> None:
         if financial_document is not None:
             write_financial_artifacts(output_dir, financial_document, bank_code=bank_code,
@@ -103,6 +104,9 @@ class ExportArtifactService:
             opening_balance_hint=opening_balance,
             closing_balance_hint=closing_balance,
         )
+        if balance_bounds_unavailable:
+            opening_balance_value = self._coerce_balance_value(opening_balance)
+            closing_balance_value = self._coerce_balance_value(closing_balance)
         summary_sheet = workbook.create_sheet(title="Resumo")
         summary_sheet.append(["Campo", "Valor"])
         if layout_inference_name == "accounts_payable_native_columns_v1":

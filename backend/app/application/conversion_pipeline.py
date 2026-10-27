@@ -230,6 +230,10 @@ class ConversionPipeline:
             opening_balance = float(parse_metrics["native_cash_opening_balance"])
         if parse_metrics and parse_metrics.get("financial_controls_validated") and "verified_opening_balance" in parse_metrics:
             opening_balance = float(parse_metrics["verified_opening_balance"])
+        if parse_metrics and "derived_opening_balance" in parse_metrics:
+            # A daily control may follow several movements. Use the reader's
+            # complete group calculation while retaining its inferred status.
+            opening_balance = float(parse_metrics["derived_opening_balance"])
         if parse_metrics and "printed_opening_balance" in parse_metrics:
             opening_balance = float(parse_metrics["printed_opening_balance"])
         if is_payables_report or (parse_metrics and parse_metrics.get("opening_balance_ambiguous")):
@@ -315,6 +319,9 @@ class ConversionPipeline:
             closing_balance = float(parse_metrics["verified_closing_balance"])
         if parse_metrics and "printed_closing_balance" in parse_metrics:
             closing_balance = float(parse_metrics["printed_closing_balance"])
+        if parse_metrics and parse_metrics.get("balance_bounds_unavailable"):
+            # Daily checkpoints inside a fragment are not statement boundaries.
+            opening_balance = closing_balance = None
         bank_name = parsed_document.bank_name or self.resolve_bank_name(
             extension, layout_inference_name, extracted_text
         )

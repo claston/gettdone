@@ -99,8 +99,10 @@ def parse_period_cash_columns(source):
             date = day(anchor.text)
             if not start <= date <= end or rows and date < rows[-1].transaction.date:
                 fail()
+            history_left = anchor.bbox["left"] + anchor.bbox["width"] - .02
             description = " ".join(line.text for line in sorted(cells, key=lambda line: (line.bbox["top"], line.bbox["left"]))
-                                   if abs(line.bbox["left"] - history_x) < .07)
+                                   if (history_left <= line.bbox["left"] < ref_x - .025 if nordeste
+                                       else abs(line.bbox["left"] - history_x) < .07))
             refs = [line.text for line in cells if abs(line.bbox["left"] - ref_x) < .025 and re.fullmatch(r"\d+", line.text)]
             if not description or len(refs) != 1:
                 fail()

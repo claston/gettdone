@@ -422,6 +422,8 @@ class AdminDashboardAttentionItem(BaseModel):
     pdf_representation_confidence: float | None = None
     error_code: str | None = None
     error_stage: str | None = None
+    document_type: str | None = None
+    document_processing_decision: str | None = None
     layout_name: str | None = None
     layout_confidence: float | None = None
     selected_parser: str | None = None

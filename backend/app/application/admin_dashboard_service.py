@@ -171,7 +171,7 @@ class AdminDashboardService:
                     "identity_type": str(event["identity_type"]),
                     "model": str(event["model"]),
                     "conversion_type": str(event["conversion_type"]),
-                    "status": str(event["status"]),
+                    "status": attention["status"],
                     "pages_count": int(event["pages_count"]),
                     "ocr_used": bool(event["ocr_used"]),
                     "pdf_representation": event.get("pdf_representation"),
@@ -349,6 +349,8 @@ class AdminDashboardService:
                     duration_ms,
                     error_code,
                     error_stage,
+                    error_subcode,
+                    failure_diagnostics_json,
                     canonical_warning_transactions_count,
                     balance_consistency_failed,
                     layout_inference_name,
@@ -394,6 +396,8 @@ class AdminDashboardService:
                     duration_ms,
                     error_code,
                     error_stage,
+                    error_subcode,
+                    failure_diagnostics_json,
                     canonical_warning_transactions_count,
                     balance_consistency_failed,
                     layout_inference_name,
@@ -583,7 +587,7 @@ def _row_to_event(row, *, identity_type: str) -> dict[str, object]:
     )
     stored_quality_status = str(row["quality_status"] or "").strip()
     stored_reasons = _json_string_list(row["quality_reason_codes_json"])
-    return {
+    event = {
         "processing_id": str(row["processing_id"] or ""),
         "identity_type": identity_type,
         "identity_id": identity_id,
@@ -603,6 +607,7 @@ def _row_to_event(row, *, identity_type: str) -> dict[str, object]:
         "duration_ms": _as_non_negative_int(row["duration_ms"]),
         "error_code": str(row["error_code"] or "").strip() or None,
         "error_stage": str(row["error_stage"] or "").strip() or None,
+        "error_subcode": str(row["error_subcode"] or "").strip() or None,
         "warning_count": _as_non_negative_int(row["canonical_warning_transactions_count"]),
         "balance_failed": _as_non_negative_int(row["balance_consistency_failed"]),
         "layout_name": str(row["layout_inference_name"] or "").strip() or None,
@@ -626,6 +631,17 @@ def _row_to_event(row, *, identity_type: str) -> dict[str, object]:
         "document_classification_version": str(row["document_classification_version"] or "").strip() or None,
         "document_processing_decision": str(row["document_processing_decision"] or "").strip().lower() or None,
     }
+    if _is_document_rejection(event):
+        event["document_processing_decision"] = "rejected"
+        if event["document_type"] in {None, "unknown", "unclassified"}:
+            try:
+                diagnostics = json.loads(row["failure_diagnostics_json"] or "{}")
+            except (TypeError, ValueError):
+                diagnostics = {}
+            kind = diagnostics.get("unsupported_document_type") if isinstance(diagnostics, dict) else None
+            if isinstance(kind, str) and kind in _REFUSED_DOCUMENT_LABELS:
+                event["document_type"] = kind
+    return event
 
 
 def _build_dashboard_payload(
@@ -739,7 +755,7 @@ def _build_dashboard_payload(
                 daily_item["review"] += 1
 
         if not is_success:
-            error_code = str(event["error_code"] or "unknown")
+            error_code = "unsupported_document_type" if _is_document_rejection(event) else str(event["error_code"] or "unknown")
             error_stage = str(event["error_stage"] or "unknown")
             top_error_counts[(error_code, error_stage)] += 1
 
@@ -1266,6 +1282,28 @@ def _build_commercial_interest(
     return result[:20]
 
 
+_REFUSED_DOCUMENT_LABELS = {
+    "fiscal_invoice": "Nota fiscal", "billing_report": "Relatório de faturamento",
+    "bank_receipt": "Comprovante bancário", "notary_receipt": "Recibo de cartório",
+    "investment_summary": "Resumo de investimentos", "investment_statement": "Extrato de investimentos",
+    "fiscal_summary": "Resumo fiscal", "receivables_report": "Relatório de recebíveis",
+    "multiple_bank_statements": "Múltiplos extratos bancários", "other": "Outro documento",
+}
+
+
+def _is_document_rejection(event: dict[str, object]) -> bool:
+    if _is_success_status(str(event.get("status") or "")):
+        return False
+    return (str(event.get("document_processing_decision") or "").strip().lower() == "rejected"
+            or any(str(event.get(key) or "").strip().lower() == "unsupported_document_type"
+                   for key in ("error_code", "error_subcode")))
+
+
+def _document_rejection_reason(event: dict[str, object]) -> str:
+    label = _REFUSED_DOCUMENT_LABELS.get(str(event.get("document_type") or ""))
+    return "Tipo de documento não suportado" + (f": {label}." if label else ".")
+
+
 def _attention_item(event: dict[str, object], *, is_success: bool) -> dict[str, object]:
     reasons: list[str] = []
     if not is_success:
@@ -1329,7 +1367,7 @@ def _attention_item(event: dict[str, object], *, is_success: bool) -> dict[str, 
         "created_at": str(event["created_at"]),
         "model": str(event["model"]),
         "conversion_type": str(event["conversion_type"]),
-        "status": str(event["status"]),
+        "status": "Recusado" if _is_document_rejection(event) else str(event["status"]),
         "transactions_count": int(event["transactions_count"]),
         "duration_ms": int(event["duration_ms"]),
         "ocr_used": bool(event.get("ocr_used")),
@@ -1338,6 +1376,8 @@ def _attention_item(event: dict[str, object], *, is_success: bool) -> dict[str, 
         "pdf_representation_confidence": event.get("pdf_representation_confidence"),
         "error_code": event["error_code"],
         "error_stage": event["error_stage"],
+        "document_type": event.get("document_type"),
+        "document_processing_decision": event.get("document_processing_decision"),
         "layout_name": event.get("layout_name"),
         "layout_confidence": event.get("layout_confidence"),
         "selected_parser": event.get("selected_parser"),
@@ -1350,7 +1390,7 @@ def _attention_item(event: dict[str, object], *, is_success: bool) -> dict[str, 
         "warning_types": event.get("warning_types", []),
         "canonical_capture_status": event.get("canonical_capture_status"),
         "canonical_capture_reason": event.get("canonical_capture_reason"),
-        "issue_reason": "; ".join(dict.fromkeys(reasons)),
+        "issue_reason": _document_rejection_reason(event) if _is_document_rejection(event) else "; ".join(dict.fromkeys(reasons)),
     }
 
 
