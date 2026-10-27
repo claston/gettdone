@@ -9,6 +9,9 @@ from app.application.parsers.pdf.verified_statements import DATE, day, fail
 
 def _kind(text):
     compact = re.sub(r"[\s-]+", "", upper(text))
+    if (all(marker in compact for marker in ("EXTRATOPORPERIODO", "ORDENAR", "SALDODODIA", "SALDOANTERIOR", "COMPARTILHAR", "VOLTAR"))
+            and re.search(r"\d{2} DE [A-Z]+ DE \d{4}", upper(text))):
+        return "descending_cards"
     if all(marker in compact for marker in ("NDDIP", "CONTADIGITAL", "TOTALCREDITO", "TOTALDEBITO", "QUANTIDADEDEOPERACOES")):
         return "ndd"
     if all(marker in compact for marker in ("BTG", "CONTACORRENTEPJ", "ENTRADAS/SAIDAS(R$)", "SALDODEABERTURA")):
@@ -44,6 +47,10 @@ def parse_followup_native_tables(raw, page_texts):
     if kind is None:
         return None
     source = read_native_table_source(raw)
+    if kind == "descending_cards":
+        from app.application.parsers.pdf.descending_web_cards import parse_descending_web_cards
+
+        return parse_descending_web_cards(source), source
     if kind == "mercado_grid":
         from app.application.parsers.pdf.mercado_pago_native_grid import parse_mercado_pago_native_grid
 

@@ -405,6 +405,16 @@ def _parse_pdf_transactions_strict(
             )
 
     if native_pages:
+        if detect_financial_report("\n".join(native_pages)) == ("investment_statement", "xp_account_web_ledger"):
+            from app.application.financial_event_projection import project_financial_document
+            from app.application.parsers.pdf.native_table_source import read_native_table_source
+            from app.application.parsers.pdf.xp_account_web import parse_xp_account_web
+
+            source = read_native_table_source(raw_bytes)
+            document = parse_xp_account_web(source)
+            result = project_financial_document(document, native_pages, native=True)
+            return _with_parse_observability(replace(result, source_extraction=source),
+                native_text_detected=1, textract_attempted=0, extraction_provider="native_pdfium_text", native_coordinates_used=1)
         if detect_financial_report("\n".join(native_pages)) == ("investment_statement", "xp_investment_account_ledger"):
             return _with_parse_observability(parse_financial_pdf_pages(native_pages, native=True),
                 native_text_detected=1, textract_attempted=0, extraction_provider="native_pdf_text")
@@ -415,6 +425,13 @@ def _parse_pdf_transactions_strict(
         from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
 
         validate_statement_completeness(native_pages)
+        from app.application.parsers.pdf.itau_complete_table import parse_itau_complete_table
+
+        complete_table = parse_itau_complete_table(raw_bytes, native_pages)
+        if complete_table is not None:
+            statement, pages = complete_table
+            return _with_parse_observability(_build_verified_statement_result(statement, pages),
+                native_text_detected=1, textract_attempted=0, extraction_provider="native_pdf_layout_text")
         from app.application.parsers.pdf.followup_native_tables import parse_followup_native_tables
 
         native_table = parse_followup_native_tables(raw_bytes, native_pages)

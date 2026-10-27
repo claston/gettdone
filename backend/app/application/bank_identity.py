@@ -145,6 +145,7 @@ def resolve_bank_name(
     layout_name = str(layout_inference_name or "").strip()
     if layout_name in {"billing_excel_horizontal_pages_v1", "conta_azul_relatorio_extrato_valor_saldo_v1",
                        "account_detail_descending_cash_v1", "dated_cd_daily_balance_fragment_ocr_v1",
+                       "descending_web_cards_daily_cash_v1",
                        "dated_cd_three_column_statement_v1"}:
         # Counterparty names in this ledger do not identify its issuer.
         return None

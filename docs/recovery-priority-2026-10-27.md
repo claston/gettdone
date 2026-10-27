@@ -1,8 +1,8 @@
 # Recuperação prioritária de 27/10/2026
 
-Esta alteração trata dezesseis documentos do recorte de recuperação encerrado em
+Esta alteração trata vinte e dois documentos do recorte de recuperação encerrado em
 27/10/2026 às 09:09, horário de São Paulo. Os originais e diagnósticos foram
-consultados em leitura; somente os dezesseis PDFs autorizados foram copiados para
+consultados em leitura; somente os vinte e dois PDFs autorizados foram copiados para
 `local/`, ignorado pelo Git. Os testes versionados usam dados fictícios.
 
 ## InfinitePay: trecho nativo de relatório
@@ -282,6 +282,73 @@ versão de cache. A tela foi conferida no Chromium com dados fictícios, e os
 testes cobrem cadastrados/anônimos, históricos antigos, CSV, HTTP real e
 diagnósticos incompletos ou inválidos.
 
+## Lote C13, C14, C25, C27, C42 e C60: contas web e investimentos
+
+Este lote reúne seis originais, com **148 movimentos** conferidos e **92
+controles financeiros independentes**. As capturas históricas permanecem como
+foram gravadas; os resultados abaixo são da conversão local atualizada.
+
+| Caso | Resultado conferido |
+| --- | --- |
+| C13, XP | 4 movimentos de investimento; 3 verificações entre saldos |
+| C14, XP | 10 movimentos de investimento; 9 verificações entre saldos |
+| C25, Caixa | 32 movimentos e 40 comparações de linhas/saldos diários; leitor existente mantido |
+| C27, Itaú | 11 movimentos, em lugar de 15 linhas exportadas; 4 controles da conta corrente |
+| C42, Itaú | 25 movimentos e 22 saldos diários; leitor existente mantido |
+| C60, extrato sem emissor comprovado | 66 movimentos e 14 saldos diários; histórico completo por operação |
+
+Os dois XP são extratos da conta investimento da corretora. A assinatura usa a
+identificação XP, o domínio próprio, consulta e as colunas `Liq`, `Mov`,
+`Histórico`, `Valor` e `Saldo`. As coordenadas nativas preservam descrições
+quebradas e distinguem **liquidação na primeira coluna** de **movimentação na
+segunda**. A conferência usa a ordem de liquidação, incluindo a ordem física de
+operações na mesma data. Posições da consulta e lançamentos futuros ficam nas
+observações, separados dos eventos do período. Não se compara o saldo da
+consulta atual com o saldo histórico do mês nem se inventa uma abertura.
+
+O resultado usa o contrato de eventos financeiros já existente: Excel e CSV
+preservam as duas datas e as posições; OFX permanece indisponível para esse
+relatório de investimentos, inclusive quando o usuário informa uma conta de
+destino. Não se atribui o código do Banco XP à corretora. Valores ilegíveis ou
+sem associação são recusados; diferenças aritméticas legíveis mantêm os dados
+e a indicação de revisão.
+
+No C27, quatro linhas `SALDO MOVIMENTAÇÃO CONTA` eram exportadas como receitas.
+O leitor delimita as colunas de valor e saldo, mantém os **11 movimentos reais**
+na ordem impressa e confere o caixa por dia. As posições de aplicações
+automáticas ficam separadas; quando o mesmo dia informa caixa, aplicação e
+total disponível, sua soma também é conferida. Nomes quebrados em outra linha
+permanecem junto da contraparte. O PDF tem uma segunda página fisicamente
+vazia: somente operações de estilo, caminho e recorte sem pintura podem ser
+ignoradas. Texto, imagens, pintura ou anotações nessa página impedem essa
+dispensa. O saldo final da conta é zero, com abertura impressa de R$ 0,01.
+
+No C60, o agrupamento anterior incorporava partes do histórico anterior à
+operação seguinte. O modelo estrutural `descending_web_cards_daily_cash_v1`
+associa cada valor ao cartão e à etiqueta de dia/mês, preserva descrições
+completas, valores zero e multiplicidade, e confere os 14 fechamentos contra o
+saldo anterior impresso. Abertura de R$ 281,65 e fechamento de R$ 11.291,54
+conferem. Os controles são diários: não são inventados saldos individuais ou
+horários. Nomes de bancos no histórico não identificam o emissor; banco,
+agência e conta continuam sem confirmação.
+
+Caixa e o segundo Itaú já preservavam os 32 e 25 movimentos, respectivamente.
+Não houve outra mudança em seus leitores ou remoção artificial dos avisos de
+confiança. A abertura de R$ 0,85 da Caixa é derivada da primeira linha e seu
+saldo, não um saldo anterior explicitamente impresso. No Itaú, o fechamento do
+período é R$ 7.164,01, distinto da posição atual de R$ 5.637,16 no cabeçalho.
+
+Ao informar banco/agência/conta no download OFX, a regeneração preserva as
+fronteiras já confirmadas por controles financeiros. Um saldo manual explícito,
+inclusive zero, continua tendo prioridade. Trechos sem fronteiras comprovadas
+permanecem sem saldo global. A mudança usa os metadados temporários existentes,
+sem migração ou atualização de históricos.
+
+Após este lote, são **22 casos conferidos e 38 restantes**: os três prioritários
+são C04 (PagBank), C35 (Santander parcial) e C41 (Sicoob parcial); os outros 35
+têm somente recomendação técnica genérica nos metadados e ainda não foram
+conferidos individualmente contra os originais.
+
 ## Validação e compatibilidade
 
 - TDD: a primeira execução dos novos testes apresentou 12 falhas e 7 sucessos,
@@ -314,6 +381,13 @@ diagnósticos incompletos ou inválidos.
   ambígua. A validação focada apresentou 78 sucessos, incluindo continuações
   entre páginas e registros antigos. O Chromium confirmou tipo, resultado e
   motivo legíveis na tabela administrativa.
+- Lote C13/C14/C25/C27/C42/C60: os nove testes iniciais reproduziram os defeitos.
+  Os 23 testes novos passaram, incluindo HTTP real, worker, exportações,
+  datas XP distintas, projeções, diferenças financeiras reais, valores zero,
+  conta de destino no OFX e página adicional comprovadamente sem pintura.
+  Os originais foram conferidos por uma leitura independente do texto nativo,
+  além dos testes fictícios. Excel/CSV foram validados nos seis; OFX foi
+  conferido nos quatro extratos bancários e impedido nos dois XP.
 - Os testes HTTP reais cobrem `/convert`, `/report/{id}`, CSV, XLSX, OFX, sinais,
   quantidades, ausência de saldos não comprovados, relatório inexistente `404`
   e o endpoint legado `/analyze`, que permanece desativado com `405`.

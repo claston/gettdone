@@ -791,6 +791,13 @@ class TempAnalysisStorage:
                 else persisted_overrides.get("bank_code")
             ),
         }
+        metrics = content.get("pdf_processing_metrics") or {}
+        if metrics.get("financial_controls_validated") and not metrics.get("balance_bounds_unavailable"):
+            # Changing the destination account must preserve confirmed statement
+            # boundaries. Explicit user overrides still take precedence.
+            for key in ("opening_balance", "closing_balance"):
+                if effective_overrides.get(key) is None:
+                    effective_overrides[key] = content.get(key)
         if requested_overrides:
             self._apply_convert_overrides_to_content(content, requested_overrides)
             self._refresh_structured_result_content(content, preview_rows=report_rows, report_rows=report_rows)
