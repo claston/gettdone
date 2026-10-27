@@ -315,6 +315,9 @@ class ConversionPipeline:
             closing_balance = float(parse_metrics["verified_closing_balance"])
         if parse_metrics and "printed_closing_balance" in parse_metrics:
             closing_balance = float(parse_metrics["printed_closing_balance"])
+        if parse_metrics and parse_metrics.get("balance_bounds_unavailable"):
+            # Daily checkpoints inside a fragment are not statement boundaries.
+            opening_balance = closing_balance = None
         bank_name = parsed_document.bank_name or self.resolve_bank_name(
             extension, layout_inference_name, extracted_text
         )

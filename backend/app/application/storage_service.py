@@ -93,6 +93,7 @@ class TempAnalysisStorage:
             layout_inference_name=data.layout_inference_name,
             opening_balance=data.opening_balance,
             closing_balance=data.closing_balance,
+            balance_bounds_unavailable=bool((data.pdf_processing_metrics or {}).get("balance_bounds_unavailable")),
             bank_branch=data.bank_branch if preserve_bank_metadata else None,
             account_number=data.account_number if preserve_bank_metadata else None,
             bank_code=data.bank_code if preserve_bank_metadata else None,
@@ -508,11 +509,12 @@ class TempAnalysisStorage:
             requested_opening_balance=requested_overrides.get("opening_balance"),
             persisted_opening_balance=persisted_overrides.get("opening_balance"),
         )
-        self._recalculate_running_balances(
-            preview_rows=preview_rows,
-            report_rows=report_rows,
-            opening_balance=opening_balance_seed,
-        )
+        if opening_balance_seed is not None or not (content.get("pdf_processing_metrics") or {}).get("balance_bounds_unavailable"):
+            self._recalculate_running_balances(
+                preview_rows=preview_rows,
+                report_rows=report_rows,
+                opening_balance=opening_balance_seed,
+            )
 
         active_rows = self._active_rows(report_rows)
         total_inflows = round(sum(item.amount for item in active_rows if item.amount > 0), 2)
@@ -556,6 +558,9 @@ class TempAnalysisStorage:
             active_rows,
             opening_balance_hint=effective_overrides.get("opening_balance"),
         )
+        if (content.get("pdf_processing_metrics") or {}).get("balance_bounds_unavailable"):
+            opening_balance_value = self._coerce_balance_value(effective_overrides.get("opening_balance"))
+            closing_balance_value = self._coerce_balance_value(effective_overrides.get("closing_balance"))
         content["opening_balance"] = opening_balance_value
         content["closing_balance"] = closing_balance_value
         content["preview_transactions"] = [asdict(item) for item in preview_rows]
@@ -572,6 +577,7 @@ class TempAnalysisStorage:
             layout_inference_name=str(content.get("layout_inference_name") or "").strip() or None,
             opening_balance=opening_balance_value,
             closing_balance=effective_overrides.get("closing_balance"),
+            balance_bounds_unavailable=bool((content.get("pdf_processing_metrics") or {}).get("balance_bounds_unavailable")),
             bank_branch=effective_overrides.get("bank_branch"),
             account_number=effective_overrides.get("account_number"),
             bank_code=effective_overrides.get("bank_code"),
@@ -797,6 +803,7 @@ class TempAnalysisStorage:
             layout_inference_name=str(content.get("layout_inference_name") or "").strip() or None,
             opening_balance=effective_overrides.get("opening_balance"),
             closing_balance=effective_overrides.get("closing_balance"),
+            balance_bounds_unavailable=bool((content.get("pdf_processing_metrics") or {}).get("balance_bounds_unavailable")),
             bank_branch=effective_overrides.get("bank_branch"),
             account_number=effective_overrides.get("account_number"),
             bank_code=effective_overrides.get("bank_code"),
@@ -1291,6 +1298,8 @@ class TempAnalysisStorage:
             if original_rows and isinstance(original_rows[0], TransactionRow)
             else self._parse_transaction_rows(original_rows)
         )
+        if (content.get("pdf_processing_metrics") or {}).get("balance_bounds_unavailable"):
+            return None
         original_opening_balance, _ = self._resolve_balance_bounds(original_parsed_rows)
         if original_opening_balance is not None:
             return original_opening_balance

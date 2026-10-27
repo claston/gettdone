@@ -29,6 +29,7 @@ class VerifiedStatement:
     balance_checkpoints: dict[int, float] | None = None
     scheduled_entries_excluded: int = 0
     opening_ambiguity_reason: str = ""
+    balance_bounds_unavailable: bool = False
 
 
 def fail(message="Não foi possível conferir todos os lançamentos e saldos impressos. Envie o extrato original completo."):

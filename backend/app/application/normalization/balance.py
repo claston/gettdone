@@ -4,6 +4,7 @@ from app.application.balance_checks import make_balance_check
 from app.application.models import CanonicalTransaction
 
 _DESCENDING_RUNNING_BALANCE_LAYOUTS = {
+    "account_detail_descending_cash_v1",
     "banco_bv_extrato_conta_corrente_saldo_dia_v1",
     "banco_pan_extrato_conta_pix_saldo_v1",
     "credisis_extrato_conta_corrente_descendente_v1",

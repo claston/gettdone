@@ -19,6 +19,13 @@ def _kind(text):
         return "bb"
     if all(marker in compact for marker in ("INFINITEPAY", "HORA", "VALOR(R$)", "TOTALDEENTRADAS", "TOTALDESAIDAS")):
         return "infinitepay"
+    from app.application.sweep_statement_detection import INFINITEPAY, identify_sweep_statement
+
+    if identify_sweep_statement(text) == INFINITEPAY and "HORA" in compact:
+        return "infinitepay"
+    if all(marker in compact for marker in ("EXTRATODECONTA", "DETALHEDOSMOVIMENTOS", "SALDOINICIAL",
+                                            "SALDOFINAL", "ENTRADAS", "SAIDAS", "TITULAR:", "PERIODO:")):
+        return "account_detail"
     if all(marker in compact for marker in ("REVOLUT", "EXTRATOEMBRL", "RESUMODOSALDO", "VALORESDESCONTADOS", "VALORESRECEBIDOS")):
         return "revolut"
     return None
@@ -54,6 +61,10 @@ def parse_followup_native_tables(raw, page_texts):
         from app.application.parsers.pdf.revolut_native import parse_revolut_native
 
         statement = parse_revolut_native(source)
+    elif kind == "account_detail":
+        from app.application.parsers.pdf.native_account_detail import parse_account_detail
+
+        statement = parse_account_detail(source)
     else:
         from app.application.parsers.pdf.infinitepay_native import parse_infinitepay_native
 
