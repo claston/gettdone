@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from app.application.errors import PdfFinancialValidationError
 from app.application.normalization.text import normalize_upper_text
+from app.application.parsers.pdf.bb_cash_controls import is_pending_deposit
 from app.application.parsers.pdf.document_period import optional_document_period, period_contains
 from app.application.parsers.pdf.layout_specific.shared import build_parsed_transaction
 from app.application.parsers.pdf.statement_review import financial_mismatch
@@ -195,6 +196,7 @@ def _bb(pages, kind):
     rows, opening, running, closing = [], None, None, None
     blocked = 0
     pending_label = ""
+    pending_label_refs = []
     period = re.search(r"PERIODO:\s*(\d{2})\s+A\s+(\d{2}/\d{2}/\d{4})", normalize_upper_text("\n".join(pages)))
     if period is None:
         from app.application.parsers.pdf.signed_statement_variants import parse_bb_split
@@ -209,17 +211,25 @@ def _bb(pages, kind):
             # Account positions and future placeholders follow the final cash
             # balance. They are not part of the validated historical ledger.
             break
-        if ("DEPOSITO BLOQUEAD." in normalize_upper_text(raw)
-                or re.search(r"\bDEPOS CHQ IMAGEM \d+ DIAS?\b", normalize_upper_text(raw))) and re.search(rf"{NUMBER}\s*\*$", raw):
+        if is_pending_deposit(raw):
             blocked += 1
             continue
-        match = re.match(rf"^({DATE})\s+(.+?)\s+({NUMBER})\s*\(([+-])\)$", raw)
+        match = re.match(rf"^({DATE})\s+(?:(.+?)\s+)?({NUMBER})\s*\(([+-])\)$", raw)
         if not match:
             if re.match(rf"^{DATE}\b", raw):
                 fail()
             label = normalize_upper_text(raw)
-            if re.fullmatch(r"PIX\s*-\s*ENVIADO|PAGAMENTO DE BOLETO|PAGAMENTO DE IMPOSTOS", label):
+            structured_history = (re.fullmatch(r"\d{5}\s+\d+\s+[^\d].+", raw)
+                                  and not re.search(rf"{NUMBER}\s*(?:\([+-]\)|\*)$", raw))
+            if structured_history or re.fullmatch(
+                    r"PIX\s*-?\s*(?:ENVIADO|RECEBIDO)(?:\s*-\s*AGRUPADO)?|PAGAMENTO DE BOLETO|PAGAMENTO DE IMPOSTOS", label):
+                if pending_label:
+                    fail()
                 pending_label = raw
+                pending_label_refs = [(page, line)]
+            elif pending_label and not label.startswith(("EXTRATO", "CLIENTE:", "PERIODO:", "DIA ", "LANCAMENTOS")):
+                pending_label += " " + raw
+                pending_label_refs.append((page, line))
             elif (
                 rows
                 and rows[-1].running_balance is None
@@ -234,6 +244,10 @@ def _bb(pages, kind):
                 )
             continue
         date, description, value, sign = match.groups()
+        if not description and not pending_label:
+            raise PdfFinancialValidationError("Um movimento Banco do Brasil está sem histórico legível.",
+                                              native_history_ambiguity=True)
+        description = description or ""
         amount = money(value) * (-1 if sign == "-" else 1)
         date = day(date)
         normalized = normalize_upper_text(description)
@@ -245,6 +259,9 @@ def _bb(pages, kind):
                 financial_mismatch()
             opening = running = amount
         elif "SALDODODIA" in compact or compact == "SALDO":
+            if "SALDODODIA" in compact and opening is None and not rows and date < start:
+                opening = running = amount
+                continue
             if not period_contains(date, start, end):
                 financial_mismatch()
             if amount != running:
@@ -259,14 +276,16 @@ def _bb(pages, kind):
             if not period_contains(date, start, end):
                 financial_mismatch()
             running += amount
-            columns = re.match(r"^(\d{5})\s+(\d+)\s+(.+)$", description)
-            reference = columns[2] if columns else None
-            description = columns[3] if columns else description
             if pending_label:
                 description = pending_label + " " + description
                 pending_label = ""
-            rows.append(_row(page, line, date, description, amount, reference=reference))
-    if not rows or closing is None:
+            columns = re.match(r"^(\d{5})\s+(\d+)\s+(.+)$", description)
+            reference = columns[2] if columns else None
+            description = columns[3] if columns else description
+            row = _row(page, line, date, description.strip(), amount, reference=reference)
+            rows.append(replace(row, source_line_refs=tuple([*pending_label_refs, *row.source_line_refs])))
+            pending_label_refs = []
+    if not rows or closing is None or pending_label:
         fail()
     return VerifiedStatement(rows, kind, opening, closing, non_cash_entries=blocked)
 

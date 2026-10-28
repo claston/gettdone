@@ -1,14 +1,16 @@
 """SISBR native history preserves detached C/D signs, including page breaks."""
 import re
 from dataclasses import replace
+from decimal import Decimal
 from statistics import median
 
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.followup_ocr import _headers, _source
+from app.application.parsers.pdf.native_table_source import native_header_columns, split_native_columns
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
-_VALUE = re.compile(rf"({NUMBER})([CD*]?)")
+_VALUE = re.compile(rf"({NUMBER})\s*([CD*]?)")
 
 
 def _attach_evidence(row, band):
@@ -25,6 +27,13 @@ def _attach_evidence(row, band):
 
 def parse_sicoob_native_split_cd(source):
     columns = _headers(source.pages[0], ("DATA", "HISTORICO", "VALOR"))
+    if source.provider == "native_pdfium_text":
+        columns = native_header_columns(source.pages[0], ("DATA", "HISTORICO", "VALOR"))
+        if columns:
+            source = replace(source, pages=[split_native_columns(page,
+                [columns["HISTORICO"] - .02, columns["VALOR"] - .04],
+                include=lambda line: bool(re.match(r"^\d{2}/\d{2}\s+", line.text)
+                    or upper(line.text).startswith("DATA ") and "HISTORICO" in upper(line.text))) for page in source.pages])
     if not columns:
         labels = [upper(line.text) for page in source.pages for line in page.lines]
         dated = [text for text in labels if re.match(r"^\d{2}/\d{2}(?:\s|$)", text)]
@@ -55,7 +64,8 @@ def parse_sicoob_native_split_cd(source):
     margin = height*.8
     financial = [(pos, p, line) for pos, p, line in body if line.bbox["left"] >= columns["VALOR"]-.04
                  and re.search(r"\d", line.text)]
-    used, rows, opening, running, current, controls = set(), [], None, None, None, {}
+    used, rows, opening, controls = set(), [], None, {}
+    opening_position, row_positions = None, []
     days_with_rows = set()
     for index, (pos, page, anchor) in enumerate(anchors):
         stop = anchors[index+1][0] if index+1 < len(anchors) else end_pos
@@ -84,21 +94,14 @@ def parse_sicoob_native_split_cd(source):
             fail("Um movimento SISBR está sem sinal C/D explícito.")
         value = money(match[1]) * (-1 if sign == "D" else 1)
         if label == "SALDO ANTERIOR":
-            if opening is not None or rows or date >= start:
+            if opening is not None or date >= start:
                 fail()
-            opening = running = value
+            opening, opening_position = value, pos
         elif label == "SALDO DO DIA":
-            if date in controls or running is None:
-                fail()
-            controls[date] = value
-            if running != value:
-                financial_mismatch()
-            if rows and rows[-1].transaction.date == date:
-                rows[-1] = _attach_evidence(replace(rows[-1], running_balance=float(value)), band)
+            controls.setdefault(date, []).append((value, band))
         else:
-            if running is None or (current and date < current) or not start <= date <= end:
+            if not start <= date <= end:
                 fail("Uma data ou a ordem dos movimentos SISBR não está legível.")
-            current = date
             days_with_rows.add(date)
             refs = [re.sub(r"^DOC\.:\s*", "", line.text, flags=re.I) for line in history if upper(line.text).startswith("DOC.:")]
             if len(refs) != 1:
@@ -106,18 +109,35 @@ def parse_sicoob_native_split_cd(source):
             description = " ".join(line.text for line in history if not upper(line.text).startswith("DOC.:"))
             row = _row(page.page_number, anchor.line_index, date, description, value, None, refs[0])
             rows.append(_attach_evidence(row, band))
-            running += value
+            row_positions.append(pos)
     if used != {(p.page_number, line.id) for _, p, line in financial} or not rows or opening is None:
         fail("Há um valor SISBR sem movimento ou controle associado.")
     if set(controls) != days_with_rows:
         fail("Um dia SISBR está sem seu fechamento.")
+    ascending = all(a.transaction.date <= b.transaction.date for a, b in zip(rows, rows[1:]))
+    descending = all(a.transaction.date >= b.transaction.date for a, b in zip(rows, rows[1:]))
+    if not ascending and not descending:
+        fail("A ordem dos movimentos SISBR não pode ser confirmada.")
+    if descending and (not ascending or opening_position > row_positions[0]):
+        rows.reverse()
+    running = opening
+    for index, row in enumerate(rows):
+        running += Decimal(str(row.transaction.amount))
+        if index + 1 == len(rows) or rows[index+1].transaction.date != row.transaction.date:
+            printed = controls[row.transaction.date]
+            if any(value != running for value, _ in printed):
+                financial_mismatch()
+            values = {value for value, _ in printed}
+            rows[index] = replace(row, running_balance=float(next(iter(values))) if len(values) == 1 else None)
+            for _, band in printed:
+                rows[index] = _attach_evidence(rows[index], band)
     closing_labels = [line for line in last_page.lines if upper(line.text) == "(+) SALDO EM CONTA:"]
     if len(closing_labels) != 1:
         fail()
     closing_values = [line for line in last_page.lines if line.bbox["left"] >= columns["VALOR"]-.04
         and abs(line.bbox["top"] - closing_labels[0].bbox["top"]) < height
         and _VALUE.fullmatch(upper(line.text))]
-    if len(closing_values) != 1 or not (match := re.fullmatch(rf"({NUMBER})([CD])", upper(closing_values[0].text))):
+    if len(closing_values) != 1 or not (match := re.fullmatch(rf"({NUMBER})\s*([CD])", upper(closing_values[0].text))):
         fail("O saldo final SISBR está sem seu sinal C/D legível.")
     closing = money(match[1]) * (-1 if match[2] == "D" else 1)
     if running != closing:

@@ -72,6 +72,9 @@ def make_corpus():
     from tests.test_recovery_case_fixes import mercado_pago_page
     from tests.test_statement_review_policy import SANTANDER
     from tests.test_multi_period_statements import bb_month, pdf
+    from tests.test_oct20_new_native_statements import bb_page
+    from tests.test_oct27_mercado_grid import mercado_grid
+    from tests.test_oct28_remaining_statements import bb_zero_with_blocked, sicoob_descending
 
     cases = []
 
@@ -80,6 +83,16 @@ def make_corpus():
                       "ocr": asdict(ocr) if ocr else None, "expected": {"movements": movements, **expected}})
 
     mp = [["2026-07-02", 50], ["2026-07-03", -20], ["2026-07-04", 20]]
+    add("bb_pending_deposit_excluded", pdf([bb_zero_with_blocked()]), [["2026-07-01", 50]], bank_code="001", review=True)
+    add("bb_prior_day_cash_control", pdf([bb_page().replace("Saldo Anterior", "Saldo do dia")]),
+        [["2026-07-02", -194.57], ["2026-07-03", 1100]], bank_code="001")
+    displaced = bb_page().replace("02/07/2026 13105 70201 Pagamento de Boleto 194,57 (-)",
+        "PAGAMENTO DE BOLETO\n02/07/2026 194,57 (-)")
+    add("bb_displaced_history", pdf([displaced]), [["2026-07-02", -194.57], ["2026-07-03", 1100]], bank_code="001")
+    add("sicoob_descending_native", sicoob_descending(), [["2026-07-01", 50], ["2026-07-02", -200]], bank_code="756")
+    add("bb_unknown_star_is_not_pending_cash", pdf([bb_zero_with_blocked().replace("Depósito bloquead.", "Pix enviado")]),
+        [], rejected=True)
+    add("mercado_native_row_rules", mercado_grid(), [["2026-10-02", 10], ["2026-10-03", -5]], bank_code="323", review=True)
     add("bb_twelve_month_blocks", pdf([page for month in range(1, 13)
         for page in bb_month(month, opening=1000+(month-1)*180, pages=6)]),
         [[f"2025-{month:02d}-{day:02d}", value] for month in range(1, 13) for day in range(1, 7) for value in (50, -20)],

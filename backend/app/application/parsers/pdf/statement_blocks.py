@@ -57,10 +57,13 @@ def statement_blocks(pages):
         normalized = upper(text)
         match = re.search(rf"({_DATE})\s+SALDO\s+(?:ANTERIOR|INICIAL)\b", normalized)
         opening_date = match[1] if match else None
+        first_dated = next((upper(line) for line in text.splitlines() if re.match(rf"^\s*{_DATE}\b", line)), "")
+        opening_starts_ledger = bool(re.match(rf"{_DATE}\s+SALDO\s+(?:ANTERIOR|INICIAL)\b", first_dated))
         is_statement = classify_document_type("page.pdf", b"", extracted_text=text).document_type == BANK_STATEMENT
         period = _period(text) if is_statement else None
         changed = period is not None and current is not None and period != current
-        dated_reset = period is None and current is None and opening_date and opening and opening_date != opening
+        dated_reset = (period is None and current is None and opening_date and opening
+                       and opening_date != opening and opening_starts_ledger)
         if index and (changed or dated_reset):
             blocks.append(StatementBlock(start, index, current))
             start, opening = index, None

@@ -523,9 +523,24 @@ def _parse_pdf_transactions_strict(
 
             prepared = read_horizontal_native_pages(raw_bytes, word_gap_ratio=.2)
             if identify_verified_statement("\n".join(prepared)) in bb_layouts:
+                try:
+                    parsed = _parse_pdf_transactions_from_page_texts(prepared, preserve_layout_spacing=True,
+                        context=LayoutSpecificParseContext(is_native_text=True))
+                except PdfFinancialValidationError as exc:
+                    if not getattr(exc, "native_history_ambiguity", False):
+                        raise
+                    from app.application.parsers.pdf.native_statement_evidence import same_printed_financial_fields
+
+                    alternative = _read_layout_native_pdf_page_texts(raw_bytes)
+                    if len(alternative) != len(prepared) or not same_printed_financial_fields(prepared, alternative):
+                        raise
+                    parsed = _parse_pdf_transactions_from_page_texts(alternative, preserve_layout_spacing=True,
+                        context=LayoutSpecificParseContext(is_native_text=True))
+                    return _with_parse_observability(parsed, extraction_provider="native_pdf_layout_text",
+                        parser_selection_reason="native_layout_history_association_with_identical_printed_financial_fields",
+                        native_text_detected=1, textract_attempted=0)
                 return _with_parse_observability(
-                    _parse_pdf_transactions_from_page_texts(prepared, preserve_layout_spacing=True,
-                        context=LayoutSpecificParseContext(is_native_text=True)),
+                    parsed,
                     extraction_provider="native_pdfium_horizontal_text", native_text_detected=1, textract_attempted=0)
         if (identify_verified_statement("\n".join(native_pages))
                 or report_identity and report_identity[1] == "sicoob_rem116_period_summary"):

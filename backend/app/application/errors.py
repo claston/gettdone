@@ -13,7 +13,8 @@ class InvalidFileContentError(Exception):
 class PdfFinancialValidationError(InvalidFileContentError):
     """Readable financial fields could not be reconciled with printed totals."""
 
-    def __init__(self, message: str | None = None) -> None:
+    def __init__(self, message: str | None = None, *, native_history_ambiguity: bool = False) -> None:
+        self.native_history_ambiguity = native_history_ambiguity
         super().__init__(
             message or "Não foi possível conferir todos os lançamentos com o total da fatura. "
             "Para evitar valores incorretos, este arquivo não foi convertido. "
