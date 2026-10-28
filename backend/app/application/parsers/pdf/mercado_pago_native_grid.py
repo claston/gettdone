@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text
 from app.application.parsers.pdf.followup_ocr import _headers, _source
+from app.application.parsers.pdf.native_table_source import split_native_columns
 from app.application.parsers.pdf.native_unicred_grid import _PDFIUM_LOCK
 from app.application.parsers.pdf.sweep_native_statements import _mercado_pago
 from app.application.parsers.pdf.text_extraction import read_layout_native_pdf_page_texts
@@ -47,6 +48,7 @@ def parse_mercado_pago_native_grid(raw, source):
                     return None
                 fail()
             page = _split_date_history(page, columns["DESCRICAO"])
+            page = split_native_columns(page, [columns["DESCRICAO"] - .02, columns["ID DA OPERACAO"] - .02])
             header_top = max(line.bbox["top"] for line in page.lines
                              if normalize_upper_text(line.text) in {"DATA", "DESCRICAO", "VALOR", "SALDO"})
             with closing(document[index]) as pdf_page:

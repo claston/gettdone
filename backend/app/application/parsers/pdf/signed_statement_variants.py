@@ -4,6 +4,7 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.bb_cash_controls import is_pending_deposit
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import NUMBER, VerifiedStatement, _lines, _row, day, fail, money
 
@@ -126,8 +127,14 @@ def parse_bb_split(pages, kind):
     rows, opening, running, closing, current = [], None, None, None, None
     pending = None
     checks = 0
+    blocked = 0
     for page, line, raw in _lines(pages):
         normalized = upper(raw)
+        if is_pending_deposit(raw):
+            if pending:
+                fail()
+            blocked += 1
+            continue
         if normalized.startswith(("EXTRATO", "CLIENTE", "AGENCIA", "LANCAMENTOS", "DIA ", "TOTAL APLICACOES", "* SALDOS", "SUJEITOS")):
             continue
         dated = re.match(r"^(\d{2}/\d{2}/\d{4})\s+(.+)$", raw)
@@ -180,4 +187,4 @@ def parse_bb_split(pages, kind):
             rows.append(row)
     if pending or not rows or closing is None:
         fail()
-    return VerifiedStatement(rows, kind, opening, closing, printed_balance_checks=checks)
+    return VerifiedStatement(rows, kind, opening, closing, printed_balance_checks=checks, non_cash_entries=blocked)

@@ -8,6 +8,64 @@ from app.application.parsers.pdf.native_unicred_grid import _PDFIUM_LOCK
 from app.application.parsers.pdf.verified_statements import fail
 
 
+def native_header_columns(page, keys):
+    """A merged LINE may still contain independently positioned header WORDs."""
+    from app.application.normalization.text import normalize_upper_text as upper
+    from app.application.parsers.pdf.followup_ocr import _headers
+
+    columns = _headers(page, keys)
+    if columns:
+        return columns
+    candidates = []
+    for anchor in page.words:
+        if not anchor.bbox or upper(anchor.text) != keys[0].split()[0]:
+            continue
+        row = sorted([word for word in page.words if word.bbox
+            and abs(word.bbox["top"]-anchor.bbox["top"]) < max(.002, anchor.bbox["height"]*.4)],
+            key=lambda word: word.bbox["left"])
+        found = {}
+        for key in keys:
+            choices = [words[0].bbox["left"] for start in range(len(row))
+                for words in [row[start:start+len(key.split())]]
+                if upper(" ".join(word.text for word in words)) == key]
+            if len(choices) != 1:
+                break
+            found[key] = choices[0]
+        if len(found) == len(keys) and list(found.values()) == sorted(found.values()):
+            candidates.append(found)
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def split_native_columns(page, boundaries, *, include=None):
+    """Separate only real WORD evidence crossing known printed column boundaries."""
+    from dataclasses import replace
+
+    words = {word.id: word for word in page.words}
+    lines = []
+    for line in page.lines:
+        if include is not None and not include(line):
+            lines.append(line)
+            continue
+        groups = {}
+        for identifier in line.word_ids:
+            word = words.get(identifier)
+            if word is not None and word.bbox:
+                column = sum(word.bbox["left"] >= boundary for boundary in boundaries)
+                groups.setdefault(column, []).append(word)
+        if len(groups) < 2:
+            lines.append(line)
+            continue
+        for column, group in sorted(groups.items()):
+            group.sort(key=lambda word: word.bbox["left"])
+            left, top = min(word.bbox["left"] for word in group), min(word.bbox["top"] for word in group)
+            right = max(word.bbox["left"] + word.bbox["width"] for word in group)
+            bottom = max(word.bbox["top"] + word.bbox["height"] for word in group)
+            lines.append(replace(line, id=f"{line.id}:column{column}", text=" ".join(word.text for word in group),
+                bbox={"left": left, "top": top, "width": right-left, "height": bottom-top},
+                word_ids=tuple(word.id for word in group)))
+    return replace(page, lines=lines)
+
+
 def read_native_table_source(raw, *, decorative_history=None):
     import pypdfium2 as pdfium
 
