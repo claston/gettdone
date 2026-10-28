@@ -58,7 +58,10 @@ def attach_existing_statement_periods(service, conn, events, *, end_at):
                 value = json.loads(value)
             except (ValueError, TypeError):
                 continue
-        if not isinstance(value, dict):
+        # Legacy source objects also contain boolean coverage and textual evidence.
+        # Admin responses expose only the validated dates and their basis.
+        value = normalize_statement_period(value)
+        if value is None:
             continue
         kind = {"user": "registered", "anonymous": "anonymous"}.get(row["owner_type"])
         if kind is None:

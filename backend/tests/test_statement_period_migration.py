@@ -1,5 +1,6 @@
 """The additive migration preserves old writers and retained period evidence."""
 
+import hashlib
 import importlib.util
 import os
 import subprocess
@@ -99,6 +100,35 @@ def test_postgres_history_and_admin_metrics_after_alembic_upgrade(tmp_path):
         assert result["failure_attempts"] == 2 and result["unique_failed_documents"] == 1
         assert result["by_period"][0]["label"] == "09/2026"
         assert result["attention"][0]["statement_period"] == period
+
+        # Historical results include boolean coverage metadata. Exercise the real
+        # PostgreSQL JSONB fallback and the response validator used by the route.
+        from app.adapters.conversion.postgres_batches import PostgresConversionBatchRepository
+        from app.application.conversion.contracts.documents import ConversionDocumentReference
+        from app.application.conversion.conversion_batch import ConversionBatch
+        from app.application.conversion.conversion_job import ConversionJob
+        from app.schemas import AdminDashboardResponse
+
+        identity = access.resolve_identity(anonymous_fingerprint=None, user_token=user.token)
+        batch = ConversionBatch.create(identity_type="user", identity_id=user.user_id, files_count=1, idempotency_key="legacy")
+        job = ConversionJob.create(batch_id=batch.batch_id, identity=identity, idempotency_key="legacy-job",
+                                   document=ConversionDocumentReference(storage_key="doc_" + "a" * 24, filename="private.pdf",
+                                                                        file_type="pdf", size_bytes=1, sha256_hex="a" * 64))
+        repository = PostgresConversionBatchRepository(database_url=dsn, database_schema=schema)
+        repository.create(batch=batch, jobs=[job])
+        digest = hashlib.sha256(job.job_id.encode()).hexdigest()
+        legacy_id = f"an_{digest[:12]}"
+        legacy = {**period, "basis": "movement_dates", "document_coverage": False, "evidence": "Synthetic legacy evidence"}
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            conn.execute(f'UPDATE "{schema}".conversion_jobs SET result_analysis_id=%s, result_payload=%s WHERE job_id=%s',
+                         (legacy_id, psycopg.types.json.Jsonb({"organization_source": {"period": legacy}}), job.job_id))
+        access.record_user_conversion(user_id=user.user_id, processing_id=legacy_id, filename="private.pdf", model="Banco",
+                                      conversion_type="pdf-ofx", status="Sucesso", transactions_count=1,
+                                      canonical_warning_transactions_count=1, file_sha256="a" * 64, document_type="bank_statement")
+        response = AdminDashboardResponse(**AdminDashboardService(access).get_dashboard(days=1))
+        attention = next(item for item in response.recent_attention if item.processing_id == legacy_id)
+        assert attention.statement_period == {**period, "basis": "movement_dates"}
+        assert response.pdf_documents.unique_review_documents == 1
     finally:
         if access:
             access.close()
