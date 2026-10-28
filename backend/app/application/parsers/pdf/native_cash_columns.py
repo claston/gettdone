@@ -163,6 +163,25 @@ def _source_lines(tp, text):
     return result
 
 
+def _monthly_period_boxes(tp, text, columns):
+    """PDF content-stream order may differ from the printed 'Entre ... e ...'."""
+    dates = _boxes(tp, text, re.compile(r"\d{2}/\d{2}/\d{4}"))
+    starts = _boxes(tp, text, re.compile(r"\bEntre\b", re.I))
+    separators = _boxes(tp, text, re.compile(r"\be\b", re.I))
+    periods = set()
+    for label in starts:
+        if label.bottom <= max(box.top for box in columns):
+            continue
+        aligned = sorted([box for box in dates if box.left > label.right and abs(box.bottom-label.bottom) < 3],
+                         key=lambda box: box.left)
+        if len(aligned) != 2:
+            continue
+        first, last = aligned
+        if len([box for box in separators if first.right < box.left < last.left and abs(box.bottom-label.bottom) < 3]) == 1:
+            periods.add((first.text, last.text))
+    return periods
+
+
 def parse_native_cash_columns(raw, page_texts):
     kind = _kind(page_texts)
     if kind is None:
@@ -228,6 +247,8 @@ def parse_native_cash_columns(raw, page_texts):
                     if not periods:
                         periods = set(re.findall(r"ENTRE\s+(\d{2}/\d{2}/\d{4})\s+E\s+(\d{2}/\d{2}/\d{4})",
                                                  upper("\n".join(page_texts))))
+                    if not periods:
+                        periods = _monthly_period_boxes(tp, text, columns)
                     start, end = unique_document_period(periods, parse_date=lambda value: _date(value, None))
                 characters = [_TextBox(char, *tp.get_charbox(i, loose=True)) for i, char in enumerate(text)
                               if char not in {"\r", "\n", "\x00"}]
@@ -377,6 +398,8 @@ def parse_native_cash_columns(raw, page_texts):
             checks += 1
     totals = (sum((Decimal(str(row.transaction.amount)) for row in rows if row.transaction.amount > 0), Decimal(0)),
               sum((-Decimal(str(row.transaction.amount)) for row in rows if row.transaction.amount < 0), Decimal(0)))
+    if totals != printed_totals:
+        rows[0] = replace(rows[0], warnings=[*rows[0].warnings, "printed_totals_differ_from_extracted_movements"])
     if running != printed_closing or totals != printed_totals or santander and running != controls["closing"]:
         financial_mismatch(_MESSAGE)
     return VerifiedStatement(rows, kind, opening, running, printed_balance_checks=checks, candidate_rows=len(rows)), tuple(source_pages)

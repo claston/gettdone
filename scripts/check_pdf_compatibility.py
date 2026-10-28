@@ -80,6 +80,10 @@ def make_corpus():
         caixa_tilted_rows, mercado_without_continuation_header,
     )
     from tests.test_sicredi_financial_columns import matrix_text
+    from tests.test_oct28_late_statement_recovery import (
+        bb_overlapping_sign, bb_page_break, bb_pending_deposit, bb_trailing_mark,
+        bradesco_reordered_period, santander_available, sicoob_page_break,
+    )
     from tests.test_oct20_followup_native import portal_pages
     from tests.test_oct20_followup_ocr import banrisul_ocr
 
@@ -91,6 +95,28 @@ def make_corpus():
 
     mp = [["2026-07-02", 50], ["2026-07-03", -20], ["2026-07-04", 20]]
     ocr_raw = generate_native_text_pdf((("Synthetic OCR source",),))
+    add("santander_available_cash_zero_debit", ocr_raw,
+        [["2026-08-21", 5000], ["2026-08-24", 200], ["2026-08-26", 200], ["2026-08-31", 200]],
+        ocr=santander_available(), bank_code="033")
+    add("sicoob_value_before_page_break", sicoob_page_break(blocked=True),
+        [["2026-07-01", 50], ["2026-07-02", -20]], bank_code="756", review=True)
+    add("bb_value_before_page_break", bb_page_break(), [["2026-07-01", 10], ["2026-07-02", 20]], bank_code="001")
+    add("bb_ocr_overlapping_sign_stroke", ocr_raw, [["2026-08-03", -4.45]],
+        ocr=bb_overlapping_sign(), bank_code="001", review=True)
+    add("bb_ocr_complete_amount_trailing_mark", ocr_raw, [["2026-08-03", 50]],
+        ocr=bb_trailing_mark(skew=True), bank_code="001", review=True)
+    add("bb_ocr_pending_deposit", ocr_raw, [["2026-08-03", 50]], ocr=bb_pending_deposit(), bank_code="001", review=True)
+    add("bradesco_reordered_header", bradesco_reordered_period(),
+        [["2026-12-16", 50], ["2026-12-17", -20]], bank_code="237")
+    add("bradesco_printed_totals_diverge", bradesco_reordered_period(mismatch=True),
+        [["2026-12-16", 50], ["2026-12-17", -20]], bank_code="237", review=True)
+    for key, source in [("bb_extra_digit_without_word_overlap", bb_overlapping_sign(overlap=False)),
+                        ("bb_overlapping_digit_wrong_balance", bb_overlapping_sign(closing="95,54 C")),
+                        ("bb_unknown_starred_movement", bb_pending_deposit(unknown=True)),
+                        ("santander_missing_amount_without_debit_control", santander_available(missing_amount=True))]:
+        add(key, ocr_raw, [], ocr=source, rejected=True)
+    add("sicoob_unknown_starred_movement", sicoob_page_break(blocked=True, unknown_star=True), [], rejected=True)
+    add("bb_conflicting_page_fragment_signs", bb_page_break(extra_sign=True), [], rejected=True)
     add("banrisul_portal_legacy_native", generate_native_text_pdf(tuple(tuple(p.splitlines()) for p in portal_pages())),
         [["2026-08-03",150],["2026-08-03",-20],["2026-08-03",-50]],bank_code="041")
     add("banrisul_portal_legacy_ocr", ocr_raw, [["2026-09-01",150],["2026-09-01",-20]],ocr=banrisul_ocr(),bank_code="041")
