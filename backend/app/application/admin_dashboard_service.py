@@ -8,7 +8,10 @@ from statistics import median
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
+from app.application.admin_pdf_metrics import build_pdf_document_metrics
+from app.application.admin_statement_periods import attach_existing_statement_periods, build_statement_period_summary
 from app.application.conversion_quality import assess_conversion_quality
+from app.application.statement_period_history import normalize_statement_period
 
 if TYPE_CHECKING:
     from app.application.access_control import AccessControlService
@@ -81,6 +84,7 @@ class AdminDashboardService:
                     end_at=now_utc.isoformat(),
                     identity_type=normalized_identity_type,
                 )
+                attach_existing_statement_periods(self._service, conn, events, end_at=now_utc.isoformat())
                 prior_identity_keys = self._load_prior_identity_keys(
                     conn,
                     before=start_utc.isoformat(),
@@ -152,6 +156,8 @@ class AdminDashboardService:
                     identity_type=normalized_identity_type,
                 )
 
+                attach_existing_statement_periods(self._service, conn, events, end_at=now_utc.isoformat())
+
         export_rows: list[dict[str, object]] = []
         for event in events:
             if _is_non_conversion_event(event):
@@ -195,6 +201,10 @@ class AdminDashboardService:
                     "parser_confidence_band": event.get("parser_confidence_band"),
                     "parser_coverage_rate": event.get("parser_coverage_rate"),
                     "warning_types": event.get("warning_types", []),
+                    "file_sha256": event.get("file_sha256"),
+                    "statement_period_start": (event.get("statement_period") or {}).get("start_date"),
+                    "statement_period_end": (event.get("statement_period") or {}).get("end_date"),
+                    "statement_period_basis": (event.get("statement_period") or {}).get("basis"),
                     "issue_reason": attention["issue_reason"],
                     "canonical_capture_status": event.get("canonical_capture_status"),
                     "canonical_capture_reason": event.get("canonical_capture_reason"),
@@ -338,6 +348,10 @@ class AdminDashboardService:
                     user_id AS identity_id,
                     created_at,
                     model,
+                    file_sha256,
+                    statement_period_start,
+                    statement_period_end,
+                    statement_period_basis,
                     conversion_type,
                     status,
                     transactions_count,
@@ -385,6 +399,10 @@ class AdminDashboardService:
                     anonymous_fingerprint AS identity_id,
                     created_at,
                     model,
+                    file_sha256,
+                    statement_period_start,
+                    statement_period_end,
+                    statement_period_basis,
                     conversion_type,
                     status,
                     transactions_count,
@@ -594,6 +612,11 @@ def _row_to_event(row, *, identity_type: str) -> dict[str, object]:
         "identity_key": f"{identity_type}:{identity_id}",
         "created_at": str(row["created_at"] or ""),
         "model": str(row["model"] or "Não identificado"),
+        "file_sha256": str(row["file_sha256"] or "") or None,
+        "statement_period": normalize_statement_period({
+            "start_date": row["statement_period_start"], "end_date": row["statement_period_end"],
+            "basis": row["statement_period_basis"],
+        }),
         "conversion_type": str(row["conversion_type"] or "Não identificado"),
         "status": str(row["status"] or ""),
         "transactions_count": _as_non_negative_int(row["transactions_count"]),
@@ -829,6 +852,8 @@ def _build_dashboard_payload(
         "top_quality_issues": top_quality_issues,
         "canonical_capture": _build_canonical_capture_summary(events),
         "document_types": _build_document_type_summary(events),
+        "statement_periods": build_statement_period_summary(events),
+        "pdf_documents": build_pdf_document_metrics(events),
         "checkout_funnel": _build_checkout_funnel(checkout_intents, product_events),
         "commercial_interest": _build_commercial_interest(product_events, registered_profiles),
         "heavy_users": _rank_user_usage(user_usage, sort_field="pages"),
@@ -1363,6 +1388,8 @@ def _attention_item(event: dict[str, object], *, is_success: bool) -> dict[str, 
 
     return {
         "processing_id": str(event["processing_id"]),
+        "file_sha256": event.get("file_sha256"),
+        "statement_period": event.get("statement_period"),
         "identity_type": str(event["identity_type"]),
         "created_at": str(event["created_at"]),
         "model": str(event["model"]),

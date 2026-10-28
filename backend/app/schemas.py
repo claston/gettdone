@@ -408,6 +408,8 @@ class AdminDashboardLayoutItem(BaseModel):
 
 
 class AdminDashboardAttentionItem(BaseModel):
+    file_sha256: str | None = None
+    statement_period: dict[str, str] | None = None
     processing_id: str
     identity_type: str
     created_at: str
@@ -452,6 +454,69 @@ class AdminDashboardCommercialInterestItem(BaseModel):
     last_interest_at: str | None = None
 
 
+class AdminStatementPeriodItem(BaseModel):
+    key: str
+    label: str
+    attempts: int
+    percentage: float
+    document_metadata_count: int = 0
+    movement_dates_count: int = 0
+
+
+class AdminStatementPeriodSummary(BaseModel):
+    total_count: int = 0
+    identified_count: int = 0
+    unknown_count: int = 0
+    excluded_count: int = 0
+    coverage_rate: float = 0
+    document_metadata_count: int = 0
+    movement_dates_count: int = 0
+    age_buckets: list[AdminStatementPeriodItem] = Field(default_factory=list)
+    by_period: list[AdminStatementPeriodItem] = Field(default_factory=list)
+
+
+class AdminPdfCounts(BaseModel):
+    attempts: int = 0
+    success_attempts: int = 0
+    failure_attempts: int = 0
+    review_attempts: int = 0
+    unique_documents: int = 0
+    unique_failed_documents: int = 0
+    unique_review_documents: int = 0
+    unidentified_attempts: int = 0
+
+
+class AdminPdfDayCounts(AdminPdfCounts):
+    date: str
+
+
+class AdminPdfPeriodCounts(AdminPdfCounts):
+    key: str
+    label: str
+
+
+class AdminPdfAttentionDocument(AdminPdfCounts):
+    file_sha256: str
+    document_reference: str
+    model: str
+    last_activity_at: str
+    first_failure_at: str | None = None
+    last_failure_at: str | None = None
+    first_review_at: str | None = None
+    last_review_at: str | None = None
+    statement_period: dict[str, str] | None = None
+    period_conflict: bool = False
+    last_error_code: str | None = None
+
+
+class AdminPdfDocumentSummary(AdminPdfCounts):
+    attention_total: int = 0
+    attention_limit: int = 200
+    attention: list[AdminPdfAttentionDocument] = Field(default_factory=list)
+    by_day: list[AdminPdfDayCounts] = Field(default_factory=list)
+    by_period: list[AdminPdfPeriodCounts] = Field(default_factory=list)
+
+
 class AdminDashboardResponse(BaseModel):
     days: int
     start_at: str
@@ -464,6 +529,8 @@ class AdminDashboardResponse(BaseModel):
     top_quality_issues: list[AdminDashboardQualityIssueItem]
     canonical_capture: AdminDashboardCanonicalCaptureSummary
     document_types: AdminDashboardDocumentTypeSummary
+    statement_periods: AdminStatementPeriodSummary = Field(default_factory=AdminStatementPeriodSummary)
+    pdf_documents: AdminPdfDocumentSummary = Field(default_factory=AdminPdfDocumentSummary)
     checkout_funnel: AdminDashboardCheckoutFunnel
     commercial_interest: list[AdminDashboardCommercialInterestItem]
     heavy_users: list[AdminDashboardHeavyUserItem]

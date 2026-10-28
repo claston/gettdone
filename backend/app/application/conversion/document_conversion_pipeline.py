@@ -56,6 +56,11 @@ from app.application.errors import (
 from app.application.pdf_representation_classifier import classify_pdf_representation
 from app.application.report_service import ReportService
 from app.application.repositories import AnalysisRepository
+from app.application.statement_period_history import (
+    statement_period_from_analysis,
+    statement_period_from_failed_pdf,
+    statement_period_from_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -561,6 +566,9 @@ class DocumentConversionPipeline:
             source_extraction=source_extraction,
             pdf_representation_classification=runtime.pdf_representation_classification,
         )
+        statement_period = None
+        if request.document.file_type == "pdf":
+            statement_period = statement_period_from_text("\n".join((page_texts or ())[:2])) or statement_period_from_analysis(analysis)
         conversion_model_label = resolve_conversion_model_label(
             layout_inference_name=getattr(analysis, "layout_inference_name", None),
             bank_name=getattr(analysis, "bank_name", None),
@@ -607,6 +615,7 @@ class DocumentConversionPipeline:
                 ocr_attempted=effective_ocr_attempted,
                 ocr_engine=effective_ocr_engine,
                 file_sha256=runtime.file_digest,
+                statement_period=statement_period,
                 canonical_warning_transactions_count=warning_rows_count,
                 balance_consistency_failed=balance_failed_count,
                 parser_confidence_band=parse_meta["parser_confidence_band"],
@@ -655,6 +664,7 @@ class DocumentConversionPipeline:
                 ocr_attempted=effective_ocr_attempted,
                 ocr_engine=effective_ocr_engine,
                 file_sha256=runtime.file_digest,
+                statement_period=statement_period,
                 parser_confidence_band=parse_meta["parser_confidence_band"],
                 parser_coverage_rate=parse_meta["parser_coverage_rate"],
                 warning_types=parse_meta["warning_types"],
@@ -712,6 +722,7 @@ class DocumentConversionPipeline:
             "rejected" if error_code == "unsupported_document_type" else "failed"
         )
         failure_diagnostics = _build_failure_diagnostics(exc)
+        statement_period = statement_period_from_failed_pdf(request.document, exc) if error_stage in {"parse", "extraction"} else None
         ocr_context = str(getattr(exc, "ocr_context", "") or "")
         if ocr_context:
             failure_diagnostics["ocr_fallback_attempted"] = True
@@ -819,6 +830,7 @@ class DocumentConversionPipeline:
                 ocr_attempted=ocr_attempted,
                 ocr_engine=runtime.ocr_engine,
                 file_sha256=runtime.file_digest,
+                statement_period=statement_period,
                 canonical_warning_transactions_count=0,
                 balance_consistency_failed=0,
                 failure_diagnostics=failure_diagnostics,
@@ -861,6 +873,7 @@ class DocumentConversionPipeline:
                 ocr_attempted=ocr_attempted,
                 ocr_engine=runtime.ocr_engine,
                 file_sha256=runtime.file_digest,
+                statement_period=statement_period,
                 canonical_warning_transactions_count=0,
                 balance_consistency_failed=0,
                 failure_diagnostics=failure_diagnostics,

@@ -6,6 +6,7 @@ from typing import Callable
 from app.application.conversion_quality_history import prepare_quality_record, replace_quality_issues
 from app.application.document_classification_history import prepare_document_classification_record
 from app.application.pdf_representation_history import prepare_pdf_representation_record
+from app.application.statement_period_history import statement_period_values
 
 
 def record_user_conversion(
@@ -38,6 +39,7 @@ def record_user_conversion(
     ocr_attempted: bool = False,
     ocr_engine: str | None = None,
     file_sha256: str | None = None,
+    statement_period: dict[str, str] | None = None,
     canonical_warning_transactions_count: int = 0,
     balance_consistency_failed: int = 0,
     parser_confidence_band: str | None = None,
@@ -132,6 +134,9 @@ def record_user_conversion(
           ocr_attempted,
           ocr_engine,
           file_sha256,
+          statement_period_start,
+          statement_period_end,
+          statement_period_basis,
           canonical_warning_transactions_count,
           balance_consistency_failed,
           quality_status,
@@ -158,7 +163,8 @@ def record_user_conversion(
         VALUES (
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?
+          ?, ?, ?, ?, ?,
+          ?, ?, ?
         )
         ON CONFLICT(analysis_id)
         DO UPDATE SET
@@ -187,7 +193,10 @@ def record_user_conversion(
           extracted_char_count=excluded.extracted_char_count,
           ocr_attempted=excluded.ocr_attempted,
           ocr_engine=excluded.ocr_engine,
-          file_sha256=excluded.file_sha256,
+          file_sha256=COALESCE(excluded.file_sha256, user_conversions.file_sha256),
+          statement_period_start=COALESCE(excluded.statement_period_start, user_conversions.statement_period_start),
+          statement_period_end=COALESCE(excluded.statement_period_end, user_conversions.statement_period_end),
+          statement_period_basis=COALESCE(excluded.statement_period_basis, user_conversions.statement_period_basis),
           canonical_warning_transactions_count=excluded.canonical_warning_transactions_count,
           balance_consistency_failed=excluded.balance_consistency_failed,
           quality_status=excluded.quality_status,
@@ -239,6 +248,7 @@ def record_user_conversion(
             bool(ocr_attempted),
             (ocr_engine or "").strip() or None,
             (file_sha256 or "").strip() or None,
+            *statement_period_values(statement_period),
             max(0, int(canonical_warning_transactions_count or 0)),
             max(0, int(balance_consistency_failed or 0)),
             assessment.status,

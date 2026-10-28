@@ -541,6 +541,9 @@ def test_non_clean_pdf_is_forwarded_to_best_effort_canonical_capture(caplog) -> 
     assert capture.calls[0]["source_layout_lines"][0][0].bbox["left"] == 0.12
     assert "identity" not in capture.calls[0]
     assert pipeline.access_control_service.recorded_user_conversions[-1]["canonical_capture_status"] == "stored"
+    assert pipeline.access_control_service.recorded_user_conversions[-1]["statement_period"] == {
+        "start_date": "2026-06-18", "end_date": "2026-06-18", "basis": "movement_dates",
+    }
     assert pipeline.access_control_service.recorded_user_conversions[-1]["canonical_capture_reason"] is None
     assert "canonical_layout_capture_result status=stored reason= storage=s3 sse=AES256" in caplog.text
     assert len(ai_dispatch.calls) == 1
