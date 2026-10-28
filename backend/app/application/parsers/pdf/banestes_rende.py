@@ -4,6 +4,7 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import period_contains, unique_document_period
 from app.application.parsers.pdf.followup_ocr import _source
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
@@ -23,10 +24,8 @@ def parse_banestes_rende(source):
     all_lines = [line for page in source.pages for line in page.lines]
     text = "\n".join(upper(line.text) for line in all_lines)
     periods = re.findall(rf"PERIODO:\s*({DATE})\s+[AÀ]\s+({DATE})", text)
-    if len(periods) != 1:
-        fail()
-    start, end = map(day, periods[0])
-    if start > end:
+    start, end = unique_document_period(periods)
+    if start is not None and start > end:
         fail()
     rows, running, opening, closing, checks = [], None, None, None, 0
     inflows = outflows = Decimal(0)
@@ -58,7 +57,7 @@ def parse_banestes_rende(source):
             if month not in MONTHS:
                 fail()
             date = day(f"{int(days[0].text):02d}/{MONTHS.index(month)+1:02d}/20{year}")
-            if not start <= date <= end:
+            if not period_contains(date, start, end):
                 fail()
             values = sorted([line for line in chunk if line.bbox["left"] >= .82 and CASH.fullmatch(line.text.strip())],
                             key=lambda line: line.bbox["top"])

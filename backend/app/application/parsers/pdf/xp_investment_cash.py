@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.financial_reports import _check, _event, date, money
+from app.application.parsers.pdf.statement_review import document_period_unavailable
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, fail
 
 EVIDENCE = "xp_investment_account_ledger"
@@ -23,8 +24,10 @@ def parse_xp_investment_pages(pages):
     period = re.search(r"DATA DO EXTRATO:\s*(\d{2})/(\d{4})", normalized)
     opening_match = re.search(rf"SALDO ANTERIOR\s*\(({DATE})\)\s*({CURRENCY.pattern})", normalized)
     closing_match = re.search(rf"SALDO ATUAL\s*\(({DATE})\)\s*({CURRENCY.pattern})", normalized)
-    if not period or not opening_match or not closing_match:
+    if not opening_match or not closing_match:
         fail("Falta o período ou os saldos inicial/final do extrato de investimentos XP.")
+    if period is None:
+        document_period_unavailable()
     opening_date, end = date(opening_match[1]), date(closing_match[1])
     opening = Decimal(_amount(CURRENCY.search(opening_match[2])))
     closing = Decimal(_amount(CURRENCY.search(closing_match[2])))
@@ -99,7 +102,8 @@ def parse_xp_investment_pages(pages):
               "OFX indisponível para este relatório de investimentos.")
     return {"schema_version": "financial_events_v1", "document_type": "investment_statement", "origin": "XP Investimentos",
             "representation": "text", "evidence": [EVIDENCE], "events": events, "observations": observations,
-            "validations": validations, "metadata": {"period_start": f"{period[2]}-{period[1]}-01", "period_end": end,
+            "validations": validations, "metadata": {"period_start": f"{period[2]}-{period[1]}-01" if period else None,
+            "period_end": end if period else None,
                 "opening_as_of": opening_date,
                 "opening_balance": str(opening), "closing_balance": str(closing)}, "notice": notice,
             "export": {"available_formats": ["csv", "xlsx"], "ofx_profile": None,

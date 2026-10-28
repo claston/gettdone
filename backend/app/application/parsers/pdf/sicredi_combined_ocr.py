@@ -5,6 +5,7 @@ from statistics import median
 
 from app.application.normalization.ocr_numeric_separators import normalize_ocr_numeric_separators
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import optional_document_period, period_contains
 from app.application.parsers.pdf.followup_ocr import _headers, _source
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
@@ -32,9 +33,7 @@ def parse_sicredi_combined(extraction):
     if not is_sicredi_combined(text):
         return None
     period = re.search(rf"DADOS REFERENTES AO PERIODO\s+({DATE})\s+A\s+({DATE})", text)
-    if not period:
-        fail("Falta um período legível no extrato Sicredi.")
-    start, end = map(day, period.groups())
+    start, end = optional_document_period(period)
     rows, opening, running, checks, columns = [], None, None, 0, None
     for original in extraction.pages:
         lines = []
@@ -160,7 +159,7 @@ def parse_sicredi_combined(extraction):
             amount, printed = money(value.text), money(balance.text)
             date_text = anchor.text[:10]
             month_recovered = False
-            if re.fullmatch(r"\d{2}/00/\d{4}", date_text) and start[:7] == end[:7] and date_text[-4:] == start[:4]:
+            if re.fullmatch(r"\d{2}/00/\d{4}", date_text) and start is not None and start[:7] == end[:7] and date_text[-4:] == start[:4]:
                 recovered = day(date_text[:3] + start[5:7] + date_text[5:])
                 neighbors = []
                 if rows:
@@ -175,7 +174,7 @@ def parse_sicredi_combined(extraction):
                 date = day(date_text)
             if rows and date < rows[-1].transaction.date:
                 financial_mismatch("As datas impressas Sicredi estão fora de ordem; confira as linhas sinalizadas.")
-            if not start <= date <= end or running + amount != printed:
+            if not period_contains(date, start, end) or running + amount != printed:
                 financial_mismatch()
             description = " ".join([anchor.text[10:].strip(), *(line.text for line in cells
                 if min(columns["DESCRICAO"]-.02, columns["DATA"]+.04) <= line.bbox["left"] < columns["DOCUMENTO"]-.02

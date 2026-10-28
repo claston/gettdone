@@ -77,4 +77,16 @@ describe("free converter review findings", () => {
       "finding:financial_validation_failed",
     ]);
   });
+
+  it("explains unavailable document periods without a financial error", () => {
+    expect(
+      Array.from(
+        collect(
+          statement({
+            canonical_warning_types_list: ["document_period_unavailable"],
+          }),
+        ),
+      ),
+    ).toEqual(["finding:document_period_unavailable"]);
+  });
 });

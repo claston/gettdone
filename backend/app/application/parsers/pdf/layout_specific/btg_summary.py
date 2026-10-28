@@ -8,6 +8,7 @@ from typing import NoReturn
 
 from app.application.errors import PdfFinancialValidationError
 from app.application.normalization.text import normalize_upper_text
+from app.application.parsers.pdf.document_period import unique_document_period
 from app.application.parsers.pdf.layout_specific.contract import LayoutSpecificParseContext, LayoutSpecificParseResult
 from app.application.parsers.pdf.layout_specific.shared import build_parsed_transaction
 from app.application.parsers.pdf.models import _ParsedTransaction, _PdfLine
@@ -64,11 +65,14 @@ def _summary(lines: list[_PdfLine]) -> _Summary:
     }
     totals = {(match[1], _money(match[2])) for text in texts if (match := _SUMMARY_TOTAL.fullmatch(text))}
     accounts = {match.groups() for text in texts if (match := _ACCOUNT.search(text))}
-    if len(periods) != 1 or len(balances) != 2 or len(totals) != 2 or len(accounts) != 1:
+    if len(balances) != 2 or len(totals) != 2 or len(accounts) != 1:
         _fail()
     if next(iter(accounts))[0] != "208":
         _fail()
-    start, end = next(iter(periods))
+    try:
+        start, end = unique_document_period(periods, parse_date=lambda value: value)
+    except PdfFinancialValidationError:
+        _fail()
     amounts = {kind: (day, value) for kind, day, value in balances}
     total_amounts = dict(totals)
     if set(amounts) != {"ABERTURA", "FECHAMENTO"} or set(total_amounts) != {"ENTRADAS", "SAIDAS"}:
@@ -76,8 +80,10 @@ def _summary(lines: list[_PdfLine]) -> _Summary:
     opening_date, opening = amounts["ABERTURA"]
     closing_date, closing = amounts["FECHAMENTO"]
     inflows, outflows = total_amounts["ENTRADAS"], total_amounts["SAIDAS"]
-    if start > end or opening_date != start or closing_date != end or min(inflows, outflows) < 0:
+    if (start is not None and opening_date != start or end is not None and closing_date != end or min(inflows, outflows) < 0):
         _fail()
+    # Explicit dated opening/closing controls bound the ledger, not documentary coverage.
+    start, end = start or opening_date, end or closing_date
     if opening + inflows - outflows != closing:
         financial_mismatch(_MESSAGE)
     return _Summary(start, end, opening, closing, inflows, outflows)

@@ -8,6 +8,7 @@ from typing import NoReturn
 
 from app.application.errors import PdfFinancialValidationError
 from app.application.normalization.text import normalize_upper_text
+from app.application.parsers.pdf.document_period import period_contains, unique_document_period
 from app.application.parsers.pdf.layout_specific.contract import LayoutSpecificParseContext, LayoutSpecificParseResult
 from app.application.parsers.pdf.layout_specific.shared import build_parsed_transaction
 from app.application.parsers.pdf.models import _ParsedTransaction, _PdfLine
@@ -48,8 +49,8 @@ def _money(value: str) -> Decimal:
 @dataclass(frozen=True)
 class WiseMetadata:
     currency: str
-    start: date
-    end: date
+    start: date | None
+    end: date | None
     closing_balance: Decimal
 
 
@@ -59,17 +60,17 @@ def extract_wise_metadata(text: str) -> WiseMetadata:
     periods = [match for line in lines if (match := _PERIOD.fullmatch(line))]
     summaries = [match for line in lines if (match := _SUMMARY.fullmatch(line))]
     accounts = [lines[i + 1] for i, line in enumerate(lines[:-1]) if line == "NUMERO DA CONTA"]
-    if len(set(titles)) != 1 or titles[0] not in WISE_CURRENCIES.values() or not periods or not summaries:
+    if len(set(titles)) != 1 or titles[0] not in WISE_CURRENCIES.values() or not summaries:
         _fail()
     if not accounts or len(set(accounts)) != 1 or not accounts[0].isdigit():
         _fail()
     bounds = {(_date(match[1]), _date(match[2])) for match in periods}
     balances = {(match[1], _date(match[2]), _money(match[3]), match[4]) for match in summaries}
-    if len(bounds) != 1 or len(balances) != 1:
+    if len(balances) != 1:
         _fail()
-    start, end = next(iter(bounds))
+    start, end = unique_document_period(bounds, parse_date=lambda value: value)
     currency, balance_date, balance, trailing_currency = next(iter(balances))
-    if start > end or balance_date != end or currency != titles[0] or trailing_currency != currency:
+    if end is not None and balance_date != end or currency != titles[0] or trailing_currency != currency:
         _fail()
     return WiseMetadata(currency, start, end, balance)
 
@@ -122,7 +123,7 @@ class WiseLayoutParser:
                         _fail()
                     transaction_date = _date(transaction[1])
                     reference = line.text.rsplit(":", 1)[-1].strip()
-                    if reference in references or not metadata.start <= transaction_date <= metadata.end:
+                    if reference in references or not period_contains(transaction_date, metadata.start, metadata.end):
                         _fail()
                     amount, balance = _money(match[2]), _money(match[3])
                     rows.append(build_parsed_transaction(

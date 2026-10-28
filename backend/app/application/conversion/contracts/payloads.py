@@ -101,6 +101,7 @@ class PdfProcessingMetrics(BaseModel):
     scheduled_entries_excluded: int = 0
     statement_no_activity: int = 0
     partial_statement: int = 0
+    document_period_unavailable: int = 0
     non_cash_entries_excluded: int = 0
     financial_controls_validated: int = 0
     printed_balance_checks: int = 0

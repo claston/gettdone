@@ -81,10 +81,18 @@ export function BalanceReviewNotice({
     conversion.transactions.flatMap((row) => row.warningTypes ?? []);
   const summaryWarning = warnings.includes("printed_summary_balance_mismatch");
   const financialWarning = warnings.includes("financial_validation_failed");
+  const periodWarning = warnings.includes("document_period_unavailable");
+  const balanceWarning = Boolean(
+    rows.length ||
+    summaryWarning ||
+    financialWarning ||
+    conversion.statementBalanceCheck,
+  );
   if (
     !rows.length &&
     !summaryWarning &&
     !financialWarning &&
+    !periodWarning &&
     !conversion.statementBalanceCheck
   )
     return null;
@@ -99,9 +107,16 @@ export function BalanceReviewNotice({
     <div
       className="page-sync-notice balance-review-notice"
       role="status"
-      aria-label="Conferência dos saldos"
+      aria-label="Conferência do documento"
     >
-      <strong>Saldos precisam de conferência.</strong>{" "}
+      {periodWarning && (
+        <p>
+          <strong>Período do documento não identificado.</strong> Os movimentos
+          legíveis foram convertidos. Confira a cobertura no PDF original; as
+          datas dos lançamentos não comprovam que o mês está completo.
+        </p>
+      )}
+      {balanceWarning && <strong>Saldos precisam de conferência.</strong>}{" "}
       {rows.length > 0 && (
         <span>
           {rows.length}{" "}
@@ -155,7 +170,7 @@ export function BalanceReviewNotice({
           </details>
         </>
       )}
-      {!conversion.statementBalanceCheck && guidance}
+      {balanceWarning && !conversion.statementBalanceCheck && guidance}
     </div>
   );
 }

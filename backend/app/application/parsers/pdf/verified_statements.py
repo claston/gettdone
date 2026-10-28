@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from app.application.errors import PdfFinancialValidationError
 from app.application.normalization.text import normalize_upper_text
+from app.application.parsers.pdf.document_period import optional_document_period, period_contains
 from app.application.parsers.pdf.layout_specific.shared import build_parsed_transaction
 from app.application.parsers.pdf.statement_review import financial_mismatch
 
@@ -244,7 +245,7 @@ def _bb(pages, kind):
                 financial_mismatch()
             opening = running = amount
         elif "SALDODODIA" in compact or compact == "SALDO":
-            if not start <= date <= end:
+            if not period_contains(date, start, end):
                 financial_mismatch()
             if amount != running:
                 financial_mismatch()
@@ -255,7 +256,7 @@ def _bb(pages, kind):
         else:
             if running is None or closing is not None or rows and date < rows[-1].transaction.date:
                 fail()
-            if not start <= date <= end:
+            if not period_contains(date, start, end):
                 financial_mismatch()
             running += amount
             columns = re.match(r"^(\d{5})\s+(\d+)\s+(.+)$", description)
@@ -274,9 +275,9 @@ def _xp(pages, kind):
     text = "\n".join(pages)
     period = re.search(rf"DE:\s*({DATE})\s+ATE:\s*({DATE})", normalize_upper_text(text))
     printed = re.search(rf"SALDO DISPONIVEL NO FINAL DO PERIODO FILTRADO:\s*R\$\s*({NUMBER})", normalize_upper_text(text))
-    if not period or not printed:
+    if not printed:
         fail()
-    start, end = day(period[1]), day(period[2])
+    start, end = optional_document_period(period)
     rows = []
     in_footer = False
     currency = re.compile(rf"(-?)R\$\s*({NUMBER})")
@@ -301,7 +302,7 @@ def _xp(pages, kind):
         amount = money(values[0][2]) * (-1 if values[0][1] else 1)
         balance = money(values[1][2]) * (-1 if values[1][1] else 1)
         date = day(match[1], "%d/%m/%y")
-        if not start <= date <= end:
+        if not period_contains(date, start, end):
             fail()
         rows.append(_row(page, line, date, match[3][: values[0].start()].strip(), amount, balance))
     if not rows or any(a.transaction.date < b.transaction.date for a, b in zip(rows, rows[1:])):

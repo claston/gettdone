@@ -4,6 +4,7 @@ import re
 from dataclasses import replace
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import period_contains, unique_document_period
 from app.application.parsers.pdf.followup_ocr import _headers, _source
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
@@ -49,7 +50,7 @@ def parse_uniprime(extraction):
         return None
     periods = set(re.findall(rf"EXTRATO DE\s+({DATE})\s+A\s+({DATE})", upper(text)))
     columns = _headers(extraction.pages[0], ("DATA", "HISTORICO", "VALOR", "SALDO"))
-    if not columns or len(periods) != 1:
+    if not columns:
         fail()
     reference_headers = [line for line in extraction.pages[0].lines if line.bbox
                          and re.sub(r"[^A-Z]", "", upper(line.text)) in {"NDOC", "NDOCTO", "NDOCUMENTO"}]
@@ -61,10 +62,7 @@ def parse_uniprime(extraction):
         if not columns["DATA"] < reference_x < columns["HISTORICO"]:
             fail()
         reference_left = (columns["DATA"] + reference_x) / 2
-    period = periods.pop()
-    start, end = day(period[0]), day(period[1])
-    if start > end:
-        fail()
+    start, end = unique_document_period(periods)
     opening = running = None
     rows, checks = [], 0
     ledger_finished = False
@@ -104,7 +102,7 @@ def parse_uniprime(extraction):
             bottom = anchors[index+1].bbox["top"] - .005 if index+1 < len(anchors) else top + .023
             cells = [line for line in lines if top - .005 <= line.bbox["top"] < bottom]
             baseline = [line for line in cells if abs(line.bbox["top"]-top) < .006]
-            if running is None or not start <= date <= end:
+            if running is None or not period_contains(date, start, end):
                 fail()
             amount_cell = _one(baseline, columns["VALOR"] - .015, columns["SALDO"] - .015,
                                clipped=native, by_center=native)

@@ -5,6 +5,7 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text
+from app.application.parsers.pdf.document_period import optional_document_period, period_contains
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import (
     DATE,
@@ -67,12 +68,7 @@ def parse_afternoon_statement(pages, kind):
 
 def _period(text):
     match = re.search(rf"PERIODO(?: DE)?\s*:?\s*({DATE})\s*A(?:TE)?\s*({DATE})", upper(text))
-    if match is None:
-        fail()
-    start, end = day(match[1]), day(match[2])
-    if start > end:
-        fail()
-    return start, end
+    return optional_document_period(match)
 
 
 def _one(values):
@@ -82,7 +78,7 @@ def _one(values):
 
 
 def _within(date, bounds):
-    if not bounds[0] <= date <= bounds[1]:
+    if not period_contains(date, *bounds):
         fail()
     return date
 
@@ -131,6 +127,8 @@ def _descending(pages, kind):
         fail("Este arquivo contém contas Cresol diferentes. Envie cada conta separadamente.")
     if len(groups) == 1:
         return _descending_period(pages, kind)
+    if any(None in bounds for bounds, _, _ in groups):
+        fail("Não foi possível separar com segurança os períodos dos blocos deste extrato.")
     statements = []
     for bounds, offset, block in sorted(groups, key=lambda group: group[0]):
         statement = _descending_period(block, kind)
@@ -311,9 +309,7 @@ def _btg_investment(pages, kind):
 def _alelo(pages, kind):
     text = "\n".join(pages)
     period = re.search(rf"DE:\s*({DATE})\s+ATE:\s*({DATE})", upper(text))
-    if period is None:
-        fail()
-    bounds = day(period[1]), day(period[2])
+    bounds = optional_document_period(period)
     rows = []
     amount_pattern = re.compile(r"(-?)R\$\s*((?:\d{1,3}(?:,\d{3})+|\d{1,3}(?:\.\d{3})+|\d+),\d{2})(?![\w.,])")
     pending, refs, date = [], [], None

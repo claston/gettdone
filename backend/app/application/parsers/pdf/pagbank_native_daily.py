@@ -4,6 +4,7 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import period_contains, unique_document_period
 from app.application.parsers.pdf.followup_ocr import _headers, _source
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
@@ -14,11 +15,8 @@ _CASH = re.compile(rf"([+-]?)\s*R\$\s*({NUMBER})")
 def parse_pagbank_native_daily(source):
     text = upper("\n".join(line.text for page in source.pages for line in page.lines))
     periods = set(re.findall(rf"PERIODO:\s*({DATE})\s+A\s+({DATE})", text))
-    if len(periods) != 1:
-        fail()
-    first, last = next(iter(periods))
-    start, end = day(first), day(last)
-    if start > end:
+    start, end = unique_document_period(periods)
+    if start is not None and start > end:
         fail()
     rows, opening, running, current, closed, total, checks = [], None, None, None, True, Decimal(0), 0
     for page in source.pages:
@@ -39,7 +37,7 @@ def parse_pagbank_native_daily(source):
             if len(amounts) != 1 or not history or not (match := _CASH.fullmatch(amounts[0].text)):
                 fail("Um movimento ou saldo PagBank não tem valor e histórico inequívocos.")
             date = day(anchor.text)
-            if not start <= date <= end:
+            if not period_contains(date, start, end):
                 financial_mismatch()
             if current is None or date != current:
                 if not closed or (current is not None and date < current):

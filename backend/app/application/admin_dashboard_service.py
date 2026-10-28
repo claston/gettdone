@@ -1372,6 +1372,7 @@ def _attention_item(event: dict[str, object], *, is_success: bool) -> dict[str, 
 
     warning_labels = {
         "partial_statement": "Documento parcial ou incompleto",
+        "document_period_unavailable": "Período do documento não identificado; movimentos convertidos para revisão",
         "financial_validation_failed": "Validação financeira não conferiu",
         "printed_summary_balance_mismatch": "Saldo do resumo impresso diverge dos lançamentos",
         "balance_consistency_failed": "Saldo entre lançamentos não confere",

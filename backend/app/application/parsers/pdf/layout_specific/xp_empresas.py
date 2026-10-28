@@ -8,6 +8,7 @@ from typing import NoReturn
 
 from app.application.errors import PdfFinancialValidationError
 from app.application.normalization.text import normalize_upper_text
+from app.application.parsers.pdf.document_period import period_contains, unique_document_period
 from app.application.parsers.pdf.layout_specific.contract import LayoutSpecificParseContext, LayoutSpecificParseResult
 from app.application.parsers.pdf.layout_specific.shared import build_parsed_transaction
 from app.application.parsers.pdf.models import _ParsedTransaction, _PdfLine
@@ -61,7 +62,7 @@ class _DayGroup:
     balance_line: _PdfLine | None = None
 
 
-def _read_summary(lines: list[_PdfLine]) -> tuple[date, date, Decimal, Decimal, Decimal, Decimal]:
+def _read_summary(lines: list[_PdfLine]) -> tuple[date | None, date | None, Decimal, Decimal, Decimal, Decimal]:
     titles = [i for i, line in enumerate(lines) if normalize_upper_text(line.text) == "EXTRATO DA CONTA DIGITAL PJ"]
     if len(titles) != 1:
         _fail()
@@ -73,11 +74,9 @@ def _read_summary(lines: list[_PdfLine]) -> tuple[date, date, Decimal, Decimal, 
             _fail()
         amounts.append(_money(matches[0]))
     periods = _PERIOD.findall(" ".join(normalize_upper_text(line.text) for line in lines[titles[0] + 1:]))
-    if len(periods) != 1:
-        _fail()
-    start, end = map(_date, periods[0])
+    start, end = unique_document_period(periods, parse_date=_date)
     opening, inflows, outflows, closing = amounts
-    if start > end or inflows < 0 or outflows > 0:
+    if inflows < 0 or outflows > 0:
         _fail()
     if opening + inflows + outflows != closing:
         financial_mismatch(_MESSAGE)
@@ -138,7 +137,7 @@ class XpEmpresasLayoutParser:
         balance = opening
         rows: list[_ParsedTransaction] = []
         for group in reversed(groups):
-            if not start <= group.day <= end:
+            if not period_contains(group.day, start, end):
                 _fail()
             balance += sum((amount for _, _, amount in group.movements), Decimal(0))
             if balance != group.balance:

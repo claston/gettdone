@@ -3,6 +3,7 @@ import re
 from dataclasses import replace
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import require_period_context, unique_document_period
 from app.application.parsers.pdf.native_table_source import read_native_table_source
 from app.application.parsers.pdf.verified_statements import DATE, day, fail
 
@@ -12,10 +13,10 @@ def _kind(text):
     if all(marker in compact for marker in ("EXTRATODECONTACORRENTE", "SALDOCONTA/RENDE+",
                                             "RENDIMENTOPREVISTORENDE+", "ENTRADASESAIDAS")):
         return "banestes_rende"
-    if all(marker in compact for marker in ("APLICATIVOSANTANDEREMPRESAS", "PERIODOS:",
+    if all(marker in compact for marker in ("APLICATIVOSANTANDEREMPRESAS",
             "VOCEALCANCOUONUMEROMAXIMODECONSULTAS", "PARAVERTODOSOSLANCAMENTOS")):
         return "santander_limited"
-    if all(marker in compact for marker in ("290PAGSEGUROINTERNETS/A", "EXTRATODACONTA", "PERIODO:", "DESCRICAO", "SALDODODIA")):
+    if all(marker in compact for marker in ("290PAGSEGUROINTERNETS/A", "EXTRATODACONTA", "DESCRICAO", "SALDODODIA")):
         return "pagbank_daily"
     if all(marker in compact for marker in ("SICOOB", "SISBR", "COOP.:", "HISTORICODEMOVIMENTACAO", "DATAHISTORICOVALOR")):
         return "sicoob_split_cd"
@@ -42,7 +43,7 @@ def _kind(text):
     if sweep == INFINITEPAY and "HORA" in compact:
         return "infinitepay"
     if all(marker in compact for marker in ("EXTRATODECONTA", "DETALHEDOSMOVIMENTOS", "SALDOINICIAL",
-                                            "SALDOFINAL", "ENTRADAS", "SAIDAS", "TITULAR:", "PERIODO:")):
+                                            "SALDOFINAL", "ENTRADAS", "SAIDAS", "TITULAR:")):
         return "account_detail"
     if all(marker in compact for marker in ("REVOLUT", "EXTRATOEMBRL", "RESUMODOSALDO", "VALORESDESCONTADOS", "VALORESRECEBIDOS")):
         return "revolut"
@@ -144,10 +145,7 @@ def _uniprime(source):
 
     text = upper("\n".join(line.text for page in source.pages for line in page.lines))
     periods = set(re.findall(rf"EXTRATO DE\s+({DATE})\s+A\s+({DATE})", text))
-    if len(periods) != 1:
-        fail()
-    first, last = next(iter(periods))
-    start, end = day(first), day(last)
+    start, end = unique_document_period(periods)
     recovered, pages = set(), []
     for page in source.pages:
         words = {word.id: word for word in page.words}
@@ -181,6 +179,7 @@ def _uniprime(source):
             clipped = re.fullmatch(r"(\d{2}/\d{2})/(\d{1,3})(?:\.{3}|…)", line.text)
             if clipped:
                 eligible = []
+                require_period_context(start, end)
                 for year in range(int(start[:4]), int(end[:4]) + 1):
                     if not str(year).startswith(clipped[2]):
                         continue

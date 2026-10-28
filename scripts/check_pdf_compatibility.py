@@ -67,6 +67,7 @@ def make_corpus():
     from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
     from tests.fixtures.recovery_acceptance import bb_outside_header, bradesco_monthly_native, sicredi_combined, xp_investment_pages
     from tests.test_postdeploy_recovery_cases import mercado_related_events
+    from tests.test_oct27_bradesco_recovery import bradesco_continuation
     from tests.test_pdf_parser_bradesco_opening_sign import native_pdf, statement_pages
     from tests.test_recovery_case_fixes import mercado_pago_page
     from tests.test_statement_review_policy import SANTANDER
@@ -79,6 +80,7 @@ def make_corpus():
 
     mp = [["2026-07-02", 50], ["2026-07-03", -20], ["2026-07-04", 20]]
     for key, text, review in [("mercado_refund", mercado_pago_page(), False),
+                              ("mercado_missing_period", mercado_pago_page().replace("Periodo: De 01-07-2026 al 31-07-2026\n", ""), True),
                               ("mercado_inconsistent_totals", mercado_pago_page().replace("Entradas: R$ 70,00", "Entradas: R$ 71,00"), True),
                               ("mercado_partial", mercado_pago_page().replace("1/1", "1/3"), True)]:
         add(key, generate_native_text_pdf((text.splitlines(),)), mp, bank_code="323", review=review)
@@ -91,6 +93,8 @@ def make_corpus():
         [["2026-09-01", 50], ["2026-09-02", -20]], bank_code="033", review=True)
     add("bradesco_native_wrapped", bradesco_monthly_native(),
         [["2026-12-01", 500], ["2026-12-01", -150], ["2026-12-02", -150]], bank_code="237")
+    add("bradesco_missing_period", bradesco_continuation(undated_opening=True, mutation="missing_period"),
+        [["2026-12-01", 500], ["2026-12-01", -150], ["2026-12-02", -150]], bank_code="237", review=True)
     add("bradesco_separate_section_opening", native_pdf(statement_pages()),
         [["2026-09-30", 100], ["2026-09-30", -20], ["2026-10-01", -12.5], ["2026-10-01", 20]], bank_code="237")
     add("bb_header_period", bb_outside_header(), [["2026-09-28", -20], ["2026-10-01", -10]], bank_code="001", review=True)

@@ -4,6 +4,10 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import (
+    optional_document_period,
+    period_contains,
+)
 from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
@@ -220,9 +224,7 @@ def parse_banrisul_columns(extraction):
     if opening is None:
         fail()
     period = re.search(rf"PERIODO:\s*({DATE})\s+\S+\s+({DATE})", " ".join(line.text for line in first.lines), re.I)
-    if period is None:
-        fail()
-    start, end = day(period[1]), day(period[2])
+    start, end = optional_document_period(period)
     seed = running = _value(_one(_near(first, opening), columns["SALDO"] - .04, columns["SIST."]).text)
     rows, current, checks, candidates = [], None, 0, 0
     for page in extraction.pages:
@@ -253,7 +255,7 @@ def parse_banrisul_columns(extraction):
                 fail("Uma linha Banrisul está sem operação ou descrição legível.")
             if match[1]:
                 date = day(match[1])
-                if not start <= date <= end or current and date < current:
+                if not period_contains(date, start, end) or current and date < current:
                     fail()
                 current = date
             if current is None:

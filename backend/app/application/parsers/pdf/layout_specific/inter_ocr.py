@@ -7,6 +7,7 @@ from app.application.document_extraction_models import ExtractedLine
 from app.application.errors import InvalidFileContentError, OcrFinancialAmbiguityError, PdfFinancialValidationError
 from app.application.normalization.date import FULL_MONTH_PATTERN, parse_statement_date
 from app.application.normalization.text import normalize_upper_text
+from app.application.parsers.pdf.document_period import period_contains, unique_document_period
 from app.application.parsers.pdf.layout_specific.shared import build_parsed_transaction
 from app.application.source_regions import evidence_regions
 
@@ -49,9 +50,7 @@ def parse_inter_ocr(extraction):
     amount_left, balance_left = amount_x - .16, (amount_x + balance_x) / 2
     periods = {(_date(match[1]), _date(match[2])) for line in first.lines
                if (match := _PERIOD.fullmatch(normalize_upper_text(line.text)))}
-    if len(periods) != 1:
-        raise PdfFinancialValidationError(_MESSAGE)
-    start, end = next(iter(periods))
+    start, end = unique_document_period(periods, parse_date=lambda value: value)
     rows = []
     current_date = None
     expected_daily = None
@@ -94,7 +93,7 @@ def parse_inter_ocr(extraction):
             if kind == "date":
                 check_daily()
                 new_date = _date(match[1])
-                if not start <= new_date <= end or current_date is not None and new_date <= current_date:
+                if not period_contains(new_date, start, end) or current_date is not None and new_date <= current_date:
                     raise PdfFinancialValidationError(_MESSAGE)
                 current_date, expected_daily, daily_start = new_date, _money(match[2]), len(rows)
                 continue

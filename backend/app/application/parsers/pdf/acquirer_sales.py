@@ -4,6 +4,7 @@ from collections import defaultdict
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import optional_document_period, period_contains
 from app.application.parsers.pdf.financial_reports import _check, _event
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, day, fail, money
 
@@ -11,9 +12,7 @@ from app.application.parsers.pdf.verified_statements import DATE, NUMBER, day, f
 def parse_sales_pages(pages):
     text = upper("\n".join(pages))
     period = re.search(rf"PERIODO\s+({DATE})\s+A\s+({DATE})", text)
-    if not period:
-        fail()
-    start, end = day(period[1]), day(period[2])
+    start, end = optional_document_period(period)
     events, checks = [], []
     totals, printed = defaultdict(lambda: Decimal(0)), {}
     current = None
@@ -36,7 +35,7 @@ def parse_sales_pages(pages):
             if not stamp_match or upper(acquirer) != "PAGBANK" or not re.fullmatch(r"[A-Za-z0-9-]+", code):
                 fail()
             date = day(stamp_match[1])
-            if not start <= date <= end:
+            if not period_contains(date, start, end):
                 fail()
             amounts = []
             for value in (gross, fee, net):

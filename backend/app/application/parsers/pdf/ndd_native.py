@@ -4,6 +4,7 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import optional_document_period, period_contains
 from app.application.parsers.pdf.followup_ocr import _source
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
@@ -30,10 +31,8 @@ def _right_value(page, anchor, *, integer=False, dash_zero=False):
 def parse_ndd_native(source):
     text = upper("\n".join(line.text for page in source.pages for line in page.lines))
     bounds = re.search(rf"\bDE:\s*({DATE}).*?ATE:\s*({DATE})", text, re.S)
-    if not bounds:
-        fail("O período do extrato NDD não foi identificado.")
-    start, end = day(bounds[1]), day(bounds[2])
-    if start > end:
+    start, end = optional_document_period(bounds)
+    if start is not None and start > end:
         fail()
     totals = {key: set() for key in ("opening", "closing", "credit", "debit", "count")}
     labels = {"TOTALGERAL:": "closing", "TOTALCREDITO:": "credit", "TOTALDEBITO:": "debit",
@@ -80,7 +79,7 @@ def parse_ndd_native(source):
                 fail("Um movimento NDD está sem valor, tipo ou data legível.")
             date, time = anchor.text.split()
             date = day(date)
-            if not start <= date <= end:
+            if not period_contains(date, start, end):
                 fail()
             history = " ".join(line.text for line in cells if history_x - .01 <= line.bbox["left"] < value_x - .05)
             if not history:
