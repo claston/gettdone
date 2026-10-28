@@ -28,13 +28,13 @@ def segment_pdf_pages(page_texts: list[str] | tuple[str, ...]) -> SegmentedPdf:
     classifications = [classify_document_type("page.pdf", b"", extracted_text=text) for text in source]
     kinds = [item.document_type for item in classifications]
     identities = {
-        identity for text, kind in zip(source, kinds, strict=True)
+        identity.rsplit("|", 1)[0] for text, kind in zip(source, kinds, strict=True)
         if kind == BANK_STATEMENT and (identity := _statement_identity(text))
     }
     if len(identities) > 1:
         raise UnsupportedDocumentContentError(
             document_type="multiple_bank_statements",
-            message=("Este PDF contém extratos de contas ou períodos diferentes. "
+            message=("Este PDF contém extratos de contas diferentes. "
                      "Envie cada extrato separadamente para evitar misturar lançamentos."),
         )
     has_statement = BANK_STATEMENT in kinds

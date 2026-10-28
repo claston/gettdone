@@ -32,6 +32,15 @@ This document defines the default execution rules for the `gettdone` repository.
    - before finalizing, run a mojibake scan for common broken sequences (for example: `Ã`, `Â`, `â€`, `�`)
    - if mojibake is found, fix the source text in-file (never rely on browser/runtime workarounds)
 
+## Financial Extraction Product Vision
+
+1. The product extracts financial transactions from documents, primarily bank statements but not exclusively. Supported financial reports must preserve their original financial meaning.
+2. A missing header, multiple months/periods, repeated monthly opening balances, or restarted page counters must not, by themselves, reject readable transactions. Apply this policy across readers and representations, including native PDFs and OCR.
+3. Identify independent statement blocks, extract all their movements, attempt reconciliation within each block, and combine the results while preserving dates, values, signs, legitimate repeated transactions, and references to the original pages.
+4. Attempt continuity validation between blocks of the same account. Gaps, overlaps, unconfirmed coverage, or balances that do not reconcile require explicit review; do not invent movements, adjust amounts, remove transactions, or report a falsely validated global balance.
+5. Distinguish optional coverage metadata from context needed to interpret a transaction. Never invent an unreadable year/month, amount, sign, or account association. Surface genuine extraction ambiguity; never silently omit an unreadable later block or represent a partial extraction as complete.
+6. Prefer shared extraction policies over bank-specific exceptions. Include regression cases for multiple periods, repeated opening balances and pagination, continuity/review, and source provenance. Splitting an otherwise readable file manually by month is a temporary workaround, not the intended product behavior.
+
 ## Production Compatibility Rules
 
 1. Assume the application is already deployed in production.

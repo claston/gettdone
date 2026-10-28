@@ -55,6 +55,26 @@ it("avisa sobre período desconhecido sem afirmar divergência de saldo", () => 
   ).not.toBeInTheDocument();
 });
 
+it("explica blocos independentes sem afirmar divergência dentro de um bloco", () => {
+  render(
+    <BalanceReviewNotice
+      conversion={
+        {
+          transactions: [],
+          reviewWarnings: ["statement_blocks_not_contiguous"],
+        } as unknown as Conversion
+      }
+    />,
+  );
+  expect(
+    screen.getByText(/Blocos do extrato precisam de conferência/),
+  ).toBeVisible();
+  expect(screen.getByText(/não há saldo global confirmado/)).toBeVisible();
+  expect(
+    screen.queryByText(/Saldos precisam de conferência/),
+  ).not.toBeInTheDocument();
+});
+
 it("mostra no topo o motivo e a conta que não fecha", () => {
   render(
     <BalanceReviewNotice

@@ -42,7 +42,7 @@ def test_http_statement_owner_identity_conversion_report_and_negative_paths(kind
         response = client.post("/convert", data=owner, files={"file": (filename, raw, mime)})
         if kind == "multiple_owners":
             assert response.status_code == 400, response.text
-            assert "contas ou períodos" in response.text
+            assert "contas diferentes" in response.text
             return
         assert response.status_code == 200, response.text
         analysis = response.json()["analysis"]

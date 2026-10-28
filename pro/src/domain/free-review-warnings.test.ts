@@ -89,4 +89,16 @@ describe("free converter review findings", () => {
       ),
     ).toEqual(["finding:document_period_unavailable"]);
   });
+
+  it("explains independent statement blocks without inventing a global balance", () => {
+    expect(
+      Array.from(
+        collect(
+          statement({
+            canonical_warning_types_list: ["statement_blocks_not_contiguous"],
+          }),
+        ),
+      ),
+    ).toEqual(["finding:statement_blocks_not_contiguous"]);
+  });
 });
