@@ -27,6 +27,8 @@
   const dashboardReturningHeavyUsersNode = document.getElementById("dashboard-returning-heavy-users");
   const dashboardOcrHeavyUsersNode = document.getElementById("dashboard-ocr-heavy-users");
   const dashboardDocumentTypesNode = document.getElementById("dashboard-document-types");
+  const dashboardStatementPeriodsNode = document.getElementById("dashboard-statement-periods");
+  const dashboardPdfDocumentsNode = document.getElementById("dashboard-pdf-documents");
   const dashboardLayoutsNode = document.getElementById("dashboard-layouts");
   const dashboardRecentAttentionNode = document.getElementById("dashboard-recent-attention");
   const dashboardAttentionExportBtn = document.getElementById("dashboard-attention-export-btn");
@@ -171,7 +173,7 @@
     if (!raw) return "-";
     const parsed = new Date(raw);
     if (Number.isNaN(parsed.getTime())) return raw;
-    return parsed.toLocaleString("pt-BR");
+    return parsed.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
   }
 
   function formatPriceBRL(priceCents) {
@@ -564,6 +566,138 @@
     return labels[String(decision || "")] || String(decision || "-");
   }
 
+  function formatStatementPeriod(period) {
+    if (!period || !period.start_date || !period.end_date) return "Não identificado";
+    const dateLabel = function (value) { return String(value).split("-").reverse().join("/"); };
+    const basis = period.basis === "movement_dates" ? "datas dos lançamentos" : "período do documento";
+    return `${dateLabel(period.start_date)} a ${dateLabel(period.end_date)} (${basis})`;
+  }
+
+  function renderDashboardPdfDocuments(summary) {
+    if (!dashboardPdfDocumentsNode) return;
+    const container = dashboardPdfDocumentsNode;
+    container.replaceChildren();
+    if (!Number(summary.attempts || 0)) {
+      container.appendChild(createTextElement("p", "empty dashboard-empty", "Nenhuma tentativa de PDF concluída no período."));
+      return;
+    }
+    const cards = createTextElement("div", "dashboard-summary", "");
+    appendMetricCard(cards, "PDFs únicos", formatInteger(summary.unique_documents), `${formatInteger(summary.attempts)} tentativas de PDF`, "");
+    appendMetricCard(cards, "PDFs únicos com falha", formatInteger(summary.unique_failed_documents), `${formatInteger(summary.failure_attempts)} tentativas com falha ou recusa`, "failure");
+    appendMetricCard(cards, "PDFs únicos em revisão", formatInteger(summary.unique_review_documents), `${formatInteger(summary.review_attempts)} concluídas com atenção`, "review");
+    appendMetricCard(cards, "Tentativas sem hash", formatInteger(summary.unidentified_attempts), "fora da contagem de PDFs únicos", "");
+    container.appendChild(cards);
+    container.appendChild(createTextElement("p", "muted compact",
+      "Um PDF pode ter falhado e ido para revisão em tentativas diferentes. Os grupos podem se sobrepor. Datas de envio no horário de São Paulo.",
+    ));
+    function table(labels, rows) {
+      const wrap = createTextElement("div", "dashboard-table-wrap", "");
+      const element = document.createElement("table");
+      element.className = "dashboard-table";
+      const head = document.createElement("thead");
+      const header = document.createElement("tr");
+      labels.forEach(function (label) { appendTableCell(header, label, "th"); });
+      head.appendChild(header);
+      element.appendChild(head);
+      const body = document.createElement("tbody");
+      rows.forEach(function (values) {
+        const row = document.createElement("tr");
+        values.forEach(function (value) { appendTableCell(row, String(value)); });
+        body.appendChild(row);
+      });
+      element.appendChild(body);
+      wrap.appendChild(element);
+      return wrap;
+    }
+    container.appendChild(createTextElement("h4", "", "Mês do documento"));
+    container.appendChild(createTextElement("p", "muted compact",
+      "O mês vem do período identificado no PDF ou, como estimativa, das datas dos lançamentos. Intervalos com vários meses ficam juntos, sem multiplicar as conversões. Dados ausentes ficam como Não identificado.",
+    ));
+    const countLabels = ["Tentativas", "Concluídas", "PDFs únicos", "Falhas", "PDFs únicos com falha", "Revisões", "PDFs únicos em revisão", "Sem hash"];
+    const counts = function (item) { return [item.attempts, item.success_attempts, item.unique_documents, item.failure_attempts,
+      item.unique_failed_documents, item.review_attempts, item.unique_review_documents, item.unidentified_attempts].map(formatInteger); };
+    container.appendChild(table(["Mês/intervalo"].concat(countLabels), (summary.by_period || []).map(function (item) {
+      return [item.label].concat(counts(item));
+    })));
+    const daily = document.createElement("details");
+    daily.appendChild(createTextElement("summary", "", "Ver PDFs únicos por dia do envio"));
+    daily.appendChild(table(["Dia do envio"].concat(countLabels), (summary.by_day || []).map(function (item) {
+      return [String(item.date).split("-").reverse().join("/")].concat(counts(item));
+    })));
+    container.appendChild(daily);
+    container.appendChild(createTextElement("h4", "", "Quais PDFs falharam ou foram para revisão"));
+    const documents = Array.isArray(summary.attention) ? summary.attention : [];
+    if (!documents.length) {
+      container.appendChild(createTextElement("p", "muted compact", "Nenhum PDF com hash disponível teve falha ou revisão neste recorte. Tentativas sem hash continuam na lista Precisa de atenção."));
+      return;
+    }
+    container.appendChild(createTextElement("p", "muted compact",
+      `Exibindo ${formatInteger(documents.length)} de ${formatInteger(summary.attention_total)} PDFs únicos com atenção, do mais recente para o mais antigo. O CSV abaixo lista as tentativas dos últimos 7 dias.`,
+    ));
+    container.appendChild(table(["Referência do PDF", "Modelo", "Período do documento", "Tentativas", "Falhas", "Primeira falha", "Última falha", "Revisões", "Primeira revisão", "Última revisão", "Último erro"], documents.map(function (item) {
+      return [item.document_reference, item.model,
+        item.period_conflict ? "Períodos conflitantes entre tentativas" : formatStatementPeriod(item.statement_period),
+        formatInteger(item.attempts), formatInteger(item.failure_attempts), formatDateTime(item.first_failure_at),
+        formatDateTime(item.last_failure_at), formatInteger(item.review_attempts), formatDateTime(item.first_review_at),
+        formatDateTime(item.last_review_at), item.last_error_code || "—"];
+    })));
+  }
+
+  function renderDashboardStatementPeriods(summary) {
+    if (!dashboardStatementPeriodsNode) return;
+    dashboardStatementPeriodsNode.replaceChildren();
+    const total = Number(summary.total_count || 0);
+    if (!total) {
+      dashboardStatementPeriodsNode.appendChild(createTextElement(
+        "p", "empty dashboard-empty", "Nenhum documento classificado como extrato bancário no período.",
+      ));
+      return;
+    }
+    dashboardStatementPeriodsNode.appendChild(createTextElement("p", "muted compact",
+      `${formatInteger(summary.identified_count)} de ${formatInteger(total)} tentativas com período disponível (${formatPercent(summary.coverage_rate)}). ` +
+      `${formatInteger(summary.document_metadata_count)} com período do documento; ${formatInteger(summary.movement_dates_count)} pelas datas dos lançamentos.`,
+    ));
+    dashboardStatementPeriodsNode.appendChild(createTextElement("p", "muted compact",
+      "As datas dos lançamentos são uma estimativa e podem não cobrir o extrato completo. Informações indisponíveis ficam como Não identificado.",
+    ));
+    if (Number(summary.excluded_count || 0)) {
+      dashboardStatementPeriodsNode.appendChild(createTextElement("p", "muted compact",
+        `${formatInteger(summary.excluded_count)} conversões de outros tipos ou sem classificação de extrato ficam fora desta tabela.`,
+      ));
+    }
+    function periodTable(items, exact) {
+      const table = document.createElement("table");
+      table.className = "dashboard-table";
+      const head = document.createElement("thead");
+      const header = document.createElement("tr");
+      const labels = exact
+        ? ["Mês/intervalo encontrado", "Tentativas", "% do total", "Período do documento", "Datas dos lançamentos"]
+        : ["Em relação ao mês do envio", "Tentativas", "% do total"];
+      labels.forEach(function (label) { appendTableCell(header, label, "th"); });
+      head.appendChild(header);
+      table.appendChild(head);
+      const body = document.createElement("tbody");
+      (Array.isArray(items) ? items : []).forEach(function (item) {
+        const row = document.createElement("tr");
+        appendTableCell(row, String(item.label || "Não identificado"));
+        appendTableCell(row, formatInteger(item.attempts));
+        appendTableCell(row, formatPercent(item.percentage));
+        if (exact) {
+          appendTableCell(row, formatInteger(item.document_metadata_count));
+          appendTableCell(row, formatInteger(item.movement_dates_count));
+        }
+        body.appendChild(row);
+      });
+      table.appendChild(body);
+      return table;
+    }
+    dashboardStatementPeriodsNode.appendChild(periodTable(summary.age_buckets, false));
+    const details = document.createElement("details");
+    details.appendChild(createTextElement("summary", "", "Ver mês/ano e intervalos encontrados"));
+    details.appendChild(periodTable(summary.by_period, true));
+    dashboardStatementPeriodsNode.appendChild(details);
+  }
+
   function renderDashboardDocumentTypes(summary) {
     if (!dashboardDocumentTypesNode) return;
     dashboardDocumentTypesNode.replaceChildren();
@@ -871,7 +1005,7 @@
     table.className = "dashboard-table";
     const head = document.createElement("thead");
     const headRow = document.createElement("tr");
-    ["Data", "Pessoa", "Banco/modelo", "Documento/OCR", "Tipo de documento", "Resultado", "Motivo", "Coleta canônica", "Identificador"].forEach(function (label) {
+    ["Data", "Pessoa", "Banco/modelo", "Documento/OCR", "Tipo de documento", "Resultado", "Motivo", "Coleta canônica", "Identificador", "PDF único", "Período do documento"].forEach(function (label) {
       appendTableCell(headRow, label, "th");
     });
     head.appendChild(headRow);
@@ -893,6 +1027,8 @@
         canonicalCaptureDescription(item.canonical_capture_status, item.canonical_capture_reason),
       );
       appendTableCell(row, item.processing_id || "-");
+      appendTableCell(row, item.file_sha256 ? `pdf_${String(item.file_sha256).slice(0, 12)}` : "Sem hash no histórico");
+      appendTableCell(row, formatStatementPeriod(item.statement_period));
       body.appendChild(row);
     });
     table.appendChild(body);
@@ -920,6 +1056,8 @@
       "Nenhum uso de OCR neste período.",
     );
     renderDashboardDocumentTypes(payload.document_types || {});
+    renderDashboardStatementPeriods(payload.statement_periods || {});
+    renderDashboardPdfDocuments(payload.pdf_documents || {});
     renderDashboardLayouts(payload.layouts || []);
     renderDashboardAttention(payload.recent_attention || []);
   }
@@ -1877,6 +2015,8 @@
       if (dashboardReturningHeavyUsersNode) dashboardReturningHeavyUsersNode.replaceChildren();
       if (dashboardOcrHeavyUsersNode) dashboardOcrHeavyUsersNode.replaceChildren();
       if (dashboardDocumentTypesNode) dashboardDocumentTypesNode.replaceChildren();
+      if (dashboardStatementPeriodsNode) dashboardStatementPeriodsNode.replaceChildren();
+      if (dashboardPdfDocumentsNode) dashboardPdfDocumentsNode.replaceChildren();
       if (dashboardCheckoutFunnelNode) dashboardCheckoutFunnelNode.replaceChildren();
       if (dashboardCommercialInterestNode) dashboardCommercialInterestNode.replaceChildren();
       if (activeUsersSummaryNode) activeUsersSummaryNode.replaceChildren();

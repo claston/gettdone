@@ -232,13 +232,18 @@ jobs:
         working-directory: .
         run: python scripts/smoke_playwright_navigation.py
 
+      - name: Admin PDF metrics smoke (desktop and mobile)
+        working-directory: .
+        run: python scripts/smoke_admin_pdf_metrics.py
+
       - name: Lint (Ruff)
         run: python -m ruff check .
 
-      - name: Validate PRO organization PostgreSQL upgrade and rollback
+      - name: Validate organization and admin metrics PostgreSQL upgrades and rollback
         env:
           PRO_ORGANIZATION_TEST_DATABASE_URL: postgresql://ofx24_test:local-ci-test-only@127.0.0.1:5432/ofx24_test
-        run: python -m pytest tests/test_pro_organization_postgres.py -q
+          ADMIN_METRICS_TEST_DATABASE_URL: postgresql://ofx24_test:local-ci-test-only@127.0.0.1:5432/ofx24_test
+        run: python -m pytest tests/test_pro_organization_postgres.py tests/test_statement_period_migration.py -q
 
       - name: Run tests
         run: python -m pytest -m "not pdf_golden" -q -n 4 --dist=worksteal

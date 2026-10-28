@@ -69,6 +69,10 @@ ATTENTION_EXPORT_COLUMNS = (
     ("confianca_parser", "parser_confidence_band"),
     ("cobertura_parser", "parser_coverage_rate"),
     ("tipos_alerta", "warning_types"),
+    ("sha256_arquivo", "file_sha256"),
+    ("inicio_periodo_documento", "statement_period_start"),
+    ("fim_periodo_documento", "statement_period_end"),
+    ("origem_periodo_documento", "statement_period_basis"),
 )
 
 

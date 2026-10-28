@@ -488,6 +488,9 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
         conn.execute("ALTER TABLE user_conversions ADD COLUMN ocr_attempted INTEGER NOT NULL DEFAULT 0")
     if "ocr_engine" not in user_conversions_columns:
         conn.execute("ALTER TABLE user_conversions ADD COLUMN ocr_engine TEXT")
+    for column in ("statement_period_start", "statement_period_end", "statement_period_basis"):
+        if column not in user_conversions_columns:
+            conn.execute(f"ALTER TABLE user_conversions ADD COLUMN {column} TEXT")
     if "file_sha256" not in user_conversions_columns:
         conn.execute("ALTER TABLE user_conversions ADD COLUMN file_sha256 TEXT")
     if "canonical_warning_transactions_count" not in user_conversions_columns:
@@ -554,6 +557,9 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
         conn.execute("ALTER TABLE anonymous_conversion_events ADD COLUMN ocr_attempted INTEGER NOT NULL DEFAULT 0")
     if "ocr_engine" not in anonymous_conversion_event_columns:
         conn.execute("ALTER TABLE anonymous_conversion_events ADD COLUMN ocr_engine TEXT")
+    for column in ("statement_period_start", "statement_period_end", "statement_period_basis"):
+        if column not in anonymous_conversion_event_columns:
+            conn.execute(f"ALTER TABLE anonymous_conversion_events ADD COLUMN {column} TEXT")
     if "file_sha256" not in anonymous_conversion_event_columns:
         conn.execute("ALTER TABLE anonymous_conversion_events ADD COLUMN file_sha256 TEXT")
     for column_name, column_type in (

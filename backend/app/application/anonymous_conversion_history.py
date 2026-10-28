@@ -5,6 +5,7 @@ from typing import Callable
 from app.application.conversion_quality_history import prepare_quality_record, replace_quality_issues
 from app.application.document_classification_history import prepare_document_classification_record
 from app.application.pdf_representation_history import prepare_pdf_representation_record
+from app.application.statement_period_history import statement_period_values
 
 
 def record_anonymous_conversion_event(
@@ -39,6 +40,7 @@ def record_anonymous_conversion_event(
     ocr_attempted: bool = False,
     ocr_engine: str | None = None,
     file_sha256: str | None = None,
+    statement_period: dict[str, str] | None = None,
     parser_confidence_band: str | None = None,
     parser_coverage_rate: float | None = None,
     warning_types: list[str] | None = None,
@@ -129,6 +131,9 @@ def record_anonymous_conversion_event(
           ocr_attempted,
           ocr_engine,
           file_sha256,
+          statement_period_start,
+          statement_period_end,
+          statement_period_basis,
           quality_status,
           quality_score,
           quality_rule_version,
@@ -153,7 +158,8 @@ def record_anonymous_conversion_event(
         VALUES (
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?
+          ?, ?, ?, ?, ?,
+          ?, ?, ?
         )
         ON CONFLICT(id)
         DO UPDATE SET
@@ -183,7 +189,10 @@ def record_anonymous_conversion_event(
           extracted_char_count=excluded.extracted_char_count,
           ocr_attempted=excluded.ocr_attempted,
           ocr_engine=excluded.ocr_engine,
-          file_sha256=excluded.file_sha256,
+          file_sha256=COALESCE(excluded.file_sha256, anonymous_conversion_events.file_sha256),
+          statement_period_start=COALESCE(excluded.statement_period_start, anonymous_conversion_events.statement_period_start),
+          statement_period_end=COALESCE(excluded.statement_period_end, anonymous_conversion_events.statement_period_end),
+          statement_period_basis=COALESCE(excluded.statement_period_basis, anonymous_conversion_events.statement_period_basis),
           quality_status=excluded.quality_status,
           quality_score=excluded.quality_score,
           quality_rule_version=excluded.quality_rule_version,
@@ -234,6 +243,7 @@ def record_anonymous_conversion_event(
             bool(ocr_attempted),
             (ocr_engine or "").strip() or None,
             (file_sha256 or "").strip() or None,
+            *statement_period_values(statement_period),
             assessment.status,
             assessment.score,
             assessment.rule_version,
