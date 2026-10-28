@@ -7,6 +7,8 @@ from app.application.normalization.text import normalize_upper_text as upper
 
 def validate_statement_completeness(pages) -> bool:
     """Return possible incompleteness; omitted pages may contain only annexes."""
+    if not pages:
+        return False
     from app.application.parsers.pdf.statement_blocks import statement_blocks
 
     blocks = statement_blocks(pages)
@@ -18,7 +20,11 @@ def validate_statement_completeness(pages) -> bool:
             and re.search(r"VOCE ALCANCOU O NUMERO MAXIMO DE CONSULTAS\b", joined)
             and "PARA VER TODOS OS LANCAMENTOS" in joined):
         return True
-    bare_counter_layout = any(bank in joined for bank in ("MERCADO PAGO", "BTG PACTUAL"))
+    # Issuer evidence belongs to the header/footer, not transaction payees.
+    issuer_lines = "\n".join(upper(line) for page in pages for line in page.splitlines())
+    bare_counter_layout = bool(re.search(r"(?:WWW\.)?MERCADOPAGO\.COM\b", joined)
+                               or re.search(r"(?m)^MERCADO PAGO INSTITUICAO DE PAGAMENTO\b", issuer_lines)
+                               or re.search(r"(?m)^BTG PACTUAL\b", "\n".join(upper(line) for line in pages[0].splitlines()[:12])))
     for physical, page in enumerate(pages, 1):
         text = "\n".join(upper(line) for line in page.splitlines())
         continuation = re.findall(r"(?m)^\s*CONTINUA NA PAGINA\s+(\d+)\s*$", text)
@@ -29,12 +35,15 @@ def validate_statement_completeness(pages) -> bool:
         if not matches:
             matches = re.findall(r"EXTRATO MENSAL[^\n]*?\b(\d{3})\s*[/|]\s*(\d{3})(?!\d)", text)
         if not matches:
-            matches = re.findall(r"(?:/EXTRATO|REF:\S+)\s+(\d{1,3})\s*/\s*(\d{1,3})\b", text)
+            matches = re.findall(r"(?m)^\s*(?:\S*/EXTRATO|(?:VIACREDI AV - EXTRATO ESPECIAL )?REF:\S+)"
+                                 r"[ \t]+(\d{1,3})[ \t]*/[ \t]*(\d{1,3})[ \t]*$", text)
         if not matches:
             matches = re.findall(r"BTG PACTUAL[^\n]*?\b(\d{1,3})\s*/\s*(\d{1,3})\b", text)
         if not matches:
             digits = r"\d{1,3}" if bare_counter_layout else r"\d{3}"
-            matches = re.findall(rf"(?m)^\s*({digits})\s*/\s*({digits})\s*$", text)
+            # Bare small counters are accepted only in the printed footer.
+            footer = "\n".join([line for line in text.splitlines() if line.strip()][-3:]) if bare_counter_layout else text
+            matches = re.findall(rf"(?m)^\s*({digits})\s*/\s*({digits})\s*$", footer)
         if matches:
             if len(matches) != 1:
                 return True

@@ -230,6 +230,7 @@ def native_pdf(pages):
 
 def test_native_pdf_with_invoice_first_uses_only_statement_and_original_source_page(monkeypatch):
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
+    monkeypatch.setenv("PDF_OCR_ENABLED", "false")
     statement = "EXTRATO DE CONTA CORRENTE\n01/06/2026 PIX RECEBIDO 350,00\n02/06/2026 PIX ENVIADO -20,00\nSALDO FINAL 330,00"
     raw = native_pdf([INVOICE, statement, RECEIPT])
     parsed = parse_pdf_transactions(raw)

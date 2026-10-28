@@ -58,6 +58,10 @@ def parse_financial_report_pages(page_texts: list[str]) -> dict | None:
     if detected is None:
         return None
     kind, evidence = detected
+    if evidence == "omie_cash_actual_forecast_columns":
+        from app.application.parsers.pdf.omie_cash import parse_omie_cash
+
+        return parse_omie_cash(page_texts)
     if evidence == "xp_account_web_ledger":
         raise PdfFinancialValidationError("Envie o PDF original da conta XP para preservar suas duas datas e as colunas dos movimentos.")
     if evidence == "xp_investment_account_ledger":

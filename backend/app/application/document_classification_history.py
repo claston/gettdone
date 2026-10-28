@@ -16,6 +16,7 @@ DOCUMENT_TYPES = frozenset(
         "notary_receipt",
         "financial_spreadsheet",
         "receivables_report",
+        "cash_flow_report",
         "investment_statement",
         "fiscal_summary",
         "investment_summary",

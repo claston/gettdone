@@ -46,9 +46,13 @@ def project_financial_document(document, page_texts, *, native=False):
             source_parser="financial_report", source_line_refs=tuple((r["page"], r["line"]) for r in refs),
         ))
     failed = any(item["status"] == "failed" for item in document["validations"])
+    layout_name = f"{document['document_type']}_events_v1"
+    if document["document_type"] == "cash_flow_report":
+        layout_name = {"Omie.CASH": "omie_cash_flow_report_events_v1",
+                       "Bradesco": "bradesco_unified_cash_flow_report_events_v1"}.get(document["origin"], layout_name)
     return PdfParseResult(
         transactions=transactions, canonical_transactions=canonical,
-        layout=PdfLayoutInference(layout_name=f"{document['document_type']}_events_v1", confidence=0.99, used_fallback=False),
+        layout=PdfLayoutInference(layout_name=layout_name, confidence=0.99, used_fallback=False),
         extracted_text="\n".join(page_texts), source_page_texts=tuple(page_texts), financial_document=document,
         parse_metrics={"selected_parser": "financial_report", "parser_selection_reason": "typed_financial_report",
                        "page_count": len(page_texts), "extracted_char_count": sum(map(len, page_texts)),

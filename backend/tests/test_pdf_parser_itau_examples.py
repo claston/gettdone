@@ -423,7 +423,6 @@ def test_itau_monthly_keeps_date_across_pages_and_stops_before_investment_detail
     assert result.parse_metrics["selected_parser"] == "grouped"
     assert result.parse_metrics["balance_consistency_failed"] == 0
     assert [(transaction.date, transaction.amount) for transaction in result.transactions] == [
-        ("2025-10-01", 1.0),
         ("2025-10-01", 100.0),
         ("2025-10-01", -100.0),
         ("2025-10-02", -10.0),
@@ -432,7 +431,7 @@ def test_itau_monthly_keeps_date_across_pages_and_stops_before_investment_detail
         ("2025-10-03", 50.0),
         ("2025-10-03", -50.0),
     ]
-    assert [transaction.description for transaction in result.transactions[3:6]] == [
+    assert [transaction.description for transaction in result.transactions[2:5]] == [
         "Sispag Fornecedores",
         "Sispag Fornecedores",
         "Res Aplic Aut Mais",
@@ -516,7 +515,6 @@ def test_itau_monthly_handles_sidebar_before_investment_balance_and_split_negati
     assert result.parse_metrics["selected_parser"] == "grouped"
     assert result.parse_metrics["balance_consistency_failed"] == 0
     assert [transaction.description for transaction in result.transactions] == [
-        "SALDO ANTERIOR",
         "PIX ENVIADO CLIENTE",
         "Res Aplic Aut Mais",
         "IOF",
@@ -527,8 +525,8 @@ def test_itau_monthly_handles_sidebar_before_investment_balance_and_split_negati
         "Apl Aplic Aut Mais",
     ]
     assert result.canonical_transactions is not None
-    assert result.canonical_transactions[6].running_balance == -78.95
-    assert result.canonical_transactions[8].running_balance == 1.0
+    assert result.canonical_transactions[5].running_balance == -78.95
+    assert result.canonical_transactions[7].running_balance == 1.0
 
 
 def test_itau_monthly_keeps_account_limit_interest_as_transaction() -> None:
@@ -562,7 +560,6 @@ def test_itau_monthly_keeps_account_limit_interest_as_transaction() -> None:
     result = pdf_parser_module._parse_pdf_transactions_from_page_texts([text])
 
     assert [(transaction.description, transaction.amount) for transaction in result.transactions] == [
-        ("SALDO ANTERIOR", -70.0),
         ("PAGAMENTO", -10.0),
         ("JUROS LIMITE DA CONTA", -5.0),
     ]
@@ -602,7 +599,6 @@ def test_itau_monthly_preserves_explicit_sispag_salary_debit_sign() -> None:
         "itau_empresas_extrato_mensal_conta_corrente_aplicacoes_automaticas_v1"
     )
     assert [(transaction.description, transaction.amount) for transaction in result.transactions] == [
-        ("SALDO ANTERIOR", 1.0),
         ("Sispag Salários", -900.0),
         ("Res Aplic Aut Mais", 900.0),
     ]

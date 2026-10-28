@@ -5,6 +5,7 @@ from dataclasses import replace
 
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.followup_ocr import _headers, _source
+from app.application.parsers.pdf.native_table_source import split_native_columns
 from app.application.parsers.pdf.row_geometry import nearest_row
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
@@ -141,16 +142,21 @@ def parse_banrisul_month(source):
     doc_x = doc_headers[0].bbox["left"] if doc_headers else None
     if doc_x is None or doc_x <= history_x:
         fail("A coluna de documentos não pode ser identificada.")
+    # The native content stream can merge the printed day and history. Split
+    # their original WORD boxes, retaining each physical source location.
+    source = replace(source, pages=[split_native_columns(page, [history_x-.015, doc_x-.035],
+        include=lambda line: bool(re.match(r"^\d{2}\s+", line.text))) for page in source.pages])
     rows, running, opening, closing, checks = [], None, None, None, 0
     current_day = None
     for page in source.pages:
-        top = seed.bbox["top"] - 0.01 if page is seed_page else 0
+        top = seed.bbox["top"] - 0.01 if page.page_number == seed_page.page_number else 0
         stop = min((line.bbox["top"] for line in page.lines if "EMITIDO AS" in upper(line.text)), default=1)
         body = [line for line in page.lines if line.bbox and top <= line.bbox["top"] < stop]
         docs = [
             line
             for line in body
-            if abs(line.bbox["left"] - doc_x) < 0.035 and re.fullmatch(r"[A-Z0-9]{4,20}", upper(line.text)) and re.search(r"\d", line.text)
+            if abs(line.bbox["left"] - doc_x) < 0.035 and re.fullmatch(r"[A-Z0-9]{4,20}", upper(line.text))
+            and upper(line.text) != "DOCUMENTO"
         ]
         controls = [line for line in body if upper(line.text) == "SALDO NA DATA" or line is seed]
         anchors = sorted([*docs, *controls], key=lambda line: line.bbox["top"])

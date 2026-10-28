@@ -8,6 +8,16 @@ from app.application.normalization.text import normalize_upper_text
 
 _GENERIC_LAYOUT_NAMES = {"generic_statement_ptbr"}
 VERIFIED_STATEMENT_BANKS = {
+    "bradesco_unified_cash_flow_report_events_v1": "Bradesco",
+    "bb_savings_native_value_columns_v1": "Banco do Brasil",
+    "sicredi_visual_signed_cash_v1": "Sicredi",
+    "caixa_enriched_printed_cash_columns_v1": "Caixa Economica Federal",
+    "pagme_printed_cash_columns_v1": "Pagme",
+    "santander_app_printed_cash_columns_v1": "Santander",
+    "sicoob_modern_printed_cash_columns_v1": "Sicoob",
+    "credisis_native_signed_cash_v1": "CrediSIS",
+    "itau_payment_beneficiary_columns_v1": "Itau",
+    "dated_native_cash_cards_v1": "Itau",
     "banestes_conta_rende_split_date_v1": "Banestes",
     "bradesco_net_empresa_explicit_no_activity_v1": "Bradesco",
     "pagbank_native_daily_cash_v1": "PagBank",
@@ -150,6 +160,7 @@ def resolve_bank_name(
     if layout_name in {"billing_excel_horizontal_pages_v1", "conta_azul_relatorio_extrato_valor_saldo_v1",
                        "account_detail_descending_cash_v1", "dated_cd_daily_balance_fragment_ocr_v1",
                        "descending_web_cards_daily_cash_v1",
+                       "omie_cash_flow_report_events_v1",
                        "dated_cd_three_column_statement_v1"}:
         # Counterparty names in this ledger do not identify its issuer.
         return None

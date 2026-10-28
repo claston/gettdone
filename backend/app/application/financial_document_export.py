@@ -12,6 +12,8 @@ from app.application.models import NormalizedTransaction
 from app.application.ofx_writer import build_ofx_statement
 
 LABELS = {
+    "opening_balance": "Saldo anterior", "closing_balance": "Saldo final",
+    "amounts.opening": "Saldo anterior", "amounts.closing": "Saldo final",
     "amounts.fee": "Taxa", "attributes.printed_status": "Situação impressa",
     "attributes.acquirer": "Adquirente", "attributes.establishment": "Estabelecimento", "attributes.nsu": "NSU",
     "dates.transaction": "Data da transação",
@@ -138,6 +140,7 @@ def write_financial_artifacts(output_dir: Path, document: dict, *, bank_code=Non
         return
     assert_financial_export(document, "ofx", bank_code=bank_code, bank_branch=bank_branch, account_number=account_number)
     rows = [NormalizedTransaction(date=event_date(event), description=event["description"],
-            amount=float(Decimal(event["cash_effect"])), type="inflow") for event in document["events"]]
+            amount=float(Decimal(event["cash_effect"])), type="inflow" if Decimal(event["cash_effect"]) >= 0 else "outflow")
+            for event in document["events"] if event["cash_effect"] is not None]
     (output_dir / "converted.ofx").write_text(build_ofx_statement(rows, bank_id=bank_code, bank_branch=bank_branch,
                                                                account_number=account_number, currency="BRL"), encoding="utf8")

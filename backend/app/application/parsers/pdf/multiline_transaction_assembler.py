@@ -232,6 +232,7 @@ def _build_parsed_row(
         raw_amount=raw_amount,
         role=candidate.amount_role,
         description=candidate.description,
+        has_explicit_sign=has_amount_token_explicit_sign(candidate.amount_token),
     )
     return _ParsedTransaction(
         transaction=NormalizedTransaction(

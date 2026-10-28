@@ -43,6 +43,8 @@ def _text_signals(text):
         signals.append("fragmented_money_values")
     if len(re.findall(r"(?<![\w\d])\.\d{3},\s*\d{2}\b", text)) >= 2:
         signals.append("truncated_money_values")
+    if len(re.findall(r"(?<!\w)[IilOo€Ú•][\d.]+[,.]\d{2}\b|(?<!\w)\d[\d.]*[A-Za-z¢][\d.]*,\d{2}\b", text)) >= 2:
+        signals.append("malformed_money_glyphs")
     return tuple(signals)
 
 

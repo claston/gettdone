@@ -1130,6 +1130,14 @@ def _parse_textract_text_pages_impl(extraction) -> PdfParseResult:
         return replace(_with_parse_observability(title_result, extraction_provider="aws_textract", textract_used=1),
                        source_extraction=extraction, source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
     inferred_layout = infer_pdf_layout(joined_text)
+    from app.application.parsers.pdf.bradesco_unified_ocr import is_bradesco_unified, parse_bradesco_unified
+
+    if is_bradesco_unified(extraction):
+        from app.application.financial_event_projection import project_financial_document
+
+        result = project_financial_document(parse_bradesco_unified(extraction), page_texts)
+        return replace(result, source_extraction=extraction,
+                       source_layout_lines=tuple(tuple(p.lines) for p in extraction.pages))
     if identify_sweep_statement(joined_text) == PAGBANK:
         from app.application.financial_event_projection import project_financial_document
         from app.application.parsers.pdf.pagbank_financial_ocr import parse_pagbank_financial
@@ -1170,7 +1178,11 @@ def _parse_textract_text_pages_impl(extraction) -> PdfParseResult:
                                           else "invoice_controls_validated"))
         return replace(result, source_extraction=extraction,
                        source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
-    controlled = parse_controlled_ocr(extraction)
+    from app.application.parsers.pdf.reviewed_cash_columns import parse_reviewed_cash, reviewed_cash_kind, supports_reviewed_cash_columns
+
+    cash_kind = reviewed_cash_kind(joined_text)
+    controlled = (parse_reviewed_cash(extraction, cash_kind) if cash_kind and supports_reviewed_cash_columns(extraction,cash_kind)
+                  else parse_controlled_ocr(extraction))
     if controlled is not None:
         result = _build_verified_statement_result(controlled, page_texts)
         return replace(result, source_extraction=extraction,
@@ -1549,18 +1561,20 @@ def _parse_statement_page_texts(
             columnar_transactions_count=0,
             balance_checkpoints=specialized_balance_checkpoints,
         )
-    grouped_rows = _parse_grouped_statement_lines(lines, layout_profile=layout_profile)
+    from app.application.parsers.pdf.statement_control_rows import movement_candidates
+
+    grouped_rows = movement_candidates((_parse_grouped_statement_lines(lines, layout_profile=layout_profile), 0))[0]
     selection = select_parsed_rows(
         lines=lines,
         grouped_rows=grouped_rows,
         layout_profile=layout_profile,
-        parse_inline_rows=_parse_inline_statement_rows,
-        parse_tabular_rows=lambda all_lines, profile: _parse_tabular_statement_rows(all_lines, layout_profile=profile),
-        parse_columnar_rows=_parse_columnar_statement_blocks,
-        parse_multiline_rows=lambda all_lines, profile: parse_multiline_transaction_rows(
+        parse_inline_rows=lambda all_lines: movement_candidates(_parse_inline_statement_rows(all_lines)),
+        parse_tabular_rows=lambda all_lines, profile: movement_candidates(_parse_tabular_statement_rows(all_lines, layout_profile=profile)),
+        parse_columnar_rows=lambda all_lines: movement_candidates(_parse_columnar_statement_blocks(all_lines)),
+        parse_multiline_rows=lambda all_lines, profile: movement_candidates(parse_multiline_transaction_rows(
             all_lines,
             layout_profile=profile,
-        ),
+        )),
     )
     parsed_rows = _normalize_asaas_parsed_rows(
         selection.rows,
@@ -1994,6 +2008,19 @@ def _build_pdf_parse_result(
     multiline_conflict_count: int = 0,
     balance_checkpoints: dict[int, float] | None = None,
 ) -> PdfParseResult:
+    from app.application.parsers.pdf.statement_control_rows import is_opening_control
+
+    # Specialized and generic readers share the same public movement contract.
+    # Preserve existing checkpoints while removing any legacy imported control.
+    excluded = [index for index, row in enumerate(parsed_rows) if is_opening_control(row)]
+    opening_controls = [parsed_rows[index] for index in excluded]
+    if excluded:
+        if balance_checkpoints:
+            balance_checkpoints = {index-sum(position < index for position in excluded): value
+                                   for index, value in balance_checkpoints.items()}
+        # An opening imported by a legacy reader can cover cash plus investments.
+        # Only independently established checkpoints may validate the cash ledger.
+        parsed_rows = [row for index, row in enumerate(parsed_rows) if index not in excluded]
     parsed_rows = _reconcile_descending_implicit_signs_from_running_balance(
         parsed_rows,
         layout_name=layout.layout_name,
@@ -2052,6 +2079,12 @@ def _build_pdf_parse_result(
     parse_metrics["multiline_coverage_gain"] = multiline_coverage_gain
     parse_metrics["multiline_conflict_count"] = multiline_conflict_count
     parse_metrics["partial_statement"] = int(any("partial_statement" in row.warnings for row in canonical_transactions))
+    if opening_controls:
+        parse_metrics["opening_controls_excluded"] = len(opening_controls)
+        if len(opening_controls) == 1:
+            control = opening_controls[0]
+            parse_metrics["printed_opening_balance"] = (control.running_balance if control.running_balance is not None
+                                                        else control.transaction.amount)
     return PdfParseResult(
         transactions=transactions,
         canonical_transactions=canonical_transactions,
@@ -3449,6 +3482,7 @@ def _recover_tabular_multiline_row(
     signed_amount = compute_hint_signed_amount(
         raw_amount=parse_pdf_amount(amount_line.text),
         description=raw_description,
+        has_explicit_sign=has_explicit_amount_sign(amount_line.text),
     )
     parsed_row = _build_parsed_transaction(
         date=parse_row_date(date_line.text, fallback_year=inferred_year, date_formats=date_formats),
@@ -3495,7 +3529,7 @@ def _parse_columnar_block_at_index(
         return None
 
     amount = apply_type_sign_hint(parse_pdf_amount(amount_raw), type_raw)
-    signed_amount = compute_hint_signed_amount(raw_amount=amount, description=description)
+    signed_amount = compute_hint_signed_amount(raw_amount=amount, description=description, has_explicit_sign=True)
     return _build_parsed_transaction(
         date=parse_row_date(raw_date, fallback_year=inferred_year),
         description=description,
@@ -3547,7 +3581,8 @@ def _parse_inline_statement_line(*, line: _PdfLine, inferred_year: int | None) -
         return None
 
     amount = parse_pdf_amount(amount_match.amount_token.value)
-    signed_amount = compute_hint_signed_amount(raw_amount=amount, description=raw_description)
+    signed_amount = compute_hint_signed_amount(raw_amount=amount, description=raw_description,
+                                               has_explicit_sign=has_explicit_amount_sign(amount_match.amount_token.value))
     return _build_parsed_transaction(
         date=parse_row_date(match.group("date"), fallback_year=inferred_year),
         description=raw_description,
@@ -3844,6 +3879,7 @@ def _build_tabular_amount_details(
         raw_amount=raw_amount,
         role=amount_role_hint or selected_role,
         description=raw_description,
+        has_explicit_sign=has_explicit_amount_sign(amount_token_value),
     )
     running_balance = parse_pdf_amount(balance_token_value) if balance_token_value is not None else None
     if running_balance is not None and balance_role_hint == "credit":
@@ -4186,7 +4222,8 @@ def _build_inline_transaction_from_date_rest(
     if not raw_description or should_skip_transaction_description(raw_description):
         return None
     amount = parse_pdf_amount(amount_match.amount_token.value)
-    signed_amount = compute_hint_signed_amount(raw_amount=amount, description=raw_description, section_hint=section_hint)
+    signed_amount = compute_hint_signed_amount(raw_amount=amount, description=raw_description, section_hint=section_hint,
+                                               has_explicit_sign=has_explicit_amount_sign(amount_match.amount_token.value))
     return _build_parsed_transaction(
         date=date,
         description=raw_description,
