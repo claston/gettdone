@@ -50,11 +50,11 @@ def test_pix_counterparties_do_not_define_the_statement_owner(header_kind, secon
 
 
 @pytest.mark.parametrize("header_kind", ["nubank", "nubank_cpf", "account_first", "agency_first"])
-@pytest.mark.parametrize("change", [{"owner_account": "456789123-4"}, {"owner_agency": "0002"}, {"month": "out"}])
-def test_different_owner_accounts_agencies_and_periods_remain_rejected(header_kind, change):
+@pytest.mark.parametrize("change", [{"owner_account": "456789123-4"}, {"owner_agency": "0002"}])
+def test_different_owner_accounts_and_agencies_remain_rejected(header_kind, change):
     first = statement_page(header_kind=header_kind)
     second = statement_page(header_kind=header_kind, **change)
-    with pytest.raises(UnsupportedDocumentContentError, match="contas ou períodos"):
+    with pytest.raises(UnsupportedDocumentContentError, match="contas diferentes"):
         segment_pdf_pages([first, second])
 
 
@@ -84,7 +84,7 @@ def test_period_date_range_before_owner_metadata_does_not_hide_different_account
     period = f"01/09/2026 {separator} 30/09/2026\n"
     first = period + statement_page()
     second = period + statement_page(owner_account="456789123-4")
-    with pytest.raises(UnsupportedDocumentContentError, match="contas ou períodos"):
+    with pytest.raises(UnsupportedDocumentContentError, match="contas diferentes"):
         segment_pdf_pages([first, second])
 
 

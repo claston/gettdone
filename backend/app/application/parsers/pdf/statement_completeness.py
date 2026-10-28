@@ -7,6 +7,11 @@ from app.application.normalization.text import normalize_upper_text as upper
 
 def validate_statement_completeness(pages) -> bool:
     """Return possible incompleteness; omitted pages may contain only annexes."""
+    from app.application.parsers.pdf.statement_blocks import statement_blocks
+
+    blocks = statement_blocks(pages)
+    if blocks:
+        return any(validate_statement_completeness(pages[block.start:block.stop]) for block in blocks)
     observed = []
     joined = upper("\n".join(pages))
     if ("SANTANDER" in joined

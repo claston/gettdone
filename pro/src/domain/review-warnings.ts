@@ -1,6 +1,7 @@
 export const documentReviewWarnings = new Set([
   "partial_statement",
   "document_period_unavailable",
+  "statement_blocks_not_contiguous",
   "printed_summary_balance_mismatch",
   "financial_validation_failed",
 ]);

@@ -1553,6 +1553,9 @@
     if (warningTypes.includes("document_period_unavailable")) {
       list.push(mapWarningTypeExplanation("document_period_unavailable"));
     }
+    if (warningTypes.includes("statement_blocks_not_contiguous")) {
+      list.push(mapWarningTypeExplanation("statement_blocks_not_contiguous"));
+    }
     if (warningTypes.includes("combined_cash_investment_balance_not_comparable")) {
       list.push("Os saldos impressos incluem conta corrente e Rende Fácil. Eles não foram usados para conferir apenas a conta corrente. Não há saldo inicial ou final mensal confirmado.");
     }
@@ -2167,6 +2170,7 @@
     if (key === "ocr_balance_recovered_from_context") return "Saldo recuperado";
     if (key === "partial_statement") return "Possível extrato incompleto";
     if (key === "document_period_unavailable") return "Período não identificado";
+    if (key === "statement_blocks_not_contiguous") return "Blocos do extrato precisam de conferência";
     if (key === "shared_operation_reference") return "Referência de operação compartilhada";
     if (key === "ocr_date_year_completed") return "Ano completado pelo extrato";
     if (key === "financial_validation_failed") return "Conferência pendente";
@@ -2210,6 +2214,7 @@
     if (value === "ocr_date_year_completed") return "O OCR cortou o último dígito de um ano. A data foi completada com o único ano informado nas demais datas do extrato. Confira a data no documento original.";
     if (value === "financial_validation_failed") return "Os movimentos legíveis foram convertidos, mas não foi possível confirmar todos os saldos e totais impressos. Confira os valores no documento original antes de exportar.";
     if (value === "document_period_unavailable") return "Não foi possível identificar o período completo do documento. Os movimentos legíveis foram convertidos; confira a cobertura no PDF original. As datas dos lançamentos não comprovam que o mês está completo.";
+    if (value === "statement_blocks_not_contiguous") return "Os movimentos de todos os blocos foram convertidos. Não foi possível confirmar uma sequência contínua de períodos e saldos entre eles. Confira cada bloco no documento original; não há saldo global confirmado.";
     if (value === "invoice_due_date_used_for_undated_fee") return "Esta anuidade não tem data impressa. Foi usada a data de vencimento da fatura. Confira ou ajuste a data antes de exportar.";
     if (value === "partial_statement_unpaired_credit") return "A tarifa associada ao primeiro crédito está fora deste trecho. O valor bruto foi preservado; a conferência dos saldos começa no próximo par completo de tarifa e crédito.";
     if (value === "ocr_numeric_separator_normalized") return "O OCR trocou ou omitiu um separador numérico. A escrita foi normalizada e conferida pelos saldos das linhas vizinhas, sem alterar os dígitos.";

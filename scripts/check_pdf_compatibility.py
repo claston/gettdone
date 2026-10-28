@@ -71,6 +71,7 @@ def make_corpus():
     from tests.test_pdf_parser_bradesco_opening_sign import native_pdf, statement_pages
     from tests.test_recovery_case_fixes import mercado_pago_page
     from tests.test_statement_review_policy import SANTANDER
+    from tests.test_multi_period_statements import bb_month, pdf
 
     cases = []
 
@@ -79,6 +80,12 @@ def make_corpus():
                       "ocr": asdict(ocr) if ocr else None, "expected": {"movements": movements, **expected}})
 
     mp = [["2026-07-02", 50], ["2026-07-03", -20], ["2026-07-04", 20]]
+    add("bb_twelve_month_blocks", pdf([page for month in range(1, 13)
+        for page in bb_month(month, opening=1000+(month-1)*180, pages=6)]),
+        [[f"2025-{month:02d}-{day:02d}", value] for month in range(1, 13) for day in range(1, 7) for value in (50, -20)],
+        bank_code="001")
+    add("bb_noncontiguous_blocks", pdf(bb_month(1)+bb_month(3, opening=1030)),
+        [["2025-01-01", 50], ["2025-01-01", -20], ["2025-03-01", 50], ["2025-03-01", -20]], bank_code="001", review=True)
     for key, text, review in [("mercado_refund", mercado_pago_page(), False),
                               ("mercado_missing_period", mercado_pago_page().replace("Periodo: De 01-07-2026 al 31-07-2026\n", ""), True),
                               ("mercado_inconsistent_totals", mercado_pago_page().replace("Entradas: R$ 70,00", "Entradas: R$ 71,00"), True),

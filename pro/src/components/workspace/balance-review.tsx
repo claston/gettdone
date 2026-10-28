@@ -82,6 +82,7 @@ export function BalanceReviewNotice({
   const summaryWarning = warnings.includes("printed_summary_balance_mismatch");
   const financialWarning = warnings.includes("financial_validation_failed");
   const periodWarning = warnings.includes("document_period_unavailable");
+  const blockWarning = warnings.includes("statement_blocks_not_contiguous");
   const balanceWarning = Boolean(
     rows.length ||
     summaryWarning ||
@@ -93,6 +94,7 @@ export function BalanceReviewNotice({
     !summaryWarning &&
     !financialWarning &&
     !periodWarning &&
+    !blockWarning &&
     !conversion.statementBalanceCheck
   )
     return null;
@@ -114,6 +116,14 @@ export function BalanceReviewNotice({
           <strong>Período do documento não identificado.</strong> Os movimentos
           legíveis foram convertidos. Confira a cobertura no PDF original; as
           datas dos lançamentos não comprovam que o mês está completo.
+        </p>
+      )}
+      {blockWarning && (
+        <p>
+          <strong>Blocos do extrato precisam de conferência.</strong> Os
+          movimentos de todos os blocos foram convertidos. Confira a sequência
+          dos períodos e dos saldos no PDF original; não há saldo global
+          confirmado.
         </p>
       )}
       {balanceWarning && <strong>Saldos precisam de conferência.</strong>}{" "}

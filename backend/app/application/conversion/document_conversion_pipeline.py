@@ -568,7 +568,9 @@ class DocumentConversionPipeline:
         )
         statement_period = None
         if request.document.file_type == "pdf":
-            statement_period = statement_period_from_text("\n".join((page_texts or ())[:2])) or statement_period_from_analysis(analysis)
+            multi_period = sum(bool(part.get("included_in_statement")) for part in analysis.document_parts) > 1
+            statement_period = (statement_period_from_analysis(analysis) if multi_period else
+                statement_period_from_text("\n".join((page_texts or ())[:2])) or statement_period_from_analysis(analysis))
         conversion_model_label = resolve_conversion_model_label(
             layout_inference_name=getattr(analysis, "layout_inference_name", None),
             bank_name=getattr(analysis, "bank_name", None),

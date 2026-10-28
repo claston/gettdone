@@ -405,6 +405,12 @@ def _parse_pdf_transactions_strict(
             )
 
     if native_pages:
+        from app.application.parsers.pdf.statement_blocks import parse_native_blocks
+
+        combined = parse_native_blocks(raw_bytes, native_pages,
+            lambda raw: _parse_pdf_transactions(raw, on_ocr_progress, max_ocr_pages))
+        if combined is not None:
+            return combined
         if detect_financial_report("\n".join(native_pages)) == ("investment_statement", "xp_account_web_ledger"):
             from app.application.financial_event_projection import project_financial_document
             from app.application.parsers.pdf.native_table_source import read_native_table_source
@@ -936,6 +942,13 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
 
 
 def _parse_textract_tables(extraction, gateway_metrics) -> PdfParseResult:
+    from app.application.parsers.pdf.statement_blocks import combine_statement_results, slice_extraction, statement_blocks
+
+    pages = _textract_page_texts(extraction)
+    blocks = statement_blocks(pages)
+    if blocks:
+        results = [_parse_textract_tables(slice_extraction(extraction, block), gateway_metrics) for block in blocks]
+        return combine_statement_results(results, blocks, pages, original_extraction=extraction)
     adapted = adapt_textract_extraction_to_transactions(extraction)
     inferred_layout = infer_pdf_layout(adapted.extracted_text)
     canonical_transactions = adapted.canonical_transactions
@@ -1064,7 +1077,14 @@ def _parse_textract_text_pages(extraction) -> PdfParseResult:
 
 
 def _parse_textract_text_pages_attempt(extraction) -> PdfParseResult:
+    from app.application.parsers.pdf.statement_blocks import combine_statement_results, slice_extraction, statement_blocks
     from app.application.parsers.pdf.statement_review import apply_statement_review
+
+    pages = _textract_page_texts(extraction)
+    blocks = statement_blocks(pages)
+    if blocks:
+        results = [_parse_textract_text_pages(slice_extraction(extraction, block)) for block in blocks]
+        return apply_statement_review(combine_statement_results(results, blocks, pages, original_extraction=extraction))
 
     try:
         return apply_statement_review(_parse_textract_text_pages_impl(extraction))
@@ -1276,9 +1296,20 @@ def _parse_pdf_transactions_from_page_texts_strict(
     preserve_layout_spacing: bool = False,
     context: LayoutSpecificParseContext | None = None,
 ) -> PdfParseResult:
+    from app.application.parsers.pdf.statement_blocks import combine_statement_results, slice_extraction, statement_blocks
     from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
     from app.application.unsupported_document_detection import NOTARY_RECEIPT_DOCUMENT_TYPE, NOTARY_RECEIPT_USER_MESSAGE
 
+    blocks = statement_blocks(page_texts)
+    if blocks:
+        results = []
+        for block in blocks:
+            local_context = replace(context, source_extraction=slice_extraction(context.source_extraction, block)) \
+                if context and context.source_extraction else context
+            results.append(_parse_pdf_transactions_from_page_texts(page_texts[block.start:block.stop],
+                preserve_layout_spacing=preserve_layout_spacing, context=local_context))
+        return combine_statement_results(results, blocks, page_texts,
+            original_extraction=context.source_extraction if context else None)
     validate_statement_completeness(page_texts)
     classification = classify_document_type("statement.pdf", b"", extracted_text="\n".join(page_texts))
     if classification.document_type == "bank_collection_return":
