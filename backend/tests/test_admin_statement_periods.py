@@ -11,7 +11,7 @@ from tests.test_admin_dashboard_api import _build_dashboard_client, _record_anon
 NOW = datetime(2026, 10, 27, 20, tzinfo=timezone.utc)
 
 
-def job(service, *, job_id, owner, period, kind="user", expired=False):
+def job(service, *, job_id, owner, period, kind="user", expired=False, created_at=None):
     digest = hashlib.sha256(job_id.encode()).hexdigest()
     with service._connect() as conn:
         conn.execute("""CREATE TABLE IF NOT EXISTS conversion_jobs (
@@ -19,13 +19,45 @@ def job(service, *, job_id, owner, period, kind="user", expired=False):
             created_at TEXT, expires_at TEXT)""")
         conn.execute("INSERT INTO conversion_jobs VALUES (?,?,?,?,?,?)", (job_id, f"an_{digest[:12]}",
             json.dumps({"identity_type": kind, "identity_id": owner}), json.dumps({"organization_source": {"period": period}}),
-            NOW.isoformat(), "2026-10-26T20:00:00+00:00" if expired else "2026-11-01T20:00:00+00:00"))
+            (created_at or NOW).isoformat(), "2026-10-26T20:00:00+00:00" if expired else "2026-11-01T20:00:00+00:00"))
         conn.commit()
     return f"an_{digest[:12]}" if kind == "user" else f"anon_evt_{digest[:24]}"
 
 
 def period(start, end, basis="document_metadata"):
     return {"start_date": start, "end_date": end, "basis": basis, "document_coverage": basis == "document_metadata"}
+
+
+@pytest.mark.parametrize("kind", ["user", "anonymous"])
+@pytest.mark.parametrize("basis", ["document_metadata", "movement_dates"])
+def test_legacy_review_period_is_normalized_before_dashboard_response_validation(tmp_path, kind, basis):
+    client, service, clock, user = _build_dashboard_client(tmp_path)
+    try:
+        clock["now"] = NOW
+        owner = user if kind == "user" else "fictional-owner"
+        legacy = {**period("2026-09-01", "2026-09-30", basis), "evidence": "Synthetic persisted source evidence"}
+        identifier = job(service, job_id="legacy-review", owner=owner, kind=kind, period=legacy)
+        if kind == "user":
+            _record_user_conversion(service, user_id=user, processing_id=identifier, created_at=NOW, warning_count=1)
+        else:
+            _record_anonymous_conversion(service, clock, fingerprint=owner, event_id=identifier,
+                                         created_at=NOW, warning_count=1)
+        assert client.post("/admin/auth/login", json={"email": "admin@example.com", "password": "admin-pass"}).status_code == 200
+        response = client.get("/admin/dashboard", params={"days": 1})
+        assert response.status_code == 200
+        payload = response.json()
+        expected = {"start_date": "2026-09-01", "end_date": "2026-09-30", "basis": basis}
+        assert payload["recent_attention"][0]["statement_period"] == expected
+        assert payload["statement_periods"]["identified_count"] == 1
+        assert payload["pdf_documents"]["review_attempts"] == 1
+        exported = client.get("/admin/dashboard/attention.csv")
+        assert exported.status_code == 200 and "2026-09-30" in exported.text
+        with service._connect() as conn:
+            stored = conn.execute("SELECT result_payload FROM conversion_jobs WHERE job_id='legacy-review'").fetchone()
+        assert json.loads(stored["result_payload"])["organization_source"]["period"] == legacy
+    finally:
+        client.close()
+        app.dependency_overrides.clear()
 
 
 def test_dashboard_joins_existing_job_metadata_for_registered_and_anonymous_without_rewriting_history(tmp_path):
@@ -139,6 +171,7 @@ def test_postgres_projects_only_period_metadata_and_respects_the_database_schema
 def test_admin_periods_real_http_retains_authentication_and_unknown_legacy_state(tmp_path):
     import httpx
 
+    from app.dependencies import get_access_control_service
     from tests.test_admin_dashboard_http_real_api import _run_http_server
 
     with _run_http_server(tmp_path) as base_url, httpx.Client(base_url=base_url, timeout=10) as client:
@@ -148,3 +181,19 @@ def test_admin_periods_real_http_retains_authentication_and_unknown_legacy_state
         assert response.status_code == 200
         data = response.json()["statement_periods"]
         assert data["total_count"] == data["unknown_count"] == 1
+        service = app.dependency_overrides[get_access_control_service]()
+        now = service.now_provider()
+        identifier = job(service, job_id="http-legacy-review", owner="fictional-owner", kind="anonymous",
+                         period=period("2026-08-03", "2026-08-20", "movement_dates"), created_at=now)
+        _record_anonymous_conversion(service, {"now": now}, fingerprint="fictional-owner", event_id=identifier,
+                                     created_at=now, warning_count=1)
+        response = client.get("/admin/dashboard", params={"days": 1})
+        assert response.status_code == 200
+        payload = response.json()
+        attention = next(item for item in payload["recent_attention"] if item["processing_id"] == identifier)
+        assert attention["statement_period"] == {
+            "start_date": "2026-08-03", "end_date": "2026-08-20", "basis": "movement_dates",
+        }
+        assert payload["statement_periods"]["identified_count"] == payload["statement_periods"]["unknown_count"] == 1
+        exported = client.get("/admin/dashboard/attention.csv")
+        assert exported.status_code == 200 and "2026-08-20" in exported.text

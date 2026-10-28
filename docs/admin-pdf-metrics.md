@@ -53,6 +53,11 @@ objeto `organization_source.period` de resultados ainda válidos, correspondendo
 identidade e tentativa. A leitura não faz backfill nem recupera PDFs do S3.
 Resultados antigos já expirados continuam com período desconhecido.
 
+O período recuperado de resultados antigos é normalizado antes da resposta:
+somente início, fim e origem são expostos. Campos auxiliares, como o booleano
+`document_coverage` e o texto `evidence`, continuam no resultado original.
+Isso mantém a resposta compatível com os campos de texto esperados pelo Admin.
+
 ## Implantação e compatibilidade
 
 1. Executar a migração `20261028_01` antes de publicar os novos produtores/API:
