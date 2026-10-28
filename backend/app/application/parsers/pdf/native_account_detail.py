@@ -7,6 +7,7 @@ import re
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import optional_document_period, period_contains
 from app.application.parsers.pdf.followup_ocr import _source
 from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
 from app.application.parsers.pdf.statement_review import financial_mismatch
@@ -46,10 +47,8 @@ def parse_account_detail(source):
     summary = _summary(first)
     text = upper("\n".join(line.text for line in first.lines))
     period = re.search(rf"PERIODO:\s*({DATE})\s+A\s*({DATE})", text)
-    if period is None:
-        fail("O período do detalhe da conta não está legível.")
-    start, end = day(period[1]), day(period[2])
-    if start > end:
+    start, end = optional_document_period(period)
+    if start is not None and start > end:
         fail()
     rows = []
     for page in source.pages:
@@ -84,7 +83,7 @@ def parse_account_detail(source):
             if len(amounts) != 1 or len(balances) != 1 or any(line.id in used for line in aligned):
                 fail("Um movimento está sem valor ou saldo inequívoco no detalhe da conta.")
             date = day(anchor.text.strip())
-            if not start <= date <= end:
+            if not period_contains(date, start, end):
                 financial_mismatch()
             history = [line for line in cells if history_x - .015 <= line.bbox["left"] < amount_x - .06]
             if not history:

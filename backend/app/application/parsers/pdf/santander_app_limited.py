@@ -3,6 +3,7 @@ import re
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import optional_document_period, period_contains
 from app.application.parsers.pdf.followup_ocr import _headers, _source
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
@@ -13,15 +14,13 @@ _VALUE = re.compile(rf"[+-]?{NUMBER}")
 def parse_santander_app_limited(source):
     text = upper("\n".join(line.text for page in source.pages for line in page.lines))
     period = re.search(rf"PERIODOS:\s*({DATE})\s+A\s*({DATE})", text)
-    if not period:
-        fail()
-    start, end = day(period[1]), day(period[2])
+    start, end = optional_document_period(period)
     columns = _headers(source.pages[0], ("DATA", "HISTORICO", "DOCUMENTO", "VALOR", "SALDO"))
     if not columns:
         if any(upper(line.text) == "DATA HISTORICO DOCUMENTO VALOR (R$) SALDO (R$)" for line in source.pages[0].lines):
             return None  # A flowing-text table retains the existing text reader.
         fail()
-    if start > end:
+    if start is not None and start > end:
         fail()
     header = next(line for line in source.pages[0].lines if upper(line.text) == "DATA")
     rows, finished = [], False
@@ -53,7 +52,7 @@ def parse_santander_app_limited(source):
             if any(not _VALUE.fullmatch(line.text) for line in values):
                 fail()
             date = day(anchor.text[:10])
-            if not start <= date <= end:
+            if not period_contains(date, start, end):
                 financial_mismatch()
             if rows and date > rows[-1].transaction.date:
                 fail("A ordem decrescente da consulta Santander não está confirmada.")

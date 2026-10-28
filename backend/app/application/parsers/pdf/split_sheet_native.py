@@ -7,6 +7,7 @@ from io import BytesIO
 from math import hypot
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import optional_document_period, period_contains
 from app.application.parsers.pdf.reader import open_pdf_reader
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 from app.application.source_regions import SourceRegion
@@ -208,11 +209,7 @@ def _billing(pages):
     if any(k not in labels for k in required):
         fail()
     period = re.search(r"PERIODO A PARTIR DE (\d{2}/\d{2}/\d{4}) ATE (\d{2}/\d{2}/\d{4})", upper(" ".join(line.text for line in pages[0])))
-    if period is None:
-        fail()
-    start, end = day(period[1]), day(period[2])
-    if start > end:
-        fail()
+    start, end = optional_document_period(period)
 
     def field(line, key, next_key):
         return " ".join(c.text for c in line.cells if labels[key] - 0.5 * c.size <= c.x < labels[next_key] - 0.5 * c.size)
@@ -250,7 +247,7 @@ def _billing(pages):
                     fail()
                 continue
             date = day(dated[1])
-            if running is None or closing is not None or not start <= date <= end or previous and date < previous:
+            if running is None or closing is not None or not period_contains(date, start, end) or previous and date < previous:
                 fail()
             previous = date
             type_line = types[matched]

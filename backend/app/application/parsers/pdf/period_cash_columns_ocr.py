@@ -3,6 +3,10 @@ import re
 from dataclasses import replace
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import (
+    optional_document_period,
+    period_contains,
+)
 from app.application.parsers.pdf.ocr_statement_controls import _provenance
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
@@ -52,9 +56,7 @@ def parse_period_cash_columns(source):
     boundary = (value_x + balance_x) / 2
     period = re.search(rf"PERIODO:\s*({DATE})\s+ATE\s+({DATE})", text)
     if nordeste:
-        if not period:
-            fail()
-        start, end = day(period[1]), day(period[2])
+        start, end = optional_document_period(period)
         seed = re.search(rf"SALDO ANTERIOR:\s*R\$\s*([+-]?\s*{NUMBER})", text)
         if seed is None:
             fail()
@@ -62,11 +64,12 @@ def parse_period_cash_columns(source):
     else:
         month = re.search(r"(?:MES:\s*)?(" + "|".join(_MONTHS) + r")/(\d{4})", text)
         bounds = re.search(r"PERIODO:\s*(\d{1,2})\s*-?\s+(\d{1,2})\b", text)
-        if not month or not bounds:
-            fail()
-        start, end = [day(f"{int(value):02d}/{_MONTHS.index(month[1])+1:02d}/{month[2]}") for value in bounds.groups()]
+        if month and bounds:
+            start, end = [day(f"{int(value):02d}/{_MONTHS.index(month[1])+1:02d}/{month[2]}") for value in bounds.groups()]
+        else:
+            start, end = optional_document_period(None)
         opening = running = None
-    if start > end:
+    if start is not None and start > end:
         fail()
     rows, checks = [], 0
     for page_index, page in enumerate(source.pages):
@@ -102,7 +105,7 @@ def parse_period_cash_columns(source):
                 fail("Uma linha do extrato está sem valor ou saldo associado.")
             used.update(line.id for line in values)
             date = day(anchor.text)
-            if not start <= date <= end or rows and date < rows[-1].transaction.date:
+            if not period_contains(date, start, end) or rows and date < rows[-1].transaction.date:
                 fail()
             history_left = anchor.bbox["left"] + anchor.bbox["width"] - .02
             description = " ".join(line.text for line in sorted(cells, key=lambda line: (line.bbox["top"], line.bbox["left"]))

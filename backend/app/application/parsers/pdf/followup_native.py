@@ -5,6 +5,7 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text
+from app.application.parsers.pdf.document_period import optional_document_period, period_contains
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _lines, _row, day, fail, money
 
@@ -28,15 +29,18 @@ def _portal(pages, kind):
             fail()
     else:
         periods = set(re.findall(r"PERIODO:\s*(\d{2})/(\d{4})\b", text))
-        if len(periods) != 1:
+        if len(periods) > 1:
             fail()
-        month, year = map(int, next(iter(periods)))
-        if not 1 <= month <= 12:
-            fail()
-        end = f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
-        start = f"{year:04d}-{month:02d}-01"
+        if not periods:
+            start, end = optional_document_period(None)
+        else:
+            month, year = map(int, next(iter(periods)))
+            if not 1 <= month <= 12:
+                fail()
+            end = f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
+            start = f"{year:04d}-{month:02d}-01"
     opening = re.findall(rf"SALDO ANT EM\s+({DATE})\s+({NUMBER})(-?)", text)
-    if len(opening) != 1 or day(opening[0][0]) >= start:
+    if len(opening) != 1 or start is not None and day(opening[0][0]) >= start:
         fail()
     seed = money(opening[0][1]) * (-1 if opening[0][2] else 1)
     running, current = seed, None
@@ -58,7 +62,7 @@ def _portal(pages, kind):
                 date = day(match[1])
                 if current and date < current:
                     fail()
-                if not start <= date <= end:
+                if not period_contains(date, start, end):
                     financial_mismatch("Há movimentos Banrisul fora do período impresso. Confira o documento original.")
                 current = date
             if current is None:

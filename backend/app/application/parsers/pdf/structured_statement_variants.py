@@ -6,6 +6,10 @@ from datetime import datetime
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import (
+    optional_document_period,
+    period_contains,
+)
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import NUMBER, VerifiedStatement, _lines, _row, day, fail, money
 from app.application.structured_statement_detection import CONTA_AZUL, CRESOL_INACTIVE, SANTANDER_GROUPED, SUMUP_PERIOD
@@ -34,9 +38,11 @@ def _sumup(pages, kind):
     text = "\n".join(pages)
     period = re.search(rf"EXTRATO BANCARIO DE ({DATE}) A ({DATE})", upper(text))
     closing = re.findall(rf"SALDO EM ({DATE})\s+R\$\s*({SIGNED})", upper(text))
-    if period is None or len(closing) != 1 or closing[0][0] != period[2]:
+    if len(closing) != 1:
         fail()
-    start, end = day(period[1]), day(period[2])
+    start, end = optional_document_period(period)
+    if end is not None and day(closing[0][0]) != end:
+        fail()
     rows, timestamps = [], []
     footer = False
     for page, line, raw in _lines(pages):
@@ -55,7 +61,7 @@ def _sumup(pages, kind):
             except ValueError:
                 fail()
             amount = _signed(amount_text)
-            if not start <= timestamp.date().isoformat() <= end or timestamps and timestamp > timestamps[-1]:
+            if not period_contains(timestamp.date().isoformat(), start, end) or timestamps and timestamp > timestamps[-1]:
                 fail()
             if ((upper(description).startswith("PIX ENVIADO") and amount >= 0)
                     or (upper(description).startswith(("PIX RECEBIDO", "VENDAS SUMUP")) and amount < 0)):
@@ -137,9 +143,7 @@ def _cresol_inactive(pages, kind):
 def _conta_azul(pages, kind):
     text = upper("\n".join(pages))
     period = re.search(rf"RELATORIO DE EXTRATO\s+({DATE}) A ({DATE})", text)
-    if period is None:
-        fail()
-    start, end = day(period[1]), day(period[2])
+    start, end = optional_document_period(period)
     totals = {}
     for label in ("RECEITAS REALIZADAS", "DESPESAS REALIZADAS", "TOTAIS DO PERIODO"):
         match = re.search(rf"{label}\s*\(R\$\)\s*({SIGNED})", text)
@@ -183,7 +187,7 @@ def _conta_azul(pages, kind):
                         or upper(status) not in {"RECEBIDO", "PAGO", "TRANSFERIDO"} or not description):
                     fail()
                 date, amount, balance = day(date), _signed(amount), _signed(balance)
-                if not start <= date <= end or rows and date < rows[-1].transaction.date:
+                if not period_contains(date, start, end) or rows and date < rows[-1].transaction.date:
                     fail()
                 if opening is None:
                     opening = running = balance - amount

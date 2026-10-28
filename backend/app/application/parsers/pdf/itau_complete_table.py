@@ -6,6 +6,7 @@ from io import BytesIO
 from pypdf.generic import ContentStream
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import period_contains, unique_document_period
 from app.application.parsers.pdf.reader import open_pdf_reader
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.text_extraction import validate_native_pdf_fonts
@@ -33,11 +34,8 @@ def parse_itau_complete_table(raw, native_pages):
                 fail("Uma página do extrato Itaú contém dados sem texto legível.")
         pages.append(content)
     periods = set(re.findall(rf"LANCAMENTOS DO PERIODO:\s*({DATE})\s+ATE\s+({DATE})", upper("\n".join(pages))))
-    if len(periods) != 1:
-        fail()
-    first, last = next(iter(periods))
-    start, end = day(first), day(last)
-    if start > end:
+    start, end = unique_document_period(periods)
+    if start is not None and start > end:
         fail()
     records = []
     finished = False
@@ -88,13 +86,13 @@ def parse_itau_complete_table(raw, native_pages):
     if not finished or not records or any(a["date"] < b["date"] for a, b in zip(records, records[1:])):
         fail("A tabela completa Itaú não pôde ser delimitada ou ordenada.")
     openings = [r for r in records if r["label"] == "SALDO ANTERIOR"]
-    if len(openings) != 1 or records[-1] is not openings[0] or openings[0]["date"] >= start:
+    if len(openings) != 1 or records[-1] is not openings[0] or start is not None and openings[0]["date"] >= start:
         fail("Falta o saldo anterior inequívoco do Itaú.")
     running = opening = openings[0]["value"]
     controls, transaction_days, checks = {}, set(), 0
     for record in reversed(records[:-1]):
         date = record["date"]
-        if not start <= date <= end:
+        if not period_contains(date, start, end):
             financial_mismatch()
         if not record["control"]:
             running += record["value"]

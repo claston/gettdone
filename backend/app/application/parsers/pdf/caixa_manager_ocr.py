@@ -5,6 +5,7 @@ from datetime import date as calendar_date
 from datetime import timedelta
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import optional_document_period, period_contains
 from app.application.parsers.pdf.ocr_statement_controls import _provenance
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
@@ -36,9 +37,7 @@ def is_caixa_manager(extraction):
 def parse_caixa_manager(extraction):
     text = upper("\n".join(line.text for page in extraction.pages for line in page.lines))
     period = re.search(rf"EXTRATO NO PERIODO DE\s+({DATE})\s+A\s+({DATE})", text)
-    if period is None:
-        fail()
-    start, end = day(period[1]), day(period[2])
+    start, end = optional_document_period(period)
     dates = [line for page in extraction.pages for line in page.lines if re.fullmatch(DATE, line.text) and line.bbox]
     if not dates:
         fail()
@@ -137,8 +136,8 @@ def parse_caixa_manager(extraction):
                     fail()
                 balance = abs(money(balance_match[1])) * _explicit_sign(balances[0].text, balance_match)
             date = day(anchor.text)
-            next_week = (calendar_date.fromisoformat(end) + timedelta(days=7)).isoformat()
-            if not start <= date <= next_week or rows and date < rows[-1].transaction.date:
+            next_week = (calendar_date.fromisoformat(end) + timedelta(days=7)).isoformat() if end else None
+            if not period_contains(date, start, next_week) or rows and date < rows[-1].transaction.date:
                 fail()
             daily = any(upper(line.text) == "SALDO DIA" for line in cells)
             used.update(line.id for line in cash)
@@ -165,7 +164,7 @@ def parse_caixa_manager(extraction):
             if recovered_indicator:
                 row = replace(row, warnings=[*row.warnings, "manual_review_recommended",
                                              "balance_indicator_from_independent_controls"])
-            if date > end:
+            if end is not None and date > end:
                 row = replace(row, warnings=[*row.warnings, "manual_review_recommended", "movement_date_outside_requested_period"])
             if amounts[0].id in repeated_signs:
                 row = replace(row, warnings=[*row.warnings, "ocr_duplicate_sign_normalized"])

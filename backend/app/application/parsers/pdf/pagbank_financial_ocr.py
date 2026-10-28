@@ -6,6 +6,10 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import (
+    optional_document_period,
+    period_contains,
+)
 from app.application.parsers.pdf.financial_reports import _check, _event
 from app.application.parsers.pdf.followup_ocr import _headers
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, day, fail, money
@@ -52,9 +56,7 @@ def _split_merged_lines(page, columns):
 def parse_pagbank_financial(extraction):
     text = upper("\n".join(line.text for page in extraction.pages for line in page.lines))
     period = re.search(rf"PERIODO:\s*({DATE})\s+A\s+({DATE})", text)
-    if not period:
-        fail()
-    start, end = day(period[1]), day(period[2])
+    start, end = optional_document_period(period)
     events, observations, changes = [], [], defaultdict(lambda: defaultdict(lambda: Decimal(0)))
     controls, event_dates = {}, set()
     for ordinal, page in enumerate(extraction.pages, 1):
@@ -111,7 +113,7 @@ def parse_pagbank_financial(extraction):
                 continue
             match = _DATETIME.fullmatch(anchor.text)
             date, time = day(match[1]), match[2]
-            if not start <= date <= end or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d", time):
+            if not period_contains(date, start, end) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d", time):
                 fail()
             aligned = [item for item in cells if abs(item.bbox["top"] - top) < 0.006]
             accounts = [item for item in aligned if columns["CONTA"] - 0.015 <= item.bbox["left"] < columns["VALOR(R$)"] - 0.025]

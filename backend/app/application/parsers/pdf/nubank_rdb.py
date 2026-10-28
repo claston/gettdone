@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from app.application.errors import PdfFinancialValidationError
 from app.application.normalization.text import normalize_upper_text
+from app.application.parsers.pdf.document_period import period_contains, unique_document_period
 
 _NUMBER = r"(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}"
 _MONEY = re.compile(rf"R\$\s*({_NUMBER})")
@@ -40,18 +41,15 @@ def parse_nubank_rdb_pages(pages: list[str]) -> dict:
     for number, page in enumerate(pages, 1):
         normalized = normalize_upper_text(page)
         match = _PERIOD.search(normalized)
-        if match is None:
-            _fail()
-        periods.add(_period(match))
+        if match is not None:
+            periods.add(_period(match))
         for match in re.finditer(rf"SALDO NO FINAL DO PERIODO:\s*R\$\s*({_NUMBER})", normalized):
             balances.add(_money(match[1]))
         position_refs.extend({"page": number, "line": index} for index, text in enumerate(page.splitlines(), 1)
                              if "SALDO NO FINAL DO PERIODO:" in normalize_upper_text(text))
-    if len(periods) != 1 or len(balances) != 1:
+    if len(balances) != 1:
         _fail()
-    start, end = next(iter(periods))
-    if start > end:
-        _fail()
+    start, end = unique_document_period(periods, parse_date=lambda value: value)
     events, observations, validations = [], [], []
     pending = []
     processing = False
@@ -66,13 +64,13 @@ def parse_nubank_rdb_pages(pages: list[str]) -> dict:
         if match is None:
             _fail()
         day = date(match[1])
-        if not start <= day <= end:
+        if not period_contains(day, start, end):
             _fail()
         values = [_money(match[1]) for match in _MONEY.finditer(text)]
         description = normalize_upper_text(_MONEY.sub("", match[2]))
         refs = [ref for _, ref in pending]
         if description == "RENDIMENTO ATE ESSA DATA" and len(values) == 1:
-            if day != end or observations:
+            if end is not None and day != end or observations:
                 _fail()
             observations.append({"observation_type": "period_income", "dates": {"as_of": day},
                                  "amounts": {"income": format(values[0], ".2f")}, "source_refs": refs, "attributes": {}})
@@ -122,7 +120,7 @@ def parse_nubank_rdb_pages(pages: list[str]) -> dict:
         flush()
     if not events or not no_pending or len(observations) != 1:
         _fail()
-    observations.append({"observation_type": "closing_position", "dates": {"as_of": end},
+    observations.append({"observation_type": "closing_position", "dates": {"as_of": end} if end else {},
                          "amounts": {"net": format(next(iter(balances)), ".2f")}, "source_refs": position_refs, "attributes": {}})
     validations.append(_check("rdb_page_count", len(pages), len(pages)))
     notice = ("Aplicações e resgates RDB das Caixinhas PJ, com valores brutos, impostos e líquidos preservados. "

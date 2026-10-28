@@ -4,6 +4,7 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import optional_document_period, period_contains
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _lines, _row, day, fail, money
 
 BB_ENGLISH = "bb_english_bank_statement_v1"
@@ -37,9 +38,9 @@ def _english(pages, kind):
     text = "\n".join(pages)
     period = re.search(rf"({DATE})\s*-\s*({DATE})", text)
     expected = re.search(r"Transaction Details\s*\((\d+) transactions\)", text, re.I)
-    if not period or not expected:
+    if not expected:
         fail()
-    start, end = [day(value, "%m/%d/%Y") for value in period.groups()]
+    start, end = optional_document_period(period, parse_date=lambda value: day(value, "%m/%d/%Y"))
     rows = []
     for page, line, raw in _lines(pages):
         if re.fullmatch(rf"{DATE}\s*-\s*{DATE}", raw):
@@ -50,7 +51,7 @@ def _english(pages, kind):
         if not match:
             fail("Uma linha do extrato em inglês está incompleta ou contém um tipo não reconhecido.")
         date = day(match[1], "%m/%d/%Y")
-        if not start <= date <= end or (match[2] == "DEBIT") != bool(match[4]):
+        if not period_contains(date, start, end) or (match[2] == "DEBIT") != bool(match[4]):
             fail()
         amount = Decimal(match[5].replace(",", "")) * (-1 if match[4] else 1)
         rows.append(_row(page, line, date, match[3], amount))

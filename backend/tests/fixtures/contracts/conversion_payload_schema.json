@@ -1075,6 +1075,11 @@
           "title": "Partial Statement",
           "type": "integer"
         },
+        "document_period_unavailable": {
+          "default": 0,
+          "title": "Document Period Unavailable",
+          "type": "integer"
+        },
         "non_cash_entries_excluded": {
           "default": 0,
           "title": "Non Cash Entries Excluded",

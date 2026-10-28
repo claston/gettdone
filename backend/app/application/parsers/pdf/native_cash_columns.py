@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from app.application.errors import OcrFinancialAmbiguityError
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import optional_document_period, unique_document_period
 from app.application.parsers.pdf.layout_specific.santander_ocr import SANTANDER_OCR_LAYOUT, _period
 from app.application.parsers.pdf.native_itau_monthly import _boxes
 from app.application.parsers.pdf.native_unicred_grid import _PDFIUM_LOCK, _read_history, _TextBox
@@ -176,11 +177,9 @@ def parse_native_cash_columns(raw, page_texts):
     controls = None
     if santander:
         start, end, controls = _summary("\n".join(read_layout_native_pdf_page_texts(raw)))
-    elif kind == BRADESCO_UNIFIED:
+    elif kind != BRADESCO_MONTHLY:
         period = re.search(r"PERIODO\s+(\d{2}/\d{2}/\d{4})\s+A\s+(\d{2}/\d{2}/\d{4})", upper("\n".join(page_texts)))
-        if period is None:
-            _fail()
-        start, end = _date(period[1], None), _date(period[2], None)
+        start, end = optional_document_period(period, parse_date=lambda value: _date(value, None))
     rows, source_pages, accounts = [], [], set()
     opening = opening_date = printed_closing = printed_totals = current = None
     finished = False
@@ -226,12 +225,10 @@ def parse_native_cash_columns(raw, page_texts):
                     if not any((box.left+box.right)/2 >= (debit.right+balance.left)/2 for box in opening_values):
                         return None
                     periods = set(re.findall(r"ENTRE\s+(\d{2}/\d{2}/\d{4})\s+E\s+(\d{2}/\d{2}/\d{4})", normalized))
-                    if len(periods) != 1:
-                        _fail()
-                    first, last = next(iter(periods))
-                    start, end = _date(first, None), _date(last, None)
-                    if start > end:
-                        _fail()
+                    if not periods:
+                        periods = set(re.findall(r"ENTRE\s+(\d{2}/\d{2}/\d{4})\s+E\s+(\d{2}/\d{2}/\d{4})",
+                                                 upper("\n".join(page_texts))))
+                    start, end = unique_document_period(periods, parse_date=lambda value: _date(value, None))
                 characters = [_TextBox(char, *tp.get_charbox(i, loose=True)) for i, char in enumerate(text)
                               if char not in {"\r", "\n", "\x00"}]
 

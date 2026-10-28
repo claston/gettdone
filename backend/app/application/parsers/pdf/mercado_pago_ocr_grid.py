@@ -4,6 +4,7 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import optional_document_period, period_contains
 from app.application.parsers.pdf.followup_ocr import _headers, _source
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import NUMBER, VerifiedStatement, _row, day, fail, money
@@ -18,9 +19,7 @@ def parse_mercado_pago_ocr_grid(source):
         return None
     text = upper("\n".join(line.text for page in source.pages for line in page.lines))
     period = re.search(r"PERIODO:\s*DE (\d{2}-\d{2}-\d{4}) AL (\d{2}-\d{2}-\d{4})", text)
-    if period is None:
-        fail()
-    start, end = [day(value, "%d-%m-%Y") for value in period.groups()]
+    start, end = optional_document_period(period, parse_date=lambda value: day(value, "%d-%m-%Y"))
     def summary(label):
         matches = re.findall(rf"{label}:\s*R\$\s*([+-]?\s*{NUMBER})", text)
         if len(matches) != 1:
@@ -28,7 +27,7 @@ def parse_mercado_pago_ocr_grid(source):
         return money(re.sub(r"\s+", "", matches[0]))
     opening, closing = summary("SALDO INICIAL"), summary("SALDO FINAL")
     inflows, outflows = abs(summary("ENTRADAS")), abs(summary("SAIDAS"))
-    if start > end:
+    if start is not None and start > end:
         fail()
     rows, running, checks = [], opening, 0
     for page in source.pages:
@@ -60,7 +59,7 @@ def parse_mercado_pago_ocr_grid(source):
                     or values[1].bbox["left"] + values[1].bbox["width"]/2 <= boundary):
                 fail("As colunas de valor e saldo Mercado Pago não estão separadas.")
             date = day(anchor.text, "%d-%m-%Y")
-            if not start <= date <= end or rows and date < rows[-1].transaction.date:
+            if not period_contains(date, start, end) or rows and date < rows[-1].transaction.date:
                 fail()
             parsed = [_CURRENCY.fullmatch(line.text.strip()) for line in values]
             amount, balance = [money(re.sub(r"\s+", "", match["number"])) for match in parsed]

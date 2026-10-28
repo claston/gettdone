@@ -8,6 +8,10 @@ from statistics import median
 
 from app.application.errors import PdfFinancialValidationError
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import (
+    optional_document_period,
+    period_contains,
+)
 from app.application.parsers.pdf.final_native_statements import MONTHS
 from app.application.parsers.pdf.followup_ocr import _headers, _source
 from app.application.parsers.pdf.statement_review import financial_mismatch
@@ -39,9 +43,10 @@ def identify_final_ocr(text):
     text = upper(text)
     if "CONTA CORRENTE + RENDE FACIL" in text and "BANCO DO BRASIL" in text and "VALOR R$" in text:
         return BB
-    if "SICREDI" in text and "PERIODO DE" in text and all(key in text for key in ("VALOR (R$)", "SALDO (R$)", "COOPERATIVA:")):
+    if "SICREDI" in text and all(key in text for key in ("VALOR (R$)", "SALDO (R$)", "COOPERATIVA:")):
         return SICREDI
-    if "GERENCIADOR" in text and "CAIXA" in text and all(key in text for key in ("VIA INTERNET", "LANCAMENTOS DE", "MOVIMENTO")):
+    if "GERENCIADOR" in text and "CAIXA" in text and all(key in text for key in (
+            "VIA INTERNET", "LANCAMENTO", "MOVIMENTO", "DOCUMENTO", "HISTORICO", "VALOR", "SALDO")):
         return CAIXA
     return None
 
@@ -78,9 +83,11 @@ def _bb(extraction):
     rows, candidates = [], 0
     text = upper("\n".join(line.text for page in extraction.pages for line in page.lines))
     period = re.search(r"MOVIMENTACAO EM\s+("+"|".join(MONTHS)+r") DE (\d{4})", text)
-    if not period:
-        fail("Falta o mês de referência do extrato Banco do Brasil.")
-    month, year = MONTHS.index(period[1])+1, int(period[2])
+    if period:
+        month, year = MONTHS.index(period[1])+1, int(period[2])
+    else:
+        optional_document_period(None)
+        month = year = None
     signed = re.compile(rf"({NUMBER})\s*([CD])(?:\s*\2)?", re.I)
     for page in extraction.pages:
         columns = _headers(page, ("DATA", "ORIGEM", "HISTORICO", "DOCUMENTO", "LOTE", "VALOR R$"))
@@ -111,7 +118,7 @@ def _bb(extraction):
             match = signed.fullmatch(value.text)
             amount = money(match[1]) * (-1 if match[2].upper() == "D" else 1)
             date = day(anchor.text)
-            if date[:7] != f"{year:04d}-{month:02d}":
+            if year is not None and date[:7] != f"{year:04d}-{month:02d}":
                 fail("Uma data Banco do Brasil está fora do mês de referência.")
             rows.append(_source(_row(page.page_number, anchor.line_index, date, description, amount,
                                     reference=refs[0].text), page, cells))
@@ -129,9 +136,7 @@ def _bb(extraction):
 def _sicredi(extraction):
     text = upper("\n".join(line.text for page in extraction.pages for line in page.lines))
     bounds = re.search(rf"PERIODO DE\s+({DATE})\s+A\s+({DATE})", text)
-    if not bounds:
-        fail()
-    start, end = day(bounds[1]), day(bounds[2])
+    start, end = optional_document_period(bounds)
     rows, opening, running, checks = [], None, None, 0
     previous_columns = None
     for page in extraction.pages:
@@ -185,7 +190,7 @@ def _sicredi(extraction):
                 printed = money("2"+balance.text[1:])
             else:
                 printed = _number(balance)
-            if running is None or not start <= date <= end or running + amount != printed:
+            if running is None or not period_contains(date, start, end) or running + amount != printed:
                 fail("Os valores Sicredi não fecham com os saldos impressos.")
             descriptions = [line.text for line in cells if columns["DESCRICAO"]-.02 <= line.bbox["left"] < columns["DOCUMENTO"]-.02]
             if not descriptions or rows and date < rows[-1].transaction.date:
@@ -220,10 +225,13 @@ def _caixa(extraction):
         text = upper("\n".join(line.text for line in page.lines))
         bounds = re.search(rf"LANCAMENTOS DE\s+({DATE})\s+A\s+({DATE})", text)
         columns = _headers(page, ("LANCAMENTO", "MOVIMENTO", "DOCUMENTO", "HISTORICO", "VALOR", "SALDO"))
-        if not bounds or not columns:
-            fail("Falta um período ou cabeçalho do extrato Caixa.")
-        scope = tuple(sorted(day(date) for date in bounds.groups()))
+        if not columns:
+            fail("Falta o cabeçalho do extrato Caixa.")
+        scope = optional_document_period(tuple(sorted(day(value) for value in bounds.groups())) if bounds else None,
+                                         parse_date=lambda value: value)
         if scope != period:
+            if scopes and (scope[0] is None or scopes[-1][1] is None):
+                fail("Não foi possível separar os blocos do extrato Caixa.")
             if scopes and scope[0] <= scopes[-1][1]:
                 fail("Os períodos Caixa se sobrepõem ou estão fora de sequência.")
             period, running = scope, None
@@ -254,8 +262,8 @@ def _caixa(extraction):
             balance = _one(cells, boundary, 1)
             amount, printed, date = _number(value), _number(balance), day(anchor.text)
             description = " ".join(line.text for line in cells if columns["HISTORICO"]-.03 <= line.bbox["left"] < columns["VALOR"]-.04)
-            next_week = (calendar_date.fromisoformat(period[1]) + timedelta(days=7)).isoformat()
-            if (not any(start <= date <= end for start, end in printed_scopes)
+            next_week = (calendar_date.fromisoformat(period[1]) + timedelta(days=7)).isoformat() if period[1] else None
+            if (period[1] is not None and not any(start <= date <= end for start, end in printed_scopes)
                     and not period[1] < date <= next_week) or not description:
                 fail()
             used.update((value.id, balance.id))
@@ -277,7 +285,7 @@ def _caixa(extraction):
             if running + amount != printed:
                 financial_mismatch("Os valores Caixa não fecham dentro do mesmo período.")
             row = _source(_row(page.page_number, anchor.line_index, date, description, amount, printed), page, cells)
-            if not period[0] <= date <= period[1]:
+            if not period_contains(date, *period):
                 row = replace(row, warnings=[*row.warnings, "manual_review_recommended", "movement_date_outside_requested_period"])
             rows.append(row)
             running = printed

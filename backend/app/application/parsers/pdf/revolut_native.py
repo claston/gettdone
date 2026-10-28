@@ -3,6 +3,7 @@ import re
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import optional_document_period, period_contains
 from app.application.parsers.pdf.ocr_statement_controls import _provenance
 from app.application.parsers.pdf.verified_statements import NUMBER, VerifiedStatement, _row, day, fail, money
 
@@ -24,10 +25,8 @@ def _date(text):
 def parse_revolut_native(source):
     text = upper(" ".join(line.text for page in source.pages for line in page.lines))
     period = re.search(r"TRANSACOES DA CONTA DE (.+?) A (\d{1,2} DE [A-Z]+ DE \d{4})", text)
-    if not period:
-        fail("O período Revolut não pôde ser identificado.")
-    start, end = _date(period[1]), _date(period[2])
-    if start > end:
+    start, end = optional_document_period(period, parse_date=_date)
+    if start is not None and start > end:
         fail()
     first = source.pages[0]
     labels = {upper(line.text): line for line in first.lines}
@@ -73,7 +72,7 @@ def parse_revolut_native(source):
             amount = money(_CASH.fullmatch(amounts[0].text)[1]) * (-1 if amounts[0].bbox["left"] < boundary else 1)
             printed = money(_CASH.fullmatch(balances[0].text)[1])
             date = _date(anchor.text)
-            if not start <= date <= end or rows and date < rows[-1].transaction.date or running + amount != printed:
+            if not period_contains(date, start, end) or rows and date < rows[-1].transaction.date or running + amount != printed:
                 fail("Um movimento Revolut não confere com a data ou o saldo impresso.")
             history = [line.text for line in cells if labels["DESCRICAO"].bbox["left"] - .01 <= line.bbox["left"] < debit_x - .03]
             if not history:

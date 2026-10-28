@@ -7,6 +7,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import optional_document_period, period_contains
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _lines, _row, day, fail, money
 from app.application.sweep_statement_detection import BB_SISBB, CAIXA, CREDISIS, MERCADO_PAGO, SICREDI, TRIBANCO
@@ -111,12 +112,10 @@ def _sicredi(pages, kind):
     text = "\n".join(pages)
     period_pattern = rf"PERIODO DE\s+({DATE})\s+A\s+({DATE})"
     bounds = re.search(period_pattern, upper(text))
-    if bounds is None:
-        fail()
     for field in (r"COOPERATIVA:\s*([\d.-]+)", r"CONTA:\s*([\d.-]+)"):
         if len(set(re.findall(field, upper(text)))) > 1:
             fail("Há contas diferentes no mesmo arquivo Sicredi. Envie um extrato por conta.")
-    start, end = day(bounds[1]), day(bounds[2])
+    start, end = optional_document_period(bounds)
     rows, opening, running, checks = [], None, None, 0
     period_seen, period_opened, future = False, False, False
     for page, line, raw in _lines(pages):
@@ -153,7 +152,7 @@ def _sicredi(pages, kind):
                 fail()
             continue
         date, description, amount, balance = day(dated[1]), dated[2], money(dated[3]), money(dated[4])
-        if not period_opened or running is None or not start <= date <= end:
+        if not period_opened or running is None or not period_contains(date, start, end):
             fail()
         if running + amount != balance:
             financial_mismatch()
@@ -220,9 +219,7 @@ def _tribanco(pages, kind):
 def _mercado_pago(pages, kind):
     text = upper("\n".join(pages))
     period = re.search(r"DE (\d{2}-\d{2}-\d{4}) AL (\d{2}-\d{2}-\d{4})", text)
-    if not period:
-        fail()
-    start, end = day(period[1], "%d-%m-%Y"), day(period[2], "%d-%m-%Y")
+    start, end = optional_document_period(period, parse_date=lambda value: day(value, "%d-%m-%Y"))
     summary = {}
     for key, label in {"opening": "SALDO INICIAL:", "closing": "SALDO FINAL:", "credit": "ENTRADAS:", "debit": "SAIDAS:"}.items():
         values = [
@@ -264,7 +261,7 @@ def _mercado_pago(pages, kind):
         date = day(dated[1], "%d-%m-%Y")
         description = dated[2][: values[0].start()].strip()
         reference = re.search(r"\s+(\d+)$", description)
-        if not reference or not start <= date <= end:
+        if not reference or not period_contains(date, start, end):
             fail()
         amount, balance = map(_currency, values)
         description = " ".join([*prefix, description[: reference.start()].strip()])

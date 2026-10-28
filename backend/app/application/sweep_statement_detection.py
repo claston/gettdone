@@ -32,7 +32,7 @@ def identify_sweep_statement(text):
     if "TRIBANCOONLINE.COM.BR" in compact and "LANCAMENTOS DA CONTA VINCULADA" in normalized:
         return TRIBANCO
     if "MERCADO PAGO INSTITUICAO DE PAGAMENTO" in normalized and all(
-        marker in normalized for marker in ("EXTRATO DE CONTA", "ID DA OPERACAO", "SALDO INICIAL", "SALDO FINAL", " AL ")
+        marker in normalized for marker in ("EXTRATO DE CONTA", "ID DA OPERACAO", "SALDO INICIAL", "SALDO FINAL")
     ):
         return MERCADO_PAGO
     if "SAC CAIXA" in normalized and all(

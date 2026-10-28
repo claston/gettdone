@@ -74,10 +74,17 @@ def test_bradesco_printed_inconsistencies_remain_readable_with_financial_warning
     assert result.parse_metrics["financial_controls_validated"] == 0
 
 
-@pytest.mark.parametrize("mutation", ["orphan_reference", "missing_value", "invalid_date", "invalid_period", "missing_period"])
+@pytest.mark.parametrize("mutation", ["orphan_reference", "missing_value", "invalid_date", "invalid_period"])
 def test_bradesco_still_rejects_ambiguous_or_missing_ledger_evidence(mutation):
     with pytest.raises(PdfFinancialValidationError):
         pdf_parser.parse_pdf_transactions(bradesco_continuation(undated_opening=True, mutation=mutation))
+
+
+def test_bradesco_missing_period_converts_fully_dated_movements_for_review():
+    result = pdf_parser.parse_pdf_transactions(bradesco_continuation(undated_opening=True, mutation="missing_period"))
+    assert [row.amount for row in result.transactions] == [500, -150, -150]
+    assert result.parse_metrics["document_period_unavailable"] == 1
+    assert result.parse_metrics["statement_validation_failed"] == 0
 
 
 def test_bradesco_undated_opening_and_bank_metadata_reach_the_shared_pipeline():

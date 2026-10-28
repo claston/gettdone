@@ -39,18 +39,28 @@ def financial_mismatch(message=None):
     warnings.append("financial_validation_failed")
 
 
+def document_period_unavailable():
+    warnings = _CONTROL_WARNINGS.get()
+    if warnings is not None and "document_period_unavailable" not in warnings:
+        warnings.append("document_period_unavailable")
+
+
 def apply_statement_review(result, *, validation_failed=False):
+    observed = _CONTROL_WARNINGS.get() or []
     validation_failed = (validation_failed or bool(result.parse_metrics.get("statement_validation_failed"))
-                         or bool(_CONTROL_WARNINGS.get()))
+                         or "financial_validation_failed" in observed)
+    period_missing = bool(result.parse_metrics.get("document_period_unavailable")) or "document_period_unavailable" in observed
     pages = result.source_page_texts or ()
     partial = bool(result.parse_metrics.get("partial_statement")) or validate_statement_completeness(pages)
-    if not partial and not validation_failed:
+    if not partial and not validation_failed and not period_missing:
         return result
     warnings = ["manual_review_recommended"]
     if partial:
         warnings.append("partial_statement")
     if validation_failed:
         warnings.append("financial_validation_failed")
+    if period_missing:
+        warnings.append("document_period_unavailable")
     canonical = list(result.canonical_transactions or [])
     if canonical:
         canonical[0] = replace(canonical[0], warnings=list(dict.fromkeys([*canonical[0].warnings, *warnings])))
@@ -59,5 +69,8 @@ def apply_statement_review(result, *, validation_failed=False):
                "partial_statement": int(partial), "financial_controls_validated": 0,
                "confidence_band": "low", "balance_validation_status": "review_required",
                "export_recommendation": "review_recommended",
-               "export_recommendation_reason": "partial_statement" if partial else "financial_validation_failed"}
+               "export_recommendation_reason": "partial_statement" if partial else "financial_validation_failed"
+               if validation_failed else "document_period_unavailable"}
+    if period_missing:
+        metrics["document_period_unavailable"] = 1
     return replace(result, canonical_transactions=canonical, parse_metrics=metrics)

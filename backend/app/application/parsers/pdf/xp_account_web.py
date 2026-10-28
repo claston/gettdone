@@ -3,6 +3,7 @@ import re
 from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.document_period import period_contains, unique_document_period
 from app.application.parsers.pdf.financial_reports import _check, _event
 from app.application.parsers.pdf.verified_statements import DATE, day, fail
 from app.application.parsers.pdf.xp_investment_cash import CURRENCY, _amount
@@ -12,11 +13,10 @@ def parse_xp_account_web(source):
     text = upper("\n".join(line.text for page in source.pages for line in page.lines))
     periods = set(re.findall(rf"DE:\s*({DATE})\s+ATE:\s*({DATE})", text))
     accounts = set(re.findall(r"\bCONTA:\s*([\d-]+)", text))
-    if len(periods) != 1 or len(accounts) != 1:
-        fail("A conta ou o período XP não pode ser confirmado.")
-    first, last = next(iter(periods))
-    start, end = day(first), day(last)
-    if start > end:
+    if len(accounts) != 1:
+        fail("A conta XP não pode ser confirmada.")
+    start, end = unique_document_period(periods)
+    if start is not None and start > end:
         fail()
     records, observations = [], []
     for page in source.pages:
@@ -53,7 +53,7 @@ def parse_xp_account_web(source):
                 if len(movement) != 1 or len(amounts) != 2 or not history or any(not CURRENCY.fullmatch(line.text) for line in amounts):
                     fail("Uma linha XP está sem suas duas datas, descrição, valor ou saldo legíveis.")
                 settlement, transaction = day(anchor.text), day(movement[0].text)
-                if not future and not (start <= settlement <= end and start <= transaction <= end):
+                if not future and not (period_contains(settlement, start, end) and period_contains(transaction, start, end)):
                     fail("Uma data XP está fora do período selecionado.")
                 used.update(line.id for line in amounts)
                 record = {"dates": {"transaction": transaction, "settlement": settlement},

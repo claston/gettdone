@@ -59,6 +59,7 @@ def detail_statement(*, mutation=None):
         "bad_date": {"02/10/2026": "32/10/2026"},
         "outside_period": {"02/10/2026": "02/11/2026"},
         "missing_summary": {"Saldo inicial": "Controle ausente"},
+        "missing_period": {"Período: 01/10/2026 a 31/10/2026": "Período não informado"},
     }
     if mutation in replacements:
         pages = [[(replacements[mutation].get(text, text), x, y) for text, x, y in page] for page in pages]

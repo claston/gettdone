@@ -33,6 +33,28 @@ const transaction: Transaction = {
   },
 };
 
+it("avisa sobre período desconhecido sem afirmar divergência de saldo", () => {
+  render(
+    <BalanceReviewNotice
+      conversion={
+        {
+          transactions: [],
+          reviewWarnings: ["document_period_unavailable"],
+        } as unknown as Conversion
+      }
+    />,
+  );
+  expect(
+    screen.getByText(/Período do documento não identificado/),
+  ).toBeVisible();
+  expect(
+    screen.getByText(/não comprovam que o mês está completo/),
+  ).toBeVisible();
+  expect(
+    screen.queryByText(/Saldos precisam de conferência/),
+  ).not.toBeInTheDocument();
+});
+
 it("mostra no topo o motivo e a conta que não fecha", () => {
   render(
     <BalanceReviewNotice
