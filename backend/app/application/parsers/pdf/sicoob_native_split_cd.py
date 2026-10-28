@@ -27,11 +27,19 @@ def _attach_evidence(row, band):
 
 def parse_sicoob_native_split_cd(source):
     columns = _headers(source.pages[0], ("DATA", "HISTORICO", "VALOR"))
+    value_left = columns["VALOR"] - .04 if columns else None
     if source.provider == "native_pdfium_text":
         columns = native_header_columns(source.pages[0], ("DATA", "HISTORICO", "VALOR"))
         if columns:
+            # Amounts are right aligned; long values legitimately start before
+            # the heading. Require their boxes to reach the financial column.
+            value_left = min([columns["VALOR"] - .04, *[
+                cell.bbox["left"] for page in source.pages for cell in (*page.lines, *page.words)
+                if cell.bbox and _VALUE.fullmatch(upper(cell.text))
+                and cell.bbox["left"] > (columns["HISTORICO"] + columns["VALOR"]) / 2
+                and cell.bbox["left"] + cell.bbox["width"] >= columns["VALOR"]]])
             source = replace(source, pages=[split_native_columns(page,
-                [columns["HISTORICO"] - .02, columns["VALOR"] - .04],
+                [columns["HISTORICO"] - .02, value_left],
                 include=lambda line: bool(re.match(r"^\d{2}/\d{2}\s+", line.text)
                     or upper(line.text).startswith("DATA ") and "HISTORICO" in upper(line.text))) for page in source.pages])
     if not columns:
@@ -62,7 +70,7 @@ def parse_sicoob_native_split_cd(source):
                       and re.fullmatch(r"\d{2}/\d{2}", item[2].text)), key=lambda item: item[0])
     height = median(line.bbox["height"] for _, _, line in body)
     margin = height*.8
-    financial = [(pos, p, line) for pos, p, line in body if line.bbox["left"] >= columns["VALOR"]-.04
+    financial = [(pos, p, line) for pos, p, line in body if line.bbox["left"] >= value_left
                  and re.search(r"\d", line.text)]
     used, rows, opening, controls = set(), [], None, {}
     opening_position, row_positions = None, []
@@ -74,7 +82,7 @@ def parse_sicoob_native_split_cd(source):
         if len(values) != 1 or not (match := _VALUE.fullmatch(upper(values[0][1].text))):
             fail("Uma linha SISBR está sem seu valor legível.")
         value_page, value_line = values[0]
-        signs = [line.text for _, _, line in band if line.bbox["left"] >= columns["VALOR"]-.04 and line.text in {"C", "D"}]
+        signs = [line.text for _, _, line in band if line.bbox["left"] >= value_left and line.text in {"C", "D"}]
         sign = match[2]
         if (sign and signs) or (not sign and len(signs) != 1):
             fail("Um valor SISBR está sem indicador C/D inequívoco.")
@@ -82,7 +90,7 @@ def parse_sicoob_native_split_cd(source):
         used.add((value_page.page_number, value_line.id))
         year = int(end[:4]) - (int(anchor.text[3:]) > int(end[5:7]))
         date = day(anchor.text + f"/{year}")
-        history = [line for _, _, line in band if columns["HISTORICO"]-.02 <= line.bbox["left"] < columns["VALOR"]-.04]
+        history = [line for _, _, line in band if columns["HISTORICO"]-.02 <= line.bbox["left"] < value_left]
         if not history:
             fail()
         label = upper(history[0].text)
@@ -134,7 +142,7 @@ def parse_sicoob_native_split_cd(source):
     closing_labels = [line for line in last_page.lines if upper(line.text) == "(+) SALDO EM CONTA:"]
     if len(closing_labels) != 1:
         fail()
-    closing_values = [line for line in last_page.lines if line.bbox["left"] >= columns["VALOR"]-.04
+    closing_values = [line for line in last_page.lines if line.bbox["left"] >= value_left
         and abs(line.bbox["top"] - closing_labels[0].bbox["top"]) < height
         and _VALUE.fullmatch(upper(line.text))]
     if len(closing_values) != 1 or not (match := re.fullmatch(rf"({NUMBER})\s*([CD])", upper(closing_values[0].text))):

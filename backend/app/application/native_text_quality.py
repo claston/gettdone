@@ -41,6 +41,8 @@ def _text_signals(text):
         signals.append("malformed_date_tokens")
     if fragmented >= 3:
         signals.append("fragmented_money_values")
+    if len(re.findall(r"(?<![\w\d])\.\d{3},\s*\d{2}\b", text)) >= 2:
+        signals.append("truncated_money_values")
     return tuple(signals)
 
 

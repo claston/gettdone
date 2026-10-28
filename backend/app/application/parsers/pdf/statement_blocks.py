@@ -18,6 +18,7 @@ from app.application.statement_period_history import statement_period_from_text
 
 _DATE = r"\d{2}/\d{2}/\d{4}"
 _MONTHS = "JAN FEV MAR ABR MAI JUN JUL AGO SET OUT NOV DEZ".split()
+_FULL_MONTHS = "JANEIRO FEVEREIRO MARCO ABRIL MAIO JUNHO JULHO AGOSTO SETEMBRO OUTUBRO NOVEMBRO DEZEMBRO".split()
 _PAGE_FIELDS = {"page", "page_number", "source_page", "reference_page"}
 
 
@@ -35,6 +36,11 @@ def _period(text):
         return period["start_date"], period["end_date"]
     short = re.search(r"PERIODO:\s*(\d{2})\s+A\s+(\d{2})/(\d{2})/(\d{4})\b", header)
     try:
+        labelled_month = re.search(r"\bPERIODO:\s*(" + "|".join(_FULL_MONTHS + _MONTHS) + r")/(20\d{2})\b", header)
+        if labelled_month:
+            names = _FULL_MONTHS if labelled_month[1] in _FULL_MONTHS else _MONTHS
+            number, year = names.index(labelled_month[1])+1, int(labelled_month[2])
+            return date(year, number, 1).isoformat(), date(year, number, calendar.monthrange(year, number)[1]).isoformat()
         if short:
             start, end, month, year = map(int, short.groups())
             return date(year, month, start).isoformat(), date(year, month, end).isoformat()
@@ -52,25 +58,34 @@ def _period(text):
 def statement_blocks(pages):
     if len(pages) < 2:
         return []
-    blocks, start, current, opening = [], 0, None, None
+    from app.application.parsers.pdf.positional_monthly_statements import positional_kind
+
+    blocks, start, current, opening, positional_month = [], 0, None, None, None
     for index, text in enumerate(pages):
         normalized = upper(text)
         match = re.search(rf"({_DATE})\s+SALDO\s+(?:ANTERIOR|INICIAL)\b", normalized)
         opening_date = match[1] if match else None
         first_dated = next((upper(line) for line in text.splitlines() if re.match(rf"^\s*{_DATE}\b", line)), "")
         opening_starts_ledger = bool(re.match(rf"{_DATE}\s+SALDO\s+(?:ANTERIOR|INICIAL)\b", first_dated))
-        is_statement = classify_document_type("page.pdf", b"", extracted_text=text).document_type == BANK_STATEMENT
+        positional = positional_kind(text)
+        is_statement = classify_document_type("page.pdf", b"", extracted_text=text).document_type == BANK_STATEMENT or bool(positional)
         period = _period(text) if is_statement else None
+        lot_date = re.search(r"(?m)^\s*\d{6,8}\s+\d{3}#?\s+(\d{2}/\d{2}/(?:\d{4}|\d{2}))\b",
+                             "\n".join(upper(line) for line in text.splitlines()))
+        month_key = lot_date[1][3:] if positional == "lot_origin" and lot_date else None
+        positional_reset = month_key and positional_month and month_key != positional_month
         changed = period is not None and current is not None and period != current
         dated_reset = (period is None and current is None and opening_date and opening
                        and opening_date != opening and opening_starts_ledger)
-        if index and (changed or dated_reset):
+        if index and (changed or dated_reset or positional_reset):
             blocks.append(StatementBlock(start, index, current))
             start, opening = index, None
         if period:
             current = period
         if opening_date:
             opening = opening_date
+        if month_key:
+            positional_month = month_key
     if not blocks:
         return []
     blocks.append(StatementBlock(start, len(pages), current))

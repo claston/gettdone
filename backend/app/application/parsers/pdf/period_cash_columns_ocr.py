@@ -8,13 +8,14 @@ from app.application.parsers.pdf.document_period import (
     period_contains,
 )
 from app.application.parsers.pdf.ocr_statement_controls import _provenance
+from app.application.parsers.pdf.row_geometry import local_row_slopes, nearest_row, row_slope
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
 _CASH = re.compile(rf"(?:R\$\s*)?((?:[+-]\s*){{0,2}}{NUMBER})\s*([CD€]?)", re.I)
 _MONTHS = "JANEIRO FEVEREIRO MARCO ABRIL MAIO JUNHO JULHO AGOSTO SETEMBRO OUTUBRO NOVEMBRO DEZEMBRO".split()
 
 
-def _value(line, *, require_sign=False):
+def _value(line, *, require_sign=False, cells=()):
     match = _CASH.fullmatch(line.text.strip())
     if match is None:
         fail()
@@ -25,10 +26,18 @@ def _value(line, *, require_sign=False):
             fail("O valor contém sinais conflitantes ou duplicados.")
         token = signs[0][0] + token[len(signs[0]):]
     value = money(token)
-    if match[2].upper() in {"C", "D"}:
-        if token.startswith(("+", "-")) and (token[0] == "-") != (match[2].upper() == "D"):
+    indicator = match[2].upper()
+    if not indicator:
+        signs = [cell.text.upper() for cell in cells if cell.bbox and cell.text.upper() in {"C", "D"}
+                 and abs(cell.bbox["top"] - line.bbox["top"]) < .006
+                 and -.003 <= cell.bbox["left"] - (line.bbox["left"] + line.bbox["width"]) < .025]
+        if len(signs) > 1:
+            fail("Há mais de um indicador C/D junto ao mesmo valor.")
+        indicator = signs[0] if signs else ""
+    if indicator in {"C", "D"}:
+        if token.startswith(("+", "-")) and (token[0] == "-") != (indicator == "D"):
             fail()
-        return abs(value) * (-1 if match[2].upper() == "D" else 1)
+        return abs(value) * (-1 if indicator == "D" else 1)
     if match[2]:
         fail("Um indicador C/D não está legível e precisa dos controles independentes da linha.")
     if require_sign and value != 0 and not match[1].lstrip().startswith(("+", "-")):
@@ -54,6 +63,7 @@ def parse_period_cash_columns(source):
     if not max(history_x, ref_x) < value_x < balance_x:
         fail()
     boundary = (value_x + balance_x) / 2
+    slope = row_slope([labels[key] for key in names])
     period = re.search(rf"PERIODO:\s*({DATE})\s+ATE\s+({DATE})", text)
     if nordeste:
         start, end = optional_document_period(period)
@@ -79,26 +89,32 @@ def parse_period_cash_columns(source):
         cash = [line for line in lines if top < line.bbox["top"] < stop and line.bbox["left"] > value_x - .09
                 and _CASH.fullmatch(line.text.strip())]
         used = set()
+        anchors = sorted([line for line in lines if line.bbox["left"] < min(history_x, ref_x)
+                          and top < line.bbox["top"] < stop and re.fullmatch(DATE, line.text)], key=lambda line: line.bbox["top"])
+        seeds = [line for line in lines if upper(line.text) == "SALDO ANTERIOR"] if caixa else []
+        row_anchors = [*seeds, *anchors]
+        descriptions = [line for line in lines if top < line.bbox["top"] < stop
+                        and abs(line.bbox["left"]-history_x) < .07]
+        slopes = local_row_slopes(row_anchors, descriptions, fallback=slope) if caixa else None
+        assigned = {line.id: nearest_row(line, row_anchors, slope=slope, slopes=slopes) for line in cash}
         if caixa:
-            seeds = [line for line in lines if upper(line.text) == "SALDO ANTERIOR"]
             for seed in seeds:
                 if opening is not None or rows:
                     fail()
-                values = [line for line in cash if abs(line.bbox["top"] - seed.bbox["top"]) < .015]
+                values = [line for line in cash if assigned[line.id] is seed]
                 balances = [line for line in values if line.bbox["left"] > boundary]
                 amounts = [line for line in values if line.bbox["left"] <= boundary]
                 if len(balances) != 1 or len(amounts) != 1 or _value(amounts[0]) != 0:
                     fail()
-                opening = running = _value(balances[0], require_sign=True)
+                opening = running = _value(balances[0], require_sign=True, cells=lines)
                 used.update(line.id for line in values)
-        anchors = sorted([line for line in lines if line.bbox["left"] < min(history_x, ref_x)
-                          and top < line.bbox["top"] < stop and re.fullmatch(DATE, line.text)], key=lambda line: line.bbox["top"])
         for index, anchor in enumerate(anchors):
             y = anchor.bbox["top"]
             low = (anchors[index - 1].bbox["top"] + y) / 2 if index else max(top, y - .012)
             high = (anchors[index + 1].bbox["top"] + y) / 2 if index + 1 < len(anchors) else min(stop, y + .03)
             cells = [line for line in lines if low <= line.bbox["top"] < high]
-            values = [line for line in cash if line in cells and line.id not in used]
+            values = [line for line in cash if assigned[line.id] is anchor and line.id not in used]
+            cells = list({line.id: line for line in [*cells, *values]}.values())
             amounts = [line for line in values if line.bbox["left"] <= boundary]
             balances = [line for line in values if line.bbox["left"] > boundary]
             if running is None or len(amounts) != 1 or len(balances) != 1:
@@ -114,7 +130,7 @@ def parse_period_cash_columns(source):
             refs = [line.text for line in cells if abs(line.bbox["left"] - ref_x) < .025 and re.fullmatch(r"\d+", line.text)]
             if not description or len(refs) != 1:
                 fail()
-            value = _value(amounts[0], require_sign=caixa)
+            value = _value(amounts[0], require_sign=caixa, cells=cells)
             balance_match = _CASH.fullmatch(balances[0].text.strip())
             recovered_indicator = caixa and balance_match[2] == "€"
             if recovered_indicator:
@@ -124,7 +140,7 @@ def parse_period_cash_columns(source):
                         and money(re.sub(r"\s", "", balance_match[1])) != balance):
                     fail("O indicador Caixa ilegível não confere com os demais valores da linha.")
             else:
-                balance = _value(balances[0], require_sign=caixa)
+                balance = _value(balances[0], require_sign=caixa, cells=cells)
             if caixa and upper(description) == "SALDO DIA":
                 if value != 0 or balance != running:
                     fail()

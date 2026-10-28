@@ -9,6 +9,11 @@ from app.application.parsers.pdf.verified_statements import DATE, day, fail
 
 
 def _kind(text):
+    from app.application.parsers.pdf.positional_monthly_statements import positional_kind
+
+    positional = positional_kind(text)
+    if positional:
+        return positional
     compact = re.sub(r"[\s-]+", "", upper(text))
     if all(marker in compact for marker in ("EXTRATODECONTACORRENTE", "SALDOCONTA/RENDE+",
                                             "RENDIMENTOPREVISTORENDE+", "ENTRADASESAIDAS")):
@@ -58,6 +63,11 @@ def parse_followup_native_tables(raw, page_texts):
     if kind is None:
         return None
     source = read_native_table_source(raw)
+    if kind in {"lot_origin", "banrisul_month"}:
+        from app.application.parsers.pdf.positional_monthly_statements import parse_banrisul_month, parse_lot_origin
+
+        statement = parse_lot_origin(source) if kind == "lot_origin" else parse_banrisul_month(source)
+        return statement, source
     if kind == "banestes_rende":
         from app.application.parsers.pdf.banestes_rende import parse_banestes_rende
 
