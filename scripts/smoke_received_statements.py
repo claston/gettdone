@@ -21,7 +21,8 @@ def run(base):
              "status": "completed", "expires_at": "2099-01-01T00:00:00Z", "analysis_id": f"an_{index}",
              "result": {"analysis": {"file_type": "csv", "bank_name": "Itaú" if index == 1 else "Inter",
                                       "updated_at": "2026-10-28T12:00:00Z", "preview_transactions": [
-                 {"transaction_id": f"tx_{index}", "date": "2026-10-01", "description": f"PIX origem {index}", "amount": 12}]}}}
+                 {"transaction_id": f"tx_{index}", "date": "2026-10-01", "description": f"PIX origem {index}", "amount": 12,
+                  "warning_types": ["ambiguous_amount"] if index == 2 else []}]}}}
             for index in (1, 2)]
     writes, errors = [], []
 
@@ -31,7 +32,7 @@ def run(base):
         if path == "/auth/me":
             route.fulfill(json={"user_id": "synthetic", "name": "Usuário Sintético", "email": "synthetic@example.test"})
         elif path == "/api/pro/receipts":
-            route.fulfill(json={"totals": {"statements": 6, "ready": 5, "attention": 1}, "clients": clients,
+            route.fulfill(json={"totals": {"statements": 3, "ready": 2, "attention": 1}, "clients": clients,
                                 "pending": pending, "next_cursor": None})
         elif path == "/api/pro/receipts/refresh":
             route.fulfill(json={"next_cursor": None})
@@ -67,6 +68,7 @@ def run(base):
             page.goto(base + "/dashboard")
             expect(page.get_by_role("heading", name="Extratos recebidos")).to_be_visible()
             expect(page.get_by_text("2 disponíveis / 5 extratos no histórico")).to_be_visible()
+            expect(page.get_by_label("Resumo dos extratos").locator("strong")).to_have_text(["3", "2", "1"])
             expect(page.get_by_text("3 expirados", exact=True)).to_be_visible()
             expect(page.get_by_text("Itaú · Conta ••1234")).to_be_visible()
             expect(page.get_by_role("heading", name="Identificação pendente")).to_be_visible()
