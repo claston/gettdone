@@ -87,6 +87,7 @@ def make_corpus():
     )
     from tests.test_oct20_followup_native import portal_pages
     from tests.test_oct20_followup_ocr import banrisul_ocr
+    from tests.test_page_financial_fragments import sicoob_split_row
 
     cases = []
 
@@ -116,6 +117,11 @@ def make_corpus():
         ocr=santander_available(), bank_code="033")
     add("sicoob_value_before_page_break", sicoob_page_break(blocked=True),
         [["2026-07-01", 50], ["2026-07-02", -20]], bank_code="756", review=True)
+    for kind, mismatch in [("balance", False), ("transaction", False), ("balance", True)]:
+        add(f"sicoob_split_{kind}_{mismatch}", sicoob_split_row(kind=kind, mismatch=mismatch),
+            [["2026-07-01", 50], ["2026-07-02", -20], ["2026-07-03", 10]], bank_code="756", review=mismatch)
+    for guard in ("missing_sign", "extra_amount", "conflicting_sign", "nonadjacent", "opening_control"):
+        add(f"sicoob_split_ambiguous_{guard}", sicoob_split_row(**{guard: True}), [], rejected=True)
     add("bb_value_before_page_break", bb_page_break(), [["2026-07-01", 10], ["2026-07-02", 20]], bank_code="001")
     add("bb_ocr_overlapping_sign_stroke", ocr_raw, [["2026-08-03", -4.45]],
         ocr=bb_overlapping_sign(), bank_code="001", review=True)

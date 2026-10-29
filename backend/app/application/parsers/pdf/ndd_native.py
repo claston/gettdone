@@ -16,7 +16,7 @@ def compact(text):
     return re.sub(r"\s+", "", upper(text))
 
 
-def _right_value(page, anchor, *, integer=False, dash_zero=False):
+def _right_value(page, anchor, *, integer=False, dash_zero=False, control_ids=None):
     candidates = [line for line in page.lines if line.bbox["left"] > anchor.bbox["left"] + .1
                   and abs(line.bbox["top"] - anchor.bbox["top"]) < .008]
     pattern = r"\d+" if integer else rf"(?:R\$\s*)?[+-]?{NUMBER}"
@@ -24,6 +24,8 @@ def _right_value(page, anchor, *, integer=False, dash_zero=False):
               or dash_zero and compact(line.text) == "R$-"]
     if len(values) != 1:
         fail("Não foi possível conferir um total ou saldo NDD impresso.")
+    if control_ids is not None:
+        control_ids.add(values[0].id)
     value = values[0].text.strip()
     return Decimal(0) if compact(value) == "R$-" else Decimal(value) if integer else money(value.removeprefix("R$").strip())
 
@@ -38,37 +40,56 @@ def parse_ndd_native(source):
     labels = {"TOTALGERAL:": "closing", "TOTALCREDITO:": "credit", "TOTALDEBITO:": "debit",
               "QUANTIDADEDEOPERACOES:": "count"}
     controls, rows, stamps = {}, [], []
+    columns = None
+    history_right = None
     for page in source.pages:
+        control_ids = set()
+        control_labels = set()
         for line in page.lines:
             label = compact(line.text)
             if label.startswith("SALDOINICIAL"):
-                totals["opening"].add(_right_value(page, line, dash_zero=True))
+                control_labels.add(line.id)
+                totals["opening"].add(_right_value(page, line, dash_zero=True, control_ids=control_ids))
             elif label in labels:
+                control_labels.add(line.id)
                 key = labels[label]
-                totals[key].add(_right_value(page, line, integer=key == "count"))
+                totals[key].add(_right_value(page, line, integer=key == "count", control_ids=control_ids))
             elif match := re.fullmatch(rf"SALDOFINALDODIA({DATE}):", label):
+                control_labels.add(line.id)
                 date = day(match[1])
-                value = _right_value(page, line)
+                value = _right_value(page, line, control_ids=control_ids)
                 if date in controls and controls[date] != value:
                     fail()
                 controls[date] = value
         headers = {compact(line.text): line for line in page.lines}
         required = ("DATA/HORA", "LANCAMENTO", "OPERACAO", "DESCRICAODAMOVIMENTACAO", "VALOR")
-        if any(key not in headers for key in required):
+        present = [key for key in required if key in headers]
+        if len(present) == len(required):
+            columns = {key: headers[key].bbox["left"] for key in required}
+            top = headers["VALOR"].bbox["top"]
+            history_right = min((headers[key].bbox["left"] for key in (
+                "N°DAOPERACAO", "NºDAOPERACAO", "PARCELA", "CONTADESTINO", "CHAVEPIX", "TIPOCHAVEPIX",
+            ) if key in headers), default=columns["VALOR"] - .05)
+        elif columns is not None:
+            # A continuation keeps the established grid. A repeated partial
+            # heading must agree with it; financial controls are not movements.
+            if any(abs(headers[key].bbox["left"] - columns[key]) > .01 for key in present):
+                fail("As colunas da continuação NDD mudaram de posição.")
+            top = 0
+        else:
             fail("O cabeçalho das colunas NDD está incompleto.")
-        date_x, type_x, operation_x, history_x, value_x = [headers[key].bbox["left"] for key in required]
+        date_x, type_x, operation_x, history_x, value_x = [columns[key] for key in required]
         if not date_x < type_x < operation_x < history_x < value_x:
             fail()
-        top = headers["VALOR"].bbox["top"]
         stop = min((line.bbox["top"] for line in page.lines if compact(line.text) == "TOTALGERAL:"), default=1)
         dates = [line for line in page.lines if abs(line.bbox["left"] - date_x) < .03
                  and re.fullmatch(rf"{DATE}\s+(?:[01]\d|2[0-3]):[0-5]\d", line.text)]
         cash = [line for line in page.lines if line.bbox["left"] > value_x - .04 and top < line.bbox["top"] < stop
-                and re.fullmatch(NUMBER, line.text)]
+                and re.fullmatch(NUMBER, line.text) and line.id not in control_ids]
         used = set()
         for index, anchor in enumerate(dates):
             y = anchor.bbox["top"]
-            low = (dates[index - 1].bbox["top"] + y) / 2 if index else top
+            low = (dates[index - 1].bbox["top"] + y) / 2 if index else max(top, y - .02)
             high = (y + dates[index + 1].bbox["top"]) / 2 if index + 1 < len(dates) else stop
             cells = [line for line in page.lines if low <= line.bbox["top"] < high]
             baseline = [line for line in cells if abs(line.bbox["top"] - y) < .008]
@@ -81,7 +102,9 @@ def parse_ndd_native(source):
             date = day(date)
             if not period_contains(date, start, end):
                 fail()
-            history = " ".join(line.text for line in cells if history_x - .01 <= line.bbox["left"] < value_x - .05)
+            history = " ".join(line.text for line in cells
+                               if history_x - .03 <= line.bbox["left"] < history_right
+                               and line.id not in control_labels | control_ids)
             if not history:
                 fail()
             references = [line.text for line in baseline if line.bbox["left"] < date_x - .02
