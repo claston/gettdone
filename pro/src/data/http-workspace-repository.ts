@@ -26,6 +26,7 @@ import { proSessionCacheVersion } from "./pro-session-cache";
 interface HttpWorkspaceRepositoryOptions {
   apiUrl: string;
   fetcher?: typeof fetch;
+  clientId?: string;
 }
 
 interface ApiTransaction {
@@ -62,6 +63,8 @@ interface ApiAnalysis {
 }
 
 interface ApiJob {
+  source_batch_id?: string;
+  expires_at?: string;
   job_id: string;
   filename: string;
   status: string;
@@ -78,6 +81,8 @@ interface ApiJob {
 }
 
 interface ApiBatch {
+  client_name?: string;
+  next_cursor?: string | null;
   batch_id: string;
   status: string;
   created_at?: string | null;
@@ -85,6 +90,7 @@ interface ApiBatch {
 }
 
 interface ConversionContext {
+  expiresAt?: string;
   batchId: string;
   analysisId: string | null;
   updatedAt: string | null;
@@ -294,16 +300,36 @@ export function createHttpWorkspaceRepository(
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     synchronizeSession();
     const version = cacheVersion;
-    const response = await request(
-      `/api/pro/conversion-batches/${encodeURIComponent(batchId)}`,
-      { signal },
-    );
+    const readPath = options.clientId
+      ? `/api/pro/receipts/clients/${encodeURIComponent(options.clientId)}/workspace`
+      : `/api/pro/conversion-batches/${encodeURIComponent(batchId)}`;
+    const response = await request(readPath, { signal });
     const payload = (await response.json()) as ApiBatch;
+    while (options.clientId && payload.next_cursor != null) {
+      const next = await request(
+        `${readPath}?cursor=${encodeURIComponent(payload.next_cursor)}`,
+        {
+          signal,
+        },
+      );
+      const page = (await next.json()) as ApiBatch;
+      payload.jobs.push(...page.jobs);
+      payload.next_cursor = page.next_cursor;
+    }
     if (signal?.aborted || version !== proSessionCacheVersion())
       throw new DOMException("Session changed", "AbortError");
-    const conversions = payload.jobs.map((job) =>
-      mapConversion({ apiUrl, batchId: payload.batch_id, job, contexts }),
-    );
+    const conversions = payload.jobs
+      .filter(
+        (job) => !job.expires_at || Date.parse(job.expires_at) > Date.now(),
+      )
+      .map((job) =>
+        mapConversion({
+          apiUrl,
+          batchId: job.source_batch_id ?? payload.batch_id,
+          job,
+          contexts,
+        }),
+      );
     const limits = payload.jobs
       .map((job) => job.result?.quota_limit)
       .filter((value): value is number => typeof value === "number");
@@ -317,8 +343,8 @@ export function createHttpWorkspaceRepository(
     const period = resolveBatchPeriod(conversions);
     const batch: Batch = {
       id: payload.batch_id,
-      name: `Lote ${period}`,
-      clientName: "Workspace OFX Simples PRO",
+      name: options.clientId ? "Extratos do cliente" : `Lote ${period}`,
+      clientName: payload.client_name ?? "Workspace OFX Simples PRO",
       period,
       createdAt: payload.created_at ?? new Date().toISOString(),
       quota: {
@@ -338,7 +364,14 @@ export function createHttpWorkspaceRepository(
     getBatch,
     getCachedBatch(batchId) {
       synchronizeSession();
-      return batches.get(batchId);
+      const batch = batches.get(batchId);
+      if (!batch) return undefined;
+      const conversions = batch.conversions.filter(
+        (row) => !row.expiresAt || Date.parse(row.expiresAt) > Date.now(),
+      );
+      return conversions.length === batch.conversions.length
+        ? batch
+        : { ...batch, conversions };
     },
     recordEvent(event) {
       if (!workspaceEvents.includes(event)) return;
@@ -520,7 +553,9 @@ export function createHttpWorkspaceRepository(
 
     async exportBatch(batchId: string): Promise<ExportResult> {
       const response = await request(
-        `/api/pro/conversion-batches/${encodeURIComponent(batchId)}/export`,
+        options.clientId
+          ? `/api/pro/receipts/clients/${encodeURIComponent(options.clientId)}/export`
+          : `/api/pro/conversion-batches/${encodeURIComponent(batchId)}/export`,
         {
           headers: { Accept: "application/zip" },
         },
@@ -580,6 +615,7 @@ function mapConversion({
     (context.rowCount > 0 || remoteTransactions.length === 0);
   if (!keepContext) {
     context = {
+      expiresAt: job.expires_at,
       batchId,
       analysisId,
       updatedAt: analysis?.updated_at ?? null,
@@ -594,6 +630,7 @@ function mapConversion({
     };
     contexts.set(job.job_id, context);
   }
+  if (context) context.expiresAt = job.expires_at;
   const transactions = orderTransactionsForReview(
     context?.savedTransactions ??
       context?.persistedTransactions ??
@@ -628,6 +665,7 @@ function mapConversion({
   );
   return {
     id: job.job_id,
+    expiresAt: job.expires_at,
     batchId,
     fileName: job.filename,
     bankName: analysis?.bank_name?.trim() || "Instituição não identificada",
@@ -749,6 +787,8 @@ function requireContext(
 ): ConversionContext {
   const context = contexts.get(conversionId);
   if (!context) throw new Error("Conversão não encontrada no lote carregado.");
+  if (context.expiresAt && Date.parse(context.expiresAt) <= Date.now())
+    throw new Error("Este extrato expirou e não está mais disponível.");
   return context;
 }
 

@@ -45,6 +45,7 @@ export interface SourceRegion {
 }
 
 export interface Conversion {
+  expiresAt?: string;
   statementBalanceCheck?: BalanceCheck;
   reviewWarnings?: readonly string[];
   id: string;

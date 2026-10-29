@@ -1,0 +1,131 @@
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
+import pytest
+
+from app.application import AccessControlService
+from app.application.received_statements import ReceivedStatements
+from app.application.statement_identity import identify_statement
+
+
+@pytest.fixture
+def receipts(tmp_path):
+    access = AccessControlService(state_file=tmp_path / "access.json", token_secret="receipts-test")
+    owner = access.register_user(name="Owner", email="receipts@example.test", password="strong-password")
+    other = access.register_user(name="Other", email="other-receipts@example.test", password="strong-password")
+    try:
+        yield ReceivedStatements(access.db), owner.user_id, other.user_id
+    finally:
+        access.close()
+
+
+def record(owner, job="job_a", batch="batch_a", days=1, source=None):
+    now = datetime(2026, 10, 28, 12, tzinfo=timezone.utc)
+    return SimpleNamespace(
+        job=SimpleNamespace(job_id=job, batch_id=batch, identity=SimpleNamespace(identity_type="user", identity_id=owner),
+                            document=SimpleNamespace(filename=f"{job}.pdf")),
+        created_at=now, expires_at=now + timedelta(days=days), status="completed",
+        result=SimpleNamespace(payload={"organization_source": source or identity(), "analysis": {}}),
+    )
+
+
+def identity():
+    return {"holder_name": "Padaria São José", "holder_tax_id": "12345678000190", "bank_code": "341",
+            "branch": "0001", "account_number": "001234-5", "confidence": "strong", "references": [{"page": 1, "line": 1}]}
+
+
+@pytest.mark.parametrize("days", [1, 30])
+def test_multiple_batches_same_client_retention_boundary_and_history_survive_deletion(receipts, days):
+    service, owner, other = receipts
+    first = record(owner, days=days)
+    second = record(owner, "job_b", "batch_b", days=days + 1)
+    service.receive(first)
+    service.receive(second)
+    service.receive(first)  # queue redelivery
+    before = service.dashboard(owner, now=first.expires_at - timedelta(microseconds=1))
+    assert before["totals"] == {"statements": 2, "ready": 2, "attention": 0}
+    assert len(before["clients"]) == 1
+    client = before["clients"][0]
+    assert (client["historical_count"], client["available_count"], client["expired_count"]) == (2, 2, 0)
+    assert client["accounts"][0]["statement_count"] == 2
+    at = service.dashboard(owner, now=first.expires_at)["clients"][0]
+    assert (at["historical_count"], at["available_count"], at["expired_count"]) == (2, 1, 1)
+    assert [row["job_id"] for row in service.documents(owner, client["id"], now=first.expires_at)] == ["job_b"]
+    first.expires_at += timedelta(days=90)
+    service.receive(first)  # never renew old retention
+    assert service.dashboard(owner, now=second.expires_at)["clients"][0]["available_count"] == 0
+    assert service.dashboard(other)["clients"] == []
+    with pytest.raises(KeyError):
+        service.documents(other, client["id"])
+
+
+def test_uncertain_identity_is_pending_and_does_not_merge_by_name(receipts):
+    service, owner, _ = receipts
+    service.receive(record(owner))
+    uncertain = {**identity(), "holder_tax_id": "", "account_number": "", "confidence": "name"}
+    service.receive(record(owner, "job_b", source=uncertain))
+    dashboard = service.dashboard(owner, now=datetime(2026, 10, 28, 13, tzinfo=timezone.utc))
+    assert len(dashboard["clients"]) == 1
+    assert [item["job_id"] for item in dashboard["pending"]] == ["job_b"]
+    assert dashboard["pending"][0]["source"]["holder_name"] == "Padaria São José"
+
+
+def test_known_source_account_and_multiple_accounts_keep_document_totals_unique(receipts):
+    service, owner, _ = receipts
+    source = {**identity(), "accounts": [
+        {"bank_code": "341", "branch": "0001", "account_number": "001234-5"},
+        {"bank_code": "077", "branch": "0001", "account_number": "009876-5"}]}
+    service.receive(record(owner, source=source))
+    service.receive(record(owner, "job_b", source={**identity(), "holder_tax_id": "", "confidence": "name"}))
+    dashboard = service.dashboard(owner, now=datetime(2026, 10, 28, 13, tzinfo=timezone.utc))
+    assert dashboard["totals"]["statements"] == 2
+    assert len(dashboard["clients"]) == 1 and dashboard["pending"] == []
+    client = dashboard["clients"][0]
+    assert client["historical_count"] == 2 and len(client["accounts"]) == 2
+    assert sorted(account["statement_count"] for account in client["accounts"]) == [1, 2]
+
+
+def test_pending_pagination_and_completion_after_early_refresh(receipts):
+    service, owner, _ = receipts
+    first = record(owner)
+    first.status, first.result = "running", None
+    service.receive(first)
+    service.receive(record(owner))
+    now = datetime(2026, 10, 28, 13, tzinfo=timezone.utc)
+    assert service.dashboard(owner, now=now)["clients"][0]["historical_count"] == 1
+    uncertain = {"holder_name": "Titular sem documento", "confidence": "name"}
+    for index in range(52):
+        service.receive(record(owner, f"pending_{index:03}", source=uncertain))
+    first_page = service.dashboard(owner, now=now)
+    assert len(first_page["pending"]) == 50
+    second_page = service.dashboard(owner, now=now, pending_after=first_page["pending_next_cursor"])
+    assert len(second_page["pending"]) == 2 and second_page["pending_next_cursor"] is None
+
+
+def test_confirmation_is_versioned_and_replay_preserves_user_corrections(receipts):
+    service, owner, _ = receipts
+    item = record(owner, source={**identity(), "holder_tax_id": "", "confidence": "name"})
+    service.receive(item)
+    now = datetime(2026, 10, 28, 13, tzinfo=timezone.utc)
+    service.confirm(owner, "job_a", expected_version=0, name="Padaria corrigida", tax_id="12345678000190", now=now)
+    service.receive(item)
+    client = service.dashboard(owner, now=now)["clients"][0]
+    assert client["name"] == "Padaria corrigida"
+    with pytest.raises(ValueError):
+        service.confirm(owner, "job_a", expected_version=0, name="Outro", tax_id="12345678000190", now=now)
+    with pytest.raises(ValueError):
+        service.confirm(owner, "job_a", expected_version=1, name="Outro", tax_id="12345678000190", now=item.expires_at)
+
+
+def test_identification_requires_holder_labels_preserves_provenance_and_supports_ocr():
+    pages = ["Banco Exemplo CNPJ: 99.999.999/0001-99\nTitular: Padaria São José\n"
+             "CPF/CNPJ do titular: 12.345.678/0001-90\nAgência: 0001 Conta: 001234-5\n01/10 PIX João CPF 111.111.111-11 10,00"]
+    source = identify_statement({"bank_code": "341"}, page_texts=pages, representation="ocr")
+    assert source["holder_name"] == "Padaria São José"
+    assert source["holder_tax_id"] == "12345678000190"
+    assert source["confidence"] == "strong"
+    assert source["references"] and source["representation"] == "ocr"
+    assert source["account_number"] == "001234-5"
+    assert not identify_statement({}, page_texts=["Banco CNPJ 99.999.999/0001-99\nPIX CPF 111.111.111-11"])["holder_tax_id"]
+    conflicting = identify_statement({}, page_texts=pages + ["Titular: Outra empresa\nCPF/CNPJ do titular: 11.111.111/0001-11"])
+    assert conflicting["confidence"] == "ambiguous"

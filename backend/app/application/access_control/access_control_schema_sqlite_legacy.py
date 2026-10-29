@@ -636,3 +636,7 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
 
     for statement in statement_work_schema_v1():
         conn.execute(statement)
+    from app.application.received_statement_schema_v1 import received_statement_schema_v1
+
+    for statement in received_statement_schema_v1():
+        conn.execute(statement)

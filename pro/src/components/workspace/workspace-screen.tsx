@@ -56,6 +56,7 @@ import {
 } from "./source-location";
 
 interface WorkspaceScreenProps {
+  clientMode?: boolean;
   batchId: string;
   initialConversionId?: string;
   repository?: WorkspaceRepository;
@@ -165,6 +166,7 @@ function ReviewRail({ userName }: { userName: string }) {
 }
 
 function ConversionNavigator({
+  clientMode = false,
   conversions,
   activeId,
   collapsed,
@@ -172,6 +174,7 @@ function ConversionNavigator({
   onSelect,
   onNext,
 }: {
+  clientMode?: boolean;
   conversions: Conversion[];
   activeId: string;
   collapsed: boolean;
@@ -225,7 +228,9 @@ function ConversionNavigator({
     <aside className="conversion-panel">
       <div className="panel-heading compact">
         <div>
-          <span className="eyebrow">Navegação do lote</span>
+          <span className="eyebrow">
+            {clientMode ? "Extratos do cliente" : "Navegação do lote"}
+          </span>
           <h2>
             Conversões <span>{conversions.length}</span>
           </h2>
@@ -265,7 +270,7 @@ function ConversionNavigator({
       <div
         className="conversion-list"
         role="listbox"
-        aria-label="Conversões do lote"
+        aria-label={clientMode ? "Extratos do cliente" : "Conversões do lote"}
         tabIndex={0}
         onKeyDown={handleKeyDown}
       >
@@ -316,10 +321,15 @@ export function WorkspaceScreen({
   dataMode = "api",
   pollIntervalMs,
   returnTo,
+  clientMode = false,
 }: WorkspaceScreenProps) {
   const session = useOptionalProSession();
   const activeRepository = repository ?? resolveWorkspaceRepository(dataMode);
-  const reviewBasePath = dataMode === "demo" ? "/demo/review" : "/review";
+  const reviewBasePath = clientMode
+    ? "/client-review"
+    : dataMode === "demo"
+      ? "/demo/review"
+      : "/review";
   const controller = useWorkspaceController(
     batchId,
     activeRepository,
@@ -550,11 +560,13 @@ export function WorkspaceScreen({
         <div className="batch-heading">
           <Link href={reviewReturnTo(returnTo)} className="back-link">
             <ChevronLeft size={16} />{" "}
-            {returnTo
-              ? reviewReturnTo(returnTo).startsWith("/works/")
-                ? "Voltar ao trabalho"
-                : "Voltar às conversões"
-              : "Lotes"}
+            {clientMode || returnTo === "/dashboard"
+              ? "Extratos recebidos"
+              : returnTo
+                ? reviewReturnTo(returnTo).startsWith("/works/")
+                  ? "Voltar ao trabalho"
+                  : "Voltar às conversões"
+                : "Lotes"}
           </Link>
           <div>
             <span className="eyebrow">{batch.clientName}</span>
@@ -630,7 +642,9 @@ export function WorkspaceScreen({
             <Download size={15} />{" "}
             {controller.exportState === "EXPORTING"
               ? "Preparando…"
-              : "Exportar lote"}
+              : clientMode
+                ? "Exportar extratos"
+                : "Exportar lote"}
           </button>
           <button
             className="primary-button"
@@ -651,7 +665,9 @@ export function WorkspaceScreen({
         {batch.conversions.length > 0 &&
           reviewed === batch.conversions.length && (
             <div className="workspace-complete" role="status">
-              Revisão do lote concluída. Você já pode exportar os arquivos.
+              {clientMode
+                ? "Revisão dos extratos concluída. Você já pode exportar os arquivos."
+                : "Revisão do lote concluída. Você já pode exportar os arquivos."}
             </div>
           )}
         {controller.exportError && (
@@ -690,6 +706,7 @@ export function WorkspaceScreen({
       </div>
       <div className="workspace-body" inert={busy}>
         <ConversionNavigator
+          clientMode={clientMode}
           conversions={batch.conversions}
           activeId={activeConversion?.id ?? ""}
           collapsed={navigatorCollapsed}

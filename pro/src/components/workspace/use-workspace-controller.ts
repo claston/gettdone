@@ -301,6 +301,33 @@ export function useWorkspaceController(
   );
 
   useEffect(() => {
+    const expirations = (batch?.conversions ?? [])
+      .flatMap((item) => (item.expiresAt ? [Date.parse(item.expiresAt)] : []))
+      .filter(Number.isFinite);
+    if (!expirations.length) return;
+    const expire = () =>
+      setBatch((current) =>
+        current
+          ? {
+              ...current,
+              conversions: current.conversions.filter(
+                (item) =>
+                  !item.expiresAt || Date.parse(item.expiresAt) > Date.now(),
+              ),
+            }
+          : current,
+      );
+    const timer = setTimeout(
+      expire,
+      Math.min(
+        2_147_483_647,
+        Math.max(0, Math.min(...expirations) - Date.now()),
+      ),
+    );
+    return () => clearTimeout(timer);
+  }, [batch]);
+
+  useEffect(() => {
     if (!hasProcessing) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;

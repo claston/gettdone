@@ -5,7 +5,7 @@ import { createOrganizationService } from "@/data/organization-service";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
-it("abre lotes sem consultar organização e preserva filtros ao alternar visões", async () => {
+it("mantém lotes e arquivos independentes e oculta cadastros e filtros de períodos", async () => {
   const request = vi.fn(async (path: string) =>
     Response.json(
       path.endsWith("/catalog")
@@ -31,14 +31,29 @@ it("abre lotes sem consultar organização e preserva filtros ao alternar visõe
   await screen.findByText("Nenhum lote de conversão encontrado.");
   expect(request).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Todos os arquivos" }));
-  const filter = await screen.findByLabelText("Filtrar por cliente");
-  fireEvent.change(filter, { target: { value: "c1" } });
-  await waitFor(() => expect(window.location.search).toContain("client=c1"));
+  await screen.findByRole("heading", { name: "Todas as conversões" });
+  expect(
+    screen.queryByLabelText("Filtrar por cliente"),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("link", { name: /Cadastrar/ }),
+  ).not.toBeInTheDocument();
+  await waitFor(() =>
+    expect(request).toHaveBeenCalledWith(
+      expect.stringContaining("include_organization=false"),
+      expect.anything(),
+    ),
+  );
+  expect(request.mock.calls.some(([path]) => path.endsWith("/catalog"))).toBe(
+    false,
+  );
   fireEvent.click(screen.getByRole("button", { name: "Lotes" }));
   expect(
     screen.queryByRole("heading", { name: "Todas as conversões" }),
   ).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Todos os arquivos" }));
-  expect(screen.getByLabelText("Filtrar por cliente")).toHaveValue("c1");
-  await waitFor(() => expect(window.location.search).toContain("client=c1"));
+  expect(
+    screen.getByRole("heading", { name: "Todas as conversões" }),
+  ).toBeInTheDocument();
+  await waitFor(() => expect(window.location.search).toContain("view=files"));
 });

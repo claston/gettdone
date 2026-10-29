@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlsplit
 from playwright.sync_api import expect, sync_playwright
 
 
-def run(base: str) -> None:
+def run_legacy(base: str) -> None:
     output = Path("tmp/pro-organization")
     output.mkdir(parents=True, exist_ok=True)
     catalog = {"clients": [], "accounts": [], "periods": []}
@@ -215,6 +215,12 @@ def run(base: str) -> None:
             print("PRO organization browser acceptance passed: desktop/mobile, filters, bulk conflicts, suggestions, review return and independent converter.")
         finally:
             browser.close()
+
+
+def run(base: str) -> None:
+    from smoke_received_statements import run as run_received
+
+    run_received(base)
 
 
 if __name__ == "__main__":
