@@ -151,7 +151,7 @@ class ReceivedStatements(OrganizationService):
             totals = self.db.fetchone(conn, "SELECT COUNT(*) AS statements, "
                 "COALESCE(SUM(CASE WHEN technical_status = 'ready' THEN 1 ELSE 0 END), 0) AS ready, "
                 "COALESCE(SUM(CASE WHEN technical_status = 'attention' THEN 1 ELSE 0 END), 0) AS attention "
-                "FROM pro_received_statements WHERE organization_id = ?", (organization,))
+                "FROM pro_received_statements WHERE organization_id = ? AND expires_at > ?", (organization, now))
             rows = self.db.fetchall(conn, "SELECT c.id, c.name, c.tax_id, c.trade_name, c.updated_at, COUNT(*) AS historical_count, "
                 "SUM(CASE WHEN r.expires_at > ? THEN 1 ELSE 0 END) AS available_count, "
                 "SUM(CASE WHEN r.technical_status = 'attention' THEN 1 ELSE 0 END) AS attention_count, "
