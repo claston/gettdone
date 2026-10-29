@@ -91,18 +91,24 @@ def _column_lines(page, columns):
                         and _MONEY.fullmatch(previous_word.text.strip())
                         and 0 <= x - (previous_word.bbox["left"] + previous_word.bbox["width"]) < .025):
                     column = previous_column
+                if (word.text == "*" and previous_column == "amount" and previous_word is not None
+                        and re.fullmatch(NUMBER, previous_word.text.strip())
+                        and abs(word.bbox["top"] - previous_word.bbox["top"]) < .006
+                        and 0 <= x - (previous_word.bbox["left"] + previous_word.bbox["width"]) < .025):
+                    column = "amount"
                 groups.setdefault(column, []).append(word)
                 previous_word, previous_column = word, column
             if len(groups) > 1:
-                for group in groups.values():
+                for role, group in groups.items():
                     if group[0].bbox["left"] < columns["HISTORICO"] - .02:
                         group = [word for word in group if word.bbox["left"] >= columns["HISTORICO"] - .02]
                     if not group:
                         continue
                     left = min(word.bbox["left"] for word in group)
                     right = max(word.bbox["left"] + word.bbox["width"] for word in group)
-                    result.append(replace(line, text=" ".join(word.text for word in group),
-                                          bbox={**line.bbox, "left": left, "width": right-left}))
+                    result.append(replace(line, id=line.id + ":" + role, text=" ".join(word.text for word in group),
+                                          bbox={**line.bbox, "left": left, "width": right-left},
+                                          word_ids=tuple(word.id for word in group)))
                 continue
         if line.bbox["left"] < columns["HISTORICO"] - .02 < line.bbox["left"] + line.bbox["width"]:
             words = [word for word in words if columns["HISTORICO"] - .02 <= word.bbox["left"] < columns["DOCUMENTO"] - .07]
@@ -113,7 +119,7 @@ def _column_lines(page, columns):
         result.append(line)
     normalized = []
     for line in result:
-        pair = re.fullmatch(rf"({NUMBER}\s*[CD])\s+({NUMBER}\s*[CD]?)", line.text.strip(), re.I)
+        pair = re.fullmatch(rf"({NUMBER}\s*[CD*])\s+({NUMBER}\s*[CD]?)", line.text.strip(), re.I)
         if pair:
             if (line.bbox["left"] > columns["VALOR R$"] + .06
                     or line.bbox["left"] + line.bbox["width"] < columns["SALDO"] - .03):
@@ -122,7 +128,36 @@ def _column_lines(page, columns):
                               for role, value in (("amount", pair[1]), ("balance", pair[2])))
         else:
             normalized.append(line)
-    return normalized
+    return _attach_pending_markers(normalized, columns)
+
+
+def _attach_pending_markers(lines, columns):
+    """A detached printed star belongs only to one adjacent unsigned amount.
+
+    This restores geometry, not financial meaning: the row must still have an
+    explicit blocked-deposit description before it may be excluded from cash.
+    """
+    attached, markers = {}, set()
+    for marker in lines:
+        if marker.text.strip() != "*" or marker.bbox["left"] < columns["VALOR R$"] - .035:
+            continue
+        candidates = [cell for cell in lines if re.fullmatch(NUMBER, cell.text.strip())
+                      and cell.bbox["left"] >= columns["VALOR R$"] - .035
+                      and (cell.id.endswith(":amount")
+                           or cell.bbox["left"] + cell.bbox["width"] < columns["SALDO"] - .005)
+                      and abs(marker.bbox["top"] - cell.bbox["top"]) < .006
+                      and 0 <= marker.bbox["left"] - (cell.bbox["left"] + cell.bbox["width"]) < .025]
+        if not candidates:
+            continue
+        if len(candidates) != 1 or candidates[0].id in attached:
+            fail("O asterisco BB não pode ser associado a um único valor de depósito.")
+        cell = candidates[0]
+        right = marker.bbox["left"] + marker.bbox["width"]
+        attached[cell.id] = replace(cell, text=cell.text + " *",
+            bbox={**cell.bbox, "width": right - cell.bbox["left"]},
+            word_ids=(*cell.word_ids, *marker.word_ids))
+        markers.add(marker.id)
+    return [attached.get(line.id, line) for line in lines if line.id not in markers]
 
 
 def is_bb_cash_ocr(text):
@@ -262,7 +297,8 @@ def parse_bb_cash_ocr(extraction):
                         and not any(other is not cell
                                     and abs(item.bbox["left"] - (other.bbox["left"] + other.bbox["width"]))
                                     <= abs(item.bbox["left"] - (cell.bbox["left"] + cell.bbox["width"]))
-                                    for other in values if _MONEY.fullmatch(other.text.strip())[2] is None)
+                                    for other in values if (other_signed := _MONEY.fullmatch(other.text.strip()))
+                                    and other_signed[2] is None)
                     ]
                     if len(signs) == 1:
                         return amount * (-1 if signs[0] == "D" else 1)
@@ -280,8 +316,17 @@ def parse_bb_cash_ocr(extraction):
 
             pending = [cell for cell in amounts if _PENDING_AMOUNT.fullmatch(cell.text.strip())]
             if pending:
-                if len(values) != 1 or len(pending) != 1 or not is_pending_deposit(label + " " + pending[0].text):
+                if (len(amounts) != 1 or len(pending) != 1 or len(balances) > 1
+                        or any("*" in item.text for item in cells if item not in pending
+                               and item.bbox["left"] > columns["DOCUMENTO"] + .05)
+                        or not is_pending_deposit(label + " " + pending[0].text)):
                     fail("Um valor bloqueado BB está sem identificação inequívoca de depósito pendente.")
+                if running is None:
+                    fail("O depósito pendente BB está sem contexto de saldo anterior.")
+                if balances:
+                    if value(balances[0]) != running:
+                        financial_mismatch("O saldo impresso junto ao depósito pendente BB diverge do caixa disponível.")
+                    checks += 1
                 non_cash += 1
                 continue
             if "SALDO ANTERIOR" in label:
