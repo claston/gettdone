@@ -148,10 +148,19 @@ def test_receipts_real_http_multi_batch_workspace_export_permissions_and_expiry(
             receipts.receive(expired)
             batches.repository._jobs.pop(jobs[0][1])
             batches.repository._batch_jobs[jobs[0][0]].remove(jobs[0][1])
-            person = next(c for c in client.get("/api/pro/receipts").json()["clients"] if c["id"] == person["id"])
+            refreshed_page = client.get("/api/pro/receipts").json()
+            assert refreshed_page["totals"] == {"statements": 2, "ready": 2, "attention": 0}
+            person = next(c for c in refreshed_page["clients"] if c["id"] == person["id"])
             assert (person["historical_count"], person["available_count"], person["expired_count"]) == (2, 1, 1)
             active = client.get(f"/api/pro/receipts/clients/{person['id']}/workspace").json()["jobs"]
             assert [item["job_id"] for item in active] == [jobs[1][1]]
+            for _, remaining_job in jobs[1:]:
+                expired = replace(batches.repository.get(remaining_job), expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+                receipts.receive(expired)
+            all_expired = client.get("/api/pro/receipts").json()
+            assert all_expired["totals"] == {"statements": 0, "ready": 0, "attention": 0}
+            assert sum(item["historical_count"] for item in all_expired["clients"]) == 3
+            assert sum(item["expired_count"] for item in all_expired["clients"]) == 3
             monkeypatch.setenv("PRO_ORGANIZATION_ENABLED", "false")
             assert client.get("/api/pro/receipts").status_code == 503
             assert client.get("/api/pro/conversions").status_code == 200

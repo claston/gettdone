@@ -48,15 +48,45 @@ def test_multiple_batches_same_client_retention_boundary_and_history_survive_del
     client = before["clients"][0]
     assert (client["historical_count"], client["available_count"], client["expired_count"]) == (2, 2, 0)
     assert client["accounts"][0]["statement_count"] == 2
-    at = service.dashboard(owner, now=first.expires_at)["clients"][0]
+    at_page = service.dashboard(owner, now=first.expires_at)
+    assert at_page["totals"] == {"statements": 1, "ready": 1, "attention": 0}
+    at = at_page["clients"][0]
     assert (at["historical_count"], at["available_count"], at["expired_count"]) == (2, 1, 1)
     assert [row["job_id"] for row in service.documents(owner, client["id"], now=first.expires_at)] == ["job_b"]
     first.expires_at += timedelta(days=90)
     service.receive(first)  # never renew old retention
-    assert service.dashboard(owner, now=second.expires_at)["clients"][0]["available_count"] == 0
+    expired_page = service.dashboard(owner, now=second.expires_at)
+    assert expired_page["totals"] == {"statements": 0, "ready": 0, "attention": 0}
+    assert expired_page["clients"][0]["available_count"] == 0
     assert service.dashboard(other)["clients"] == []
     with pytest.raises(KeyError):
         service.documents(other, client["id"])
+
+
+def test_first_visit_with_four_expired_statements_has_zero_operational_totals(receipts):
+    service, owner, other = receipts
+    for index in range(4):
+        service.receive(record(owner, job=f"old_{index}"))
+    service.receive(record(other, job="foreign_active", days=30))
+    now = datetime(2026, 10, 30, 12, tzinfo=timezone.utc)
+    page = service.dashboard(owner, now=now)
+    assert page["totals"] == {"statements": 0, "ready": 0, "attention": 0}
+    client = page["clients"][0]
+    assert (client["historical_count"], client["available_count"], client["expired_count"]) == (4, 0, 4)
+    assert client["accounts"][0]["statement_count"] == 4
+    assert page["pending"] == [] and service.documents(owner, client["id"], now=now) == []
+
+
+def test_totals_exclude_expired_ready_failed_and_processing_documents(receipts):
+    service, owner, _ = receipts
+    for expired in (False, True):
+        for status in ("completed", "failed", "running"):
+            item = record(owner, job=f"{status}_{expired}", days=1 if expired else 30)
+            item.status = status
+            service.receive(item)
+    page = service.dashboard(owner, now=datetime(2026, 10, 30, 12, tzinfo=timezone.utc))
+    assert page["totals"] == {"statements": 3, "ready": 1, "attention": 1}
+    assert page["clients"][0]["historical_count"] == 6
 
 
 def test_uncertain_identity_is_pending_and_does_not_merge_by_name(receipts):

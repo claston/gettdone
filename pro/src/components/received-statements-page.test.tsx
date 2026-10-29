@@ -1,9 +1,15 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ReceivedStatementsPage } from "./received-statements-page";
 
 const page = {
-  totals: { statements: 5, ready: 4, attention: 1 },
+  totals: { statements: 2, ready: 1, attention: 1 },
   clients: [
     {
       id: "client_1",
@@ -30,6 +36,36 @@ const page = {
 };
 
 describe("Extratos recebidos", () => {
+  it("mostra os três indicadores zerados com quatro extratos expirados no histórico", async () => {
+    const service = {
+      list: vi.fn().mockResolvedValue({
+        ...page,
+        totals: { statements: 0, ready: 0, attention: 0 },
+        clients: [
+          {
+            ...page.clients[0],
+            historical_count: 4,
+            available_count: 0,
+            expired_count: 4,
+          },
+        ],
+      }),
+      refresh: vi.fn().mockResolvedValue(undefined),
+      edit: vi.fn(),
+      confirm: vi.fn(),
+    };
+    render(<ReceivedStatementsPage service={service} />);
+    expect(
+      await screen.findByText("0 disponíveis / 4 extratos no histórico"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Resumo dos extratos")).getAllByText("0"),
+    ).toHaveLength(3);
+    expect(screen.getByText("4 expirados")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /Padaria São José/ }),
+    ).not.toBeInTheDocument();
+  });
   it("consolida por cliente, mantém expiração secundária e edita inline sem cadastro", async () => {
     const service = {
       list: vi.fn().mockResolvedValue(page),
@@ -76,6 +112,7 @@ describe("Extratos recebidos", () => {
     const service = {
       list: vi.fn().mockResolvedValue({
         ...page,
+        totals: { statements: 1, ready: 1, attention: 0 },
         clients: [{ ...page.clients[0], available_count: 0, expired_count: 5 }],
         pending: [
           {

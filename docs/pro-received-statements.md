@@ -44,6 +44,10 @@ há nova concessão de degustação, acesso de equipe ou mudança de plano.
 
 O dashboard consulta metadados, com paginação independente de clientes e
 identificações. Mostra exatamente Extratos, Prontos e Precisam de atenção.
+Esses três indicadores contam somente documentos disponíveis: no instante exato
+da expiração, o arquivo deixa de compor os cards. Se todos expiraram, os cards
+mostram 0 / 0 / 0. Os totais históricos e expirados de cada cliente e conta
+continuam preservados, sem alteração do status técnico armazenado ou do TTL.
 Processamento em andamento não aparece como Todos prontos. Expiração e situação
 técnica são dimensões distintas, inclusive no histórico após o expurgo.
 
