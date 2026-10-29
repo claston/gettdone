@@ -59,6 +59,18 @@ def _kind(text):
 
 
 def parse_followup_native_tables(raw, page_texts):
+    from app.application.parsers.pdf.reviewed_native_statements import parse_reviewed_native
+
+    reviewed = parse_reviewed_native(raw, page_texts)
+    if reviewed is not None:
+        return reviewed
+    from app.application.parsers.pdf.reviewed_cash_columns import parse_reviewed_cash, reviewed_cash_kind, supports_reviewed_cash_columns
+
+    cash_kind = reviewed_cash_kind("\n".join(page_texts))
+    if cash_kind:
+        source = read_native_table_source(raw)
+        if supports_reviewed_cash_columns(source,cash_kind):
+            return parse_reviewed_cash(source, cash_kind), source
     kind = _kind("\n".join(page_texts))
     if kind is None:
         return None

@@ -932,11 +932,11 @@ def test_parse_pdf_transactions_uses_standard_pdf_parser_for_textract_text_mode(
 
     result = parse_pdf_transactions(b"%PDF synthetic")
 
-    assert len(result.transactions) == 2
-    assert result.transactions[0].description == "SALDO ANTERIOR"
-    assert result.transactions[1].description == "DEPOSITO IDENTIFICADO 010324854"
-    assert result.canonical_transactions[0].running_balance == -441.66
-    assert result.canonical_transactions[1].running_balance == -151.93
+    assert len(result.transactions) == 1
+    assert all(not transaction.description.startswith(("SALDO ANTERIOR", "SALDO INICIAL")) for transaction in result.transactions)
+    assert result.transactions[0].description == "DEPOSITO IDENTIFICADO 010324854"
+    assert result.parse_metrics["printed_opening_balance"] == -441.66
+    assert result.canonical_transactions[0].running_balance == -151.93
     assert result.parse_metrics.get("selected_parser") == "tabular"
     assert result.parse_metrics.get("extraction_provider") == "aws_textract"
     assert result.parse_metrics.get("textract_mode") == "text"
@@ -944,8 +944,8 @@ def test_parse_pdf_transactions_uses_standard_pdf_parser_for_textract_text_mode(
     assert result.source_layout_lines[0][0].bbox == {
         "left": 0.18, "top": 0.12, "width": 0.7, "height": 0.03,
     }
+    assert all(not row.warnings for row in result.canonical_transactions)
     assert result.canonical_transactions[0].warnings == []
-    assert result.canonical_transactions[1].warnings == []
 
 
 def test_parse_pdf_transactions_assembles_unicred_textract_rows_from_geometry(monkeypatch) -> None:
@@ -2043,12 +2043,6 @@ def test_parse_pdf_transactions_keeps_vangogh_grouped_multiline_descriptions_wit
     assert result.transactions == [
         pdf_parser_module.NormalizedTransaction(
             date="2024-08-01",
-            description="SALDO ANTERIOR",
-            amount=2071.46,
-            type="inflow",
-        ),
-        pdf_parser_module.NormalizedTransaction(
-            date="2024-08-01",
             description="PIX RECEBIDO RG FAMILY OFFICE ASSESSOR",
             amount=8736.7,
             type="inflow",
@@ -2090,9 +2084,9 @@ def test_parse_pdf_transactions_keeps_vangogh_grouped_multiline_descriptions_wit
             type="outflow",
         ),
     ]
-    assert result.canonical_transactions[4].running_balance == 7490.8
-    assert result.canonical_transactions[6].running_balance == 4367.18
-    assert result.canonical_transactions[7].running_balance == 4174.56
+    assert result.canonical_transactions[3].running_balance == 7490.8
+    assert result.canonical_transactions[5].running_balance == 4367.18
+    assert result.canonical_transactions[6].running_balance == 4174.56
 
 
 def test_parse_pdf_transactions_scopes_vangogh_movements_and_treats_inss_benefits_as_credits() -> None:
@@ -2733,13 +2727,13 @@ def test_parse_pdf_transactions_supports_bradesco_unificado_poupanca_movimentaca
     assert result.layout.layout_name == "bradesco_extrato_unificado_pj_poupanca_facil_a4_v1"
     assert result.layout.used_fallback is False
     assert result.parse_metrics["selected_parser"] == "layout_specific_bradesco_unificado_movimentacao"
-    assert [transaction.date for transaction in result.transactions] == ["2023-10-30", "2023-11-06", "2023-11-09"]
-    assert [transaction.amount for transaction in result.transactions] == [8847.52, 9.02, 41.15]
-    assert result.transactions[0].description == "SALDO ANTERIOR"
-    assert result.transactions[1].description == "Rendimentos Poup Facil-depos A Partir 4/5/12 0406058"
-    assert result.transactions[2].description == "Rendimentos Poup Facil-depos A Partir 4/5/12 0906087"
-    assert result.canonical_transactions[1].running_balance == 8856.54
-    assert result.canonical_transactions[2].running_balance == 8897.69
+    assert [transaction.date for transaction in result.transactions] == ["2023-11-06", "2023-11-09"]
+    assert [transaction.amount for transaction in result.transactions] == [9.02, 41.15]
+    assert all(not transaction.description.startswith(("SALDO ANTERIOR", "SALDO INICIAL")) for transaction in result.transactions)
+    assert result.transactions[0].description == "Rendimentos Poup Facil-depos A Partir 4/5/12 0406058"
+    assert result.transactions[1].description == "Rendimentos Poup Facil-depos A Partir 4/5/12 0906087"
+    assert result.canonical_transactions[0].running_balance == 8856.54
+    assert result.canonical_transactions[1].running_balance == 8897.69
 
 
 def test_parse_pdf_transactions_prefers_neon_mei_facil_layout_text_profile(monkeypatch) -> None:
@@ -2880,7 +2874,6 @@ def test_parse_pdf_transactions_prefers_neon_mei_facil_layout_text_profile(monke
     assert result.layout.used_fallback is False
     assert result.parse_metrics["selected_parser"] == "tabular"
     assert [transaction.amount for transaction in result.transactions] == [
-        1902.45,
         -453.02,
         -1440.0,
         350.0,
@@ -2891,9 +2884,9 @@ def test_parse_pdf_transactions_prefers_neon_mei_facil_layout_text_profile(monke
         350.0,
         -1399.43,
     ]
-    assert result.transactions[0].description == "SALDO ANTERIOR"
+    assert all(not transaction.description.startswith(("SALDO ANTERIOR", "SALDO INICIAL")) for transaction in result.transactions)
     assert result.transactions[-1].description == "PIX ENVIADO ANGELO"
-    assert result.canonical_transactions[0].running_balance == 1902.45
+    assert "1.902,45" in result.extracted_text
     assert result.canonical_transactions[-1].running_balance == 0.0
 
 
@@ -2968,17 +2961,16 @@ def test_parse_pdf_transactions_supports_banco_do_nordeste_extrato_consolidado_s
     assert result.parse_metrics["selected_parser"] == "layout_specific_banco_nordeste_consolidado"
     assert [transaction.date for transaction in result.transactions] == [
         "2023-03-01",
-        "2023-03-01",
         "2023-03-03",
         "2023-03-07",
         "2023-03-09",
     ]
-    assert [transaction.amount for transaction in result.transactions] == [69.86, -53.0, 2600.0, -792.75, 177.34]
-    assert result.transactions[0].description == "SALDO ANTERIOR"
-    assert result.transactions[1].description == "TARIFA MANUTENCAO CONTA 474"
-    assert result.transactions[2].description == "ESTORNO DE TARIFAS 996"
-    assert result.transactions[4].description == "CREDITO TED 104"
-    assert [item.running_balance for item in result.canonical_transactions] == [69.86, 16.86, 2616.86, 1824.11, 2001.45]
+    assert [transaction.amount for transaction in result.transactions] == [-53.0, 2600.0, -792.75, 177.34]
+    assert all(not transaction.description.startswith(("SALDO ANTERIOR", "SALDO INICIAL")) for transaction in result.transactions)
+    assert result.transactions[0].description == "TARIFA MANUTENCAO CONTA 474"
+    assert result.transactions[1].description == "ESTORNO DE TARIFAS 996"
+    assert result.transactions[3].description == "CREDITO TED 104"
+    assert [item.running_balance for item in result.canonical_transactions] == [16.86, 2616.86, 1824.11, 2001.45]
 
 
 def test_parse_pdf_transactions_supports_banco_do_nordeste_fundos_rentabilidade_statement(monkeypatch) -> None:
@@ -3062,7 +3054,6 @@ def test_parse_pdf_transactions_supports_banco_do_nordeste_fundos_rentabilidade_
     assert result.layout.used_fallback is False
     assert result.parse_metrics["selected_parser"] == "layout_specific_banco_nordeste_fundos_rentabilidade"
     assert [transaction.date for transaction in result.transactions] == [
-        "2021-04-01",
         "2021-04-03",
         "2021-04-05",
         "2021-04-09",
@@ -3076,7 +3067,6 @@ def test_parse_pdf_transactions_supports_banco_do_nordeste_fundos_rentabilidade_
         "2021-04-29",
     ]
     assert [transaction.amount for transaction in result.transactions] == [
-        57056.8,
         -64335.03,
         -4357.25,
         -37680.71,
@@ -3089,9 +3079,9 @@ def test_parse_pdf_transactions_supports_banco_do_nordeste_fundos_rentabilidade_
         -49195.4,
         51845.14,
     ]
-    assert result.transactions[0].description == "SALDO INICIAL"
-    assert result.transactions[5].description == "I.O.F. S/RESGATE"
-    assert result.transactions[6].description == "I.R. FEDERAL"
+    assert all(not transaction.description.startswith(("SALDO ANTERIOR", "SALDO INICIAL")) for transaction in result.transactions)
+    assert result.transactions[4].description == "I.O.F. S/RESGATE"
+    assert result.transactions[5].description == "I.R. FEDERAL"
 
 
 def test_parse_pdf_transactions_resolves_singular_credit_debit_headers_in_tabular_positions() -> None:
@@ -3137,11 +3127,11 @@ def test_parse_pdf_transactions_uses_running_balance_to_override_heuristic_when_
     result = parse_pdf_transactions(b"%PDF synthetic")
 
     assert result.parse_metrics["selected_parser"] == "grouped"
-    assert len(result.transactions) == 2
-    assert result.transactions[0].description == "SALDO ANTERIOR"
-    assert result.transactions[0].amount == 1000.0
-    assert result.transactions[1].description == "PAGAMENTO CARTAO 999999"
-    assert result.transactions[1].amount == 125.45
+    assert len(result.transactions) == 1
+    assert all(not transaction.description.startswith(("SALDO ANTERIOR", "SALDO INICIAL")) for transaction in result.transactions)
+    assert result.parse_metrics["printed_opening_balance"] == 1000.0
+    assert result.transactions[0].description == "PAGAMENTO CARTAO 999999"
+    assert result.transactions[0].amount == 125.45
 
 
 def test_parse_pdf_transactions_keeps_explicit_negative_sign_even_if_running_balance_suggests_positive(monkeypatch) -> None:
@@ -3167,9 +3157,9 @@ def test_parse_pdf_transactions_keeps_explicit_negative_sign_even_if_running_bal
     result = parse_pdf_transactions(b"%PDF synthetic")
 
     assert result.parse_metrics["selected_parser"] == "grouped"
-    assert len(result.transactions) == 2
-    assert result.transactions[0].description == "SALDO ANTERIOR"
-    assert result.transactions[1].amount == -125.45
+    assert len(result.transactions) == 1
+    assert all(not transaction.description.startswith(("SALDO ANTERIOR", "SALDO INICIAL")) for transaction in result.transactions)
+    assert result.transactions[0].amount == -125.45
 
 
 def test_parse_pdf_transactions_does_not_reconcile_grouped_sign_from_non_adjacent_running_balance(monkeypatch) -> None:
@@ -3207,7 +3197,7 @@ def test_parse_pdf_transactions_does_not_reconcile_grouped_sign_from_non_adjacen
     result = parse_pdf_transactions(b"%PDF synthetic")
 
     assert result.parse_metrics["selected_parser"] == "grouped"
-    assert len(result.transactions) == 6
+    assert len(result.transactions) == 5
     assert result.transactions[-1].description == "Rend Pag Aplic Aut Mais"
     assert result.transactions[-1].amount == 0.02
     assert result.canonical_transactions[-1].running_balance == 2701.68
@@ -3238,13 +3228,13 @@ def test_parse_pdf_transactions_ignores_grouped_saldo_rows_from_transaction_tota
     result = parse_pdf_transactions(b"%PDF synthetic")
 
     assert result.parse_metrics["selected_parser"] == "grouped"
-    assert len(result.transactions) == 3
-    assert result.transactions[0].description == "SALDO ANTERIOR"
-    assert result.transactions[0].amount == 1000.0
-    assert result.transactions[1].description == "PIX RECEBIDO"
-    assert result.transactions[1].amount == 200.0
-    assert result.transactions[2].description == "PAGAMENTO BOLETO"
-    assert result.transactions[2].amount == -50.0
+    assert len(result.transactions) == 2
+    assert all(not transaction.description.startswith(("SALDO ANTERIOR", "SALDO INICIAL")) for transaction in result.transactions)
+    assert result.parse_metrics["printed_opening_balance"] == 1000.0
+    assert result.transactions[0].description == "PIX RECEBIDO"
+    assert result.transactions[0].amount == 200.0
+    assert result.transactions[1].description == "PAGAMENTO BOLETO"
+    assert result.transactions[1].amount == -50.0
 
 
 def test_parse_pdf_transactions_ignores_caixa_siatr_saldo_dia_rows(monkeypatch) -> None:
@@ -3325,7 +3315,7 @@ def test_parse_pdf_transactions_does_not_attach_total_disponivel_header_as_runni
     )
 
 
-def test_parse_pdf_transactions_includes_opening_balance_without_date_on_first_transaction_date(monkeypatch) -> None:
+def test_parse_pdf_transactions_keeps_undated_opening_as_metadata(monkeypatch) -> None:
     sample_text = "\n".join(
         [
             "Lançamentos",
@@ -3343,12 +3333,12 @@ def test_parse_pdf_transactions_includes_opening_balance_without_date_on_first_t
     result = parse_pdf_transactions(b"%PDF synthetic")
 
     assert result.parse_metrics["selected_parser"] == "grouped"
-    assert len(result.transactions) == 2
+    assert len(result.transactions) == 1
     assert result.transactions[0].date == "2025-01-02"
-    assert result.transactions[0].description == "SALDO ANTERIOR"
-    assert result.transactions[0].amount == 25430.25
-    assert result.transactions[1].description == "CRÉDITO PIX 000123"
-    assert result.transactions[1].amount == 8450.0
+    assert all(not transaction.description.startswith(("SALDO ANTERIOR", "SALDO INICIAL")) for transaction in result.transactions)
+    assert result.parse_metrics["printed_opening_balance"] == 25430.25
+    assert result.transactions[0].description == "CRÉDITO PIX 000123"
+    assert result.transactions[0].amount == 8450.0
 
 
 def test_parse_pdf_transactions_supports_santander_mobile_grouped_dates_and_inline_transaction_date_details(
@@ -4540,10 +4530,9 @@ def test_parse_pdf_transactions_does_not_import_fragmented_bradesco_total_row() 
     assert result.layout.layout_name == "bradesco_net_empresa_extrato_mensal_por_periodo_v1"
     assert result.parse_metrics["selected_parser"] == "grouped"
     assert [transaction.description for transaction in result.transactions] == [
-        "SALDO ANTERIOR",
         "PIX ENVIADO 1620095 DES: CONTRAPARTE 28/09",
     ]
-    assert [transaction.amount for transaction in result.transactions] == [100.0, -10.0]
+    assert [transaction.amount for transaction in result.transactions] == [-10.0]
     assert result.parse_metrics["balance_consistency_failed"] == 0
     assert all(not transaction.warnings for transaction in result.canonical_transactions)
 

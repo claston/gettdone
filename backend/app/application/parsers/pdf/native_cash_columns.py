@@ -43,6 +43,9 @@ def _kind(pages):
     if ("EXTRATO CONSOLIDADO INTELIGENTE" in text and "SANTANDER" in text
             and "EXTRATO_PJ_A4_INTELIGENTE" in text and "SALDO DE CONTA CORRENTE EM" in text):
         return SANTANDER_OCR_LAYOUT
+    if ("EXTRATO CONSOLIDADO" in text and "SANTANDER" in text
+            and "EXTRATO_PJ_A4_BASICO" in text and "SALDO DISPONIVEL DE CONTA CORRENTE" in text):
+        return SANTANDER_OCR_LAYOUT
     return None
 
 
@@ -95,17 +98,24 @@ def _date(raw, year):
 
 
 def _summary(text):
+    text = re.sub(r"\bEM(?=\d{2}/\d{2})", "EM ", upper(text))
     try:
         start, end = _period(text)
     except OcrFinancialAmbiguityError:
         _fail()
     result = {}
+    basic = "EXTRATO_PJ_A4_BASICO" in text
     for key, label in {
         "opening": "SALDO DE CONTA CORRENTE EM " + (start-timedelta(days=1)).strftime("%d/%m"),
         "closing": "SALDO DE CONTA CORRENTE EM " + end.strftime("%d/%m"),
         "credit": "TOTAL DE CREDITOS", "debit": "TOTAL DE DEBITOS",
     }.items():
+        if basic and key in {"opening", "closing"}:
+            label = label.replace("SALDO DE", "SALDO DISPONIVEL DE")
         values = {_value(m[1]) for m in re.finditer(re.escape(label)+rf"\s+([+-]?{NUMBER}-?)(?![\d,.])", upper(text))}
+        if basic and key in {"credit", "debit"} and not values:
+            result[key] = None
+            continue
         if len(values) != 1:
             _fail()
         result[key] = values.pop()
@@ -119,8 +129,9 @@ def _summary(text):
         if result["closing"] - (blocked.pop() if blocked else 0) != cash_closing:
             financial_mismatch(_MESSAGE)
         result["closing"] = cash_closing
-    if (min(result["credit"], result["debit"]) < 0
-            or result["opening"]+result["credit"]-result["debit"] != result["closing"]):
+    if (any(value is not None and value < 0 for value in (result["credit"], result["debit"]))
+            or result["credit"] is not None and result["debit"] is not None
+            and result["opening"]+result["credit"]-result["debit"] != result["closing"]):
         financial_mismatch(_MESSAGE)
     return start, end, result
 
@@ -289,6 +300,8 @@ def parse_native_cash_columns(raw, page_texts):
                 for index, cells in enumerate(groups):
                     anchor = cells[0]
                     label = upper(bounded(date_col.left-3, anchor.bottom-1, reference.left-3, anchor.top+1))
+                    if santander:
+                        label = re.sub(r"\bEM(?=\d{2}/\d{2})", "EM ", label)
                     amounts = {}
                     for box in cells:
                         center = (box.left+box.right)/2
@@ -326,8 +339,11 @@ def parse_native_cash_columns(raw, page_texts):
                         if set(amounts) != expected_roles:
                             _fail()
                         printed_closing = amounts["balance"]
-                        printed_totals = ((controls["credit"], controls["debit"]) if santander
-                                          else (amounts["credit"], abs(amounts["debit"])))
+                        if santander:
+                            printed_totals = ((controls["credit"], controls["debit"])
+                                              if controls["credit"] is not None and controls["debit"] is not None else None)
+                        else:
+                            printed_totals = (amounts["credit"], abs(amounts["debit"]))
                         finished = True
                         break
                     if opening is None:
@@ -387,8 +403,16 @@ def parse_native_cash_columns(raw, page_texts):
                 terminal_y = anchor.bottom if finished else 0
                 if any(id(box) not in used_references and box.bottom > terminal_y for box in references):
                     _fail()
-    if not finished or not rows or opening is None:
+    if not rows or opening is None:
         _fail()
+    if not finished:
+        if kind != BRADESCO_MONTHLY:
+            _fail()
+        # A readable truncated ledger has no proven global closing. Preserve
+        # every observed movement with partial-file review, without inventing
+        # a final control or silently ignoring a later page.
+        return VerifiedStatement(rows, kind, opening, None, partial=True,
+            candidate_rows=len(rows), balance_bounds_unavailable=True), tuple(source_pages)
     running = opening
     for row in rows:
         running += Decimal(str(row.transaction.amount))
@@ -398,8 +422,9 @@ def parse_native_cash_columns(raw, page_texts):
             checks += 1
     totals = (sum((Decimal(str(row.transaction.amount)) for row in rows if row.transaction.amount > 0), Decimal(0)),
               sum((-Decimal(str(row.transaction.amount)) for row in rows if row.transaction.amount < 0), Decimal(0)))
-    if totals != printed_totals:
+    if printed_totals is not None and totals != printed_totals:
         rows[0] = replace(rows[0], warnings=[*rows[0].warnings, "printed_totals_differ_from_extracted_movements"])
-    if running != printed_closing or totals != printed_totals or santander and running != controls["closing"]:
+    if (running != printed_closing or printed_totals is not None and totals != printed_totals
+            or santander and running != controls["closing"]):
         financial_mismatch(_MESSAGE)
     return VerifiedStatement(rows, kind, opening, running, printed_balance_checks=checks, candidate_rows=len(rows)), tuple(source_pages)

@@ -1,13 +1,13 @@
 meta_model:
   layout_id: banco_sorisa_extrato_por_periodo_entradas_saidas_v1
-  bank: Banco Sorisa
+  bank: Banco Sofisa
   channel: unknown
   statement_type: conta_corrente_extrato_por_periodo
   source_quality: image_inferred
   confidence: high
   detection_signals:
     strong:
-      - "Logo/texto 'Banco Sorisa' visível no topo"
+      - "Logo/texto 'Banco Sofisa' visível no topo"
       - "Campos 'Cliente', 'Agência' e 'Conta' no cabeçalho"
       - "Bloco de saldo em conta"
       - "Resumo com 'Cheque Fácil', 'Valor Bloqueado' e 'Saldo Bloqueado'"
@@ -30,7 +30,7 @@ meta_model:
       - "Valor (R$)"
   page_structure:
     header:
-      bank_logo: "Banco Sorisa"
+      bank_logo: "Banco Sofisa"
       account_identifiers:
         client: unknown
         agency: unknown
@@ -149,7 +149,7 @@ meta_model:
       - "Não há exemplo claro de entrada com sinal positivo."
       - "Não há saldo por transação."
       - "Coluna Número Documento não tem valores visíveis."
-      - "O nome do banco/canal deve ser validado em amostras reais, pois Banco Sorisa pode ser layout de sistema/white-label."
+      - "O nome do banco/canal deve ser validado em amostras reais, pois Banco Sofisa pode ser layout de sistema/white-label."
     fields_that_may_be_missing:
       - "document"
       - "balance"
@@ -169,13 +169,13 @@ meta_model:
 
 layout_profile:
   profile_name: banco_sorisa_extrato_por_periodo_entradas_saidas_v1
-  bank: Banco Sorisa
+  bank: Banco Sofisa
   layout_family: sorisa_extrato_periodo_entradas_saidas
   statement_type: conta_corrente_extrato
   confidence: high
   classifier:
     required_keywords:
-      - "Banco Sorisa"
+      - "Banco Sofisa"
       - "Cliente"
       - "Agência"
       - "Conta"
@@ -259,7 +259,7 @@ layout_profile:
       - "{amount_without_minus}"
       - "R$ {amount_without_minus}"
     ignore_rows:
-      - "Banco Sorisa"
+      - "Banco Sofisa"
       - "Cliente"
       - "Agência"
       - "Conta"
@@ -392,7 +392,7 @@ layout_profile:
         should_import_as_transaction: false
         notes: "Linha de saldo; não importar como transação"
   implementation_notes:
-    - "Classificar pelo logo Banco Sorisa e pelo bloco 'Extrato por período - Mais recente para o mais antigo'."
+    - "Classificar pelo logo Banco Sofisa e pelo bloco 'Extrato por período - Mais recente para o mais antigo'."
     - "Normalizar datas curtas como dd/MM/yy para dd/MM/yyyy."
     - "Usar sinal explícito do valor como regra primária."
     - "Não importar linhas de saldo disponível."

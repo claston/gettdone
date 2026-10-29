@@ -11,6 +11,10 @@ from app.application.source_regions import evidence_regions
 
 
 def parse_controlled_ocr(extraction):
+    from app.application.parsers.pdf.sicredi_visual_cash import is_sicredi_visual_cash, parse_sicredi_visual_cash
+
+    if is_sicredi_visual_cash(extraction):
+        return parse_sicredi_visual_cash(extraction)
     from app.application.parsers.pdf.positional_monthly_statements import parse_banrisul_month
 
     monthly = parse_banrisul_month(extraction)

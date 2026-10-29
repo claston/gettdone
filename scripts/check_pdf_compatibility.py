@@ -95,6 +95,21 @@ def make_corpus():
 
     mp = [["2026-07-02", 50], ["2026-07-03", -20], ["2026-07-04", 20]]
     ocr_raw = generate_native_text_pdf((("Synthetic OCR source",),))
+    from tests.test_oct28_reviewed_reports import bradesco_unified_source, omie_pages
+
+    add("omie_realized_and_pending_cash", generate_native_text_pdf([omie_pages()[0].splitlines()]),
+        [["2026-09-01",50],["2026-09-01",90],["2026-09-02",-20]],
+        document_type="cash_flow_report",origin="Omie.CASH",bank_code=None,formats=["csv","xlsx","ofx"])
+    cases[-1]["correction_reason"] = "Printed status separates two realized cash movements from a pending title; daily balances are controls."
+    add("bradesco_unified_two_products", generate_native_text_pdf((("Synthetic OCR source",),)*2),
+        [["2026-09-01",50],["2026-09-01",-20],["2026-09-01",50],["2026-09-01",-20]],
+        ocr=bradesco_unified_source(savings=True),origin="Bradesco",bank_code=None,formats=["csv","xlsx"])
+    cases[-1]["correction_reason"] = "Preserve current-account and savings movements in separate product scopes instead of merging balances and monetary columns."
+    add("generic_opening_control_is_metadata", generate_native_text_pdf(([
+        "Extrato de Conta Corrente BANCO TESTE","Data Histórico Valor Saldo",
+        "31/08/2026 SALDO ANTERIOR 100,00 C","01/09/2026 PIX RECEBIDO 50,00 C 150,00 C",
+        "02/09/2026 PIX ENVIADO 20,00 D 130,00 C"],)),[["2026-09-01",50],["2026-09-02",-20]])
+    cases[-1]["correction_reason"] = "A printed opening balance is not a financial movement."
     add("santander_available_cash_zero_debit", ocr_raw,
         [["2026-08-21", 5000], ["2026-08-24", 200], ["2026-08-26", 200], ["2026-08-31", 200]],
         ocr=santander_available(), bank_code="033")

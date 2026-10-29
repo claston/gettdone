@@ -12,6 +12,9 @@ def detect_financial_report(text: str) -> tuple[str, str] | None:
     lines = [normalize_upper_text(line) for line in text.splitlines() if line.strip()]
     header = " ".join(lines[:12])
     normalized = " ".join(lines)
+    if all(marker in normalized for marker in (
+        "FINANCAS - MOVIMENTACAO DA CONTA CORRENTE", "SITUACAO", "SALDO PREVISTO (R$)", "OMIE.CASH")):
+        return "cash_flow_report", "omie_cash_actual_forecast_columns"
     if ("XP INVESTIMENTOS" in header and "EXTRATO DA CONTA" in header
             and all(marker in normalized for marker in ("DATA DA CONSULTA:", "XPI.COM.BR", "LANCAMENTOS FUTUROS"))
             and re.search(r"\bLIQ\s+MOV\s+HISTORICO\s+VALOR\s+SALDO\b", normalized)):

@@ -151,6 +151,10 @@ def _parse_grouped_list_rows(lines: list[_PdfLine], *, fallback_year: int) -> li
 
     for line in lines:
         normalized_line = normalize_text(line.text)
+        if normalized_line.startswith("TOTALIZADORES"):
+            inside_transactions = False
+            current_date = None
+            continue
         if normalized_line == "LANCAMENTOS" or normalized_line.startswith("LANCAMENTOS "):
             inside_transactions = True
             continue
