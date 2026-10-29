@@ -80,6 +80,7 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_API_URL: /
+          PRO_INTERNAL_LEGACY_ORGANIZATION_UI: ${{ matrix.suite == 'works' && 'true' || 'false' }}
 
       - name: Set up Python for browser acceptance
         uses: actions/setup-python@v5
@@ -110,6 +111,8 @@ jobs:
         run: python -m playwright install --only-shell chromium
 
       - name: Browser acceptance and performance budgets
+        env:
+          PRO_INTERNAL_LEGACY_ORGANIZATION_UI: ${{ matrix.suite == 'works' && 'true' || 'false' }}
         working-directory: .
         run: |
           mkdir -p tmp/pro-workspace-acceptance

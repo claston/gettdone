@@ -9,6 +9,12 @@ export function reviewReturnTo(value: unknown): string {
   }
   if (
     url.origin === "https://ofx.local" &&
+    (url.pathname === "/dashboard" ||
+      /^\/client-review\/client_[A-Za-z0-9]+$/.test(url.pathname))
+  )
+    return url.pathname;
+  if (
+    url.origin === "https://ofx.local" &&
     /^\/works\/work_[A-Za-z0-9]+$/.test(url.pathname)
   )
     return url.pathname;

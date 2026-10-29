@@ -118,7 +118,7 @@ def run(base: str):
             metrics[f"cached_{identifier}_ms"] = round((time.perf_counter() - started) * 1000)
             assert metrics[f"cached_{identifier}_ms"] < 2000, metrics
         started = time.perf_counter()
-        page.get_by_role("link", name="Voltar ao dashboard").click()
+        page.get_by_role("link", name="Conversões", exact=True).click()
         expect(page.get_by_role("link", name="Abrir lote")).to_be_visible(timeout=2000)
         metrics["dashboard_ms"] = round((time.perf_counter() - started) * 1000)
         assert metrics["dashboard_ms"] < 2000, metrics

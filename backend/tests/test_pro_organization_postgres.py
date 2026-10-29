@@ -78,8 +78,15 @@ def test_postgres_upgrade_runtime_rollback_and_reupgrade(tmp_path):
         assert service.catalog(user.user_id)["periods"][0]["start_date"] == "2026-09-20"
         assert service.contexts(user.user_id, [job.job_id])[job.job_id]["client_id"] == client["id"]
         from app.application.conversion.contracts.jobs import ConversionJobResultReference
+        from app.application.received_statements import ReceivedStatements
         from app.application.statement_works import StatementWorkService
 
+        receipts = ReceivedStatements(access.db, repository)
+        receipts.receive(repository.get(job.job_id))
+        receipt_page = receipts.dashboard(user.user_id)
+        assert receipt_page["clients"][0]["id"] == client["id"]
+        assert receipt_page["clients"][0]["historical_count"] == 1
+        assert receipts.documents(user.user_id, client["id"])[0]["batch_id"] == batch.batch_id
         works = StatementWorkService(access.db, repository)
         account = service.save_account(user.user_id, client_id=client["id"], name="Principal")
         work = works.create(user.user_id, client["id"], period["id"])

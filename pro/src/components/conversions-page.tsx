@@ -76,6 +76,7 @@ export function ConversionsPage({
           <OrganizationPage
             mode="conversions"
             independent
+            showOrganization={false}
             service={organization}
             initialFilters={initialFilters}
             initialCursor={initialCursor}

@@ -36,6 +36,7 @@ export function OrganizationPage({
   initialFilters = emptyFilters,
   initialCursor,
   onContextChange,
+  showOrganization = true,
 }: {
   mode: "clients" | "periods" | "conversions";
   service?: OrganizationService;
@@ -43,6 +44,7 @@ export function OrganizationPage({
   initialFilters?: OrganizationFilters;
   initialCursor?: string;
   onContextChange?(url: string): void;
+  showOrganization?: boolean;
 }) {
   const active = service ?? organizationService;
   const [catalog, setCatalog] = useState<OrganizationCatalog | null>(null);
@@ -61,7 +63,8 @@ export function OrganizationPage({
   const [selected, setSelected] = useState<string[]>([]);
   const [bulkErrors, setBulkErrors] = useState<string[]>([]);
   const [revision, setRevision] = useState(0);
-  const withOrganization = !independent || (catalog !== null && !catalogError);
+  const withOrganization =
+    showOrganization && (!independent || (catalog !== null && !catalogError));
   const request = useMemo(
     () => ({ active, filters, cursor, attempt, withOrganization }),
     [active, filters, cursor, attempt, withOrganization],
@@ -75,6 +78,7 @@ export function OrganizationPage({
   const loading = !current;
 
   useEffect(() => {
+    if (!showOrganization) return;
     const abort = new AbortController();
     void active
       .catalog(abort.signal)
@@ -98,7 +102,7 @@ export function OrganizationPage({
         }
       });
     return () => abort.abort();
-  }, [active, catalogAttempt, independent]);
+  }, [active, catalogAttempt, independent, showOrganization]);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -286,8 +290,9 @@ export function OrganizationPage({
         <div>
           <h2>Todas as conversões</h2>
           <p>
-            Os filtros de cliente e período podem ser usados separadamente ou em
-            conjunto.
+            {showOrganization
+              ? "Os filtros de cliente e período podem ser usados separadamente ou em conjunto."
+              : "Consulte os arquivos recebidos e retome a revisão."}
           </p>
         </div>
         <button

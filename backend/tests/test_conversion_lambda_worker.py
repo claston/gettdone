@@ -42,6 +42,24 @@ class TimeoutPipeline:
         raise TimeoutError("upstream timeout")
 
 
+def test_receipt_failure_retries_only_indexing_of_a_completed_job():
+    repository, job = _queued_repository()
+    pipeline = SuccessfulPipeline()
+    calls = []
+
+    def record_receipt(record):
+        calls.append(record.status)
+        if len(calls) == 1:
+            raise ConnectionError("Receipt storage temporarily unavailable")
+
+    processor = ConversionLambdaProcessor(repository=repository, document_store=FakeDocumentStore(), pipeline=pipeline,
+                                          receipt_recorder=record_receipt)
+    first = handle_sqs_event(_event(job.job_id), processor=processor, request_id="first")
+    assert first["batchItemFailures"] and repository.get(job.job_id).status == ConversionJobStatus.COMPLETED
+    second = handle_sqs_event(_event(job.job_id, receive_count=2), processor=processor, request_id="second")
+    assert second["batchItemFailures"] == [] and len(calls) == 2 and pipeline.calls == 1
+
+
 class InvalidPipeline:
     def run_job(self, **_kwargs):
         raise ValueError("invalid document")

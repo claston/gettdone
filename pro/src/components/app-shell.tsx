@@ -3,15 +3,12 @@
 import {
   BarChart3,
   Building2,
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
   FileStack,
-  Landmark,
   LogOut,
   Menu,
   Settings,
-  Users,
   Zap,
 } from "lucide-react";
 import Link from "next/link";
@@ -22,12 +19,8 @@ import { useProSession } from "@/components/pro-session-gate";
 import type { ProUser } from "@/data/pro-auth-service";
 
 const navigation = [
-  { href: "/dashboard", label: "Início", icon: BarChart3 },
+  { href: "/dashboard", label: "Extratos recebidos", icon: BarChart3 },
   { href: "/conversions", label: "Conversões", icon: FileStack },
-  { href: "/clients", label: "Clientes", icon: Users },
-  { href: "/periods", label: "Períodos", icon: CalendarDays },
-  { href: "/works", label: "Trabalhos", icon: FileStack },
-  { href: "/reconciliation", label: "Conciliação", icon: Landmark, soon: true },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -69,7 +62,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <Icon size={18} />
                 <span>{item.label}</span>
-                {item.soon && <em>Em breve</em>}
               </Link>
             );
           })}

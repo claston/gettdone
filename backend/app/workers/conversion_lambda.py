@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic, time
@@ -45,8 +46,20 @@ class ConversionLambdaProcessor:
     max_receive_count: int = 5
     lease_seconds: int = 900
     results_s3_prefix: str = "conversion/results"
+    receipt_recorder: Callable | None = None
 
     def process(
+        self, **kwargs,
+    ) -> None:
+        self._process_conversion(**kwargs)
+        # Runs after the financial job commits, including terminal queue redeliveries.
+        # Failure retries only receipt ingestion, never a completed conversion/quota charge.
+        if self.receipt_recorder is not None:
+            record = self.repository.get(kwargs["job_id"])
+            if record and record.job.batch_id == kwargs["expected_batch_id"]:
+                self.receipt_recorder(record)
+
+    def _process_conversion(
         self,
         *,
         job_id: str,
@@ -96,7 +109,8 @@ class ConversionLambdaProcessor:
             if result.status == ConversionPipelineStatus.COMPLETED:
                 from app.application.organization_suggestions import build_source_evidence
 
-                payload = {**payload, "organization_source": build_source_evidence(payload.get("analysis") or {})}
+                source = payload.get("organization_source") or build_source_evidence(payload.get("analysis") or {})
+                payload = {**payload, "organization_source": source}
                 analysis_id = str(payload.get("processing_id") or payload.get("analysis_id") or "").strip()
                 if not analysis_id:
                     raise RuntimeError("Completed conversion result does not contain an analysis id.")
@@ -291,6 +305,10 @@ def build_lambda_processor() -> ConversionLambdaProcessor:
         ),
         ai_recovery_dispatcher=build_ai_recovery_shadow_dispatcher(),
     )
+    from app.adapters.conversion.organization_db import WorkerOrganizationDb
+    from app.application.received_statements import ReceivedStatements
+
+    receipts = ReceivedStatements(WorkerOrganizationDb(access_control_service), repository)
     return ConversionLambdaProcessor(
         repository=repository,
         document_store=document_store,
@@ -298,6 +316,7 @@ def build_lambda_processor() -> ConversionLambdaProcessor:
         max_receive_count=int(os.getenv("CONVERSION_SQS_MAX_RECEIVE_COUNT", "5")),
         lease_seconds=int(os.getenv("CONVERSION_JOB_LEASE_SECONDS", "900")),
         results_s3_prefix=os.getenv("CONVERSION_RESULTS_S3_PREFIX", "conversion/results"),
+        receipt_recorder=receipts.receive if _read_bool_env("PRO_ORGANIZATION_ENABLED", default=False) else None,
     )
 
 
