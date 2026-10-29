@@ -7,6 +7,7 @@ from statistics import median
 
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.followup_ocr import _headers, _source
+from app.application.parsers.pdf.row_geometry import nearest_row, row_slope
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
@@ -116,6 +117,7 @@ def parse_bb_cash_ocr(extraction):
     if not columns:
         fail()
     base_columns = columns
+    base_slope = row_slope([item for item in extraction.pages[0].lines if item.bbox and upper(item.text) in columns])
     first_date_x = None
     rows, opening, running, closing, checks = [], None, None, None, 0
     for page in extraction.pages:
@@ -135,6 +137,11 @@ def parse_bb_cash_ocr(extraction):
             fail()
         columns = {key: value + offset for key, value in base_columns.items()}
         lines = _column_lines(page, columns)
+        headings = [item for item in lines if upper(item.text) in columns]
+        slope = row_slope(headings) if len(headings) >= 2 else base_slope
+        financial = [item for item in lines if item.bbox["left"] > columns["DOCUMENTO"] + .05
+                     and _MONEY.fullmatch(item.text.strip())]
+        assigned = {item.id: nearest_row(item, dates, slope=slope) for item in financial}
         if rows and dates[0].bbox["top"] < .15:
             first_y = dates[0].bbox["top"]
             continuation = [line for line in lines if columns["HISTORICO"]-.02 <= line.bbox["left"] < columns["DOCUMENTO"]-.07
@@ -165,10 +172,14 @@ def parse_bb_cash_ocr(extraction):
             if (len(controls) == 1 and label == "999 SALDO") or baseline_label.removeprefix("999") == "SALDO":
                 # The final date has no next anchor; limits, CET and footer
                 # balances below it belong to another financial section.
-                cells = [item for item in cells if abs(item.bbox["top"] - top) < (.018 if native else .006)]
+                cells = [item for item in lines if nearest_row(item, [anchor], slope=slope,
+                         max_distance=.018 if native else .006) is anchor]
                 history = [item for item in history if item in cells]
                 label = "999 SALDO"
-            values = [item for item in cells if item.bbox["left"] > columns["DOCUMENTO"] + 0.05 and _MONEY.fullmatch(item.text.strip())]
+            values = [item for item in financial if assigned[item.id] is anchor]
+            if label == "999 SALDO":
+                values = [item for item in values if item in cells]
+            cells = list({item.id:item for item in [*cells,*values]}.values())
             amounts = [item for item in values if item.id.endswith(":amount") or not item.id.endswith(":balance")
                        and item.bbox["left"] + item.bbox["width"] < columns["SALDO"] - .005]
             balances = [item for item in values if item not in amounts]
@@ -205,9 +216,13 @@ def parse_bb_cash_ocr(extraction):
                 return amount * (-1 if signed[2].upper() == "D" else 1)
 
             if "SALDO ANTERIOR" in label:
-                if rows or opening is not None or amounts or len(balances) != 1:
+                if (rows or opening is not None or not re.fullmatch(r"(?:\d+\s+)?SALDO ANTERIOR", label)
+                        or not values or len(amounts) > 1 or len(balances) > 1):
                     fail()
-                opening = running = value(balances[0])
+                copies = {value(cell) for cell in values}
+                if len(copies) != 1:
+                    fail("As cópias impressas do saldo anterior Banco do Brasil divergem.")
+                opening = running = copies.pop()
                 continue
             if label.replace(" ", "").removeprefix("999") == "SALDO":
                 if amounts or len(balances) != 1 or running != value(balances[0]):
@@ -236,14 +251,15 @@ def parse_bb_cash_ocr(extraction):
                 checks += 1
             refs = [
                 item
-                for item in cells
+                for item in lines
                 if columns["DOCUMENTO"] - 0.07 <= item.bbox["left"] < columns["VALOR R$"] - 0.03
-                and abs(item.bbox["top"] - top) < 0.006
+                and nearest_row(item, dates, slope=slope) is anchor
                 and item not in values
                 and re.fullmatch(r"[\d.,]+", item.text)
             ]
             if len(refs) != 1:
                 fail()
+            cells = list({item.id: item for item in [*cells, *refs]}.values())
             description = re.sub(r"^\d{3}\s+", "", " ".join(item.text for item in history))
             movement_dates = [item for item in cells if .17 < item.bbox["left"] < .29
                               and re.fullmatch(DATE, item.text) and abs(item.bbox["top"] - top) < .008]

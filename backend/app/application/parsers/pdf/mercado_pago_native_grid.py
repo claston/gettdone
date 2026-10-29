@@ -39,18 +39,21 @@ def _split_date_history(page, history_left):
 def parse_mercado_pago_native_grid(raw, source):
     import pypdfium2 as pdfium
 
-    recovered, pending = [], []
+    recovered, pending, previous_columns = [], [], None
     with _PDFIUM_LOCK, pdfium.PdfDocument(raw) as document:
         for index, page in enumerate(source.pages):
             columns = _headers(page, ("DATA", "DESCRICAO", "ID DA OPERACAO", "VALOR", "SALDO"))
+            has_header = bool(columns)
             if not columns:
                 if index == 0:
                     return None
-                fail()
+                columns = previous_columns
+            previous_columns = columns
             page = _split_date_history(page, columns["DESCRICAO"])
             page = split_native_columns(page, [columns["DESCRICAO"] - .02, columns["ID DA OPERACAO"] - .02])
-            header_top = max(line.bbox["top"] for line in page.lines
-                             if normalize_upper_text(line.text) in {"DATA", "DESCRICAO", "VALOR", "SALDO"})
+            header_top = max((line.bbox["top"] for line in page.lines
+                             if normalize_upper_text(line.text) in {"DATA", "DESCRICAO", "VALOR", "SALDO"}),
+                             default=0) if has_header else 0
             with closing(document[index]) as pdf_page:
                 width, height = pdf_page.get_size()
                 rules = set()

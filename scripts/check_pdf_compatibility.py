@@ -75,6 +75,13 @@ def make_corpus():
     from tests.test_oct20_new_native_statements import bb_page
     from tests.test_oct27_mercado_grid import mercado_grid
     from tests.test_oct28_remaining_statements import bb_zero_with_blocked, sicoob_descending
+    from tests.test_oct28_new_statement_failures import (
+        append_image_page, banrisul_month_source, bb_duplicate_opening, brb_lot_statement,
+        caixa_tilted_rows, mercado_without_continuation_header,
+    )
+    from tests.test_sicredi_financial_columns import matrix_text
+    from tests.test_oct20_followup_native import portal_pages
+    from tests.test_oct20_followup_ocr import banrisul_ocr
 
     cases = []
 
@@ -83,6 +90,29 @@ def make_corpus():
                       "ocr": asdict(ocr) if ocr else None, "expected": {"movements": movements, **expected}})
 
     mp = [["2026-07-02", 50], ["2026-07-03", -20], ["2026-07-04", 20]]
+    ocr_raw = generate_native_text_pdf((("Synthetic OCR source",),))
+    add("banrisul_portal_legacy_native", generate_native_text_pdf(tuple(tuple(p.splitlines()) for p in portal_pages())),
+        [["2026-08-03",150],["2026-08-03",-20],["2026-08-03",-50]],bank_code="041")
+    add("banrisul_portal_legacy_ocr", ocr_raw, [["2026-09-01",150],["2026-09-01",-20]],ocr=banrisul_ocr(),bank_code="041")
+    add("lot_origin_rotated_native", brb_lot_statement(rotated=True),
+        [["2026-01-02", -20], ["2026-01-06", 50], ["2026-01-06", .01]])
+    add("sicoob_white_image_page", append_image_page(sicoob_descending()),
+        [["2026-07-01", 50], ["2026-07-02", -200]], bank_code="756")
+    add("mercado_headerless_continuation", mercado_without_continuation_header(),
+        [["2026-10-02", 10], ["2026-10-03", -5]], bank_code="323", review=True)
+    add("caixa_tilted_ocr_rows", ocr_raw, [["2026-07-01", -20], ["2026-07-02", 10]], ocr=caixa_tilted_rows())
+    add("bb_duplicate_printed_opening", ocr_raw, [["2026-08-03", 50]], ocr=bb_duplicate_opening())
+    add("banrisul_monthly_day_context", ocr_raw,
+        [["2026-04-01", -20], ["2026-04-01", 50], ["2026-04-02", .01]], ocr=banrisul_month_source())
+    cases[-1]["correction_reason"] = (
+        "The previous generic OCR reader exported the 100.00 opening as a transaction and omitted all three day-only movements. "
+        "The monthly reader preserves the actual -20.00, +50.00 and +0.01 movements and checks the 130.01 closing."
+    )
+    matrix = matrix_text().replace("DEBITOS.............: 7.564,91", "DEBITOS.............: 7.564,91   |  05/11/2026 JUROS -119,85")
+    add("sicredi_summary_separate_panel", generate_native_text_pdf((matrix.splitlines(),)),
+        [["2026-09-01",2600], ["2026-09-01",-250], ["2026-09-01",-11.61], ["2026-09-02",-7303.3]])
+    add("bb_conflicting_opening_copies", ocr_raw, [], ocr=bb_duplicate_opening(conflicting=True), rejected=True)
+    add("nonblank_image_is_not_a_blank_page", append_image_page(sicoob_descending(), white=False), [], rejected=True)
     add("bb_pending_deposit_excluded", pdf([bb_zero_with_blocked()]), [["2026-07-01", 50]], bank_code="001", review=True)
     add("bb_prior_day_cash_control", pdf([bb_page().replace("Saldo Anterior", "Saldo do dia")]),
         [["2026-07-02", -194.57], ["2026-07-03", 1100]], bank_code="001")

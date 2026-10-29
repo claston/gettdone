@@ -11,6 +11,11 @@ from app.application.source_regions import evidence_regions
 
 
 def parse_controlled_ocr(extraction):
+    from app.application.parsers.pdf.positional_monthly_statements import parse_banrisul_month
+
+    monthly = parse_banrisul_month(extraction)
+    if monthly is not None:
+        return monthly
     from app.application.parsers.pdf.daily_cd_fragment_ocr import parse_daily_cd_fragment
 
     fragment = parse_daily_cd_fragment(extraction)

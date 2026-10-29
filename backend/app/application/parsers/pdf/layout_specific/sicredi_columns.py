@@ -46,11 +46,13 @@ def _single(values):
 
 
 def _matrix(lines):
+    # The printable summary can share a line with a separately ruled forecast
+    # panel. Its amounts and dates are not movements or controls of this ledger.
     texts = [normalize_upper_text(line.text) for line in lines]
     summaries = {}
     for kind, prefix in (("debits", "DEBITOS"), ("credits", "CREDITOS"), ("closing", "SALDO ATUAL")):
         amounts = {_money(token.value) for line, text in zip(lines, texts, strict=True) if text.startswith(prefix)
-                   for token in find_amount_tokens(line.text)}
+                   for token in find_amount_tokens(line.text.partition("|")[0])}
         if not amounts:
             if kind == "closing":
                 return None  # Other matrix templates keep their existing parser.

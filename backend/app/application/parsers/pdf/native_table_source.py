@@ -1,6 +1,7 @@
 """Native glyph evidence in column fragments, preserving real PDF coordinates."""
 import hashlib
 from contextlib import closing
+from io import BytesIO
 from statistics import median
 
 from app.application.document_extraction_models import ExtractedLine, ExtractedPage, ExtractedWord, RawDocumentExtraction
@@ -68,13 +69,22 @@ def split_native_columns(page, boundaries, *, include=None):
 
 def read_native_table_source(raw, *, decorative_history=None):
     import pypdfium2 as pdfium
+    from pypdf import PdfReader, PdfWriter
 
     pages, excluded, empty = [], 0, 0
-    with _PDFIUM_LOCK, pdfium.PdfDocument(raw) as document:
+    reader = PdfReader(BytesIO(raw))
+    rotated = any(page.rotation for page in reader.pages)
+    normalized = raw
+    if rotated:
+        writer = PdfWriter(clone_from=reader)
+        for page in writer.pages:
+            page.transfer_rotation_to_content()
+        output = BytesIO()
+        writer.write(output)
+        normalized = output.getvalue()
+    with _PDFIUM_LOCK, pdfium.PdfDocument(normalized) as document:
         for page_index in range(len(document)):
             with closing(document[page_index]) as page, closing(page.get_textpage()) as tp:
-                if page.get_rotation():
-                    fail("A orientação deste extrato nativo não permite conferir suas colunas.")
                 width, height = page.get_size()
                 chars = []
                 for index in range(tp.count_chars()):
@@ -92,9 +102,9 @@ def read_native_table_source(raw, *, decorative_history=None):
                     if right > left and top > bottom:
                         chars.append((left, bottom, right, top, char))
                 if not chars:
-                    # Only an object-free, visibly white page can be ignored.
-                    # Keep its page number: source references must not shift.
-                    if not list(page.get_objects()) and page.render(scale=.5).to_pil().convert("L").getextrema() == (255, 255):
+                    # White image objects also occur on otherwise empty pages.
+                    # Verify actual pixels and preserve the physical page number.
+                    if page.render(scale=2).to_pil().convert("RGB").getextrema() == ((255, 255),) * 3:
                         pages.append(ExtractedPage(page_index + 1, lines=[], words=[]))
                         empty += 1
                         continue
@@ -145,6 +155,8 @@ def read_native_table_source(raw, *, decorative_history=None):
                         add_fragment(fragment)
                 pages.append(ExtractedPage(page_index + 1, lines=lines, words=words))
     metrics = {"native_coordinates_used": 1}
+    if rotated:
+        metrics["native_rotation_normalized"] = 1
     if empty:
         metrics["empty_native_pages_verified"] = empty
     if excluded:
