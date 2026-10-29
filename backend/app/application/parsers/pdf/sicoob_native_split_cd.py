@@ -7,6 +7,7 @@ from statistics import median
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.followup_ocr import _headers, _source
 from app.application.parsers.pdf.native_table_source import native_header_columns, split_native_columns
+from app.application.parsers.pdf.page_financial_fragments import preceding_page_amounts
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
@@ -72,7 +73,14 @@ def parse_sicoob_native_split_cd(source):
     margin = height*.8
     financial = [(pos, p, line) for pos, p, line in body if line.bbox["left"] >= value_left
                  and re.search(r"\d", line.text)]
+    fragments = preceding_page_amounts(anchors, financial, body)
+    destinations = {(item.origin_page.page_number, item.amount.id): item.target_page.page_number + item.anchor.bbox["top"]
+                    for item in fragments}
+    # Effective row membership changes; physical page, line and coordinates do not.
+    body = [(destinations.get((p.page_number, line.id), pos), p, line) for pos, p, line in body]
+    financial = [(destinations.get((p.page_number, line.id), pos), p, line) for pos, p, line in financial]
     used, rows, opening, controls = set(), [], None, {}
+    non_cash = 0
     opening_position, row_positions = None, []
     days_with_rows = set()
     for index, (pos, page, anchor) in enumerate(anchors):
@@ -97,6 +105,9 @@ def parse_sicoob_native_split_cd(source):
         if label in {"SALDO BLOQ.ANTERIOR", "SALDO BLOQUEADO ANTERIOR"}:
             if sign != "*":
                 fail()
+            continue
+        if sign == "*" and re.fullmatch(r"DEP\.?\s*CHEQUE\s+BLOQ\.?\s*\d+D", label):
+            non_cash += 1
             continue
         if sign not in {"C", "D"}:
             fail("Um movimento SISBR está sem sinal C/D explícito.")
@@ -151,4 +162,4 @@ def parse_sicoob_native_split_cd(source):
     if running != closing:
         financial_mismatch()
     return VerifiedStatement(rows, "sicoob_sisbr_native_split_cd_v1", opening, closing,
-        printed_balance_checks=len(controls)+1, candidate_rows=len(rows), balance_checkpoints={})
+        printed_balance_checks=len(controls)+1, candidate_rows=len(rows), balance_checkpoints={}, non_cash_entries=non_cash)

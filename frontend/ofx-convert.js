@@ -1572,7 +1572,8 @@
     }
     for (const warning of ["date_year_from_statement_period", "native_amount_recovered_from_balances",
       "scheduled_transactions_excluded", "pending_deposits_excluded", "ocr_duplicate_sign_normalized",
-      "amount_sign_from_printed_balances"]) {
+      "amount_sign_from_printed_balances", "ocr_sign_stroke_overlap_confirmed", "ocr_trailing_mark_confirmed",
+      "printed_totals_differ_from_extracted_movements"]) {
       if (warningTypes.includes(warning)) list.push(mapWarningTypeExplanation(warning));
     }
 
@@ -2160,6 +2161,9 @@
     if (value === "scheduled_transactions_excluded") return "Agendamentos separados";
     if (value === "pending_deposits_excluded") return "Depósitos bloqueados";
     if (value === "ocr_duplicate_sign_normalized") return "Sinal duplicado conferido";
+    if (value === "ocr_sign_stroke_overlap_confirmed") return "Caractere junto ao sinal conferido";
+    if (value === "ocr_trailing_mark_confirmed") return "Marca junto ao valor conferida";
+    if (value === "printed_totals_differ_from_extracted_movements") return "Totais a conferir";
     if (value === "amount_sign_from_printed_balances") return "Sinal conferido pelos saldos";
     if (value === "opening_balance_ambiguous") return "Saldo inicial a conferir";
     if (value === "accounts_payable_pending") return "Pendente";
@@ -2205,6 +2209,9 @@
     if (value === "scheduled_transactions_excluded") return "Os movimentos agendados foram separados dos lançamentos já efetivados e não entraram no arquivo exportado.";
     if (value === "pending_deposits_excluded") return "Os depósitos identificados como bloqueados ou pendentes não entraram como dinheiro disponível na conta. Confira a liberação no banco.";
     if (value === "ocr_duplicate_sign_normalized") return "O OCR repetiu o sinal de um valor. O sinal duplicado foi normalizado e conferido pelos dois saldos impressos da operação.";
+    if (value === "ocr_sign_stroke_overlap_confirmed") return "A leitura recuperou um caractere junto ao sinal do valor, confirmado pelo saldo impresso da linha. Confira o valor e o sinal no PDF original antes de exportar.";
+    if (value === "ocr_trailing_mark_confirmed") return "A leitura encontrou uma marca após o valor. O número e o sinal foram preservados e conferidos pelo saldo da linha. Confira o lançamento no PDF original.";
+    if (value === "printed_totals_differ_from_extracted_movements") return "Os totais impressos de créditos e débitos diferem da soma dos movimentos extraídos. Os lançamentos foram preservados; confira o período e os totais no documento original.";
     if (value === "amount_sign_from_printed_balances") return "O sinal não estava legível na leitura. A direção do movimento foi confirmada pela diferença entre os saldos impressos antes e depois dele, sem alterar os dígitos do valor.";
     if (value === "opening_balance_ambiguous") return "O extrato apresenta saldos iniciais diferentes. Confira qual saldo corresponde ao período antes de exportar.";
     if (value === "combined_cash_investment_balance_not_comparable") return "Os controles incluem conta corrente e aplicações automáticas. Eles não validam isoladamente o saldo da conta corrente; eventuais diferenças podem incluir rendimentos.";

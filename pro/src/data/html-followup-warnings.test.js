@@ -15,6 +15,9 @@ describe("avisos objetivos dos extratos recuperados", () => {
     ["ocr_duplicate_sign_normalized", "sinal duplicado"],
     ["amount_sign_from_printed_balances", "saldos impressos"],
     ["opening_balance_ambiguous", "saldos iniciais diferentes"],
+    ["ocr_sign_stroke_overlap_confirmed", "caractere junto ao sinal"],
+    ["ocr_trailing_mark_confirmed", "marca após o valor"],
+    ["printed_totals_differ_from_extracted_movements", "soma dos movimentos"],
   ])("explica %s no revisor", async (warning, expected) => {
     const dom = new JSDOM(html, { url: "https://ofx.test/ofx-convert.html", runScripts: "outside-only" });
     const rows = [{ date: "2026-10-01", description: "EXEMPLO", amount: 20 }];

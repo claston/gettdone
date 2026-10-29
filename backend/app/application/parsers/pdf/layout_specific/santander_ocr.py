@@ -127,16 +127,29 @@ def _summary(cells):
         "credit": "TOTAL DE CREDITOS", "debit": "TOTAL DE DEBITOS",
     }
     controls, witnesses = {}, []
+    def label_text(cell):
+        return re.sub(r"^\([+=-]\)\s*", "", normalize_upper_text(cell.line.text))
+
+    available = any(label_text(cell) == labels["opening"].replace("SALDO DE", "SALDO DISPONIVEL DE")
+                    for cell in cells)
+    if available:
+        labels.update({key: labels[key].replace("SALDO DE", "SALDO DISPONIVEL DE") for key in ("opening", "closing")})
     for kind, label in labels.items():
-        source = _one([cell for cell in cells if normalize_upper_text(cell.line.text) == label and cell.line.bbox])
+        sources = [cell for cell in cells if label_text(cell) == label and cell.line.bbox]
+        if kind == "debit" and available and not sources:
+            # This summary omits zero categories. Confirm zero against complete
+            # explicitly credited table rows below, never a balance difference.
+            controls[kind] = None
+            continue
+        source = _one(sources)
         value_cell, value = _aligned_value(source, cells, .55, .8)
         if not _printed(source):
             raise OcrFinancialAmbiguityError(_MESSAGE)
         controls[kind] = value
         witnesses.extend((source, value_cell))
-    if controls["credit"] < 0 or controls["debit"] < 0:
+    if controls["credit"] < 0 or controls["debit"] is not None and controls["debit"] < 0:
         raise PdfFinancialValidationError(_MESSAGE)
-    if controls["opening"] + controls["credit"] - controls["debit"] != controls["closing"]:
+    if controls["debit"] is not None and controls["opening"] + controls["credit"] - controls["debit"] != controls["closing"]:
         financial_mismatch(_MESSAGE)
     return start, end, controls, witnesses
 
@@ -314,6 +327,13 @@ def parse_santander_ocr(extraction):
     cells = _cells(extraction)
     start, end, controls, witnesses = _summary(cells)
     rows, marks = _read_movements(extraction, cells, start, end, controls)
+    omitted_zero_debit = controls["debit"] is None
+    if omitted_zero_debit:
+        if (not rows or marks or any(row.kind != "credit" or row.amount is None for row in rows)
+                or sum((row.amount for row in rows), Decimal(0)) != controls["credit"]
+                or controls["opening"] + controls["credit"] != controls["closing"]):
+            raise OcrFinancialAmbiguityError(_MESSAGE)
+        controls["debit"] = Decimal(0)
     recovered = _recover_and_validate(rows, marks, controls, witnesses)
     parsed = []
     for row in rows:
@@ -330,4 +350,4 @@ def parse_santander_ocr(extraction):
         )
         parsed.append(replace(result, warnings=row.warnings))
     return parsed, {"financial_controls_validated": 1, "ocr_amounts_recovered_from_summary": len(recovered),
-                    "ocr_off_row_marks_excluded": len(marks)}
+                    "ocr_off_row_marks_excluded": len(marks), "omitted_zero_debit_control_confirmed": int(omitted_zero_debit)}

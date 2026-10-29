@@ -1105,6 +1105,8 @@ def _parse_textract_text_pages_attempt(extraction) -> PdfParseResult:
         return apply_statement_review(_parse_textract_text_pages_impl(extraction))
     except InvalidFileContentError as exc:
         layout = infer_pdf_layout("\n".join(_textract_page_texts(extraction)))
+        if is_santander_consolidated_scan(extraction):
+            layout = PdfLayoutInference(SANTANDER_OCR_LAYOUT, .99, False)
         existing = dict(getattr(exc, "_parse_observability", {}) or {})
         defaults = dict(layout_inference_name=layout.layout_name, layout_inference_confidence=layout.confidence,
                         extraction_provider="aws_textract", textract_attempted=1, textract_used=1,
