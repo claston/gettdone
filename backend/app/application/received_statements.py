@@ -1,11 +1,15 @@
 """Document-led organization and minimal history, without reprocessing or quota mutations."""
 
 import json
+import logging
 from datetime import datetime, timezone
+from io import BytesIO
 from uuid import uuid4
 
 from app.application.pro_organization import OrganizationConflict, OrganizationService
-from app.application.statement_identity import normalized
+from app.application.statement_identity import IDENTITY_VERSION, account_identity, account_signature, identify_statement, normalized
+
+logger = logging.getLogger(__name__)
 
 
 def _utc(value):
@@ -30,9 +34,10 @@ def technical_status(record):
 
 
 class ReceivedStatements(OrganizationService):
-    def __init__(self, db, repository=None):
+    def __init__(self, db, repository=None, *, document_store=None):
         super().__init__(db)
         self.repository = repository
+        self.document_store = document_store
 
     def _lock(self, conn, owner):
         organization = self._organization(conn, owner, create=True)
@@ -52,44 +57,82 @@ class ReceivedStatements(OrganizationService):
 
     def _account(self, conn, organization, owner, client_id, source):
         fields = [str(source.get(key) or "") for key in ("bank_code", "branch", "account_number")]
-        if not all(fields) or fields[0] == "000":
+        key = account_signature(source)
+        if not key:
             return None
         rows = self.db.fetchall(conn, "SELECT * FROM pro_accounts WHERE organization_id = ? AND client_id = ?", (organization, client_id))
+        known = {json.loads(row["source_json"]).get("account_links", {}).get(key)
+                 for row in self._account_receipts(conn, organization, key) if row["client_id"] == client_id}
         for row in rows:
-            if [normalized(row[key]) for key in ("bank_code", "branch", "account_number")] == [normalized(v) for v in fields]:
+            if (row["id"] in known and
+                    [normalized(row[key]) for key in ("bank_code", "branch", "account_number")] == [normalized(v) for v in fields]):
+                return row["id"]
+            if (not source.get("cooperative") and
+                    [normalized(row[key]) for key in ("bank_code", "branch", "account_number")] == [normalized(v) for v in fields]):
                 return row["id"]
         account_id, now = f"account_{uuid4().hex}", self._now()
+        name = f"Conta de origem · Cooperativa {source['cooperative']}" if source.get("cooperative") else "Conta de origem"
         self._write(conn, "INSERT INTO pro_accounts (id, organization_id, client_id, name, bank_code, branch, account_number, "
                     "created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (account_id, organization, client_id, "Conta de origem", *fields, owner, now, now))
+                    (account_id, organization, client_id, name, *fields, owner, now, now))
         return account_id
 
+    def _account_receipts(self, conn, organization, key):
+        rows = self.db.fetchall(conn, "SELECT r.source_json, x.client_id FROM pro_received_statements r "
+            "JOIN pro_conversion_contexts x ON x.organization_id = r.organization_id AND x.job_id = r.job_id "
+            "WHERE r.organization_id = ? AND x.client_id IS NOT NULL AND r.source_json LIKE ?", (organization, f'%"{key}"%'))
+        return [row for row in rows if key in self._source_keys(json.loads(row["source_json"]))]
+
+    @staticmethod
+    def _source_keys(source):
+        return sorted({key for item in source.get("accounts") or [source] if (key := account_signature(item))})
+
+    def _known_clients(self, conn, organization, source):
+        key = account_signature(source)
+        if not key:
+            return set()
+        matches = {row["client_id"] for row in self._account_receipts(conn, organization, key)}
+        # Legacy accounts use genuine agency fields. A cooperative is a separate scope.
+        if not source.get("cooperative"):
+            for row in self.db.fetchall(conn, "SELECT * FROM pro_accounts WHERE organization_id = ?", (organization,)):
+                if account_identity({"bank_code": row["bank_code"], "branch": row["branch"],
+                                     "account_number": row["account_number"]}) == account_identity(source):
+                    matches.add(row["client_id"])
+        return matches
+
     def _link_accounts(self, conn, organization, owner, job_id, client, source):
+        links = {}
         for item in source.get("accounts") or [source]:
             account = self._account(conn, organization, owner, client, item)
             if account:
+                links[account_signature(item)] = account
                 self._write(conn, "INSERT INTO pro_received_statement_accounts (organization_id, job_id, account_id) "
                             "VALUES (?, ?, ?) ON CONFLICT DO NOTHING", (organization, job_id, account))
+        self._write(conn, "UPDATE pro_received_statements SET source_json = ? WHERE organization_id = ? AND job_id = ?",
+                    (json.dumps({**source, "account_links": links}, ensure_ascii=False), organization, job_id))
+        return links.get(account_signature(source))
 
-    def receive(self, record):
+    def receive(self, record, *, recovered_source=None):
         job = record.job
         if job.identity.identity_type != "user" or not job.batch_id:
             return
         owner = job.identity.identity_id
         payload = (record.result.payload or {}) if record.result else {}
-        source = payload.get("organization_source") or {}
+        source = recovered_source if recovered_source is not None else payload.get("organization_source") or {}
         if not source:
-            from app.application.statement_identity import identify_statement
-
             # A legacy export account may be a destination chosen after conversion.
             source = identify_statement({"financial_document": (payload.get("analysis") or {}).get("financial_document")})
         elif "confidence" not in source:
             source = {**source, "confidence": "strong" if source.get("holder_tax_id") else "name"}
         # Historical metadata deliberately excludes transaction/period/result data and raw text.
-        source = {key: source[key] for key in ("holder_name", "holder_tax_id", "bank_code", "branch", "account_number",
-                                              "confidence", "references", "representation", "accounts") if key in source}
-        if source.get("confidence") == "missing" and not any(source.get(key) for key in ("holder_name", "holder_tax_id", "account_number")):
+        source = {key: source[key] for key in ("version", "holder_name", "holder_tax_id", "bank_code", "branch", "cooperative",
+                                              "account_number", "confidence", "references", "representation", "accounts",
+                                              "native_identity_checked") if key in source}
+        if (source.get("confidence") == "missing" and not source.get("native_identity_checked")
+                and not any(source.get(key) for key in ("holder_name", "holder_tax_id", "account_number"))):
             source = {}
+        if source:
+            source["account_keys"] = self._source_keys(source)
         with self.db.connect() as conn:
             organization = self._lock(conn, owner)
             self._write(conn, "INSERT INTO pro_received_statements "
@@ -104,6 +147,14 @@ class ReceivedStatements(OrganizationService):
                         (organization, job.job_id, job.batch_id, job.document.filename, _utc(record.created_at).isoformat(),
                          _utc(record.expires_at).isoformat(), technical_status(record), json.dumps(source, ensure_ascii=False),
                          str(getattr(record.status, "value", record.status))))
+            stored = json.loads(self.db.fetchone(conn,
+                "SELECT source_json FROM pro_received_statements WHERE organization_id = ? AND job_id = ?",
+                (organization, job.job_id))["source_json"])
+            if source.get("version", 0) > stored.get("version", 0):
+                self._write(conn, "UPDATE pro_received_statements SET source_json = ? WHERE organization_id = ? AND job_id = ?",
+                            (json.dumps(source, ensure_ascii=False), organization, job.job_id))
+            else:
+                source = stored
             context = self.db.fetchone(conn, "SELECT job_id FROM pro_conversion_contexts WHERE organization_id = ? AND job_id = ?",
                                        (organization, job.job_id))
             tax, name = normalized(source.get("holder_tax_id")), str(source.get("holder_name") or "").strip()
@@ -111,19 +162,48 @@ class ReceivedStatements(OrganizationService):
             if not context and name and tax.isdigit() and len(tax) in (11, 14) and source.get("confidence") == "strong":
                 client = self._client(conn, organization, owner, name[:160], tax)
             elif not context and not tax and source.get("confidence") != "ambiguous":
-                fields = [normalized(source.get(key)) for key in ("bank_code", "branch", "account_number")]
-                if all(fields) and fields[0] != "000":
-                    matches = {row["client_id"] for row in self.db.fetchall(conn,
-                        "SELECT client_id, bank_code, branch, account_number FROM pro_accounts WHERE organization_id = ?", (organization,))
-                        if [normalized(row[key]) for key in ("bank_code", "branch", "account_number")] == fields}
-                    if len(matches) == 1:
-                        client = next(iter(matches))
+                matches = self._known_clients(conn, organization, source)
+                if len(matches) == 1:
+                    client = next(iter(matches))
+                elif not matches and name and source.get("confidence") == "source_account" and account_identity(source):
+                    client = self._client(conn, organization, owner, name[:160], None)
             if not context and client:
-                account = self._account(conn, organization, owner, client, source)
+                account = self._link_accounts(conn, organization, owner, job.job_id, client, source)
                 self.save_context_in_connection(conn, owner, job_id=job.job_id, client_id=client, account_id=account,
                                                 period_ids=[], expected_version=0)
-                self._link_accounts(conn, organization, owner, job.job_id, client, source)
             conn.commit()
+
+    def _recover_native_source(self, owner, record):
+        if (self.document_store is None or record.result is None
+                or not str(record.job.document.filename).lower().endswith(".pdf")
+                or record.expires_at <= datetime.now(timezone.utc)):
+            return None
+        original = (record.result.payload or {}).get("organization_source") or {}
+        if original.get("version", 0) >= IDENTITY_VERSION:
+            return None
+        with self.db.connect() as conn:
+            organization = self._organization(conn, owner)
+            row = self.db.fetchone(conn, "SELECT source_json, expires_at FROM pro_received_statements "
+                                   "WHERE organization_id = ? AND job_id = ?", (organization, record.job.job_id))
+            context = self.db.fetchone(conn, "SELECT client_id FROM pro_conversion_contexts WHERE organization_id = ? AND job_id = ?",
+                                       (organization, record.job.job_id))
+            if context and context["client_id"]:
+                return None
+            if row and (_utc(row["expires_at"]) <= datetime.now(timezone.utc)
+                        or json.loads(row["source_json"]).get("version", 0) >= IDENTITY_VERSION):
+                return None
+        try:
+            from pypdf import PdfReader
+
+            document = self.document_store.load(record.job.document)
+            pages = [page.extract_text() or "" for page in PdfReader(BytesIO(document.raw_bytes)).pages]
+            source = identify_statement({"bank_code": original.get("bank_code"), "bank_branch": original.get("branch"),
+                "account_number": original.get("account_number"), "financial_document": {"metadata": {
+                    "owner_name": original.get("holder_name"), "owner_tax_id": original.get("holder_tax_id")}}}, page_texts=pages)
+            return {**source, "native_identity_checked": True} if record.expires_at > datetime.now(timezone.utc) else None
+        except Exception as exc:
+            logger.warning("pro_receipt_identity_recovery_failed", extra={"job_id": record.job.job_id, "error_class": type(exc).__name__})
+            return None
 
     def sync(self, owner, cursor=None):
         if self.repository is None:
@@ -136,7 +216,7 @@ class ReceivedStatements(OrganizationService):
         for summary in summaries:
             record = self.repository.get(summary.job_id)
             if record and record.job.identity.identity_type == "user" and record.job.identity.identity_id == owner:
-                self.receive(record)
+                self.receive(record, recovered_source=self._recover_native_source(owner, record))
         if len(summaries) == 100:
             last = summaries[-1]
             return base64.urlsafe_b64encode(json.dumps([last.created_at.isoformat(), last.job_id]).encode()).decode().rstrip("=")
@@ -223,14 +303,13 @@ class ReceivedStatements(OrganizationService):
                                       (organization, job_id))
             if (context["version"] if context else 0) != expected_version:
                 raise OrganizationConflict("A identificação mudou. Atualize antes de confirmar novamente.")
-            account_id = self._account(conn, organization, owner, client_id, source)
             periods = [row["period_id"] for row in self.db.fetchall(conn,
                 "SELECT period_id FROM pro_conversion_periods WHERE organization_id = ? AND job_id = ?", (organization, job_id))]
-            result = self.save_context_in_connection(conn, owner, job_id=job_id, client_id=client_id, account_id=account_id,
-                                                     period_ids=periods, expected_version=expected_version)
             self._write(conn, "DELETE FROM pro_received_statement_accounts WHERE organization_id = ? AND job_id = ?",
                         (organization, job_id))
-            self._link_accounts(conn, organization, owner, job_id, client_id, source)
+            account_id = self._link_accounts(conn, organization, owner, job_id, client_id, source)
+            result = self.save_context_in_connection(conn, owner, job_id=job_id, client_id=client_id, account_id=account_id,
+                                                     period_ids=periods, expected_version=expected_version)
             conn.commit()
             return result
 

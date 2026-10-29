@@ -12,15 +12,18 @@ from app.application.received_statements import ReceivedStatements
 from app.dependencies import (
     get_access_control_service,
     get_async_conversion_report_service,
+    get_conversion_batch_document_store,
     get_conversion_batch_service,
     get_report_service,
 )
 from app.main import app
 from tests.test_conversion_workspace_http_real_api import _run_pro_upload_http_server
+from tests.test_statement_holder_headers import HEADERS, WRAPPED_HEADER
 
 
 @pytest.mark.real_http
-def test_native_pdf_processing_identifies_holder_and_original_report_stays_available(tmp_path, monkeypatch):
+@pytest.mark.parametrize("header_case", [None, *HEADERS, WRAPPED_HEADER])
+def test_native_pdf_processing_identifies_holder_and_original_report_stays_available(tmp_path, monkeypatch, header_case):
     from app.application.conversion.document_conversion_pipeline import DocumentConversionPipeline
     from app.application.conversion.uploaded_document import ingest_uploaded_document
     from app.application.default_conversion_pipeline import build_default_conversion_pipeline
@@ -31,12 +34,23 @@ def test_native_pdf_processing_identifies_holder_and_original_report_stays_avail
 
     monkeypatch.setenv("PRO_ORGANIZATION_ENABLED", "true")
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
-    raw = generate_native_text_pdf(((
+    lines = (
         "Banco Teste - Extrato de conta corrente", "Titular: Padaria Sao Jose",
         "CPF/CNPJ do titular: 12.345.678/0001-90", "Agencia: 0001 Conta: 12345-6",
         "Periodo: 01/09/2026 a 30/09/2026", "Saldo anterior: R$ 150,00",
         "Sem movimentacao no periodo.", "Saldo final: R$ 150,00",
-    ),))
+    )
+    if header_case:
+        header, bank, *_ = header_case
+        lines = (f"{'Sicoob' if bank == '756' else 'Sicredi'} - Extrato de conta corrente", *header.splitlines(),
+                 "Saldo anterior: R$ 150,00", "Sem movimentacao no periodo.", "Saldo final: R$ 150,00")
+        if bank == "756":
+            lines = ("SICOOB SISTEMA DE COOPERATIVAS DE CREDITO DO BRASIL",
+                "PLATAFORMA DE SERVICOS FINANCEIROS DO SICOOB - SISBR", "EXTRATO DE CONTA CORRENTE", *header.splitlines(),
+                "HISTORICO DE MOVIMENTACAO", "Data Documento Historico Valor",
+                "03/04 100001 PIX RECEBIDO R$ 500,00C", "03/04 100002 DEB.TARIFA SERVICO R$ 100,00D",
+                "03/04 SALDO DO DIA R$ 400,00C")
+    raw = generate_native_text_pdf((lines,))
 
     class Documents:
         def load(self, reference):
@@ -66,9 +80,16 @@ def test_native_pdf_processing_identifies_holder_and_original_report_stays_avail
             record = batches.repository.get(job_id)
             assert record.result, record.failure
             source = record.result.payload["organization_source"]
-            assert source["holder_tax_id"] == "12345678000190" and source["references"]
+            assert source["holder_tax_id"] == ("" if header_case else "12345678000190") and source["references"]
+            if header_case:
+                assert source["bank_code"] == header_case[1] and source["cooperative"] == header_case[3]
+                assert source["account_number"] == header_case[4] and source["branch"] == ""
+                if header_case[1] == "756":
+                    assert record.result.payload["analysis"]["transactions_total"] == 2
             page = client.get("/api/pro/receipts").json()
-            assert page["clients"][0]["name"] == "Padaria Sao Jose"
+            assert page["clients"][0]["name"] == (header_case[2] if header_case else "Padaria Sao Jose")
+            if header_case:
+                assert page["clients"][0]["tax_id"] is None and len(page["clients"][0]["accounts"]) == 1
             assert client.get(f"/report/{record.result.analysis_id}").status_code == 200
             assert client.get("/report/nonexistent-ofx62").status_code == 404
             # The retired analyze route remains intentionally disabled, as in main.
@@ -165,3 +186,63 @@ def test_receipts_real_http_multi_batch_workspace_export_permissions_and_expiry(
             assert client.get("/api/pro/receipts").status_code == 503
             assert client.get("/api/pro/conversions").status_code == 200
             assert publisher.calls == [] and access.get_remaining_quota(identity) == remaining
+
+
+@pytest.mark.real_http
+def test_refresh_recovers_anonymized_cooperative_pdfs_without_reconversion(tmp_path, monkeypatch):
+    from app.application.conversion.uploaded_document import ingest_uploaded_document
+    from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
+
+    monkeypatch.setenv("PRO_ORGANIZATION_ENABLED", "true")
+    originals, loads, before = {}, [], {}
+
+    class Documents:
+        def load(self, reference):
+            loads.append(reference.filename)
+            return ingest_uploaded_document(reference.filename, originals[reference.filename])
+
+    with _run_pro_upload_http_server(tmp_path) as (base, publisher, token):
+        access = app.dependency_overrides[get_access_control_service]()
+        batches = app.dependency_overrides[get_conversion_batch_service]()
+        app.dependency_overrides[get_conversion_batch_document_store] = Documents
+        identity = access.resolve_identity(anonymous_fingerprint=None, user_token=token)
+        quota = access.get_remaining_quota(identity)
+        receipts = ReceivedStatements(access.db)
+        headers = {"Authorization": f"Bearer {token}", "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web"}
+        with httpx.Client(base_url=base, headers=headers) as client:
+            for index, (header, bank, _, _, account) in enumerate(HEADERS):
+                filename = f"cooperative-{index}.pdf"
+                raw = generate_native_text_pdf((tuple(header.splitlines()),))
+                originals[filename] = raw
+                response = client.post("/api/pro/conversion-batches", headers={"Idempotency-Key": filename}, json={"files": [
+                    {"filename": filename, "content_type": "application/pdf", "size_bytes": len(raw),
+                     "sha256_hex": hashlib.sha256(raw).hexdigest()}]})
+                assert response.status_code == 201, response.text
+                job_id = response.json()["jobs"][0]["job_id"]
+                for method in ("mark_uploaded", "mark_queued", "mark_running"):
+                    getattr(batches.repository, method)(job_id)
+                batches.repository.mark_completed(job_id, result=ConversionJobResultReference(analysis_id=f"an_legacy_{index}", payload={
+                    "organization_source": {"version": 1, "bank_code": bank, "account_number": account,
+                        "holder_name": "", "holder_tax_id": "", "confidence": "missing"},
+                    # A changed export destination must never become the document's source identity.
+                    "analysis": {"bank_code": "341", "bank_branch": "9999", "account_number": "999999",
+                        "preview_transactions": [{"date": "2026-04-01", "amount": 10, "description": "PIX"}]}}))
+                record = batches.repository.get(job_id)
+                before[job_id] = (record.result, record.expires_at)
+                receipts.receive(record)
+            assert len(client.get("/api/pro/receipts").json()["pending"]) == 2 and loads == []
+            assert httpx.post(base + "/api/pro/receipts/refresh").status_code in (401, 403)
+            assert loads == []
+            refreshed = client.post("/api/pro/receipts/refresh")
+            assert refreshed.status_code == 200, refreshed.text
+            page = client.get("/api/pro/receipts").json()
+            assert page["pending"] == [] and len(page["clients"]) == 2
+            assert {c["name"] for c in page["clients"]} == {h[2] for h in HEADERS}
+            assert all(c["tax_id"] is None and len(c["accounts"]) == 1 for c in page["clients"])
+            assert {c["accounts"][0]["bank_code"] for c in page["clients"]} == {"748", "756"}
+            assert client.post("/api/pro/receipts/refresh").status_code == 200
+            assert len(loads) == 2
+            for job_id, (result, expiry) in before.items():
+                record = batches.repository.get(job_id)
+                assert record.result == result and record.expires_at == expiry
+            assert publisher.calls == [] and access.get_remaining_quota(identity) == quota

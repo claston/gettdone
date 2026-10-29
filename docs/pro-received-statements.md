@@ -9,15 +9,21 @@ novas. O Free e os contratos comerciais existentes permanecem compatíveis.
 
 `statement_identity.py` aplica a mesma política ao texto nativo e ao texto já
 obtido por OCR, sem nova chamada de OCR. Aceita metadados explícitos de titular e
-rótulos documentais de titular/razão social com CPF/CNPJ; registra representação,
+rótulos documentais de titular/razão social, `Associado:` e `Conta: número / titular`,
+inclusive campos concatenados pela extração nativa; registra representação,
 página e linha. CPF/CNPJ genérico de banco ou contraparte não é evidência de
 titular. Números de conta preservam zeros. Identificadores conflitantes deixam o
 documento pendente. A cobertura de rótulos é conservadora: não é reconhecimento
 universal de titulares de todos os layouts.
 
 O serviço reutiliza clientes pelo CPF/CNPJ normalizado dentro do proprietário.
-Sem documento do titular, uma conta de origem conhecida e inequívoca pode
-identificar um cliente existente; nomes semelhantes não geram vínculos.
+Sem CPF/CNPJ do titular, um nome explícito e único junto de uma conta de origem
+completa (banco + agência ou cooperativa + conta) permite criar o cliente sem
+documento fiscal. Uma conta de origem conhecida e inequívoca permite reutilizar
+o cliente; nomes semelhantes, isoladamente, não geram vínculos. Cooperativa é um
+escopo separado de agência: seu identificador fica na evidência JSON e no nome da
+conta, sem preencher a agência ou alterar os dados financeiros da exportação.
+Contas iguais em cooperativas diferentes não são consideradas a mesma origem.
 Recebimentos concorrentes são serializados pela organização e são idempotentes
 por arquivo. Contas de um mesmo PDF não duplicam o total do cliente.
 
@@ -32,8 +38,13 @@ O worker grava a organização depois de concluir a conversão. Se essa gravaç�
 falhar, a mensagem é repetida e apenas a organização é retomada; o arquivo
 concluído não é reconvertido nem consome cota novamente. O refresh explícito do
 dashboard também permite recuperar metadados de trabalhos existentes, em blocos
-de até 100 registros, sem reler PDFs. Resultados antigos sem evidência confiável
-ficam pendentes; conta de destino de exportação não é usada como origem.
+de até 100 registros. Para PDFs nativos antigos, ainda disponíveis e sem cliente
+associado, ele pode reler uma vez o texto do original para atualizar a evidência
+de identificação. Essa recuperação não executa OCR, não reconverte lançamentos,
+não consome cota e não modifica resultados ou prazos. PDFs expirados e vínculos
+já confirmados são preservados. Falhas de leitura deixam a identificação pendente
+e permitem nova tentativa. Resultados sem evidência confiável ficam pendentes;
+conta de destino de exportação não é usada como origem.
 
 ## Consulta, editor e retenção
 
@@ -98,6 +109,8 @@ suíte de regressão de Trabalhos. Não habilitar em builds públicos.
 
 - `test_received_statements.py`: identidade, ambiguidade, correções, múltiplas
   contas, idempotência e expiração exata com dois lotes em 24h e 30d.
+- `test_statement_holder_headers.py`: cabeçalhos anonimizados Sicoob/Sicredi,
+  CPF/CNPJ ausente, cooperativas distintas, origem ambígua e recuperação nativa.
 - `test_received_statements_http.py`: servidor HTTP real, PDF nativo pelo pipeline,
   relatório original, múltiplos lotes, ZIP restrito, 401/404/409, expurgo e cota.
 - `test_received_statement_migration.py` e `test_pro_organization_postgres.py`:

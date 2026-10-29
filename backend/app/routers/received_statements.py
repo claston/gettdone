@@ -6,12 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.application import AccessControlService
+from app.application.conversion.contracts.documents import ConversionDocumentStore
 from app.application.conversion.conversion_batch_service import ConversionBatchService
 from app.application.received_statements import ReceivedStatements
 from app.application.report_service import ReportService
 from app.dependencies import (
     get_access_control_service,
     get_async_conversion_report_service,
+    get_conversion_batch_document_store,
     get_conversion_batch_service,
     get_report_service,
 )
@@ -23,10 +25,11 @@ router = APIRouter(prefix="/api/pro/receipts", tags=["Received statements"])
 
 
 def receipt_service(access: AccessControlService = Depends(get_access_control_service),
-                    batches: ConversionBatchService | None = Depends(get_conversion_batch_service)):
+                    batches: ConversionBatchService | None = Depends(get_conversion_batch_service),
+                    documents: ConversionDocumentStore = Depends(get_conversion_batch_document_store)):
     if batches is None:
         raise HTTPException(503, "Os extratos não estão disponíveis agora. Tente novamente.")
-    return ReceivedStatements(access.db, batches.repository)
+    return ReceivedStatements(access.db, batches.repository, document_store=documents)
 
 
 class Confirmation(BaseModel):
