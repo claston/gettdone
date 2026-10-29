@@ -2,9 +2,11 @@
 
 import re
 from datetime import date, datetime, timezone
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from app.application.access_control.access_control_db import AccessControlDbComponent
+if TYPE_CHECKING:
+    from app.application.access_control.access_control_db import AccessControlDbComponent
 
 
 class OrganizationConflict(ValueError):
@@ -12,7 +14,7 @@ class OrganizationConflict(ValueError):
 
 
 class OrganizationService:
-    def __init__(self, db: AccessControlDbComponent) -> None:
+    def __init__(self, db: "AccessControlDbComponent") -> None:
         self.db = db
 
     def _write(self, conn, query: str, params: tuple = ()) -> int:
