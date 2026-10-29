@@ -66,6 +66,7 @@ def make_corpus():
     sys.path.insert(0, str(ROOT / "backend"))
     from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
     from tests.fixtures.recovery_acceptance import bb_outside_header, bradesco_monthly_native, sicredi_combined, xp_investment_pages
+    from tests.test_bb_pending_marker import bb_pending_marker, bb_pending_native
     from tests.test_postdeploy_recovery_cases import mercado_related_events
     from tests.test_oct27_bradesco_recovery import bradesco_continuation
     from tests.test_pdf_parser_bradesco_opening_sign import native_pdf, statement_pages
@@ -121,6 +122,16 @@ def make_corpus():
     add("bb_ocr_complete_amount_trailing_mark", ocr_raw, [["2026-08-03", 50]],
         ocr=bb_trailing_mark(skew=True), bank_code="001", review=True)
     add("bb_ocr_pending_deposit", ocr_raw, [["2026-08-03", 50]], ocr=bb_pending_deposit(), bank_code="001", review=True)
+    add("bb_native_pending_marker_balance", bb_pending_native(),
+        [["2026-08-03", 50], ["2026-08-06", 200]], bank_code="001", review=True)
+    for mode in ("detached", "merged_text", "merged_words"):
+        add("bb_pending_marker_" + mode, ocr_raw, [["2026-08-03", 50], ["2026-08-06", 200]],
+            ocr=bb_pending_marker(mode=mode), bank_code="001", review=True)
+    for option in ("mismatch", "detached_balance_sign"):
+        add("bb_pending_marker_" + option, ocr_raw, [["2026-08-03", 50], ["2026-08-06", 200]],
+            ocr=bb_pending_marker(**{option: True}), bank_code="001", review=True)
+    for guard in ("unknown", "misplaced", "duplicate", "unsigned_balance"):
+        add("bb_pending_marker_rejected_" + guard, ocr_raw, [], ocr=bb_pending_marker(**{guard: True}), rejected=True)
     add("bradesco_reordered_header", bradesco_reordered_period(),
         [["2026-12-16", 50], ["2026-12-17", -20]], bank_code="237")
     add("bradesco_printed_totals_diverge", bradesco_reordered_period(mismatch=True),
