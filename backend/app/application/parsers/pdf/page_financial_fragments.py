@@ -20,8 +20,13 @@ class PageAmountFragment:
     anchor: object
 
 
-def preceding_page_amounts(anchors, amounts, witnesses):
-    """Inputs are (page number + top, original page, original line) triples."""
+def preceding_page_amounts(anchors, amounts, witnesses, *, row_margin=.005, balance_labels=()):
+    """Reuse the reader's row bands and explicitly supported balance roles.
+
+    Inputs are (page number + top, original page, original line) triples.
+    A balance label grants only row-role recognition; it never supplies a value
+    or sign. Callers must still reconcile the recovered printed control.
+    """
     groups = {}
     for item in anchors:
         groups.setdefault(item[1].page_number, []).append(item)
@@ -34,15 +39,17 @@ def preceding_page_amounts(anchors, amounts, witnesses):
         before, after = previous[-1], following[0]
         if before[2].bbox["top"] < .8 or after[2].bbox["top"] > .15:
             continue
-        stop = following[1][0] - .005 if len(following) > 1 else number + 2
+        stop = following[1][0] - row_margin if len(following) > 1 else number + 2
         target_cells = [line for pos, page, line in witnesses if page.page_number == number + 1
-                        and after[0] - .005 <= pos < stop]
-        if any(re.match(r"^(?:\d+\s+)?SALDO\b", upper(line.text)) for line in target_cells):
+                        and after[0] - row_margin <= pos < stop]
+        controls = [upper(line.text) for line in target_cells
+                    if re.match(r"^(?:\d+\s+)?SALDO\b", upper(line.text))]
+        if controls and (len(controls) != 1 or controls[0] not in balance_labels):
             continue
-        if any(after[0] - .005 <= pos < stop for pos, _, _ in amounts):
+        if any(after[0] - row_margin <= pos < stop for pos, _, _ in amounts):
             continue
         tail = sorted([item for item in amounts if item[1].page_number == number
-                       and item[0] >= before[0] - .005], key=lambda item: item[0])
+                       and item[0] >= before[0] - row_margin], key=lambda item: item[0])
         if len(tail) != 2:
             continue
         _, origin, candidate = tail[-1]

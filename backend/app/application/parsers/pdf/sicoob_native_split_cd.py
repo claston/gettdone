@@ -73,7 +73,8 @@ def parse_sicoob_native_split_cd(source):
     margin = height*.8
     financial = [(pos, p, line) for pos, p, line in body if line.bbox["left"] >= value_left
                  and re.search(r"\d", line.text)]
-    fragments = preceding_page_amounts(anchors, financial, body)
+    fragments = preceding_page_amounts(
+        anchors, financial, body, row_margin=margin, balance_labels=("SALDO DO DIA",))
     destinations = {(item.origin_page.page_number, item.amount.id): item.target_page.page_number + item.anchor.bbox["top"]
                     for item in fragments}
     # Effective row membership changes; physical page, line and coordinates do not.
