@@ -44,12 +44,20 @@
   feedbackHint.textContent = "Sua resposta é opcional e nos ajuda a melhorar. Você pode baixar o arquivo a qualquer momento.";
   feedbackPanel.appendChild(feedbackHint);
   const feedbackActions = document.createElement("div");
-  feedbackActions.className = "download-actions";
+  feedbackActions.className = "feedback-actions";
   const feedbackButtons = ["yes", "no"].map(function (answer) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "btn btn-inline btn-ghost";
-    button.textContent = answer === "yes" ? "Sim" : "Não";
+    button.className = "btn feedback-button";
+    const check = document.createElement("span");
+    check.className = "feedback-check";
+    check.textContent = "✓";
+    check.setAttribute("aria-hidden", "true");
+    check.hidden = true;
+    button.appendChild(check);
+    const label = document.createElement("span");
+    label.textContent = answer === "yes" ? "Sim" : "Não";
+    button.appendChild(label);
     button.dataset.answer = answer;
     button.setAttribute("aria-pressed", "false");
     button.addEventListener("click", function () { void submitConversionFeedback(answer); });
@@ -2562,8 +2570,10 @@
   function renderConversionFeedback(message) {
     const feedback = state.feedback;
     feedbackButtons.forEach(function (button) {
+      const selected = Boolean(feedback && feedback.answer === button.dataset.answer);
       button.disabled = Boolean(feedback && feedback.pending);
-      button.setAttribute("aria-pressed", String(Boolean(feedback && feedback.answer === button.dataset.answer)));
+      button.setAttribute("aria-pressed", String(selected));
+      button.querySelector(".feedback-check").hidden = !selected;
     });
     feedbackStatus.textContent = message || (feedback && feedback.answer
       ? "Obrigado pela sua avaliação! Você pode alterar sua resposta."
