@@ -16,6 +16,7 @@
   const dashboardRefreshBtn = document.getElementById("dashboard-refresh-btn");
   const dashboardStatusNode = document.getElementById("dashboard-status");
   const dashboardSummaryNode = document.getElementById("dashboard-summary");
+  const dashboardFeedbackNode = document.getElementById("dashboard-conversion-feedback");
   const dashboardDailyChartNode = document.getElementById("dashboard-daily-chart");
   const dashboardIdentitiesNode = document.getElementById("dashboard-identities");
   const dashboardTopErrorsNode = document.getElementById("dashboard-top-errors");
@@ -1036,6 +1037,15 @@
   }
 
   function renderDashboard(payload) {
+    if (dashboardFeedbackNode) {
+      dashboardFeedbackNode.replaceChildren();
+      const feedback = payload.conversion_feedback || {};
+      [["Sim", "yes"], ["Não", "no"], ["Sem resposta", "unanswered"]].forEach(function (entry) {
+        const [label, key] = entry;
+        appendMetricCard(dashboardFeedbackNode, label, formatInteger(feedback[`${key}_people`] || 0),
+          `${formatInteger(feedback[`${key}_count`] || 0)} conversões`, "");
+      });
+    }
     renderDashboardSummary(payload.summary || {});
     renderDashboardChart(payload.daily || []);
     renderDashboardIdentities(payload.identities || {});
@@ -2007,6 +2017,7 @@
       setMarketingStatus("", null);
       setActiveUsersStatus("", null);
       if (dashboardSummaryNode) dashboardSummaryNode.replaceChildren();
+      if (dashboardFeedbackNode) dashboardFeedbackNode.replaceChildren();
       if (dashboardDailyChartNode) dashboardDailyChartNode.replaceChildren();
       if (dashboardIdentitiesNode) dashboardIdentitiesNode.replaceChildren();
       if (dashboardTopErrorsNode) dashboardTopErrorsNode.replaceChildren();

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 from app.application.balance_checks import BalanceCheck
@@ -517,7 +519,22 @@ class AdminPdfDocumentSummary(AdminPdfCounts):
     by_period: list[AdminPdfPeriodCounts] = Field(default_factory=list)
 
 
+class ConversionFeedbackRequest(BaseModel):
+    answer: Literal["yes", "no"] | None = None
+
+
+class ConversionFeedbackSummary(BaseModel):
+    offered_count: int = 0
+    yes_count: int = 0
+    no_count: int = 0
+    unanswered_count: int = 0
+    yes_people: int = 0
+    no_people: int = 0
+    unanswered_people: int = 0
+
+
 class AdminDashboardResponse(BaseModel):
+    conversion_feedback: ConversionFeedbackSummary = Field(default_factory=ConversionFeedbackSummary)
     days: int
     start_at: str
     end_at: str
