@@ -31,7 +31,7 @@ class StatementBlock:
 
 def _period(text):
     header = _statement_header(text)
-    period = statement_period_from_text(re.sub(r"PERIODO\s*:\s*DE\s+", "PERIODO: ", header))
+    period = statement_period_from_text(re.sub(r"\bATE\b", "A", re.sub(r"PERIODO\s*:\s*DE\s+", "PERIODO: ", header)))
     if period:
         return period["start_date"], period["end_date"]
     short = re.search(r"PERIODO:\s*(\d{2})\s+A\s+(\d{2})/(\d{2})/(\d{4})\b", header)
