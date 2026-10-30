@@ -5,6 +5,7 @@ from dataclasses import replace
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.document_period import require_period_context, unique_document_period
 from app.application.parsers.pdf.native_table_source import read_native_table_source
+from app.application.parsers.pdf.sicoob_cash_controls import is_sisbr_history_grid
 from app.application.parsers.pdf.verified_statements import DATE, day, fail
 
 
@@ -23,7 +24,7 @@ def _kind(text):
         return "santander_limited"
     if all(marker in compact for marker in ("290PAGSEGUROINTERNETS/A", "EXTRATODACONTA", "DESCRICAO", "SALDODODIA")):
         return "pagbank_daily"
-    if all(marker in compact for marker in ("SICOOB", "SISBR", "COOP.:", "HISTORICODEMOVIMENTACAO", "DATAHISTORICOVALOR")):
+    if is_sisbr_history_grid(text):
         return "sicoob_split_cd"
     if (all(marker in compact for marker in ("EXTRATOPORPERIODO", "ORDENAR", "SALDODODIA", "SALDOANTERIOR", "COMPARTILHAR", "VOLTAR"))
             and re.search(r"\d{2} DE [A-Z]+ DE \d{4}", upper(text))):

@@ -37,6 +37,14 @@ def _text_signals(text):
                 malformed += 1
     fragmented = len(re.findall(r"(?<!\d)\d[\d.]*,\s+\d{2}\b", text))
     signals = []
+    # An OCR layer may turn the trailing C/D into a third fractional digit.
+    # This only requests fresh visual evidence; never round or supply a sign.
+    # Other reports can legitimately print three-decimal quantities/prices.
+    cash = r"\bR\$\s*(?:\d{1,3}(?:\.\d{3})+|\d+),"
+    if ("SALDO DO DIA" in text.upper()
+            and len(re.findall(cash + r"\d{2}\s*[CD]\b", text, re.I)) >= 2
+            and re.search(cash + r"\d{3}(?![\d.,])", text)):
+        signals.append("malformed_signed_cash_values")
     if malformed:
         signals.append("malformed_date_tokens")
     if fragmented >= 3:
