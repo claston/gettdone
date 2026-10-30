@@ -903,3 +903,31 @@ body.quota-locked {
     gap: 0.9rem;
   }
 }
+.conversion-feedback {
+  min-width: 0;
+  margin: 1.5rem 0 0;
+  padding: 1rem;
+  border: 1px solid #d8e2ee;
+  border-radius: 12px;
+}
+
+.conversion-feedback legend {
+  max-width: 100%;
+  padding: 0 .4rem;
+  font-weight: 700;
+}
+
+.conversion-feedback p {
+  margin: .5rem 0;
+}
+
+.conversion-feedback .download-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.conversion-feedback button[aria-pressed="true"] {
+  background: #e3f3ed;
+  border-color: #16794f;
+  color: #125c3d;
+}

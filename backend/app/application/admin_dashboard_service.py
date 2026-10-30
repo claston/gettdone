@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from app.application.admin_pdf_metrics import build_pdf_document_metrics
 from app.application.admin_statement_periods import attach_existing_statement_periods, build_statement_period_summary
+from app.application.conversion_feedback import feedback_summary
 from app.application.conversion_quality import assess_conversion_quality
 from app.application.statement_period_history import normalize_statement_period
 
@@ -85,6 +86,10 @@ class AdminDashboardService:
                     identity_type=normalized_identity_type,
                 )
                 attach_existing_statement_periods(self._service, conn, events, end_at=now_utc.isoformat())
+                conversion_feedback = feedback_summary(
+                    self._service, conn, start_at=start_utc.isoformat(), end_at=now_utc.isoformat(),
+                    identity_type=normalized_identity_type,
+                )
                 prior_identity_keys = self._load_prior_identity_keys(
                     conn,
                     before=start_utc.isoformat(),
@@ -117,7 +122,7 @@ class AdminDashboardService:
                     else []
                 )
 
-        return _build_dashboard_payload(
+        payload = _build_dashboard_payload(
             events=events,
             prior_identity_keys=prior_identity_keys,
             days=normalized_days,
@@ -129,6 +134,8 @@ class AdminDashboardService:
             checkout_intents=checkout_intents,
             product_events=product_events,
         )
+        payload["conversion_feedback"] = conversion_feedback
+        return payload
 
     def get_attention_export_rows(
         self,

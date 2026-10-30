@@ -34,6 +34,33 @@
 
   const reviewSection = document.getElementById("review-section");
   const downloadSection = document.getElementById("download-section");
+  const feedbackPanel = document.createElement("fieldset");
+  feedbackPanel.id = "conversion-feedback";
+  feedbackPanel.className = "conversion-feedback hidden";
+  const feedbackQuestion = document.createElement("legend");
+  feedbackQuestion.textContent = "Na sua avaliação, a conversão foi realizada com sucesso?";
+  feedbackPanel.appendChild(feedbackQuestion);
+  const feedbackHint = document.createElement("p");
+  feedbackHint.textContent = "Sua resposta é opcional e nos ajuda a melhorar. Você pode baixar o arquivo a qualquer momento.";
+  feedbackPanel.appendChild(feedbackHint);
+  const feedbackActions = document.createElement("div");
+  feedbackActions.className = "download-actions";
+  const feedbackButtons = ["yes", "no"].map(function (answer) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-inline btn-ghost";
+    button.textContent = answer === "yes" ? "Sim" : "Não";
+    button.dataset.answer = answer;
+    button.setAttribute("aria-pressed", "false");
+    button.addEventListener("click", function () { void submitConversionFeedback(answer); });
+    feedbackActions.appendChild(button);
+    return button;
+  });
+  feedbackPanel.appendChild(feedbackActions);
+  const feedbackStatus = document.createElement("p");
+  feedbackStatus.setAttribute("role", "status");
+  feedbackPanel.appendChild(feedbackStatus);
+  downloadSection.appendChild(feedbackPanel);
   const reviewRows = document.getElementById("review-rows");
   const kpis = document.getElementById("kpis");
   const addRowBtn = document.getElementById("add-row-btn");
@@ -98,6 +125,7 @@
     },
     batchResults: [],
     activeBatchFilename: null,
+    feedback: null,
   };
   let bankCodeOptions = [{ code: "", label: "Selecione o banco", name: "", short_name: "", aliases: [] }];
 
@@ -1030,6 +1058,8 @@
     }
     state.analysisId = null;
     state.processingId = null;
+    state.feedback = null;
+    feedbackPanel.classList.add("hidden");
     state.restoredFileMeta = null;
     state.previewRows = [];
     state.originalRows = [];
@@ -2321,6 +2351,7 @@
     setDownloadButtonsDisabled(!canDownload);
 
     setStatus("Sessão restaurada. Você pode continuar o download.", "success");
+    showConversionFeedback();
   }
 
   async function postConvert(formData, options) {
@@ -2525,6 +2556,54 @@
     downloadSection.classList.remove("hidden");
     setDownloadButtonsDisabled(!state.analysisId);
     persistCurrentViewState();
+    showConversionFeedback();
+  }
+
+  function renderConversionFeedback(message) {
+    const feedback = state.feedback;
+    feedbackButtons.forEach(function (button) {
+      button.disabled = Boolean(feedback && feedback.pending);
+      button.setAttribute("aria-pressed", String(Boolean(feedback && feedback.answer === button.dataset.answer)));
+    });
+    feedbackStatus.textContent = message || (feedback && feedback.answer
+      ? "Obrigado pela sua avaliação! Você pode alterar sua resposta."
+      : "");
+  }
+
+  function showConversionFeedback() {
+    const processingId = state.processingId || state.analysisId;
+    if (!processingId) return;
+    state.feedback = { processingId, answer: null, pending: false, revision: 0 };
+    feedbackPanel.classList.remove("hidden");
+    renderConversionFeedback();
+    void submitConversionFeedback(null);
+  }
+
+  async function submitConversionFeedback(answer) {
+    const feedback = state.feedback;
+    if (!feedback || feedback.pending) return;
+    const revision = ++feedback.revision;
+    if (answer !== null) {
+      feedback.pending = true;
+      renderConversionFeedback("Salvando sua avaliação...");
+    }
+    try {
+      const response = await session.request(`${apiBase}/conversion-feedback/${encodeURIComponent(feedback.processingId)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answer }),
+      });
+      if (!response.ok) throw new Error("feedback_failed");
+      const payload = await response.json();
+      if (state.feedback !== feedback || feedback.revision !== revision) return;
+      feedback.answer = payload.answer;
+      feedback.pending = false;
+      renderConversionFeedback();
+    } catch (_) {
+      if (state.feedback !== feedback || feedback.revision !== revision) return;
+      feedback.pending = false;
+      renderConversionFeedback(answer === null ? "" : "Não foi possível salvar. Tente responder novamente.");
+    }
   }
 
   async function runLegacyConvert(fileOverride) {
@@ -2708,7 +2787,7 @@
   function renderBatchResults(jobs) {
     state.batchResults = Array.isArray(jobs) ? jobs : [];
     batchResultsPanel.innerHTML = "";
-    if (!state.batchResults.length) {
+    if (state.batchResults.length <= 1) {
       batchResultsPanel.classList.add("hidden");
       return;
     }
@@ -2757,7 +2836,7 @@
       const terminalCount = jobs.filter(function (job) {
         return ["completed", "failed", "expired"].includes(String(job.status || ""));
       }).length;
-      setStatus(`Processando lote: ${terminalCount} de ${jobs.length} concluídos...`, null);
+      setStatus(jobs.length === 1 ? "Processando arquivo..." : `Processando lote: ${terminalCount} de ${jobs.length} concluídos...`, null);
       if (jobs.length) {
         setProgressTarget(50 + Math.round((terminalCount / jobs.length) * 50));
       }
@@ -2812,7 +2891,7 @@
         body: JSON.stringify({ files: fileContracts }),
       });
       await uploadPreparedBatchFiles(files, created.uploads || []);
-      setStatus("Uploads concluídos. Enviando o lote para processamento...", null);
+      setStatus(files.length === 1 ? "Arquivo enviado. Iniciando processamento..." : "Uploads concluídos. Enviando o lote para processamento...", null);
       setProgressTarget(48);
       await fetchBatchJson(`/api/conversion-batches/${encodeURIComponent(created.batch_id)}/submit`, {
         method: "POST",
@@ -2833,7 +2912,9 @@
       setProgressTarget(100);
       const failedCount = completed.jobs.length - successfulJobs.length;
       setStatus(
-        failedCount > 0
+        completed.jobs.length === 1
+          ? "Arquivo convertido. Confira a prévia e baixe o resultado."
+          : failedCount > 0
           ? `${successfulJobs.length} arquivo(s) concluído(s) e ${failedCount} com falha. Escolha um resultado para revisar.`
           : `${successfulJobs.length} arquivo(s) convertido(s). Escolha o resultado que deseja revisar.`,
         failedCount > 0 ? null : "success",

@@ -52,6 +52,7 @@ class AccessControlSchemaComponent:
             "conversion_outbox",
             "conversion_quota_consumptions",
             "product_events",
+            "conversion_feedback",
         )
         missing_tables = [table for table in required_tables if not self._postgres_table_exists(conn, table)]
 

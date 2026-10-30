@@ -640,3 +640,7 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
 
     for statement in received_statement_schema_v1():
         conn.execute(statement)
+    from app.application.conversion_feedback_schema import feedback_schema
+
+    for statement in feedback_schema():
+        conn.execute(statement)

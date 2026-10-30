@@ -19,6 +19,7 @@ from app.application.conversion.conversion_runtime_config import (
     ConversionArchitectureMode,
     ConversionRuntimeConfig,
 )
+from app.application.conversion_feedback import save_feedback
 from app.application.errors import InvalidFileContentError
 from app.dependencies import (
     get_access_control_service,
@@ -35,10 +36,46 @@ from app.routers.auth_session import (
     resolve_user_token_with_session,
 )
 from app.routers.pro_security import require_pro_browser_request
-from app.schemas import ConvertEditsRequest, ConvertEditsResponse
+from app.schemas import ConversionFeedbackRequest, ConvertEditsRequest, ConvertEditsResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@router.put("/conversion-feedback/{processing_id}")
+def put_conversion_feedback(
+    processing_id: str,
+    payload: ConversionFeedbackRequest,
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    anonymous_cookie_token: str | None = Cookie(default=None, alias=ANONYMOUS_IDENTITY_COOKIE_NAME),
+    service: ReportService = Depends(get_report_service),
+    async_service: ReportService | None = Depends(get_async_conversion_report_service),
+    runtime: ConversionRuntimeConfig = Depends(get_conversion_runtime_config),
+    rollout_policy: AsyncConversionRolloutPolicy = Depends(get_async_conversion_rollout_policy),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
+) -> dict:
+    try:
+        user_token = resolve_user_token_with_session(
+            access_control_service=access_control_service, authorization=authorization,
+            explicit_user_token=None, access_cookie_token=access_cookie_token,
+        )
+        fingerprint = resolve_anonymous_fingerprint_with_cookie(
+            access_control_service=access_control_service, anonymous_cookie_token=anonymous_cookie_token,
+            legacy_fingerprint=None,
+        )
+        identity = access_control_service.resolve_identity(anonymous_fingerprint=fingerprint, user_token=user_token or None)
+        _select_convert_report_service(
+            analysis_id=processing_id, legacy_service=service, async_service=async_service,
+            runtime=runtime, rollout_policy=rollout_policy, identity=identity, access_control_service=access_control_service,
+        )
+    except InvalidUserTokenError:
+        raise HTTPException(status_code=401, detail="A product identity is required.") from None
+    except AnalysisNotFoundError:
+        raise HTTPException(status_code=404, detail="Analysis not found") from None
+    except AnalysisAccessDeniedError:
+        raise HTTPException(status_code=403, detail="Access denied for this analysis.") from None
+    return save_feedback(access_control_service, identity=identity, processing_id=processing_id, answer=payload.answer)
 
 
 def _record_download_safely(
