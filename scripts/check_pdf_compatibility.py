@@ -88,6 +88,8 @@ def make_corpus():
     from tests.test_oct20_followup_native import portal_pages
     from tests.test_oct20_followup_ocr import banrisul_ocr
     from tests.test_page_financial_fragments import sicoob_split_row
+    from tests.test_statement_account_blocks import consolidated_pages, ocr_pages
+    from tests.fixtures.positioned_cash_statements import positioned_pdf
 
     cases = []
 
@@ -97,6 +99,13 @@ def make_corpus():
 
     mp = [["2026-07-02", 50], ["2026-07-03", -20], ["2026-07-04", 20]]
     ocr_raw = generate_native_text_pdf((("Synthetic OCR source",),))
+    scoped_pages = consolidated_pages()
+    scoped_movements = [["2026-09-01", 50], ["2026-09-02", -20]] * 2
+    add("santander_consolidated_two_accounts_native", positioned_pdf(scoped_pages), scoped_movements, bank_code="033")
+    add("santander_consolidated_two_accounts_ocr", generate_native_text_pdf((("Synthetic OCR source",),) * len(scoped_pages)),
+        scoped_movements, ocr=ocr_pages(scoped_pages), bank_code="033")
+    for guard in ("missing_account", "unreadable"):
+        add("santander_account_scope_rejected_" + guard, positioned_pdf(consolidated_pages(**{guard: True})), [], rejected=True)
     from tests.test_oct28_reviewed_reports import bradesco_unified_source, omie_pages
 
     add("omie_realized_and_pending_cash", generate_native_text_pdf([omie_pages()[0].splitlines()]),
@@ -261,7 +270,7 @@ def main():
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     os.environ.update(TEXTRACT_ENABLED="false", PDF_OCR_ENABLED="false", AI_RECOVERY_MODE="off",
-                      PYTHONDONTWRITEBYTECODE="1", CANONICAL_LAYOUT_CAPTURE_ENABLED="false")
+                      PYTHONDONTWRITEBYTECODE="1", CANONICAL_LAYOUT_CAPTURE_ENABLED="false", PDF_MULTI_ACCOUNT_ENABLED="true")
     if args.worker:
         worker(args.worker, json.loads(args.corpus.read_text(encoding="utf-8")), args.report)
         return 0

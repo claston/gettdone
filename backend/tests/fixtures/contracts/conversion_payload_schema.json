@@ -1370,6 +1370,19 @@
     },
     "TransactionPreview": {
       "properties": {
+        "statement_account": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Statement Account"
+        },
         "balance_check": {
           "anyOf": [
             {

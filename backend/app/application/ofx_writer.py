@@ -13,6 +13,7 @@ def build_ofx_statement(
     account_number: str | None = None,
     bank_id: str | None = None,
     currency: str | None = None,
+    fit_ids: list[str] | None = None,
 ) -> str:
     normalized_account_type = str(account_type or "").strip().lower()
     is_credit_card_statement = normalized_account_type in {"credit_card", "credit-card", "card", "cc"}
@@ -76,7 +77,7 @@ def build_ofx_statement(
         "        <BANKTRANLIST>",
     ]
 
-    fit_ids = build_fit_id_sequence(transactions)
+    fit_ids = build_fit_id_sequence(transactions) if fit_ids is None else fit_ids
     for transaction, fit_id in zip(transactions, fit_ids, strict=True):
         lines.extend(
             [

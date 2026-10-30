@@ -1259,7 +1259,34 @@
     return String((analysis && analysis.ofx_account_type) || "").trim().toLowerCase();
   }
 
+  function hasStatementAccounts(analysis) {
+    return Boolean(analysis && Array.isArray(analysis.document_parts) &&
+      analysis.document_parts.some((part) => part.statement_account));
+  }
+
+  function renderAccountKpis(analysis) {
+    const rows = state.previewRows.length ? state.previewRows : analysis.preview_transactions || [];
+    const derived = buildDerivedSummaryFromRows(rows);
+    const balances = analysis.document_parts.filter((part) => part.statement_account).map((part) => {
+      const scope = part.statement_account;
+      const opening = part.opening_balance == null ? "Não informado" : formatCurrency(part.opening_balance);
+      const closing = part.closing_balance == null ? "Não informado" : formatCurrency(part.closing_balance);
+      return `<article class="kpi"><p class="kpi-label">Agência ${escapeAttr(scope.bank_branch)} · Conta ${escapeAttr(scope.account_number)}</p>
+        <p>Saldo anterior impresso: ${escapeAttr(opening)}</p><p>Saldo final impresso: ${escapeAttr(closing)}</p></article>`;
+    }).join("");
+    kpis.innerHTML = `${buildReviewWarningsMarkup(analysis)}
+      <p class="kpi-hint">As contas estão separadas nos lançamentos e nos arquivos para download.</p>
+      <article class="kpi"><p class="kpi-label">Transações</p><p class="kpi-value">${derived.transactionsTotal}</p></article>
+      <article class="kpi"><p class="kpi-label">Entradas (todas as contas)</p><p class="kpi-value">${formatCurrency(derived.totalInflows)}</p></article>
+      <article class="kpi"><p class="kpi-label">Saídas (todas as contas)</p><p class="kpi-value">${formatCurrency(derived.totalOutflows)}</p></article>
+      ${balances}`;
+  }
+
   function renderKpis(analysis) {
+    if (hasStatementAccounts(analysis)) {
+      renderAccountKpis(analysis);
+      return;
+    }
     if (financialDocument(analysis)) {
       renderFinancialDocumentKpis(analysis);
       return;
@@ -1682,6 +1709,9 @@
   }
 
   function buildDisplayedRunningBalances(rows) {
+    if ((rows || []).some((row) => row.statement_account)) {
+      return (rows || []).map(getRunningBalanceAmount);
+    }
     if (isPayablesReport(state.analysisSnapshot) || financialDocument(state.analysisSnapshot)) {
       return (rows || []).map(() => null);
     }
@@ -2158,13 +2188,17 @@
         const descriptionText = String(row.description || "").trim();
         const descriptionCellText = descriptionText || "-";
         const descriptionTitleAttr = descriptionText ? ` title="${escapeAttr(descriptionText)}"` : "";
+        const accountScope = row.statement_account;
+        const accountMarkup = accountScope
+          ? `<br><small>Agência ${escapeAttr(accountScope.bank_branch)} · Conta ${escapeAttr(accountScope.account_number)}</small>`
+          : "";
         const warningBadge = hasWarning
           ? `<span class="row-warning-badge" title="${escapeAttr(warningTypes.map(mapWarningTypeExplanation).join(" | "))}">${escapeAttr(mapWarningTypeLabel(warningTypes[0]))}</span>`
           : "";
         return `
           <tr class="${rowClass} ${rowDeleted ? "row-deleted" : ""} ${hasWarning ? "row-has-warning" : ""}">
             <td>${formatDate(row.date)}</td>
-            <td${descriptionTitleAttr}>${escapeAttr(descriptionCellText)}${warningBadge}</td>
+            <td${descriptionTitleAttr}>${escapeAttr(descriptionCellText)}${warningBadge}${accountMarkup}</td>
             <td>${creditMarkup}</td>
             <td>${debitMarkup}</td>
             <td>${runningBalanceMarkup}</td>
@@ -3040,7 +3074,7 @@
         query.set("bank_code", bankCode);
         query.set("bank_branch", branch);
         query.set("account_number", account);
-      } else if (requestedFormat === "ofx" && !isPayablesReport(state.analysisSnapshot)) {
+      } else if (requestedFormat === "ofx" && !isPayablesReport(state.analysisSnapshot) && !hasStatementAccounts(state.analysisSnapshot)) {
         const openingBalance = isNoActivityStatement(state.analysisSnapshot) && state.openingBalanceOverride == null
           ? NaN : Number(state.openingBalanceOverride);
         const closingBalance = isNoActivityStatement(state.analysisSnapshot) && state.closingBalanceOverride == null

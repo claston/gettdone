@@ -261,7 +261,13 @@ class ConversionPipeline:
         ]
 
         reconcile_start = perf_counter()
-        reconciliation_result = self.reconcile_transactions(transactions)
+        account_scopes = [row.statement_account for row in selected_canonical_transactions]
+        if any(account_scopes):
+            from app.application.statement_account_export import reconcile_account_rows
+
+            reconciliation_result = reconcile_account_rows(transactions, account_scopes, self.reconcile_transactions)
+        else:
+            reconciliation_result = self.reconcile_transactions(transactions)
         reconcile_ms = round((perf_counter() - reconcile_start) * 1000, 3)
 
         preview_before_after = [
@@ -307,6 +313,11 @@ class ConversionPipeline:
             analysis_id=analysis_id,
         )
 
+        if any(account_scopes):
+            for index, scope in enumerate(account_scopes):
+                preview_rows[index].statement_account = deepcopy(scope)
+                report_rows[index].statement_account = deepcopy(scope)
+
         total_inflows = round(sum(item.amount for item in transactions if item.amount > 0), 2)
         total_outflows = round(sum(item.amount for item in transactions if item.amount < 0), 2)
         net_total = round(total_inflows + total_outflows, 2)
@@ -328,6 +339,8 @@ class ConversionPipeline:
         bank_branch, account_number = self.extract_bank_account_metadata(extracted_text)
         bank_branch = parsed_document.bank_branch or bank_branch
         account_number = parsed_document.account_number or account_number
+        if any(account_scopes) or (parse_metrics or {}).get("statement_accounts_count", 0) > 1:
+            bank_branch = account_number = None
         inferred_bank_code = parsed_document.bank_code or self.resolve_inferred_bank_code(
             extension, layout_inference_name, bank_name
         )

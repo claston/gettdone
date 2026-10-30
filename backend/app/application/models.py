@@ -28,6 +28,7 @@ class TransactionRow:
     source_regions: list[SourceRegion] = field(default_factory=list)
     review_regions: list[SourceRegion] = field(default_factory=list)
     balance_check: BalanceCheck | None = None
+    statement_account: dict[str, object] | None = None
 
 
 @dataclass
@@ -58,6 +59,7 @@ class CanonicalTransaction:
     source_regions: list[SourceRegion] = field(default_factory=list)
     source_line_refs: tuple[tuple[int, int], ...] = ()
     balance_check: BalanceCheck | None = None
+    statement_account: dict[str, object] | None = None
 
 
 @dataclass

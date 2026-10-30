@@ -292,6 +292,32 @@ const batchPayload = {
   ],
 };
 
+it("preserva a conta de origem recebida para cada lançamento", async () => {
+  const payload = structuredClone(batchPayload);
+  payload.jobs[0].result!.analysis.preview_transactions =
+    payload.jobs[0].result!.analysis.preview_transactions.map((row, index) => ({
+      ...row,
+      statement_account: {
+        bank_branch: index ? "0039" : "0017",
+        account_number: index ? "98765-4" : "12345-6",
+      },
+    }));
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(jsonResponse({}))
+    .mockResolvedValueOnce(jsonResponse(payload));
+  const batch = await createHttpWorkspaceRepository({
+    apiUrl: "/",
+    fetcher,
+  }).getBatch("batch-real");
+  expect(
+    batch.conversions[0].transactions.map((row) => row.statementAccount),
+  ).toEqual([
+    { bankBranch: "0017", accountNumber: "12345-6" },
+    { bankBranch: "0039", accountNumber: "98765-4" },
+  ]);
+});
+
 it("salva e limpa marcações separadamente da origem e confirma o eco da API", async () => {
   const region = { page: 1, left: 0.1, top: 0.5, width: 0.7, height: 0.03 };
   const markedRows =

@@ -39,6 +39,7 @@ class Insight(BaseModel):
 
 
 class TransactionPreview(BaseModel):
+    statement_account: dict[str, object] | None = None
     balance_check: BalanceCheck | None = None
     transaction_id: str | None = None
     source_sequence: int | None = None

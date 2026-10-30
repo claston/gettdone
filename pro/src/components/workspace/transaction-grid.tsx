@@ -656,6 +656,12 @@ export function TransactionGrid({
                           field="description"
                           onCommit={commitField}
                         />
+                        {transaction.statementAccount && (
+                          <small>
+                            Agência {transaction.statementAccount.bankBranch} ·
+                            Conta {transaction.statementAccount.accountNumber}
+                          </small>
+                        )}
                         <TransactionReviewNote
                           transaction={transaction}
                           onShowReference={
