@@ -61,6 +61,8 @@
   const marketingPrevBtn = document.getElementById("marketing-prev-btn");
   const marketingNextBtn = document.getElementById("marketing-next-btn");
   const marketingPageLabelNode = document.getElementById("marketing-page-label");
+  const marketingSendTestBtn = document.getElementById("marketing-send-test-btn");
+  const marketingSendStatusNode = document.getElementById("marketing-send-status");
   const activeUsersPeriodNode = document.getElementById("active-users-period");
   const activeUsersIdentityTypeNode = document.getElementById("active-users-identity-type");
   const activeUsersProspectOnlyNode = document.getElementById("active-users-prospect-only");
@@ -78,6 +80,7 @@
   let usersOffset = 0;
   let marketingOffset = 0;
   let marketingTotal = 0;
+  let marketingTestRequestId = null;
   let activeUsersOffset = 0;
   let activeUsersTotal = 0;
   let activeAdminSection = "dashboard";
@@ -1250,6 +1253,49 @@
     if (marketingNextBtn) {
       marketingNextBtn.disabled = marketingOffset + MARKETING_PAGE_SIZE >= marketingTotal;
     }
+  }
+
+  async function sendMarketingTestEmail() {
+    if (!marketingSendTestBtn || marketingSendTestBtn.disabled) return;
+    marketingSendTestBtn.disabled = true;
+    marketingSendTestBtn.textContent = "Enviando...";
+    if (marketingSendStatusNode) {
+      marketingSendStatusNode.textContent = "Aguardando confirmação do envio...";
+      marketingSendStatusNode.className = "status";
+    }
+    try {
+      if (!marketingTestRequestId) marketingTestRequestId = window.crypto.randomUUID();
+      const { response, payload } = await apiRequest("/admin/marketing/test-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ request_id: marketingTestRequestId }),
+      });
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) setAuthenticatedView(false);
+        throw new Error(String(payload.detail || "Não foi possível confirmar o envio."));
+      }
+      if (marketingSendStatusNode) {
+        marketingSendStatusNode.textContent = payload.delivery_mode === "dry_run"
+          ? "Simulação concluída. Nenhum e-mail foi enviado."
+          : `Envio aceito pelo Resend para ${payload.recipient}. Referência: ${payload.provider_message_id || "indisponível"}.`;
+        marketingSendStatusNode.className = "status ok";
+      }
+      marketingTestRequestId = null;
+    } catch (error) {
+      if (marketingSendStatusNode) {
+        marketingSendStatusNode.textContent = error instanceof TypeError
+          ? "Falha de rede. O envio pode ter ocorrido. Tente novamente para verificar o mesmo disparo."
+          : String(error.message || "Não foi possível confirmar o envio.");
+        marketingSendStatusNode.className = "status error";
+      }
+    } finally {
+      marketingSendTestBtn.disabled = false;
+      marketingSendTestBtn.textContent = "Enviar e-mail de teste";
+    }
+  }
+
+  if (marketingSendTestBtn) {
+    marketingSendTestBtn.addEventListener("click", function () { void sendMarketingTestEmail(); });
   }
 
   async function loadMarketingContacts() {
