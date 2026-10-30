@@ -88,6 +88,7 @@ def make_corpus():
     from tests.test_oct20_followup_native import portal_pages
     from tests.test_oct20_followup_ocr import banrisul_ocr
     from tests.test_page_financial_fragments import sicoob_split_row
+    from tests.test_sicoob_statement_context import modern_cells, sisbr_pending_cells
 
     cases = []
 
@@ -97,6 +98,20 @@ def make_corpus():
 
     mp = [["2026-07-02", 50], ["2026-07-03", -20], ["2026-07-04", 20]]
     ocr_raw = generate_native_text_pdf((("Synthetic OCR source",),))
+    from tests.fixtures.recovery_acceptance import grid_pdf
+    from tests.test_recovery_sweep_ocr import extraction
+
+    for descending in (False, True):
+        cells = modern_cells(descending=descending)
+        for representation in ("native", "ocr"):
+            add(f"sicoob_period_direction_{descending}_{representation}",
+                grid_pdf([cells]) if representation == "native" else ocr_raw,
+                [["2026-07-01", 50], ["2026-07-02", -10], ["2026-07-02", -10]],
+                ocr=extraction(cells) if representation == "ocr" else None, bank_code="756")
+    for mismatch in (False, True):
+        add(f"sicoob_detached_pending_idle_day_{mismatch}",
+            grid_pdf(sisbr_pending_cells(idle_balance="151,00C" if mismatch else "150,00C")),
+            [["2026-07-01", 50], ["2026-07-03", 200], ["2026-07-03", -20]], bank_code="756", review=True)
     from tests.test_oct28_reviewed_reports import bradesco_unified_source, omie_pages
 
     add("omie_realized_and_pending_cash", generate_native_text_pdf([omie_pages()[0].splitlines()]),

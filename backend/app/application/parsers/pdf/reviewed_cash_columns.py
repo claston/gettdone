@@ -9,7 +9,13 @@ from app.application.parsers.pdf.followup_ocr import _source
 from app.application.parsers.pdf.native_table_source import split_native_columns
 from app.application.parsers.pdf.row_geometry import nearest_row
 from app.application.parsers.pdf.statement_review import financial_mismatch
-from app.application.parsers.pdf.verified_statements import NUMBER, VerifiedStatement, _row, day, fail, money
+from app.application.parsers.pdf.statement_row_context import (
+    chronological_rows,
+    contextual_row_date,
+    labelled_row_period,
+    validate_idle_day_controls,
+)
+from app.application.parsers.pdf.verified_statements import NUMBER, VerifiedStatement, _row, fail, money
 
 _AMOUNT = re.compile(rf"([+-]?)\s*(?:R\$\s*)?([+-]?)({NUMBER})\s*([CD])?", re.I)
 
@@ -59,6 +65,12 @@ def parse_reviewed_cash(source, kind):
     text = "\n".join(line.text for p in source.pages for line in p.lines)
     years = set(re.findall(r"(?:0[1-9]|[12]\d|3[01])/\d{2}/(\d{4})", text))
     year = years.pop() if len(years) == 1 else None
+    period = labelled_row_period(text) if kind == "sicoob_modern" else (None, None)
+    if kind == "sicoob_modern":
+        # A lone expiry/issue year cannot replace a missing statement period.
+        # Full transaction dates remain readable without optional coverage.
+        year = None
+    opening_position, row_positions = None, []
     rows, opening, controls, coverage = [], None, [], 0
     ended = False
     for original in source.pages:
@@ -127,11 +139,12 @@ def parse_reviewed_cash(source, kind):
                 value = _amount(control[0])
                 if "ANTERIOR" in label:
                     opening = value
+                    opening_position = (page.page_number, index)
                 else:
                     controls.append(
                         (
-                            day(anchor.text if len(anchor.text) == 10 else f"{anchor.text}/{year}")
-                            if year or len(anchor.text) == 10
+                            contextual_row_date(anchor.text, period, year)
+                            if kind == "sicoob_modern" or year or len(anchor.text) == 10
                             else None,
                             value,
                         )
@@ -139,10 +152,9 @@ def parse_reviewed_cash(source, kind):
                 continue
             if len(values) != 1 or balance_left is not None and len(balances) != 1 or not description:
                 fail("Um movimento está sem sua descrição, valor ou saldo impresso.")
-            if len(anchor.text) != 10 and year is None:
-                fail("Não há ano inequívoco para as datas abreviadas do extrato.")
-            date = day(anchor.text if len(anchor.text) == 10 else f"{anchor.text}/{year}")
+            date = contextual_row_date(anchor.text, period, year)
             coverage += 1
+            row_positions.append((page.page_number, index))
             rows.append(
                 _source(
                     _row(
@@ -159,8 +171,9 @@ def parse_reviewed_cash(source, kind):
             )
     if not rows:
         fail()
-    # These layouts explicitly print newest first, including each day's rows.
-    if kind in {"santander_app", "sicoob_modern"}:
+    if kind == "sicoob_modern":
+        rows = chronological_rows(rows, opening_position=opening_position, first_row_position=row_positions[0])
+    elif kind == "santander_app":
         rows.reverse()
     if any(a.transaction.date > b.transaction.date for a, b in zip(rows, rows[1:])):
         fail("A ordem de datas da tabela não pode ser confirmada.")
@@ -170,7 +183,14 @@ def parse_reviewed_cash(source, kind):
             fail("O saldo anterior não pode ser identificado no documento.")
         opening = Decimal(str(rows[0].running_balance)) - Decimal(str(rows[0].transaction.amount))
     running, checks = opening, 0
-    daily = dict(controls)
+    daily = {}
+    for date, value in controls:
+        if kind == "sicoob_modern":
+            daily.setdefault(date, []).append(value)
+        else:
+            daily[date] = [value]
+    if kind == "sicoob_modern":
+        checks += validate_idle_day_controls(rows, opening, daily)
     for index, row in enumerate(rows):
         running += Decimal(str(row.transaction.amount))
         if row.running_balance is not None:
@@ -179,10 +199,11 @@ def parse_reviewed_cash(source, kind):
             checks += 1
         end_day = index + 1 == len(rows) or rows[index + 1].transaction.date != row.transaction.date
         if end_day and row.transaction.date in daily:
-            if running != daily[row.transaction.date]:
+            values = daily[row.transaction.date]
+            if any(running != value for value in values):
                 financial_mismatch()
-            rows[index] = replace(row, running_balance=float(daily[row.transaction.date]))
-            checks += 1
+            rows[index] = replace(row, running_balance=float(values[0]) if len(set(values)) == 1 else None)
+            checks += len(values)
     return VerifiedStatement(
         rows,
         f"{kind}_printed_cash_columns_v1",

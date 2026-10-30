@@ -9,6 +9,7 @@ from app.application.parsers.pdf.followup_ocr import _headers, _source
 from app.application.parsers.pdf.native_table_source import native_header_columns, split_native_columns
 from app.application.parsers.pdf.page_financial_fragments import preceding_page_amounts
 from app.application.parsers.pdf.statement_review import financial_mismatch
+from app.application.parsers.pdf.statement_row_context import chronological_rows, validate_idle_day_controls
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
 _VALUE = re.compile(rf"({NUMBER})\s*([CD*]?)")
@@ -91,7 +92,7 @@ def parse_sicoob_native_split_cd(source):
         if len(values) != 1 or not (match := _VALUE.fullmatch(upper(values[0][1].text))):
             fail("Uma linha SISBR está sem seu valor legível.")
         value_page, value_line = values[0]
-        signs = [line.text for _, _, line in band if line.bbox["left"] >= value_left and line.text in {"C", "D"}]
+        signs = [line.text for _, _, line in band if line.bbox["left"] >= value_left and line.text in {"C", "D", "*"}]
         sign = match[2]
         if (sign and signs) or (not sign and len(signs) != 1):
             fail("Um valor SISBR está sem indicador C/D inequívoco.")
@@ -107,7 +108,7 @@ def parse_sicoob_native_split_cd(source):
             if sign != "*":
                 fail()
             continue
-        if sign == "*" and re.fullmatch(r"DEP\.?\s*CHEQUE\s+BLOQ\.?\s*\d+D", label):
+        if sign == "*" and re.fullmatch(r"DEP\.?\s*(?:CHEQUE\s+|CH\.?)BLOQ\.?\s*\d+D(?:-INTE)?", label):
             non_cash += 1
             continue
         if sign not in {"C", "D"}:
@@ -132,14 +133,10 @@ def parse_sicoob_native_split_cd(source):
             row_positions.append(pos)
     if used != {(p.page_number, line.id) for _, p, line in financial} or not rows or opening is None:
         fail("Há um valor SISBR sem movimento ou controle associado.")
-    if set(controls) != days_with_rows:
+    if not days_with_rows.issubset(controls):
         fail("Um dia SISBR está sem seu fechamento.")
-    ascending = all(a.transaction.date <= b.transaction.date for a, b in zip(rows, rows[1:]))
-    descending = all(a.transaction.date >= b.transaction.date for a, b in zip(rows, rows[1:]))
-    if not ascending and not descending:
-        fail("A ordem dos movimentos SISBR não pode ser confirmada.")
-    if descending and (not ascending or opening_position > row_positions[0]):
-        rows.reverse()
+    rows = chronological_rows(rows, opening_position=opening_position, first_row_position=row_positions[0])
+    validate_idle_day_controls(rows, opening, {date: [value for value, _ in entries] for date, entries in controls.items()})
     running = opening
     for index, row in enumerate(rows):
         running += Decimal(str(row.transaction.amount))
