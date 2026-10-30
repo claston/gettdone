@@ -921,13 +921,56 @@ body.quota-locked {
   margin: .5rem 0;
 }
 
-.conversion-feedback .download-actions {
+.feedback-actions {
+  display: flex;
   justify-content: flex-start;
   flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
 }
 
-.conversion-feedback button[aria-pressed="true"] {
-  background: #e3f3ed;
-  border-color: #16794f;
-  color: #125c3d;
+.conversion-feedback .feedback-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  width: 100px;
+  min-height: 44px;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid var(--feedback-border);
+  border-radius: 0.65rem;
+  background: var(--feedback-background);
+  color: var(--feedback-text);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.2;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.feedback-button[data-answer="yes"] {
+  --feedback-background: #ecfdf3;
+  --feedback-border: #a7d7bc;
+  --feedback-text: #166534;
+  --feedback-active: #d1fae5;
+}
+
+.feedback-button[data-answer="no"] {
+  --feedback-background: #fff1f2;
+  --feedback-border: #fecdd3;
+  --feedback-text: #9f1239;
+  --feedback-active: #ffe4e6;
+}
+
+.conversion-feedback .feedback-button:hover:not(:disabled),
+.conversion-feedback .feedback-button[aria-pressed="true"] {
+  background: var(--feedback-active);
+  border-color: var(--feedback-text);
+}
+
+.conversion-feedback .feedback-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
 }
