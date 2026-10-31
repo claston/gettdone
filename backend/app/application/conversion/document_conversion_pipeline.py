@@ -699,14 +699,19 @@ class DocumentConversionPipeline:
                 "identity_type": identity.identity_type,
                 "analysis": analysis.model_dump(),
             }
-        from app.application.statement_identity import identify_statement
+        from app.application.statement_identity import identify_native_statement, identify_statement
 
         identity_pages = page_texts or ["\n".join(line.text for line in page.lines)
                                        for page in getattr(source_extraction, "pages", ())]
-        payload["organization_source"] = identify_statement(
-            payload.get("analysis") or {}, page_texts=identity_pages,
-            representation="ocr" if effective_ocr_used else "native",
-        )
+        if request.document.filename.lower().endswith(".pdf") and not effective_ocr_used:
+            payload["organization_source"] = identify_native_statement(
+                payload.get("analysis") or {}, raw_bytes=request.document.raw_bytes, page_texts=identity_pages,
+            )
+        else:
+            payload["organization_source"] = identify_statement(
+                payload.get("analysis") or {}, page_texts=identity_pages,
+                representation="ocr" if effective_ocr_used else "native",
+            )
         return ConversionPipelineResult.completed(
             payload=payload,
             metadata=_build_conversion_pipeline_metadata(

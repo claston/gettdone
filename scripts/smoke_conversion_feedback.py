@@ -78,6 +78,11 @@ def check_converter(browser, width, count, filename):
     page.locator("#convert-btn").click()
     survey = page.locator("#conversion-feedback")
     expect(survey).to_be_visible()
+    yes_button = survey.get_by_role("button", name="Sim", exact=True)
+    no_button = survey.get_by_role("button", name="Não", exact=True)
+    yes_box, no_box = survey.evaluate("node => [...node.querySelectorAll('button')].map(button => button.getBoundingClientRect().toJSON())")
+    assert 90 <= yes_box["width"] <= 120 and yes_box["height"] >= 42, "Survey buttons must be compact with a usable target"
+    assert abs(yes_box["y"] - no_box["y"]) <= 1 and no_box["x"] > yes_box["x"], "Survey answers must sit side by side"
     if count == 1:
         expect(page.locator("#batch-results-panel")).to_be_hidden()
         expect(page.locator("#status-msg")).not_to_contain_text("Escolha")
@@ -95,6 +100,8 @@ def check_converter(browser, width, count, filename):
     survey.get_by_role("button", name="Sim", exact=True).click()
     expect(survey.get_by_role("status")).to_contain_text("Obrigado")
     expect(survey.get_by_role("button", name="Sim", exact=True)).to_have_attribute("aria-pressed", "true")
+    expect(yes_button.locator(".feedback-check")).to_be_visible()
+    expect(no_button.locator(".feedback-check")).to_be_hidden()
     if count > 1:
         page.locator("#batch-results-panel button").nth(1).click()
         expect(survey.get_by_role("button", name="Sim", exact=True)).to_have_attribute("aria-pressed", "false")
