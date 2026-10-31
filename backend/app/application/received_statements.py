@@ -2,6 +2,7 @@
 
 import json
 import logging
+import unicodedata
 from datetime import datetime, timezone
 from io import BytesIO
 from uuid import uuid4
@@ -21,6 +22,11 @@ logger = logging.getLogger(__name__)
 
 def _utc(value):
     return datetime.fromisoformat(value).astimezone(timezone.utc) if isinstance(value, str) else value.astimezone(timezone.utc)
+
+
+def _client_name_order(row):
+    name = unicodedata.normalize("NFD", row["name"].strip().casefold())
+    return "".join(char for char in name if not unicodedata.combining(char)), row["id"]
 
 
 def technical_status(record):
@@ -230,7 +236,7 @@ class ReceivedStatements(OrganizationService):
             return base64.urlsafe_b64encode(json.dumps([last.created_at.isoformat(), last.job_id]).encode()).decode().rstrip("=")
         return None
 
-    def dashboard(self, owner, *, now=None, after="", limit=30, pending_after=""):
+    def dashboard(self, owner, *, now=None, after="", limit=30, pending_after="", sort="id"):
         now = _utc(now or datetime.now(timezone.utc)).isoformat()
         with self.db.connect() as conn:
             organization = self._organization(conn, owner)
@@ -240,6 +246,19 @@ class ReceivedStatements(OrganizationService):
                 "COALESCE(SUM(CASE WHEN technical_status = 'ready' THEN 1 ELSE 0 END), 0) AS ready, "
                 "COALESCE(SUM(CASE WHEN technical_status = 'attention' THEN 1 ELSE 0 END), 0) AS attention "
                 "FROM pro_received_statements WHERE organization_id = ? AND expires_at > ?", (organization, now))
+            client_filter, client_params = "c.id > ?", [after]
+            if sort == "name":
+                # Sort only identities before pagination; hydrate counts/accounts for one page.
+                # Python normalization gives SQLite and PostgreSQL the same accent-insensitive order.
+                identities = sorted(self.db.fetchall(conn,
+                    "SELECT c.id, c.name FROM pro_clients c WHERE c.organization_id = ? AND EXISTS ("
+                    "SELECT 1 FROM pro_conversion_contexts x JOIN pro_received_statements r "
+                    "ON r.organization_id = x.organization_id AND r.job_id = x.job_id "
+                    "WHERE x.organization_id = c.organization_id AND x.client_id = c.id)",
+                    (organization,)), key=_client_name_order)
+                start = next((index + 1 for index, row in enumerate(identities) if row["id"] == after), len(identities)) if after else 0
+                client_params = [row["id"] for row in identities[start:start + limit + 1]]
+                client_filter = f"c.id IN ({', '.join('?' for _ in client_params)})" if client_params else "1 = 0"
             rows = self.db.fetchall(conn, "SELECT c.id, c.name, c.tax_id, c.trade_name, c.updated_at, COUNT(*) AS historical_count, "
                 "SUM(CASE WHEN r.expires_at > ? THEN 1 ELSE 0 END) AS available_count, "
                 "SUM(CASE WHEN r.technical_status = 'attention' THEN 1 ELSE 0 END) AS attention_count, "
@@ -247,9 +266,11 @@ class ReceivedStatements(OrganizationService):
                 "FROM pro_received_statements r JOIN pro_conversion_contexts x "
                 "ON x.organization_id = r.organization_id AND x.job_id = r.job_id "
                 "JOIN pro_clients c ON c.organization_id = x.organization_id AND c.id = x.client_id "
-                "WHERE r.organization_id = ? AND c.id > ? "
+                f"WHERE r.organization_id = ? AND {client_filter} "
                 "GROUP BY c.id, c.name, c.tax_id, c.trade_name, c.updated_at ORDER BY c.id LIMIT ?",
-                (now, organization, after, limit + 1))
+                (now, organization, *client_params, limit + 1))
+            if sort == "name":
+                rows = sorted(rows, key=_client_name_order)
             clients = []
             for row in rows[:limit]:
                 client = dict(row)

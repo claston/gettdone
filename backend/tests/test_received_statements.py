@@ -159,3 +159,30 @@ def test_identification_requires_holder_labels_preserves_provenance_and_supports
     assert not identify_statement({}, page_texts=["Banco CNPJ 99.999.999/0001-99\nPIX CPF 111.111.111-11"])["holder_tax_id"]
     conflicting = identify_statement({}, page_texts=pages + ["Titular: Outra empresa\nCPF/CNPJ do titular: 11.111.111/0001-11"])
     assert conflicting["confidence"] == "ambiguous"
+
+
+def test_alphabetical_clients_across_pages_with_accents_ties_and_legacy_cursors(receipts):
+    service, owner, other = receipts
+    now = datetime(2026, 10, 28, 13, tzinfo=timezone.utc)
+    names = ["Zulu", "Érica", "beatriz", "Ângela", "Álvaro", "alvaro", "Álvaro"]
+    for index, name in enumerate(names):
+        service.receive(record(owner, f"name_{index}", source={
+            **identity(), "holder_name": name, "holder_tax_id": f"{index:014d}",
+        }))
+    service.receive(record(other, "foreign", source={**identity(), "holder_name": "AAA outro usuário"}))
+    legacy = service.dashboard(owner, now=now)
+    assert [c["id"] for c in legacy["clients"]] == sorted(c["id"] for c in legacy["clients"])
+    clients, cursor = [], ""
+    while True:
+        page = service.dashboard(owner, now=now, after=cursor, limit=2, sort="name")
+        clients.extend(page["clients"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+    assert [c["name"] for c in clients[:3]].count("Álvaro") == 2
+    assert {c["name"] for c in clients[:3]} == {"Álvaro", "alvaro"}
+    assert [c["id"] for c in clients[:3]] == sorted(c["id"] for c in clients[:3])
+    assert [c["name"] for c in clients[3:]] == ["Ângela", "beatriz", "Érica", "Zulu"]
+    assert len({c["id"] for c in clients}) == len(names)
+    foreign_id = service.dashboard(other, now=now)["clients"][0]["id"]
+    assert service.dashboard(owner, now=now, after=foreign_id, sort="name")["clients"] == []

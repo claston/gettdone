@@ -340,14 +340,6 @@ a {
   border: 0;
   background: transparent;
 }
-.environment-chip {
-  padding: 5px 9px;
-  border-radius: 999px;
-  background: var(--blue-50);
-  color: var(--blue-700);
-  font-size: 10px;
-  font-weight: 700;
-}
 .topbar-spacer {
   flex: 1;
 }

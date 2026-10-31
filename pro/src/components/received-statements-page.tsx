@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { LoaderCircle } from "lucide-react";
 import {
   receivedService,
   type ReceivedService,
@@ -113,9 +114,9 @@ function IdentityForm({
                   if (selected) {
                     setName(selected.name);
                     setTax(selected.tax_id ?? "");
-                } else {
-                  setName(pending.source.holder_name ?? "");
-                  setTax(pending.source.holder_tax_id ?? "");
+                  } else {
+                    setName(pending.source.holder_name ?? "");
+                    setTax(pending.source.holder_tax_id ?? "");
                   }
                 }}
               >
@@ -178,16 +179,25 @@ export function ReceivedStatementsPage({
   const [pendingCursor, setPendingCursor] = useState<string | undefined>();
   const [attempt, setAttempt] = useState(0);
   const [editing, setEditing] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshing, setRefreshing] = useState(true);
+  const [activeTab, setActiveTab] = useState<"clients" | "pending">("clients");
+  const tabId = useId();
+  const clientTab = useRef<HTMLButtonElement>(null);
+  const pendingTab = useRef<HTMLButtonElement>(null);
+  const selectTab = (tab: "clients" | "pending", focus = false) => {
+    if (tab !== activeTab) setEditing(null);
+    setActiveTab(tab);
+    if (focus) (tab === "clients" ? clientTab : pendingTab).current?.focus();
+  };
   useEffect(() => {
     const abort = new AbortController();
     async function load() {
       setError(null);
+      setRefreshing(true);
       try {
         const first = await service.list(cursor, abort.signal, pendingCursor);
         if (abort.signal.aborted) return;
         setPage(first);
-        setRefreshing(true);
         await service.refresh(abort.signal);
         const updated = await service.list(cursor, abort.signal, pendingCursor);
         if (!abort.signal.aborted) setPage(updated);
@@ -210,6 +220,11 @@ export function ReceivedStatementsPage({
     setPendingCursor(undefined);
     setAttempt((value) => value + 1);
   };
+  const clients = [...(page?.clients ?? [])].sort(
+    (a, b) =>
+      a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" }) ||
+      a.id.localeCompare(b.id),
+  );
   return (
     <section className={`standard-page ${styles.page}`}>
       <div className="page-title">
@@ -223,7 +238,14 @@ export function ReceivedStatementsPage({
             disabled={refreshing}
             onClick={() => setAttempt((value) => value + 1)}
           >
-            Atualizar extratos
+            {refreshing && (
+              <LoaderCircle
+                size={16}
+                className={styles.spinner}
+                aria-hidden="true"
+              />
+            )}
+            {refreshing ? "Atualizando extratos..." : "Atualizar extratos"}
           </button>
           <Link href="/conversions" className="primary-button">
             Nova conversão
@@ -235,6 +257,7 @@ export function ReceivedStatementsPage({
           <p>{error}</p>
           <button
             className="secondary-button"
+            disabled={refreshing}
             onClick={() => setAttempt((value) => value + 1)}
           >
             Tentar novamente
@@ -242,7 +265,31 @@ export function ReceivedStatementsPage({
         </div>
       )}
       {!page ? (
-        !error && <p role="status">Carregando extratos…</p>
+        !error && (
+          <div className={styles.loadingState}>
+            <p className={styles.loadingMessage} role="status">
+              <LoaderCircle
+                size={22}
+                className={styles.spinner}
+                aria-hidden="true"
+              />
+              Carregando extratos...
+            </p>
+            <div className={styles.kpis} aria-hidden="true">
+              {[0, 1, 2].map((item) => (
+                <div className={styles.skeleton} key={item} />
+              ))}
+            </div>
+            <div className={styles.clients} aria-hidden="true">
+              {[0, 1].map((item) => (
+                <div
+                  className={`${styles.skeleton} ${styles.skeletonClient}`}
+                  key={item}
+                />
+              ))}
+            </div>
+          </div>
+        )
       ) : (
         <>
           <div className={styles.kpis} aria-label="Resumo dos extratos">
@@ -259,172 +306,251 @@ export function ReceivedStatementsPage({
           </div>
           {refreshing && (
             <p className={styles.muted} role="status">
-              Atualizando documentos recebidos…
+              Atualizando extratos...
             </p>
           )}
-          <div className={styles.clients}>
-            {page.clients.map((client) => (
-              <article className={styles.client} key={client.id}>
-                <div className={styles.clientHeader}>
-                  <div>
-                    {client.available_count ? (
-                      <Link
-                        className={styles.clientLink}
-                        href={`/client-review/${client.id}`}
-                      >
-                        <strong>{client.name}</strong>
-                        <span>{taxLabel(client.tax_id)}</span>
-                      </Link>
-                    ) : (
-                      <div className={styles.clientLink}>
-                        <strong>{client.name}</strong>
-                        <span>{taxLabel(client.tax_id)}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className={styles.summary}>
-                    <span
-                      className={
-                        client.attention_count ? styles.attention : styles.ready
-                      }
-                    >
-                      {client.attention_count
-                        ? `${client.attention_count} ${client.attention_count === 1 ? "precisa" : "precisam"} de atenção`
-                        : client.processing_count
-                          ? `${client.processing_count} em processamento`
-                          : "Todos prontos"}
-                    </span>
-                    <span>
-                      {client.available_count}{" "}
-                      {client.available_count === 1
-                        ? "disponível"
-                        : "disponíveis"}{" "}
-                      / {client.historical_count}{" "}
-                      {client.historical_count === 1 ? "extrato" : "extratos"}{" "}
-                      no histórico
-                    </span>
-                    {client.expired_count > 0 && (
-                      <small>
-                        {client.expired_count}{" "}
-                        {client.expired_count === 1 ? "expirado" : "expirados"}
-                      </small>
-                    )}
-                  </div>
-                  <button
-                    className="secondary-button small"
-                    aria-label={`Editar ${client.name}`}
-                    onClick={() => setEditing(client.id)}
-                  >
-                    Editar
-                  </button>
-                </div>
-                {client.accounts.length > 0 && (
-                  <ul className={styles.accounts}>
-                    {client.accounts.map((account) => (
-                      <li key={account.id}>
-                        {banks[account.bank_code] ??
-                          `Banco ${account.bank_code}`}{" "}
-                        · Conta {account.account_number}
-                        <span>
-                          {account.statement_count}{" "}
-                          {account.statement_count === 1
-                            ? "extrato"
-                            : "extratos"}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {editing === client.id && (
-                  <IdentityForm
-                    client={client}
-                    clients={page.clients}
-                    service={service}
-                    onSaved={saved}
-                    onCancel={() => setEditing(null)}
-                  />
-                )}
-              </article>
+          <div
+            className={styles.tabs}
+            role="tablist"
+            aria-label="Organização dos extratos"
+          >
+            {(
+              [
+                ["clients", "Clientes", clientTab],
+                ["pending", "Não identificados", pendingTab],
+              ] as const
+            ).map(([tab, label, ref]) => (
+              <button
+                type="button"
+                key={tab}
+                ref={ref}
+                role="tab"
+                id={`${tabId}-${tab}-tab`}
+                aria-selected={activeTab === tab}
+                aria-controls={`${tabId}-${tab}-panel`}
+                tabIndex={activeTab === tab ? 0 : -1}
+                onClick={() => selectTab(tab)}
+                onKeyDown={(event) => {
+                  if (
+                    ["ArrowRight", "ArrowLeft", "Home", "End"].includes(
+                      event.key,
+                    )
+                  ) {
+                    event.preventDefault();
+                    selectTab(
+                      event.key === "Home"
+                        ? "clients"
+                        : event.key === "End"
+                          ? "pending"
+                          : tab === "clients"
+                            ? "pending"
+                            : "clients",
+                      true,
+                    );
+                  }
+                }}
+              >
+                {label}
+              </button>
             ))}
           </div>
-          {!page.clients.length && !page.pending.length && (
-            <p>
-              Seus clientes aparecerão aqui conforme os titulares forem
-              identificados nos documentos recebidos.
-            </p>
-          )}
-          {(cursor || page.next_cursor) && (
-            <nav className={styles.actions} aria-label="Paginação de clientes">
-              <button
-                className="secondary-button"
-                disabled={!cursor}
-                onClick={() => setCursor(undefined)}
-              >
-                Início
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!page.next_cursor}
-                onClick={() => setCursor(page.next_cursor!)}
-              >
-                Próxima
-              </button>
-            </nav>
-          )}
-          {(page.pending.length > 0 || pendingCursor) && (
-            <section className={styles.pending}>
-              <h2>Identificação pendente</h2>
-              <p>Estes arquivos continuam disponíveis para revisão no lote.</p>
-              {page.pending.map((item) => (
-                <article key={item.job_id}>
-                  <div className={styles.clientHeader}>
-                    <Link
-                      href={`/review/${item.batch_id}/${item.job_id}?return_to=%2Fdashboard`}
-                      aria-label={`Conferir ${item.filename}`}
-                    >
-                      {item.filename}
-                    </Link>
-                    <button
-                      className="secondary-button small"
-                      onClick={() => setEditing(item.job_id)}
-                    >
-                      Conferir identificação
-                    </button>
-                  </div>
-                  {editing === item.job_id && (
-                    <IdentityForm
-                      pending={item}
-                      clients={page.clients}
-                      service={service}
-                      onSaved={saved}
-                      onCancel={() => setEditing(null)}
-                    />
-                  )}
-                </article>
-              ))}
-              {(pendingCursor || page.pending_next_cursor) && (
-                <nav
-                  className={styles.actions}
-                  aria-label="Paginação de identificações"
-                >
-                  <button
-                    className="secondary-button"
-                    disabled={!pendingCursor}
-                    onClick={() => setPendingCursor(undefined)}
-                  >
-                    Primeiras identificações
-                  </button>
-                  <button
-                    className="secondary-button"
-                    disabled={!page.pending_next_cursor}
-                    onClick={() => setPendingCursor(page.pending_next_cursor!)}
-                  >
-                    Próximas identificações
-                  </button>
-                </nav>
-              )}
-            </section>
-          )}
+          {(["clients", "pending"] as const).map((tab) => (
+            <div
+              key={tab}
+              role="tabpanel"
+              id={`${tabId}-${tab}-panel`}
+              aria-labelledby={`${tabId}-${tab}-tab`}
+              aria-busy={refreshing}
+              hidden={activeTab !== tab}
+              tabIndex={0}
+              className={styles.tabPanel}
+            >
+              {activeTab === tab &&
+                (tab === "clients" ? (
+                  <>
+                    <div className={styles.clients}>
+                      {clients.map((client) => (
+                        <article className={styles.client} key={client.id}>
+                          <div className={styles.clientHeader}>
+                            <div>
+                              {client.available_count ? (
+                                <Link
+                                  className={styles.clientLink}
+                                  href={`/client-review/${client.id}`}
+                                >
+                                  <strong>{client.name}</strong>
+                                  <span>{taxLabel(client.tax_id)}</span>
+                                </Link>
+                              ) : (
+                                <div className={styles.clientLink}>
+                                  <strong>{client.name}</strong>
+                                  <span>{taxLabel(client.tax_id)}</span>
+                                </div>
+                              )}
+                            </div>
+                            <div className={styles.summary}>
+                              <span
+                                className={
+                                  client.attention_count
+                                    ? styles.attention
+                                    : styles.ready
+                                }
+                              >
+                                {client.attention_count
+                                  ? `${client.attention_count} ${client.attention_count === 1 ? "precisa" : "precisam"} de atenção`
+                                  : client.processing_count
+                                    ? `${client.processing_count} em processamento`
+                                    : "Todos prontos"}
+                              </span>
+                              <span>
+                                {client.available_count}{" "}
+                                {client.available_count === 1
+                                  ? "disponível"
+                                  : "disponíveis"}{" "}
+                                / {client.historical_count}{" "}
+                                {client.historical_count === 1
+                                  ? "extrato"
+                                  : "extratos"}{" "}
+                                no histórico
+                              </span>
+                              {client.expired_count > 0 && (
+                                <small>
+                                  {client.expired_count}{" "}
+                                  {client.expired_count === 1
+                                    ? "expirado"
+                                    : "expirados"}
+                                </small>
+                              )}
+                            </div>
+                            <button
+                              className="secondary-button small"
+                              aria-label={`Editar ${client.name}`}
+                              onClick={() => setEditing(client.id)}
+                            >
+                              Editar
+                            </button>
+                          </div>
+                          {client.accounts.length > 0 && (
+                            <ul className={styles.accounts}>
+                              {client.accounts.map((account) => (
+                                <li key={account.id}>
+                                  {banks[account.bank_code] ??
+                                    `Banco ${account.bank_code}`}{" "}
+                                  · Conta {account.account_number}
+                                  <span>
+                                    {account.statement_count}{" "}
+                                    {account.statement_count === 1
+                                      ? "extrato"
+                                      : "extratos"}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {editing === client.id && (
+                            <IdentityForm
+                              client={client}
+                              clients={clients}
+                              service={service}
+                              onSaved={saved}
+                              onCancel={() => setEditing(null)}
+                            />
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                    {!page.clients.length && (
+                      <p>
+                        Seus clientes aparecerão aqui conforme os titulares
+                        forem identificados nos documentos recebidos.
+                      </p>
+                    )}
+                    {(cursor || page.next_cursor) && (
+                      <nav
+                        className={styles.actions}
+                        aria-label="Paginação de clientes"
+                      >
+                        <button
+                          className="secondary-button"
+                          disabled={refreshing || !cursor}
+                          onClick={() => setCursor(undefined)}
+                        >
+                          Início
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={refreshing || !page.next_cursor}
+                          onClick={() => setCursor(page.next_cursor!)}
+                        >
+                          Próxima
+                        </button>
+                      </nav>
+                    )}
+                  </>
+                ) : (
+                  <section className={styles.pending}>
+                    <h2>Identificação pendente</h2>
+                    <p>
+                      {page.pending.length > 0 ||
+                      pendingCursor ||
+                      page.pending_next_cursor
+                        ? "Estes extratos precisam de identificação do cliente. Os arquivos continuam disponíveis para revisão no lote."
+                        : "Todos os extratos estão identificados."}
+                    </p>
+                    {page.pending.map((item) => (
+                      <article key={item.job_id}>
+                        <div className={styles.clientHeader}>
+                          <Link
+                            href={`/review/${item.batch_id}/${item.job_id}?return_to=%2Fdashboard`}
+                            aria-label={`Conferir ${item.filename}`}
+                          >
+                            {item.filename}
+                          </Link>
+                          <button
+                            className="secondary-button small"
+                            onClick={() => setEditing(item.job_id)}
+                          >
+                            Conferir identificação
+                          </button>
+                        </div>
+                        {editing === item.job_id && (
+                          <IdentityForm
+                            pending={item}
+                            clients={clients}
+                            service={service}
+                            onSaved={saved}
+                            onCancel={() => setEditing(null)}
+                          />
+                        )}
+                      </article>
+                    ))}
+                    {(pendingCursor || page.pending_next_cursor) && (
+                      <nav
+                        className={styles.actions}
+                        aria-label="Paginação de identificações"
+                      >
+                        <button
+                          className="secondary-button"
+                          disabled={refreshing || !pendingCursor}
+                          onClick={() => setPendingCursor(undefined)}
+                        >
+                          Primeiras identificações
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={refreshing || !page.pending_next_cursor}
+                          onClick={() =>
+                            setPendingCursor(page.pending_next_cursor!)
+                          }
+                        >
+                          Próximas identificações
+                        </button>
+                      </nav>
+                    )}
+                  </section>
+                ))}
+            </div>
+          ))}
         </>
       )}
       <Link href="/conversions?view=batches" className="secondary-button">

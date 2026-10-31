@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from io import BytesIO
+from typing import Literal
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -49,8 +50,9 @@ class ClientEdit(BaseModel):
 
 @router.get("")
 def dashboard(owner: str = Depends(organization_owner), service=Depends(receipt_service),
-              cursor: str = Query("", max_length=100), pending_cursor: str = Query("", max_length=100)):
-    return service.dashboard(owner, after=cursor, pending_after=pending_cursor)
+              cursor: str = Query("", max_length=100), pending_cursor: str = Query("", max_length=100),
+              sort: Literal["id", "name"] = Query("id")):
+    return service.dashboard(owner, after=cursor, pending_after=pending_cursor, sort=sort)
 
 
 @router.post("/refresh", dependencies=[Depends(require_pro_browser_request)])

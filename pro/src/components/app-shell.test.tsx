@@ -35,7 +35,7 @@ describe("AppShell", () => {
     expect(await screen.findByText("Usuário Canário")).toBeInTheDocument();
     expect(screen.getByText("Plano Profissional")).toBeInTheDocument();
     expect(screen.getByText("23 de 150 páginas usadas")).toBeInTheDocument();
-    expect(screen.getByText("Integração real")).toBeInTheDocument();
+    expect(screen.queryByText("Integração real")).not.toBeInTheDocument();
     expect(screen.queryByText("Ana Souza")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Sair" }));

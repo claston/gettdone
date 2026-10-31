@@ -101,7 +101,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <button className="mobile-menu" aria-label="Abrir menu">
             <Menu size={19} />
           </button>
-          <span className="environment-chip">Integração real</span>
           <span className="topbar-spacer" />
           {quota && (
             <span className="quota-top">
