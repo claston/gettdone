@@ -30,6 +30,9 @@ from app.application.ocr_structure import (  # noqa: E402
     reconstruct_ocr_table,
 )  # noqa: E402
 from app.application.textract_extraction_mapper import map_textract_blocks_to_extraction  # noqa: E402
+from app.application.textract_transaction_adapter import (  # noqa: E402
+    adapt_textract_extraction_to_transactions,
+)
 
 
 def read_json(path):
@@ -85,11 +88,14 @@ def run(args):
         )
         started = perf_counter()
         baseline = (
-            pdf_parser._parse_scanned_pdf_with_textract_text_pages(extraction)
-            if mode == "text"
-            else pdf_parser._parse_textract_tables(
-                extraction, {"textract_mode": "analysis"}
+            pdf_parser._parse_pdf_transactions_from_page_texts(
+                [
+                    "\n".join(line.text for line in page.lines)
+                    for page in extraction.pages
+                ]
             )
+            if mode == "text"
+            else adapt_textract_extraction_to_transactions(extraction)
         )
         baseline_rows = baseline.canonical_transactions or []
         baseline_actual = Counter(
@@ -99,7 +105,7 @@ def run(args):
         summaries.append(
             {
                 "reader": mode,
-                "interpreter": "current",
+                "interpreter": "legacy_without_shared_ocr",
                 "count": len(baseline_rows),
                 "net": str(
                     sum((Decimal(str(row.amount)) for row in baseline_rows), Decimal(0))

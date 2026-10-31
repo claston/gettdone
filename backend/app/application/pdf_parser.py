@@ -969,6 +969,11 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
 
 
 def _parse_textract_tables(extraction, gateway_metrics) -> PdfParseResult:
+    from app.application.ocr_cash_statement import maybe_parse_shared_cash
+
+    shared = maybe_parse_shared_cash(extraction)
+    if shared is not None:
+        return shared
     from app.application.parsers.pdf.statement_blocks import combine_statement_results, slice_extraction, statement_blocks
 
     pages = _textract_page_texts(extraction)
@@ -1147,6 +1152,11 @@ def _parse_textract_text_pages_impl(extraction) -> PdfParseResult:
         return replace(_with_parse_observability(title_result, extraction_provider="aws_textract", textract_used=1),
                        source_extraction=extraction, source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
     inferred_layout = infer_pdf_layout(joined_text)
+    from app.application.ocr_cash_statement import maybe_parse_shared_cash
+
+    shared = maybe_parse_shared_cash(extraction)
+    if shared is not None:
+        return shared
     from app.application.parsers.pdf.bradesco_unified_ocr import is_bradesco_unified, parse_bradesco_unified
 
     if is_bradesco_unified(extraction):

@@ -9,6 +9,62 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+it("envia um PDF PRO e confere páginas antes de submeter ao worker", async () => {
+  const request = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("conversion-runtime"))
+      return jsonResponse({
+        direct_batch_enabled: true,
+        upload_mode: "direct_s3",
+        execution_mode: "sqs_lambda",
+        batch_max_files: 12,
+      });
+    if (url.endsWith("pro-estimate"))
+      return jsonResponse({
+        pages: 4,
+        remaining_pages: 20,
+        remaining_after: 16,
+        monthly_pages: 20,
+      });
+    if (url.endsWith("submit"))
+      return jsonResponse({ batch_id: "pro-test" }, 202);
+    expect(JSON.parse(String(init?.body)).ocr_mode).toBe("pro");
+    return jsonResponse({
+      batch_id: "pro-test",
+      uploads: [
+        {
+          job_id: "job-pro",
+          url: "https://uploads.example.test/pro",
+          fields: {},
+        },
+      ],
+    });
+  });
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValue(new Response(null, { status: 204 }));
+  const service = createBatchUploadService({
+    apiUrl: "/",
+    apiClient: { request },
+    fetcher,
+    digestFile: async () => "a".repeat(64),
+    createIdempotencyKey: () => "pro-key",
+  });
+  const estimate = await service.preparePro!(new File(["scan"], "asaas.pdf"));
+  expect(estimate).toMatchObject({
+    batchId: "pro-test",
+    pages: 4,
+    remaining_after: 16,
+  });
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(request.mock.calls.some(([url]) => url.endsWith("submit"))).toBe(
+    false,
+  );
+  await service.submitPro!(estimate.batchId);
+  expect(
+    request.mock.calls.filter(([url]) => url.endsWith("submit")),
+  ).toHaveLength(1);
+});
+
 describe("BatchUploadService", () => {
   it.each(["http", "network", "all"])(
     "submete o lote e identifica somente uploads com falha: %s",

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from threading import RLock
 from typing import Any, Iterator
 
+from app.application.active_plan_reader import read_active_user_plan
 from app.application.anonymous_conversion_history import (
     record_anonymous_conversion_event as record_anonymous_conversion_event_query,
 )
@@ -24,6 +25,8 @@ _DATABASE_SCHEMA_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 class PostgresConversionAccessService:
     """Worker-only access adapter without authentication or admin capabilities."""
+
+    _use_postgres = True
 
     def __init__(
         self,
@@ -73,6 +76,11 @@ class PostgresConversionAccessService:
     def assert_upload_size(self, raw_bytes: bytes, max_upload_size_bytes: int) -> None:
         if len(raw_bytes) > max(1, int(max_upload_size_bytes)):
             raise FileTooLargeError
+
+    def _read_active_user_plan(self, *, user_id: str) -> dict[str, str | int] | None:
+        # Reuse the API's subscription query, without authentication/admin services or caching.
+        with self._lock, self._connect() as conn:
+            return read_active_user_plan(conn, fetchone=self._fetchone, user_id=user_id)
 
     def ensure_quota_available(self, identity: IdentityContext, *, required_units: int = 1) -> None:
         with self._lock:

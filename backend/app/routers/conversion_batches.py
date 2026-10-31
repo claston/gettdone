@@ -8,6 +8,7 @@ import re
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
+from typing import Literal
 from urllib.parse import quote
 from uuid import uuid4
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -65,6 +66,7 @@ class CreateConversionBatchRequest(BaseModel):
     files: list[ConversionBatchFileRequest] = Field(min_length=1, max_length=12)
     anonymous_fingerprint: str | None = Field(default=None, max_length=500)
     user_token: str | None = Field(default=None, max_length=500)
+    ocr_mode: Literal["standard", "pro"] = "standard"
 
 
 class ConversionBatchIdentityRequest(BaseModel):
@@ -219,6 +221,20 @@ def create_conversion_batch(
         access_control_service=access_control_service,
         files_count=len(request.files),
     )
+    mode_options = {}
+    if request.ocr_mode == "pro":
+        from app.application.conversion.pro_conversion import ConversionProAccessError, ConversionProQuota
+
+        budget = ConversionProQuota(access_control_service)
+        try:
+            budget.require_access(identity)
+        except ConversionProAccessError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        if len(request.files) != 1 or not request.files[0].filename.lower().endswith(".pdf"):
+            raise HTTPException(status_code=400, detail="A Conversão PRO aceita um único PDF por solicitação.")
+        if budget.remaining(identity) < 1:
+            raise HTTPException(status_code=429, detail="O limite mensal da Conversão PRO foi atingido.")
+        mode_options["ocr_mode"] = "pro"
     try:
         required_units = len(request.files) if identity.quota_mode == "conversion" else 1
         access_control_service.ensure_quota_available(identity, required_units=required_units)
@@ -226,6 +242,7 @@ def create_conversion_batch(
             identity=identity,
             files=[ConversionBatchFile(**item.model_dump()) for item in request.files],
             idempotency_key=idempotency_key,
+            **mode_options,
         )
     except QuotaExceededError as exc:
         quota_code = "monthly_pages_quota_exceeded" if identity.quota_mode == "pages" else "weekly_quota_exceeded"

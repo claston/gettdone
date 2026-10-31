@@ -644,3 +644,7 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
 
     for statement in feedback_schema():
         conn.execute(statement)
+    from app.application.conversion.pro_conversion_schema import conversion_pro_schema
+
+    for statement in conversion_pro_schema():
+        conn.execute(statement)

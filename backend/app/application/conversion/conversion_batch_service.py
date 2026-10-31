@@ -49,7 +49,12 @@ class ConversionBatchService:
         identity: IdentityContext,
         files: list[ConversionBatchFile],
         idempotency_key: str,
+        ocr_mode: str = "standard",
     ) -> PreparedConversionBatch:
+        if ocr_mode not in {"standard", "pro"}:
+            raise ValueError("Unknown OCR mode")
+        if ocr_mode == "pro" and (len(files) != 1 or not files[0].filename.lower().endswith(".pdf")):
+            raise ValueError("A Conversão PRO aceita um único PDF por solicitação.")
         if not 1 <= len(files) <= self.batch_max_files:
             raise ValueError(f"Conversion batch must contain between 1 and {self.batch_max_files} files.")
         normalized_idempotency_key = (idempotency_key or "").strip()
@@ -78,11 +83,14 @@ class ConversionBatchService:
                 document=item.document,
                 identity=identity,
                 idempotency_key=f"{normalized_idempotency_key}:{index}",
+                ocr_mode=ocr_mode,
             )
             for index, item in enumerate(initially_prepared)
         ]
         submission = self.repository.create(batch=batch, jobs=jobs)
         if not submission.created:
+            if any(record.job.ocr_mode != ocr_mode for record in submission.snapshot.jobs):
+                raise ValueError("Idempotency key was already used with a different conversion mode.")
             self._validate_idempotent_files(submission.snapshot, files)
             initially_prepared = [
                 self.direct_upload_service.prepare_reference(
@@ -187,6 +195,8 @@ class ConversionBatchService:
         record = next((record for record in snapshot.jobs if record.job.job_id == job_id), None) if snapshot else None
         if record is None:
             raise KeyError(f"Conversion job not found: {job_id}")
+        if record.job.ocr_mode == "pro":
+            raise ValueError("Para repetir a Conversão PRO, envie o PDF em uma nova conversão.")
         if record.failure is not None and record.failure.code == "upload_failed":
             raise ValueError("A failed upload must be uploaded again before processing.")
         self.repository.retry_failed(job_id)

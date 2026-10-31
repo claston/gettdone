@@ -26,6 +26,7 @@ class ConversionJob:
     identity: IdentityContext
     preflight_result: DocumentPreflightResult
     batch_id: str | None = None
+    ocr_mode: str = "standard"
 
     @classmethod
     def create(
@@ -38,7 +39,10 @@ class ConversionJob:
         job_id: str | None = None,
         idempotency_key: str | None = None,
         batch_id: str | None = None,
+        ocr_mode: str = "standard",
     ) -> ConversionJob:
+        if ocr_mode not in {"standard", "pro"}:
+            raise ValueError("Unknown OCR mode")
         resolved_job_id = (job_id or "").strip() or f"job_{uuid4().hex[:24]}"
         return cls(
             job_id=resolved_job_id,
@@ -50,6 +54,7 @@ class ConversionJob:
                 estimated_pages_count=estimated_pages_count,
             ),
             batch_id=(batch_id or "").strip() or None,
+            ocr_mode=ocr_mode,
         )
 
 

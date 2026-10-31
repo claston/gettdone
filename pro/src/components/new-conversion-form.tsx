@@ -2,7 +2,7 @@
 
 import { FilePlus2, LoaderCircle, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   statementWorkService,
   type StatementWorkService,
@@ -11,6 +11,8 @@ import {
 import {
   createBatchUploadService,
   type BatchUploadService,
+  type ProConversionOptions,
+  type ProConversionEstimate,
 } from "@/data/batch-upload-service";
 
 export function NewConversionForm({
@@ -35,6 +37,25 @@ export function NewConversionForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdBatch, setCreatedBatch] = useState<string | null>(null);
+  const [proOptions, setProOptions] = useState<ProConversionOptions | null>(
+    null,
+  );
+  const [proMode, setProMode] = useState(false);
+  const [proEstimate, setProEstimate] = useState<ProConversionEstimate | null>(
+    null,
+  );
+  useEffect(() => {
+    let active = true;
+    activeService
+      .getProOptions?.()
+      .then((value) => {
+        if (active) setProOptions(value);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [activeService]);
 
   const submit = async () => {
     if (!files.length || submitting) return;
@@ -44,8 +65,30 @@ export function NewConversionForm({
       const context = workId ? await workService.get(workId) : null;
       if (context?.state === "completed")
         throw new Error("Reabra o trabalho antes de enviar novos extratos.");
-      const batchId =
-        createdBatch ?? (await activeService.createAndSubmit(files)).batchId;
+      let batchId = createdBatch;
+      if (!batchId && proMode) {
+        if (
+          files.length !== 1 ||
+          !files[0].name.toLowerCase().endsWith(".pdf")
+        ) {
+          throw new Error(
+            "A Conversão PRO aceita um único PDF por solicitação.",
+          );
+        }
+        if (
+          !activeService.preparePro ||
+          !activeService.submitPro ||
+          !proOptions?.eligible
+        ) {
+          throw new Error("A Conversão PRO está indisponível para esta conta.");
+        }
+        if (!proEstimate) {
+          setProEstimate(await activeService.preparePro(files[0]));
+          return;
+        }
+        batchId = (await activeService.submitPro(proEstimate.batchId)).batchId;
+      }
+      batchId ??= (await activeService.createAndSubmit(files)).batchId;
       if (context) {
         setCreatedBatch(batchId);
         await workService.attachBatch(context, batchId);
@@ -68,9 +111,15 @@ export function NewConversionForm({
     <main className="standard-page conversion-upload-page">
       <div className="page-title">
         <div>
-          <span className="eyebrow">Conversão em lote</span>
+          <span className="eyebrow">
+            {proMode ? "Conversão PRO" : "Conversão em lote"}
+          </span>
           <h1>Nova conversão</h1>
-          <p>Envie até 12 arquivos para converter e revisar em conjunto.</p>
+          <p>
+            {proMode
+              ? "Envie um PDF digitalizado para análise de tabelas e revisão."
+              : "Envie até 12 arquivos para converter e revisar em conjunto."}
+          </p>
           {workId && (
             <p>
               Os arquivos serão vinculados ao trabalho.{" "}
@@ -83,6 +132,58 @@ export function NewConversionForm({
       </div>
 
       <section className="upload-card">
+        {proOptions?.enabled && (
+          <fieldset disabled={submitting || createdBatch !== null}>
+            <legend>Tipo de conversão</legend>
+            <label>
+              <input
+                type="radio"
+                name="conversion-mode"
+                checked={!proMode}
+                onChange={() => {
+                  setProMode(false);
+                  setProEstimate(null);
+                }}
+              />{" "}
+              Padrão
+            </label>{" "}
+            <label>
+              <input
+                type="radio"
+                name="conversion-mode"
+                checked={proMode}
+                disabled={
+                  !proOptions.eligible || proOptions.remaining_pages < 1
+                }
+                onChange={() => {
+                  setProMode(true);
+                  setProEstimate(null);
+                  setError(null);
+                }}
+              />{" "}
+              Conversão PRO
+            </label>
+            <p>
+              {proOptions.eligible
+                ? `${proOptions.remaining_pages} de ${proOptions.monthly_pages} páginas PRO disponíveis neste ciclo.`
+                : "Disponível somente para assinaturas pagas ativas."}
+            </p>
+            {proOptions.eligible && proOptions.reset_at && (
+              <p>
+                Renovação do limite PRO:{" "}
+                {new Date(proOptions.reset_at).toLocaleString("pt-BR")}.
+              </p>
+            )}
+          </fieldset>
+        )}
+        {proMode && (
+          <p>
+            Piloto para extratos Asaas digitalizados. Um PDF por vez, até{" "}
+            {proOptions?.max_pages} páginas. Pode levar mais tempo e continuar
+            em revisão. As páginas com leitura iniciada contam para o limite
+            PRO, mesmo se a conversão não for concluída.
+          </p>
+        )}
         <div className="upload-card-heading">
           <span className="placeholder-icon">
             <Upload size={24} />
@@ -107,12 +208,17 @@ export function NewConversionForm({
           <input
             aria-label="Selecionar arquivos"
             type="file"
-            multiple
-            accept="application/pdf,text/csv,application/x-ofx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.pdf,.csv,.xlsx,.ofx"
+            multiple={!proMode}
+            accept={
+              proMode
+                ? "application/pdf,.pdf"
+                : "application/pdf,text/csv,application/x-ofx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.pdf,.csv,.xlsx,.ofx"
+            }
             disabled={submitting || createdBatch !== null}
             onChange={(event) => {
               setFiles(Array.from(event.currentTarget.files ?? []));
               setError(null);
+              setProEstimate(null);
               event.currentTarget.value = "";
             }}
           />
@@ -137,6 +243,7 @@ export function NewConversionForm({
                         current.filter((_, fileIndex) => fileIndex !== index),
                       );
                       setError(null);
+                      setProEstimate(null);
                     }}
                   >
                     <X size={14} /> Remover
@@ -151,6 +258,17 @@ export function NewConversionForm({
           <p className="upload-error" role="alert">
             {error}
           </p>
+        )}
+        {proEstimate && (
+          <div role="status">
+            <p>{proEstimate.pages} páginas serão processadas.</p>
+            <p>
+              Consome {proEstimate.pages} páginas da franquia do plano e do
+              limite PRO. Restarão {proEstimate.remaining_after} páginas PRO
+              neste ciclo.
+            </p>
+            <p>Confirme para iniciar a Conversão PRO.</p>
+          </div>
         )}
 
         <div className="upload-actions">
@@ -169,7 +287,11 @@ export function NewConversionForm({
               ? "Preparando lote…"
               : createdBatch
                 ? "Retomar vínculo com o trabalho"
-                : "Criar lote"}
+                : proMode
+                  ? proEstimate
+                    ? "Iniciar Conversão PRO"
+                    : "Verificar Conversão PRO"
+                  : "Criar lote"}
           </button>
         </div>
       </section>
