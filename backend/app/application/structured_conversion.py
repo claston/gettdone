@@ -54,6 +54,7 @@ class StructuredConversionTransaction:
     running_balance: float | None = None
     warning_types: list[str] = field(default_factory=list)
     is_deleted: bool = False
+    statement_account: dict[str, object] | None = None
 
 
 @dataclass
@@ -195,6 +196,7 @@ def _build_structured_transaction(
         event = financial_document["events"][index - 1]
         transaction_type = event["event_type"]
     return StructuredConversionTransaction(
+        statement_account=row.statement_account,
         transaction_id=row.transaction_id if financial_document else f"txn_{index:04d}",
         date=row.date,
         description=row.description,

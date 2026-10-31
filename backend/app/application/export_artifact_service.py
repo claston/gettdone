@@ -10,6 +10,7 @@ from app.application.financial_document_export import write_financial_artifacts,
 from app.application.models import AnalysisData, NormalizedTransaction, TransactionRow
 from app.application.ofx_writer import build_ofx_statement
 from app.application.parsers.pdf.layout_specific.wise import WISE_CURRENCIES
+from app.application.statement_account_export import statement_scopes
 
 
 class ExportArtifactService:
@@ -22,6 +23,13 @@ class ExportArtifactService:
     ) -> None:
         if snapshot.financial_document is not None:
             write_financial_workbook(output_path, snapshot.financial_document)
+            return
+        scopes = statement_scopes(snapshot.document_parts)
+        if scopes or any(row.statement_account for row in report_rows):
+            from app.application.statement_account_export import write_account_workbook
+
+            write_account_workbook(output_path, report_rows, format_sheet=self._format_sheet,
+                                   format_date=self._format_convert_date, report=True, scopes=scopes)
             return
         workbook = Workbook()
         sheet = workbook.active
@@ -47,12 +55,19 @@ class ExportArtifactService:
         bank_code: str | None = None,
         financial_document: dict | None = None,
         balance_bounds_unavailable: bool = False,
+        statement_accounts: list[dict[str, object]] | None = None,
     ) -> None:
         if financial_document is not None:
             write_financial_artifacts(output_dir, financial_document, bank_code=bank_code,
                                       bank_branch=bank_branch, account_number=account_number)
             return
         active_rows = self._active_rows(report_rows)
+        if statement_accounts or any(row.statement_account for row in report_rows):
+            from app.application.statement_account_export import write_account_artifacts
+
+            write_account_artifacts(output_dir, report_rows, format_sheet=self._format_sheet,
+                                    format_date=self._format_convert_date, scopes=statement_accounts)
+            return
         ofx_rows = [item for item in active_rows if not self._is_opening_balance_row(item)]
         normalized_transactions = [
             NormalizedTransaction(

@@ -31,6 +31,7 @@ from app.routers import (
     report_router,
     telemetry_router,
 )
+from app.routers.marketing import router as marketing_router
 from app.routers.pro_conversions import router as pro_conversions_router
 from app.routers.received_statements import router as received_statements_router
 from app.routers.statement_works import router as statement_works_router
@@ -102,6 +103,7 @@ app.include_router(health_router)
 app.include_router(banks_router)
 app.include_router(plans_router)
 app.include_router(admin_auth_router)
+app.include_router(marketing_router)
 app.include_router(convert_router)
 app.include_router(auth_router)
 app.include_router(client_router)

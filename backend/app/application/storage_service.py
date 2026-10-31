@@ -20,6 +20,7 @@ from app.application.export_artifact_service import ExportArtifactService
 from app.application.financial_document_export import assert_financial_export
 from app.application.models import AnalysisData, BeforeAfterRow, TransactionRow
 from app.application.source_regions import parse_source_regions, validate_review_regions
+from app.application.statement_account_export import assert_account_overrides, refresh_edited_account_rows, statement_scopes
 from app.application.structured_conversion import build_structured_conversion_result_from_analysis_data
 
 _SAFE_ANALYSIS_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
@@ -98,6 +99,7 @@ class TempAnalysisStorage:
             account_number=data.account_number if preserve_bank_metadata else None,
             bank_code=data.bank_code if preserve_bank_metadata else None,
             **({"financial_document": data.financial_document} if data.financial_document is not None else {}),
+            **({"statement_accounts": statement_scopes(data.document_parts)} if statement_scopes(data.document_parts) else {}),
         )
         return expires_at.isoformat()
 
@@ -385,12 +387,16 @@ class TempAnalysisStorage:
         report_rows_raw = content.get("report_transactions") or content.get("preview_transactions", [])
         report_rows = self._parse_transaction_rows(report_rows_raw)
         current_updated_at = str(content.get("updated_at") or "").strip()
+        assert_account_overrides(report_rows, opening_balance=opening_balance, closing_balance=closing_balance,
+                                 bank_branch=bank_branch, account_number=account_number, bank_code=bank_code,
+                                 statement_accounts=statement_scopes(content.get("document_parts")))
 
         if (len(preview_rows) == 0 or len(report_rows) == 0) and not _is_confirmed_empty_statement(content):
             raise AnalysisNotFoundError
         if expected_updated_at and current_updated_at and expected_updated_at != current_updated_at:
             raise AnalysisEditConflictError
 
+        edited_account_blocks = set()
         for edit in edits:
             action = str(edit.get("action") or "update").strip().lower()
             if action not in {"update", "delete", "restore", "insert", "annotate"}:
@@ -403,6 +409,8 @@ class TempAnalysisStorage:
                     (content.get("pdf_processing_metrics") or {}).get("page_count"))
 
             if action == "insert":
+                if statement_scopes(content.get("document_parts")) and not preview_rows:
+                    raise InvalidFileContentError("A inserção exige um lançamento de referência que identifique a conta de origem.")
                 amount = self._build_amount_from_credit_debit(edit.get("credit"), edit.get("debit"))
                 description = str(edit.get("description") or "").strip()
                 date = str(edit.get("date") or "").strip()
@@ -423,6 +431,11 @@ class TempAnalysisStorage:
                     anchor = next((row for row in preview_rows if row.transaction_id == anchor_id), None) if anchor_id else None
                     if anchor_id and anchor is None:
                         raise ValueError("Anchor transaction not found.")
+                    if any(row.statement_account for row in preview_rows):
+                        if anchor is None or not anchor.statement_account:
+                            raise InvalidFileContentError("Escolha um lançamento da conta de origem para inserir a nova linha.")
+                        new_row.statement_account = dict(anchor.statement_account)
+                        edited_account_blocks.add(anchor.statement_account["block_id"])
                     new_row.transaction_id = str(edit.get("transaction_id") or f"txn_{uuid4().hex}")
                     if any(row.transaction_id == new_row.transaction_id for row in preview_rows):
                         raise ValueError("Transaction ID already exists.")
@@ -450,6 +463,8 @@ class TempAnalysisStorage:
                 continue
 
             if action == "delete":
+                if preview_rows[row_index].statement_account:
+                    edited_account_blocks.add(preview_rows[row_index].statement_account["block_id"])
                 if row_index >= len(report_rows):
                     raise ValueError("row_id out of bounds.")
                 preview_rows[row_index].is_deleted = True
@@ -470,6 +485,8 @@ class TempAnalysisStorage:
                 raise ValueError("Date and description are required.")
 
             report_target = report_rows[row_index]
+            if report_target.statement_account:
+                edited_account_blocks.add(report_target.statement_account["block_id"])
             report_target.date = date
             report_target.description = description
             report_target.amount = amount
@@ -509,6 +526,12 @@ class TempAnalysisStorage:
             requested_opening_balance=requested_overrides.get("opening_balance"),
             persisted_opening_balance=persisted_overrides.get("opening_balance"),
         )
+        if any(row.statement_account for row in report_rows):
+            opening_balance_seed = None
+            if edited_account_blocks:
+                refresh_edited_account_rows(preview_rows, report_rows, edited_account_blocks)
+                content["pdf_processing_metrics"].update(financial_controls_validated=0, export_recommendation="review_recommended",
+                    export_recommendation_reason="statement_account_edited", balance_validation_status="review_required")
         if opening_balance_seed is not None or not (content.get("pdf_processing_metrics") or {}).get("balance_bounds_unavailable"):
             self._recalculate_running_balances(
                 preview_rows=preview_rows,
@@ -582,6 +605,8 @@ class TempAnalysisStorage:
             account_number=effective_overrides.get("account_number"),
             bank_code=effective_overrides.get("bank_code"),
             **({"financial_document": content["financial_document"]} if content.get("financial_document") is not None else {}),
+            **({"statement_accounts": statement_scopes(content.get("document_parts"))}
+               if statement_scopes(content.get("document_parts")) else {}),
         )
 
         if operation_id:
@@ -760,6 +785,10 @@ class TempAnalysisStorage:
         if not report_rows and not _is_confirmed_empty_statement(content):
             raise AnalysisNotFoundError
 
+        assert_account_overrides(report_rows, closing_balance=closing_balance, bank_branch=bank_branch,
+                                 account_number=account_number, bank_code=bank_code,
+                                 statement_accounts=statement_scopes(content.get("document_parts")))
+
         persisted_overrides = self._extract_convert_overrides(content)
         requested_overrides = self._normalize_convert_overrides(
             opening_balance=None,
@@ -815,6 +844,8 @@ class TempAnalysisStorage:
             account_number=effective_overrides.get("account_number"),
             bank_code=effective_overrides.get("bank_code"),
             **({"financial_document": content["financial_document"]} if content.get("financial_document") is not None else {}),
+            **({"statement_accounts": statement_scopes(content.get("document_parts"))}
+               if statement_scopes(content.get("document_parts")) else {}),
         )
 
     def _normalize_convert_overrides(
@@ -909,6 +940,7 @@ class TempAnalysisStorage:
                 continue
             parsed.append(
                 TransactionRow(
+                    statement_account=dict(item["statement_account"]) if isinstance(item.get("statement_account"), dict) else None,
                     balance_check=parse_balance_check(item.get("balance_check")),
                     date=str(item.get("date") or ""),
                     description=str(item.get("description") or ""),

@@ -110,6 +110,8 @@ class ContactService:
         subject: str,
         text: str,
         reply_to: str | None = None,
+        headers: dict[str, str] | None = None,
+        idempotency_key: str | None = None,
     ) -> ContactDeliveryResult:
         clean_to = to_email.strip()
         if not clean_to:
@@ -135,18 +137,23 @@ class ContactService:
         clean_reply_to = (reply_to or "").strip()
         if clean_reply_to:
             payload["reply_to"] = clean_reply_to
+        if headers:
+            payload["headers"] = headers
 
-        return await self._send_payload(payload)
+        return await self._send_payload(payload, idempotency_key=idempotency_key)
 
-    async def _send_payload(self, payload: dict[str, object]) -> ContactDeliveryResult:
+    async def _send_payload(self, payload: dict[str, object], *, idempotency_key: str | None = None) -> ContactDeliveryResult:
+        request_headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        if idempotency_key:
+            request_headers["Idempotency-Key"] = idempotency_key
         try:
             async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
                 response = await client.post(
                     f"{self._resend_api_base}/emails",
-                    headers={
-                        "Authorization": f"Bearer {self._api_key}",
-                        "Content-Type": "application/json",
-                    },
+                    headers=request_headers,
                     json=payload,
                 )
                 response.raise_for_status()
@@ -156,8 +163,14 @@ class ContactService:
         except httpx.HTTPError as exc:
             raise ContactDeliveryError("Unable to reach email provider.") from exc
 
-        provider_payload = response.json()
-        provider_id = str(provider_payload.get("id") or "").strip() or None
+        try:
+            provider_payload = response.json()
+        except ValueError as exc:
+            raise ContactDeliveryError("Invalid email provider response.") from exc
+        provider_id = provider_payload.get("id") if isinstance(provider_payload, dict) else None
+        if not isinstance(provider_id, str) or not provider_id.strip():
+            raise ContactDeliveryError("Missing email provider message ID.")
+        provider_id = provider_id.strip()
         return ContactDeliveryResult(delivery_mode="resend", provider_message_id=provider_id)
 
     @staticmethod

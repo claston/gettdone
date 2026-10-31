@@ -405,8 +405,12 @@ def _parse_pdf_transactions_strict(
             )
 
     if native_pages:
+        from app.application.parsers.pdf.santander_account_blocks import parse_native_account_blocks
         from app.application.parsers.pdf.statement_blocks import parse_native_blocks
 
+        account_result = parse_native_account_blocks(raw_bytes, native_pages, _build_verified_statement_result)
+        if account_result is not None:
+            return account_result
         combined = parse_native_blocks(raw_bytes, native_pages,
             lambda raw: _parse_pdf_transactions(raw, on_ocr_progress, max_ocr_pages))
         if combined is not None:
@@ -885,6 +889,14 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
     gateway_metrics = dict(gateway_result.get("metrics") or {})
     textract_mode = str(gateway_metrics.get("textract_mode") or "").strip().lower()
     _validate_ocr_statement_source(extraction)
+    from app.application.parsers.pdf.santander_account_blocks import parse_ocr_account_blocks
+
+    accounts = parse_ocr_account_blocks(extraction, _parse_textract_text_pages_impl, _build_verified_statement_result)
+    if accounts is not None:
+        from app.application.parsers.pdf.statement_review import apply_statement_review
+
+        return _with_parse_observability(apply_statement_review(accounts), textract_mode=textract_mode,
+                                         textract_used=1, extraction_provider="aws_textract")
     inactive = _explicit_inactive_result(_textract_page_texts(extraction))
     if inactive is not None:
         return replace(inactive, source_extraction=extraction,
@@ -1061,6 +1073,11 @@ def _parse_scanned_pdf_with_textract_text_pages_strict(extraction) -> PdfParseRe
     from app.application.structured_statement_detection import is_bradesco_monthly_ocr
 
     _validate_ocr_statement_source(extraction)
+    from app.application.parsers.pdf.santander_account_blocks import parse_ocr_account_blocks
+
+    accounts = parse_ocr_account_blocks(extraction, _parse_textract_text_pages_impl, _build_verified_statement_result)
+    if accounts is not None:
+        return accounts
     inactive = _explicit_inactive_result(_textract_page_texts(extraction))
     if inactive is not None:
         return replace(inactive, source_extraction=extraction,

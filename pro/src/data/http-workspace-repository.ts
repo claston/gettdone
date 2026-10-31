@@ -30,6 +30,10 @@ interface HttpWorkspaceRepositoryOptions {
 }
 
 interface ApiTransaction {
+  statement_account?: {
+    bank_branch?: unknown;
+    account_number?: unknown;
+  } | null;
   balance_check?: unknown;
   transaction_id?: string | null;
   source_sequence?: number | null;
@@ -256,6 +260,9 @@ export function createHttpWorkspaceRepository(
       context.rowCount = rows.length;
       context.savedTransactions = transactions.map((transaction) => ({
         ...transaction,
+        statementAccount:
+          mapStatementAccount(rows[serverOrder.indexOf(transaction.id)]) ??
+          transaction.statementAccount,
         isDeleted: Boolean(
           rows[serverOrder.indexOf(transaction.id)].is_deleted,
         ),
@@ -709,6 +716,7 @@ function mapTransaction(row: ApiTransaction, index: number): Transaction {
     fieldStates[amount >= 0 ? "credit" : "debit"] = "SUSPECTED";
   }
   return {
+    statementAccount: mapStatementAccount(row),
     id: row.transaction_id ?? `row_${index + 1}`,
     date: toBrazilianDate(String(row.date ?? "")),
     description: String(row.description ?? ""),
@@ -726,6 +734,17 @@ function mapTransaction(row: ApiTransaction, index: number): Transaction {
     warningTypes,
     balanceCheck: mapBalanceCheck(row.balance_check),
   };
+}
+
+function mapStatementAccount(
+  row: ApiTransaction,
+): Transaction["statementAccount"] {
+  const scope = row.statement_account;
+  return scope &&
+    typeof scope.bank_branch === "string" &&
+    typeof scope.account_number === "string"
+    ? { bankBranch: scope.bank_branch, accountNumber: scope.account_number }
+    : undefined;
 }
 
 function mapBalanceCheck(value: unknown): BalanceCheck | undefined {

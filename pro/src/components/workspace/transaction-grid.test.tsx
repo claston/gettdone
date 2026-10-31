@@ -36,6 +36,46 @@ const conversion: Conversion = {
 };
 
 describe("grid page anchors", () => {
+  it("mostra a conta de origem de cada lançamento do consolidado", () => {
+    render(
+      <TransactionGrid
+        activePage={1}
+        conversion={{
+          ...conversion,
+          transactions: [
+            {
+              ...row("1", 1),
+              statementAccount: {
+                bankBranch: "0017",
+                accountNumber: "12345-6",
+              },
+            },
+            {
+              ...row("2", 1),
+              statementAccount: {
+                bankBranch: "0039",
+                accountNumber: "98765-4",
+              },
+            },
+          ],
+        }}
+        groupByPage={false}
+        onSourcePage={vi.fn()}
+        onLocateTransaction={vi.fn()}
+        onUpdate={vi.fn()}
+        onGroupChange={vi.fn()}
+        onAdd={vi.fn()}
+        onRemove={vi.fn()}
+        onRestore={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText("Agência 0017 · Conta 12345-6"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Agência 0039 · Conta 98765-4"),
+    ).toBeInTheDocument();
+  });
   it("não escolhe um lançamento de referência quando a origem é ambígua", () => {
     const reference = { ...row("1", 1), sourceLine: 10 };
     const current = {
