@@ -134,7 +134,7 @@ class ReceivedStatements(OrganizationService):
         # Historical metadata deliberately excludes transaction/period/result data and raw text.
         source = {key: source[key] for key in ("version", "holder_name", "holder_tax_id", "bank_code", "branch", "cooperative",
                                               "account_number", "confidence", "references", "representation", "accounts",
-                                              "native_identity_checked") if key in source}
+                                              "native_identity_checked", "identity_issues") if key in source}
         if (source.get("confidence") == "missing" and not source.get("native_identity_checked")
                 and not any(source.get(key) for key in ("holder_name", "holder_tax_id", "account_number"))):
             source = {}
