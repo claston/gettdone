@@ -41,6 +41,9 @@ export function NewConversionForm({
     null,
   );
   const [proMode, setProMode] = useState(false);
+  const [proOptionsFailed, setProOptionsFailed] = useState(false);
+  const [proOptionsRetrying, setProOptionsRetrying] = useState(false);
+  const [proOptionsAttempt, setProOptionsAttempt] = useState(0);
   const [proEstimate, setProEstimate] = useState<ProConversionEstimate | null>(
     null,
   );
@@ -49,13 +52,21 @@ export function NewConversionForm({
     activeService
       .getProOptions?.()
       .then((value) => {
-        if (active) setProOptions(value);
+        if (active) {
+          setProOptions(value);
+          setProOptionsFailed(false);
+        }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (active) setProOptionsFailed(true);
+      })
+      .finally(() => {
+        if (active) setProOptionsRetrying(false);
+      });
     return () => {
       active = false;
     };
-  }, [activeService]);
+  }, [activeService, proOptionsAttempt]);
 
   const submit = async () => {
     if (!files.length || submitting) return;
@@ -132,6 +143,25 @@ export function NewConversionForm({
       </div>
 
       <section className="upload-card">
+        {proOptionsFailed && (
+          <div role="status">
+            <p>
+              Não foi possível consultar a disponibilidade da Conversão PRO.
+            </p>
+            <button
+              type="button"
+              className="secondary-button"
+              aria-label="Consultar a Conversão PRO novamente"
+              disabled={proOptionsRetrying}
+              onClick={() => {
+                setProOptionsRetrying(true);
+                setProOptionsAttempt((attempt) => attempt + 1);
+              }}
+            >
+              {proOptionsRetrying ? "Consultando…" : "Tentar novamente"}
+            </button>
+          </div>
+        )}
         {proOptions?.enabled && (
           <fieldset disabled={submitting || createdBatch !== null}>
             <legend>Tipo de conversão</legend>

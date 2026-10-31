@@ -20,6 +20,11 @@ describe("buildBackendProxyRewrites", () => {
           destination: "https://api.ofxsimples.com.br/api/conversion-runtime",
         },
         {
+          source: "/api/pro/conversion-options",
+          destination:
+            "https://api.ofxsimples.com.br/api/pro/conversion-options",
+        },
+        {
           source: "/api/pro/conversion-batches/:path*",
           destination:
             "https://api.ofxsimples.com.br/api/pro/conversion-batches/:path*",
