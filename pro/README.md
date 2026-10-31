@@ -222,6 +222,8 @@ BACKEND_API_URL=https://www.ofxsimples.com.br
 
 Neste estágio, `BACKEND_API_URL` aponta para o backend FastAPI já existente do OFX Simples Free em `https://www.ofxsimples.com.br`; ele não é outro serviço Render. `NEXT_PUBLIC_API_URL=/` faz o navegador usar o mesmo domínio do PRO. O Next.js encaminha somente as rotas explicitamente listadas em `src/config/backend-proxy.ts`, incluindo o runtime, `/api/pro/*`, o bootstrap de sessão e os relatórios. Assim, evita cookies cross-site e não expõe `BACKEND_API_URL` ao bundle do navegador.
 
+`Nova conversão` consulta `/api/pro/conversion-options` por esse proxy para exibir a opção **Conversão PRO**. A flag `CONVERSION_PRO_ENABLED=true` pertence à API FastAPI e ao worker de conversão; não é uma variável `NEXT_PUBLIC_*` do frontend. Se a consulta falhar, a tela informa a indisponibilidade e permite tentar novamente, mantendo o envio padrão disponível. Alterações na lista de rotas do proxy exigem um novo build e deploy do frontend PRO.
+
 Depois de configurar ou alterar `NEXT_PUBLIC_API_URL`, faça um novo build do serviço. Essa variável é incorporada ao bundle do navegador durante o build; um redeploy sem rebuild não aplica a mudança.
 
 No backend, mantenha `CORS_ALLOW_ORIGINS` sem wildcard e inclua obrigatoriamente a origem exata do preview. A validação dos endpoints mutáveis confere o cabeçalho `Origin` mesmo quando a chamada chega pelo proxy same-origin:
