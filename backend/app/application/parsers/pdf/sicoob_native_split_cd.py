@@ -8,6 +8,7 @@ from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.followup_ocr import _headers, _source
 from app.application.parsers.pdf.native_table_source import native_header_columns, split_native_columns
 from app.application.parsers.pdf.page_financial_fragments import preceding_page_amounts
+from app.application.parsers.pdf.sicoob_cash_controls import is_blocked_cheque_history
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.statement_row_context import chronological_rows, validate_idle_day_controls
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
@@ -108,7 +109,9 @@ def parse_sicoob_native_split_cd(source):
             if sign != "*":
                 fail()
             continue
-        if sign == "*" and re.fullmatch(r"DEP\.?\s*(?:CHEQUE\s+|CH\.?)BLOQ\.?\s*\d+D(?:-INTE)?", label):
+        if sign == "*" and is_blocked_cheque_history(label):
+            if not start <= date <= end:
+                fail("Um depósito pendente SISBR está fora do período confirmado.")
             non_cash += 1
             continue
         if sign not in {"C", "D"}:

@@ -8,6 +8,7 @@ from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.followup_ocr import _source
 from app.application.parsers.pdf.native_table_source import split_native_columns
 from app.application.parsers.pdf.row_geometry import nearest_row
+from app.application.parsers.pdf.sicoob_cash_controls import is_blocked_cheque_history
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.statement_row_context import (
     chronological_rows,
@@ -55,6 +56,14 @@ def _amount(cell):
     return money(match[3]) * (-1 if "-" in (match[1], match[2]) or upper(match[4] or "") == "D" else 1)
 
 
+def _sicoob_marked_value(cell, markers):
+    if not markers:
+        return cell
+    if len(markers) != 1 or not re.fullmatch(rf"(?:R\$\s*)?{NUMBER}", cell.text.strip()):
+        fail("Uma linha Sicoob possui marcadores financeiros conflitantes.")
+    return replace(cell, text=cell.text.strip()+markers[0].text)
+
+
 def parse_reviewed_cash(source, kind):
     history_left, value_left, balance_left, date_right = {
         "caixa_enriched": (0.24, 0.61, 0.79, 0.12),
@@ -72,6 +81,7 @@ def parse_reviewed_cash(source, kind):
         year = None
     opening_position, row_positions = None, []
     rows, opening, controls, coverage = [], None, [], 0
+    non_cash = 0
     ended = False
     for original in source.pages:
         if ended:
@@ -115,6 +125,12 @@ def parse_reviewed_cash(source, kind):
             cells = [line for line in cash if nearest_row(line, anchors) is anchor]
             values = [line for line in cells if balance_left is None or line.bbox["left"] < balance_left]
             balances = [line for line in cells if balance_left is not None and line.bbox["left"] >= balance_left]
+            if kind == "sicoob_modern":
+                markers = [line for line in body if line.bbox["left"] >= value_left
+                           and line.text in {"*", "C", "D"} and nearest_row(line, anchors) is anchor]
+                cells.extend(markers)
+                if len(values) == 1:
+                    values = [_sicoob_marked_value(values[0], markers)]
             high = (anchor.bbox["top"] + anchors[index + 1].bbox["top"]) / 2 if index + 1 < len(anchors) else stop
             lower = (anchors[index - 1].bbox["top"] + anchor.bbox["top"]) / 2 if index else anchor.bbox["top"] - 0.015
             history = [line for line in body if history_left <= line.bbox["left"] < value_left and lower <= line.bbox["top"] < high]
@@ -153,6 +169,16 @@ def parse_reviewed_cash(source, kind):
             if len(values) != 1 or balance_left is not None and len(balances) != 1 or not description:
                 fail("Um movimento está sem sua descrição, valor ou saldo impresso.")
             date = contextual_row_date(anchor.text, period, year)
+            if kind == "sicoob_modern":
+                primary = upper(history[0].text) if history else ""
+                pending = re.fullmatch(rf"(?:R\$\s*)?{NUMBER}\s*\*", values[0].text.strip())
+                if pending and is_blocked_cheque_history(primary):
+                    non_cash += 1
+                    continue
+                if is_blocked_cheque_history(primary):
+                    explicit = _AMOUNT.fullmatch(values[0].text.strip())
+                    if not explicit or not any(explicit[index] for index in (1, 2, 4)):
+                        fail("Um depósito Sicoob está sem marcador financeiro explícito.")
             coverage += 1
             row_positions.append((page.page_number, index))
             rows.append(
@@ -212,4 +238,5 @@ def parse_reviewed_cash(source, kind):
         opening_inferred=inferred,
         candidate_rows=coverage,
         printed_balance_checks=checks,
+        non_cash_entries=non_cash,
     )

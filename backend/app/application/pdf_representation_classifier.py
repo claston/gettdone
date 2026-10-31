@@ -8,7 +8,7 @@ from pypdf import PdfReader
 
 from app.application.native_text_quality import assess_native_text_quality, has_dense_vector_paths, has_raster_with_invisible_text
 
-CLASSIFIER_VERSION = "pdf_representation_v5"
+CLASSIFIER_VERSION = "pdf_representation_v6"
 
 _VIRTUAL_PRINTER_PRODUCERS = (
     ("microsoft print to pdf", "producer_microsoft_print_to_pdf"),
