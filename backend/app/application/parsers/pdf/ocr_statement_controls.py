@@ -81,6 +81,12 @@ def parse_controlled_ocr(extraction):
     text = normalize_upper_text("\n".join(texts))
     if is_bb_cash_ocr(text):
         return parse_bb_cash_ocr(extraction)
+    from app.application.parsers.pdf.sicoob_cash_controls import is_sisbr_history_grid
+
+    if is_sisbr_history_grid(text):
+        from app.application.parsers.pdf.sicoob_native_split_cd import parse_sicoob_native_split_cd
+
+        return parse_sicoob_native_split_cd(extraction)
     if "SICOOB SISBR" in text and "EXTRATO DE CONTA CORRENTE" in text:
         from app.application.parsers.pdf.sicoob_sisbr_ocr import parse_sicoob
 
