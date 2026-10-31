@@ -5,6 +5,7 @@ import re
 from app.application.bank_catalog import load_bank_catalog
 from app.application.layout_profiles.registry import get_layout_profile
 from app.application.normalization.text import normalize_upper_text
+from app.application.pdf_document_segmentation import _statement_header
 
 _GENERIC_LAYOUT_NAMES = {"generic_statement_ptbr"}
 VERIFIED_STATEMENT_BANKS = {
@@ -202,10 +203,13 @@ def _match_bank_name_in_text(extracted_text: str | None) -> str | None:
     header_candidate = _match_unlisted_institution_header(extracted_text)
     if header_candidate is not None:
         return _match_known_bank_name(header_candidate) or header_candidate
+    header_bank = _match_known_bank_name(_statement_header(str(extracted_text or "")))
+    if header_bank is not None:
+        return header_bank
     transaction_fingerprint = _match_bank_transaction_fingerprint(normalized_text)
     if transaction_fingerprint is not None:
         return transaction_fingerprint
-    return _match_known_bank_name(normalized_text)
+    return None
 
 
 def _match_bank_transaction_fingerprint(normalized_text: str) -> str | None:
