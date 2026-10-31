@@ -86,12 +86,20 @@ def _statement_identity(text: str) -> str | None:
     normalized = _statement_header(text)
     columns = re.search(
         r"\bAGENCIA\s+CONTA(?: CORRENTE)?\s+(\d{3,6}(?:-\d)?)\s+"
-        r"(\d[\d.]*[-/]\d+|\d{4,})(?![\d,.])\b", normalized,
+        r"(\d[\d.]*[-/]\d+|\d{4,})(?![\d,./])\b", normalized,
     )
+    if columns is None:
+        # In native exports the labelled CC value may occur after period dates
+        # in content-stream order. The explicitly ruled account table still
+        # associates its two values; never use a date fragment as an account.
+        columns = re.search(
+            r"\bAGENCIA\s*\|\s*CONTA(?: CORRENTE)?\b.*?\b(\d{3,6}(?:-\d)?)\s*\|\s*"
+            r"(\d[\d.]*[-/]\d+|\d{4,})(?![\d,./])\b", normalized,
+        )
     if columns:
         period = re.search(r"\b(?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+20\d{2}\b", normalized)
         return "|".join((columns[1], columns[2], period[0] if period else ""))
-    account = re.search(r"\b(?:CC|C/C|CONTA(?: CORRENTE)?)\s*[:.]?\s*(\d[\d.]*[-/]\d+|\d{4,})(?![\d,.])\b", normalized)
+    account = re.search(r"\b(?:CC|C/C|CONTA(?: CORRENTE)?)\s*[:.]?\s*(\d[\d.]*[-/]\d+|\d{4,})(?![\d,./])\b", normalized)
     if account is None:
         return None
     agency = re.search(r"\b(?:AG|AGENCIA)\s*[:.]?\s*(\d{3,6}(?:-\d)?)", normalized)
