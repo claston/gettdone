@@ -38,6 +38,19 @@ Abra `http://localhost:3000/demo/review/batch-setembro-2026` para acessar o vert
 
 ## Arquitetura de dados
 
+Extratos recebidos separa **Clientes** e **Não identificados** em abas com
+navegação por teclado, sem repetir consultas ao alternar entre elas. Clientes
+ficam em ordem alfabética, ignorando caixa e acentos, também entre páginas;
+cada lista conserva sua própria paginação. A abertura mostra indicador de
+carregamento e cartões provisórios; atualizações mantêm os dados já exibidos.
+
+O frontend solicita `GET /api/pro/receipts?sort=name`. A API ordena os nomes
+antes de paginar, com desempate pelo ID, e carrega contagens/contas apenas da
+página solicitada. O parâmetro é opcional: clientes antigos continuam usando
+a ordenação por ID e os mesmos cursores. Publicar a API antes do PRO para
+garantir A–Z entre páginas. Não há migração, backfill ou alteração financeira;
+rollback consiste em reverter o frontend e/ou a API.
+
 Trabalhos reutiliza os vínculos de cliente/conta/período e a revisão existente.
 Escopo confirmado, cobertura, pendências, conclusão com ressalvas e histórico
 versionado são descritos em [Trabalhos e fechamento](../docs/statement-works.md).

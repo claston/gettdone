@@ -143,6 +143,10 @@ def test_receipts_real_http_multi_batch_workspace_export_permissions_and_expiry(
             dashboard = client.get("/api/pro/receipts")
             assert dashboard.status_code == 200, dashboard.text
             assert dashboard.json()["totals"] == {"statements": 3, "ready": 3, "attention": 0}
+            alphabetical = client.get("/api/pro/receipts", params={"sort": "name"})
+            assert alphabetical.status_code == 200, alphabetical.text
+            assert [row["name"] for row in alphabetical.json()["clients"]] == ["Outro cliente", "Padaria"]
+            assert client.get("/api/pro/receipts", params={"sort": "unknown"}).status_code == 400
             person = next(c for c in dashboard.json()["clients"] if c["name"] == "Padaria")
             assert person["historical_count"] == 2 and person["accounts"][0]["account_number"] == "••1234"
             workspace = client.get(f"/api/pro/receipts/clients/{person['id']}/workspace")

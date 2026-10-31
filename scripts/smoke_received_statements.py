@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -24,7 +24,8 @@ def run(base):
                  {"transaction_id": f"tx_{index}", "date": "2026-10-01", "description": f"PIX origem {index}", "amount": 12,
                   "warning_types": ["ambiguous_amount"] if index == 2 else []}]}}}
             for index in (1, 2)]
-    writes, errors = [], []
+    writes, errors, held_lists, held_refreshes = [], [], [], []
+    loading = {"hold_list": True, "hold_refresh": True}
 
     def intercept(route):
         path = urlsplit(route.request.url).path
@@ -32,9 +33,16 @@ def run(base):
         if path == "/auth/me":
             route.fulfill(json={"user_id": "synthetic", "name": "Usuário Sintético", "email": "synthetic@example.test"})
         elif path == "/api/pro/receipts":
+            assert parse_qs(urlsplit(route.request.url).query).get("sort") == ["name"]
+            if loading["hold_list"]:
+                held_lists.append(route)
+                return
             route.fulfill(json={"totals": {"statements": 3, "ready": 2, "attention": 1}, "clients": clients,
                                 "pending": pending, "next_cursor": None})
         elif path == "/api/pro/receipts/refresh":
+            if loading["hold_refresh"]:
+                held_refreshes.append(route)
+                return
             route.fulfill(json={"next_cursor": None})
         elif path == "/api/pro/receipts/clients/client_browser" and method == "PATCH":
             body = route.request.post_data_json
@@ -67,11 +75,31 @@ def run(base):
             page.route("**/*", intercept)
             page.goto(base + "/dashboard")
             expect(page.get_by_role("heading", name="Extratos recebidos")).to_be_visible()
+            expect(page.get_by_role("status")).to_have_text("Carregando extratos...")
+            expect(page.get_by_role("button", name="Atualizando extratos...")).to_be_disabled()
+            page.screenshot(path=str(output / "received-loading.png"), full_page=True)
+            loading["hold_list"] = False
+            held_lists.pop().fulfill(json={"totals": {"statements": 3, "ready": 2, "attention": 1}, "clients": clients,
+                                          "pending": pending, "next_cursor": None})
             expect(page.get_by_text("2 disponíveis / 5 extratos no histórico")).to_be_visible()
+            expect(page.get_by_role("button", name="Atualizando extratos...")).to_be_disabled()
+            expect(page.get_by_text("Integração real", exact=True)).to_have_count(0)
             expect(page.get_by_label("Resumo dos extratos").locator("strong")).to_have_text(["3", "2", "1"])
             expect(page.get_by_text("3 expirados", exact=True)).to_be_visible()
             expect(page.get_by_text("Itaú · Conta ••1234")).to_be_visible()
+            expect(page.get_by_role("tab", name="Clientes", exact=True)).to_have_attribute("aria-selected", "true")
+            expect(page.get_by_role("link", name="Conferir identificar.pdf")).to_have_count(0)
+            page.get_by_role("tab", name="Não identificados", exact=True).click()
             expect(page.get_by_role("heading", name="Identificação pendente")).to_be_visible()
+            expect(page.get_by_role("link", name="Conferir identificar.pdf")).to_be_visible()
+            expect(page.get_by_role("link", name="Padaria São José", exact=False)).to_have_count(0)
+            page.screenshot(path=str(output / "received-pending-desktop.png"), full_page=True)
+            page.get_by_role("tab", name="Não identificados", exact=True).press("ArrowLeft")
+            expect(page.get_by_role("tab", name="Clientes", exact=True)).to_be_focused()
+            loading["hold_refresh"] = False
+            assert len(held_refreshes) == 1, "Tab switching must not restart synchronization"
+            held_refreshes.pop().fulfill(json={"next_cursor": None})
+            expect(page.get_by_role("button", name="Atualizar extratos", exact=True)).to_be_enabled()
             expect(page.get_by_role("navigation", name="Navegação principal").get_by_role("link")).to_have_count(2)
             expect(page.locator(".mobile-menu")).not_to_be_visible()
             page.get_by_role("button", name="Editar Padaria São José").click()
@@ -93,18 +121,25 @@ def run(base):
             expect(page.get_by_role("heading", name="Extratos recebidos")).to_be_visible()
             page.set_viewport_size({"width": 390, "height": 844})
             expect(page.locator(".mobile-menu")).to_be_visible()
+            expect(page.get_by_role("tab", name="Clientes", exact=True)).to_be_visible()
+            expect(page.get_by_role("tab", name="Não identificados", exact=True)).to_be_visible()
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Mobile overflow"
             page.screenshot(path=str(output / "received-mobile.png"), full_page=True)
+            page.get_by_role("tab", name="Não identificados", exact=True).click()
+            expect(page.get_by_role("button", name="Conferir identificação", exact=True)).to_be_visible()
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Pending mobile overflow"
+            page.screenshot(path=str(output / "received-pending-mobile.png"), full_page=True)
             page.get_by_role("link", name="Ver conversões e lotes", exact=True).click()
             page.get_by_role("button", name="Todos os arquivos", exact=True).click()
             expect(page.get_by_role("heading", name="Todas as conversões")).to_be_visible()
+            expect(page.get_by_text("Integração real", exact=True)).to_have_count(0)
             expect(page.get_by_role("link", name="Cadastrar clientes e contas")).to_have_count(0)
             for legacy in ("/clients", "/periods", "/works", "/works/work_hidden"):
                 page.goto(base + legacy)
                 expect(page).to_have_url(base + "/dashboard")
             assert len(writes) == 2 and not errors, (writes, errors)
             (output / "summary.json").write_text(json.dumps({"result": "PASS", "writes": writes, "browser_errors": errors,
-                "checks": ["three KPIs", "clients and subordinate accounts", "inline edit", "pending identity",
+                "checks": ["initial loading", "background refresh", "accessible tabs", "three KPIs", "clients and subordinate accounts", "inline edit", "pending identity",
                            "flat multi-batch editor", "original batch review", "scoped export", "desktop/mobile",
                            "independent converter", "legacy screens hidden"]},
                 ensure_ascii=False, indent=2), encoding="utf-8")

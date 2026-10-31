@@ -76,6 +76,7 @@ async function read(path: string, init?: RequestInit) {
 export const receivedService: ReceivedService = {
   list: (cursor, signal, pendingCursor) => {
     const query = new URLSearchParams();
+    query.set("sort", "name");
     if (cursor) query.set("cursor", cursor);
     if (pendingCursor) query.set("pending_cursor", pendingCursor);
     return read(query.size ? `?${query}` : "", {

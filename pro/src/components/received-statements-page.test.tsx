@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ReceivedStatementsPage } from "./received-statements-page";
+import type { ReceivedPage } from "@/data/received-statements-service";
 
 const page = {
   totals: { statements: 2, ready: 1, attention: 1 },
@@ -132,6 +133,9 @@ describe("Extratos recebidos", () => {
       confirm: vi.fn(),
     };
     render(<ReceivedStatementsPage service={service} />);
+    fireEvent.click(
+      await screen.findByRole("tab", { name: "Não identificados" }),
+    );
     expect(
       await screen.findByRole("heading", { name: "Identificação pendente" }),
     ).toBeInTheDocument();
@@ -141,5 +145,226 @@ describe("Extratos recebidos", () => {
     expect(
       screen.getByRole("link", { name: "Conferir pendente.pdf" }),
     ).toHaveAttribute("href", "/review/b2/j2?return_to=%2Fdashboard");
+  });
+
+  it("mostra carregamento desde a primeira consulta e mantém os dados durante toda a atualização", async () => {
+    let finishList!: (value: ReceivedPage) => void;
+    let finishRefresh!: () => void;
+    const service = {
+      list: vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<ReceivedPage>((resolve) => {
+              finishList = resolve;
+            }),
+        )
+        .mockResolvedValue(page),
+      refresh: vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((resolve) => {
+              finishRefresh = resolve;
+            }),
+        )
+        .mockResolvedValue(undefined),
+      edit: vi.fn(),
+      confirm: vi.fn(),
+    };
+    render(<ReceivedStatementsPage service={service} />);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Carregando extratos...",
+    );
+    expect(
+      screen.getByRole("button", { name: /Atualizando extratos/ }),
+    ).toBeDisabled();
+    finishList(page);
+    await screen.findByRole("link", { name: /Padaria São José/ });
+    expect(
+      screen.getByRole("button", { name: /Atualizando extratos/ }),
+    ).toBeDisabled();
+    finishRefresh();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Atualizar extratos" }),
+      ).toBeEnabled(),
+    );
+
+    service.list.mockImplementationOnce(
+      () =>
+        new Promise<ReceivedPage>((resolve) => {
+          finishList = resolve;
+        }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Atualizar extratos" }));
+    expect(
+      screen.getByRole("button", { name: /Atualizando extratos/ }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("link", { name: /Padaria São José/ }),
+    ).toBeVisible();
+    finishList(page);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Atualizar extratos" }),
+      ).toBeEnabled(),
+    );
+  });
+
+  it("separa as listas em abas acessíveis, ordena nomes com acentos e não consulta novamente ao trocar de aba", async () => {
+    const service = {
+      list: vi.fn().mockResolvedValue({
+        ...page,
+        clients: [
+          { ...page.clients[0], id: "z", name: "Zulu" },
+          { ...page.clients[0], id: "b", name: "beatriz" },
+          { ...page.clients[0], id: "a", name: "Álvaro" },
+        ],
+      }),
+      refresh: vi.fn().mockResolvedValue(undefined),
+      edit: vi.fn(),
+      confirm: vi.fn(),
+    };
+    render(<ReceivedStatementsPage service={service} />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Atualizar extratos" }),
+      ).toBeEnabled(),
+    );
+    const clients = screen.getByRole("tab", { name: "Clientes" });
+    for (const tab of screen.getAllByRole("tab")) {
+      expect(
+        document.getElementById(tab.getAttribute("aria-controls")!),
+      ).toHaveAttribute("role", "tabpanel");
+    }
+    expect(clients).toHaveAttribute("aria-selected", "true");
+    expect(
+      within(screen.getByRole("tabpanel", { name: "Clientes" }))
+        .getAllByRole("link")
+        .map((link) => link.textContent?.split("CNPJ")[0]),
+    ).toEqual(["Álvaro", "beatriz", "Zulu"]);
+    fireEvent.keyDown(clients, { key: "ArrowRight" });
+    const pending = screen.getByRole("tab", { name: "Não identificados" });
+    expect(pending).toHaveFocus();
+    expect(pending).toHaveAttribute("aria-selected", "true");
+    expect(
+      screen.queryByRole("link", { name: /Álvaro/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Todos os extratos estão identificados."),
+    ).toBeVisible();
+    fireEvent.keyDown(pending, { key: "Home" });
+    expect(clients).toHaveFocus();
+    expect(clients).toHaveAttribute("aria-selected", "true");
+    expect(service.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserva a aba e a página de cada lista ao navegar e ao confirmar uma identificação", async () => {
+    const pending = {
+      job_id: "j2",
+      batch_id: "b2",
+      filename: "pendente.pdf",
+      version: 0,
+      source: { holder_name: "Novo cliente" },
+    };
+    const service = {
+      list: vi.fn().mockImplementation((cursor, _signal, pendingCursor) =>
+        Promise.resolve({
+          ...page,
+          pending: pendingCursor ? [pending] : [],
+          next_cursor: cursor ? null : "c2",
+          pending_next_cursor: pendingCursor ? null : "p2",
+        }),
+      ),
+      refresh: vi.fn().mockResolvedValue(undefined),
+      edit: vi.fn(),
+      confirm: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<ReceivedStatementsPage service={service} />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Atualizar extratos" }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Próxima" }));
+    await waitFor(() =>
+      expect(service.list).toHaveBeenLastCalledWith(
+        "c2",
+        expect.any(AbortSignal),
+        undefined,
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Atualizar extratos" }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Não identificados" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Próximas identificações" }),
+    );
+    await screen.findByRole("link", { name: "Conferir pendente.pdf" });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Atualizar extratos" }),
+      ).toBeEnabled(),
+    );
+    expect(service.list).toHaveBeenLastCalledWith(
+      "c2",
+      expect.any(AbortSignal),
+      "p2",
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Clientes" }));
+    expect(screen.getByRole("button", { name: "Início" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("tab", { name: "Não identificados" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Conferir identificação" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Salvar identificação" }),
+    );
+    await waitFor(() =>
+      expect(service.confirm).toHaveBeenCalledWith(
+        "j2",
+        expect.objectContaining({ name: "Novo cliente" }),
+      ),
+    );
+    await waitFor(() =>
+      expect(service.list).toHaveBeenLastCalledWith(
+        "c2",
+        expect.any(AbortSignal),
+        undefined,
+      ),
+    );
+    expect(
+      screen.getByRole("tab", { name: "Não identificados" }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("encerra o carregamento em erro e permite tentar novamente", async () => {
+    const service = {
+      list: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Falha temporária"))
+        .mockResolvedValue(page),
+      refresh: vi.fn().mockResolvedValue(undefined),
+      edit: vi.fn(),
+      confirm: vi.fn(),
+    };
+    render(<ReceivedStatementsPage service={service} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Falha temporária",
+    );
+    expect(
+      screen.queryByText("Carregando extratos..."),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    await screen.findByRole("link", { name: /Padaria São José/ });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Atualizar extratos" }),
+      ).toBeEnabled(),
+    );
   });
 });
