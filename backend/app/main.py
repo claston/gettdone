@@ -31,6 +31,7 @@ from app.routers import (
     report_router,
     telemetry_router,
 )
+from app.routers.conversion_pro import router as conversion_pro_router
 from app.routers.marketing import router as marketing_router
 from app.routers.pro_conversions import router as pro_conversions_router
 from app.routers.received_statements import router as received_statements_router
@@ -110,6 +111,7 @@ app.include_router(client_router)
 app.include_router(checkout_router)
 app.include_router(contact_router)
 app.include_router(conversion_batches_router)
+app.include_router(conversion_pro_router)
 app.include_router(pro_organization_router)
 app.include_router(pro_conversions_router)
 app.include_router(statement_works_router)

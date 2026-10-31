@@ -247,7 +247,9 @@ class DocumentConversionPipeline:
             enforce_initial_document_routing(
                 initial_document_type, filename=request.document.filename, raw_bytes=request.document.raw_bytes,
             )
-            if self.legacy_conversion_runner is not None:
+            if request.job.ocr_mode not in {"standard", "pro"}:
+                raise InvalidFileContentError("Modo de conversão desconhecido.")
+            if self.legacy_conversion_runner is not None and request.job.ocr_mode == "standard":
                 conversion_response = self.legacy_conversion_runner(
                     filename=request.document.filename,
                     raw_bytes=request.document.raw_bytes,
@@ -270,10 +272,18 @@ class DocumentConversionPipeline:
                 )
                 resolved_analysis_id = (runtime.attempt_processing_id or "").strip() or f"an_{uuid4().hex[:12]}"
                 parse_started_at = monotonic()
+                parser_options = {}
+                if request.job.ocr_mode == "pro":
+                    if document.file_type != "pdf":
+                        raise InvalidFileContentError("A Conversão PRO aceita apenas PDF.")
+                    from app.application.conversion.pro_pdf_parser import make_pro_pdf_parser
+
+                    parser_options["pdf_parser"] = make_pro_pdf_parser(access=self.access_control_service, job=request.job)
                 extracted_document = self.document_extractor.extract(
                     document=document,
                     on_ocr_progress=runtime.build_ocr_progress_callback(job=request, hooks=hooks),
                     max_ocr_pages=ocr_max_pages,
+                    **parser_options,
                 )
                 parsed_statement = self.statement_parser.parse(extracted_document=extracted_document)
                 parse_ms = round((monotonic() - parse_started_at) * 1000, 3)

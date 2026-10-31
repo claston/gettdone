@@ -136,12 +136,14 @@ class PostgresConversionBatchRepository:
                         created=False,
                     )
                 for job in jobs:
+                    pro_column = ", ocr_mode" if job.ocr_mode != "standard" else ""
+                    pro_value = ", %s" if job.ocr_mode != "standard" else ""
                     cursor.execute(
                         f"""
                         INSERT INTO {self._jobs_table} (
                             job_id, batch_id, idempotency_key, status, document, identity,
-                            preflight_result, created_at, updated_at, expires_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            preflight_result, created_at, updated_at, expires_at{pro_column}
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s{pro_value})
                         """,
                         (
                             job.job_id,
@@ -154,7 +156,7 @@ class PostgresConversionBatchRepository:
                             batch.created_at,
                             batch.created_at,
                             expires_at,
-                        ),
+                        ) + ((job.ocr_mode,) if pro_column else ()),
                     )
             return ConversionBatchSubmission(snapshot=self._snapshot(conn, batch.batch_id), created=True)
 
@@ -684,6 +686,7 @@ class PostgresConversionBatchRepository:
             document=ConversionDocumentReference(**document_payload),
             identity=IdentityContext(**identity_payload),
             preflight_result=DocumentPreflightResult(**preflight_payload),
+            ocr_mode=row.get("ocr_mode", "standard"),
         )
         result_analysis_id = str(row.get("result_analysis_id") or "").strip()
         result_payload = row.get("result_payload")

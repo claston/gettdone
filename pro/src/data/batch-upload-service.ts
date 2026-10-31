@@ -6,6 +6,27 @@ import {
 
 export interface BatchUploadService {
   createAndSubmit(files: File[]): Promise<{ batchId: string }>;
+  getProOptions?(): Promise<ProConversionOptions>;
+  preparePro?(file: File): Promise<ProConversionEstimate>;
+  submitPro?(batchId: string): Promise<{ batchId: string }>;
+}
+
+export interface ProConversionOptions {
+  enabled: boolean;
+  eligible: boolean;
+  monthly_pages: number;
+  remaining_pages: number;
+  max_pages: number;
+  reset_at?: string;
+}
+
+export interface ProConversionEstimate {
+  batchId: string;
+  pages: number;
+  remaining_pages: number;
+  remaining_after: number;
+  monthly_pages: number;
+  reset_at?: string;
 }
 
 interface BatchUploadServiceOptions {
@@ -46,122 +67,176 @@ export function createBatchUploadService(
   const createIdempotencyKey =
     options.createIdempotencyKey ?? secureIdempotencyKey;
 
-  return {
-    async createAndSubmit(files: File[]) {
-      if (!files.length || files.length > 12) {
-        throw new Error("Selecione entre 1 e 12 arquivos.");
-      }
+  const uploadBatch = async (files: File[], pro = false) => {
+    if (!files.length || files.length > 12) {
+      throw new Error("Selecione entre 1 e 12 arquivos.");
+    }
 
-      const runtimeResponse = await apiClient.request(
-        "/api/conversion-runtime",
+    const runtimeResponse = await apiClient.request("/api/conversion-runtime");
+    if (!runtimeResponse.ok) {
+      throw new Error(
+        await readApiError(
+          runtimeResponse,
+          "Não foi possível consultar o processamento em lote.",
+        ),
       );
-      if (!runtimeResponse.ok) {
-        throw new Error(
-          await readApiError(
-            runtimeResponse,
-            "Não foi possível consultar o processamento em lote.",
-          ),
-        );
-      }
-      const runtime = (await runtimeResponse.json()) as ConversionRuntime;
-      if (
-        !runtime.direct_batch_enabled ||
-        runtime.upload_mode !== "direct_s3" ||
-        runtime.execution_mode !== "sqs_lambda"
-      ) {
-        throw new Error(
-          "O processamento assíncrono está indisponível. Nenhum arquivo foi enviado.",
-        );
-      }
-      if (files.length > runtime.batch_max_files) {
-        throw new Error(
-          `Este ambiente permite no máximo ${runtime.batch_max_files} arquivo(s) por lote.`,
-        );
-      }
+    }
+    const runtime = (await runtimeResponse.json()) as ConversionRuntime;
+    if (
+      !runtime.direct_batch_enabled ||
+      runtime.upload_mode !== "direct_s3" ||
+      runtime.execution_mode !== "sqs_lambda"
+    ) {
+      throw new Error(
+        "O processamento assíncrono está indisponível. Nenhum arquivo foi enviado.",
+      );
+    }
+    if (files.length > runtime.batch_max_files) {
+      throw new Error(
+        `Este ambiente permite no máximo ${runtime.batch_max_files} arquivo(s) por lote.`,
+      );
+    }
 
-      const fileContracts = await Promise.all(
-        files.map(async (file) => ({
-          filename: file.name,
-          content_type: contentTypeForFile(file),
-          size_bytes: file.size,
-          sha256_hex: await digestFile(file),
-        })),
-      );
-      const createdResponse = await apiClient.request(
-        "/api/pro/conversion-batches",
-        {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-            "Idempotency-Key": createIdempotencyKey(),
-          },
-          body: JSON.stringify({ files: fileContracts }),
+    const fileContracts = await Promise.all(
+      files.map(async (file) => ({
+        filename: file.name,
+        content_type: contentTypeForFile(file),
+        size_bytes: file.size,
+        sha256_hex: await digestFile(file),
+      })),
+    );
+    const createdResponse = await apiClient.request(
+      "/api/pro/conversion-batches",
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "Idempotency-Key": createIdempotencyKey(),
         },
-      );
-      if (!createdResponse.ok) {
-        throw new Error(
-          await readApiError(
-            createdResponse,
-            "Não foi possível criar o lote de conversão.",
-          ),
-        );
-      }
-      const prepared = (await createdResponse.json()) as PreparedBatch;
-      const uploads = prepared.uploads ?? [];
-      if (uploads.length !== files.length) {
-        throw new Error(
-          "O backend não retornou instruções para todos os arquivos.",
-        );
-      }
-
-      const uploadResults = await Promise.allSettled(
-        files.map(async (file, index) => {
-          const upload = uploads[index];
-          const form = new FormData();
-          Object.entries(upload.fields).forEach(([key, value]) =>
-            form.append(key, value),
-          );
-          form.append("file", file);
-          const response = await fetcher(upload.url, {
-            method: "POST",
-            body: form,
-          });
-          if (!response.ok) {
-            throw new Error(
-              `Não foi possível enviar o arquivo ${file.name} ao armazenamento seguro.`,
-            );
-          }
+        body: JSON.stringify({
+          files: fileContracts,
+          ...(pro ? { ocr_mode: "pro" } : {}),
         }),
+      },
+    );
+    if (!createdResponse.ok) {
+      throw new Error(
+        await readApiError(
+          createdResponse,
+          "Não foi possível criar o lote de conversão.",
+        ),
       );
-      const failedUploadJobIds = uploadResults.flatMap((result, index) =>
-        result.status === "rejected" ? [uploads[index].job_id] : [],
+    }
+    const prepared = (await createdResponse.json()) as PreparedBatch;
+    const uploads = prepared.uploads ?? [];
+    if (uploads.length !== files.length) {
+      throw new Error(
+        "O backend não retornou instruções para todos os arquivos.",
       );
+    }
 
-      const submittedResponse = await apiClient.request(
-        `/api/pro/conversion-batches/${encodeURIComponent(prepared.batch_id)}/submit`,
-        {
+    const uploadResults = await Promise.allSettled(
+      files.map(async (file, index) => {
+        const upload = uploads[index];
+        const form = new FormData();
+        Object.entries(upload.fields).forEach(([key, value]) =>
+          form.append(key, value),
+        );
+        form.append("file", file);
+        const response = await fetcher(upload.url, {
           method: "POST",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(
-            failedUploadJobIds.length
-              ? { failed_upload_job_ids: failedUploadJobIds }
-              : {},
-          ),
+          body: form,
+        });
+        if (!response.ok) {
+          throw new Error(
+            `Não foi possível enviar o arquivo ${file.name} ao armazenamento seguro.`,
+          );
+        }
+      }),
+    );
+    const failedUploadJobIds = uploadResults.flatMap((result, index) =>
+      result.status === "rejected" ? [uploads[index].job_id] : [],
+    );
+
+    if (pro) {
+      if (failedUploadJobIds.length)
+        throw new Error("Não foi possível enviar o PDF para a Conversão PRO.");
+      return { batchId: prepared.batch_id };
+    }
+
+    const submittedResponse = await apiClient.request(
+      `/api/pro/conversion-batches/${encodeURIComponent(prepared.batch_id)}/submit`,
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify(
+          failedUploadJobIds.length
+            ? { failed_upload_job_ids: failedUploadJobIds }
+            : {},
+        ),
+      },
+    );
+    if (!submittedResponse.ok) {
+      throw new Error(
+        await readApiError(
+          submittedResponse,
+          "Os arquivos foram enviados, mas o lote não entrou na fila.",
+        ),
       );
-      if (!submittedResponse.ok) {
+    }
+    return { batchId: prepared.batch_id };
+  };
+
+  return {
+    createAndSubmit: (files) => uploadBatch(files),
+    async getProOptions() {
+      const response = await apiClient.request("/api/pro/conversion-options");
+      if (!response.ok)
         throw new Error(
           await readApiError(
-            submittedResponse,
-            "Os arquivos foram enviados, mas o lote não entrou na fila.",
+            response,
+            "Não foi possível consultar a Conversão PRO.",
           ),
         );
-      }
-      return { batchId: prepared.batch_id };
+      return response.json() as Promise<ProConversionOptions>;
+    },
+    async preparePro(file) {
+      if (!file.name.toLowerCase().endsWith(".pdf"))
+        throw new Error("A Conversão PRO aceita um único PDF.");
+      const { batchId } = await uploadBatch([file], true);
+      const response = await apiClient.request(
+        `/api/pro/conversion-batches/${encodeURIComponent(batchId)}/pro-estimate`,
+      );
+      if (!response.ok)
+        throw new Error(
+          await readApiError(
+            response,
+            "Não foi possível conferir as páginas deste PDF.",
+          ),
+        );
+      return { ...(await response.json()), batchId } as ProConversionEstimate;
+    },
+    async submitPro(batchId) {
+      const response = await apiClient.request(
+        `/api/pro/conversion-batches/${encodeURIComponent(batchId)}/submit`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        },
+      );
+      if (!response.ok)
+        throw new Error(
+          await readApiError(
+            response,
+            "Não foi possível iniciar a Conversão PRO.",
+          ),
+        );
+      return { batchId };
     },
   };
 }

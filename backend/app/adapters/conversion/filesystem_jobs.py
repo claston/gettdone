@@ -199,6 +199,7 @@ class FilesystemConversionJobRepository:
                 "identity": self._serialize_identity(record.job.identity),
                 "preflight_result": asdict(record.job.preflight_result),
                 "batch_id": record.job.batch_id,
+                "ocr_mode": record.job.ocr_mode,
             },
             "status": record.status.value,
             "created_at": record.created_at.isoformat(),
@@ -221,6 +222,7 @@ class FilesystemConversionJobRepository:
             identity=IdentityContext(**job_payload["identity"]),
             preflight_result=DocumentPreflightResult(**job_payload["preflight_result"]),
             batch_id=job_payload.get("batch_id"),
+            ocr_mode=job_payload.get("ocr_mode", "standard"),
         )
         return ConversionJobRecord(
             job=job,

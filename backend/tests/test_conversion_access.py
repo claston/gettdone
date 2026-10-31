@@ -123,6 +123,32 @@ def test_worker_access_enforces_upload_limit_without_authentication_service() ->
         service.assert_upload_size(b"12345", max_upload_size_bytes=4)
 
 
+@pytest.mark.parametrize("active", [False, True])
+def test_worker_rechecks_current_subscription_with_shared_plan_query(active, monkeypatch):
+    service = _service(FakeConnection())
+    row = {
+        "code": "profissional",
+        "name": "Profissional",
+        "version": 1,
+        "quota_mode": "pages",
+        "quota_limit": 300,
+        "quota_window_days": 30,
+        "max_upload_size_bytes": 10000000,
+        "max_pages_per_file": 10,
+        "max_pages_per_file_ocr": 6,
+        "batch_conversion_enabled": True,
+        "batch_max_files": 12,
+    }
+
+    def fetchone(conn, query, params):
+        assert "JOIN plan_versions" in query and "ups.status = 'active'" in query
+        assert params == ("usr_paid",)
+        return row if active else None
+
+    monkeypatch.setattr(service, "_fetchone", fetchone)
+    assert service._read_active_user_plan(user_id="usr_paid") == (row if active else None)
+
+
 def test_worker_access_rejects_invalid_database_schema_before_opening_pool() -> None:
     with pytest.raises(ValueError, match="valid PostgreSQL identifier"):
         PostgresConversionAccessService(

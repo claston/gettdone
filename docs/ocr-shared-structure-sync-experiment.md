@@ -1,0 +1,137 @@
+# OCR compartilhado e Conversão PRO
+
+Data: 31/10/2026. Integração autorizada; recurso entregue desligado para testes e implantação gradual.
+
+## Resultado da avaliação
+
+A referência é um extrato Asaas digitalizado de quatro páginas e 72 movimentos conferidos visualmente. A primeira página tem inclinação e descrições multilinha. Os resultados abaixo comparam a implementação anterior à integração e a estrutura compartilhada.
+
+| Leitura Textract | Interpretação | Movimentos | Datas, valores, sinais, multiplicidade e páginas | Saldos impressos |
+| --- | --- | ---: | --- | --- |
+| DetectDocumentText | Leitor anterior | 53/72 | Faltam 19 movimentos da primeira página | Conferência não registrada |
+| DetectDocumentText | Estrutura compartilhada | 72/72 | Iguais à referência, sem extras | Conferem |
+| AnalyzeDocument, TABLES + LAYOUT | Adaptador anterior | 72/72 | Iguais à referência, sem extras | Conferência não registrada |
+| AnalyzeDocument, TABLES + LAYOUT | Estrutura compartilhada | 72/72 | Iguais à referência, sem extras | Conferem |
+
+A distribuição é 19, 25, 25 e 3 movimentos por página. As descrições compartilhadas são iguais entre palavras e células após normalizar espaços. Essa equivalência não certifica visualmente cada contraparte e descrição.
+
+Na primeira página, o OCR retorna `Valor` antes de `Data` e `Movimentações`. O leitor anterior depende da ordem dos cabeçalhos; a reconstrução usa posições e resolve essa dependência. O ganho comprovado é recuperar 19 movimentos com uma interpretação financeira comum. Nesta amostra, **AnalyzeDocument não recuperou movimentos adicionais em relação ao texto reconstruído**. Por isso a análise mais cara depende de escolha explícita.
+
+Os dois resultados continuam em revisão por baixa confiança em campos e controles. Saldos conferem sem ajuste de números, sinais ou repetições. O limiar de confiança é 90%; scores de WORD e CELL não estão calibrados como medidas equivalentes. Uma amostra não comprova desempenho universal.
+
+## Arquitetura e alcance
+
+```mermaid
+flowchart TD
+    T[OCR com palavras posicionadas] --> E[RawDocumentExtraction]
+    A[OCR com tabelas] --> E
+    E --> S[Reconstrução de estrutura]
+    S --> R[Linhas com campos e origem]
+    R --> F[Uma interpretação financeira]
+    F --> V[Cobertura, saldos e confiança]
+```
+
+- `ocr_structure.py`: reconstrói linhas com células ou palavras posicionadas, inclinação observada, cabeçalhos e âncoras independentes de data/valor. Preserva descrições multilinha e origem.
+- `ocr_financial_interpretation.py`: interpreta as mesmas linhas nos dois modos, com Decimal, datas completas, sinais explícitos, controles impressos e linhas não resolvidas.
+- `ocr_cash_statement.py`: aplica um único perfil semântico de caixa ao piloto Asaas e projeta no contrato atual de transações. Reutiliza a segmentação por períodos e a validação de continuidade existentes.
+- O despacho de OCR Asaas de texto e tabelas usa essa projeção. PDFs nativos e demais famílias permanecem nos leitores existentes; evidência antiga sem geometria conserva o fallback existente.
+- `pro_pdf_parser.py` seleciona o leitor pago e controla acesso/consumo. Não contém outro interpretador financeiro Asaas. Não altera `TEXTRACT_MODE` global.
+- API e worker compartilham a consulta de assinatura em `active_plan_reader.py`. O import anterior continua disponível para compatibilidade; o worker não importa gestão administrativa de planos.
+
+O núcleo estrutural não importa SDKs nem decide sinais. A interpretação financeira não seleciona fornecedor ou modo. Novas famílias exigem perfis semânticos compatíveis e evidência de validação, compartilhados pelos leitores; não se promete suporte universal.
+
+Blocos mensais preservam movimentos repetidos e páginas físicas. Lacunas, sobreposições, cobertura incerta ou controles incompatíveis exigem revisão. Não se inventam mês, ano, valor, sinal ou conta. Débito/crédito separados, faturas e eventos sem efeito de caixa precisam de semântica própria. Curvatura, perspectiva e rotações extremas não foram avaliadas. Âncoras reconhecidas não provam que o OCR enxergou cada transação impressa.
+
+## Fluxo na aplicação
+
+Na tela **Nova conversão**, `Padrão` continua selecionado. Quando habilitada no servidor, aparece **Conversão PRO**, disponível somente para assinatura paga ativa.
+
+1. Selecionar Conversão PRO e enviar um PDF digitalizado do piloto Asaas.
+2. `Verificar Conversão PRO` envia o arquivo e consulta suas páginas reais sem chamar Textract nem reservar franquia PRO.
+3. A tela informa páginas, consumo da franquia normal e do limite PRO, saldo previsto e possibilidade de revisão/falha.
+4. `Iniciar Conversão PRO` submete à fila existente. O worker revalida acesso, tipo, páginas e limites antes do OCR.
+
+| Regra | Implementação |
+| --- | --- |
+| Plano | Essencial, Profissional ou Escritório com assinatura ativa; verificação no servidor |
+| Gratuito | Recusado antes da leitura paga, inclusive via requisição direta |
+| Arquivos | Um PDF por solicitação |
+| Páginas | Menor limite entre OCR do plano e `CONVERSION_PRO_MAX_PAGES`, limitado a 6 |
+| Limite PRO | `CONVERSION_PRO_MONTHLY_PAGES`, padrão 20 por usuário e mês calendário UTC; data de renovação exibida |
+| PDF com texto confiável | Recusado na opção PRO antes de chamar AWS; usar Padrão |
+| PDF misto/camada OCR | Classificação existente decide a necessidade visual |
+| Consumo | Reserva PRO das páginas reais antes de chamar; franquia normal segue contabilização existente |
+| Falha parcial | Páginas ainda não iniciadas são liberadas; tentativas iniciadas contam mesmo sem resultado |
+| Rejeição definitiva de entrada/permissão AWS | Página rejeitada é liberada |
+| Timeout/resposta incerta | Tentativa continua contabilizada; não presumir ausência de cobrança |
+| Repetição | Sem retry automático de AnalyzeDocument; job pago iniciado não é repetido. Nova tentativa exige novo envio explícito |
+
+Não há cobrança avulsa nova. O limite é um orçamento técnico separado dentro do plano pago. A opção não garante extração completa nem liberação da revisão.
+
+## Leitura e persistência
+
+`SynchronousTextractReader` divide internamente o PDF em páginas, valida o limite de 10 MB por página e chama somente `AnalyzeDocument(TABLES, LAYOUT)` síncrono. Não chama OCR de texto antes da análise. Recompõe páginas físicas e prefixa IDs/Relationships; o contrato comum recebe palavras, linhas e células. Cada cópia temporária usa chave exclusiva e é removida com sua versão quando presente. Falhas de limpeza geram log operacional.
+
+A fila/polling do produto continua assíncrona; a API Textract usada pelo worker é síncrona. IAM requer `textract:AnalyzeDocument`, além do acesso S3 já utilizado. `StartDocumentAnalysis`/`GetDocumentAnalysis` não substituem essa permissão. SDK sem retry automático evita repetição paga silenciosa.
+
+Persistência aditiva:
+
+- `conversion_jobs.ocr_mode TEXT NOT NULL DEFAULT 'standard'`; jobs antigos e escritores antigos conservam o padrão.
+- `conversion_pro_usage`: job, proprietário, mês UTC, reserva, tentativas iniciadas e estado. Reserva atômica usa transação e trava por proprietário no PostgreSQL; SQLite usa transação imediata.
+- Reentrega da fila não inicia nova leitura paga. Após início, tentativa interrompida não tem retomada automática nem cache persistente por página. Uma morte abrupta pode deixar reserva retida; investigar o job antes de qualquer liberação manual. Não reaplicar o job para resolver isso.
+- Nenhuma opção foi inserida no JSON de preflight, que precisa continuar legível por versões antigas.
+
+## Implantação e rollback
+
+Configuração padrão em API e worker:
+
+```dotenv
+CONVERSION_PRO_ENABLED=false
+CONVERSION_PRO_MAX_PAGES=6
+CONVERSION_PRO_MONTHLY_PAGES=20
+```
+
+1. Aplicar a migração `20261031_01` após `20261029_01`. Ela adiciona coluna com default, tabela e índice; não remove ou renomeia dados.
+2. Publicar API e todos os workers compatíveis com a flag desligada. Configurar bucket temporário, região e IAM para AnalyzeDocument síncrono.
+3. Encerrar execuções de workers antigos antes de habilitar `CONVERSION_PRO_ENABLED=true` na API e nos workers do ambiente de testes/piloto. Conferir opções, confirmação, quota e resultado.
+4. Monitorar tentativas por job/proprietário, falhas, limpeza temporária, consumo e revisão. Conferir custo efetivo na AWS; não inferir precisão pela taxa de revisão.
+5. Rollback: desabilitar novas solicitações, drenar/concluir ou cancelar jobs PRO e resolver reservas antes de restaurar workers antigos. O downgrade da migração conserva coluna e histórico intencionalmente. O retorno do código não reverte consumos.
+
+Validação em PostgreSQL 16 local isolado: upgrade repetido, job preexistente, escritor antigo após upgrade, job PRO, downgrade sem perda do histórico e escritor antigo após downgrade. Operações aditivas podem aguardar lock de DDL em tabela ativa; aplicar com limite de espera e acompanhar bloqueios. Não houve migração nem implantação em produção nesta tarefa.
+
+## Experimento autorizado e custos
+
+Foram oito chamadas pagas em `us-east-1`, quatro DetectDocumentText e quatro AnalyzeDocument síncronos, no mesmo documento. Nenhuma API Start. Páginas separadas preservaram os pixels originais; não houve retificação, binarização ou aumento de resolução. Quatro cópias S3 exclusivas e suas versões foram removidas. Ajustes posteriores usam respostas salvas, sem novas chamadas pagas.
+
+Tempos agregados observados: texto 16,090 s; análise 25,308 s, incluindo overhead do CLI. Não são benchmark de produção. Os modos retornaram as mesmas palavras/linhas; análise acrescentou quatro tabelas e 228 células.
+
+Catálogo oficial regional publicado em 27/10/2026, primeira faixa até um milhão de páginas/mês:
+
+| Operação | US$/página | Quatro páginas |
+| --- | ---: | ---: |
+| DetectDocumentText síncrono | 0,0015 | 0,0060 |
+| AnalyzeDocument, TABLES + LAYOUT | 0,0150 | 0,0600 |
+
+LAYOUT incluído com TABLES; FORMS não solicitado. Oito chamadas: referência de **US$ 0,0660**, excluindo impostos, descontos/franquias e S3. Vinte páginas de Tables equivalem a aproximadamente US$ 0,30 nessas condições, sem garantia de margem nem de custo técnico após interrupções.
+
+Fontes: [catálogo regional](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonTextract/current/us-east-1/index.json), [preços](https://aws.amazon.com/textract/pricing/), [limites síncronos](https://docs.aws.amazon.com/textract/latest/dg/limits-document.html), [AnalyzeDocument](https://docs.aws.amazon.com/textract/latest/APIReference/API_AnalyzeDocument.html).
+
+## Reprodução e validação
+
+PDFs, referências visuais, respostas OCR e relatórios ficam em `local/pdf-review-six-20261031/`, ignorado pelo Git. Nenhum dado financeiro de cliente integra a PR. O avaliador usa o leitor legado explicitamente para manter a comparação anterior à integração:
+
+```powershell
+backend\venv\Scripts\python.exe scripts\evaluate_ocr_structure.py `
+  --source '<PDF privado>' `
+  --text-result '<resposta de texto recomposta>' `
+  --analysis-result '<resposta de análise recomposta>' `
+  --reference '<CSV de conferência visual>' `
+  --reference-filename '<nome do PDF no CSV>' `
+  --output local/ocr-comparison
+```
+
+CSV: `;`, UTF-8, campos `file`, `date` (`dd/mm/aaaa`), `amount` (decimal com ponto e sinal), `page`. Respostas: Blocks e DocumentMetadata.Pages, IDs exclusivos por página. A referência avalia resultados e nunca alimenta a interpretação.
+
+Testes cobrem texto/tabelas/outro fornecedor, inclinação, ordem, repetições, células incompletas, sinais fragmentados/conflitantes, campos ilegíveis, falta de geometria/cabeçalho, página posterior, confiança, períodos contínuos/com lacuna e origem. Integração cobre assinatura, concorrência de orçamento, mês UTC, falha parcial, idempotência, estimativa e HTTP real com worker e downloads. SDK simulado valida chamadas/cópias/limpeza sem custo AWS adicional. A comparação offline real mantém 72/72 nos dois modos com revisão por confiança preservada.
+
+Comandos e resultados finais das suítes, lint e HTTP estão registrados em `How to test` da PR.
