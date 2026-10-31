@@ -79,7 +79,7 @@ def test_worker_runtime_uses_the_approved_debian_base_and_official_lambda_client
     assert "COPY --from=build /runtime-status/ /var/lib/dpkg/status.d/" in dockerfile
     assert "dnf " not in dockerfile and "public.ecr.aws/lambda/python" not in dockerfile
     requirements = WORKER_REQUIREMENTS_PATH.read_text(encoding="utf-8")
-    assert "pypdf==6.21.2" in requirements
+    assert "pypdf==6.21.4" in requirements
     assert "awslambdaric==4.2.2" in requirements
 
 
