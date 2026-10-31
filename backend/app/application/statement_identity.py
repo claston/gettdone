@@ -4,11 +4,12 @@ import hashlib
 import re
 import unicodedata
 
+from app.application.bank_catalog import resolve_bank_code_from_name
 from app.application.organization_suggestions import build_source_evidence
 
-TAX = r"(?:\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}|\d{3}\.?\d{3}\.?\d{3}-?\d{2})"
+TAX = r"(?:\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}|\d{3}\.?\d{3}\.?\d{3}-?\d{2})(?!\d|[./-]\d)"
 FORMATTED_TAX = r"(?:\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2})"
-IDENTITY_VERSION = 4
+IDENTITY_VERSION = 5
 MASKED_TAX = r"(?=[\d.*•/-]*[*•])[\d.*•/-]{11,22}"
 IDENTIFIER = r"\d[\d.]*(?:-[\dXx]+)?(?=$|[\s/|A-Za-zÀ-ÿ])"
 ORIGIN_LABEL = r"(?:COOPERATIVA|COOP\.|AG[EÊ]NCIA|AG\.?|CONTA(?:\s+(?:CORRENTE|INVESTIMENTO))?|C/C|CC|BANCO)"
@@ -40,6 +41,9 @@ def account_signature(source):
 def _ordered_identity_columns(raw):
     """Recover the owner tax/agency/account columns in either native reading order."""
     plain = _plain(raw.strip())
+    combined_account = re.match(r"AGENCIA\s*/\s*CONTA\s*:?\s*(\d[\d.]*-?\d)\s*/\s*(\d[\d.]*-?\d)(?=$|\s+SALDO\b)", plain)
+    if combined_account:
+        return f"Conta: {combined_account[2]} Agência: {combined_account[1]}" + plain[combined_account.end():]
     report = re.fullmatch(r"RELATORIO DE MOVIMENTACOES\s+(.+?)\s+[-–]\s*(CNPJ|CPF)\s*:\s*(" + TAX + ")", plain)
     if report:
         name = re.split(r"\s+[-–]\s*(?:CNPJ|CPF)\s*:", raw.strip(), flags=re.I)[0]
@@ -58,6 +62,15 @@ def _ordered_identity_columns(raw):
 def _header_blocks(text):
     block, active = [], True
     lines = str(text).splitlines()
+    for index in range(len(lines) - 1):
+        for prefix_pattern, tail_pattern in ((r"\d{2}\.\d{3}\.\d{3}/\d{4}-", r"\d{2}"),
+                                             (r"\d{2}\.\d{3}\.\d{3}", r"/\d{4}-\d{2}")):
+            prefix = re.search(r"\bCNPJ\s*:?\s*(" + prefix_pattern + ")", lines[index], re.I)
+            if prefix and re.fullmatch(tail_pattern, lines[index + 1].strip()):
+                tail = lines[index + 1].strip()
+                lines[index] = lines[index][:prefix.end()] + tail + " " + lines[index][prefix.end():].lstrip()
+                lines[index + 1] = "CNPJ: " + prefix[1] + tail
+                break
     for index, raw in enumerate(lines, 1):
         # These native font characters encode punctuation, never missing digits.
         raw = raw.replace("\ue088", "-")
@@ -67,6 +80,9 @@ def _header_blocks(text):
         raw = re.sub(r"(" + TAX_LABEL + r"\s*:\s*" + TAX + r")\s+(\d+)\s+(\d[\d.-]*)"
                      r"\s*Ag[eê]ncia:\s*Conta:", r"\1 Agência: \2 Conta: \3", raw, flags=re.I)
         raw = _ordered_identity_columns(raw)
+        unseparated_customer = re.fullmatch(r"Cliente\s*([A-ZÀ-Ý].+)", raw.strip())
+        if unseparated_customer and active and any("EXTRATO" in _plain(value) for _, value in block):
+            raw = "Cliente: " + unseparated_customer[1]
         if index > 1 and any("RELATORIO DE MOVIMENTACOES" in _plain(value) for value in lines[max(0, index - 3):index - 1]):
             report_account = re.fullmatch(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ .&]*\s+[-–]\s+(\d{3,6})\s+[-–]\s+(\d[\d.]*-\d)", raw.strip())
             if report_account:
@@ -135,18 +151,18 @@ def _holder_candidate(value):
             or re.match(r"^\d[\d.-]*\s+CONTA CORRENTE\b", plain)
             or all(len(word) == 1 for word in plain.split())
             or "©" in value or re.search(r"\bCOPYRIGHT\b", plain)
-            or re.match(r"^(?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+\d{4}\b", plain)
+            or re.match(r"^(?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+\d{4}(?:\b|(?=\d+[|/]\d))", plain)
             or re.search(r"\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|R\$", plain)
             or re.search(r"\b(?:SCFI|INSTITUICAO DE PAGAMENTO)\b", plain)
+            or re.fullmatch(r"(?:MINHA|MEU|SUA|SEU)(?:\s*(?:CONTA|AGENCIA))?\d*", plain)
             or re.match(r"^(?:EXTRATO|RELATORIO|SALDO|DADOS|INFORMACOES|PERIODO|PAGINA|EMITIDO|GERADO|DATA|"
                         r"BANCO\b|INSTITUICAO\b|COOPERATIVA\b|AGENCIA\b|CONTA\b|CPF\b|CNPJ\b|"
-                        r"NOME\b|TITULAR\b|CLIENTE\s*-|DOCUMENTO\b|INVESTIMENTO\b|MENSAL\b|PDF\b|"
-                        r"MINHA\b|MEU\b|SUA\b|SEU\b)", plain)):
+                        r"NOME\b|TITULAR\b|CLIENTE\s*-|DOCUMENTO\b|INVESTIMENTO\b|MENSAL\b|PDF\b)", plain)):
         return ""
     return value
 
 
-def _adjacent_holders(block, *, statement_title=False):
+def _adjacent_holders(block, *, statement_title=False, issue_codes=None):
     """Accept unlabeled names only beside an explicit origin account or owner tax field."""
     origin = any(re.match(r"^(?:CONTA(?:\s+(?:CORRENTE|INVESTIMENTO))?|C/C|CC)\s*:?\s*" + IDENTIFIER,
                           _plain(line)) for _, line in block)
@@ -170,6 +186,14 @@ def _adjacent_holders(block, *, statement_title=False):
             yield name, normalized(pair[2]), (line_number,)
         tax = re.match(r"^" + TAX_LABEL + r"\s*:?\s*(" + TAX + r")(?!\d)", plain)
         masked = re.fullmatch(TAX_LABEL + r"\s*:\s*" + MASKED_TAX, plain)
+        tax_value = re.match(r"^" + TAX_LABEL + r"(?:\s+(?:DO\s+)?TITULAR)?\s*:\s*(.*)", plain)
+        if (tax is None and tax_value and re.search(r"\d", tax_value[1]) and not re.fullmatch(TAX, tax_value[1])
+                and not masked and position):
+            ref, previous = block[position - 1]
+            if (name := _holder_candidate(previous)) and not resolve_bank_code_from_name(name):
+                if issue_codes is not None:
+                    issue_codes.add("unreadable_holder_tax_id")
+                yield name, "", (ref, line_number)
         if masked and position:
             ref, previous = block[position - 1]
             if line_number - ref <= 1 and (name := _holder_candidate(previous)):
@@ -178,17 +202,28 @@ def _adjacent_holders(block, *, statement_title=False):
             tax = tax or re.match(r"^DOCUMENTO\s*:\s*(" + TAX + r")(?!\d)", plain)
         if tax:
             # Tax labels belonging to a bank/issuer do not establish holder identity.
-            candidates = [(line_number, line[tax.end():])]
+            candidates = [((line_number,), line[tax.end():])]
             if position and line_number - block[position - 1][0] <= 1:
                 previous_number, previous = block[position - 1]
-                candidates.append((previous_number, previous))
+                previous_refs = (previous_number,)
+                if position > 1:
+                    earlier_number, earlier = block[position - 2]
+                    prefix_name, tail_name = _holder_candidate(earlier), _holder_candidate(previous)
+                    if (prefix_name and tail_name and not resolve_bank_code_from_name(prefix_name)
+                            and not re.search(r"\b(?:LTDA|EIRELI|S\.?A\.?)$", _plain(prefix_name))
+                            and (re.match(r"^(?:DE|DA|DO|DOS|DAS|E)\b", _plain(tail_name))
+                                 or re.search(r"\b(?:LTDA|EIRELI|S\.?A\.?)$", _plain(tail_name)))):
+                        previous = prefix_name + " " + tail_name
+                        previous_refs = (earlier_number, previous_number)
+                candidates.append((previous_refs, previous))
                 if (position > 1 and re.match(r"^CONTA\s+INVESTIMENTO\s*:", _plain(previous))
                         and line_number - block[position - 2][0] <= 2):
-                    candidates.append(block[position - 2])
+                    ref, value = block[position - 2]
+                    candidates.append(((ref,), value))
             for ref, candidate in candidates:
                 name = _holder_candidate(candidate)
                 if name:
-                    yield name, normalized(tax[1]), (ref, line_number)
+                    yield name, normalized(tax[1]), (*ref, line_number)
             if account_section:
                 yield "", normalized(tax[1]), (line_number,)
         # The holder may precede agency/account fields, even on the same physical line.
@@ -206,6 +241,7 @@ def _adjacent_holders(block, *, statement_title=False):
 def identify_statement(analysis, *, page_texts=(), representation="native"):
     source = build_source_evidence(analysis)
     holders, taxes, references, accounts = {}, set(), [], []
+    issue_codes = set()
     if source["holder_name"]:
         holders[" ".join(_plain(source["holder_name"]).split())] = source["holder_name"]
     if source["holder_tax_id"]:
@@ -216,7 +252,9 @@ def identify_statement(analysis, *, page_texts=(), representation="native"):
             branches, cooperatives, numbers = set(), set(), set()
             block_has_account = any(re.match(r"^(?:CONTA(?:\s+(?:CORRENTE|INVESTIMENTO))?|C/C|CC)\s*:?\s*" + IDENTIFIER,
                                              _plain(value)) for _, value in block)
-            for name, tax, refs in _adjacent_holders(block, statement_title=bool(re.search(r"(?im)^\s*EXTRATO(?:\s|$)", text))):
+            for name, tax, refs in _adjacent_holders(
+                block, statement_title=bool(re.search(r"(?im)^\s*EXTRATO(?:\s|$)", text)), issue_codes=issue_codes,
+            ):
                 if name:
                     holders.setdefault(" ".join(_plain(name).split()), name)
                 if tax:
@@ -246,6 +284,9 @@ def identify_statement(analysis, *, page_texts=(), representation="native"):
                     references.append((page, line_number))
                     if raw_name:
                         raw_name = re.sub(r"\s*[-|•·]?\s*" + TAX + r"\s*$", "", raw_name).strip()
+                known_tax = re.match(r"^" + TAX_LABEL + r"\s*:\s*(" + TAX + ")$", plain)
+                if known_tax and normalized(known_tax[1]) in taxes:
+                    references.append((page, line_number))
                 for label, values in ((r"(?:AGENCIA|AG\.?)", branches), (r"(?:COOPERATIVA|COOP\.)", cooperatives)):
                     identifier = re.match(r"^" + label + r"\s*:?\s*(" + IDENTIFIER + ")", plain)
                     if identifier:
@@ -315,7 +356,9 @@ def identify_statement(analysis, *, page_texts=(), representation="native"):
         source.update(accounts[0])
     if len(accounts) > 1:
         source["branch"], source["account_number"] = "", ""
-    source["confidence"] = ("ambiguous" if len(taxes) > 1 or len(holders) > 1 else "strong" if len(taxes) == 1
+    if issue_codes:
+        source["identity_issues"] = sorted(issue_codes)
+    source["confidence"] = ("ambiguous" if issue_codes or len(taxes) > 1 or len(holders) > 1 else "strong" if len(taxes) == 1
                             else "source_account" if holders and account_identity(source) else "name" if holders else "missing")
     return source
 
@@ -349,6 +392,18 @@ def _prefer_native_source(source, candidate, *, text_mode):
         return source
     if candidate["confidence"] == "ambiguous":
         source["confidence"] = "ambiguous"
+        if candidate.get("identity_issues"):
+            source["identity_issues"] = sorted(set(source.get("identity_issues", ())) | set(candidate["identity_issues"]))
+            if "unreadable_holder_tax_id" in candidate["identity_issues"]:
+                source["holder_tax_id"] = ""
+            if not source.get("holder_name"):
+                source["holder_name"] = candidate.get("holder_name", "")
+            if (source.get("account_number") and candidate.get("account_number")
+                    and normalized(source["account_number"]) == normalized(candidate["account_number"])):
+                for key in ("branch", "cooperative"):
+                    if not source.get(key):
+                        source[key] = candidate.get(key, "")
+            source["references"].extend({**ref, "text_mode": text_mode} for ref in candidate["references"])
         return source
     conflicts = [key for key in fields if source.get(key) and candidate.get(key)
                  and normalized(_plain(source[key])) != normalized(_plain(candidate[key]))]
