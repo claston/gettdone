@@ -68,6 +68,27 @@ class ReceivedStatements(OrganizationService):
                     "VALUES (?, ?, ?, ?, '', ?, ?, ?)", (client_id, organization, name, tax_id or None, owner, now, now))
         return client_id
 
+    def _prefer_document_name(self, conn, organization, client_id, source, record):
+        """Same tax identity; a later document wins over a stale catalog name."""
+        tax = normalized(source.get("holder_tax_id"))
+        name = str(source.get("holder_name") or "").strip()[:160]
+        if (not name or source.get("confidence") != "strong" or not tax.isdigit() or len(tax) not in (11, 14)
+                or str(getattr(record.status, "value", record.status)) != "completed"):
+            return
+        client = self.db.fetchone(conn, "SELECT name, tax_id FROM pro_clients WHERE organization_id = ? AND id = ?",
+                                 (organization, client_id))
+        if not client or normalized(client["tax_id"]) != tax or client["name"] == name:
+            return
+        latest = self.db.fetchone(conn, "SELECT r.created_at, r.job_id FROM pro_received_statements r "
+            "JOIN pro_conversion_contexts x ON x.organization_id = r.organization_id AND x.job_id = r.job_id "
+            "WHERE r.organization_id = ? AND x.client_id = ? ORDER BY r.created_at DESC, r.job_id DESC LIMIT 1",
+            (organization, client_id))
+        current = (_utc(record.created_at).isoformat(), record.job.job_id)
+        if latest and (latest["created_at"], latest["job_id"]) > current:
+            return
+        self._write(conn, "UPDATE pro_clients SET name = ?, updated_at = ? WHERE organization_id = ? AND id = ?",
+                    (name, self._now(), organization, client_id))
+
     def _account(self, conn, organization, owner, client_id, source):
         fields = [str(source.get(key) or "") for key in ("bank_code", "branch", "account_number")]
         key = account_signature(source)
@@ -168,7 +189,8 @@ class ReceivedStatements(OrganizationService):
                             (json.dumps(source, ensure_ascii=False), organization, job.job_id))
             else:
                 source = stored
-            context = self.db.fetchone(conn, "SELECT job_id FROM pro_conversion_contexts WHERE organization_id = ? AND job_id = ?",
+            context = self.db.fetchone(conn, "SELECT job_id, client_id FROM pro_conversion_contexts "
+                                       "WHERE organization_id = ? AND job_id = ?",
                                        (organization, job.job_id))
             tax, name = normalized(source.get("holder_tax_id")), str(source.get("holder_name") or "").strip()
             client = None
@@ -184,6 +206,9 @@ class ReceivedStatements(OrganizationService):
                 account = self._link_accounts(conn, organization, owner, job.job_id, client, source)
                 self.save_context_in_connection(conn, owner, job_id=job.job_id, client_id=client, account_id=account,
                                                 period_ids=[], expected_version=0)
+            linked_client = client or (context["client_id"] if context else None)
+            if linked_client:
+                self._prefer_document_name(conn, organization, linked_client, source, record)
             conn.commit()
 
     def _recover_native_source(self, owner, record):

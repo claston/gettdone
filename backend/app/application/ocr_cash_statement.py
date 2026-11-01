@@ -22,7 +22,18 @@ def project_shared_cash_extraction(extraction, *, layout=None):
     blocks = statement_blocks(texts)
     if blocks:
         results = [project_shared_cash_extraction(slice_extraction(extraction, block), layout=layout) for block in blocks]
-        return combine_statement_results(results, blocks, texts, original_extraction=extraction)
+        combined = combine_statement_results(results, blocks, texts, original_extraction=extraction)
+        # Individual block arithmetic cannot certify an unconfirmed global balance.
+        return replace(
+            combined,
+            parse_metrics={
+                **combined.parse_metrics,
+                "ocr_balance_arithmetic_matches": int(
+                    bool(combined.parse_metrics.get("financial_controls_validated"))
+                    and all(result.parse_metrics.get("ocr_balance_arithmetic_matches") for result in results)
+                ),
+            },
+        )
     # Pilot semantic policy; reconstruction and financial interpretation are shared.
     schema = OcrTableSchema(
         (
@@ -37,20 +48,44 @@ def project_shared_cash_extraction(extraction, *, layout=None):
     if not interpreted.movements:
         raise InvalidFileContentError("Não foi possível identificar movimentos legíveis neste documento por OCR.")
     pages = {page.page_number: page for page in extraction.pages}
+    row_warnings = {}
+    document_warnings = []
+    issue_codes = {issue.code for issue in interpreted.issues}
+    for issue in interpreted.issues:
+        if issue.code == "critical_confidence_unconfirmed":
+            code = {"date": "ocr_date_confidence_unconfirmed", "amount": "ocr_amount_confidence_unconfirmed"}.get(
+                issue.field_name, "manual_review_recommended"
+            )
+            row_warnings.setdefault((issue.page_number, issue.row_number), set()).add(code)
+    if "control_confidence_unconfirmed" in issue_codes:
+        document_warnings.append("ocr_control_confidence_unconfirmed")
+    if "printed_controls_unconfirmed" in issue_codes:
+        document_warnings.append("ocr_controls_unavailable")
+    elif not interpreted.balance_matches:
+        document_warnings.append("financial_validation_failed")
+    coverage_issues = {"row_coverage_mismatch", "unassigned_column_anchor", "geometry_unavailable", "header_unavailable", "no_row_anchors"}
+    if interpreted.unresolved_rows or issue_codes.intersection(coverage_issues):
+        document_warnings.append("partial_statement")
+    if issue_codes - {
+        "critical_confidence_unconfirmed",
+        "control_confidence_unconfirmed",
+        "printed_controls_unconfirmed",
+        "financial_validation_unconfirmed",
+        "unreadable_date",
+        "unreadable_amount",
+        "unreadable_description",
+        *coverage_issues,
+    }:
+        document_warnings.append("ocr_structure_review_required")
     rows = []
     for movement in interpreted.movements:
         page = pages[movement.source_page]
         refs = tuple(
             (page.page_number, line.line_index) for line in page.lines if set(line.word_ids).intersection(movement.source_word_ids)
         )
-        warnings = ["manual_review_recommended"] if interpreted.requires_review else []
-        if not interpreted.balance_matches:
-            warnings.append("financial_validation_failed")
-        if interpreted.unresolved_rows or any(
-            i.code in {"row_coverage_mismatch", "unassigned_column_anchor", "geometry_unavailable", "header_unavailable", "no_row_anchors"}
-            for i in interpreted.issues
-        ):
-            warnings.append("partial_statement")
+        warnings = sorted(row_warnings.get((movement.source_page, movement.source_row), ()))
+        if not rows:
+            warnings.extend(document_warnings)
         transaction = NormalizedTransaction(
             date=movement.date,
             description=movement.description,
@@ -84,6 +119,9 @@ def project_shared_cash_extraction(extraction, *, layout=None):
         "financial_controls_validated": int(interpreted.balance_matches and not interpreted.requires_review),
         "balance_validation_status": "review_required" if interpreted.requires_review else "validated",
         "ocr_unresolved_rows": len(interpreted.unresolved_rows),
+        "ocr_balance_arithmetic_matches": int(interpreted.balance_matches),
+        "ocr_review_fields_count": sum(len(warnings) for warnings in row_warnings.values()),
+        "ocr_review_rows_count": len(row_warnings),
         "statement_rows_expected": structure.expected_rows,
         "statement_rows_parsed": len(rows),
         "confidence_band": "low" if interpreted.requires_review else "high",

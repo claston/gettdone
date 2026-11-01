@@ -79,6 +79,23 @@ def build_client_with_user_owner(tmp_path: Path) -> tuple[TestClient, str]:
     return TestClient(app), user.token
 
 
+def test_edit_clears_the_original_ocr_arithmetic_confirmation(tmp_path):
+    import json
+
+    client = build_client(tmp_path)
+    metadata = tmp_path / "an_convert123" / "analysis.json"
+    content = json.loads(metadata.read_text(encoding="utf-8"))
+    content["pdf_processing_metrics"] = {"ocr_balance_arithmetic_matches": 1}
+    metadata.write_text(json.dumps(content), encoding="utf-8")
+    try:
+        result = client.post("/convert-edits/an_convert123?anonymous_fingerprint=fp-owner", json={
+            "edits": [{"row_id": "row_1", "date": "2026-04-01", "description": "Corrigido", "credit": None, "debit": 30}]})
+        assert result.status_code == 200, result.text
+        assert json.loads(metadata.read_text(encoding="utf-8"))["pdf_processing_metrics"]["ocr_balance_arithmetic_matches"] == 0
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_edit_operation_confirms_and_replays_insert_without_duplication(tmp_path: Path) -> None:
     client = build_client(tmp_path)
     url = "/convert-edits/an_convert123?anonymous_fingerprint=fp-owner"

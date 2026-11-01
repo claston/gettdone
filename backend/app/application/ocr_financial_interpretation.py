@@ -100,9 +100,9 @@ def interpret_cash_table(extraction, structure, policy: CashTablePolicy) -> OcrC
         if codes:
             unresolved.append(row)
             continue
-        for cell in (date_cell, amount_cell):
+        for field_name, cell in ((policy.date_column, date_cell), (policy.amount_column, amount_cell)):
             if cell.confidence is None or cell.confidence < policy.minimum_critical_confidence:
-                issues.append(OcrIssue("critical_confidence_unconfirmed", row.page_number, row.row_number))
+                issues.append(OcrIssue("critical_confidence_unconfirmed", row.page_number, row.row_number, field_name))
         identifiers = tuple(dict.fromkeys(identifier for cell in row.cells.values() for identifier in cell.word_ids))
         regions = tuple(dict.fromkeys(region for cell in row.cells.values() for region in cell.source_regions))
         movements.append(OcrCashMovement(date, description_cell.text, amount, row.page_number, row.row_number, identifiers, regions))

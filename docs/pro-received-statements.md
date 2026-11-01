@@ -17,6 +17,16 @@ documento pendente. A cobertura de rótulos é conservadora: não é reconhecime
 universal de titulares de todos os layouts.
 
 O serviço reutiliza clientes pelo CPF/CNPJ normalizado dentro do proprietário.
+Quando o documento identifica nome e CPF/CNPJ do titular de forma consistente,
+o nome identificado passa a ter preferência sobre o nome salvo do mesmo cliente.
+O ID, o CPF/CNPJ, as contas e os vínculos existentes são preservados. A regra
+também é aplicada ao atualizar recebimentos já associados, sem nova conversão.
+Identificação ambígua, nome ausente ou CPF/CNPJ diferente não renomeiam o cliente.
+O documento associado mais recente, pela data de criação e desempate por job,
+define o nome: sincronizar um lote antigo não restaura o nome anterior. Essa
+preferência pode substituir um nome editado manualmente; a identificação por
+CPF/CNPJ continua sendo a referência para o vínculo.
+
 Sem CPF/CNPJ do titular, um nome explícito e único junto de uma conta de origem
 completa (banco + agência ou cooperativa + conta) permite criar o cliente sem
 documento fiscal. Uma conta de origem conhecida e inequívoca permite reutilizar

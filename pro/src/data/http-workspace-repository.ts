@@ -1,7 +1,7 @@
 import { validSourceRegions } from "@/domain/source-regions";
 import {
   documentReviewWarnings,
-  fieldReviewWarnings,
+  reviewFields,
   requiresDocumentReview,
 } from "@/domain/review-warnings";
 import { workspaceEvents } from "@/domain/workspace-events";
@@ -83,6 +83,7 @@ interface ApiAnalysis {
     page_count?: number;
     statement_no_activity?: number;
     partial_statement?: number;
+    ocr_balance_arithmetic_matches?: number;
   } | null;
   preview_transactions?: ApiTransaction[];
 }
@@ -725,6 +726,8 @@ function mapConversion({
     partialStatement,
     reviewWarnings,
     statementBalanceCheck,
+    ocrBalanceMatches:
+      analysis?.pdf_processing_metrics?.ocr_balance_arithmetic_matches === 1,
     transactions,
   };
 }
@@ -733,13 +736,8 @@ function mapTransaction(row: ApiTransaction, index: number): Transaction {
   const amount = Number(row.amount ?? 0);
   const fieldStates = originalFieldStates();
   const warningTypes = row.warning_types ?? [];
-  const fieldWarnings = fieldReviewWarnings(warningTypes);
-  if (fieldWarnings.includes("balance_consistency_failed"))
-    fieldStates.balance = "SUSPECTED";
-  if (fieldWarnings.some((code) => code !== "balance_consistency_failed")) {
-    fieldStates.description = "SUSPECTED";
-    fieldStates[amount >= 0 ? "credit" : "debit"] = "SUSPECTED";
-  }
+  for (const field of reviewFields(warningTypes, amount))
+    fieldStates[field] = "SUSPECTED";
   return {
     statementAccount: mapStatementAccount(row),
     id: row.transaction_id ?? `row_${index + 1}`,

@@ -35,6 +35,7 @@ class OcrIssue:
     code: str
     page_number: int
     row_number: int | None = None
+    field_name: str | None = None
 
 
 @dataclass(frozen=True)
