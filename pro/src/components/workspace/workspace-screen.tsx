@@ -813,12 +813,27 @@ export function WorkspaceScreen({
                       Enviar arquivo novamente
                     </Link>
                   </>
+                ) : activeConversion.ocrMode === "pro" ? (
+                  <>
+                    <h3>Conversão PRO interrompida</h3>
+                    <p>
+                      {activeConversion.errorMessage ??
+                        "Não foi possível concluir a leitura deste PDF."}
+                    </p>
+                    <p>
+                      Uma nova leitura exige um novo envio e pode consumir
+                      páginas. Confira o motivo da falha antes de reenviar.
+                    </p>
+                    <Link className="primary-button" href="/conversions">
+                      Enviar PDF em nova conversão
+                    </Link>
+                  </>
                 ) : (
                   <>
                     <h3>Conversão interrompida</h3>
                     <p>
-                      Tente processar este arquivo novamente sem bloquear o
-                      restante do lote.
+                      {activeConversion.errorMessage ??
+                        "Tente processar este arquivo novamente sem bloquear o restante do lote."}
                     </p>
                     <button
                       className="primary-button"

@@ -1065,6 +1065,9 @@ def _apply_ocr_limit_context(
 
 
 def _resolve_failed_conversion_code(exc: Exception) -> str:
+    metadata = getattr(exc, "_parse_observability", {}) or {}
+    if metadata.get("error_subcode") in {"pro_ocr_configuration", "pro_ocr_upload", "pro_ocr_analysis"}:
+        return "ocr_service_unavailable"
     if isinstance(exc, FileTooLargeError):
         return "file_too_large"
     if isinstance(exc, MaxPagesPerFileExceededError):
@@ -1292,6 +1295,9 @@ def _resolve_effective_ocr_observability(
 
 def _resolve_error_observability(exc: Exception) -> tuple[str | None, str | None, str]:
     exception_class = exc.__class__.__name__
+    metadata = getattr(exc, "_parse_observability", {}) or {}
+    if metadata.get("error_subcode") in {"pro_ocr_configuration", "pro_ocr_upload", "pro_ocr_analysis"}:
+        return "ocr", metadata["error_subcode"], exception_class
     if isinstance(exc, PdfFinancialValidationError):
         return "parse", "financial_validation_failed", exception_class
     if isinstance(exc, OcrFinancialAmbiguityError):
@@ -1394,6 +1400,10 @@ def _build_failure_diagnostics(exc: Exception) -> dict[str, str | int | bool | l
     textract_error_type = str(parse_observability.get("textract_error_type") or "").strip()
     if textract_error_type:
         diagnostics["textract_error_type"] = textract_error_type
+    for key in ("ocr_provider_error_code", "ocr_provider_operation"):
+        value = str(parse_observability.get(key) or "").strip()
+        if value:
+            diagnostics[key] = value[:100]
     return diagnostics
 
 

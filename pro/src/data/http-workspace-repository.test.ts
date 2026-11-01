@@ -11,6 +11,51 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("documentos e lotes já abertos", () => {
+  it("preserva modo PRO e a mensagem pública da falha", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          batch_id: "failed-pro",
+          status: "failed",
+          jobs: [
+            {
+              job_id: "pro-failed",
+              filename: "scan.pdf",
+              status: "failed",
+              ocr_mode: "pro",
+              error_code: "InvalidFileContentError",
+              error_message: "O serviço de leitura não está configurado.",
+            },
+          ],
+        }),
+      );
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+    expect(
+      (await repository.getBatch("failed-pro")).conversions[0],
+    ).toMatchObject({
+      ocrMode: "pro",
+      errorMessage: "O serviço de leitura não está configurado.",
+      status: "FAILED",
+    });
+  });
+
+  it("mostra a recusa de retry PRO sem confundi-la com edição concorrente", async () => {
+    const detail =
+      "Para repetir a Conversão PRO, envie o PDF em uma nova conversão.";
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse(batchPayload))
+      .mockResolvedValueOnce(jsonResponse({ detail }, 409));
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+    await repository.getBatch("batch-real");
+    await expect(repository.retryConversion("job-failed")).rejects.toThrow(
+      detail,
+    );
+  });
+
   it("preserva o motivo de falha de upload para orientar o reenvio", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

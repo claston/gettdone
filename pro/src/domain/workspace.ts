@@ -57,6 +57,8 @@ export interface Conversion {
   period: string;
   status: ConversionStatus;
   errorCode?: string | null;
+  ocrMode?: "standard" | "pro";
+  errorMessage?: string;
   reviewStatus: ReviewStatus;
   transactionCount: number;
   suspectedCount: number;

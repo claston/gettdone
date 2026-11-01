@@ -136,6 +136,29 @@ class ConversionProQuota:
                 raise ConversionProAccessError("A tentativa da Conversão PRO já foi iniciada ou não pertence a esta conta.")
             conn.commit()
 
+    def before_document(self, job_id, identity, pages):
+        self.require_access(identity)
+        with self.access._lock, self.access._connect() as conn:
+            cursor = self.access._execute(
+                conn,
+                """UPDATE conversion_pro_usage SET attempted_pages=reserved_pages
+                WHERE job_id=? AND owner_id=? AND status='reserved' AND attempted_pages=0 AND reserved_pages=?""",
+                (job_id, identity.identity_id, pages),
+            )
+            if cursor.rowcount != 1:
+                raise ConversionProAccessError("Esta Conversão PRO já foi iniciada ou não pertence a esta conta.")
+            conn.commit()
+
+    def reject_document(self, job_id, identity, pages):
+        with self.access._lock, self.access._connect() as conn:
+            self.access._execute(
+                conn,
+                """UPDATE conversion_pro_usage SET attempted_pages=0,status='finished'
+                WHERE job_id=? AND owner_id=? AND status='reserved' AND reserved_pages=? AND attempted_pages=?""",
+                (job_id, identity.identity_id, pages, pages),
+            )
+            conn.commit()
+
     def finish(self, job_id, identity):
         with self.access._lock, self.access._connect() as conn:
             self.access._execute(

@@ -107,6 +107,8 @@ def workspace(client_id: str, owner: str = Depends(organization_owner), service=
                          "status": getattr(record.status, "value", record.status),
                          "analysis_id": record.result.analysis_id if record.result else None,
                          "error_code": record.failure.code if record.failure else None,
+                         "error_message": record.failure.message if record.failure else None,
+                         "ocr_mode": record.job.ocr_mode,
                          "result": record.result.payload if record.result else None})
         return {"batch_id": client_id, "client_name": client["name"], "status": "completed", "jobs": jobs,
                 "next_cursor": documents[49]["job_id"] if len(documents) > 50 else None}

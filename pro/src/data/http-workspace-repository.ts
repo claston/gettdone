@@ -50,6 +50,27 @@ interface ApiTransaction {
   is_deleted?: boolean;
 }
 
+const publicFailureCodes = new Set([
+  "InvalidFileContentError",
+  "ConversionProAccessError",
+  "ConversionProQuotaError",
+  "invalid_pdf_content",
+  "insufficient_text",
+  "pages_limit_exceeded",
+  "quota_exceeded",
+  "password_protected_pdf",
+  "file_too_large",
+  "unsupported_document_type",
+  "unsupported_type",
+  "cross_page_transaction_split",
+  "ocr_service_unavailable",
+]);
+
+function publicFailureMessage(job: ApiJob): string | undefined {
+  if (!publicFailureCodes.has(job.error_code ?? "")) return undefined;
+  return job.error_message?.trim().slice(0, 500) || undefined;
+}
+
 interface ApiAnalysis {
   statement_balance_check?: unknown;
   financial_document?: FinancialDocument | null;
@@ -73,6 +94,8 @@ interface ApiJob {
   filename: string;
   status: string;
   error_code?: string | null;
+  error_message?: string | null;
+  ocr_mode?: string;
   analysis_id?: string | null;
   reviewed_at?: string | null;
   result?: {
@@ -188,7 +211,7 @@ export function createHttpWorkspaceRepository(
       } catch {
         // Keep the safe status-based message when the response is not JSON.
       }
-      if (response.status === 409)
+      if (response.status === 409 && path.startsWith("/api/pro/convert-edits/"))
         message =
           "Este documento foi alterado em outra sessão. Suas edições continuam na tela; confira a outra sessão antes de recarregar.";
       throw new ApiRequestError(message, response.status);
@@ -680,6 +703,8 @@ function mapConversion({
     period: resolveTransactionPeriod(transactions),
     status,
     errorCode: job.error_code,
+    ocrMode: job.ocr_mode === "pro" ? "pro" : "standard",
+    errorMessage: publicFailureMessage(job),
     reviewStatus: status === "REVIEWED" ? "REVIEWED" : "PENDING",
     transactionCount: transactions.filter((row) => !row.isDeleted).length,
     suspectedCount,

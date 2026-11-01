@@ -694,6 +694,7 @@ export function useWorkspaceController(
     if (
       !activeConversion ||
       activeConversion.status !== "FAILED" ||
+      activeConversion.ocrMode === "pro" ||
       actionLock.current ||
       exportPromise.current
     )

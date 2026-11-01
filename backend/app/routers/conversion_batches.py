@@ -90,6 +90,7 @@ class ConversionBatchJobResponse(BaseModel):
     job_id: str
     filename: str
     status: str
+    ocr_mode: str = "standard"
     analysis_id: str | None = None
     error_code: str | None = None
     error_message: str | None = None
@@ -936,6 +937,7 @@ def _snapshot_response(snapshot: ConversionBatchSnapshot) -> ConversionBatchResp
                 job_id=record.job.job_id,
                 filename=record.job.document.filename,
                 status=record.status.value,
+                ocr_mode=record.job.ocr_mode,
                 analysis_id=record.result.analysis_id if record.result else None,
                 error_code=record.failure.code if record.failure else None,
                 error_message=record.failure.message if record.failure else None,

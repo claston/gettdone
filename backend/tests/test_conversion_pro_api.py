@@ -101,3 +101,18 @@ def test_estimate_enforces_owner(context):
     access.activate_user_plan(user_id=other.user_id, plan_code="profissional")
     result = client.get(f"/api/pro/conversion-batches/{batch}/pro-estimate", headers={"Authorization": f"Bearer {other.token}"})
     assert result.status_code == 404
+
+
+def test_failed_pro_job_reports_its_mode_and_preserves_retry_refusal(context):
+    client, service, access, identity, headers = context
+    created = create(client, headers).json()
+    job = created["jobs"][0]["job_id"]
+    batch = created["batch_id"]
+    service.repository.mark_failed(job, code="InvalidFileContentError", message="O serviço de leitura não está configurado.")
+    failed = client.get(f"/api/pro/conversion-batches/{batch}", headers=headers)
+    assert failed.status_code == 200
+    assert failed.json()["jobs"][0]["ocr_mode"] == "pro"
+    assert failed.json()["jobs"][0]["error_message"] == "O serviço de leitura não está configurado."
+    retried = client.post(f"/api/pro/conversion-batches/{batch}/jobs/{job}/retry", headers=headers, json={})
+    assert retried.status_code == 409
+    assert "nova conversão" in retried.json()["detail"]

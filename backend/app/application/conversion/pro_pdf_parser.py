@@ -1,11 +1,12 @@
 """Explicit paid OCR selection over the shared financial interpretation."""
 
 from dataclasses import replace
+from hashlib import sha256
 
+from app.application.asynchronous_textract import AsynchronousTextractReader
 from app.application.conversion.pro_conversion import ConversionProQuota, inspect_pro_pdf
 from app.application.errors import InvalidFileContentError
 from app.application.ocr_cash_statement import project_shared_cash_extraction as project_pro_extraction
-from app.application.synchronous_textract import SynchronousTextractReader
 
 
 def make_pro_pdf_parser(*, access, job, reader=None):
@@ -18,12 +19,14 @@ def make_pro_pdf_parser(*, access, job, reader=None):
         access.ensure_quota_available(job.identity, required_units=pages if job.identity.quota_mode == "pages" else 1)
         budget.reserve(job.job_id, job.identity, pages)
         try:
-            extraction = (reader or SynchronousTextractReader()).read(
+            token = sha256(f"{job.identity.identity_id}:{job.job_id}:{sha256(raw).hexdigest()}:analysis-v1".encode()).hexdigest()
+            extraction = (reader or AsynchronousTextractReader()).read(
                 raw,
                 max_pages=limit,
-                before_page=lambda page: budget.before_page(job.job_id, job.identity, page),
+                request_token=token,
+                before_document=lambda count: budget.before_document(job.job_id, job.identity, count),
                 on_progress=on_ocr_progress,
-                on_rejected_page=lambda page: budget.reject_page(job.job_id, job.identity, page),
+                on_rejected_document=lambda count: budget.reject_document(job.job_id, job.identity, count),
             )
             try:
                 projected = project_pro_extraction(extraction)
