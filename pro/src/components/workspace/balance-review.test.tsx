@@ -33,6 +33,55 @@ const transaction: Transaction = {
   },
 };
 
+it("separa a soma que confere da confiança nos saldos lidos", () => {
+  render(
+    <BalanceReviewNotice
+      conversion={
+        {
+          transactions: [],
+          ocrBalanceMatches: true,
+          reviewWarnings: ["ocr_control_confidence_unconfirmed"],
+        } as unknown as Conversion
+      }
+    />,
+  );
+  expect(
+    screen.getByText(/Saldo calculado confere com os saldos lidos/),
+  ).toBeVisible();
+  expect(screen.getByText(/Confira os saldos no PDF/)).toBeVisible();
+  expect(screen.queryByText(/Saldo final não confere/)).not.toBeInTheDocument();
+});
+
+it("uma divergência atual impede a confirmação positiva do OCR", () => {
+  render(
+    <BalanceReviewNotice
+      conversion={
+        {
+          transactions: [],
+          ocrBalanceMatches: true,
+          reviewWarnings: ["financial_validation_failed"],
+        } as unknown as Conversion
+      }
+    />,
+  );
+  expect(screen.queryByText(/Saldo calculado confere/)).not.toBeInTheDocument();
+  expect(screen.getByText(/não fecharam/)).toBeVisible();
+});
+
+it("explica a dúvida da data sem acusar descrição ou valor", () => {
+  render(
+    <TransactionReviewNote
+      transaction={{
+        ...transaction,
+        balanceCheck: undefined,
+        warningTypes: ["ocr_date_confidence_unconfirmed"],
+      }}
+    />,
+  );
+  expect(screen.getByText(/Confira a data no PDF/)).toBeVisible();
+  expect(screen.queryByText(/a descrição e o valor/)).not.toBeInTheDocument();
+});
+
 it("avisa sobre período desconhecido sem afirmar divergência de saldo", () => {
   render(
     <BalanceReviewNotice

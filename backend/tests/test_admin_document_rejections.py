@@ -104,7 +104,8 @@ def test_document_refusal_is_clear_through_real_admin_http(tmp_path):
     with _run_http_server(tmp_path) as base_url:
         service = app.dependency_overrides[get_access_control_service]()
         identifier, _, _ = record_refusal(service)
-        with httpx.Client(base_url=base_url) as client:
+        # Password hashing under Windows/xdist can exceed httpx's implicit five-second limit.
+        with httpx.Client(base_url=base_url, timeout=30) as client:
             assert client.get("/admin/dashboard").status_code == 401
             assert client.post("/admin/auth/login", json={"email": "admin@example.com", "password": "admin-pass"}).status_code == 200
             response = client.get("/admin/dashboard", params={"days": 7})

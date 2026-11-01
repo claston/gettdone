@@ -2276,6 +2276,11 @@
   }
 
   function mapWarningTypeExplanation(value) {
+    if (value === "ocr_date_confidence_unconfirmed") return "A leitura da data teve confiança abaixo do limite. Confira a data deste lançamento no PDF.";
+    if (value === "ocr_amount_confidence_unconfirmed") return "A leitura do valor teve confiança abaixo do limite. Confira o valor deste lançamento no PDF.";
+    if (value === "ocr_control_confidence_unconfirmed") return "Confira os saldos no PDF: a leitura desses valores teve confiança abaixo do limite. Esse aviso se refere aos controles do documento.";
+    if (value === "ocr_controls_unavailable") return "Não foi possível identificar os saldos de abertura e fechamento para conferir o documento.";
+    if (value === "ocr_structure_review_required") return "A organização de algumas linhas precisa de conferência no PDF. Esse aviso se refere ao documento.";
     if (value === "date_year_from_statement_period") return "O ano cortado na coluna de data foi completado com o único ano compatível com o período impresso e os dígitos visíveis. Confira a data no documento original.";
     if (value === "native_amount_recovered_from_balances") return "Os centavos cortados no PDF foram recuperados pela diferença entre dois saldos impressos, preservando todos os dígitos visíveis. Confira o valor no documento original.";
     if (value === "scheduled_transactions_excluded") return "Os movimentos agendados foram separados dos lançamentos já efetivados e não entraram no arquivo exportado.";

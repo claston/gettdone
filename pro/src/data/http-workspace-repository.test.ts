@@ -11,6 +11,58 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("documentos e lotes já abertos", () => {
+  it.each([
+    ["ocr_date_confidence_unconfirmed", "date"],
+    ["ocr_amount_confidence_unconfirmed", "credit"],
+  ])("localiza %s no campo afetado", async (warning, field) => {
+    const payload = structuredClone(batchPayload);
+    const job = payload.jobs[0];
+    job.result!.analysis.preview_transactions = [
+      {
+        ...job.result!.analysis.preview_transactions[0],
+        amount: 10,
+        warning_types: [warning],
+      },
+    ];
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse({ ...payload, jobs: [job] }));
+    const conversion = (
+      await createHttpWorkspaceRepository({ apiUrl: "/", fetcher }).getBatch(
+        "batch-real",
+      )
+    ).conversions[0];
+    expect(conversion.suspectedCount).toBe(1);
+    expect(
+      Object.entries(conversion.transactions[0].fieldStates)
+        .filter(([, state]) => state === "SUSPECTED")
+        .map(([key]) => key),
+    ).toEqual([field]);
+  });
+
+  it("mantém revisão dos saldos lidos sem suspeitar de todos os campos", async () => {
+    const payload = structuredClone(batchPayload);
+    const job = payload.jobs[0];
+    job.result!.analysis.preview_transactions = [
+      {
+        ...job.result!.analysis.preview_transactions[0],
+        warning_types: ["ocr_control_confidence_unconfirmed"],
+      },
+    ];
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse({ ...payload, jobs: [job] }));
+    const conversion = (
+      await createHttpWorkspaceRepository({ apiUrl: "/", fetcher }).getBatch(
+        "batch-real",
+      )
+    ).conversions[0];
+    expect(conversion.status).toBe("NEEDS_REVIEW");
+    expect(conversion.suspectedCount).toBe(0);
+  });
+
   it("preserva modo PRO e a mensagem pública da falha", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

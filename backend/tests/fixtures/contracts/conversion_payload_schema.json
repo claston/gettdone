@@ -1045,6 +1045,21 @@
           "title": "Ocr Unresolved Rows",
           "type": "integer"
         },
+        "ocr_balance_arithmetic_matches": {
+          "default": 0,
+          "title": "Ocr Balance Arithmetic Matches",
+          "type": "integer"
+        },
+        "ocr_review_fields_count": {
+          "default": 0,
+          "title": "Ocr Review Fields Count",
+          "type": "integer"
+        },
+        "ocr_review_rows_count": {
+          "default": 0,
+          "title": "Ocr Review Rows Count",
+          "type": "integer"
+        },
         "ocr_annotations_detected": {
           "default": 0,
           "title": "Ocr Annotations Detected",

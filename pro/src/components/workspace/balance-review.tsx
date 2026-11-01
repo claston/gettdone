@@ -83,18 +83,40 @@ export function BalanceReviewNotice({
   const financialWarning = warnings.includes("financial_validation_failed");
   const periodWarning = warnings.includes("document_period_unavailable");
   const blockWarning = warnings.includes("statement_blocks_not_contiguous");
+  const controlWarning = warnings.includes(
+    "ocr_control_confidence_unconfirmed",
+  );
+  const controlsUnavailable = warnings.includes("ocr_controls_unavailable");
+  const structureWarning = warnings.includes("ocr_structure_review_required");
   const balanceWarning = Boolean(
     rows.length ||
     summaryWarning ||
     financialWarning ||
     conversion.statementBalanceCheck,
   );
+  const changedAmounts = conversion.transactions.some(
+    (row) =>
+      row.isDeleted ||
+      row.fieldStates.credit === "EDITED" ||
+      row.fieldStates.debit === "EDITED",
+  );
+  const ocrBalanceMatches =
+    conversion.ocrBalanceMatches &&
+    !balanceWarning &&
+    !blockWarning &&
+    !conversion.partialStatement &&
+    !controlsUnavailable &&
+    !changedAmounts;
   if (
     !rows.length &&
     !summaryWarning &&
     !financialWarning &&
     !periodWarning &&
     !blockWarning &&
+    !controlWarning &&
+    !controlsUnavailable &&
+    !structureWarning &&
+    !ocrBalanceMatches &&
     !conversion.statementBalanceCheck
   )
     return null;
@@ -107,10 +129,36 @@ export function BalanceReviewNotice({
   );
   return (
     <div
-      className="page-sync-notice balance-review-notice"
+      className={`page-sync-notice balance-review-notice${balanceWarning ? " has-financial-error" : ""}`}
       role="status"
       aria-label="Conferência do documento"
     >
+      {ocrBalanceMatches && (
+        <p>
+          <strong>Saldo calculado confere com os saldos lidos.</strong>
+          {conversion.transactions.some((row) =>
+            Object.values(row.fieldStates).includes("SUSPECTED"),
+          ) && " Os campos destacados ainda precisam de conferência."}
+        </p>
+      )}
+      {controlWarning && (
+        <p>
+          Confira os saldos no PDF: a leitura desses valores teve confiança
+          abaixo do limite.
+        </p>
+      )}
+      {controlsUnavailable && (
+        <p>
+          Não foi possível identificar os saldos de abertura e fechamento para
+          conferir o documento.
+        </p>
+      )}
+      {structureWarning && (
+        <p>
+          A organização de algumas linhas precisa de conferência no PDF. Esse
+          aviso se refere ao documento.
+        </p>
+      )}
       {periodWarning && (
         <p>
           <strong>Período do documento não identificado.</strong> Os movimentos

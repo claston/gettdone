@@ -100,6 +100,61 @@ def test_uncertain_identity_is_pending_and_does_not_merge_by_name(receipts):
     assert dashboard["pending"][0]["source"]["holder_name"] == "Padaria São José"
 
 
+@pytest.mark.parametrize("tax", ["12345678000190", "12345678901"])
+def test_matching_tax_prefers_current_document_name_without_creating_another_client(receipts, tax):
+    service, owner, other = receipts
+    old = record(owner, source={**identity(), "holder_name": "ASAAS", "holder_tax_id": tax}, days=30)
+    service.receive(old)
+    before = service.dashboard(owner, now=old.created_at)["clients"][0]
+    current = record(owner, "job_new", source={**identity(), "holder_tax_id": tax}, days=30)
+    current.created_at += timedelta(minutes=1)
+    service.receive(current)
+    service.receive(old)
+    page = service.dashboard(owner, now=current.created_at)
+    assert len(page["clients"]) == 1
+    assert page["clients"][0]["id"] == before["id"]
+    assert page["clients"][0]["name"] == "Padaria São José"
+    assert page["clients"][0]["historical_count"] == 2
+    assert service.dashboard(other)["clients"] == []
+
+
+def test_already_linked_receipt_can_refresh_legacy_client_name_from_its_identified_holder(receipts):
+    service, owner, _ = receipts
+    item = record(owner, days=30)
+    service.receive(item)
+    client = service.dashboard(owner, now=item.created_at)["clients"][0]
+    with service.db.connect() as conn:
+        service._write(conn, "UPDATE pro_clients SET name = ? WHERE id = ?", ("ASAAS", client["id"]))
+        conn.commit()
+    service.receive(item)
+    assert service.dashboard(owner, now=item.created_at)["clients"][0]["name"] == "Padaria São José"
+
+
+def test_ambiguous_document_cannot_rename_a_client_even_with_the_same_tax(receipts):
+    service, owner, _ = receipts
+    service.receive(record(owner, days=30))
+    current = record(owner, "uncertain", source={**identity(), "holder_name": "Nome incerto", "confidence": "ambiguous"}, days=30)
+    current.created_at += timedelta(minutes=1)
+    service.receive(current)
+    page = service.dashboard(owner, now=current.created_at)
+    assert page["clients"][0]["name"] == "Padaria São José"
+    assert [row["job_id"] for row in page["pending"]] == ["uncertain"]
+
+
+def test_different_tax_does_not_rename_or_merge_an_existing_client(receipts):
+    service, owner, _ = receipts
+    first = record(owner, days=30)
+    service.receive(first)
+    existing_id = service.dashboard(owner, now=first.created_at)["clients"][0]["id"]
+    other = record(owner, "job_other_tax", source={**identity(), "holder_name": "Outro titular", "holder_tax_id": "98765432000110"})
+    other.created_at += timedelta(minutes=1)
+    service.receive(other)
+    clients = service.dashboard(owner, now=other.created_at)["clients"]
+    assert len(clients) == 2
+    assert next(client for client in clients if client["id"] == existing_id)["name"] == "Padaria São José"
+
+
+
 def test_known_source_account_and_multiple_accounts_keep_document_totals_unique(receipts):
     service, owner, _ = receipts
     source = {**identity(), "accounts": [

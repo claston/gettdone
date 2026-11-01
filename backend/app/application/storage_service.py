@@ -588,6 +588,8 @@ class TempAnalysisStorage:
         content["closing_balance"] = closing_balance_value
         content["preview_transactions"] = [asdict(item) for item in preview_rows]
         content["report_transactions"] = [asdict(item) for item in report_rows]
+        if "ocr_balance_arithmetic_matches" in (content.get("pdf_processing_metrics") or {}):
+            content["pdf_processing_metrics"]["ocr_balance_arithmetic_matches"] = 0
         new_updated_at = self.now_provider().isoformat()
         content["updated_at"] = new_updated_at
         self._refresh_structured_result_content(content, preview_rows=preview_rows, report_rows=report_rows)

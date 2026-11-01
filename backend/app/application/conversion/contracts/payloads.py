@@ -96,6 +96,9 @@ class PdfProcessingMetrics(BaseModel):
     textract_error_type: str = ""
     native_text_detected: int = 0
     ocr_unresolved_rows: int = 0
+    ocr_balance_arithmetic_matches: int = 0
+    ocr_review_fields_count: int = 0
+    ocr_review_rows_count: int = 0
     ocr_annotations_detected: int = 0
     opening_balance_ambiguous: int = 0
     opening_balance_ambiguity_reason: str = ""

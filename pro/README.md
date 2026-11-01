@@ -226,6 +226,8 @@ Neste estágio, `BACKEND_API_URL` aponta para o backend FastAPI já existente do
 
 A Conversão PRO usa `StartDocumentAnalysis`/`GetDocumentAnalysis` assíncronos para o PDF inteiro. Em caso de falha, o workspace mostra a mensagem pública disponível e orienta um novo envio, com aviso de possível consumo de páginas. Uma recusa de reprocessamento não é apresentada como conflito entre sessões; o aviso de conflito fica restrito às operações de edição. Respostas antigas sem `ocr_mode` continuam compatíveis com o fluxo padrão.
 
+Os novos avisos do OCR separam confiança da data/valor e ressalvas do documento. Só o campo afetado recebe destaque amarelo. O topo pode informar que o cálculo confere com os saldos lidos, mantendo as ressalvas de leitura; isso não declara o documento integralmente validado. Divergência financeira impede essa mensagem positiva. Resultados antigos mantêm seus avisos genéricos. Em Extratos recebidos, CPF/CNPJ continua definindo o cliente e o nome consistente do documento mais recente tem preferência sobre o nome salvo.
+
 Depois de configurar ou alterar `NEXT_PUBLIC_API_URL`, faça um novo build do serviço. Essa variável é incorporada ao bundle do navegador durante o build; um redeploy sem rebuild não aplica a mudança.
 
 No backend, mantenha `CORS_ALLOW_ORIGINS` sem wildcard e inclua obrigatoriamente a origem exata do preview. A validação dos endpoints mutáveis confere o cabeçalho `Origin` mesmo quando a chamada chega pelo proxy same-origin:

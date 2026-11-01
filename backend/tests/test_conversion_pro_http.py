@@ -29,14 +29,21 @@ from tests.ocr_conversion_http_helpers import public_client
 from tests.test_conversion_workspace_http_real_api import _run_pro_upload_http_server
 from tests.test_embedded_ocr_quality import layered_pdf
 from tests.test_ocr_structure_experiment import evidence
+from tests.test_received_statements import record as received_record
 
 pytestmark = pytest.mark.real_http
 
 
-def test_paid_individual_estimate_worker_report_and_idempotency(tmp_path, monkeypatch):
+@pytest.mark.parametrize("low_confidence", [False, True])
+def test_paid_individual_estimate_worker_report_and_idempotency(tmp_path, monkeypatch, low_confidence):
     raw = layered_pdf("")
     extraction = replace(evidence(tables=True), document_hash=hashlib.sha256(raw).hexdigest())
     page = extraction.pages[0]
+    if low_confidence:
+        table = page.tables[0]
+        rows = [list(row) for row in table.rows]
+        rows[1][2] = replace(rows[1][2], confidence=40)
+        page = replace(page, tables=[replace(table, rows=rows)])
     headers = [
         ExtractedLine("owner", 1, 1, "EMPRESA AURORA LTDA"),
         ExtractedLine("issuer", 1, 2, "ASAAS"),
@@ -108,6 +115,11 @@ def test_paid_individual_estimate_worker_report_and_idempotency(tmp_path, monkey
             assert estimate.json()["pages"] == 1 and not calls
             assert client.post(f"/api/pro/conversion-batches/{batch}/submit", json={}).status_code == 202
             job_id = publisher.calls[0]
+            received = ReceivedStatements(access.db)
+            legacy = received_record(service.repository.get(job_id).job.identity.identity_id, "legacy_asaas", days=30, source={
+                "holder_name": "ASAAS", "holder_tax_id": "12345678000190", "bank_code": "461", "confidence": "strong"})
+            received.receive(legacy)
+            legacy_client_id = received.dashboard(legacy.job.identity.identity_id)["clients"][0]["id"]
             for receive_count in [1, 2]:
                 processor.process(
                     job_id=job_id, expected_batch_id=batch, trace_id="pro-http", receive_count=receive_count, lease_owner="test"
@@ -116,14 +128,25 @@ def test_paid_individual_estimate_worker_report_and_idempotency(tmp_path, monkey
             assert result["status"] == "completed", result
             analysis = result["result"]["analysis"]
             assert analysis["transactions_total"] == 3
+            assert analysis["pdf_processing_metrics"]["ocr_balance_arithmetic_matches"] == 1
+            assert analysis["pdf_processing_metrics"]["ocr_review_rows_count"] == int(low_confidence)
+            if low_confidence:
+                assert analysis["preview_transactions"][0]["warning_types"] == ["ocr_amount_confidence_unconfirmed"]
+                assert not analysis["preview_transactions"][1]["warning_types"]
             assert analysis["bank_name"] == "Asaas" and analysis["bank_code"] == "461"
             source = service.repository.get(job_id).result.payload["organization_source"]
             assert source["holder_name"] == "EMPRESA AURORA LTDA" and source["holder_tax_id"] == "12345678000190"
             receipts = client.get("/api/pro/receipts")
             assert receipts.status_code == 200, receipts.text
             assert receipts.json()["clients"][0]["name"] == "EMPRESA AURORA LTDA"
+            assert len(receipts.json()["clients"]) == 1
+            assert receipts.json()["clients"][0]["id"] == legacy_client_id
             assert [r["amount"] for r in analysis["preview_transactions"]] == [20, -5, -5]
-            assert analysis["opening_balance"] == 100 and analysis["closing_balance"] == 110
+            if not low_confidence:
+                assert analysis["opening_balance"] == 100 and analysis["closing_balance"] == 110
+            else:
+                # Arithmetic over read controls does not promote uncertain evidence to verified export bounds.
+                assert analysis["opening_balance"] is None and analysis["closing_balance"] is None
             assert client.get(f"/report/{result['analysis_id']}").status_code == 200
             download = client.get(f"/convert-report/{result['analysis_id']}", params={"format": "csv"})
             assert download.status_code == 200 and "TARIFA" in download.text

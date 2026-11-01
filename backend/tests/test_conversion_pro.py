@@ -205,5 +205,6 @@ def test_pro_reuses_shared_period_segmentation_and_preserves_page_provenance(mon
     assert len(result.transactions) == 6
     assert result.parse_metrics["statement_blocks_count"] == 2
     assert bool(result.parse_metrics["financial_controls_validated"]) is validated
+    assert bool(result.parse_metrics["ocr_balance_arithmetic_matches"]) is validated
     assert [row.source_page for row in result.canonical_transactions] == [1, 1, 1, 2, 2, 2]
     assert all(region.page == row.source_page for row in result.canonical_transactions for region in row.source_regions)
