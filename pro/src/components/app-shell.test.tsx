@@ -35,6 +35,19 @@ describe("AppShell", () => {
     expect(await screen.findByText("Usuário Canário")).toBeInTheDocument();
     expect(screen.getByText("Plano Profissional")).toBeInTheDocument();
     expect(screen.getByText("23 de 150 páginas usadas")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Clientes" })).toHaveAttribute(
+      "href",
+      "/dashboard",
+    );
+    expect(screen.getByRole("link", { name: "Conversões" })).toHaveAttribute(
+      "href",
+      "/conversions",
+    );
+    expect(
+      screen.queryByRole("link", {
+        name: /Períodos|Trabalhos|Extratos recebidos/,
+      }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("Integração real")).not.toBeInTheDocument();
     expect(screen.queryByText("Ana Souza")).not.toBeInTheDocument();
 

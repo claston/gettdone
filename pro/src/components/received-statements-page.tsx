@@ -30,6 +30,14 @@ function taxLabel(value: string | null) {
     : `CPF ${value.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4")}`;
 }
 
+function pendingReason(source: PendingStatement["source"]) {
+  if (source.identity_issues?.includes("unreadable_holder_tax_id"))
+    return "CPF/CNPJ do titular ilegível. Confira a identificação no documento.";
+  if (source.confidence === "ambiguous")
+    return "Identificação ambígua. Confirme o titular no documento.";
+  return "Titular sem evidência suficiente para associação automática.";
+}
+
 function IdentityForm({
   client,
   pending,
@@ -181,6 +189,21 @@ export function ReceivedStatementsPage({
   const [editing, setEditing] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(true);
   const [activeTab, setActiveTab] = useState<"clients" | "pending">("clients");
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const synchronized = useRef<{
+    service: ReceivedService;
+    attempt: number;
+  } | null>(null);
+  useEffect(() => {
+    if (search.trim() === query) return;
+    const timer = setTimeout(() => {
+      setCursor(undefined);
+      setEditing(null);
+      setQuery(search.trim());
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [search, query]);
   const tabId = useId();
   const clientTab = useRef<HTMLButtonElement>(null);
   const pendingTab = useRef<HTMLButtonElement>(null);
@@ -195,11 +218,29 @@ export function ReceivedStatementsPage({
       setError(null);
       setRefreshing(true);
       try {
-        const first = await service.list(cursor, abort.signal, pendingCursor);
+        const first = await service.list(
+          cursor,
+          abort.signal,
+          pendingCursor,
+          query,
+        );
         if (abort.signal.aborted) return;
         setPage(first);
+        if (
+          query &&
+          synchronized.current?.service === service &&
+          synchronized.current.attempt === attempt
+        )
+          return;
         await service.refresh(abort.signal);
-        const updated = await service.list(cursor, abort.signal, pendingCursor);
+        if (abort.signal.aborted) return;
+        synchronized.current = { service, attempt };
+        const updated = await service.list(
+          cursor,
+          abort.signal,
+          pendingCursor,
+          query,
+        );
         if (!abort.signal.aborted) setPage(updated);
       } catch (caught) {
         if (!abort.signal.aborted)
@@ -214,7 +255,7 @@ export function ReceivedStatementsPage({
     }
     void load();
     return () => abort.abort();
-  }, [service, cursor, pendingCursor, attempt]);
+  }, [service, cursor, pendingCursor, attempt, query]);
   const saved = () => {
     setEditing(null);
     setPendingCursor(undefined);
@@ -229,8 +270,11 @@ export function ReceivedStatementsPage({
     <section className={`standard-page ${styles.page}`}>
       <div className="page-title">
         <div>
-          <h1>Extratos recebidos</h1>
-          <p>Visão consolidada dos documentos processados</p>
+          <h1>Clientes</h1>
+          <p>
+            Consulte os extratos, contas bancárias e pendências dos seus
+            clientes.
+          </p>
         </div>
         <div className={styles.actions}>
           <button
@@ -316,7 +360,7 @@ export function ReceivedStatementsPage({
           >
             {(
               [
-                ["clients", "Clientes", clientTab],
+                ["clients", "Identificados", clientTab],
                 ["pending", "Não identificados", pendingTab],
               ] as const
             ).map(([tab, label, ref]) => (
@@ -350,7 +394,11 @@ export function ReceivedStatementsPage({
                   }
                 }}
               >
-                {label}
+                {label} (
+                {tab === "clients"
+                  ? (page.client_count ?? page.clients.length)
+                  : (page.pending_count ?? page.pending.length)}
+                )
               </button>
             ))}
           </div>
@@ -368,6 +416,34 @@ export function ReceivedStatementsPage({
               {activeTab === tab &&
                 (tab === "clients" ? (
                   <>
+                    <div
+                      className={styles.search}
+                      role="search"
+                      aria-label="Buscar clientes"
+                    >
+                      <label htmlFor={`${tabId}-search`}>
+                        Buscar por nome, CPF ou CNPJ
+                      </label>
+                      <div className={styles.actions}>
+                        <input
+                          id={`${tabId}-search`}
+                          type="search"
+                          value={search}
+                          placeholder="Buscar por nome, CPF ou CNPJ"
+                          maxLength={160}
+                          autoComplete="off"
+                          onChange={(event) => setSearch(event.target.value)}
+                        />
+                        {search && (
+                          <button
+                            className="secondary-button"
+                            onClick={() => setSearch("")}
+                          >
+                            Limpar busca
+                          </button>
+                        )}
+                      </div>
+                    </div>
                     <div className={styles.clients}>
                       {clients.map((client) => (
                         <article className={styles.client} key={client.id}>
@@ -460,9 +536,10 @@ export function ReceivedStatementsPage({
                       ))}
                     </div>
                     {!page.clients.length && (
-                      <p>
-                        Seus clientes aparecerão aqui conforme os titulares
-                        forem identificados nos documentos recebidos.
+                      <p role="status">
+                        {query
+                          ? "Nenhum cliente encontrado"
+                          : "Seus clientes aparecerão aqui conforme os titulares forem identificados nos documentos recebidos."}
                       </p>
                     )}
                     {(cursor || page.next_cursor) && (
@@ -512,6 +589,21 @@ export function ReceivedStatementsPage({
                           >
                             Conferir identificação
                           </button>
+                        </div>
+                        <div className={styles.pendingDetails}>
+                          {(item.source.bank_code ||
+                            item.source.account_number) && (
+                            <p>
+                              {item.source.bank_code &&
+                                (banks[item.source.bank_code] ??
+                                  `Banco ${item.source.bank_code}`)}
+                              {item.source.branch &&
+                                ` · Agência ${item.source.branch}`}
+                              {item.source.account_number &&
+                                ` · Conta ••${item.source.account_number.slice(-4)}`}
+                            </p>
+                          )}
+                          <p>{pendingReason(item.source)}</p>
                         </div>
                         {editing === item.job_id && (
                           <IdentityForm

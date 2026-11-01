@@ -108,6 +108,31 @@
   display: grid;
   gap: 16px;
 }
+.search {
+  display: grid;
+  gap: 8px;
+}
+.search label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.search input {
+  flex: 1;
+  min-width: 180px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: white;
+  color: #0f172a;
+}
+.pendingDetails {
+  display: grid;
+  gap: 8px;
+  padding: 0 20px 20px;
+  color: #64748b;
+  font-size: 0.85rem;
+}
 .client {
   background: white;
   border: 1px solid #e2e8f0;

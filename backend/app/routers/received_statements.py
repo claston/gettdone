@@ -62,6 +62,20 @@ def refresh(owner: str = Depends(organization_owner), service=Depends(receipt_se
     return {"next_cursor": service.sync(owner, cursor)}
 
 
+class ClientSearch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    query: str = Field(default="", max_length=160)
+    cursor: str = Field(default="", max_length=100)
+    pending_cursor: str = Field(default="", max_length=100)
+    sort: Literal["id", "name"] = "name"
+
+
+@router.post("/search", dependencies=[Depends(require_pro_browser_request)])
+def search_clients(request: ClientSearch, owner: str = Depends(organization_owner), service=Depends(receipt_service)):
+    # Search terms stay out of URLs/access logs and are never sent to analytics.
+    return service.dashboard(owner, after=request.cursor, pending_after=request.pending_cursor, sort=request.sort, query=request.query)
+
+
 def live_record(service, owner, document):
     record = service.repository.get(document["job_id"])
     if (not record or record.job.batch_id != document["batch_id"] or record.job.identity.identity_type != "user"

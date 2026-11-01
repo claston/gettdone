@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  BarChart3,
   Building2,
   ChevronLeft,
   ChevronRight,
@@ -19,7 +18,7 @@ import { useProSession } from "@/components/pro-session-gate";
 import type { ProUser } from "@/data/pro-auth-service";
 
 const navigation = [
-  { href: "/dashboard", label: "Extratos recebidos", icon: BarChart3 },
+  { href: "/dashboard", label: "Clientes", icon: Building2 },
   { href: "/conversions", label: "Conversões", icon: FileStack },
 ];
 

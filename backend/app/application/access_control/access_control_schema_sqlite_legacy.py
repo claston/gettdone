@@ -648,3 +648,12 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
 
     for statement in conversion_pro_schema():
         conn.execute(statement)
+    from app.application.client_identity_schema_v1 import client_identity_schema_v1, protect_existing_client_identities
+
+    identity_table_existed = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'pro_client_identity_confirmations'"
+    ).fetchone()
+    for statement in client_identity_schema_v1():
+        conn.execute(statement)
+    if not identity_table_existed:
+        conn.execute(protect_existing_client_identities())

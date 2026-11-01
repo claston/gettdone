@@ -27,6 +27,10 @@ export interface PendingStatement {
     holder_name?: string;
     holder_tax_id?: string;
     confidence?: string;
+    bank_code?: string;
+    branch?: string;
+    account_number?: string;
+    identity_issues?: string[];
     references?: Array<{ page: number; line: number }>;
   };
 }
@@ -36,6 +40,8 @@ export interface ReceivedPage {
   pending: PendingStatement[];
   next_cursor: string | null;
   pending_next_cursor?: string | null;
+  client_count?: number;
+  pending_count?: number;
 }
 export interface ClientEdit {
   name: string;
@@ -53,6 +59,7 @@ export interface ReceivedService {
     cursor?: string,
     signal?: AbortSignal,
     pendingCursor?: string,
+    query?: string,
   ): Promise<ReceivedPage>;
   refresh(signal?: AbortSignal): Promise<void>;
   edit(id: string, value: ClientEdit): Promise<unknown>;
@@ -74,7 +81,20 @@ async function read(path: string, init?: RequestInit) {
   return response.json();
 }
 export const receivedService: ReceivedService = {
-  list: (cursor, signal, pendingCursor) => {
+  list: (cursor, signal, pendingCursor, search = "") => {
+    if (search.trim())
+      return read("/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: search.trim(),
+          cursor: cursor ?? "",
+          pending_cursor: pendingCursor ?? "",
+          sort: "name",
+        }),
+        signal,
+        cache: "no-store",
+      });
     const query = new URLSearchParams();
     query.set("sort", "name");
     if (cursor) query.set("cursor", cursor);

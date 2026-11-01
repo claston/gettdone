@@ -24,9 +24,21 @@ def _utc(value):
     return datetime.fromisoformat(value).astimezone(timezone.utc) if isinstance(value, str) else value.astimezone(timezone.utc)
 
 
+def _search_text(value):
+    text = unicodedata.normalize("NFD", (value or "").strip().casefold())
+    return "".join(char for char in text if not unicodedata.combining(char))
+
+
 def _client_name_order(row):
-    name = unicodedata.normalize("NFD", row["name"].strip().casefold())
-    return "".join(char for char in name if not unicodedata.combining(char)), row["id"]
+    return _search_text(row["name"]), row["id"]
+
+
+def _matches_client(row, query):
+    text = _search_text(query)
+    digits = "".join(char for char in text if char.isdecimal())
+    document_query = digits and all(char.isdecimal() or char in ".-/ " for char in text)
+    return (not text or text in _search_text(row["name"]) or text in _search_text(row["trade_name"])
+            or bool(document_query and digits in normalized(row["tax_id"])))
 
 
 def technical_status(record):
@@ -78,6 +90,9 @@ class ReceivedStatements(OrganizationService):
         client = self.db.fetchone(conn, "SELECT name, tax_id FROM pro_clients WHERE organization_id = ? AND id = ?",
                                  (organization, client_id))
         if not client or normalized(client["tax_id"]) != tax or client["name"] == name:
+            return
+        if self.db.fetchone(conn, "SELECT 1 FROM pro_client_identity_confirmations WHERE organization_id = ? AND client_id = ?",
+                            (organization, client_id)):
             return
         latest = self.db.fetchone(conn, "SELECT r.created_at, r.job_id FROM pro_received_statements r "
             "JOIN pro_conversion_contexts x ON x.organization_id = r.organization_id AND x.job_id = r.job_id "
@@ -261,26 +276,30 @@ class ReceivedStatements(OrganizationService):
             return base64.urlsafe_b64encode(json.dumps([last.created_at.isoformat(), last.job_id]).encode()).decode().rstrip("=")
         return None
 
-    def dashboard(self, owner, *, now=None, after="", limit=30, pending_after="", sort="id"):
+    def dashboard(self, owner, *, now=None, after="", limit=30, pending_after="", sort="id", query=""):
         now = _utc(now or datetime.now(timezone.utc)).isoformat()
         with self.db.connect() as conn:
             organization = self._organization(conn, owner)
             if not organization:
-                return {"totals": {"statements": 0, "ready": 0, "attention": 0}, "clients": [], "pending": [], "next_cursor": None}
+                return {"totals": {"statements": 0, "ready": 0, "attention": 0}, "clients": [], "pending": [],
+                        "next_cursor": None, "pending_next_cursor": None, "client_count": 0, "pending_count": 0}
             totals = self.db.fetchone(conn, "SELECT COUNT(*) AS statements, "
                 "COALESCE(SUM(CASE WHEN technical_status = 'ready' THEN 1 ELSE 0 END), 0) AS ready, "
                 "COALESCE(SUM(CASE WHEN technical_status = 'attention' THEN 1 ELSE 0 END), 0) AS attention "
                 "FROM pro_received_statements WHERE organization_id = ? AND expires_at > ?", (organization, now))
             client_filter, client_params = "c.id > ?", [after]
-            if sort == "name":
-                # Sort only identities before pagination; hydrate counts/accounts for one page.
-                # Python normalization gives SQLite and PostgreSQL the same accent-insensitive order.
-                identities = sorted(self.db.fetchall(conn,
-                    "SELECT c.id, c.name FROM pro_clients c WHERE c.organization_id = ? AND EXISTS ("
+            # Authorize first, normalize/filter before pagination. Only hydrate one
+            # page; Python normalization is identical on SQLite and PostgreSQL.
+            identities = self.db.fetchall(conn,
+                    "SELECT c.id, c.name, c.trade_name, c.tax_id FROM pro_clients c WHERE c.organization_id = ? AND EXISTS ("
                     "SELECT 1 FROM pro_conversion_contexts x JOIN pro_received_statements r "
                     "ON r.organization_id = x.organization_id AND r.job_id = x.job_id "
                     "WHERE x.organization_id = c.organization_id AND x.client_id = c.id)",
-                    (organization,)), key=_client_name_order)
+                    (organization,))
+            identities = [row for row in identities if _matches_client(row, query)]
+            client_count = len(identities)
+            if sort == "name" or query.strip():
+                identities = sorted(identities, key=_client_name_order if sort == "name" else lambda row: row["id"])
                 start = next((index + 1 for index, row in enumerate(identities) if row["id"] == after), len(identities)) if after else 0
                 client_params = [row["id"] for row in identities[start:start + limit + 1]]
                 client_filter = f"c.id IN ({', '.join('?' for _ in client_params)})" if client_params else "1 = 0"
@@ -312,11 +331,14 @@ class ReceivedStatements(OrganizationService):
                 for account in client["accounts"]:
                     account["account_number"] = "••" + account["account_number"][-4:]
                 clients.append(client)
+            pending_count = self.db.fetchone(conn, "SELECT COUNT(*) AS total FROM pro_received_statements r "
+                "LEFT JOIN pro_conversion_contexts x ON x.organization_id = r.organization_id AND x.job_id = r.job_id "
+                "WHERE r.organization_id = ? AND x.client_id IS NULL AND r.expires_at > ?", (organization, now))["total"]
             pending = self.db.fetchall(conn, "SELECT r.*, COALESCE(x.version, 0) AS version FROM pro_received_statements r "
                 "LEFT JOIN pro_conversion_contexts x ON x.organization_id = r.organization_id AND x.job_id = r.job_id "
                 "WHERE r.organization_id = ? AND x.client_id IS NULL AND r.expires_at > ? AND r.job_id > ? ORDER BY r.job_id LIMIT 51",
                 (organization, now, pending_after))
-            return {"totals": dict(totals), "clients": clients,
+            return {"totals": dict(totals), "clients": clients, "client_count": client_count, "pending_count": pending_count,
                     "pending": [{"job_id": row["job_id"], "batch_id": row["batch_id"], "filename": row["filename"],
                                  "version": row["version"], "source": json.loads(row["source_json"])} for row in pending[:50]],
                     "pending_next_cursor": pending[49]["job_id"] if len(pending) > 50 else None,
@@ -364,6 +386,7 @@ class ReceivedStatements(OrganizationService):
             account_id = self._link_accounts(conn, organization, owner, job_id, client_id, source)
             result = self.save_context_in_connection(conn, owner, job_id=job_id, client_id=client_id, account_id=account_id,
                                                      period_ids=periods, expected_version=expected_version)
+            self._confirm_identity(conn, organization, client_id)
             conn.commit()
             return result
 
@@ -382,5 +405,10 @@ class ReceivedStatements(OrganizationService):
                 raise ValueError("Já existe um cliente com este CPF/CNPJ. Confira a associação do documento.")
             self._write(conn, "UPDATE pro_clients SET name = ?, tax_id = ?, updated_at = ? WHERE organization_id = ? AND id = ?",
                         (name, tax or None, self._now(), organization, client_id))
+            self._confirm_identity(conn, organization, client_id)
             conn.commit()
             return {"id": client_id}
+
+    def _confirm_identity(self, conn, organization, client_id):
+        self._write(conn, "INSERT INTO pro_client_identity_confirmations (organization_id, client_id, confirmed_at) "
+                    "VALUES (?, ?, ?) ON CONFLICT (organization_id, client_id) DO NOTHING", (organization, client_id, self._now()))

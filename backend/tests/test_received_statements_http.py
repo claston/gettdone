@@ -148,6 +148,15 @@ def test_receipts_real_http_multi_batch_workspace_export_permissions_and_expiry(
             assert [row["name"] for row in alphabetical.json()["clients"]] == ["Outro cliente", "Padaria"]
             assert client.get("/api/pro/receipts", params={"sort": "unknown"}).status_code == 400
             person = next(c for c in dashboard.json()["clients"] if c["name"] == "Padaria")
+            for term in ("pada", "PADARIA", "12.345.678/0001-90", "12345678000190"):
+                searched = client.post("/api/pro/receipts/search", json={"query": term})
+                assert searched.status_code == 200, searched.text
+                assert [c["id"] for c in searched.json()["clients"]] == [person["id"]]
+                assert searched.json()["client_count"] == 1
+                assert searched.headers["cache-control"] == "private, no-store"
+            assert client.post("/api/pro/receipts/search", json={"query": "inexistente"}).json()["clients"] == []
+            assert client.post("/api/pro/receipts/search", json={"query": "x" * 161}).status_code == 400
+            assert httpx.post(base + "/api/pro/receipts/search", json={"query": "Padaria"}).status_code in (401, 403)
             assert person["historical_count"] == 2 and person["accounts"][0]["account_number"] == "••1234"
             workspace = client.get(f"/api/pro/receipts/clients/{person['id']}/workspace")
             assert workspace.status_code == 200, workspace.text
@@ -164,6 +173,9 @@ def test_receipts_real_http_multi_batch_workspace_export_permissions_and_expiry(
             assert httpx.get(base + "/api/pro/receipts").status_code == 401
             foreign = access.register_user(name="Other", email="receipt-foreign@example.test", password="strong-password")
             access.activate_user_plan(user_id=foreign.user_id, plan_code="essencial")
+            private = client.post("/api/pro/receipts/search", json={"query": "12345678000190"},
+                                  headers={"Authorization": f"Bearer {foreign.token}"})
+            assert private.status_code == 200 and private.json()["clients"] == []
             for suffix in ("workspace", "export"):
                 response = client.get(f"/api/pro/receipts/clients/{person['id']}/{suffix}",
                                       headers={"Authorization": f"Bearer {foreign.token}"})

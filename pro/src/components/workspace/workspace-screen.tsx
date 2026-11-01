@@ -561,7 +561,7 @@ export function WorkspaceScreen({
           <Link href={reviewReturnTo(returnTo)} className="back-link">
             <ChevronLeft size={16} />{" "}
             {clientMode || returnTo === "/dashboard"
-              ? "Extratos recebidos"
+              ? "Clientes"
               : returnTo
                 ? reviewReturnTo(returnTo).startsWith("/works/")
                   ? "Voltar ao trabalho"

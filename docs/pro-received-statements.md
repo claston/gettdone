@@ -1,7 +1,9 @@
-# Extratos recebidos — OFX-62
+# Clientes — OFX-23 / OFX-62
 
 O PRO reconhece o titular dos documentos e reúne conversões de lotes diferentes
-no dashboard **Extratos recebidos**. Conversões permanece autossuficiente: upload,
+na tela **Clientes**, disponível em `/dashboard`. Esse endereço e os links antigos
+permanecem compatíveis; `/clients` continua reservado ao cadastro legado oculto.
+Conversões permanece autossuficiente: upload,
 processamento, revisão e download por lote não exigem organização nem as tabelas
 novas. O Free e os contratos comerciais existentes permanecem compatíveis.
 
@@ -24,8 +26,13 @@ também é aplicada ao atualizar recebimentos já associados, sem nova conversã
 Identificação ambígua, nome ausente ou CPF/CNPJ diferente não renomeiam o cliente.
 O documento associado mais recente, pela data de criação e desempate por job,
 define o nome: sincronizar um lote antigo não restaura o nome anterior. Essa
-preferência pode substituir um nome editado manualmente; a identificação por
-CPF/CNPJ continua sendo a referência para o vínculo.
+preferência só vale para identidades ainda não confirmadas. Uma edição inline ou
+confirmação contextual grava um marcador em `pro_client_identity_confirmations`;
+inferências posteriores não substituem esses dados. O marcador guarda somente
+organização, cliente e instante da confirmação, sem duplicar CPF/CNPJ ou evidência.
+Como a versão anterior não distinguia correção humana de inferência, a migração
+protege conservadoramente todas as identidades preexistentes. Elas continuam
+editáveis inline; somente a troca automática posterior de nome fica impedida.
 
 Sem CPF/CNPJ do titular, um nome explícito e único junto de uma conta de origem
 completa (banco + agência ou cooperativa + conta) permite criar o cliente sem
@@ -37,7 +44,7 @@ Contas iguais em cooperativas diferentes não são consideradas a mesma origem.
 Recebimentos concorrentes são serializados pela organização e são idempotentes
 por arquivo. Contas de um mesmo PDF não duplicam o total do cliente.
 
-Dados insuficientes aparecem em **Identificação pendente**, com evidência e link
+Dados insuficientes aparecem na aba **Não identificados**, com evidência e link
 para conferir o PDF. O formulário é contextual ao documento, com confirmação de
 dados ou associação a cliente já identificado; não há cadastro livre na navegação.
 Confirmações usam versão de vínculo; edições inline usam a versão temporal do
@@ -58,13 +65,30 @@ conta de destino de exportação não é usada como origem.
 
 ## Consulta, editor e retenção
 
-APIs novas ficam em `/api/pro/receipts`: dashboard, refresh, confirmação por
+APIs ficam em `/api/pro/receipts`: dashboard, busca, refresh, confirmação por
 documento, edição do cliente, workspace e exportação por cliente. Todas usam a
 autorização existente; escritas exigem origem permitida e o cabeçalho PRO. Não
 há nova concessão de degustação, acesso de equipe ou mudança de plano.
 
 O dashboard consulta metadados, com paginação independente de clientes e
-identificações. Mostra exatamente Extratos, Prontos e Precisam de atenção.
+identificações. As abas **Identificados** e **Não identificados** contam,
+respectivamente, clientes encontrados e documentos disponíveis pendentes, além
+da página atual. A busca em Identificados aceita trechos de nome/razão social e
+nome fantasia sem diferenciar acentos/caixa; CPF/CNPJ são comparados pelos dígitos.
+A filtragem ocorre no backend, depois do isolamento por proprietário e antes da
+paginação. Limpar a busca restaura a lista; trocar de aba conserva o termo sem
+filtrar os documentos pendentes. A atualização tem debounce de 250 ms, cancelamento
+de requisições antigas, estado vazio e botão de limpeza, sem recarregar a página.
+
+`POST /api/pro/receipts/search` recebe `query`, `cursor`, `pending_cursor` e `sort`
+no corpo JSON, evitando identificadores nas URLs/logs de acesso. Não emite eventos
+de analytics nem persiste termos. O GET anterior continua compatível; as respostas
+acrescentam `client_count` e `pending_count`. A implementação normaliza identidades
+autorizadas em memória e hidrata contas/quantidades somente para a página atual,
+reutilizando a ordenação existente. Históricos muito grandes podem exigir índice
+normalizado em uma evolução separada.
+
+Mostra exatamente Extratos, Prontos e Precisam de atenção.
 Esses três indicadores contam somente documentos disponíveis: no instante exato
 da expiração, o arquivo deixa de compor os cards. Se todos expiraram, os cards
 mostram 0 / 0 / 0. Os totais históricos e expirados de cada cliente e conta
@@ -88,10 +112,15 @@ reconstruído por suposição.
 
 ## Migração, publicação e rollback
 
-1. Aplicar `20261028_02`, posterior a `20261028_01`, no ambiente escolhido:
+1. Aplicar a cadeia até `20261101_01`, posterior a `20261031_01`, no ambiente escolhido:
    `venv\Scripts\python.exe -m alembic upgrade head`, dentro de `backend`.
-   A migração cria apenas `pro_received_statements`, seu índice e
-   `pro_received_statement_accounts`; não modifica tabelas anteriores.
+   A nova migração cria apenas `pro_client_identity_confirmations`; não altera
+   tabelas/colunas, PDFs, resultados, cotas ou prazos anteriores. As tabelas de
+   recebimentos continuam na migração histórica `20261028_02`. O backfill copia
+   apenas IDs e `updated_at` dos clientes preexistentes para protegê-los, sem
+   reler documentos. Tanto backfill quanto confirmações novas são idempotentes
+   por organização/cliente. Os marcadores
+   continuam válidos após expirar um lote.
 2. Publicar API e worker compatíveis, mantendo `PRO_ORGANIZATION_ENABLED` desligado
    até concluir a preparação. Habilitá-lo também no worker para registrar novos
    recebimentos. O refresh permite retomar registros disponíveis sem reconversão.
@@ -103,19 +132,32 @@ reconstruído por suposição.
 
 O rollback operacional desliga organização e reverte frontend/API/worker quando
 necessário, **mantendo tabelas e vínculos**. Conversões continua acessível. O
-downgrade técnico remove somente as duas tabelas novas e perde esse histórico;
-foi validado em banco descartável e não deve ser usado após uso real sem backup
-e estratégia de restauração. Não há backfill de PDFs, cópia de lançamentos,
+prefira rollback de aplicação mantendo a migração. O downgrade técnico de
+`20261101_01` remove somente a tabela de marcadores e perde as confirmações;
+exporte seus registros antes e restaure-os após reupgrade. Downgrades além de
+`20261028_02` também removem as duas tabelas históricas de recebimentos.
+Upgrade/downgrade/reupgrade são exercitados em SQLite e PostgreSQL 16 descartável,
+incluindo leitura/gravação pelas APIs anteriores. A versão antiga do worker ainda
+pode aplicar sua política antiga de nomes durante uma janela mista: atualizar API
+e worker antes de liberar a nova UI evita essa janela. Não há backfill de PDFs, cópia de lançamentos,
 mudança de quota ou DDL em tabelas grandes existentes. Downtime esperado: nenhum.
 
-Clientes, Contas, Períodos e Trabalhos não têm entradas na navegação pública;
-suas implementações, rotas e APIs permanecem. As páginas legadas redirecionam
+Os cadastros legados de Clientes/Contas, Períodos e Trabalhos não têm entradas na
+navegação pública; suas implementações, rotas e APIs permanecem. **Clientes** no
+menu aponta à nova experiência documental. As páginas legadas redirecionam
 para o dashboard por padrão. Somente builds internos de aceitação podem usar
 `PRO_INTERNAL_LEGACY_ORGANIZATION_UI=true` para exercitar as telas preservadas;
 isso não concede permissões no backend. A CI usa esse modo exclusivamente na
 suíte de regressão de Trabalhos. Não habilitar em builds públicos.
 
 ## Evidências de validação
+
+Validação local da iteração de 01/11/2026: backend **3952 passed, 7 skipped,
+2 xfailed**; PRO **253 testes**; validação focada de serviço/migração/PostgreSQL
+**31 passed**. Ruff, ESLint, TypeScript, Prettier dos arquivos alterados e lints
+de texto/navegação passaram. Build de produção validado em cópia isolada devido
+a EPERM no cache antigo do OneDrive. Chromium aprovou Clientes em desktop/mobile
+e o workspace por lote com 12 documentos e 541 linhas no documento maior.
 
 - `test_received_statements.py`: identidade, ambiguidade, correções, múltiplas
   contas, idempotência e expiração exata com dois lotes em 24h e 30d.
