@@ -20,6 +20,11 @@ class BankRecord:
 
 
 _EXTRA_BANK_RECORDS = (
+    # Asaas confirms code 461: https://www.asaas.com/sobre-nos
+    BankRecord(
+        code="461", name="ASAAS GESTÃO FINANCEIRA INSTITUIÇÃO DE PAGAMENTO S.A.",
+        short_name="Asaas", aliases=("Asaas", "Asaas IP S.A.", "Asaas I.P. S.A."), active=True,
+    ),
     # Uniprime do Iguaçu confirms its clearing institution as 099 (page 5):
     # https://www.uniprime.com.br/uploads/singular-demonstrativo/2024/08/iguacu-2024-1724933264.pdf
     BankRecord(

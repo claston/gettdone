@@ -9,7 +9,7 @@ from app.application.organization_suggestions import build_source_evidence
 
 TAX = r"(?:\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}|\d{3}\.?\d{3}\.?\d{3}-?\d{2})(?!\d|[./-]\d)"
 FORMATTED_TAX = r"(?:\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2})"
-IDENTITY_VERSION = 5
+IDENTITY_VERSION = 6
 MASKED_TAX = r"(?=[\d.*•/-]*[*•])[\d.*•/-]{11,22}"
 IDENTIFIER = r"\d[\d.]*(?:-[\dXx]+)?(?=$|[\s/|A-Za-zÀ-ÿ])"
 ORIGIN_LABEL = r"(?:COOPERATIVA|COOP\.|AG[EÊ]NCIA|AG\.?|CONTA(?:\s+(?:CORRENTE|INVESTIMENTO))?|C/C|CC|BANCO)"
@@ -162,6 +162,11 @@ def _holder_candidate(value):
     return value
 
 
+def _unlabelled_holder(value):
+    name = _holder_candidate(value)
+    return name if name and not resolve_bank_code_from_name(name) else ""
+
+
 def _adjacent_holders(block, *, statement_title=False, issue_codes=None):
     """Accept unlabeled names only beside an explicit origin account or owner tax field."""
     origin = any(re.match(r"^(?:CONTA(?:\s+(?:CORRENTE|INVESTIMENTO))?|C/C|CC)\s*:?\s*" + IDENTIFIER,
@@ -173,7 +178,7 @@ def _adjacent_holders(block, *, statement_title=False, issue_codes=None):
             pair = re.fullmatch(r"(.+?)\s+(" + TAX + r")", value)
             if pair and (name := _holder_candidate(pair[1])):
                 yield name, normalized(pair[2]), (line_number, ref)
-    initial_owner = (statement_title and len(block) > 1 and _holder_candidate(block[0][1])
+    initial_owner = (statement_title and len(block) > 1 and _unlabelled_holder(block[0][1])
                      and re.match(r"^" + TAX_LABEL + r"\s*:\s*" + TAX + r"$", _plain(block[1][1])))
     if not origin and not initial_owner:
         return
@@ -182,7 +187,7 @@ def _adjacent_holders(block, *, statement_title=False, issue_codes=None):
             continue
         plain = _plain(line)
         pair = re.fullmatch(r"(.+?)\s+[•|]\s*(" + FORMATTED_TAX + ")", line)
-        if pair and (name := _holder_candidate(pair[1])):
+        if pair and (name := _unlabelled_holder(pair[1])):
             yield name, normalized(pair[2]), (line_number,)
         tax = re.match(r"^" + TAX_LABEL + r"\s*:?\s*(" + TAX + r")(?!\d)", plain)
         masked = re.fullmatch(TAX_LABEL + r"\s*:\s*" + MASKED_TAX, plain)
@@ -190,13 +195,13 @@ def _adjacent_holders(block, *, statement_title=False, issue_codes=None):
         if (tax is None and tax_value and re.search(r"\d", tax_value[1]) and not re.fullmatch(TAX, tax_value[1])
                 and not masked and position):
             ref, previous = block[position - 1]
-            if (name := _holder_candidate(previous)) and not resolve_bank_code_from_name(name):
+            if name := _unlabelled_holder(previous):
                 if issue_codes is not None:
                     issue_codes.add("unreadable_holder_tax_id")
                 yield name, "", (ref, line_number)
         if masked and position:
             ref, previous = block[position - 1]
-            if line_number - ref <= 1 and (name := _holder_candidate(previous)):
+            if line_number - ref <= 1 and (name := _unlabelled_holder(previous)):
                 yield name, "", (ref, line_number)
         if account_section:
             tax = tax or re.match(r"^DOCUMENTO\s*:\s*(" + TAX + r")(?!\d)", plain)
@@ -206,9 +211,18 @@ def _adjacent_holders(block, *, statement_title=False, issue_codes=None):
             if position and line_number - block[position - 1][0] <= 1:
                 previous_number, previous = block[position - 1]
                 previous_refs = (previous_number,)
-                if position > 1:
+                if position > 1 and resolve_bank_code_from_name(previous.strip()):
+                    # A logo can be interleaved by OCR. Only cross it when the tax field
+                    # shares its physical line with the origin account, not issuer tax alone.
+                    owner_line, owner = block[position - 2]
+                    same_line_account = any(ref == line_number and re.match(
+                        r"^(?:CONTA(?:\s+(?:CORRENTE|INVESTIMENTO))?|C/C|CC)\s*:?\s*" + IDENTIFIER, _plain(value)
+                    ) for ref, value in block)
+                    if same_line_account and line_number - owner_line <= 2:
+                        previous, previous_refs = owner, (owner_line,)
+                elif position > 1:
                     earlier_number, earlier = block[position - 2]
-                    prefix_name, tail_name = _holder_candidate(earlier), _holder_candidate(previous)
+                    prefix_name, tail_name = _unlabelled_holder(earlier), _unlabelled_holder(previous)
                     if (prefix_name and tail_name and not resolve_bank_code_from_name(prefix_name)
                             and not re.search(r"\b(?:LTDA|EIRELI|S\.?A\.?)$", _plain(prefix_name))
                             and (re.match(r"^(?:DE|DA|DO|DOS|DAS|E)\b", _plain(tail_name))
@@ -221,7 +235,7 @@ def _adjacent_holders(block, *, statement_title=False, issue_codes=None):
                     ref, value = block[position - 2]
                     candidates.append(((ref,), value))
             for ref, candidate in candidates:
-                name = _holder_candidate(candidate)
+                name = _unlabelled_holder(candidate)
                 if name:
                     yield name, normalized(tax[1]), (*ref, line_number)
             if account_section:
@@ -230,11 +244,11 @@ def _adjacent_holders(block, *, statement_title=False, issue_codes=None):
         if (re.match(r"^(?:AGENCIA|AG\.?)\s*:?\s*" + IDENTIFIER, plain) and position
                 and not any(re.match(r"^" + NAME_LABEL + r"\s*[:\-]", _plain(value)) for _, value in block)):
             ref, previous = block[position - 1]
-            if line_number - ref <= 1 and (name := _holder_candidate(previous)):
+            if line_number - ref <= 1 and (name := _unlabelled_holder(previous)):
                 yield name, "", (ref,)
         if re.match(r"^BANCO\s*:?\s*\d{3}\b", plain) and position:
             ref, previous = block[position - 1]
-            if ref == line_number and (name := _holder_candidate(previous)):
+            if ref == line_number and (name := _unlabelled_holder(previous)):
                 yield name, "", (ref,)
 
 

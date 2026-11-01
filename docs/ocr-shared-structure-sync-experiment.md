@@ -40,6 +40,8 @@ flowchart TD
 
 O núcleo estrutural não importa SDKs nem decide sinais. A interpretação financeira não seleciona fornecedor ou modo. Novas famílias exigem perfis semânticos compatíveis e evidência de validação, compartilhados pelos leitores; não se promete suporte universal.
 
+A identificação documental separa instituição e titular também quando o OCR intercala o logo entre o nome e o CNPJ. Nomes exatos do catálogo de instituições não são candidatos a titular sem rótulo explícito. O salto sobre um logo exige que CNPJ e conta de origem compartilhem a mesma linha física; um CNPJ isolado do emissor não comprova o titular. Asaas está no catálogo como instituição de código 461, confirmado no [site oficial](https://www.asaas.com/sobre-nos). A regra de cabeçalho é compartilhada com outros bancos e preserva referências às páginas/linhas. Clientes e vínculos já salvos não são renomeados automaticamente: a correção não substitui uma confirmação do usuário sobre registros anteriores. Se um cliente já foi criado como “ASAAS”, seu nome deve ser corrigido pela edição de cliente; novos documentos do mesmo CNPJ reutilizam o cadastro existente sem sobrescrever o nome salvo.
+
 Blocos mensais preservam movimentos repetidos e páginas físicas. Lacunas, sobreposições, cobertura incerta ou controles incompatíveis exigem revisão. Não se inventam mês, ano, valor, sinal ou conta. Débito/crédito separados, faturas e eventos sem efeito de caixa precisam de semântica própria. Curvatura, perspectiva e rotações extremas não foram avaliadas. Âncoras reconhecidas não provam que o OCR enxergou cada transação impressa.
 
 ## Fluxo na aplicação
