@@ -168,16 +168,21 @@ a {
   grid-template-columns: 64px minmax(0, 1fr);
 }
 .app-sidebar {
-  position: relative;
+  position: sticky;
+  top: 0;
+  align-self: start;
   display: flex;
   flex-direction: column;
   background: var(--navy-950);
   color: #b9c7da;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   overflow: hidden;
 }
 .app-brand {
   height: 66px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -227,6 +232,8 @@ a {
   flex-direction: column;
   gap: 5px;
   padding: 46px 10px 12px;
+  min-height: 0;
+  overflow-y: auto;
 }
 .app-sidebar nav a,
 .sidebar-bottom > a,
@@ -272,6 +279,7 @@ a {
 }
 .sidebar-bottom {
   margin-top: auto;
+  flex-shrink: 0;
   padding: 12px 10px 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
