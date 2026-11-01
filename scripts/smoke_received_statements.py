@@ -1,6 +1,8 @@
 """Synthetic desktop/mobile acceptance for OFX-62 using the production editor."""
 
 import json
+import re
+import unicodedata
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -27,6 +29,11 @@ def run(base):
     writes, errors, held_lists, held_refreshes = [], [], [], []
     loading = {"hold_list": True, "hold_refresh": True}
 
+    def dashboard(selected=None):
+        selected = clients if selected is None else selected
+        return {"totals": {"statements": 3, "ready": 2, "attention": 1}, "clients": selected,
+                "pending": pending, "next_cursor": None, "client_count": len(selected), "pending_count": len(pending)}
+
     def intercept(route):
         path = urlsplit(route.request.url).path
         method = route.request.method
@@ -37,8 +44,16 @@ def run(base):
             if loading["hold_list"]:
                 held_lists.append(route)
                 return
-            route.fulfill(json={"totals": {"statements": 3, "ready": 2, "attention": 1}, "clients": clients,
-                                "pending": pending, "next_cursor": None})
+            route.fulfill(json=dashboard())
+        elif path == "/api/pro/receipts/search":
+            assert method == "POST" and not urlsplit(route.request.url).query
+            term = route.request.post_data_json["query"]
+            text = "".join(c for c in unicodedata.normalize("NFD", term.casefold()) if not unicodedata.combining(c))
+            digits = re.sub(r"\D", "", term)
+            selected = [c for c in clients if text in "".join(
+                x for x in unicodedata.normalize("NFD", c["name"].casefold()) if not unicodedata.combining(x))
+                or (digits and digits in c["tax_id"])]
+            route.fulfill(json=dashboard(selected))
         elif path == "/api/pro/receipts/refresh":
             if loading["hold_refresh"]:
                 held_refreshes.append(route)
@@ -74,7 +89,7 @@ def run(base):
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.route("**/*", intercept)
             page.goto(base + "/dashboard")
-            expect(page.get_by_role("heading", name="Extratos recebidos")).to_be_visible()
+            expect(page.get_by_role("heading", name="Clientes", exact=True)).to_be_visible()
             expect(page.get_by_role("status")).to_have_text("Carregando extratos...")
             expect(page.get_by_role("button", name="Atualizando extratos...")).to_be_disabled()
             page.screenshot(path=str(output / "received-loading.png"), full_page=True)
@@ -87,21 +102,34 @@ def run(base):
             expect(page.get_by_label("Resumo dos extratos").locator("strong")).to_have_text(["3", "2", "1"])
             expect(page.get_by_text("3 expirados", exact=True)).to_be_visible()
             expect(page.get_by_text("Itaú · Conta ••1234")).to_be_visible()
-            expect(page.get_by_role("tab", name="Clientes", exact=True)).to_have_attribute("aria-selected", "true")
+            expect(page.get_by_role("tab", name="Identificados (1)", exact=True)).to_have_attribute("aria-selected", "true")
             expect(page.get_by_role("link", name="Conferir identificar.pdf")).to_have_count(0)
-            page.get_by_role("tab", name="Não identificados", exact=True).click()
+            page.get_by_role("tab", name="Não identificados (1)", exact=True).click()
             expect(page.get_by_role("heading", name="Identificação pendente")).to_be_visible()
             expect(page.get_by_role("link", name="Conferir identificar.pdf")).to_be_visible()
             expect(page.get_by_role("link", name="Padaria São José", exact=False)).to_have_count(0)
             page.screenshot(path=str(output / "received-pending-desktop.png"), full_page=True)
-            page.get_by_role("tab", name="Não identificados", exact=True).press("ArrowLeft")
-            expect(page.get_by_role("tab", name="Clientes", exact=True)).to_be_focused()
+            page.get_by_role("tab", name="Não identificados (1)", exact=True).press("ArrowLeft")
+            expect(page.get_by_role("tab", name="Identificados (1)", exact=True)).to_be_focused()
             loading["hold_refresh"] = False
             assert len(held_refreshes) == 1, "Tab switching must not restart synchronization"
             held_refreshes.pop().fulfill(json={"next_cursor": None})
             expect(page.get_by_role("button", name="Atualizar extratos", exact=True)).to_be_enabled()
             expect(page.get_by_role("navigation", name="Navegação principal").get_by_role("link")).to_have_count(2)
             expect(page.locator(".mobile-menu")).not_to_be_visible()
+            search = page.get_by_role("searchbox", name="Buscar por nome, CPF ou CNPJ")
+            for query in ("pada", "SAO JOSE", "12.345.678/0001-90", "12345678000190"):
+                with page.expect_response(lambda response: response.url.endswith("/api/pro/receipts/search")
+                                          and response.request.post_data_json["query"] == query):
+                    search.fill(query)
+                expect(page.get_by_role("link", name="Padaria São José", exact=False)).to_be_visible()
+            search.fill("inexistente")
+            expect(page.get_by_text("Nenhum cliente encontrado", exact=True)).to_be_visible()
+            page.get_by_role("tab", name="Não identificados (1)", exact=True).click()
+            expect(page.get_by_role("link", name="Conferir identificar.pdf")).to_be_visible()
+            page.get_by_role("tab", name="Identificados (0)", exact=True).click()
+            page.get_by_role("button", name="Limpar busca", exact=True).click()
+            expect(page.get_by_role("link", name="Padaria São José", exact=False)).to_be_visible()
             page.get_by_role("button", name="Editar Padaria São José").click()
             page.get_by_label("Nome do cliente", exact=True).fill("Padaria corrigida")
             page.get_by_role("button", name="Salvar identificação").click()
@@ -117,15 +145,15 @@ def run(base):
             expect(page.get_by_text("Revisado", exact=True)).to_be_visible()
             with page.expect_download():
                 page.get_by_role("button", name="Exportar extratos", exact=True).click()
-            page.get_by_role("link", name="Extratos recebidos", exact=True).click()
-            expect(page.get_by_role("heading", name="Extratos recebidos")).to_be_visible()
+            page.get_by_role("link", name="Clientes", exact=True).click()
+            expect(page.get_by_role("heading", name="Clientes", exact=True)).to_be_visible()
             page.set_viewport_size({"width": 390, "height": 844})
             expect(page.locator(".mobile-menu")).to_be_visible()
-            expect(page.get_by_role("tab", name="Clientes", exact=True)).to_be_visible()
-            expect(page.get_by_role("tab", name="Não identificados", exact=True)).to_be_visible()
+            expect(page.get_by_role("tab", name="Identificados (1)", exact=True)).to_be_visible()
+            expect(page.get_by_role("tab", name="Não identificados (1)", exact=True)).to_be_visible()
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Mobile overflow"
             page.screenshot(path=str(output / "received-mobile.png"), full_page=True)
-            page.get_by_role("tab", name="Não identificados", exact=True).click()
+            page.get_by_role("tab", name="Não identificados (1)", exact=True).click()
             expect(page.get_by_role("button", name="Conferir identificação", exact=True)).to_be_visible()
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Pending mobile overflow"
             page.screenshot(path=str(output / "received-pending-mobile.png"), full_page=True)

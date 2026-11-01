@@ -34,6 +34,91 @@ def identity():
             "branch": "0001", "account_number": "001234-5", "confidence": "strong", "references": [{"page": 1, "line": 1}]}
 
 
+@pytest.mark.parametrize("query", ["padar", "SAO JOSE", "São José", "12345678000190", "12.345.678/0001-90", "0001-90"])
+def test_client_search_normalizes_names_and_tax_ids_before_pagination(receipts, query):
+    service, owner, other = receipts
+    now = record(owner).created_at
+    for index in range(4):
+        service.receive(record(owner, f"search_{index}", source={
+            **identity(), "holder_name": f"Padaria São José {index}", "holder_tax_id": None,
+            "confidence": "source_account", "account_number": str(123400 + index),
+        }))
+    service.receive(record(owner))
+    service.receive(record(other, "foreign"))
+    service.receive(record(owner, "pending", source={"confidence": "ambiguous"}))
+    expected = 5 if not any(char.isdigit() for char in query) else 1
+    clients, cursor = [], ""
+    while True:
+        page = service.dashboard(owner, now=now, query=query, sort="name", after=cursor, limit=2)
+        assert page["client_count"] == expected
+        assert page["pending_count"] == 1
+        assert [p["job_id"] for p in page["pending"]] == ["pending"]
+        assert page["totals"]["statements"] == 6
+        clients.extend(page["clients"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+    assert len({c["id"] for c in clients}) == expected
+    empty = service.dashboard(owner, now=now, query="não existe", sort="name")
+    assert empty["clients"] == [] and empty["client_count"] == 0 and empty["pending_count"] == 1
+    assert len(service.dashboard(owner, now=now, query="  ")["clients"]) == 5
+
+
+@pytest.mark.parametrize("query", ["joao", "JOÃO", "123.456.789-01", "12345678901"])
+def test_search_cpf_and_foreign_only_matches_are_private(receipts, query):
+    service, owner, other = receipts
+    item = record(owner, source={**identity(), "holder_name": "João da Silva", "holder_tax_id": "12345678901"})
+    service.receive(item)
+    assert len(service.dashboard(owner, now=item.created_at, query=query)["clients"]) == 1
+    assert service.dashboard(other, now=item.created_at, query=query)["clients"] == []
+
+
+@pytest.mark.parametrize("confirmed", [False, True])
+def test_later_inference_preserves_inline_edits_and_confirmed_identity(receipts, confirmed):
+    service, owner, _ = receipts
+    item = record(owner, source={"confidence": "ambiguous"} if confirmed else identity())
+    service.receive(item)
+    if confirmed:
+        service.confirm(owner, item.job.job_id, expected_version=0, name="Nome confirmado",
+                        tax_id="12345678000190", now=item.created_at)
+    else:
+        client = service.dashboard(owner, now=item.created_at)["clients"][0]
+        service.edit_client(owner, client["id"], name="Nome confirmado", tax_id=client["tax_id"],
+                            expected_updated_at=client["updated_at"])
+    later = record(owner, "later", source={**identity(), "holder_name": "Inferência posterior"})
+    later.created_at += timedelta(minutes=1)
+    service.receive(later)
+    service.receive(item)
+    client = service.dashboard(owner, now=later.created_at)["clients"][0]
+    assert client["name"] == "Nome confirmado" and client["historical_count"] == 2
+
+
+@pytest.mark.parametrize("legacy_schema", [True, False])
+def test_sqlite_upgrade_protects_old_identities_without_freezing_new_inferences_on_restart(tmp_path, legacy_schema):
+    state = tmp_path / "upgrade.json"
+    with_access = AccessControlService(state_file=state, token_secret="client-upgrade-test")
+    try:
+        owner = with_access.register_user(name="Owner", email="upgrade@example.test", password="strong-password").user_id
+        service = ReceivedStatements(with_access.db)
+        service.receive(record(owner))
+        if legacy_schema:
+            with with_access.db.connect() as conn:
+                service._write(conn, "DROP TABLE pro_client_identity_confirmations")
+                conn.commit()
+    finally:
+        with_access.close()
+    reopened = AccessControlService(state_file=state, token_secret="client-upgrade-test")
+    try:
+        service = ReceivedStatements(reopened.db)
+        later = record(owner, "later", source={**identity(), "holder_name": "Nome posterior"})
+        later.created_at += timedelta(minutes=1)
+        service.receive(later)
+        assert service.dashboard(owner, now=later.created_at)["clients"][0]["name"] == (
+            "Padaria São José" if legacy_schema else "Nome posterior")
+    finally:
+        reopened.close()
+
+
 @pytest.mark.parametrize("days", [1, 30])
 def test_multiple_batches_same_client_retention_boundary_and_history_survive_deletion(receipts, days):
     service, owner, other = receipts

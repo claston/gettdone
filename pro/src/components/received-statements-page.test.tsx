@@ -36,7 +36,80 @@ const page = {
   next_cursor: null,
 };
 
-describe("Extratos recebidos", () => {
+describe("Clientes", () => {
+  it("busca no servidor, reinicia a paginação e mantém documentos pendentes independentes", async () => {
+    const service = {
+      list: vi
+        .fn()
+        .mockImplementation((cursor, _signal, _pendingCursor, query) =>
+          Promise.resolve({
+            ...page,
+            clients: query === "inexistente" ? [] : page.clients,
+            client_count: query === "inexistente" ? 0 : 1,
+            pending_count: 1,
+            next_cursor: cursor ? null : "c2",
+            pending: [
+              {
+                job_id: "j2",
+                batch_id: "b2",
+                filename: "pendente.pdf",
+                version: 0,
+                source: {
+                  bank_code: "341",
+                  account_number: "123456",
+                  confidence: "ambiguous",
+                },
+              },
+            ],
+          }),
+        ),
+      refresh: vi.fn().mockResolvedValue(undefined),
+      edit: vi.fn(),
+      confirm: vi.fn(),
+    };
+    render(<ReceivedStatementsPage service={service} />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Atualizar extratos" }),
+      ).toBeEnabled(),
+    );
+    expect(
+      screen.getByRole("tab", { name: "Identificados (1)" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Próxima" }));
+    await waitFor(() =>
+      expect(service.list).toHaveBeenLastCalledWith(
+        "c2",
+        expect.any(AbortSignal),
+        undefined,
+        "",
+      ),
+    );
+    const input = screen.getByRole("searchbox", {
+      name: "Buscar por nome, CPF ou CNPJ",
+    });
+    fireEvent.change(input, { target: { value: "inexistente" } });
+    await screen.findByText("Nenhum cliente encontrado");
+    expect(service.list).toHaveBeenLastCalledWith(
+      undefined,
+      expect.any(AbortSignal),
+      undefined,
+      "inexistente",
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Não identificados (1)" }));
+    expect(
+      screen.getByRole("link", { name: "Conferir pendente.pdf" }),
+    ).toBeVisible();
+    expect(screen.getByText(/Itaú/)).toBeVisible();
+    expect(screen.getByText(/••3456/)).toBeVisible();
+    expect(screen.getByText(/Identificação ambígua/)).toBeVisible();
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Identificados (0)" }));
+    expect(screen.getByRole("searchbox")).toHaveValue("inexistente");
+    fireEvent.click(screen.getByRole("button", { name: "Limpar busca" }));
+    await screen.findByRole("link", { name: /Padaria São José/ });
+    expect(screen.getByRole("searchbox")).toHaveValue("");
+  });
   it("mostra os três indicadores zerados com quatro extratos expirados no histórico", async () => {
     const service = {
       list: vi.fn().mockResolvedValue({
@@ -76,7 +149,7 @@ describe("Extratos recebidos", () => {
     };
     render(<ReceivedStatementsPage service={service} />);
     expect(
-      await screen.findByRole("heading", { name: "Extratos recebidos" }),
+      await screen.findByRole("heading", { name: "Clientes" }),
     ).toBeInTheDocument();
     expect(
       await screen.findByRole("link", { name: /Padaria São José/ }),
@@ -134,7 +207,7 @@ describe("Extratos recebidos", () => {
     };
     render(<ReceivedStatementsPage service={service} />);
     fireEvent.click(
-      await screen.findByRole("tab", { name: "Não identificados" }),
+      await screen.findByRole("tab", { name: /^Não identificados/ }),
     );
     expect(
       await screen.findByRole("heading", { name: "Identificação pendente" }),
@@ -232,7 +305,7 @@ describe("Extratos recebidos", () => {
         screen.getByRole("button", { name: "Atualizar extratos" }),
       ).toBeEnabled(),
     );
-    const clients = screen.getByRole("tab", { name: "Clientes" });
+    const clients = screen.getByRole("tab", { name: /^Identificados/ });
     for (const tab of screen.getAllByRole("tab")) {
       expect(
         document.getElementById(tab.getAttribute("aria-controls")!),
@@ -240,12 +313,12 @@ describe("Extratos recebidos", () => {
     }
     expect(clients).toHaveAttribute("aria-selected", "true");
     expect(
-      within(screen.getByRole("tabpanel", { name: "Clientes" }))
+      within(screen.getByRole("tabpanel", { name: /^Identificados/ }))
         .getAllByRole("link")
         .map((link) => link.textContent?.split("CNPJ")[0]),
     ).toEqual(["Álvaro", "beatriz", "Zulu"]);
     fireEvent.keyDown(clients, { key: "ArrowRight" });
-    const pending = screen.getByRole("tab", { name: "Não identificados" });
+    const pending = screen.getByRole("tab", { name: /^Não identificados/ });
     expect(pending).toHaveFocus();
     expect(pending).toHaveAttribute("aria-selected", "true");
     expect(
@@ -293,6 +366,7 @@ describe("Extratos recebidos", () => {
         "c2",
         expect.any(AbortSignal),
         undefined,
+        "",
       ),
     );
     await waitFor(() =>
@@ -300,7 +374,7 @@ describe("Extratos recebidos", () => {
         screen.getByRole("button", { name: "Atualizar extratos" }),
       ).toBeEnabled(),
     );
-    fireEvent.click(screen.getByRole("tab", { name: "Não identificados" }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Não identificados/ }));
     fireEvent.click(
       screen.getByRole("button", { name: "Próximas identificações" }),
     );
@@ -314,10 +388,11 @@ describe("Extratos recebidos", () => {
       "c2",
       expect.any(AbortSignal),
       "p2",
+      "",
     );
-    fireEvent.click(screen.getByRole("tab", { name: "Clientes" }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Identificados/ }));
     expect(screen.getByRole("button", { name: "Início" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("tab", { name: "Não identificados" }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Não identificados/ }));
     fireEvent.click(
       screen.getByRole("button", { name: "Conferir identificação" }),
     );
@@ -335,10 +410,11 @@ describe("Extratos recebidos", () => {
         "c2",
         expect.any(AbortSignal),
         undefined,
+        "",
       ),
     );
     expect(
-      screen.getByRole("tab", { name: "Não identificados" }),
+      screen.getByRole("tab", { name: /^Não identificados/ }),
     ).toHaveAttribute("aria-selected", "true");
   });
 

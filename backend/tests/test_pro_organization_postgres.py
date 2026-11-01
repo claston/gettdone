@@ -87,6 +87,13 @@ def test_postgres_upgrade_runtime_rollback_and_reupgrade(tmp_path):
         assert receipt_page["clients"][0]["id"] == client["id"]
         assert receipt_page["clients"][0]["historical_count"] == 1
         assert receipts.documents(user.user_id, client["id"])[0]["batch_id"] == batch.batch_id
+        for query in ("CLIENTE", "123.456.789-01", "12345678901"):
+            assert receipts.dashboard(user.user_id, query=query, sort="name")["client_count"] == 1
+        receipts.edit_client(user.user_id, client["id"], name="Cliente confirmado", tax_id=client["tax_id"],
+                             expected_updated_at=client["updated_at"])
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            assert conn.execute(sql.SQL("SELECT count(*) FROM {}.pro_client_identity_confirmations")
+                                .format(sql.Identifier(schema))).fetchone()[0] == 1
         works = StatementWorkService(access.db, repository)
         account = service.save_account(user.user_id, client_id=client["id"], name="Principal")
         work = works.create(user.user_id, client["id"], period["id"])
@@ -136,6 +143,9 @@ def test_postgres_upgrade_runtime_rollback_and_reupgrade(tmp_path):
         )
         assert StatementWorkService(access.db, repository).list(user.user_id)["items"] == []
         assert OrganizationService(access.db).catalog(user.user_id)["clients"][0]["id"] == client["id"]
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            assert conn.execute(sql.SQL("SELECT client_id FROM {}.pro_client_identity_confirmations")
+                                .format(sql.Identifier(schema))).fetchall() == [(client["id"],)]
         access.close()
         access = None
         migrate("20261012_01")
