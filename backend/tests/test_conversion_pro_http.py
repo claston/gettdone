@@ -45,15 +45,15 @@ def test_paid_individual_estimate_worker_report_and_idempotency(tmp_path, monkey
     extraction = replace(extraction, pages=[replace(page, lines=[*headers, *page.lines])])
     calls = []
 
-    def read(self, content, *, max_pages, before_page, on_progress, on_rejected_page):
+    def read(self, content, *, max_pages, request_token, before_document, on_progress, on_rejected_document):
         assert content == raw
-        before_page(1)
+        before_document(1)
         calls.append(1)
         on_progress(1, 1)
         return extraction
 
     monkeypatch.setenv("CONVERSION_PRO_ENABLED", "true")
-    monkeypatch.setattr(pro_pdf_parser.SynchronousTextractReader, "read", read)
+    monkeypatch.setattr(pro_pdf_parser.AsynchronousTextractReader, "read", read)
     monkeypatch.setattr(
         ocr_cash_statement, "infer_pdf_layout", lambda text: PdfLayoutInference("asaas_extrato_conta_digital_movimentacoes_v1", 0.99, False)
     )

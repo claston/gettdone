@@ -1,4 +1,4 @@
-# OCR compartilhado e Conversão PRO
+# OCR compartilhado e Conversão PRO assíncrona
 
 Data: 31/10/2026. Integração autorizada; recurso entregue desligado para testes e implantação gradual.
 
@@ -63,23 +63,25 @@ Na tela **Nova conversão**, `Padrão` continua selecionado. Quando habilitada n
 | PDF com texto confiável | Recusado na opção PRO antes de chamar AWS; usar Padrão |
 | PDF misto/camada OCR | Classificação existente decide a necessidade visual |
 | Consumo | Reserva PRO das páginas reais antes de chamar; franquia normal segue contabilização existente |
-| Falha parcial | Páginas ainda não iniciadas são liberadas; tentativas iniciadas contam mesmo sem resultado |
-| Rejeição definitiva de entrada/permissão AWS | Página rejeitada é liberada |
+| Falha após iniciar o job | O documento inteiro conta como tentativa, mesmo sem resultado; leitura parcial não é apresentada como completa |
+| Rejeição definitiva no início por entrada/permissão AWS | Todas as páginas reservadas são liberadas |
 | Timeout/resposta incerta | Tentativa continua contabilizada; não presumir ausência de cobrança |
-| Repetição | Sem retry automático de AnalyzeDocument; job pago iniciado não é repetido. Nova tentativa exige novo envio explícito |
+| Repetição | Sem retry automático da análise; ClientRequestToken por proprietário/job/documento protege o início. Nova tentativa exige novo envio explícito |
 
 Não há cobrança avulsa nova. O limite é um orçamento técnico separado dentro do plano pago. A opção não garante extração completa nem liberação da revisão.
 
 ## Leitura e persistência
 
-`SynchronousTextractReader` divide internamente o PDF em páginas, valida o limite de 10 MB por página e chama somente `AnalyzeDocument(TABLES, LAYOUT)` síncrono. Não chama OCR de texto antes da análise. Recompõe páginas físicas e prefixa IDs/Relationships; o contrato comum recebe palavras, linhas e células. Cada cópia temporária usa chave exclusiva e é removida com sua versão quando presente. Falhas de limpeza geram log operacional.
+`AsynchronousTextractReader` envia o PDF original inteiro, sem divisão por página, e inicia um único `StartDocumentAnalysis(TABLES, LAYOUT)`. O worker consulta `GetDocumentAnalysis` até a conclusão e percorre todos os `NextToken`. O contrato comum preserva as páginas físicas e os IDs/Relationships originais do resultado. Não há chamada síncrona nem OCR de texto antes da análise. Limites comerciais do plano continuam válidos; o limite técnico de uma página do Textract síncrono não se aplica a esse fluxo.
 
-A fila/polling do produto continua assíncrona; a API Textract usada pelo worker é síncrona. IAM requer `textract:AnalyzeDocument`, além do acesso S3 já utilizado. `StartDocumentAnalysis`/`GetDocumentAnalysis` não substituem essa permissão. SDK sem retry automático evita repetição paga silenciosa.
+A fila/polling do produto e a API Textract usada pelo worker são assíncronos. IAM requer `textract:StartDocumentAnalysis` e `textract:GetDocumentAnalysis`, além do acesso S3 já utilizado. Não requer `textract:AnalyzeDocument`. A leitura padrão conserva suas APIs/permissões de texto. SDK sem retry automático e token idempotente evitam repetição paga silenciosa. Resultados parciais, páginas não confirmadas e paginação incompleta não são liberados como extração completa. Referências das APIs: [StartDocumentAnalysis](https://docs.aws.amazon.com/textract/latest/APIReference/API_StartDocumentAnalysis.html) e [GetDocumentAnalysis](https://docs.aws.amazon.com/textract/latest/APIReference/API_GetDocumentAnalysis.html).
+
+A cópia temporária exclusiva é removida com sua versão quando o job termina ou quando o início é definitivamente rejeitado. Em bucket versionado, o worker precisa também de `s3:GetObjectVersion` para a versão enviada ao Textract e `s3:DeleteObjectVersion` para sua limpeza, limitados ao prefixo temporário. Se a resposta do início se perder, ou a consulta falhar enquanto o job pode estar em execução, o arquivo é mantido para não interromper a leitura aceita pela AWS. O prefixo temporário precisa estar coberto pela política de expiração do bucket; o log operacional identifica o job e a chave retida. Não excluir essa entrada antes de confirmar o estado final do job.
 
 Persistência aditiva:
 
 - `conversion_jobs.ocr_mode TEXT NOT NULL DEFAULT 'standard'`; jobs antigos e escritores antigos conservam o padrão.
-- `conversion_pro_usage`: job, proprietário, mês UTC, reserva, tentativas iniciadas e estado. Reserva atômica usa transação e trava por proprietário no PostgreSQL; SQLite usa transação imediata.
+- `conversion_pro_usage`: job, proprietário, mês UTC, reserva, tentativas iniciadas e estado. Reserva atômica usa transação e trava por proprietário no PostgreSQL; SQLite usa transação imediata. O início assíncrono marca todas as páginas em uma atualização atômica, com conferência do proprietário e do estado.
 - Reentrega da fila não inicia nova leitura paga. Após início, tentativa interrompida não tem retomada automática nem cache persistente por página. Uma morte abrupta pode deixar reserva retida; investigar o job antes de qualquer liberação manual. Não reaplicar o job para resolver isso.
 - Nenhuma opção foi inserida no JSON de preflight, que precisa continuar legível por versões antigas.
 
@@ -94,16 +96,18 @@ CONVERSION_PRO_MONTHLY_PAGES=20
 ```
 
 1. Aplicar a migração `20261031_01` após `20261029_01`. Ela adiciona coluna com default, tabela e índice; não remove ou renomeia dados.
-2. Publicar API e todos os workers compatíveis com a flag desligada. Configurar bucket temporário, região e IAM para AnalyzeDocument síncrono.
+2. Publicar API e todos os workers compatíveis com a flag desligada. Configurar bucket temporário, expiração do prefixo, região e IAM para StartDocumentAnalysis/GetDocumentAnalysis assíncronos. Atualizar o frontend para reconhecer o modo PRO nas falhas e orientar um novo envio explícito.
 3. Encerrar execuções de workers antigos antes de habilitar `CONVERSION_PRO_ENABLED=true` na API e nos workers do ambiente de testes/piloto. Conferir opções, confirmação, quota e resultado.
 4. Monitorar tentativas por job/proprietário, falhas, limpeza temporária, consumo e revisão. Conferir custo efetivo na AWS; não inferir precisão pela taxa de revisão.
 5. Rollback: desabilitar novas solicitações, drenar/concluir ou cancelar jobs PRO e resolver reservas antes de restaurar workers antigos. O downgrade da migração conserva coluna e histórico intencionalmente. O retorno do código não reverte consumos.
 
 Validação em PostgreSQL 16 local isolado: upgrade repetido, job preexistente, escritor antigo após upgrade, job PRO, downgrade sem perda do histórico e escritor antigo após downgrade. Operações aditivas podem aguardar lock de DDL em tabela ativa; aplicar com limite de espera e acompanhar bloqueios. Não houve migração nem implantação em produção nesta tarefa.
 
-## Experimento autorizado e custos
+## Experimento original autorizado e custos
 
 Foram oito chamadas pagas em `us-east-1`, quatro DetectDocumentText e quatro AnalyzeDocument síncronos, no mesmo documento. Nenhuma API Start. Páginas separadas preservaram os pixels originais; não houve retificação, binarização ou aumento de resolução. Quatro cópias S3 exclusivas e suas versões foram removidas. Ajustes posteriores usam respostas salvas, sem novas chamadas pagas.
+
+Na troca posterior para o fluxo assíncrono, os testes de SDK/HTTP validam um único PDF, StartDocumentAnalysis e todos os resultados paginados por GetDocumentAnalysis. O replay offline das respostas salvas conserva 72 movimentos e as mesmas datas/valores/páginas; isso não mede uma nova extração assíncrona na AWS. A tentativa de validação real foi recusada por falta de StartDocumentAnalysis no perfil local de diagnóstico, antes de criar um JobId; a cópia temporária dessa tentativa foi removida. A permissão desse perfil é distinta da role de execução do worker. Não houve fallback para API síncrona.
 
 Tempos agregados observados: texto 16,090 s; análise 25,308 s, incluindo overhead do CLI. Não são benchmark de produção. Os modos retornaram as mesmas palavras/linhas; análise acrescentou quatro tabelas e 228 células.
 

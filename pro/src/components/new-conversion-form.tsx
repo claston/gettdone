@@ -210,8 +210,8 @@ export function NewConversionForm({
           <p>
             Piloto para extratos Asaas digitalizados. Um PDF por vez, até{" "}
             {proOptions?.max_pages} páginas. Pode levar mais tempo e continuar
-            em revisão. As páginas com leitura iniciada contam para o limite
-            PRO, mesmo se a conversão não for concluída.
+            em revisão. As páginas do PDF contam para o limite PRO quando a
+            leitura é solicitada, mesmo se a conversão não for concluída.
           </p>
         )}
         <div className="upload-card-heading">

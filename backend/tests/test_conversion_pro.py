@@ -1,4 +1,4 @@
-"""Paid OCR authorization, durable cost bounds and synchronous page handling."""
+"""Paid OCR authorization, durable cost bounds and whole-document attempts."""
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -6,9 +6,10 @@ from datetime import datetime, timezone
 from io import BytesIO
 
 import pytest
-from pypdf import PdfReader, PdfWriter
+from pypdf import PdfWriter
 
 from app.application.access_control import AccessControlService
+from app.application.asynchronous_textract import AsynchronousTextractReader
 from app.application.conversion.identity import IdentityContext
 from app.application.conversion.pro_conversion import (
     ConversionProAccessError,
@@ -16,7 +17,6 @@ from app.application.conversion.pro_conversion import (
     ConversionProQuotaError,
     ProConversionPolicy,
 )
-from app.application.synchronous_textract import SynchronousTextractReader
 
 
 @pytest.fixture
@@ -94,51 +94,10 @@ def pdf(pages):
     return output.getvalue()
 
 
-def test_sync_reader_uses_only_analysis_and_restores_original_pages_and_ids():
-    class S3:
-        def __init__(self):
-            self.created = []
-            self.deleted = []
-
-        def put_object(self, **kwargs):
-            assert len(PdfReader(BytesIO(kwargs["Body"])).pages) == 1
-            self.created.append(kwargs["Key"])
-            return {}
-
-        def delete_object(self, **kwargs):
-            self.deleted.append(kwargs["Key"])
-
-    class Textract:
-        def analyze_document(self, **kwargs):
-            assert kwargs["FeatureTypes"] == ["TABLES", "LAYOUT"]
-            return {
-                "Blocks": [
-                    {
-                        "Id": "line",
-                        "BlockType": "LINE",
-                        "Text": "example",
-                        "Page": 1,
-                        "Relationships": [{"Type": "CHILD", "Ids": ["word"]}],
-                    },
-                    {"Id": "word", "BlockType": "WORD", "Text": "example", "Page": 1},
-                ]
-            }
-
-    s3 = S3()
-    attempted = []
-    result = SynchronousTextractReader(bucket="test", s3_client=s3, textract_client=Textract()).read(
-        pdf(2), max_pages=2, before_page=attempted.append
-    )
-    assert attempted == [1, 2]
-    assert {p.page_number for p in result.pages} == {1, 2}
-    assert result.pages[0].lines[0].word_ids != result.pages[1].lines[0].word_ids
-    assert sorted(s3.created) == sorted(s3.deleted)
-
-
 def test_page_limit_is_checked_before_any_cloud_call():
-    reader = SynchronousTextractReader(bucket="test", s3_client=object(), textract_client=object())
+    reader = AsynchronousTextractReader(bucket="test", s3_client=object(), textract_client=object())
     with pytest.raises(ValueError):
-        reader.read(pdf(3), max_pages=2)
+        reader.read(pdf(3), max_pages=2, request_token="a" * 64)
 
 
 def test_definite_permission_rejection_releases_unprocessed_budget(quota):
@@ -147,6 +106,29 @@ def test_definite_permission_rejection_releases_unprocessed_budget(quota):
     budget.before_page("job_denied", identity, 1)
     budget.reject_page("job_denied", identity, 1)
     budget.finish("job_denied", identity)
+    assert budget.remaining(identity) == 5
+
+
+def test_async_attempt_accounts_for_all_pages_atomically_and_rejects_reentry(quota):
+    budget, identity = quota
+    budget.reserve("async-job", identity, 4)
+    with pytest.raises(ConversionProAccessError):
+        budget.before_document("async-job", replace(identity, identity_id="other"), 4)
+    with pytest.raises(ConversionProAccessError):
+        budget.before_document("async-job", identity, 3)
+    budget.before_document("async-job", identity, 4)
+    with pytest.raises(ConversionProAccessError):
+        budget.before_document("async-job", identity, 4)
+    budget.finish("async-job", identity)
+    assert budget.remaining(identity) == 1
+
+
+def test_definite_async_start_rejection_releases_all_pages(quota):
+    budget, identity = quota
+    budget.reserve("async-rejected", identity, 4)
+    budget.before_document("async-rejected", identity, 4)
+    budget.reject_document("async-rejected", identity, 4)
+    budget.finish("async-rejected", identity)
     assert budget.remaining(identity) == 5
 
 

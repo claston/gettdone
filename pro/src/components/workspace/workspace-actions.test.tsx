@@ -13,6 +13,41 @@ import { WorkspaceScreen } from "./workspace-screen";
 
 afterEach(() => vi.useRealTimers());
 
+it("explica a falha PRO e orienta novo envio sem oferecer retry pago", async () => {
+  const repository = createMockWorkspaceRepository({ latencyMs: 0 });
+  const batch = await repository.getBatch("batch-setembro-2026");
+  const failed = batch.conversions[0];
+  Object.assign(failed, {
+    status: "FAILED",
+    ocrMode: "pro",
+    pdf: null,
+    errorCode: "InvalidFileContentError",
+    errorMessage: "O serviço de leitura não está configurado.",
+  });
+  vi.spyOn(repository, "getBatch").mockResolvedValue(batch);
+  const retry = vi.spyOn(repository, "retryConversion");
+  render(
+    <WorkspaceScreen
+      batchId={batch.id}
+      initialConversionId={failed.id}
+      repository={repository}
+    />,
+  );
+  expect(
+    await screen.findByText("Conversão PRO interrompida"),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText("O serviço de leitura não está configurado."),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("link", { name: "Enviar PDF em nova conversão" }),
+  ).toHaveAttribute("href", "/conversions");
+  expect(
+    screen.queryByRole("button", { name: "Tentar novamente" }),
+  ).not.toBeInTheDocument();
+  expect(retry).not.toHaveBeenCalled();
+});
+
 it("orienta novo envio quando o upload falha sem oferecer retry do worker", async () => {
   const repository = createMockWorkspaceRepository({ latencyMs: 0 });
   const batch = await repository.getBatch("batch-setembro-2026");
