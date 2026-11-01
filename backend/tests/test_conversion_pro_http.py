@@ -11,7 +11,9 @@ from app.application.conversion import pro_pdf_parser
 from app.application.conversion.document_conversion_pipeline import DocumentConversionPipeline
 from app.application.conversion.uploaded_document import ingest_uploaded_document
 from app.application.default_conversion_pipeline import build_default_conversion_pipeline
+from app.application.document_extraction_models import ExtractedLine
 from app.application.pdf_layout_inference import PdfLayoutInference
+from app.application.received_statements import ReceivedStatements
 from app.application.report_service import ReportService
 from app.application.storage_service import TempAnalysisStorage
 from app.dependencies import (
@@ -34,6 +36,13 @@ pytestmark = pytest.mark.real_http
 def test_paid_individual_estimate_worker_report_and_idempotency(tmp_path, monkeypatch):
     raw = layered_pdf("")
     extraction = replace(evidence(tables=True), document_hash=hashlib.sha256(raw).hexdigest())
+    page = extraction.pages[0]
+    headers = [
+        ExtractedLine("owner", 1, 1, "EMPRESA AURORA LTDA"),
+        ExtractedLine("issuer", 1, 2, "ASAAS"),
+        ExtractedLine("origin", 1, 3, "CNPJ 12.345.678/0001-90 Agência: 0001 Conta: 0012345-6"),
+    ]
+    extraction = replace(extraction, pages=[replace(page, lines=[*headers, *page.lines])])
     calls = []
 
     def read(self, content, *, max_pages, request_token, before_document, on_progress, on_rejected_document):
@@ -67,6 +76,7 @@ def test_paid_individual_estimate_worker_report_and_idempotency(tmp_path, monkey
                 processing_pipeline=build_default_conversion_pipeline(),
                 analysis_repository=storage,
             ),
+            receipt_recorder=ReceivedStatements(access.db).receive,
         )
         app.dependency_overrides[get_conversion_batch_document_store] = lambda: Store()
         app.dependency_overrides[get_async_conversion_report_service] = lambda: reports
@@ -106,6 +116,12 @@ def test_paid_individual_estimate_worker_report_and_idempotency(tmp_path, monkey
             assert result["status"] == "completed", result
             analysis = result["result"]["analysis"]
             assert analysis["transactions_total"] == 3
+            assert analysis["bank_name"] == "Asaas" and analysis["bank_code"] == "461"
+            source = service.repository.get(job_id).result.payload["organization_source"]
+            assert source["holder_name"] == "EMPRESA AURORA LTDA" and source["holder_tax_id"] == "12345678000190"
+            receipts = client.get("/api/pro/receipts")
+            assert receipts.status_code == 200, receipts.text
+            assert receipts.json()["clients"][0]["name"] == "EMPRESA AURORA LTDA"
             assert [r["amount"] for r in analysis["preview_transactions"]] == [20, -5, -5]
             assert analysis["opening_balance"] == 100 and analysis["closing_balance"] == 110
             assert client.get(f"/report/{result['analysis_id']}").status_code == 200
