@@ -43,6 +43,7 @@ class PostgresConversionBatchRepository:
         terminal_ttl_seconds: int = 24 * 60 * 60,
         connection_factory: ConnectionFactory | None = None,
         clock: Callable[[], datetime] | None = None,
+        canonical_completion=None,
     ) -> None:
         self.database_url = (database_url or "").strip()
         if not self.database_url and connection_factory is None:
@@ -54,6 +55,7 @@ class PostgresConversionBatchRepository:
         self.terminal_ttl_seconds = max(1, int(terminal_ttl_seconds))
         self.connection_factory = connection_factory
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.canonical_completion = canonical_completion
         self._batches_table = f'"{self.database_schema}".conversion_batches'
         self._jobs_table = f'"{self.database_schema}".conversion_jobs'
         self._outbox_table = f'"{self.database_schema}".conversion_outbox'
@@ -589,6 +591,9 @@ class PostgresConversionBatchRepository:
                 )
                 updated = self._record_from_row(cursor.fetchone())
             self._refresh_batch_status(conn, updated.job.batch_id)
+            if target == ConversionJobStatus.COMPLETED and self.canonical_completion is not None:
+                self.canonical_completion(conn, updated)
+                updated = self._record_from_row(self._fetch_job(conn, job_id))
             return updated
 
     def _snapshot(self, conn, batch_id: str) -> ConversionBatchSnapshot:

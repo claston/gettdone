@@ -275,6 +275,12 @@ def build_lambda_processor() -> ConversionLambdaProcessor:
         db_pool_min_size=int(os.getenv("CONVERSION_LAMBDA_DB_POOL_MIN_SIZE", "0")),
         db_pool_max_size=int(os.getenv("CONVERSION_LAMBDA_DB_POOL_MAX_SIZE", "1")),
     )
+    if _read_bool_env("CANONICAL_PRO_COMPLETION_ENABLED", default=False):
+        from app.adapters.conversion.canonical_movements import PostgresMovementRepository
+        from app.application.canonical_pro import CanonicalCompletion
+
+        repository.canonical_completion = CanonicalCompletion(
+            PostgresMovementRepository(database_url, schema=database_schema), analysis_storage)
     pipeline = DocumentConversionPipeline(
         report_service=ReportService(storage=analysis_storage),
         access_control_service=access_control_service,

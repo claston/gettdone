@@ -138,6 +138,19 @@ def get_report_service() -> ReportService:
     return _report_service
 
 
+def get_canonical_pro_service():
+    """Routing stays available after cohort shutdown; no Free caller uses this."""
+    from app.adapters.conversion.canonical_movements import PostgresMovementRepository
+    from app.application.canonical_pro import CanonicalProService, canonical_objects
+
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if not database_url:
+        return None
+    storage = (get_async_conversion_report_service() or get_report_service()).storage
+    return CanonicalProService(PostgresMovementRepository(database_url, schema=os.getenv("DATABASE_SCHEMA", "public")),
+                               canonical_objects(storage))
+
+
 def get_analysis_repository() -> AnalysisRepository:
     return _storage
 
@@ -257,6 +270,14 @@ def get_conversion_batch_repository() -> ConversionBatchRepository:
         active_ttl_seconds=int(os.getenv("CONVERSION_JOB_ACTIVE_TTL_SECONDS", "86400")),
         terminal_ttl_seconds=int(os.getenv("CONVERSION_JOB_TERMINAL_TTL_SECONDS", "86400")),
     )
+    if read_bool_env("CANONICAL_PRO_COMPLETION_ENABLED", default=False):
+        from app.adapters.conversion.canonical_movements import PostgresMovementRepository
+        from app.application.canonical_pro import CanonicalCompletion
+
+        _conversion_batch_repository.canonical_completion = CanonicalCompletion(
+            PostgresMovementRepository(database_url, schema=os.getenv("DATABASE_SCHEMA", "public")),
+            (get_async_conversion_report_service() or get_report_service()).storage,
+        )
     return _conversion_batch_repository
 
 

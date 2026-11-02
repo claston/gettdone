@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from app.application import (
     AccessControlService,
@@ -35,6 +35,7 @@ from app.routers.auth_session import (
     resolve_anonymous_fingerprint_with_cookie,
     resolve_user_token_with_session,
 )
+from app.routers.canonical_pro import canonical_bytes, resolve_canonical
 from app.routers.pro_security import require_pro_browser_request
 from app.schemas import ConversionFeedbackRequest, ConvertEditsRequest, ConvertEditsResponse
 
@@ -100,7 +101,7 @@ def _record_download_safely(
             exc_info=True,
         )
 
-@router.get("/report/{analysis_id}")
+@router.get("/report/{analysis_id}", response_model=None)
 def get_report(
     analysis_id: str,
     anonymous_fingerprint: str | None = Query(default=None),
@@ -134,6 +135,14 @@ def get_report(
             allow_unowned=True,
         )
         report_path = service.get_report_path(analysis_id)
+    except AnalysisEditConflictError:
+        canonical = resolve_canonical(identity, analysis_id)
+        if canonical is None:
+            raise HTTPException(409, "A análise aguarda a conclusão da revisão canônica.") from None
+        data, version = canonical_bytes(canonical.canonical, canonical.scope, "report.xlsx")
+        return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        headers={"Cache-Control": "private, no-store", "X-Analysis-Version": str(version),
+                                 "Content-Disposition": f'attachment; filename="ofxsimples_report_{analysis_id}.xlsx"'})
     except AnalysisNotFoundError:
         raise HTTPException(status_code=404, detail="Analysis not found")
     except AnalysisAccessDeniedError:
@@ -217,10 +226,11 @@ def get_reconcile_report(
     return FileResponse(path=report_path, media_type=media_type, filename=filename)
 
 
-@router.get("/convert-report/{processing_id}")
+@router.get("/convert-report/{processing_id}", response_model=None)
 def get_convert_report(
     processing_id: str,
     file_format: Literal["ofx", "csv", "xlsx"] = Query(default="ofx", alias="format"),
+    expected_version: int | None = Query(default=None, ge=1),
     closing_balance: float | None = Query(default=None),
     bank_branch: str | None = Query(default=None),
     account_number: str | None = Query(default=None),
@@ -261,6 +271,17 @@ def get_convert_report(
             identity=identity,
             access_control_service=access_control_service,
         )
+        if hasattr(active_service, "canonical"):
+            if any(value is not None for value in (closing_balance, bank_branch, account_number, bank_code)):
+                raise HTTPException(409, "Salve os ajustes antes de exportar a análise canônica.")
+            data, version = canonical_bytes(active_service.canonical, active_service.scope,
+                                            f"converted.{file_format}", expected_version=expected_version)
+            filename = _build_convert_download_filename(processing_id, active_service.get_upload_filename(processing_id), file_format)
+            from urllib.parse import quote
+            return Response(data, media_type={"ofx": "application/x-ofx", "csv": "text/csv; charset=utf-8",
+                            "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}[file_format],
+                            headers={"Cache-Control": "private, no-store", "X-Analysis-Version": str(version),
+                                     "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
         report_path = active_service.get_convert_report_path(
             processing_id,
             file_format=file_format,
@@ -270,6 +291,8 @@ def get_convert_report(
             bank_code=bank_code if file_format == "ofx" else None,
         )
         upload_filename = active_service.get_upload_filename(processing_id)
+    except AnalysisEditConflictError:
+        raise HTTPException(409, "A análise aguarda a conclusão da revisão canônica.") from None
     except InvalidFileContentError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except AnalysisNotFoundError:
@@ -375,8 +398,13 @@ def apply_convert_edits(
             result = active_service.get_convert_edit_operation(processing_id, operation_id)
             if result is None:
                 raise HTTPException(status_code=404, detail="Edit operation not found.")
-            return ConvertEditsResponse(**result)
+            return _edit_response(result)
         operation_options = {"operation_id": payload.operation_id} if payload.operation_id else {}
+        if hasattr(active_service, "canonical"):
+            operation_options.update(expected_version=payload.expected_version,
+                                     expected_movement_versions=payload.expected_movement_versions)
+        elif payload.expected_version is not None or any(item.movement_id for item in payload.edits):
+            raise AnalysisEditConflictError
         result = active_service.apply_convert_edits(
             analysis_id=processing_id,
             edits=[item.model_dump(exclude_none=True) for item in payload.edits],
@@ -388,7 +416,7 @@ def apply_convert_edits(
             bank_code=payload.bank_code,
             **operation_options,
         )
-        if payload.job_id and batch_service:
+        if payload.job_id and batch_service and result.get("authority") != "postgres_v1":
             try:
                 batch_service.repository.update_analysis(payload.job_id, analysis=ConvertEditsResponse(**result).model_dump())
             except Exception:
@@ -397,7 +425,7 @@ def apply_convert_edits(
                 logger.exception("conversion_batch_analysis_sync_failed job_id=%s", payload.job_id)
         logger.info("conversion_edit_saved processing_id=%s job_id=%s operation_id=%s version=%s",
                     processing_id, payload.job_id, payload.operation_id, result.get("updated_at"))
-        return ConvertEditsResponse(**result)
+        return _edit_response(result)
     except AnalysisNotFoundError:
         raise HTTPException(status_code=404, detail="Analysis not found")
     except AnalysisAccessDeniedError:
@@ -441,9 +469,22 @@ def _select_convert_report_service(
                 identity_id=identity.identity_id,
             )
             return candidate
+        except AnalysisEditConflictError:
+            canonical = resolve_canonical(identity, analysis_id)
+            if canonical is not None:
+                return canonical
+            raise
         except AnalysisNotFoundError:
             continue
     raise AnalysisNotFoundError
+
+
+def _edit_response(result):
+    legacy = ConvertEditsResponse(**result)
+    if result.get("authority") == "postgres_v1":
+        return JSONResponse({**legacy.model_dump(mode="json"), **{key: result[key] for key in
+                            ("authority", "version", "movement_ids", "movement_versions")}})
+    return legacy
 
 
 def _build_convert_download_filename(analysis_id: str, upload_filename: str | None, file_format: str) -> str:
