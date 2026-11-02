@@ -2,6 +2,7 @@
 
 import {
   Building2,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   FileStack,
@@ -11,10 +12,10 @@ import {
   Zap,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { useProSession } from "@/components/pro-session-gate";
+import { useOptionalProSession } from "@/components/pro-session-gate";
 import type { ProUser } from "@/data/pro-auth-service";
 
 const navigation = [
@@ -22,13 +23,46 @@ const navigation = [
   { href: "/conversions", label: "Conversões", icon: FileStack },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  financialDemoVisible = false,
+  demo = false,
+}: {
+  children: React.ReactNode;
+  financialDemoVisible?: boolean;
+  demo?: boolean;
+}) {
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const pathname = usePathname();
-  const { user, logout } = useProSession();
+  const router = useRouter();
+  const session = useOptionalProSession();
+  if (!session && !demo) throw new Error("AppShell exige uma sessão PRO.");
+  const user = session?.user ?? {
+    user_id: "financial-demo",
+    name: "Demonstração fictícia",
+    email: "demo@example.test",
+    plan_name: "Demonstração",
+  };
+  const logout =
+    session?.logout ??
+    (async () => {
+      router.push("/conversions");
+    });
   const quota = formatQuota(user);
+  const items = navigation.map((item) =>
+    demo && item.href === "/dashboard"
+      ? { ...item, href: "/demo/financial/clients" }
+      : item,
+  );
+  if (financialDemoVisible)
+    items.push({
+      href: "/demo/financial/single",
+      label: "Central · demonstração",
+      icon: CalendarDays,
+    });
 
   return (
     <div className={`app-shell ${collapsed ? "sidebar-collapsed" : ""}`}>
@@ -49,9 +83,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
         <nav aria-label="Navegação principal">
-          {navigation.map((item) => {
+          {items.map((item) => {
             const Icon = item.icon;
-            const active = pathname.startsWith(item.href);
+            const active =
+              pathname.startsWith(item.href) ||
+              (item.icon === CalendarDays &&
+                pathname.startsWith("/demo/financial/") &&
+                !pathname.endsWith("/clients"));
             return (
               <Link
                 key={item.href}
@@ -97,9 +135,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
       <div className="app-content">
         <header className="app-topbar">
-          <button className="mobile-menu" aria-label="Abrir menu">
+          <button
+            className="mobile-menu"
+            aria-label={mobileOpen ? "Fechar menu" : "Abrir menu"}
+            aria-expanded={mobileOpen}
+            aria-controls="mobile-pro-navigation"
+            onClick={() => setMobileOpen((value) => !value)}
+          >
             <Menu size={19} />
           </button>
+          {mobileOpen && (
+            <nav
+              id="mobile-pro-navigation"
+              className="mobile-pro-navigation"
+              aria-label="Navegação móvel"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setMobileOpen(false);
+              }}
+            >
+              {items.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  {item.label}
+                </Link>
+              ))}
+              <Link href="/account" onClick={() => setMobileOpen(false)}>
+                Conta e plano
+              </Link>
+            </nav>
+          )}
           <span className="topbar-spacer" />
           {quota && (
             <span className="quota-top">

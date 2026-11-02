@@ -12,6 +12,23 @@ npm run dev
 
 Abra `http://localhost:3000/demo/review/batch-setembro-2026` para acessar o vertical slice completo com dados de demonstração, sem depender do backend.
 
+### Central Financeira — OFX-65
+
+O protótipo fica desligado por padrão. Para executar a demonstração local:
+
+```powershell
+$env:PRO_FINANCIAL_CENTER_DEMO = 'true'
+npm.cmd run dev -- --port 3185
+```
+
+Abra `http://localhost:3185/demo/financial/clients`. A jornada usa Clientes e o
+revisor existentes, com nove cenários fictícios, calendário, filtros, fechamento
+simulado e CSV compatível com Excel. Não exige backend ou autenticação real.
+A flag também acrescenta um acesso identificado no shell e em Clientes do PRO.
+Não altera permissões, TTL ou flags canônicas. Reinicie o servidor ao mudar a flag.
+
+Consulte [execução, arquitetura, limitações e próximos incrementos](../docs/financial-center-prototype.md).
+
 ## Scripts
 
 - `npm run dev`: servidor de desenvolvimento.

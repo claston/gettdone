@@ -8,6 +8,8 @@ import type {
 
 interface MockRepositoryOptions {
   latencyMs?: number;
+  fixture?: Batch;
+  invalidateReviewOnSave?: boolean;
 }
 
 export interface MockWorkspaceRepository extends WorkspaceRepository {
@@ -20,7 +22,7 @@ export function createMockWorkspaceRepository(
   options: MockRepositoryOptions = {},
 ): MockWorkspaceRepository {
   const latencyMs = options.latencyMs ?? 650;
-  const batch = clone(workspaceFixture);
+  const batch = clone(options.fixture ?? workspaceFixture);
   let shouldFailSave = false;
 
   const wait = () => new Promise((resolve) => setTimeout(resolve, latencyMs));
@@ -47,6 +49,10 @@ export function createMockWorkspaceRepository(
       }
       const conversion = findConversion(conversionId);
       conversion.transactions = clone(transactions);
+      if (options.invalidateReviewOnSave) {
+        conversion.reviewStatus = "PENDING";
+        conversion.status = "NEEDS_REVIEW";
+      }
       conversion.editedCount = transactions.filter((transaction) =>
         Object.values(transaction.fieldStates).includes("EDITED"),
       ).length;

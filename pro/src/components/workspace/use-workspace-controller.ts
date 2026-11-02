@@ -95,6 +95,7 @@ export function useWorkspaceController(
   initialConversionId?: string,
   reviewBasePath = "/review",
   pollIntervalMs = 2500,
+  conversionHref?: (id: string) => string,
 ): WorkspaceController {
   const [batch, setBatch] = useState<Batch | null>(null);
   const [activeId, setActiveId] = useState(initialConversionId ?? "");
@@ -691,11 +692,11 @@ export function useWorkspaceController(
         window.history.replaceState(
           null,
           "",
-          `${reviewBasePath}/${batchId}/${id}`,
+          conversionHref?.(id) ?? `${reviewBasePath}/${batchId}/${id}`,
         );
       }
     },
-    [batchId, reviewBasePath, activeId, repository],
+    [batchId, reviewBasePath, activeId, repository, conversionHref],
   );
 
   const goToNextPending = useCallback(() => {
