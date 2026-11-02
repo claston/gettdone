@@ -34,6 +34,7 @@ from app.application.conversion.conversion_runtime_config import (
     ConversionUploadMode,
 )
 from app.application.errors import AnalysisNotFoundError
+from app.application.review_commands import ReviewCommandService
 from app.dependencies import (
     get_access_control_service,
     get_async_conversion_report_service,
@@ -551,9 +552,8 @@ def review_conversion_job(
         raise HTTPException(status_code=404, detail="Conversion job not found.")
     if service is None:  # protected by _owned_snapshot
         raise HTTPException(status_code=404, detail="Conversion batch not found.")
-    reviewed_at = datetime.now(timezone.utc).isoformat()
     try:
-        service.repository.mark_reviewed(job_id, reviewed_at=reviewed_at)
+        reviewed_at = ReviewCommandService().mark_reviewed(service.repository, job_id)
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return ConversionJobReviewResponse(job_id=job_id, reviewed_at=reviewed_at)

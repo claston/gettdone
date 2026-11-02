@@ -1,0 +1,122 @@
+{
+  "issue": "OFX-68",
+  "date": "2026-11-02",
+  "timezone": "America/Sao_Paulo",
+  "baseline_commit": "c2ca8abafc087485992c77d60cadc8d4b26740f1",
+  "implementation_commit": "36044d2c238c97b3712c706f532887f989c23187",
+  "application_tree": "ae1c07c746eb42d28433339683708598950d6f26",
+  "application_source_sha256": "f8279f6c36cd67ee98b62e527cd48936befc1b4336a36e8176634ea7fdaac67d",
+  "working_copy_note": "Only uncommitted delivery documentation; application matched implementation commit.",
+  "scope": "Legacy review command extraction only; no migration, canonical persistence or production deploy.",
+  "backend_full": {
+    "passed": 3988,
+    "skipped": 7,
+    "xfailed": 2,
+    "warnings": 8,
+    "seconds": 280.63,
+    "command": "backend\\venv\\Scripts\\python.exe -m pytest -q -n 4 --dist=worksteal --basetemp C:\\Users\\erica\\AppData\\Local\\Temp\\gettdone-pytest-ofx68-full --junitxml=tmp/ofx68-full-suite.xml",
+    "skip_reasons": {
+      "disposable_postgresql_not_configured": 6,
+      "tesseract_not_installed": 1
+    },
+    "xfail_reasons": [
+      "existing ISO date gap",
+      "existing unforced debit-column inference gap"
+    ],
+    "temporary_directories_removed": true
+  },
+  "backend_targeted": {
+    "passed": 65,
+    "warnings": 2,
+    "seconds": 43.83
+  },
+  "tdd_red": "ModuleNotFoundError: app.application.review_commands",
+  "pro": {
+    "files": 49,
+    "passed": 253,
+    "seconds": 58.97,
+    "command": "npm.cmd run test:run"
+  },
+  "legacy_helper_ast_comparison": {
+    "identical_methods": 17
+  },
+  "free_gate": {
+    "cases": 90,
+    "errors": [],
+    "strict": {
+      "errors": [],
+      "differences": [],
+      "platform_geometry_differences": [],
+      "cases": 90
+    },
+    "frozen": {
+      "errors": [],
+      "differences": [],
+      "platform_geometry_differences": [],
+      "cases": 90
+    },
+    "corpus_sha256": "f5c4481d0bf628b8bb2a03c0eb4b136a818db013f7eae8e85f1761e6e0489e47",
+    "command": "backend\\venv\\Scripts\\python.exe scripts/check_pdf_compatibility.py --base-ref c2ca8ab --output-dir tmp/ofx68-free-final"
+  },
+  "review_gate": {
+    "cases": 170,
+    "errors": [],
+    "differences": [],
+    "scenario_families": [
+      "stable IDs",
+      "positional IDs",
+      "zero value",
+      "unavailable balances",
+      "empty statement",
+      "multiple accounts",
+      "specialized report"
+    ],
+    "storage_adapters": [
+      "local",
+      "fake S3"
+    ],
+    "command": "backend\\venv\\Scripts\\python.exe scripts/check_review_compatibility.py --base-ref c2ca8ab --output-dir tmp/ofx68-review-final"
+  },
+  "initial_review_diagnostics": {
+    "differences": 412,
+    "financial_differences": 0,
+    "causes": [
+      "catalogued pipeline timings",
+      "initial update timestamps",
+      "Python set iteration in semantic evidence"
+    ],
+    "resolution": "Identical fixture initial version, OFX-67 timing catalogue removed before persistence, PYTHONHASHSEED=0 in both workers; no financial output suppression."
+  },
+  "real_http": {
+    "POST /convert CSV": 200,
+    "GET /report": 200,
+    "POST /convert-edits": 200,
+    "retry_and_confirmation": "identical response",
+    "stale_version": 409,
+    "GET /convert-report csv": 200,
+    "GET /convert-report xlsx": 200,
+    "GET /convert-report ofx": 200,
+    "GET nonexistent report": 404,
+    "POST /analyze existing contract": 405
+  },
+  "checks": {
+    "ruff_backend": "passed",
+    "ruff_review_gate": "passed",
+    "eslint_pro": "passed",
+    "utf8_mojibake": "passed",
+    "frontend_navigation": "passed",
+    "git_diff_check": "passed"
+  },
+  "performance": {
+    "approved_for_rollout": false,
+    "thresholds_changed": false,
+    "note": "OFX-67 local hardware variability remains; controlled homologation with real OCR/HTTP/499 required before rollout."
+  },
+  "known_limits": [
+    "process-local locks, no distributed S3 CAS",
+    "legacy post-save job projection synchronization",
+    "multi-artifact publication is not atomic",
+    "optional legacy precondition and document review without financial version"
+  ],
+  "rollback": "Revert OFX-68 code and rebuild via existing pipeline; legacy persisted formats are unchanged. No schema/data rollback. Production rollback not executed."
+}
