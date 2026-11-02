@@ -6,9 +6,29 @@ import { ProSessionGate } from "./pro-session-gate";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/conversions",
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 describe("AppShell", () => {
+  it("navega pelo menu móvel da demonstração sem criar sessão real", () => {
+    render(
+      <AppShell demo financialDemoVisible>
+        <p>Protótipo</p>
+      </AppShell>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Abrir menu" }));
+    expect(
+      screen.getByRole("navigation", { name: "Navegação móvel" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Fechar menu" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Fechar menu" }));
+    expect(
+      screen.queryByRole("navigation", { name: "Navegação móvel" }),
+    ).not.toBeInTheDocument();
+  });
   it("mostra a identidade e a cota reais e permite encerrar a sessão", async () => {
     const authService = {
       currentUser: vi.fn().mockResolvedValue({

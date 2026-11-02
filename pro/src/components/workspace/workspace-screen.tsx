@@ -64,6 +64,7 @@ interface WorkspaceScreenProps {
   dataMode?: WorkspaceDataMode;
   pollIntervalMs?: number;
   returnTo?: string;
+  conversionHref?: (id: string) => string;
 }
 
 const statusContent: Record<
@@ -322,6 +323,7 @@ export function WorkspaceScreen({
   dataMode = "api",
   pollIntervalMs,
   returnTo,
+  conversionHref,
   clientMode = false,
 }: WorkspaceScreenProps) {
   const session = useOptionalProSession();
@@ -337,6 +339,7 @@ export function WorkspaceScreen({
     initialConversionId,
     reviewBasePath,
     pollIntervalMs,
+    conversionHref,
   );
   const [navigatorCollapsed, setNavigatorCollapsed] = useState(false);
   const [focusMode, setFocusMode] = useState(true);
@@ -561,13 +564,15 @@ export function WorkspaceScreen({
         <div className="batch-heading">
           <Link href={reviewReturnTo(returnTo)} className="back-link">
             <ChevronLeft size={16} />{" "}
-            {clientMode || returnTo === "/dashboard"
-              ? "Clientes"
-              : returnTo
-                ? reviewReturnTo(returnTo).startsWith("/works/")
-                  ? "Voltar ao trabalho"
-                  : "Voltar às conversões"
-                : "Lotes"}
+            {reviewReturnTo(returnTo).startsWith("/demo/financial/")
+              ? "Voltar à Central Financeira"
+              : clientMode || returnTo === "/dashboard"
+                ? "Clientes"
+                : returnTo
+                  ? reviewReturnTo(returnTo).startsWith("/works/")
+                    ? "Voltar ao trabalho"
+                    : "Voltar às conversões"
+                  : "Lotes"}
           </Link>
           <div>
             <span className="eyebrow">{batch.clientName}</span>
@@ -601,7 +606,8 @@ export function WorkspaceScreen({
             error={controller.saveError}
             onRetry={controller.retrySave}
           />
-          {(controller.saveStatus === "ERROR" || controller.actionError?.includes("outra sessão")) && (
+          {(controller.saveStatus === "ERROR" ||
+            controller.actionError?.includes("outra sessão")) && (
             <ConflictRecovery
               key={controller.activeConversion?.id}
               controller={controller}

@@ -9,6 +9,17 @@ export function reviewReturnTo(value: unknown): string {
   }
   if (
     url.origin === "https://ofx.local" &&
+    /^\/demo\/financial\/[a-z]+$/.test(url.pathname)
+  ) {
+    const query = new URLSearchParams();
+    for (const key of ["month", "accounts", "tab", "day"]) {
+      const item = url.searchParams.get(key);
+      if (item !== null) query.set(key, item);
+    }
+    return url.pathname + (query.size ? `?${query}` : "");
+  }
+  if (
+    url.origin === "https://ofx.local" &&
     (url.pathname === "/dashboard" ||
       /^\/client-review\/client_[A-Za-z0-9]+$/.test(url.pathname))
   )

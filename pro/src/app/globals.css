@@ -2069,7 +2069,37 @@ kbd {
   }
 }
 
+.mobile-pro-navigation {
+  display: none;
+}
+
 @media (max-width: 760px) {
+  .app-topbar {
+    position: relative;
+  }
+  .mobile-pro-navigation {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: absolute;
+    top: 100%;
+    left: 12px;
+    right: 12px;
+    padding: 12px;
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    z-index: 60;
+  }
+  .mobile-pro-navigation a {
+    padding: 12px;
+    border-radius: 5px;
+    color: var(--ink-700);
+  }
+  .mobile-pro-navigation a:hover {
+    background: var(--blue-50);
+  }
   .app-shell,
   .app-shell.sidebar-collapsed {
     grid-template-columns: 1fr;

@@ -1,0 +1,117 @@
+{
+  "date": "2026-11-02",
+  "base_commit": "f3638c5",
+  "feature_flag": "PRO_FINANCIAL_CENTER_DEMO",
+  "default_enabled": false,
+  "backend": {
+    "command": "venv\\Scripts\\python.exe -m pytest -q --basetemp C:\\Users\\erica\\AppData\\Local\\Temp\\gettdone-pytest-ofx65-full",
+    "cwd": "backend",
+    "passed": 3993,
+    "skipped": 40,
+    "xfailed": 2,
+    "warnings": 2,
+    "seconds": 1147.29
+  },
+  "frontend": {
+    "full_suite_files": 55,
+    "full_suite_passed": 277,
+    "final_affected_suite_passed": 17,
+    "note": "Full suite preceded final review-invalidation adjustment; affected suites, lint, types, build and browser were rerun afterwards.",
+    "eslint": "passed",
+    "typescript": "passed",
+    "prettier_changed_files": "passed",
+    "production_build": "passed in a temporary copy outside OneDrive after EPERM in checkout .next/static"
+  },
+  "ruff": "passed",
+  "utf8_scan": {
+    "files": 203,
+    "mojibake": 0
+  },
+  "browser": {
+    "command": "backend\\venv\\Scripts\\python.exe scripts/smoke_financial_center.py --url http://127.0.0.1:3186",
+    "mode": "production build, Chromium",
+    "desktop_width": 1440,
+    "mobile_width": 390,
+    "result": "passed",
+    "real_financial_requests": 0,
+    "checks": [
+      "clients",
+      "calendar",
+      "filters",
+      "same repository after reviewer correction",
+      "immutable original PDF",
+      "closing reservations",
+      "integrity blockers",
+      "CSV download",
+      "expiry",
+      "trial simulation",
+      "mobile navigation",
+      "no page overflow"
+    ]
+  },
+  "http": {
+    "flag_off": {
+      "clients": 404,
+      "financial_center": 404,
+      "reviewer": 404
+    },
+    "flag_on": {
+      "clients": 200,
+      "unknown_client": 404,
+      "expired_document": 404,
+      "document_from_other_scenario": 404
+    }
+  },
+  "production_deployed": false,
+  "schema_changed": false,
+  "ttl_changed": false,
+  "pr538_review": {
+    "date": "2026-11-02",
+    "comments_addressed": [
+      4447836969,
+      4447836976
+    ],
+    "red_phase": "Both new UI regression tests failed before the fix",
+    "frontend_full_suite_files": 55,
+    "frontend_full_suite_passed": 286,
+    "affected_suite_files": 3,
+    "affected_suite_passed": 24,
+    "eslint": "passed",
+    "typescript": "passed",
+    "ruff": "passed",
+    "prettier_changed_files": "passed",
+    "frontend_text_navigation_lints": "passed",
+    "utf8_scan": {
+      "files": 203,
+      "mojibake": 0
+    },
+    "production_build": "passed in temporary copy outside OneDrive",
+    "browser": {
+      "modes": [
+        "development",
+        "production"
+      ],
+      "status": "passed",
+      "browser_errors": [],
+      "real_financial_requests": [],
+      "checks": [
+        "clients",
+        "calendar",
+        "filters",
+        "shared-reviewer",
+        "pdf",
+        "closing",
+        "integrity-blocks",
+        "csv",
+        "expiry",
+        "trial",
+        "desktop-mobile",
+        "empty-document-review",
+        "accept-unchanged-suspected-fields",
+        "invalidate-review-after-edit"
+      ]
+    },
+    "backend_rerun": false,
+    "backend_changed": false
+  }
+}

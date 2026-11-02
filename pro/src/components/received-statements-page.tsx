@@ -178,8 +178,12 @@ function IdentityForm({
 
 export function ReceivedStatementsPage({
   service = receivedService,
+  financialDemoVisible = false,
+  financialDemo = false,
 }: {
   service?: ReceivedService;
+  financialDemoVisible?: boolean;
+  financialDemo?: boolean;
 }) {
   const [page, setPage] = useState<ReceivedPage | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -296,6 +300,22 @@ export function ReceivedStatementsPage({
           </Link>
         </div>
       </div>
+      {financialDemo && (
+        <p className={styles.muted}>
+          Demonstração com clientes e documentos fictícios. Selecione um cliente
+          para explorar a Central Financeira.{" "}
+          <Link href="/demo/financial/trial">
+            Ver jornada da primeira conversão →
+          </Link>
+        </p>
+      )}
+      {financialDemoVisible && !financialDemo && (
+        <p>
+          <Link className="secondary-button" href="/demo/financial/clients">
+            Explorar Central Financeira · dados fictícios
+          </Link>
+        </p>
+      )}
       {error && (
         <div role="alert">
           <p>{error}</p>
@@ -449,10 +469,14 @@ export function ReceivedStatementsPage({
                         <article className={styles.client} key={client.id}>
                           <div className={styles.clientHeader}>
                             <div>
-                              {client.available_count ? (
+                              {client.available_count || financialDemo ? (
                                 <Link
                                   className={styles.clientLink}
-                                  href={`/client-review/${client.id}`}
+                                  href={
+                                    financialDemo
+                                      ? `/demo/financial/${client.id}`
+                                      : `/client-review/${client.id}`
+                                  }
                                 >
                                   <strong>{client.name}</strong>
                                   <span>{taxLabel(client.tax_id)}</span>
@@ -498,13 +522,23 @@ export function ReceivedStatementsPage({
                                 </small>
                               )}
                             </div>
-                            <button
-                              className="secondary-button small"
-                              aria-label={`Editar ${client.name}`}
-                              onClick={() => setEditing(client.id)}
-                            >
-                              Editar
-                            </button>
+                            {!financialDemo && (
+                              <button
+                                className="secondary-button small"
+                                aria-label={`Editar ${client.name}`}
+                                onClick={() => setEditing(client.id)}
+                              >
+                                Editar
+                              </button>
+                            )}
+                            {financialDemo && (
+                              <Link
+                                className="secondary-button small"
+                                href={`/demo/financial/${client.id}`}
+                              >
+                                Central Financeira
+                              </Link>
+                            )}
                           </div>
                           {client.accounts.length > 0 && (
                             <ul className={styles.accounts}>
