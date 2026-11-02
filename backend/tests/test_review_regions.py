@@ -26,7 +26,7 @@ def test_mark_clear_reopen_and_idempotency_do_not_change_finances_or_original_ev
     storage, path = saved
     original = json.loads(path.read_text(encoding="utf-8"))
     # Annotation-only updates may not recalculate balances or rewrite exports.
-    monkeypatch.setattr(storage, "_recalculate_running_balances", lambda **kw: pytest.fail("financial recalculation"))
+    monkeypatch.setattr(storage.review_commands, "_recalculate_running_balances", lambda **kw: pytest.fail("financial recalculation"))
     monkeypatch.setattr(storage, "_write_report_workbook", lambda *a, **kw: pytest.fail("report rewrite"))
     patch = {"row_id": "stable", "action": "annotate", "review_regions": [BOX]}
     result = storage.apply_convert_edits("an_marks", [patch], operation_id="draw-1")
