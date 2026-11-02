@@ -13,7 +13,7 @@ from openpyxl.utils import get_column_letter
 
 from app.application.analysis_lock import locked_analysis
 from app.application.bank_identity import resolve_conversion_model_label
-from app.application.errors import AnalysisAccessDeniedError, AnalysisNotFoundError
+from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConflictError, AnalysisNotFoundError
 from app.application.export_artifact_service import ExportArtifactService
 from app.application.financial_document_export import assert_financial_export
 from app.application.legacy_analysis_state import LegacyAnalysisState
@@ -42,6 +42,12 @@ class TempAnalysisStorage(LegacyAnalysisState):
 
     def save_analysis(self, data: AnalysisData) -> str:
         analysis_dir = self._resolve_analysis_dir(data.analysis_id)
+        if (analysis_dir / "analysis.json").exists():
+            try:
+                existing = json.loads((analysis_dir / "analysis.json").read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                existing = {}
+            self._assert_legacy_authority(existing)
         analysis_dir.mkdir(parents=True, exist_ok=True)
         now = self.now_provider()
         expires_at = now + timedelta(seconds=self.ttl_seconds)
@@ -337,6 +343,7 @@ class TempAnalysisStorage(LegacyAnalysisState):
         except (OSError, json.JSONDecodeError):
             raise AnalysisNotFoundError from None
 
+        self._assert_legacy_authority(content)
         result = self.review_commands.apply(
             content, edits, expected_updated_at=expected_updated_at,
             opening_balance=opening_balance, closing_balance=closing_balance,
@@ -637,7 +644,46 @@ class TempAnalysisStorage(LegacyAnalysisState):
             content = json.loads(metadata_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             raise AnalysisNotFoundError from None
+        if metadata_filename == "analysis.json":
+            self._assert_legacy_authority(content)
         return content, metadata_path
+
+    @staticmethod
+    def _assert_legacy_authority(content: dict) -> None:
+        if content.get("authority") in {"postgres_v1", "canonical_pending"}:
+            raise AnalysisEditConflictError
+
+    @locked_analysis
+    def fence_canonical_analysis(self, analysis_id: str) -> dict:
+        """Fence a new, not-yet-exposed PRO document before SQL adoption.
+
+        A retry can recover the extraction from the pending marker. Old binaries
+        must be drained before rollout; their code cannot honor this barrier.
+        """
+        path = self._resolve_analysis_dir(analysis_id) / "analysis.json"
+        try:
+            content = json.loads(path.read_text(encoding="utf-8"))
+            expires_at = datetime.fromisoformat(content["expires_at"])
+        except (OSError, KeyError, ValueError):
+            raise AnalysisNotFoundError from None
+        if expires_at.tzinfo is None or self.now_provider() >= expires_at:
+            raise AnalysisNotFoundError
+        if content.get("authority") not in {None, "canonical_pending"}:
+            raise AnalysisEditConflictError
+        content["authority"] = "canonical_pending"
+        self._write_metadata(path, content)
+        return {key: value for key, value in content.items() if key != "authority"}
+
+    @locked_analysis
+    def delete_canonical_analysis(self, analysis_id: str) -> None:
+        """Internal retained-data cleanup; caller supplies a SQL expiration/tombstone."""
+        directory = self._resolve_analysis_dir(analysis_id)
+        metadata = directory / "analysis.json"
+        if metadata.exists():
+            content = json.loads(metadata.read_text(encoding="utf-8"))
+            if content.get("authority") not in {"postgres_v1", "canonical_pending"}:
+                raise ValueError("Cannot purge a legacy analysis through canonical cleanup")
+        self._cleanup_analysis(directory)
 
     def _resolve_analysis_dir(self, analysis_id: str) -> Path:
         clean_analysis_id = str(analysis_id or "").strip()
@@ -653,7 +699,10 @@ class TempAnalysisStorage(LegacyAnalysisState):
             if not isinstance(expires_at_raw, str):
                 return False
             expires_at = datetime.fromisoformat(expires_at_raw)
-            return self.now_provider() > expires_at
+            expired = self.now_provider() > expires_at
+            if not expired:
+                self._assert_legacy_authority(content)
+            return expired
         except (OSError, TypeError, json.JSONDecodeError, ValueError):
             return False
 
