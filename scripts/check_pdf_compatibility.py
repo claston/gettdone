@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 import subprocess
@@ -17,6 +18,7 @@ from collections import Counter
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
+from shutil import copytree, ignore_patterns
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -246,70 +248,123 @@ def make_corpus():
     return cases
 
 
-def worker(backend, corpus, output):
-    sys.path.insert(0, str(backend.resolve()))
-    from app.application import pdf_parser
-    from app.application.default_conversion_pipeline import build_default_conversion_pipeline
-    from app.application.document_extraction_models import ExtractedLine, ExtractedPage, ExtractedWord, RawDocumentExtraction
-
-    results = {}
-    for case in corpus:
-        try:
-            raw = base64.b64decode(case["pdf"])
-            source = case.get("ocr")
-            if source:
-                pages = [ExtractedPage(page_number=p["page_number"], lines=[ExtractedLine(**line) for line in p["lines"]],
-                    words=[ExtractedWord(**w) for w in p["words"]]) for p in source["pages"]]
-                extracted = RawDocumentExtraction(source["provider"], source["document_hash"], pages, {})
-                parsed = pdf_parser._parse_scanned_pdf_with_textract_text_pages(extracted)
-            else:
-                parsed = pdf_parser.parse_pdf_transactions(raw)
-            data = build_default_conversion_pipeline().run(filename="fictional.pdf", raw_bytes=raw, analysis_id="an_pdf_gate",
-                pdf_parser=lambda *a, **kw: parsed).analysis_data
-            doc = data.financial_document
-            results[case["id"]] = {"success": True, "movements": [[r.date, r.amount] for r in data.report_transactions],
-                "bank_code": data.bank_code, "document_type": data.document_type, "origin": doc and doc.get("origin"),
-                "formats": doc and doc["export"]["available_formats"],
-                "review": (data.pdf_processing_metrics or {}).get("export_recommendation") == "review_recommended"}
-        except Exception as exc:
-            results[case["id"]] = {"success": False, "error": type(exc).__name__}
-    output.write_text(json.dumps(results, indent=2), encoding="utf-8")
-
-
 def main():
+    from free_converter_guard import (
+        FROZEN_BASELINE,
+        SCHEMA_VERSION,
+        compare_frozen_snapshots,
+        compare_performance,
+        compare_snapshots,
+        extra_cases,
+        source_checks,
+    )
+    from free_converter_guard import worker as strict_worker
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-ref")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "tmp/pdf-compatibility")
     parser.add_argument("--worker", type=Path)
     parser.add_argument("--corpus", type=Path)
     parser.add_argument("--report", type=Path)
+    parser.add_argument("--repeat", type=int, default=1, help="Measured repetitions per fixture (same ordered corpus).")
+    parser.add_argument("--profile", default="offline-local", help="Comparable hardware/load profile label.")
+    parser.add_argument("--performance-gate", action="store_true", help="Enforce +10%% budgets; requires at least five repeats.")
+    parser.add_argument("--capture-baseline", type=Path, help="Create a NEW characterization artifact for explicit review; never overwrite.")
+    parser.add_argument("--approvals", type=Path, help="Explicit owner approvals bound to exact differences and revision/tree hashes.")
     args = parser.parse_args()
     os.environ.update(TEXTRACT_ENABLED="false", PDF_OCR_ENABLED="false", AI_RECOVERY_MODE="off",
                       PYTHONDONTWRITEBYTECODE="1", CANONICAL_LAYOUT_CAPTURE_ENABLED="false", PDF_MULTI_ACCOUNT_ENABLED="true")
     if args.worker:
-        worker(args.worker, json.loads(args.corpus.read_text(encoding="utf-8")), args.report)
+        strict_worker(args.worker, json.loads(args.corpus.read_text(encoding="utf-8")), args.report,
+                      repeat=args.repeat, profile=args.profile)
         return 0
     if not args.base_ref:
         parser.error("--base-ref is required; an absent baseline must not silently pass")
     # Resolve to a commit hash before passing it to archive (never a shell).
     ref = subprocess.check_output(["git", "rev-parse", "--verify", "--end-of-options", args.base_ref + "^{commit}"], cwd=ROOT, text=True).strip()
-    cases = make_corpus()
+    if args.repeat < 1:
+        parser.error("--repeat must be positive")
+    if args.capture_baseline and args.capture_baseline.exists():
+        parser.error("--capture-baseline must name a new file; existing evidence is never overwritten")
+    cases = make_corpus() + extra_cases()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     corpus = args.output_dir / "corpus.json"
     corpus.write_text(json.dumps(cases), encoding="utf-8")
+    candidate_ref = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    candidate_app_tree = subprocess.check_output(["git", "rev-parse", "HEAD:backend/app"], cwd=ROOT, text=True).strip()
+    approvals = json.loads(args.approvals.read_text(encoding="utf-8")) if args.approvals else []
+    if approvals and subprocess.check_output(["git", "status", "--porcelain", "--", "backend/app"], cwd=ROOT, text=True).strip():
+        parser.error("Approvals require committed application code so the candidate tree is exact")
     with tempfile.TemporaryDirectory(prefix="gettdone-pdf-baseline-") as temporary:
         archive = subprocess.check_output(["git", "archive", "--format=tar", ref, "backend/app"], cwd=ROOT)
         with tarfile.open(fileobj=BytesIO(archive)) as tar:
             tar.extractall(temporary, filter="data")
+        # Both revisions execute from the same local temporary filesystem. This
+        # avoids comparing archived sources with OneDrive/network-backed files.
+        candidate_backend = Path(temporary) / "candidate" / "backend"
+        copytree(ROOT / "backend" / "app", candidate_backend / "app", ignore=ignore_patterns("__pycache__", "*.pyc"))
         outputs = []
-        for name, backend in [("baseline", Path(temporary) / "backend"), ("candidate", ROOT / "backend")]:
+        for name, backend in [("baseline", Path(temporary) / "backend"), ("candidate", candidate_backend)]:
             report = args.output_dir / f"{name}.json"
-            subprocess.run([sys.executable, str(Path(__file__).resolve()), "--worker", str(backend),
-                            "--corpus", str(corpus.resolve()), "--report", str(report.resolve())], check=True, cwd=ROOT, timeout=180)
+            try:
+                subprocess.run([sys.executable, str(Path(__file__).resolve()), "--worker", str(backend),
+                                "--corpus", str(corpus.resolve()), "--report", str(report.resolve()),
+                                "--repeat", str(args.repeat), "--profile", args.profile], check=True, cwd=ROOT, timeout=180 * args.repeat)
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+                failure = {"errors": [f"{name}: worker infrastructure failure ({type(exc).__name__})"],
+                           "timeouts": int(isinstance(exc, subprocess.TimeoutExpired)), "baseline_commit": ref}
+                (args.output_dir / "comparison.json").write_text(json.dumps(failure, indent=2), encoding="utf-8")
+                print(json.dumps(failure))
+                return 1
             outputs.append(json.loads(report.read_text(encoding="utf-8")))
-    summary = {"baseline_commit": ref, **compare_reports(cases, *outputs)}
+    old, new = [output["cases"] for output in outputs]
+    summary = {"baseline_commit": ref, "candidate_commit": candidate_ref,
+               "candidate_app_tree": candidate_app_tree, "performance_gate_enforced": args.performance_gate,
+               "candidate_dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip()),
+               "corpus_sha256": hashlib.sha256(corpus.read_bytes()).hexdigest(),
+               **compare_reports(cases, old, new)}
+    summary["strict"] = compare_snapshots(old, new, approvals=approvals, reference_commit=ref, candidate_app_tree=candidate_app_tree)
+    summary["errors"].extend(summary["strict"]["errors"])
+    for case in cases:
+        try:
+            summary["errors"].extend(source_checks(case, new[case["id"]]))
+        except (KeyError, ValueError, TypeError, IndexError) as exc:
+            summary["errors"].append(f"{case['id']}: malformed financial export ({type(exc).__name__})")
+    summary["performance"] = {"baseline": outputs[0]["performance"], "candidate": outputs[1]["performance"]}
+    if args.performance_gate:
+        summary["performance_comparison"] = compare_performance(*[output["performance"] for output in outputs])
+        summary["errors"].extend(summary["performance_comparison"]["errors"])
+    if args.capture_baseline:
+        if summary["errors"]:
+            summary["errors"].append("Refusing to capture a baseline with source-truth or revision differences")
+        else:
+            frozen = {"schema_version": SCHEMA_VERSION, "platform": outputs[0]["platform"], "reference_commit": ref,
+                      "normalization": ["NFC and whitespace in descriptions", "five pipeline timing fields",
+                                        "XLSX container metadata", "empty physical CSV records / line separators",
+                                        "DTASOF generation date only on empty statements",
+                                        "source-region glyph coordinates <=0.001 only across different known OS; reported separately"],
+                      "cases": {key: {"success": value["success"], "input": value["input"], "snapshot": value["snapshot"]}
+                                for key, value in old.items()}}
+            with args.capture_baseline.open("x", encoding="utf-8") as handle:
+                # One case per line keeps baseline changes reviewable in git.
+                entries = frozen.pop("cases")
+                handle.write(json.dumps(frozen, separators=(",", ":"))[:-1] + ',"cases":{\n')
+                handle.write(",\n".join(json.dumps(key) + ":" + json.dumps(value, ensure_ascii=True, separators=(",", ":"))
+                                       for key, value in entries.items()))
+                handle.write("\n}}\n")
+    else:
+        if not FROZEN_BASELINE.is_file():
+            summary["errors"].append("Frozen characterization baseline is missing")
+        else:
+            frozen = json.loads(FROZEN_BASELINE.read_text(encoding="utf-8"))
+            if frozen.get("schema_version") != SCHEMA_VERSION:
+                summary["errors"].append("Unsupported frozen baseline schema")
+            summary["frozen"] = compare_frozen_snapshots(frozen, outputs[1], approvals=approvals,
+                                                         reference_commit=frozen["reference_commit"], candidate_app_tree=candidate_app_tree)
+            summary["errors"].extend(summary["frozen"]["errors"])
+    summary["platform_geometry_differences"] = len(summary.get("frozen", {}).get("platform_geometry_differences", []))
     (args.output_dir / "comparison.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    print(json.dumps(summary, indent=2))
+    print(json.dumps({key: value for key, value in summary.items() if key not in {"strict", "frozen", "performance"}}, indent=2))
     return 1 if summary["errors"] else 0
 
 
