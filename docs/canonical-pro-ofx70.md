@@ -143,6 +143,8 @@ das correções:
 A leitura de checkpoints do worker permanece disponível com a ativação de
 ingestão desligada: uma conclusão pendente fica suspensa, sem reconversão nem
 publicação legada. O mesmo vale se a coorte for desligada ou passar a sombra.
+O limite normal de tentativas/DLQ continua vigente; após reativar, retomar o job
+pendente antes do TTL, sem remover a barreira ou recriar a extração.
 Usuários Free não consultam checkpoints nem SQL canônico. Essas correções não
 alteram schema ou defaults das flags. O teste de retomada usa pipeline, worker,
 storage e PostgreSQL reais, injeta timeout depois da ingestão antes do commit e

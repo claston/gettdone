@@ -290,5 +290,92 @@
     "Next .next build in OneDrive and Vitest spawn inside sandbox encountered EPERM; isolated build and unsandboxed tests passed.",
     "No production rollout authorized or performed. Issue is not claimed fully accepted for rollout."
   ],
-  "cleanup": "Task PostgreSQL and Next processes stopped; exact task pytest temporary directories, database cluster and isolated build removed. node_modules junction removed without deleting repository dependencies."
+  "cleanup": "Task PostgreSQL and Next processes stopped; exact task pytest temporary directories, database cluster and isolated build removed. node_modules junction removed without deleting repository dependencies.",
+  "pr_review_corrections": {
+    "date": "2026-11-02",
+    "reviewed_commit": "eab71e1317a9b37445dc0e80b843df134cb84c17",
+    "application_commit": "ad25551528ced83442e2110319e37aece4778648",
+    "review_comments": [
+      4443228061,
+      4443228071,
+      4443228080
+    ],
+    "tdd": "Both frontend regressions and both real worker retry variants failed before fixes, reproducing the review.",
+    "targeted_backend": {
+      "passed": 33,
+      "failed": 0,
+      "errors": 0,
+      "skipped_or_xfailed": [],
+      "seconds": 57.564
+    },
+    "full_backend": {
+      "passed": 4031,
+      "failed": 0,
+      "errors": 0,
+      "skipped_or_xfailed": [
+        {
+          "test": "test_two_editors_compare_reapply_and_refresh",
+          "type": "pytest.skip",
+          "reason": "Requires running local PRO build (OFX70_BROWSER_URL)"
+        },
+        {
+          "test": "test_native_text_synthetic_corpus_runs_through_real_pdf_pipeline[date_and_amount_formats]",
+          "type": "pytest.xfail",
+          "reason": "known gap: Generic inline rows do not yet recognize ISO date prefixes.; expected=3 actual=2 matched=2 false_positives=0 recall=0.667 precision=1.000"
+        },
+        {
+          "test": "test_native_text_synthetic_corpus_runs_through_real_pdf_pipeline[tabular_credit_debit]",
+          "type": "pytest.xfail",
+          "reason": "known gap: Unforced layout inference can select the zero-valued debit column.; expected=2 actual=2 matched=1 false_positives=1 recall=0.500 precision=0.500"
+        },
+        {
+          "test": "test_scanned_synthetic_pdf_runs_through_real_ocr_pipeline",
+          "type": "pytest.skip",
+          "reason": "Tesseract binary is not installed"
+        }
+      ],
+      "seconds": 480.309
+    },
+    "full_backend_mode": "pytest -q -n 2 --dist=worksteal; isolated local PostgreSQL 16 enabled for canonical, organization and migration tests",
+    "frontend": {
+      "files": 51,
+      "passed": 259,
+      "seconds": 78.77,
+      "eslint": "passed",
+      "typescript": "passed"
+    },
+    "lint": {
+      "ruff": "passed",
+      "frontend_text": "passed",
+      "frontend_navigation": "passed",
+      "mojibake_files": 187,
+      "mojibake_findings": 0,
+      "git_diff_check": "passed"
+    },
+    "worker_retry": "Real worker, CSV pipeline, filesystem source and PostgreSQL; SQL timeout after fence, rollback, restart, paused worker/cohort, then completion; exactly one pipeline execution/quota consumption and unchanged original TTL. S3 cold cache uses real adapter and simulated client, not a live bucket.",
+    "client_conflict": "Document loaded from second client page; conflict recovery through source batch, comparison and reapply with current version.",
+    "no_op_save": "Edit lock followed by unchanged save releases dirty; subsequent refresh adopts remote values and expected_version=2 download.",
+    "free_conversion_gate": {
+      "baseline_commit": "c2ca8abafc087485992c77d60cadc8d4b26740f1",
+      "candidate_commit": "ad25551528ced83442e2110319e37aece4778648",
+      "candidate_dirty": false,
+      "candidate_app_tree": "56c014beb47d61f3994076607f608009446a0425",
+      "corpus_sha256": "f5c4481d0bf628b8bb2a03c0eb4b136a818db013f7eae8e85f1761e6e0489e47",
+      "cases": 90,
+      "errors": [],
+      "platform_geometry_differences": 0,
+      "performance_gate_enforced": false
+    },
+    "free_review_gate": {
+      "baseline_commit": "c2ca8abafc087485992c77d60cadc8d4b26740f1",
+      "candidate_commit": "ad25551528ced83442e2110319e37aece4778648",
+      "candidate_dirty": false,
+      "candidate_app_sha256": "1021274796c02a8429b16d7819f5ef36e56c499dee0c916570d8abe1b6012eba",
+      "cases": 170,
+      "errors": [],
+      "differences": [],
+      "platform_geometry_differences": []
+    },
+    "rollout": "Disabled. No schema changes in review fixes, no merge or deploy. Previous S3/operational acceptance limits remain."
+  }
 }
