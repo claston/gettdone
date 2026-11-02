@@ -1,0 +1,478 @@
+{
+  "schema_version": 1,
+  "measurement_date_local": "2026-11-01",
+  "scope": "OFX-67 only; no production application changes",
+  "reference_commit": "c3cf02c4d4631ae591e2a59571dd9d1b557ec5f5",
+  "candidate_application_tree": "82caea2fbdaae1492bb4cd5696b7a2f2c4f64cc0",
+  "candidate_application_identical_to_reference": true,
+  "functional": {
+    "cases": 90,
+    "outcomes": {
+      "success": 28,
+      "review": 35,
+      "rejected": 27
+    },
+    "revision_differences": 0,
+    "frozen_differences": 0,
+    "source_truth_errors": [],
+    "corpus_sha256": "f5c4481d0bf628b8bb2a03c0eb4b136a818db013f7eae8e85f1761e6e0489e47",
+    "frozen_snapshot_sha256": "7a487319c3cfc8cca13a078fed6e15b3404bb3090549bfb7b840aee295f73891",
+    "final_frozen_command_exit_code": 0,
+    "final_frozen_corpus_sha256": "f5c4481d0bf628b8bb2a03c0eb4b136a818db013f7eae8e85f1761e6e0489e47",
+    "frozen_snapshot_hash_encoding": "UTF-8 with LF line endings (same bytes as Git blob)"
+  },
+  "performance": {
+    "baseline": {
+      "environment": {
+        "profile": "windows-local-ofx67",
+        "platform": "Windows-11-10.0.26200-SP0",
+        "python": "3.12.10",
+        "machine": "AMD64",
+        "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+        "dependencies": {
+          "pypdf": "5.4.0",
+          "openpyxl": "3.1.5",
+          "pydantic": "2.11.3"
+        }
+      },
+      "repeat": 5,
+      "process_peak_rss_bytes": 130641920,
+      "groups": {
+        "native": {
+          "runs": 285,
+          "p50_ms": 46.96939999121241,
+          "p95_ms": 100.5103399977088,
+          "cpu_p95_ms": 93.75,
+          "export_p95_ms": 42.96440000762235,
+          "technical_failures": 0,
+          "timeouts": 0,
+          "rejections": 70,
+          "artifact_bytes": 7112908
+        },
+        "ocr_evidence": {
+          "runs": 145,
+          "p50_ms": 113.1463000056101,
+          "p95_ms": 175.8441399899311,
+          "cpu_p95_ms": 156.25,
+          "export_p95_ms": 39.688220000243696,
+          "technical_failures": 0,
+          "timeouts": 0,
+          "rejections": 50,
+          "artifact_bytes": 3126489
+        },
+        "native_large": {
+          "runs": 5,
+          "p50_ms": 1515.4621999972733,
+          "p95_ms": 1535.650400002487,
+          "cpu_p95_ms": 1500.0,
+          "export_p95_ms": 103.24297999613918,
+          "technical_failures": 0,
+          "timeouts": 0,
+          "rejections": 0,
+          "artifact_bytes": 2019541
+        },
+        "preflight": {
+          "runs": 15,
+          "p50_ms": 0.01030000566970557,
+          "p95_ms": 0.050090004515368484,
+          "cpu_p95_ms": 0.0,
+          "export_p95_ms": 0.0,
+          "technical_failures": 0,
+          "timeouts": 0,
+          "rejections": 15,
+          "artifact_bytes": 0
+        }
+      }
+    },
+    "candidate": {
+      "environment": {
+        "profile": "windows-local-ofx67",
+        "platform": "Windows-11-10.0.26200-SP0",
+        "python": "3.12.10",
+        "machine": "AMD64",
+        "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+        "dependencies": {
+          "pypdf": "5.4.0",
+          "openpyxl": "3.1.5",
+          "pydantic": "2.11.3"
+        }
+      },
+      "repeat": 5,
+      "process_peak_rss_bytes": 130449408,
+      "groups": {
+        "native": {
+          "runs": 285,
+          "p50_ms": 49.159500005771406,
+          "p95_ms": 104.7144599928288,
+          "cpu_p95_ms": 93.75,
+          "export_p95_ms": 40.72310000774452,
+          "technical_failures": 0,
+          "timeouts": 0,
+          "rejections": 70,
+          "artifact_bytes": 7112996
+        },
+        "ocr_evidence": {
+          "runs": 145,
+          "p50_ms": 115.89710001135245,
+          "p95_ms": 189.17558001121478,
+          "cpu_p95_ms": 153.12499999999974,
+          "export_p95_ms": 50.08051999611755,
+          "technical_failures": 0,
+          "timeouts": 0,
+          "rejections": 50,
+          "artifact_bytes": 3126487
+        },
+        "native_large": {
+          "runs": 5,
+          "p50_ms": 1715.8668000047328,
+          "p95_ms": 1826.8263200036017,
+          "cpu_p95_ms": 1721.875,
+          "export_p95_ms": 111.0403799888445,
+          "technical_failures": 0,
+          "timeouts": 0,
+          "rejections": 0,
+          "artifact_bytes": 2019540
+        },
+        "preflight": {
+          "runs": 15,
+          "p50_ms": 0.009499999578110874,
+          "p95_ms": 0.047300006553996334,
+          "cpu_p95_ms": 0.0,
+          "export_p95_ms": 0.0,
+          "technical_failures": 0,
+          "timeouts": 0,
+          "rejections": 15,
+          "artifact_bytes": 0
+        }
+      }
+    }
+  },
+  "performance_gate": {
+    "status": "failed",
+    "evaluation": "compare_performance on final 90-case reports; budget not enforced during characterization capture",
+    "errors": [
+      "ocr_evidence.export_p95_ms: exceeds +10% budget (39.688220000243696 -> 50.08051999611755)",
+      "native_large.p95_ms: exceeds +10% budget (1535.650400002487 -> 1826.8263200036017)",
+      "native_large.cpu_p95_ms: exceeds +10% budget (1500.0 -> 1721.875)"
+    ],
+    "interpretation": "Identical application tree; local measurements exceed budgets in varying groups. No production performance or rollout approval.",
+    "source_command": "backend/venv/Scripts/python.exe scripts/check_pdf_compatibility.py --base-ref c3cf02c4d4631ae591e2a59571dd9d1b557ec5f5 --repeat 5 --profile windows-local-ofx67 --capture-baseline tmp/ofx67-expanded-baseline.json --output-dir tmp/ofx67-expanded",
+    "capture_exit_code": 0
+  },
+  "first_trial_before_equivalent_source_locations": {
+    "method": "Reference archived in local temporary storage, candidate loaded from OneDrive workspace",
+    "performance": {
+      "baseline": {
+        "environment": {
+          "profile": "windows-local-ofx67",
+          "platform": "Windows-11-10.0.26200-SP0",
+          "python": "3.12.10",
+          "machine": "AMD64",
+          "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+          "dependencies": {
+            "pypdf": "5.4.0",
+            "openpyxl": "3.1.5",
+            "pydantic": "2.11.3"
+          }
+        },
+        "repeat": 5,
+        "process_peak_rss_bytes": 129904640,
+        "groups": {
+          "native": {
+            "runs": 280,
+            "p50_ms": 49.96854999626521,
+            "p95_ms": 109.00748999629288,
+            "cpu_p95_ms": 93.75,
+            "export_p95_ms": 46.452765009598814,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 70,
+            "artifact_bytes": 6968321
+          },
+          "ocr_evidence": {
+            "runs": 145,
+            "p50_ms": 116.87099999107886,
+            "p95_ms": 192.22735999501288,
+            "cpu_p95_ms": 168.74999999999974,
+            "export_p95_ms": 77.62676000711505,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 50,
+            "artifact_bytes": 3126476
+          },
+          "native_large": {
+            "runs": 5,
+            "p50_ms": 1542.4606000015046,
+            "p95_ms": 1563.3886400028132,
+            "cpu_p95_ms": 1512.5,
+            "export_p95_ms": 116.38002000399865,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 0,
+            "artifact_bytes": 2019533
+          },
+          "preflight": {
+            "runs": 15,
+            "p50_ms": 0.010000003385357559,
+            "p95_ms": 0.0452100037364289,
+            "cpu_p95_ms": 0.0,
+            "export_p95_ms": 0.0,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 15,
+            "artifact_bytes": 0
+          }
+        }
+      },
+      "candidate": {
+        "environment": {
+          "profile": "windows-local-ofx67",
+          "platform": "Windows-11-10.0.26200-SP0",
+          "python": "3.12.10",
+          "machine": "AMD64",
+          "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+          "dependencies": {
+            "pypdf": "5.4.0",
+            "openpyxl": "3.1.5",
+            "pydantic": "2.11.3"
+          }
+        },
+        "repeat": 5,
+        "process_peak_rss_bytes": 129024000,
+        "groups": {
+          "native": {
+            "runs": 280,
+            "p50_ms": 50.01975000050152,
+            "p95_ms": 110.22497500744069,
+            "cpu_p95_ms": 93.75,
+            "export_p95_ms": 74.20932000750328,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 70,
+            "artifact_bytes": 6968302
+          },
+          "ocr_evidence": {
+            "runs": 145,
+            "p50_ms": 114.9784000008367,
+            "p95_ms": 164.1290200088406,
+            "cpu_p95_ms": 140.625,
+            "export_p95_ms": 36.619480000808814,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 50,
+            "artifact_bytes": 3126446
+          },
+          "native_large": {
+            "runs": 5,
+            "p50_ms": 1500.6339000101434,
+            "p95_ms": 1519.179380001151,
+            "cpu_p95_ms": 1450.0,
+            "export_p95_ms": 162.50833999365568,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 0,
+            "artifact_bytes": 2019533
+          },
+          "preflight": {
+            "runs": 15,
+            "p50_ms": 0.010200004908256233,
+            "p95_ms": 0.03922000323655082,
+            "cpu_p95_ms": 0.0,
+            "export_p95_ms": 0.0,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 15,
+            "artifact_bytes": 0
+          }
+        }
+      }
+    },
+    "budget_check": {
+      "errors": [
+        "native_large.export_p95_ms: exceeds +10% budget (116.38002000399865 -> 162.50833999365568)",
+        "native.export_p95_ms: exceeds +10% budget (46.452765009598814 -> 74.20932000750328)"
+      ]
+    }
+  },
+  "validation": {
+    "full_suite": {
+      "passed": 3972,
+      "skipped": 7,
+      "xfailed": 2,
+      "warnings": 8,
+      "duration_seconds": 232.97,
+      "command": "backend/venv/Scripts/python.exe -m pytest -q -n 4 --dist=worksteal --basetemp C:/Users/erica/AppData/Local/Temp/gettdone-pytest-ofx67-final-full --junitxml=tmp/ofx67-final-full-suite.xml"
+    },
+    "final_guard_tests": {
+      "passed": 27,
+      "duration_seconds": 1.21
+    },
+    "targeted_initial_suites": {
+      "passed": 67,
+      "duration_seconds": 9.72
+    },
+    "lint": [
+      "backend Ruff passed",
+      "guard Ruff passed",
+      "frontend UTF-8/mojibake passed",
+      "frontend navigation passed"
+    ],
+    "not_run": [
+      "Real PostgreSQL checks: six skips, disposable DSN absent",
+      "Real Tesseract OCR: one skip, binary absent",
+      "PRO/browser suites not repeated; no UI change"
+    ],
+    "known_xfails": [
+      "date_and_amount_formats",
+      "tabular_credit_debit"
+    ],
+    "initial_full_suite": {
+      "passed": 3969,
+      "skipped": 7,
+      "xfailed": 2,
+      "warnings": 8,
+      "duration_seconds": 246.29
+    }
+  },
+  "limitations": [
+    "Offline local measurements are not production SLO evidence",
+    "OCR evidence parsing excludes external recognition/network/rendering cost",
+    "Peak RSS is whole-worker high-water mark including imports and diagnostics, not per-file peak",
+    "CPU is process CPU time, not CPU percentage",
+    "Timeout is the corpus worker limit, not HTTP timeout/499",
+    "No real bank statements or production data accessed"
+  ],
+  "prior_89_case_cli_performance_gate": {
+    "performance": {
+      "baseline": {
+        "environment": {
+          "profile": "windows-local-ofx67",
+          "platform": "Windows-11-10.0.26200-SP0",
+          "python": "3.12.10",
+          "machine": "AMD64",
+          "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+          "dependencies": {
+            "pypdf": "5.4.0",
+            "openpyxl": "3.1.5",
+            "pydantic": "2.11.3"
+          }
+        },
+        "repeat": 5,
+        "process_peak_rss_bytes": 130646016,
+        "groups": {
+          "native": {
+            "runs": 280,
+            "p50_ms": 50.86535000009462,
+            "p95_ms": 109.68466500198701,
+            "cpu_p95_ms": 109.375,
+            "export_p95_ms": 41.12699499601151,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 70,
+            "artifact_bytes": 6968285
+          },
+          "ocr_evidence": {
+            "runs": 145,
+            "p50_ms": 117.35680000856519,
+            "p95_ms": 177.85019999719222,
+            "cpu_p95_ms": 156.25,
+            "export_p95_ms": 38.44243999919843,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 50,
+            "artifact_bytes": 3126403
+          },
+          "native_large": {
+            "runs": 5,
+            "p50_ms": 1651.804599998286,
+            "p95_ms": 1734.926680001081,
+            "cpu_p95_ms": 1662.5,
+            "export_p95_ms": 113.79942000494339,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 0,
+            "artifact_bytes": 2019533
+          },
+          "preflight": {
+            "runs": 15,
+            "p50_ms": 0.011199997970834374,
+            "p95_ms": 0.05415999767137691,
+            "cpu_p95_ms": 0.0,
+            "export_p95_ms": 0.0,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 15,
+            "artifact_bytes": 0
+          }
+        }
+      },
+      "candidate": {
+        "environment": {
+          "profile": "windows-local-ofx67",
+          "platform": "Windows-11-10.0.26200-SP0",
+          "python": "3.12.10",
+          "machine": "AMD64",
+          "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+          "dependencies": {
+            "pypdf": "5.4.0",
+            "openpyxl": "3.1.5",
+            "pydantic": "2.11.3"
+          }
+        },
+        "repeat": 5,
+        "process_peak_rss_bytes": 130564096,
+        "groups": {
+          "native": {
+            "runs": 280,
+            "p50_ms": 50.75265000050422,
+            "p95_ms": 100.38478500428029,
+            "cpu_p95_ms": 93.75,
+            "export_p95_ms": 42.5306399971305,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 70,
+            "artifact_bytes": 6968323
+          },
+          "ocr_evidence": {
+            "runs": 145,
+            "p50_ms": 114.88130000361707,
+            "p95_ms": 205.4874800087418,
+            "cpu_p95_ms": 153.12499999999974,
+            "export_p95_ms": 56.23885999666523,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 50,
+            "artifact_bytes": 3126520
+          },
+          "native_large": {
+            "runs": 5,
+            "p50_ms": 1485.8641000028001,
+            "p95_ms": 1552.8801800013753,
+            "cpu_p95_ms": 1515.625,
+            "export_p95_ms": 108.29863999970257,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 0,
+            "artifact_bytes": 2019533
+          },
+          "preflight": {
+            "runs": 15,
+            "p50_ms": 0.01030000566970557,
+            "p95_ms": 0.04932998999720438,
+            "cpu_p95_ms": 0.0,
+            "export_p95_ms": 0.0,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 15,
+            "artifact_bytes": 0
+          }
+        }
+      }
+    },
+    "errors": [
+      "ocr_evidence.p95_ms: exceeds +10% budget (177.85019999719222 -> 205.4874800087418)",
+      "ocr_evidence.export_p95_ms: exceeds +10% budget (38.44243999919843 -> 56.23885999666523)"
+    ],
+    "exit_code": 1
+  }
+}
