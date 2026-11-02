@@ -54,6 +54,20 @@ jobs:
   pro-browser:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres-canonical:
+        image: postgres:16
+        env:
+          POSTGRES_DB: ofx24_test
+          POSTGRES_USER: ofx24_test
+          POSTGRES_PASSWORD: local-ci-test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ofx24_test -d ofx24_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     strategy:
       fail-fast: false
       matrix:
@@ -93,8 +107,8 @@ jobs:
         working-directory: .
         run: python -m pip install -r scripts/requirements-pro-browser.txt
 
-      - name: Install disposable backend for statement work acceptance
-        if: matrix.suite == 'works'
+      - name: Install disposable backend for SQL and statement work acceptance
+        if: matrix.suite == 'works' || matrix.suite == 'workspace'
         working-directory: .
         run: python -m pip install -r backend/requirements.txt
 
@@ -113,6 +127,8 @@ jobs:
       - name: Browser acceptance and performance budgets
         env:
           PRO_INTERNAL_LEGACY_ORGANIZATION_UI: ${{ matrix.suite == 'works' && 'true' || 'false' }}
+          CANONICAL_MOVEMENTS_TEST_DATABASE_URL: postgresql://ofx24_test:local-ci-test-only@127.0.0.1:5432/ofx24_test
+          OFX70_BROWSER_URL: http://127.0.0.1:3100
         working-directory: .
         run: |
           mkdir -p tmp/pro-workspace-acceptance
@@ -120,6 +136,10 @@ jobs:
           pro_pid=$!
           trap 'kill "$pro_pid"' EXIT
           python scripts/run_pro_browser_suite.py --suite "${{ matrix.suite }}" --url http://127.0.0.1:3100
+          if [ "${{ matrix.suite }}" = "workspace" ]; then
+            cd backend
+            python -m pytest tests/test_canonical_pro_browser.py -q --basetemp "$RUNNER_TEMP/ofx70-browser" --junitxml=../tmp/ofx70-browser.xml
+          fi
 
       - name: Preserve synthetic browser evidence
         if: always()
@@ -134,6 +154,7 @@ jobs:
             tmp/pro-organization/
             tmp/pro-browser-suites/
             tmp/ofx61-browser/
+            tmp/ofx70-browser.xml
           if-no-files-found: ignore
 
   # Keep the required check and worker release contract unchanged. A skipped
@@ -250,7 +271,8 @@ jobs:
           TEST_PRO_CONVERSION_PG_DSN: postgresql://ofx24_test:local-ci-test-only@127.0.0.1:5432/ofx24_test
         run: >-
           python -m pytest tests/test_pro_organization_postgres.py tests/test_statement_period_migration.py
-          tests/test_conversion_pro_migration.py tests/test_canonical_movements.py tests/test_canonical_movements_postgres.py -q
+          tests/test_conversion_pro_migration.py tests/test_canonical_movements.py tests/test_canonical_movements_postgres.py
+          tests/test_canonical_pro.py -q
 
       - name: Run tests
         run: python -m pytest -m "not pdf_golden" -q -n 4 --dist=worksteal

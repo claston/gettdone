@@ -1,4 +1,5 @@
 "use client";
+import { ConflictRecovery } from "./conflict-recovery";
 
 import {
   AlertCircle,
@@ -600,6 +601,12 @@ export function WorkspaceScreen({
             error={controller.saveError}
             onRetry={controller.retrySave}
           />
+          {(controller.saveStatus === "ERROR" || controller.actionError?.includes("outra sessão")) && (
+            <ConflictRecovery
+              key={controller.activeConversion?.id}
+              controller={controller}
+            />
+          )}
           <button
             className="icon-button"
             onClick={() => void controller.refreshBatch()}

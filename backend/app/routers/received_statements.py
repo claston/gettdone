@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from io import BytesIO
 from typing import Literal
@@ -18,6 +19,7 @@ from app.dependencies import (
     get_conversion_batch_service,
     get_report_service,
 )
+from app.routers.canonical_pro import canonical_record_payload, export_canonical_record, validate_export_checks
 from app.routers.conversion_batches import _find_convert_report, _unique_export_name
 from app.routers.pro_organization import organization_errors, organization_owner
 from app.routers.pro_security import require_pro_browser_request
@@ -123,17 +125,25 @@ def workspace(client_id: str, owner: str = Depends(organization_owner), service=
                          "error_code": record.failure.code if record.failure else None,
                          "error_message": record.failure.message if record.failure else None,
                          "ocr_mode": record.job.ocr_mode,
-                         "result": record.result.payload if record.result else None})
+                         "result": canonical_record_payload(record, owner) if record.result else None})
         return {"batch_id": client_id, "client_name": client["name"], "status": "completed", "jobs": jobs,
                 "next_cursor": documents[49]["job_id"] if len(documents) > 50 else None}
 
 
 @router.get("/clients/{client_id}/export")
 def export_client(client_id: str, owner: str = Depends(organization_owner), service=Depends(receipt_service),
+                  expected_versions: str | None = Query(default=None, max_length=10000),
                   report: ReportService = Depends(get_report_service),
                   async_report: ReportService | None = Depends(get_async_conversion_report_service)):
     with organization_errors():
         documents = service.documents(owner, client_id)
+    try:
+        versions = json.loads(expected_versions) if expected_versions else {}
+        if not isinstance(versions, dict):
+            raise ValueError
+    except (ValueError, TypeError):
+        raise HTTPException(400, "Invalid export versions") from None
+    checks = []
     buffer, exported, used = BytesIO(), 0, set()
     with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
         for document in documents:
@@ -142,14 +152,16 @@ def export_client(client_id: str, owner: str = Depends(organization_owner), serv
                 continue
             analysis = (record.result.payload or {}).get("analysis") or {}
             file_format = "xlsx" if analysis.get("financial_document") is not None else "ofx"
-            path = _find_convert_report(record.result.analysis_id,
+            data = export_canonical_record(record, owner, file_format, checks, versions)
+            path = None if data is not None else _find_convert_report(record.result.analysis_id,
                                         candidates=[r for r in (async_report, report) if r], file_format=file_format)
-            if path is None:
+            if path is None and data is None:
                 continue
             name = _unique_export_name(filename=record.job.document.filename, analysis_id=record.result.analysis_id,
                                        used_names=used, file_format=file_format)
-            archive.writestr(name, path.read_bytes())
+            archive.writestr(name, data if data is not None else path.read_bytes())
             exported += 1
+    validate_export_checks(checks)
     if not exported:
         raise HTTPException(409, "Nenhum extrato disponível para exportação.")
     return Response(buffer.getvalue(), media_type="application/zip", headers={

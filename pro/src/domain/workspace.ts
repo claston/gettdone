@@ -46,6 +46,7 @@ export interface SourceRegion {
 }
 
 export interface Conversion {
+  canonical?: boolean;
   expiresAt?: string;
   statementBalanceCheck?: BalanceCheck;
   ocrBalanceMatches?: boolean;
@@ -134,6 +135,11 @@ export interface ExportResult {
 }
 
 export interface WorkspaceRepository {
+  lockSnapshot?(conversionId: string): void;
+  prepareConflict?(
+    conversionId: string,
+  ): Promise<{ baseline: Transaction[]; latest: Transaction[] }>;
+  acceptConflict?(conversionId: string): void;
   recordEvent?(event: WorkspaceEvent): void;
   loadDocument?(
     conversionId: string,

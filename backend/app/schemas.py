@@ -80,6 +80,7 @@ class ReconcileIntakeResponse(BaseModel):
 
 
 class ConvertEditPatch(BaseModel):
+    movement_id: str | None = Field(default=None, max_length=36, pattern=r"^[a-fA-F0-9-]{36}$")
     transaction_id: str | None = Field(default=None, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
     anchor_transaction_id: str | None = Field(default=None, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
     row_id: str | None = None
@@ -98,6 +99,8 @@ class ConvertEditPatch(BaseModel):
 
 
 class ConvertEditsRequest(BaseModel):
+    expected_version: int | None = Field(default=None, ge=1, strict=True)
+    expected_movement_versions: dict[str, int] | None = None
     operation_id: str | None = Field(default=None, min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
     batch_id: str | None = None
     job_id: str | None = None

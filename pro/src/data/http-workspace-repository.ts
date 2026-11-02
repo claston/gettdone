@@ -72,6 +72,10 @@ function publicFailureMessage(job: ApiJob): string | undefined {
 }
 
 interface ApiAnalysis {
+  authority?: string;
+  version?: number;
+  movement_ids?: Record<string, string>;
+  movement_versions?: Record<string, number>;
   statement_balance_check?: unknown;
   financial_document?: FinancialDocument | null;
   file_type?: string;
@@ -118,6 +122,13 @@ interface ApiBatch {
 }
 
 interface ConversionContext {
+  dirty?: boolean;
+  pendingReview?: string;
+  version?: number;
+  movementIds?: Record<string, string>;
+  movementVersions?: Record<string, number>;
+  conflicted?: boolean;
+  recovery?: ConversionContext;
   expiresAt?: string;
   batchId: string;
   analysisId: string | null;
@@ -228,6 +239,7 @@ export function createHttpWorkspaceRepository(
       response = await request(path, { method: "POST", body: pending.body });
     } catch (error) {
       if (error instanceof ApiRequestError && error.status < 500) {
+        if (error.status === 409 && context.version) context.conflicted = true;
         context.pendingSave = undefined;
         throw error;
       }
@@ -240,6 +252,9 @@ export function createHttpWorkspaceRepository(
       }
     }
     const result = (await response.json()) as {
+      version?: number;
+      movement_ids?: Record<string, string>;
+      movement_versions?: Record<string, number>;
       operation_id?: string | null;
       updated_at?: string | null;
       preview_transactions?: ApiTransaction[];
@@ -274,6 +289,13 @@ export function createHttpWorkspaceRepository(
       );
     const currentIds = new Set(transactions.map((row) => row.id));
     context.updatedAt = result.updated_at ?? context.updatedAt;
+    if (context.version) {
+      if (!result.version || !result.movement_ids || !result.movement_versions)
+        throw new Error("Não foi possível confirmar a versão salva.");
+      context.version = result.version;
+      context.movementIds = result.movement_ids;
+      context.movementVersions = result.movement_versions;
+    }
     if (result.preview_transactions?.length === serverOrder.length) {
       const rows = result.preview_transactions;
       context.rowIds = new Map(
@@ -302,10 +324,18 @@ export function createHttpWorkspaceRepository(
     }
     context.persistedTransactions = context.savedTransactions;
     context.pendingSave = undefined;
+    context.dirty = false;
     updateCachedConversion(
       [...contexts].find(([, value]) => value === context)?.[0] ?? "",
       (item) => ({
         ...item,
+        downloadUrl:
+          context.version && item.downloadUrl
+            ? item.downloadUrl.replace(
+                /&expected_version=\d+/,
+                `&expected_version=${context.version}`,
+              )
+            : item.downloadUrl,
         transactions: context.savedTransactions!,
         transactionCount: context.savedTransactions!.filter(
           (row) => !row.isDeleted,
@@ -435,8 +465,49 @@ export function createHttpWorkspaceRepository(
       return blob;
     },
 
+    lockSnapshot(conversionId: string) {
+      requireContext(contexts, conversionId).dirty = true;
+    },
+
+    async prepareConflict(conversionId: string) {
+      const context = requireContext(contexts, conversionId);
+      if (!context.version)
+        throw new Error("Reabra o documento para recuperar a revisão legada.");
+      // Keep the old CAS token and draft active until the user accepts comparison.
+      // The client workspace is paginated; the saved source batch addresses
+      // this document directly regardless of its position in that workspace.
+      const path = `/api/pro/conversion-batches/${encodeURIComponent(context.batchId)}`;
+      const response = await request(path);
+      const payload = (await response.json()) as ApiBatch;
+      const job = payload.jobs.find((item) => item.job_id === conversionId);
+      if (!job)
+        throw new Error("O documento expirou ou não está mais disponível.");
+      const fresh = new Map<string, ConversionContext>();
+      mapConversion({ apiUrl, batchId: context.batchId, job, contexts: fresh });
+      context.recovery = fresh.get(conversionId)!;
+      return {
+        baseline: structuredClone(context.persistedTransactions),
+        latest: structuredClone(context.recovery.persistedTransactions),
+      };
+    },
+
+    acceptConflict(conversionId: string) {
+      const context = requireContext(contexts, conversionId);
+      if (!context.recovery)
+        throw new Error("Compare a revisão antes de continuar.");
+      contexts.set(conversionId, context.recovery);
+    },
+
     async saveTransactions(conversionId: string, transactions: Transaction[]) {
       const context = requireContext(contexts, conversionId);
+      if (context.version)
+        transactions = transactions.filter(
+          (row) => context.rowIds.has(row.id) || !row.isDeleted,
+        );
+      if (context.conflicted)
+        throw new Error(
+          "Compare a revisão atual antes de reaplicar seu rascunho.",
+        );
       if (!context.analysisId)
         throw new Error("A conversão ainda não possui resultado editável.");
       if (context.pendingSave) await finishSave(context);
@@ -480,7 +551,12 @@ export function createHttpWorkspaceRepository(
                 : originalById.get(transaction.id)?.isDeleted
                   ? "restore"
                   : "update",
-            row_id: transaction.sourceSequence != null ? transaction.id : rowId,
+            ...(context.version
+              ? { movement_id: context.movementIds?.[transaction.id] }
+              : {
+                  row_id:
+                    transaction.sourceSequence != null ? transaction.id : rowId,
+                }),
             date: toIsoDate(transaction.date),
             description: transaction.description,
             credit: transaction.credit,
@@ -494,10 +570,14 @@ export function createHttpWorkspaceRepository(
         if (!currentIds.has(localId))
           edits.push({
             action: "delete",
-            row_id:
-              originalById.get(localId)?.sourceSequence != null
-                ? localId
-                : rowId,
+            ...(context.version
+              ? { movement_id: context.movementIds?.[localId] }
+              : {
+                  row_id:
+                    originalById.get(localId)?.sourceSequence != null
+                      ? localId
+                      : rowId,
+                }),
           });
       }
       const serverOrder: Array<string | null> = Array(context.rowCount).fill(
@@ -517,7 +597,7 @@ export function createHttpWorkspaceRepository(
         const position = nextIndex < 0 ? serverOrder.length : nextIndex;
         edits.push({
           action: "insert",
-          ...(transaction.sourceSequence != null
+          ...(context.version || transaction.sourceSequence != null
             ? { transaction_id: transaction.id }
             : {}),
           insert_position: position,
@@ -534,6 +614,7 @@ export function createHttpWorkspaceRepository(
           edits.push({ action: "delete", row_id: `row_${position + 1}` });
       });
       if (!edits.length) {
+        context.dirty = false;
         const savedById = new Map(
           context.persistedTransactions.map((row) => [row.id, row]),
         );
@@ -551,6 +632,16 @@ export function createHttpWorkspaceRepository(
           operation_id: operationId,
           edits,
           expected_updated_at: context.updatedAt,
+          ...(context.version
+            ? {
+                expected_version: context.version,
+                expected_movement_versions: Object.fromEntries(
+                  Object.entries(context.movementIds ?? {}).map(
+                    ([alias, id]) => [id, context.movementVersions?.[alias]],
+                  ),
+                ),
+              }
+            : {}),
           batch_id: context.batchId,
           job_id: conversionId,
         }),
@@ -561,12 +652,34 @@ export function createHttpWorkspaceRepository(
 
     async markReviewed(conversionId: string) {
       const context = requireContext(contexts, conversionId);
-      await request(
+      if (context.version && !context.pendingReview)
+        context.pendingReview = JSON.stringify({
+          operation_id: crypto.randomUUID(),
+          expected_version: context.version,
+        });
+      const response = await request(
         `/api/pro/conversion-batches/${encodeURIComponent(context.batchId)}/jobs/${encodeURIComponent(conversionId)}/review`,
-        { method: "POST", body: "{}" },
+        {
+          method: "POST",
+          body: context.pendingReview ?? "{}",
+        },
       );
+      if (context.version) {
+        const saved = await response.json();
+        context.version = saved.version;
+        context.updatedAt = saved.updated_at;
+        context.movementVersions = saved.movement_versions;
+        context.pendingReview = undefined;
+      }
       updateCachedConversion(conversionId, (item) => ({
         ...item,
+        downloadUrl:
+          context.version && item.downloadUrl
+            ? item.downloadUrl.replace(
+                /&expected_version=\d+/,
+                `&expected_version=${context.version}`,
+              )
+            : item.downloadUrl,
         status: "REVIEWED",
         reviewStatus: "REVIEWED",
       }));
@@ -583,10 +696,23 @@ export function createHttpWorkspaceRepository(
     },
 
     async exportBatch(batchId: string): Promise<ExportResult> {
+      const versions = Object.fromEntries(
+        [...contexts.values()]
+          .filter(
+            (context) =>
+              context.version &&
+              (options.clientId || context.batchId === batchId),
+          )
+          .map((context) => [context.analysisId, context.version]),
+      );
+      const query = Object.keys(versions).length
+        ? `?expected_versions=${encodeURIComponent(JSON.stringify(versions))}`
+        : "";
       const response = await request(
-        options.clientId
+        (options.clientId
           ? `/api/pro/receipts/clients/${encodeURIComponent(options.clientId)}/export`
-          : `/api/pro/conversion-batches/${encodeURIComponent(batchId)}/export`,
+          : `/api/pro/conversion-batches/${encodeURIComponent(batchId)}/export`) +
+          query,
         {
           headers: { Accept: "application/zip" },
         },
@@ -643,9 +769,19 @@ function mapConversion({
   // advance its optimistic-lock version or replace positional row mappings.
   const keepContext =
     context?.analysisId === analysisId &&
-    (context.rowCount > 0 || remoteTransactions.length === 0);
+    (context.rowCount > 0 || remoteTransactions.length === 0) &&
+    (!context.version ||
+      context.dirty ||
+      context.pendingSave ||
+      context.pendingReview ||
+      context.conflicted ||
+      (analysis?.version ?? 0) <= context.version);
   if (!keepContext) {
     context = {
+      version:
+        analysis?.authority === "postgres_v1" ? analysis.version : undefined,
+      movementIds: analysis?.movement_ids,
+      movementVersions: analysis?.movement_versions,
       expiresAt: job.expires_at,
       batchId,
       analysisId,
@@ -695,6 +831,7 @@ function mapConversion({
       reviewWarnings.some((code) => documentReviewWarnings.has(code)),
   );
   return {
+    canonical: analysis?.authority === "postgres_v1",
     id: job.job_id,
     expiresAt: job.expires_at,
     batchId,
@@ -719,7 +856,7 @@ function mapConversion({
             fileName: job.filename,
           },
     downloadUrl: analysisId
-      ? `${apiUrl}/convert-report/${encodeURIComponent(analysisId)}?format=${analysis?.financial_document ? "xlsx" : "ofx"}`
+      ? `${apiUrl}/convert-report/${encodeURIComponent(analysisId)}?format=${analysis?.financial_document ? "xlsx" : "ofx"}${context?.version ? `&expected_version=${context.version}` : ""}`
       : undefined,
     financialDocument: analysis?.financial_document,
     noActivity: analysis?.pdf_processing_metrics?.statement_no_activity === 1,

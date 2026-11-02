@@ -1,5 +1,6 @@
 "use client";
 import { requiresDocumentReview } from "@/domain/review-warnings";
+import { recoverDraft } from "@/domain/recover-draft";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { validSourceRegions } from "@/domain/source-regions";
@@ -31,6 +32,16 @@ type LoadState = "LOADING" | "READY" | "ERROR";
 type RefreshState = "IDLE" | "REFRESHING" | "ERROR";
 
 export interface WorkspaceController {
+  compareConflict(): Promise<{
+    baseline: Transaction[];
+    latest: Transaction[];
+    draft: Transaction[];
+  }>;
+  recoverConflict(comparison: {
+    baseline: Transaction[];
+    latest: Transaction[];
+    draft: Transaction[];
+  }): void;
   batch: Batch | null;
   activeConversion: Conversion | null;
   loadState: LoadState;
@@ -123,34 +134,44 @@ export function useWorkspaceController(
     setSaveStatuses(saveStatusesRef.current);
   }, []);
 
-  const changeRows = useCallback((id: string, transactions: Transaction[]) => {
-    const current = batchRef.current;
-    if (!current) return;
-    const next: Batch = {
-      ...current,
-      conversions: current.conversions.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              transactions,
-              transactionCount: transactions.filter((row) => !row.isDeleted)
-                .length,
-              editedCount: countEdited(transactions),
-              suspectedCount: countSuspected(transactions),
-              reviewStatus: "IN_REVIEW",
-              status:
-                item.status === "REVIEWED" || item.status === "EXPORTED"
-                  ? countSuspected(transactions) || requiresDocumentReview(item)
-                    ? "NEEDS_REVIEW"
-                    : "READY"
-                  : item.status,
-            }
-          : item,
-      ),
-    };
-    batchRef.current = next;
-    setBatch(next);
-  }, []);
+  const changeRows = useCallback(
+    (id: string, transactions: Transaction[]) => {
+      const current = batchRef.current;
+      if (!current) return;
+      const next: Batch = {
+        ...current,
+        conversions: current.conversions.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                downloadUrl: item.canonical
+                  ? (repository
+                      .getCachedBatch?.(batchId)
+                      ?.conversions.find((row) => row.id === id)?.downloadUrl ??
+                    item.downloadUrl)
+                  : item.downloadUrl,
+                transactions,
+                transactionCount: transactions.filter((row) => !row.isDeleted)
+                  .length,
+                editedCount: countEdited(transactions),
+                suspectedCount: countSuspected(transactions),
+                reviewStatus: "IN_REVIEW",
+                status:
+                  item.status === "REVIEWED" || item.status === "EXPORTED"
+                    ? countSuspected(transactions) ||
+                      requiresDocumentReview(item)
+                      ? "NEEDS_REVIEW"
+                      : "READY"
+                    : item.status,
+              }
+            : item,
+        ),
+      };
+      batchRef.current = next;
+      setBatch(next);
+    },
+    [repository, batchId],
+  );
 
   useEffect(() => {
     let active = true;
@@ -299,6 +320,21 @@ export function useWorkspaceController(
   const hasProcessing = Boolean(
     batch?.conversions.some((item) => item.status === "PROCESSING"),
   );
+  const hasCanonical = Boolean(
+    batch?.conversions.some((item) => item.canonical),
+  );
+  useEffect(() => {
+    if (!hasCanonical) return;
+    const refresh = () => {
+      if (document.visibilityState !== "hidden") void refreshBatch();
+    };
+    const timer = setInterval(refresh, 15000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [hasCanonical, refreshBatch]);
 
   useEffect(() => {
     const expirations = (batch?.conversions ?? [])
@@ -406,6 +442,7 @@ export function useWorkspaceController(
 
   const queueSave = useCallback(
     (conversionId: string, transactions: Transaction[]) => {
+      repository.lockSnapshot?.(conversionId);
       clearTimeout(timers.current[conversionId]);
       pending.current.set(conversionId, transactions);
       setStatus(
@@ -416,7 +453,7 @@ export function useWorkspaceController(
         void persist(conversionId);
       }, 700);
     },
-    [persist, setStatus],
+    [persist, setStatus, repository],
   );
 
   const replaceTransactions = useCallback(
@@ -599,6 +636,38 @@ export function useWorkspaceController(
     }
   }, [activeConversion, persist]);
 
+  const compareConflict = useCallback(async () => {
+    if (!activeConversion || !repository.prepareConflict)
+      throw new Error("Reabra o documento para comparar.");
+    clearTimeout(timers.current[activeConversion.id]);
+    const comparison = await repository.prepareConflict(activeConversion.id);
+    return {
+      ...comparison,
+      draft: structuredClone(activeConversion.transactions),
+    };
+  }, [activeConversion, repository]);
+
+  const recoverConflict = useCallback(
+    (comparison: {
+      baseline: Transaction[];
+      latest: Transaction[];
+      draft: Transaction[];
+    }) => {
+      if (!activeConversion || !repository.acceptConflict) return;
+      repository.acceptConflict(activeConversion.id);
+      setActionError(null);
+      const rows = recoverDraft(
+        comparison.baseline,
+        comparison.latest,
+        comparison.draft,
+      );
+      changeRows(activeConversion.id, rows);
+      pending.current.set(activeConversion.id, rows);
+      void persist(activeConversion.id);
+    },
+    [activeConversion, repository, changeRows, persist],
+  );
+
   const undo = useCallback(() => {
     if (!activeConversion) return;
     const entries = history[activeConversion.id] ?? [];
@@ -660,6 +729,12 @@ export function useWorkspaceController(
             item.id === activeConversion.id
               ? {
                   ...item,
+                  downloadUrl: item.canonical
+                    ? (repository
+                        .getCachedBatch?.(batchId)
+                        ?.conversions.find((row) => row.id === item.id)
+                        ?.downloadUrl ?? item.downloadUrl)
+                    : item.downloadUrl,
                   status: "REVIEWED",
                   reviewStatus: "REVIEWED",
                   suspectedCount: 0,
@@ -688,7 +763,7 @@ export function useWorkspaceController(
       actionLock.current = false;
       setActionBusy(false);
     }
-  }, [activeConversion, repository, selectConversion]);
+  }, [activeConversion, repository, selectConversion, batchId]);
 
   const retryConversion = useCallback(async () => {
     if (
@@ -786,6 +861,8 @@ export function useWorkspaceController(
 
   return useMemo(
     () => ({
+      compareConflict,
+      recoverConflict,
       batch,
       activeConversion,
       loadState,
@@ -824,6 +901,8 @@ export function useWorkspaceController(
       refreshBatch,
     }),
     [
+      compareConflict,
+      recoverConflict,
       activeConversion,
       addTransaction,
       batch,
@@ -874,7 +953,11 @@ function mergeRefreshedBatch(
       const saveStatus = saveStatuses[conversion.id] ?? "IDLE";
       if (
         !local ||
-        !["DIRTY", "SAVING", "ERROR", "SAVED"].includes(saveStatus)
+        !(
+          conversion.canonical
+            ? ["DIRTY", "SAVING", "ERROR"]
+            : ["DIRTY", "SAVING", "ERROR", "SAVED"]
+        ).includes(saveStatus)
       ) {
         return conversion;
       }

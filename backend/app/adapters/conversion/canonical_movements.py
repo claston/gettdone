@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 from datetime import date, datetime, timedelta
 from uuid import uuid4
@@ -19,7 +19,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from app.application.canonical_movements import CanonicalRollout, MovementScope, exact_amount
-from app.application.errors import AnalysisEditConflictError, AnalysisNotFoundError
+from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConflictError, AnalysisNotFoundError
 from app.application.review_commands import ReviewCommandService
 
 _ROWS = {"preview_transactions", "report_transactions", "edit_operations"}
@@ -144,7 +144,7 @@ class PostgresMovementRepository:
              Jsonb(row) if baseline else None, Jsonb({k: v for k, v in row.items() if k not in _TYPED}))).fetchone()
 
     def ingest(self, scope: MovementScope, content: dict, *, currency: str, product: str, new_analysis: bool,
-               rollout: CanonicalRollout):
+               rollout: CanonicalRollout, connection=None):
         if not rollout.allows(organization_id=scope.organization_id, product=product, new_analysis=new_analysis):
             raise ValueError("Canonical ingestion is disabled for this document")
         if content.get("financial_document") is not None or content.get("analysis_id") != scope.analysis_id:
@@ -164,7 +164,7 @@ class PostgresMovementRepository:
         if expiration.tzinfo is None:
             raise ValueError("Expiration must include timezone")
         ingestion_hash = _hash({"content": content, "currency": currency})
-        with self._connect() as conn:
+        with (nullcontext(connection) if connection is not None else self._connect()) as conn:
             source = self._source(conn, scope)
             existing = conn.execute(f"SELECT * FROM {self.p}canonical_analyses WHERE analysis_id = %s FOR UPDATE",
                                     (scope.analysis_id,)).fetchone()
@@ -227,7 +227,7 @@ class PostgresMovementRepository:
 
     def apply(self, scope: MovementScope, edits: list[dict], *, expected_version: int | None = None, operation_id: str,
               channel: str, expected_updated_at: str | None = None, expected_movement_versions: dict | None = None,
-              mark_reviewed: bool = False, **overrides):
+              mark_reviewed: bool = False, require_edit_enabled: bool = False, **overrides):
         if not operation_id or len(operation_id) > 128 or not channel or len(channel) > 80:
             raise ValueError("An operation identity and source channel are required")
         if expected_version is None and not expected_updated_at:
@@ -253,6 +253,13 @@ class PostgresMovementRepository:
                               "movement_versions": expected_movement_versions, "channel": channel})
         with self._connect() as conn:
             analysis, source = self._analysis(conn, scope)
+            if require_edit_enabled:
+                plan = conn.execute(f'''SELECT s.id FROM {self.p}user_plan_subscriptions s
+                    JOIN {self.p}plan_versions p ON p.id = s.plan_version_id
+                    WHERE s.user_id=%s AND s.status='active' AND p.batch_conversion_enabled
+                        AND p.code IN ('essencial','profissional','escritorio') FOR SHARE OF s,p''', (scope.actor_id,)).fetchone()
+                if not plan:
+                    raise AnalysisAccessDeniedError
             receipt = conn.execute(f"""SELECT * FROM {self.p}movement_operations
                 WHERE analysis_id = %s AND operation_id = %s""", (scope.analysis_id, operation_id)).fetchone()
             if receipt:
@@ -260,16 +267,29 @@ class PostgresMovementRepository:
                     raise AnalysisEditConflictError
                 self._unexpired(conn, scope)
                 return receipt["response"]
+            if require_edit_enabled and not (analysis["read_enabled"] and analysis["edit_enabled"]):
+                raise AnalysisEditConflictError
             if expected_version is not None and analysis["version"] != expected_version:
                 raise AnalysisEditConflictError
             if expected_updated_at is not None and analysis["metadata"]["updated_at"] != expected_updated_at:
                 raise AnalysisEditConflictError
             original = self._movements(conn, scope.analysis_id)
             by_id = {row["legacy_id"]: row for row in original}
+            by_movement = {str(row["id"]): row for row in original}
             for key, version in (expected_movement_versions or {}).items():
-                if key not in by_id or by_id[key]["version"] != version:
+                movement = by_movement.get(key) or by_id.get(key)
+                if movement is None or movement["version"] != version:
                     raise AnalysisEditConflictError
+            # Resolve UUIDs under the same lock as CAS; never use display order.
+            edits = deepcopy(edits)
             for patch in edits:
+                if patch.get("movement_id"):
+                    movement = by_movement.get(patch.pop("movement_id"))
+                    if movement is None:
+                        raise ValueError("Unknown movement in this analysis")
+                    if patch.get("row_id") not in (None, movement["legacy_id"]):
+                        raise ValueError("Conflicting movement identities")
+                    patch["row_id"] = movement["legacy_id"]
                 if patch.get("action") != "insert" and patch.get("row_id") not in by_id:
                     raise ValueError("Canonical edits require stable row IDs")
             content = self._snapshot(conn, analysis)
@@ -333,6 +353,7 @@ class PostgresMovementRepository:
             snapshot = self._snapshot(conn, updated)
             self._project(conn, scope, snapshot, source)
             response = {**service._edit_result(scope.analysis_id, snapshot, operation_id),
+                        "reviewed_at": snapshot.get("reviewed_at"),
                         "version": updated["version"], "movement_versions": snapshot["movement_versions"],
                         "movement_ids": snapshot["movement_ids"], "authority": "postgres_v1"}
             conn.execute(f"""INSERT INTO {self.p}movement_operations

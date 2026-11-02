@@ -5,6 +5,7 @@ import binascii
 import json
 import logging
 import re
+from dataclasses import replace
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -33,7 +34,7 @@ from app.application.conversion.conversion_runtime_config import (
     ConversionRuntimeConfig,
     ConversionUploadMode,
 )
-from app.application.errors import AnalysisNotFoundError
+from app.application.errors import AnalysisEditConflictError, AnalysisNotFoundError
 from app.application.review_commands import ReviewCommandService
 from app.dependencies import (
     get_access_control_service,
@@ -50,6 +51,7 @@ from app.routers.auth_session import (
     resolve_anonymous_fingerprint_with_cookie,
     resolve_user_token_with_session,
 )
+from app.routers.canonical_pro import canonical_record_payload, export_canonical_record, resolve_canonical, validate_export_checks
 from app.routers.pro_security import require_pro_browser_request
 
 router = APIRouter()
@@ -71,6 +73,9 @@ class CreateConversionBatchRequest(BaseModel):
 
 
 class ConversionBatchIdentityRequest(BaseModel):
+    expected_version: int | None = Field(default=None, ge=1, strict=True)
+    operation_id: str | None = Field(default=None, max_length=100)
+    expected_updated_at: str | None = None
     anonymous_fingerprint: str | None = Field(default=None, max_length=500)
     user_token: str | None = Field(default=None, max_length=500)
 
@@ -553,7 +558,18 @@ def review_conversion_job(
     if service is None:  # protected by _owned_snapshot
         raise HTTPException(status_code=404, detail="Conversion batch not found.")
     try:
+        record = next(item for item in snapshot.jobs if item.job.job_id == job_id)
+        canonical = resolve_canonical(identity, record.result.analysis_id) if record.result else None
+        if canonical:
+            saved = canonical.canonical.edit(canonical.scope, [], mark_reviewed=True,
+                expected_version=request.expected_version, expected_updated_at=request.expected_updated_at,
+                operation_id=request.operation_id)
+            return Response(content=json.dumps({"job_id": job_id, "reviewed_at": saved["reviewed_at"],
+                            "version": saved["version"], "updated_at": saved["updated_at"],
+                            "movement_versions": saved["movement_versions"]}), media_type="application/json")
         reviewed_at = ReviewCommandService().mark_reviewed(service.repository, job_id)
+    except AnalysisEditConflictError:
+        raise HTTPException(409, "Este documento foi alterado em outra sessão ou está com a revisão suspensa.") from None
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return ConversionJobReviewResponse(job_id=job_id, reviewed_at=reviewed_at)
@@ -611,6 +627,7 @@ def retry_conversion_job(
 @router.get("/api/pro/conversion-batches/{batch_id}/export")
 def export_conversion_batch(
     batch_id: str,
+    expected_versions: str | None = Query(default=None, max_length=10000),
     anonymous_fingerprint: str | None = Query(default=None, max_length=500),
     user_token: str | None = Query(default=None, max_length=500),
     authorization: str | None = Header(default=None),
@@ -639,6 +656,13 @@ def export_conversion_batch(
         service=service,
         access_control_service=access_control_service,
     )
+    try:
+        versions = json.loads(expected_versions) if expected_versions else {}
+        if not isinstance(versions, dict):
+            raise ValueError
+    except (ValueError, TypeError):
+        raise HTTPException(400, "Invalid export versions") from None
+    checks = []
     candidates = [item for item in (async_report_service, report_service) if item is not None]
     buffer = BytesIO()
     exported = 0
@@ -649,12 +673,13 @@ def export_conversion_batch(
                 continue
             analysis = (record.result.payload or {}).get("analysis") or {}
             file_format = "xlsx" if analysis.get("financial_document") is not None else "ofx"
-            report_path = _find_convert_report(
+            data = export_canonical_record(record, identity.identity_id, file_format, checks, versions)
+            report_path = None if data is not None else _find_convert_report(
                 record.result.analysis_id,
                 candidates=candidates,
                 file_format=file_format,
             )
-            if report_path is None:
+            if report_path is None and data is None:
                 continue
             archive_name = _unique_export_name(
                 filename=record.job.document.filename,
@@ -662,8 +687,9 @@ def export_conversion_batch(
                 used_names=used_names,
                 file_format=file_format,
             )
-            archive.writestr(archive_name, report_path.read_bytes())
+            archive.writestr(archive_name, data if data is not None else report_path.read_bytes())
             exported += 1
+    validate_export_checks(checks)
     if exported == 0:
         raise HTTPException(status_code=409, detail="No completed conversion is available for export.")
     return Response(
@@ -928,6 +954,9 @@ def _prepared_response(prepared: PreparedConversionBatch) -> ConversionBatchResp
 
 
 def _snapshot_response(snapshot: ConversionBatchSnapshot) -> ConversionBatchResponse:
+    records = [replace(record, result=replace(record.result,
+                payload=canonical_record_payload(record, snapshot.batch.identity_id))) if record.result else record
+               for record in snapshot.jobs]
     return ConversionBatchResponse(
         batch_id=snapshot.batch.batch_id,
         status=snapshot.batch.status.value,
@@ -948,7 +977,7 @@ def _snapshot_response(snapshot: ConversionBatchSnapshot) -> ConversionBatchResp
                     else None
                 ),
             )
-            for record in snapshot.jobs
+            for record in records
         ],
     )
 

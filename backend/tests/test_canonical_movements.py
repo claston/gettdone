@@ -49,3 +49,41 @@ def test_s3_pending_fence_is_visible_to_an_independent_cache(tmp_path):
         second.apply_convert_edits("an_shared123", [])
     with pytest.raises(AnalysisEditConflictError):
         second.get_convert_report_path("an_shared123", "csv")
+
+
+def test_completion_checkpoint_is_immutable_scoped_and_expires_with_extraction(tmp_path):
+    from dataclasses import replace
+    from datetime import datetime, timedelta, timezone
+
+    from app.application.canonical_pro import CanonicalCompletion
+    from app.application.conversion.document_conversion_pipeline import DocumentConversionRuntime
+    from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConflictError, AnalysisNotFoundError
+    from app.application.storage_service import TempAnalysisStorage
+    from tests.test_conversion_lambda_worker import _queued_repository
+    from tests.test_s3_analysis_storage import _analysis
+
+    _, job = _queued_repository()
+    job = replace(job, identity=replace(job.identity, plan_code="essencial", batch_conversion_enabled=True))
+    now = datetime.now(timezone.utc)
+    storage = TempAnalysisStorage(tmp_path, ttl_seconds=60, now_provider=lambda: now)
+    analysis = _analysis()
+    analysis.analysis_id = DocumentConversionRuntime.from_job(job).attempt_processing_id
+    completion = CanonicalCompletion(None, storage)
+    assert completion.resume(job) is None
+    expires_at = storage.save_analysis(analysis)
+    checkpoint = {"job_id": job.job_id, "batch_id": job.batch_id, "actor_id": job.identity.identity_id,
+                  "result": {"analysis_id": analysis.analysis_id, "payload": {"quota_remaining": 19}}}
+    original = storage.fence_canonical_analysis(analysis.analysis_id, completion=checkpoint)
+    assert "canonical_completion" not in original
+    assert completion.resume(job).payload == {"quota_remaining": 19}
+    assert original["expires_at"] == expires_at
+    with pytest.raises(AnalysisAccessDeniedError):
+        completion.resume(replace(job, batch_id="other"))
+    with pytest.raises(AnalysisAccessDeniedError):
+        completion.resume(replace(job, identity=replace(job.identity, identity_id="other")))
+    with pytest.raises(AnalysisEditConflictError):
+        storage.fence_canonical_analysis(analysis.analysis_id, completion={**checkpoint, "batch_id": "other"})
+    assert completion.resume(replace(job, identity=replace(job.identity, plan_code="free", batch_conversion_enabled=False))) is None
+    storage.now_provider = lambda: now + timedelta(seconds=61)
+    with pytest.raises(AnalysisNotFoundError):
+        completion.resume(job)

@@ -1,0 +1,381 @@
+{
+  "date": "2026-11-02",
+  "issue": "OFX-70",
+  "base_commit": "e316e7ed8d5780702f73a21fc2fdb87d18b719c3",
+  "application_commit": "ea0f65bf5cf28537000928ad49b024aa8635a85b",
+  "application_tree": "4555908a4e85e63fc9ab68f2db423903170fd7a1",
+  "activation": "All new activations default off. No production cohort enabled; no merge or deploy.",
+  "database": "Disposable local PostgreSQL 16, real migrations, independent processes, filesystem storage, Uvicorn HTTP and Chromium.",
+  "full_suite_serial": {
+    "passed": 4022,
+    "failed": 0,
+    "errors": 0,
+    "skipped_or_xfailed": [
+      {
+        "test": "test_postgres_upgrade_retry_old_writer_and_rollback_keep_feedback",
+        "type": "pytest.skip",
+        "reason": "Requires isolated local PostgreSQL"
+      },
+      {
+        "test": "test_postgres_full_migration_chain_and_feedback_service",
+        "type": "pytest.skip",
+        "reason": "Requires isolated local PostgreSQL"
+      },
+      {
+        "test": "test_postgres_pro_upgrade_keeps_old_writers_and_retained_rollback",
+        "type": "pytest.skip",
+        "reason": "isolated local PostgreSQL DSN not configured"
+      },
+      {
+        "test": "test_postgres_upgrade_runtime_rollback_and_reupgrade",
+        "type": "pytest.skip",
+        "reason": "Requires disposable local PostgreSQL"
+      },
+      {
+        "test": "test_statement_period_migration_forward_old_writers_rollback_and_retry_on_postgres",
+        "type": "pytest.skip",
+        "reason": "Requires an isolated local PostgreSQL database"
+      },
+      {
+        "test": "test_postgres_history_and_admin_metrics_after_alembic_upgrade",
+        "type": "pytest.skip",
+        "reason": "Requires an isolated local PostgreSQL database"
+      },
+      {
+        "test": "test_native_text_synthetic_corpus_runs_through_real_pdf_pipeline[date_and_amount_formats]",
+        "type": "pytest.xfail",
+        "reason": "known gap: Generic inline rows do not yet recognize ISO date prefixes.; expected=3 actual=2 matched=2 false_positives=0 recall=0.667 precision=1.000"
+      },
+      {
+        "test": "test_native_text_synthetic_corpus_runs_through_real_pdf_pipeline[tabular_credit_debit]",
+        "type": "pytest.xfail",
+        "reason": "known gap: Unforced layout inference can select the zero-valued debit column.; expected=2 actual=2 matched=1 false_positives=1 recall=0.500 precision=0.500"
+      },
+      {
+        "test": "test_scanned_synthetic_pdf_runs_through_real_ocr_pipeline",
+        "type": "pytest.skip",
+        "reason": "Tesseract binary is not installed"
+      }
+    ],
+    "seconds": 1030.698
+  },
+  "final_postgres_http": {
+    "passed": 46,
+    "failed": 0,
+    "errors": 0,
+    "skipped_or_xfailed": [],
+    "seconds": 199.945
+  },
+  "final_pro_integration": {
+    "passed": 7,
+    "failed": 0,
+    "errors": 0,
+    "skipped_or_xfailed": [],
+    "seconds": 34.418
+  },
+  "additional_postgres_migrations": {
+    "passed": 8,
+    "failed": 0,
+    "errors": 0,
+    "skipped_or_xfailed": [],
+    "seconds": 41.414
+  },
+  "final_two_editor_browser": {
+    "passed": 1,
+    "failed": 0,
+    "errors": 0,
+    "skipped_or_xfailed": [],
+    "seconds": 35.88
+  },
+  "revision_notes": "Full suite preceded final hardening. Final 46-case SQL/HTTP selection and 7-case OFX-70 selection revalidated subsequent changes; browser and 257 PRO tests ran on final application code.",
+  "pro": {
+    "files": 51,
+    "passed": 257,
+    "seconds": 70.31,
+    "eslint": "passed",
+    "typescript": "passed",
+    "production_build": "passed; webpack in isolated temporary copy outside OneDrive"
+  },
+  "existing_browser_suites": {
+    "workspace": "passed (workspace, idle navigation, organization)",
+    "pdf": "passed (PDF sync and specialized financial reports)",
+    "works": "not repeated locally; existing required CI matrix preserved"
+  },
+  "lint": {
+    "ruff": "passed",
+    "frontend_text": "passed",
+    "frontend_navigation": "passed by pre-commit",
+    "mojibake_scan": {
+      "files": 187,
+      "findings": 0
+    },
+    "git_diff_check": "passed",
+    "ci_yaml": "parsed successfully"
+  },
+  "http": {
+    "save_retry_receipt": "200",
+    "stale_edit_or_review": "409",
+    "batch_and_client_read": "200; same canonical movement and version",
+    "ofx_csv_xlsx_workbook_zip": "200",
+    "export_failure_after_commit": "503; committed SQL preserved",
+    "expired": "404",
+    "retired_analyze": "405; not re-enabled; existing real HTTP conversion uses POST /convert"
+  },
+  "free_conversion_gate": {
+    "baseline_commit": "c2ca8abafc087485992c77d60cadc8d4b26740f1",
+    "candidate_commit": "ea0f65bf5cf28537000928ad49b024aa8635a85b",
+    "candidate_app_tree": "4555908a4e85e63fc9ab68f2db423903170fd7a1",
+    "performance_gate_enforced": false,
+    "candidate_dirty": false,
+    "corpus_sha256": "f5c4481d0bf628b8bb2a03c0eb4b136a818db013f7eae8e85f1761e6e0489e47",
+    "errors": [],
+    "documented_corrections": [],
+    "cases": 90,
+    "strict": {
+      "errors": [],
+      "differences": [],
+      "platform_geometry_differences": [],
+      "cases": 90
+    },
+    "performance": {
+      "baseline": {
+        "environment": {
+          "profile": "offline-local",
+          "platform": "Windows-11-10.0.26200-SP0",
+          "python": "3.12.10",
+          "machine": "AMD64",
+          "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+          "dependencies": {
+            "pypdf": "5.4.0",
+            "openpyxl": "3.1.5",
+            "pydantic": "2.11.3"
+          }
+        },
+        "repeat": 1,
+        "process_peak_rss_bytes": 125812736,
+        "groups": {
+          "native": {
+            "runs": 57,
+            "p50_ms": 130.65459999779705,
+            "p95_ms": 337.4352600105335,
+            "cpu_p95_ms": 221.87499999999994,
+            "export_p95_ms": 151.71227999962855,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 14,
+            "artifact_bytes": 1422536
+          },
+          "ocr_evidence": {
+            "runs": 29,
+            "p50_ms": 244.5403999881819,
+            "p95_ms": 587.9425399936734,
+            "cpu_p95_ms": 393.74999999999994,
+            "export_p95_ms": 92.46286000125109,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 10,
+            "artifact_bytes": 625248
+          },
+          "native_large": {
+            "runs": 1,
+            "p50_ms": 3277.94260000519,
+            "p95_ms": 3277.94260000519,
+            "cpu_p95_ms": 3125.0,
+            "export_p95_ms": 253.93579999217764,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 0,
+            "artifact_bytes": 403907
+          },
+          "preflight": {
+            "runs": 3,
+            "p50_ms": 0.055900003644637764,
+            "p95_ms": 0.0661599900922738,
+            "cpu_p95_ms": 0.0,
+            "export_p95_ms": 0.0,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 3,
+            "artifact_bytes": 0
+          }
+        }
+      },
+      "candidate": {
+        "environment": {
+          "profile": "offline-local",
+          "platform": "Windows-11-10.0.26200-SP0",
+          "python": "3.12.10",
+          "machine": "AMD64",
+          "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+          "dependencies": {
+            "pypdf": "5.4.0",
+            "openpyxl": "3.1.5",
+            "pydantic": "2.11.3"
+          }
+        },
+        "repeat": 1,
+        "process_peak_rss_bytes": 129249280,
+        "groups": {
+          "native": {
+            "runs": 57,
+            "p50_ms": 147.0783999975538,
+            "p95_ms": 300.24166000366665,
+            "cpu_p95_ms": 253.12499999999994,
+            "export_p95_ms": 129.85492000298092,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 14,
+            "artifact_bytes": 1422554
+          },
+          "ocr_evidence": {
+            "runs": 29,
+            "p50_ms": 259.2086999939056,
+            "p95_ms": 466.17902000143636,
+            "cpu_p95_ms": 412.4999999999999,
+            "export_p95_ms": 154.04753999609952,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 10,
+            "artifact_bytes": 625260
+          },
+          "native_large": {
+            "runs": 1,
+            "p50_ms": 4038.4351999964565,
+            "p95_ms": 4038.4351999964565,
+            "cpu_p95_ms": 3859.375,
+            "export_p95_ms": 246.06309999944642,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 0,
+            "artifact_bytes": 403911
+          },
+          "preflight": {
+            "runs": 3,
+            "p50_ms": 0.0872999953571707,
+            "p95_ms": 0.13868999376427382,
+            "cpu_p95_ms": 0.0,
+            "export_p95_ms": 0.0,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 3,
+            "artifact_bytes": 0
+          }
+        }
+      }
+    },
+    "frozen": {
+      "errors": [],
+      "differences": [],
+      "platform_geometry_differences": [],
+      "cases": 90
+    },
+    "platform_geometry_differences": 0
+  },
+  "free_review_gate": {
+    "baseline_commit": "c2ca8abafc087485992c77d60cadc8d4b26740f1",
+    "candidate_commit": "ea0f65bf5cf28537000928ad49b024aa8635a85b",
+    "candidate_dirty": false,
+    "candidate_app_sha256": "39c6dea6d079700caa338335d1d59330b2a6cd9c661cfe815f59325ce9d4c42d",
+    "errors": [],
+    "differences": [],
+    "platform_geometry_differences": [],
+    "cases": 170
+  },
+  "limitations": [
+    "Real S3 acceptance not executed; existing adapter simulation coverage remains.",
+    "Production p95/CPU/RAM/499/timeout/OCR-cost comparison and monitoring provisioning require homologation; performance_gate_enforced remains false, unchanged.",
+    "Canonical cleanup entry point implemented and expiration tested; scheduler must be provisioned and validated before canary.",
+    "Initial adoption requires an existing client/job context before completion. Later receipt association does not migrate active legacy documents.",
+    "Tesseract is not installed locally. Two known synthetic parser cases remain xfail.",
+    "Next .next build in OneDrive and Vitest spawn inside sandbox encountered EPERM; isolated build and unsandboxed tests passed.",
+    "No production rollout authorized or performed. Issue is not claimed fully accepted for rollout."
+  ],
+  "cleanup": "Task PostgreSQL and Next processes stopped; exact task pytest temporary directories, database cluster and isolated build removed. node_modules junction removed without deleting repository dependencies.",
+  "pr_review_corrections": {
+    "date": "2026-11-02",
+    "reviewed_commit": "eab71e1317a9b37445dc0e80b843df134cb84c17",
+    "application_commit": "ad25551528ced83442e2110319e37aece4778648",
+    "review_comments": [
+      4443228061,
+      4443228071,
+      4443228080
+    ],
+    "tdd": "Both frontend regressions and both real worker retry variants failed before fixes, reproducing the review.",
+    "targeted_backend": {
+      "passed": 33,
+      "failed": 0,
+      "errors": 0,
+      "skipped_or_xfailed": [],
+      "seconds": 57.564
+    },
+    "full_backend": {
+      "passed": 4031,
+      "failed": 0,
+      "errors": 0,
+      "skipped_or_xfailed": [
+        {
+          "test": "test_two_editors_compare_reapply_and_refresh",
+          "type": "pytest.skip",
+          "reason": "Requires running local PRO build (OFX70_BROWSER_URL)"
+        },
+        {
+          "test": "test_native_text_synthetic_corpus_runs_through_real_pdf_pipeline[date_and_amount_formats]",
+          "type": "pytest.xfail",
+          "reason": "known gap: Generic inline rows do not yet recognize ISO date prefixes.; expected=3 actual=2 matched=2 false_positives=0 recall=0.667 precision=1.000"
+        },
+        {
+          "test": "test_native_text_synthetic_corpus_runs_through_real_pdf_pipeline[tabular_credit_debit]",
+          "type": "pytest.xfail",
+          "reason": "known gap: Unforced layout inference can select the zero-valued debit column.; expected=2 actual=2 matched=1 false_positives=1 recall=0.500 precision=0.500"
+        },
+        {
+          "test": "test_scanned_synthetic_pdf_runs_through_real_ocr_pipeline",
+          "type": "pytest.skip",
+          "reason": "Tesseract binary is not installed"
+        }
+      ],
+      "seconds": 480.309
+    },
+    "full_backend_mode": "pytest -q -n 2 --dist=worksteal; isolated local PostgreSQL 16 enabled for canonical, organization and migration tests",
+    "frontend": {
+      "files": 51,
+      "passed": 259,
+      "seconds": 78.77,
+      "eslint": "passed",
+      "typescript": "passed"
+    },
+    "lint": {
+      "ruff": "passed",
+      "frontend_text": "passed",
+      "frontend_navigation": "passed",
+      "mojibake_files": 187,
+      "mojibake_findings": 0,
+      "git_diff_check": "passed"
+    },
+    "worker_retry": "Real worker, CSV pipeline, filesystem source and PostgreSQL; SQL timeout after fence, rollback, restart, paused worker/cohort, then completion; exactly one pipeline execution/quota consumption and unchanged original TTL. S3 cold cache uses real adapter and simulated client, not a live bucket.",
+    "client_conflict": "Document loaded from second client page; conflict recovery through source batch, comparison and reapply with current version.",
+    "no_op_save": "Edit lock followed by unchanged save releases dirty; subsequent refresh adopts remote values and expected_version=2 download.",
+    "free_conversion_gate": {
+      "baseline_commit": "c2ca8abafc087485992c77d60cadc8d4b26740f1",
+      "candidate_commit": "ad25551528ced83442e2110319e37aece4778648",
+      "candidate_dirty": false,
+      "candidate_app_tree": "56c014beb47d61f3994076607f608009446a0425",
+      "corpus_sha256": "f5c4481d0bf628b8bb2a03c0eb4b136a818db013f7eae8e85f1761e6e0489e47",
+      "cases": 90,
+      "errors": [],
+      "platform_geometry_differences": 0,
+      "performance_gate_enforced": false
+    },
+    "free_review_gate": {
+      "baseline_commit": "c2ca8abafc087485992c77d60cadc8d4b26740f1",
+      "candidate_commit": "ad25551528ced83442e2110319e37aece4778648",
+      "candidate_dirty": false,
+      "candidate_app_sha256": "1021274796c02a8429b16d7819f5ef36e56c499dee0c916570d8abe1b6012eba",
+      "cases": 170,
+      "errors": [],
+      "differences": [],
+      "platform_geometry_differences": []
+    },
+    "rollout": "Disabled. No schema changes in review fixes, no merge or deploy. Previous S3/operational acceptance limits remain."
+  }
+}

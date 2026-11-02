@@ -78,9 +78,9 @@ class S3AnalysisStorage(TempAnalysisStorage):
         return expires_at
 
     @locked_analysis
-    def fence_canonical_analysis(self, analysis_id: str) -> dict:
+    def fence_canonical_analysis(self, analysis_id: str, *, completion: dict | None = None) -> dict:
         self._materialize_analysis(analysis_id)
-        content = super().fence_canonical_analysis(analysis_id)
+        content = super().fence_canonical_analysis(analysis_id, completion=completion)
         path = self._resolve_analysis_dir(analysis_id) / "analysis.json"
         params = {"Bucket": self.bucket, "Key": self._object_key(analysis_id, "analysis.json"),
                   "Body": path.read_bytes(), "ContentType": "application/json"}
@@ -90,6 +90,11 @@ class S3AnalysisStorage(TempAnalysisStorage):
             params["SSEKMSKeyId"] = self.kms_key_id
         self._client().put_object(**params)
         return content
+
+    @locked_analysis
+    def get_canonical_completion(self, analysis_id: str) -> dict | None:
+        self._materialize_analysis(analysis_id)
+        return super().get_canonical_completion(analysis_id)
 
     @locked_analysis
     def delete_canonical_analysis(self, analysis_id: str) -> None:
