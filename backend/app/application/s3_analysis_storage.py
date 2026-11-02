@@ -78,6 +78,34 @@ class S3AnalysisStorage(TempAnalysisStorage):
         return expires_at
 
     @locked_analysis
+    def fence_canonical_analysis(self, analysis_id: str) -> dict:
+        self._materialize_analysis(analysis_id)
+        content = super().fence_canonical_analysis(analysis_id)
+        path = self._resolve_analysis_dir(analysis_id) / "analysis.json"
+        params = {"Bucket": self.bucket, "Key": self._object_key(analysis_id, "analysis.json"),
+                  "Body": path.read_bytes(), "ContentType": "application/json"}
+        if self.server_side_encryption:
+            params["ServerSideEncryption"] = self.server_side_encryption
+        if self.kms_key_id:
+            params["SSEKMSKeyId"] = self.kms_key_id
+        self._client().put_object(**params)
+        return content
+
+    @locked_analysis
+    def delete_canonical_analysis(self, analysis_id: str) -> None:
+        self._materialize_analysis(analysis_id)
+        # Validate the persisted barrier before removing any remote objects.
+        super().delete_canonical_analysis(analysis_id)
+        prefix = self._object_key(analysis_id, "")
+        pages = self._client().get_paginator("list_objects_v2").paginate(Bucket=self.bucket, Prefix=prefix)
+        for page in pages:
+            keys = [{"Key": item["Key"]} for item in page.get("Contents", [])]
+            if keys:
+                result = self._client().delete_objects(Bucket=self.bucket, Delete={"Objects": keys, "Quiet": True})
+                if result.get("Errors"):
+                    raise RuntimeError("Canonical legacy artifact cleanup incomplete")
+
+    @locked_analysis
     def get_report_path(self, analysis_id: str) -> Path:
         self._materialize_analysis(analysis_id)
         return super().get_report_path(analysis_id)
