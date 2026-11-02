@@ -1,0 +1,233 @@
+{
+  "date": "2026-11-02",
+  "issue": "OFX-69",
+  "base_commit": "7195a1184262a93e26178e7e033baef4267586ba",
+  "application_commit": "c1508df847573f2768856bd18afc1dc4e8b0a001",
+  "application_tree": "ffb72c5b41476893eec35913af8c4375fc6d675f",
+  "application_sha256": "c3b1b6ae87a4eba01dd83c7c336bf8f383aa04247350de1e0eb1eed2db53972e",
+  "activation": "disabled; no production composition-root wiring or deployment",
+  "database": "Disposable local PostgreSQL 16; real migrations, independent processes and filesystem storage",
+  "full_suite_serial": {
+    "passed": 4019,
+    "failed": 0,
+    "errors": 0,
+    "skipped_or_xfailed": [
+      {
+        "test": "test_postgres_pro_upgrade_keeps_old_writers_and_retained_rollback",
+        "type": "pytest.skip",
+        "message": "isolated local PostgreSQL DSN not configured"
+      },
+      {
+        "test": "test_native_text_synthetic_corpus_runs_through_real_pdf_pipeline[date_and_amount_formats]",
+        "type": "pytest.xfail",
+        "message": "known gap: Generic inline rows do not yet recognize ISO date prefixes.; expected=3 actual=2 matched=2 false_positives=0 recall=0.667 precision=1.000"
+      },
+      {
+        "test": "test_native_text_synthetic_corpus_runs_through_real_pdf_pipeline[tabular_credit_debit]",
+        "type": "pytest.xfail",
+        "message": "known gap: Unforced layout inference can select the zero-valued debit column.; expected=2 actual=2 matched=1 false_positives=1 recall=0.500 precision=0.500"
+      },
+      {
+        "test": "test_scanned_synthetic_pdf_runs_through_real_ocr_pipeline",
+        "type": "pytest.skip",
+        "message": "Tesseract binary is not installed"
+      }
+    ],
+    "seconds": 608.98
+  },
+  "final_postgres_migrations_http": {
+    "passed": 32,
+    "failed": 0,
+    "errors": 0,
+    "skipped_or_xfailed": [],
+    "seconds": 86.083
+  },
+  "final_revision_notes": "The final 32-test selection revalidates scope/cleanup hardening after the full-suite run, including 27 new tests.",
+  "additional_pro_migration": {
+    "passed": 1,
+    "seconds": 1.0,
+    "test": "test_postgres_pro_upgrade_keeps_old_writers_and_retained_rollback"
+  },
+  "pro": {
+    "files": 49,
+    "passed": 253,
+    "seconds": 82.82,
+    "eslint_exit_code": 0
+  },
+  "lint": {
+    "ruff": "passed",
+    "frontend_utf8_mojibake": "passed",
+    "frontend_navigation": "passed",
+    "git_diff_check": "passed"
+  },
+  "http": {
+    "convert_csv": 200,
+    "report": 200,
+    "missing_report": 404,
+    "retired_analyze": 405,
+    "canonical_save_retry_receipt": [
+      200,
+      200,
+      200
+    ],
+    "stale_version": 409,
+    "operation_content_conflict": 409
+  },
+  "free_gate": {
+    "cases": 90,
+    "errors": [],
+    "documented_corrections": [],
+    "platform_geometry_differences": 0,
+    "candidate_dirty": false,
+    "corpus_sha256": "f5c4481d0bf628b8bb2a03c0eb4b136a818db013f7eae8e85f1761e6e0489e47",
+    "performance_gate_enforced": false,
+    "performance": {
+      "baseline": {
+        "environment": {
+          "profile": "offline-local",
+          "platform": "Windows-11-10.0.26200-SP0",
+          "python": "3.12.10",
+          "machine": "AMD64",
+          "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+          "dependencies": {
+            "pypdf": "5.4.0",
+            "openpyxl": "3.1.5",
+            "pydantic": "2.11.3"
+          }
+        },
+        "repeat": 1,
+        "process_peak_rss_bytes": 129703936,
+        "groups": {
+          "native": {
+            "runs": 57,
+            "p50_ms": 47.96569999598432,
+            "p95_ms": 106.71794000663795,
+            "cpu_p95_ms": 96.87499999999993,
+            "export_p95_ms": 40.01612000574823,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 14,
+            "artifact_bytes": 1422583
+          },
+          "ocr_evidence": {
+            "runs": 29,
+            "p50_ms": 111.11880000680685,
+            "p95_ms": 201.0515399975701,
+            "cpu_p95_ms": 143.74999999999994,
+            "export_p95_ms": 36.49222000094595,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 10,
+            "artifact_bytes": 625324
+          },
+          "native_large": {
+            "runs": 1,
+            "p50_ms": 1426.2212000030559,
+            "p95_ms": 1426.2212000030559,
+            "cpu_p95_ms": 1390.625,
+            "export_p95_ms": 85.0849999987986,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 0,
+            "artifact_bytes": 403907
+          },
+          "preflight": {
+            "runs": 3,
+            "p50_ms": 0.03860000288113952,
+            "p95_ms": 0.04688000044552609,
+            "cpu_p95_ms": 0.0,
+            "export_p95_ms": 0.0,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 3,
+            "artifact_bytes": 0
+          }
+        }
+      },
+      "candidate": {
+        "environment": {
+          "profile": "offline-local",
+          "platform": "Windows-11-10.0.26200-SP0",
+          "python": "3.12.10",
+          "machine": "AMD64",
+          "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+          "dependencies": {
+            "pypdf": "5.4.0",
+            "openpyxl": "3.1.5",
+            "pydantic": "2.11.3"
+          }
+        },
+        "repeat": 1,
+        "process_peak_rss_bytes": 129826816,
+        "groups": {
+          "native": {
+            "runs": 57,
+            "p50_ms": 48.71889999776613,
+            "p95_ms": 104.61645999166645,
+            "cpu_p95_ms": 96.87499999999993,
+            "export_p95_ms": 32.69315999641548,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 14,
+            "artifact_bytes": 1422583
+          },
+          "ocr_evidence": {
+            "runs": 29,
+            "p50_ms": 107.79829999955837,
+            "p95_ms": 184.43062000442293,
+            "cpu_p95_ms": 134.37499999999997,
+            "export_p95_ms": 28.797180007677518,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 10,
+            "artifact_bytes": 625316
+          },
+          "native_large": {
+            "runs": 1,
+            "p50_ms": 1445.300400009728,
+            "p95_ms": 1445.300400009728,
+            "cpu_p95_ms": 1406.25,
+            "export_p95_ms": 89.35809999820776,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 0,
+            "artifact_bytes": 403907
+          },
+          "preflight": {
+            "runs": 3,
+            "p50_ms": 0.03670000296551734,
+            "p95_ms": 0.04803999763680622,
+            "cpu_p95_ms": 0.0,
+            "export_p95_ms": 0.0,
+            "technical_failures": 0,
+            "timeouts": 0,
+            "rejections": 3,
+            "artifact_bytes": 0
+          }
+        }
+      }
+    }
+  },
+  "review_gate": {
+    "baseline_commit": "7195a1184262a93e26178e7e033baef4267586ba",
+    "candidate_commit": "c1508df847573f2768856bd18afc1dc4e8b0a001",
+    "candidate_dirty": false,
+    "candidate_app_sha256": "c3b1b6ae87a4eba01dd83c7c336bf8f383aa04247350de1e0eb1eed2db53972e",
+    "errors": [],
+    "differences": [],
+    "platform_geometry_differences": [],
+    "cases": 170
+  },
+  "initial_infrastructure_failure": {
+    "full_parallel": "2746 passed, 6 errors before MemoryError/PDFium worker abort; not accepted as suite success",
+    "free_baseline": "MemoryError in baseline sicoob_period_direction_False_native; failed comparison retained",
+    "isolated_pdf_recheck": "1 passed in 2.21s",
+    "resolution": "Complete serial suite and isolated final differential gates; no parser, golden or threshold changes"
+  },
+  "limitations": [
+    "Real Tesseract OCR unavailable",
+    "S3 SDK tests simulated; transactional tests use real PostgreSQL and real filesystem",
+    "Offline performance repeat=1 is not a production SLO approval",
+    "OFX-70 must wire authenticated PRO scope, routes, worker adoption, cleanup scheduling and controlled rollout"
+  ]
+}

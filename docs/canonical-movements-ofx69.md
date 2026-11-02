@@ -220,6 +220,38 @@ Os gates OFX-67/68 são executados contra a base integrada, sem atualizar golden
 nem afrouxar thresholds. O benchmark local não substitui o ensaio controlado de
 homologação exigido pela OFX-67 (p95/CPU/RAM/OCR/HTTP/499).
 
+Validação final do código commitado em `c1508df`, árvore `backend/app`
+`ffb72c5b41476893eec35913af8c4375fc6d675f`:
+
+- Seleção PostgreSQL/migrations/HTTP: **32 passed, 2 warnings em 86,10 s**,
+  incluindo os **27 testes novos** (23 com PostgreSQL real e 4 contratos/storage).
+- Migration PRO preexistente, com sua variável de DSN específica:
+  **1 passed em 1,00 s**. Esse caso havia sido skip na suíte completa.
+- Gate Free: **90 casos, errors=[], zero diferenças de geometria**.
+- Gate de revisão: **170 casos, errors=[], differences=[]**.
+- HTTP real da aplicação: CSV em `/convert` e `/report` → 200; relatório
+  inexistente → 404; `/analyze` → 405. Adapter canônico no endpoint existente:
+  save/retry/recibo → 200 e mesmo resultado; versão antiga/conteúdo divergente → 409.
+
+Comandos dos gates, executados sequencialmente:
+
+```powershell
+backend\venv\Scripts\python.exe scripts/check_pdf_compatibility.py --base-ref 7195a11 --output-dir tmp/ofx69-free-isolated
+backend\venv\Scripts\python.exe scripts/check_review_compatibility.py --base-ref 7195a11 --output-dir tmp/ofx69-review-isolated
+```
+
+Amostra offline de performance (`repeat=1`, sem ensaio de SLO em produção):
+
+| Métrica | Base | Candidata |
+| --- | ---: | ---: |
+| p95 nativo | 106,72 ms | 104,62 ms |
+| p95 evidência OCR simulada | 201,05 ms | 184,43 ms |
+| PDF grande, uma execução | 1426,22 ms | 1445,30 ms |
+| Pico RSS do processo | 129.703.936 bytes | 129.826.816 bytes |
+
+Nenhuma falha técnica ou timeout nessa repetição. OCR externo, HTTP/499 sob carga,
+S3 real e canário produtivo continuam fora dessa evidência local.
+
 `POST /analyze` está desativado no contrato atual (405). A validação HTTP usa
 `POST /convert` com CSV, `GET /report`, downloads e caminho negativo; não reativa
 o endpoint histórico para satisfazer a instrução V1.
