@@ -120,6 +120,35 @@ mantém o job sem conclusão e a barreira recuperável; repetir a conclusão com
 mesmo resultado retoma a adoção sem reprocessar/OCR ou consumir cota novamente.
 Moeda segue a interpretação do exportador existente, inclusive os layouts Wise.
 
+### Correções da revisão do PR #537
+
+Os três apontamentos da revisão de `eab71e1` foram reproduzidos por testes antes
+das correções:
+
+1. **Retomada pelo worker:** a barreira agora grava, na mesma escrita atômica de
+   `analysis.json`, um checkpoint imutável com o resultado concluído do pipeline
+   e a identidade do job/lote/usuário. Antes de carregar o documento ou executar
+   o pipeline, o worker PRO consulta esse checkpoint pelo ID determinístico da
+   análise. O retry repete somente `mark_completed`, sem reconversão, OCR ou nova
+   chamada de consumo de cota. O adapter S3 recupera o checkpoint mesmo com cache
+   local vazio. Escopo e TTL original são verificados; expirados não são retomados.
+   O checkpoint não é uma fonte editável e não entra no snapshot SQL: é removido
+   junto ao storage de extração pelos mecanismos de retenção existentes.
+2. **Conflito no cliente paginado:** a comparação busca o documento pelo lote de
+   origem já conhecido, independentemente da página em que apareceu no workspace
+   do cliente. A precondição e o rascunho continuam preservados até a reaplicação.
+3. **Editar/desfazer sem alterações:** o autosave sem comandos libera `dirty`,
+   permitindo que o próximo refresh adote linhas e versão de download remotas.
+
+A leitura de checkpoints do worker permanece disponível com a ativação de
+ingestão desligada: uma conclusão pendente fica suspensa, sem reconversão nem
+publicação legada. O mesmo vale se a coorte for desligada ou passar a sombra.
+Usuários Free não consultam checkpoints nem SQL canônico. Essas correções não
+alteram schema ou defaults das flags. O teste de retomada usa pipeline, worker,
+storage e PostgreSQL reais, injeta timeout depois da ingestão antes do commit e
+verifica uma única execução do pipeline/consumo de cota. S3 usa o adapter real
+com cliente simulado; a validação em bucket real continua pendente.
+
 ## Retenção e operação segura
 
 O prazo efetivo continua sendo o menor prazo de análise, job e lote. Todas as

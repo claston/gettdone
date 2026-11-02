@@ -1,9 +1,12 @@
 """PRO routing and adoption. Disabled controls fail closed, never change authority."""
 import logging
+from dataclasses import asdict
 from time import monotonic
 
 from app.application.canonical_artifacts import CanonicalArtifactService
 from app.application.canonical_movements import CanonicalRollout, MovementScope
+from app.application.conversion.contracts.jobs import ConversionJobResultReference
+from app.application.conversion.document_conversion_pipeline import DocumentConversionRuntime
 from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConflictError
 from app.application.parsers.pdf.layout_specific.wise import WISE_CURRENCIES
 
@@ -90,6 +93,25 @@ class CanonicalCompletion:
     def __init__(self, repository, storage):
         self.repository, self.storage = repository, storage
 
+    def resume(self, job):
+        # Free must not acquire any dependency on canonical storage or SQL.
+        if (job.identity.identity_type != "user" or not job.identity.batch_conversion_enabled
+                or job.identity.plan_code not in PAID_PLANS):
+            return None
+        analysis_id = DocumentConversionRuntime.from_job(job).attempt_processing_id
+        if analysis_id is None:
+            return None
+        completion = self.storage.get_canonical_completion(analysis_id)
+        if completion is None:
+            return None
+        if (completion.get("job_id") != job.job_id or completion.get("batch_id") != job.batch_id
+                or completion.get("actor_id") != job.identity.identity_id):
+            raise AnalysisAccessDeniedError
+        result = ConversionJobResultReference(**completion["result"])
+        if result.analysis_id != analysis_id:
+            raise AnalysisAccessDeniedError
+        return result
+
     def __call__(self, conn, record):
         identity = record.job.identity
         if (identity.identity_type != "user" or not identity.batch_conversion_enabled
@@ -101,6 +123,8 @@ class CanonicalCompletion:
             JOIN {repo.p}pro_conversion_contexts x ON x.organization_id = o.id AND x.job_id = %s
             WHERE o.owner_user_id = %s''', (record.job.job_id, identity.identity_id)).fetchone()
         if not cohort or not (cohort["ingestion_enabled"] or cohort["shadow_enabled"]):
+            if self.storage.get_canonical_completion(record.result.analysis_id) is not None:
+                raise ConnectionError("Canonical adoption is paused for a pending completion")
             return
         CanonicalProService(repo, None).assert_entitled(conn, identity.identity_id)
         analysis = (record.result.payload or {}).get("analysis") or {}
@@ -109,6 +133,8 @@ class CanonicalCompletion:
         scope = MovementScope(identity.identity_id, cohort["organization_id"], record.job.job_id,
                               record.result.analysis_id, cohort["client_id"])
         if not cohort["ingestion_enabled"]:
+            if self.storage.get_canonical_completion(scope.analysis_id) is not None:
+                raise ConnectionError("Canonical adoption is paused for a pending completion")
             # Read-only shadow: compare the job projection against extraction storage.
             if hasattr(self.storage, "_materialize_analysis"):
                 self.storage._materialize_analysis(scope.analysis_id)
@@ -130,7 +156,10 @@ class CanonicalCompletion:
                 differences.append(type(exc).__name__)
             logger.info("canonical_shadow analysis_id=%s differences=%s", scope.analysis_id, differences)
             return
-        content = self.storage.fence_canonical_analysis(scope.analysis_id)
+        content = self.storage.fence_canonical_analysis(scope.analysis_id, completion={
+            "job_id": record.job.job_id, "batch_id": record.job.batch_id,
+            "actor_id": identity.identity_id, "result": asdict(record.result),
+        })
         repo.ingest(scope, content, currency=WISE_CURRENCIES.get(content.get("layout_inference_name"), "BRL"),
                     product="pro", new_analysis=True,
                     rollout=CanonicalRollout(True, frozenset({scope.organization_id})), connection=conn)

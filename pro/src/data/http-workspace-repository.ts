@@ -474,9 +474,9 @@ export function createHttpWorkspaceRepository(
       if (!context.version)
         throw new Error("Reabra o documento para recuperar a revisão legada.");
       // Keep the old CAS token and draft active until the user accepts comparison.
-      const path = options.clientId
-        ? `/api/pro/receipts/clients/${encodeURIComponent(options.clientId)}/workspace`
-        : `/api/pro/conversion-batches/${encodeURIComponent(context.batchId)}`;
+      // The client workspace is paginated; the saved source batch addresses
+      // this document directly regardless of its position in that workspace.
+      const path = `/api/pro/conversion-batches/${encodeURIComponent(context.batchId)}`;
       const response = await request(path);
       const payload = (await response.json()) as ApiBatch;
       const job = payload.jobs.find((item) => item.job_id === conversionId);
@@ -614,6 +614,7 @@ export function createHttpWorkspaceRepository(
           edits.push({ action: "delete", row_id: `row_${position + 1}` });
       });
       if (!edits.length) {
+        context.dirty = false;
         const savedById = new Map(
           context.persistedTransactions.map((row) => [row.id, row]),
         );

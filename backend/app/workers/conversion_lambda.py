@@ -47,6 +47,7 @@ class ConversionLambdaProcessor:
     lease_seconds: int = 900
     results_s3_prefix: str = "conversion/results"
     receipt_recorder: Callable | None = None
+    completion_resumer: Callable | None = None
 
     def process(
         self, **kwargs,
@@ -99,6 +100,13 @@ class ConversionLambdaProcessor:
         # PRO workspace can render or retry the original statement. S3 lifecycle
         # and ConversionJobCleanupService remove them after retention expires.
         try:
+            resumed = self.completion_resumer(claimed.job) if self.completion_resumer else None
+            if resumed is not None:
+                if getattr(self.repository, "canonical_completion", None) is None:
+                    raise ConnectionError("Canonical completion is paused; retain the persisted extraction")
+                self.repository.mark_completed(job_id, result=resumed)
+                self._log_outcome(claimed.job, trace_id=trace_id, outcome="completed", started_at=started_at)
+                return
             document = self.document_store.load(claimed.job.document)
             result = self.pipeline.run_job(
                 job=claimed.job,
@@ -275,12 +283,12 @@ def build_lambda_processor() -> ConversionLambdaProcessor:
         db_pool_min_size=int(os.getenv("CONVERSION_LAMBDA_DB_POOL_MIN_SIZE", "0")),
         db_pool_max_size=int(os.getenv("CONVERSION_LAMBDA_DB_POOL_MAX_SIZE", "1")),
     )
-    if _read_bool_env("CANONICAL_PRO_COMPLETION_ENABLED", default=False):
-        from app.adapters.conversion.canonical_movements import PostgresMovementRepository
-        from app.application.canonical_pro import CanonicalCompletion
+    from app.adapters.conversion.canonical_movements import PostgresMovementRepository
+    from app.application.canonical_pro import CanonicalCompletion
 
-        repository.canonical_completion = CanonicalCompletion(
-            PostgresMovementRepository(database_url, schema=database_schema), analysis_storage)
+    completion = CanonicalCompletion(PostgresMovementRepository(database_url, schema=database_schema), analysis_storage)
+    if _read_bool_env("CANONICAL_PRO_COMPLETION_ENABLED", default=False):
+        repository.canonical_completion = completion
     pipeline = DocumentConversionPipeline(
         report_service=ReportService(storage=analysis_storage),
         access_control_service=access_control_service,
@@ -323,6 +331,7 @@ def build_lambda_processor() -> ConversionLambdaProcessor:
         lease_seconds=int(os.getenv("CONVERSION_JOB_LEASE_SECONDS", "900")),
         results_s3_prefix=os.getenv("CONVERSION_RESULTS_S3_PREFIX", "conversion/results"),
         receipt_recorder=receipts.receive if _read_bool_env("PRO_ORGANIZATION_ENABLED", default=False) else None,
+        completion_resumer=completion.resume,
     )
 
 

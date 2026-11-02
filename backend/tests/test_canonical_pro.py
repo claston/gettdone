@@ -199,3 +199,103 @@ def test_free_never_calls_canonical_service(monkeypatch):
     monkeypatch.setattr(canonical_pro, "get_canonical_pro_service", forbidden)
     assert canonical_pro.resolve_canonical(SimpleNamespace(identity_type="anonymous"), "free") is None
     assert canonical_pro.resolve_canonical(SimpleNamespace(identity_type="user", batch_conversion_enabled=False), "free") is None
+
+
+@pytest.mark.parametrize("storage_kind", ["filesystem", "s3_cold_cache"])
+def test_worker_retry_resumes_fenced_extraction_without_pipeline_or_quota(database, tmp_path, monkeypatch, storage_kind):
+    import json
+    from dataclasses import asdict, replace
+    from unittest.mock import Mock
+
+    from psycopg.types.json import Jsonb
+    from test_s3_analysis_storage import FakeS3Client
+
+    from app.adapters.conversion.document_store import FilesystemConversionDocumentStore
+    from app.application.canonical_pro import CanonicalCompletion
+    from app.application.conversion.document_conversion_pipeline import DocumentConversionPipeline, DocumentConversionRuntime
+    from app.application.conversion.uploaded_document import ingest_uploaded_document
+    from app.application.default_conversion_pipeline import build_default_conversion_pipeline
+    from app.application.report_service import ReportService
+    from app.application.s3_analysis_storage import S3AnalysisStorage
+    from app.application.storage_service import TempAnalysisStorage
+    from app.workers.conversion_lambda import ConversionLambdaProcessor, RetryableConversionError
+
+    repository, scope, _, _, batches, _ = database
+    documents = FilesystemConversionDocumentStore(root_dir=tmp_path / "sources")
+    reference = documents.store(ingest_uploaded_document("test.csv", b"date,description,amount\n2026-04-01,Original,10.25\n"))
+    identity = repository.test_access.resolve_identity(anonymous_fingerprint=None, user_token=repository.test_user.token)
+    with repository._connect() as conn:
+        conn.execute(f'''UPDATE {repository.p}conversion_jobs SET status='queued', identity=%s, document=%s,
+            result_analysis_id=NULL, result_payload=NULL, result_s3_prefix=NULL WHERE job_id=%s''',
+            (Jsonb(asdict(identity)), Jsonb(asdict(reference)), scope.job_id))
+        conn.execute(f'''INSERT INTO {repository.p}canonical_pro_cohorts
+            (organization_id,ingestion_enabled,read_enabled,edit_enabled) VALUES (%s,TRUE,TRUE,TRUE)''', (scope.organization_id,))
+    fake_s3 = FakeS3Client()
+    def storage_at(name):
+        if storage_kind == "s3_cold_cache":
+            return S3AnalysisStorage(root_dir=tmp_path / name, bucket="private", s3_client=fake_s3)
+        return TempAnalysisStorage(tmp_path / "legacy")
+    storage = storage_at("first")
+    batches.canonical_completion = CanonicalCompletion(repository, storage)
+    pipeline = DocumentConversionPipeline(report_service=ReportService(storage), access_control_service=repository.test_access,
+        processing_pipeline=build_default_conversion_pipeline(), analysis_repository=storage)
+    pipeline.run_job = Mock(wraps=pipeline.run_job)
+    pipeline.quota_validator_service.consume_quota_for_conversion = Mock(
+        wraps=pipeline.quota_validator_service.consume_quota_for_conversion)
+    original_ingest = repository.ingest
+    attempts = []
+    def interrupted(*args, **kwargs):
+        attempts.append(1)
+        result = original_ingest(*args, **kwargs)
+        if len(attempts) == 1:
+            raise TimeoutError("SQL completion interrupted after fence")
+        return result
+    monkeypatch.setattr(repository, "ingest", interrupted)
+    kwargs = dict(job_id=scope.job_id, expected_batch_id=batches.get(scope.job_id).job.batch_id,
+                  trace_id="resume-test", lease_owner="first", receive_count=1)
+    first = ConversionLambdaProcessor(repository=batches, document_store=documents, pipeline=pipeline,
+        completion_resumer=batches.canonical_completion.resume)
+    with pytest.raises(RetryableConversionError):
+        first.process(**kwargs)
+    assert batches.get(scope.job_id).status.value == "retrying"
+    analysis_id = DocumentConversionRuntime.from_job(batches.get(scope.job_id).job).attempt_processing_id
+    path = storage.root_dir / analysis_id / "analysis.json"
+    fenced = json.loads(path.read_text(encoding="utf-8"))
+    assert fenced["authority"] == "canonical_pending"
+    with repository._connect() as conn:
+        assert conn.execute(f"SELECT count(*) AS n FROM {repository.p}canonical_analyses").fetchone()["n"] == 0
+    restarted_storage = storage_at("restarted")
+    batches.canonical_completion = CanonicalCompletion(repository, restarted_storage)
+    # Also simulate a new pipeline/storage cache, as on another Lambda instance.
+    restarted_pipeline = DocumentConversionPipeline(report_service=ReportService(restarted_storage),
+        access_control_service=repository.test_access, processing_pipeline=build_default_conversion_pipeline(),
+        analysis_repository=restarted_storage)
+    restarted_pipeline.run_job = Mock(wraps=restarted_pipeline.run_job)
+    restarted = ConversionLambdaProcessor(repository=batches, document_store=documents, pipeline=restarted_pipeline,
+        completion_resumer=batches.canonical_completion.resume)
+    completion = batches.canonical_completion
+    # Pausing either activation gate must not turn a pending retry into legacy.
+    batches.canonical_completion = None
+    with pytest.raises(RetryableConversionError):
+        restarted.process(**{**kwargs, "lease_owner": "paused-worker", "receive_count": 2})
+    batches.canonical_completion = completion
+    with repository._connect() as conn:
+        conn.execute(f"UPDATE {repository.p}canonical_pro_cohorts SET ingestion_enabled=FALSE")
+    with pytest.raises(RetryableConversionError):
+        restarted.process(**{**kwargs, "lease_owner": "paused-cohort", "receive_count": 3})
+    with repository._connect() as conn:
+        conn.execute(f"UPDATE {repository.p}canonical_pro_cohorts SET ingestion_enabled=TRUE")
+    restarted.process(**{**kwargs, "lease_owner": "second", "receive_count": 4})
+    completed = batches.get(scope.job_id)
+    assert completed.status.value == "completed", completed.failure
+    assert completed.result.payload["authority"] == "postgres_v1"
+    assert pipeline.run_job.call_count == 1
+    assert restarted_pipeline.run_job.call_count == 0
+    assert pipeline.quota_validator_service.consume_quota_for_conversion.call_count == 1
+    assert len(attempts) == 2
+    snapshot = repository.read(replace(scope, analysis_id=analysis_id))
+    assert snapshot["version"] == 1
+    assert snapshot["preview_transactions"][0]["amount"] == 10.25
+    assert snapshot["expires_at"] == fenced["expires_at"]
+    with pytest.raises(AnalysisEditConflictError):
+        restarted_storage.apply_convert_edits(analysis_id, [])

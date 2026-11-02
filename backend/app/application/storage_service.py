@@ -654,7 +654,7 @@ class TempAnalysisStorage(LegacyAnalysisState):
             raise AnalysisEditConflictError
 
     @locked_analysis
-    def fence_canonical_analysis(self, analysis_id: str) -> dict:
+    def fence_canonical_analysis(self, analysis_id: str, *, completion: dict | None = None) -> dict:
         """Fence a new, not-yet-exposed PRO document before SQL adoption.
 
         A retry can recover the extraction from the pending marker. Old binaries
@@ -670,9 +670,34 @@ class TempAnalysisStorage(LegacyAnalysisState):
             raise AnalysisNotFoundError
         if content.get("authority") not in {None, "canonical_pending"}:
             raise AnalysisEditConflictError
+        if completion is not None:
+            previous = content.get("canonical_completion")
+            if previous is not None and previous != completion:
+                raise AnalysisEditConflictError
+            content["canonical_completion"] = completion
         content["authority"] = "canonical_pending"
         self._write_metadata(path, content)
-        return {key: value for key, value in content.items() if key != "authority"}
+        return {key: value for key, value in content.items() if key not in {"authority", "canonical_completion"}}
+
+    @locked_analysis
+    def get_canonical_completion(self, analysis_id: str) -> dict | None:
+        """Internal retry checkpoint, immutable and bounded by the extraction TTL."""
+        path = self._resolve_analysis_dir(analysis_id) / "analysis.json"
+        if not path.exists():
+            return None
+        try:
+            content = json.loads(path.read_text(encoding="utf-8"))
+            if content.get("authority") not in {"canonical_pending", "postgres_v1"}:
+                return None
+            expires_at = datetime.fromisoformat(content["expires_at"])
+        except (OSError, KeyError, ValueError):
+            raise AnalysisNotFoundError from None
+        if expires_at.tzinfo is None or self.now_provider() >= expires_at:
+            raise AnalysisNotFoundError
+        completion = content.get("canonical_completion")
+        if not isinstance(completion, dict):
+            raise AnalysisEditConflictError
+        return completion
 
     @locked_analysis
     def delete_canonical_analysis(self, analysis_id: str) -> None:
