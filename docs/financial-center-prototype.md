@@ -226,6 +226,27 @@ Capturas versionadas (todas com dados fictícios):
 O CSV e o resultado do roteiro ficam em `tmp/ofx65-browser/`. Resumo reproduzível
 da validação em [financial-center-prototype-results.json](financial-center-prototype-results.json).
 
+## Correções da revisão da PR #538
+
+Os dois apontamentos foram reproduzidos em testes que falharam antes da correção:
+
+- Excluir todos os lançamentos não dispensa a revisão documental. O fechamento
+  verifica os documentos disponíveis do mês e das contas selecionadas, mesmo sem
+  linhas ativas, e oferece acesso ao revisor. Um documento vazio explicitamente
+  revisado continua permitido; documentos de outros meses/contas não bloqueiam.
+- Marcar o documento como revisado aceita campos suspeitos que foram conferidos
+  sem exigir alteração dos valores corretos. Os dados e marcadores originais são
+  preservados. Uma gravação posterior invalida o aceite e bloqueia novamente.
+
+Validação após as correções: **55 arquivos / 286 testes PRO aprovados**, incluindo
+**24 testes nas três suítes diretamente afetadas**. ESLint, TypeScript, Ruff,
+Prettier e lints de texto/navegação passaram. O build de produção passou em cópia
+temporária fora do OneDrive. O roteiro Chromium passou em desenvolvimento e
+produção, cobrindo também exclusão de todas as linhas, revisão sem edição e
+invalidação após nova edição, usando somente a interface existente e sem
+requisições financeiras reais. A suíte backend acima pertence à entrega original e não
+foi repetida neste ajuste exclusivamente frontend.
+
 ## Compatibilidade e rollback
 
 Nenhuma migration ou operação manual sobre dados. Parsers, Core Free, backend,

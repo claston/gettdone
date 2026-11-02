@@ -44,6 +44,10 @@ export interface FinancialMovement {
   readonly pending: boolean;
   readonly source: FinancialSource & { page: number | null };
 }
+export interface FinancialDocumentReview {
+  readonly source: FinancialSource;
+  readonly reviewed: boolean;
+}
 export interface MovementFilters {
   month: string;
   accountIds: readonly string[];
@@ -89,13 +93,50 @@ export function projectMovements(
           description: row.description,
           amountCents: Math.round(((row.credit ?? 0) - (row.debit ?? 0)) * 100),
           accountId: source.accountId,
-          pending:
-            conversion.reviewStatus !== "REVIEWED" ||
-            Object.values(row.fieldStates).includes("SUSPECTED"),
+          // Explicit document acceptance covers unchanged suspected fields.
+          // Subsequent saves invalidate reviewStatus in the shared repository.
+          pending: conversion.reviewStatus !== "REVIEWED",
           source: { ...source, page: row.sourcePage ?? null },
         }));
     })
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+}
+
+export function projectDocumentReviews(
+  scenario: FinancialScenario,
+  batch: Batch,
+): FinancialDocumentReview[] {
+  return scenario.sources.map((source) => ({
+    source,
+    reviewed:
+      batch.conversions.find(
+        (conversion) => conversion.id === source.conversionId,
+      )?.reviewStatus === "REVIEWED",
+  }));
+}
+
+export function scopedDocumentReviews(
+  documents: readonly FinancialDocumentReview[],
+  rows: readonly FinancialMovement[],
+  month: string,
+  accountIds: readonly string[],
+) {
+  const from = `${month}-01`;
+  const until = `${shiftMonth(month, 1)}-01`;
+  return documents.filter(
+    ({ source }) =>
+      source.availability === "available" &&
+      accountIds.includes(source.accountId) &&
+      ((source.coverage &&
+        source.coverage.from < until &&
+        source.coverage.to >= from) ||
+        rows.some(
+          (row) =>
+            row.source.conversionId === source.conversionId &&
+            row.date >= from &&
+            row.date < until,
+        )),
+  );
 }
 
 const normalize = (value: string) =>
@@ -208,6 +249,7 @@ export function assessClosing(
   accountIds: readonly string[],
   confirmed: boolean,
   reservation: string,
+  documentReviews: readonly FinancialDocumentReview[],
 ) {
   const rows = filterMovements(allRows, { month, accountIds });
   const findings = scopedFindings(scenario, rows);
@@ -227,6 +269,16 @@ export function assessClosing(
     blockers.push("É necessário ao menos um extrato válido no mês.");
   if (rows.some((row) => row.pending))
     blockers.push("Há lançamentos que precisam de revisão.");
+  const pendingDocuments = scopedDocumentReviews(
+    documentReviews,
+    allRows,
+    month,
+    accountIds,
+  ).filter((document) => !document.reviewed);
+  if (pendingDocuments.length)
+    blockers.push(
+      "Há documentos que precisam de revisão, mesmo sem lançamentos no recorte.",
+    );
   blockers.push(
     ...findings
       .filter((finding) => finding.blocking)
@@ -237,7 +289,12 @@ export function assessClosing(
     findings.some((finding) => !finding.blocking);
   if (withReservations && !reservation.trim())
     blockers.push("Documente a ressalva para este mês e estas contas.");
-  return { allowed: blockers.length === 0, blockers, withReservations };
+  return {
+    allowed: blockers.length === 0,
+    blockers,
+    withReservations,
+    pendingDocuments,
+  };
 }
 
 // CSV for Excel: UTF-8 BOM, semicolon, quoted text and formula neutralization.

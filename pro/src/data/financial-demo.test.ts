@@ -3,9 +3,49 @@ import {
   financialDemoRepository,
   getFinancialScenario,
 } from "./financial-demo";
-import { projectMovements, scopedFindings } from "@/domain/financial-center";
+import {
+  assessClosing,
+  projectDocumentReviews,
+  projectMovements,
+  scopedFindings,
+} from "@/domain/financial-center";
 
 describe("Autoridade da demonstração financeira", () => {
+  it("confirma campos suspeitos sem modificar dados e invalida o aceite no próximo save", async () => {
+    const scenario = structuredClone(getFinancialScenario("review")!);
+    scenario.id = "review-confirmation-regression";
+    const repository = financialDemoRepository(scenario);
+    const before = await repository.getBatch(scenario.batch.id);
+    const assess = (batch: typeof before) =>
+      assessClosing(
+        scenario,
+        projectMovements(scenario, batch),
+        "2026-09",
+        ["inter"],
+        true,
+        "",
+        projectDocumentReviews(scenario, batch),
+      );
+    expect(before.conversions[0].reviewStatus).toBe("PENDING");
+    expect(assess(before).allowed).toBe(false);
+    await repository.markReviewed(before.conversions[0].id);
+    const accepted = await repository.getBatch(scenario.batch.id);
+    expect(accepted.conversions[0].transactions).toEqual(
+      before.conversions[0].transactions,
+    );
+    expect(
+      accepted.conversions[0].transactions[1].fieldStates.description,
+    ).toBe("SUSPECTED");
+    expect(assess(accepted).allowed).toBe(true);
+    await repository.saveTransactions(
+      accepted.conversions[0].id,
+      accepted.conversions[0].transactions,
+    );
+    expect(assess(await repository.getBatch(scenario.batch.id)).allowed).toBe(
+      false,
+    );
+  });
+
   it("usa o mesmo repository para revisão e leitura, mantendo o PDF original", async () => {
     const scenario = getFinancialScenario("review")!;
     const repository = financialDemoRepository(scenario);

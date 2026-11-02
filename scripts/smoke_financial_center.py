@@ -8,6 +8,56 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 
+def check_review_consistency(page, base: str, output: Path) -> None:
+    """Regression cases reported in PR #538, using only the existing reviewer UI."""
+    page.set_viewport_size({"width": 1440, "height": 1100})
+    page.on("dialog", lambda dialog: dialog.accept())
+    page.goto(base + "/demo/financial/single?tab=Lançamentos")
+    page.get_by_role("link", name="Abrir no revisor", exact=True).first.click()
+    for description in ("PIX recebido — Cliente Horizonte", "Pagamento fornecedor", "Tarifa de serviços"):
+        page.get_by_role("button", name="Remover " + description, exact=True).click()
+    expect(page.get_by_role("button", name="Restaurar ", exact=False)).to_have_count(3)
+    expect(page.get_by_text("Salvo", exact=True).first).to_be_visible()
+    page.get_by_role("link", name="Voltar à Central Financeira", exact=True).click()
+    page.get_by_role("button", name="Fechamento", exact=True).click()
+    page.get_by_role("checkbox", name="Confirmo estas contas", exact=False).check()
+    expect(page.get_by_role("button", name="Simular fechamento", exact=True)).to_be_disabled()
+    expect(page.get_by_text("Há documentos que precisam de revisão, mesmo sem lançamentos no recorte.", exact=True)).to_be_visible()
+    page.screenshot(path=str(output / "empty-document-pending-review.png"), full_page=True, caret="initial")
+    page.get_by_role("link", name="Revisar documento", exact=True).click()
+    page.get_by_role("button", name="Marcar revisado", exact=True).click()
+    expect(page.get_by_role("button", name="Marcar revisado", exact=True)).to_be_disabled()
+    page.get_by_role("link", name="Voltar à Central Financeira", exact=True).click()
+    page.get_by_role("checkbox", name="Confirmo estas contas", exact=False).check()
+    expect(page.get_by_role("button", name="Simular fechamento", exact=True)).to_be_enabled()
+    page.get_by_role("button", name="Simular fechamento", exact=True).click()
+    expect(page.get_by_role("status")).to_contain_text("Concluído (simulação)")
+
+    page.goto(base + "/demo/financial/review?tab=Lançamentos")
+    page.get_by_role("link", name="Abrir no revisor", exact=True).first.click()
+    expect(page.get_by_role("textbox", name="Descrição de Pagamento fornecedor", exact=True)).to_have_value("Pagamento fornecedor")
+    page.get_by_role("button", name="Marcar revisado", exact=True).click()
+    expect(page.get_by_role("button", name="Marcar revisado", exact=True)).to_be_disabled()
+    page.get_by_role("link", name="Voltar à Central Financeira", exact=True).click()
+    page.get_by_role("combobox", name="Revisão", exact=True).select_option("pending")
+    expect(page.get_by_role("link", name="Abrir no revisor", exact=True)).to_have_count(0)
+    page.get_by_role("button", name="Fechamento", exact=True).click()
+    page.get_by_role("checkbox", name="Confirmo estas contas", exact=False).check()
+    expect(page.get_by_role("button", name="Simular fechamento", exact=True)).to_be_enabled()
+    page.screenshot(path=str(output / "suspected-fields-confirmed.png"), full_page=True, caret="initial")
+    page.get_by_role("button", name="Lançamentos", exact=True).click()
+    page.get_by_role("button", name="Limpar filtros", exact=True).click()
+    page.get_by_role("link", name="Abrir no revisor", exact=True).first.click()
+    editor = page.get_by_role("textbox", name="Descrição de Pagamento fornecedor", exact=True)
+    editor.fill("Pagamento fornecedor conferido novamente")
+    page.keyboard.press("Tab")
+    expect(page.get_by_text("Salvo", exact=True).first).to_be_visible()
+    page.get_by_role("link", name="Voltar à Central Financeira", exact=True).click()
+    page.get_by_role("button", name="Fechamento", exact=True).click()
+    page.get_by_role("checkbox", name="Confirmo estas contas", exact=False).check()
+    expect(page.get_by_role("button", name="Simular fechamento", exact=True)).to_be_disabled()
+
+
 def run(base: str) -> None:
     output = Path("tmp/ofx65-browser")
     output.mkdir(parents=True, exist_ok=True)
@@ -92,13 +142,15 @@ def run(base: str) -> None:
         page.get_by_role("button", name="Lançamentos", exact=True).click()
         page.screenshot(path=str(output / "movements-mobile.png"), full_page=True, caret="initial")
         assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Transactions overflow mobile viewport"
+        check_review_consistency(page, base, output)
         assert not financial_requests, financial_requests
         assert not errors, errors
         browser.close()
     (output / "results.json").write_text(json.dumps({"status": "passed", "browser_errors": errors,
         "real_financial_requests": financial_requests, "checks": ["clients", "calendar", "filters", "shared-reviewer",
-        "pdf", "closing", "integrity-blocks", "csv", "expiry", "trial", "desktop-mobile"]}, indent=2), encoding="utf-8")
-    print("OFX-65 browser acceptance passed (desktop/mobile, shared reviewer, PDF, CSV, closing, no real financial requests).")
+        "pdf", "closing", "integrity-blocks", "csv", "expiry", "trial", "desktop-mobile",
+        "empty-document-review", "accept-unchanged-suspected-fields", "invalidate-review-after-edit"]}, indent=2), encoding="utf-8")
+    print("OFX-65 browser acceptance passed (desktop/mobile, PDF, CSV, closing, PR #538 review regressions, no real financial requests).")
 
 
 if __name__ == "__main__":

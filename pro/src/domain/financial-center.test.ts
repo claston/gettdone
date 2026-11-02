@@ -4,6 +4,7 @@ import {
   calendarDays,
   filterMovements,
   projectMovements,
+  projectDocumentReviews,
   reportCsv,
 } from "./financial-center";
 import { financialScenarios } from "@/data/financial-demo";
@@ -86,10 +87,26 @@ describe("Central Financeira: projeções de demonstração", () => {
     const data = scenario("partial");
     const rows = projectMovements(data, data.batch);
     expect(
-      assessClosing(data, rows, "2026-09", ["inter"], false, "").allowed,
+      assessClosing(
+        data,
+        rows,
+        "2026-09",
+        ["inter"],
+        false,
+        "",
+        projectDocumentReviews(data, data.batch),
+      ).allowed,
     ).toBe(false);
     expect(
-      assessClosing(data, rows, "2026-09", ["inter"], true, "").allowed,
+      assessClosing(
+        data,
+        rows,
+        "2026-09",
+        ["inter"],
+        true,
+        "",
+        projectDocumentReviews(data, data.batch),
+      ).allowed,
     ).toBe(false);
     expect(
       assessClosing(
@@ -99,6 +116,7 @@ describe("Central Financeira: projeções de demonstração", () => {
         ["inter"],
         true,
         "Extrato cobre apenas a primeira quinzena.",
+        projectDocumentReviews(data, data.batch),
       ),
     ).toMatchObject({ allowed: true, withReservations: true });
     for (const id of ["review", "duplicates", "divergence"]) {
@@ -111,22 +129,46 @@ describe("Central Financeira: projeções de demonstração", () => {
           ["inter"],
           true,
           "Justificativa não remove bloqueios",
+          projectDocumentReviews(blocked, blocked.batch),
         ).allowed,
       ).toBe(false);
     }
     expect(
-      assessClosing(data, [], "2026-10", ["inter"], true, "Sem extrato válido")
-        .allowed,
+      assessClosing(
+        data,
+        [],
+        "2026-10",
+        ["inter"],
+        true,
+        "Sem extrato válido",
+        projectDocumentReviews(data, data.batch),
+      ).allowed,
     ).toBe(false);
     expect(
-      assessClosing(data, rows, "2026-09", [], true, "Sem contas").allowed,
+      assessClosing(
+        data,
+        rows,
+        "2026-09",
+        [],
+        true,
+        "Sem contas",
+        projectDocumentReviews(data, data.batch),
+      ).allowed,
     ).toBe(false);
   });
 
   it("aceita extrato sem movimentos comprovado e ignora pendências fora do recorte", () => {
     const empty = scenario("empty");
     expect(
-      assessClosing(empty, [], "2026-09", ["inter"], true, ""),
+      assessClosing(
+        empty,
+        [],
+        "2026-09",
+        ["inter"],
+        true,
+        "",
+        projectDocumentReviews(empty, empty.batch),
+      ),
     ).toMatchObject({ allowed: true, withReservations: false });
     const multiple = scenario("multiple");
     expect(
@@ -137,8 +179,96 @@ describe("Central Financeira: projeções de demonstração", () => {
         ["itau"],
         true,
         "Contraparte da transferência fora do recorte.",
+        projectDocumentReviews(multiple, multiple.batch),
       ).allowed,
     ).toBe(true);
+  });
+
+  it.each([
+    {
+      account: "inter",
+      from: "2026-09-30",
+      to: "2026-10-10",
+      availability: "available" as const,
+      allowed: false,
+    },
+    {
+      account: "inter",
+      from: "2026-08-01",
+      to: "2026-08-31",
+      availability: "available" as const,
+      allowed: true,
+    },
+    {
+      account: "inter",
+      from: "2026-10-01",
+      to: "2026-10-31",
+      availability: "available" as const,
+      allowed: true,
+    },
+    {
+      account: "itau",
+      from: "2026-09-01",
+      to: "2026-09-30",
+      availability: "available" as const,
+      allowed: true,
+    },
+    {
+      account: "inter",
+      from: "2026-09-01",
+      to: "2026-09-30",
+      availability: "expired" as const,
+      allowed: true,
+    },
+  ])(
+    "avalia documento vazio pendente somente no escopo autorizado: $account $from $availability",
+    ({ account, from, to, availability, allowed }) => {
+      const data = structuredClone(scenario("single"));
+      data.sources = [
+        ...data.sources,
+        {
+          ...data.sources[0],
+          conversionId: "pending-empty",
+          accountId: account,
+          availability,
+          coverage: { from, to },
+        },
+      ];
+      const batch = structuredClone(data.batch);
+      batch.conversions.push({
+        ...batch.conversions[0],
+        id: "pending-empty",
+        transactions: [],
+        reviewStatus: "PENDING",
+      });
+      expect(
+        assessClosing(
+          data,
+          projectMovements(data, batch),
+          "2026-09",
+          ["inter"],
+          true,
+          "Não dispensa revisão",
+          projectDocumentReviews(data, batch),
+        ).allowed,
+      ).toBe(allowed);
+    },
+  );
+
+  it("não considera revisado um documento cujo estado não foi carregado", () => {
+    const data = scenario("single");
+    const batch = { ...data.batch, conversions: [] };
+    expect(
+      assessClosing(
+        data,
+        [],
+        "2026-09",
+        ["inter"],
+        true,
+        "",
+        projectDocumentReviews(data, batch),
+      ).allowed,
+    ).toBe(false);
   });
 
   it("exporta recorte, origem, ressalvas e protege texto contra fórmulas de planilha", () => {

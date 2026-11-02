@@ -60,7 +60,7 @@ function makeScenario(
     bankName: "Inter",
     period: "Setembro de 2026",
     status: id === "review" ? "NEEDS_REVIEW" : "REVIEWED",
-    reviewStatus: "REVIEWED",
+    reviewStatus: id === "review" ? "PENDING" : "REVIEWED",
     transactionCount: transactions.length,
     suspectedCount: id === "review" ? 1 : 0,
     editedCount: 0,

@@ -26,11 +26,14 @@ import {
   money,
   monthLabel,
   projectMovements,
+  projectDocumentReviews,
+  scopedDocumentReviews,
   reportCsv,
   scopedFindings,
   shiftMonth,
   totals,
   type FinancialMovement,
+  type FinancialDocumentReview,
   type FinancialScenario,
   type MovementFilters,
 } from "@/domain/financial-center";
@@ -81,7 +84,12 @@ export function FinancialCenter({
     tabs.find((item) => item === query.get("tab")) ?? "Calendário",
   );
   const [day, setDay] = useState<string | null>(query.get("day"));
-  const [allRows, setAllRows] = useState<FinancialMovement[] | null>(null);
+  const [snapshot, setSnapshot] = useState<{
+    rows: FinancialMovement[];
+    documents: FinancialDocumentReview[];
+  } | null>(null);
+  const allRows = snapshot?.rows ?? null;
+  const documentReviews = snapshot?.documents ?? [];
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [filters, setFilters] = useState({
@@ -108,7 +116,10 @@ export function FinancialCenter({
       .getBatch(scenario.batch.id)
       .then((batch) => {
         if (active) {
-          setAllRows(projectMovements(scenario, batch));
+          setSnapshot({
+            rows: projectMovements(scenario, batch),
+            documents: projectDocumentReviews(scenario, batch),
+          });
           setError(false);
         }
       })
@@ -134,6 +145,12 @@ export function FinancialCenter({
   const rows = filterMovements(allRows ?? [], { month, accountIds: accounts });
   const sum = totals(rows);
   const findings = scopedFindings(scenario, rows);
+  const pendingDocuments = scopedDocumentReviews(
+    documentReviews,
+    allRows ?? [],
+    month,
+    accounts,
+  ).filter((document) => !document.reviewed);
   const days = calendarDays(scenario, allRows ?? [], month, accounts);
   const coveredDays = days.filter((item) => item.covered).length;
   const visibleRows = filterMovements(rows, {
@@ -141,12 +158,19 @@ export function FinancialCenter({
     accountIds: accounts,
     ...filters,
   }).filter((row) => !focusIds || focusIds.includes(row.id));
-  const pendingCount = new Set([
-    ...rows.filter((row) => row.pending).map((row) => row.id),
-    ...findings
-      .flatMap((finding) => finding.movementIds)
-      .filter((id) => rows.some((row) => row.id === id)),
-  ]).size;
+  const pendingCount =
+    new Set([
+      ...rows.filter((row) => row.pending).map((row) => row.id),
+      ...findings
+        .flatMap((finding) => finding.movementIds)
+        .filter((id) => rows.some((row) => row.id === id)),
+    ]).size +
+    pendingDocuments.filter(
+      (document) =>
+        !rows.some(
+          (row) => row.source.conversionId === document.source.conversionId,
+        ),
+    ).length;
   function changeMonth(delta: number) {
     setMonth(shiftMonth(month, delta));
     setDay(null);
@@ -308,7 +332,9 @@ export function FinancialCenter({
             />
             <button
               className={styles.pendingMetric}
-              onClick={() => setTab("Conciliação")}
+              onClick={() =>
+                setTab(pendingDocuments.length ? "Fechamento" : "Conciliação")
+              }
             >
               <span>
                 <CircleAlert size={19} />
@@ -638,6 +664,8 @@ export function FinancialCenter({
               key={scope}
               scenario={scenario}
               rows={allRows}
+              documentReviews={documentReviews}
+              returnTo={returnTo}
               month={month}
               accounts={accounts}
               completed={closingText}
@@ -863,6 +891,8 @@ function MovementTable({
 function Closing({
   scenario,
   rows,
+  documentReviews,
+  returnTo,
   month,
   accounts,
   completed,
@@ -871,6 +901,8 @@ function Closing({
 }: {
   scenario: FinancialScenario;
   rows: readonly FinancialMovement[];
+  documentReviews: readonly FinancialDocumentReview[];
+  returnTo: string;
   month: string;
   accounts: string[];
   completed: string;
@@ -886,6 +918,7 @@ function Closing({
     accounts,
     confirmed,
     reservation,
+    documentReviews,
   );
   return (
     <section className={styles.panel}>
@@ -937,6 +970,21 @@ function Closing({
           <button className="secondary-button" onClick={onInvestigate}>
             Investigar pendências
           </button>
+          {assessment.pendingDocuments.length > 0 && (
+            <ul>
+              {assessment.pendingDocuments.map(({ source }) => (
+                <li key={source.conversionId}>
+                  {source.filename} · revisão documental pendente.{" "}
+                  <Link
+                    className={styles.sourceLink}
+                    href={`/demo/financial/${scenario.id}/review/${source.conversionId}?returnTo=${encodeURIComponent(returnTo)}`}
+                  >
+                    Revisar documento
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </li>
         <li>
           <h3>3. Documente as ressalvas</h3>
