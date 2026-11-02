@@ -124,6 +124,14 @@ Normalizações catalogadas e limitadas:
   Datas de movimentos, saldos, FITID e todas as demais linhas OFX são comparados.
 - Dinheiro precisa ser representável exatamente em centavos: 20,001 falha em vez
   de ser arredondado para esconder a diferença.
+- Ao comparar a baseline congelada entre sistemas operacionais conhecidos e
+  diferentes, apenas `left/top/width/height` em `source_regions` das linhas,
+  canônico e linhas persistidas admitem variação absoluta de até **0,001 da
+  página** (menos de um ponto PDF em A4). O PDFium apresenta diferenças
+  subpixel nas fontes padrão entre Windows e Linux. Essas diferenças continuam
+  explícitas em `platform_geometry_differences`. Página, quantidade/ordem de
+  retângulos, marcações manuais e campos financeiros permanecem exatos. Ausência
+  de plataforma, plataforma igual, ou comparação Git pré/pós não ativa tolerância.
 
 Mudanças legítimas exigem análise do diff e aprovação explícita do proprietário.
 Não basta adicionar um `correction_reason` genérico. Opcionalmente, `--approvals`
@@ -303,6 +311,34 @@ backend\venv\Scripts\python.exe scripts/lint_frontend_navigation.py
 
 Os diretórios `--basetemp` específicos foram removidos após validação, conferindo
 seus caminhos absolutos sob `C:\Users\erica\AppData\Local\Temp`.
+
+### Correção da primeira execução da CI
+
+Os jobs `lint-and-tests` e `candidate-tests` falharam no mesmo teste de integração:
+40 coordenadas divergentes em cada um dos dois cenários com movimentos. A
+baseline havia sido capturada no Windows e comparada bit a bit com renderização
+Linux, sem catalogar a variação de geometria das fontes. A falha foi reproduzida
+no Ubuntu local com os mesmos pacotes; as 80 diferenças eram exclusivamente
+`left/top/width/height`, sem mudança de movimento, descrição, data, saldo,
+warning, ID, página ou exportação. O maior desvio observado nesses dois casos
+foi 0,000219 da página. A comparação completa dos 90 casos confirmou que todas
+as divergências entre plataformas eram geométricas; o máximo foi 0,000831
+da página, inferior a um ponto PDF. A margem geométrica foi definida com esse
+corpus completo, sem alterar tolerâncias de dinheiro ou desempenho.
+
+A correção introduz a política geométrica entre plataformas descrita acima e
+registra a plataforma de captura/execução. Os snapshots financeiros originais
+foram preservados. Testes adicionais exigem falha para um centavo alterado,
+troca de página ou deslocamento maior, e confirmam que a comparação Git no mesmo
+ambiente continua exata. Falhas futuras do teste de integração passam a imprimir
+os campos e valores divergentes no log. Não houve alteração em código produtivo.
+
+Validação da correção: 32 testes do comparador aprovados no Windows e no Ubuntu;
+corpus completo no Linux com `cases: 90`, `errors: []`, nenhuma diferença Git
+pré/pós, nenhum desvio financeiro e 8.635 coordenadas geométricas catalogadas
+entre plataformas (contando as repetições em linhas, canônico e persistência).
+Suíte Windows completa: **3977 passed, 7 skipped, 2 xfailed, 8 warnings in
+317.76s**, usando `--basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-ofx67-ci-full`.
 
 Os sete skips são seis ensaios com PostgreSQL descartável sem DSN configurado e
 um ensaio com Tesseract ausente. Os dois xfails são os gaps já declarados no

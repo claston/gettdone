@@ -23,6 +23,13 @@ SCHEMA_VERSION = 1
 FROZEN_BASELINE = Path(__file__).resolve().parents[1] / "backend/tests/fixtures/free_converter_baseline.json"
 # Exhaustive dynamic-field catalogue, applied only to pdf_processing_metrics.
 TIMING_FIELDS = {"total_ms", "parse_ms", "classify_ms", "normalize_ms", "reconcile_ms"}
+# Built-in PDF fonts have slightly different glyph bounds across PDFium builds.
+# Limit this policy to frozen snapshots from another OS; Git pre/post is exact.
+PLATFORM_GEOMETRY_TOLERANCE = 0.001  # < 1 PDF point on an A4 page; glyph bounds only.
+_SOURCE_GEOMETRY_PATH = re.compile(
+    r"^\$\.(?:rows|preview|canonical|persisted_rows|persisted_preview)\[\d+\]"
+    r"\.source_regions\[\d+\]\.(?:left|top|width|height)$"
+)
 
 
 def cents(value):
@@ -65,8 +72,8 @@ def diff_values(before, after, path="$"):
     return []
 
 
-def compare_snapshots(baseline, candidate, *, approvals=(), reference_commit=None, candidate_app_tree=None):
-    errors, differences = [], []
+def compare_snapshots(baseline, candidate, *, approvals=(), reference_commit=None, candidate_app_tree=None, geometry_tolerance=0):
+    errors, differences, geometry_differences = [], [], []
     if not baseline or set(baseline) != set(candidate):
         errors.append("Missing/extra cases or empty baseline; comparison cannot pass")
     for key in sorted(baseline.keys() & candidate.keys()):
@@ -80,6 +87,11 @@ def compare_snapshots(baseline, candidate, *, approvals=(), reference_commit=Non
         unapproved = 0
         for change in changes:
             difference = {"case": key, **change}
+            if (geometry_tolerance and change["change"] == "changed" and _SOURCE_GEOMETRY_PATH.fullmatch(change["path"])
+                    and type(change["before"]) in (int, float) and type(change["after"]) in (int, float)
+                    and abs(change["before"] - change["after"]) <= geometry_tolerance):
+                geometry_differences.append(difference)
+                continue
             approval = next((item for item in approvals if item.get("difference") == difference
                              and reference_commit and item.get("reference_commit") == reference_commit
                              and candidate_app_tree and item.get("candidate_app_tree") == candidate_app_tree
@@ -91,7 +103,15 @@ def compare_snapshots(baseline, candidate, *, approvals=(), reference_commit=Non
             differences.append(difference)
         if unapproved:
             errors.append(f"{key}: {unapproved} unapproved characterization differences")
-    return {"errors": errors, "differences": differences, "cases": len(candidate)}
+    return {"errors": errors, "differences": differences, "platform_geometry_differences": geometry_differences, "cases": len(candidate)}
+
+
+def compare_frozen_snapshots(frozen, candidate_report, **kwargs):
+    platforms = {"win32", "linux", "darwin"}
+    old_platform, new_platform = frozen.get("platform"), candidate_report.get("platform")
+    cross_platform = old_platform in platforms and new_platform in platforms and old_platform != new_platform
+    return compare_snapshots(frozen["cases"], candidate_report["cases"],
+                             geometry_tolerance=PLATFORM_GEOMETRY_TOLERANCE if cross_platform else 0, **kwargs)
 
 
 def normalize_ofx(content, *, empty):
@@ -401,6 +421,6 @@ def worker(backend, corpus, output, *, repeat=1, profile="offline-local"):
                                          "artifact_bytes": artifact_bytes, "technical_failure": result["technical_failure"],
                                          "rejected": not result["success"]})
             entry.update(result)
-    report = {"schema_version": SCHEMA_VERSION, "cases": results,
+    report = {"schema_version": SCHEMA_VERSION, "platform": sys.platform, "cases": results,
               "performance": performance_report(results, repeat=repeat, profile=profile)}
     output.write_text(json.dumps(report, ensure_ascii=True, indent=2), encoding="utf-8")

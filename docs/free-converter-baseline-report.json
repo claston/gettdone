@@ -16,7 +16,7 @@
     "frozen_differences": 0,
     "source_truth_errors": [],
     "corpus_sha256": "f5c4481d0bf628b8bb2a03c0eb4b136a818db013f7eae8e85f1761e6e0489e47",
-    "frozen_snapshot_sha256": "7a487319c3cfc8cca13a078fed6e15b3404bb3090549bfb7b840aee295f73891",
+    "frozen_snapshot_sha256": "0c2d54701daf3343d944a9c44b1891a6da80eedffdfd3e8a7de575eea3157941",
     "final_frozen_command_exit_code": 0,
     "final_frozen_corpus_sha256": "f5c4481d0bf628b8bb2a03c0eb4b136a818db013f7eae8e85f1761e6e0489e47",
     "frozen_snapshot_hash_encoding": "UTF-8 with LF line endings (same bytes as Git blob)"
@@ -296,16 +296,16 @@
   },
   "validation": {
     "full_suite": {
-      "passed": 3972,
+      "passed": 3977,
       "skipped": 7,
       "xfailed": 2,
       "warnings": 8,
-      "duration_seconds": 232.97,
-      "command": "backend/venv/Scripts/python.exe -m pytest -q -n 4 --dist=worksteal --basetemp C:/Users/erica/AppData/Local/Temp/gettdone-pytest-ofx67-final-full --junitxml=tmp/ofx67-final-full-suite.xml"
+      "duration_seconds": 317.76,
+      "command": "backend/venv/Scripts/python.exe -m pytest -q -n 4 --dist=worksteal --basetemp C:/Users/erica/AppData/Local/Temp/gettdone-pytest-ofx67-ci-full --junitxml=tmp/ofx67-ci-full.xml"
     },
     "final_guard_tests": {
-      "passed": 27,
-      "duration_seconds": 1.21
+      "passed": 32,
+      "duration_seconds": 2.09
     },
     "targeted_initial_suites": {
       "passed": 67,
@@ -332,6 +332,18 @@
       "xfailed": 2,
       "warnings": 8,
       "duration_seconds": 246.29
+    },
+    "before_ci_portability_fix_full_suite": {
+      "passed": 3972,
+      "skipped": 7,
+      "xfailed": 2,
+      "warnings": 8,
+      "duration_seconds": 232.97,
+      "command": "backend/venv/Scripts/python.exe -m pytest -q -n 4 --dist=worksteal --basetemp C:/Users/erica/AppData/Local/Temp/gettdone-pytest-ofx67-final-full --junitxml=tmp/ofx67-final-full-suite.xml"
+    },
+    "linux_guard_tests": {
+      "passed": 32,
+      "duration_seconds": 13.76
     }
   },
   "limitations": [
@@ -474,5 +486,29 @@
       "ocr_evidence.export_p95_ms: exceeds +10% budget (38.44243999919843 -> 56.23885999666523)"
     ],
     "exit_code": 1
+  },
+  "ci_portability_fix": {
+    "cause": "PDFium standard font glyph bounding boxes differ by subpixel amounts between Windows and Linux",
+    "reproduced_in": "Local Ubuntu / Python 3.12.3 / API requirements",
+    "original_differences": 80,
+    "fields": [
+      "height",
+      "left",
+      "top",
+      "width"
+    ],
+    "maximum_coordinate_delta": 0.0008300781249999944,
+    "frozen_financial_snapshots_preserved": true,
+    "cross_platform_source_geometry_tolerance": 0.001,
+    "same_environment_git_comparison": "exact",
+    "windows_guard_tests_passed": 32,
+    "full_corpus_differences": 8635,
+    "linux_full_corpus_cases": 90,
+    "full_corpus_financial_differences": 0,
+    "full_corpus_same_environment_git_differences": 0,
+    "linux_full_corpus_exit_code": 0,
+    "platform_geometry_differences": 8635,
+    "source_corpus_sha256": "f5c4481d0bf628b8bb2a03c0eb4b136a818db013f7eae8e85f1761e6e0489e47",
+    "same_environment_git_differences": 0
   }
 }

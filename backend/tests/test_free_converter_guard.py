@@ -83,6 +83,31 @@ def test_cent_conversion_is_exact_and_never_rounds_a_regression_away():
         guard.cents("20.001")
 
 
+def test_frozen_geometry_drift_is_catalogued_only_between_known_different_platforms():
+    old = {"a": {"snapshot": {"rows": [{"amount_cents": 2000, "source_page": 1,
+           "source_regions": [{"page": 1, "left": 0.0825042019371225}]}]}}}
+    new = deepcopy(old)
+    new["a"]["snapshot"]["rows"][0]["source_regions"][0]["left"] = 0.08236974507820706
+    frozen = {"platform": "win32", "cases": old}
+    candidate = {"platform": "linux", "cases": new}
+    comparison = guard.compare_frozen_snapshots(frozen, candidate)
+    assert not comparison["errors"]
+    assert comparison["platform_geometry_differences"][0]["path"] == "$.rows[0].source_regions[0].left"
+    assert guard.compare_snapshots(old, new)["errors"]  # Git pre/post stays exact.
+    assert guard.compare_frozen_snapshots(frozen, {**candidate, "platform": "win32"})["errors"]
+    assert guard.compare_frozen_snapshots({"cases": old}, candidate)["errors"]
+
+
+@pytest.mark.parametrize("field,value", [("left", 0.0845), ("page", 2), ("amount_cents", 2001), ("source_page", 2)])
+def test_cross_platform_geometry_policy_preserves_financial_and_source_regression_gates(field, value):
+    old = {"a": {"snapshot": {"rows": [{"amount_cents": 2000, "source_page": 1,
+           "source_regions": [{"page": 1, "left": 0.0825}]}]}}}
+    new = deepcopy(old)
+    row = new["a"]["snapshot"]["rows"][0]
+    (row["source_regions"][0] if field in {"left", "page"} else row)[field] = value
+    assert guard.compare_frozen_snapshots({"platform": "win32", "cases": old}, {"platform": "linux", "cases": new})["errors"]
+
+
 def test_csv_platform_newlines_preserve_every_financial_cell_and_duplicate():
     unix = 'date,description,amount\n2026-09-01,"PIX, CLIENTE",-0.01\n2026-09-01,"PIX, CLIENTE",-0.01\n'
     windows = unix.replace("\n", "\r\r\n")
@@ -144,9 +169,12 @@ def test_real_pipeline_exports_match_independent_oracle_and_frozen_baseline(tmp_
         "free_invalid_pdf", "free_password_protected"}]
     output = tmp_path / "report.json"
     guard.worker(SCRIPT.parents[1] / "backend", cases, output)
-    actual = json.loads(output.read_text(encoding="utf-8"))["cases"]
-    frozen = json.loads(guard.FROZEN_BASELINE.read_text(encoding="utf-8"))["cases"]
-    assert not guard.compare_snapshots({case["id"]: frozen[case["id"]] for case in cases}, actual)["errors"]
+    candidate = json.loads(output.read_text(encoding="utf-8"))
+    actual = candidate["cases"]
+    frozen = json.loads(guard.FROZEN_BASELINE.read_text(encoding="utf-8"))
+    frozen["cases"] = {case["id"]: frozen["cases"][case["id"]] for case in cases}
+    comparison = guard.compare_frozen_snapshots(frozen, candidate)
+    assert not comparison["errors"], json.dumps(comparison, ensure_ascii=True, indent=2)
     for case in cases:
         assert not guard.source_checks(case, actual[case["id"]])
     case = next(case for case in cases if case["id"] == "free_catalog_inline_signed_values")

@@ -252,6 +252,7 @@ def main():
     from free_converter_guard import (
         FROZEN_BASELINE,
         SCHEMA_VERSION,
+        compare_frozen_snapshots,
         compare_performance,
         compare_snapshots,
         extra_cases,
@@ -337,10 +338,11 @@ def main():
         if summary["errors"]:
             summary["errors"].append("Refusing to capture a baseline with source-truth or revision differences")
         else:
-            frozen = {"schema_version": SCHEMA_VERSION, "reference_commit": ref,
+            frozen = {"schema_version": SCHEMA_VERSION, "platform": outputs[0]["platform"], "reference_commit": ref,
                       "normalization": ["NFC and whitespace in descriptions", "five pipeline timing fields",
                                         "XLSX container metadata", "empty physical CSV records / line separators",
-                                        "DTASOF generation date only on empty statements"],
+                                        "DTASOF generation date only on empty statements",
+                                        "source-region glyph coordinates <=0.001 only across different known OS; reported separately"],
                       "cases": {key: {"success": value["success"], "input": value["input"], "snapshot": value["snapshot"]}
                                 for key, value in old.items()}}
             with args.capture_baseline.open("x", encoding="utf-8") as handle:
@@ -357,9 +359,10 @@ def main():
             frozen = json.loads(FROZEN_BASELINE.read_text(encoding="utf-8"))
             if frozen.get("schema_version") != SCHEMA_VERSION:
                 summary["errors"].append("Unsupported frozen baseline schema")
-            summary["frozen"] = compare_snapshots(frozen["cases"], new, approvals=approvals,
-                                                  reference_commit=frozen["reference_commit"], candidate_app_tree=candidate_app_tree)
+            summary["frozen"] = compare_frozen_snapshots(frozen, outputs[1], approvals=approvals,
+                                                         reference_commit=frozen["reference_commit"], candidate_app_tree=candidate_app_tree)
             summary["errors"].extend(summary["frozen"]["errors"])
+    summary["platform_geometry_differences"] = len(summary.get("frozen", {}).get("platform_geometry_differences", []))
     (args.output_dir / "comparison.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps({key: value for key, value in summary.items() if key not in {"strict", "frozen", "performance"}}, indent=2))
     return 1 if summary["errors"] else 0
