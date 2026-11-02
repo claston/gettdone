@@ -120,3 +120,40 @@ def test_worker_requirements_do_not_include_web_or_development_packages() -> Non
             "sqlalchemy",
         }
     )
+
+
+def test_worker_conversions_and_both_handlers_work_with_sqlite_imports_blocked() -> None:
+    script = r'''
+import importlib.abc
+import json
+import os
+import sys
+
+class NoSQLite(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "_sqlite3" or fullname == "sqlite3" or fullname.startswith("sqlite3."):
+            raise AssertionError("Worker must not require SQLite: " + fullname)
+
+assert "sqlite3" not in sys.modules and "_sqlite3" not in sys.modules
+sys.meta_path.insert(0, NoSQLite())
+os.environ.update(TEXTRACT_ENABLED="false", PDF_OCR_ENABLED="false", AWS_EC2_METADATA_DISABLED="true")
+import app.workers.conversion_lambda
+import app.workers.ai_recovery_lambda
+from app.workers.worker_image_canary import run_checks
+print(json.dumps(run_checks()))
+'''
+    result = subprocess.run([sys.executable, "-c", script], cwd=BACKEND_ROOT, check=True,
+                            capture_output=True, text=True, timeout=45)
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "passed"
+    assert payload["checks"] == ["csv", "xlsx", "ofx", "pdf", "pdfium", "psycopg"]
+
+
+@pytest.mark.parametrize("filename", ["Dockerfile.lambda", "Dockerfile.lambda.debian"])
+def test_worker_images_omit_unused_sqlite_library_and_python_modules(filename) -> None:
+    dockerfile = (ROOT / filename).read_text(encoding="utf-8")
+    native_packages = next(line for line in dockerfile.splitlines() if "for package in" in line)
+    assert "libsqlite3-0" not in native_packages
+    assert "/usr/local/lib/python3.12/sqlite3" in dockerfile
+    assert "/usr/local/lib/python3.12/lib-dynload/_sqlite3*.so" in dockerfile
+    assert "COPY --from=build /runtime-status/ /var/lib/dpkg/status.d/" in dockerfile

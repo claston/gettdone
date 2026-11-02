@@ -50,6 +50,13 @@ bloqueiam a release. Também é obrigatório reconhecer o inventário Debian e a
 versão do PyPDF instalada, para impedir que um scan vazio pareça aprovado.
 As evidências ficam no artefato `worker-debian-release-<run_id>-<attempt>`.
 
+O runtime do worker exclui SQLite, utilizado apenas no controle de acesso da
+API, que já não pertence a essa imagem. O contrato do build/canário verifica a
+ausência dos bindings e da biblioteca nativa. Isso remove a dependência atingida
+pela CVE-2026-119373 sem exceção no scanner; os pacotes restantes mantêm seus
+metadados e licenças reais. Evidências e compatibilidade em
+[Segurança SQLite do worker](worker-sqlite-security.md).
+
 Somente depois desses passos a esteira assume a role AWS existente. Ela marca
 e publica **a mesma imagem que foi testada**, sem um segundo build. Cada
 tentativa recebe tag imutável `release-<sha12>-<run_id>-<attempt>`, evitando

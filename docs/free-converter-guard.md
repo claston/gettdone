@@ -1,8 +1,12 @@
 # OFX-67 — Proteção reproduzível do conversor Free
 
 Referência funcional: `c3cf02c4d4631ae591e2a59571dd9d1b557ec5f5`.
-Escopo: testes, caracterização, ferramentas offline e CI. Nenhum arquivo em
-`backend/app`, parser, YAML, OCR, frontend, quota, TTL ou migration foi alterado.
+Escopo inicial: testes, caracterização, ferramentas offline e CI. Após a
+autorização adicional do usuário, a correção isolada do [PR #534](https://github.com/claston/gettdone/pull/534)
+remove SQLite não utilizado da imagem do worker e reforça seu contrato de
+build/canário; detalhes em [Segurança SQLite do worker](worker-sqlite-security.md).
+Parsers, YAML, OCR, frontend, quotas, TTL, migrations e bases SQLite da API
+permanecem sem alteração. O núcleo financeiro e os snapshots foram preservados.
 As OFX-68/69/70 continuam fora desta implementação.
 
 ## Diagnóstico anterior à implementação
@@ -339,6 +343,22 @@ pré/pós, nenhum desvio financeiro e 8.635 coordenadas geométricas catalogadas
 entre plataformas (contando as repetições em linhas, canônico e persistência).
 Suíte Windows completa: **3977 passed, 7 skipped, 2 xfailed, 8 warnings in
 317.76s**, usando `--basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-ofx67-ci-full`.
+
+### Correção da imagem autorizada posteriormente
+
+O usuário autorizou corrigir a imagem que ainda estava bloqueada por SQLite.
+O commit isolado do PR #534 remove a dependência não utilizada do worker e seus
+bindings, preservando a API. A [validação real da imagem](https://github.com/claston/gettdone/actions/runs/41378979029/job/125066523475)
+passou: canário com PostgreSQL aprovado, zero HIGH/CRITICAL, 20 pacotes de sistema
+reconhecidos e nenhum SQLite, sem alterar a política do scanner.
+
+A combinação com os gates do Free foi revalidada: **3984 passed, 7 skipped,
+2 xfailed, 8 warnings in 266.64s**; comando completo com
+`--basetemp C:\Users\erica\AppData\Local\Temp\gettdone-pytest-ofx67-worker-image-full`
+e `--junitxml=tmp/ofx67-worker-image-full.xml`. O gate em
+`tmp/ofx67-worker-image-gate` repetiu os 90 casos contra a referência e a baseline
+congelada com `errors: []`, sem diferenças financeiras ou de exportação. O
+temporário específico foi removido. Não houve merge em main ou deploy.
 
 Os sete skips são seis ensaios com PostgreSQL descartável sem DSN configurado e
 um ensaio com Tesseract ausente. Os dois xfails são os gaps já declarados no
