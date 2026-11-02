@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import ctypes
 import sys
-from importlib import metadata
+from importlib import metadata, util
 from pathlib import Path
 
 FORBIDDEN_MODULE_PREFIXES = (
@@ -46,7 +47,19 @@ FORBIDDEN_DISTRIBUTIONS = (
 )
 
 
+def verify_no_sqlite_runtime() -> None:
+    for module in ("sqlite3", "_sqlite3"):
+        if util.find_spec(module) is not None:
+            raise RuntimeError(f"Worker image contains unused SQLite module: {module}")
+    try:
+        ctypes.CDLL("libsqlite3.so.0")
+    except OSError:
+        return
+    raise RuntimeError("Worker image contains the unused SQLite shared library.")
+
+
 def verify_worker_image(root: Path | None = None) -> None:
+    verify_no_sqlite_runtime()
     image_root = (root or Path("/var/task")).resolve()
     present_paths = [relative for relative in FORBIDDEN_IMAGE_PATHS if (image_root / relative).exists()]
     if present_paths:

@@ -262,6 +262,10 @@ jobs:
           fi
           python scripts/check_pdf_compatibility.py --base-ref "$baseline_ref"
 
+      - name: Lint Free baseline instrumentation
+        working-directory: .
+        run: python -m ruff check scripts/free_converter_guard.py --config backend/pyproject.toml
+
       - name: Preserve fictional PDF compatibility reports
         if: always()
         uses: actions/upload-artifact@v4
