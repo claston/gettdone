@@ -58,6 +58,10 @@ def parse_financial_report_pages(page_texts: list[str]) -> dict | None:
     if detected is None:
         return None
     kind, evidence = detected
+    if evidence == "sicoob_sisbr_fixed_income_positions":
+        from app.application.parsers.pdf.investment_positions import parse_fixed_income_positions
+
+        return parse_fixed_income_positions(page_texts)
     if evidence == "omie_cash_actual_forecast_columns":
         from app.application.parsers.pdf.omie_cash import parse_omie_cash
 

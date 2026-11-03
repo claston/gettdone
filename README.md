@@ -180,7 +180,7 @@ backend\venv\Scripts\python.exe scripts\smoke_playwright_navigation.py
 
 ## Testes de backend durante o desenvolvimento
 
-Para executar a suíte completa em quatro processos, com um diretório temporário isolado:
+Para executar a suíte completa, com paralelismo ajustado à memória disponível e um diretório temporário isolado:
 
 ```powershell
 .\scripts\test-backend.ps1
@@ -192,7 +192,11 @@ O script aceita argumentos adicionais do pytest. Por exemplo, para rodar apenas 
 .\scripts\test-backend.ps1 backend/tests/test_access_control.py
 ```
 
-Defina `PYTEST_WORKERS` para alterar a quantidade de processos. O padrão validado localmente é `4`.
+O padrão `auto` usa de um a quatro processos, respeitando CPU e memória disponível. Com pouca memória ou sem uma medição confiável, usa um processo, sem o custo adicional de um controlador paralelo. Para uma escolha explícita, use `--workers 1`, `--workers 2` ou a variável `PYTEST_WORKERS`.
+
+O script impede duas execuções simultâneas pelo runner no mesmo checkout, remove seu diretório temporário ao terminar e preserva resultados e tempos em `tmp/test-runs/<execução>/junit.xml` e `run.json`. Nenhum teste é excluído por padrão; testes que dependem de PostgreSQL ou outros recursos continuam exigindo sua configuração habitual. No ambiente Codex Windows, o comando deve ser executado fora do sandbox, conforme `AGENTS.md`.
+
+Em outros sistemas, com o ambiente virtual ativado, use `python scripts/test_backend.py`. Veja [a infraestrutura e as medições dos testes](docs/test-runtime.md).
 
 ## CI no GitHub
 

@@ -1,10 +1,11 @@
+
 import hashlib
 
-import httpx
 import pytest
 
 from app.dependencies import get_access_control_service
 from app.main import app
+from tests.http_runtime import LoopbackClient, loopback_request
 from tests.test_conversion_workspace_http_real_api import _run_pro_upload_http_server
 
 pytestmark = pytest.mark.real_http
@@ -20,11 +21,11 @@ def test_http_manual_organization_filters_permissions_and_no_processing(tmp_path
         other = access.register_user(name="Other", email="other@example.test", password="strong-password")
         access.activate_user_plan(user_id=other.user_id, plan_code="essencial")
         headers = {"Authorization": f"Bearer {token}", "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web"}
-        with httpx.Client(base_url=base_url, headers=headers) as client:
-            assert httpx.get(f"{base_url}/api/pro/organization/catalog").status_code == 401
+        with LoopbackClient(base_url=base_url, headers=headers) as client:
+            assert loopback_request("GET", f"{base_url}/api/pro/organization/catalog").status_code == 401
             assert client.get("/api/pro/organization/catalog", headers={"Authorization": f"Bearer {free.token}"}).status_code == 403
             assert client.get("/api/pro/organization/catalog").json() == {"clients": [], "accounts": [], "periods": []}
-            forbidden = httpx.post(
+            forbidden = loopback_request("POST",
                 f"{base_url}/api/pro/organization/clients", headers={"Authorization": f"Bearer {token}"}, json={"name": "Missing guard"}
             )
             assert forbidden.status_code == 403

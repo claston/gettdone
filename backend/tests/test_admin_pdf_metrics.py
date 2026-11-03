@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import pytest
 
 from app.main import app
+from tests.http_runtime import LoopbackClient
 from tests.test_admin_dashboard_api import _build_dashboard_client
 
 
@@ -143,7 +144,6 @@ def test_document_period_uses_complete_ledger_and_prefers_document_metadata():
 
 @pytest.mark.real_http
 def test_pdf_metrics_over_real_http_and_csv(tmp_path):
-    import httpx
 
     from app.dependencies import get_access_control_service
     from tests.test_admin_dashboard_http_real_api import _run_http_server
@@ -157,7 +157,7 @@ def test_pdf_metrics_over_real_http_and_csv(tmp_path):
                 pages_count=2, scanned_likely=False, ocr_used=False, ocr_pages_processed=0, duration_ms=100,
                 error_code="invalid_pdf_content", file_sha256="a" * 64, document_type="bank_statement",
                 statement_period={"start_date": "2026-08-01", "end_date": "2026-08-31", "basis": "document_metadata"})
-        with httpx.Client(base_url=base_url, timeout=10) as client:
+        with LoopbackClient(base_url=base_url, timeout=10) as client:
             assert client.get("/admin/dashboard").status_code == 401
             assert client.post("/admin/auth/login", json={"email": "admin@example.com", "password": "admin-pass"}).status_code == 200
             response = client.get("/admin/dashboard", params={"days": 1})

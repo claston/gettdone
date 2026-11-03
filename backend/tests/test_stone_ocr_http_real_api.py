@@ -1,7 +1,7 @@
 """Exercise public/worker exports with synthetic Textract column evidence."""
+
 import hashlib
 
-import httpx
 import pytest
 
 from app.application import pdf_parser
@@ -21,6 +21,7 @@ from app.dependencies import (
 from app.main import app
 from app.workers.conversion_lambda import ConversionLambdaProcessor
 from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
+from tests.http_runtime import LoopbackClient
 from tests.test_conversion_workspace_http_real_api import _run_pro_upload_http_server
 from tests.test_convert_edits_http_real_api import _run_http_server
 from tests.test_stone_ocr_values import change_line, stone_extraction
@@ -72,7 +73,7 @@ def test_public_http_stone_ocr_and_export(kind, tmp_path, monkeypatch):
         app.dependency_overrides[get_conversion_processing_pipeline] = lambda: build_default_conversion_pipeline()
         app.dependency_overrides[get_report_service] = lambda: ReportService(storage)
 
-    with _run_http_server(configure) as base_url, httpx.Client(base_url=base_url, timeout=20) as client:
+    with _run_http_server(configure) as base_url, LoopbackClient(base_url=base_url, timeout=20) as client:
         owner = {"anonymous_fingerprint": "fp-stone-synthetic"}
         response = client.post("/convert", data=owner, files={"file": (filename, raw, mime)})
         assert response.status_code == 200, response.text
@@ -96,7 +97,7 @@ def test_ambiguous_ocr_http_rejects_instead_of_exporting_balance_as_amount(tmp_p
     def configure(_access):
         app.dependency_overrides[get_conversion_processing_pipeline] = lambda: build_default_conversion_pipeline()
 
-    with _run_http_server(configure) as base_url, httpx.Client(base_url=base_url, timeout=20) as client:
+    with _run_http_server(configure) as base_url, LoopbackClient(base_url=base_url, timeout=20) as client:
         response = client.post("/convert", data={"anonymous_fingerprint": "fp-stone-ambiguous"},
                                files={"file": ("stone.pdf", raw, "application/pdf")})
         assert response.status_code == 400, response.text
@@ -121,7 +122,7 @@ def test_worker_http_stone_ocr_preserves_warnings_and_values(kind, mode, tmp_pat
             pipeline=DocumentConversionPipeline(report_service=reports, access_control_service=access,
                 processing_pipeline=build_default_conversion_pipeline(), analysis_repository=storage))
         app.dependency_overrides[get_async_conversion_report_service] = lambda: reports
-        with httpx.Client(base_url=base_url, timeout=20, headers={"Authorization": f"Bearer {token}",
+        with LoopbackClient(base_url=base_url, timeout=20, headers={"Authorization": f"Bearer {token}",
                 "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web"}) as client:
             created = client.post("/api/conversion-batches", headers={"Idempotency-Key": kind}, json={"files": [
                 {"filename": "stone.pdf", "content_type": "application/pdf", "size_bytes": len(raw),

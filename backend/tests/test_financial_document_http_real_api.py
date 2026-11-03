@@ -1,8 +1,8 @@
+
 import hashlib
 from io import BytesIO
 from zipfile import ZipFile
 
-import httpx
 import pytest
 from openpyxl import load_workbook
 
@@ -21,6 +21,7 @@ from app.dependencies import (
 )
 from app.main import app
 from app.workers.conversion_lambda import ConversionLambdaProcessor
+from tests.http_runtime import LoopbackClient
 from tests.test_conversion_workspace_http_real_api import _run_pro_upload_http_server
 from tests.test_convert_edits_http_real_api import _run_http_server
 from tests.test_financial_document_events import report_pdf
@@ -41,7 +42,7 @@ def test_public_upload_and_download_keep_report_contract(kind, tmp_path, monkeyp
 
     raw = report_pdf(kind) if kind != "csv" else b"date,description,amount\n2026-09-01,PIX,100\n"
     filename, mime = (f"{kind}.pdf", "application/pdf") if kind != "csv" else ("statement.csv", "text/csv")
-    with _run_http_server(configure) as base_url, httpx.Client(base_url=base_url, timeout=20) as client:
+    with _run_http_server(configure) as base_url, LoopbackClient(base_url=base_url, timeout=20) as client:
         owner = {"anonymous_fingerprint": "fp-financial-report"}
         response = client.post("/convert", data=owner, files={"file": (filename, raw, mime)})
         assert response.status_code == 200, response.text
@@ -79,7 +80,7 @@ def test_worker_and_http_exports_respect_document_semantics(kind, count, tmp_pat
                 processing_pipeline=build_default_conversion_pipeline(), analysis_repository=storage))
         app.dependency_overrides[get_async_conversion_report_service] = lambda: reports
         app.dependency_overrides[get_report_service] = lambda: reports
-        with httpx.Client(base_url=base_url, timeout=20, headers={"Authorization": f"Bearer {token}",
+        with LoopbackClient(base_url=base_url, timeout=20, headers={"Authorization": f"Bearer {token}",
                 "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web"}) as client:
             created = client.post("/api/conversion-batches", headers={"Idempotency-Key": kind}, json={"files": [
                 {"filename": filename, "content_type": mime, "size_bytes": len(raw), "sha256_hex": hashlib.sha256(raw).hexdigest()},

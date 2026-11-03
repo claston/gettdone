@@ -50,6 +50,10 @@ def day(value, pattern="%d/%m/%Y"):
 
 
 def identify_verified_statement(text):
+    from app.application.parsers.pdf.modern_movement_blocks import SICREDI_MODERN, is_sicredi_modern_statement
+
+    if is_sicredi_modern_statement(text):
+        return SICREDI_MODERN
     from app.application.parsers.pdf.nubank_credit_card import LAYOUT as NUBANK_CARD_LAYOUT
     from app.application.parsers.pdf.nubank_credit_card import is_nubank_invoice
 
@@ -109,6 +113,10 @@ def identify_verified_statement(text):
 def parse_verified_statement(pages):
     text = "\n".join(pages)
     kind = identify_verified_statement(text)
+    from app.application.parsers.pdf.modern_movement_blocks import SICREDI_MODERN, parse_modern_movement_blocks
+
+    if kind == SICREDI_MODERN:
+        return parse_modern_movement_blocks(pages)
     if kind == "nubank_fatura_cartao_credito_v1":
         from app.application.parsers.pdf.nubank_credit_card import parse_nubank_invoice
 
