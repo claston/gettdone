@@ -509,7 +509,7 @@ def _parse_pdf_transactions_strict(
                 extraction_provider="native_pdfium_text", native_text_detected=1, textract_attempted=0,
             )
         report_identity = detect_financial_report("\n".join(native_pages))
-        if report_identity and report_identity[1] == "pagbank_sales_gross_fee_net_status":
+        if report_identity and report_identity[1] in {"pagbank_sales_gross_fee_net_status", "sicoob_sisbr_fixed_income_positions"}:
             return _with_parse_observability(
                 parse_financial_pdf_pages(_read_layout_native_pdf_page_texts(raw_bytes), native=True),
                 extraction_provider="native_pdf_text", native_text_detected=1, textract_attempted=0)
@@ -1378,7 +1378,8 @@ def _parse_pdf_transactions_from_page_texts_strict(
         # The strict reader validates every physical page before generic segmentation.
         return _parse_statement_page_texts(page_texts, preserve_layout_spacing=preserve_layout_spacing, context=context)
     report = detect_financial_report("\n".join(page_texts))
-    if report is not None and report[1] in {"nubank_rdb_caixinhas_columns", "sicoob_rem116_period_summary", "btg_fund_positions_and_lots"}:
+    if report is not None and report[1] in {"nubank_rdb_caixinhas_columns", "sicoob_rem116_period_summary",
+                                           "btg_fund_positions_and_lots", "sicoob_sisbr_fixed_income_positions"}:
         # An income-only final RDB page may resemble a bank statement. Preserve
         # the complete typed report before the bank/appendix page segmentation.
         return parse_financial_pdf_pages(page_texts, native=bool(context and context.is_native_text))
@@ -1410,7 +1411,9 @@ def _build_verified_statement_result(statement, pages):
         statement.rows[0] = replace(statement.rows[0], warnings=[*statement.rows[0].warnings, "opening_balance_ambiguous"])
     result = _build_pdf_parse_result(
         parsed_rows=statement.rows, layout=PdfLayoutInference(statement.layout, .99, False),
-        layout_profile=None, selected_parser=("layout_specific_verified_statement" if statement.opening is not None
+        layout_profile=None, selected_parser=("layout_specific_modern_accounts"
+                                             if statement.layout == "sicredi_extrato_conta_corrente_moderno_movimentacoes_v1"
+                                             else "layout_specific_verified_statement" if statement.opening is not None
                                              else "layout_specific_signed_report"),
         parser_selection_reason=("explicit_signs_printed_closing_and_derived_opening" if statement.opening_inferred
                                  else "explicit_amount_roles_and_all_printed_ledger_controls_validated"
@@ -1428,10 +1431,14 @@ def _build_verified_statement_result(statement, pages):
     controls = (dict(verified_opening_balance=float(statement.opening), verified_closing_balance=float(statement.closing))
                 if statement.opening is not None and statement.closing is not None else {})
     if statement.layout in {"bb_cash_rende_facil_combined_v1", "itau_empresas_cash_combined_positions_v1"}:
-        return _with_parse_observability(result, financial_controls_validated=0,
+        return _with_parse_observability(result, financial_controls_validated=0, balance_bounds_unavailable=1,
             balance_validation_status="combined_cash_investment_not_comparable",
             export_recommendation="review_recommended", export_recommendation_reason="combined_cash_investment_balance_not_comparable")
     return _with_parse_observability(result, **controls,
+        **(dict(confidence_band="high", export_recommendation="safe_to_export",
+                export_recommendation_reason="complete_movement_section_and_printed_controls_validated")
+           if controls and statement.layout == "sicredi_extrato_conta_corrente_moderno_movimentacoes_v1"
+           and not statement.partial else {}),
         **({"derived_opening_balance": float(statement.opening)}
            if statement.opening_inferred and statement.opening is not None else {}),
         **({"balance_bounds_unavailable": 1} if statement.balance_bounds_unavailable else {}),
@@ -3226,6 +3233,13 @@ def _resolve_tabular_balance_checkpoints(
     parsed_rows: list[_ParsedTransaction],
     tabular_profile: DeclarativeLayoutProfile | None,
 ) -> dict[int, float]:
+    from app.application.normalization.statement_balance_columns import opening_balance_from_columns
+
+    dates = [row.transaction.date for row in parsed_rows]
+    if len(set(dates)) > 1 and dates == sorted(dates):
+        opening = opening_balance_from_columns("\n".join(line.text for line in lines))
+        if opening is not None:
+            return {0: opening}
     if (
         tabular_profile is None
         or tabular_profile.profile_name != _BRADESCO_NET_EMPRESA_MONTHLY_LAYOUT

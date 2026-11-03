@@ -8,6 +8,7 @@ from app.application.bank_resolver import DEFAULT_BANK_CODE, resolve_bank_code
 from app.application.conversion_pipeline import ConversionPipeline
 from app.application.models import TransactionRow
 from app.application.normalization.balance import resolve_descending_running_balance
+from app.application.normalization.statement_balance_columns import opening_balance_from_columns
 from app.application.parsers.pdf.layout_specific.bradesco_card_web import BRADESCO_CARD_WEB_LAYOUT
 from app.application.parsers.pdf.layout_specific.bradesco_daily_order import (
     resolve_bradesco_period_closing,
@@ -93,6 +94,9 @@ def _resolve_opening_balance(
         printed = _nubank_summary_balance(extracted_text, "SALDO INICIAL")
         if printed is not None:
             return printed
+    column_opening = opening_balance_from_columns(extracted_text)
+    if column_opening is not None:
+        return column_opening
     labeled_balance = _extract_labeled_balance(
         extracted_text,
         labels=_opening_balance_labels(layout_name),

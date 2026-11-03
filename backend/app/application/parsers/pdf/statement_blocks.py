@@ -36,6 +36,11 @@ def _period(text):
         return period["start_date"], period["end_date"]
     short = re.search(r"PERIODO:\s*(\d{2})\s+A\s+(\d{2})/(\d{2})/(\d{4})\b", header)
     try:
+        movement_period = re.search(rf"(?m)^\s*MOVIMENTACOES\s+DE\s+({_DATE})\s+A\s+({_DATE})\b",
+                                    "\n".join(upper(line) for line in text.splitlines()))
+        if movement_period:
+            return tuple(date.fromisoformat("-".join(reversed(value.split("/")))).isoformat()
+                         for value in movement_period.groups())
         labelled_month = re.search(r"\bPERIODO:\s*(" + "|".join(_FULL_MONTHS + _MONTHS) + r")/(20\d{2})\b", header)
         if labelled_month:
             names = _FULL_MONTHS if labelled_month[1] in _FULL_MONTHS else _MONTHS
