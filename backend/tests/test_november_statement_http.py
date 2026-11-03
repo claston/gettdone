@@ -35,11 +35,13 @@ def check_analysis(analysis, kind):
         assert analysis["transactions_total"] == 2
         assert analysis["opening_balance"] == 100
         assert analysis["closing_balance"] == 105
+        assert analysis["pdf_processing_metrics"]["balance_bounds_unavailable"] == 0
         assert analysis["pdf_processing_metrics"]["balance_consistency_checked"] == 2
         assert analysis["pdf_processing_metrics"]["balance_consistency_failed"] == 0
     elif kind == "itau":
         assert analysis["transactions_total"] == 2
         assert analysis["opening_balance"] is None and analysis["closing_balance"] is None
+        assert analysis["pdf_processing_metrics"].get("balance_bounds_unavailable") == 1
         assert analysis["pdf_processing_metrics"]["export_recommendation"] == "review_recommended"
     else:
         assert analysis["transactions_total"] == (5 if kind == "inherited" else 4)
