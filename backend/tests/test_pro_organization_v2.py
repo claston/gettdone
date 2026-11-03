@@ -1,8 +1,8 @@
+
 import hashlib
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-import httpx
 import pytest
 
 from app.application.conversion.contracts.jobs import ConversionJobResultReference
@@ -10,6 +10,7 @@ from app.application.organization_suggestions import build_source_evidence, sugg
 from app.dependencies import get_access_control_service, get_conversion_batch_service
 from app.main import app
 from app.routers.pro_organization import conversion_page
+from tests.http_runtime import LoopbackClient, loopback_request
 from tests.test_conversion_workspace_http_real_api import _run_pro_upload_http_server
 
 
@@ -84,7 +85,7 @@ def test_http_independent_listing_filtered_pages_bulk_conflicts_and_suggestions(
         identity = access.resolve_identity(anonymous_fingerprint=None, user_token=token)
         remaining = access.get_remaining_quota(identity)
         headers = {"Authorization": f"Bearer {token}", "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web"}
-        with httpx.Client(base_url=base, headers=headers) as client:
+        with LoopbackClient(base_url=base, headers=headers) as client:
             raw = b"date,amount,description\n2026-10-01,12,PIX\n"
             created = client.post("/api/pro/conversion-batches", headers={"Idempotency-Key": "org-v2"}, json={"files": [
                 {"filename": f"{n}.csv", "content_type": "text/csv", "size_bytes": len(raw),
@@ -140,7 +141,7 @@ def test_http_independent_listing_filtered_pages_bulk_conflicts_and_suggestions(
                 assert plain.status_code == 200, plain.text
                 assert len(plain.json()["items"]) == 1 and plain.json()["next_cursor"]
                 assert client.get("/api/pro/conversions", params={"client_id": person["id"]}).status_code == 403
-                assert httpx.get(base + "/api/pro/conversions").status_code == 401
+                assert loopback_request("GET", base + "/api/pro/conversions").status_code == 401
             finally:
                 app.dependency_overrides.pop(organization_service, None)
             assert access.get_remaining_quota(identity) == remaining

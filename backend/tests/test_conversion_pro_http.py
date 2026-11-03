@@ -3,7 +3,6 @@
 import hashlib
 from dataclasses import replace
 
-import httpx
 import pytest
 
 from app.application import ocr_cash_statement
@@ -25,6 +24,7 @@ from app.dependencies import (
 )
 from app.main import app
 from app.workers.conversion_lambda import ConversionLambdaProcessor
+from tests.http_runtime import LoopbackClient
 from tests.ocr_conversion_http_helpers import public_client
 from tests.test_conversion_workspace_http_real_api import _run_pro_upload_http_server
 from tests.test_embedded_ocr_quality import layered_pdf
@@ -88,7 +88,7 @@ def test_paid_individual_estimate_worker_report_and_idempotency(tmp_path, monkey
         app.dependency_overrides[get_conversion_batch_document_store] = lambda: Store()
         app.dependency_overrides[get_async_conversion_report_service] = lambda: reports
         app.dependency_overrides[get_report_service] = lambda: reports
-        with httpx.Client(
+        with LoopbackClient(
             base_url=base,
             headers={"Authorization": f"Bearer {token}", "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web"},
             timeout=20,

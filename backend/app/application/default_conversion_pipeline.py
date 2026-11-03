@@ -4,7 +4,7 @@ import unicodedata
 
 from app.application.bank_catalog import resolve_bank_code_from_name
 from app.application.bank_identity import resolve_bank_name
-from app.application.bank_resolver import DEFAULT_BANK_CODE, resolve_bank_code
+from app.application.bank_resolver import DEFAULT_BANK_CODE
 from app.application.conversion_pipeline import ConversionPipeline
 from app.application.models import TransactionRow
 from app.application.normalization.balance import resolve_descending_running_balance
@@ -301,6 +301,8 @@ def _build_pdf_processing_metrics(
         return None
 
     return {
+        **({"statement_issuer_source": str(parse_metrics["statement_issuer_source"])}
+           if "statement_issuer_source" in parse_metrics else {}),
         "total_ms": total_ms,
         "parse_ms": parse_ms,
         "classify_ms": classify_ms,
@@ -415,9 +417,9 @@ def _resolve_inferred_bank_code(
 ) -> str | None:
     if extension != "pdf":
         return None
-    code = resolve_bank_code(layout_inference_name=layout_inference_name)
-    if code == DEFAULT_BANK_CODE and bank_name:
-        code = resolve_bank_code_from_name(bank_name) or DEFAULT_BANK_CODE
+    # The name already resolved issuer evidence before layout hints. Reconsulting
+    # the layout here could give one institution the clearing code of another.
+    code = resolve_bank_code_from_name(bank_name) or DEFAULT_BANK_CODE
     return None if code == DEFAULT_BANK_CODE else code
 
 

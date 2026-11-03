@@ -1,11 +1,11 @@
 """Real HTTP acceptance for survey ownership and exports, with fictional PDFs."""
 
-import httpx
 import pytest
 
 from app.application.admin_dashboard_service import AdminDashboardService
 from app.dependencies import get_access_control_service
 from app.main import app
+from tests.http_runtime import LoopbackClient
 from tests.ocr_conversion_http_helpers import public_client, worker_case
 from tests.test_followup_conversion_recovery import btg_native
 
@@ -38,7 +38,7 @@ def test_survey_tracks_exposures_answers_and_retries_without_blocking_download(t
         assert client.get("/report/nonexistent").status_code == 404
         # /analyze is deliberately retired in production; exercise its current contract.
         assert client.post("/analyze").status_code == 405
-        with httpx.Client(base_url=str(client.base_url)) as stranger:
+        with LoopbackClient(base_url=str(client.base_url)) as stranger:
             assert stranger.put(path, json={"answer": "no"}).status_code == 401
             assert stranger.post("/auth/anonymous-session", json={}).status_code == 200
             assert stranger.put(path, json={"answer": "no"}).status_code == 403

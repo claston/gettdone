@@ -43,13 +43,12 @@ def document():
 
 @pytest.fixture
 def database(tmp_path):
+    from tests.postgres_runtime import migrate_test_schema
+
     parsed = urlparse(DSN)
     assert parsed.hostname in {"localhost", "127.0.0.1"} and parsed.path in {"/ofx69_test", "/ofx24_test"}
     schema = f"ofx69_test_{uuid4().hex}"
-    env = {**os.environ, "DATABASE_URL": DSN, "DATABASE_SCHEMA": schema}
-    result = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"],
-                            cwd=Path(__file__).resolve().parents[1], env=env, capture_output=True, text=True)
-    assert result.returncode == 0, result.stdout + result.stderr
+    migrate_test_schema(DSN, schema)
     access = AccessControlService(state_file=tmp_path / "access.json", token_secret="canonical-test",
                                   database_url=DSN, database_schema=schema)
     try:

@@ -2,8 +2,6 @@
 import hashlib
 from contextlib import contextmanager
 
-import httpx
-
 from app.application import pdf_parser
 from app.application.conversion.document_conversion_pipeline import DocumentConversionPipeline
 from app.application.conversion.uploaded_document import ingest_uploaded_document
@@ -21,6 +19,7 @@ from app.dependencies import (
 from app.main import app
 from app.workers.conversion_lambda import ConversionLambdaProcessor
 from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
+from tests.http_runtime import LoopbackClient
 from tests.test_conversion_workspace_http_real_api import _run_pro_upload_http_server
 from tests.test_convert_edits_http_real_api import _run_http_server
 
@@ -50,7 +49,7 @@ def public_client(tmp_path):
         app.dependency_overrides[get_conversion_processing_pipeline] = lambda: build_default_conversion_pipeline()
         app.dependency_overrides[get_report_service] = lambda: ReportService(storage)
 
-    with _run_http_server(configure) as base_url, httpx.Client(base_url=base_url, timeout=20) as client:
+    with _run_http_server(configure) as base_url, LoopbackClient(base_url=base_url, timeout=20) as client:
         yield client
 
 
@@ -69,7 +68,7 @@ def worker_case(tmp_path, raw, *, filename="synthetic.pdf"):
             pipeline=DocumentConversionPipeline(report_service=reports, access_control_service=access,
                 processing_pipeline=build_default_conversion_pipeline(), analysis_repository=storage))
         app.dependency_overrides[get_async_conversion_report_service] = lambda: reports
-        with httpx.Client(base_url=base_url, timeout=20, headers={"Authorization": f"Bearer {token}",
+        with LoopbackClient(base_url=base_url, timeout=20, headers={"Authorization": f"Bearer {token}",
                 "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web"}) as client:
             created = client.post("/api/conversion-batches", headers={"Idempotency-Key": "synthetic-ocr"}, json={"files": [
                 {"filename": filename, "content_type": "application/pdf", "size_bytes": len(raw),

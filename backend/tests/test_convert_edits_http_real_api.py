@@ -1,21 +1,17 @@
 ﻿from __future__ import annotations
 
 import csv
-import socket
 import sqlite3
 import tempfile
-import threading
-import time
 from contextlib import contextmanager
 from pathlib import Path
 
-import httpx
 import pytest
-import uvicorn
 
 from app.application import AccessControlService
 from app.dependencies import get_access_control_service, get_report_service
 from app.main import app
+from tests.http_runtime import loopback_request
 
 pytestmark = pytest.mark.real_http
 
@@ -41,11 +37,11 @@ def test_http_edit_operation_survives_lost_response_and_rejects_other_owner(tmp_
         params = {"anonymous_fingerprint": "fp-owner"}
         payload = {"operation_id": "http-save-1", "edits": [{"action": "insert", "insert_position": 0,
                    "date": "2026-04-02", "description": "Incluído", "credit": 20}]}
-        first = httpx.post(url, params=params, json=payload)
-        confirmed = httpx.get(f"{url}/operations/http-save-1", params=params)
-        repeated = httpx.post(url, params=params, json=payload)
-        denied = httpx.get(f"{url}/operations/http-save-1", params={"anonymous_fingerprint": "fp-other"})
-        report = httpx.get(f"{base_url}/convert-report/an_receipt_http", params={**params, "format": "csv"})
+        first = loopback_request("POST", url, params=params, json=payload)
+        confirmed = loopback_request("GET", f"{url}/operations/http-save-1", params=params)
+        repeated = loopback_request("POST", url, params=params, json=payload)
+        denied = loopback_request("GET", f"{url}/operations/http-save-1", params={"anonymous_fingerprint": "fp-other"})
+        report = loopback_request("GET", f"{base_url}/convert-report/an_receipt_http", params={**params, "format": "csv"})
     assert first.status_code == confirmed.status_code == repeated.status_code == report.status_code == 200
     assert first.json() == confirmed.json() == repeated.json()
     assert first.json()["transactions_total"] == 2
@@ -70,14 +66,14 @@ def test_http_stable_transaction_id_preserves_source_order_after_edit_and_insert
     with _run_http_server(configure) as base_url:
         url = f"{base_url}/convert-edits/an_order_http"
         params = {"anonymous_fingerprint": "fp-owner"}
-        snapshot = httpx.post(url, params=params, json={"edits": []}).json()
+        snapshot = loopback_request("POST", url, params=params, json={"edits": []}).json()
         first = snapshot["preview_transactions"][0]["transaction_id"]
-        saved = httpx.post(url, params=params, json={"expected_updated_at": snapshot["updated_at"], "edits": [
+        saved = loopback_request("POST", url, params=params, json={"expected_updated_at": snapshot["updated_at"], "edits": [
             {"row_id": first, "date": "2026-04-01", "description": "CORRIGIDO", "credit": 10},
             {"action": "insert", "transaction_id": "manual-http", "anchor_transaction_id": first,
              "date": "2026-04-30", "description": "MANUAL", "credit": 8},
         ]})
-        report = httpx.get(f"{base_url}/convert-report/an_order_http", params={**params, "format": "csv"})
+        report = loopback_request("GET", f"{base_url}/convert-report/an_order_http", params={**params, "format": "csv"})
     assert saved.status_code == report.status_code == 200
     rows = saved.json()["preview_transactions"]
     assert rows[0]["transaction_id"] == first
@@ -224,14 +220,10 @@ class FakeReportService:
         return "extrato_nubank.pdf"
 
 
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
 @contextmanager
 def _run_http_server(configure=None):
+    from tests.http_runtime import serve_http
+
     access_control = _AccessControlServiceInMemory(
         state_file=Path("access-control-state.json"),
         token_secret="test-secret",
@@ -243,40 +235,17 @@ def _run_http_server(configure=None):
     if configure:
         configure(access_control)
 
-    host = "127.0.0.1"
-    port = _find_free_port()
-    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="error"))
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-
-    base_url = f"http://{host}:{port}"
-    with httpx.Client(timeout=2.0) as client:
-        deadline = time.time() + 15.0
-        while time.time() < deadline:
-            try:
-                response = client.get(f"{base_url}/health")
-                if response.status_code == 200:
-                    break
-            except httpx.HTTPError:
-                pass
-            time.sleep(0.1)
-        else:
-            server.should_exit = True
-            thread.join(timeout=5.0)
-            app.dependency_overrides.clear()
-            raise RuntimeError("HTTP test server did not start in time")
-
     try:
-        yield base_url
+        with serve_http(app) as base_url:
+            yield base_url
     finally:
-        server.should_exit = True
-        thread.join(timeout=5.0)
         app.dependency_overrides.clear()
+        access_control._test_conn.close()
 
 
 def test_http_convert_edits_happy_path_and_csv_reflects_edit() -> None:
     with _run_http_server() as base_url:
-        edit = httpx.post(
+        edit = loopback_request("POST",
             f"{base_url}/convert-edits/an_convert_http_edits",
             params={"anonymous_fingerprint": "fp-owner"},
             json={
@@ -293,7 +262,7 @@ def test_http_convert_edits_happy_path_and_csv_reflects_edit() -> None:
             timeout=5.0,
         )
 
-        report = httpx.get(
+        report = loopback_request("GET",
             f"{base_url}/convert-report/an_convert_http_edits",
             params={"format": "csv", "anonymous_fingerprint": "fp-owner"},
             timeout=5.0,
@@ -309,7 +278,7 @@ def test_http_convert_edits_happy_path_and_csv_reflects_edit() -> None:
 
 def test_http_convert_edits_negative_path_conflict_on_stale_version() -> None:
     with _run_http_server() as base_url:
-        first = httpx.post(
+        first = loopback_request("POST",
             f"{base_url}/convert-edits/an_convert_http_edits",
             params={"anonymous_fingerprint": "fp-owner"},
             json={
@@ -327,7 +296,7 @@ def test_http_convert_edits_negative_path_conflict_on_stale_version() -> None:
         )
         assert first.status_code == 200
 
-        conflict = httpx.post(
+        conflict = loopback_request("POST",
             f"{base_url}/convert-edits/an_convert_http_edits",
             params={"anonymous_fingerprint": "fp-owner"},
             json={
@@ -351,7 +320,7 @@ def test_http_convert_edits_negative_path_conflict_on_stale_version() -> None:
 
 def test_http_convert_edits_negative_path_rejects_other_owner() -> None:
     with _run_http_server() as base_url:
-        prime = httpx.post(
+        prime = loopback_request("POST",
             f"{base_url}/convert-edits/an_convert_http_edits",
             params={"anonymous_fingerprint": "fp-owner"},
             json={
@@ -369,7 +338,7 @@ def test_http_convert_edits_negative_path_rejects_other_owner() -> None:
         )
         assert prime.status_code == 200
 
-        denied = httpx.post(
+        denied = loopback_request("POST",
             f"{base_url}/convert-edits/an_convert_http_edits",
             params={"anonymous_fingerprint": "fp-other"},
             json={
@@ -426,22 +395,22 @@ def test_http_pro_save_can_be_reopened_from_batch_and_exported(monkeypatch) -> N
         })
 
     with _run_http_server(configure) as base_url:
-        saved = httpx.post(f"{base_url}/api/pro/convert-edits/an_convert_http_edits",
+        saved = loopback_request("POST", f"{base_url}/api/pro/convert-edits/an_convert_http_edits",
                            params={"anonymous_fingerprint": "fp-owner"},
                            headers={"X-OFX-Pro-Client": "web", "Origin": "https://pro.example.test"},
                            json={**ids, "edits": [{"row_id": "row_1", "date": "2026-04-05",
                                                    "description": "SALVO E REABERTO", "credit": 45}]})
         assert saved.status_code == 200
-        reloaded = httpx.get(f"{base_url}/api/pro/conversion-batches/{ids['batch_id']}",
+        reloaded = loopback_request("GET", f"{base_url}/api/pro/conversion-batches/{ids['batch_id']}",
                             params={"anonymous_fingerprint": "fp-owner"})
         assert reloaded.status_code == 200
         analysis = reloaded.json()["jobs"][0]["result"]["analysis"]
         assert analysis["updated_at"] == saved.json()["updated_at"]
         assert analysis["preview_transactions"][0]["description"] == "SALVO E REABERTO"
-        report = httpx.get(f"{base_url}/convert-report/an_convert_http_edits",
+        report = loopback_request("GET", f"{base_url}/convert-report/an_convert_http_edits",
                           params={"anonymous_fingerprint": "fp-owner", "format": "csv"})
         assert report.status_code == 200
         assert "SALVO E REABERTO" in report.text
-        denied = httpx.get(f"{base_url}/api/pro/conversion-batches/{ids['batch_id']}",
+        denied = loopback_request("GET", f"{base_url}/api/pro/conversion-batches/{ids['batch_id']}",
                           params={"anonymous_fingerprint": "fp-other"})
         assert denied.status_code == 404

@@ -1,5 +1,5 @@
 """Exercise additive provenance through real HTTP, conversion and review storage."""
-import httpx
+
 import pytest
 
 from app.application.default_conversion_pipeline import build_default_conversion_pipeline
@@ -8,6 +8,7 @@ from app.application.storage_service import TempAnalysisStorage
 from app.dependencies import get_analysis_repository, get_conversion_processing_pipeline, get_report_service
 from app.main import app
 from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
+from tests.http_runtime import LoopbackClient
 from tests.test_convert_edits_http_real_api import _run_http_server
 from tests.test_wise_statements import wise_lines
 
@@ -32,7 +33,7 @@ def test_http_conversion_report_edit_and_negative_paths_keep_source_regions(tmp_
 
         raw = sicoob_source_pdf()
         file_type = "pdf"
-    with _run_http_server(configure) as base_url, httpx.Client(base_url=base_url, timeout=20) as client:
+    with _run_http_server(configure) as base_url, LoopbackClient(base_url=base_url, timeout=20) as client:
         response = client.post("/convert", data={"anonymous_fingerprint": "fp-regions"},
                                files={"file": (f"synthetic.{file_type}", raw, "text/csv" if file_type == "csv" else "application/pdf")})
         assert response.status_code == 200, response.text

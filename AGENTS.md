@@ -58,6 +58,7 @@ This document defines the default execution rules for the `gettdone` repository.
 3. For API changes, run the app and validate endpoints with real HTTP requests.
 4. In the Codex Windows environment, run every `pytest` command outside the filesystem sandbox on the first attempt (`sandbox_permissions: require_escalated`); do not first run the same command sandboxed. Pytest temporary-directory creation and enumeration can fail with `WinError 5` inside the sandbox, including when `--basetemp` points into the workspace.
 5. For full-suite runs, use an explicit task-specific `--basetemp` under the user's local temporary directory (for example, `C:\Users\<user>\AppData\Local\Temp\gettdone-pytest-<task>`) and remove that exact temporary directory after validation.
+6. Prefer `scripts/test-backend.ps1` (Windows) or the project virtual environment's Python with `scripts/test_backend.py` for full backend runs. The runner selects workers from available memory, owns and cleans its unique local temporary directory, records JUnit/timing results, and rejects overlapping runner executions in the same checkout. Keep the default full selection; use `--workers` only for an intentional override. The Windows sandbox rule above also applies to the runner.
 
 Minimum API validation for V1:
 

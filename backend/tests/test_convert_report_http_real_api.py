@@ -1,16 +1,11 @@
 ﻿from __future__ import annotations
 
-import socket
 import sqlite3
-import threading
-import time
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import NamedTemporaryFile, mkdtemp
 
-import httpx
 import pytest
-import uvicorn
 
 from app.application import AccessControlService
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineResult
@@ -27,6 +22,7 @@ from app.schemas import (
     TopExpense,
     TransactionPreview,
 )
+from tests.http_runtime import loopback_request
 
 pytestmark = pytest.mark.real_http
 
@@ -344,12 +340,6 @@ class FakeAnalyzeService:
         return _build_conversion_result(analysis)
 
 
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
 @contextmanager
 def _run_http_server():
     state_dir = Path(mkdtemp(prefix="convert-http-real-"))
@@ -363,47 +353,20 @@ def _run_http_server():
     app.dependency_overrides[get_access_control_service] = lambda: access_control
     app.dependency_overrides[get_report_service] = lambda: report_service
 
-    host = "127.0.0.1"
-    port = _find_free_port()
-    server = uvicorn.Server(
-        uvicorn.Config(
-            app,
-            host=host,
-            port=port,
-            log_level="error",
-        )
-    )
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-
-    base_url = f"http://{host}:{port}"
-    with httpx.Client(timeout=2.0) as client:
-        deadline = time.time() + 15.0
-        while time.time() < deadline:
-            try:
-                response = client.get(f"{base_url}/health")
-                if response.status_code == 200:
-                    break
-            except httpx.HTTPError:
-                pass
-            time.sleep(0.1)
-        else:
-            server.should_exit = True
-            thread.join(timeout=5.0)
-            app.dependency_overrides.clear()
-            raise RuntimeError("HTTP test server did not start in time")
+    from tests.http_runtime import serve_http
 
     try:
-        yield base_url
+        with serve_http(app) as base_url:
+            yield base_url
     finally:
-        server.should_exit = True
-        thread.join(timeout=5.0)
         app.dependency_overrides.clear()
+        access_control._test_conn.close()
+        state_dir.rmdir()
 
 
 def test_http_convert_happy_path_exposes_canonical_pdf_metrics_compatibility() -> None:
     with _run_http_server() as base_url:
-        response = httpx.post(
+        response = loopback_request("POST",
             f"{base_url}/convert",
             data={"anonymous_fingerprint": "fp-convert-owner"},
             files={"file": ("sample.pdf", b"%PDF data", "application/pdf")},
@@ -433,7 +396,7 @@ def test_http_convert_happy_path_exposes_canonical_pdf_metrics_compatibility() -
 
 def test_http_convert_report_happy_path_after_convert() -> None:
     with _run_http_server() as base_url:
-        convert = httpx.post(
+        convert = loopback_request("POST",
             f"{base_url}/convert",
             data={"anonymous_fingerprint": "fp-convert-owner"},
             files={"file": ("sample.pdf", b"%PDF data", "application/pdf")},
@@ -441,7 +404,7 @@ def test_http_convert_report_happy_path_after_convert() -> None:
         )
         assert convert.status_code == 200
 
-        report = httpx.get(
+        report = loopback_request("GET",
             f"{base_url}/convert-report/an_convert_http123",
             params={"format": "ofx", "anonymous_fingerprint": "fp-convert-owner"},
             timeout=5.0,
@@ -453,7 +416,7 @@ def test_http_convert_report_happy_path_after_convert() -> None:
 
 def test_http_convert_report_negative_path_rejects_other_owner() -> None:
     with _run_http_server() as base_url:
-        convert = httpx.post(
+        convert = loopback_request("POST",
             f"{base_url}/convert",
             data={"anonymous_fingerprint": "fp-convert-owner"},
             files={"file": ("sample.pdf", b"%PDF data", "application/pdf")},
@@ -461,7 +424,7 @@ def test_http_convert_report_negative_path_rejects_other_owner() -> None:
         )
         assert convert.status_code == 200
 
-        denied = httpx.get(
+        denied = loopback_request("GET",
             f"{base_url}/convert-report/an_convert_http123",
             params={"format": "ofx", "anonymous_fingerprint": "fp-other-owner"},
             timeout=5.0,
