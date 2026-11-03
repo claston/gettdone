@@ -32,6 +32,7 @@ from app.routers import (
     telemetry_router,
 )
 from app.routers.conversion_pro import router as conversion_pro_router
+from app.routers.financial_center import router as financial_center_router
 from app.routers.marketing import router as marketing_router
 from app.routers.pro_conversions import router as pro_conversions_router
 from app.routers.received_statements import router as received_statements_router
@@ -116,6 +117,7 @@ app.include_router(pro_organization_router)
 app.include_router(pro_conversions_router)
 app.include_router(statement_works_router)
 app.include_router(received_statements_router)
+app.include_router(financial_center_router)
 app.include_router(reconcile_router)
 app.include_router(report_router)
 app.include_router(telemetry_router)

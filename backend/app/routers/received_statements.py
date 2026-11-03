@@ -19,7 +19,7 @@ from app.dependencies import (
     get_conversion_batch_service,
     get_report_service,
 )
-from app.routers.canonical_pro import canonical_record_payload, export_canonical_record, validate_export_checks
+from app.routers.canonical_pro import canonical_display_record, export_canonical_record, validate_export_checks
 from app.routers.conversion_batches import _find_convert_report, _unique_export_name
 from app.routers.pro_organization import organization_errors, organization_owner
 from app.routers.pro_security import require_pro_browser_request
@@ -117,6 +117,9 @@ def workspace(client_id: str, owner: str = Depends(organization_owner), service=
             record = live_record(service, owner, document)
             if not record:
                 continue
+            record = canonical_display_record(record, owner)
+            if str(getattr(record.status, "value", record.status)) == "expired":
+                continue
             jobs.append({"job_id": record.job.job_id, "source_batch_id": record.job.batch_id,
                          "filename": record.job.document.filename,
                          "expires_at": min(document["expires_at"], record.expires_at.isoformat()),
@@ -125,7 +128,7 @@ def workspace(client_id: str, owner: str = Depends(organization_owner), service=
                          "error_code": record.failure.code if record.failure else None,
                          "error_message": record.failure.message if record.failure else None,
                          "ocr_mode": record.job.ocr_mode,
-                         "result": canonical_record_payload(record, owner) if record.result else None})
+                         "result": record.result.payload if record.result else None})
         return {"batch_id": client_id, "client_name": client["name"], "status": "completed", "jobs": jobs,
                 "next_cursor": documents[49]["job_id"] if len(documents) > 50 else None}
 

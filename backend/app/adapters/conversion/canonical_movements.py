@@ -18,6 +18,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from app.application.canonical_identity import accounts_for_rows
 from app.application.canonical_movements import CanonicalRollout, MovementScope, exact_amount
 from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConflictError, AnalysisNotFoundError
 from app.application.review_commands import ReviewCommandService
@@ -144,7 +145,7 @@ class PostgresMovementRepository:
              Jsonb(row) if baseline else None, Jsonb({k: v for k, v in row.items() if k not in _TYPED}))).fetchone()
 
     def ingest(self, scope: MovementScope, content: dict, *, currency: str, product: str, new_analysis: bool,
-               rollout: CanonicalRollout, connection=None):
+               rollout: CanonicalRollout, connection=None, resolve_accounts=False):
         if not rollout.allows(organization_id=scope.organization_id, product=product, new_analysis=new_analysis):
             raise ValueError("Canonical ingestion is disabled for this document")
         if content.get("financial_document") is not None or content.get("analysis_id") != scope.analysis_id:
@@ -193,10 +194,11 @@ class PostgresMovementRepository:
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (scope.analysis_id, scope.job_id, scope.organization_id, scope.client_id, currency,
                  Jsonb(self._metadata(content)), Jsonb(baseline), ingestion_hash, expiration, Jsonb(payload)))
+            accounts = accounts_for_rows(self, conn, scope, rows) if resolve_accounts else [None] * len(rows)
             for ordinal, row in enumerate(rows):
-                # Document account_id is deliberately not used. Row evidence is
-                # preserved, with catalog association pending until confirmed.
-                self._insert_row(conn, scope, row, ordinal, currency, baseline=True)
+                # Only documented source evidence can resolve a catalog account.
+                # A manually selected document/export account is never inherited.
+                self._insert_row(conn, scope, row, ordinal, currency, baseline=True, account_id=accounts[ordinal])
             analysis, _ = self._analysis(conn, scope)
             snapshot = self._snapshot(conn, analysis)
             self._project(conn, scope, snapshot, source)

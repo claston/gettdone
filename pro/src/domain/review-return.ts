@@ -9,10 +9,11 @@ export function reviewReturnTo(value: unknown): string {
   }
   if (
     url.origin === "https://ofx.local" &&
-    /^\/demo\/financial\/[a-z]+$/.test(url.pathname)
+    (/^\/demo\/financial\/[a-z]+$/.test(url.pathname) ||
+      /^\/financial\/client_[A-Za-z0-9]+$/.test(url.pathname))
   ) {
     const query = new URLSearchParams();
-    for (const key of ["month", "accounts", "tab", "day"]) {
+    for (const key of ["month", "accounts", "tab", "day", "pending"]) {
       const item = url.searchParams.get(key);
       if (item !== null) query.set(key, item);
     }
