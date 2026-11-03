@@ -214,6 +214,16 @@ def extra_cases():
                           {"movements": [[row.date, row.amount] for row in scenario.expected.transactions],
                            "descriptions": [row.description_contains for row in scenario.expected.transactions],
                            "export_oracle": True}))
+    issuer_corrections = {
+        "free_empty_statement": "The printed issuer is Banco Teste; the grid alone cannot assign Santander/033.",
+        "free_catalog_multipage_repeated_header": (
+            "The printed issuer is Banco Exemplo S.A.; the grid alone cannot assign Banco do Brasil/001."
+        ),
+    }
+    for item in cases:
+        if item["id"] in issuer_corrections:
+            item["correction_reason"] = issuer_corrections[item["id"]]
+            item["expected"]["bank_code"] = None
     return cases
 
 

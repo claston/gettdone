@@ -56,6 +56,7 @@ class ExportArtifactService:
         financial_document: dict | None = None,
         balance_bounds_unavailable: bool = False,
         statement_accounts: list[dict[str, object]] | None = None,
+        allow_layout_bank_fallback: bool = True,
     ) -> None:
         if financial_document is not None:
             write_financial_artifacts(output_dir, financial_document, bank_code=bank_code,
@@ -81,7 +82,7 @@ class ExportArtifactService:
 
         resolved_bank_code = resolve_bank_code(
             bank_code_override=bank_code,
-            layout_inference_name=layout_inference_name,
+            layout_inference_name=layout_inference_name if allow_layout_bank_fallback else None,
         )
         (output_dir / "converted.ofx").write_text(
             build_ofx_statement(

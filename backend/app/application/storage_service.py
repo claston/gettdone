@@ -93,6 +93,7 @@ class TempAnalysisStorage(LegacyAnalysisState):
             bank_branch=data.bank_branch if preserve_bank_metadata else None,
             account_number=data.account_number if preserve_bank_metadata else None,
             bank_code=data.bank_code if preserve_bank_metadata else None,
+            allow_layout_bank_fallback=not (data.pdf_processing_metrics or {}).get("statement_issuer_source"),
             **({"financial_document": data.financial_document} if data.financial_document is not None else {}),
             **({"statement_accounts": statement_scopes(data.document_parts)} if statement_scopes(data.document_parts) else {}),
         )
@@ -373,6 +374,7 @@ class TempAnalysisStorage(LegacyAnalysisState):
             bank_branch=effective_overrides.get("bank_branch"),
             account_number=effective_overrides.get("account_number"),
             bank_code=effective_overrides.get("bank_code"),
+            allow_layout_bank_fallback=not (content.get("pdf_processing_metrics") or {}).get("statement_issuer_source"),
             **({"financial_document": content["financial_document"]} if content.get("financial_document") is not None else {}),
             **({"statement_accounts": statement_scopes(content.get("document_parts"))}
                if statement_scopes(content.get("document_parts")) else {}),
@@ -561,6 +563,7 @@ class TempAnalysisStorage(LegacyAnalysisState):
             bank_branch=effective_overrides.get("bank_branch"),
             account_number=effective_overrides.get("account_number"),
             bank_code=effective_overrides.get("bank_code"),
+            allow_layout_bank_fallback=not (content.get("pdf_processing_metrics") or {}).get("statement_issuer_source"),
             **({"financial_document": content["financial_document"]} if content.get("financial_document") is not None else {}),
             **({"statement_accounts": statement_scopes(content.get("document_parts"))}
                if statement_scopes(content.get("document_parts")) else {}),
