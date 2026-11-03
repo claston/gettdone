@@ -231,6 +231,35 @@ módulo. Os basetemps e o cluster descartável são removidos após a validaçã
 
 ## Arquivos principais
 
+### Correção da revisão: reassociação de contas
+
+O apontamento no PR #539 foi reproduzido: um documento multiconta podia ter
+movimentos associados às suas contas, mas contexto documental sem conta única.
+`OrganizationService.save_account` verificava apenas esse contexto e permitia
+mudar a conta para outro cliente, tornando o filtro da Central inconsistente.
+
+A proteção agora consulta também `bank_movements`, incluindo registros
+logicamente excluídos ou expirados ainda retidos. A alteração de conta adquire o
+lock da organização antes de ler os vínculos, serializando-a com a adoção
+canônica. Se a reassociação ocorrer antes da adoção, o guard existente da
+ingestão recusa atomicamente vínculos de origem que ficaram desatualizados.
+Renomear contas mantendo o cliente e reassociar contas sem vínculos continuam
+permitidos. SQLite e PostgreSQL sem a tabela canônica preservam as regras
+legadas. Não há nova migration, backfill ou modificação de dados existentes.
+
+Regressões cobrem duas contas sem conta única no contexto, serviço e PATCH HTTP
+real, filtro por conta após a recusa, renomeação permitida, histórico retido,
+reassociação anterior à adoção e duas conexões concorrentes. Os módulos Central
+e organização tiveram 18 testes aprovados; o caso concorrente adicional passou.
+
+Após a retomada, a suíte backend completa passou com **4.041 passed, 8 skipped,
+2 xfailed em 998,69 s**, incluindo PostgreSQL e o teste de upgrade/rollback da
+organização. Ruff, varredura UTF-8 e `git diff --check` também passaram. Evidências
+locais preservadas em `tmp/ofx74-account-full.log` e `tmp/ofx74-account-full.xml`.
+O resultado da execução interrompida não foi utilizado como evidência de sucesso.
+
+### Mapa de arquivos
+
 Arquivos principais para revisão:
 
 - `backend/app/application/financial_center.py` e

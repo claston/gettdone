@@ -197,7 +197,8 @@ def test_identical_reimport_reuses_review_and_original_retention(database, tmp_p
     assert unavailable.status.value == "expired" and unavailable.result is None
 
 
-def test_multiconta_evidence_filters_and_unknown_account(database):
+@pytest.fixture
+def multiconta_document(database):
     from app.application.received_statements import ReceivedStatements
 
     repo, scope, original, _, batches, organization = database
@@ -209,7 +210,12 @@ def test_multiconta_evidence_filters_and_unknown_account(database):
             for i, (number, value) in enumerate([("111", 10), ("222", -2.75), ("unknown", 3)])]
     record, content = add_document(database, suffix="multiconta", context=False, source=source, rows=rows)
     ReceivedStatements(repo.test_access.db, batches).receive(record)
-    adopt(database, record, content)
+    return record, content
+
+
+def test_multiconta_evidence_filters_and_unknown_account(database, multiconta_document):
+    repo, scope, original, _, batches, organization = database
+    adopt(database, *multiconta_document)
     all_rows = query(database)["movements"]
     assert len(all_rows) == 3
     assert sum(row["account_id"] is None for row in all_rows) == 1
@@ -220,6 +226,118 @@ def test_multiconta_evidence_filters_and_unknown_account(database):
         assert len(scoped["movements"]) == 1
         assert scoped["movements"][0]["account_id"] == account["id"]
     assert len(query(database, accounts=["unidentified"])["movements"]) == 1
+
+
+def test_multiconta_account_cannot_change_client_via_service_or_http(database, multiconta_document):
+    import httpx
+
+    from app.application.financial_center import FinancialCenterService
+    from app.dependencies import get_access_control_service
+    from app.main import app
+    from app.routers.financial_center import financial_service
+    from tests.test_convert_edits_http_real_api import _run_http_server
+
+    repo, scope, _, _, _, organization = database
+    record, content = multiconta_document
+    adopt(database, record, content)
+    assert organization.contexts(scope.actor_id, [record.job.job_id])[record.job.job_id]["account_id"] is None
+    other = organization.save_client(scope.actor_id, name="Outro cliente")
+    accounts = organization.catalog(scope.actor_id)["accounts"]
+    assert len(accounts) == 2
+    for account in accounts:
+        before = query(database, accounts=[account["id"]])["movements"]
+        with pytest.raises(ValueError, match="Mantenha o cliente"):
+            organization.save_account(scope.actor_id, entity_id=account["id"], client_id=other["id"], name=account["name"])
+        assert query(database, accounts=[account["id"]])["movements"] == before
+
+    account = accounts[0]
+    def configure(_):
+        app.dependency_overrides[get_access_control_service] = lambda: repo.test_access
+        app.dependency_overrides[financial_service] = lambda: FinancialCenterService(repo)
+    with _run_http_server(configure) as base, httpx.Client(base_url=base, timeout=30, headers={
+        "Authorization": f"Bearer {repo.test_user.token}", "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web",
+    }) as client:
+        path = f'/api/pro/organization/accounts/{account["id"]}'
+        denied = client.patch(path, json={"client_id": other["id"], "name": account["name"]})
+        assert denied.status_code == 400 and "Mantenha o cliente" in denied.json()["detail"]
+        renamed = client.patch(path, json={"client_id": scope.client_id, "name": "Nome corrigido"})
+        assert renamed.status_code == 200 and renamed.json()["name"] == "Nome corrigido"
+        filtered = client.get(f'/api/pro/financial-center/clients/{scope.client_id}',
+                              params={"month": "2026-04", "account": account["id"]})
+        assert filtered.status_code == 200 and len(filtered.json()["movements"]) == 1
+
+    # Retained history still owns its account after a logical deletion or expiry.
+    with repo._connect() as conn:
+        conn.execute(f'UPDATE {repo.p}bank_movements SET is_deleted=TRUE WHERE account_id=%s', (account["id"],))
+        conn.execute(f"UPDATE {repo.p}canonical_analyses SET expires_at=clock_timestamp()-interval '1 second'")
+    with pytest.raises(ValueError, match="Mantenha o cliente"):
+        organization.save_account(scope.actor_id, entity_id=account["id"], client_id=other["id"], name=account["name"])
+
+
+def test_account_reassigned_before_adoption_cannot_cross_client(database, multiconta_document):
+    from app.application.errors import AnalysisNotFoundError
+
+    repo, scope, _, _, _, organization = database
+    account = organization.catalog(scope.actor_id)["accounts"][0]
+    other = organization.save_client(scope.actor_id, name="Outro cliente")
+    changed = organization.save_account(scope.actor_id, entity_id=account["id"], client_id=other["id"], name=account["name"])
+    assert changed["client_id"] == other["id"]
+    # The existing ingestion guard rejects stale source links atomically.
+    with pytest.raises(AnalysisNotFoundError):
+        adopt(database, *multiconta_document)
+    with repo._connect() as conn:
+        assert conn.execute(f'SELECT count(*) AS n FROM {repo.p}bank_movements').fetchone()["n"] == 0
+        assert conn.execute(f'SELECT count(*) AS n FROM {repo.p}canonical_analyses').fetchone()["n"] == 0
+
+
+def test_account_reassignment_waits_for_adoption_then_rechecks(database, multiconta_document):
+    from concurrent.futures import ThreadPoolExecutor
+    from contextlib import contextmanager
+    from threading import Event
+    from time import monotonic, sleep
+
+    from app.application.pro_organization import OrganizationService
+
+    repo, scope, _, _, _, organization = database
+    record, content = multiconta_document
+    account = organization.catalog(scope.actor_id)["accounts"][0]
+    other = organization.save_client(scope.actor_id, name="Outro cliente")
+    ready, backend_pid = Event(), []
+
+    class ConcurrentDb:
+        def __getattr__(self, name):
+            return getattr(organization.db, name)
+
+        @contextmanager
+        def connect(self):
+            with organization.db.connect() as conn:
+                backend_pid.append(conn.info.backend_pid)
+                ready.set()
+                yield conn
+
+    concurrent = OrganizationService(ConcurrentDb())
+    # Retain the real ingestion transaction while a different connection attempts
+    # reassignment, then commit and verify it sees the newly committed references.
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with repo._connect() as conn:
+            repo.ingest(replace(scope, job_id=record.job.job_id, analysis_id=content["analysis_id"]), content,
+                        currency="BRL", product="pro", new_analysis=True, connection=conn,
+                        rollout=CanonicalRollout(True, frozenset({scope.organization_id})), resolve_accounts=True)
+            moving = executor.submit(concurrent.save_account, scope.actor_id, entity_id=account["id"],
+                                     client_id=other["id"], name=account["name"])
+            assert ready.wait(10)
+            deadline = monotonic() + 10
+            with repo._connect() as observer:
+                while monotonic() < deadline:
+                    blocked = observer.execute("SELECT cardinality(pg_blocking_pids(%s)) AS n", (backend_pid[0],)).fetchone()["n"]
+                    if blocked:
+                        break
+                    assert not moving.done(), "Reassignment must wait for adoption"
+                    sleep(0.02)
+                assert blocked, "Reassignment did not acquire its database lock"
+        with pytest.raises(ValueError, match="Mantenha o cliente"):
+            moving.result(timeout=10)
+    assert next(a for a in organization.catalog(scope.actor_id)["accounts"] if a["id"] == account["id"])["client_id"] == scope.client_id
 
 
 def test_documented_no_activity_is_distinct_from_unknown_coverage(database):

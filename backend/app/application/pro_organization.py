@@ -78,6 +78,10 @@ class OrganizationService:
         now = self._now()
         with self.db.connect() as conn:
             organization = self._organization(conn, owner, create=True)
+            if kind == "accounts" and entity_id:
+                # Serialize reassignment with canonical adoption/identity writes.
+                # Read existing scope and references only after acquiring the lock.
+                self._write(conn, "UPDATE pro_organizations SET created_at = created_at WHERE id = ?", (organization,))
             existing = self._entity(conn, table, organization, entity_id) if entity_id else None
             if kind == "clients" and values["tax_id"]:
                 duplicate = self.db.fetchone(
@@ -93,6 +97,13 @@ class OrganizationService:
                         "SELECT job_id FROM pro_conversion_contexts WHERE organization_id = ? AND account_id = ? LIMIT 1",
                         (organization, entity_id),
                     )
+                    # SQLite/older deployments may not have the canonical schema.
+                    # Deleted/expired movements still retain their account until purge.
+                    if not used and self.db.table_exists(conn, "bank_movements"):
+                        used = self.db.fetchone(
+                            conn, "SELECT id FROM bank_movements WHERE organization_id = ? AND account_id = ? LIMIT 1",
+                            (organization, entity_id),
+                        )
                     if used:
                         raise ValueError("Esta conta já possui conversões vinculadas. Mantenha o cliente ou cadastre outra conta.")
             if entity_id:
