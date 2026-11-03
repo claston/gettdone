@@ -1,10 +1,11 @@
 """Exercise corrected PDF rows and inactive statements through real local HTTP."""
+
 from pathlib import Path
 
-import httpx
 import pytest
 
 from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
+from tests.http_runtime import LoopbackClient
 from tests.test_admin_dashboard_http_real_api import _run_http_server
 from tests.test_oct26_recovery import caixa_empty_lines, caixa_wrapped_lines
 
@@ -19,7 +20,7 @@ def test_oct26_corrected_pdfs_convert_and_download_with_real_http(tmp_path: Path
         ("wrapped.pdf", generate_native_text_pdf((tuple(caixa_wrapped_lines()),)), "application/pdf", 4),
         ("inactive.pdf", generate_native_text_pdf((tuple(caixa_empty_lines()),)), "application/pdf", 0),
     ]
-    with _run_http_server(tmp_path) as base_url, httpx.Client(base_url=base_url, timeout=15) as client:
+    with _run_http_server(tmp_path) as base_url, LoopbackClient(base_url=base_url, timeout=15) as client:
         login = client.post("/admin/auth/login", json={"email": "admin@example.com", "password": "admin-pass"})
         assert login.status_code == 200
         for name, raw, mime, count in files:

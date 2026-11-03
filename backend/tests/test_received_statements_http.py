@@ -1,10 +1,10 @@
+
 import hashlib
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from zipfile import ZipFile
 
-import httpx
 import pytest
 
 from app.application.conversion.contracts.jobs import ConversionJobResultReference
@@ -17,6 +17,7 @@ from app.dependencies import (
     get_report_service,
 )
 from app.main import app
+from tests.http_runtime import LoopbackClient, loopback_request
 from tests.test_conversion_workspace_http_real_api import _run_pro_upload_http_server
 from tests.test_statement_holder_headers import HEADERS, WRAPPED_HEADER
 
@@ -67,7 +68,7 @@ def test_native_pdf_processing_identifies_holder_and_original_report_stays_avail
             pipeline=DocumentConversionPipeline(report_service=reports, access_control_service=access,
                 processing_pipeline=build_default_conversion_pipeline(), analysis_repository=storage),
             receipt_recorder=ReceivedStatements(access.db).receive)
-        with httpx.Client(base_url=base, headers={"Authorization": f"Bearer {token}",
+        with LoopbackClient(base_url=base, headers={"Authorization": f"Bearer {token}",
             "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web"}) as client:
             response = client.post("/api/pro/conversion-batches", headers={"Idempotency-Key": "holder-pdf"}, json={"files": [
                 {"filename": "titular.pdf", "content_type": "application/pdf", "size_bytes": len(raw),
@@ -115,7 +116,7 @@ def test_receipts_real_http_multi_batch_workspace_export_permissions_and_expiry(
         app.dependency_overrides[get_report_service] = Reports
         app.dependency_overrides[get_async_conversion_report_service] = Reports
         headers = {"Authorization": f"Bearer {token}", "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web"}
-        with httpx.Client(base_url=base, headers=headers) as client:
+        with LoopbackClient(base_url=base, headers=headers) as client:
             jobs = []
             for index in range(3):
                 raw = b"date,amount,description\n2026-10-01,12,PIX\n"
@@ -156,7 +157,7 @@ def test_receipts_real_http_multi_batch_workspace_export_permissions_and_expiry(
                 assert searched.headers["cache-control"] == "private, no-store"
             assert client.post("/api/pro/receipts/search", json={"query": "inexistente"}).json()["clients"] == []
             assert client.post("/api/pro/receipts/search", json={"query": "x" * 161}).status_code == 400
-            assert httpx.post(base + "/api/pro/receipts/search", json={"query": "Padaria"}).status_code in (401, 403)
+            assert loopback_request("POST", base + "/api/pro/receipts/search", json={"query": "Padaria"}).status_code in (401, 403)
             assert person["historical_count"] == 2 and person["accounts"][0]["account_number"] == "••1234"
             workspace = client.get(f"/api/pro/receipts/clients/{person['id']}/workspace")
             assert workspace.status_code == 200, workspace.text
@@ -170,7 +171,7 @@ def test_receipts_real_http_multi_batch_workspace_export_permissions_and_expiry(
             assert changed.status_code == 200, changed.text
             assert client.patch(f"/api/pro/receipts/clients/{person['id']}", json={"name": "Stale",
                 "tax_id": person["tax_id"], "expected_updated_at": person["updated_at"]}).status_code == 409
-            assert httpx.get(base + "/api/pro/receipts").status_code == 401
+            assert loopback_request("GET", base + "/api/pro/receipts").status_code == 401
             foreign = access.register_user(name="Other", email="receipt-foreign@example.test", password="strong-password")
             access.activate_user_plan(user_id=foreign.user_id, plan_code="essencial")
             private = client.post("/api/pro/receipts/search", json={"query": "12345678000190"},
@@ -225,7 +226,7 @@ def test_refresh_recovers_anonymized_cooperative_pdfs_without_reconversion(tmp_p
         quota = access.get_remaining_quota(identity)
         receipts = ReceivedStatements(access.db)
         headers = {"Authorization": f"Bearer {token}", "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web"}
-        with httpx.Client(base_url=base, headers=headers) as client:
+        with LoopbackClient(base_url=base, headers=headers) as client:
             for index, (header, bank, _, _, account) in enumerate(HEADERS):
                 filename = f"cooperative-{index}.pdf"
                 raw = generate_native_text_pdf((tuple(header.splitlines()),))
@@ -247,7 +248,7 @@ def test_refresh_recovers_anonymized_cooperative_pdfs_without_reconversion(tmp_p
                 before[job_id] = (record.result, record.expires_at)
                 receipts.receive(record)
             assert len(client.get("/api/pro/receipts").json()["pending"]) == 2 and loads == []
-            assert httpx.post(base + "/api/pro/receipts/refresh").status_code in (401, 403)
+            assert loopback_request("POST", base + "/api/pro/receipts/refresh").status_code in (401, 403)
             assert loads == []
             refreshed = client.post("/api/pro/receipts/refresh")
             assert refreshed.status_code == 200, refreshed.text

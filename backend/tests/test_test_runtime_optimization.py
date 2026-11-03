@@ -107,3 +107,21 @@ def test_default_filesystem_runtime_is_not_shared_through_backend_tmp() -> None:
     backend_tmp = (Path(__file__).resolve().parents[1] / "tmp").resolve()
     assert not job_repository.root_dir.is_relative_to(backend_tmp)
     assert not document_store.root_dir.is_relative_to(backend_tmp)
+
+
+def test_in_memory_http_databases_clone_schema_without_repeating_bootstrap(monkeypatch):
+    from tests.test_convert_edits_http_real_api import _AccessControlServiceInMemory
+
+    def unexpected_bootstrap(*args, **kwargs):
+        raise AssertionError("HTTP fixtures must reuse the migrated SQLite template")
+
+    monkeypatch.setattr(schema_module, "apply_sqlite_legacy_schema_bootstrap", unexpected_bootstrap)
+    first = _AccessControlServiceInMemory(state_file=Path("memory-first.json"), token_secret="test")
+    second = _AccessControlServiceInMemory(state_file=Path("memory-second.json"), token_secret="test")
+    try:
+        first.register_user(name="Owner", email="memory@example.test", password="strong-password")
+        assert first._test_conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 1
+        assert second._test_conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
+    finally:
+        first._test_conn.close()
+        second._test_conn.close()

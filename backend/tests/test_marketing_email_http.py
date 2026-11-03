@@ -6,12 +6,12 @@ from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from uuid import uuid4
 
-import httpx
 import pytest
 
 from app.application.contact_service import ContactService
 from app.dependencies import get_contact_service
 from app.main import app
+from tests.http_runtime import LoopbackClient
 from tests.test_auth_session_http_real_api import _run_http_server
 
 pytestmark = pytest.mark.real_http
@@ -69,7 +69,7 @@ def test_inline_send_retries_and_unsubscribe_over_real_http(monkeypatch):
             api_key="fictional-resend-key", from_email="teste@example.com", to_email="support@example.com",
             dry_run=False, resend_api_base=provider_url,
         )
-        with httpx.Client(base_url=base_url, timeout=10) as client:
+        with LoopbackClient(base_url=base_url, timeout=10) as client:
             path = "/admin/marketing/test-email"
             body = {"request_id": str(uuid4())}
             assert client.post(path, json=body).status_code == 401
@@ -93,7 +93,7 @@ def test_inline_send_retries_and_unsubscribe_over_real_http(monkeypatch):
             assert client.get(f"/report/{converted.json()['processing_id']}").status_code == 200
             assert client.get("/report/nonexistent-marketing-test").status_code == 404
             assert client.post("/analyze").status_code == 405
-            with httpx.Client(timeout=10) as recipient:
+            with LoopbackClient(timeout=10) as recipient:
                 assert recipient.get(unsubscribe_url).status_code == 200
                 assert access.list_marketing_contacts_for_admin()[1] == 1
                 assert recipient.post(unsubscribe_url, data={"List-Unsubscribe": "One-Click"}).status_code == 200

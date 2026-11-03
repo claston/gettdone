@@ -1,6 +1,5 @@
 """Actual HTTP uploads, report downloads and financial rejection paths."""
 
-import httpx
 import pytest
 
 from app.application.default_conversion_pipeline import build_default_conversion_pipeline
@@ -9,6 +8,7 @@ from app.application.storage_service import TempAnalysisStorage
 from app.dependencies import get_analysis_repository, get_conversion_processing_pipeline, get_report_service
 from app.main import app
 from tests.fixtures.split_sheet_statements import BUILDERS, change, document
+from tests.http_runtime import LoopbackClient
 from tests.test_convert_edits_http_real_api import _run_http_server
 
 pytestmark = pytest.mark.real_http
@@ -31,7 +31,7 @@ def test_upload_and_all_exports_preserve_financial_rows(kind, tmp_path, monkeypa
         raw = b"date,description,amount\n2026-02-02,CREDITO,100\n2026-02-03,DEBITO,-20\n"
     else:
         raw = document(BUILDERS[kind](), shuffled=True)
-    with _run_http_server(configure) as base, httpx.Client(base_url=base, timeout=20) as client:
+    with _run_http_server(configure) as base, LoopbackClient(base_url=base, timeout=20) as client:
         owner = {"anonymous_fingerprint": "fp-split-sheet"}
         response = client.post("/convert", data=owner, files={"file": (filename, raw, mime)})
         assert response.status_code == 200, response.text
@@ -71,7 +71,7 @@ def test_inconsistent_printed_controls_rejected_over_http(kind, before, after, m
     def configure(_access):
         app.dependency_overrides[get_conversion_processing_pipeline] = lambda: build_default_conversion_pipeline()
 
-    with _run_http_server(configure) as base, httpx.Client(base_url=base, timeout=20) as client:
+    with _run_http_server(configure) as base, LoopbackClient(base_url=base, timeout=20) as client:
         response = client.post(
             "/convert", data={"anonymous_fingerprint": "fp-split-sheet-invalid"}, files={"file": ("synthetic.pdf", raw, "application/pdf")}
         )

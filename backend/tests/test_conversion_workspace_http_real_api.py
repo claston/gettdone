@@ -1,15 +1,10 @@
 from __future__ import annotations
 
 import hashlib
-import socket
-import threading
-import time
 from contextlib import contextmanager
 from pathlib import Path
 
-import httpx
 import pytest
-import uvicorn
 
 from app.application.access_control import AccessControlService, IdentityContext
 from app.application.conversion.async_conversion_rollout import AsyncConversionRolloutPolicy
@@ -37,6 +32,7 @@ from app.dependencies import (
 )
 from app.main import app
 from app.workers.conversion_lambda import ConversionLambdaProcessor
+from tests.http_runtime import LoopbackClient, loopback_request
 
 pytestmark = pytest.mark.real_http
 
@@ -78,7 +74,7 @@ def test_http_empty_statement_completes_in_worker_and_exports(tmp_path: Path, ap
         )
         app.dependency_overrides[get_async_conversion_report_service] = lambda: reports
         app.dependency_overrides[get_report_service] = lambda: reports
-        with httpx.Client(base_url=base_url, headers={
+        with LoopbackClient(base_url=base_url, headers={
             "Authorization": f"Bearer {token}", "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web",
         }) as owner:
             created = owner.post(f"{api_prefix}/conversion-batches", headers={"Idempotency-Key": "empty-http"}, json={
@@ -169,7 +165,7 @@ def test_http_ofx_batch_preserves_bank_metadata_through_worker_and_export(tmp_pa
         )
         app.dependency_overrides[get_async_conversion_report_service] = lambda: reports
         app.dependency_overrides[get_report_service] = lambda: reports
-        with httpx.Client(base_url=base_url, headers={
+        with LoopbackClient(base_url=base_url, headers={
             "Authorization": f"Bearer {token}", "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web",
         }) as owner:
             created = owner.post("/api/pro/conversion-batches", headers={"Idempotency-Key": "ofx-metadata-http"}, json={
@@ -211,7 +207,7 @@ def test_http_ofx_batch_preserves_bank_metadata_through_worker_and_export(tmp_pa
                 assert f"<BANKID>{code}" in exported_after_edit.text
                 assert "<ACCTID>0004567" in exported_after_edit.text
                 assert "PIX REVISADO" in exported_after_edit.text
-            with httpx.Client(base_url=base_url) as other:
+            with LoopbackClient(base_url=base_url) as other:
                 bootstrap = other.post("/auth/pro/anonymous-session", headers={
                     "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web",
                 }, json={})
@@ -253,7 +249,7 @@ def test_http_partial_upload_preserves_valid_reports_and_charges_only_processed_
         )
         app.dependency_overrides[get_async_conversion_report_service] = lambda: reports
         app.dependency_overrides[get_report_service] = lambda: reports
-        with httpx.Client(base_url=base_url, headers={
+        with LoopbackClient(base_url=base_url, headers={
             "Authorization": f"Bearer {token}", "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web",
         }) as owner:
             created = owner.post("/api/pro/conversion-batches", headers={"Idempotency-Key": "partial-upload-http"}, json={
@@ -408,34 +404,12 @@ def _service() -> tuple[ConversionBatchService, str, str]:
     )
 
 
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
 @contextmanager
 def _serve_app():
-    host = "127.0.0.1"
-    port = _find_free_port()
-    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="error"))
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    base_url = f"http://{host}:{port}"
-    deadline = time.time() + 15
-    while time.time() < deadline:
-        try:
-            if httpx.get(f"{base_url}/health", timeout=1).status_code == 200:
-                break
-        except httpx.HTTPError:
-            time.sleep(0.1)
-    else:
-        raise RuntimeError("HTTP test server did not start in time")
-    try:
+    from tests.http_runtime import serve_http
+
+    with serve_http(app) as base_url:
         yield base_url
-    finally:
-        server.should_exit = True
-        thread.join(timeout=5)
 
 
 @contextmanager
@@ -497,12 +471,12 @@ def _run_pro_upload_http_server(tmp_path: Path):
 def test_http_pro_workspace_batch_document_review_export_and_negative_owner(tmp_path: Path) -> None:
     with _run_http_server(tmp_path) as (base_url, batch_id, job_id):
         params = {"anonymous_fingerprint": "workspace-owner"}
-        batch = httpx.get(f"{base_url}/api/pro/conversion-batches/{batch_id}", params=params)
-        document = httpx.get(
+        batch = loopback_request("GET", f"{base_url}/api/pro/conversion-batches/{batch_id}", params=params)
+        document = loopback_request("GET",
             f"{base_url}/api/pro/conversion-batches/{batch_id}/jobs/{job_id}/document",
             params=params,
         )
-        reviewed = httpx.post(
+        reviewed = loopback_request("POST",
             f"{base_url}/api/pro/conversion-batches/{batch_id}/jobs/{job_id}/review",
             headers={
                 "Origin": "http://localhost:3000",
@@ -510,8 +484,8 @@ def test_http_pro_workspace_batch_document_review_export_and_negative_owner(tmp_
             },
             json=params,
         )
-        exported = httpx.get(f"{base_url}/api/pro/conversion-batches/{batch_id}/export", params=params)
-        forbidden = httpx.get(
+        exported = loopback_request("GET", f"{base_url}/api/pro/conversion-batches/{batch_id}/export", params=params)
+        forbidden = loopback_request("GET",
             f"{base_url}/api/pro/conversion-batches/{batch_id}",
             params={"anonymous_fingerprint": "not-owner"},
         )
@@ -529,7 +503,7 @@ def test_http_paid_user_can_create_submit_read_and_rejects_negative_owner(tmp_pa
         "X-OFX-Pro-Client": "web",
     }
     with _run_pro_upload_http_server(tmp_path) as (base_url, publisher, paid_user_token):
-        with httpx.Client(base_url=base_url) as owner:
+        with LoopbackClient(base_url=base_url) as owner:
             authenticated_headers = {
                 **pro_headers,
                 "Authorization": f"Bearer {paid_user_token}",
@@ -560,7 +534,7 @@ def test_http_paid_user_can_create_submit_read_and_rejects_negative_owner(tmp_pa
                 headers=authenticated_headers,
             )
 
-        with httpx.Client(base_url=base_url) as other:
+        with LoopbackClient(base_url=base_url) as other:
             other_bootstrap = other.post("/auth/pro/anonymous-session", headers=pro_headers, json={})
             forbidden = other.get(f"/api/pro/conversion-batches/{batch_id}")
 
