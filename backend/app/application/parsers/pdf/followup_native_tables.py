@@ -48,8 +48,9 @@ def _kind(text):
         return "mercado_grid"
     if sweep == INFINITEPAY and "HORA" in compact:
         return "infinitepay"
+    # Account-owner labels vary (Nome/Titular) and do not define this financial grid.
     if all(marker in compact for marker in ("EXTRATODECONTA", "DETALHEDOSMOVIMENTOS", "SALDOINICIAL",
-                                            "SALDOFINAL", "ENTRADAS", "SAIDAS", "TITULAR:")):
+                                            "SALDOFINAL", "ENTRADAS", "SAIDAS")):
         return "account_detail"
     if all(marker in compact for marker in ("REVOLUT", "EXTRATOEMBRL", "RESUMODOSALDO", "VALORESDESCONTADOS", "VALORESRECEBIDOS")):
         return "revolut"
