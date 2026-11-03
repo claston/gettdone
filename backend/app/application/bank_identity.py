@@ -3,10 +3,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from app.application.bank_catalog import load_bank_catalog
+from app.application.bank_catalog import load_bank_catalog, resolve_bank_code_from_name
 from app.application.layout_profiles.registry import get_layout_profile
 from app.application.normalization.text import normalize_upper_text
 from app.application.pdf_document_segmentation import _statement_header
+from app.application.statement_identity import NAME_LABEL, TAX_LABEL
 
 _GENERIC_LAYOUT_NAMES = {"generic_statement_ptbr"}
 VERIFIED_STATEMENT_BANKS = {
@@ -206,10 +207,25 @@ class StatementIssuerEvidence:
 
 
 def _issuer_result(names: set[str], source: str) -> StatementIssuerEvidence | None:
+    # Catalog aliases (e.g. Viacredi/Ailos) identify one institution even when
+    # native text or OCR places the aliases on separate physical lines.
+    preferred_names = {name for _, name in _TEXT_BANK_HINTS}
+    institutions = {}
+    for name in sorted(names, key=lambda name: (name in preferred_names, len(name), name)):
+        institutions[resolve_bank_code_from_name(name) or normalize_upper_text(name)] = name
+    names = set(institutions.values())
     if names:
         return StatementIssuerEvidence(next(iter(names)) if len(names) == 1 else None,
                                        source if len(names) == 1 else f"conflicting_{source}")
     return None
+
+
+_PRIVATE_FIELD_LABEL = rf"(?:{NAME_LABEL}|{TAX_LABEL}|AGENCIA|CONTA(?:\s+(?:CORRENTE|INVESTIMENTO))?|DOCUMENTO)"
+_INLINE_PRIVATE_FIELD = re.compile(rf"\b(?:{NAME_LABEL}|{TAX_LABEL}|AGENCIA|DOCUMENTO)\b|^CONTA\b")
+
+
+def _only_private_field_labels(line: str) -> bool:
+    return not re.sub(rf"\b{_PRIVATE_FIELD_LABEL}\b", "", line).strip(" :/|,;.-")
 
 
 def resolve_statement_issuer(extracted_text: str | None) -> StatementIssuerEvidence | None:
@@ -227,19 +243,17 @@ def resolve_statement_issuer(extracted_text: str | None) -> StatementIssuerEvide
                     r"AGOSTO|SETEMBRO|OUTUBRO|NOVEMBRO|DEZEMBRO)\b)", line):
             break
         if skip_owner_value:
-            skip_owner_value = False
+            skip_owner_value = _only_private_field_labels(line)
             continue
-        private = re.match(r"^(?:CLIENTE|TITULAR|NOME|CPF|CNPJ|AGENCIA|CONTA|DOCUMENTO)\b", line)
+        private = _INLINE_PRIVATE_FIELD.search(line)
         if private:
-            skip_owner_value = not line[private.end():].strip(" :-")
-            continue
-        # Native extraction may put the issuer and the customer's name on one
-        # line. Only the text before the customer/account labels is institutional.
-        line = re.split(r"\b(?:CLIENTE|TITULAR|NOME|CPF|CNPJ|AGENCIA)\b", line, maxsplit=1)[0]
+            # Combined labels such as Nome/Razão Social CPF/CNPJ still put the
+            # holder value on the next line. Keep any issuer before the labels.
+            skip_owner_value = _only_private_field_labels(line[private.start():])
+            line = line[:private.start()]
         candidate = _institution_candidate_from_line(line)
-        bank = _match_known_bank_name(line) or candidate
-        if bank:
-            names.add(bank)
+        banks = _match_known_bank_names(line)
+        names.update(banks or ({candidate} if candidate else set()))
     evidence = _issuer_result(names, "header")
     if evidence is not None:
         return evidence
@@ -264,7 +278,7 @@ def resolve_statement_issuer(extracted_text: str | None) -> StatementIssuerEvide
         joined = " ".join(block)
         if not re.search(r"\b(?:0800|0300|[34]00\d)[\s-]*\d|[A-Z0-9.-]+\.(?:COM|COOP)\.BR\b", joined):
             continue
-        names.update(bank for contact in block if (bank := _match_known_bank_name(contact)))
+        names.update(bank for contact in block for bank in _match_known_bank_names(contact))
     return _issuer_result(names, "footer")
 
 
@@ -275,16 +289,17 @@ def _match_bank_transaction_fingerprint(normalized_text: str) -> str | None:
     return "Bradesco" if supporting_hits >= 2 else None
 
 
-def _match_known_bank_name(normalized_text: str) -> str | None:
+def _match_known_bank_names(normalized_text: str) -> set[str]:
+    best_by_institution: dict[str, tuple[int, str]] = {}
 
-    best_name = ""
-    best_score = -1
+    def consider(bank_name: str, score: int, code: str | None = None) -> None:
+        key = code or resolve_bank_code_from_name(bank_name) or normalize_upper_text(bank_name)
+        if score > best_by_institution.get(key, (-1, ""))[0]:
+            best_by_institution[key] = (score, bank_name)
+
     for token, bank_name in _TEXT_BANK_HINTS:
         if _contains_token(normalized_text, token):
-            score = len(token) + 100
-            if score > best_score:
-                best_name = bank_name
-                best_score = score
+            consider(bank_name, len(token) + 100)
 
     for record in load_bank_catalog():
         display_name = record.short_name or record.name
@@ -299,11 +314,9 @@ def _match_known_bank_name(normalized_text: str) -> str | None:
                 score += 20
             elif candidate == record.name:
                 score += 10
-            if score > best_score:
-                best_name = display_name
-                best_score = score
+            consider(display_name, score, record.code)
 
-    return best_name or None
+    return {name for _, name in best_by_institution.values()}
 
 
 def _institution_candidate_from_line(line: str) -> str | None:

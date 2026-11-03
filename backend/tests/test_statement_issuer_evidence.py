@@ -81,7 +81,7 @@ def test_capture_uses_the_same_issuer_priority_when_conversion_identity_is_unava
     assert manifest["code"] == ("033" if expected == "Santander" else None)
 
 
-def issuer_pdf(*, footer=False):
+def issuer_pdf(*, footer=False, title="Banco Santander", owner=None):
     from tests.fixtures.recovery_acceptance import grid_pdf
 
     cells = [("EXTRATO DE CONTA", .65, .03), ("Agência: 0001 | Conta: 12345-6", .06, .06),
@@ -98,8 +98,10 @@ def issuer_pdf(*, footer=False):
         cells.extend([(date, .06, y), (description, .20, y), (amount, .71, y), (balance, .85, y)])
     if footer:
         cells.extend([("SAC Santander", .06, .90), ("0800 000 0000", .06, .92)])
-    else:
-        cells.insert(0, ("Banco Santander", .06, .03))
+    elif title:
+        cells.insert(0, (title, .06, .03))
+    if owner:
+        cells.extend((line, .06, .14 + index * .015) for index, line in enumerate(owner.splitlines()))
     return grid_pdf([cells])
 
 
