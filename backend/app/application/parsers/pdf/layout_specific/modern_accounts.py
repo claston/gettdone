@@ -223,42 +223,9 @@ def _build_bradesco_row(
 
 
 def _parse_sicredi_rows(lines: list[_PdfLine]) -> list[_ParsedTransaction]:
-    inside_movements = False
-    rows: list[_ParsedTransaction] = []
-    for line in lines:
-        normalized = normalize_text(line.text)
-        if normalized.startswith("MOVIMENTACOES DE"):
-            inside_movements = True
-            continue
-        if not inside_movements:
-            continue
-        if normalized.startswith(("CHEQUE ESPECIAL", "FIM DESSE EXTRATO")):
-            break
-        match = _DATE_AT_START_PATTERN.match(line.text)
-        if match is None:
-            continue
-        amount_tokens = tuple(find_amount_tokens(match.group("rest")))
-        if not amount_tokens:
-            continue
-        date = _safe_parse_date(match.group("date"))
-        if date is None:
-            continue
-        amount_token = amount_tokens[-1]
-        description = _remove_amount_tokens(match.group("rest"), amount_tokens)
-        if _should_skip_description(description):
-            continue
-        amount, forced_sign = _resolve_signed_amount(amount_token, description=description)
-        rows.append(
-            _build_row(
-                date=date,
-                description=description,
-                amount=amount,
-                amount_token=amount_token,
-                source=line,
-                forced_sign=forced_sign,
-            )
-        )
-    return rows
+    from app.application.parsers.pdf.modern_movement_blocks import parse_modern_movement_lines
+
+    return parse_modern_movement_lines(lines).rows
 
 
 def _parse_grouped_long_date_rows(lines: list[_PdfLine]) -> list[_ParsedTransaction]:

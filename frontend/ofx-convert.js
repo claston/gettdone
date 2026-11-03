@@ -1319,9 +1319,10 @@
 
     const inflows = formatCurrency(derived.totalInflows);
     const outflows = formatCurrency(derived.totalOutflows);
-    const openingBalanceValue = isNoActivityStatement(analysis) && state.openingBalanceOverride == null && analysis.opening_balance == null
+    const balancesUnavailable = hasUnavailableBalanceBounds(analysis);
+    const openingBalanceValue = balancesUnavailable || (isNoActivityStatement(analysis) && state.openingBalanceOverride == null && analysis.opening_balance == null)
       ? "" : toMoneyInputValue(openingBalance);
-    const closingBalanceValue = isNoActivityStatement(analysis) && state.closingBalanceOverride == null && analysis.closing_balance == null
+    const closingBalanceValue = balancesUnavailable || (isNoActivityStatement(analysis) && state.closingBalanceOverride == null && analysis.closing_balance == null)
       ? "" : toMoneyInputValue(closingBalance);
     const isOfxFlow = outputFormat === "ofx";
     const isCreditCardFlow = isOfxFlow && resolveOfxAccountType(analysis) === "credit_card";
@@ -1368,16 +1369,16 @@
         <p class="kpi-label">Saldo anterior</p>
         ${
           isOfxFlow
-            ? `<p class="kpi-value-editable"><input id="opening-balance-input" class="kpi-edit-input" type="text" inputmode="decimal" placeholder="Não informado" value="${openingBalanceValue}" /></p>`
-            : `<p class="kpi-value">${formatCurrency(openingBalance)}</p>`
+            ? `<p class="kpi-value-editable"><input id="opening-balance-input" class="kpi-edit-input" type="text" inputmode="decimal" placeholder="Não informado" value="${openingBalanceValue}"${balancesUnavailable ? " disabled" : ""} /></p>`
+            : `<p class="kpi-value">${balancesUnavailable ? "Não informado" : formatCurrency(openingBalance)}</p>`
         }
       </article>
       <article class="kpi">
         <p class="kpi-label">Saldo final</p>
         ${
           isOfxFlow
-            ? `<p class="kpi-value-editable"><input id="closing-balance-input" class="kpi-edit-input" type="text" inputmode="decimal" placeholder="Não informado" value="${closingBalanceValue}" /></p>`
-            : `<p class="kpi-value">${formatCurrency(closingBalance)}</p>`
+            ? `<p class="kpi-value-editable"><input id="closing-balance-input" class="kpi-edit-input" type="text" inputmode="decimal" placeholder="Não informado" value="${closingBalanceValue}"${balancesUnavailable ? " disabled" : ""} /></p>`
+            : `<p class="kpi-value">${balancesUnavailable ? "Não informado" : formatCurrency(closingBalance)}</p>`
         }
       </article>
     `;
@@ -1554,6 +1555,10 @@
       <p class="kpi-hint">Este relatório não informa saldos bancários.</p>`;
   }
 
+  function hasUnavailableBalanceBounds(analysis) {
+    return Number(analysis && analysis.pdf_processing_metrics && analysis.pdf_processing_metrics.balance_bounds_unavailable) === 1;
+  }
+
   function isNoActivityStatement(analysis) {
     return Boolean(analysis && analysis.pdf_processing_metrics &&
       Number(analysis.pdf_processing_metrics.statement_no_activity) === 1);
@@ -1709,6 +1714,9 @@
   }
 
   function buildDisplayedRunningBalances(rows) {
+    if (hasUnavailableBalanceBounds(state.analysisSnapshot)) {
+      return (rows || []).map(getRunningBalanceAmount);
+    }
     if ((rows || []).some((row) => row.statement_account)) {
       return (rows || []).map(getRunningBalanceAmount);
     }
@@ -1768,6 +1776,10 @@
   }
 
   function syncOpeningBalanceFromPayload(payload) {
+    if (hasUnavailableBalanceBounds(payload) || hasUnavailableBalanceBounds(state.analysisSnapshot)) {
+      state.openingBalanceOverride = null;
+      return;
+    }
     if (state.openingBalanceManuallyEdited) {
       return;
     }
@@ -1778,6 +1790,10 @@
   }
 
   function syncClosingBalanceFromPayload(payload) {
+    if (hasUnavailableBalanceBounds(payload) || hasUnavailableBalanceBounds(state.analysisSnapshot)) {
+      state.closingBalanceOverride = null;
+      return;
+    }
     if (state.closingBalanceManuallyEdited) {
       return;
     }
@@ -2582,6 +2598,10 @@
       analysis.closing_balance != null ? analysis.closing_balance : analysis.net_total || 0
     );
     if (isNoActivityStatement(analysis) && analysis.closing_balance == null) state.closingBalanceOverride = null;
+    if (hasUnavailableBalanceBounds(analysis)) {
+      state.openingBalanceOverride = null;
+      state.closingBalanceOverride = null;
+    }
     state.bankBranchOverride = normalizeBankBranchDisplay(analysis.bank_branch || "");
     state.accountNumberOverride = normalizeAccountDisplay(analysis.account_number || "");
     state.bankCodeOverride = resolveInitialBankCode(analysis, "");
@@ -3080,9 +3100,9 @@
         query.set("bank_branch", branch);
         query.set("account_number", account);
       } else if (requestedFormat === "ofx" && !isPayablesReport(state.analysisSnapshot) && !hasStatementAccounts(state.analysisSnapshot)) {
-        const openingBalance = isNoActivityStatement(state.analysisSnapshot) && state.openingBalanceOverride == null
+        const openingBalance = hasUnavailableBalanceBounds(state.analysisSnapshot) || (isNoActivityStatement(state.analysisSnapshot) && state.openingBalanceOverride == null)
           ? NaN : Number(state.openingBalanceOverride);
-        const closingBalance = isNoActivityStatement(state.analysisSnapshot) && state.closingBalanceOverride == null
+        const closingBalance = hasUnavailableBalanceBounds(state.analysisSnapshot) || (isNoActivityStatement(state.analysisSnapshot) && state.closingBalanceOverride == null)
           ? NaN : Number(state.closingBalanceOverride);
         const isCreditCardFlow = resolveOfxAccountType(state.analysisSnapshot) === "credit_card";
         const bankBranch = isCreditCardFlow ? "" : normalizeDigits(state.bankBranchOverride);

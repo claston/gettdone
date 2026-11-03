@@ -1070,6 +1070,11 @@
           "title": "Opening Balance Ambiguous",
           "type": "integer"
         },
+        "balance_bounds_unavailable": {
+          "default": 0,
+          "title": "Balance Bounds Unavailable",
+          "type": "integer"
+        },
         "opening_balance_ambiguity_reason": {
           "default": "",
           "title": "Opening Balance Ambiguity Reason",
