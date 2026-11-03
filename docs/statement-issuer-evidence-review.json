@@ -3083,5 +3083,27 @@
     "method": "Apply only the exact approved differences; retain financial fields and original reference lineage.",
     "updated_remaining_cases": 20,
     "updated_remaining_fields": 210
+  },
+  "review_followup": {
+    "request": "a PR 543 foi revisada e em aponamenttos, pode verifcar?",
+    "reviewed_commit": "9562ddace19af5a81c0c7818757324a2aff7a013",
+    "review_comments": [
+      "https://github.com/claston/gettdone/pull/543#discussion_r4458051232",
+      "https://github.com/claston/gettdone/pull/543#discussion_r4458051236"
+    ],
+    "fix_commit": "1bc50e6c9f52f7c1f9e9e024218df08c2267f55d",
+    "previous_application_tree": "c3a7f48d1d4be4baf5756bf45088ecdfa06bd717",
+    "application_tree": "65236b36354607b0142a2337d6a37d088fd72c36",
+    "fixes": [
+      "Reuse shared holder labels and skip combined label rows plus their values.",
+      "Collect every distinct catalog institution per line; collapse aliases before detecting conflicts."
+    ],
+    "compatibility": {
+      "cases": 90,
+      "exact_previously_approved_differences": 224,
+      "new_differences": 0,
+      "frozen_differences": 0
+    },
+    "approval_scope": "The original explicit approval of these exact identity differences is unchanged. This follow-up revalidates the same set for the requested review fixes; it is not a PR review approval or authorization to merge/deploy."
   }
 }
