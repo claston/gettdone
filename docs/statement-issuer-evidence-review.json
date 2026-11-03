@@ -1,5 +1,5 @@
 {
-  "approval_status": "pending_owner_approval",
+  "approval_status": "approved_by_owner",
   "reference_commit": "2149989c2cb8d6fa4b2b3b145c86bf4e8a4ea823",
   "candidate_commit": "18b3daf32f8eccab18d450bfb98745bb5376a219",
   "candidate_app_tree": "c3a7f48d1d4be4baf5756bf45088ecdfa06bd717",
@@ -3071,5 +3071,17 @@
   "review_compatibility": {
     "cases": 170,
     "errors": []
+  },
+  "owner_approval": {
+    "approved_by": "Repository owner, via explicit reply in the Codex conversation",
+    "answer": "Sim, registrar essas diferen?as",
+    "question_item_id": "[\"request_user_input_async\",\"call_9c00607dd5f34fc4921c478b5bbced5c\",0]",
+    "scope": "Register the reviewed identity-only differences; no merge or deployment authorized.",
+    "scope_note": "The final reviewed set has 224 differences in 23 cases: one fewer source-metadata addition than the question, because independently scoped accounts retain their own identity."
+  },
+  "baseline_update": {
+    "method": "Apply only the exact approved differences; retain financial fields and original reference lineage.",
+    "updated_remaining_cases": 20,
+    "updated_remaining_fields": 210
   }
 }
