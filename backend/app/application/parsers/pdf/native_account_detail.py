@@ -9,6 +9,7 @@ from decimal import Decimal
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.document_period import optional_document_period, period_contains
 from app.application.parsers.pdf.followup_ocr import _source
+from app.application.parsers.pdf.native_table_source import split_native_columns
 from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
@@ -63,6 +64,12 @@ def parse_account_detail(source):
             fail()
         top = labels["DATA"].bbox["top"]
         table_bottom = max(line.bbox["top"] + line.bbox["height"] for line in labels.values())
+        # PDF fragments may join date/history or amount/balance despite distinct WORDs.
+        # Split using original glyph positions; retain the same physical source references.
+        page = split_native_columns(page, (history_x - .005, (amount_x + balance_x) / 2), include=lambda line:
+            line.bbox["top"] > top and (
+                line.bbox["left"] < history_x - .005 and re.match(rf"^{DATE}(?:\s|$)", line.text)
+                or line.bbox["left"] > amount_x - .06 and "R$" in line.text))
         financial = [line for line in page.lines if line.bbox["left"] > amount_x - .06
                      and line.bbox["top"] > top and "R$" in line.text]
         for line in financial:
