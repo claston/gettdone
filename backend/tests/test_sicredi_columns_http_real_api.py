@@ -1,7 +1,7 @@
 """Synthetic native Sicredi PDFs through actual public and worker HTTP flows."""
+
 import hashlib
 
-import httpx
 import pytest
 
 from app.application.conversion.document_conversion_pipeline import DocumentConversionPipeline
@@ -20,6 +20,7 @@ from app.dependencies import (
 from app.main import app
 from app.workers.conversion_lambda import ConversionLambdaProcessor
 from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
+from tests.http_runtime import LoopbackClient
 from tests.test_conversion_workspace_http_real_api import _run_pro_upload_http_server
 from tests.test_convert_edits_http_real_api import _run_http_server
 from tests.test_sicredi_financial_columns import html_text, matrix_text
@@ -56,7 +57,7 @@ def test_public_sicredi_upload_and_reports(kind, tmp_path, monkeypatch):
         app.dependency_overrides[get_conversion_processing_pipeline] = lambda: build_default_conversion_pipeline()
         app.dependency_overrides[get_report_service] = lambda: ReportService(storage)
 
-    with _run_http_server(configure) as base_url, httpx.Client(base_url=base_url, timeout=20) as client:
+    with _run_http_server(configure) as base_url, LoopbackClient(base_url=base_url, timeout=20) as client:
         owner = {"anonymous_fingerprint": "fp-sicredi-synthetic"}
         response = client.post("/convert", data=owner, files={"file": (filename, raw, mime)})
         assert response.status_code == 200, response.text
@@ -89,7 +90,7 @@ def test_sicredi_inconsistent_controls_convert_with_review_over_http(kind, tmp_p
         app.dependency_overrides[get_report_service] = lambda: ReportService(storage)
         app.dependency_overrides[get_conversion_processing_pipeline] = lambda: build_default_conversion_pipeline()
 
-    with _run_http_server(configure) as base_url, httpx.Client(base_url=base_url, timeout=20) as client:
+    with _run_http_server(configure) as base_url, LoopbackClient(base_url=base_url, timeout=20) as client:
         response = client.post("/convert", data={"anonymous_fingerprint": "fp-sicredi-invalid"},
                                files={"file": ("sicredi.pdf", raw, "application/pdf")})
         assert response.status_code == 200, response.text
@@ -118,7 +119,7 @@ def test_sicredi_worker_preserves_columns_and_period_balances(kind, tmp_path, mo
             pipeline=DocumentConversionPipeline(report_service=reports, access_control_service=access,
                 processing_pipeline=build_default_conversion_pipeline(), analysis_repository=storage))
         app.dependency_overrides[get_async_conversion_report_service] = lambda: reports
-        with httpx.Client(base_url=base_url, timeout=20, headers={"Authorization": f"Bearer {token}",
+        with LoopbackClient(base_url=base_url, timeout=20, headers={"Authorization": f"Bearer {token}",
                 "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web"}) as client:
             created = client.post("/api/conversion-batches", headers={"Idempotency-Key": kind}, json={"files": [
                 {"filename": "sicredi.pdf", "content_type": "application/pdf", "size_bytes": len(raw),

@@ -1,8 +1,8 @@
+
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -16,6 +16,7 @@ from app.application.conversion.conversion_runtime_config import ConversionRunti
 from app.dependencies import get_access_control_service, get_conversion_batch_service, get_conversion_runtime_config
 from app.main import app
 from app.routers.auth_session import SESSION_ACCESS_COOKIE_NAME
+from tests.http_runtime import LoopbackClient, loopback_request
 
 
 def _seed_batch(repository, identity, *, created_at, number):
@@ -102,8 +103,8 @@ def test_http_batch_listing_uses_session_cookie_without_origin_and_requires_logi
 
     with _run_http_server(configure) as base_url:
         url = f"{base_url}/api/pro/conversion-batches"
-        assert httpx.get(url).status_code == 401
-        with httpx.Client(cookies={SESSION_ACCESS_COOKIE_NAME: state["access"]}) as client:
+        assert loopback_request("GET", url).status_code == 401
+        with LoopbackClient(cookies={SESSION_ACCESS_COOKIE_NAME: state["access"]}) as client:
             first = client.get(url, params={"limit": 2})
             assert first.status_code == 200
             assert len(first.json()["items"]) == 2

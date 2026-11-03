@@ -1,27 +1,17 @@
 from __future__ import annotations
 
-import socket
-import threading
-import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-import httpx
 import pytest
-import uvicorn
 
 from app.application.access_control import AccessControlService
 from app.dependencies import get_access_control_service
 from app.main import app
+from tests.http_runtime import LoopbackClient
 
 pytestmark = pytest.mark.real_http
-
-
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
 
 
 @contextmanager
@@ -70,40 +60,19 @@ def _run_http_server(tmp_path: Path):
     )
     app.dependency_overrides[get_access_control_service] = lambda: access_control
 
-    host = "127.0.0.1"
-    port = _find_free_port()
-    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="error"))
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    base_url = f"http://{host}:{port}"
-
-    with httpx.Client(timeout=2.0) as client:
-        deadline = time.time() + 15.0
-        while time.time() < deadline:
-            try:
-                if client.get(f"{base_url}/health").status_code == 200:
-                    break
-            except httpx.HTTPError:
-                pass
-            time.sleep(0.1)
-        else:
-            server.should_exit = True
-            thread.join(timeout=5.0)
-            app.dependency_overrides.clear()
-            raise RuntimeError("HTTP test server did not start in time")
+    from tests.http_runtime import serve_http
 
     try:
-        yield base_url
+        with serve_http(app) as base_url:
+            yield base_url
     finally:
-        server.should_exit = True
-        thread.join(timeout=5.0)
         app.dependency_overrides.clear()
         access_control.close()
 
 
 def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path: Path) -> None:
     with _run_http_server(tmp_path) as base_url:
-        with httpx.Client(timeout=5.0) as client:
+        with LoopbackClient(timeout=5.0) as client:
             unauthorized = client.get(f"{base_url}/admin/dashboard")
             login = client.post(
                 f"{base_url}/admin/auth/login",

@@ -1,13 +1,14 @@
+
 import hashlib
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
-import httpx
 import pytest
 
 from app.application.conversion.contracts.jobs import ConversionJobResultReference
 from app.dependencies import get_access_control_service, get_conversion_batch_service
 from app.main import app
+from tests.http_runtime import LoopbackClient, loopback_request
 from tests.test_conversion_workspace_http_real_api import _run_pro_upload_http_server
 
 pytestmark = pytest.mark.real_http
@@ -22,8 +23,8 @@ def test_work_lifecycle_snapshot_reassessment_permissions_and_quota(tmp_path, mo
         identity = access.resolve_identity(anonymous_fingerprint=None, user_token=token)
         quota = access.get_remaining_quota(identity)
         headers = {"Authorization": f"Bearer {token}", "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web"}
-        with httpx.Client(base_url=base, headers=headers) as client:
-            assert httpx.get(base + "/api/pro/works").status_code == 401
+        with LoopbackClient(base_url=base, headers=headers) as client:
+            assert loopback_request("GET", base + "/api/pro/works").status_code == 401
             customer = client.post("/api/pro/organization/clients", json={"name": "Aurora"}).json()
             account = client.post("/api/pro/organization/accounts", json={"name": "Principal", "client_id": customer["id"]}).json()
             period = client.post(
@@ -37,7 +38,8 @@ def test_work_lifecycle_snapshot_reassessment_permissions_and_quota(tmp_path, mo
             path = f"/api/pro/works/{work_id}"
             assert client.post("/api/pro/works", json=request).json()["id"] == work_id
             assert client.post("/api/pro/works", json={**request, "owner_user_id": "foreign"}).status_code == 400
-            assert httpx.post(base + "/api/pro/works", headers={"Authorization": f"Bearer {token}"}, json=request).status_code == 403
+            denied = loopback_request("POST", base + "/api/pro/works", headers={"Authorization": f"Bearer {token}"}, json=request)
+            assert denied.status_code == 403
             assert (
                 client.post(path + "/complete", json={"expected_version": 1, "expected_fingerprint": work["fingerprint"]}).status_code
                 == 409

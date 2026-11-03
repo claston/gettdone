@@ -1,7 +1,9 @@
+import sqlite3
 import sys
 from collections.abc import Iterator
 from pathlib import Path
 from shutil import copyfile
+from threading import RLock
 
 import pytest
 
@@ -65,9 +67,25 @@ def _optimize_access_control_test_runtime(tmp_path_factory: pytest.TempPathFacto
     template_service.close()
     template_db = template_service.db_file
     original_init_db = AccessControlService._init_db
+    template_memory = sqlite3.connect(":memory:", check_same_thread=False)
+    with sqlite3.connect(template_db) as source:
+        source.backup(template_memory)
+    source.close()
+    template_lock = RLock()
 
     def _init_from_template(service: AccessControlService) -> None:
-        if service._use_postgres or hasattr(service, "_test_conn") or service.db_file.exists():
+        if service._use_postgres:
+            original_init_db(service)
+            return
+        memory = getattr(service, "_test_conn", None)
+        if memory is not None:
+            if memory.execute("SELECT 1 FROM sqlite_master WHERE type='table' LIMIT 1").fetchone():
+                original_init_db(service)
+            else:
+                with template_lock:
+                    template_memory.backup(memory)
+            return
+        if service.db_file.exists():
             original_init_db(service)
             return
         copyfile(template_db, service.db_file)
@@ -83,6 +101,15 @@ def _optimize_access_control_test_runtime(tmp_path_factory: pytest.TempPathFacto
         yield
     finally:
         patcher.undo()
+        template_memory.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _close_shared_http_listener(_isolate_default_filesystem_runtime):
+    yield
+    from tests.http_runtime import close_worker_server
+
+    close_worker_server()
 
 
 @pytest.fixture(autouse=True)

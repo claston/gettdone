@@ -1,9 +1,11 @@
 """PRO integration against disposable PostgreSQL; legacy fixture remains unchanged."""
+
 import pytest
 from test_canonical_movements_postgres import DSN, enroll
 from test_canonical_movements_postgres import database as canonical_database
 
 from app.application.errors import AnalysisEditConflictError
+from tests.http_runtime import LoopbackClient
 
 pytestmark = pytest.mark.skipif(not DSN, reason="Requires disposable local PostgreSQL")
 
@@ -53,8 +55,6 @@ def test_existing_routes_sql_save_reopen_exports_and_ttl(database, tmp_path, mon
     import json
     from types import SimpleNamespace
 
-    import httpx
-
     from app.adapters.conversion.canonical_artifacts import LocalCanonicalObjects
     from app.application import ReportService, TempAnalysisStorage
     from app.application.canonical_pro import CanonicalProService
@@ -86,7 +86,7 @@ def test_existing_routes_sql_save_reopen_exports_and_ttl(database, tmp_path, mon
         app.dependency_overrides[get_conversion_batch_service] = lambda: SimpleNamespace(repository=batches)
         app.dependency_overrides[get_conversion_runtime_config] = lambda: ConversionRuntimeConfig.from_mapping(
             {"CONVERSION_ARCHITECTURE_MODE": "async_aws"})
-    with _run_http_server(configure) as base_url, httpx.Client(base_url=base_url, timeout=30,
+    with _run_http_server(configure) as base_url, LoopbackClient(base_url=base_url, timeout=30,
             headers={"Authorization": f"Bearer {repository.test_user.token}"}) as client:
         payload = {"expected_version": 1, "operation_id": "new-http", "edits": [{
             "movement_id": initial["movement_ids"]["stable"], "date": "2026-04-02", "description": "Revisado", "debit": 2.75}]}

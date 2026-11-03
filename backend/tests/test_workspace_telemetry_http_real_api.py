@@ -1,7 +1,8 @@
-import httpx
+
 import pytest
 
 from app.main import app
+from tests.http_runtime import LoopbackClient
 from tests.test_convert_edits_http_real_api import _run_http_server
 from tests.test_workspace_telemetry import EVENTS, HEADERS
 
@@ -16,7 +17,7 @@ def test_workspace_events_over_real_authenticated_http(monkeypatch):
         access.register_user(name="Sintético", email="workspace@example.invalid", password="safe-test-password")
         services.append(access)
 
-    with _run_http_server(configure) as base, httpx.Client(base_url=base) as client:
+    with _run_http_server(configure) as base, LoopbackClient(base_url=base) as client:
         assert client.post("/telemetry/events", json={"event_type": EVENTS[0]}, headers=HEADERS).status_code == 401
         login = client.post("/auth/pro/session/login", headers=HEADERS,
                             json={"email": "workspace@example.invalid", "password": "safe-test-password"})

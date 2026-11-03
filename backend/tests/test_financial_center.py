@@ -1,4 +1,5 @@
 """Financial center reads and prerequisites against disposable PostgreSQL."""
+
 from copy import deepcopy
 from dataclasses import replace
 from datetime import date, datetime
@@ -12,6 +13,7 @@ from app.application.canonical_movements import CanonicalRollout, MovementScope
 from app.application.conversion.contracts.jobs import ConversionJobResultReference
 from app.application.conversion.conversion_batch import ConversionBatch
 from app.application.conversion.conversion_job import ConversionJob
+from tests.http_runtime import LoopbackClient
 
 database = paid_database
 
@@ -229,7 +231,6 @@ def test_multiconta_evidence_filters_and_unknown_account(database, multiconta_do
 
 
 def test_multiconta_account_cannot_change_client_via_service_or_http(database, multiconta_document):
-    import httpx
 
     from app.application.financial_center import FinancialCenterService
     from app.dependencies import get_access_control_service
@@ -254,7 +255,7 @@ def test_multiconta_account_cannot_change_client_via_service_or_http(database, m
     def configure(_):
         app.dependency_overrides[get_access_control_service] = lambda: repo.test_access
         app.dependency_overrides[financial_service] = lambda: FinancialCenterService(repo)
-    with _run_http_server(configure) as base, httpx.Client(base_url=base, timeout=30, headers={
+    with _run_http_server(configure) as base, LoopbackClient(base_url=base, timeout=30, headers={
         "Authorization": f"Bearer {repo.test_user.token}", "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web",
     }) as client:
         path = f'/api/pro/organization/accounts/{account["id"]}'
@@ -390,8 +391,6 @@ def test_suspended_sources_legacy_and_mixed_currency_are_honest(database):
 def test_http_financial_center_real_auth_failure_and_revision(database, monkeypatch):
     from time import perf_counter
 
-    import httpx
-
     from app.application.financial_center import FinancialCenterService
     from app.dependencies import get_access_control_service
     from app.main import app
@@ -404,7 +403,7 @@ def test_http_financial_center_real_auth_failure_and_revision(database, monkeypa
     def configure(_):
         app.dependency_overrides[get_access_control_service] = lambda: repo.test_access
         app.dependency_overrides[financial_service] = lambda: service
-    with _run_http_server(configure) as base, httpx.Client(base_url=base, timeout=30) as client:
+    with _run_http_server(configure) as base, LoopbackClient(base_url=base, timeout=30) as client:
         path = f"/api/pro/financial-center/clients/{scope.client_id}?month=2026-04"
         assert client.get(path).status_code == 401
         client.headers["Authorization"] = f"Bearer {repo.test_user.token}"

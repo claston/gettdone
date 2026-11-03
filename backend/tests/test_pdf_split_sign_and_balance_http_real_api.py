@@ -1,4 +1,4 @@
-import httpx
+
 import pytest
 
 from app.application.default_conversion_pipeline import build_default_conversion_pipeline
@@ -7,6 +7,7 @@ from app.application.storage_service import TempAnalysisStorage
 from app.dependencies import get_analysis_repository, get_conversion_processing_pipeline, get_report_service
 from app.main import app
 from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
+from tests.http_runtime import LoopbackClient
 from tests.test_convert_edits_http_real_api import _run_http_server
 from tests.test_pdf_split_sign_and_balance_labels import bb_statement_lines, flash_statement_lines
 
@@ -34,7 +35,7 @@ def test_http_conversion_and_ofx_export_keep_correct_signs_and_exclude_closing_b
         raw = generate_native_text_pdf((lines,))
         expected = [-1173.0, 1173.0] if kind == "flash" else [1000.0, -2.55]
 
-    with _run_http_server(configure) as base_url, httpx.Client(base_url=base_url, timeout=20) as client:
+    with _run_http_server(configure) as base_url, LoopbackClient(base_url=base_url, timeout=20) as client:
         owner = {"anonymous_fingerprint": "fp-split-sign-balance"}
         response = client.post("/convert", data=owner, files={"file": (filename, raw, mime)})
         assert response.status_code == 200, response.text
