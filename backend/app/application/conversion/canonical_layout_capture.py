@@ -12,7 +12,7 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from app.application.bank_catalog import load_bank_catalog, normalize_bank_code, resolve_bank_code_from_name
-from app.application.bank_identity import resolve_bank_name
+from app.application.bank_identity import resolve_bank_name, resolve_statement_issuer
 from app.application.conversion.canonical_layout_v2 import (
     PLACEHOLDERS,
     PUBLIC_LAYOUT_PHRASES,
@@ -551,15 +551,16 @@ def _bank_manifest(
     resolved_name = _safe_institution_name(bank_name)
     resolved_code = _safe_bank_code(bank_code)
     if resolved_name is None and resolved_code is None:
+        issuer = resolve_statement_issuer(source_text)
         resolved_name = _safe_institution_name(
-            resolve_bank_name(layout_inference_name=layout_name, extracted_text=None)
+            resolve_bank_name(layout_inference_name=layout_name, extracted_text=source_text)
         )
-        detection_source = "layout"
-    if resolved_name is None and resolved_code is None:
-        resolved_name = _safe_institution_name(
-            resolve_bank_name(layout_inference_name=None, extracted_text=source_text)
-        )
-        detection_source = text_detection_source
+        if issuer is not None:
+            detection_source = "footer" if issuer.source == "footer" else text_detection_source
+        elif resolve_bank_name(layout_inference_name=layout_name) is not None:
+            detection_source = "layout"
+        else:
+            detection_source = text_detection_source
     if resolved_name is None and resolved_code is None:
         return {
             "code": None,
