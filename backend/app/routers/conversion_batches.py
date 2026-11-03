@@ -5,7 +5,6 @@ import binascii
 import json
 import logging
 import re
-from dataclasses import replace
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -51,7 +50,7 @@ from app.routers.auth_session import (
     resolve_anonymous_fingerprint_with_cookie,
     resolve_user_token_with_session,
 )
-from app.routers.canonical_pro import canonical_record_payload, export_canonical_record, resolve_canonical, validate_export_checks
+from app.routers.canonical_pro import canonical_display_record, export_canonical_record, resolve_canonical, validate_export_checks
 from app.routers.pro_security import require_pro_browser_request
 
 router = APIRouter()
@@ -669,6 +668,7 @@ def export_conversion_batch(
     used_names: set[str] = set()
     with ZipFile(buffer, mode="w", compression=ZIP_DEFLATED) as archive:
         for record in snapshot.jobs:
+            record = canonical_display_record(record, identity.identity_id)
             if record.result is None:
                 continue
             analysis = (record.result.payload or {}).get("analysis") or {}
@@ -954,9 +954,7 @@ def _prepared_response(prepared: PreparedConversionBatch) -> ConversionBatchResp
 
 
 def _snapshot_response(snapshot: ConversionBatchSnapshot) -> ConversionBatchResponse:
-    records = [replace(record, result=replace(record.result,
-                payload=canonical_record_payload(record, snapshot.batch.identity_id))) if record.result else record
-               for record in snapshot.jobs]
+    records = [canonical_display_record(record, snapshot.batch.identity_id) for record in snapshot.jobs]
     return ConversionBatchResponse(
         batch_id=snapshot.batch.batch_id,
         status=snapshot.batch.status.value,

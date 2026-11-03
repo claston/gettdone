@@ -3,6 +3,7 @@
 import json
 import logging
 import unicodedata
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from io import BytesIO
 from uuid import uuid4
@@ -161,7 +162,7 @@ class ReceivedStatements(OrganizationService):
                     (json.dumps({**source, "account_links": links}, ensure_ascii=False), organization, job_id))
         return links.get(account_signature(source))
 
-    def receive(self, record, *, recovered_source=None):
+    def receive(self, record, *, recovered_source=None, connection=None):
         job = record.job
         if job.identity.identity_type != "user" or not job.batch_id:
             return
@@ -182,7 +183,7 @@ class ReceivedStatements(OrganizationService):
             source = {}
         if source:
             source["account_keys"] = self._source_keys(source)
-        with self.db.connect() as conn:
+        with (nullcontext(connection) if connection is not None else self.db.connect()) as conn:
             organization = self._lock(conn, owner)
             self._write(conn, "INSERT INTO pro_received_statements "
                         "(organization_id, job_id, batch_id, filename, created_at, expires_at, technical_status, source_json) "
@@ -224,7 +225,8 @@ class ReceivedStatements(OrganizationService):
             linked_client = client or (context["client_id"] if context else None)
             if linked_client:
                 self._prefer_document_name(conn, organization, linked_client, source, record)
-            conn.commit()
+            if connection is None:
+                conn.commit()
 
     def _recover_native_source(self, owner, record):
         if (self.document_store is None or record.result is None

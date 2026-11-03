@@ -88,3 +88,16 @@ def test_validation_duplicate_identity_and_editing_catalog(organization):
     edited = service.save_client(owner, entity_id=client["id"], name="Corrigido", tax_id="12345678901")
     assert edited["id"] == client["id"]
     assert edited["name"] == "Corrigido"
+
+
+def test_account_reassignment_preserves_sqlite_legacy_rules(organization):
+    service, owner, _, _access = organization
+    first = service.save_client(owner, name="Primeiro")
+    second = service.save_client(owner, name="Segundo")
+    account = service.save_account(owner, client_id=first["id"], name="Conta livre")
+    changed = service.save_account(owner, entity_id=account["id"], client_id=second["id"], name="Conta livre")
+    assert changed["client_id"] == second["id"]
+    service.save_context(owner, job_id="legacy-job", client_id=second["id"], account_id=account["id"],
+                         period_ids=[], expected_version=0)
+    with pytest.raises(ValueError, match="Mantenha o cliente"):
+        service.save_account(owner, entity_id=account["id"], client_id=first["id"], name="Conta vinculada")

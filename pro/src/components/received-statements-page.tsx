@@ -179,10 +179,12 @@ function IdentityForm({
 export function ReceivedStatementsPage({
   service = receivedService,
   financialDemoVisible = false,
+  financialCenterVisible = false,
   financialDemo = false,
 }: {
   service?: ReceivedService;
   financialDemoVisible?: boolean;
+  financialCenterVisible?: boolean;
   financialDemo?: boolean;
 }) {
   const [page, setPage] = useState<ReceivedPage | null>(null);
@@ -536,6 +538,11 @@ export function ReceivedStatementsPage({
                                 className="secondary-button small"
                                 href={`/demo/financial/${client.id}`}
                               >
+                                Central Financeira
+                              </Link>
+                            )}
+                            {financialCenterVisible && !financialDemo && (
+                              <Link className="secondary-button small" href={`/financial/${client.id}`}>
                                 Central Financeira
                               </Link>
                             )}

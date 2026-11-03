@@ -90,6 +90,12 @@ class AccessControlDbComponent:
             return query.replace("?", "%s")
         return query
 
+    def table_exists(self, conn, table_name: str) -> bool:
+        if self._service._use_postgres:
+            return self.fetchone(conn, "SELECT 1 FROM information_schema.tables "
+                                 "WHERE table_schema = current_schema() AND table_name = ?", (table_name,)) is not None
+        return self.fetchone(conn, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table_name,)) is not None
+
     def true_value(self):
         if self._service._use_postgres:
             return True

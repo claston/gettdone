@@ -3,7 +3,10 @@ import logging
 from dataclasses import asdict
 from time import monotonic
 
+from psycopg.types.json import Jsonb
+
 from app.application.canonical_artifacts import CanonicalArtifactService
+from app.application.canonical_identity import receive_in_transaction
 from app.application.canonical_movements import CanonicalRollout, MovementScope
 from app.application.conversion.contracts.jobs import ConversionJobResultReference
 from app.application.conversion.document_conversion_pipeline import DocumentConversionRuntime
@@ -118,6 +121,13 @@ class CanonicalCompletion:
                 or identity.plan_code not in PAID_PLANS):
             return
         repo = self.repository
+        # Identify within completion, before selecting authority. The cohort must
+        # already exist; this does not enable ingestion or migrate exposed jobs.
+        selected = conn.execute(f'''SELECT c.* FROM {repo.p}canonical_pro_cohorts c
+            JOIN {repo.p}pro_organizations o ON o.id=c.organization_id
+            WHERE o.owner_user_id=%s FOR UPDATE OF o''', (identity.identity_id,)).fetchone()
+        if selected and selected["ingestion_enabled"] and selected["ui_enabled"]:
+            receive_in_transaction(repo, conn, record)
         cohort = conn.execute(f'''SELECT c.*, x.client_id FROM {repo.p}canonical_pro_cohorts c
             JOIN {repo.p}pro_organizations o ON o.id = c.organization_id
             JOIN {repo.p}pro_conversion_contexts x ON x.organization_id = o.id AND x.job_id = %s
@@ -160,9 +170,39 @@ class CanonicalCompletion:
             "job_id": record.job.job_id, "batch_id": record.job.batch_id,
             "actor_id": identity.identity_id, "result": asdict(record.result),
         })
+        # Exact bytes + owner + confirmed client identify a repeated document,
+        # never a transaction inferred from date/amount/description. The original
+        # authority and expiration remain unchanged, including human corrections.
+        # The organization lock above serializes concurrent reimports.
+        repeated = conn.execute(f'''SELECT a.*, LEAST(a.expires_at,j.expires_at,b.expires_at) AS source_expires_at
+            FROM {repo.p}canonical_analyses a
+            JOIN {repo.p}conversion_jobs j ON j.job_id=a.job_id
+            JOIN {repo.p}conversion_batches b ON b.batch_id=j.batch_id
+            WHERE a.organization_id=%s AND a.client_id=%s AND a.analysis_id<>%s
+                AND j.document->>'sha256_hex'=%s AND j.document->>'file_type'=%s
+                AND j.status='completed' AND b.identity_id=%s
+                AND LEAST(a.expires_at,j.expires_at,b.expires_at)>clock_timestamp()
+            ORDER BY a.created_at,a.analysis_id LIMIT 1 FOR UPDATE OF a''',
+            (scope.organization_id, scope.client_id, scope.analysis_id, record.job.document.sha256_hex,
+             record.job.document.file_type, identity.identity_id)).fetchone() if cohort["ui_enabled"] else None
+        if repeated:
+            snapshot = repo._snapshot(conn, repeated)
+            payload = {**(record.result.payload or {}), "analysis": snapshot, "authority": "postgres_v1",
+                       "canonical_source_job_id": repeated["job_id"]}
+            if snapshot.get("reviewed_at"):
+                payload["reviewed_at"] = snapshot["reviewed_at"]
+            conn.execute(f'''UPDATE {repo.p}conversion_jobs SET result_analysis_id=%s,result_payload=%s,
+                expires_at=LEAST(expires_at,%s) WHERE job_id=%s''',
+                (repeated["analysis_id"], Jsonb(payload), repeated["source_expires_at"], scope.job_id))
+            conn.execute(f'''UPDATE {repo.p}pro_received_statements SET expires_at=%s
+                WHERE organization_id=%s AND job_id=%s AND expires_at>%s''',
+                (repeated["source_expires_at"].isoformat(), scope.organization_id, scope.job_id,
+                 repeated["source_expires_at"].isoformat()))
+            return
         repo.ingest(scope, content, currency=WISE_CURRENCIES.get(content.get("layout_inference_name"), "BRL"),
                     product="pro", new_analysis=True,
-                    rollout=CanonicalRollout(True, frozenset({scope.organization_id})), connection=conn)
+                    rollout=CanonicalRollout(True, frozenset({scope.organization_id})), connection=conn,
+                    resolve_accounts=bool(cohort["ui_enabled"]))
         conn.execute(f'''UPDATE {repo.p}canonical_analyses SET read_enabled=%s, edit_enabled=%s, ui_enabled=%s
             WHERE analysis_id=%s''',
                      (cohort["read_enabled"], cohort["edit_enabled"], cohort["ui_enabled"], scope.analysis_id))

@@ -38,6 +38,10 @@ describe("buildBackendProxyRewrites", () => {
           destination: "https://api.ofxsimples.com.br/api/pro/receipts/:path*",
         },
         {
+          source: "/api/pro/financial-center/:path*",
+          destination: "https://api.ofxsimples.com.br/api/pro/financial-center/:path*",
+        },
+        {
           source: "/api/pro/works/:path*",
           destination: "https://api.ofxsimples.com.br/api/pro/works/:path*",
         },

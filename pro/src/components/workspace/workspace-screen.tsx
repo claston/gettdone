@@ -564,7 +564,7 @@ export function WorkspaceScreen({
         <div className="batch-heading">
           <Link href={reviewReturnTo(returnTo)} className="back-link">
             <ChevronLeft size={16} />{" "}
-            {reviewReturnTo(returnTo).startsWith("/demo/financial/")
+            {(reviewReturnTo(returnTo).startsWith("/demo/financial/") || reviewReturnTo(returnTo).startsWith("/financial/"))
               ? "Voltar à Central Financeira"
               : clientMode || returnTo === "/dashboard"
                 ? "Clientes"

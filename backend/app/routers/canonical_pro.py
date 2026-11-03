@@ -1,8 +1,27 @@
 """Small adapters used by existing HTTP routes; no parallel financial writer."""
+from dataclasses import replace
+from datetime import datetime, timezone
+
 from fastapi import HTTPException
 
 from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConflictError, AnalysisNotFoundError
 from app.dependencies import get_canonical_pro_service
+
+
+def canonical_display_record(record, owner):
+    """A repeated document cannot outlive its original authority or break its new batch."""
+    if not record.result:
+        return record
+    repeated = bool((record.result.payload or {}).get("canonical_source_job_id"))
+    try:
+        if repeated and record.expires_at <= datetime.now(timezone.utc):
+            raise HTTPException(404, "Analysis not found")
+        payload = canonical_record_payload(record, owner)
+        return replace(record, result=replace(record.result, payload=payload))
+    except HTTPException as exc:
+        if repeated and exc.status_code == 404:
+            return replace(record, status=type(record.status)("expired"), result=None)
+        raise
 
 
 def canonical_record_payload(record, owner):

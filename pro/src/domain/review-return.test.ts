@@ -4,6 +4,13 @@ import { reviewReturnTo } from "./review-return";
 it("preserva filtros de conversões e rejeita destinos externos", () => {
   expect(
     reviewReturnTo(
+      "/financial/client_abc?month=2026-04&accounts=account_abc&day=2026-04-02&pending=true&token=secret",
+    ),
+  ).toBe(
+    "/financial/client_abc?month=2026-04&accounts=account_abc&day=2026-04-02&pending=true",
+  );
+  expect(
+    reviewReturnTo(
       "/demo/financial/multiple?month=2026-09&accounts=itau&tab=Calendário&token=secret",
     ),
   ).toBe(
