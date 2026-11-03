@@ -1,0 +1,3109 @@
+{
+  "approval_status": "approved_by_owner",
+  "reference_commit": "2149989c2cb8d6fa4b2b3b145c86bf4e8a4ea823",
+  "candidate_commit": "18b3daf32f8eccab18d450bfb98745bb5376a219",
+  "candidate_app_tree": "c3a7f48d1d4be4baf5756bf45088ecdfa06bd717",
+  "rule": "docs/free-converter-guard.md: Mudan?as leg?timas exigem an?lise do diff e aprova??o expl?cita do propriet?rio.",
+  "evidence": "Comparison executed on the final working application before its commit. Only fictional fixtures; no production writes.",
+  "cases": 90,
+  "changed_cases": 23,
+  "changed_fields": {
+    "$.canonical[].bank_name": 195,
+    "$.metrics.statement_issuer_source": 23,
+    "$.artifacts.converted.ofx": 2,
+    "$.bank.bank_code": 2,
+    "$.bank.bank_name": 2
+  },
+  "financial_and_provenance_changes": 0,
+  "documented_corrections": [
+    {
+      "case": "free_empty_statement",
+      "reason": "The printed issuer is Banco Teste; the grid alone cannot assign Santander/033."
+    },
+    {
+      "case": "free_catalog_multipage_repeated_header",
+      "reason": "The printed issuer is Banco Exemplo S.A.; the grid alone cannot assign Banco do Brasil/001."
+    }
+  ],
+  "differences_from_main": [
+    {
+      "case": "banrisul_portal_legacy_native",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Banrisul",
+      "change": "changed"
+    },
+    {
+      "case": "banrisul_portal_legacy_native",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Banrisul",
+      "change": "changed"
+    },
+    {
+      "case": "banrisul_portal_legacy_native",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Banrisul",
+      "change": "changed"
+    },
+    {
+      "case": "banrisul_portal_legacy_native",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "bb_header_period",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_header_period",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_header_period",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "bb_noncontiguous_blocks",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_noncontiguous_blocks",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_noncontiguous_blocks",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_noncontiguous_blocks",
+      "path": "$.canonical[3].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_noncontiguous_blocks",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[3].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[4].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[5].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[6].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[7].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[8].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[9].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[10].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[11].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[12].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[13].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[14].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[15].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[16].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[17].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[18].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[19].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[20].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[21].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[22].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[23].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[24].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[25].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[26].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[27].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[28].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[29].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[30].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[31].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[32].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[33].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[34].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[35].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[36].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[37].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[38].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[39].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[40].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[41].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[42].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[43].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[44].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[45].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[46].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[47].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[48].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[49].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[50].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[51].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[52].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[53].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[54].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[55].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[56].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[57].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[58].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[59].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[60].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[61].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[62].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[63].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[64].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[65].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[66].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[67].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[68].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[69].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[70].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[71].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[72].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[73].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[74].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[75].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[76].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[77].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[78].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[79].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[80].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[81].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[82].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[83].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[84].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[85].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[86].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[87].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[88].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[89].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[90].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[91].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[92].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[93].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[94].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[95].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[96].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[97].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[98].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[99].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[100].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[101].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[102].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[103].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[104].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[105].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[106].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[107].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[108].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[109].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[110].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[111].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[112].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[113].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[114].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[115].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[116].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[117].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[118].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[119].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[120].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[121].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[122].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[123].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[124].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[125].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[126].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[127].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[128].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[129].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[130].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[131].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[132].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[133].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[134].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[135].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[136].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[137].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[138].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[139].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[140].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[141].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[142].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[143].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "bradesco_missing_period",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_missing_period",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_missing_period",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_missing_period",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "bradesco_native_wrapped",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_native_wrapped",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_native_wrapped",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_native_wrapped",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "bradesco_printed_totals_diverge",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_printed_totals_diverge",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_printed_totals_diverge",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "bradesco_reordered_header",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_reordered_header",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_reordered_header",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "bradesco_separate_section_opening",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "free_catalog_inline_signed_values",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "BANCO EXEMPLO S.A",
+      "change": "changed"
+    },
+    {
+      "case": "free_catalog_inline_signed_values",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "BANCO EXEMPLO S.A",
+      "change": "changed"
+    },
+    {
+      "case": "free_catalog_inline_signed_values",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "free_catalog_multipage_repeated_header",
+      "path": "$.artifacts.converted.ofx",
+      "before": "OFXHEADER:100\nDATA:OFXSGML\nVERSION:102\nSECURITY:NONE\nENCODING:USASCII\nCHARSET:1252\nCOMPRESSION:NONE\nOLDFILEUID:NONE\nNEWFILEUID:NONE\n\n<OFX>\n  <BANKMSGSRSV1>\n    <STMTTRNRS>\n      <STMTRS>\n        <BANKACCTFROM>\n          <BANKID>001\n          <BRANCHID>0001\n          <ACCTID>000000\n          <ACCTTYPE>CHECKING\n        </BANKACCTFROM>\n        <BANKTRANLIST>\n          <STMTTRN>\n            <TRNTYPE>DEBIT\n            <DTPOSTED>20260509000000[-3:BRT]\n            <TRNAMT>-150.25\n            <FITID>OFXS-C6E96B766C63CA0C\n            <NAME>PAGAMENTO FORNECEDOR ALFA\n            <MEMO>PAGAMENTO FORNECEDOR ALFA\n          </STMTTRN>\n          <STMTTRN>\n            <TRNTYPE>CREDIT\n            <DTPOSTED>20260510000000[-3:BRT]\n            <TRNAMT>500.00\n            <FITID>OFXS-93F5DA8C6911FB50\n            <NAME>PIX RECEBIDO CLIENTE BETA\n            <MEMO>PIX RECEBIDO CLIENTE BETA\n          </STMTTRN>\n          <STMTTRN>\n            <TRNTYPE>DEBIT\n            <DTPOSTED>20260511000000[-3:BRT]\n            <TRNAMT>-35.50\n            <FITID>OFXS-13FE7D1D57548DA7\n            <NAME>TARIFA PROCESSAMENTO\n            <MEMO>TARIFA PROCESSAMENTO\n          </STMTTRN>\n        </BANKTRANLIST>\n      </STMTRS>\n    </STMTTRNRS>\n  </BANKMSGSRSV1>\n</OFX>\n",
+      "after": "OFXHEADER:100\nDATA:OFXSGML\nVERSION:102\nSECURITY:NONE\nENCODING:USASCII\nCHARSET:1252\nCOMPRESSION:NONE\nOLDFILEUID:NONE\nNEWFILEUID:NONE\n\n<OFX>\n  <BANKMSGSRSV1>\n    <STMTTRNRS>\n      <STMTRS>\n        <BANKACCTFROM>\n          <BANKID>000\n          <BRANCHID>0001\n          <ACCTID>000000\n          <ACCTTYPE>CHECKING\n        </BANKACCTFROM>\n        <BANKTRANLIST>\n          <STMTTRN>\n            <TRNTYPE>DEBIT\n            <DTPOSTED>20260509000000[-3:BRT]\n            <TRNAMT>-150.25\n            <FITID>OFXS-C6E96B766C63CA0C\n            <NAME>PAGAMENTO FORNECEDOR ALFA\n            <MEMO>PAGAMENTO FORNECEDOR ALFA\n          </STMTTRN>\n          <STMTTRN>\n            <TRNTYPE>CREDIT\n            <DTPOSTED>20260510000000[-3:BRT]\n            <TRNAMT>500.00\n            <FITID>OFXS-93F5DA8C6911FB50\n            <NAME>PIX RECEBIDO CLIENTE BETA\n            <MEMO>PIX RECEBIDO CLIENTE BETA\n          </STMTTRN>\n          <STMTTRN>\n            <TRNTYPE>DEBIT\n            <DTPOSTED>20260511000000[-3:BRT]\n            <TRNAMT>-35.50\n            <FITID>OFXS-13FE7D1D57548DA7\n            <NAME>TARIFA PROCESSAMENTO\n            <MEMO>TARIFA PROCESSAMENTO\n          </STMTTRN>\n        </BANKTRANLIST>\n      </STMTRS>\n    </STMTTRNRS>\n  </BANKMSGSRSV1>\n</OFX>\n",
+      "change": "changed"
+    },
+    {
+      "case": "free_catalog_multipage_repeated_header",
+      "path": "$.bank.bank_code",
+      "before": "001",
+      "after": null,
+      "change": "changed"
+    },
+    {
+      "case": "free_catalog_multipage_repeated_header",
+      "path": "$.bank.bank_name",
+      "before": "Banco do Brasil",
+      "after": "BANCO EXEMPLO S.A",
+      "change": "changed"
+    },
+    {
+      "case": "free_catalog_multipage_repeated_header",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "BANCO EXEMPLO S.A",
+      "change": "changed"
+    },
+    {
+      "case": "free_catalog_multipage_repeated_header",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "BANCO EXEMPLO S.A",
+      "change": "changed"
+    },
+    {
+      "case": "free_catalog_multipage_repeated_header",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "BANCO EXEMPLO S.A",
+      "change": "changed"
+    },
+    {
+      "case": "free_catalog_multipage_repeated_header",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "free_empty_statement",
+      "path": "$.artifacts.converted.ofx",
+      "before": "OFXHEADER:100\nDATA:OFXSGML\nVERSION:102\nSECURITY:NONE\nENCODING:USASCII\nCHARSET:1252\nCOMPRESSION:NONE\nOLDFILEUID:NONE\nNEWFILEUID:NONE\n\n<OFX>\n  <BANKMSGSRSV1>\n    <STMTTRNRS>\n      <STMTRS>\n        <BANKACCTFROM>\n          <BANKID>033\n          <BRANCHID>0001\n          <ACCTID>123456\n          <ACCTTYPE>CHECKING\n        </BANKACCTFROM>\n        <BANKTRANLIST>\n        </BANKTRANLIST>\n        <LEDGERBAL>\n          <BALAMT>150.00\n          <DTASOF><generation-date>[-3:BRT]\n        </LEDGERBAL>\n      </STMTRS>\n    </STMTTRNRS>\n  </BANKMSGSRSV1>\n</OFX>\n",
+      "after": "OFXHEADER:100\nDATA:OFXSGML\nVERSION:102\nSECURITY:NONE\nENCODING:USASCII\nCHARSET:1252\nCOMPRESSION:NONE\nOLDFILEUID:NONE\nNEWFILEUID:NONE\n\n<OFX>\n  <BANKMSGSRSV1>\n    <STMTTRNRS>\n      <STMTRS>\n        <BANKACCTFROM>\n          <BANKID>000\n          <BRANCHID>0001\n          <ACCTID>123456\n          <ACCTTYPE>CHECKING\n        </BANKACCTFROM>\n        <BANKTRANLIST>\n        </BANKTRANLIST>\n        <LEDGERBAL>\n          <BALAMT>150.00\n          <DTASOF><generation-date>[-3:BRT]\n        </LEDGERBAL>\n      </STMTRS>\n    </STMTTRNRS>\n  </BANKMSGSRSV1>\n</OFX>\n",
+      "change": "changed"
+    },
+    {
+      "case": "free_empty_statement",
+      "path": "$.bank.bank_code",
+      "before": "033",
+      "after": null,
+      "change": "changed"
+    },
+    {
+      "case": "free_empty_statement",
+      "path": "$.bank.bank_name",
+      "before": "Santander",
+      "after": "BANCO TESTE",
+      "change": "changed"
+    },
+    {
+      "case": "free_empty_statement",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "santander_partial",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_descending_native",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_descending_native",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_descending_native",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_detached_pending_idle_day_False",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_detached_pending_idle_day_False",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_detached_pending_idle_day_False",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_detached_pending_idle_day_False",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_detached_pending_idle_day_True",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_detached_pending_idle_day_True",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_detached_pending_idle_day_True",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_detached_pending_idle_day_True",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_period_direction_False_native",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_period_direction_False_native",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_period_direction_False_native",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_period_direction_False_native",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_period_direction_True_native",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_period_direction_True_native",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_period_direction_True_native",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_period_direction_True_native",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_split_balance_False",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_balance_False",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_balance_False",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_balance_False",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_split_balance_True",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_balance_True",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_balance_True",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_balance_True",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_split_transaction_False",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_transaction_False",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_transaction_False",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_transaction_False",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_value_before_page_break",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_value_before_page_break",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_value_before_page_break",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_white_image_page",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_white_image_page",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_white_image_page",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    }
+  ],
+  "frozen_reference_commit": "c3cf02c4d4631ae591e2a59571dd9d1b557ec5f5",
+  "differences_from_frozen": [
+    {
+      "case": "banrisul_portal_legacy_native",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Banrisul",
+      "change": "changed"
+    },
+    {
+      "case": "banrisul_portal_legacy_native",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Banrisul",
+      "change": "changed"
+    },
+    {
+      "case": "banrisul_portal_legacy_native",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Banrisul",
+      "change": "changed"
+    },
+    {
+      "case": "banrisul_portal_legacy_native",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "bb_header_period",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_header_period",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_header_period",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "bb_noncontiguous_blocks",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_noncontiguous_blocks",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_noncontiguous_blocks",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_noncontiguous_blocks",
+      "path": "$.canonical[3].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_noncontiguous_blocks",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[3].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[4].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[5].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[6].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[7].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[8].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[9].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[10].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[11].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[12].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[13].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[14].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[15].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[16].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[17].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[18].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[19].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[20].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[21].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[22].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[23].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[24].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[25].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[26].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[27].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[28].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[29].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[30].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[31].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[32].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[33].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[34].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[35].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[36].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[37].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[38].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[39].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[40].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[41].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[42].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[43].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[44].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[45].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[46].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[47].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[48].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[49].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[50].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[51].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[52].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[53].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[54].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[55].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[56].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[57].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[58].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[59].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[60].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[61].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[62].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[63].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[64].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[65].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[66].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[67].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[68].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[69].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[70].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[71].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[72].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[73].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[74].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[75].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[76].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[77].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[78].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[79].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[80].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[81].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[82].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[83].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[84].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[85].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[86].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[87].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[88].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[89].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[90].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[91].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[92].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[93].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[94].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[95].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[96].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[97].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[98].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[99].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[100].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[101].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[102].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[103].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[104].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[105].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[106].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[107].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[108].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[109].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[110].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[111].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[112].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[113].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[114].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[115].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[116].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[117].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[118].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[119].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[120].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[121].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[122].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[123].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[124].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[125].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[126].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[127].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[128].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[129].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[130].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[131].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[132].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[133].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[134].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[135].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[136].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[137].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[138].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[139].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[140].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[141].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[142].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.canonical[143].bank_name",
+      "before": null,
+      "after": "Banco do Brasil",
+      "change": "changed"
+    },
+    {
+      "case": "bb_twelve_month_blocks",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "bradesco_missing_period",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_missing_period",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_missing_period",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_missing_period",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "bradesco_native_wrapped",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_native_wrapped",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_native_wrapped",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_native_wrapped",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "bradesco_printed_totals_diverge",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_printed_totals_diverge",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_printed_totals_diverge",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "bradesco_reordered_header",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_reordered_header",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Bradesco",
+      "change": "changed"
+    },
+    {
+      "case": "bradesco_reordered_header",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "bradesco_separate_section_opening",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "santander_partial",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_descending_native",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_descending_native",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_descending_native",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_detached_pending_idle_day_False",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_detached_pending_idle_day_False",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_detached_pending_idle_day_False",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_detached_pending_idle_day_False",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_detached_pending_idle_day_True",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_detached_pending_idle_day_True",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_detached_pending_idle_day_True",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_detached_pending_idle_day_True",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_period_direction_False_native",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_period_direction_False_native",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_period_direction_False_native",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_period_direction_False_native",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_period_direction_True_native",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_period_direction_True_native",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_period_direction_True_native",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_period_direction_True_native",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_split_balance_False",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_balance_False",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_balance_False",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_balance_False",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_split_balance_True",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_balance_True",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_balance_True",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_balance_True",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_split_transaction_False",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_transaction_False",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_transaction_False",
+      "path": "$.canonical[2].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_split_transaction_False",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_value_before_page_break",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_value_before_page_break",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_value_before_page_break",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    },
+    {
+      "case": "sicoob_white_image_page",
+      "path": "$.canonical[0].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_white_image_page",
+      "path": "$.canonical[1].bank_name",
+      "before": null,
+      "after": "Sicoob",
+      "change": "changed"
+    },
+    {
+      "case": "sicoob_white_image_page",
+      "path": "$.metrics.statement_issuer_source",
+      "before": null,
+      "after": "header",
+      "change": "added"
+    }
+  ],
+  "review_compatibility": {
+    "cases": 170,
+    "errors": []
+  },
+  "owner_approval": {
+    "approved_by": "Repository owner, via explicit reply in the Codex conversation",
+    "answer": "Sim, registrar essas diferen?as",
+    "question_item_id": "[\"request_user_input_async\",\"call_9c00607dd5f34fc4921c478b5bbced5c\",0]",
+    "scope": "Register the reviewed identity-only differences; no merge or deployment authorized.",
+    "scope_note": "The final reviewed set has 224 differences in 23 cases: one fewer source-metadata addition than the question, because independently scoped accounts retain their own identity."
+  },
+  "baseline_update": {
+    "method": "Apply only the exact approved differences; retain financial fields and original reference lineage.",
+    "updated_remaining_cases": 20,
+    "updated_remaining_fields": 210
+  },
+  "review_followup": {
+    "request": "a PR 543 foi revisada e em aponamenttos, pode verifcar?",
+    "reviewed_commit": "9562ddace19af5a81c0c7818757324a2aff7a013",
+    "review_comments": [
+      "https://github.com/claston/gettdone/pull/543#discussion_r4458051232",
+      "https://github.com/claston/gettdone/pull/543#discussion_r4458051236"
+    ],
+    "fix_commit": "1bc50e6c9f52f7c1f9e9e024218df08c2267f55d",
+    "previous_application_tree": "c3a7f48d1d4be4baf5756bf45088ecdfa06bd717",
+    "application_tree": "65236b36354607b0142a2337d6a37d088fd72c36",
+    "fixes": [
+      "Reuse shared holder labels and skip combined label rows plus their values.",
+      "Collect every distinct catalog institution per line; collapse aliases before detecting conflicts."
+    ],
+    "compatibility": {
+      "cases": 90,
+      "exact_previously_approved_differences": 224,
+      "new_differences": 0,
+      "frozen_differences": 0
+    },
+    "approval_scope": "The original explicit approval of these exact identity differences is unchanged. This follow-up revalidates the same set for the requested review fixes; it is not a PR review approval or authorization to merge/deploy."
+  }
+}

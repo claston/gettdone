@@ -6,6 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Callable
 
+from app.application.bank_identity import resolve_statement_issuer
 from app.application.cross_page_transaction_detection import detect_cross_page_transaction_split
 from app.application.document_routing_policy import enforce_document_routing
 from app.application.document_type_classifier import classify_document_type
@@ -279,6 +280,17 @@ def parse_pdf_transactions(
             raise InvalidFileContentError("Cannot confirm an empty statement: some PDF pages could not be read.")
     from app.application.transaction_source_regions import bind_transaction_source_regions
 
+    scoped_accounts = any(row.statement_account for row in result.canonical_transactions or ())
+    issuer = None if scoped_accounts else resolve_statement_issuer(result.extracted_text)
+    if issuer is not None:
+        result = replace(result, parse_metrics={**result.parse_metrics, "statement_issuer_source": issuer.source})
+    if issuer is not None and result.canonical_transactions is not None:
+        # Scoped accounts already carry their own identity. Only unscoped rows
+        # inherit the document issuer; the financial reader and values stay intact.
+        result = replace(result, canonical_transactions=[
+            replace(row, bank_name=issuer.bank_name) if row.statement_account is None else row
+            for row in result.canonical_transactions
+        ])
     return bind_transaction_source_regions(result, raw_bytes)
 
 
