@@ -1593,10 +1593,8 @@
     const rows = analysis && Array.isArray(analysis.preview_transactions) ? analysis.preview_transactions : [];
     const manualReview = warningTypes.includes("manual_review_recommended") || rows.some((row) =>
       row && !row.is_deleted && Array.isArray(row.warning_types) && row.warning_types.includes("manual_review_recommended"));
-    if (String(metrics.export_recommendation || "").trim().toLowerCase() === "review_recommended" || manualReview ||
-      insights.some((insight) => insight && insight.type === "pdf_export_review_recommended")) {
-      list.push("Revise os lançamentos e confira os dados no documento original antes de exportar. A conversão foi concluída com recomendação de revisão manual.");
-    }
+    const reviewRecommended = String(metrics.export_recommendation || "").trim().toLowerCase() === "review_recommended" || manualReview ||
+      insights.some((insight) => insight && insight.type === "pdf_export_review_recommended");
     if (isPayablesReport(analysis)) {
       list.push("Documento identificado: relatório de contas a pagar. Este documento não é um extrato bancário.");
       list.push("Os valores representam o total de cada conta. Itens pagos usam a data de pagamento; pendentes e parciais usam o vencimento e estão identificados no histórico. Todos os itens listados podem ser exportados.");
@@ -1668,6 +1666,9 @@
       list.push(
         `Saldo linha a linha com inconsistências: ${balanceFailed} lançamento(s) não bateram no cálculo de saldo.`
       );
+    }
+    if (!list.length && reviewRecommended) {
+      list.push("Revise os lançamentos e confira os dados no documento original antes de exportar. A conversão foi concluída com recomendação de revisão manual.");
     }
     return list;
   }

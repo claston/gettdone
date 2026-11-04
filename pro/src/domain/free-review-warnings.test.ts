@@ -38,11 +38,47 @@ function statement(metrics: Record<string, unknown> = {}) {
 
 describe("free converter review findings", () => {
   it.each(["high", "medium", "low"])(
-    "shows no warning for %s confidence without findings, including old responses",
+    "does not treat %s confidence alone as a review recommendation",
     (band) => {
-      expect(collect(statement({ confidence_band: band }))).toHaveLength(0);
+      expect(
+        collect(
+          statement({ confidence_band: band, export_recommendation: "" }),
+        ),
+      ).toHaveLength(0);
     },
   );
+
+  it("shows an explicit review recommendation even without specific findings", () => {
+    const warnings = collect(statement());
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("recomendação de revisão manual");
+  });
+
+  it("shows the legacy review insight when PDF metrics are absent", () => {
+    const warnings = collect({
+      insights: [{ type: "pdf_export_review_recommended" }],
+    });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("recomendação de revisão manual");
+  });
+
+  it("keeps OCR document findings without repeating the general recommendation", () => {
+    expect(
+      Array.from(
+        collect(
+          statement({
+            canonical_warning_types_list: [
+              "ocr_control_confidence_unconfirmed",
+              "ocr_structure_review_required",
+            ],
+          }),
+        ),
+      ),
+    ).toEqual([
+      "finding:ocr_control_confidence_unconfirmed",
+      "finding:ocr_structure_review_required",
+    ]);
+  });
 
   it("keeps the specific balance finding without a duplicate generic warning", () => {
     const warnings = collect(statement({ balance_consistency_failed: 2 }));

@@ -69,12 +69,12 @@ def main():
                     page.locator("#file-input").set_input_files({
                         "name": "synthetic-review.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4\n%%EOF"})
                     page.locator("#convert-btn").click()
-                    expect(page.locator(".review-warning-list li")).to_have_count(3)
+                    expect(page.locator(".review-warning-list li")).to_have_count(2)
                     # Exercise restored results through the real initialization path too.
                     page.reload(wait_until="domcontentloaded")
                     expect(page.locator("#review-section").get_by_text(GUIDANCE, exact=True)).to_be_visible()
                     expect(page.locator(".review-warning-title")).to_have_text("Atenção na revisão")
-                    expect(page.locator(".review-warning-list li")).to_have_count(3)
+                    expect(page.locator(".review-warning-list li")).to_have_count(2)
                     expect(page.locator(".review-warning-list")).to_contain_text("Confira os saldos no PDF")
                     expect(page.locator(".review-warning-list")).to_contain_text("A organização de algumas linhas")
                     assert not errors, errors
