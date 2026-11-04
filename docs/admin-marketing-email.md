@@ -4,8 +4,9 @@ No admin, abra **Marketing → Disparo de teste → Enviar e-mail de teste**.
 O backend aguarda o Resend na própria requisição e apresenta a aceitação pelo
 provedor ou a falha. Não usa worker, fila, agendamento ou tarefa em background.
 
-O destinatário desta versão é exclusivamente `a@a.com.br`, sem campo para
-informar outro endereço. A conta deve existir, estar ativa, ter e-mail verificado
+O destinatário é definido exclusivamente por `MARKETING_TEST_RECIPIENT` no
+ambiente do backend, sem campo no painel para informar outro endereço.
+A conta deve existir, estar ativa, ter e-mail verificado
 e `product_updates_opt_in` habilitado. O sistema não cria usuários nem concede
 consentimento automaticamente. O modelo `marketing-test-v1` é texto simples com
 saudação, mensagem de teste e link individual para descadastro.
@@ -17,6 +18,12 @@ escolhido para o formulário de contato:
 
 - `RESEND_API_KEY`: chave do Resend já usada pela aplicação.
 - `CONTACT_FROM_EMAIL`: remetente autorizado pelo domínio configurado no Resend.
+- `MARKETING_TEST_RECIPIENT`: endereço único da conta de teste, configurado de
+  forma privada no serviço do backend (no Render, em **Environment**). Não tem
+  valor padrão: ausente, vazio ou inválido bloqueia o envio com `503`. Espaços
+  externos são removidos e o endereço é convertido para minúsculas, como no cadastro.
+  Configure antes do deploy desta versão e reinicie/reimplante o backend ao alterar.
+  Não versionar endereços reais; os testes usam apenas destinatários fictícios.
 - `CONTACT_RESEND_DRY_RUN=false`: habilita envio real. O padrão `true` apenas
   simula, e o admin exibe explicitamente que nenhum e-mail foi enviado.
 - `MARKETING_PUBLIC_BASE_URL`: origem pública que atende as rotas do backend;
@@ -69,6 +76,11 @@ Não há migração ou tabela nova. A única escrita persistente é a revogaçã
 consentimento, usando campos existentes e SQL compatível com SQLite/PostgreSQL.
 O serviço de e-mails mantém os parâmetros anteriores; cabeçalhos e chave de
 idempotência são opcionais. Não altera cadastro, sessão ou conversão.
+
+A versão anterior ignora `MARKETING_TEST_RECIPIENT`; esta versão exige a variável
+para disparos de teste. Os links de descadastro existentes continuam válidos,
+inclusive quando a variável estiver ausente ou mudar. Em rollback, desabilitar
+o gatilho de envio antes de restaurar uma versão com destinatário fixo.
 
 Rollback: remover o botão/gatilho de envio primeiro. Preservar as rotas de
 descadastro enquanto houver e-mails enviados com esses links. Reverter toda a

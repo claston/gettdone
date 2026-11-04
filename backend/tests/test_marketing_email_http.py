@@ -55,12 +55,13 @@ def fake_resend_server():
 
 
 def test_inline_send_retries_and_unsubscribe_over_real_http(monkeypatch):
+    monkeypatch.setenv("MARKETING_TEST_RECIPIENT", "marketing-test@example.com")
     with fake_resend_server() as (provider_url, messages, requests), _run_http_server(
         admin_emails={"admin@example.com"},
     ) as (base_url, access):
         access.register_user(name="Admin", email="admin@example.com", password="strong-pass")
         access.register_user(
-            name="Cliente de teste", email="a@a.com.br", password="strong-pass",
+            name="Cliente de teste", email="marketing-test@example.com", password="strong-pass",
             product_updates_opt_in=True, product_updates_opted_in_at="2026-10-29T12:00:00+00:00",
             product_updates_consent_version=2,
         )
@@ -76,12 +77,13 @@ def test_inline_send_retries_and_unsubscribe_over_real_http(monkeypatch):
             assert client.post("/admin/auth/login", json={"email": "admin@example.com", "password": "strong-pass"}).status_code == 200
             sent = client.post(path, json=body)
             assert sent.status_code == 200, sent.text
+            assert sent.json()["recipient"] == "marketing-test@example.com"
             assert sent.json()["provider_message_id"] == "fictional-message-1"
             assert client.post(path, json=body).json() == sent.json()
             assert len(requests) == 2 and len(messages) == 1
             message = messages[0]
             assert message["from"] == "teste@example.com"
-            assert message["to"] == ["a@a.com.br"]
+            assert message["to"] == ["marketing-test@example.com"]
             assert message["headers"]["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
             unsubscribe_url = message["headers"]["List-Unsubscribe"].strip("<>")
             assert unsubscribe_url in message["text"]

@@ -11,7 +11,6 @@ from app.application.access_control import AccessControlService
 from app.application.contact_service import ContactService
 from app.application.errors import ContactDeliveryError, ContactProviderNotConfiguredError
 from app.application.marketing_email_service import (
-    TEST_RECIPIENT,
     TEST_TEMPLATE_ID,
     InvalidMarketingUnsubscribeTokenError,
     MarketingConfigurationError,
@@ -51,16 +50,21 @@ async def send_marketing_test_email(
         x_admin_token=x_admin_token, authorization=authorization,
         access_cookie_token=access_cookie_token, access_control_service=access_control,
     )
+    service = MarketingEmailService(access_control)
     try:
-        delivery = await MarketingEmailService(access_control).send_test(
+        delivery = await service.send_test(
             mailer=mailer,
             public_base_url=os.getenv("MARKETING_PUBLIC_BASE_URL", "https://www.ofxsimples.com.br").strip(),
             request_id=str(payload.request_id),
         )
     except MarketingRecipientUnavailableError:
-        raise HTTPException(409, "O usuário a@a.com.br precisa existir, estar ativo, ter e-mail verificado e consentimento de marketing.")
+        raise HTTPException(
+            409, "O destinatário configurado precisa existir, estar ativo, ter e-mail verificado e consentimento de marketing.",
+        )
     except (ContactProviderNotConfiguredError, MarketingConfigurationError):
-        raise HTTPException(503, "O envio de marketing não está configurado. Verifique o Resend e a URL pública de descadastro.")
+        raise HTTPException(
+            503, "O envio de marketing não está configurado. Verifique o destinatário, o Resend e a URL pública de descadastro.",
+        )
     except ContactDeliveryError:
         logger.warning("marketing_test_delivery_failed admin_id=%s template_id=%s", admin.user_id, TEST_TEMPLATE_ID)
         raise HTTPException(502, "Não foi possível confirmar o envio pelo Resend. Tente novamente para verificar o mesmo disparo.")
@@ -68,7 +72,7 @@ async def send_marketing_test_email(
     logger.info("marketing_test_delivery_finished admin_id=%s template_id=%s mode=%s provider_message_id=%s",
                 admin.user_id, TEST_TEMPLATE_ID, delivery.delivery_mode, delivery.provider_message_id)
     return MarketingTestEmailResponse(
-        recipient=TEST_RECIPIENT, template_id=TEST_TEMPLATE_ID,
+        recipient=service.test_recipient, template_id=TEST_TEMPLATE_ID,
         delivery_mode=delivery.delivery_mode, provider_message_id=delivery.provider_message_id,
     )
 

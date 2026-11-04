@@ -40,7 +40,7 @@ async def main():
                             await request.fulfill(status=502, json={"detail": "Falha simulada do Resend."})
                         else:
                             await request.fulfill(json={
-                                "recipient": "a@a.com.br", "template_id": "marketing-test-v1",
+                                "recipient": "marketing-test@example.com", "template_id": "marketing-test-v1",
                                 "delivery_mode": "dry_run" if attempt == 1 else "resend",
                                 "provider_message_id": "fictional-message-1",
                             })
@@ -65,7 +65,7 @@ async def main():
                 await expect(status).to_contain_text("Falha simulada")
                 await expect(button).to_be_enabled()
                 await button.click()
-                await expect(status).to_contain_text("Envio aceito pelo Resend para a@a.com.br")
+                await expect(status).to_contain_text("Envio aceito pelo Resend para marketing-test@example.com")
                 assert calls[0]["request_id"] != calls[1]["request_id"]
                 assert calls[1]["request_id"] == calls[2]["request_id"], "Retry must keep the same idempotency key"
                 assert not errors, errors
