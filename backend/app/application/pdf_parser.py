@@ -417,6 +417,11 @@ def _parse_pdf_transactions_strict(
             )
 
     if native_pages:
+        if detect_financial_report("\n".join(native_pages)) == ("acquirer_sales_report", "sales_gross_installment_columns"):
+            from app.application.parsers.pdf.installment_sales import parse_installment_sales
+            from app.application.parsers.pdf.native_table_source import read_native_table_source
+
+            return parse_installment_sales(read_native_table_source(raw_bytes), native_pages, native=True)
         from app.application.parsers.pdf.santander_account_blocks import parse_native_account_blocks
         from app.application.parsers.pdf.statement_blocks import parse_native_blocks
 
@@ -1159,6 +1164,16 @@ def _parse_textract_text_pages_impl(extraction) -> PdfParseResult:
     if not any(page_texts):
         raise InvalidFileContentError("Nao foi possivel extrair transacoes do OCR para revisao.")
     joined_text = "\n".join(page_texts)
+    from app.application.parsers.pdf.grouped_daily_cash import is_grouped_daily_cash, parse_grouped_daily_cash
+
+    if is_grouped_daily_cash(joined_text):
+        result = _build_verified_statement_result(parse_grouped_daily_cash(extraction), page_texts)
+        return replace(result, source_extraction=extraction,
+                       source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
+    if detect_financial_report(joined_text) == ("acquirer_sales_report", "sales_gross_installment_columns"):
+        from app.application.parsers.pdf.installment_sales import parse_installment_sales
+
+        return parse_installment_sales(extraction, page_texts)
     title_result = parse_ocr_title_report(extraction)
     if title_result is not None:
         return replace(_with_parse_observability(title_result, extraction_provider="aws_textract", textract_used=1),

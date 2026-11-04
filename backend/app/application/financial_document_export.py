@@ -12,6 +12,11 @@ from app.application.models import NormalizedTransaction
 from app.application.ofx_writer import build_ofx_statement
 
 LABELS = {
+    "attributes.installment": "Parcela", "attributes.card_brand": "Bandeira",
+    "attributes.card_type": "Tipo de cartão", "attributes.terminal": "Terminal",
+    "attributes.card_indicator": "Modalidade crédito/débito", "attributes.payment_order": "Ordem de pagamento",
+    "attributes.transaction_id": "Identificador da transação",
+    "reported_establishments": "Estabelecimentos informados",
     "opening_balance": "Saldo anterior", "closing_balance": "Saldo final",
     "amounts.opening": "Saldo anterior", "amounts.closing": "Saldo final",
     "amounts.fee": "Taxa", "attributes.printed_status": "Situação impressa",

@@ -36,6 +36,12 @@ def _period(text):
         return period["start_date"], period["end_date"]
     short = re.search(r"PERIODO:\s*(\d{2})\s+A\s+(\d{2})/(\d{2})/(\d{4})\b", header)
     try:
+        if "EXTRATO CONSOLIDADO" in upper(text):
+            initial = re.search(rf"SALDO INICIAL NO DIA ({_DATE}):?", upper(text))
+            final = re.search(rf"SALDO FINAL NO DIA ({_DATE}):?", upper(text))
+            if initial and final:
+                return tuple(date.fromisoformat("-".join(reversed(match[1].split("/")))).isoformat()
+                             for match in (initial, final))
         movement_period = re.search(rf"(?m)^\s*MOVIMENTACOES\s+DE\s+({_DATE})\s+A\s+({_DATE})\b",
                                     "\n".join(upper(line) for line in text.splitlines()))
         if movement_period:
