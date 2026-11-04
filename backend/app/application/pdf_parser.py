@@ -535,7 +535,8 @@ def _parse_pdf_transactions_strict(
                 extraction_provider="native_pdfium_text", native_text_detected=1, textract_attempted=0,
             )
         report_identity = detect_financial_report("\n".join(native_pages))
-        if report_identity and report_identity[1] in {"pagbank_sales_gross_fee_net_status", "sicoob_sisbr_fixed_income_positions"}:
+        if report_identity and report_identity[1] in {"pagbank_sales_gross_fee_net_status", "sicoob_sisbr_fixed_income_positions",
+                                                      "agora_custody_monthly_positions", "brb_fcbr76_positions"}:
             return _with_parse_observability(
                 parse_financial_pdf_pages(_read_layout_native_pdf_page_texts(raw_bytes), native=True),
                 extraction_provider="native_pdf_text", native_text_detected=1, textract_attempted=0)
@@ -1185,6 +1186,21 @@ def _parse_textract_text_pages_impl(extraction) -> PdfParseResult:
         return replace(_with_parse_observability(title_result, extraction_provider="aws_textract", textract_used=1),
                        source_extraction=extraction, source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
     inferred_layout = infer_pdf_layout(joined_text)
+    from app.application.parsers.pdf.grouped_daily_cash import is_grouped_daily_cash, parse_grouped_daily_cash
+
+    if is_grouped_daily_cash(joined_text):
+        statement = parse_grouped_daily_cash(extraction)
+        result = _build_verified_statement_result(statement, page_texts)
+        return replace(result, source_extraction=extraction,
+                       source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
+    from app.application.parsers.pdf.consolidated_cash_columns import consolidated_cash_kind, parse_consolidated_cash
+
+    consolidated = consolidated_cash_kind(joined_text)
+    if consolidated:
+        statement = parse_consolidated_cash(extraction, consolidated)
+        result = _build_verified_statement_result(statement, page_texts)
+        return replace(result, source_extraction=extraction,
+                       source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
     from app.application.ocr_cash_statement import maybe_parse_shared_cash
 
     shared = maybe_parse_shared_cash(extraction)

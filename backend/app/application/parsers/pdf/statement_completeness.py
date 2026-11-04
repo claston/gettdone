@@ -25,6 +25,8 @@ def validate_statement_completeness(pages) -> bool:
     # Issuer evidence belongs to the header/footer, not transaction payees.
     issuer_lines = "\n".join(upper(line) for page in pages for line in page.splitlines())
     bare_counter_layout = bool(re.search(r"(?:WWW\.)?MERCADOPAGO\.COM\b", joined)
+                               or "EXTRATO CONSOLIDADO DE CONTA CORRENTE" in joined
+                               or "BALANCETE" in joined and "AG. ORIGEM" in joined
                                or re.search(r"(?m)^MERCADO PAGO INSTITUICAO DE PAGAMENTO\b", issuer_lines)
                                or re.search(r"(?m)^BTG PACTUAL\b", "\n".join(upper(line) for line in pages[0].splitlines()[:12])))
     for physical, page in enumerate(pages, 1):
@@ -34,6 +36,8 @@ def validate_statement_completeness(pages) -> bool:
             return True
         text = re.sub(r"(?m)^\s*CONTINUA NA PAGINA\s+\d+\s*$", "", text)
         matches = re.findall(r"\b(?:PAGINA|FOLHA)\s*:?\s*(?:DE\s*)?(\d+)\s*(?:/|DE)\s*(\d+)\b", text)
+        if not matches and "EXTRATO CONSOLIDADO DE CONTA CORRENTE" in joined:
+            matches = re.findall(r"(?m)^\s*PAGINA\s+(\d+)\s+(\d+)\s*$", text)
         if not matches:
             matches = re.findall(r"EXTRATO MENSAL[^\n]*?\b(\d{3})\s*[/|]\s*(\d{3})(?!\d)", text)
         if not matches:
