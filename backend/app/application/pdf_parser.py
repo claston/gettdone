@@ -1112,10 +1112,13 @@ def _parse_scanned_pdf_with_textract_text_pages_strict(extraction) -> PdfParseRe
             page for page in extraction.pages if segmentation.page_texts[page.page_number - 1]
         ])
     result = parse_with_ocr_separator_recovery(statement_extraction, _parse_textract_text_pages)
+    parts = segmentation.parts or result.document_parts
+    if result.parse_metrics.get("statement_blocks_count"):
+        parts = (result.document_parts or []) + [part for part in segmentation.parts or [] if not part.get("included_in_statement")]
     return replace(result, source_page_texts=segmentation.source_page_texts,
                    source_extraction=extraction, source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages),
                    parse_metrics={**result.parse_metrics, "page_count": len(segmentation.source_page_texts)},
-                   document_parts=segmentation.parts or result.document_parts)
+                   document_parts=parts)
 
 
 def _parse_textract_text_pages(extraction) -> PdfParseResult:
@@ -1403,6 +1406,10 @@ def _parse_pdf_transactions_from_page_texts_strict(
 
 
 def _build_verified_statement_result(statement, pages):
+    if statement.blocks:
+        from app.application.parsers.pdf.statement_blocks import combine_verified_blocks
+
+        return combine_verified_blocks(statement, pages, _build_verified_statement_result)
     if not statement.rows:
         if statement.opening is None or statement.opening != statement.closing:
             raise PdfFinancialValidationError("Não foi possível confirmar os saldos do extrato sem movimentação.")

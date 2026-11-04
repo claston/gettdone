@@ -23,6 +23,39 @@ _REFERENCE = re.compile(rf"(?P<before>{_MONTH_YEAR})\s*MES:|\bMES:\s*(?P<after>{
 _MESSAGE = "Não foi possível validar as datas, os valores e os totais do extrato de cartão Bradesco. Confira o documento original."
 
 
+def _contact_furniture(lines: list[_PdfLine]) -> set[tuple[int, int]]:
+    """Identify the printed contact panel even when the PDF emits it before rows.
+
+    Only a contiguous panel with contact labels and a phone is accepted. Unknown
+    text, transaction dates and currency values remain subject to row validation.
+    """
+    labels = {
+        "DEMAIS TELEFONES", "CONSULTE O SITE", "FALE CONOSCO", "CANCELAMENTOS, RECLAMACOES E",
+        "INFORMACOES. ATENDIMENTO 24 HORAS, 7 DIAS", "POR SEMANA.", "DEFICIENTE AUDITIVO OU DE FALA",
+        "ALO BRADESCO", "SAC - SERVICO DE", "APOIO AO CLIENTE",
+    }
+    phone = re.compile(r"(?:OUVIDORIA )?0800 \d{3} \d{4}(?: ATENDIMENTO DE SEGUNDA A SEXTA-FEIRA, "
+                       r"DAS 8H AS 18H, EXCETO FERIADOS\.)?")
+    ignored, panel = set(), []
+
+    def finish():
+        texts = [normalize_upper_text(line.text) for line in panel]
+        if sum(text in labels for text in texts) >= 2 and any(phone.fullmatch(text) for text in texts):
+            ignored.update((line.page_number, line.line_number) for line in panel)
+        panel.clear()
+
+    for line in lines:
+        text = normalize_upper_text(line.text)
+        if panel and line.page_number != panel[-1].page_number:
+            finish()
+        if text in labels or phone.fullmatch(text):
+            panel.append(line)
+        else:
+            finish()
+    finish()
+    return ignored
+
+
 def _reference(lines: list[_PdfLine]) -> tuple[int, int]:
     references: set[tuple[int, int]] = set()
     for line in lines:
@@ -50,6 +83,7 @@ class BradescoCardWebLayoutParser:
         # This is a card movement list: neither currency column is a running balance.
         # Prefer the printed billing month over export metadata and the due month.
         reference_month, reference_year = _reference(lines)
+        furniture = _contact_furniture(lines)
         rows: list[_ParsedTransaction] = []
         sums = [Decimal(0), Decimal(0)]
         active = False
@@ -59,7 +93,7 @@ class BradescoCardWebLayoutParser:
             if _HEADER.fullmatch(normalized):
                 active = True
                 continue
-            if not active or not normalized:
+            if not active or not normalized or (line.page_number, line.line_number) in furniture:
                 continue
             values = _VALUES.fullmatch(line.text.strip())
             if values is None:

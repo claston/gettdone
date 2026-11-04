@@ -87,9 +87,14 @@ def _column_lines(page, columns):
                 x = word.bbox["left"]
                 column = ("balance" if x >= columns["SALDO"] - .03 else "amount" if x >= columns["VALOR R$"] - .035
                           else "document" if x >= columns["DOCUMENTO"] - .07 else "history")
+                # Financial values are right aligned; their left edge moves
+                # with the number of digits and can precede the balance heading.
+                if _MONEY.fullmatch(word.text.strip()) and x >= columns["VALOR R$"] - .035:
+                    column = "balance" if x + word.bbox["width"] >= columns["SALDO"] - .005 else "amount"
                 if (word.text.upper() in {"C", "D"} and previous_word is not None
                         and _MONEY.fullmatch(previous_word.text.strip())
-                        and 0 <= x - (previous_word.bbox["left"] + previous_word.bbox["width"]) < .025):
+                        and abs(word.bbox["top"] - previous_word.bbox["top"]) < .006
+                        and -.006 <= x - (previous_word.bbox["left"] + previous_word.bbox["width"]) < .025):
                     column = previous_column
                 if (word.text == "*" and previous_column == "amount" and previous_word is not None
                         and re.fullmatch(NUMBER, previous_word.text.strip())
