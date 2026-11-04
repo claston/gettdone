@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   loadFinancialMonth,
@@ -61,6 +67,114 @@ beforeEach(() => {
   window.history.replaceState(null, "", "/");
 });
 describe("Central canônica", () => {
+  it("aguarda a resolução do mês sem publicar um período provisório", async () => {
+    let resolve!: (data: FinancialMonth) => void;
+    vi.mocked(loadFinancialMonth).mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    render(
+      <LiveFinancialCenter
+        clientId="client_test"
+        initialQuery="accounts=account_test&pending=true"
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Mês anterior" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Próximo mês" })).toBeDisabled();
+    expect(window.location.search).toBe("");
+    await act(async () => resolve(result));
+    expect(new URLSearchParams(window.location.search).get("month")).toBe(
+      "2026-04",
+    );
+    expect(loadFinancialMonth).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(loadFinancialMonth).mock.calls[0][1]).toContain(
+      "account=account_test",
+    );
+  });
+  it("permite repetir a resolução inicial quando a consulta falha", async () => {
+    vi.mocked(loadFinancialMonth).mockRejectedValueOnce(
+      new Error("Consulta indisponível"),
+    );
+    render(<LiveFinancialCenter clientId="client_test" />);
+    await screen.findByRole("alert");
+    expect(loadFinancialMonth).toHaveBeenCalledTimes(1);
+    expect(window.location.search).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    await screen.findByRole("heading", { name: "Cliente real" });
+    expect(new URLSearchParams(window.location.search).get("month")).toBe(
+      "2026-04",
+    );
+    expect(loadFinancialMonth).toHaveBeenCalledTimes(2);
+  });
+  it.each(["", "month=invalid"])(
+    "resolve o último mês com movimentos ao entrar (%s)",
+    async (initialQuery) => {
+      render(
+        <LiveFinancialCenter
+          clientId="client_test"
+          initialQuery={initialQuery}
+        />,
+      );
+      await screen.findByRole("heading", { name: "Cliente real" });
+      expect(
+        new URLSearchParams(vi.mocked(loadFinancialMonth).mock.calls[0][1]).has(
+          "month",
+        ),
+      ).toBe(false);
+      expect(new URLSearchParams(window.location.search).get("month")).toBe(
+        "2026-04",
+      );
+      expect(loadFinancialMonth).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByRole("button", { name: "Atualizar" }));
+      await waitFor(() =>
+        expect(vi.mocked(loadFinancialMonth).mock.lastCall?.[1]).toContain(
+          "month=2026-04",
+        ),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Próximo mês" }));
+      await waitFor(() =>
+        expect(vi.mocked(loadFinancialMonth).mock.lastCall?.[1]).toContain(
+          "month=2026-05",
+        ),
+      );
+    },
+  );
+  it("usa o mês atual retornado pelo servidor quando não há movimentos", async () => {
+    vi.mocked(loadFinancialMonth).mockResolvedValue({
+      ...result,
+      month: "2026-11",
+      days: [],
+      movements: [],
+    });
+    render(<LiveFinancialCenter clientId="client_test" />);
+    await screen.findByRole("heading", { name: "Cliente real" });
+    expect(new URLSearchParams(window.location.search).get("month")).toBe(
+      "2026-11",
+    );
+    expect(loadFinancialMonth).toHaveBeenCalledTimes(1);
+  });
+  it("preserva o mês explícito mesmo sem movimentos", async () => {
+    vi.mocked(loadFinancialMonth).mockResolvedValue({
+      ...result,
+      month: "2025-12",
+      days: [],
+      movements: [],
+    });
+    render(
+      <LiveFinancialCenter
+        clientId="client_test"
+        initialQuery="month=2025-12"
+      />,
+    );
+    await screen.findByRole("heading", { name: "Cliente real" });
+    expect(vi.mocked(loadFinancialMonth).mock.calls[0][1]).toContain(
+      "month=2025-12",
+    );
+    expect(new URLSearchParams(window.location.search).get("month")).toBe(
+      "2025-12",
+    );
+  });
   it("consulta um dia e abre a origem com retorno ao cliente e mês", async () => {
     render(
       <LiveFinancialCenter

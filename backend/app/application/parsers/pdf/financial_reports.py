@@ -58,6 +58,10 @@ def parse_financial_report_pages(page_texts: list[str]) -> dict | None:
     if detected is None:
         return None
     kind, evidence = detected
+    if evidence in {"agora_custody_monthly_positions", "brb_fcbr76_positions"}:
+        from app.application.parsers.pdf.custody_period_reports import parse_agora_custody, parse_fcbr76
+
+        return parse_agora_custody(page_texts) if evidence == "agora_custody_monthly_positions" else parse_fcbr76(page_texts)
     if evidence == "sicoob_sisbr_fixed_income_positions":
         from app.application.parsers.pdf.investment_positions import parse_fixed_income_positions
 
@@ -89,6 +93,10 @@ def parse_financial_report_pages(page_texts: list[str]) -> dict | None:
         from app.application.parsers.pdf.btg_fund_positions import parse_btg_fund_positions
 
         return parse_btg_fund_positions(page_texts)
+    if evidence == "btg_investment_cash_ledger":
+        from app.application.parsers.pdf.btg_investment_cash import parse_btg_investment_cash
+
+        return parse_btg_investment_cash(page_texts)
     if evidence == "sicoob_rem116_period_summary":
         from app.application.parsers.pdf.sicoob_summary import parse_sicoob_summary
 
@@ -219,7 +227,15 @@ def _investments(lines):
     if not all(marker in header for marker in ("SALDO ANTERIOR", "APLICACOES", "RESGATES / VENCIMENTOS", "SALDO FINAL")):
         raise PdfFinancialValidationError(MESSAGE)
     row = re.compile(rf"^({DATE})\s+({DATE})\s+({DATE}|-)\s+(\d+,\d{{4}})\s+(.+)$")
-    for text, ref in lines:
+    for line_index, (text, ref) in enumerate(lines):
+        # Some native exports emit metadata values before their labels. These
+        # are explicitly labelled dates, not incomplete application records.
+        normalized = normalize_upper_text(text)
+        if re.fullmatch(rf"{DATE}\s+{DATE}\s*ATE\s*PERIODO DE:", normalized):
+            continue
+        if (not groups and not current and re.fullmatch(DATE, text) and line_index+1 < len(lines)
+                and normalize_upper_text(lines[line_index+1][0]).startswith("DATA EMISSAO DO")):
+            continue
         if normalize_upper_text(text).startswith("TOTAL "):
             values = re.findall(MONEY, text)
             if len(values) != 7:
@@ -233,7 +249,7 @@ def _investments(lines):
                 raise PdfFinancialValidationError(MESSAGE)
             applied, maturity, redeemed, rate, tail = match.groups()
             values = re.findall(MONEY, tail)
-            if " ".join(values) != tail or len(values) not in {4, 7}:
+            if " ".join(values) != tail or len(values) not in {1, 4, 7} or len(values) == 1 and len(groups) != 1:
                 raise PdfFinancialValidationError(MESSAGE)
             dates = {"application": date(applied), "maturity": date(maturity)}
             if redeemed != "-":

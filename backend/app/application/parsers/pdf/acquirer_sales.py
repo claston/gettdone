@@ -51,15 +51,19 @@ def parse_sales_pages(pages):
                     fail("A situação de uma venda está incompleta.")
                 status += " " + continuation[1]
                 refs.append({"page": page, "line": continuation[0]})
-            if upper(status) not in {"APROVADA", "AGUARDANDO PAGAMENTO"}:
+            if upper(status) not in {"APROVADA", "AGUARDANDO PAGAMENTO", "CANCELADA"}:
                 fail("O relatório contém uma situação de venda ainda não suportada.")
             current = date
             totals[date] += net_value
-            checks.append(_check(f"sale_net_p{page}_l{number}", gross_value - fee_value, net_value, refs=refs))
+            # A cancelled sale may retain its original gross while explicitly
+            # printing zero fee and zero net. The active-sale equation does not
+            # apply to that representation; its net still enters daily controls.
+            if not (upper(status) == "CANCELADA" and fee_value == net_value == 0):
+                checks.append(_check(f"sale_net_p{page}_l{number}", gross_value - fee_value, net_value, refs=refs))
             events.append(_event("acquirer_sale", dates={"transaction": date},
                 amounts=dict(zip(("gross", "fee", "net"), (format(value, ".2f") for value in amounts), strict=True)),
                 primary="net", cash_effect=None, reference=code, description=kind,
-                status="pending" if upper(status) == "AGUARDANDO PAGAMENTO" else "approved", refs=refs,
+                status={"AGUARDANDO PAGAMENTO": "pending", "APROVADA": "approved", "CANCELADA": "cancelled"}[upper(status)], refs=refs,
                 attributes={"time": stamp_match[2], "acquirer": acquirer, "establishment": establishment,
                             "nsu": nsu, "printed_status": status}))
     if not events or set(totals) != set(printed):

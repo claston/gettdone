@@ -38,9 +38,7 @@ export function LiveFinancialCenter({
   const [month, setMonth] = useState(() =>
     /^20\d{2}-(0[1-9]|1[0-2])$/.test(initial.get("month") ?? "")
       ? initial.get("month")!
-      : new Date()
-          .toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" })
-          .slice(0, 7),
+      : "",
   );
   const [account, setAccount] = useState(initial.get("accounts") ?? "");
   const [day, setDay] = useState(initial.get("day") ?? "");
@@ -58,12 +56,13 @@ export function LiveFinancialCenter({
     key: string;
     message: string;
   } | null>(null);
-  const query = new URLSearchParams({ month, limit: "50" });
+  const query = new URLSearchParams({ limit: "50" });
   if (account) query.set("account", account);
   if (day.startsWith(month + "-"))
     query.set("day", String(Number(day.slice(-2))));
   if (pending) query.set("pending", "true");
   if (cursor) query.set("cursor", cursor);
+  if (month) query.set("month", month);
   const request = query.toString();
   const key = `${clientId}:${request}:${attempt}`;
   const data = snapshot?.key === key ? snapshot.data : null;
@@ -74,10 +73,20 @@ export function LiveFinancialCenter({
   const returnTo = `/financial/${encodeURIComponent(clientId)}?${context}`;
 
   useEffect(() => {
+    if (snapshot?.key === key || failure?.key === key) return;
     const controller = new AbortController();
     void loadFinancialMonth(clientId, request, controller.signal)
       .then((result) => {
-        if (!controller.signal.aborted) setSnapshot({ key, data: result });
+        if (controller.signal.aborted) return;
+        const resolvedQuery = new URLSearchParams(request);
+        if (!resolvedQuery.has("month")) {
+          resolvedQuery.set("month", result.month);
+          setMonth(result.month);
+        }
+        setSnapshot({
+          key: `${clientId}:${resolvedQuery}:${attempt}`,
+          data: result,
+        });
       })
       .catch((caught: unknown) => {
         if (!controller.signal.aborted) {
@@ -92,10 +101,10 @@ export function LiveFinancialCenter({
         }
       });
     return () => controller.abort();
-  }, [clientId, request, key]);
+  }, [clientId, request, key, attempt, snapshot, failure]);
   useEffect(() => {
-    window.history.replaceState(null, "", returnTo);
-  }, [returnTo]);
+    if (month) window.history.replaceState(null, "", returnTo);
+  }, [returnTo, month]);
   useEffect(() => {
     const refresh = () => {
       setSnapshot(null);
@@ -290,14 +299,16 @@ export function LiveFinancialCenter({
           <button
             className="secondary-button"
             aria-label="Mês anterior"
+            disabled={!month}
             onClick={() => changeMonth(-1)}
           >
             <ChevronLeft size={17} />
           </button>
-          <h2>{monthLabel(month)}</h2>
+          <h2>{month ? monthLabel(month) : "Carregando mês…"}</h2>
           <button
             className="secondary-button"
             aria-label="Próximo mês"
+            disabled={!month}
             onClick={() => changeMonth(1)}
           >
             <ChevronRight size={17} />

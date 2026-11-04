@@ -32,6 +32,8 @@ class VerifiedStatement:
     scheduled_entries_excluded: int = 0
     opening_ambiguity_reason: str = ""
     balance_bounds_unavailable: bool = False
+    # Independently controlled scopes can share a physical page.
+    blocks: list[tuple["VerifiedStatement", tuple[str, str] | None]] | None = None
 
 
 def fail(message="Não foi possível conferir todos os lançamentos e saldos impressos. Envie o extrato original completo."):
@@ -112,6 +114,10 @@ def identify_verified_statement(text):
 
 def parse_verified_statement(pages):
     text = "\n".join(pages)
+    from app.application.parsers.pdf.signed_balance_cards import is_signed_balance_cards, parse_signed_balance_cards
+
+    if is_signed_balance_cards(text):
+        return parse_signed_balance_cards(pages)
     kind = identify_verified_statement(text)
     from app.application.parsers.pdf.modern_movement_blocks import SICREDI_MODERN, parse_modern_movement_blocks
 

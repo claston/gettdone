@@ -22,12 +22,12 @@ def financial_service():
 
 
 @router.get("/clients/{client_id}")
-def month(client_id: str, month: str = Query(pattern=r"^20\d{2}-(0[1-9]|1[0-2])$"),
+def month(client_id: str, month: str | None = Query(default=None, pattern=r"^20\d{2}-(0[1-9]|1[0-2])$"),
           account: list[str] = Query(default=[], max_length=50), day: int | None = Query(default=None, ge=1, le=31),
           pending: bool = False, limit: int = Query(default=50, ge=1, le=100), cursor: str | None = Query(default=None, max_length=200),
           owner: str = Depends(organization_owner), service=Depends(financial_service)):
     try:
-        return service.month(owner, client_id, month=date.fromisoformat(month+"-01"), accounts=account,
+        return service.month(owner, client_id, month=date.fromisoformat(month+"-01") if month else None, accounts=account,
                              day=day, pending=pending, limit=limit, cursor=cursor)
     except AnalysisNotFoundError:
         raise HTTPException(404, "Cliente ou conta não disponível.") from None

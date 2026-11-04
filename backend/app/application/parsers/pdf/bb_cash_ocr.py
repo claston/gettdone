@@ -5,16 +5,17 @@ from dataclasses import replace
 from decimal import Decimal
 from statistics import median
 
+from app.application.normalization.ocr_numeric_separators import normalize_ocr_numeric_separators
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.bb_cash_controls import is_pending_deposit
 from app.application.parsers.pdf.followup_ocr import _headers, _source
 from app.application.parsers.pdf.page_financial_fragments import preceding_page_amounts
-from app.application.parsers.pdf.row_geometry import nearest_row, row_slope
+from app.application.parsers.pdf.row_geometry import local_row_slopes, nearest_row, row_slope
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
 LAYOUT = "banco_do_brasil_autoatendimento_cd_ocr_v1"
-_MONEY = re.compile(rf"({NUMBER}|\d+\.\d{{2}})\s*(?:[Il|1]\s*(?=[CD]|$))?([CD])?(?:\s+&)?", re.IGNORECASE)
+_MONEY = re.compile(rf"({NUMBER}|\d+\.\d{{2}})\s*(?:[Il|1]\s*(?=[CD]|$))?([CD]|(?<=\s)0)?(?:\s+&)?", re.IGNORECASE)
 _PENDING_AMOUNT = re.compile(rf"{NUMBER}\s*\*")
 
 
@@ -44,6 +45,11 @@ def _columns(page):
     columns = _headers(page, keys)
     if columns:
         return columns
+    from app.application.parsers.pdf.native_table_source import native_header_columns
+
+    optional = native_header_columns(page, ("HISTORICO", "VALOR R$", "SALDO"))
+    if optional and not any(upper(item.text) == "DOCUMENTO" for item in [*page.lines, *page.words]):
+        return optional
     others = _headers(page, keys[1:])
     if not others:
         # Native exports can join several headings into one LINE; WORD
@@ -87,9 +93,14 @@ def _column_lines(page, columns):
                 x = word.bbox["left"]
                 column = ("balance" if x >= columns["SALDO"] - .03 else "amount" if x >= columns["VALOR R$"] - .035
                           else "document" if x >= columns["DOCUMENTO"] - .07 else "history")
+                # Financial values are right aligned; their left edge moves
+                # with the number of digits and can precede the balance heading.
+                if _MONEY.fullmatch(word.text.strip()) and x >= columns["VALOR R$"] - .035:
+                    column = "balance" if x + word.bbox["width"] >= columns["SALDO"] - .005 else "amount"
                 if (word.text.upper() in {"C", "D"} and previous_word is not None
                         and _MONEY.fullmatch(previous_word.text.strip())
-                        and 0 <= x - (previous_word.bbox["left"] + previous_word.bbox["width"]) < .025):
+                        and abs(word.bbox["top"] - previous_word.bbox["top"]) < .006
+                        and -.006 <= x - (previous_word.bbox["left"] + previous_word.bbox["width"]) < .025):
                     column = previous_column
                 if (word.text == "*" and previous_column == "amount" and previous_word is not None
                         and re.fullmatch(NUMBER, previous_word.text.strip())
@@ -175,10 +186,17 @@ def parse_bb_cash_ocr(extraction):
     columns = _columns(extraction.pages[0])
     if not columns:
         fail()
+    has_document = "DOCUMENTO" in columns
+    if not has_document:
+        # A zero-width reference area lets history extend to the amount column.
+        columns["DOCUMENTO"] = columns["VALOR R$"] + .04
     base_columns = columns
     base_slope = row_slope([item for item in extraction.pages[0].lines if item.bbox and upper(item.text) in columns])
     first_date_x = None
+    first_history_x = None
     frames = []
+    page_slopes = {}
+    separator_repairs = set()
     for page in extraction.pages:
         lines = [line for line in page.lines if line.bbox]
         dates = sorted(
@@ -193,10 +211,44 @@ def parse_bb_cash_ocr(extraction):
         if abs(offset) > 0.08 or any(abs(item.bbox["left"] - date_x) > 0.02 for item in dates):
             fail()
         columns = {key: value + offset for key, value in base_columns.items()}
+        if not has_document:
+            histories = [item.bbox["left"] for item in lines if re.match(r"^\d{3}\s+[A-Za-zÀ-ÿ]", item.text)
+                         and .2 < item.bbox["left"] < .6]
+            if not histories:
+                fail("A coluna de histórico Banco do Brasil está ausente.")
+            history_x = median(histories)
+            if first_history_x is None:
+                first_history_x = history_x
+            scale = (history_x-date_x)/(first_history_x-first_date_x)
+            if not .8 <= scale <= 1.2:
+                fail("As colunas do extrato Banco do Brasil não mantêm uma escala identificável.")
+            columns = {key: date_x+(value-first_date_x)*scale for key, value in base_columns.items()}
         lines = _column_lines(page, columns)
+        if extraction.provider == "aws_textract":
+            repaired = []
+            for item in lines:
+                split_decimal = re.fullmatch(r"(\d+)\s+(\d{2})\s+([CD])", item.text, re.I)
+                if split_decimal and item.bbox["left"] >= columns["VALOR R$"]-.035:
+                    separator_repairs.add((page.page_number, item.id))
+                    item = replace(item, text=f"{split_decimal[1]},{split_decimal[2]} {split_decimal[3]}")
+                repaired.append(item)
+            lines = repaired
+            lines = [replace(item, text=normalize_ocr_numeric_separators(item.text))
+                     if item.bbox["left"] >= columns["VALOR R$"]-.035 else item for item in lines]
+            lines = [replace(item, text=re.sub(r"^(\d{1,3}(?:,\d{3})+)\.(\d{2})(\s*[CD])$",
+                     lambda match: match[1].replace(",", ".")+","+match[2]+match[3], item.text))
+                     if item.bbox["left"] >= columns["VALOR R$"]-.035 else item for item in lines]
         headings = [item for item in lines if upper(item.text) in columns]
         slope = row_slope(headings) if len(headings) >= 2 else base_slope
-        financial = [item for item in lines if item.bbox["left"] > columns["DOCUMENTO"] + .05
+        if not has_document:
+            descriptions = [item for item in lines if columns["HISTORICO"]-.02 <= item.bbox["left"] < columns["VALOR R$"]-.035
+                            and re.match(r"^\d{3}\s+[A-Za-zÀ-ÿ]", item.text)]
+            slopes = local_row_slopes(dates, descriptions, fallback=slope)
+            page_slopes[page.page_number] = slopes
+            lines = [replace(item, text=re.sub(r"^(\d{1,3}(?:\.\d{3})+)\.(\d{2})(\s*[CD])$", r"\1,\2\3", item.text))
+                     if item.bbox["left"] >= columns["VALOR R$"]-.035 else item for item in lines]
+        financial_left = columns["DOCUMENTO"] + .05 if has_document else columns["VALOR R$"]-.035
+        financial = [item for item in lines if item.bbox["left"] > financial_left
                      and (_MONEY.fullmatch(item.text.strip()) or _PENDING_AMOUNT.fullmatch(item.text.strip()))]
         frames.append((page, columns, dates, lines, slope, financial))
         if any((re.fullmatch(r"(?:0{5})?999SALDO", upper(item.text).replace(" ", ""))
@@ -215,13 +267,23 @@ def parse_bb_cash_ocr(extraction):
     rows, opening, running, closing, checks = [], None, None, None, 0
     non_cash = 0
     for page, columns, dates, lines, slope, financial in frames:
+        slopes = page_slopes.get(page.page_number)
+
+        def row_position(item):
+            if not slopes:
+                return item.bbox["top"]
+            # This selects a local deskew estimate for text windows, not a
+            # financial row. Actual monetary association retains tie rejection.
+            nearest = min(dates, key=lambda anchor: abs(anchor.bbox["top"]-item.bbox["top"]))
+            return (item.bbox["top"] - slopes[nearest.id]*(item.bbox["left"]-nearest.bbox["left"])
+                    if slopes and nearest is not None else item.bbox["top"])
         if closing is not None:
             break
         outgoing = {item.amount.id for item in fragments if item.origin_page.page_number == page.page_number}
         incoming = [item for item in fragments if item.target_page.page_number == page.page_number]
         lines = [item for item in lines if item.id not in outgoing]
         financial = [item for item in financial if item.id not in outgoing]
-        assigned = {item.id: nearest_row(item, dates, slope=slope) for item in financial}
+        assigned = {item.id: nearest_row(item, dates, slope=slope, slopes=slopes) for item in financial}
         for fragment in incoming:
             financial.append(fragment.amount)
             assigned[fragment.amount.id] = fragment.anchor
@@ -241,21 +303,21 @@ def parse_bb_cash_ocr(extraction):
             bottom = dates[index + 1].bbox["top"] - 0.005 if index + 1 < len(dates) else 1
             lower = top - .005
             native = extraction.provider == "native_pdfium_text"
-            cells = [item for item in lines if lower <= item.bbox["top"] < bottom]
+            cells = [item for item in lines if lower <= row_position(item) < bottom]
             history = [item for item in cells if columns["HISTORICO"] - 0.02 <= item.bbox["left"] < columns["DOCUMENTO"] - 0.07]
             label = upper(" ".join(item.text for item in history))
             # Textract can emit lot + history as a single WORD as well as a
             # single LINE. These exact control labels have no monetary value
             # or document reference, so recognize the printed marker itself.
-            controls = [item for item in cells if abs(item.bbox["top"]-top) < .006
+            controls = [item for item in cells if abs(row_position(item)-top) < .006
                         and re.fullmatch(r"(?:0{5})?(?:000SALDOANTERIOR|999SALDO)", upper(item.text).replace(" ", ""))]
             if len(controls) == 1:
                 label = "SALDO ANTERIOR" if "ANTERIOR" in upper(controls[0].text) else "999 SALDO"
-            baseline_label = upper(" ".join(item.text for item in history if abs(item.bbox["top"]-top) < .006)).replace(" ", "")
+            baseline_label = upper(" ".join(item.text for item in history if abs(row_position(item)-top) < .006)).replace(" ", "")
             if (len(controls) == 1 and label == "999 SALDO") or baseline_label.removeprefix("999") == "SALDO":
                 # The final date has no next anchor; limits, CET and footer
                 # balances below it belong to another financial section.
-                cells = [item for item in lines if nearest_row(item, [anchor], slope=slope,
+                cells = [item for item in lines if nearest_row(item, [anchor], slope=slope, slopes=slopes,
                          max_distance=.018 if native else .006) is anchor]
                 history = [item for item in history if item in cells]
                 label = "999 SALDO"
@@ -263,8 +325,8 @@ def parse_bb_cash_ocr(extraction):
             if label == "999 SALDO":
                 values = [item for item in values if item in cells]
             signs = [item for item in lines if item.text.upper() in {"C", "D"}
-                     and item.bbox["left"] > columns["DOCUMENTO"] + .05
-                     and nearest_row(item, dates, slope=slope) is anchor]
+                     and item.bbox["left"] > (columns["DOCUMENTO"] + .05 if has_document else columns["VALOR R$"]-.035)
+                     and nearest_row(item, dates, slope=slope, slopes=slopes) is anchor]
             cells = list({item.id:item for item in [*cells,*values,*signs]}.values())
             amounts = [item for item in values if item.id.endswith(":amount") or not item.id.endswith(":balance")
                        and item.bbox["left"] + item.bbox["width"] < columns["SALDO"] - .005]
@@ -286,7 +348,7 @@ def parse_bb_cash_ocr(extraction):
                     if extraction.provider != "aws_textract" or cell not in amounts or not _duplicated_sign_stroke(page, cell):
                         fail("O dígito adicional junto ao valor BB não tem confirmação independente no documento.")
                     recovered_strokes.add(cell.id)
-                if signed[2] is None:
+                if signed[2] not in {"C", "D", "c", "d"}:
                     signs = [
                         item.text.upper()
                         for item in cells
@@ -308,10 +370,12 @@ def parse_bb_cash_ocr(extraction):
                         fail("A marca junto ao valor Banco do Brasil está sem indicador C/D independente.")
                     # Both the numeric history code and its explicit received
                     # label must agree; the complete printed ledger still closes.
-                    if cell not in amounts or not label.startswith(("821 PIX RECEBIDO", "144 PIX ENVIADO")):
+                    explicit_direction = ("821 PIX RECEBIDO", "144 PIX ENVIADO", "102 CHEQUE COMPENSADO",
+                                          "429 TAR PROCESSAMENTO CHEQUE")
+                    if cell not in amounts or not label.startswith(explicit_direction):
                         fail("Um valor Banco do Brasil está sem indicador C/D legível. Envie uma digitalização mais nítida.")
                     inferred_signs.add(cell.id)
-                    return amount * (-1 if label.startswith("144 PIX ENVIADO") else 1)
+                    return amount * (1 if label.startswith("821 PIX RECEBIDO") else -1)
                 return amount * (-1 if signed[2].upper() == "D" else 1)
 
             pending = [cell for cell in amounts if _PENDING_AMOUNT.fullmatch(cell.text.strip())]
@@ -373,8 +437,10 @@ def parse_bb_cash_ocr(extraction):
                 and item not in values
                 and re.fullmatch(r"[\d.,]+", item.text)
             ]
-            if len(refs) != 1:
+            if has_document and len(refs) != 1:
                 fail()
+            if not has_document:
+                refs = []
             cells = list({item.id: item for item in [*cells, *refs]}.values())
             description = re.sub(r"^\d{3}\s+", "", " ".join(item.text for item in history))
             movement_dates = [item for item in cells if .17 < item.bbox["left"] < .29
@@ -383,7 +449,8 @@ def parse_bb_cash_ocr(extraction):
                 fail()
             date = movement_dates[0].text if movement_dates else anchor.text
             carried = [item for item in incoming if item.anchor is anchor]
-            row = _source(_row(page.page_number, anchor.line_index, day(date), description, amount, balance, refs[0].text),
+            reference = refs[0].text if refs else None
+            row = _source(_row(page.page_number, anchor.line_index, day(date), description, amount, balance, reference),
                           page, [cell for cell in cells if not any(item.amount is cell for item in carried)])
             for fragment in carried:
                 evidence = _source(row, fragment.origin_page, [fragment.amount])
@@ -395,7 +462,14 @@ def parse_bb_cash_ocr(extraction):
                 row = replace(row, warnings=[*row.warnings, "manual_review_recommended", "ocr_sign_stroke_overlap_confirmed"])
             if recovered_marks:
                 row = replace(row, warnings=[*row.warnings, "manual_review_recommended", "ocr_trailing_mark_confirmed"])
+            if any((page.page_number, item.id) in separator_repairs for item in values):
+                row = replace(row, warnings=[*row.warnings, "manual_review_recommended", "ocr_decimal_separator_recovered"])
             rows.append(row)
-    if not rows or closing is None or not checks or any(a.transaction.date > b.transaction.date for a, b in zip(rows, rows[1:])):
+    from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
+
+    partial = validate_statement_completeness(["\n".join(line.text for line in page.lines) for page in extraction.pages])
+    if (not rows or closing is None and not partial or not checks
+            or any(a.transaction.date > b.transaction.date for a, b in zip(rows, rows[1:]))):
         fail()
-    return VerifiedStatement(rows, LAYOUT, opening, closing, printed_balance_checks=checks, non_cash_entries=non_cash)
+    return VerifiedStatement(rows, LAYOUT, opening, closing, printed_balance_checks=checks, non_cash_entries=non_cash,
+                             partial=partial, balance_bounds_unavailable=partial)

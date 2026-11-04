@@ -9,6 +9,7 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.generic import ContentStream, NameObject
 
 from app.application.errors import OcrFinancialAmbiguityError
+from app.application.normalization.text import normalize_upper_text
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,15 @@ def _text_signals(text):
                 malformed += 1
     fragmented = len(re.findall(r"(?<!\d)\d[\d.]*,\s+\d{2}\b", text))
     signals = []
+    normalized = normalize_upper_text(text)
+    if all(label in normalized for label in ("SICREDI", "DADOS REFERENTES AO PERIODO", "SALDO")):
+        for line in text.splitlines():
+            if not re.match(r"^\s*\d{2}/\d{2}/\d{4}\b", line):
+                continue
+            tokens = re.findall(r"-\d[\d.]*,\S+", line)
+            if any(not re.fullmatch(r"-\d[\d.]*,\d{2}", token) for token in tokens):
+                signals.append("malformed_signed_cash_values")
+                break
     # An OCR layer may turn the trailing C/D into a third fractional digit.
     # This only requests fresh visual evidence; never round or supply a sign.
     # Other reports can legitimately print three-decimal quantities/prices.
@@ -131,7 +141,8 @@ def assess_native_text_quality(raw_bytes, page_texts, *, reader=None):
     # Type3 fonts without a Unicode map can yield thousands of placeholder
     # squares. Character count alone must not suppress visual extraction.
     for text in page_texts:
-        unmapped = sum(text.count(character) for character in ("\u25a1", "\ufffd", "\x00"))
+        unmapped = sum(character in {"\u25a1", "\ufffd"} or ord(character) < 32 and character not in "\t\n\r\f"
+                       for character in text)
         glyph_names = re.findall(r"(?<!\S)/(?:i?\d+)\b", text)
         if (unmapped >= 30 and unmapped / max(1, len(text)) >= .12
                 or len(glyph_names) >= 30 and sum(map(len, glyph_names)) / max(1, len(text)) >= .25):

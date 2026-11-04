@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.followup_ocr import _headers, _source
-from app.application.parsers.pdf.native_table_source import split_native_columns
+from app.application.parsers.pdf.native_table_source import split_leading_date_words, split_native_columns
 from app.application.parsers.pdf.row_geometry import nearest_row
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
@@ -50,14 +50,14 @@ def parse_sicredi_visual_cash(source):
     date_words = [word for word in first.words if word.bbox and word.bbox["left"] < 0.3 and re.fullmatch(DATE, word.text)]
     if not date_words:
         fail("A imagem Sicredi está sem datas de transação legíveis.")
-    date_right = max(word.bbox["left"] + word.bbox["width"] for word in date_words) + 0.001
+    date_right = min(word.bbox["left"] + word.bbox["width"] for word in date_words) + 0.001
     doc_left = columns["DOCUMENTO"][0].bbox["left"] - 0.015
     value_left = columns["VALOR"][0].bbox["left"] - 0.015
     balance_left = (columns["VALOR"][0].bbox["left"] + columns["SALDO"][0].bbox["left"]) / 2 + 0.005
     rows, opening, running, checks = [], None, None, 0
     unreadable_balance = False
     for original in source.pages:
-        page = split_native_columns(original, [date_right, doc_left, value_left, balance_left])
+        page = split_native_columns(split_leading_date_words(original, re.compile(DATE)), [date_right, doc_left, value_left, balance_left])
         header = max(
             (
                 w.bbox["top"] + w.bbox["height"]
@@ -66,7 +66,8 @@ def parse_sicredi_visual_cash(source):
             ),
             default=0,
         )
-        stop = min((line.bbox["top"] for line in page.lines if upper(line.text).startswith("LANCAMENTOS FUTUROS")), default=0.96)
+        stop = min((line.bbox["top"] for line in original.lines if upper(line.text).startswith("LANCAMENTOS FUTUROS")
+                    or upper(line.text) == "SALDO DA CONTA"), default=0.96)
         body = [line for line in page.lines if line.bbox and header < line.bbox["top"] < stop]
         dates = sorted(
             [line for line in body if line.bbox["left"] < date_right and re.fullmatch(DATE, line.text)], key=lambda line: line.bbox["top"]

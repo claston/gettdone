@@ -1,7 +1,9 @@
 """Monthly cash tables with explicit amount columns and printed date context."""
 
+import calendar
 import re
 from dataclasses import replace
+from datetime import date as calendar_date
 
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.followup_ocr import _headers, _source
@@ -125,16 +127,20 @@ def parse_banrisul_month(source):
     text = upper("\n".join(line.text for page in source.pages for line in page.lines))
     if positional_kind(text) != "banrisul_month":
         return None
-    periods = set()
-    for month, year in re.findall(r"(?:PERIODO:\s*|MOVIMENTOS\s+)([A-Z]+)/\s*(\d{4})", text):
-        matches = [i + 1 for i, name in enumerate(_MONTHS) if month in {name, name[:3]}]
-        if len(matches) == 1:
-            periods.add((matches[0], int(year)))
-    if len(periods) != 1:
-        fail("O mês e o ano dos dias abreviados não podem ser confirmados.")
-    month, year = periods.pop()
+
+    def period(line):
+        match = re.search(r"(?:PERIODO:\s*|MOVIMENTOS\s+)([A-Z]+)/\s*(\d{4})", upper(line.text))
+        if not match:
+            if re.match(r"^[+\s]*MOVIMENTOS\s+(?!DA\b|FUTUROS\b)", upper(line.text)):
+                fail("O mês e o ano dos dias abreviados não podem ser confirmados.")
+            return None
+        matches = [i + 1 for i, name in enumerate(_MONTHS) if match[1] in {name, name[:3]}]
+        if len(matches) != 1:
+            fail("O mês e o ano dos dias abreviados não podem ser confirmados.")
+        return matches[0], int(match[2])
+
     seeds = [(page, line) for page in source.pages for line in page.lines if re.fullmatch(rf"SALDO ANT EM\s+{DATE}", upper(line.text))]
-    if len(seeds) != 1:
+    if not seeds:
         fail("O saldo de abertura mensal não pode ser identificado.")
     seed_page, seed = seeds[0]
     history_x = seed.bbox["left"]
@@ -147,10 +153,36 @@ def parse_banrisul_month(source):
     source = replace(source, pages=[split_native_columns(page, [history_x-.015, doc_x-.035],
         include=lambda line: bool(re.match(r"^\d{2}\s+", line.text))) for page in source.pages])
     rows, running, opening, closing, checks = [], None, None, None, 0
-    current_day = None
+    current_day = current_period = period_source = None
+    blocks, block_start, block_checks, scheduled = [], 0, 0, 0
+    source_pages = {page.page_number: page for page in source.pages}
+
+    def finish_block():
+        nonlocal block_start, block_checks
+        if len(rows) == block_start:
+            return
+        if closing is None or current_period is None:
+            fail("O fechamento do extrato mensal não pode ser confirmado.")
+        month, year = current_period
+        rows[-1] = replace(rows[-1], running_balance=float(closing))
+        bounds = (calendar_date(year, month, 1).isoformat(),
+                  calendar_date(year, month, calendar.monthrange(year, month)[1]).isoformat())
+        blocks.append((VerifiedStatement(rows[block_start:], "banrisul_monthly_cash_columns_v1", opening, closing,
+                                        printed_balance_checks=checks-block_checks), bounds))
+        block_start, block_checks = len(rows), checks
+
+    future = False
     for page in source.pages:
+        if page.page_number < seed_page.page_number:
+            continue
         top = seed.bbox["top"] - 0.01 if page.page_number == seed_page.page_number else 0
-        stop = min((line.bbox["top"] for line in page.lines if "EMITIDO AS" in upper(line.text)), default=1)
+        future_headers = [line.bbox["top"] for line in page.lines if "MOVIMENTOS FUTUROS DA CONTA CORRENTE" in upper(line.text)]
+        future_top = 0 if future else min(future_headers, default=1)
+        future = future or bool(future_headers)
+        scheduled += sum(1 for line in page.lines if line.bbox and line.bbox["top"] > future_top
+                         and abs(line.bbox["left"] - doc_x) < .035 and re.fullmatch(r"[A-Z0-9]{4,20}", upper(line.text))
+                         and upper(line.text) != "DOCUMENTO")
+        stop = min(future_top, min((line.bbox["top"] for line in page.lines if "EMITIDO AS" in upper(line.text)), default=1))
         body = [line for line in page.lines if line.bbox and top <= line.bbox["top"] < stop]
         docs = [
             line
@@ -158,8 +190,10 @@ def parse_banrisul_month(source):
             if abs(line.bbox["left"] - doc_x) < 0.035 and re.fullmatch(r"[A-Z0-9]{4,20}", upper(line.text))
             and upper(line.text) != "DOCUMENTO"
         ]
-        controls = [line for line in body if upper(line.text) == "SALDO NA DATA" or line is seed]
+        controls = [line for line in body if upper(line.text) == "SALDO NA DATA"
+                    or re.fullmatch(rf"SALDO ANT EM\s+{DATE}", upper(line.text))]
         anchors = sorted([*docs, *controls], key=lambda line: line.bbox["top"])
+        periods = [line for line in page.lines if line.bbox and line.bbox["top"] < stop and period(line)]
         cash = [line for line in body if line.bbox["left"] > doc_x + 0.08 and _is_money(line)]
         # Anything financial-looking in the value column must be accounted for,
         # including malformed digits/signs which cannot be silently omitted.
@@ -174,56 +208,85 @@ def parse_banrisul_month(source):
             key=lambda line: line.bbox["top"],
         )
         used = set()
-        for index, anchor in enumerate(anchors):
-            for label in days:
-                if label.bbox["top"] <= anchor.bbox["top"] + 0.006:
-                    current_day = label.text
+        events = sorted([(line, 0) for line in periods] + [(line, 1) for line in days] + [(line, 2) for line in anchors],
+                        key=lambda event: (event[0].bbox["top"] - (.006 if event[1] == 1 else 0), event[1]))
+        for anchor, event_type in events:
+            if event_type == 0:
+                new_period = period(anchor)
+                if current_period and new_period != current_period:
+                    finish_block()
+                    previous_month, previous_year = current_period
+                    consecutive = new_period == (previous_month % 12 + 1, previous_year + int(previous_month == 12))
+                    opening = running = closing if consecutive else None
+                    closing = None
+                    current_day = None
+                current_period, period_source = new_period, anchor
+                continue
+            if event_type == 1:
+                current_day = anchor
+                continue
             values = [line for line in cash if assigned[line.id] is anchor]
             if len(values) != 1:
                 fail("Um lançamento ou saldo mensal está sem valor inequívoco.")
             value = _signed(values[0])
             used.add(values[0].id)
-            if anchor is seed:
+            if re.fullmatch(rf"SALDO ANT EM\s+{DATE}", upper(anchor.text)):
+                first_opening = not rows
+                finish_block()
                 opening = running = value
+                closing = None
+                current_day = None
+                if not first_opening:
+                    current_period = period_source = None
                 continue
             if upper(anchor.text) == "SALDO NA DATA":
-                if running is None:
-                    fail()
-                if value != running:
+                if running is not None and value != running:
                     financial_mismatch()
-                closing = value
+                closing = running = value
                 checks += 1
                 continue
-            if current_day is None:
+            if current_day is None or current_period is None:
                 fail("Um movimento está sem o dia impresso de referência.")
-            date = day(f"{current_day}/{month:02d}/{year}")
-            if rows and date < rows[-1].transaction.date:
+            month, year = current_period
+            date = day(f"{current_day.text}/{month:02d}/{year}")
+            if len(rows) > block_start and date < rows[-1].transaction.date:
                 fail("A sequência de dias do extrato mensal não confere.")
-            high = anchors[index + 1].bbox["top"] - 0.006 if index + 1 < len(anchors) else stop
+            high = min((line.bbox["top"]-.006 for line in [*anchors, *periods]
+                        if line.bbox["top"] > anchor.bbox["top"]+.006), default=stop)
             history = [
                 line
                 for line in body
                 if history_x - 0.025 <= line.bbox["left"] < doc_x - 0.03
                 and anchor.bbox["top"] - 0.006 <= line.bbox["top"] < high
-                and not upper(line.text).startswith("MOVIMENTOS ")
+                and not period(line)
             ]
-            if not history or running is None:
+            if not history:
                 fail("O histórico de um movimento mensal não pode ser associado.")
             description = " ".join(line.text for line in sorted(history, key=lambda line: line.bbox["top"]))
-            running += value
-            rows.append(
-                _source(
-                    _row(page.page_number, anchor.line_index, date, description, value, None, anchor.text),
-                    page,
-                    [anchor, *history, *values],
-                )
-            )
+            if running is not None:
+                running += value
+            row = _row(page.page_number, anchor.line_index, date, description, value, None, anchor.text)
+            # Keep existing movement highlights stable. Date context only adds
+            # provenance when it comes from another original page.
+            context = [current_day, *([period_source] if period_source else [])]
+            cells = [anchor, *history, *values, *(cell for cell in context if cell.page_number != page.page_number)]
+            regions, references = [], []
+            for page_number in dict.fromkeys(cell.page_number for cell in cells):
+                evidence = _source(row, source_pages[page_number], [cell for cell in cells if cell.page_number == page_number])
+                regions.extend(evidence.source_regions)
+                references.extend(evidence.source_line_refs)
+            rows.append(replace(row, source_regions=regions, source_line_refs=tuple(dict.fromkeys(references))))
             closing = None
         if used != {line.id for line in cash}:
             fail("Há um valor mensal sem movimento ou controle associado.")
     if not rows or closing is None:
         fail("O fechamento do extrato mensal não pode ser confirmado.")
-    rows[-1] = replace(rows[-1], running_balance=float(closing))
-    return VerifiedStatement(
-        rows, "banrisul_monthly_cash_columns_v1", opening, closing, printed_balance_checks=checks, candidate_rows=len(rows)
-    )
+    finish_block()
+    blocks[-1][0].scheduled_entries_excluded = scheduled
+    # The last "saldo na data" controls only the observed final day. A month
+    # heading in a current-month extract does not establish future coverage.
+    last, bounds = blocks[-1]
+    blocks[-1] = last, (bounds[0], rows[-1].transaction.date)
+    if len(blocks) == 1:
+        return blocks[0][0]
+    return VerifiedStatement(rows, "banrisul_monthly_cash_columns_v1", None, None, blocks=blocks)
