@@ -150,6 +150,29 @@ def test_completion_identifies_client_before_adoption_and_resolves_row_account(d
         assert movement["client_id"] and movement["account_id"]
 
 
+def test_canonical_identity_rolls_back_with_callers_transaction(database):
+    from app.application.canonical_identity import receive_in_transaction
+
+    repo, scope, *_ = database
+    source = {"holder_name": "Titular sintético", "holder_tax_id": "12345678000190", "confidence": "strong",
+              "bank_code": "341", "branch": "1234", "account_number": "56789"}
+    record, _ = add_document(database, suffix="identityrollback", context=False, source=source)
+    with repo._connect() as conn:
+        receive_in_transaction(repo, conn, record)
+        context = conn.execute(f'SELECT client_id, account_id FROM {repo.p}pro_conversion_contexts WHERE job_id=%s',
+                               (record.job.job_id,)).fetchone()
+        assert context["client_id"] and context["account_id"]
+        with repo._connect() as observer:
+            assert observer.execute(f'SELECT 1 FROM {repo.p}pro_received_statements WHERE job_id=%s',
+                                    (record.job.job_id,)).fetchone() is None
+        conn.rollback()
+    with repo._connect() as conn:
+        assert conn.execute(f'SELECT 1 FROM {repo.p}pro_received_statements WHERE job_id=%s',
+                            (record.job.job_id,)).fetchone() is None
+        assert conn.execute(f'SELECT 1 FROM {repo.p}pro_clients WHERE id=%s', (context["client_id"],)).fetchone() is None
+        assert conn.execute(f'SELECT 1 FROM {repo.p}pro_accounts WHERE id=%s', (context["account_id"],)).fetchone() is None
+
+
 def test_identical_reimport_reuses_review_and_original_retention(database, tmp_path, monkeypatch):
     import json
     import os

@@ -17,7 +17,8 @@ pytestmark = pytest.mark.architecture
 def _imported_app_modules() -> set[str]:
     command = (
         "import json, sys; "
-        "import app.workers.conversion_lambda; "
+        "from app.workers.worker_image_contract import verify_worker_imports; "
+        "verify_worker_imports(); "
         "print(json.dumps(sorted(name for name in sys.modules if name.startswith('app.'))))"
     )
     result = subprocess.run(
@@ -147,6 +148,55 @@ print(json.dumps(run_checks()))
     payload = json.loads(result.stdout)
     assert payload["status"] == "passed"
     assert payload["checks"] == ["csv", "xlsx", "ofx", "pdf", "pdfium", "psycopg"]
+
+
+@pytest.mark.parametrize("canonical_enabled", ["false", "true"])
+def test_worker_bootstrap_without_excluded_modules(canonical_enabled) -> None:
+    script = r'''
+import importlib.abc
+import os
+import sys
+
+from app.workers.worker_image_contract import FORBIDDEN_MODULE_PREFIXES
+
+class WorkerBoundary(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        excluded = (*FORBIDDEN_MODULE_PREFIXES, "sqlite3", "_sqlite3", "fastapi", "uvicorn")
+        if any(fullname == prefix or fullname.startswith(prefix + ".") for prefix in excluded):
+            raise ModuleNotFoundError("Excluded from worker image: " + fullname, name=fullname)
+
+sys.meta_path.insert(0, WorkerBoundary())
+os.environ.update(
+    DATABASE_URL="postgresql://synthetic:synthetic@127.0.0.1/worker_test",
+    DATABASE_SCHEMA="public", CONVERSION_S3_BUCKET="synthetic-worker-test",
+    CANONICAL_PRO_COMPLETION_ENABLED=sys.argv[1], PRO_ORGANIZATION_ENABLED="true",
+    TEXTRACT_ENABLED="false", PDF_OCR_ENABLED="false", AWS_EC2_METADATA_DISABLED="true",
+)
+from app.workers import conversion_lambda as worker
+from app.workers.worker_image_contract import verify_worker_imports
+verify_worker_imports()
+
+# Only external resources are replaced; the production bootstrap and its
+# deferred imports run with the same forbidden modules as the packaged image.
+class ExternalResource:
+    def __init__(self, **kwargs):
+        pass
+
+worker.PostgresConversionAccessService = ExternalResource
+worker.S3AnalysisStorage = ExternalResource
+worker.S3ConversionDocumentStore = ExternalResource
+worker.build_s3_canonical_layout_capture_service = lambda **kwargs: None
+worker.build_ai_recovery_shadow_dispatcher = lambda: None
+processor = worker.build_lambda_processor()
+assert (processor.repository.canonical_completion is not None) == (sys.argv[1] == "true")
+assert callable(processor.completion_resumer)
+assert callable(processor.receipt_recorder)
+print("Worker bootstrap passed")
+'''
+    result = subprocess.run([sys.executable, "-c", script, canonical_enabled], cwd=BACKEND_ROOT,
+                            capture_output=True, text=True, timeout=45)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Worker bootstrap passed" in result.stdout
 
 
 @pytest.mark.parametrize("filename", ["Dockerfile.lambda", "Dockerfile.lambda.debian"])
