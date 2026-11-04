@@ -162,6 +162,15 @@ def test_banrisul_unreadable_later_month_is_not_dropped(representation, before, 
         parse_banrisul(source, representation)
 
 
+def test_banrisul_same_page_keeps_existing_movement_source_references():
+    result = parse_banrisul(banrisul_month_source(), "ocr")
+    expected = [(13, 12, 15, 14), (17, 16, 18), (23, 22, 24)]
+    assert [row.source_line_refs for row in result.canonical_transactions] == [
+        tuple((1, line) for line in lines) for lines in expected
+    ]
+    assert [len(row.source_regions) for row in result.canonical_transactions] == [4, 3, 3]
+
+
 def test_banrisul_date_context_on_previous_page_keeps_original_provenance():
     source = banrisul_two_months()
     page = source.pages[0]

@@ -266,7 +266,10 @@ def parse_banrisul_month(source):
             if running is not None:
                 running += value
             row = _row(page.page_number, anchor.line_index, date, description, value, None, anchor.text)
-            cells = [anchor, current_day, *([period_source] if period_source else []), *history, *values]
+            # Keep existing movement highlights stable. Date context only adds
+            # provenance when it comes from another original page.
+            context = [current_day, *([period_source] if period_source else [])]
+            cells = [anchor, *history, *values, *(cell for cell in context if cell.page_number != page.page_number)]
             regions, references = [], []
             for page_number in dict.fromkeys(cell.page_number for cell in cells):
                 evidence = _source(row, source_pages[page_number], [cell for cell in cells if cell.page_number == page_number])
