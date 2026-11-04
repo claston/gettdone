@@ -2,8 +2,9 @@
 import base64
 import calendar
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from app.application.canonical_pro import CanonicalProService
 from app.application.errors import AnalysisEditConflictError, AnalysisNotFoundError
@@ -14,13 +15,10 @@ class FinancialCenterService:
     def __init__(self, repository):
         self.repository = repository
 
-    def month(self, actor_id, client_id, *, month, accounts=(), day=None, pending=False, limit=50, cursor=None):
+    def month(self, actor_id, client_id, *, month=None, accounts=(), day=None, pending=False, limit=50, cursor=None):
         repo = self.repository
-        if month.day != 1 or not 2000 <= month.year <= 2100 or not 1 <= limit <= 100 or len(accounts) > 50:
+        if (month is not None and (month.day != 1 or not 2000 <= month.year <= 2100)) or not 1 <= limit <= 100 or len(accounts) > 50:
             raise ValueError("Recorte inválido.")
-        length = calendar.monthrange(month.year, month.month)[1]
-        if day is not None and not 1 <= day <= length:
-            raise ValueError("Dia inválido.")
         after_date, after_id = date.min, UUID(int=0)
         if cursor:
             try:
@@ -44,8 +42,8 @@ class FinancialCenterService:
                 WHERE organization_id=%s AND client_id=%s ORDER BY id''', (org, client_id)).fetchall()
             if set(accounts) - {item["id"] for item in catalog} - {"unidentified"}:
                 raise AnalysisNotFoundError
-            params = {"org": org, "client": client_id, "actor": actor_id, "start": month,
-                      "end": month + timedelta(days=length), "accounts": list(accounts), "all_accounts": not accounts}
+            params = {"org": org, "client": client_id, "actor": actor_id,
+                      "accounts": list(accounts), "all_accounts": not accounts}
             accessible = f'''SELECT a.*, j.batch_id, j.document->>'filename' AS filename,
                     LEAST(a.expires_at,j.expires_at,b.expires_at) AS access_expires_at
                 FROM {repo.p}canonical_analyses a
@@ -64,6 +62,18 @@ class FinancialCenterService:
             source_state_sql = f'''WITH authorized AS ({accessible}) SELECT analysis_id,version,read_enabled,ui_enabled
                 FROM authorized ORDER BY analysis_id'''
             source_state = conn.execute(source_state_sql, params).fetchall()
+            if month is None:
+                latest = conn.execute(f'''WITH authorized AS ({accessible})
+                    SELECT max(m.movement_date) AS latest_date
+                    FROM {repo.p}bank_movements m JOIN authorized a ON a.analysis_id=m.analysis_id
+                    WHERE a.read_enabled AND a.ui_enabled AND NOT m.is_deleted
+                        AND (%(all_accounts)s OR COALESCE(m.account_id,'unidentified')=ANY(%(accounts)s))''', params).fetchone()
+                reference = latest["latest_date"] or datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+                month = reference.replace(day=1)
+            length = calendar.monthrange(month.year, month.month)[1]
+            if day is not None and not 1 <= day <= length:
+                raise ValueError("Dia inválido.")
+            params.update(start=month, end=month + timedelta(days=length))
             inactive = conn.execute(f'''WITH authorized AS ({accessible})
                 SELECT a.metadata->'document_parts' AS parts,r.source_json
                 FROM authorized a JOIN {repo.p}pro_received_statements r

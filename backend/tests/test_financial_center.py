@@ -62,6 +62,57 @@ def query(database, **filters):
     return FinancialCenterService(repo).month(scope.actor_id, scope.client_id, month=date(2026, 4, 1), **filters)
 
 
+def test_default_month_uses_latest_movement_not_upload_order(database):
+    from app.application.financial_center import FinancialCenterService
+
+    repo, scope, original, *_ = database
+    rows = [dict(original["preview_transactions"][0], transaction_id=f"month-{i}", date=value)
+            for i, value in enumerate(["2025-12-31", "2026-05-02", "2026-01-15"])]
+    adopt(database, *add_document(database, suffix="months", rows=rows))
+    adopt(database, *add_document(database, suffix="older"))
+    service = FinancialCenterService(repo)
+    result = service.month(scope.actor_id, scope.client_id)
+    assert result["month"] == "2026-05"
+    assert [row["date"] for row in result["movements"]] == ["2026-05-02"]
+    assert service.month(scope.actor_id, scope.client_id, month=date(2025, 11, 1))["movements"] == []
+
+
+@pytest.mark.parametrize("excluded", ["deleted", "suspended", "expired"])
+def test_default_month_ignores_inaccessible_or_deleted_movements(database, excluded):
+    from app.application.financial_center import FinancialCenterService
+
+    repo, scope, original, *_ = database
+    adopt(database)
+    rows = [dict(original["preview_transactions"][0], date="2026-06-01")]
+    _, latest_scope = adopt(database, *add_document(database, suffix="latest", rows=rows))
+    with repo._connect() as conn:
+        if excluded == "deleted":
+            conn.execute(f'UPDATE {repo.p}bank_movements SET is_deleted=TRUE WHERE analysis_id=%s', (latest_scope.analysis_id,))
+        elif excluded == "suspended":
+            conn.execute(f'UPDATE {repo.p}canonical_analyses SET ui_enabled=FALSE WHERE analysis_id=%s', (latest_scope.analysis_id,))
+        else:
+            conn.execute(f"UPDATE {repo.p}conversion_jobs SET expires_at=clock_timestamp()-interval '1 second' WHERE job_id=%s",
+                         (latest_scope.job_id,))
+    assert FinancialCenterService(repo).month(scope.actor_id, scope.client_id)["month"] == "2026-04"
+
+
+def test_default_month_without_movements_uses_sao_paulo_current_month(database, monkeypatch):
+    from datetime import timezone
+
+    from app.application import financial_center
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 12, 1, 1, tzinfo=timezone.utc).astimezone(tz)
+
+    monkeypatch.setattr(financial_center, "datetime", FixedDatetime)
+    repo, scope, *_ = database
+    result = financial_center.FinancialCenterService(repo).month(scope.actor_id, scope.client_id)
+    assert result["month"] == "2026-11"
+    assert result["movements"] == []
+
+
 def test_calendar_reads_current_revision_decimal_and_source(database):
     repo, scope, *_ = database
     initial, _ = adopt(database)
@@ -253,6 +304,20 @@ def test_multiconta_evidence_filters_and_unknown_account(database, multiconta_do
     assert len(query(database, accounts=["unidentified"])["movements"]) == 1
 
 
+def test_default_month_respects_account_filter(database, multiconta_document):
+    from app.application.financial_center import FinancialCenterService
+
+    repo, scope, *_ = database
+    adopt(database, *multiconta_document)
+    with repo._connect() as conn:
+        conn.execute(f"UPDATE {repo.p}bank_movements SET movement_date='2027-01-01' WHERE account_id IS NULL")
+    service = FinancialCenterService(repo)
+    assert service.month(scope.actor_id, scope.client_id)["month"] == "2027-01"
+    account = next(row["account_id"] for row in query(database)["movements"] if row["account_id"])
+    assert service.month(scope.actor_id, scope.client_id, accounts=[account])["month"] == "2026-04"
+    assert service.month(scope.actor_id, scope.client_id, accounts=["unidentified"])["month"] == "2027-01"
+
+
 def test_multiconta_account_cannot_change_client_via_service_or_http(database, multiconta_document):
 
     from app.application.financial_center import FinancialCenterService
@@ -430,6 +495,10 @@ def test_http_financial_center_real_auth_failure_and_revision(database, monkeypa
         path = f"/api/pro/financial-center/clients/{scope.client_id}?month=2026-04"
         assert client.get(path).status_code == 401
         client.headers["Authorization"] = f"Bearer {repo.test_user.token}"
+        default = client.get(f"/api/pro/financial-center/clients/{scope.client_id}")
+        assert default.status_code == 200
+        assert default.json()["month"] == "2026-04"
+        assert default.json()["movements"][0]["amount"] == "10.00"
         start = perf_counter()
         response = client.get(path)
         print(f"financial_center_http_ms={(perf_counter()-start)*1000:.1f}")
@@ -471,6 +540,7 @@ def test_two_tenants_and_other_client_rows_never_enter_totals(database):
         content["analysis_id"] = "an_"+suffix
         for key in ("preview_transactions", "report_transactions"):
             content[key][0]["amount"] = 999
+            content[key][0]["date"] = "2027-01-30"
         batches.mark_completed(job.job_id, result=ConversionJobResultReference(
             analysis_id=content["analysis_id"], payload={"analysis": content}))
         with repo._connect() as conn:
@@ -481,7 +551,9 @@ def test_two_tenants_and_other_client_rows_never_enter_totals(database):
         enable(database)
         with repo._connect() as conn:
             conn.execute(f'UPDATE {repo.p}canonical_analyses SET ui_enabled=TRUE')
-        other = FinancialCenterService(repo).month(owner.user_id, other_client["id"], month=date(2026, 4, 1))
-        assert other["days"][0]["inflows"] == "999.00"
+        other = FinancialCenterService(repo).month(owner.user_id, other_client["id"], month=date(2027, 1, 1))
+        assert other["days"][29]["inflows"] == "999.00"
     own = query(database)
     assert len(own["movements"]) == 1 and own["days"][0]["inflows"] == "10.00"
+    automatic = FinancialCenterService(repo).month(scope.actor_id, scope.client_id)
+    assert automatic["month"] == "2026-04" and len(automatic["movements"]) == 1
