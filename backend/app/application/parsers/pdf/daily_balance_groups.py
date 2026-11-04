@@ -12,7 +12,7 @@ from app.application.parsers.pdf.verified_statements import DATE, NUMBER, Verifi
 from app.application.source_regions import evidence_regions
 
 
-def is_grouped_daily_cash(text):
+def is_daily_balance_groups(text):
     text = upper(text)
     return all(label in text for label in ("EXTRATO CONSOLIDADO", "SALDO INICIAL NO DIA",
         "SALDO FINAL NO DIA", "SALDO FINAL DO DIA"))
@@ -25,7 +25,7 @@ def cash(text):
     return money(match[2]) * (-1 if match[1] == "-" else 1)
 
 
-def parse_grouped_daily_cash(source):
+def parse_daily_balance_groups(source):
     keys = ("HISTORICO", "TIPO", "VALOR", "SALDO")
     columns, blocks, current, date_evidence = None, [], None, None
     accounts = set()

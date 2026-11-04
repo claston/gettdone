@@ -1164,10 +1164,10 @@ def _parse_textract_text_pages_impl(extraction) -> PdfParseResult:
     if not any(page_texts):
         raise InvalidFileContentError("Nao foi possivel extrair transacoes do OCR para revisao.")
     joined_text = "\n".join(page_texts)
-    from app.application.parsers.pdf.grouped_daily_cash import is_grouped_daily_cash, parse_grouped_daily_cash
+    from app.application.parsers.pdf.daily_balance_groups import is_daily_balance_groups, parse_daily_balance_groups
 
-    if is_grouped_daily_cash(joined_text):
-        result = _build_verified_statement_result(parse_grouped_daily_cash(extraction), page_texts)
+    if is_daily_balance_groups(joined_text):
+        result = _build_verified_statement_result(parse_daily_balance_groups(extraction), page_texts)
         return replace(result, source_extraction=extraction,
                        source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
     if detect_financial_report(joined_text) == ("acquirer_sales_report", "sales_gross_installment_columns"):

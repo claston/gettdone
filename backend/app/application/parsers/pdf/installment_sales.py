@@ -5,9 +5,9 @@ from decimal import Decimal
 
 from app.application.financial_event_projection import project_financial_document
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.daily_balance_groups import cash
 from app.application.parsers.pdf.financial_reports import _check, _event
 from app.application.parsers.pdf.followup_ocr import _headers
-from app.application.parsers.pdf.grouped_daily_cash import cash
 from app.application.parsers.pdf.native_table_source import native_header_columns, split_native_columns
 from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
 from app.application.parsers.pdf.verified_statements import DATE, day, fail
