@@ -208,6 +208,20 @@ def _attach_parse_observability(exc: Exception, **values: object) -> Exception:
 
 
 def _original_visual_provenance(result, original, visual):
+    # Generic OCR can parse the first page as rows and silently lose later
+    # column-oriented pages. A review warning cannot make that extraction whole.
+    if result.financial_document is None and result.canonical_transactions:
+        covered = {row.source_page for row in result.canonical_transactions}
+        covered.update(page for row in result.canonical_transactions for page, _ in row.source_line_refs or ())
+        for page, text in enumerate(result.source_page_texts or (), 1):
+            if page in covered:
+                continue
+            dates = re.findall(r"(?m)^\s*\d{2}/\d{2}(?:/\d{2,4})?\b", text)
+            amounts = re.findall(r"\d[\d.]*,\d{2}\b", text)
+            if len(dates) >= 2 and len(amounts) >= 2:
+                raise OcrFinancialAmbiguityError(
+                    "A leitura visual deixou uma página com possíveis movimentos sem extrair. "
+                    "Reenvie o extrato original ou uma cópia mais legível.")
     metrics = {**result.parse_metrics, "native_text_layer_ignored":1}
     canonical = result.canonical_transactions
     if not metrics.get("financial_controls_validated"):
@@ -525,7 +539,7 @@ def _parse_pdf_transactions_strict(
             return _with_parse_observability(
                 parse_financial_pdf_pages(_read_layout_native_pdf_page_texts(raw_bytes), native=True),
                 extraction_provider="native_pdf_text", native_text_detected=1, textract_attempted=0)
-        if report_identity and report_identity[1] == "btg_fund_positions_and_lots":
+        if report_identity and report_identity[1] in {"btg_fund_positions_and_lots", "btg_investment_cash_ledger"}:
             from app.application.parsers.pdf.btg_fund_positions import read_btg_native_pages
 
             return _with_parse_observability(
@@ -915,7 +929,9 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
                        source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
     segmentation = segment_pdf_pages(_textract_page_texts(extraction))
     daily_fragment = is_daily_cd_fragment(extraction)
-    if daily_fragment:
+    cash_report = detect_financial_report("\n".join(_textract_page_texts(extraction))) == (
+        "investment_statement", "btg_investment_cash_ledger")
+    if daily_fragment or cash_report:
         segmentation = replace(segmentation, page_texts=_textract_page_texts(extraction), parts=[])
     statement_extraction = extraction
     if segmentation.parts:
@@ -1099,7 +1115,9 @@ def _parse_scanned_pdf_with_textract_text_pages_strict(extraction) -> PdfParseRe
     if inactive is not None:
         return replace(inactive, source_extraction=extraction,
                        source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
-    if is_bradesco_monthly_ocr("\n".join(_textract_page_texts(extraction))) or is_daily_cd_fragment(extraction):
+    cash_report = detect_financial_report("\n".join(_textract_page_texts(extraction))) == (
+        "investment_statement", "btg_investment_cash_ledger")
+    if is_bradesco_monthly_ocr("\n".join(_textract_page_texts(extraction))) or is_daily_cd_fragment(extraction) or cash_report:
         # An unreadable continuation is evidence of an incomplete ledger. Keep
         # every physical page for the strict reader, before appendix filtering.
         result = _parse_textract_text_pages(extraction)
@@ -1391,6 +1409,7 @@ def _parse_pdf_transactions_from_page_texts_strict(
         return _parse_statement_page_texts(page_texts, preserve_layout_spacing=preserve_layout_spacing, context=context)
     report = detect_financial_report("\n".join(page_texts))
     if report is not None and report[1] in {"nubank_rdb_caixinhas_columns", "sicoob_rem116_period_summary",
+                                           "btg_investment_cash_ledger",
                                            "btg_fund_positions_and_lots", "sicoob_sisbr_fixed_income_positions"}:
         # An income-only final RDB page may resemble a bank statement. Preserve
         # the complete typed report before the bank/appendix page segmentation.

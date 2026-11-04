@@ -32,6 +32,10 @@ def detect_financial_report(text: str) -> tuple[str, str] | None:
         return RECEIVABLES_REPORT, "pagbank_sales_gross_fee_net_status"
     if "INFORMATIVO MENSAL CDB" in header and "CDB CAIXA" in header:
         return INVESTMENT_STATEMENT, "caixa_monthly_cdb_positions"
+    if ("BTG PACTUAL" in header and "INVESTIMENTO" in header and "EXTRATO" in header
+            and "CONTA CORRENTE - MOVIMENTACAO" in normalized
+            and re.search(r"DISTRIBUICAO DA CARTEIRA\s+CONTA CORRENTE\s+100[.,]00%", normalized)):
+        return INVESTMENT_STATEMENT, "btg_investment_cash_ledger"
     if ("BTG PACTUAL" in header and "INVESTIMENTO" in header
             and "FUNDO DE INVESTIMENTO" in normalized and "EXTRATO" in header):
         return INVESTMENT_STATEMENT, "btg_fund_positions_and_lots"

@@ -117,7 +117,7 @@ def parse_period_cash_columns(source):
             cells = list({line.id: line for line in [*cells, *values]}.values())
             amounts = [line for line in values if line.bbox["left"] <= boundary]
             balances = [line for line in values if line.bbox["left"] > boundary]
-            if running is None or len(amounts) != 1 or len(balances) != 1:
+            if len(amounts) != 1 or len(balances) != 1:
                 fail("Uma linha do extrato está sem valor ou saldo associado.")
             used.update(line.id for line in values)
             date = day(anchor.text)
@@ -134,6 +134,8 @@ def parse_period_cash_columns(source):
             balance_match = _CASH.fullmatch(balances[0].text.strip())
             recovered_indicator = caixa and balance_match[2] == "€"
             if recovered_indicator:
+                if running is None:
+                    fail("O primeiro saldo Caixa precisa de um indicador C/D legível.")
                 magnitude = abs(money(re.sub(r"\s", "", balance_match[1])))
                 balance = running + value
                 if (abs(balance) != magnitude or balance_match[1].lstrip().startswith(("+", "-"))
@@ -146,7 +148,7 @@ def parse_period_cash_columns(source):
                     fail()
                 checks += 1
                 continue
-            amount = balance - running
+            amount = balance - running if running is not None else value
             match = _CASH.fullmatch(amounts[0].text.strip())
             explicit = caixa or bool(match[2]) or match[1].lstrip().startswith(("+", "-"))
             if abs(amount) != abs(value) or explicit and amount != value:
@@ -166,4 +168,5 @@ def parse_period_cash_columns(source):
     if not rows:
         fail()
     layout = "banco_do_nordeste_periodo_cash_ocr_v1" if nordeste else "caixa_periodo_cash_columns_ocr_v1"
-    return VerifiedStatement(rows, layout, opening, running, printed_balance_checks=checks, candidate_rows=len(rows))
+    return VerifiedStatement(rows, layout, opening, running, printed_balance_checks=checks, candidate_rows=len(rows),
+                             balance_bounds_unavailable=opening is None)

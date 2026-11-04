@@ -131,7 +131,8 @@ def assess_native_text_quality(raw_bytes, page_texts, *, reader=None):
     # Type3 fonts without a Unicode map can yield thousands of placeholder
     # squares. Character count alone must not suppress visual extraction.
     for text in page_texts:
-        unmapped = sum(text.count(character) for character in ("\u25a1", "\ufffd", "\x00"))
+        unmapped = sum(character in {"\u25a1", "\ufffd"} or ord(character) < 32 and character not in "\t\n\r\f"
+                       for character in text)
         glyph_names = re.findall(r"(?<!\S)/(?:i?\d+)\b", text)
         if (unmapped >= 30 and unmapped / max(1, len(text)) >= .12
                 or len(glyph_names) >= 30 and sum(map(len, glyph_names)) / max(1, len(text)) >= .25):
