@@ -1,17 +1,32 @@
 """Reuse document identity in the completion transaction; never parse a document."""
 import json
-from types import SimpleNamespace
 
-from app.application.access_control.access_control_db import AccessControlDbComponent
 from app.application.received_statements import ReceivedStatements
 from app.application.statement_identity import account_signature, normalized
+
+
+class _PostgresTransactionDb:
+    """Queries on the caller's transaction; no auth, SQLite, pool or commits."""
+
+    @staticmethod
+    def execute(conn, query, params=()):
+        return conn.execute(query.replace("?", "%s"), params)
+
+    @classmethod
+    def fetchone(cls, conn, query, params=()):
+        with cls.execute(conn, query, params) as cursor:
+            return cursor.fetchone()
+
+    @classmethod
+    def fetchall(cls, conn, query, params=()):
+        with cls.execute(conn, query, params) as cursor:
+            return cursor.fetchall()
 
 
 def receive_in_transaction(repository, conn, record):
     # The shared service accepts the caller's connection and must not commit it.
     conn.execute(f'SET LOCAL search_path TO "{repository.schema}", public')
-    db = AccessControlDbComponent(SimpleNamespace(_use_postgres=True))
-    ReceivedStatements(db).receive(record, connection=conn)
+    ReceivedStatements(_PostgresTransactionDb()).receive(record, connection=conn)
 
 
 def accounts_for_rows(repository, conn, scope, rows):

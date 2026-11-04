@@ -18,6 +18,20 @@ O worker usa `PostgresConversionAccessService`, que expõe somente operações d
 quota e histórico necessárias ao processamento. Ele não autentica usuários e
 não precisa de `ACCESS_CONTROL_TOKEN_SECRET`.
 
+A identificação durante a adoção canônica reutiliza a conexão PostgreSQL da
+conclusão do job, com um adaptador de consultas sem autenticação, SQLite,
+abertura de pool ou commit independente. O pacote `app.application.access_control`
+continua excluído da imagem. Importá-lo nesse caminho causa falha na primeira
+invocação, mesmo com `CANONICAL_PRO_COMPLETION_ENABLED=false`: a inicialização
+também prepara a retomada de conclusões canônicas pendentes.
+
+O contrato de build verifica os imports dos handlers e das dependências
+canônicas carregadas durante a inicialização. Os testes executam
+`build_lambda_processor()` com módulos excluídos bloqueados, com a adoção ligada
+e desligada, além de verificar rollback da identificação na transação original
+em PostgreSQL. Uma correção nesse código requer publicar uma nova imagem do
+worker; alterar somente a flag não substitui a imagem já implantada.
+
 O template de infraestrutura também deve remover essa variável do ambiente da
 Lambda. Publicar somente a nova imagem não apaga variáveis já configuradas na
 função.

@@ -58,13 +58,12 @@ def verify_no_sqlite_runtime() -> None:
     raise RuntimeError("Worker image contains the unused SQLite shared library.")
 
 
-def verify_worker_image(root: Path | None = None) -> None:
-    verify_no_sqlite_runtime()
-    image_root = (root or Path("/var/task")).resolve()
-    present_paths = [relative for relative in FORBIDDEN_IMAGE_PATHS if (image_root / relative).exists()]
-    if present_paths:
-        raise RuntimeError(f"Worker image contains forbidden application paths: {present_paths}")
-
+def verify_worker_imports() -> None:
+    # Bootstrap imports these lazily, even with canonical adoption disabled:
+    # the resumer must remain available for already-adopted jobs. Check their
+    # complete dependency graph in the packaged image, before the first request.
+    from app.adapters.conversion.canonical_movements import PostgresMovementRepository  # noqa: F401
+    from app.application.canonical_pro import CanonicalCompletion  # noqa: F401
     from app.workers import ai_recovery_lambda, conversion_lambda  # noqa: F401
 
     imported_forbidden = sorted(
@@ -74,6 +73,16 @@ def verify_worker_image(root: Path | None = None) -> None:
     )
     if imported_forbidden:
         raise RuntimeError(f"Worker import loaded forbidden modules: {imported_forbidden}")
+
+
+def verify_worker_image(root: Path | None = None) -> None:
+    verify_no_sqlite_runtime()
+    image_root = (root or Path("/var/task")).resolve()
+    present_paths = [relative for relative in FORBIDDEN_IMAGE_PATHS if (image_root / relative).exists()]
+    if present_paths:
+        raise RuntimeError(f"Worker image contains forbidden application paths: {present_paths}")
+
+    verify_worker_imports()
 
     installed_forbidden: list[str] = []
     for distribution in FORBIDDEN_DISTRIBUTIONS:
