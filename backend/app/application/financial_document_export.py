@@ -12,6 +12,11 @@ from app.application.models import NormalizedTransaction
 from app.application.ofx_writer import build_ofx_statement
 
 LABELS = {
+    "statement_month": "Mês de referência", "attributes.statement_month": "Mês de referência",
+    "attributes.credit_month": "Mês do crédito", "attributes.asset": "Ativo", "attributes.unit": "Unidade",
+    "attributes.reference": "Número da aplicação", "attributes.redemption_reference": "Número do resgate",
+    "attributes.index": "Indexador", "attributes.printed_principal_complement": "Complemento impresso do valor aplicado",
+    "amounts.accumulated_income": "Rendimento bruto acumulado", "amounts.gross_redemptions": "Resgates brutos",
     "opening_balance": "Saldo anterior", "closing_balance": "Saldo final",
     "amounts.opening": "Saldo anterior", "amounts.closing": "Saldo final",
     "amounts.fee": "Taxa", "attributes.printed_status": "Situação impressa",

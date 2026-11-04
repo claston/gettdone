@@ -58,6 +58,10 @@ def parse_financial_report_pages(page_texts: list[str]) -> dict | None:
     if detected is None:
         return None
     kind, evidence = detected
+    if evidence in {"agora_custody_monthly_positions", "brb_fcbr76_positions"}:
+        from app.application.parsers.pdf.custody_period_reports import parse_agora_custody, parse_fcbr76
+
+        return parse_agora_custody(page_texts) if evidence == "agora_custody_monthly_positions" else parse_fcbr76(page_texts)
     if evidence == "sicoob_sisbr_fixed_income_positions":
         from app.application.parsers.pdf.investment_positions import parse_fixed_income_positions
 

@@ -37,6 +37,28 @@ def native_header_columns(page, keys):
     return candidates[0] if len(candidates) == 1 else None
 
 
+def split_leading_date_words(page, pattern):
+    """Detach a printed date WORD without cutting its neighbouring history."""
+    from dataclasses import replace
+
+    words = {word.id: word for word in page.words}
+    lines = []
+    for line in page.lines:
+        children = sorted([words[key] for key in line.word_ids if key in words and words[key].bbox],
+                          key=lambda word: word.bbox["left"])
+        if len(children) < 2 or not pattern.fullmatch(children[0].text):
+            lines.append(line)
+            continue
+        for role, group in (("date", children[:1]), ("history", children[1:])):
+            left, top = min(w.bbox["left"] for w in group), min(w.bbox["top"] for w in group)
+            right = max(w.bbox["left"]+w.bbox["width"] for w in group)
+            bottom = max(w.bbox["top"]+w.bbox["height"] for w in group)
+            lines.append(replace(line, id=f"{line.id}:{role}", text=" ".join(w.text for w in group),
+                bbox={"left": left, "top": top, "width": right-left, "height": bottom-top},
+                word_ids=tuple(w.id for w in group)))
+    return replace(page, lines=lines)
+
+
 def split_native_columns(page, boundaries, *, include=None):
     """Separate only real WORD evidence crossing known printed column boundaries."""
     from dataclasses import replace

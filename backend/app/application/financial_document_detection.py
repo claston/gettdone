@@ -12,6 +12,11 @@ def detect_financial_report(text: str) -> tuple[str, str] | None:
     lines = [normalize_upper_text(line) for line in text.splitlines() if line.strip()]
     header = " ".join(lines[:12])
     normalized = " ".join(lines)
+    if ("EXTRATO DE CUSTODIA MENSAL/PERIODO" in header and "AGORA CORRETORA" in normalized
+            and "PROVENTOS EM DINHEIRO" in normalized):
+        return INVESTMENT_STATEMENT, "agora_custody_monthly_positions"
+    if "FCBR76 - EXTRATO DE APLICACOES PARA SIMPLES CONFERENCIA" in header and "APLICACOES EM CDB/RDB" in header:
+        return INVESTMENT_STATEMENT, "brb_fcbr76_positions"
     if ("SICOOB" in header and "SISBR SALDO RENDA FIXA" in header
             and all(marker in normalized for marker in ("VALOR APLICADO", "VALOR BRUTO", "VALOR LIQUIDO"))):
         return INVESTMENT_STATEMENT, "sicoob_sisbr_fixed_income_positions"
