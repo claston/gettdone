@@ -1,8 +1,10 @@
 """Offline browser check of Free review guidance and document warnings."""
 
 import json
+import os
 import subprocess
 import sys
+from dataclasses import asdict
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -14,7 +16,40 @@ ROOT = Path(__file__).resolve().parents[1]
 GUIDANCE = "Revise os lançamentos e confira os dados com o documento original antes de baixar o arquivo."
 
 
+def converted_review_cases():
+    """Use real PDF parsing results for the two review regressions."""
+    sys.path.insert(0, str(ROOT / "backend"))
+    from app.application.default_conversion_pipeline import build_default_conversion_pipeline
+    from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
+
+    os.environ.update(TEXTRACT_ENABLED="false", PDF_OCR_ENABLED="false")
+    empty_page = (
+        "Banco Teste - Extrato bancário", "Agência: 0001 Conta: 12345-6",
+        "Período: 01/09/2026 a 30/09/2026", "Saldo anterior: R$ 150,00",
+        "Nenhum lançamento no período.", "Saldo final: R$ 150,00",
+    )
+    compound_pages = (
+        ("EXTRATO DE CONTA CORRENTE", "01/06/2026 PIX RECEBIDO 350,00", "02/06/2026 PIX ENVIADO -20,00",
+         "03/06/2026 PIX RECEBIDO 100,00", "04/06/2026 PIX ENVIADO -10,00", "SALDO FINAL 420,00"),
+        ("COMPROVANTE DE TRANSFERÊNCIA PIX", "VALOR 350,00", "AUTENTICAÇÃO ABC", "DATA DA TRANSAÇÃO 01/06/2026"),
+    )
+    pipeline = build_default_conversion_pipeline()
+    empty = asdict(pipeline.run(filename="empty.pdf", raw_bytes=generate_native_text_pdf((empty_page, empty_page)),
+                               analysis_id="an_review_empty").analysis_data)
+    compound = asdict(pipeline.run(filename="compound.pdf", raw_bytes=generate_native_text_pdf(compound_pages),
+                                  analysis_id="an_review_compound").analysis_data)
+    assert empty["transactions_total"] == 0 and empty["pdf_processing_metrics"]["statement_no_activity"] == 1
+    assert empty["pdf_processing_metrics"]["page_count"] == 2
+    assert empty["layout_inference_name"] == "generic_statement_ptbr"
+    assert compound["transactions_total"] == 4
+    assert compound["pdf_processing_metrics"]["export_recommendation"] == "review_recommended"
+    assert any(part["document_type"] == "bank_receipt" and not part["requires_review"]
+               for part in compound["document_parts"])
+    return empty, compound
+
+
 def main():
+    empty, compound = converted_review_cases()
     base = f"http://127.0.0.1:{pick_free_port()}"
     port = urlparse(base).port
     server = subprocess.Popen([sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"],
@@ -77,6 +112,22 @@ def main():
                     expect(page.locator(".review-warning-list li")).to_have_count(2)
                     expect(page.locator(".review-warning-list")).to_contain_text("Confira os saldos no PDF")
                     expect(page.locator(".review-warning-list")).to_contain_text("A organização de algumas linhas")
+                    for case, pdf_name in ((empty, "empty.pdf"), (compound, "compound.pdf")):
+                        analysis = case
+                        page.locator("#file-input").set_input_files({
+                            "name": pdf_name, "mimeType": "application/pdf", "buffer": b"%PDF-1.4\n%%EOF"})
+                        page.locator("#convert-btn").click()
+                        expected_title = "Extrato sem movimentação no período." if case is empty else "Atenção na revisão"
+                        expect(page.locator(".review-warning-title")).to_have_text(expected_title)
+                        for restored in (False, True):
+                            if restored:
+                                page.reload(wait_until="domcontentloaded")
+                            expect(page.locator(".review-warning-title")).to_have_text(expected_title)
+                            expect(page.locator("#review-section").get_by_text(GUIDANCE, exact=True)).to_be_visible()
+                            expect(page.locator("#kpis")).not_to_contain_text("Leitura parcial detectada")
+                            if case is compound:
+                                expect(page.locator(".review-warning-list")).to_contain_text("Páginas 2: comprovantes")
+                                expect(page.locator(".review-warning-list")).to_contain_text("recomendação de revisão manual")
                     assert not errors, errors
                     context.close()
             browser.close()

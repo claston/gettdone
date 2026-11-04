@@ -1604,13 +1604,16 @@
       return list;
     }
     const parts = analysis && Array.isArray(analysis.document_parts) ? analysis.document_parts : [];
+    const documentNotices = [];
+    let documentRequiresReview = false;
     const documentLabels = { fiscal_invoice: "notas fiscais", bank_receipt: "comprovantes", unknown: "documentos não identificados", mixed: "conteúdo misturado na mesma página" };
     for (const part of parts) {
       if (!part || part.included_in_statement || !Array.isArray(part.pages)) {
         continue;
       }
       const label = documentLabels[part.document_type] || "outros documentos";
-      list.push(`Páginas ${part.pages.join(", ")}: ${label}, separados dos lançamentos do extrato.${part.requires_review ? " Confira essas páginas no PDF original." : ""}`);
+      documentNotices.push(`Páginas ${part.pages.join(", ")}: ${label}, separados dos lançamentos do extrato.${part.requires_review ? " Confira essas páginas no PDF original." : ""}`);
+      if (part.requires_review) documentRequiresReview = true;
     }
     const txCount = Number((analysis && analysis.transactions_total) || 0);
     const pageCount = Number(metrics.page_count || 0);
@@ -1654,6 +1657,7 @@
     }
 
     if (
+      !isNoActivityStatement(analysis) &&
       pageCount >= 2 &&
       txCount <= Math.max(3, pageCount) &&
       (layout === "generic_statement_ptbr" || parser === "grouped")
@@ -1667,10 +1671,10 @@
         `Saldo linha a linha com inconsistências: ${balanceFailed} lançamento(s) não bateram no cálculo de saldo.`
       );
     }
-    if (!list.length && reviewRecommended) {
+    if (!list.length && !documentRequiresReview && reviewRecommended) {
       list.push("Revise os lançamentos e confira os dados no documento original antes de exportar. A conversão foi concluída com recomendação de revisão manual.");
     }
-    return list;
+    return [...documentNotices, ...list];
   }
 
   function toPositiveMoneyString(value) {
