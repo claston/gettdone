@@ -113,7 +113,9 @@ def _summary(text):
         if basic and key in {"opening", "closing"}:
             label = label.replace("SALDO DE", "SALDO DISPONIVEL DE")
         values = {_value(m[1]) for m in re.finditer(re.escape(label)+rf"\s+([+-]?{NUMBER}-?)(?![\d,.])", upper(text))}
-        if basic and key in {"credit", "debit"} and not values:
+        if basic and not values:
+            if label in text:
+                _fail()
             result[key] = None
             continue
         if len(values) != 1:
@@ -126,11 +128,11 @@ def _summary(text):
         if len(cash_totals) != 1 or len(blocked) > 1 or blocked and min(blocked) < 0:
             _fail()
         cash_closing = cash_totals.pop()
-        if result["closing"] - (blocked.pop() if blocked else 0) != cash_closing:
+        if result["closing"] is not None and result["closing"] - (blocked.pop() if blocked else 0) != cash_closing:
             financial_mismatch(_MESSAGE)
         result["closing"] = cash_closing
     if (any(value is not None and value < 0 for value in (result["credit"], result["debit"]))
-            or result["credit"] is not None and result["debit"] is not None
+            or all(result[key] is not None for key in ("opening", "closing", "credit", "debit"))
             and result["opening"]+result["credit"]-result["debit"] != result["closing"]):
         financial_mismatch(_MESSAGE)
     return start, end, result
@@ -324,7 +326,7 @@ def parse_native_cash_columns(raw, page_texts):
                         if opening is not None or set(amounts) != {"balance"}:
                             _fail()
                         opening = amounts["balance"]
-                        if santander and opening != controls["opening"]:
+                        if santander and controls["opening"] is not None and opening != controls["opening"]:
                             financial_mismatch(_MESSAGE)
                         if not santander and current is None and kind != BRADESCO_MONTHLY:
                             _fail()
@@ -425,6 +427,6 @@ def parse_native_cash_columns(raw, page_texts):
     if printed_totals is not None and totals != printed_totals:
         rows[0] = replace(rows[0], warnings=[*rows[0].warnings, "printed_totals_differ_from_extracted_movements"])
     if (running != printed_closing or printed_totals is not None and totals != printed_totals
-            or santander and running != controls["closing"]):
+            or santander and controls["closing"] is not None and running != controls["closing"]):
         financial_mismatch(_MESSAGE)
     return VerifiedStatement(rows, kind, opening, running, printed_balance_checks=checks, candidate_rows=len(rows)), tuple(source_pages)

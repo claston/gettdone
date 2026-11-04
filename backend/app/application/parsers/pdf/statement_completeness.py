@@ -11,7 +11,9 @@ def validate_statement_completeness(pages) -> bool:
         return False
     from app.application.parsers.pdf.statement_blocks import statement_blocks
 
-    blocks = statement_blocks(pages)
+    # Pagination inspection also runs before/after the opt-in account reader.
+    # Account identity is enforced by the extraction route, not this warning.
+    blocks = statement_blocks(pages, validate_identity=False)
     if blocks:
         return any(validate_statement_completeness(pages[block.start:block.stop]) for block in blocks)
     observed = []
