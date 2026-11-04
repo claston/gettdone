@@ -1565,13 +1565,13 @@
   }
 
   function buildReviewWarningsMarkup(analysis) {
-    if (isNoActivityStatement(analysis) && state.previewRows.length === 0) {
+    const warnings = collectReviewWarnings(analysis);
+    if (!warnings.length && isNoActivityStatement(analysis) && state.previewRows.length === 0) {
       return `<section class="review-warning-card" role="status" aria-live="polite">
         <h3 class="review-warning-title">Extrato sem movimentação no período.</h3>
         <p>A conversão foi concluída. Você pode baixar o OFX sem lançamentos.</p>
       </section>`;
     }
-    const warnings = collectReviewWarnings(analysis);
     if (!warnings.length) {
       return "";
     }
@@ -1586,6 +1586,15 @@
 
   function collectReviewWarnings(analysis) {
     const list = [];
+    const metrics = analysis && typeof analysis.pdf_processing_metrics === "object" && analysis.pdf_processing_metrics
+      ? analysis.pdf_processing_metrics : {};
+    const warningTypes = Array.isArray(metrics.canonical_warning_types_list) ? metrics.canonical_warning_types_list : [];
+    const insights = analysis && Array.isArray(analysis.insights) ? analysis.insights : [];
+    const rows = analysis && Array.isArray(analysis.preview_transactions) ? analysis.preview_transactions : [];
+    const manualReview = warningTypes.includes("manual_review_recommended") || rows.some((row) =>
+      row && !row.is_deleted && Array.isArray(row.warning_types) && row.warning_types.includes("manual_review_recommended"));
+    const reviewRecommended = String(metrics.export_recommendation || "").trim().toLowerCase() === "review_recommended" || manualReview ||
+      insights.some((insight) => insight && insight.type === "pdf_export_review_recommended");
     if (isPayablesReport(analysis)) {
       list.push("Documento identificado: relatório de contas a pagar. Este documento não é um extrato bancário.");
       list.push("Os valores representam o total de cada conta. Itens pagos usam a data de pagamento; pendentes e parciais usam o vencimento e estão identificados no histórico. Todos os itens listados podem ser exportados.");
@@ -1595,25 +1604,23 @@
       return list;
     }
     const parts = analysis && Array.isArray(analysis.document_parts) ? analysis.document_parts : [];
+    const documentNotices = [];
+    let documentRequiresReview = false;
     const documentLabels = { fiscal_invoice: "notas fiscais", bank_receipt: "comprovantes", unknown: "documentos não identificados", mixed: "conteúdo misturado na mesma página" };
     for (const part of parts) {
       if (!part || part.included_in_statement || !Array.isArray(part.pages)) {
         continue;
       }
       const label = documentLabels[part.document_type] || "outros documentos";
-      list.push(`Páginas ${part.pages.join(", ")}: ${label}, separados dos lançamentos do extrato.${part.requires_review ? " Confira essas páginas no PDF original." : ""}`);
+      documentNotices.push(`Páginas ${part.pages.join(", ")}: ${label}, separados dos lançamentos do extrato.${part.requires_review ? " Confira essas páginas no PDF original." : ""}`);
+      if (part.requires_review) documentRequiresReview = true;
     }
-    const metrics = analysis && typeof analysis === "object" ? analysis.pdf_processing_metrics : null;
-    if (!metrics || typeof metrics !== "object") {
-      return list;
-    }
-    const txCount = Number(analysis.transactions_total || 0);
+    const txCount = Number((analysis && analysis.transactions_total) || 0);
     const pageCount = Number(metrics.page_count || 0);
     const parser = String(metrics.selected_parser || "").trim().toLowerCase();
-    const layout = String(analysis.layout_inference_name || "").trim().toLowerCase();
+    const layout = String((analysis && analysis.layout_inference_name) || "").trim().toLowerCase();
     const balanceFailed = Number(metrics.balance_consistency_failed || 0);
     const unresolvedRows = Number(metrics.ocr_unresolved_rows || 0);
-    const warningTypes = Array.isArray(metrics.canonical_warning_types_list) ? metrics.canonical_warning_types_list : [];
     if (warningTypes.includes("partial_statement")) {
       list.push(mapWarningTypeExplanation("partial_statement"));
     }
@@ -1641,6 +1648,8 @@
         : "O saldo inicial pode incluir aplicações e não foi usado como saldo da conta corrente. Confira e informe o saldo correto antes de exportar.");
     }
     for (const warning of ["date_year_from_statement_period", "native_amount_recovered_from_balances",
+      "ocr_control_confidence_unconfirmed", "ocr_controls_unavailable", "ocr_structure_review_required",
+      "ocr_date_confidence_unconfirmed", "ocr_amount_confidence_unconfirmed",
       "scheduled_transactions_excluded", "pending_deposits_excluded", "ocr_duplicate_sign_normalized",
       "amount_sign_from_printed_balances", "ocr_sign_stroke_overlap_confirmed", "ocr_trailing_mark_confirmed",
       "printed_totals_differ_from_extracted_movements"]) {
@@ -1648,6 +1657,7 @@
     }
 
     if (
+      !isNoActivityStatement(analysis) &&
       pageCount >= 2 &&
       txCount <= Math.max(3, pageCount) &&
       (layout === "generic_statement_ptbr" || parser === "grouped")
@@ -1661,7 +1671,10 @@
         `Saldo linha a linha com inconsistências: ${balanceFailed} lançamento(s) não bateram no cálculo de saldo.`
       );
     }
-    return list;
+    if (!list.length && !documentRequiresReview && reviewRecommended) {
+      list.push("Revise os lançamentos e confira os dados no documento original antes de exportar. A conversão foi concluída com recomendação de revisão manual.");
+    }
+    return [...documentNotices, ...list];
   }
 
   function toPositiveMoneyString(value) {

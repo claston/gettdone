@@ -256,6 +256,10 @@ jobs:
         working-directory: .
         run: python scripts/smoke_playwright_navigation.py
 
+      - name: Free review guidance and warnings smoke (desktop and mobile)
+        working-directory: .
+        run: python scripts/smoke_free_review_frontend.py
+
       - name: Admin PDF metrics smoke (desktop and mobile)
         working-directory: .
         run: python scripts/smoke_admin_pdf_metrics.py
