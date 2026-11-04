@@ -69,9 +69,15 @@ OFX-73; esta entrega não promete deduplicação automática arbitrária.
 
 `GET /api/pro/financial-center/clients/{client_id}` aceita:
 
-- `month=YYYY-MM` obrigatório;
+- `month=YYYY-MM` opcional: sem mês explícito, abre o mês do movimento acessível mais recente do cliente (respeitando o filtro de conta). Sem movimentos, usa o mês atual em `America/Sao_Paulo`. A data do movimento, e não a ordem de envio dos extratos, determina o período;
 - `account` opcional/repetível, no máximo 50; `unidentified` representa pendência;
 - `day`, `pending`, `limit` (1–100; padrão 50) e `cursor` por data/UUID.
+
+A interface resolve esse padrão somente na entrada sem mês válido, grava o
+período retornado na URL e preserva escolhas manuais, atualização e retorno da
+origem. Movimentos excluídos e fontes suspensas ou expiradas não definem o mês
+inicial. Publique o backend antes do frontend: clientes antigos que enviam
+`month` continuam compatíveis. No rollback, reverta o frontend antes do backend.
 
 O backend resolve o proprietário pela sessão existente, valida usuário ativo,
 plano PRO vigente, organização, cliente e contas. A consulta junta autoridade,
