@@ -19,6 +19,8 @@ from app.application.statement_period_history import statement_period_from_text
 _DATE = r"\d{2}/\d{2}/\d{4}"
 _MONTHS = "JAN FEV MAR ABR MAI JUN JUL AGO SET OUT NOV DEZ".split()
 _FULL_MONTHS = "JANEIRO FEVEREIRO MARCO ABRIL MAIO JUNHO JULHO AGOSTO SETEMBRO OUTUBRO NOVEMBRO DEZEMBRO".split()
+_COVER_MONTH = re.compile(r"\bEXTRATO (?:CONSOLIDADO(?: INTELIGENTE)?|MENSAL)\s+(" +
+                          "|".join(_FULL_MONTHS) + r")\s*/\s*(20\d{2})\b")
 _PAGE_FIELDS = {"page", "page_number", "source_page", "reference_page"}
 
 
@@ -55,6 +57,13 @@ def _period(text):
         if short:
             start, end, month, year = map(int, short.groups())
             return date(year, month, start).isoformat(), date(year, month, end).isoformat()
+        # A monthly cover heading is scope evidence. Historical month tables
+        # inside investments are not: require the statement title immediately
+        # before the full month, within the pre-ledger header.
+        cover_month = _COVER_MONTH.search(header)
+        if cover_month:
+            number, year = _FULL_MONTHS.index(cover_month[1])+1, int(cover_month[2])
+            return date(year, number, 1).isoformat(), date(year, number, calendar.monthrange(year, number)[1]).isoformat()
         for line in text.splitlines():
             month = re.fullmatch(r"(?:EXTRATO MENSAL\s+)?(" + "|".join(_MONTHS) + r")[ /]+(20\d{2})", upper(line))
             if month:
@@ -66,7 +75,7 @@ def _period(text):
     return None
 
 
-def statement_blocks(pages):
+def statement_blocks(pages, *, validate_identity=True):
     if len(pages) < 2:
         return []
     from app.application.parsers.pdf.positional_monthly_statements import positional_kind
@@ -79,7 +88,8 @@ def statement_blocks(pages):
         first_dated = next((upper(line) for line in text.splitlines() if re.match(rf"^\s*{_DATE}\b", line)), "")
         opening_starts_ledger = bool(re.match(rf"{_DATE}\s+SALDO\s+(?:ANTERIOR|INICIAL)\b", first_dated))
         positional = positional_kind(text)
-        is_statement = classify_document_type("page.pdf", b"", extracted_text=text).document_type == BANK_STATEMENT or bool(positional)
+        is_statement = (classify_document_type("page.pdf", b"", extracted_text=text).document_type == BANK_STATEMENT
+                        or bool(positional) or bool(_COVER_MONTH.match(normalized)))
         period = _period(text) if is_statement else None
         lot_date = re.search(r"(?m)^\s*\d{6,8}\s+\d{3}#?\s+(\d{2}/\d{2}/(?:\d{4}|\d{2}))\b",
                              "\n".join(upper(line) for line in text.splitlines()))
@@ -101,7 +111,8 @@ def statement_blocks(pages):
         return []
     blocks.append(StatementBlock(start, len(pages), current))
     # Owner identity and annex rules remain independent of document periods.
-    segment_pdf_pages(pages)
+    if validate_identity:
+        segment_pdf_pages(pages)
     return blocks
 
 
@@ -152,6 +163,22 @@ def _bounds(result):
         if f"{prefix}_opening_balance" in metrics and f"{prefix}_closing_balance" in metrics:
             return Decimal(str(metrics[f"{prefix}_opening_balance"])), Decimal(str(metrics[f"{prefix}_closing_balance"]))
     return None
+
+
+def combine_verified_blocks(statement, pages, build):
+    """Reuse continuity policy for scopes within pages, without shifting sources."""
+    results, blocks = [], []
+    for part, period in statement.blocks:
+        result = build(part, pages)
+        result = replace(result, document_parts=[{
+            "id": "ledger", "included_in_statement": True,
+            "pages": sorted({row.source_page for row in part.rows}),
+        }])
+        results.append(result)
+        blocks.append(StatementBlock(0, len(pages), period))
+    combined = combine_statement_results(results, blocks, pages)
+    # All scopes refer to the same original extraction, not copied PDF pages.
+    return replace(combined, extracted_text="\n".join(pages), source_page_texts=tuple(pages), source_layout_lines=None)
 
 
 def combine_statement_results(results, blocks, pages, *, original_extraction=None, document_hash=""):

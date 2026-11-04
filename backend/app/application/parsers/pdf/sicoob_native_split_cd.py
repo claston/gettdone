@@ -53,7 +53,7 @@ def parse_sicoob_native_split_cd(source):
             return None  # The complete flowing-text form has explicit inline signs.
         fail("O SISBR está sem as três colunas de histórico.")
     text = upper("\n".join(line.text for page in source.pages for line in page.lines))
-    periods = set(re.findall(rf"PERIODO:\s*({DATE})\s*-\s*({DATE})", text))
+    periods = set(re.findall(rf"PERIODO:\s*({DATE})(?:\s*[-–]\s*|\s+A\s+|\s+)({DATE})", text))
     accounts = set(re.findall(r"(?m)^CONTA:\s*([\d.-]+)", "\n".join(upper(line.text) for p in source.pages for line in p.lines)))
     if len(periods) != 1 or len(accounts) != 1:
         fail("A conta ou o período SISBR não pode ser confirmado.")
@@ -93,7 +93,7 @@ def parse_sicoob_native_split_cd(source):
         if len(values) != 1 or not (match := _VALUE.fullmatch(upper(values[0][1].text))):
             fail("Uma linha SISBR está sem seu valor legível.")
         value_page, value_line = values[0]
-        signs = [line.text for _, _, line in band if line.bbox["left"] >= value_left and line.text in {"C", "D", "*"}]
+        signs = [upper(line.text) for _, _, line in band if line.bbox["left"] >= value_left and upper(line.text) in {"C", "D", "*"}]
         sign = match[2]
         if (sign and signs) or (not sign and len(signs) != 1):
             fail("Um valor SISBR está sem indicador C/D inequívoco.")

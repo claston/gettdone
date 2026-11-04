@@ -15,6 +15,11 @@ def detect_financial_report(text: str) -> tuple[str, str] | None:
     if "RELATORIO DE VENDAS" in header and all(marker in normalized for marker in (
         "ESTABELECIMENTO(S)", "VALOR PARCELA BRUTO", "BANDEIRA", "INDICADOR", "STATUS")):
         return "acquirer_sales_report", "sales_gross_installment_columns"
+    if ("EXTRATO DE CUSTODIA MENSAL/PERIODO" in header and "AGORA CORRETORA" in normalized
+            and "PROVENTOS EM DINHEIRO" in normalized):
+        return INVESTMENT_STATEMENT, "agora_custody_monthly_positions"
+    if "FCBR76 - EXTRATO DE APLICACOES PARA SIMPLES CONFERENCIA" in header and "APLICACOES EM CDB/RDB" in header:
+        return INVESTMENT_STATEMENT, "brb_fcbr76_positions"
     if ("SICOOB" in header and "SISBR SALDO RENDA FIXA" in header
             and all(marker in normalized for marker in ("VALOR APLICADO", "VALOR BRUTO", "VALOR LIQUIDO"))):
         return INVESTMENT_STATEMENT, "sicoob_sisbr_fixed_income_positions"
@@ -35,6 +40,10 @@ def detect_financial_report(text: str) -> tuple[str, str] | None:
         return RECEIVABLES_REPORT, "pagbank_sales_gross_fee_net_status"
     if "INFORMATIVO MENSAL CDB" in header and "CDB CAIXA" in header:
         return INVESTMENT_STATEMENT, "caixa_monthly_cdb_positions"
+    if ("BTG PACTUAL" in header and "INVESTIMENTO" in header and "EXTRATO" in header
+            and "CONTA CORRENTE - MOVIMENTACAO" in normalized
+            and re.search(r"DISTRIBUICAO DA CARTEIRA\s+CONTA CORRENTE\s+100[.,]00%", normalized)):
+        return INVESTMENT_STATEMENT, "btg_investment_cash_ledger"
     if ("BTG PACTUAL" in header and "INVESTIMENTO" in header
             and "FUNDO DE INVESTIMENTO" in normalized and "EXTRATO" in header):
         return INVESTMENT_STATEMENT, "btg_fund_positions_and_lots"

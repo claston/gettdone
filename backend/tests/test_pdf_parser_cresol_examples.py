@@ -161,12 +161,11 @@ CRESOL_EXAMPLE_CASES: dict[str, dict[str, Any]] = {
 
 
 @pytest.mark.parametrize("case_name", CRESOL_EXAMPLE_CASES)
-def test_parse_pdf_transactions_supports_cresol_visual_examples(case_name: str, monkeypatch) -> None:
+def test_parse_pdf_transactions_supports_cresol_visual_examples(case_name: str) -> None:
     case = CRESOL_EXAMPLE_CASES[case_name]
-    monkeypatch.setattr(pdf_parser_module, "_read_native_pdf_page_texts", lambda raw_bytes: [case["text"]])
-    monkeypatch.setattr(pdf_parser_module, "_read_layout_native_pdf_page_texts", lambda raw_bytes: [case["text"]])
-
-    result = pdf_parser_module.parse_pdf_transactions(b"%PDF synthetic")
+    # These fixtures exercise the text reader. Native geometry is covered with
+    # real generated PDFs in test_remaining_recovery_cases.
+    result = pdf_parser_module._parse_pdf_transactions_from_page_texts([case["text"]])
 
     assert result.layout.layout_name == case["profile"]
     assert result.parse_metrics["selected_parser"] == "layout_specific_cresol"
