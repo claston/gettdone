@@ -58,6 +58,8 @@ def parse_financial_report_pages(page_texts: list[str]) -> dict | None:
     if detected is None:
         return None
     kind, evidence = detected
+    if evidence == "sales_gross_installment_columns":
+        raise PdfFinancialValidationError("Envie o PDF original do relatório de vendas para preservar as colunas e parcelas.")
     if evidence in {"agora_custody_monthly_positions", "brb_fcbr76_positions"}:
         from app.application.parsers.pdf.custody_period_reports import parse_agora_custody, parse_fcbr76
 

@@ -61,6 +61,11 @@ def _kind(text):
 
 
 def parse_followup_native_tables(raw, page_texts):
+    from app.application.parsers.pdf.daily_balance_groups import is_daily_balance_groups, parse_daily_balance_groups
+
+    if is_daily_balance_groups("\n".join(page_texts)):
+        source = read_native_table_source(raw)
+        return parse_daily_balance_groups(source), source
     from app.application.parsers.pdf.grouped_daily_cash import is_grouped_daily_cash, parse_grouped_daily_cash
 
     if is_grouped_daily_cash("\n".join(page_texts)):
