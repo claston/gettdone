@@ -6,8 +6,8 @@
     "normal_pull_request_review": "pending",
     "note": "The owner authorized this functional change; these exact synthetic differences were audited during implementation, not individually presented to the owner beforehand."
   },
-  "candidate_commit": "26d1b7b231daa09d69d68ee0fcfed515cef8ec4b",
-  "candidate_app_tree": "b9ae7c48c668dafa2be4a77765db97c79335acf5",
+  "candidate_commit": "65e799b7910f3612087608a47a81e942e1ea4b47",
+  "candidate_app_tree": "6c04445e8ef8cb396a8c55b33640077461710733",
   "unchanged": [
     "dates",
     "amounts and signs",
@@ -64,5 +64,19 @@
     "current_base": "99afe012190870eb61cb654dff94e8eb02617c0f",
     "identical_application_tree": "34c762521798878819419aa2de06c3371ea066eb",
     "note": "Main advanced with an unrelated PRO UI change. Both baseline application trees are byte-identical; exact differences are unchanged."
+  },
+  "review_follow_up": {
+    "previous_app_tree": "b9ae7c48c668dafa2be4a77765db97c79335acf5",
+    "candidate_commit": "65e799b7910f3612087608a47a81e942e1ea4b47",
+    "comments": [
+      "https://github.com/claston/gettdone/pull/555#discussion_r4479105596",
+      "https://github.com/claston/gettdone/pull/555#discussion_r4479105613"
+    ],
+    "corrections": [
+      "Deterministic canonical CSV column precedence; ambiguous aliases rejected; financial alias vocabulary unchanged.",
+      "Document-only integer zero-fill formatting from XLSX source cells."
+    ],
+    "existing_differences_changed": false,
+    "validation": "The exact original PDF/review differences remain enumerated, with no new exemptions or baseline regeneration. CI must validate the complete corpus against this application tree. Local regressions passed; interrupted OOM runs are not validation evidence."
   }
 }
