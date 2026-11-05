@@ -12,6 +12,15 @@ from app.application.models import NormalizedTransaction
 from app.application.ofx_writer import build_ofx_statement
 
 LABELS = {
+    "amounts.period_inflows": "Entradas no período", "amounts.period_outflows": "Saídas no período",
+    "amounts.available_net": "Líquido disponível",
+    "amounts.provision_tax": "Provisão de IR/IOF", "attributes.participation_percent": "Participação (%)",
+    "amounts.day_income": "Rendimento do dia", "amounts.month_income": "Rendimento do mês",
+    "amounts.previous_month_income": "Rendimento do mês anterior",
+    "amounts.three_month_income": "Rendimento dos últimos três meses",
+    "amounts.six_month_income": "Rendimento dos últimos seis meses",
+    "amounts.year_income": "Rendimento dos últimos doze meses", "attributes.contract": "Contrato",
+    "attributes.customer_reference": "Seu número", "attributes.direction": "Direção informada",
     "attributes.installment": "Parcela", "attributes.card_brand": "Bandeira",
     "attributes.card_type": "Tipo de cartão", "attributes.terminal": "Terminal",
     "attributes.card_indicator": "Modalidade crédito/débito", "attributes.payment_order": "Ordem de pagamento",

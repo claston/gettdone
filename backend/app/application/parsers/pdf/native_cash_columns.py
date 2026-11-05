@@ -195,8 +195,8 @@ def _monthly_period_boxes(tp, text, columns):
     return periods
 
 
-def parse_native_cash_columns(raw, page_texts):
-    kind = _kind(page_texts)
+def parse_native_cash_columns(raw, page_texts, *, inherited_kind=None):
+    kind = _kind(page_texts) or inherited_kind
     if kind is None:
         return None
     inactive = parse_santander_inactive_cash(page_texts)
