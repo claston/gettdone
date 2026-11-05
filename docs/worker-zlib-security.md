@@ -12,11 +12,13 @@ Os dois Dockerfiles do worker instalam somente o pacote oficial Debian
 `df84af25dc1942490e1d1c899a07619152a46148`. Não se trata da versão upstream
 1.3.2 sem patches, que permanece vulnerável.
 
-O pacote vem do snapshot Debian de `20261105T060000Z`, com índices assinados
-verificados pelo APT. Somente a validade temporal do snapshot histórico é
-desabilitada; assinatura, integridade e autenticação continuam obrigatórias.
+O pacote vem do espelho oficial `deb.debian.org`, com índices assinados
+verificados pelo APT. Assinatura, validade, integridade e autenticação
+continuam obrigatórias; falhas ao atualizar índices interrompem o build.
 Não há atualização geral do sistema nem habilitação permanente de Sid. As
-bases Python e distroless continuam fixadas pelos mesmos digests.
+bases Python e distroless continuam fixadas pelos mesmos digests. A versão
+exata é obrigatória: se sair do espelho, o build falha em vez de selecionar
+automaticamente uma biblioteca diferente.
 
 A biblioteca mantém o SONAME `libz.so.1`. A imagem de produção é Linux/amd64;
 este procedimento não declara suporte a outras arquiteturas. O binário antigo

@@ -4,11 +4,11 @@ ARG RUNTIME_IMAGE=gcr.io/distroless/cc-debian13:nonroot@sha256:3ee00291cf386ec52
 FROM ${PYTHON_IMAGE} AS build
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
 WORKDIR /build
-# Install only the corrected official zlib package, using signed snapshot indexes.
+# Install only the corrected official zlib package, using signed Debian indexes.
 # The rest of the build/runtime stays on the pinned Debian 13 images.
 RUN set -eu; printf '%s\n' \
-      'deb [check-valid-until=no signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://snapshot.debian.org/archive/debian/20261105T060000Z/ sid main' > /tmp/zlib.list \
-    && apt-get -o Dir::Etc::sourcelist=/tmp/zlib.list -o Dir::Etc::sourceparts=- update \
+      'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://deb.debian.org/debian sid main' > /tmp/zlib.list \
+    && apt-get -o APT::Update::Error-Mode=any -o Acquire::Retries=3 -o Dir::Etc::sourcelist=/tmp/zlib.list -o Dir::Etc::sourceparts=- update \
     && apt-get -o Dir::Etc::sourcelist=/tmp/zlib.list -o Dir::Etc::sourceparts=- download zlib1g=1:1.3.dfsg+really1.3.2-4 \
     && dpkg -i /build/zlib1g_*.deb \
     && rm /tmp/zlib.list
