@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from playwright.sync_api import expect, sync_playwright
+from smoke_pro_pdf_sync import synthetic_pdf
 
 
 def run(base):
@@ -18,7 +19,7 @@ def run(base):
                     {"id": "a1", "bank_code": "341", "account_number": "••1234", "statement_count": 3},
                     {"id": "a2", "bank_code": "077", "account_number": "••5678", "statement_count": 2}]}]
     pending = [{"job_id": "job_pending", "batch_id": "batch_pending", "filename": "identificar.pdf", "version": 0,
-                "source": {"holder_name": "Titular a conferir", "references": [{"page": 1, "line": 2}]}}]
+                "source": {"holder_name": "Titular a conferir", "references": [{"page": 2, "line": 2}]}}]
     jobs = [{"job_id": f"job_{index}", "source_batch_id": f"batch_{index}", "filename": f"extrato-{index}.csv",
              "status": "completed", "expires_at": "2099-01-01T00:00:00Z", "analysis_id": f"an_{index}",
              "result": {"analysis": {"file_type": "csv", "bank_name": "Itaú" if index == 1 else "Inter",
@@ -28,6 +29,8 @@ def run(base):
             for index in (1, 2)]
     writes, errors, held_lists, held_refreshes = [], [], [], []
     loading = {"hold_list": True, "hold_refresh": True}
+    document_state = {"requests": 0, "unavailable": True}
+    original_pdf = synthetic_pdf(6)
 
     def dashboard(selected=None):
         selected = clients if selected is None else selected
@@ -39,6 +42,20 @@ def run(base):
         method = route.request.method
         if path == "/auth/me":
             route.fulfill(json={"user_id": "synthetic", "name": "Usuário Sintético", "email": "synthetic@example.test"})
+        elif path == "/api/pro/conversion-batches/batch_pending/jobs/job_pending/document":
+            assert method == "GET" and route.request.headers.get("x-ofx-pro-client") == "web"
+            document_state["requests"] += 1
+            if document_state["unavailable"]:
+                route.fulfill(status=404, json={"detail": "Conversion document not found."})
+            else:
+                route.fulfill(body=original_pdf, content_type="application/pdf")
+        elif path == "/api/pro/receipts/documents/job_pending/confirm":
+            body = route.request.post_data_json
+            assert body["name"] == "Page 2 transaction 0" and body["expected_version"] == 0
+            assert body["tax_id"] == "12345678000190"
+            writes.append(path)
+            pending.clear()
+            route.fulfill(json={"id": "client_browser"})
         elif path == "/api/pro/receipts":
             assert parse_qs(urlsplit(route.request.url).query).get("sort") == ["name"]
             if loading["hold_list"]:
@@ -86,6 +103,7 @@ def run(base):
         browser = playwright.chromium.launch(headless=True)
         try:
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
+            page.context.grant_permissions(["clipboard-read", "clipboard-write"])
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.route("**/*", intercept)
             page.goto(base + "/dashboard")
@@ -115,6 +133,30 @@ def run(base):
             assert len(held_refreshes) == 1, "Tab switching must not restart synchronization"
             held_refreshes.pop().fulfill(json={"next_cursor": None})
             expect(page.get_by_role("button", name="Atualizar extratos", exact=True)).to_be_enabled()
+            assert document_state["requests"] == 0, "PDF must load only when checking identity"
+            page.get_by_role("tab", name="Não identificados (1)", exact=True).click()
+            page.get_by_role("button", name="Conferir identificação", exact=True).click()
+            expect(page.get_by_role("region", name="Documento original").get_by_role("alert")).to_contain_text(
+                "PDF indisponível ou expirado")
+            page.get_by_label("Nome do cliente", exact=True).fill("Rascunho preservado")
+            document_state["unavailable"] = False
+            page.get_by_role("button", name="Recarregar PDF", exact=True).click()
+            expect(page.get_by_text("Página 2 de 6", exact=True)).to_be_visible(timeout=15000)
+            expect(page.get_by_label("Nome do cliente", exact=True)).to_have_value("Rascunho preservado")
+            copy_pdf_name(page)
+            for label in ("Aumentar zoom do PDF", "Próxima página do PDF", "Página anterior do PDF"):
+                page.get_by_role("button", name=label, exact=True).click()
+            page.get_by_role("button", name="Ajustar à largura", exact=True).click()
+            expect(page.get_by_label("Nome do cliente", exact=True)).to_have_value("Page 2 transaction 0")
+            assert not writes, "Viewing, zooming and copying must not submit identification"
+            wait_pdf_render(page)
+            page.screenshot(path=str(output / "identity-pdf-desktop.png"), full_page=True)
+            for _ in range(4):
+                page.get_by_role("button", name="Próxima página do PDF", exact=True).click()
+            expect(page.get_by_text("Esta página não tem texto selecionável.", exact=False)).to_be_visible()
+            page.get_by_role("button", name="Cancelar", exact=True).click()
+            expect(page.get_by_role("region", name="Documento original")).to_have_count(0)
+            page.get_by_role("tab", name="Identificados (1)", exact=True).click()
             expect(page.get_by_role("navigation", name="Navegação principal").get_by_role("link")).to_have_count(2)
             expect(page.locator(".mobile-menu")).not_to_be_visible()
             search = page.get_by_role("searchbox", name="Buscar por nome, CPF ou CNPJ")
@@ -157,6 +199,17 @@ def run(base):
             expect(page.get_by_role("button", name="Conferir identificação", exact=True)).to_be_visible()
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Pending mobile overflow"
             page.screenshot(path=str(output / "received-pending-mobile.png"), full_page=True)
+            page.get_by_role("button", name="Conferir identificação", exact=True).click()
+            expect(page.get_by_text("Página 2 de 6", exact=True)).to_be_visible()
+            copy_pdf_name(page)
+            page.get_by_label("CPF/CNPJ do titular", exact=True).fill("12345678000190")
+            page.get_by_role("button", name="Aumentar zoom do PDF", exact=True).click()
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Inline PDF mobile overflow"
+            wait_pdf_render(page)
+            page.screenshot(path=str(output / "identity-pdf-mobile.png"), full_page=True)
+            page.get_by_role("button", name="Salvar identificação", exact=True).click()
+            expect(page.get_by_text("Todos os extratos estão identificados.", exact=True)).to_be_visible()
+            expect(page.get_by_role("region", name="Documento original")).to_have_count(0)
             page.get_by_role("link", name="Ver conversões e lotes", exact=True).click()
             page.get_by_role("button", name="Todos os arquivos", exact=True).click()
             expect(page.get_by_role("heading", name="Todas as conversões")).to_be_visible()
@@ -165,12 +218,50 @@ def run(base):
             for legacy in ("/clients", "/periods", "/works", "/works/work_hidden"):
                 page.goto(base + legacy)
                 expect(page).to_have_url(base + "/dashboard")
-            assert len(writes) == 2 and not errors, (writes, errors)
+            assert len(writes) == 3 and not errors, (writes, errors)
             (output / "summary.json").write_text(json.dumps({"result": "PASS", "writes": writes, "browser_errors": errors,
-                "checks": ["initial loading", "background refresh", "accessible tabs", "three KPIs", "clients and subordinate accounts", "inline edit", "pending identity",
+                "checks": ["initial loading", "background refresh", "accessible tabs", "three KPIs", "clients and subordinate accounts",
+                           "inline edit", "pending identity",
                            "flat multi-batch editor", "original batch review", "scoped export", "desktop/mobile",
-                           "independent converter", "legacy screens hidden"]},
+                           "independent converter", "legacy screens hidden", "inline PDF evidence page", "PDF copy/paste",
+                           "PDF retry preserves form", "image-only page", "inline PDF mobile", "identity confirmation"]},
                 ensure_ascii=False, indent=2), encoding="utf-8")
             print("OFX-62 browser PASS: dashboard, inline editing, multi-batch workspace, scoped export and mobile.")
+        except Exception:
+            page.screenshot(path=str(output / "received-failure.png"), full_page=True)
+            print("Browser errors:", errors)
+            print(page.get_by_role("region", name="Documento original").all_inner_texts())
+            raise
         finally:
             browser.close()
+
+
+def copy_pdf_name(page):
+    text = page.locator(".textLayer span").filter(has_text=re.compile(r"^Page 2 transaction 0$"))
+    expect(text).to_be_visible()
+    text.evaluate("""element => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+    }""")
+    page.keyboard.press("Control+c")
+    assert page.evaluate("navigator.clipboard.readText()") == "Page 2 transaction 0"
+    field = page.get_by_label("Nome do cliente", exact=True)
+    field.fill("")
+    field.press("Control+v")
+    expect(field).to_have_value("Page 2 transaction 0")
+
+
+def wait_pdf_render(page):
+    # Text selection can finish before the canvas repaints after zoom/navigation.
+    page.wait_for_function("""() => {
+        const canvas = document.querySelector('.react-pdf__Page__canvas');
+        if (!canvas || !canvas.width || !canvas.height || canvas.style.display === 'none') return false;
+        const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+        for (let i = 0; i < pixels.length; i += 4) {
+            if (pixels[i + 3] > 0 && pixels[i] < 128 && pixels[i + 1] < 128 && pixels[i + 2] < 128) return true;
+        }
+        return false;
+    }""")

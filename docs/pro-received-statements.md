@@ -51,6 +51,20 @@ Confirmações usam versão de vínculo; edições inline usam a versão tempora
 cliente. Inferências não substituem vínculos manuais já existentes. Períodos
 legados são preservados ao confirmar a identificação.
 
+Em **Conferir identificação**, PDFs disponíveis abrem inline ao lado do
+formulário no desktop e acima dele no celular. A leitura começa na primeira
+página válida da evidência (ou na página 1), com navegação, zoom, ajuste à largura
+e texto selecionável para copiar e colar. Páginas sem camada de texto continuam
+visíveis, com orientação para conferência visual; essa prévia não executa OCR.
+Arquivos de outros formatos mantêm o formulário, com aviso de ausência de prévia.
+
+O visualizador carrega apenas ao abrir a pendência e usa a rota autenticada
+existente de documento do lote, sem consultar o workspace de lançamentos.
+Fechar ou trocar o arquivo cancela a leitura pendente. Recarregar um PDF com
+erro não apaga os campos preenchidos. A confirmação continua explícita em
+**Salvar identificação**, com o mesmo controle de versão e acesso. Não há
+conversão adicional, cobrança de cota, alteração de retenção ou migração.
+
 O worker grava a organização depois de concluir a conversão. Se essa gravação
 falhar, a mensagem é repetida e apenas a organização é retomada; o arquivo
 concluído não é reconvertido nem consome cota novamente. O refresh explícito do

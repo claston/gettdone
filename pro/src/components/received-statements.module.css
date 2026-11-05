@@ -234,6 +234,21 @@ a.clientLink::after {
   gap: 12px;
   flex-wrap: wrap;
 }
+.identityReview {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr);
+  align-items: start;
+  border-top: 1px solid #e2e8f0;
+}
+.identityReview .form {
+  min-width: 0;
+  border-top: 0;
+}
+@media (max-width: 900px) {
+  .identityReview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .pending {
   display: grid;
   gap: 12px;

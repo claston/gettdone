@@ -1,0 +1,59 @@
+.preview {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 20px;
+  background: #f8fafc;
+  color: #0f172a;
+}
+.preview strong {
+  overflow-wrap: anywhere;
+}
+.preview p {
+  margin: 0;
+}
+.hint {
+  font-size: 0.85rem;
+  color: #475569;
+}
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+.controls button {
+  min-height: 40px;
+  min-width: 40px;
+}
+.viewport {
+  height: min(65vh, 680px);
+  min-height: 280px;
+  overflow: auto;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #e2e8f0;
+  padding: 8px;
+}
+.viewport :global(.react-pdf__Document) {
+  width: max-content;
+  margin: 0 auto;
+}
+.viewport :global(.textLayer) {
+  user-select: text;
+  cursor: text;
+}
+.message {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+}
+@media (max-width: 700px) {
+  .preview {
+    padding: 16px;
+  }
+  .viewport {
+    height: 50vh;
+  }
+}

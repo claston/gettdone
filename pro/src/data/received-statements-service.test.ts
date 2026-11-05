@@ -6,6 +6,62 @@ afterEach(() => {
 });
 
 describe("busca de clientes", () => {
+  it("mostra uma mensagem em português quando a rede falha", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
+    );
+    const { loadReceivedDocument } =
+      await import("./received-statements-service");
+    await expect(
+      loadReceivedDocument("batch", "job", new AbortController().signal),
+    ).rejects.toThrow("Não foi possível carregar o PDF.");
+  });
+  it("busca apenas o PDF original com sessão, cancelamento e sem cache", async () => {
+    const fetcher = vi.fn().mockImplementation(async (path) =>
+      path === "/auth/me"
+        ? Response.json({})
+        : new Response("%PDF-example", {
+            headers: { "Content-Type": "application/pdf" },
+          }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    const { loadReceivedDocument } =
+      await import("./received-statements-service");
+    const abort = new AbortController();
+    const blob = await loadReceivedDocument("batch/1", "job/1", abort.signal);
+    expect(blob.type).toBe("application/pdf");
+    expect(fetcher).toHaveBeenLastCalledWith(
+      "/api/pro/conversion-batches/batch%2F1/jobs/job%2F1/document",
+      expect.objectContaining({
+        credentials: "include",
+        signal: abort.signal,
+        cache: "no-store",
+      }),
+    );
+    expect(
+      fetcher.mock.calls.every(
+        ([path]) => path === "/auth/me" || path.endsWith("/document"),
+      ),
+    ).toBe(true);
+  });
+  it("informa quando o PDF não está mais disponível", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation(async (path) =>
+          path === "/auth/me"
+            ? Response.json({})
+            : new Response(null, { status: 404 }),
+        ),
+    );
+    const { loadReceivedDocument } =
+      await import("./received-statements-service");
+    await expect(
+      loadReceivedDocument("batch", "job", new AbortController().signal),
+    ).rejects.toThrow(/indisponível ou expirado/);
+  });
   it("envia identificadores no corpo, preserva cursores e não os inclui em URLs ou telemetria", async () => {
     const fetcher = vi
       .fn()
