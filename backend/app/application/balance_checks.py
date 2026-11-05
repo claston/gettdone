@@ -104,5 +104,13 @@ def enrich_legacy_balance_checks(analysis: dict) -> dict:
 
 
 def enrich_legacy_conversion_result(payload: dict) -> dict:
+    from app.application.pdf_review_guidance import build_pdf_review_guidance
+
     analysis = payload.get("analysis")
-    return {**payload, "analysis": enrich_legacy_balance_checks(analysis)} if isinstance(analysis, dict) else payload
+    if not isinstance(analysis, dict):
+        return payload
+    enriched = enrich_legacy_balance_checks(analysis)
+    guidance = build_pdf_review_guidance(enriched)
+    if guidance is not None or "review_guidance" in enriched:
+        enriched = {**enriched, "review_guidance": guidance}
+    return {**payload, "analysis": enriched}

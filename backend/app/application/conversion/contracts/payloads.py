@@ -146,6 +146,7 @@ class PdfProcessingMetrics(BaseModel):
 
 
 class AnalyzeResponse(BaseModel):
+    review_guidance: dict[str, str] | None = None
     statement_balance_check: BalanceCheck | None = None
     analysis_id: str
     file_type: str
