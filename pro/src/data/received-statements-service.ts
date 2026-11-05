@@ -69,6 +69,32 @@ export interface ReceivedService {
 const api = createProApiClient({
   apiUrl: process.env.NEXT_PUBLIC_API_URL ?? "/",
 });
+
+export async function loadReceivedDocument(
+  batchId: string,
+  jobId: string,
+  signal: AbortSignal,
+): Promise<Blob> {
+  const response = await api
+    .request(
+      `/api/pro/conversion-batches/${encodeURIComponent(batchId)}/jobs/${encodeURIComponent(jobId)}/document`,
+      { signal, cache: "no-store", headers: { Accept: "application/pdf" } },
+    )
+    .catch(() => {
+      throw new Error(
+        "Não foi possível carregar o PDF. Tente novamente; os dados preenchidos continuam na tela.",
+      );
+    });
+  if (!response.ok) {
+    throw new Error(
+      response.status === 404
+        ? "PDF indisponível ou expirado. Você pode continuar preenchendo os dados."
+        : "Não foi possível carregar o PDF. Tente novamente; os dados preenchidos continuam na tela.",
+    );
+  }
+  return response.blob();
+}
+
 async function read(path: string, init?: RequestInit) {
   const response = await api.request(`/api/pro/receipts${path}`, init);
   if (!response.ok)
