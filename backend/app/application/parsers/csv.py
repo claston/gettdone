@@ -50,6 +50,7 @@ def parse_csv_transactions_with_mapping(
                 description=description_raw.strip(),
                 amount=amount,
                 type=txn_type,
+                document_number=(row.get(field_map.get("document_number"), "") or "").strip() or None,
             )
         )
 
@@ -82,8 +83,8 @@ def _resolve_field_map(fieldnames: list[str]) -> dict[str, str]:
     field_map: dict[str, str] = {}
     for canonical, aliases in FIELD_ALIASES.items():
         for alias in aliases:
-            if alias in normalized_lookup:
-                field_map[canonical] = normalized_lookup[alias]
+            if _normalize_header(alias) in normalized_lookup:
+                field_map[canonical] = normalized_lookup[_normalize_header(alias)]
                 break
     return field_map
 

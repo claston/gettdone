@@ -36,6 +36,36 @@ const conversion: Conversion = {
 };
 
 describe("grid page anchors", () => {
+  it("exibe o documento separado e preserva zeros à esquerda", () => {
+    render(
+      <TransactionGrid
+        activePage={1}
+        conversion={{
+          ...conversion,
+          transactions: [
+            { ...row("1", 1), documentNumber: "001103" },
+            row("2", 1),
+          ],
+        }}
+        groupByPage={true}
+        onSourcePage={vi.fn()}
+        onLocateTransaction={vi.fn()}
+        onUpdate={vi.fn()}
+        onGroupChange={vi.fn()}
+        onAdd={vi.fn()}
+        onRemove={vi.fn()}
+        onRestore={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("columnheader", { name: "Documento" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "001103" })).toBeInTheDocument();
+    expect(screen.getByText(/Página 1/).closest("td")).toHaveAttribute(
+      "colspan",
+      "7",
+    );
+  });
   it("mostra a conta de origem de cada lançamento do consolidado", () => {
     render(
       <TransactionGrid

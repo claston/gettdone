@@ -30,6 +30,7 @@ interface HttpWorkspaceRepositoryOptions {
 }
 
 interface ApiTransaction {
+  document_number?: string | null;
   statement_account?: {
     bank_branch?: unknown;
     account_number?: unknown;
@@ -880,6 +881,7 @@ function mapTransaction(row: ApiTransaction, index: number): Transaction {
     id: row.transaction_id ?? `row_${index + 1}`,
     date: toBrazilianDate(String(row.date ?? "")),
     description: String(row.description ?? ""),
+    documentNumber: row.document_number ?? null,
     credit: amount > 0 ? amount : null,
     debit: amount < 0 ? Math.abs(amount) : null,
     balance: row.running_balance == null ? null : Number(row.running_balance),

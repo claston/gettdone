@@ -64,6 +64,7 @@ def parse_xlsx_transactions_with_mapping(
                 description=str(description_raw).strip(),
                 amount=amount,
                 type=_normalize_type(type_raw, amount),
+                document_number=str(_get_optional_value(row_values, fieldnames, field_map.get("document_number")) or "").strip() or None,
             )
         )
 
