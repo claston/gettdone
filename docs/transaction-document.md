@@ -7,6 +7,13 @@ Não extraímos números arbitrários da descrição nem removemos lançamentos 
 compartilharem essa referência. Quando a fonte não permite separar o documento,
 o campo permanece ausente/nulo; não adivinhamos seu valor.
 
+No Excel, máscaras inteiras de preenchimento com zeros, como `000000`, são
+respeitadas exclusivamente na coluna Documento: `1103` com essa máscara vira
+`001103`. Formatos monetários e as células de valor não são reinterpretados.
+No CSV, o nome canônico da coluna tem precedência (`amount`, por exemplo);
+sem ele, aliases concorrentes geram erro explícito de ambiguidade. A inclusão
+de Documento não amplia o vocabulário dos campos financeiros.
+
 A prévia Free e a revisão PRO mostram a coluna quando algum lançamento tem
 documento. Ela é informativa: editar histórico, data ou valor preserva a referência
 da origem. CSV, Excel de conversão e relatório Excel recebem uma coluna adicional
