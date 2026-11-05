@@ -38,11 +38,15 @@ substituir este uso pontual de pacote Sid quando houver publicação oficial.
 - checksum do binário conforme o pacote autenticado pelo APT;
 - ausência do binário anterior e destino correto do link `libz.so.1`;
 - versão da biblioteca efetivamente carregada pelo Python;
-- escrita em `/dev/full`, erro `Z_ERRNO`, limpeza do erro e nova escrita curta.
+- escrita transparente em `/dev/full`, erro `Z_ERRNO`, limpeza do erro e nova
+  escrita curta, com uma página de memória protegida após o buffer de entrada.
 
 A regressão roda em subprocesso, com limite de tempo. A CI exige que a imagem
 Python original reproduza SIGSEGV depois do erro de escrita, e que a imagem
-atualizada aceite a nova escrita sem falha de memória. Os JSONs antes/depois
+atualizada aceite a nova escrita sem falha de memória. O modo transparente
+garante que o erro aconteça com entrada ainda pendente, sem depender de quanto
+o compressor já consumiu. Falhas desse teste interrompem a etapa, sem pipeline
+de shell que possa ocultar seu código de saída. Os JSONs antes/depois
 são anexados ao mesmo artefato dos testes de runtime, SBOM e scanner.
 
 Os testes de conversão CSV/XLSX/OFX/PDF, PDFium, cliente Lambda e PostgreSQL

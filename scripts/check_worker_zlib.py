@@ -6,8 +6,8 @@ import argparse
 import ctypes
 import hashlib
 import json
+import mmap
 import os
-import random
 import signal
 import subprocess
 import sys
@@ -43,24 +43,31 @@ def probe_failed_write() -> None:
     lib.gzclearerr.argtypes, lib.gzclearerr.restype = [ctypes.c_void_p], None
     lib.gzclose.argtypes, lib.gzclose.restype = [ctypes.c_void_p], ctypes.c_int
     fd = os.open("/dev/full", os.O_WRONLY)
-    stream = lib.gzdopen(fd, b"wb")
+    # Transparent mode guarantees input remains pending when /dev/full fails;
+    # deflate may consume all compressed input before the failed write instead.
+    stream = lib.gzdopen(fd, b"wbT")
     if not stream:
         os.close(fd)
         raise RuntimeError("gzdopen failed")
     try:
-        # Incompressible input forces a real failed write in the direct-input path.
-        data = ctypes.create_string_buffer(random.Random(76844).randbytes(256 * 1024))
-        if lib.gzwrite(stream, data, len(data) - 1) != 0:
-            raise RuntimeError("The /dev/full write did not fail as required")
-        error = ctypes.c_int()
-        lib.gzerror(stream, ctypes.byref(error))
-        if error.value != -1:  # Z_ERRNO, not a precondition/allocation failure.
-            raise RuntimeError(f"Expected Z_ERRNO, got {error.value}")
-        lib.gzclearerr(stream)
-        print("retrying-after-failed-write", flush=True)
-        if lib.gzwrite(stream, b"12345678", 8) != 8:
-            raise RuntimeError("The corrected buffered retry did not accept eight bytes")
-        print("buffered-retry-passed", flush=True)
+        size = 256 * 1024
+        with mmap.mmap(-1, size + mmap.PAGESIZE) as data:
+            address = ctypes.addressof(ctypes.c_char.from_buffer(data))
+            libc = ctypes.CDLL(None, use_errno=True)
+            libc.mprotect.argtypes, libc.mprotect.restype = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int], ctypes.c_int
+            if libc.mprotect(address + size, mmap.PAGESIZE, 0) != 0:
+                raise OSError(ctypes.get_errno(), "Cannot protect input guard page")
+            if lib.gzwrite(stream, address, size) != 0:
+                raise RuntimeError("The /dev/full write did not fail as required")
+            error = ctypes.c_int()
+            lib.gzerror(stream, ctypes.byref(error))
+            if error.value != -1:  # Z_ERRNO, not a precondition/allocation failure.
+                raise RuntimeError(f"Expected Z_ERRNO, got {error.value}")
+            lib.gzclearerr(stream)
+            print("retrying-after-failed-write", flush=True)
+            if lib.gzwrite(stream, b"12345678", 8) != 8:
+                raise RuntimeError("The corrected buffered retry did not accept eight bytes")
+            print("buffered-retry-passed", flush=True)
     finally:
         lib.gzclose(stream)
 
@@ -80,7 +87,7 @@ def main() -> None:
     probe = subprocess.run([sys.executable, __file__, "--probe"], capture_output=True, text=True, timeout=20)
     if args.expect_vulnerable:
         if probe.returncode != -signal.SIGSEGV or "retrying-after-failed-write" not in probe.stdout:
-            raise RuntimeError(f"Old image did not reproduce the expected memory fault: {probe}")
+            raise RuntimeError(f"zlib {zlib.ZLIB_RUNTIME_VERSION} did not reproduce the expected memory fault: {probe}")
     elif probe.returncode or "buffered-retry-passed" not in probe.stdout:
         raise RuntimeError(f"zlib failed the memory-safety regression: {probe}")
     print(json.dumps({"runtime": zlib.ZLIB_RUNTIME_VERSION, "package": None if args.expect_vulnerable else EXPECTED_PACKAGE,
