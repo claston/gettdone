@@ -77,14 +77,22 @@ def _totalbank(pages, kind):
 def _combined(pages, kind):
     rows = []
     pending = None
+    current_page, in_table = None, False
     for page, line, raw in _lines(pages):
+        if page != current_page:
+            current_page, in_table = page, False
+        normalized = upper(raw)
+        if all(word in normalized for word in ("DATA", "HISTORICO", "DOCUMENTO", "VALOR")):
+            in_table = True
+            continue
+        if normalized.startswith(("BB.COM.BR", "IMPRESSO POR", "PAG.", "PAGINA")):
+            in_table = False
+            continue
         if not re.match(r"^\d{2}/\d{2}/\d{4}\b", raw):
-            normalized = upper(raw)
-            if (normalized.startswith(("BB.COM.BR", "IMPRESSO POR", "PAG.", "PAGINA", "EXTRATO DE CONTA CORRENTE",
-                                       "BANCO DO BRASIL", "MOVIMENTACAO EM", "DATA ORIGEM", "CONTA CORRENTE + RENDE FACIL"))
-                    or all(word in normalized for word in ("DATA", "HISTORICO", "DOCUMENTO", "VALOR"))):
+            if normalized.startswith(("EXTRATO DE CONTA CORRENTE", "BANCO DO BRASIL", "MOVIMENTACAO EM",
+                                      "DATA ORIGEM", "CONTA CORRENTE + RENDE FACIL")):
                 continue
-            if pending is not None:
+            if in_table and pending is not None:
                 if re.search(rf"{NUMBER}\s+[CD]$", raw):
                     fail("Um valor está sem data no extrato de conta corrente e aplicações.")
                 row = rows[pending]
@@ -96,6 +104,7 @@ def _combined(pages, kind):
         match = re.fullmatch(rf"(\d{{2}}/\d{{2}}/\d{{4}})\s+\d+-\w\s+(.+?)\s+(\d+)\s+(?:\d{{5}}\s+)?({NUMBER})\s+([CD])", raw)
         if not match:
             fail()
+        in_table = True  # Dated readable rows also establish a table without a printed header.
         date, label, reference, value, sign = match.groups()
         if upper(label) == "SALDO DO DIA":
             pending = None

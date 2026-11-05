@@ -95,13 +95,16 @@ def _bb(extraction):
         if not columns:
             fail("Falta um cabeçalho de colunas do Banco do Brasil.")
         top = next(line.bbox["top"] for line in page.lines if line.bbox and upper(line.text) == "DATA")
+        header_cells = [line for line in page.lines if line.bbox and abs(line.bbox["top"] - top) < .025
+                        and any(upper(line.text) == key or upper(line.text).startswith(key + " (") for key in columns)]
+        header_bottom = max(line.bbox["top"] + line.bbox.get("height", 0) for line in header_cells) + .002
         anchors = sorted([line for line in page.lines if line.bbox and line.bbox["top"] > top
                           and line.bbox["left"] < columns["ORIGEM"]-.02 and re.fullmatch(DATE, line.text)],
                          key=lambda line: line.bbox["top"])
         # A wrapped history can resume below the next page's repeated header.
         first_top = anchors[0].bbox["top"]-.004 if anchors else .96
         continuation = sorted([
-            line for line in page.lines if line.bbox and top < line.bbox["top"] < first_top
+            line for line in page.lines if line.bbox and header_bottom < line.bbox["top"] < first_top
             and columns["HISTORICO"]-.02 <= line.bbox["left"] < columns["DOCUMENTO"]-.08
             and not upper(line.text).startswith("CONTA CORRENTE + RENDE FACIL")
         ], key=lambda line: (line.bbox["top"], line.line_index))

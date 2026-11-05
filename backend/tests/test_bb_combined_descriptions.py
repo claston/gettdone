@@ -80,3 +80,44 @@ def test_complete_history_is_returned_and_exported_over_http(tmp_path):
         assert client.get("/report/"+csv.json()["processing_id"], params=owner).status_code == 200
         assert client.post("/analyze").status_code == 405
         assert client.get("/report/nonexistent-description", params=owner).status_code == 404
+
+
+@pytest.mark.parametrize("offset", [.001, .004, -.003])
+def test_ocr_header_vertical_jitter_is_not_a_history_continuation(offset):
+    original = pdf_parser._parse_textract_text_pages(ocr(pages()))
+    shifted = [[(text, left, top + offset if text == "Histórico" else top)
+                for text, left, top in page] for page in pages()]
+    result = pdf_parser._parse_textract_text_pages(ocr(shifted))
+    expected = {r.external_reference_id: (r.date, r.amount, r.description) for r in original.canonical_transactions}
+    assert {r.external_reference_id: (r.date, r.amount, r.description) for r in result.canonical_transactions} == expected
+
+
+@pytest.mark.parametrize("mode", ["native", "ocr"])
+def test_next_page_metadata_stays_outside_history_and_ofx_identity(mode):
+    from app.application.ofx_writer import build_ofx_statement
+
+    def parse(source):
+        return (pdf_parser.parse_pdf_transactions(grid_pdf(source)) if mode == "native"
+                else pdf_parser._parse_textract_text_pages(ocr(source)))
+
+    original = parse(pages())
+    source = pages()
+    source[1].append(("Agência 1234-5 Conta 000123-4 Cliente EXEMPLO FICTÍCIO", .25, .075))
+    result = parse(source)
+    assert [r.description for r in result.transactions] == [r.description for r in original.transactions]
+    assert build_ofx_statement(result.transactions) == build_ofx_statement(original.transactions)
+    row = next(r for r in result.canonical_transactions if r.external_reference_id == "001104")
+    assert "OUTRA PESSOA" in row.description
+    assert {page for page, _ in row.source_line_refs} == {1, 2}
+
+
+def test_readable_dated_rows_do_not_require_a_repeated_table_header():
+    from app.application.parsers.pdf.signed_statement_variants import BB_COMBINED, parse_variant
+
+    result = parse_variant([
+        "03/11/2025 1234-5 Pix - Enviado 001103 13105 20,00 D\nComplemento inicial",
+        "04/11/2025 1234-5 Pix - Enviado 001104 13105 30,00 D\nComplemento seguinte",
+    ], BB_COMBINED)
+    assert [r.transaction.amount for r in result.rows] == [-20, -30]
+    assert [r.transaction.description for r in result.rows] == [
+        "Pix - Enviado Complemento inicial", "Pix - Enviado Complemento seguinte"]
