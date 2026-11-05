@@ -76,16 +76,32 @@ def _totalbank(pages, kind):
 
 def _combined(pages, kind):
     rows = []
+    pending = None
     for page, line, raw in _lines(pages):
         if not re.match(r"^\d{2}/\d{2}/\d{4}\b", raw):
+            normalized = upper(raw)
+            if (normalized.startswith(("BB.COM.BR", "IMPRESSO POR", "PAG.", "PAGINA", "EXTRATO DE CONTA CORRENTE",
+                                       "BANCO DO BRASIL", "MOVIMENTACAO EM", "DATA ORIGEM", "CONTA CORRENTE + RENDE FACIL"))
+                    or all(word in normalized for word in ("DATA", "HISTORICO", "DOCUMENTO", "VALOR"))):
+                continue
+            if pending is not None:
+                if re.search(rf"{NUMBER}\s+[CD]$", raw):
+                    fail("Um valor está sem data no extrato de conta corrente e aplicações.")
+                row = rows[pending]
+                rows[pending] = replace(
+                    row, transaction=replace(row.transaction, description=f"{row.transaction.description} {' '.join(raw.split())}"),
+                    source_line_refs=(*row.source_line_refs, (page, line)),
+                )
             continue
         match = re.fullmatch(rf"(\d{{2}}/\d{{2}}/\d{{4}})\s+\d+-\w\s+(.+?)\s+(\d+)\s+(?:\d{{5}}\s+)?({NUMBER})\s+([CD])", raw)
         if not match:
             fail()
         date, label, reference, value, sign = match.groups()
         if upper(label) == "SALDO DO DIA":
+            pending = None
             continue  # Cash + investment is not a cash ledger checkpoint.
         rows.append(_row(page, line, day(date), label, money(value) * (-1 if sign == "D" else 1), reference=reference))
+        pending = len(rows) - 1
     if not rows:
         fail()
     rows[0] = replace(rows[0], warnings=["combined_cash_investment_balance_not_comparable"])

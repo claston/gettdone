@@ -81,6 +81,7 @@ def _one(cells, left, right, *, allow_glyph=False):
 
 def _bb(extraction):
     rows, candidates = [], 0
+    pending = None
     text = upper("\n".join(line.text for page in extraction.pages for line in page.lines))
     period = re.search(r"MOVIMENTACAO EM\s+("+"|".join(MONTHS)+r") DE (\d{4})", text)
     if period:
@@ -97,6 +98,24 @@ def _bb(extraction):
         anchors = sorted([line for line in page.lines if line.bbox and line.bbox["top"] > top
                           and line.bbox["left"] < columns["ORIGEM"]-.02 and re.fullmatch(DATE, line.text)],
                          key=lambda line: line.bbox["top"])
+        # A wrapped history can resume below the next page's repeated header.
+        first_top = anchors[0].bbox["top"]-.004 if anchors else .96
+        continuation = sorted([
+            line for line in page.lines if line.bbox and top < line.bbox["top"] < first_top
+            and columns["HISTORICO"]-.02 <= line.bbox["left"] < columns["DOCUMENTO"]-.08
+            and not upper(line.text).startswith("CONTA CORRENTE + RENDE FACIL")
+        ], key=lambda line: (line.bbox["top"], line.line_index))
+        if continuation:
+            if pending is None:
+                fail("Um complemento de histórico está sem lançamento na página anterior.")
+            row = rows[pending]
+            evidence = _source(row, page, continuation)
+            rows[pending] = replace(
+                row, transaction=replace(row.transaction, description=" ".join([
+                    row.transaction.description, *(line.text for line in continuation)])),
+                source_line_refs=(*row.source_line_refs, *evidence.source_line_refs),
+                source_regions=[*row.source_regions, *evidence.source_regions],
+            )
         used = set()
         for index, anchor in enumerate(anchors):
             low = anchor.bbox["top"]-.004
@@ -110,6 +129,7 @@ def _bb(extraction):
             used.add(value.id)
             description = " ".join(line.text for line in sorted(labels, key=lambda line: line.line_index))
             if upper(description).startswith("SALDO DO DIA"):
+                pending = None
                 continue
             refs = [line for line in cells if columns["DOCUMENTO"]-.08 <= line.bbox["left"] < columns["LOTE"]-.02
                     and line.text.isdigit()]
@@ -122,6 +142,7 @@ def _bb(extraction):
                 fail("Uma data Banco do Brasil está fora do mês de referência.")
             rows.append(_source(_row(page.page_number, anchor.line_index, date, description, amount,
                                     reference=refs[0].text), page, cells))
+            pending = len(rows) - 1
             candidates += 1
         if used != {line.id for line in page.lines if line.bbox and line.bbox["top"] > top
                     and line.bbox["left"] >= columns["VALOR R$"]-.04 and signed.fullmatch(line.text)}:
