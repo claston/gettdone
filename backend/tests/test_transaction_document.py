@@ -73,6 +73,9 @@ def test_document_does_not_change_fitid_and_long_values_are_not_truncated():
         result = build_ofx_statement([replace(transaction, document_number=document)])
         assert re.findall(r"<FITID>([^\n<]+)", result) == re.findall(r"<FITID>([^\n<]+)", base)
         assert document in result
+        if len(document) > 12:
+            assert "<CHECKNUM>" not in result and "<REFNUM>" not in result
+            assert "<MEMO>TESTE | Documento: " + document in result
     assert "<CHECKNUM>" not in base and "<REFNUM>" not in base
 
 
@@ -83,6 +86,42 @@ def test_explicit_ofx_reference_keeps_its_meaning():
     exported = build_ofx_statement(parsed)
     assert "<REFNUM>000123456789012345" in exported
     assert "<CHECKNUM>" not in exported
+
+
+def test_document_is_literal_text_in_excel_and_escaped_in_ofx(tmp_path):
+    raw = b"date,description,amount,documento\n2025-11-03,PIX,-20,=1+1\n2025-11-03,PIX,-20,A&B\n"
+    data = build_default_conversion_pipeline().run(filename="text.csv", raw_bytes=raw, analysis_id="literal-document").analysis_data
+    storage = TempAnalysisStorage(tmp_path)
+    storage.save_analysis(data)
+    for path in (storage.get_report_path(data.analysis_id), storage.get_convert_report_path(data.analysis_id, "xlsx")):
+        book = load_workbook(path, data_only=False)
+        cell = book.worksheets[0].cell(2, 6)
+        assert cell.value == "=1+1" and cell.data_type == "s"
+        book.close()
+    exported = storage.get_convert_report_path(data.analysis_id, "ofx").read_bytes()
+    assert b"<CHECKNUM>A&amp;B" in exported
+    assert [row.document_number for row in parse_ofx_transactions(exported)] == ["=1+1", "A&B"]
+
+
+def test_document_survives_scoped_account_exports(tmp_path, monkeypatch):
+    from tests.fixtures.positioned_cash_statements import positioned_pdf
+    from tests.test_statement_account_blocks import consolidated_pages
+
+    monkeypatch.setenv("PDF_MULTI_ACCOUNT_ENABLED", "true")
+    raw = positioned_pdf(consolidated_pages())
+    data = build_default_conversion_pipeline().run(filename="accounts.pdf", raw_bytes=raw, analysis_id="account-documents").analysis_data
+    expected = ["1001", "1002"] * 2
+    assert [row.document_number for row in data.report_transactions] == expected
+    storage = TempAnalysisStorage(tmp_path)
+    storage.save_analysis(data)
+    exported = storage.get_convert_report_path(data.analysis_id, "ofx").read_bytes()
+    assert [row.document_number for row in parse_ofx_transactions(exported)] == expected
+    rows = list(csv.DictReader(StringIO(storage.get_convert_report_path(data.analysis_id, "csv").read_text(encoding="utf-8"))))
+    assert [row["document_number"] for row in rows] == expected
+    for path in (storage.get_report_path(data.analysis_id), storage.get_convert_report_path(data.analysis_id, "xlsx")):
+        book = load_workbook(path, read_only=True)
+        assert [row[-1] for row in list(book.worksheets[0].values)[1:]] == expected
+        book.close()
 
 
 @pytest.mark.real_http

@@ -1,5 +1,15 @@
 # OFX-67 — Proteção reproduzível do conversor Free
 
+Evolução autorizada: o [campo Documento](transaction-document.md) acrescenta
+metadados textuais opcionais e colunas de exportação. A caracterização original
+continua versionada; o comparador utiliza agora
+`backend/tests/fixtures/free_converter_document_baseline.json`. Os diffs exatos
+contra a revisão anterior estão em `docs/transaction-document-approvals.json`;
+o gate de revisão também aceita `--approvals`. Uma entrada pode agrupar os
+diffs em `differences`, mantendo a correspondência exata de cada item e os mesmos
+vínculos de base, árvore e autorização. Não há normalização adicional de campos
+financeiros. As seções seguintes documentam a entrega original OFX-67.
+
 Referência funcional: `c3cf02c4d4631ae591e2a59571dd9d1b557ec5f5`.
 Escopo inicial: testes, caracterização, ferramentas offline e CI. Após a
 autorização adicional do usuário, a correção isolada do [PR #534](https://github.com/claston/gettdone/pull/534)

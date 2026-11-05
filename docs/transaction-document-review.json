@@ -1,0 +1,68 @@
+{
+  "authorization": {
+    "request": "vamos ajustar isso. Faça esse ajuste em uma PR e a correção da descrição de modelo de extrato em outtra. Consegue?",
+    "scope": "Implement the separate Documento field, preserving full descriptions and financial meaning. Separate PR for BB wrapped histories.",
+    "evidence_reviewed_by": "Codex",
+    "normal_pull_request_review": "pending",
+    "note": "The owner authorized this functional change; these exact synthetic differences were audited during implementation, not individually presented to the owner beforehand."
+  },
+  "candidate_commit": "26d1b7b231daa09d69d68ee0fcfed515cef8ec4b",
+  "candidate_app_tree": "b9ae7c48c668dafa2be4a77765db97c79335acf5",
+  "unchanged": [
+    "dates",
+    "amounts and signs",
+    "transaction multiplicity and order",
+    "descriptions (except labeled OFX MEMO fallback)",
+    "balances",
+    "reconciliation",
+    "source provenance",
+    "FITID"
+  ],
+  "groups": [
+    {
+      "gate": "pdf-compatibility",
+      "reference_commit": "99afe012190870eb61cb654dff94e8eb02617c0f",
+      "differences": 3304,
+      "changed_paths": {
+        "$.artifacts.converted.csv[][]": 292,
+        "$.artifacts.converted.ofx": 44,
+        "$.artifacts.converted.xlsx[].rows[][]": 292,
+        "$.artifacts.report.xlsx[].rows[][]": 292,
+        "$.persisted_preview[].document_number": 298,
+        "$.persisted_preview[].document_reference_type": 298,
+        "$.persisted_rows[].document_number": 298,
+        "$.persisted_rows[].document_reference_type": 298,
+        "$.preview[].document_number": 298,
+        "$.preview[].document_reference_type": 298,
+        "$.rows[].document_number": 298,
+        "$.rows[].document_reference_type": 298
+      }
+    },
+    {
+      "gate": "ofx68-review-gate",
+      "reference_commit": "99afe012190870eb61cb654dff94e8eb02617c0f",
+      "differences": 3642,
+      "changed_paths": {
+        "$.artifacts.converted.csv[][]": 166,
+        "$.artifacts.converted.ofx": 32,
+        "$.artifacts.converted.xlsx[].rows[][]": 166,
+        "$.artifacts.report.xlsx[].rows[][]": 166,
+        "$.metadata.preview_transactions[].document_number": 432,
+        "$.metadata.preview_transactions[].document_reference_type": 432,
+        "$.metadata.report_transactions[].document_number": 432,
+        "$.metadata.report_transactions[].document_reference_type": 432,
+        "$.metadata.structured_result.transactions[].document_number": 432,
+        "$.metadata.structured_result.transactions[].document_reference_type": 432,
+        "$.response.preview_transactions[].document_number": 260,
+        "$.response.preview_transactions[].document_reference_type": 260
+      }
+    }
+  ],
+  "baseline": "A new versioned characterization is captured from the committed application. The original baseline and independent financial oracles remain unchanged.",
+  "base_revalidation": {
+    "original_base": "6b9a159943aa187842919934aa403a37fcad4d78",
+    "current_base": "99afe012190870eb61cb654dff94e8eb02617c0f",
+    "identical_application_tree": "34c762521798878819419aa2de06c3371ea066eb",
+    "note": "Main advanced with an unrelated PRO UI change. Both baseline application trees are byte-identical; exact differences are unchanged."
+  }
+}

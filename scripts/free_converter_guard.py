@@ -20,7 +20,7 @@ from pathlib import Path
 from time import perf_counter, process_time
 
 SCHEMA_VERSION = 1
-FROZEN_BASELINE = Path(__file__).resolve().parents[1] / "backend/tests/fixtures/free_converter_baseline.json"
+FROZEN_BASELINE = Path(__file__).resolve().parents[1] / "backend/tests/fixtures/free_converter_document_baseline.json"
 # Exhaustive dynamic-field catalogue, applied only to pdf_processing_metrics.
 TIMING_FIELDS = {"total_ms", "parse_ms", "classify_ms", "normalize_ms", "reconcile_ms"}
 # Built-in PDF fonts have slightly different glyph bounds across PDFium builds.
@@ -92,7 +92,8 @@ def compare_snapshots(baseline, candidate, *, approvals=(), reference_commit=Non
                     and abs(change["before"] - change["after"]) <= geometry_tolerance):
                 geometry_differences.append(difference)
                 continue
-            approval = next((item for item in approvals if item.get("difference") == difference
+            approval = next((item for item in approvals if (item.get("difference") == difference
+                                                           or difference in item.get("differences", []))
                              and reference_commit and item.get("reference_commit") == reference_commit
                              and candidate_app_tree and item.get("candidate_app_tree") == candidate_app_tree
                              and all(item.get(field) for field in ("approved_by", "approval_reference", "reason"))), None)
