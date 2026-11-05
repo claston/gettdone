@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+import os
 import re
 from dataclasses import dataclass
 from urllib.parse import urlencode, urlsplit
@@ -10,7 +11,6 @@ from urllib.parse import urlencode, urlsplit
 from app.application.access_control import AccessControlService
 from app.application.contact_service import ContactDeliveryResult, ContactService
 
-TEST_RECIPIENT = "a@a.com.br"
 TEST_TEMPLATE_ID = "marketing-test-v1"
 TEST_SUBJECT = "OFX Simples — e-mail de teste"
 
@@ -50,8 +50,11 @@ TEST_TEMPLATE = MarketingEmailTemplate(TEST_TEMPLATE_ID, TEST_SUBJECT)
 class MarketingEmailService:
     def __init__(self, access_control: AccessControlService):
         self.access_control = access_control
+        self.test_recipient = os.getenv("MARKETING_TEST_RECIPIENT", "").strip().lower()
 
     async def send_test(self, *, mailer: ContactService, public_base_url: str, request_id: str) -> ContactDeliveryResult:
+        if not re.fullmatch(r"[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+", self.test_recipient):
+            raise MarketingConfigurationError("MARKETING_TEST_RECIPIENT must contain a single email address.")
         try:
             parsed = urlsplit(public_base_url)
             local_http = parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
@@ -74,14 +77,14 @@ class MarketingEmailService:
                 SELECT id, name, email, product_updates_opt_in, is_active,
                        email_verification_status, product_updates_opted_in_at
                 FROM users WHERE email = ?
-                """, (TEST_RECIPIENT,))
+                """, (self.test_recipient,))
         if (row is None or not row["product_updates_opt_in"] or not self.access_control._row_is_active(row)
                 or str(row["email_verification_status"] or "") != "verified"):
             raise MarketingRecipientUnavailableError
         token = f"{row['id']}.{self._signature(row)}"
         unsubscribe_url = f"{public_base_url.rstrip('/')}/marketing/unsubscribe?{urlencode({'token': token})}"
         return await mailer.send_text_email(
-            to_email=TEST_RECIPIENT,
+            to_email=self.test_recipient,
             subject=TEST_TEMPLATE.subject,
             text=TEST_TEMPLATE.render(name=str(row["name"] or "cliente"), unsubscribe_url=unsubscribe_url),
             headers={

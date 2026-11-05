@@ -28,6 +28,7 @@ class FakeResend:
 
 @pytest.fixture
 def marketing(tmp_path, monkeypatch):
+    monkeypatch.setenv("MARKETING_TEST_RECIPIENT", "marketing-test@example.com")
     service = AccessControlService(
         state_file=tmp_path / "access.json",
         token_secret="marketing-test-secret",
@@ -35,7 +36,7 @@ def marketing(tmp_path, monkeypatch):
     )
     service.register_user(name="Admin", email="admin@example.com", password="strong-pass")
     user = service.register_user(
-        name="Teste", email="a@a.com.br", password="strong-pass",
+        name="Teste", email="marketing-test@example.com", password="strong-pass",
         product_updates_opt_in=True,
         product_updates_opted_in_at="2026-10-29T12:00:00+00:00",
         product_updates_consent_version=2,
@@ -72,12 +73,12 @@ def test_admin_send_finishes_inline_and_includes_unsubscribe(marketing):
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
     assert response.json() == {
-        "recipient": "a@a.com.br", "template_id": "marketing-test-v1",
+        "recipient": "marketing-test@example.com", "template_id": "marketing-test-v1",
         "delivery_mode": "resend", "provider_message_id": "test-message-1",
     }
     assert len(mailer.messages) == 1
     message = mailer.messages[0]
-    assert message["to_email"] == "a@a.com.br"
+    assert message["to_email"] == "marketing-test@example.com"
     assert "teste" in message["subject"].lower()
     assert "Não quero receber mais e-mails" in message["text"]
     assert message["idempotency_key"].endswith(str(request_id))
@@ -88,7 +89,7 @@ def test_admin_send_finishes_inline_and_includes_unsubscribe(marketing):
 def test_send_requires_admin_and_disallows_arbitrary_recipient(marketing):
     client, _, _, mailer = marketing
     assert send(client).status_code == 401
-    assert client.post("/auth/session/login", json={"email": "a@a.com.br", "password": "strong-pass"}).status_code == 200
+    assert client.post("/auth/session/login", json={"email": "marketing-test@example.com", "password": "strong-pass"}).status_code == 200
     assert send(client).status_code == 403
     login(client)
     response = client.post("/admin/marketing/test-email", json={"request_id": str(uuid4()), "to_email": "other@example.com"})
@@ -213,7 +214,7 @@ def test_resend_response_without_confirmation_is_a_delivery_error(monkeypatch, r
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: client)
     mailer = ContactService(api_key="fictional", from_email="test@example.com", to_email="support@example.com", dry_run=False)
     with pytest.raises(ContactDeliveryError):
-        asyncio.run(mailer.send_text_email(to_email="a@a.com.br", subject="Teste", text="Teste"))
+        asyncio.run(mailer.send_text_email(to_email="marketing-test@example.com", subject="Teste", text="Teste"))
 
 
 def test_unsubscribe_signature_is_bound_to_recipient(marketing):
@@ -224,3 +225,49 @@ def test_unsubscribe_signature_is_bound_to_recipient(marketing):
     path = unsubscribe_path(mailer)
     assert client.post(path.replace(user.user_id, other.user_id)).status_code == 400
     assert service.list_marketing_contacts_for_admin()[1] == 2
+
+
+@pytest.mark.parametrize("recipient", [None, "", "   ", "invalid", "one@example.com,two@example.com",
+                                       "Name <one@example.com>", "one@example.com\r\nBcc: two@example.com"])
+def test_missing_or_invalid_recipient_configuration_blocks_delivery(marketing, monkeypatch, recipient):
+    client, _, _, mailer = marketing
+    login(client)
+    if recipient is None:
+        monkeypatch.delenv("MARKETING_TEST_RECIPIENT", raising=False)
+    else:
+        monkeypatch.setenv("MARKETING_TEST_RECIPIENT", recipient)
+    response = send(client)
+    assert response.status_code == 503
+    assert "destinatário" in response.json()["detail"]
+    assert mailer.messages == []
+
+
+def test_configured_recipient_is_normalized_and_selected_exclusively(marketing, monkeypatch):
+    client, service, original, mailer = marketing
+    selected = service.register_user(
+        name="Selected", email="selected@example.com", password="strong-pass",
+        product_updates_opt_in=True,
+    )
+    monkeypatch.setenv("MARKETING_TEST_RECIPIENT", "  SELECTED@example.com  ")
+    login(client)
+    response = send(client)
+    assert response.status_code == 200
+    assert response.json()["recipient"] == "selected@example.com"
+    assert [message["to_email"] for message in mailer.messages] == ["selected@example.com"]
+    path = unsubscribe_path(mailer)
+    assert selected.user_id in path
+    assert original.user_id not in path
+    assert client.post(path).status_code == 200
+    assert send(client).status_code == 409
+    assert len(mailer.messages) == 1
+    assert service.list_marketing_contacts_for_admin()[1] == 1
+
+
+def test_unsubscribe_still_works_without_recipient_configuration(marketing, monkeypatch):
+    client, _, _, mailer = marketing
+    login(client)
+    assert send(client).status_code == 200
+    path = unsubscribe_path(mailer)
+    monkeypatch.delenv("MARKETING_TEST_RECIPIENT")
+    assert client.get(path).status_code == 200
+    assert client.post(path).status_code == 200

@@ -102,8 +102,11 @@ describe("Central canônica", () => {
     expect(window.location.search).toBe("");
     fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
     await screen.findByRole("heading", { name: "Cliente real" });
-    expect(new URLSearchParams(window.location.search).get("month")).toBe(
-      "2026-04",
+    // The heading can render before the effect synchronizes the URL.
+    await waitFor(() =>
+      expect(new URLSearchParams(window.location.search).get("month")).toBe(
+        "2026-04",
+      ),
     );
     expect(loadFinancialMonth).toHaveBeenCalledTimes(2);
   });
@@ -122,8 +125,10 @@ describe("Central canônica", () => {
           "month",
         ),
       ).toBe(false);
-      expect(new URLSearchParams(window.location.search).get("month")).toBe(
-        "2026-04",
+      await waitFor(() =>
+        expect(new URLSearchParams(window.location.search).get("month")).toBe(
+          "2026-04",
+        ),
       );
       expect(loadFinancialMonth).toHaveBeenCalledTimes(1);
       fireEvent.click(screen.getByRole("button", { name: "Atualizar" }));
@@ -149,8 +154,10 @@ describe("Central canônica", () => {
     });
     render(<LiveFinancialCenter clientId="client_test" />);
     await screen.findByRole("heading", { name: "Cliente real" });
-    expect(new URLSearchParams(window.location.search).get("month")).toBe(
-      "2026-11",
+    await waitFor(() =>
+      expect(new URLSearchParams(window.location.search).get("month")).toBe(
+        "2026-11",
+      ),
     );
     expect(loadFinancialMonth).toHaveBeenCalledTimes(1);
   });
@@ -171,8 +178,10 @@ describe("Central canônica", () => {
     expect(vi.mocked(loadFinancialMonth).mock.calls[0][1]).toContain(
       "month=2025-12",
     );
-    expect(new URLSearchParams(window.location.search).get("month")).toBe(
-      "2025-12",
+    await waitFor(() =>
+      expect(new URLSearchParams(window.location.search).get("month")).toBe(
+        "2025-12",
+      ),
     );
   });
   it("consulta um dia e abre a origem com retorno ao cliente e mês", async () => {
