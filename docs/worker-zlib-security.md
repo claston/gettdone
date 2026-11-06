@@ -60,17 +60,59 @@ do Trivy 0.76.1 consulta a distribuição da imagem e, quando `FixedVersion`
 está vazio, reporta o alerta sem comparar versões. Portanto, este pacote
 corrigido em Debian 13 pode continuar bloqueado pela base de vulnerabilidades.
 
-Esta alteração não ignora esse resultado: nenhum CVE é suprimido, nenhum
-inventário é ocultado, e HIGH/CRITICAL continuam bloqueando CI e deploy.
-A aprovação depende do resultado real da esteira; um teste de regressão
-aprovado não substitui a aprovação do scanner.
+## Exceção temporária e verificável
+
+`.github/worker-vulnerability-exceptions.json` registra uma única exceção:
+`CVE-2026-76844`, pacote `zlib1g`, versão **exata**
+`1:1.3.dfsg+really1.3.2-4`, severidade `HIGH`. Ela vence no início de
+**6 de dezembro de 2026, às 00:00 UTC**. Não há renovação automática.
+A justificativa e as referências à correção acompanham a política.
+
+`scripts/check_worker_vulnerabilities.py` aplica essa mesma política ao Trivy
+e ao ECR. A exceção só é aplicada quando o teste da imagem no mesmo build
+comprova o inventário autêntico, a biblioteca carregada `1.3.2` e a regressão
+de escrita aprovada em `artifacts/zlib-after.json`. O controle negativo com a
+biblioteca antiga continua obrigatório. No Trivy, a exceção só vale para
+pacote de sistema Debian na imagem Debian 13, nunca para dependências Python.
+
+No Trivy, `--exit-code 0` coleta os resultados sem interromper por achados;
+erros de execução do scanner ainda interrompem a etapa. Em seguida, a
+verificação de cobertura do inventário e o avaliador da política são
+obrigatórios. O avaliador retorna código 1 se restar qualquer HIGH/CRITICAL
+fora da exceção. Não se usa `--ignore-unfixed`, `.trivyignore` genérico ou
+`continue-on-error`. O relatório bruto `vulnerabilities.json` continua
+incluindo o achado aceito, e `trivy-security-decision.json` explica a decisão.
+
+O ECR não consome arquivos de ignore do Trivy. O workflow de deploy preserva
+o relatório completo em `ecr-vulnerabilities.json` e aplica a política antes
+de criar ou executar alterações no stack. A decisão é salva em
+`ecr-security-decision.json`, no resumo da execução e em artefato separado.
+O scan precisa estar completo, corresponder ao digest solicitado e ter
+contagens consistentes com os detalhes. Respostas incompletas, formato
+Enhanced ou paginação pendente bloqueiam a execução, exigindo adaptação
+explícita; não são interpretadas como ausência de vulnerabilidades.
+
+A exceção no ECR exige também que o digest seja o publicado a partir da
+imagem construída e testada nessa execução. A opção histórica
+`pr488-debian-canary` não pode usar a exceção, pois não produz essa evidência.
+Nenhuma configuração de supressão é criada na AWS: apenas a decisão do
+workflow considera a exceção, mantendo o resultado do scanner visível.
+
+Versões antigas ou diferentes, outra CVE, severidade alterada para CRITICAL,
+prova ausente/reprovada ou prazo vencido continuam bloqueando. Quando Trixie
+publicar uma correção reconhecida pelos scanners, atualizar o pacote, remover
+a exceção e validar novamente. A exceção não pode ser usada como evidência de
+que a imagem antiga de produção foi corrigida.
 
 ## Rollback e operação
 
 Esta PR não faz merge nem deploy. Se a atualização apresentar incompatibilidade,
 reverter o commit restaura a construção anterior, mas também restaura o pacote
 vulnerável: esse rollback não constitui uma versão segura para publicação.
-Manter o bloqueio de release até existir uma imagem aprovada.
+Remover somente a entrada da política restaura o bloqueio do alerta sem
+reintroduzir a biblioteca vulnerável. O deploy continua manual, restrito a
+`main` e à confirmação do ambiente `production-worker`. Esta alteração deve
+ser revisada na PR; a implantação fica para uma janela autorizada pelo usuário.
 
 Fontes:
 

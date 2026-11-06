@@ -14,6 +14,8 @@ on:
       - "scripts/verify_worker_release_gates.py"
       - "scripts/smoke_worker_candidate_image.py"
       - "scripts/check_worker_zlib.py"
+      - "scripts/check_worker_vulnerabilities.py"
+      - ".github/worker-vulnerability-exceptions.json"
       - ".github/workflows/worker-debian-candidate.yml"
   workflow_dispatch:
 
@@ -120,7 +122,7 @@ jobs:
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/artifacts:/out" \
             "$TRIVY_IMAGE" image --image-src docker --scanners vuln --pkg-types os,library \
-            --severity HIGH,CRITICAL --exit-code 1 --list-all-pkgs --format json --output /out/vulnerabilities.json "$CANDIDATE_IMAGE"
+            --severity HIGH,CRITICAL --exit-code 0 --ignorefile /dev/null --list-all-pkgs --format json --output /out/vulnerabilities.json "$CANDIDATE_IMAGE"
           python - <<'PY'
           import json
           from pathlib import Path
@@ -135,6 +137,9 @@ jobs:
               raise SystemExit("Scanner did not recognize the candidate Python package inventory.")
           print(f"Scan coverage verified: {len(os_packages)} OS packages; {len(python_packages)} Python packages.")
           PY
+          python scripts/check_worker_vulnerabilities.py --scanner trivy \
+            --report artifacts/vulnerabilities.json --runtime-evidence artifacts/zlib-after.json \
+            --output artifacts/trivy-security-decision.json
       - name: Save approved candidate for isolated Lambda validation
         if: github.event_name == 'workflow_dispatch'
         run: docker save "$CANDIDATE_IMAGE" -o artifacts/worker-debian-image.tar
