@@ -11,6 +11,7 @@ import {
   type PendingStatement,
 } from "@/data/received-statements-service";
 import styles from "./received-statements.module.css";
+import { IdentityDocumentPreview } from "./identity-document-preview";
 
 const banks: Record<string, string> = {
   "001": "Banco do Brasil",
@@ -95,7 +96,9 @@ function IdentityForm({
     >
       {pending && (
         <>
-          <p>Confira a identidade do titular no PDF antes de confirmar.</p>
+          <p>
+            Confira a identidade do titular no documento antes de confirmar.
+          </p>
           {pending.source.references?.length ? (
             <p className={styles.muted}>
               Evidência no documento: páginas{" "}
@@ -542,7 +545,10 @@ export function ReceivedStatementsPage({
                               </Link>
                             )}
                             {financialCenterVisible && !financialDemo && (
-                              <Link className="secondary-button small" href={`/financial/${client.id}`}>
+                              <Link
+                                className="secondary-button small"
+                                href={`/financial/${client.id}`}
+                              >
                                 Central Financeira
                               </Link>
                             )}
@@ -647,13 +653,16 @@ export function ReceivedStatementsPage({
                           <p>{pendingReason(item.source)}</p>
                         </div>
                         {editing === item.job_id && (
-                          <IdentityForm
-                            pending={item}
-                            clients={clients}
-                            service={service}
-                            onSaved={saved}
-                            onCancel={() => setEditing(null)}
-                          />
+                          <div className={styles.identityReview}>
+                            <IdentityDocumentPreview document={item} />
+                            <IdentityForm
+                              pending={item}
+                              clients={clients}
+                              service={service}
+                              onSaved={saved}
+                              onCancel={() => setEditing(null)}
+                            />
+                          </div>
                         )}
                       </article>
                     ))}

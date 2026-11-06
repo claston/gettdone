@@ -9,6 +9,14 @@ import { describe, expect, it, vi } from "vitest";
 import { ReceivedStatementsPage } from "./received-statements-page";
 import type { ReceivedPage } from "@/data/received-statements-service";
 
+vi.mock("./identity-document-preview", () => ({
+  IdentityDocumentPreview: ({
+    document,
+  }: {
+    document: { filename: string };
+  }) => <section aria-label="Documento original">{document.filename}</section>,
+}));
+
 const page = {
   totals: { statements: 2, ready: 1, attention: 1 },
   clients: [
@@ -37,6 +45,65 @@ const page = {
 };
 
 describe("Clientes", () => {
+  it("abre o PDF somente ao conferir a pendência e preserva a confirmação inline", async () => {
+    const service = {
+      list: vi.fn().mockResolvedValue({
+        ...page,
+        pending: [
+          {
+            job_id: "j2",
+            batch_id: "b2",
+            filename: "pendente.pdf",
+            version: 3,
+            source: {
+              holder_name: "Nome extraído",
+              references: [{ page: 2, line: 1 }],
+            },
+          },
+        ],
+      }),
+      refresh: vi.fn().mockResolvedValue(undefined),
+      edit: vi.fn(),
+      confirm: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<ReceivedStatementsPage service={service} />);
+    fireEvent.click(
+      await screen.findByRole("tab", { name: /^Não identificados/ }),
+    );
+    expect(
+      screen.queryByRole("region", { name: "Documento original" }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Conferir identificação" }),
+    );
+    expect(
+      await screen.findByRole("region", { name: "Documento original" }),
+    ).toHaveTextContent("pendente.pdf");
+    fireEvent.change(screen.getByLabelText("Nome do cliente"), {
+      target: { value: "Titular conferido" },
+    });
+    fireEvent.change(screen.getByLabelText("CPF/CNPJ do titular"), {
+      target: { value: "12345678000190" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Salvar identificação" }),
+    );
+    await waitFor(() =>
+      expect(service.confirm).toHaveBeenCalledWith(
+        "j2",
+        expect.objectContaining({
+          name: "Titular conferido",
+          tax_id: "12345678000190",
+          expected_version: 3,
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("region", { name: "Documento original" }),
+      ).toBeNull(),
+    );
+  });
   it("busca no servidor, reinicia a paginação e mantém documentos pendentes independentes", async () => {
     const service = {
       list: vi
