@@ -62,11 +62,19 @@ corrigido em Debian 13 pode continuar bloqueado pela base de vulnerabilidades.
 
 ## Exceção temporária e verificável
 
-`.github/worker-vulnerability-exceptions.json` registra uma única exceção:
-`CVE-2026-76844`, pacote `zlib1g`, versão **exata**
-`1:1.3.dfsg+really1.3.2-4`, severidade `HIGH`. Ela vence no início de
+`.github/worker-vulnerability-exceptions.json` registra duas entradas explícitas:
+`CVE-2026-76844` e `CVE-2026-85091`, ambas para `zlib1g`, versão **exata**
+`1:1.3.dfsg+really1.3.2-4`, severidade `HIGH`. Elas vencem no início de
 **6 de dezembro de 2026, às 00:00 UTC**. Não há renovação automática.
 A justificativa e as referências à correção acompanham a política.
+
+O scan atualizado de 6 de novembro passou a incluir `CVE-2026-85091`, e a
+política inicial bloqueou corretamente esse segundo achado. O Debian registra
+ambas as CVEs como corrigidas na mesma revisão `-4`, pelo mesmo commit upstream
+`df84af25dc1942490e1d1c899a07619152a46148`. A segunda entrada foi adicionada
+após conferir essa evidência; não há wildcard para outras CVEs. O teste de
+runtime exercita a falha de estado após escrita malsucedida que o patch corrige;
+não se declara reprodução separada de todas as variantes `gzprintf`/non-blocking.
 
 `scripts/check_worker_vulnerabilities.py` aplica essa mesma política ao Trivy
 e ao ECR. A exceção só é aplicada quando o teste da imagem no mesmo build
@@ -109,7 +117,7 @@ que a imagem antiga de produção foi corrigida.
 Esta PR não faz merge nem deploy. Se a atualização apresentar incompatibilidade,
 reverter o commit restaura a construção anterior, mas também restaura o pacote
 vulnerável: esse rollback não constitui uma versão segura para publicação.
-Remover somente a entrada da política restaura o bloqueio do alerta sem
+Remover as entradas da política restaura o bloqueio dos alertas sem
 reintroduzir a biblioteca vulnerável. O deploy continua manual, restrito a
 `main` e à confirmação do ambiente `production-worker`. Esta alteração deve
 ser revisada na PR; a implantação fica para uma janela autorizada pelo usuário.
@@ -117,6 +125,7 @@ ser revisada na PR; a implantação fica para uma janela autorizada pelo usuári
 Fontes:
 
 - [Debian Security Tracker](https://security-tracker.debian.org/tracker/CVE-2026-76844)
+- [Segunda CVE corrigida pelo mesmo patch](https://security-tracker.debian.org/tracker/CVE-2026-85091)
 - [Pacote oficial corrigido](https://packages.debian.org/sid/zlib1g)
 - [Correção upstream](https://github.com/madler/zlib/commit/df84af25dc1942490e1d1c899a07619152a46148)
 - [Detector Debian do Trivy 0.76.1](https://github.com/aquasecurity/trivy/blob/v0.76.1/pkg/detector/ospkg/debian/debian.go)
