@@ -72,7 +72,8 @@ Armazenamento compartilhado de documentos de conversão:
 OCR para PDF sem camada de texto:
 
 - Em `development`, o OCR pode ser autoativado quando houver Tesseract instalado e `backend/tmp/tessdata` com idiomas disponiveis.
-- Em `production`, o OCR continua desligado por padrao; use `PDF_OCR_ENABLED=true` para habilitar explicitamente.
+- As imagens de produção da API e do worker usam somente AWS Textract para OCR: não incluem Tesseract nem `pytesseract`, e definem `PDF_OCR_ENABLED=false`.
+- O OCR local permanece opcional no ambiente de desenvolvimento, instalado com `backend/requirements.txt`. Não habilite `PDF_OCR_ENABLED` nas imagens de produção.
 - Idioma padrao: `por+eng` (configuravel por `PDF_OCR_LANG`).
 - Limite padrao de paginas no fallback: `12` (configuravel por `PDF_OCR_MAX_PAGES`).
 - DPI padrao de renderizacao OCR: `250` (configuravel por `PDF_OCR_DPI`; faixa recomendada `150` a `400`).
@@ -88,7 +89,8 @@ Textract para PDF escaneado:
 - Para o teste local, configure tambem `AWS_REGION` e `TEXTRACT_TEMP_BUCKET`.
 - `TEXTRACT_FEATURE_TYPES` so e usado em `TEXTRACT_MODE=analysis`.
 - Se quiser forcar Textract mesmo quando o PDF tiver texto nativo, use `TEXTRACT_FORCE=true`.
-- A imagem Lambda usa Textract como caminho de OCR e nao inclui o binario Tesseract; o fallback local continua opcional no runtime legado do Render.
+- Configure `TEXTRACT_ENABLED=true`, a região, o bucket temporário e as permissões AWS no deploy. Falhas do Textract não acionam fallback local com `PDF_OCR_ENABLED=false`.
+- A construção e a validação das imagens estão descritas em [Imagem de execução da API](docs/api-runtime-image.md).
 
 ## Conversão com revisão
 

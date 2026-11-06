@@ -194,7 +194,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-runtime.txt
 
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
@@ -233,7 +235,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-runtime.txt
 
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
@@ -295,7 +299,10 @@ jobs:
 
       - name: Lint Free baseline instrumentation
         working-directory: .
-        run: python -m ruff check scripts/free_converter_guard.py scripts/check_review_compatibility.py --config backend/pyproject.toml
+        run: >-
+          python -m ruff check scripts/free_converter_guard.py scripts/check_review_compatibility.py
+          scripts/check_api_image.py scripts/smoke_api_http.py
+          scripts/check_worker_zlib.py scripts/check_worker_vulnerabilities.py --config backend/pyproject.toml
 
       - name: Preserve fictional PDF compatibility reports
         if: always()

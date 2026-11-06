@@ -4,12 +4,23 @@ ARG RUNTIME_IMAGE=gcr.io/distroless/cc-debian13:nonroot@sha256:3ee00291cf386ec52
 FROM ${PYTHON_IMAGE} AS build
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
 WORKDIR /build
+# Install only the corrected official zlib package, using signed Debian indexes.
+# The rest of the build/runtime stays on the pinned Debian 13 images.
+RUN set -eu; printf '%s\n' \
+      'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://deb.debian.org/debian sid main' > /tmp/zlib.list \
+    && apt-get -o APT::Update::Error-Mode=any -o Acquire::Retries=3 -o Dir::Etc::sourcelist=/tmp/zlib.list -o Dir::Etc::sourceparts=- update \
+    && apt-get -o Dir::Etc::sourcelist=/tmp/zlib.list -o Dir::Etc::sourceparts=- download zlib1g=1:1.3.dfsg+really1.3.2-4 \
+    && dpkg -i /build/zlib1g_*.deb \
+    && rm /tmp/zlib.list
 COPY backend/requirements-worker.txt ./
 RUN python -m pip install --only-binary=:all: --target /build/site-packages -r requirements-worker.txt
 # Keep compression, XML, ctypes and dbm support, including real package
 # metadata and licenses. No package database is deleted or rewritten to hide CVEs.
 # SQLite belongs to the excluded API access-control code, not this worker.
 RUN set -eu; mkdir -p /runtime-libs /runtime-status \
+    && dpkg-deb -x /build/zlib1g_*.deb /runtime-libs \
+    && dpkg-query -s zlib1g > /runtime-status/zlib1g \
+    && cp "/var/lib/dpkg/info/zlib1g:$(dpkg --print-architecture).md5sums" /runtime-status/zlib1g.md5sums \
     && for package in libbz2-1.0 libffi8 libgdbm6t64 libdb5.3t64 liblzma5 libcrypt1; do \
          dpkg-query -s "$package" > "/runtime-status/$package"; \
          dpkg-query -L "$package" | grep -E '/lib[^/]+\.so(\.|$)' | while IFS= read -r library; do \
@@ -29,14 +40,22 @@ RUN set -eu; mkdir -p /runtime-libs /runtime-status \
 FROM ${RUNTIME_IMAGE} AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/var/task APP_RUNTIME_TMP_DIR=/tmp/gettdone
 ENV LD_LIBRARY_PATH=/usr/local/lib
+ENV PDF_OCR_ENABLED=false
 ARG APP_RELEASE=local
 ENV APP_RELEASE=${APP_RELEASE}
 WORKDIR /var/task
 COPY --from=build /usr/local/bin/python3.12 /usr/local/bin/python3.12
 COPY --from=build /usr/local/lib/libpython3.12.so.1.0 /usr/local/lib/libpython3.12.so.1.0
 COPY --from=build /usr/local/lib/python3.12 /usr/local/lib/python3.12
+# Remove the replaced binary, then install the complete official package files
+# and its authentic status/checksums. Runtime execution remains unprivileged.
+USER 0
+RUN ["/usr/local/bin/python3.12", "-c", "from pathlib import Path; Path('/usr/lib/x86_64-linux-gnu/libz.so.1.3.1').unlink()"]
 COPY --from=build /runtime-libs/ /
 COPY --from=build /runtime-status/ /var/lib/dpkg/status.d/
+COPY scripts/check_worker_zlib.py /opt/check_worker_zlib.py
+USER 65532:65532
+RUN ["/usr/local/bin/python3.12", "/opt/check_worker_zlib.py"]
 COPY --from=build /build/site-packages /var/task
 COPY backend/app/__init__.py /var/task/app/__init__.py
 COPY backend/app/adapters /var/task/app/adapters
