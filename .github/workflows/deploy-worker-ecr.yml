@@ -135,6 +135,13 @@ jobs:
       - name: Validate Debian runtime
         if: inputs.image_source == 'build-main'
         run: |
+          mkdir -p artifacts
+          base=$(sed -n 's/^ARG PYTHON_IMAGE=//p' Dockerfile.lambda)
+          docker run --rm --entrypoint python --ulimit core=0 \
+            -v "$PWD/scripts/check_worker_zlib.py:/checks/check_worker_zlib.py:ro" \
+            "$base" /checks/check_worker_zlib.py --expect-vulnerable > artifacts/zlib-before.json
+          docker run --rm --read-only --entrypoint /usr/local/bin/python3.12 --ulimit core=0 \
+            "$WORKER_IMAGE" /opt/check_worker_zlib.py > artifacts/zlib-after.json
           python3 scripts/smoke_worker_candidate_image.py \
             --image "$WORKER_IMAGE" --output artifacts/runtime.json \
             --database-url postgresql://worker_canary:synthetic_only@127.0.0.1:5432/worker_canary
@@ -153,7 +160,7 @@ jobs:
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/artifacts:/out" \
             "$TRIVY_IMAGE" image --image-src docker --scanners vuln --pkg-types os,library \
-            --severity HIGH,CRITICAL --exit-code 1 --list-all-pkgs --format json --output /out/vulnerabilities.json "$WORKER_IMAGE"
+            --severity HIGH,CRITICAL --exit-code 0 --ignorefile /dev/null --list-all-pkgs --format json --output /out/vulnerabilities.json "$WORKER_IMAGE"
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -169,6 +176,9 @@ jobs:
               raise SystemExit("Scanner did not recognize the production Python package inventory.")
           print(f"Scan coverage verified: {len(native)} OS packages; {len(packages)} Python packages.")
           PY
+          python3 scripts/check_worker_vulnerabilities.py --scanner trivy \
+            --report artifacts/vulnerabilities.json --runtime-evidence artifacts/zlib-after.json \
+            --output artifacts/trivy-security-decision.json
 
       - name: Preserve Debian runtime and security evidence
         if: ${{ always() && inputs.image_source == 'build-main' }}
@@ -334,6 +344,7 @@ jobs:
         env:
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
           REPOSITORY_NAME: ${{ steps.target.outputs.repository_name }}
+          VERIFIED_IMAGE_DIGEST: ${{ steps.publish.outputs.digest }}
         shell: bash
         run: |
           set -euo pipefail
@@ -371,6 +382,8 @@ jobs:
             --repository-name "${REPOSITORY_NAME}" \
             --image-id "imageDigest=${IMAGE_DIGEST}" \
             --output json)"
+          mkdir -p artifacts
+          printf '%s\n' "$scan_findings" > artifacts/ecr-vulnerabilities.json
           severity_counts="$(jq -c '.imageScanFindings.findingSeverityCounts // {}' <<<"${scan_findings}")"
           critical="$(jq -r '.CRITICAL // 0' <<<"${severity_counts}")"
           high="$(jq -r '.HIGH // 0' <<<"${severity_counts}")"
@@ -397,7 +410,7 @@ jobs:
             echo "- High findings: ${high}"
             if [ "${critical}" -gt 0 ] || [ "${high}" -gt 0 ]; then
               echo ""
-              echo "### Blocking findings"
+              echo "### Raw findings before exception policy"
               echo ""
               echo '```json'
               jq '.' <<<"${blocking_findings}"
@@ -405,13 +418,19 @@ jobs:
             fi
           } >> "${GITHUB_STEP_SUMMARY}"
 
-          if [ "${critical}" -gt 0 ] || [ "${high}" -gt 0 ]; then
-            echo "Blocking ECR findings:"
-            jq -r '.[] | "\(.severity) \(.name) package=\(.package) installed=\(.installed_version) fixed=\(.fixed_version) uri=\(.uri)"' \
-              <<<"${blocking_findings}"
-            echo "::error::Worker image has ${critical} critical and ${high} high vulnerability findings."
-            exit 1
-          fi
+          python3 scripts/check_worker_vulnerabilities.py --scanner ecr \
+            --report artifacts/ecr-vulnerabilities.json --runtime-evidence artifacts/zlib-after.json \
+            --image-digest "$IMAGE_DIGEST" --verified-image-digest "$VERIFIED_IMAGE_DIGEST" \
+            --output artifacts/ecr-security-decision.json
+
+      - name: Preserve ECR scan and exception decision
+        if: ${{ always() && steps.image.outputs.digest != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: worker-ecr-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/ecr-*.json
+          retention-days: 30
+          if-no-files-found: warn
 
       - name: Record rollback image
         if: steps.image.outputs.needs_update == 'true'
