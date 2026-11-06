@@ -34,6 +34,7 @@ class VerifiedStatement:
     balance_bounds_unavailable: bool = False
     # Independently controlled scopes can share a physical page.
     blocks: list[tuple["VerifiedStatement", tuple[str, str] | None]] | None = None
+    balances_are_printed: bool = False
 
 
 def fail(message="Não foi possível conferir todos os lançamentos e saldos impressos. Envie o extrato original completo."):

@@ -1,6 +1,7 @@
 """Evaluate embedded OCR text separately from the legibility of the page image."""
 
 import re
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
@@ -137,6 +138,34 @@ def has_dense_vector_paths(page, reader):
     return construction >= 360 and paint >= 100
 
 
+def _has_document_image_without_native_text(raw_bytes, page_index):
+    """Ignore print furniture when a substantial painted image has no body text."""
+    import pypdfium2 as pdfium
+
+    from app.application.parsers.pdf.native_unicred_grid import _PDFIUM_LOCK
+
+    with _PDFIUM_LOCK, pdfium.PdfDocument(raw_bytes) as document, closing(document[page_index]) as page:
+        page_left, page_bottom, page_right, page_top = page.get_bbox()
+        width, height = page_right - page_left, page_top - page_bottom
+        with closing(page.get_textpage()) as textpage:
+            for image in page.get_objects(filter=[pdfium.raw.FPDF_PAGEOBJ_IMAGE]):
+                bounds = image.get_bounds()
+                container = image.container
+                while container is not None:
+                    bounds = container.get_matrix().on_rect(*bounds)
+                    container = container.container
+                left, bottom, right, top = bounds
+                left, right = max(page_left, left), min(page_right, right)
+                bottom, top = max(page_bottom + height * .08, bottom), min(page_top - height * .08, top)
+                # Measure the painted area, not the bitmap resolution. A small
+                # high-resolution logo or an unused image resource is not a scan.
+                if right <= left or top <= bottom or (right - left) * (top - bottom) < width * height * .2:
+                    continue
+                if not textpage.get_text_bounded(left, bottom, right, top).strip():
+                    return True
+    return False
+
+
 def assess_native_text_quality(raw_bytes, page_texts, *, reader=None):
     # Type3 fonts without a Unicode map can yield thousands of placeholder
     # squares. Character count alone must not suppress visual extraction.
@@ -163,6 +192,8 @@ def assess_native_text_quality(raw_bytes, page_texts, *, reader=None):
             vector = len(re.findall(rb"(?<!\S)(?:S|s|f\*?|F|B\*?|b\*?)(?!\S)", data)) >= 100
             if not raster and not vector:
                 continue
+            if raster and _has_document_image_without_native_text(raw_bytes, index):
+                return NativeTextQuality(True, ("document_raster_present", "sparse_native_text_on_image_pages"))
             text = page_texts[index] if len(page_texts) == len(reader.pages) else page.extract_text() or ""
             if len(text.strip()) >= 80:
                 continue
