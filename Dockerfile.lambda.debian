@@ -29,6 +29,7 @@ RUN set -eu; mkdir -p /runtime-libs /runtime-status \
 FROM ${RUNTIME_IMAGE} AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/var/task APP_RUNTIME_TMP_DIR=/tmp/gettdone
 ENV LD_LIBRARY_PATH=/usr/local/lib
+ENV PDF_OCR_ENABLED=false
 ARG APP_RELEASE=local
 ENV APP_RELEASE=${APP_RELEASE}
 WORKDIR /var/task
