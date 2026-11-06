@@ -1,4 +1,6 @@
 **
+!scripts/
+!scripts/check_worker_zlib.py
 !Dockerfile.lambda
 !backend/
 !backend/requirements-worker.txt
