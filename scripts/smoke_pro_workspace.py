@@ -113,6 +113,8 @@ def run(base: str, *, save_receipt_delay_ms: int = 0):
                 for edit in payload["edits"]:
                     row = next(row for row in analysis["preview_transactions"] if row["transaction_id"] == edit["row_id"])
                     row.update(date=edit["date"], description=edit["description"], amount=edit.get("credit") or -(edit.get("debit") or 0))
+                    if "document_number" in edit:
+                        row["document_number"] = edit["document_number"]
                 analysis["updated_at"] = f"2026-10-18T00:00:{save_attempts:02d}Z"
                 receipt = {"operation_id": payload["operation_id"], **copy.deepcopy(analysis)}
                 receipts[payload["operation_id"]] = receipt
@@ -184,6 +186,16 @@ def run(base: str, *, save_receipt_delay_ms: int = 0):
             page.get_by_role("button", name="Falha ao salvar · tentar novamente").click()
             expect(page.get_by_text("Salvo", exact=True)).to_be_visible()
             assert jobs[0]["result"]["analysis"]["preview_transactions"][1]["description"] == "Synthetic corrected description"
+            expect(page.get_by_role("table", name="Lançamentos extraídos").get_by_role("columnheader")).to_have_text([
+                "Data", "Descrição", "Documento", "Crédito", "Débito", "Saldo", "Ações"])
+            document_cell = page.get_by_role("textbox", name="Documento de Synthetic corrected description", exact=True)
+            assert document_cell.evaluate("node => getComputedStyle(node).fontSize") == cell.evaluate(
+                "node => getComputedStyle(node).fontSize")
+            for document in ("000ABC-01/2", "", "000FINAL"):
+                document_cell.fill(document)
+                document_cell.press("Tab")
+                expect(page.get_by_text("Salvo", exact=True)).to_be_visible()
+                assert jobs[0]["result"]["analysis"]["preview_transactions"][1]["document_number"] == (document or None)
 
             divider = page.get_by_role("separator", name="Ajustar largura do PDF e dos lançamentos")
             divider.focus()
@@ -225,6 +237,7 @@ def run(base: str, *, save_receipt_delay_ms: int = 0):
             with zipfile.ZipFile(io.BytesIO(exports[0])) as zipped:
                 assert len(zipped.namelist()) == 12
                 assert json.loads(zipped.read("doc-00.json"))[1]["description"] == "Synthetic corrected description"
+                assert json.loads(zipped.read("doc-00.json"))[1]["document_number"] == "000FINAL"
             expect(page.get_by_text("Exportação concluída", exact=True)).to_be_visible()
             page.get_by_role("button", name="Fechar aviso", exact=True).click()
             expect(page.get_by_role("table", name="Lançamentos extraídos")).to_be_visible()

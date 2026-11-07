@@ -12,8 +12,10 @@ from app.application.models import NormalizedTransaction
 from app.application.ofx_writer import build_ofx_statement
 from app.application.parsers.ofx import parse_ofx_transactions
 from app.application.storage_service import TempAnalysisStorage
+from app.dependencies import get_async_conversion_report_service, get_report_service
+from app.main import app
 from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
-from tests.ocr_conversion_http_helpers import public_client
+from tests.ocr_conversion_http_helpers import public_client, worker_case
 
 
 def input_file(kind):
@@ -149,3 +151,58 @@ def test_document_survives_api_edits_and_legacy_documents(tmp_path):
         assert legacy.json()["analysis"]["preview_transactions"][0]["document_number"] is None
         assert client.post("/analyze").status_code == 405
         assert client.get("/report/missing-document", params=owner).status_code == 404
+
+
+@pytest.mark.real_http
+@pytest.mark.parametrize("pro", [False, True])
+def test_edit_document_persists_clears_and_exports_without_changing_identity(tmp_path, pro):
+    context = worker_case(tmp_path, input_file("pdf")) if pro else public_client(tmp_path)
+    with context as opened:
+        owner = {} if pro else {"anonymous_fingerprint": "fp-document-edit"}
+        if pro:
+            client, job = opened
+            app.dependency_overrides[get_report_service] = app.dependency_overrides[get_async_conversion_report_service]
+            identifier = job["analysis_id"]
+            data = job["result"]["analysis"]
+        else:
+            client = opened
+            response = client.post("/convert", data=owner, files={"file": ("edit.csv", input_file("csv"), "text/csv")})
+            assert response.status_code == 200, response.text
+            identifier, data = response.json()["processing_id"], response.json()["analysis"]
+        edit_url = ("/api/pro" if pro else "") + "/convert-edits/" + identifier
+        original = data["preview_transactions"][0]
+        patch = {"row_id": original["transaction_id"], "date": original["date"], "description": original["description"], "debit": 20}
+        before = client.get("/convert-report/" + identifier, params={**owner, "format": "ofx"})
+        identities = re.findall(r"<FITID>([^\n<]+)", before.text)
+
+        for document in ("000ABC-01/2", "=1+1", None):
+            edited = client.post(edit_url, params=owner, json={"edits": [{**patch, "document_number": document}]})
+            assert edited.status_code == 200, edited.text
+            row = edited.json()["preview_transactions"][0]
+            assert row["document_number"] == document
+            for field in ("transaction_id", "source_page", "source_line", "source_sequence", "amount", "description"):
+                assert row.get(field) == original.get(field)
+            # An old client omitting the new field must preserve the saved value.
+            unchanged = client.post(edit_url, params=owner, json={"edits": [patch]})
+            assert unchanged.status_code == 200, unchanged.text
+            assert unchanged.json()["preview_transactions"][0]["document_number"] == document
+            ofx = client.get("/convert-report/" + identifier, params={**owner, "format": "ofx"})
+            assert re.findall(r"<FITID>([^\n<]+)", ofx.text) == identities
+            assert parse_ofx_transactions(ofx.content)[0].document_number == document
+            exported = client.get("/convert-report/" + identifier, params={**owner, "format": "csv"})
+            assert list(csv.DictReader(StringIO(exported.text)))[0]["document_number"] == (document or "")
+            for endpoint in ("/report/", "/convert-report/"):
+                exported = client.get(endpoint + identifier, params={**owner, "format": "xlsx"})
+                assert exported.status_code == 200, exported.text
+                book = load_workbook(BytesIO(exported.content))
+                cell = book.active.cell(2, 6)
+                assert cell.value == document
+                if document is not None:
+                    assert cell.data_type == "s"
+                book.close()
+
+        inserted = client.post(edit_url, params=owner, json={"edits": [{
+            "action": "insert", "date": original["date"], "description": "Manual", "credit": 5, "document_number": "000MANUAL",
+        }]})
+        assert inserted.status_code == 200, inserted.text
+        assert inserted.json()["preview_transactions"][-1]["document_number"] == "000MANUAL"

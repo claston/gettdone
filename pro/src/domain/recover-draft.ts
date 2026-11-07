@@ -12,6 +12,7 @@ export function recoverDraft(
   const fields = [
     "date",
     "description",
+    "documentNumber",
     "credit",
     "debit",
     "isDeleted",

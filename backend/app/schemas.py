@@ -80,6 +80,7 @@ class ReconcileIntakeResponse(BaseModel):
 
 
 class ConvertEditPatch(BaseModel):
+    document_number: str | None = Field(default=None, strict=True, max_length=1024)
     movement_id: str | None = Field(default=None, max_length=36, pattern=r"^[a-fA-F0-9-]{36}$")
     transaction_id: str | None = Field(default=None, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
     anchor_transaction_id: str | None = Field(default=None, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")

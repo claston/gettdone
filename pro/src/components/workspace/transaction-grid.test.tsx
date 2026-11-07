@@ -36,7 +36,32 @@ const conversion: Conversion = {
 };
 
 describe("grid page anchors", () => {
+  it("mostra o documento original ao desfazer uma edição confirmada", () => {
+    const props = {
+      activePage: 1,
+      groupByPage: false,
+      onSourcePage: vi.fn(),
+      onLocateTransaction: vi.fn(),
+      onUpdate: vi.fn(),
+      onGroupChange: vi.fn(),
+      onAdd: vi.fn(),
+      onRemove: vi.fn(),
+      onRestore: vi.fn(),
+    };
+    const withDocument = (documentNumber: string): Conversion => ({
+      ...conversion, transactions: [{ ...row("1", 1), documentNumber }],
+    });
+    const view = render(<TransactionGrid {...props} conversion={withDocument("001103")} />);
+    const input = screen.getByLabelText("Documento de Linha 1");
+    fireEvent.change(input, { target: { value: "000EDITADO" } });
+    fireEvent.blur(input);
+    view.rerender(<TransactionGrid {...props} conversion={withDocument("000EDITADO")} />);
+    expect(input).toHaveValue("000EDITADO");
+    view.rerender(<TransactionGrid {...props} conversion={withDocument("001103")} />);
+    expect(input).toHaveValue("001103");
+  });
   it("exibe o documento separado e preserva zeros à esquerda", () => {
+    const onUpdate = vi.fn();
     render(
       <TransactionGrid
         activePage={1}
@@ -50,7 +75,7 @@ describe("grid page anchors", () => {
         groupByPage={true}
         onSourcePage={vi.fn()}
         onLocateTransaction={vi.fn()}
-        onUpdate={vi.fn()}
+        onUpdate={onUpdate}
         onGroupChange={vi.fn()}
         onAdd={vi.fn()}
         onRemove={vi.fn()}
@@ -60,7 +85,15 @@ describe("grid page anchors", () => {
     expect(
       screen.getByRole("columnheader", { name: "Documento" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: "001103" })).toBeInTheDocument();
+    expect(screen.getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "Data", "Descrição", "Documento", "Crédito", "Débito", "Saldo", "Ações",
+    ]);
+    const document = screen.getByRole("textbox", { name: "Documento de Linha 1" });
+    expect(document).toHaveValue("001103");
+    fireEvent.change(document, { target: { value: "000ABC-01/2" } });
+    fireEvent.blur(document);
+    expect(onUpdate).toHaveBeenCalledWith("1", "documentNumber", "000ABC-01/2");
+    expect(screen.getByRole("textbox", { name: "Documento de Linha 2" })).toHaveValue("");
     expect(screen.getByText(/Página 1/).closest("td")).toHaveAttribute(
       "colspan",
       "7",

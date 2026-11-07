@@ -19,6 +19,7 @@ export function TransactionDialog({
   const dialog = useRef<HTMLDialogElement>(null);
   const [date, setDate] = useState(initialDate);
   const [description, setDescription] = useState("");
+  const [documentNumber, setDocumentNumber] = useState("");
   const [credit, setCredit] = useState("");
   const [debit, setDebit] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +48,7 @@ export function TransactionDialog({
           const validation =
             validateTransactionField("date", date) ||
             validateTransactionField("description", description) ||
+            validateTransactionField("documentNumber", documentNumber) ||
             validateTransactionField("credit", credit) ||
             validateTransactionField("debit", debit);
           if (validation) {
@@ -66,6 +68,7 @@ export function TransactionDialog({
           onAdd({
             date,
             description: description.trim(),
+            ...(documentNumber.trim() ? { documentNumber: documentNumber.trim() } : {}),
             credit: creditValue,
             debit: debitValue,
           });
@@ -88,6 +91,14 @@ export function TransactionDialog({
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             required
+          />
+        </label>
+        <label>
+          Documento (opcional)
+          <input
+            value={documentNumber}
+            maxLength={1024}
+            onChange={(event) => setDocumentNumber(event.target.value)}
           />
         </label>
         <div className="transaction-dialog-amounts">

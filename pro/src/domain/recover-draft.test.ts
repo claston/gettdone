@@ -15,9 +15,9 @@ it("reapplies local fields while preserving another editor's confirmed amount an
     recoverDraft(
       [original],
       [current, inserted],
-      [{ ...original, description: "Local" }],
+      [{ ...original, description: "Local", documentNumber: "000ABC" }],
     ),
-  ).toEqual([{ ...current, description: "Local" }, inserted]);
+  ).toEqual([{ ...current, description: "Local", documentNumber: "000ABC" }, inserted]);
 });
 
 it("does not duplicate an insertion committed before a lost response", () => {

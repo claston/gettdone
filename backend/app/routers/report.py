@@ -407,7 +407,10 @@ def apply_convert_edits(
             raise AnalysisEditConflictError
         result = active_service.apply_convert_edits(
             analysis_id=processing_id,
-            edits=[item.model_dump(exclude_none=True) for item in payload.edits],
+            edits=[{
+                **item.model_dump(exclude_none=True),
+                **({"document_number": item.document_number} if "document_number" in item.model_fields_set else {}),
+            } for item in payload.edits],
             expected_updated_at=payload.expected_updated_at,
             opening_balance=payload.opening_balance,
             closing_balance=payload.closing_balance,

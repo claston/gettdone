@@ -492,7 +492,9 @@ export function useWorkspaceController(
           (item) => item.id === activeConversion.id,
         )?.transactions ?? activeConversion.transactions;
       const parsedValue =
-        field === "date" || field === "description"
+        field === "documentNumber"
+          ? value.trim() || null
+          : field === "date" || field === "description"
           ? value
           : parseBrazilianCurrency(value);
       const existing = previous.find(

@@ -57,9 +57,9 @@ const EditableCell = memo(function EditableCell({
   const [previousFormatted, setPreviousFormatted] = useState(String(formatted));
   const [error, setError] = useState<string | null>(null);
 
-  if (String(formatted) !== previousFormatted && String(formatted) !== value) {
+  if (String(formatted) !== previousFormatted) {
     setPreviousFormatted(String(formatted));
-    setValue(String(formatted));
+    if (String(formatted) !== value) setValue(String(formatted));
   }
 
   const commit = (nextValue: string) => {
@@ -70,7 +70,8 @@ const EditableCell = memo(function EditableCell({
   return (
     <div className="editable-wrap">
       <input
-        aria-label={`${{ date: "Data", description: "Descrição", credit: "Crédito", debit: "Débito", balance: "Saldo" }[field]} de ${transaction.description}`}
+        aria-label={`${{ date: "Data", description: "Descrição", documentNumber: "Documento", credit: "Crédito", debit: "Débito", balance: "Saldo" }[field]} de ${transaction.description}`}
+        maxLength={field === "documentNumber" ? 1024 : undefined}
         readOnly={field === "balance" || transaction.isDeleted}
         className={`${transaction.fieldStates[field] === "SUSPECTED" ? "is-suspected" : ""} ${transaction.fieldStates[field] === "EDITED" ? "is-edited" : ""} ${error ? "is-invalid" : ""}`}
         value={value}
@@ -325,7 +326,6 @@ export function TransactionGrid({
     });
   };
   const hasPageRows = conversion.transactions.some(belongsToPage);
-  const hasDocument = conversion.transactions.some((row) => row.documentNumber);
   const groups = groupByPage
     ? Array.from(new Set(visible.map((row) => row.sourcePage ?? null)))
         .sort((a, b) => (a ?? Infinity) - (b ?? Infinity))
@@ -542,15 +542,15 @@ export function TransactionGrid({
           }
         }}
       >
-        <table aria-label="Lançamentos extraídos">
+        <table className="transaction-table" aria-label="Lançamentos extraídos">
           <thead>
             <tr>
               <th>Data</th>
               <th>Descrição</th>
-              <th>Crédito</th>
-              <th>Débito</th>
-              <th>Saldo</th>
-              {hasDocument && <th>Documento</th>}
+              <th className="document-column">Documento</th>
+              <th className="amount-column">Crédito</th>
+              <th className="amount-column">Débito</th>
+              <th className="amount-column">Saldo</th>
               <th>
                 <span className="sr-only">Ações</span>
               </th>
@@ -561,7 +561,7 @@ export function TransactionGrid({
               <Fragment key={group.page ?? "unknown"}>
                 {groupByPage && (
                   <tr className="source-page-heading">
-                    <td colSpan={hasDocument ? 7 : 6}>
+                    <td colSpan={7}>
                       {group.page === null ? (
                         "Sem página de origem · lançamentos manuais ou arquivos anteriores"
                       ) : (
@@ -683,6 +683,13 @@ export function TransactionGrid({
                       <td>
                         <EditableCell
                           transaction={transaction}
+                          field="documentNumber"
+                          onCommit={commitField}
+                        />
+                      </td>
+                      <td>
+                        <EditableCell
+                          transaction={transaction}
                           field="credit"
                           onCommit={commitField}
                         />
@@ -701,9 +708,6 @@ export function TransactionGrid({
                           onCommit={commitField}
                         />
                       </td>
-                      {hasDocument && (
-                        <td>{transaction.documentNumber || "—"}</td>
-                      )}
                       <td>
                         {transaction.isDeleted ? (
                           <button

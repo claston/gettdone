@@ -161,6 +161,7 @@ class ApiRequestError extends Error {
 const originalFieldStates = (): Transaction["fieldStates"] => ({
   date: "ORIGINAL",
   description: "ORIGINAL",
+  documentNumber: "ORIGINAL",
   credit: "ORIGINAL",
   debit: "ORIGINAL",
   balance: "ORIGINAL",
@@ -269,6 +270,18 @@ export function createHttpWorkspaceRepository(
     const originalById = new Map(
       context.persistedTransactions.map((row) => [row.id, row]),
     );
+    const documentRows = transactions.filter(
+      (row) => (row.documentNumber ?? null) !==
+        (originalById.get(row.id)?.documentNumber ?? null),
+    );
+    if (documentRows.some((row) => {
+      const server = result.preview_transactions?.[serverOrder.indexOf(row.id)];
+      return !server || !Object.hasOwn(server, "document_number") ||
+        (server.document_number ?? null) !== (row.documentNumber ?? null);
+    }))
+      throw new Error(
+        "Não foi possível confirmar o documento. Sua edição continua pendente; tente salvar novamente.",
+      );
     const manualRows = transactions.filter(
       (row) =>
         (row.reviewRegions?.length ?? 0) > 0 ||
@@ -308,6 +321,7 @@ export function createHttpWorkspaceRepository(
       context.rowCount = rows.length;
       context.savedTransactions = transactions.map((transaction) => ({
         ...transaction,
+        documentNumber: rows[serverOrder.indexOf(transaction.id)].document_number ?? transaction.documentNumber ?? null,
         statementAccount:
           mapStatementAccount(rows[serverOrder.indexOf(transaction.id)]) ??
           transaction.statementAccount,
@@ -520,7 +534,7 @@ export function createHttpWorkspaceRepository(
       const originalById = new Map(
         context.persistedTransactions.map((row) => [row.id, row]),
       );
-      const fields = ["date", "description", "credit", "debit"] as const;
+      const fields = ["date", "description", "documentNumber", "credit", "debit"] as const;
       const edits: Array<Record<string, unknown>> = transactions
         .filter((row) => {
           if (!context.rowIds.has(row.id)) return false;
@@ -561,6 +575,9 @@ export function createHttpWorkspaceRepository(
                 }),
             date: toIsoDate(transaction.date),
             description: transaction.description,
+            ...(transaction.documentNumber !== original?.documentNumber
+              ? { document_number: transaction.documentNumber ?? null }
+              : {}),
             credit: transaction.credit,
             debit: transaction.debit,
             ...(regionsChanged
@@ -605,6 +622,9 @@ export function createHttpWorkspaceRepository(
           insert_position: position,
           date: toIsoDate(transaction.date),
           description: transaction.description,
+          ...(transaction.documentNumber != null
+            ? { document_number: transaction.documentNumber }
+            : {}),
           credit: transaction.credit,
           debit: transaction.debit,
           ...(transaction.reviewRegions?.length

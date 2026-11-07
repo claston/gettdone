@@ -35,7 +35,17 @@ describe("revisor HTML do OFX Simples", () => {
           quota_remaining: 10,
           quota_limit: 50,
         })),
-        request: vi.fn(async () => new Response("{}", { status: 409 })),
+        request: vi.fn(async (url, init) => {
+          if (!url.includes("/convert-edits/") || init?.method !== "POST")
+            return new Response("{}", { status: 409 });
+          const patch = JSON.parse(init.body).edits[0];
+          rows[0] = { ...rows[0], document_number: patch.document_number };
+          return new Response(JSON.stringify({
+            preview_transactions: rows,
+            transactions_total: 1,
+            updated_at: "document-saved",
+          }));
+        }),
       };
       Object.defineProperty(dom.window.performance, "getEntriesByType", {
         value: () => [{ type: "reload" }],
@@ -63,23 +73,38 @@ describe("revisor HTML do OFX Simples", () => {
           return element;
         });
         const table = button.closest("table");
-        expect(table.querySelectorAll("thead th")).toHaveLength(
-          documentNumber ? 7 : 6,
-        );
-        if (documentNumber) {
-          expect(table.querySelector("tbody tr").cells[5].textContent).toBe(
-            documentNumber,
-          );
-          expect(table.querySelector("tbody b")).toBeNull();
-        }
+        expect([...table.querySelectorAll("thead th")].map((cell) => cell.textContent)).toEqual([
+          "Data", "Histórico", "Documento", "Crédito", "Débito", "Saldo", "Ações",
+        ]);
+        expect(table.querySelector("tbody tr").cells[2].textContent).toBe(documentNumber || "—");
+        expect(table.querySelector("tbody b")).toBeNull();
         button.click();
-        if (documentNumber)
-          expect(table.querySelector("tbody tr").cells[5].textContent).toBe(
-            documentNumber,
-          );
-        expect(
-          table.querySelector('[data-edit-field="description"]').value,
-        ).toBe("PIX");
+        const documentInput = table.querySelector('[data-edit-field="document_number"]');
+        expect(documentInput.value).toBe(documentNumber || "");
+        documentInput.value = "000ABC-01/2";
+        documentInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+        table.querySelector('[data-action="save-row"]').click();
+        await vi.waitFor(() => {
+          const call = dom.window.OfxSession.request.mock.calls.find(([url, init]) => url.includes("/convert-edits/") && init?.method === "POST");
+          expect(call).toBeDefined();
+          expect(JSON.parse(call[1].body).edits[0].document_number).toBe("000ABC-01/2");
+        });
+        await vi.waitFor(() => {
+          expect(table.querySelector('[data-action="edit-row"]')).not.toBeNull();
+          expect(table.querySelector("tbody tr").cells[2].textContent).toBe("000ABC-01/2");
+        });
+        const saved = JSON.parse(dom.window.sessionStorage.getItem("ofxsimples_ofx_convert_view_state_ofx_v1"));
+        expect(saved.preview_rows[0].document_number).toBe("000ABC-01/2");
+        table.querySelector('[data-action="edit-row"]').click();
+        const clearInput = table.querySelector('[data-edit-field="document_number"]');
+        clearInput.value = "";
+        clearInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+        table.querySelector('[data-action="cancel-row"]').click();
+        expect(table.querySelector("tbody tr").cells[2].textContent).toBe("000ABC-01/2");
+        table.querySelector('[data-action="revert-row"]').click();
+        await vi.waitFor(() => {
+          expect(table.querySelector("tbody tr").cells[2].textContent).toBe(documentNumber || "—");
+        });
       } finally {
         dom.window.close();
       }

@@ -6,6 +6,23 @@ import { useWorkspaceController } from "./use-workspace-controller";
 afterEach(() => vi.useRealTimers());
 
 describe("edição e autosave", () => {
+  it("edita e limpa o documento como texto sem mudar o valor ou a origem", async () => {
+    const repository = createMockWorkspaceRepository({ latencyMs: 0 });
+    const batch = await repository.getBatch("batch-setembro-2026");
+    repository.getBatch = vi.fn().mockResolvedValue(batch);
+    const { result } = renderHook(() => useWorkspaceController(batch.id, repository));
+    await waitFor(() => expect(result.current.loadState).toBe("READY"));
+    const before = result.current.activeConversion!.transactions[0];
+    act(() => {
+      expect(result.current.updateField(before.id, "documentNumber", "000ABC-01/2")).toBeNull();
+    });
+    const edited = result.current.activeConversion!.transactions[0];
+    expect(edited).toEqual({ ...before, documentNumber: "000ABC-01/2", fieldStates: { ...before.fieldStates, documentNumber: "EDITED" } });
+    act(() => {
+      expect(result.current.updateField(before.id, "documentNumber", "")).toBeNull();
+    });
+    expect(result.current.activeConversion!.transactions[0].documentNumber).toBeNull();
+  });
   it("mantém a revisão documental necessária ao editar um arquivo já revisado", async () => {
     const repository = createMockWorkspaceRepository({ latencyMs: 0 });
     const batch = await repository.getBatch("batch-setembro-2026");
