@@ -61,6 +61,21 @@ Executar a suíte completa com `python scripts/test_backend.py`, Ruff, lints de
 texto/navegação, testes/lint/typecheck do PRO e os gates oficiais de compatibilidade
 PDF e revisão. Usar o ambiente virtual e, no Windows, pytest fora do sandbox.
 
+Após integrar a `main` no commit `f2fc6fb`, o CI de push comparou a branch com
+`71aa1c5`, que ainda não continha Documento. A comparação da PR com a `main`
+`e79cab7` já passou; o push falhou porque os vínculos de aprovação ainda
+apontavam para a revisão anterior da evidência.
+
+As 3.304 diferenças PDF e 3.642 de revisão foram conferidas integralmente,
+incluindo caso, caminho, antes/depois e multiplicidade. São as mesmas adições
+Documento já enumeradas. Apenas os vínculos foram atualizados para `71aa1c5`
+e a árvore `f3cfe6d40ccc7600bc371212b6d9839d2813724c`; evidência e hashes estão
+em [pdf-review-guidance-ci-revalidation.json](pdf-review-guidance-ci-revalidation.json).
+Para reproduzir o push, executar ambos os gates com `--base-ref 71aa1c5`
+e `--approvals docs/transaction-document-approvals.json`. Para validar a PR,
+usar `--base-ref origin/main`. Essa correção de CI preserva os comparadores,
+baselines, oráculos financeiros e código da aplicação.
+
 Rollback: reverter o commit e republicar. O campo adicional pode permanecer em
 payloads existentes; o código anterior o ignora. Movimentos, exportações e dados
 do banco permanecem compatíveis, sem operação de recuperação de esquema.
