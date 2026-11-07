@@ -1,0 +1,58 @@
+{
+  "comparison": "Existing Documento compatibility approvals revalidated for optional document edits; no parser or export contract changes.",
+  "baseline_commit": "6cbe24dbd79fe48ae0a98803d974f6971f5e6257",
+  "candidate_commit": "fded9920a04a404c6274744fea0c78935e76db54",
+  "candidate_app_tree": "015568a2242c09ee842b4365ff98bde309c1f9fb",
+  "previous_candidate_app_tree": "a8238e8ea77e78fee813a6a0865a2e4d38abaffb",
+  "approvals": [
+    {
+      "gate": "pdf",
+      "existing_authorized_differences": 3304,
+      "exact_differences_and_authorization_unchanged": true,
+      "differences_sha256_compact_sorted_json": "e9dba017c9a62b3c4b65646872fc801fab04f578b0bcc890d4ef84e6f7d66192"
+    },
+    {
+      "gate": "review",
+      "existing_authorized_differences": 3642,
+      "exact_differences_and_authorization_unchanged": true,
+      "differences_sha256_compact_sorted_json": "ddc7a7eecaef8ec81f88658441c5fe99806680ca841e5b35d4f69aa6089502fa"
+    }
+  ],
+  "gates": [
+    {
+      "gate": "pdf",
+      "cases": 90,
+      "errors": [],
+      "new_strict_differences": 0
+    },
+    {
+      "gate": "review",
+      "cases": 170,
+      "errors": [],
+      "new_strict_differences": 0
+    }
+  ],
+  "validation": {
+    "backend": {
+      "passed": 4512,
+      "skipped": 62,
+      "xfailed": 2
+    },
+    "frontend": {
+      "passed": 334,
+      "files": 59
+    },
+    "pro_production_build": "passed",
+    "free_browser": "three entry pages, desktop/mobile, enter/save/reload/clear",
+    "pro_browser": {
+      "result": "PASS",
+      "documents": 12,
+      "rows": 541,
+      "reviewed": 12,
+      "exported": 12,
+      "matching_font_sizes": true,
+      "edited_reference_in_archive": true
+    }
+  },
+  "note": "Only the historical approval tree bindings changed. No authorized differences were added, removed or widened; authorization text, frozen baselines, comparison policies and source oracles remain unchanged."
+}
