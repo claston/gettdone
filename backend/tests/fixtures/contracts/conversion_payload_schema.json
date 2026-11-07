@@ -2,6 +2,21 @@
   "$defs": {
     "AnalyzeResponse": {
       "properties": {
+        "review_guidance": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Review Guidance"
+        },
         "statement_balance_check": {
           "anyOf": [
             {
@@ -1390,6 +1405,30 @@
     },
     "TransactionPreview": {
       "properties": {
+        "document_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Document Number"
+        },
+        "document_reference_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Document Reference Type"
+        },
         "statement_account": {
           "anyOf": [
             {

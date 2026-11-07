@@ -294,8 +294,8 @@ jobs:
           if [ -z "$baseline_ref" ] || [ "$baseline_ref" = "0000000000000000000000000000000000000000" ]; then
             baseline_ref="origin/main"
           fi
-          python scripts/check_pdf_compatibility.py --base-ref "$baseline_ref" --approvals docs/statement-issuer-evidence-approvals.json
-          python scripts/check_review_compatibility.py --base-ref "$baseline_ref"
+          python scripts/check_pdf_compatibility.py --base-ref "$baseline_ref" --approvals docs/transaction-document-approvals.json
+          python scripts/check_review_compatibility.py --base-ref "$baseline_ref" --approvals docs/transaction-document-approvals.json
 
       - name: Lint Free baseline instrumentation
         working-directory: .

@@ -30,6 +30,7 @@ interface HttpWorkspaceRepositoryOptions {
 }
 
 interface ApiTransaction {
+  document_number?: string | null;
   statement_account?: {
     bank_branch?: unknown;
     account_number?: unknown;
@@ -72,6 +73,7 @@ function publicFailureMessage(job: ApiJob): string | undefined {
 }
 
 interface ApiAnalysis {
+  review_guidance?: Conversion["reviewGuidance"];
   authority?: string;
   version?: number;
   movement_ids?: Record<string, string>;
@@ -827,6 +829,10 @@ function mapConversion({
     job,
     suspectedCount,
     partialStatement ||
+      Boolean(
+        analysis?.review_guidance &&
+        analysis.review_guidance.category !== "information",
+      ) ||
       Boolean(statementBalanceCheck) ||
       reviewWarnings.some((code) => documentReviewWarnings.has(code)),
   );
@@ -862,6 +868,7 @@ function mapConversion({
     noActivity: analysis?.pdf_processing_metrics?.statement_no_activity === 1,
     partialStatement,
     reviewWarnings,
+    reviewGuidance: analysis?.review_guidance,
     statementBalanceCheck,
     ocrBalanceMatches:
       analysis?.pdf_processing_metrics?.ocr_balance_arithmetic_matches === 1,
@@ -880,6 +887,7 @@ function mapTransaction(row: ApiTransaction, index: number): Transaction {
     id: row.transaction_id ?? `row_${index + 1}`,
     date: toBrazilianDate(String(row.date ?? "")),
     description: String(row.description ?? ""),
+    documentNumber: row.document_number ?? null,
     credit: amount > 0 ? amount : null,
     debit: amount < 0 ? Math.abs(amount) : null,
     balance: row.running_balance == null ? null : Number(row.running_balance),
