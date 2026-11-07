@@ -264,6 +264,18 @@ jobs:
         working-directory: .
         run: python scripts/smoke_free_review_frontend.py
 
+      - name: Free editor and responsive review smoke
+        working-directory: .
+        run: python scripts/smoke_free_editor.py
+
+      - name: Preserve fictional Free editor previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: free-review-editor-preview
+          path: tmp/free-editor-preview/
+          if-no-files-found: ignore
+
       - name: Admin PDF metrics smoke (desktop and mobile)
         working-directory: .
         run: python scripts/smoke_admin_pdf_metrics.py
