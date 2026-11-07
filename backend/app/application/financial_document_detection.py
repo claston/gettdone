@@ -12,6 +12,10 @@ def detect_financial_report(text: str) -> tuple[str, str] | None:
     lines = [normalize_upper_text(line) for line in text.splitlines() if line.strip()]
     header = " ".join(lines[:12])
     normalized = " ".join(lines)
+    investment_title = re.search(r'^EXTRATO\s+D[\sAE\x00]*\s+CONT[A\x00]?\s+INVESTIMENTO\b', ' '.join(lines[:4]))
+    if (investment_title and 'BTG' in normalized
+            and all(marker in normalized for marker in ('CDB', 'QUANTIDADE', 'BRUTO', 'IR', 'IOF'))):
+        return INVESTMENT_STATEMENT, 'btg_cdb_positions_and_details'
     if ('PORTFOLIO DE INVESTIMENTOS' in header and 'POSICAO DA CARTEIRA' in normalized
             and 'PROVISAO IR/IOF' in normalized):
         return INVESTMENT_STATEMENT, 'portfolio_positions_and_performance'

@@ -1491,6 +1491,12 @@
     return Boolean(analysis && analysis.document_type === "accounts_payable_report");
   }
 
+  function financialObservationValue(item) {
+    const value = Object.values(item.amounts || {})[0];
+    if (value != null && Number.isFinite(Number(value))) return formatCurrency(Number(value));
+    return escapeAttr((item.attributes || {}).printed_value || "Não informado");
+  }
+
   function financialDocument(analysis) {
     return analysis && analysis.financial_document ? analysis.financial_document : null;
   }
@@ -1504,6 +1510,8 @@
       accounts_payable_report: "Contas a pagar", accounts_receivable_report: "Contas a receber" };
     const titleReport = ["accounts_payable_report", "accounts_receivable_report"].includes(report.document_type);
     const summaryOnly = report.events.length === 0 && observations.length > 0;
+    const positionCount = report.metadata && report.metadata.product === "CDB" ? Number(report.metadata.position_count) : null;
+    const hasPositionCount = Number.isInteger(positionCount) && positionCount > 0;
     const periodAmounts = Object.assign({}, ...observations.map((item) => item.amounts || {}));
     const hasPeriodFlows = ["applications", "net_redemptions"].every((key) =>
       Object.prototype.hasOwnProperty.call(periodAmounts, key));
@@ -1527,7 +1535,7 @@
         ${failed ? `<p>${failed} validação(ões) com diferença. Confira os detalhes no Excel.</p>` : ""}
         <p>Os campos de origem são preservados. Confira datas, valores e situações no Excel.</p>
       </section>${fields}
-      <article class="kpi"><p class="kpi-label">${summaryOnly ? "Campos do resumo" : "Eventos listados"}</p><p class="kpi-value">${summaryOnly ? observations.length : report.events.length}</p></article>
+      <article class="kpi"><p class="kpi-label">${hasPositionCount ? "Posições de CDB" : summaryOnly ? "Campos do resumo" : "Eventos listados"}</p><p class="kpi-value">${hasPositionCount ? positionCount : summaryOnly ? observations.length : report.events.length}</p></article>
       ${summaryOnly
         ? `<article class="kpi"><p class="kpi-label">${hasPeriodFlows ? "Aplicações no período" : "Saldo bruto final"}</p><p class="kpi-value">${summaryAmount(hasPeriodFlows ? "applications" : "closing_gross")}</p></article>
            <article class="kpi"><p class="kpi-label">${hasPeriodFlows ? "Resgates líquidos no período" : "Saldo líquido final"}</p><p class="kpi-value">${summaryAmount(hasPeriodFlows ? "net_redemptions" : "closing_net")}</p></article>`
@@ -2163,7 +2171,7 @@
         reviewRows.innerHTML = observations.map((item) => `<tr>
           <td>${formatDate(item.dates.as_of || item.dates.period_end)}</td>
           <td>${escapeAttr((item.attributes || {}).label || "Posição do período")}</td>
-          <td>${formatCurrency(Number(Object.values(item.amounts)[0]))}</td>
+          <td>${financialObservationValue(item)}</td>
           <td>${item.observation_type === "investment_lot" ? "Lote de aquisição" : "Posição / resumo do período"}</td>
           <td>${item.dates.application ? `Compra em ${formatDate(item.dates.application)}` : "Sem data de movimento individual"}</td>
           <td>${escapeAttr(item.source_refs.map((ref) => `Pág. ${ref.page}, linha ${ref.line}`).join("; "))}</td></tr>`).join("");

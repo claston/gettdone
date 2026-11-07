@@ -5,13 +5,13 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.application.errors import OcrFinancialAmbiguityError
+from app.application.normalization.explicit_signed_money import parse_parenthesized_signed_money
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.followup_ocr import _headers, _source
 from app.application.parsers.pdf.statement_review import financial_mismatch
-from app.application.parsers.pdf.verified_statements import NUMBER, VerifiedStatement, _row, day, fail, money
+from app.application.parsers.pdf.verified_statements import VerifiedStatement, _row, day, fail
 
 LAYOUT = "banco_do_brasil_extrato_conta_corrente_lancamentos_v1"
-SIGNED = re.compile(rf"({NUMBER})\s*(?:\(\s*)+([+-])\s*\)")
 MESSAGE = "Não foi possível separar uma data, um valor ou seu sinal no extrato Banco do Brasil. Confira o documento original."
 
 
@@ -36,7 +36,7 @@ def parse_bb_signed_ocr(extraction):
         top = max(header, default=0)
         value_left = (columns["HISTORICO"] + columns["VALOR"]) / 2
         amounts = [line for line in lines if line.bbox["top"] > top + .005
-                   and line.bbox["left"] >= value_left and SIGNED.fullmatch(line.text.strip())]
+                   and line.bbox["left"] >= value_left and re.search(r"\d[,.]\d", line.text)]
         dates = [line for line in lines if line.bbox["top"] > top + .005
                  and line.bbox["left"] < columns["LOTE"] - .02
                  and re.fullmatch(r"\d{2}/\d{2}/(?:\d{4}|20\d)", line.text.strip())]
@@ -44,6 +44,11 @@ def parse_bb_signed_ocr(extraction):
         if not amounts:
             raise OcrFinancialAmbiguityError(MESSAGE)
         for index, value in enumerate(amounts):
+            amount = parse_parenthesized_signed_money(value.text)
+            if amount is None:
+                # Keep every financial candidate in its physical row. An
+                # unreadable token must not disappear and merge two dates.
+                raise OcrFinancialAmbiguityError(MESSAGE)
             y = value.bbox["top"]
             lower = (amounts[index - 1].bbox["top"] + y) / 2 if index else top + .005
             upper_y = (amounts[index + 1].bbox["top"] + y) / 2 if index + 1 < len(amounts) else min(1, y + .025)
@@ -56,8 +61,6 @@ def parse_bb_signed_ocr(extraction):
             history = [line for line in cells if columns["HISTORICO"] - .02 <= line.bbox["left"] < value_left]
             label = " ".join(line.text.strip() for line in history)
             compact = upper(label).replace(" ", "")
-            matched = SIGNED.fullmatch(value.text.strip())
-            amount = money(matched[1]) * (-1 if matched[2] == "-" else 1)
             if any(word.id in value.word_ids and word.text_type == "HANDWRITING" for word in page.words):
                 raise OcrFinancialAmbiguityError(MESSAGE)
             is_control = "SALDOANTERIOR" in compact or "SALDODODIA" in compact or compact in {"SALDO", "SALDOATUAL"}
