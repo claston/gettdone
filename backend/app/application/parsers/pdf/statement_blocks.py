@@ -32,7 +32,10 @@ class StatementBlock:
 
 
 def _period(text):
-    header = _statement_header(text)
+    # A standalone print timestamp is not a movement or the statement period.
+    period_header = "\n".join(line for line in text.splitlines()
+                              if not re.fullmatch(rf"\s*{_DATE}\s+\d{{2}}:\d{{2}}(?::\d{{2}})?\s*", line))
+    header = _statement_header(period_header)
     period = statement_period_from_text(re.sub(r"\bATE\b", "A", re.sub(r"PERIODO\s*:\s*DE\s+", "PERIODO: ", header)))
     if period:
         return period["start_date"], period["end_date"]
@@ -142,6 +145,9 @@ def parse_native_blocks(raw, pages, parse):
     from app.application.parsers.pdf.reader import open_pdf_reader
 
     reader = open_pdf_reader(BytesIO(raw))
+    from app.application.parsers.pdf.native_cash_columns import BRADESCO_MONTHLY, _kind, parse_native_cash_columns
+
+    inherited_kind = _kind(pages)
     results = []
     for block in blocks:
         writer = PdfWriter()
@@ -151,7 +157,19 @@ def parse_native_blocks(raw, pages, parse):
             writer.add_metadata({key: value for key, value in reader.metadata.items() if isinstance(value, str)})
         buffer = BytesIO()
         writer.write(buffer)
-        results.append(parse(buffer.getvalue()))
+        local_pages = pages[block.start:block.stop]
+        if block.start and inherited_kind == BRADESCO_MONTHLY and _kind(local_pages) is None:
+            # The original document proves the account/layout. A continued
+            # ledger need not repeat its bank title, but must retain its columns.
+            from app.application.pdf_parser import _build_verified_statement_result
+
+            continued = parse_native_cash_columns(buffer.getvalue(), local_pages, inherited_kind=inherited_kind)
+            if continued is None:
+                raise PdfFinancialValidationError("Não foi possível associar as colunas do bloco de continuação.")
+            statement, source = continued
+            results.append(_build_verified_statement_result(statement, source))
+        else:
+            results.append(parse(buffer.getvalue()))
     return combine_statement_results(results, blocks, pages, document_hash=sha256(raw).hexdigest())
 
 

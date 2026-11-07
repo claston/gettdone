@@ -17,6 +17,7 @@ export interface PdfDocument {
 }
 
 export interface Transaction {
+  documentNumber?: string | null;
   statementAccount?: { bankBranch: string; accountNumber: string };
   balanceCheck?: BalanceCheck;
   warningTypes?: readonly string[];

@@ -1,6 +1,7 @@
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from html import unescape
 
 from app.application.bank_catalog import load_bank_catalog, normalize_bank_code
 from app.application.errors import InvalidFileContentError
@@ -54,12 +55,16 @@ def parse_ofx_transactions(raw_bytes: bytes) -> list[NormalizedTransaction]:
         type_raw = _extract_optional_tag(block, "TRNTYPE") or ""
 
         amount = parse_amount(amount_raw)
+        document_tag = "REFNUM" if _extract_optional_tag(block, "REFNUM") else "CHECKNUM"
+        document = _extract_optional_tag(block, document_tag)
         transactions.append(
             NormalizedTransaction(
                 date=_parse_ofx_date(date_raw),
                 description=description_raw.strip(),
                 amount=amount,
                 type=_normalize_type(type_raw, amount),
+                document_number=unescape(document) if document else None,
+                document_reference_type=document_tag if document else None,
             )
         )
 

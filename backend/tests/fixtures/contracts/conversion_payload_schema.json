@@ -1405,6 +1405,30 @@
     },
     "TransactionPreview": {
       "properties": {
+        "document_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Document Number"
+        },
+        "document_reference_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Document Reference Type"
+        },
         "statement_account": {
           "anyOf": [
             {

@@ -76,16 +76,41 @@ def _totalbank(pages, kind):
 
 def _combined(pages, kind):
     rows = []
+    pending = None
+    current_page, in_table = None, False
     for page, line, raw in _lines(pages):
+        if page != current_page:
+            current_page, in_table = page, False
+        normalized = upper(raw)
+        if all(word in normalized for word in ("DATA", "HISTORICO", "DOCUMENTO", "VALOR")):
+            in_table = True
+            continue
+        if normalized.startswith(("BB.COM.BR", "IMPRESSO POR", "PAG.", "PAGINA")):
+            in_table = False
+            continue
         if not re.match(r"^\d{2}/\d{2}/\d{4}\b", raw):
+            if normalized.startswith(("EXTRATO DE CONTA CORRENTE", "BANCO DO BRASIL", "MOVIMENTACAO EM",
+                                      "DATA ORIGEM", "CONTA CORRENTE + RENDE FACIL")):
+                continue
+            if in_table and pending is not None:
+                if re.search(rf"{NUMBER}\s+[CD]$", raw):
+                    fail("Um valor está sem data no extrato de conta corrente e aplicações.")
+                row = rows[pending]
+                rows[pending] = replace(
+                    row, transaction=replace(row.transaction, description=f"{row.transaction.description} {' '.join(raw.split())}"),
+                    source_line_refs=(*row.source_line_refs, (page, line)),
+                )
             continue
         match = re.fullmatch(rf"(\d{{2}}/\d{{2}}/\d{{4}})\s+\d+-\w\s+(.+?)\s+(\d+)\s+(?:\d{{5}}\s+)?({NUMBER})\s+([CD])", raw)
         if not match:
             fail()
+        in_table = True  # Dated readable rows also establish a table without a printed header.
         date, label, reference, value, sign = match.groups()
         if upper(label) == "SALDO DO DIA":
+            pending = None
             continue  # Cash + investment is not a cash ledger checkpoint.
         rows.append(_row(page, line, day(date), label, money(value) * (-1 if sign == "D" else 1), reference=reference))
+        pending = len(rows) - 1
     if not rows:
         fail()
     rows[0] = replace(rows[0], warnings=["combined_cash_investment_balance_not_comparable"])
