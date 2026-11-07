@@ -324,7 +324,7 @@ describe("WorkspaceScreen", () => {
     );
     expect(
       screen.getAllByRole("columnheader").map((cell) => cell.textContent),
-    ).toEqual(["Data", "Descrição", "Crédito", "Débito", "Saldo", "Ações"]);
+    ).toEqual(["Data", "Descrição", "Documento", "Crédito", "Débito", "Saldo", "Ações"]);
   });
 
   it("valida a inclusão e permite cancelar sem alterar o documento", async () => {
@@ -380,6 +380,9 @@ describe("WorkspaceScreen", () => {
     fireEvent.change(within(dialog).getByLabelText("Descrição"), {
       target: { value: "Transação manual" },
     });
+    fireEvent.change(within(dialog).getByLabelText("Documento (opcional)"), {
+      target: { value: "000MANUAL" },
+    });
     fireEvent.change(within(dialog).getByLabelText("Crédito"), {
       target: { value: "50,00" },
     });
@@ -390,6 +393,7 @@ describe("WorkspaceScreen", () => {
     expect(screen.getAllByRole("row")[1]).toContainElement(
       screen.getByDisplayValue("Transação manual"),
     );
+    expect(screen.getByLabelText("Documento de Transação manual")).toHaveValue("000MANUAL");
     await waitFor(
       () => expect(repository.saveTransactions).toHaveBeenCalled(),
       { timeout: 1800 },

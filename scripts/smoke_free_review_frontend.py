@@ -88,6 +88,10 @@ def main():
                             body = {"items": []}
                         if path.endswith("/api/conversions/upload"):
                             body = {**body, "analysis": analysis, "processing_id": analysis["analysis_id"]}
+                        if "/convert-edits/" in path:
+                            patch = request.request.post_data_json["edits"][0]
+                            analysis["preview_transactions"][0]["document_number"] = patch["document_number"]
+                            body = analysis
                         request.fulfill(status=status, headers=headers, content_type="application/json", body=json.dumps(body))
 
                     page.route("**/*", route)
@@ -98,6 +102,18 @@ def main():
                     expect(page.locator("#review-section")).to_be_visible()
                     expect(page.locator("#review-section").get_by_text(GUIDANCE, exact=True)).to_be_visible()
                     expect(page.locator(".review-warning-title")).to_have_count(0)
+                    expect(page.locator("#review-section th")).to_have_text([
+                        "Data", "Histórico", "Documento", "Crédito", "Débito", "Saldo", "Ações"])
+                    page.get_by_role("button", name="Editar linha", exact=True).click()
+                    page.get_by_role("textbox", name="Documento", exact=True).fill("000ABC-01/2")
+                    page.get_by_role("button", name="Salvar edição", exact=True).click()
+                    expect(page.locator("#review-rows tr").first.locator("td").nth(2)).to_have_text("000ABC-01/2")
+                    page.reload(wait_until="domcontentloaded")
+                    expect(page.locator("#review-rows tr").first.locator("td").nth(2)).to_have_text("000ABC-01/2")
+                    page.get_by_role("button", name="Editar linha", exact=True).click()
+                    page.get_by_role("textbox", name="Documento", exact=True).fill("")
+                    page.get_by_role("button", name="Salvar edição", exact=True).click()
+                    expect(page.locator("#review-rows tr").first.locator("td").nth(2)).to_have_text("—")
                     analysis["pdf_processing_metrics"] = {
                         "export_recommendation": "review_recommended",
                         "canonical_warning_types_list": ["ocr_control_confidence_unconfirmed", "ocr_structure_review_required"],

@@ -123,6 +123,7 @@ class ReviewCommandService(LegacyAnalysisState):
                 new_row = TransactionRow(
                     date=date,
                     description=description,
+                    document_number=(edit.get("document_number") or "").strip() or None,
                     amount=amount,
                     category="Outros",
                     reconciliation_status="unmatched",
@@ -200,6 +201,9 @@ class ReviewCommandService(LegacyAnalysisState):
             preview_target.description = description
             preview_target.amount = amount
             preview_target.is_deleted = False
+            if "document_number" in edit:
+                document_number = (edit["document_number"] or "").strip() or None
+                preview_target.document_number = report_target.document_number = document_number
 
         if edits and all(str(edit.get("action") or "").strip().lower() == "annotate" for edit in edits) and all(value is None for value in (
                 opening_balance, closing_balance, bank_branch, account_number, bank_code)):

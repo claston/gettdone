@@ -1871,6 +1871,7 @@
       action: action || "update",
       date: String(row.date || ""),
       description: String(row.description || ""),
+      document_number: row.document_number || null,
       credit: amount > 0 ? Number(amount.toFixed(2)) : null,
       debit: amount < 0 ? Number(Math.abs(amount).toFixed(2)) : null,
     };
@@ -1888,6 +1889,7 @@
     return (
       String(original.date || "") !== String(row.date || "") ||
       String(original.description || "") !== String(row.description || "") ||
+      String(original.document_number || "") !== String(row.document_number || "") ||
       Number(original.amount || 0) !== Number(row.amount || 0) ||
       Boolean(original.is_deleted) !== Boolean(row.is_deleted)
     );
@@ -1994,6 +1996,7 @@
     state.editDraft = {
       date: "",
       description: "",
+      document_number: "",
       credit: "",
       debit: "",
     };
@@ -2025,6 +2028,7 @@
     state.editDraft = {
       date: toIsoDateInputValue(row.date),
       description: row.description || "",
+      document_number: row.document_number || "",
       credit: toPositiveMoneyString(getCreditAmount(row)),
       debit: toPositiveMoneyString(getDebitAmount(row)),
     };
@@ -2067,6 +2071,7 @@
 
     const credit = parseMoneyInput(state.editDraft.credit);
     const debit = parseMoneyInput(state.editDraft.debit);
+    const documentNumber = String(state.editDraft.document_number || "").trim();
 
     if ((credit === null && debit === null) || (credit !== null && debit !== null)) {
       setStatus("Preencha apenas crédito ou débito.", "error");
@@ -2095,6 +2100,7 @@
               insert_position: 0,
               date: normalizedDate,
               description,
+              document_number: documentNumber || null,
               credit,
               debit,
             }
@@ -2102,6 +2108,7 @@
               row_id: rowId,
               date: normalizedDate,
               description,
+              document_number: documentNumber || null,
               credit,
               debit,
             },
@@ -2146,9 +2153,9 @@
       addRowBtn.hidden = Boolean(report);
       addRowBtn.disabled = Boolean(report);
     }
-    const hasDocument = !report && state.previewRows.some((row) => row.document_number);
+    const hasDocument = !report;
     const headings = report ? ["Data", "Evento", "Valor", "Situação", "Referência", "Origem"]
-      : ["Data", "Histórico", "Crédito", "Débito", "Saldo", ...(hasDocument ? ["Documento"] : []), "Ações"];
+      : ["Data", "Histórico", "Documento", "Crédito", "Débito", "Saldo", "Ações"];
     const table = reviewRows.closest("table");
     if (table) {
       const header = table.querySelector("thead tr");
@@ -2156,7 +2163,7 @@
       if (hasDocument && !documentHeader) {
         const cell = document.createElement("th");
         cell.dataset.documentColumn = "true";
-        header.insertBefore(cell, header.lastElementChild);
+        header.insertBefore(cell, header.children[2]);
       } else if (!hasDocument && documentHeader) {
         documentHeader.remove();
       }
@@ -2224,10 +2231,10 @@
           <tr class="${rowClass}">
             <td><input class="cell-input cell-input-date" type="date" data-edit-field="date" autocomplete="off" value="${escapeAttr(editDateValue)}" /></td>
             <td><input class="cell-input cell-input-description" data-edit-field="description" value="${escapeAttr(state.editDraft.description)}" /></td>
+            <td><input class="cell-input cell-input-document" aria-label="Documento" data-edit-field="document_number" maxlength="1024" value="${escapeAttr(state.editDraft.document_number || "")}" /></td>
             <td><input class="cell-input cell-input-money" data-edit-field="credit" inputmode="decimal" placeholder="0,00" value="${escapeAttr(state.editDraft.credit)}" /></td>
             <td><input class="cell-input cell-input-money" data-edit-field="debit" inputmode="decimal" placeholder="0,00" value="${escapeAttr(state.editDraft.debit)}" /></td>
             <td><span class="amount-empty">—</span></td>
-            ${hasDocument ? `<td>${escapeAttr(row.document_number || "—")}</td>` : ""}
             <td class="actions-cell">
               <button class="btn btn-secondary btn-inline" type="button" data-action="save-row" data-row-id="${row.rowId}" aria-label="Salvar edição">
                 <span class="btn-icon" aria-hidden="true">&#10003;</span><span>Salvar</span>
@@ -2270,10 +2277,10 @@
           <tr class="${rowClass} ${rowDeleted ? "row-deleted" : ""} ${hasWarning ? "row-has-warning" : ""}">
             <td>${formatDate(row.date)}</td>
             <td${descriptionTitleAttr}>${escapeAttr(descriptionCellText)}${warningBadge}${accountMarkup}</td>
+            <td>${escapeAttr(row.document_number || "—")}</td>
             <td>${creditMarkup}</td>
             <td>${debitMarkup}</td>
             <td>${runningBalanceMarkup}</td>
-            ${hasDocument ? `<td>${escapeAttr(row.document_number || "—")}</td>` : ""}
             <td class="actions-cell">
               ${
                 !rowDeleted && !isDraftRowId(row.rowId)
@@ -2440,7 +2447,8 @@
     markChangedRow(null);
     if (viewState.editing_row_id && viewState.edit_draft && state.previewRows.some((row) => row.rowId === viewState.editing_row_id)) {
       state.editingRowId = viewState.editing_row_id;
-      state.editDraft = { ...viewState.edit_draft };
+      const editingRow = state.previewRows.find((row) => row.rowId === state.editingRowId);
+      state.editDraft = { document_number: editingRow.document_number || "", ...viewState.edit_draft };
     } else {
       state.editingRowId = null;
       state.editDraft = null;
@@ -2636,6 +2644,20 @@
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw buildApiError(response.status, payload.detail || "Falha ao salvar edição.");
+    }
+    if (Object.prototype.hasOwnProperty.call(editPatch, "document_number")) {
+      const index = state.previewRows.findIndex((row) => row.rowId === editPatch.row_id);
+      const previous = index >= 0 ? state.previewRows[index] : null;
+      const expected = editPatch.document_number || null;
+      if (expected !== (previous?.document_number || null)) {
+        const saved = editPatch.action === "insert"
+          ? payload.preview_transactions?.[editPatch.insert_position || 0]
+          : payload.preview_transactions?.find((row) => row.transaction_id === editPatch.row_id)
+            || payload.preview_transactions?.[index];
+        if (!saved || (saved.document_number || null) !== expected) {
+          throw new Error("Não foi possível confirmar o documento. Sua edição foi mantida; tente salvar novamente.");
+        }
+      }
     }
     return payload;
   }

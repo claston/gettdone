@@ -1786,8 +1786,15 @@ button.save-indicator {
 }
 .table-scroll th:nth-child(3),
 .table-scroll th:nth-child(4),
-.table-scroll th:nth-child(5) {
+.table-scroll th:nth-child(5),
+.table-scroll .transaction-table th.amount-column {
   width: 83px;
+}
+.table-scroll .transaction-table {
+  min-width: 641px;
+}
+.table-scroll th.document-column {
+  width: 93px;
 }
 .table-scroll th:last-child {
   width: 29px;

@@ -732,6 +732,11 @@ tr.row-deleted td:not(.actions-cell) {
   text-align: right;
 }
 
+.cell-input-document {
+  width: 9rem;
+  min-width: 6rem;
+}
+
 .download-row {
   display: grid;
   grid-template-columns: 1.2fr 1fr;

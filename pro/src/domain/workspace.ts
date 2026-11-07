@@ -8,7 +8,7 @@ export type TransactionFieldState = "ORIGINAL" | "SUSPECTED" | "EDITED";
 export type TransactionFilter = "ALL" | "SUSPECTED" | "EDITED";
 export type SaveStatus = "IDLE" | "DIRTY" | "SAVING" | "SAVED" | "ERROR";
 export type TransactionField =
-  "date" | "description" | "credit" | "debit" | "balance";
+  "date" | "description" | "documentNumber" | "credit" | "debit" | "balance";
 
 export interface PdfDocument {
   url: string;
@@ -34,7 +34,8 @@ export interface Transaction {
   sourceRegions?: readonly SourceRegion[];
   reviewRegions?: readonly SourceRegion[];
   isDeleted?: boolean;
-  fieldStates: Record<TransactionField, TransactionFieldState>;
+  fieldStates: Record<Exclude<TransactionField, "documentNumber">, TransactionFieldState> &
+    Partial<Record<"documentNumber", TransactionFieldState>>;
 }
 
 /** Unit coordinates on the original visible page, including intrinsic rotation/crop. */
@@ -165,7 +166,7 @@ export interface WorkspaceRepository {
 
 export type TransactionDraft = Pick<
   Transaction,
-  "date" | "description" | "credit" | "debit"
+  "date" | "description" | "documentNumber" | "credit" | "debit"
 >;
 
 export function sortTransactionsByDate(
@@ -260,6 +261,9 @@ export function validateTransactionField(
   field: TransactionField,
   value: string,
 ): string | null {
+  if (field === "documentNumber") {
+    return value.length <= 1024 ? null : "O documento deve ter até 1024 caracteres.";
+  }
   if (field === "date") {
     return isValidDate(value)
       ? null
