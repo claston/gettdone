@@ -165,7 +165,7 @@ def _record(page, source_line, cells, headers, original_index):
     balance, invalid_balance, _ = _value(balances, page)
     if invalid_amount:
         raise OcrFinancialAmbiguityError(_MESSAGE)
-    if amount is not None:
+    if amount is not None and amount >= 0:
         amount = -abs(amount) if direction == "SAIDA" else abs(amount)
     relevant = [(ref, line) for ref, line in cells if line.bbox["left"] < party_left]
     return _OcrRow(

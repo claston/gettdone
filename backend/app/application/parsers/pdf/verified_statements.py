@@ -52,6 +52,11 @@ def day(value, pattern="%d/%m/%Y"):
 
 
 def identify_verified_statement(text):
+    from app.application.parsers.pdf.period_signed_tables import identify_period_signed_table
+
+    period_table = identify_period_signed_table(text)
+    if period_table:
+        return period_table
     from app.application.parsers.pdf.modern_movement_blocks import SICREDI_MODERN, is_sicredi_modern_statement
 
     if is_sicredi_modern_statement(text):
@@ -114,6 +119,11 @@ def identify_verified_statement(text):
 
 def parse_verified_statement(pages):
     text = "\n".join(pages)
+    from app.application.parsers.pdf.period_signed_tables import identify_period_signed_table, parse_period_signed_table
+
+    period_table = identify_period_signed_table(text)
+    if period_table:
+        return parse_period_signed_table(pages, period_table)
     from app.application.parsers.pdf.signed_balance_cards import is_signed_balance_cards, parse_signed_balance_cards
 
     if is_signed_balance_cards(text):

@@ -58,6 +58,10 @@ def parse_financial_report_pages(page_texts: list[str]) -> dict | None:
     if detected is None:
         return None
     kind, evidence = detected
+    if evidence in {'portfolio_positions_and_performance','analytic_collection_postings'}:
+        from app.application.parsers.pdf.analytic_financial_reports import parse_collection_postings, parse_portfolio
+
+        return (parse_portfolio if evidence == 'portfolio_positions_and_performance' else parse_collection_postings)(page_texts)
     if evidence == "sales_gross_installment_columns":
         raise PdfFinancialValidationError("Envie o PDF original do relatório de vendas para preservar as colunas e parcelas.")
     if evidence in {"agora_custody_monthly_positions", "brb_fcbr76_positions"}:
