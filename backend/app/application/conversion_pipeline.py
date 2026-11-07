@@ -313,6 +313,11 @@ class ConversionPipeline:
             analysis_id=analysis_id,
         )
 
+        for index, canonical in enumerate(selected_canonical_transactions):
+            if canonical.external_reference_id is not None:
+                preview_rows[index].document_number = canonical.external_reference_id
+                report_rows[index].document_number = canonical.external_reference_id
+
         if any(account_scopes):
             for index, scope in enumerate(account_scopes):
                 preview_rows[index].statement_account = deepcopy(scope)
@@ -489,6 +494,8 @@ def _build_transaction_rows(
         TransactionRow(
             date=item.date,
             description=item.description,
+            document_number=item.document_number,
+            document_reference_type=item.document_reference_type,
             amount=item.amount,
             category="Outros",
             reconciliation_status=statuses[idx],

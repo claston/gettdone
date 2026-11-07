@@ -60,12 +60,15 @@ def test_rejection_to_acceptance_and_crash_on_rejected_fixture_fail_closed():
     assert guard.compare_snapshots(old, broken)["errors"]
 
 
-def test_approval_is_bound_to_exact_values_revisions_and_owner_evidence():
+@pytest.mark.parametrize("grouped", [False, True])
+def test_approval_is_bound_to_exact_values_revisions_and_owner_evidence(grouped):
     old = {"a": {"snapshot": {"amount_cents": 20000}}}
     new = {"a": {"snapshot": {"amount_cents": 2000}}}
     approval = {"difference": {"case": "a", "path": "$.amount_cents", "before": 20000, "after": 2000, "change": "changed"},
                 "approved_by": "product-owner", "approval_reference": "review-url", "reason": "Source reads 20.00",
                 "reference_commit": "reference", "candidate_app_tree": "tree"}
+    if grouped:
+        approval["differences"] = [approval.pop("difference")]
     kwargs = {"approvals": [approval], "reference_commit": "reference", "candidate_app_tree": "tree"}
     assert not guard.compare_snapshots(old, new, **kwargs)["errors"]
     assert guard.compare_snapshots(old, new, **{**kwargs, "candidate_app_tree": "another-tree"})["errors"]

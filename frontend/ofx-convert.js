@@ -2117,9 +2117,21 @@
       addRowBtn.hidden = Boolean(report);
       addRowBtn.disabled = Boolean(report);
     }
+    const hasDocument = !report && state.previewRows.some((row) => row.document_number);
     const headings = report ? ["Data", "Evento", "Valor", "Situação", "Referência", "Origem"]
-      : ["Data", "Histórico", "Crédito", "Débito", "Saldo", "Ações"];
+      : ["Data", "Histórico", "Crédito", "Débito", "Saldo", ...(hasDocument ? ["Documento"] : []), "Ações"];
     const table = reviewRows.closest("table");
+    if (table) {
+      const header = table.querySelector("thead tr");
+      const documentHeader = header.querySelector("[data-document-column]");
+      if (hasDocument && !documentHeader) {
+        const cell = document.createElement("th");
+        cell.dataset.documentColumn = "true";
+        header.insertBefore(cell, header.lastElementChild);
+      } else if (!hasDocument && documentHeader) {
+        documentHeader.remove();
+      }
+    }
     if (table) table.querySelectorAll("thead th").forEach((cell, index) => { cell.textContent = headings[index]; });
     if (report) {
       const observations = Array.isArray(report.observations) ? report.observations : [];
@@ -2156,7 +2168,7 @@
     }
     const rows = (state.previewRows || []).filter((row) => !isOpeningBalanceRow(row));
     if (!rows || rows.length === 0) {
-      reviewRows.innerHTML = '<tr><td colspan="6">Nenhuma transação para exibir.</td></tr>';
+      reviewRows.innerHTML = `<tr><td colspan="${headings.length}">Nenhuma transação para exibir.</td></tr>`;
       return;
     }
 
@@ -2186,6 +2198,7 @@
             <td><input class="cell-input cell-input-money" data-edit-field="credit" inputmode="decimal" placeholder="0,00" value="${escapeAttr(state.editDraft.credit)}" /></td>
             <td><input class="cell-input cell-input-money" data-edit-field="debit" inputmode="decimal" placeholder="0,00" value="${escapeAttr(state.editDraft.debit)}" /></td>
             <td><span class="amount-empty">—</span></td>
+            ${hasDocument ? `<td>${escapeAttr(row.document_number || "—")}</td>` : ""}
             <td class="actions-cell">
               <button class="btn btn-secondary btn-inline" type="button" data-action="save-row" data-row-id="${row.rowId}" aria-label="Salvar edição">
                 <span class="btn-icon" aria-hidden="true">&#10003;</span><span>Salvar</span>
@@ -2231,6 +2244,7 @@
             <td>${creditMarkup}</td>
             <td>${debitMarkup}</td>
             <td>${runningBalanceMarkup}</td>
+            ${hasDocument ? `<td>${escapeAttr(row.document_number || "—")}</td>` : ""}
             <td class="actions-cell">
               ${
                 !rowDeleted && !isDraftRowId(row.rowId)

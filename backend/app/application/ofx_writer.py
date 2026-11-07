@@ -79,6 +79,7 @@ def build_ofx_statement(
 
     fit_ids = build_fit_id_sequence(transactions) if fit_ids is None else fit_ids
     for transaction, fit_id in zip(transactions, fit_ids, strict=True):
+        reference_lines, memo = _document_reference(transaction)
         lines.extend(
             [
                 "          <STMTTRN>",
@@ -86,8 +87,9 @@ def build_ofx_statement(
                 f"            <DTPOSTED>{_format_ofx_date(transaction.date)}",
                 f"            <TRNAMT>{transaction.amount:.2f}",
                 f"            <FITID>{fit_id}",
+                *reference_lines,
                 f"            <NAME>{_escape_ofx_text(transaction.description)}",
-                f"            <MEMO>{_escape_ofx_text(transaction.description)}",
+                f"            <MEMO>{_escape_ofx_text(memo)}",
                 "          </STMTTRN>",
             ]
         )
@@ -110,6 +112,20 @@ def build_ofx_statement(
         for offset, item in enumerate(ledger_lines):
             lines.insert(insert_index + offset, item)
     return "\n".join(lines) + "\n"
+
+
+def _document_reference(transaction: NormalizedTransaction) -> tuple[list[str], str]:
+    document = transaction.document_number
+    if not document:
+        return [], transaction.description
+    # CHECKNUM also permits other reference numbers. A generic bank document
+    # is not proof of uniqueness; only an explicit source REFNUM retains that role.
+    tag = "REFNUM" if transaction.document_reference_type == "REFNUM" else "CHECKNUM"
+    limit = 32 if tag == "REFNUM" else 12
+    if len(document) <= limit and not any(ord(char) < 32 for char in document):
+        return [f"            <{tag}>{_escape_ofx_text(document)}"], transaction.description
+    # Preserve the complete reference rather than truncate it or invent a unique ID.
+    return [], f"{transaction.description} | Documento: {document}"
 
 
 def _format_ofx_date(raw_date: str) -> str:

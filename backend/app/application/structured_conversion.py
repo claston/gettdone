@@ -55,6 +55,8 @@ class StructuredConversionTransaction:
     warning_types: list[str] = field(default_factory=list)
     is_deleted: bool = False
     statement_account: dict[str, object] | None = None
+    document_number: str | None = None
+    document_reference_type: str | None = None
 
 
 @dataclass
@@ -200,6 +202,8 @@ def _build_structured_transaction(
         transaction_id=row.transaction_id if financial_document else f"txn_{index:04d}",
         date=row.date,
         description=row.description,
+        document_number=row.document_number,
+        document_reference_type=row.document_reference_type,
         amount=row.amount,
         transaction_type=transaction_type,
         category=row.category,
