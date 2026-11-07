@@ -55,13 +55,29 @@ python scripts/test_backend.py
 python -m ruff check backend
 python scripts/lint_frontend_text.py
 python scripts/lint_frontend_navigation.py
-python scripts/check_pdf_compatibility.py --base-ref 99afe01 --approvals docs/statement-issuer-evidence-approvals.json
-python scripts/check_review_compatibility.py --base-ref 99afe01
+python scripts/check_pdf_compatibility.py --base-ref origin/main --approvals docs/transaction-document-approvals.json
+python scripts/check_review_compatibility.py --base-ref origin/main --approvals docs/transaction-document-approvals.json
 ```
 
 No Windows, executar pytest/runner fora do sandbox de arquivos. O runner administra
 seu diretório temporário e produz JUnit e tempos. A rota pública atual é
 `POST /convert`; `POST /analyze` já retorna 405 nesta base.
+
+### Revalidação após integrar a main
+
+O CI do push `20a86c2` comparou a integração com `ff6c796`, o commit anterior
+da branch, que ainda não continha Documento. A comparação da PR com a `main`
+`94ef1c3` já passou. A falha do push ocorreu porque os vínculos de aprovação
+ainda apontavam para a base e a árvore da PR 555.
+
+As 3.304 diferenças de PDF e 3.642 de revisão foram comparadas integralmente,
+incluindo caso, caminho, antes/depois e multiplicidade: são as mesmas adições
+Documento já enumeradas. Atualizamos apenas os dois vínculos para `ff6c796`
+e a árvore `7eba4c66dab6a301bbfd4a2614d22712237cb8dc`. A evidência e os hashes
+das diferenças estão em [audit-seven-ci-revalidation.json](audit-seven-ci-revalidation.json).
+Para reproduzir a comparação do push, usar `--base-ref ff6c796` nos dois gates.
+Os comparadores, oráculos financeiros, baselines e leitores não são alterados
+por essa correção de CI.
 
 ## Limites da auditoria e compatibilidade
 
