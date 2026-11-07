@@ -158,6 +158,7 @@ def main():
     parser.add_argument("--output-dir", type=Path, default=ROOT / "tmp/ofx68-review-gate")
     parser.add_argument("--worker", type=Path)
     parser.add_argument("--report", type=Path)
+    parser.add_argument("--approvals", type=Path, help="Exact authorized differences bound to the base revision and candidate app tree.")
     args = parser.parse_args()
     os.environ.update(TEXTRACT_ENABLED="false", PDF_OCR_ENABLED="false", AI_RECOVERY_MODE="off",
                       PYTHONDONTWRITEBYTECODE="1", CANONICAL_LAYOUT_CAPTURE_ENABLED="false", PDF_MULTI_ACCOUNT_ENABLED="true",
@@ -170,6 +171,10 @@ def main():
     ref = subprocess.check_output(["git", "rev-parse", "--verify", "--end-of-options", args.base_ref + "^{commit}"],
                                   cwd=ROOT, text=True).strip()
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    candidate_app_tree = subprocess.check_output(["git", "rev-parse", "HEAD:backend/app"], cwd=ROOT, text=True).strip()
+    approvals = json.loads(args.approvals.read_text(encoding="utf-8")) if args.approvals else []
+    if approvals and subprocess.check_output(["git", "status", "--porcelain", "--", "backend/app"], cwd=ROOT, text=True).strip():
+        parser.error("Approvals require committed application code so the candidate tree is exact")
     with tempfile.TemporaryDirectory(prefix="gettdone-review-baseline-") as temporary:
         archive = subprocess.check_output(["git", "archive", "--format=tar", ref, "backend/app"], cwd=ROOT)
         with tarfile.open(fileobj=BytesIO(archive)) as tar:
@@ -195,7 +200,8 @@ def main():
     summary = {"baseline_commit": ref, "candidate_commit": candidate_commit,
                "candidate_dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip()),
                "candidate_app_sha256": source_hash.hexdigest(),
-               **compare_snapshots(*outputs)}
+               "candidate_app_tree": candidate_app_tree,
+               **compare_snapshots(*outputs, approvals=approvals, reference_commit=ref, candidate_app_tree=candidate_app_tree)}
     (args.output_dir / "comparison.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps({k: v for k, v in summary.items() if k not in {"differences", "platform_geometry_differences"}}))
     return int(bool(summary["errors"]))

@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable
 from datetime import datetime
 from io import BytesIO
@@ -41,12 +42,20 @@ def parse_xlsx_transactions_with_mapping(
     if not workbook.worksheets:
         raise InvalidFileContentError("XLSX does not contain worksheets.")
 
-    sheet = workbook.worksheets[0]
-    rows = [list(row) for row in sheet.iter_rows(values_only=True)]
-    header_row_index, fieldnames, field_map = _locate_header_row(rows, field_resolver, required)
+    try:
+        sheet = workbook.worksheets[0]
+        rows = [list(row) for row in sheet.iter_rows(values_only=True)]
+        header_row_index, fieldnames, field_map = _locate_header_row(rows, field_resolver, required)
+        documents = []
+        if "document_number" in field_map:
+            column = fieldnames.index(field_map["document_number"]) + 1
+            documents = [_document_number(cells[0]) for cells in sheet.iter_rows(
+                min_row=header_row_index + 2, min_col=column, max_col=column)]
+    finally:
+        workbook.close()
 
     transactions: list[NormalizedTransaction] = []
-    for raw_row in rows[header_row_index + 1 :]:
+    for index, raw_row in enumerate(rows[header_row_index + 1 :]):
         if not raw_row:
             continue
         row_values = list(raw_row)
@@ -64,12 +73,25 @@ def parse_xlsx_transactions_with_mapping(
                 description=str(description_raw).strip(),
                 amount=amount,
                 type=_normalize_type(type_raw, amount),
+                document_number=documents[index] if documents else None,
             )
         )
 
     if not transactions:
         raise InvalidFileContentError("XLSX does not contain transaction rows.")
     return transactions, field_map
+
+
+def _document_number(cell) -> str | None:
+    value = cell.value
+    if value is None:
+        return None
+    # Only explicit integer zero-fill masks supply leading zero evidence.
+    # Financial cells and other numeric/date/display formats remain untouched.
+    if (isinstance(value, (int, float)) and not isinstance(value, bool) and value == int(value)
+            and re.fullmatch(r"0+", cell.number_format or "")):
+        return str(int(value)).zfill(len(cell.number_format))
+    return str(value).strip() or None
 
 
 def _locate_header_row(

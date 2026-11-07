@@ -13,6 +13,78 @@ const script = readFileSync(
 );
 
 describe("revisor HTML do OFX Simples", () => {
+  it.each([null, "001103", "<b>001103</b>"])(
+    "separa o documento %s ao reabrir e editar",
+    async (documentNumber) => {
+      const dom = new JSDOM(html, {
+        url: "https://ofx.test/ofx-convert.html",
+        runScripts: "outside-only",
+        pretendToBeVisual: true,
+      });
+      const rows = [
+        {
+          date: "2026-09-30",
+          description: "PIX",
+          amount: 100,
+          document_number: documentNumber,
+        },
+      ];
+      dom.window.fetch = vi.fn(async () => new Response("[]"));
+      dom.window.OfxSession = {
+        getCurrentUser: vi.fn(async () => ({
+          quota_remaining: 10,
+          quota_limit: 50,
+        })),
+        request: vi.fn(async () => new Response("{}", { status: 409 })),
+      };
+      Object.defineProperty(dom.window.performance, "getEntriesByType", {
+        value: () => [{ type: "reload" }],
+      });
+      dom.window.sessionStorage.setItem(
+        "ofxsimples_ofx_convert_view_state_ofx_v1",
+        JSON.stringify({
+          processing_id: "an_document",
+          analysis: {
+            analysis_id: "an_document",
+            preview_transactions: rows,
+            transactions_total: 1,
+          },
+          preview_rows: rows,
+          original_rows: rows,
+        }),
+      );
+      try {
+        dom.window.eval(script);
+        const button = await vi.waitFor(() => {
+          const element = dom.window.document.querySelector(
+            '[data-action="edit-row"]',
+          );
+          expect(element).not.toBeNull();
+          return element;
+        });
+        const table = button.closest("table");
+        expect(table.querySelectorAll("thead th")).toHaveLength(
+          documentNumber ? 7 : 6,
+        );
+        if (documentNumber) {
+          expect(table.querySelector("tbody tr").cells[5].textContent).toBe(
+            documentNumber,
+          );
+          expect(table.querySelector("tbody b")).toBeNull();
+        }
+        button.click();
+        if (documentNumber)
+          expect(table.querySelector("tbody tr").cells[5].textContent).toBe(
+            documentNumber,
+          );
+        expect(
+          table.querySelector('[data-edit-field="description"]').value,
+        ).toBe("PIX");
+      } finally {
+        dom.window.close();
+      }
+    },
+  );
   it.each([
     "123456789",
     "00012345678-9",

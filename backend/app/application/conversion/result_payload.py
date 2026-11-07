@@ -93,6 +93,8 @@ def build_analyze_response(
         insights=insights,
         preview_transactions=[
             TransactionPreview(
+                document_number=row.document_number,
+                document_reference_type=row.document_reference_type,
                 statement_account=row.statement_account,
                 transaction_id=row.transaction_id,
                 source_sequence=row.source_sequence,

@@ -101,9 +101,10 @@ def write_account_workbook(path, rows, *, format_sheet, format_date, report=Fals
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Transacoes" if report else "Conversao"
+    has_document = any(row.document_number is not None for row in rows if not row.is_deleted)
     sheet.append((["date", "description", "amount", "category", "reconciliation_status"] if report
                   else ["Data", "Histórico", "Crédito", "Débito", "Saldo"])
-                 + ["Banco", "Agência", "Conta", "Bloco", "Página de origem"])
+                 + ["Banco", "Agência", "Conta", "Bloco", "Página de origem"] + (["Documento"] if has_document else []))
     for row in rows:
         if row.is_deleted:
             continue
@@ -111,6 +112,10 @@ def write_account_workbook(path, rows, *, format_sheet, format_date, report=Fals
                   else [format_date(row.date), row.description, row.amount if row.amount > 0 else None,
                         abs(row.amount) if row.amount < 0 else None, row.running_balance])
         sheet.append(fields + _account_columns(row))
+        if has_document:
+            cell = sheet.cell(sheet.max_row, 11, row.document_number)
+            cell.data_type = "s"
+            cell.number_format = "@"
     summary = workbook.create_sheet("Resumo")
     summary.append(["Banco", "Agência", "Conta", "Bloco", "Início", "Fim", "Saldo anterior", "Saldo final impresso", "Conferência"])
     for scope, block_rows in groups.values():
@@ -127,12 +132,14 @@ def write_account_artifacts(output_dir, rows, *, format_sheet, format_date, scop
     account_transactions = OrderedDict()
     for scope, block_rows in groups.values():
         account_transactions.setdefault(scope["account_id"], []).extend(
-            NormalizedTransaction(r.date, r.description, r.amount, "inflow" if r.amount >= 0 else "outflow")
+            NormalizedTransaction(r.date, r.description, r.amount, "inflow" if r.amount >= 0 else "outflow",
+                                  document_number=r.document_number, document_reference_type=r.document_reference_type)
             for r in block_rows if not r.is_deleted)
     fit_ids = {key: iter(build_fit_id_sequence(transactions)) for key, transactions in account_transactions.items()}
     responses, prefix = [], None
     for scope, block_rows in groups.values():
-        transactions = [NormalizedTransaction(r.date, r.description, r.amount, "inflow" if r.amount >= 0 else "outflow")
+        transactions = [NormalizedTransaction(r.date, r.description, r.amount, "inflow" if r.amount >= 0 else "outflow",
+                                              document_number=r.document_number, document_reference_type=r.document_reference_type)
                         for r in block_rows if not r.is_deleted]
         statement = build_ofx_statement(transactions, bank_id=scope["bank_code"], bank_branch=scope["bank_branch"],
                                         account_number=scope["account_number"], closing_balance=account_ledger_balance(scope, block_rows),
@@ -147,10 +154,13 @@ def write_account_artifacts(output_dir, rows, *, format_sheet, format_date, scop
                                                + "  </BANKMSGSRSV1>\n</OFX>\n", encoding="utf-8")
     buffer = StringIO()
     writer = csv.writer(buffer)
+    has_document = any(row.document_number is not None for row in rows if not row.is_deleted)
     writer.writerow(["date", "description", "amount", "category", "reconciliation_status",
-                     "bank_code", "bank_branch", "account_number", "statement_block", "source_page"])
+                     "bank_code", "bank_branch", "account_number", "statement_block", "source_page"]
+                    + (["document_number"] if has_document else []))
     for row in rows:
         if not row.is_deleted:
-            writer.writerow([row.date, row.description, row.amount, row.category, row.reconciliation_status] + _account_columns(row))
+            writer.writerow([row.date, row.description, row.amount, row.category, row.reconciliation_status] + _account_columns(row)
+                            + ([row.document_number] if has_document else []))
     (output_dir / "converted.csv").write_text(buffer.getvalue(), encoding="utf-8")
     write_account_workbook(output_dir / "converted.xlsx", rows, format_sheet=format_sheet, format_date=format_date, scopes=scopes)

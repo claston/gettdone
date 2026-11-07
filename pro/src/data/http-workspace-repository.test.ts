@@ -11,6 +11,25 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("documentos e lotes já abertos", () => {
+  it("preserva documento textual separado da descrição", async () => {
+    const payload = structuredClone(batchPayload);
+    const job = payload.jobs[0];
+    Object.assign(job.result!.analysis.preview_transactions[0], {
+      document_number: "001103",
+    });
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse({ ...payload, jobs: [job] }));
+    const batch = await createHttpWorkspaceRepository({
+      apiUrl: "/",
+      fetcher,
+    }).getBatch("batch-real");
+    expect(batch.conversions[0].transactions[0].documentNumber).toBe("001103");
+    expect(batch.conversions[0].transactions[0].description).not.toContain(
+      "001103",
+    );
+  });
   it.each([
     ["ocr_date_confidence_unconfirmed", "date"],
     ["ocr_amount_confidence_unconfirmed", "credit"],

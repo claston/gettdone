@@ -325,6 +325,7 @@ export function TransactionGrid({
     });
   };
   const hasPageRows = conversion.transactions.some(belongsToPage);
+  const hasDocument = conversion.transactions.some((row) => row.documentNumber);
   const groups = groupByPage
     ? Array.from(new Set(visible.map((row) => row.sourcePage ?? null)))
         .sort((a, b) => (a ?? Infinity) - (b ?? Infinity))
@@ -549,6 +550,7 @@ export function TransactionGrid({
               <th>Crédito</th>
               <th>Débito</th>
               <th>Saldo</th>
+              {hasDocument && <th>Documento</th>}
               <th>
                 <span className="sr-only">Ações</span>
               </th>
@@ -559,7 +561,7 @@ export function TransactionGrid({
               <Fragment key={group.page ?? "unknown"}>
                 {groupByPage && (
                   <tr className="source-page-heading">
-                    <td colSpan={6}>
+                    <td colSpan={hasDocument ? 7 : 6}>
                       {group.page === null ? (
                         "Sem página de origem · lançamentos manuais ou arquivos anteriores"
                       ) : (
@@ -699,6 +701,9 @@ export function TransactionGrid({
                           onCommit={commitField}
                         />
                       </td>
+                      {hasDocument && (
+                        <td>{transaction.documentNumber || "—"}</td>
+                      )}
                       <td>
                         {transaction.isDeleted ? (
                           <button

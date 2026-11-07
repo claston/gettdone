@@ -34,9 +34,12 @@ class ExportArtifactService:
         workbook = Workbook()
         sheet = workbook.active
         sheet.title = "Transacoes"
-        sheet.append(["date", "description", "amount", "category", "reconciliation_status"])
+        has_document = any(row.document_number is not None for row in self._active_rows(report_rows))
+        sheet.append(["date", "description", "amount", "category", "reconciliation_status"] + (["document_number"] if has_document else []))
         for item in self._active_rows(report_rows):
             sheet.append([item.date, item.description, item.amount, item.category, item.reconciliation_status])
+            if has_document:
+                self._write_document_cell(sheet, item.document_number, 6)
         self._format_sheet(sheet)
         self._add_conciliacao_sheet(workbook, snapshot)
         workbook.save(output_path)
@@ -76,6 +79,8 @@ class ExportArtifactService:
                 description=item.description,
                 amount=item.amount,
                 type="inflow" if item.amount >= 0 else "outflow",
+                document_number=item.document_number,
+                document_reference_type=item.document_reference_type,
             )
             for item in ofx_rows
         ]
@@ -99,20 +104,25 @@ class ExportArtifactService:
 
         csv_buffer = StringIO()
         writer = csv.writer(csv_buffer)
-        writer.writerow(["date", "description", "amount", "category", "reconciliation_status"])
+        has_document = any(row.document_number is not None for row in active_rows)
+        writer.writerow(["date", "description", "amount", "category", "reconciliation_status"]
+                        + (["document_number"] if has_document else []))
         for item in active_rows:
-            writer.writerow([item.date, item.description, item.amount, item.category, item.reconciliation_status])
+            writer.writerow([item.date, item.description, item.amount, item.category, item.reconciliation_status]
+                            + ([item.document_number] if has_document else []))
         (output_dir / "converted.csv").write_text(csv_buffer.getvalue(), encoding="utf-8")
 
         workbook = Workbook()
         sheet = workbook.active
         sheet.title = "Conversao"
-        sheet.append(["Data", "Historico", "Credito", "Debito", "Saldo"])
+        sheet.append(["Data", "Historico", "Credito", "Debito", "Saldo"] + (["Documento"] if has_document else []))
         for item in active_rows:
             amount = float(item.amount)
             credit = round(amount, 2) if amount > 0 else None
             debit = round(abs(amount), 2) if amount < 0 else None
             sheet.append([self._format_convert_date(item.date), item.description, credit, debit, item.running_balance])
+            if has_document:
+                self._write_document_cell(sheet, item.document_number, 6)
         self._format_sheet(sheet)
 
         opening_balance_value, closing_balance_value = self._resolve_balance_bounds(
@@ -138,6 +148,12 @@ class ExportArtifactService:
 
     def _active_rows(self, rows: list[TransactionRow]) -> list[TransactionRow]:
         return [item for item in rows if not item.is_deleted]
+
+    @staticmethod
+    def _write_document_cell(sheet, value: str | None, column: int) -> None:
+        cell = sheet.cell(row=sheet.max_row, column=column, value=value)
+        cell.data_type = "s"
+        cell.number_format = "@"
 
     def _format_sheet(self, sheet) -> None:
         if sheet.max_row >= 1 and sheet.max_column >= 1:

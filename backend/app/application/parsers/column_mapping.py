@@ -6,6 +6,7 @@ from app.application.errors import InvalidFileContentError
 REQUIRED_FIELDS = {"date", "description", "amount"}
 
 FIELD_ALIASES = {
+    "document_number": {"document_number", "document number", "documento", "document", "numero documento", "num doc", "n documento"},
     "date": {
         "date",
         "data",

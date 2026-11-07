@@ -29,6 +29,8 @@ class TransactionRow:
     review_regions: list[SourceRegion] = field(default_factory=list)
     balance_check: BalanceCheck | None = None
     statement_account: dict[str, object] | None = None
+    document_number: str | None = None
+    document_reference_type: str | None = None
 
 
 @dataclass
@@ -37,6 +39,8 @@ class NormalizedTransaction:
     description: str
     amount: float
     type: str
+    document_number: str | None = None
+    document_reference_type: str | None = None
 
 
 @dataclass
