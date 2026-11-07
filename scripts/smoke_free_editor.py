@@ -90,8 +90,19 @@ def main():
                     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), width
                     assert page.locator(".review-table-wrap").evaluate("node => node.scrollWidth <= node.clientWidth + 1"), width
                     before_width = table.bounding_box()["width"]
-                    page.get_by_role("button", name="Editar linha", exact=True).first.click()
+                    page.evaluate("""() => {
+                        document.querySelector('[data-action="edit-row"]').click();
+                        const field = document.querySelector('#transaction-editor [data-edit-field="document_number"]');
+                        field.focus();
+                        field.select();
+                    }""")
                     dialog = page.get_by_role("dialog", name="Editar lançamento")
+                    expect(dialog).to_be_visible()
+                    page.evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+                    expect(dialog.get_by_label("Documento", exact=True)).to_be_focused()
+                    page.keyboard.press("Escape")
+                    expect(dialog).not_to_be_visible()
+                    page.get_by_role("button", name="Editar linha", exact=True).first.click()
                     expect(dialog).to_be_visible()
                     assert table.bounding_box()["width"] == before_width
                     assert table.locator("input, textarea").count() == 0

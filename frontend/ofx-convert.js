@@ -2053,13 +2053,10 @@
   }
 
   function focusEditingDateInput() {
-    window.requestAnimationFrame(() => {
-      const dateInput = rowEditor.querySelector('input[data-edit-field="date"]');
-      if (!(dateInput instanceof HTMLInputElement)) {
-        return;
-      }
+    const dateInput = rowEditor.querySelector('input[data-edit-field="date"]');
+    if (rowEditor.open && dateInput instanceof HTMLInputElement) {
       dateInput.focus({ preventScroll: true });
-    });
+    }
   }
 
   function startEditingRow(rowId) {

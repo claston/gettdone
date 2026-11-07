@@ -106,7 +106,12 @@ def main():
                         "Data", "Histórico", "Documento", "Crédito", "Débito", "Saldo", "Ações"])
                     page.get_by_role("button", name="Editar linha", exact=True).click()
                     page.get_by_role("textbox", name="Documento", exact=True).fill("000ABC-01/2")
-                    page.get_by_role("button", name="Salvar edição", exact=True).click()
+                    expect(page.get_by_role("textbox", name="Documento", exact=True)).to_have_value("000ABC-01/2")
+                    with page.expect_response(lambda response: response.request.method == "POST"
+                                              and "/convert-edits/" in urlparse(response.url).path) as saved:
+                        page.get_by_role("button", name="Salvar edição", exact=True).click()
+                    assert saved.value.status == 200
+                    expect(page.get_by_role("dialog", name="Editar lançamento")).not_to_be_visible()
                     expect(page.locator("#review-rows tr").first.locator("td").nth(2)).to_have_text("000ABC-01/2")
                     page.reload(wait_until="domcontentloaded")
                     expect(page.locator("#review-rows tr").first.locator("td").nth(2)).to_have_text("000ABC-01/2")

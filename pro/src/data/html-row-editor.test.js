@@ -44,6 +44,20 @@ function fill(dom, field, value) {
 }
 
 describe("edição do Free fora da tabela", () => {
+  it("preserva o foco quando o usuário começa a preencher Documento antes do próximo frame", async () => {
+    const { dom, document } = await openReviewer();
+    const frames = [];
+    dom.window.requestAnimationFrame = (callback) => { frames.push(callback); return frames.length; };
+    try {
+      document.querySelector('[data-action="edit-row"]').click();
+      const input = document.querySelector('#transaction-editor [data-edit-field="document_number"]');
+      input.focus();
+      fill(dom, "document_number", "000ABC-01/2");
+      for (const callback of frames.splice(0)) callback(0);
+      expect(document.activeElement).toBe(input);
+      expect(input.value).toBe("000ABC-01/2");
+    } finally { dom.window.close(); }
+  });
   it("abre um formulário identificado e cancela sem modificar o lançamento", async () => {
     const { dom, document, edits } = await openReviewer();
     try {
