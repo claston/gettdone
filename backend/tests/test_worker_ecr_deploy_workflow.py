@@ -81,8 +81,13 @@ def test_worker_deploy_reports_blocking_ecr_findings_before_failing():
     assert 'select(.key == "package_name")' in workflow
     assert 'select(.key == "package_version")' in workflow
     assert 'select(.key == "fixed_version")' in workflow
-    assert "### Blocking findings" in workflow
-    assert "Worker image has ${critical} critical and ${high} high vulnerability findings." in workflow
+    assert "### Raw findings before exception policy" in workflow
+    assert "scripts/check_worker_vulnerabilities.py --scanner ecr" in workflow
+    assert '--verified-image-digest "$VERIFIED_IMAGE_DIGEST"' in workflow
+    assert "VERIFIED_IMAGE_DIGEST: ${{ steps.publish.outputs.digest }}" in workflow
+    assert "--runtime-evidence artifacts/zlib-after.json" in workflow
+    assert "worker-ecr-security-${{ github.run_id }}-${{ github.run_attempt }}" in workflow
+    assert workflow.index("--scanner ecr") < workflow.index("Execute worker image change set")
 
 
 def test_worker_deploy_builds_immutable_lambda_image_and_uses_digest():
@@ -148,7 +153,11 @@ def test_normal_release_tests_and_scans_the_actual_image_before_aws_and_push():
     assert "push: false" in workflow and "load: true" in workflow
     assert "Build Debian worker image locally" in workflow
     assert "scripts/smoke_worker_candidate_image.py" in workflow
-    assert "--severity HIGH,CRITICAL --exit-code 1" in workflow
+    assert "--severity HIGH,CRITICAL --exit-code 0 --ignorefile /dev/null" in workflow
+    assert "scripts/check_worker_vulnerabilities.py --scanner trivy" in workflow
+    assert workflow.index("--scanner trivy") < workflow.index("Configure temporary AWS credentials")
+    assert "--expect-vulnerable > artifacts/zlib-before.json" in workflow
+    assert '"$WORKER_IMAGE" /opt/check_worker_zlib.py > artifacts/zlib-after.json' in workflow
     assert "--pkg-types os,library" in workflow and "--ignore-unfixed" not in workflow
     assert "worker_canary" in workflow and "image: postgres:16" in workflow
     assert workflow.index("Build Debian worker image locally") < workflow.index("Validate Debian runtime")
