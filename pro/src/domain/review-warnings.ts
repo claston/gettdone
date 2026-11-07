@@ -23,6 +23,8 @@ export function fieldReviewWarnings(warnings: readonly string[]): string[] {
 export function requiresDocumentReview(conversion: Conversion): boolean {
   return Boolean(
     conversion.partialStatement ||
+    (conversion.reviewGuidance &&
+      conversion.reviewGuidance.category !== "information") ||
     conversion.statementBalanceCheck ||
     conversion.reviewWarnings?.some((code) => documentReviewWarnings.has(code)),
   );
@@ -31,6 +33,15 @@ export function requiresDocumentReview(conversion: Conversion): boolean {
 export function reviewWarningText(warnings: readonly string[]): string {
   if (warnings.includes("balance_consistency_failed"))
     return "Saldo não confere. Confira o valor deste lançamento e os saldos de referência no PDF.";
+  if (
+    warnings.includes("shared_operation_reference") &&
+    warnings.every((code) =>
+      ["shared_operation_reference", "manual_review_recommended"].includes(
+        code,
+      ),
+    )
+  )
+    return "Há movimentos com a mesma referência de operação. Isso não comprova duplicidade; os lançamentos foram preservados como aparecem no PDF. Não exclua movimentos apenas pela referência.";
   const fields = fieldReviewWarnings(warnings);
   if (fields.length && fields.every((code) => ocrFieldWarnings.has(code))) {
     const date = fields.includes("ocr_date_confidence_unconfirmed");

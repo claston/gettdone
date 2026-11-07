@@ -37,6 +37,43 @@ function statement(metrics: Record<string, unknown> = {}) {
 }
 
 describe("free converter review findings", () => {
+  it("shows explicit guidance when legacy recommendation metrics are absent", () => {
+    expect(
+      collect({
+        review_guidance: {
+          category: "financial_discrepancy",
+          title: "Divergência financeira encontrada",
+          message: "Saldo final divergente.",
+        },
+      }),
+    ).toEqual(["Saldo final divergente."]);
+  });
+  it("explains incomplete validation instead of a generic suspected error", () => {
+    const result = collect({
+      ...statement(),
+      review_guidance: {
+        category: "validation_incomplete",
+        title: "Validação automática incompleta",
+        message:
+          "164 verificações entre saldos conferiram. A cobertura do período ainda precisa de conferência.",
+      },
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]).toContain("164 verificações");
+  });
+
+  it("keeps a balance discrepancy even with informational guidance", () => {
+    const result = collect({
+      ...statement({ balance_consistency_failed: 1 }),
+      review_guidance: {
+        category: "information",
+        title: "Referências compartilhadas",
+        message: "Controles conferiram.",
+      },
+    });
+    expect(result.join(" ")).toContain("inconsistências");
+    expect(result.join(" ")).not.toContain("Controles conferiram");
+  });
   it.each([2, 4])(
     "does not label a confirmed empty %s-page statement as partial",
     (pageCount) => {

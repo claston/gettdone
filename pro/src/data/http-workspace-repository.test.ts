@@ -11,6 +11,25 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("documentos e lotes já abertos", () => {
+  it("preserva documento textual separado da descrição", async () => {
+    const payload = structuredClone(batchPayload);
+    const job = payload.jobs[0];
+    Object.assign(job.result!.analysis.preview_transactions[0], {
+      document_number: "001103",
+    });
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse({ ...payload, jobs: [job] }));
+    const batch = await createHttpWorkspaceRepository({
+      apiUrl: "/",
+      fetcher,
+    }).getBatch("batch-real");
+    expect(batch.conversions[0].transactions[0].documentNumber).toBe("001103");
+    expect(batch.conversions[0].transactions[0].description).not.toContain(
+      "001103",
+    );
+  });
   it.each([
     ["ocr_date_confidence_unconfirmed", "date"],
     ["ocr_amount_confidence_unconfirmed", "credit"],
@@ -538,6 +557,41 @@ describe("HttpWorkspaceRepository", () => {
     });
     expect(conversion.statementBalanceCheck?.difference).toBe(-20);
   });
+  it("preserva a orientação de validação sem transformar os campos em erro", async () => {
+    const payload = structuredClone(batchPayload);
+    const analysis = {
+      ...payload.jobs[0].result!.analysis,
+      review_guidance: {
+        category: "validation_incomplete",
+        title: "Validação automática incompleta",
+        message: "Confira a cobertura.",
+      },
+      preview_transactions: [
+        {
+          ...payload.jobs[0].result!.analysis.preview_transactions[0],
+          warning_types: [],
+        },
+      ],
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...payload,
+          jobs: [{ ...payload.jobs[0], result: { analysis } }],
+        }),
+      );
+    const {
+      conversions: [conversion],
+    } = await createHttpWorkspaceRepository({ apiUrl: "/", fetcher }).getBatch(
+      "batch-real",
+    );
+    expect(conversion.reviewGuidance).toEqual(analysis.review_guidance);
+    expect(conversion.status).toBe("NEEDS_REVIEW");
+    expect(conversion.suspectedCount).toBe(0);
+  });
+
   it("preserva a indicação de extrato parcial recebida do worker", async () => {
     const payload = structuredClone(batchPayload);
     const analysis = {

@@ -50,6 +50,7 @@ def parse_csv_transactions_with_mapping(
                 description=description_raw.strip(),
                 amount=amount,
                 type=txn_type,
+                document_number=(row.get(field_map.get("document_number"), "") or "").strip() or None,
             )
         )
 
@@ -78,13 +79,18 @@ def _detect_delimiter(text: str) -> str:
 
 
 def _resolve_field_map(fieldnames: list[str]) -> dict[str, str]:
-    normalized_lookup = {_normalize_header(header): header for header in fieldnames}
     field_map: dict[str, str] = {}
     for canonical, aliases in FIELD_ALIASES.items():
-        for alias in aliases:
-            if alias in normalized_lookup:
-                field_map[canonical] = normalized_lookup[alias]
-                break
+        # Only Documento adds normalized aliases. Keep the existing financial
+        # vocabulary; e.g. valor_bruto must not newly compete with amount.
+        accepted = {_normalize_header(alias) for alias in aliases} if canonical == "document_number" else aliases
+        matches = [header for header in fieldnames if _normalize_header(header) in accepted]
+        preferred = [header for header in matches if _normalize_header(header) == _normalize_header(canonical)]
+        candidates = preferred or matches
+        if len(candidates) > 1:
+            raise InvalidFileContentError(f"CSV has ambiguous column mapping for '{canonical}': {candidates}.")
+        if candidates:
+            field_map[canonical] = candidates[0]
     return field_map
 
 

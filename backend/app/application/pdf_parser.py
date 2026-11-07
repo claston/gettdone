@@ -431,6 +431,11 @@ def _parse_pdf_transactions_strict(
             )
 
     if native_pages:
+        report = detect_financial_report("\n".join(native_pages))
+        if report and report[1] in {'portfolio_positions_and_performance','analytic_collection_postings'}:
+            return _with_parse_observability(
+                parse_financial_pdf_pages(_read_layout_native_pdf_page_texts(raw_bytes), native=True),
+                native_text_detected=1, textract_attempted=0, extraction_provider='native_pdf_layout_text')
         if detect_financial_report("\n".join(native_pages)) == ("acquirer_sales_report", "sales_gross_installment_columns"):
             from app.application.parsers.pdf.installment_sales import parse_installment_sales
             from app.application.parsers.pdf.native_table_source import read_native_table_source
@@ -1420,6 +1425,10 @@ def _parse_pdf_transactions_from_page_texts_strict(
     from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
     from app.application.unsupported_document_detection import NOTARY_RECEIPT_DOCUMENT_TYPE, NOTARY_RECEIPT_USER_MESSAGE
 
+    report = detect_financial_report("\n".join(page_texts))
+    if report and report[1] in {'portfolio_positions_and_performance','analytic_collection_postings'}:
+        validate_statement_completeness(page_texts)
+        return parse_financial_pdf_pages(page_texts, native=bool(context and context.is_native_text))
     blocks = statement_blocks(page_texts)
     if blocks:
         results = []

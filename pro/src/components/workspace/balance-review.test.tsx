@@ -33,6 +33,71 @@ const transaction: Transaction = {
   },
 };
 
+it("mostra o alcance da validação do documento sem afirmar erro financeiro", () => {
+  render(
+    <BalanceReviewNotice
+      conversion={
+        {
+          transactions: [],
+          reviewGuidance: {
+            category: "validation_incomplete",
+            title: "Validação automática incompleta",
+            message:
+              "164 verificações entre saldos conferiram. A cobertura ainda precisa de conferência.",
+          },
+        } as unknown as Conversion
+      }
+    />,
+  );
+  expect(screen.getByText("Validação automática incompleta")).toBeVisible();
+  expect(screen.getByText(/164 verificações/)).toBeVisible();
+  expect(screen.queryByText(/Saldo final não confere/)).not.toBeInTheDocument();
+});
+
+it("não repete informação positiva antiga quando há divergência atual", () => {
+  render(
+    <BalanceReviewNotice
+      conversion={
+        {
+          transactions: [transaction],
+          reviewGuidance: {
+            category: "information",
+            title: "Referências compartilhadas",
+            message: "Controles conferiram.",
+          },
+        } as unknown as Conversion
+      }
+    />,
+  );
+  expect(screen.queryByText("Controles conferiram.")).not.toBeInTheDocument();
+  expect(screen.getByText(/lançamento com saldo divergente/)).toBeVisible();
+});
+
+it("não apresenta os controles originais como validação de valores editados", () => {
+  render(
+    <BalanceReviewNotice
+      conversion={
+        {
+          transactions: [
+            {
+              ...transaction,
+              warningTypes: [],
+              balanceCheck: undefined,
+              fieldStates: { ...transaction.fieldStates, debit: "EDITED" },
+            },
+          ],
+          reviewGuidance: {
+            category: "information",
+            title: "Referências compartilhadas",
+            message: "Controles conferiram.",
+          },
+        } as unknown as Conversion
+      }
+    />,
+  );
+  expect(screen.queryByText("Controles conferiram.")).not.toBeInTheDocument();
+});
+
 it("separa a soma que confere da confiança nos saldos lidos", () => {
   render(
     <BalanceReviewNotice

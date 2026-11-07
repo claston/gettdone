@@ -28,6 +28,8 @@ def normalize_transaction(transaction: NormalizedTransaction) -> NormalizedTrans
         description=normalized_description,
         amount=normalized_amount,
         type=_infer_type(normalized_amount, transaction.type, normalized_description),
+        document_number=transaction.document_number,
+        document_reference_type=transaction.document_reference_type,
     )
 
 

@@ -1,0 +1,27 @@
+{
+  "failed_ci_run": "https://github.com/claston/gettdone/actions/runs/42370082738",
+  "comparison": "Push compared with the previous commit on the audit branch, before merging main and Documento.",
+  "previous_approval_base": "37fb57276409af59ae094f9b1aaadcd8cdb40886",
+  "previous_candidate_app_tree": "8fb923c6b67ee71a58892b059aaca6f8d343ead7",
+  "reference_commit": "ff6c79685bd75a01b2e46e0dee42bcd5f2fd9f3c",
+  "candidate_commit": "20a86c20e91f27b939de689e44faa369e0c1ecd7",
+  "candidate_app_tree": "7eba4c66dab6a301bbfd4a2614d22712237cb8dc",
+  "pull_request_base": "94ef1c367029fce9fa6d04b0850f9a1eefaaf24e",
+  "evidence": [
+    {
+      "gate": "pdf",
+      "cases": 90,
+      "differences": 3304,
+      "exact_differences_unchanged": true,
+      "differences_sha256": "b435925ccf34b37f1619a85f984e2803dbd5198812254693c2141b53e64b9238"
+    },
+    {
+      "gate": "review",
+      "cases": 170,
+      "differences": 3642,
+      "exact_differences_unchanged": true,
+      "differences_sha256": "78279ca58039f0b2d1dcd0e0d532b31d95da8d14f99edb52cda2924612fda5ab"
+    }
+  ],
+  "note": "Only the two exact approval revision/tree bindings changed. All enumerated Documento differences, owner authorization, comparison code, frozen baselines, source oracles and application code are unchanged by this CI correction. The pull request comparison against main already passed without any snapshot differences."
+}

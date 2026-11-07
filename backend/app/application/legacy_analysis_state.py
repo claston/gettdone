@@ -103,6 +103,8 @@ class LegacyAnalysisState:
                     balance_check=parse_balance_check(item.get("balance_check")),
                     date=str(item.get("date") or ""),
                     description=str(item.get("description") or ""),
+                    document_number=item.get("document_number") if isinstance(item.get("document_number"), str) else None,
+                    document_reference_type=item.get("document_reference_type"),
                     amount=float(item.get("amount") or 0.0),
                     category=str(item.get("category") or "Outros"),
                     reconciliation_status=str(item.get("reconciliation_status") or "unmatched"),

@@ -1576,12 +1576,32 @@
       return "";
     }
     const items = warnings.map((item) => `<li>${escapeAttr(item)}</li>`).join("");
+    const guidance = getReviewGuidance(analysis);
+    const specific = guidance && (guidance.category === "financial_discrepancy" ||
+      (warnings.length === 1 && warnings[0] === guidance.message));
     return `
-      <section class="review-warning-card" role="status" aria-live="polite">
-        <h3 class="review-warning-title">Atenção na revisão</h3>
+      <section class="review-warning-card" data-review-category="${specific ? guidance.category : "validation_incomplete"}" role="status" aria-live="polite">
+        <h3 class="review-warning-title">${escapeAttr(specific ? guidance.title : "Atenção na revisão")}</h3>
         <ul class="review-warning-list">${items}</ul>
       </section>
     `;
+  }
+
+  function getReviewGuidance(analysis) {
+    const guidance = analysis && analysis.review_guidance;
+    if (!guidance || !["information", "validation_incomplete", "financial_discrepancy"].includes(guidance.category) ||
+        typeof guidance.title !== "string" || typeof guidance.message !== "string") return null;
+    const metrics = analysis.pdf_processing_metrics || {};
+    const warnings = [...(metrics.canonical_warning_types_list || []),
+      ...(analysis.preview_transactions || []).filter((row) => !row.is_deleted).flatMap((row) => row.warning_types || [])];
+    if (guidance.category !== "financial_discrepancy" &&
+        (Number(metrics.balance_consistency_failed) > 0 || analysis.statement_balance_check ||
+         warnings.some((code) => ["balance_consistency_failed", "printed_summary_balance_mismatch"].includes(code)))) return null;
+    if (guidance.category === "information" &&
+        (warnings.some((code) => !["manual_review_recommended", "shared_operation_reference"].includes(code)) ||
+         ["partial_statement", "opening_balance_ambiguous", "ocr_unresolved_rows", "document_period_unavailable"].some((key) => Number(metrics[key]) > 0) ||
+         (analysis.document_parts || []).some((part) => part.requires_review))) return null;
+    return guidance;
   }
 
   function collectReviewWarnings(analysis) {
@@ -1593,7 +1613,7 @@
     const rows = analysis && Array.isArray(analysis.preview_transactions) ? analysis.preview_transactions : [];
     const manualReview = warningTypes.includes("manual_review_recommended") || rows.some((row) =>
       row && !row.is_deleted && Array.isArray(row.warning_types) && row.warning_types.includes("manual_review_recommended"));
-    const reviewRecommended = String(metrics.export_recommendation || "").trim().toLowerCase() === "review_recommended" || manualReview ||
+    const reviewRecommended = Boolean(getReviewGuidance(analysis)) || String(metrics.export_recommendation || "").trim().toLowerCase() === "review_recommended" || manualReview ||
       insights.some((insight) => insight && insight.type === "pdf_export_review_recommended");
     if (isPayablesReport(analysis)) {
       list.push("Documento identificado: relatório de contas a pagar. Este documento não é um extrato bancário.");
@@ -1672,7 +1692,8 @@
       );
     }
     if (!list.length && !documentRequiresReview && reviewRecommended) {
-      list.push("Revise os lançamentos e confira os dados no documento original antes de exportar. A conversão foi concluída com recomendação de revisão manual.");
+      const guidance = getReviewGuidance(analysis);
+      list.push(guidance ? guidance.message : "Revise os lançamentos e confira os dados no documento original antes de exportar. A conversão foi concluída com recomendação de revisão manual.");
     }
     return [...documentNotices, ...list];
   }
@@ -2117,9 +2138,21 @@
       addRowBtn.hidden = Boolean(report);
       addRowBtn.disabled = Boolean(report);
     }
+    const hasDocument = !report && state.previewRows.some((row) => row.document_number);
     const headings = report ? ["Data", "Evento", "Valor", "Situação", "Referência", "Origem"]
-      : ["Data", "Histórico", "Crédito", "Débito", "Saldo", "Ações"];
+      : ["Data", "Histórico", "Crédito", "Débito", "Saldo", ...(hasDocument ? ["Documento"] : []), "Ações"];
     const table = reviewRows.closest("table");
+    if (table) {
+      const header = table.querySelector("thead tr");
+      const documentHeader = header.querySelector("[data-document-column]");
+      if (hasDocument && !documentHeader) {
+        const cell = document.createElement("th");
+        cell.dataset.documentColumn = "true";
+        header.insertBefore(cell, header.lastElementChild);
+      } else if (!hasDocument && documentHeader) {
+        documentHeader.remove();
+      }
+    }
     if (table) table.querySelectorAll("thead th").forEach((cell, index) => { cell.textContent = headings[index]; });
     if (report) {
       const observations = Array.isArray(report.observations) ? report.observations : [];
@@ -2156,7 +2189,7 @@
     }
     const rows = (state.previewRows || []).filter((row) => !isOpeningBalanceRow(row));
     if (!rows || rows.length === 0) {
-      reviewRows.innerHTML = '<tr><td colspan="6">Nenhuma transação para exibir.</td></tr>';
+      reviewRows.innerHTML = `<tr><td colspan="${headings.length}">Nenhuma transação para exibir.</td></tr>`;
       return;
     }
 
@@ -2186,6 +2219,7 @@
             <td><input class="cell-input cell-input-money" data-edit-field="credit" inputmode="decimal" placeholder="0,00" value="${escapeAttr(state.editDraft.credit)}" /></td>
             <td><input class="cell-input cell-input-money" data-edit-field="debit" inputmode="decimal" placeholder="0,00" value="${escapeAttr(state.editDraft.debit)}" /></td>
             <td><span class="amount-empty">—</span></td>
+            ${hasDocument ? `<td>${escapeAttr(row.document_number || "—")}</td>` : ""}
             <td class="actions-cell">
               <button class="btn btn-secondary btn-inline" type="button" data-action="save-row" data-row-id="${row.rowId}" aria-label="Salvar edição">
                 <span class="btn-icon" aria-hidden="true">&#10003;</span><span>Salvar</span>
@@ -2231,6 +2265,7 @@
             <td>${creditMarkup}</td>
             <td>${debitMarkup}</td>
             <td>${runningBalanceMarkup}</td>
+            ${hasDocument ? `<td>${escapeAttr(row.document_number || "—")}</td>` : ""}
             <td class="actions-cell">
               ${
                 !rowDeleted && !isDraftRowId(row.rowId)

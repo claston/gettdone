@@ -64,6 +64,7 @@ class StoneLayoutParser:
 
 
 def _parse_statement_rows(lines: list[_PdfLine]) -> list[_ParsedTransaction]:
+    lines = _order_amount_first_packets(lines)
     rows: list[_ParsedTransaction] = []
     inferred_year = infer_default_statement_year_from_lines(lines)
     current_date: str | None = None
@@ -140,6 +141,37 @@ def _parse_statement_rows(lines: list[_PdfLine]) -> list[_ParsedTransaction]:
         source=source,
     )
     return rows
+
+
+def _order_amount_first_packets(lines):
+    """OCR can print both currency cells before the description of that row."""
+    result, packet = [], []
+
+    def flush():
+        if not packet:
+            return
+        first_money = next((i for i, line in enumerate(packet) if find_amount_tokens(line.text)), None)
+        if first_money == 1 and not _DATE_PREFIX_PATTERN.match(packet[0].text).group('rest').strip():
+            labels = [line for line in packet[1:] if not find_amount_tokens(line.text)
+                      and normalize_text(line.text) and not _is_page_metadata(normalize_text(line.text))
+                      and not _is_table_header(normalize_text(line.text))]
+            if not labels:
+                raise OcrFinancialAmbiguityError('Uma linha Stone está sem descrição legível; confira o original.')
+            label = labels[0]
+            result.extend([packet[0], label, *[line for line in packet[1:] if line is not label]])
+        else:
+            result.extend(packet)
+
+    for line in lines:
+        if _DATE_PREFIX_PATTERN.match(line.text):
+            flush()
+            packet = [line]
+        elif packet:
+            packet.append(line)
+        else:
+            result.append(line)
+    flush()
+    return result
 
 
 def _consume_row_text(
@@ -227,6 +259,8 @@ def _append_row(
 
 
 def _resolve_amount_sign(amount: float, *, description: str, description_parts: list[str]) -> float:
+    if amount < 0:
+        return amount
     normalized = normalize_text(description)
     standalone_types = {normalize_text(part) for part in description_parts} & {"SAIDA", "ENTRADA"}
     if len(standalone_types) > 1:

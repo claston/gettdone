@@ -11,10 +11,12 @@ def test_candidate_cannot_publish_or_deploy_and_keeps_security_gate():
     assert "aws-actions/" not in workflow
     assert "cloudformation" not in workflow
     assert "--pkg-types os,library" in workflow
-    assert "--severity HIGH,CRITICAL --exit-code 1" in workflow
+    assert "--severity HIGH,CRITICAL --exit-code 0 --ignorefile /dev/null" in workflow
+    assert "scripts/check_worker_vulnerabilities.py --scanner trivy" in workflow
+    assert "--runtime-evidence artifacts/zlib-after.json" in workflow
     assert "--ignore-unfixed" not in workflow
     assert "continue-on-error" not in workflow
-    assert workflow.index("--exit-code 1") < workflow.index('docker save "$CANDIDATE_IMAGE"')
+    assert workflow.index("scripts/check_worker_vulnerabilities.py --scanner trivy") < workflow.index('docker save "$CANDIDATE_IMAGE"')
 
 
 def test_candidate_preserves_handler_architecture_and_restricted_context():
