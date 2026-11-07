@@ -1,0 +1,27 @@
+{
+  "failed_ci_run": "https://github.com/claston/gettdone/actions/runs/42375495518",
+  "comparison": "Push against the previous API runtime image branch commit, before merging main and Documento.",
+  "previous_approval_base": "71aa1c5abc3f59e6185d53ed7e2b1779cfd896e8",
+  "previous_candidate_app_tree": "f3cfe6d40ccc7600bc371212b6d9839d2813724c",
+  "reference_commit": "dd64a9252ee0959d7724280821189a300bf82f21",
+  "candidate_commit": "106d82f7cb846a2ebe803202e55eb0e81337f19e",
+  "candidate_app_tree": "7a82a42455bed4a8ba859eeaaf00378344908b2b",
+  "pull_request_base": "475a58b083ae113065bcd13bdaf05038dcff49ce",
+  "evidence": [
+    {
+      "gate": "pdf",
+      "cases": 90,
+      "differences": 3304,
+      "exact_differences_unchanged": true,
+      "differences_sha256": "b435925ccf34b37f1619a85f984e2803dbd5198812254693c2141b53e64b9238"
+    },
+    {
+      "gate": "review",
+      "cases": 170,
+      "differences": 3642,
+      "exact_differences_unchanged": true,
+      "differences_sha256": "78279ca58039f0b2d1dcd0e0d532b31d95da8d14f99edb52cda2924612fda5ab"
+    }
+  ],
+  "note": "Only the two exact approval revision/tree bindings changed. All enumerated Documento differences, owner authorization, comparators, frozen baselines, source oracles and application code are unchanged by this CI correction."
+}

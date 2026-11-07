@@ -1518,6 +1518,8 @@ def _build_verified_statement_result(statement, pages):
     )
     controls = (dict(verified_opening_balance=float(statement.opening), verified_closing_balance=float(statement.closing))
                 if statement.opening is not None and statement.closing is not None else {})
+    if controls and statement.balances_are_printed and not statement.opening_inferred and not statement.opening_ambiguity_reason:
+        controls.update(printed_opening_balance=float(statement.opening), printed_closing_balance=float(statement.closing))
     if statement.layout in {"bb_cash_rende_facil_combined_v1", "itau_empresas_cash_combined_positions_v1"}:
         return _with_parse_observability(result, financial_controls_validated=0, balance_bounds_unavailable=1,
             balance_validation_status="combined_cash_investment_not_comparable",

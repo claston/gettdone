@@ -8,7 +8,7 @@ from pypdf import PdfReader
 
 from app.application.native_text_quality import assess_native_text_quality, has_dense_vector_paths, has_raster_with_invisible_text
 
-CLASSIFIER_VERSION = "pdf_representation_v6"
+CLASSIFIER_VERSION = "pdf_representation_v7"
 
 _VIRTUAL_PRINTER_PRODUCERS = (
     ("microsoft print to pdf", "producer_microsoft_print_to_pdf"),
@@ -52,7 +52,7 @@ def classify_pdf_representation(raw_bytes: bytes) -> PdfRepresentationClassifica
         evidence = ["native_text_present"]
         quality = assess_native_text_quality(raw_bytes, [page.extract_text() or "" for page in sampled_pages], reader=reader)
         full_page_raster = full_page_raster or "full_page_raster_present" in quality.evidence
-        if full_page_raster or dense_vector_paths:
+        if full_page_raster or dense_vector_paths or "document_raster_present" in quality.evidence:
             evidence.append("non_text_page_content_present")
             hidden_layer = full_page_raster and any(has_raster_with_invisible_text(page, reader) for page in sampled_pages)
             if hidden_layer:

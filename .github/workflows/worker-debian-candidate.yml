@@ -13,6 +13,7 @@ on:
       - ".github/workflows/deploy-worker-ecr.yml"
       - "scripts/verify_worker_release_gates.py"
       - "scripts/smoke_worker_candidate_image.py"
+      - "scripts/check_api_image.py"
       - "scripts/check_worker_zlib.py"
       - "scripts/check_worker_vulnerabilities.py"
       - ".github/worker-vulnerability-exceptions.json"
@@ -111,6 +112,12 @@ jobs:
           docker run --rm --entrypoint /usr/local/bin/python3.12 "$CANDIDATE_IMAGE" \
             -c 'import importlib.metadata,json; print(json.dumps(sorted((d.metadata["Name"],d.version) for d in importlib.metadata.distributions())))' \
             > artifacts/python-packages.json
+      - name: Verify Textract without local OCR packages
+        run: |
+          docker run --rm --network none --entrypoint /usr/local/bin/python3.12 \
+            -e AWS_EC2_METADATA_DISABLED=true \
+            -v "$PWD/scripts/check_api_image.py:/checks/check_api_image.py:ro" \
+            "$CANDIDATE_IMAGE" /checks/check_api_image.py --textract-only | tee artifacts/textract-runtime.json
       - name: Generate SBOM
         if: always()
         run: |

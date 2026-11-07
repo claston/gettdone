@@ -1,13 +1,19 @@
-.git
-.github
-local
-.pytest_cache
-.ruff_cache
-backend/.pytest_cache
-backend/.ruff_cache
-backend/.pytest_tmp*
-backend/venv
-tmp
+# Only API runtime inputs enter the build context. Lambda images use their
+# existing Dockerfile-specific ignore files.
+**
+!Dockerfile
+!backend/
+!backend/requirements-runtime.txt
+!backend/app/
+!backend/app/**
+!backend/alembic/
+!backend/alembic/**
+!backend/alembic.ini
+!backend/scripts/
+!backend/scripts/run_alembic_migrations.py
+!frontend/
+!frontend/**
+
 **/__pycache__
 **/*.pyc
 **/*.pyo
