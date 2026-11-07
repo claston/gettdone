@@ -1,0 +1,26 @@
+{
+  "comparison": "Integrated main and API runtime image PR #559 compared with the previous remote OCR branch head.",
+  "previous_approval_base": "dd64a9252ee0959d7724280821189a300bf82f21",
+  "previous_candidate_app_tree": "7a82a42455bed4a8ba859eeaaf00378344908b2b",
+  "reference_commit": "f3bd7ce838cce6253a0be6220791480b346b6e2a",
+  "candidate_commit": "2f6e1d53aaa5b30faaf71041bf0bd6728487b078",
+  "candidate_app_tree": "a8238e8ea77e78fee813a6a0865a2e4d38abaffb",
+  "runtime_integration": "API runtime image and the patched worker zlib package with its existing evidence-dependent policy.",
+  "evidence": [
+    {
+      "gate": "pdf",
+      "cases": 90,
+      "differences": 3304,
+      "exact_differences_unchanged": true,
+      "differences_sha256": "b435925ccf34b37f1619a85f984e2803dbd5198812254693c2141b53e64b9238"
+    },
+    {
+      "gate": "review",
+      "cases": 170,
+      "differences": 3642,
+      "exact_differences_unchanged": true,
+      "differences_sha256": "78279ca58039f0b2d1dcd0e0d532b31d95da8d14f99edb52cda2924612fda5ab"
+    }
+  ],
+  "note": "The 3304 PDF and 3642 review differences are exactly the existing Documento additions received from main. Only their exact revision/tree bindings changed; authorization, comparators, frozen baselines and financial source oracles are unchanged."
+}

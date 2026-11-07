@@ -73,3 +73,17 @@ Os testes HTTP iniciam a aplicação localmente e exercitam upload PDF/CSV,
 preview, relatórios CSV/XLSX/OFX, saldos impressos e IDs inexistentes. A rota
 de upload vigente é `POST /convert`; `POST /analyze` permanece desabilitada
 com HTTP 405. Os resultados finais de suíte e lint constam no PR.
+
+A integração com a `main` e a imagem de execução da PR #559 inclui a correção
+de zlib do worker e sua política de scan com evidência de runtime. Os testes
+de OCR também são executados com essa configuração de produção, sem fallback
+para Tesseract nas imagens.
+
+Comparando com a revisão remota anterior `f3bd7ce`, as 3.304 diferenças PDF e
+3.642 de revisão recebidas da `main` são exatamente as adições Documento já
+enumeradas. Somente seus vínculos foram atualizados para essa base e a árvore
+`a8238e8ea77e78fee813a6a0865a2e4d38abaffb`. A conferência integral e os hashes
+estão em [image-statement-ocr-ci-revalidation.json](image-statement-ocr-ci-revalidation.json).
+Para reproduzir, executar os dois gates com `--base-ref f3bd7ce` e
+`--approvals docs/transaction-document-approvals.json`. Para conferir a PR,
+usar a `main` atual. Comparadores, baselines e oráculos não foram alterados.
