@@ -9,7 +9,6 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from playwright.sync_api import expect, sync_playwright
-
 from smoke_playwright_navigation import pick_free_port, wait_for_http_ready
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +49,8 @@ def converted_review_cases():
 
 def main():
     empty, compound = converted_review_cases()
+    from app.application.pdf_review_guidance import build_pdf_review_guidance
+
     base = f"http://127.0.0.1:{pick_free_port()}"
     port = urlparse(base).port
     server = subprocess.Popen([sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"],
@@ -128,10 +129,32 @@ def main():
                             if case is compound:
                                 expect(page.locator(".review-warning-list")).to_contain_text("Páginas 2: comprovantes")
                                 expect(page.locator(".review-warning-list")).to_contain_text("recomendação de revisão manual")
+                    for category, metrics in (
+                        ("validation_incomplete", {"balance_consistency_checked": 1}),
+                        ("information", {"financial_controls_validated": 1, "balance_validation_status": "validated",
+                         "printed_balance_checks": 3, "statement_row_coverage_rate": 1,
+                         "canonical_warning_types_list": ["shared_operation_reference", "manual_review_recommended"]}),
+                        ("financial_discrepancy", {"balance_consistency_failed": 1}),
+                    ):
+                        analysis = {"analysis_id": "an_guidance_smoke", "file_type": "pdf", "transactions_total": 1,
+                                    "total_inflows": 10, "total_outflows": 0, "net_total": 10,
+                                    "preview_transactions": [{"date": "2026-10-01", "description": "Crédito fictício",
+                                                              "amount": 10, "warning_types": []}],
+                                    "pdf_processing_metrics": {"export_recommendation": "review_recommended", **metrics}}
+                        analysis["review_guidance"] = build_pdf_review_guidance(analysis)
+                        page.locator("#file-input").set_input_files({
+                            "name": category + ".pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4\n%%EOF"})
+                        page.locator("#convert-btn").click()
+                        for restored in (False, True):
+                            if restored:
+                                page.reload(wait_until="domcontentloaded")
+                            expect(page.locator(".review-warning-title")).to_have_text(analysis["review_guidance"]["title"])
+                            expect(page.locator(".review-warning-card")).to_have_attribute("data-review-category", category)
+                            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Horizontal overflow"
                     assert not errors, errors
                     context.close()
             browser.close()
-        print("Free review browser smoke passed: three pages, mobile/desktop, conversion and restored warnings.")
+        print("Free review browser smoke passed: three pages, mobile/desktop, conversion/restoration and three review categories.")
     finally:
         server.terminate()
         try:

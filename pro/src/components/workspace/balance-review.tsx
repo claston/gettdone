@@ -107,7 +107,23 @@ export function BalanceReviewNotice({
     !conversion.partialStatement &&
     !controlsUnavailable &&
     !changedAmounts;
+  const reviewGuidance =
+    !changedAmounts &&
+    (!balanceWarning ||
+      conversion.reviewGuidance?.category === "financial_discrepancy") &&
+    !(
+      conversion.reviewGuidance?.category === "information" &&
+      (blockWarning ||
+        conversion.partialStatement ||
+        controlWarning ||
+        controlsUnavailable ||
+        structureWarning ||
+        periodWarning)
+    )
+      ? conversion.reviewGuidance
+      : null;
   if (
+    !reviewGuidance &&
     !rows.length &&
     !summaryWarning &&
     !financialWarning &&
@@ -133,6 +149,11 @@ export function BalanceReviewNotice({
       role="status"
       aria-label="Conferência do documento"
     >
+      {reviewGuidance && (
+        <p>
+          <strong>{reviewGuidance.title}</strong> {reviewGuidance.message}
+        </p>
+      )}
       {ocrBalanceMatches && (
         <p>
           <strong>Saldo calculado confere com os saldos lidos.</strong>

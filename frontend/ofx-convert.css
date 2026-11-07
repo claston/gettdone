@@ -399,6 +399,26 @@ body {
   padding: 0.8rem 0.95rem;
 }
 
+.review-warning-card[data-review-category="information"] {
+  border-color: #b5d4ed;
+  background: #f0f7fc;
+}
+
+.review-warning-card[data-review-category="information"] .review-warning-title,
+.review-warning-card[data-review-category="information"] .review-warning-list {
+  color: #244c6b;
+}
+
+.review-warning-card[data-review-category="financial_discrepancy"] {
+  border-color: #c98f8f;
+  background: #fff4f4;
+}
+
+.review-warning-card[data-review-category="financial_discrepancy"] .review-warning-title,
+.review-warning-card[data-review-category="financial_discrepancy"] .review-warning-list {
+  color: #8b2525;
+}
+
 .review-warning-title {
   margin: 0 0 0.4rem;
   font-size: 0.92rem;

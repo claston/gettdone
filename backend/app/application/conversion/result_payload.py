@@ -14,6 +14,7 @@ from app.application.conversion.contracts.payloads import (
 from app.application.conversion.persisted_conversion_result import PersistedConversionResult
 from app.application.conversion.result_persistence import persist_conversion_result
 from app.application.conversion_pipeline import ConversionPipelineResult
+from app.application.pdf_review_guidance import build_pdf_review_guidance
 from app.application.repositories import AnalysisRepository
 
 
@@ -40,14 +41,17 @@ def build_analyze_response(
             title="Extrato sem movimentação no período",
             description="A conversão foi concluída. Você pode baixar o OFX sem lançamentos.",
         ))
+    guidance = build_pdf_review_guidance(analysis_data)
     review_insight = _build_export_review_insight(
         extension=extension,
         pdf_processing_metrics=analysis_data.pdf_processing_metrics,
+        guidance=guidance,
     )
     if review_insight is not None:
         insights.append(review_insight)
 
     return AnalyzeResponse(
+        review_guidance=guidance,
         statement_balance_check=analysis_data.statement_balance_check,
         analysis_id=analysis_data.analysis_id,
         file_type=extension,
@@ -177,12 +181,15 @@ def _build_export_review_insight(
     *,
     extension: str,
     pdf_processing_metrics,
+    guidance=None,
 ) -> Insight | None:
     if extension != "pdf" or pdf_processing_metrics is None:
         return None
     recommendation = str(_metrics_get(pdf_processing_metrics, "export_recommendation", "")).strip().lower()
     if recommendation != "review_recommended":
         return None
+    if guidance:
+        return Insight(type="pdf_export_review_recommended", title=guidance["title"], description=guidance["message"])
     reason = str(_metrics_get(pdf_processing_metrics, "export_recommendation_reason", "")).strip()
     reason_suffix = f" ({reason})" if reason else ""
     return Insight(

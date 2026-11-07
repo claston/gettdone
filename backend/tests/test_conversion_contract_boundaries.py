@@ -52,6 +52,9 @@ def test_shared_payload_keeps_the_http_conversion_schema() -> None:
     assert ConvertResponse is ConversionPayload
     baseline = json.loads((BACKEND_ROOT / "tests/fixtures/contracts/conversion_payload_schema.json").read_text(encoding="utf-8"))
     assert ConversionPayload.model_json_schema() == baseline
+    analysis_schema = ConversionPayload.model_json_schema()["$defs"]["AnalyzeResponse"]
+    assert "review_guidance" not in analysis_schema["required"]
+    assert analysis_schema["properties"]["review_guidance"]["default"] is None
     assert ConvertResponse.model_json_schema()["required"] == [
         "processing_id",
         "quota_remaining",

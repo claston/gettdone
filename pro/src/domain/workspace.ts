@@ -47,6 +47,11 @@ export interface SourceRegion {
 }
 
 export interface Conversion {
+  reviewGuidance?: {
+    category: "financial_discrepancy" | "validation_incomplete" | "information";
+    title: string;
+    message: string;
+  } | null;
   canonical?: boolean;
   expiresAt?: string;
   statementBalanceCheck?: BalanceCheck;

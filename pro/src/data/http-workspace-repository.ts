@@ -73,6 +73,7 @@ function publicFailureMessage(job: ApiJob): string | undefined {
 }
 
 interface ApiAnalysis {
+  review_guidance?: Conversion["reviewGuidance"];
   authority?: string;
   version?: number;
   movement_ids?: Record<string, string>;
@@ -828,6 +829,10 @@ function mapConversion({
     job,
     suspectedCount,
     partialStatement ||
+      Boolean(
+        analysis?.review_guidance &&
+        analysis.review_guidance.category !== "information",
+      ) ||
       Boolean(statementBalanceCheck) ||
       reviewWarnings.some((code) => documentReviewWarnings.has(code)),
   );
@@ -863,6 +868,7 @@ function mapConversion({
     noActivity: analysis?.pdf_processing_metrics?.statement_no_activity === 1,
     partialStatement,
     reviewWarnings,
+    reviewGuidance: analysis?.review_guidance,
     statementBalanceCheck,
     ocrBalanceMatches:
       analysis?.pdf_processing_metrics?.ocr_balance_arithmetic_matches === 1,
