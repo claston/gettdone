@@ -40,6 +40,8 @@ FORBIDDEN_DISTRIBUTIONS = (
     "fastapi",
     "httpx",
     "pytest",
+    "pytesseract",
+    "paddleocr",
     "python-multipart",
     "ruff",
     "sqlalchemy",

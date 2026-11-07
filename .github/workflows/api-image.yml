@@ -1,0 +1,83 @@
+name: CI | API Runtime Image
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "backend/**"
+      - "frontend/**"
+      - "scripts/check_api_image.py"
+      - "scripts/smoke_api_http.py"
+      - ".github/workflows/api-image.yml"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-image-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      API_IMAGE: gettdone-api-check:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
+      - name: Build API image without publishing
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          pull: true
+          tags: ${{ env.API_IMAGE }}
+          build-args: APP_RELEASE=${{ github.sha }}
+          cache-from: type=gha,scope=api-runtime
+          cache-to: type=gha,mode=min,scope=api-runtime
+      - name: Verify runtime inventory, native libraries and Textract isolation
+        run: |
+          mkdir -p artifacts
+          docker image inspect "$API_IMAGE" > artifacts/image-inspect.json
+          docker run --rm --network none --entrypoint python \
+            -e AWS_EC2_METADATA_DISABLED=true \
+            -v "$PWD/scripts/check_api_image.py:/checks/check_api_image.py:ro" \
+            "$API_IMAGE" /checks/check_api_image.py | tee artifacts/runtime.json
+      - name: Validate production startup and real HTTP on a nondefault port
+        run: |
+          python -m pip install httpx==0.28.1
+          docker run -d --name api-image-http -p 127.0.0.1:18080:8080 \
+            -e PORT=8080 -e APP_ENV=production \
+            -e ACCESS_CONTROL_TOKEN_SECRET=synthetic-api-image-check-secret-at-least-32-characters \
+            -e CORS_ALLOW_ORIGINS=https://synthetic.example.invalid \
+            -e TEXTRACT_ENABLED=false -e AWS_EC2_METADATA_DISABLED=true \
+            "$API_IMAGE"
+          python scripts/smoke_api_http.py --url http://127.0.0.1:18080 | tee artifacts/http.json
+      - name: Preserve server logs and remove disposable container
+        if: always()
+        run: |
+          mkdir -p artifacts
+          if docker container inspect api-image-http >/dev/null 2>&1; then
+            docker logs api-image-http > artifacts/server.log 2>&1
+            docker rm -f api-image-http
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: api-runtime-image-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: error
