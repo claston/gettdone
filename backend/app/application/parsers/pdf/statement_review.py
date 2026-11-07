@@ -51,7 +51,8 @@ def apply_statement_review(result, *, validation_failed=False):
                          or "financial_validation_failed" in observed)
     period_missing = bool(result.parse_metrics.get("document_period_unavailable")) or "document_period_unavailable" in observed
     pages = result.source_page_texts or ()
-    partial = bool(result.parse_metrics.get("partial_statement")) or validate_statement_completeness(pages)
+    partial = bool(result.parse_metrics.get("partial_statement")) or (
+        not result.parse_metrics.get("document_coverage_validated") and validate_statement_completeness(pages))
     if not partial and not validation_failed and not period_missing:
         return result
     warnings = ["manual_review_recommended"]

@@ -430,6 +430,12 @@ def _parse_pdf_transactions_strict(
                 **quality_metrics,
             )
 
+    if native_pages and detect_financial_report("\n".join(native_pages)) == ("investment_statement", "btg_cdb_positions_and_details"):
+        from app.application.parsers.pdf.cdb_position_report import parse_cdb_position_result
+        from app.application.parsers.pdf.native_table_source import read_native_table_source
+
+        return _with_parse_observability(parse_cdb_position_result(read_native_table_source(raw_bytes), native=True),
+            extraction_provider="native_pdfium_text", native_text_detected=1, textract_attempted=0)
     if native_pages:
         report = detect_financial_report("\n".join(native_pages))
         if report and report[1] in {'portfolio_positions_and_performance','analytic_collection_postings'}:
@@ -940,8 +946,8 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
                        source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
     segmentation = segment_pdf_pages(_textract_page_texts(extraction))
     daily_fragment = is_daily_cd_fragment(extraction)
-    cash_report = detect_financial_report("\n".join(_textract_page_texts(extraction))) == (
-        "investment_statement", "btg_investment_cash_ledger")
+    cash_report = detect_financial_report("\n".join(_textract_page_texts(extraction))) in {
+        ("investment_statement", "btg_investment_cash_ledger"), ("investment_statement", "btg_cdb_positions_and_details")}
     if daily_fragment or cash_report:
         segmentation = replace(segmentation, page_texts=_textract_page_texts(extraction), parts=[])
     statement_extraction = extraction
@@ -1126,8 +1132,8 @@ def _parse_scanned_pdf_with_textract_text_pages_strict(extraction) -> PdfParseRe
     if inactive is not None:
         return replace(inactive, source_extraction=extraction,
                        source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
-    cash_report = detect_financial_report("\n".join(_textract_page_texts(extraction))) == (
-        "investment_statement", "btg_investment_cash_ledger")
+    cash_report = detect_financial_report("\n".join(_textract_page_texts(extraction))) in {
+        ("investment_statement", "btg_investment_cash_ledger"), ("investment_statement", "btg_cdb_positions_and_details")}
     if is_bradesco_monthly_ocr("\n".join(_textract_page_texts(extraction))) or is_daily_cd_fragment(extraction) or cash_report:
         # An unreadable continuation is evidence of an incomplete ledger. Keep
         # every physical page for the strict reader, before appendix filtering.
@@ -1191,6 +1197,10 @@ def _parse_textract_text_pages_impl(extraction) -> PdfParseResult:
     if not any(page_texts):
         raise InvalidFileContentError("Nao foi possivel extrair transacoes do OCR para revisao.")
     joined_text = "\n".join(page_texts)
+    if detect_financial_report(joined_text) == ("investment_statement", "btg_cdb_positions_and_details"):
+        from app.application.parsers.pdf.cdb_position_report import parse_cdb_position_result
+
+        return parse_cdb_position_result(extraction)
     from app.application.parsers.pdf.daily_balance_groups import is_daily_balance_groups, parse_daily_balance_groups
 
     if is_daily_balance_groups(joined_text):

@@ -12,6 +12,11 @@ from app.application.models import NormalizedTransaction
 from app.application.ofx_writer import build_ofx_statement
 
 LABELS = {
+    "attributes.asset_code": "Código do ativo", "attributes.unit_price": "Preço unitário",
+    "attributes.purchase_price": "Preço unitário de compra", "attributes.issuer": "Emissor",
+    "attributes.liquidity": "Liquidez", "attributes.grace_days": "Carência (dias)",
+    "attributes.rate": "Taxa / indexador", "attributes.printed_value": "Valor impresso",
+    "dates.opening_as_of": "Data da posição anterior", "position_count": "Quantidade de posições de CDB",
     "amounts.period_inflows": "Entradas no período", "amounts.period_outflows": "Saídas no período",
     "amounts.available_net": "Líquido disponível",
     "amounts.provision_tax": "Provisão de IR/IOF", "attributes.participation_percent": "Participação (%)",
@@ -96,10 +101,10 @@ def _flatten(event):
     return {key: json.dumps(value, ensure_ascii=False) if isinstance(value, (list, dict)) else value for key, value in row.items()}
 
 
-def _sheet(workbook, title, rows, *, default_headers=()):
+def _sheet(workbook, title, rows, *, default_headers=(), labels=None):
     sheet = workbook.create_sheet(title)
     headers = list(dict.fromkeys(key for row in rows for key in row)) or list(default_headers)
-    sheet.append([LABELS.get(key, key) for key in headers])
+    sheet.append([(labels or LABELS).get(key, key) for key in headers])
     for row in rows:
         sheet.append([row.get(key) for key in headers])
         # Identifiers, including leading zeros and formula-like descriptions, are text.
@@ -128,7 +133,9 @@ def write_financial_workbook(path: Path, document: dict):
                for event in document["events"] for key, value in _flatten(event).items()]
     details = [dict(item, field=LABELS.get(item["field"], item["field"])) for item in details]
     _sheet(workbook, "Detalhes", details, default_headers=("event_id", "field", "value"))
-    _sheet(workbook, "Posições", [_flatten(item) for item in document["observations"]], default_headers=("observation_type",))
+    position_labels = {**LABELS, "attributes.quantity": "Quantidade do ativo"} if document['metadata'].get('product') == 'CDB' else LABELS
+    _sheet(workbook, "Posições", [_flatten(item) for item in document["observations"]],
+           default_headers=("observation_type",), labels=position_labels)
     _sheet(workbook, "Validações", [dict(item, source_refs=json.dumps(item["source_refs"])) for item in document["validations"]])
     document_fields = {
         "Tipo": document["document_type"], "Origem": document["origin"], "Observação": document["notice"],

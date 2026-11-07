@@ -58,6 +58,8 @@ def parse_financial_report_pages(page_texts: list[str]) -> dict | None:
     if detected is None:
         return None
     kind, evidence = detected
+    if evidence == "btg_cdb_positions_and_details":
+        raise PdfFinancialValidationError("A posição de CDB exige as colunas originais do PDF ou OCR para preservar os campos.")
     if evidence in {'portfolio_positions_and_performance','analytic_collection_postings'}:
         from app.application.parsers.pdf.analytic_financial_reports import parse_collection_postings, parse_portfolio
 
