@@ -4,6 +4,7 @@ import re
 from dataclasses import replace
 
 from app.application.normalization.text import normalize_upper_text as upper
+from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import NUMBER, VerifiedStatement, _row, day, fail, money
 from app.application.source_regions import evidence_regions
 from app.application.structured_statement_detection import BRADESCO_MONTHLY_OCR
@@ -54,9 +55,14 @@ def parse_bradesco_monthly(extraction):
                 date_cells = [line for line in nearby if re.fullmatch(r"\d{2}/\d{2}", line.text)]
                 if (len(date_cells) != 1 or current_date is None
                         or date_cells[0].text != current_date[8:10] + "/" + current_date[5:7]
-                        or running != amount or not rows):
+                        or not rows):
                     fail("Os lançamentos do extrato mensal Bradesco não fecham com os saldos impressos.")
+                if running != amount:
+                    financial_mismatch("Os lançamentos do extrato mensal Bradesco não fecham com os saldos impressos.")
                 rows[-1] = replace(rows[-1], running_balance=float(amount))
+                # The next interval starts at this printed control. The shared
+                # review policy retains the mismatch; never invent a movement.
+                running = amount
                 last_control = len(rows) - 1
                 checks += 1
                 continue
@@ -98,4 +104,4 @@ def parse_bradesco_monthly(extraction):
     if not rows or not checks or last_control != len(rows) - 1:
         fail()
     return VerifiedStatement(rows, BRADESCO_MONTHLY_OCR, opening, running,
-                             printed_balance_checks=checks, candidate_rows=len(rows))
+                             printed_balance_checks=checks, candidate_rows=len(rows), balances_are_printed=True)
