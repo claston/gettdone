@@ -63,3 +63,11 @@ com Documento. Nenhum campo financeiro, FITID ou proveniência foi mascarado no
 comparador. Agrupar diferenças sob a mesma autorização só evita repetir metadados:
 cada diferença ainda exige correspondência exata de caso, caminho, antes/depois,
 base e árvore. Os oráculos financeiros independentes permanecem inalterados.
+
+Após integrar a PR #554 da `main`, os vínculos foram revalidados contra a base
+`37fb572` e a árvore da aplicação `8fb923c6b67ee71a58892b059aaca6f8d343ead7`.
+As 3.304 diferenças de PDF e 3.642 de revisão são exatamente as já enumeradas;
+a atualização altera apenas seus vínculos de revisão. O registro dessa
+conferência está em `merge_revalidation` na evidência sintética. Uma integração
+futura que altere a base ou a árvore exige nova conferência das diferenças antes
+de atualizar esses vínculos.
