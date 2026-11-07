@@ -79,11 +79,14 @@ describe("revisor HTML do OFX Simples", () => {
         expect(table.querySelector("tbody tr").cells[2].textContent).toBe(documentNumber || "—");
         expect(table.querySelector("tbody b")).toBeNull();
         button.click();
-        const documentInput = table.querySelector('[data-edit-field="document_number"]');
+        const editor = dom.window.document.querySelector("#transaction-editor");
+        expect(editor.open).toBe(true);
+        expect(table.querySelector("input")).toBeNull();
+        const documentInput = editor.querySelector('[data-edit-field="document_number"]');
         expect(documentInput.value).toBe(documentNumber || "");
         documentInput.value = "000ABC-01/2";
         documentInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
-        table.querySelector('[data-action="save-row"]').click();
+        editor.querySelector('[data-action="save-row"]').click();
         await vi.waitFor(() => {
           const call = dom.window.OfxSession.request.mock.calls.find(([url, init]) => url.includes("/convert-edits/") && init?.method === "POST");
           expect(call).toBeDefined();
@@ -96,10 +99,10 @@ describe("revisor HTML do OFX Simples", () => {
         const saved = JSON.parse(dom.window.sessionStorage.getItem("ofxsimples_ofx_convert_view_state_ofx_v1"));
         expect(saved.preview_rows[0].document_number).toBe("000ABC-01/2");
         table.querySelector('[data-action="edit-row"]').click();
-        const clearInput = table.querySelector('[data-edit-field="document_number"]');
+        const clearInput = editor.querySelector('[data-edit-field="document_number"]');
         clearInput.value = "";
         clearInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
-        table.querySelector('[data-action="cancel-row"]').click();
+        editor.querySelector('[data-action="cancel-row"]').click();
         expect(table.querySelector("tbody tr").cells[2].textContent).toBe("000ABC-01/2");
         table.querySelector('[data-action="revert-row"]').click();
         await vi.waitFor(() => {

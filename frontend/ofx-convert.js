@@ -72,6 +72,46 @@
   const reviewRows = document.getElementById("review-rows");
   const kpis = document.getElementById("kpis");
   const addRowBtn = document.getElementById("add-row-btn");
+  const rowEditor = document.createElement("dialog");
+  rowEditor.id = "transaction-editor";
+  rowEditor.className = "transaction-editor";
+  rowEditor.setAttribute("aria-labelledby", "transaction-editor-title");
+  rowEditor.setAttribute("aria-describedby", "transaction-editor-hint");
+  rowEditor.innerHTML = `
+    <form class="transaction-editor-form">
+      <header class="transaction-editor-head">
+        <div><p class="transaction-editor-eyebrow">Revisão de lançamento</p>
+          <h2 id="transaction-editor-title">Editar lançamento</h2>
+          <p id="transaction-editor-hint">Confira os dados com o documento original.</p>
+        </div>
+        <button class="transaction-editor-close" type="button" data-action="cancel-row" aria-label="Fechar edição">&#10005;</button>
+      </header>
+      <div class="transaction-editor-body">
+        <label for="edit-transaction-date">Data
+          <input id="edit-transaction-date" type="date" data-edit-field="date" required autocomplete="off" />
+        </label>
+        <label for="edit-transaction-document">Documento <span class="optional-label">(opcional)</span>
+          <input id="edit-transaction-document" type="text" aria-label="Documento" data-edit-field="document_number" maxlength="1024" autocomplete="off" />
+        </label>
+        <label class="transaction-editor-history" for="edit-transaction-description">Histórico
+          <textarea id="edit-transaction-description" data-edit-field="description" rows="3" required></textarea>
+        </label>
+        <label for="edit-transaction-credit">Crédito
+          <input id="edit-transaction-credit" data-edit-field="credit" inputmode="decimal" placeholder="0,00" aria-describedby="transaction-editor-money-hint" />
+        </label>
+        <label for="edit-transaction-debit">Débito
+          <input id="edit-transaction-debit" data-edit-field="debit" inputmode="decimal" placeholder="0,00" aria-describedby="transaction-editor-money-hint" />
+        </label>
+        <p id="transaction-editor-money-hint" class="transaction-editor-money-hint">Preencha apenas crédito ou débito.</p>
+        <p class="transaction-editor-status" role="alert" hidden></p>
+      </div>
+      <footer class="transaction-editor-actions">
+        <button class="btn btn-secondary" type="button" data-action="cancel-row" aria-label="Cancelar edição">Cancelar</button>
+        <button class="btn btn-primary" type="submit" data-action="save-row" aria-label="Salvar edição">Salvar alterações</button>
+      </footer>
+    </form>`;
+  document.body.appendChild(rowEditor);
+  let editorSaving = false;
 
   const analysisIdNode = document.getElementById("analysis-id");
   const processingIdNode = document.getElementById("processing-id");
@@ -657,6 +697,12 @@
   }
 
   function setStatus(message, kind) {
+    if (rowEditor.open) {
+      const editorStatus = rowEditor.querySelector(".transaction-editor-status");
+      editorStatus.textContent = message;
+      editorStatus.hidden = !message;
+      editorStatus.classList.toggle("is-error", kind === "error");
+    }
     statusMsg.textContent = message || "";
     statusMsg.classList.remove("error", "success");
     if (kind) {
@@ -1711,7 +1757,7 @@
     if (!Number.isFinite(numeric) || numeric === 0) {
       return "";
     }
-    return numeric.toFixed(2);
+    return toMoneyInputValue(numeric);
   }
 
   function parseMoneyInput(value) {
@@ -2007,15 +2053,10 @@
   }
 
   function focusEditingDateInput() {
-    window.requestAnimationFrame(() => {
-      const dateInput = reviewRows.querySelector('input[data-edit-field="date"]');
-      if (!(dateInput instanceof HTMLInputElement)) {
-        return;
-      }
-      dateInput.focus();
-      const valueLength = dateInput.value.length;
-      dateInput.setSelectionRange(valueLength, valueLength);
-    });
+    const dateInput = rowEditor.querySelector('input[data-edit-field="date"]');
+    if (rowEditor.open && dateInput instanceof HTMLInputElement) {
+      dateInput.focus({ preventScroll: true });
+    }
   }
 
   function startEditingRow(rowId) {
@@ -2033,9 +2074,11 @@
       debit: toPositiveMoneyString(getDebitAmount(row)),
     };
     renderRows();
+    persistCurrentViewState();
   }
 
   function cancelEditingRow() {
+    if (editorSaving) return;
     if (isDraftRowId(state.editingRowId)) {
       state.previewRows = state.previewRows.filter((row) => row.rowId !== state.editingRowId);
     }
@@ -2054,7 +2097,7 @@
   }
 
   async function saveEditingRow(rowId) {
-    if (!state.editDraft) {
+    if (!state.editDraft || editorSaving) {
       return;
     }
     const normalizedDate = normalizeDateInput(state.editDraft.date);
@@ -2090,6 +2133,7 @@
     }
 
     try {
+      setEditorBusy(true);
       setStatus("Salvando edição...", null);
       const isDraft = isDraftRowId(rowId);
       const payload = await postConvertEdit(
@@ -2138,16 +2182,58 @@
         renderKpis(state.analysisSnapshot);
       }
       const insertedRow = isDraft ? state.previewRows[0] : null;
+      if (insertedRow) rowEditor.dataset.rowId = insertedRow.rowId;
       markChangedRow(insertedRow ? insertedRow.rowId : rowId, isDraft ? "new" : "changed");
       renderRows();
       persistCurrentViewState();
       setStatus("Linha atualizada na prévia.", "success");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Falha ao salvar edição.", "error");
+    } finally {
+      setEditorBusy(false);
     }
   }
 
+  function setEditorBusy(busy) {
+    editorSaving = busy;
+    rowEditor.setAttribute("aria-busy", String(busy));
+    rowEditor.querySelectorAll("input, textarea, button").forEach((field) => { field.disabled = busy; });
+    rowEditor.querySelector('[data-action="save-row"]').textContent = busy ? "Salvando..." : "Salvar alterações";
+  }
+
+  function syncRowEditor() {
+    if (!state.editingRowId || !state.editDraft) {
+      if (!rowEditor.open) return;
+      const rowId = rowEditor.dataset.rowId;
+      if (typeof rowEditor.close === "function") rowEditor.close();
+      else rowEditor.removeAttribute("open");
+      document.body.classList.remove("has-transaction-editor");
+      window.requestAnimationFrame(() => {
+        const button = Array.from(reviewRows.querySelectorAll('[data-action="edit-row"]'))
+          .find((item) => item.dataset.rowId === rowId);
+        (button || addRowBtn)?.focus({ preventScroll: true });
+      });
+      return;
+    }
+    if (rowEditor.open && rowEditor.dataset.rowId === state.editingRowId) return;
+    rowEditor.dataset.rowId = state.editingRowId;
+    rowEditor.querySelector("#transaction-editor-title").textContent = isDraftRowId(state.editingRowId)
+      ? "Novo lançamento" : "Editar lançamento";
+    rowEditor.querySelectorAll("[data-edit-field]").forEach((field) => {
+      field.value = field.dataset.editField === "date"
+        ? toIsoDateInputValue(state.editDraft.date) : state.editDraft[field.dataset.editField] || "";
+    });
+    rowEditor.querySelector(".transaction-editor-status").hidden = true;
+    if (!rowEditor.open) {
+      if (typeof rowEditor.showModal === "function") rowEditor.showModal();
+      else rowEditor.setAttribute("open", "");
+    }
+    document.body.classList.add("has-transaction-editor");
+    focusEditingDateInput();
+  }
+
   function renderRows() {
+    syncRowEditor();
     const report = financialDocument(state.analysisSnapshot);
     if (addRowBtn) {
       addRowBtn.hidden = Boolean(report);
@@ -2158,6 +2244,9 @@
       : ["Data", "Histórico", "Documento", "Crédito", "Débito", "Saldo", "Ações"];
     const table = reviewRows.closest("table");
     if (table) {
+      table.classList.toggle("review-transactions-table", !report);
+      table.parentElement.classList.toggle("review-table-wrap", !report);
+      table.setAttribute("aria-label", report ? "Relatório financeiro" : "Lançamentos extraídos");
       const header = table.querySelector("thead tr");
       const documentHeader = header.querySelector("[data-document-column]");
       if (hasDocument && !documentHeader) {
@@ -2224,28 +2313,6 @@
               : "row-changed"
             : "";
         const rowDeleted = Boolean(row.is_deleted);
-        const isEditing = row.rowId === state.editingRowId && state.editDraft;
-        if (isEditing) {
-          const editDateValue = toIsoDateInputValue(state.editDraft.date);
-          return `
-          <tr class="${rowClass}">
-            <td><input class="cell-input cell-input-date" type="date" data-edit-field="date" autocomplete="off" value="${escapeAttr(editDateValue)}" /></td>
-            <td><input class="cell-input cell-input-description" data-edit-field="description" value="${escapeAttr(state.editDraft.description)}" /></td>
-            <td><input class="cell-input cell-input-document" aria-label="Documento" data-edit-field="document_number" maxlength="1024" value="${escapeAttr(state.editDraft.document_number || "")}" /></td>
-            <td><input class="cell-input cell-input-money" data-edit-field="credit" inputmode="decimal" placeholder="0,00" value="${escapeAttr(state.editDraft.credit)}" /></td>
-            <td><input class="cell-input cell-input-money" data-edit-field="debit" inputmode="decimal" placeholder="0,00" value="${escapeAttr(state.editDraft.debit)}" /></td>
-            <td><span class="amount-empty">—</span></td>
-            <td class="actions-cell">
-              <button class="btn btn-secondary btn-inline" type="button" data-action="save-row" data-row-id="${row.rowId}" aria-label="Salvar edição">
-                <span class="btn-icon" aria-hidden="true">&#10003;</span><span>Salvar</span>
-              </button>
-              <button class="btn btn-inline btn-ghost" type="button" data-action="cancel-row" aria-label="Cancelar edição">
-                <span class="btn-icon" aria-hidden="true">&#10005;</span><span>Cancelar</span>
-              </button>
-            </td>
-          </tr>
-        `;
-        }
         const rowChanged = isRowChanged(row);
         const warningTypes = Array.isArray(row.warning_types)
           ? row.warning_types.filter((value) => String(value || "").trim().toLowerCase() !== "layout_fallback")
@@ -2273,29 +2340,35 @@
         const warningBadge = hasWarning
           ? `<span class="row-warning-badge" title="${escapeAttr(warningTypes.map(mapWarningTypeExplanation).join(" | "))}">${escapeAttr(mapWarningTypeLabel(warningTypes[0]))}</span>`
           : "";
+        const secondaryActions = !isDraftRowId(row.rowId) && !rowDeleted
+          ? `<details class="row-actions-menu">
+              <summary aria-label="Mais opções do lançamento" title="Mais opções">&#8943;</summary>
+              <div class="row-actions-options">
+                <button class="btn btn-inline btn-ghost" type="button" data-action="delete-row" data-row-id="${row.rowId}" aria-label="Apagar linha">Apagar lançamento</button>
+                ${rowChanged ? `<button class="btn btn-inline btn-ghost" type="button" data-action="revert-row" data-row-id="${row.rowId}" aria-label="Voltar para valor original">Voltar ao valor original</button>` : ""}
+              </div>
+            </details>` : "";
         return `
           <tr class="${rowClass} ${rowDeleted ? "row-deleted" : ""} ${hasWarning ? "row-has-warning" : ""}">
-            <td>${formatDate(row.date)}</td>
-            <td${descriptionTitleAttr}>${escapeAttr(descriptionCellText)}${warningBadge}${accountMarkup}</td>
-            <td>${escapeAttr(row.document_number || "—")}</td>
-            <td>${creditMarkup}</td>
-            <td>${debitMarkup}</td>
-            <td>${runningBalanceMarkup}</td>
-            <td class="actions-cell">
+            <td data-label="Data">${formatDate(row.date)}</td>
+            <td data-label="Histórico"${descriptionTitleAttr}><span class="review-history-text">${escapeAttr(descriptionCellText)}</span>${warningBadge}${accountMarkup}</td>
+            <td data-label="Documento"><span class="review-document-text" title="${escapeAttr(row.document_number || "")}">${escapeAttr(row.document_number || "—")}</span></td>
+            <td data-label="Crédito">${creditMarkup}</td>
+            <td data-label="Débito">${debitMarkup}</td>
+            <td data-label="Saldo">${runningBalanceMarkup}</td>
+            <td class="actions-cell" data-label="Ações">
               ${
                 !rowDeleted && !isDraftRowId(row.rowId)
                   ? `<button class="btn btn-inline btn-secondary" type="button" data-action="edit-row" data-row-id="${row.rowId}" aria-label="Editar linha">
                 <span class="btn-icon" aria-hidden="true">&#9998;</span><span>Editar</span>
-              </button>
-              <button class="btn btn-inline btn-ghost" type="button" data-action="delete-row" data-row-id="${row.rowId}" aria-label="Apagar linha">
-                <span class="btn-icon" aria-hidden="true">&#128465;</span><span>Apagar</span>
               </button>`
                   : ""
               }
+              ${secondaryActions}
               ${
-                rowChanged
+                rowChanged && rowDeleted
                   ? `<button class="btn btn-inline btn-ghost" type="button" data-action="revert-row" data-row-id="${row.rowId}" aria-label="Voltar para valor original">
-                <span class="btn-icon" aria-hidden="true">&#8634;</span><span>Voltar</span>
+                Restaurar
               </button>`
                   : ""
               }
@@ -3339,9 +3412,26 @@
     }
   });
 
-  reviewRows.addEventListener("input", (event) => {
+  rowEditor.querySelector("form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    void saveEditingRow(state.editingRowId);
+  });
+  rowEditor.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    cancelEditingRow();
+  });
+  rowEditor.addEventListener("click", (event) => {
+    if (event.target.closest('[data-action="cancel-row"]')) cancelEditingRow();
+    if (event.target === rowEditor) {
+      const bounds = rowEditor.getBoundingClientRect();
+      if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) {
+        cancelEditingRow();
+      }
+    }
+  });
+  rowEditor.addEventListener("input", (event) => {
     const target = event.target;
-    if (!(target instanceof HTMLInputElement)) {
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
       return;
     }
     const field = target.dataset.editField;
@@ -3361,6 +3451,17 @@
       return;
     }
     updateEditDraft(field, target.value);
+  });
+  document.addEventListener("click", (event) => {
+    reviewRows.querySelectorAll(".row-actions-menu[open]").forEach((menu) => {
+      if (!menu.contains(event.target)) menu.open = false;
+    });
+  });
+  reviewRows.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      const menu = event.target.closest(".row-actions-menu[open]");
+      if (menu) { menu.open = false; menu.querySelector("summary").focus(); }
+    }
   });
   kpis.addEventListener("input", function (event) {
     const target = event.target;
