@@ -47,6 +47,18 @@ O workflow do worker executa o mesmo ensaio Textract em sua imagem final,
 além dos controles existentes de PostgreSQL, SBOM e vulnerabilidades.
 
 Antes da promoção, confirmar os dois workflows de imagem e a CI completa.
+
+A integração da `main` no commit `106d82f` acrescentou Documento à branch.
+O gate do push compara com `dd64a92`, o commit anterior à integração, enquanto
+a PR compara com a `main`. As 3.304 diferenças PDF e 3.642 de revisão foram
+conferidas integralmente e são as mesmas adições Documento já enumeradas.
+Os vínculos foram atualizados para essa base e a árvore
+`7a82a42455bed4a8ba859eeaaf00378344908b2b`; a evidência e os hashes estão em
+[api-runtime-image-ci-revalidation.json](api-runtime-image-ci-revalidation.json).
+Para reproduzir o push, executar ambos os gates com `--base-ref dd64a92`
+e `--approvals docs/transaction-document-approvals.json`. Comparadores,
+baselines e oráculos financeiros permanecem intactos.
+
 Esta alteração não faz deploy. O rollback consiste em restaurar o digest
 anterior da imagem, preservando variáveis, volumes e configurações AWS.
 Não há rollback de dados. A imagem anterior da API volta a incluir Tesseract;
