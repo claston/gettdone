@@ -131,7 +131,11 @@ def test_workflow_preserves_validation_and_isolates_browser_resources():
 
 def test_browser_requirements_use_same_geometry_and_fixture_versions_as_backend():
     def pins(path):
-        return dict(re.findall(r"^([\w-]+)==([^\s]+)$", path.read_text(), re.M))
+        content = path.read_text(encoding="utf-8")
+        result = dict(re.findall(r"^([\w-]+)==([^\s]+)$", content, re.M))
+        for included in re.findall(r"^-r\s+(\S+)$", content, re.M):
+            result.update(pins(path.parent / included))
+        return result
 
     browser = pins(ROOT / "scripts/requirements-pro-browser.txt")
     backend = pins(ROOT / "backend/requirements.txt")
