@@ -56,6 +56,7 @@ def fake_resend_server():
 
 def test_inline_send_retries_and_unsubscribe_over_real_http(monkeypatch):
     monkeypatch.setenv("MARKETING_TEST_RECIPIENT", "marketing-test@example.com")
+    monkeypatch.setenv("MARKETING_FROM_EMAIL", "OFX Simples <novidades@example.com>")
     with fake_resend_server() as (provider_url, messages, requests), _run_http_server(
         admin_emails={"admin@example.com"},
     ) as (base_url, access):
@@ -82,7 +83,7 @@ def test_inline_send_retries_and_unsubscribe_over_real_http(monkeypatch):
             assert client.post(path, json=body).json() == sent.json()
             assert len(requests) == 2 and len(messages) == 1
             message = messages[0]
-            assert message["from"] == "teste@example.com"
+            assert message["from"] == "OFX Simples <novidades@example.com>"
             assert message["to"] == ["marketing-test@example.com"]
             assert message["headers"]["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
             unsubscribe_url = message["headers"]["List-Unsubscribe"].strip("<>")

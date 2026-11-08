@@ -112,6 +112,7 @@ class ContactService:
         reply_to: str | None = None,
         headers: dict[str, str] | None = None,
         idempotency_key: str | None = None,
+        from_email: str | None = None,
     ) -> ContactDeliveryResult:
         clean_to = to_email.strip()
         if not clean_to:
@@ -129,7 +130,7 @@ class ContactService:
             raise ContactProviderNotConfiguredError
 
         payload: dict[str, object] = {
-            "from": self._from_email,
+            "from": (from_email or "").strip() or self._from_email,
             "to": [clean_to],
             "subject": subject.strip() or "Mensagem",
             "text": text.strip() or "Mensagem",

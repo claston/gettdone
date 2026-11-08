@@ -13,11 +13,20 @@ saudação, mensagem de teste e link individual para descadastro.
 
 ## Configuração
 
-Reutiliza o serviço transacional do Resend, independentemente do provedor SMTP
-escolhido para o formulário de contato:
+Reutiliza o serviço transacional do Resend, com remetente de marketing opcional,
+independentemente do provedor SMTP escolhido para o formulário de contato:
 
 - `RESEND_API_KEY`: chave do Resend já usada pela aplicação.
-- `CONTACT_FROM_EMAIL`: remetente autorizado pelo domínio configurado no Resend.
+- `CONTACT_FROM_EMAIL`: remetente dos e-mails transacionais e padrão do marketing,
+  autorizado pelo domínio configurado no Resend.
+- `MARKETING_FROM_EMAIL`: remetente exclusivo dos envios de marketing. Aceita
+  endereço simples ou nome e endereço, como `OFX Simples <novidades@ofxsimples.com.br>`.
+  Deve pertencer a um domínio autorizado no Resend. Se ausente, vazio ou composto
+  apenas por espaços, mantém o remetente definido por `CONTACT_FROM_EMAIL`.
+  Espaços externos são removidos. Configure no ambiente do backend e
+  reinicie/reimplante para aplicar. Não altera os remetentes da verificação de
+  e-mail, checkout ou formulário de contato. A chave do Resend e a configuração
+  de simulação continuam compartilhadas; esta variável separa apenas o remetente.
 - `MARKETING_TEST_RECIPIENT`: endereço único da conta de teste, configurado de
   forma privada no serviço do backend (no Render, em **Environment**). Não tem
   valor padrão: ausente, vazio ou inválido bloqueia o envio com `503`. Espaços
@@ -75,7 +84,13 @@ a abrangência da versão 2).
 Não há migração ou tabela nova. A única escrita persistente é a revogação do
 consentimento, usando campos existentes e SQL compatível com SQLite/PostgreSQL.
 O serviço de e-mails mantém os parâmetros anteriores; cabeçalhos e chave de
-idempotência são opcionais. Não altera cadastro, sessão ou conversão.
+idempotência são opcionais, assim como a substituição do remetente por mensagem.
+O remetente padrão do serviço compartilhado não é modificado por envios de marketing.
+Não altera cadastro, sessão ou conversão.
+
+`MARKETING_FROM_EMAIL` é opcional e versões anteriores a ignoram. Para desfazer
+somente a separação do remetente, remova a variável e reimplante o backend; os
+envios de marketing voltam a usar `CONTACT_FROM_EMAIL`.
 
 A versão anterior ignora `MARKETING_TEST_RECIPIENT`; esta versão exige a variável
 para disparos de teste. Os links de descadastro existentes continuam válidos,
