@@ -19,6 +19,8 @@ export interface ProUser {
   quota_remaining?: number;
   quota_limit?: number;
   quota_mode?: string;
+  max_upload_size_bytes?: number;
+  max_pages_per_file?: number;
 }
 
 export interface ProAuthService {
