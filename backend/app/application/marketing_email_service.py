@@ -51,6 +51,7 @@ class MarketingEmailService:
     def __init__(self, access_control: AccessControlService):
         self.access_control = access_control
         self.test_recipient = os.getenv("MARKETING_TEST_RECIPIENT", "").strip().lower()
+        self.from_email = os.getenv("MARKETING_FROM_EMAIL", "").strip() or None
 
     async def send_test(self, *, mailer: ContactService, public_base_url: str, request_id: str) -> ContactDeliveryResult:
         if not re.fullmatch(r"[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+", self.test_recipient):
@@ -84,6 +85,7 @@ class MarketingEmailService:
         token = f"{row['id']}.{self._signature(row)}"
         unsubscribe_url = f"{public_base_url.rstrip('/')}/marketing/unsubscribe?{urlencode({'token': token})}"
         return await mailer.send_text_email(
+            from_email=self.from_email,
             to_email=self.test_recipient,
             subject=TEST_TEMPLATE.subject,
             text=TEST_TEMPLATE.render(name=str(row["name"] or "cliente"), unsubscribe_url=unsubscribe_url),

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 from uuid import uuid4
 
@@ -29,6 +30,7 @@ class FakeResend:
 @pytest.fixture
 def marketing(tmp_path, monkeypatch):
     monkeypatch.setenv("MARKETING_TEST_RECIPIENT", "marketing-test@example.com")
+    monkeypatch.delenv("MARKETING_FROM_EMAIL", raising=False)
     service = AccessControlService(
         state_file=tmp_path / "access.json",
         token_secret="marketing-test-secret",
@@ -271,3 +273,36 @@ def test_unsubscribe_still_works_without_recipient_configuration(marketing, monk
     monkeypatch.delenv("MARKETING_TEST_RECIPIENT")
     assert client.get(path).status_code == 200
     assert client.post(path).status_code == 200
+
+
+@pytest.mark.parametrize("marketing_sender", [None, "", "   ", "  OFX Simples <novidades@example.com>  "])
+def test_marketing_sender_does_not_change_transactional_sender(marketing, monkeypatch, marketing_sender):
+    client, _, _, _ = marketing
+    transactional_sender = "OFX Simples <contato@example.com>"
+    monkeypatch.setenv("CONTACT_FROM_EMAIL", transactional_sender)
+    monkeypatch.setenv("CONTACT_RESEND_DRY_RUN", "false")
+    monkeypatch.setenv("RESEND_API_KEY", "fictional-key")
+    monkeypatch.setenv("CONTACT_DELIVERY_PROVIDER", "hostinger_smtp")
+    if marketing_sender is not None:
+        monkeypatch.setenv("MARKETING_FROM_EMAIL", marketing_sender)
+
+    messages = []
+
+    def capture(request):
+        messages.append(json.loads(request.content))
+        return httpx.Response(200, json={"id": f"fictional-message-{len(messages)}"})
+
+    async_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: async_client(transport=httpx.MockTransport(capture), **kwargs))
+    mailer = ContactService.from_env()
+    app.dependency_overrides[get_contact_service] = lambda: mailer
+    login(client)
+    response = send(client)
+    assert response.status_code == 200, response.text
+    assert response.json()["delivery_mode"] == "resend"
+    assert messages[0]["from"] == ((marketing_sender or "").strip() or transactional_sender)
+
+    # The shared mailer must retain its configured sender after a marketing send.
+    asyncio.run(mailer.send_text_email(to_email="account@example.com", subject="Conta", text="Mensagem transacional"))
+    assert len(messages) == 2
+    assert messages[1]["from"] == transactional_sender
