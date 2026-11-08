@@ -1,10 +1,5 @@
-import { PlaceholderPage } from "@/components/placeholder-page";
+import { AccountPage } from "@/components/account-page";
 
 export default function Page() {
-  return (
-    <PlaceholderPage
-      title="Conta e plano"
-      description="Configurações do workspace, preferências e uso do plano."
-    />
-  );
+  return <AccountPage />;
 }
