@@ -12,6 +12,16 @@ def detect_financial_report(text: str) -> tuple[str, str] | None:
     lines = [normalize_upper_text(line) for line in text.splitlines() if line.strip()]
     header = " ".join(lines[:12])
     normalized = " ".join(lines)
+    # Recognize the report before generic bank parsing, including damaged table
+    # rows: an unreadable investment must never fall back to fabricated cash.
+    if (any('EXTRATO' in line and 'DEPOSITO A PRAZO' in line for line in lines[:20])
+            and 'SICRED' in normalized):
+        return INVESTMENT_STATEMENT, 'sicredi_term_deposit_monthly'
+    if any(line.startswith('EXTRATOS - INVESTIMENTOS FUNDOS - MENSAL') for line in lines[:5]):
+        return INVESTMENT_STATEMENT, 'bb_monthly_fund_positions'
+    if ('COMPROVANTE DE PAGAMENTO' in header and 'STONE' in normalized
+            and all(marker in normalized for marker in ('MODALIDADE', 'BANDEIRA', 'IDENTIFICACAO'))):
+        return 'acquirer_sales_report', 'stone_payment_receipt_rows'
     investment_title = re.search(r'^EXTRATO\s+D[\sAE\x00]*\s+CONT[A\x00]?\s+INVESTIMENTO\b', ' '.join(lines[:4]))
     if (investment_title and 'BTG' in normalized
             and all(marker in normalized for marker in ('CDB', 'QUANTIDADE', 'BRUTO', 'IR', 'IOF'))):
