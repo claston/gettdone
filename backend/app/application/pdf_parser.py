@@ -430,6 +430,15 @@ def _parse_pdf_transactions_strict(
                 **quality_metrics,
             )
 
+    from app.application.parsers.pdf.period_report_source import EVIDENCES, parse_period_report_result
+
+    report_identity = detect_financial_report("\n".join(native_pages)) if native_pages else None
+    if report_identity and report_identity[1] in EVIDENCES:
+        from app.application.parsers.pdf.native_table_source import read_native_table_source
+
+        return _with_parse_observability(
+            parse_period_report_result(read_native_table_source(raw_bytes), report_identity[1], native=True),
+            native_text_detected=1, extraction_provider="native_pdf_text", textract_attempted=0)
     if native_pages and detect_financial_report("\n".join(native_pages)) == ("investment_statement", "btg_cdb_positions_and_details"):
         from app.application.parsers.pdf.cdb_position_report import parse_cdb_position_result
         from app.application.parsers.pdf.native_table_source import read_native_table_source
@@ -1209,6 +1218,11 @@ def _parse_textract_text_pages_impl(extraction) -> PdfParseResult:
     if not any(page_texts):
         raise InvalidFileContentError("Nao foi possivel extrair transacoes do OCR para revisao.")
     joined_text = "\n".join(page_texts)
+    from app.application.parsers.pdf.period_report_source import EVIDENCES, parse_period_report_result
+
+    report_identity = detect_financial_report(joined_text)
+    if report_identity and report_identity[1] in EVIDENCES:
+        return parse_period_report_result(extraction, report_identity[1])
     if detect_financial_report(joined_text) == ("investment_statement", "btg_cdb_positions_and_details"):
         from app.application.parsers.pdf.cdb_position_report import parse_cdb_position_result
 

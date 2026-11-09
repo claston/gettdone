@@ -29,6 +29,50 @@ const fiscal: FinancialDocument = {
 };
 
 describe("FinancialReportReview", () => {
+  it("preserva meses, fundos e valores sem inventar movimentos ou saldo global", () => {
+    const report: FinancialDocument = {
+      ...fiscal,
+      document_type: "investment_statement",
+      events: [],
+      observations: [
+        {
+          observation_type: "investment_monthly_summary",
+          dates: {},
+          amounts: { applications: "100.00", redemptions: "50.00" },
+          attributes: {
+            statement_month: "10/2026",
+            product: "SICREDINVEST",
+            label: "Resumo mensal",
+          },
+          source_refs: [{ page: 2, line: 10 }],
+        },
+        {
+          observation_type: "investment_fund_position",
+          dates: { as_of: "2026-10-30" },
+          amounts: { value: "110.00" },
+          attributes: { fund_name: "FUNDO TESTE", label: "Saldo Atual" },
+          source_refs: [{ page: 3, line: 20 }],
+        },
+      ],
+    };
+    render(
+      <FinancialReportReview
+        report={report}
+        downloadUrl="/convert-report/an_test"
+      />,
+    );
+    expect(screen.getByText("10/2026")).toBeInTheDocument();
+    expect(screen.getByText("30/10/2026")).toBeInTheDocument();
+    expect(screen.getByText("FUNDO TESTE — Saldo Atual")).toBeInTheDocument();
+    expect(screen.getByText(/Aplicações:.*Resgates:/)).toBeInTheDocument();
+    expect(screen.getByText("Pág. 2, linha 10")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Sem movimentos neste período"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Exportar OFX" }),
+    ).not.toBeInTheDocument();
+  });
   it("não apresenta emissão como vencimento quando o título não informa data de vencimento", () => {
     const report: FinancialDocument = {
       ...fiscal,

@@ -27,6 +27,27 @@ export function FinancialReportReview({
 }) {
   const [account, setAccount] = useState(["", "", ""]);
   const [showAccount, setShowAccount] = useState(false);
+  const observations = report.observations ?? [];
+  const amountLabels: Record<string, string> = {
+    applications: "Aplicações",
+    redemptions: "Resgates",
+    paid_income: "Rendimentos pagos",
+    withheld_irrf: "IRRF",
+    withheld_iof: "IOF",
+    month_income: "Rendimento do mês",
+    provisioned_income: "Rendimentos provisionados",
+    principal: "Saldo atual",
+    opening: "Saldo anterior",
+    closing: "Saldo final",
+    gross: "Bruto",
+    net: "Líquido",
+    expected_irrf: "Provisão IRRF",
+    expected_iof: "Provisão IOF",
+    value: "Valor",
+    gross_income: "Rendimento bruto",
+    net_income: "Rendimento líquido",
+    opening_provisioned_income: "Rendimentos provisionados anteriores",
+  };
   const failed = report.validations.filter(
     (item) => item.status === "failed",
   ).length;
@@ -37,12 +58,14 @@ export function FinancialReportReview({
     unknown: "Não identificado",
     confirmed: "Confirmado",
     paid: "Pago",
+    reported: "Informado no documento",
     settled: "Liquidado no relatório",
     pending: "Em aberto",
     partial: "Parcial",
   };
   const types: Record<string, string> = {
     receipt: "Recebimento de título",
+    acquirer_payment: "Repasse informado",
     investment_application: "Aplicação",
     investment_redemption: "Resgate",
     investment_movement: "Movimentação de investimento",
@@ -83,8 +106,13 @@ export function FinancialReportReview({
         <div className="financial-report-title">
           <h2>{titles[report.document_type] ?? "Relatório do documento"}</h2>
           <span>
-            {report.origin ?? "Documento financeiro"} · {report.events.length}{" "}
-            {report.events.length === 1 ? "evento" : "eventos"}
+            {report.origin ?? "Documento financeiro"} ·{" "}
+            {report.events.length + observations.length}{" "}
+            {observations.length
+              ? "registros financeiros"
+              : report.events.length === 1
+                ? "evento"
+                : "eventos"}
           </span>
         </div>
         {base && (
@@ -168,97 +196,161 @@ export function FinancialReportReview({
         </fieldset>
       )}
       <div className="table-scroll">
-        <table
-          className="financial-events-table"
-          aria-label="Eventos do relatório"
-        >
-          <thead>
-            <tr>
-              {[
-                dateLabel,
-                titleReport ? "Título / contraparte" : "Evento",
-                "Valor",
-                ...(titleReport ? ["Em aberto"] : []),
-                "Situação",
-                "Origem",
-              ].map((label) => (
-                <th key={label} scope="col">
-                  {label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {report.events.map((event) => {
-              const rawDate = titleReport
-                ? event.dates[titleDateRole ?? "due"]
-                : (event.dates.payment ??
-                  event.dates.redemption ??
-                  event.dates.application ??
-                  event.dates.issue ??
-                  event.dates.movement);
-              return (
-                <tr key={event.event_id}>
-                  <td className="financial-event-date">
-                    {rawDate?.split("-").reverse().join("/") ?? "—"}
-                  </td>
-                  <td className="financial-event-description">
-                    <span className="financial-event-type">
-                      {types[event.event_type] ?? "Evento financeiro"}
-                    </span>
-                    <span className="financial-event-text">
-                      {event.description}
-                    </span>
-                    {titleReport &&
-                      event.counterparty &&
-                      event.counterparty !== event.description && (
-                        <span>{event.counterparty}</span>
-                      )}
-                    {event.reference && (
-                      <span className="financial-event-reference">
-                        Referência: {event.reference}
-                      </span>
-                    )}
-                  </td>
-                  <td className="financial-event-amount">
-                    {formatCurrency(Number(event.amount))}
-                  </td>
-                  {titleReport && (
-                    <td>
-                      {event.amounts?.outstanding != null
-                        ? formatCurrency(Number(event.amounts.outstanding))
-                        : "Não informado"}
+        {(report.events.length > 0 || observations.length === 0) && (
+          <table
+            className="financial-events-table"
+            aria-label="Eventos do relatório"
+          >
+            <thead>
+              <tr>
+                {[
+                  dateLabel,
+                  titleReport ? "Título / contraparte" : "Evento",
+                  "Valor",
+                  ...(titleReport ? ["Em aberto"] : []),
+                  "Situação",
+                  "Origem",
+                ].map((label) => (
+                  <th key={label} scope="col">
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {report.events.map((event) => {
+                const rawDate = titleReport
+                  ? event.dates[titleDateRole ?? "due"]
+                  : (event.dates.payment ??
+                    event.dates.redemption ??
+                    event.dates.application ??
+                    event.dates.issue ??
+                    event.dates.movement);
+                return (
+                  <tr key={event.event_id}>
+                    <td className="financial-event-date">
+                      {rawDate?.split("-").reverse().join("/") ?? "—"}
                     </td>
-                  )}
-                  <td>
-                    <span
-                      className="financial-event-status"
-                      data-status={event.status}
-                    >
-                      {statuses[event.status] ?? "Não identificado"}
-                    </span>
-                  </td>
-                  <td>
-                    {onSource && event.source_refs.length > 0 ? (
-                      <button
-                        className="financial-source-link"
-                        aria-label={`Ver origem do evento ${event.description}`}
-                        onClick={() => onSource(event.event_id)}
-                      >
-                        Página {event.source_refs[0]?.page}
-                      </button>
-                    ) : (
-                      event.source_refs
-                        .map((ref) => `Pág. ${ref.page}, linha ${ref.line}`)
-                        .join("; ") || "—"
+                    <td className="financial-event-description">
+                      <span className="financial-event-type">
+                        {types[event.event_type] ?? "Evento financeiro"}
+                      </span>
+                      <span className="financial-event-text">
+                        {event.description}
+                      </span>
+                      {titleReport &&
+                        event.counterparty &&
+                        event.counterparty !== event.description && (
+                          <span>{event.counterparty}</span>
+                        )}
+                      {event.reference && (
+                        <span className="financial-event-reference">
+                          Referência: {event.reference}
+                        </span>
+                      )}
+                    </td>
+                    <td className="financial-event-amount">
+                      {formatCurrency(Number(event.amount))}
+                    </td>
+                    {titleReport && (
+                      <td>
+                        {event.amounts?.outstanding != null
+                          ? formatCurrency(Number(event.amounts.outstanding))
+                          : "Não informado"}
+                      </td>
                     )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {report.events.length === 0 && (
+                    <td>
+                      <span
+                        className="financial-event-status"
+                        data-status={event.status}
+                      >
+                        {statuses[event.status] ?? "Não identificado"}
+                      </span>
+                    </td>
+                    <td>
+                      {onSource && event.source_refs.length > 0 ? (
+                        <button
+                          className="financial-source-link"
+                          aria-label={`Ver origem do evento ${event.description}`}
+                          onClick={() => onSource(event.event_id)}
+                        >
+                          Página {event.source_refs[0]?.page}
+                        </button>
+                      ) : (
+                        event.source_refs
+                          .map((ref) => `Pág. ${ref.page}, linha ${ref.line}`)
+                          .join("; ") || "—"
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+        {observations.length > 0 && (
+          <table
+            className="financial-events-table"
+            aria-label="Posições e informações do investimento"
+          >
+            <thead>
+              <tr>
+                {[
+                  "Período / data",
+                  "Investimento / campo",
+                  "Valores informados",
+                  "Origem",
+                ].map((label) => (
+                  <th key={label} scope="col">
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {observations.map((item, index) => {
+                const asOf = item.dates.as_of ?? item.dates.period_end;
+                const period =
+                  asOf?.split("-").reverse().join("/") ??
+                  String(item.attributes.statement_month ?? "Não informado");
+                const label = [
+                  item.attributes.fund_name ?? item.attributes.product,
+                  item.attributes.label ?? "Posição do período",
+                ]
+                  .filter(Boolean)
+                  .join(" — ");
+                const amounts = Object.entries(item.amounts)
+                  .map(
+                    ([key, value]) =>
+                      `${amountLabels[key] ?? key}: ${formatCurrency(Number(value))}`,
+                  )
+                  .join("; ");
+                const quote = item.attributes.unit_quote;
+                const rate = item.attributes.rate_percent;
+                return (
+                  <tr key={index}>
+                    <td>{period}</td>
+                    <td>{label}</td>
+                    <td>
+                      {amounts ||
+                        (quote != null
+                          ? String(quote)
+                          : rate != null
+                            ? `${rate}%`
+                            : "Não informado")}
+                    </td>
+                    <td>
+                      {item.source_refs
+                        .map((ref) => `Pág. ${ref.page}, linha ${ref.line}`)
+                        .join("; ")}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+        {report.events.length === 0 && observations.length === 0 && (
           <div className="financial-report-empty">
             <strong>
               {titleReport

@@ -12,6 +12,14 @@ from app.application.models import NormalizedTransaction
 from app.application.ofx_writer import build_ofx_statement
 
 LABELS = {
+    "amounts.redemptions": "Resgates informados", "amounts.paid_income": "Rendimentos pagos",
+    "amounts.provisioned_income": "Rendimentos provisionados",
+    "amounts.opening_provisioned_income": "Rendimentos provisionados anteriores",
+    "amounts.value": "Valor informado", "amounts.compensated_loss": "Prejuízo compensado",
+    "amounts.reported_payment": "Repasse informado", "attributes.payment_code": "Código do pagamento",
+    "attributes.balance_quantity": "Saldo de cotas", "attributes.fund_name": "Fundo",
+    "attributes.fund_tax_id": "CNPJ do fundo", "attributes.product": "Produto",
+    "attributes.source_account_number": "Conta de origem", "attributes.block": "Bloco do documento",
     "attributes.asset_code": "Código do ativo", "attributes.unit_price": "Preço unitário",
     "attributes.purchase_price": "Preço unitário de compra", "attributes.issuer": "Emissor",
     "attributes.liquidity": "Liquidez", "attributes.grace_days": "Carência (dias)",

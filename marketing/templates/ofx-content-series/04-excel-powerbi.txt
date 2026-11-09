@@ -1,0 +1,20 @@
+Olá, {{ name }}!
+
+Depois de organizar e conferir os dados, você pode querer explorar os números, montar gráficos e criar relatórios para acompanhar a rotina da empresa.
+
+Se você quer desenvolver essas habilidades, vale conhecer o curso on-line de Excel e Power BI, divulgado pela Expert Cursos.
+
+A programação apresenta funções do Excel, gráficos, tabelas dinâmicas, Power Query e criação de dashboards.
+
+Consulte os módulos e as condições na página para avaliar se o conteúdo corresponde ao seu nível de conhecimento e ao que você precisa no dia a dia.
+
+Conhecer Excel e Power BI: https://go.hotmart.com/V107857392F
+
+Sobre esta indicação: divulgamos este curso como afiliados e podemos receber uma comissão pelas compras realizadas pelo nosso link.
+
+Equipe OFX Simples
+
+Você recebe esta mensagem porque autorizou conteúdos e ofertas de parceiros do OFX Simples.
+Cancelar recebimento: {{ unsubscribe_url }}
+{{ sender_company }}
+{{ sender_address }}

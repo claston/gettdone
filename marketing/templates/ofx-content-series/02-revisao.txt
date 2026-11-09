@@ -1,0 +1,24 @@
+Olá, {{ name }}!
+
+Durante uma revisão contábil, esclarecer uma movimentação pode exigir uma busca entre extratos, contratos, relatórios e conversas com o cliente.
+
+Experimente manter um registro com três campos:
+
+PENDÊNCIA: o que precisa ser esclarecido?
+DOCUMENTO DE APOIO: onde está a informação?
+RESPONSÁVEL: quem pode confirmar ou complementar?
+
+Exemplo: pagamento a identificar; extrato da conta com data e valor; confirmar com o financeiro da empresa.
+
+Esse registro ajuda a organizar as informações que serão avaliadas na preparação das demonstrações e das notas explicativas.
+
+Para colocar em prática: escolha uma pendência da sua revisão e preencha os três campos.
+
+No próximo e-mail, vamos apresentar uma opção de capacitação para quem trabalha com essa etapa.
+
+Equipe OFX Simples
+
+Você recebe esta mensagem porque autorizou conteúdos e ofertas de parceiros do OFX Simples.
+Cancelar recebimento: {{ unsubscribe_url }}
+{{ sender_company }}
+{{ sender_address }}

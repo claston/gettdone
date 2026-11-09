@@ -98,6 +98,13 @@ export interface FinancialDocument {
   document_type: string;
   origin: string | null;
   notice: string;
+  observations?: Array<{
+    observation_type: string;
+    dates: Record<string, string>;
+    amounts: Record<string, string>;
+    attributes: Record<string, unknown>;
+    source_refs: Array<{ page: number; line: number }>;
+  }>;
   events: Array<{
     event_id: string;
     event_type: string;
