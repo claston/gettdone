@@ -127,6 +127,12 @@ def parse_native_itau_monthly(raw: bytes, page_texts: list[str]) -> NativeMonthl
                 if finished:
                     continue  # Printed appendices repeat movements; only the original cash ledger is authoritative.
                 if columns is None:
+                    # Some monthly editions put the consolidated cover before
+                    # the cash table. Its category totals are not movements.
+                    if (page_index == 0 and "SALDO CONSOLIDADO" in normalize_upper_text(characters)
+                            and "CONTA CORRENTE | MOVIMENTACAO" not in normalize_upper_text(characters)
+                            and not re.search(r"(?m)^\s*\d{2}/\d{2}\s+", characters)):
+                        continue
                     _fail()
                 money = _boxes(tp, characters, _MONEY)
                 if summary is None:
@@ -177,7 +183,7 @@ def parse_native_itau_monthly(raw: bytes, page_texts: list[str]) -> NativeMonthl
                         if set(amounts) != {"balance"} or amounts["balance"] != summary[2]:
                             _fail()
                         continue
-                    if label.startswith("SALDO APLIC AUT MAIS"):
+                    if label.startswith(("SALDO APLIC AUT MAIS", "POUP AUT - APLICACOES A PARTIR DE")):
                         investment_checks.append((len(rows), amounts.get("balance")))
                         continue
                     if label.startswith(("(-) SALDO A LIBERAR", "SALDO FINAL DISPONIVEL", "SALDO FINAL DEVEDOR")):

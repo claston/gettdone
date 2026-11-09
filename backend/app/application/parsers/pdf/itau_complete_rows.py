@@ -10,7 +10,7 @@ from app.application.parsers.pdf.verified_statements import DATE, NUMBER, day, f
 from app.application.source_regions import evidence_regions
 
 _KEYS = ("DATA", "LANCAMENTOS", "RAZAO SOCIAL", "CNPJ/CPF", "VALOR (R$)", "SALDO (R$)")
-_CONTROLS = {"SALDO ANTERIOR", "SALDO MOVIMENTACAO CONTA", "SALDO TOTAL DISPONIVEL DIA", "SALDO APLIC. AUT."}
+_CONTROLS = {"SALDO ANTERIOR", "SALDO MOVIMENTACAO CONTA", "SALDO TOTAL DISPONIVEL DIA", "SALDO APLIC. AUT.", "SDO APLIC AUT MAIS AP"}
 
 
 def _center(item):
@@ -126,7 +126,8 @@ def read_itau_complete_rows(raw, source):
                             if set(line.word_ids) & {word.id for word in previous_words})
                 regions.extend(evidence_regions(previous_page.page_number, previous_words))
             pending = []
-            records.append({"date": day(anchor.text), "label": upper(fields[1]), "fields": fields[1:4],
+            label = "SALDO APLIC. AUT." if upper(fields[1]) == "SDO APLIC AUT MAIS AP" else upper(fields[1])
+            records.append({"date": day(anchor.text), "label": label, "fields": fields[1:4],
                             "control": control, "value": money(token.replace(" ", "")),
                             "page": page.page_number, "line": refs[0][1], "refs": refs, "regions": regions})
         leftovers = [word for word in words if word.id not in used]

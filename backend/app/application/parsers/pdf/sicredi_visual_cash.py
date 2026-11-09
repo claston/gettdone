@@ -36,7 +36,10 @@ def _value(cell):
 
 def parse_sicredi_visual_cash(source):
     first = source.pages[0]
-    data_headers = [w for w in first.words if upper(w.text) == "DATA" and w.bbox and w.bbox["top"] < 0.22]
+    data_headers = [w for w in first.words if upper(w.text) == "DATA" and w.bbox
+                    and all(any(upper(other.text).replace("(R$)", "").strip() == key and other.bbox
+                                and abs(other.bbox["top"]-w.bbox["top"]) < .012
+                                for other in first.words) for key in ("DOCUMENTO", "VALOR", "SALDO"))]
     if len(data_headers) != 1:
         fail("O cabeçalho da imagem Sicredi está ausente.")
     header_y = data_headers[0].bbox["top"]
@@ -62,7 +65,8 @@ def parse_sicredi_visual_cash(source):
             (
                 w.bbox["top"] + w.bbox["height"]
                 for w in page.words
-                if w.bbox and upper(w.text) in {"DATA", "DOCUMENTO"} and w.bbox["top"] < 0.22
+                if w.bbox and upper(w.text) in {"DATA", "DOCUMENTO"}
+                and abs(w.bbox["left"]-columns[upper(w.text)][0].bbox["left"]) < .02
             ),
             default=0,
         )

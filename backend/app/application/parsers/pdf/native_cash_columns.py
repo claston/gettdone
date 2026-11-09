@@ -49,12 +49,14 @@ def _kind(pages):
     return None
 
 
-def _columns(tp, text, santander):
+def _columns(tp, text, santander, *, below=None):
     patterns = [r"\bData\b", r"Descri[cç][aã]o" if santander else r"Hist[oó]rico|Lan[cç]amento",
                 r"Documento" if santander else r"Docto|Dcto\.",
                 r"Cr[eé]ditos?", r"D[eé]bitos?", r"Saldo(?: \(R\$\))?"]
     choices = [_boxes(tp, text, re.compile(pattern, re.IGNORECASE)) for pattern in patterns]
     for anchor in choices[0]:
+        if below is not None and anchor.top >= below:
+            continue
         found = [anchor]
         for index, candidates in enumerate(choices[1:], 1):
             tolerance = 20 if santander and index in (3, 4) else 4
@@ -195,10 +197,25 @@ def _monthly_period_boxes(tp, text, columns):
     return periods
 
 
-def parse_native_cash_columns(raw, page_texts, *, inherited_kind=None):
+def parse_native_cash_columns(raw, page_texts, *, inherited_kind=None, _section=None):
     kind = _kind(page_texts) or inherited_kind
     if kind is None:
         return None
+    if kind == BRADESCO_MONTHLY and _section is None:
+        text = upper("\n".join(page_texts))
+        latest = text.split("ULTIMOS LANCAMENTOS", 1)
+        if len(latest) == 2 and "SALDO ANTERIOR" in latest[1]:
+            primary = parse_native_cash_columns(raw, page_texts, inherited_kind=inherited_kind, _section="main")
+            if primary is None:
+                # Sequential text PDFs are handled by the text reader, which
+                # already preserves independently balanced sections.
+                return None
+            recent = parse_native_cash_columns(raw, page_texts, inherited_kind=inherited_kind, _section="latest")
+            if recent is None:
+                _fail()
+            statement, pages = primary
+            other, _ = recent
+            return replace(statement, blocks=[(statement, None), (other, None)]), pages
     inactive = parse_santander_inactive_cash(page_texts)
     if inactive is not None:
         return inactive, tuple(page_texts)
@@ -217,6 +234,7 @@ def parse_native_cash_columns(raw, page_texts, *, inherited_kind=None):
     finished = False
     checks = 0
     previous_columns = None
+    latest_started = False
     with _PDFIUM_LOCK, pdfium.PdfDocument(raw) as document:
         for page_index in range(len(document)):
             with closing(document[page_index]) as page, closing(page.get_textpage()) as tp:
@@ -226,13 +244,18 @@ def parse_native_cash_columns(raw, page_texts, *, inherited_kind=None):
                 accounts.update(re.findall(r"AGENCIA:\s*(\d{3,5})\s+CONTA:\s*([\d.-]+)", normalized))
                 if len(accounts) > 1:
                     _fail()
-                columns = _columns(tp, text, santander)
+                latest_boxes = _boxes(tp, text, re.compile(r"[ÚUuú]ltimos\s+Lan[cç]amentos", re.I)) if kind == BRADESCO_MONTHLY else []
+                latest_top = max((box.top for box in latest_boxes), default=None)
+                if _section == "latest" and not latest_started:
+                    if latest_top is None:
+                        continue
+                    latest_started = True
+                columns = _columns(tp, text, santander, below=latest_top if _section == "latest" else None)
                 if finished:
                     if columns is not None and kind != BRADESCO_MONTHLY:
                         _fail()
                     continue
-                latest_boxes = _boxes(tp, text, re.compile(r"[ÚUuú]ltimos\s+Lan[cç]amentos", re.I)) if kind == BRADESCO_MONTHLY else []
-                cutoff = max((box.top for box in latest_boxes), default=0)
+                cutoff = max((box.top for box in latest_boxes), default=0) if _section != "latest" and not inherited_kind else 0
                 if cutoff and columns is not None and columns[0].top < cutoff:
                     columns = None
                 continued_monthly = columns is None and kind == BRADESCO_MONTHLY and previous_columns is not None
@@ -331,7 +354,7 @@ def parse_native_cash_columns(raw, page_texts, *, inherited_kind=None):
                         if not santander and current is None and kind != BRADESCO_MONTHLY:
                             _fail()
                         opening_date = start-timedelta(days=1) if santander else current
-                        if start and opening_date is not None and opening_date >= start:
+                        if start and opening_date is not None and opening_date >= start and _section != "latest":
                             _fail()
                         continue
                     terminal = (label == "SALDO EM " + end.strftime("%d/%m") if santander
@@ -365,7 +388,7 @@ def parse_native_cash_columns(raw, page_texts, *, inherited_kind=None):
                         continue
                     if len(set(amounts) & {"credit", "debit"}) != 1 or current is None:
                         _fail()
-                    if (opening_date is not None and current <= opening_date
+                    if (opening_date is not None and current < opening_date
                             or rows and current.isoformat() < rows[-1].transaction.date):
                         _fail()
                     if start and not start <= current <= end:

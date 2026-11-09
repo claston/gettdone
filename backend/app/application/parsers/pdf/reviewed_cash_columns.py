@@ -94,7 +94,9 @@ def parse_reviewed_cash(source, kind):
             if line.bbox and upper(line.text) in {"VALOR", "VALOR (R$)", "LANCAMENTO (R$)"} and line.bbox["left"] > value_left - 0.04
         ]
         low = min(headers) + 0.01 if headers else 0
-        stops = [line.bbox["top"] for line in page.lines if line.bbox and upper(line.text) in {"RESUMO", "TOTALIZADORES"}]
+        stops = [line.bbox["top"] for line in original.lines if line.bbox and (
+            upper(line.text) in {"RESUMO", "TOTALIZADORES"}
+            or kind == "santander_app" and upper(line.text).startswith(("ENTENDA A COMPOSICAO", "SALDO DE CONTAMAX")))]
         stop = min(stops, default=0.97)
         ended = bool(stops)
         body = [line for line in page.lines if line.bbox and low <= line.bbox["top"] < stop]

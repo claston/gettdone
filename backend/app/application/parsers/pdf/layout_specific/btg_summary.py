@@ -20,11 +20,11 @@ _DATE = r"\d{2}/\d{2}/\d{4}"
 _NUMBER = r"(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}"
 _CURRENCY = rf"[+\-−]?\s*R\$\s*{_NUMBER}"
 _PERIOD = re.compile(rf"^PERIODO DE ({_DATE}) A ({_DATE})\b")
-_SUMMARY_BALANCE = re.compile(rf"^SALDO DE (ABERTURA|FECHAMENTO) ({_DATE})\s+({_CURRENCY})$")
+_SUMMARY_BALANCE = re.compile(rf"^SALDO DE (ABERTURA|FECHAMENTO) ({_DATE})\s+({_CURRENCY}|-)$")
 _SUMMARY_TOTAL = re.compile(rf"^TOTAL DE (ENTRADAS|SAIDAS)\s+({_CURRENCY})$")
 _ROW = re.compile(rf"^({_DATE})(?:\s+(.*))?$")
 _VALUES = re.compile(rf"^(.+?)\s+({_CURRENCY})\s+({_CURRENCY})$")
-_ANCHOR = re.compile(rf"^SALDO DE (ABERTURA|FECHAMENTO)\s+({_CURRENCY})$")
+_ANCHOR = re.compile(rf"^SALDO DE (ABERTURA|FECHAMENTO)\s+({_CURRENCY}|-)$")
 _PAGE = re.compile(r"(?:^|\s)(\d{1,4})\s*/\s*(\d{1,4})$")
 _ACCOUNT = re.compile(r"\bBANCO (\d{3})\s*[·|–-]?\s*AGENCIA (\d+(?:-\d)?)\s*[·|–-]?\s*CONTA ([\d.-]+)\b")
 _CHART_TICK = re.compile(r"^R\$\s*\d{1,3}(?:\.\d{3})*$")
@@ -51,7 +51,7 @@ def _money(value: str) -> Decimal:
 class _Summary:
     start: date
     end: date
-    opening: Decimal
+    opening: Decimal | None
     closing: Decimal
     inflows: Decimal
     outflows: Decimal
@@ -59,9 +59,12 @@ class _Summary:
 
 def _summary(lines: list[_PdfLine]) -> _Summary:
     texts = [normalize_upper_text(line.text) for line in lines]
+    # OCR may put a label, its date and its amount on separate lines.
+    texts = [" ".join(texts[i:i+width]) for i in range(len(texts)) for width in (1, 2, 3)]
     periods = {(_date(match[1]), _date(match[2])) for text in texts if (match := _PERIOD.match(text))}
     balances = {
-        (match[1], _date(match[2]), _money(match[3])) for text in texts if (match := _SUMMARY_BALANCE.fullmatch(text))
+        (match[1], _date(match[2]), None if match[3] == "-" else _money(match[3]))
+        for text in texts if (match := _SUMMARY_BALANCE.fullmatch(text))
     }
     totals = {(match[1], _money(match[2])) for text in texts if (match := _SUMMARY_TOTAL.fullmatch(text))}
     accounts = {match.groups() for text in texts if (match := _ACCOUNT.search(text))}
@@ -79,12 +82,14 @@ def _summary(lines: list[_PdfLine]) -> _Summary:
         _fail()
     opening_date, opening = amounts["ABERTURA"]
     closing_date, closing = amounts["FECHAMENTO"]
+    if closing is None:
+        _fail()
     inflows, outflows = total_amounts["ENTRADAS"], total_amounts["SAIDAS"]
     if (start is not None and opening_date != start or end is not None and closing_date != end or min(inflows, outflows) < 0):
         _fail()
     # Explicit dated opening/closing controls bound the ledger, not documentary coverage.
     start, end = start or opening_date, end or closing_date
-    if opening + inflows - outflows != closing:
+    if opening is None or opening + inflows - outflows != closing:
         financial_mismatch(_MESSAGE)
     return _Summary(start, end, opening, closing, inflows, outflows)
 
@@ -94,7 +99,7 @@ class _LedgerRow:
     day: date
     description: str
     amount: Decimal
-    balance: Decimal
+    balance: Decimal | None
     kind: str
     source: tuple[_PdfLine, ...]
 
@@ -107,7 +112,7 @@ def _ledger_row(pending: list[_PdfLine]) -> _LedgerRow | None:
     rest = match[2]
     anchor = _ANCHOR.fullmatch(normalize_upper_text(rest))
     if anchor:
-        return _LedgerRow(day, anchor[1], Decimal(0), _money(anchor[2]), anchor[1], tuple(pending))
+        return _LedgerRow(day, anchor[1], Decimal(0), None if anchor[2] == "-" else _money(anchor[2]), anchor[1], tuple(pending))
     values = _VALUES.fullmatch(rest)
     if values is None:
         return None
@@ -119,10 +124,10 @@ def _ledger_row(pending: list[_PdfLine]) -> _LedgerRow | None:
 def _page_rows(page: list[_PdfLine], *, ordinal: int, total_pages: int) -> list[_LedgerRow]:
     headers = []
     for index, line in enumerate(page):
-        if normalize_upper_text(line.text) == _TABLE:
-            headers.append(index + 1)
-        elif index + 1 < len(page) and normalize_upper_text(line.text + " " + page[index + 1].text) == _TABLE:
-            headers.append(index + 2)
+        for width in range(1, 7):
+            if normalize_upper_text(" ".join(part.text for part in page[index:index+width])) == _TABLE:
+                headers.append(index + width)
+                break
     if len(headers) != 1:
         _fail()
     rows: list[_LedgerRow] = []
@@ -187,7 +192,7 @@ class BtgSummaryLayoutParser:
         for newer, older in zip(ledger, ledger[1:]):
             if newer.day < older.day:
                 _fail()
-            if newer.balance != older.balance + newer.amount:
+            if older.balance is None or newer.balance is None or newer.balance != older.balance + newer.amount:
                 financial_mismatch(_MESSAGE)
         # Accounting consumers use oldest first; provenance retains the PDF's physical order.
         rows: list[_ParsedTransaction] = [build_parsed_transaction(
