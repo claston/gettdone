@@ -1,0 +1,21 @@
+Olá, {{ name }}!
+
+Encontrar o documento certo na hora de revisar uma movimentação faz diferença.
+
+1. Separe por empresa, conta e período.
+2. Preserve o documento original junto do arquivo convertido.
+3. Registre as pendências e a referência ao documento de origem.
+4. Reúna comprovantes e outros documentos de apoio.
+
+O OFX Simples ajuda na conversão dos arquivos. Essa organização complementa o trabalho e facilita a revisão.
+
+Abrir o OFX Simples: https://www.ofxsimples.com.br/
+
+No próximo e-mail: como organizar as informações que ainda precisam de confirmação.
+
+Equipe OFX Simples
+
+Você recebe esta mensagem porque autorizou conteúdos e ofertas de parceiros do OFX Simples.
+Cancelar recebimento: {{ unsubscribe_url }}
+{{ sender_company }}
+{{ sender_address }}
