@@ -33,6 +33,7 @@ from app.application.conversion.conversion_runtime_config import (
     ConversionRuntimeConfig,
     ConversionUploadMode,
 )
+from app.application.conversion.quota_rejection_history import record_batch_quota_rejection
 from app.application.errors import AnalysisEditConflictError, AnalysisNotFoundError
 from app.application.review_commands import ReviewCommandService
 from app.dependencies import (
@@ -227,6 +228,7 @@ def create_conversion_batch(
         access_control_service=access_control_service,
         files_count=len(request.files),
     )
+    files = [ConversionBatchFile(**item.model_dump()) for item in request.files]
     mode_options = {}
     if request.ocr_mode == "pro":
         from app.application.conversion.pro_conversion import ConversionProAccessError, ConversionProQuota
@@ -239,6 +241,10 @@ def create_conversion_batch(
         if len(request.files) != 1 or not request.files[0].filename.lower().endswith(".pdf"):
             raise HTTPException(status_code=400, detail="A Conversão PRO aceita um único PDF por solicitação.")
         if budget.remaining(identity) < 1:
+            record_batch_quota_rejection(
+                access_control_service=access_control_service, identity=identity, files=files,
+                idempotency_key=idempotency_key, quota_code="pro_monthly_pages_quota_exceeded", ocr_mode=request.ocr_mode,
+            )
             raise HTTPException(status_code=429, detail="O limite mensal da Conversão PRO foi atingido.")
         mode_options["ocr_mode"] = "pro"
     try:
@@ -246,12 +252,17 @@ def create_conversion_batch(
         access_control_service.ensure_quota_available(identity, required_units=required_units)
         prepared = active_service.create(
             identity=identity,
-            files=[ConversionBatchFile(**item.model_dump()) for item in request.files],
+            files=files,
             idempotency_key=idempotency_key,
             **mode_options,
         )
     except QuotaExceededError as exc:
         quota_code = "monthly_pages_quota_exceeded" if identity.quota_mode == "pages" else "weekly_quota_exceeded"
+        record_batch_quota_rejection(
+            access_control_service=access_control_service, identity=identity, files=files,
+            idempotency_key=idempotency_key, quota_code=quota_code, ocr_mode=request.ocr_mode,
+            exception_class=type(exc).__name__,
+        )
         raise HTTPException(
             status_code=429,
             detail={
