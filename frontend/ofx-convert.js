@@ -1538,9 +1538,29 @@
   }
 
   function financialObservationValue(item) {
+    if (item.observation_type === "investment_monthly_summary") {
+      const labels = { applications: "Aplicações", redemptions: "Resgates", paid_income: "Rendimentos pagos",
+        withheld_irrf: "IRRF", withheld_iof: "IOF", month_income: "Rendimento do mês",
+        provisioned_income: "Rendimentos provisionados", principal: "Saldo atual" };
+      return Object.entries(item.amounts || {}).map(([key, value]) =>
+        `${escapeAttr(labels[key] || key)}: ${value == null ? "Não informado" : formatCurrency(Number(value))}`).join("; ");
+    }
+    if (item.observation_type === "investment_fund_quote") return escapeAttr((item.attributes || {}).unit_quote || "Não informado");
+    if (item.observation_type === "investment_fund_performance") return `${escapeAttr((item.attributes || {}).rate_percent || "0")}%`;
     const value = Object.values(item.amounts || {})[0];
     if (value != null && Number.isFinite(Number(value))) return formatCurrency(Number(value));
     return escapeAttr((item.attributes || {}).printed_value || "Não informado");
+  }
+
+  function financialObservationDate(item) {
+    return item.dates.as_of || item.dates.period_end
+      ? formatDate(item.dates.as_of || item.dates.period_end)
+      : escapeAttr((item.attributes || {}).statement_month || "Não informado");
+  }
+
+  function financialObservationLabel(item) {
+    const attrs = item.attributes || {};
+    return escapeAttr([attrs.fund_name || attrs.product, attrs.label || "Posição do período"].filter(Boolean).join(" — "));
   }
 
   function financialDocument(analysis) {
@@ -1556,6 +1576,8 @@
       accounts_payable_report: "Contas a pagar", accounts_receivable_report: "Contas a receber" };
     const titleReport = ["accounts_payable_report", "accounts_receivable_report"].includes(report.document_type);
     const summaryOnly = report.events.length === 0 && observations.length > 0;
+    const perBlock = report.metadata && report.metadata.summary_scope === "per_block";
+    const stonePayments = (report.evidence || []).includes("stone_payment_receipt_rows");
     const positionCount = report.metadata && report.metadata.product === "CDB" ? Number(report.metadata.position_count) : null;
     const hasPositionCount = Number.isInteger(positionCount) && positionCount > 0;
     const periodAmounts = Object.assign({}, ...observations.map((item) => item.amounts || {}));
@@ -1582,7 +1604,11 @@
         <p>Os campos de origem são preservados. Confira datas, valores e situações no Excel.</p>
       </section>${fields}
       <article class="kpi"><p class="kpi-label">${hasPositionCount ? "Posições de CDB" : summaryOnly ? "Campos do resumo" : "Eventos listados"}</p><p class="kpi-value">${hasPositionCount ? positionCount : summaryOnly ? observations.length : report.events.length}</p></article>
-      ${summaryOnly
+      ${summaryOnly && perBlock
+        ? `<article class="kpi"><p class="kpi-label">Saldos e rendimentos</p><p class="kpi-value">Por investimento e período</p><p class="kpi-hint">Confira cada posição na tabela e no Excel.</p></article>`
+        : stonePayments
+        ? `<article class="kpi"><p class="kpi-label">Valor dos repasses listados</p><p class="kpi-value">${formatCurrency(total)}</p></article>`
+        : summaryOnly
         ? `<article class="kpi"><p class="kpi-label">${hasPeriodFlows ? "Aplicações no período" : "Saldo bruto final"}</p><p class="kpi-value">${summaryAmount(hasPeriodFlows ? "applications" : "closing_gross")}</p></article>
            <article class="kpi"><p class="kpi-label">${hasPeriodFlows ? "Resgates líquidos no período" : "Saldo líquido final"}</p><p class="kpi-value">${summaryAmount(hasPeriodFlows ? "net_redemptions" : "closing_net")}</p></article>`
         : titleReport
@@ -2265,8 +2291,8 @@
           cell.textContent = ["Período / data", "Campo", "Valor", "Natureza", "Referência", "Origem"][index];
         });
         reviewRows.innerHTML = observations.map((item) => `<tr>
-          <td>${formatDate(item.dates.as_of || item.dates.period_end)}</td>
-          <td>${escapeAttr((item.attributes || {}).label || "Posição do período")}</td>
+          <td>${financialObservationDate(item)}</td>
+          <td>${financialObservationLabel(item)}</td>
           <td>${financialObservationValue(item)}</td>
           <td>${item.observation_type === "investment_lot" ? "Lote de aquisição" : "Posição / resumo do período"}</td>
           <td>${item.dates.application ? `Compra em ${formatDate(item.dates.application)}` : "Sem data de movimento individual"}</td>
@@ -2274,6 +2300,7 @@
         return;
       }
       const types = { receipt: "Recebimento de título", investment_application: "Aplicação CDB", investment_redemption: "Resgate CDB", investment_movement: "Movimentação de investimento", fiscal_document: "Documento fiscal",
+        acquirer_payment: "Repasse informado",
         payable_title: "Título a pagar", receivable_title: "Título a receber" };
       const statuses = { paid: "Pago", confirmed: "Confirmado", issued: "Emitido", voided: "Inutilizado", cancelled: "Cancelado", unknown: "Não identificado",
         settled: "Liquidado no relatório", pending: "Em aberto", partial: "Parcial" };
