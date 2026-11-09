@@ -1,0 +1,20 @@
+Olá, {{ name }}!
+
+Organizar os documentos e conferir as movimentações faz parte da rotina de quem trabalha com informações contábeis. A preparação das demonstrações e das notas explicativas exige conhecimentos específicos.
+
+Se essa etapa faz parte do seu trabalho, vale conhecer o curso Demonstrações Contábeis e Notas Explicativas, da Descomplicont, com o professor Laudelino Jochem.
+
+O programa aborda a estrutura das demonstrações e das notas explicativas para diferentes portes de empresas.
+
+Consulte a programação e as condições disponíveis para avaliar se o treinamento corresponde às atividades que você realiza.
+
+Conhecer o curso: https://go.hotmart.com/D87342786L
+
+Sobre esta indicação: divulgamos este curso como afiliados e podemos receber uma comissão pelas compras realizadas pelo nosso link.
+
+Equipe OFX Simples
+
+Você recebe esta mensagem porque autorizou conteúdos e ofertas de parceiros do OFX Simples.
+Cancelar recebimento: {{ unsubscribe_url }}
+{{ sender_company }}
+{{ sender_address }}
