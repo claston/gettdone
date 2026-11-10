@@ -37,6 +37,7 @@ from app.routers.access_control_common import (
     set_anonymous_identity_cookie,
     set_session_cookies,
 )
+from app.routers.password_reset import router as password_reset_router
 from app.routers.pro_security import (
     ProSessionRateLimiter,
     get_pro_session_rate_limiter,
@@ -61,6 +62,7 @@ from app.schemas import (
 from app.security_baseline import is_production_env
 
 router = APIRouter()
+router.include_router(password_reset_router)
 logger = logging.getLogger(__name__)
 _LEGACY_ANONYMOUS_FINGERPRINT_PATTERN = re.compile(r"^anon-\d{10,16}-[0-9a-f]{4,32}$")
 

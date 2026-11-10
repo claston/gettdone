@@ -52,6 +52,12 @@ describe("ProSessionGate", () => {
       await screen.findByRole("heading", { name: "Entre no OFX Simples PRO" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("Upload autenticado")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Esqueci minha senha" }),
+    ).toHaveAttribute(
+      "href",
+      "https://www.ofxsimples.com.br/esqueci-senha.html",
+    );
   });
 
   it("libera o upload depois que o backend cria a sessão HttpOnly", async () => {
