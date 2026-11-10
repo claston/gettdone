@@ -258,6 +258,7 @@ class ProductEventRequest(BaseModel):
 
 
 class AdminDashboardSummary(BaseModel):
+    client_area_people_count: int = 0
     conversions_total: int
     non_conversion_count: int
     pages_total: int

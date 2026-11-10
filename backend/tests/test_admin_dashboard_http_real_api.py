@@ -82,6 +82,12 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
                 f"{base_url}/telemetry/events",
                 json={"event_type": "plans_view", "page_path": "/planos.html"},
             )
+            for _ in range(2):
+                visit = client.post(
+                    f"{base_url}/telemetry/events",
+                    json={"event_type": "client_area_view", "page_path": "/client-area.html"},
+                )
+                assert visit.status_code == 202
             dashboard = client.get(
                 f"{base_url}/admin/dashboard",
                 params={"days": 7, "identity_type": "registered"},
@@ -109,6 +115,7 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
     assert dashboard.status_code == 200
     assert dashboard.headers["cache-control"] == "no-store"
     assert dashboard.json()["summary"]["conversions_total"] == 1
+    assert dashboard.json()["summary"]["client_area_people_count"] == 1
     assert dashboard.json()["summary"]["non_conversion_count"] == 0
     assert dashboard.json()["summary"]["pages_total"] == 3
     assert dashboard.json()["summary"]["pdf_conversions_count"] == 1

@@ -829,6 +829,10 @@ def _build_dashboard_payload(
         "end_at": end_at.isoformat(),
         "timezone": DASHBOARD_TIMEZONE_NAME,
         "summary": {
+            "client_area_people_count": len({
+                event["identity_id"] for event in product_events
+                if event["event_type"] == "client_area_view" and event["identity_type"] == "registered" and event["identity_id"]
+            }),
             "conversions_total": total,
             "non_conversion_count": non_conversion_count,
             "pages_total": pages_total,

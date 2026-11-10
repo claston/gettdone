@@ -228,6 +228,7 @@ def test_admin_dashboard_aggregates_quality_failures_and_returning_people(tmp_pa
         assert payload["days"] == 30
         assert payload["timezone"] == "America/Sao_Paulo"
         assert payload["summary"] == {
+            "client_area_people_count": 0,
             "conversions_total": 5,
             "non_conversion_count": 0,
             "pages_total": 13,

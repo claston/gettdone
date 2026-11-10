@@ -39,7 +39,7 @@ def record_client_product_event(
             explicit_user_token=None,
             access_cookie_token=access_cookie_token,
         )
-        if workspace_event and not user_token:
+        if (workspace_event or event_type == "client_area_view") and not user_token:
             raise HTTPException(status_code=401, detail="A registered product identity is required.")
         anonymous_fingerprint = ""
         if not user_token:

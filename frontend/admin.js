@@ -271,6 +271,13 @@
     appendMetricCard(dashboardSummaryNode, "Conversões", formatInteger(total), "tentativas no período", "");
     appendMetricCard(
       dashboardSummaryNode,
+      "Pessoas na área de clientes",
+      formatInteger(summary.client_area_people_count || 0),
+      "cadastrados únicos que entraram no período; coleta a partir da implantação",
+      "",
+    );
+    appendMetricCard(
+      dashboardSummaryNode,
       "Páginas processadas",
       formatInteger(summary.pages_total),
       "em todas as tentativas",
