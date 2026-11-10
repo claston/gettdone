@@ -69,10 +69,13 @@ Desative `AUTH_PASSWORD_RESET_ENABLED` para retornar `503` nas duas rotas e, se
 necessário, reverta os links do frontend. Preserve o código de validação de
 `credential_version`, a coluna e a tabela. Um rollback completo para um backend
 anterior após uma troca poderia revalidar tokens legados comprometidos; faça uma
-correção progressiva mantendo a revogação. O downgrade Alembic é bloqueado
-explicitamente para impedir essa perda de proteção. Senhas já trocadas permanecem
-válidas e não são restauradas. Antes de qualquer recuperação ser habilitada, o
-código anterior pode operar com os objetos aditivos presentes.
+correção progressiva mantendo a revogação. O downgrade Alembic é bloqueado quando
+existe um usuário com `credential_version > 0`, para impedir essa perda de
+proteção. Senhas já trocadas permanecem válidas e não são restauradas. Se nenhuma
+senha foi redefinida, o downgrade é permitido e preserva a coluna, a tabela e os
+dados; o código anterior pode operar com esses objetos aditivos presentes.
+Desative a recuperação antes do rollback. A verificação segura bloqueia escritas
+em `users` durante a transação de migração para não concorrer com uma redefinição.
 
 ## Validação reproduzível
 
@@ -81,9 +84,11 @@ código anterior pode operar com os objetos aditivos presentes.
 - Para exercitar PostgreSQL, aponte `PASSWORD_RESET_TEST_DATABASE_URL` para um
   banco descartável **local**. O teste cria um schema aleatório, migra até a
   revisão anterior, insere usuários antigos, aplica a migração duas vezes,
-  comprova escrita antiga e preservação dos dados, verifica o bloqueio do
-  downgrade e testa consumo concorrente entre dois serviços. Remove somente
-  esse schema ao terminar.
+  comprova escrita antiga e preservação dos dados, executa downgrade/re-upgrade
+  antes de uma redefinição e verifica o bloqueio do downgrade depois dela.
+  Também testa consumo concorrente entre dois serviços. Remove somente esse
+  schema ao terminar. A etapa PostgreSQL da CI executa esse teste junto aos
+  testes de rollback de organizações e movimentos canônicos.
 - `pro`: `npm run test:run`, `npm run lint` e `npm run typecheck`. Os testes do
   HTML executam o script das páginas, incluindo confirmação divergente, token
   ausente/expirado, falha de rede, limpeza da URL e limitação de reenvio.

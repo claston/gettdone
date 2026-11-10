@@ -30,11 +30,18 @@ def test_migration_is_additive_and_blocks_unsafe_rollback(monkeypatch):
     assert len(statements) == 3
     assert all("IF NOT EXISTS" in statement for statement in statements)
     assert not any("DROP " in statement for statement in statements)
-    with pytest.raises(RuntimeError, match="Retain password reset schema"):
-        module.downgrade()
+    statements.clear()
+    module.downgrade()
+    assert len(statements) == 1
+    assert 'LOCK TABLE "test_recovery".users IN SHARE MODE' in statements[0]
+    assert 'credential_version > 0' in statements[0]
+    assert 'RAISE EXCEPTION' in statements[0]
+    assert 'DROP ' not in statements[0]
     monkeypatch.setenv("DATABASE_SCHEMA", 'unsafe"schema')
     with pytest.raises(ValueError, match="Invalid PostgreSQL schema"):
         module.upgrade()
+    with pytest.raises(ValueError, match="Invalid PostgreSQL schema"):
+        module.downgrade()
 
 
 @pytest.mark.skipif(not os.getenv("PASSWORD_RESET_TEST_DATABASE_URL"), reason="Requires isolated local PostgreSQL")
@@ -64,9 +71,17 @@ def test_postgres_upgrade_existing_users_and_atomic_reset(tmp_path, monkeypatch)
             module.upgrade()
             conn.execute(insert, ("usr_old_writer", "old-writer@example.com"))
             assert conn.execute(f'SELECT credential_version FROM "{schema}".users').fetchall() == [(0,), (0,)]
-            with pytest.raises(RuntimeError, match="Retain password reset schema"):
-                module.downgrade()
+            module.downgrade()
             assert conn.execute(f'SELECT password_hash FROM "{schema}".users WHERE id=\'usr_old\'').fetchone() == ("existing-hash",)
+        env = {**os.environ, "DATABASE_URL": url, "DATABASE_SCHEMA": schema}
+
+        def migrate(direction, revision):
+            return subprocess.run([sys.executable, "-m", "alembic", direction, revision], cwd=backend,
+                                  env=env, capture_output=True, text=True, timeout=120)
+
+        for direction, revision in (("upgrade", "head"), ("downgrade", "20261103_01"), ("upgrade", "head")):
+            result = migrate(direction, revision)
+            assert result.returncode == 0, result.stdout + result.stderr
         for _ in range(2):
             services.append(AccessControlService(state_file=tmp_path / "state.json", token_secret="test",
                                                  database_url=url, database_schema=schema))
@@ -87,6 +102,14 @@ def test_postgres_upgrade_existing_users_and_atomic_reset(tmp_path, monkeypatch)
         with pytest.raises(InvalidUserTokenError):
             services[0].get_user_by_token(user.token)
         assert services[0].authenticate_user(user.email, "new-password").user_id == user.user_id
+        result = migrate("downgrade", "20261103_01")
+        assert result.returncode != 0
+        assert "Retain password reset schema" in result.stderr
+        with psycopg.connect(url) as conn:
+            assert conn.execute(f'SELECT version_num FROM "{schema}".alembic_version').fetchone() == ("20261109_01",)
+            assert conn.execute(f'SELECT credential_version FROM "{schema}".users WHERE id = %s', (user.user_id,)).fetchone() == (1,)
+        with pytest.raises(InvalidUserTokenError):
+            services[0].get_user_by_token(user.token)
     finally:
         for service in services:
             service.close()

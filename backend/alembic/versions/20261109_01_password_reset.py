@@ -1,7 +1,8 @@
 """Add password recovery tokens and legacy credential revocation.
 
 Retain these additive objects on application rollback. Dropping credential
-versions could restore compromised legacy tokens, so downgrade is blocked.
+versions could restore compromised legacy tokens, so downgrade is blocked
+once a password reset has revoked credentials.
 """
 import os
 
@@ -23,4 +24,13 @@ def upgrade():
 
 
 def downgrade():
-    raise RuntimeError("Retain password reset schema and credential revocation on rollback; disable recovery routes instead.")
+    schema = os.getenv("DATABASE_SCHEMA", "public").strip() or "public"
+    password_reset_schema(schema)  # Validate before interpolating an identifier.
+    # Keep additive objects for old writers and idempotent re-upgrades. Serialize
+    # the safety check with resets until the migration transaction completes.
+    op.execute(f'''DO $$ BEGIN
+        LOCK TABLE "{schema}".users IN SHARE MODE;
+        IF EXISTS (SELECT 1 FROM "{schema}".users WHERE credential_version > 0) THEN
+            RAISE EXCEPTION 'Retain password reset schema and credential revocation on rollback; disable recovery routes instead.';
+        END IF;
+    END $$''')
