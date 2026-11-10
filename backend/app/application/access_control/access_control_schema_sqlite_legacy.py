@@ -373,6 +373,12 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
           AND product_updates_consent_version IS NULL
         """
     )
+    if "credential_version" not in user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN credential_version INTEGER NOT NULL DEFAULT 0")
+    from app.application.password_reset_schema import password_reset_schema
+
+    for statement in password_reset_schema():
+        conn.execute(statement)
     if "email_verification_status" not in user_columns:
         conn.execute("ALTER TABLE users ADD COLUMN email_verification_status TEXT NOT NULL DEFAULT 'verified'")
     if "email_verified_at" not in user_columns:

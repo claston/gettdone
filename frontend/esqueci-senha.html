@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="referrer" content="no-referrer" />
+  <meta name="robots" content="noindex" />
+  <title>OFX Simples | Esqueci minha senha</title>
+  <link rel="icon" type="image/png" href="/assets/favicon.png" />
+  <link rel="stylesheet" href="./auth.css?v=3" />
+  <link rel="stylesheet" href="./topbar-unified.css?v=1" />
+</head>
+<body>
+  <nav class="top-nav-shell glass-header" aria-label="Navegação principal">
+    <div class="top-nav-inner">
+      <a class="top-brand" href="./index.html">OFX Simples</a>
+      <div class="top-auth-actions"><a class="top-auth-link" href="./login.html">Entrar</a></div>
+    </div>
+  </nav>
+  <main class="auth-page">
+    <section class="auth-shell">
+      <article class="card">
+        <header class="card-head">
+          <h1>Esqueci minha senha</h1>
+          <p>Informe o e-mail da sua conta para solicitar um link de recuperação.</p>
+        </header>
+        <p id="status-msg" class="status" role="status" aria-live="polite"></p>
+        <form id="forgot-password-form" class="form">
+          <label for="email">E-mail</label>
+          <input id="email" name="email" type="email" autocomplete="email" maxlength="320" required />
+          <button id="submit-btn" type="submit" class="btn btn-primary">Enviar link de recuperação</button>
+        </form>
+        <p class="footnote">Confira também a pasta de spam. O link expira em 30 minutos.</p>
+        <p class="footnote">Entrou com o Google? Use <a href="./login.html">Continuar com Google</a>.</p>
+        <p class="footnote"><a href="./login.html">Voltar para entrar</a></p>
+        <noscript><p>Ative o JavaScript para solicitar a recuperação de senha.</p></noscript>
+      </article>
+    </section>
+  </main>
+  <script src="./password-reset.js?v=1" defer></script>
+</body>
+</html>

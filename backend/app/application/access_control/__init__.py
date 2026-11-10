@@ -24,6 +24,7 @@ from app.application.access_control.access_control_email_verification import Acc
 from app.application.access_control.access_control_helpers import AccessControlHelpersComponent
 from app.application.access_control.access_control_identity import AccessControlIdentityComponent
 from app.application.access_control.access_control_login_events import AccessControlLoginEventsComponent
+from app.application.access_control.access_control_password_reset import AccessControlPasswordResetComponent
 from app.application.access_control.access_control_quota import AccessControlQuotaComponent
 from app.application.access_control.access_control_schema import AccessControlSchemaComponent
 from app.application.access_control.access_control_session import AccessControlSessionComponent
@@ -165,6 +166,7 @@ class AccessControlService:
         self.helpers = AccessControlHelpersComponent(self)
         self.auth = AccessControlAuthComponent(self)
         self.email_verification = AccessControlEmailVerificationComponent(self)
+        self.password_reset = AccessControlPasswordResetComponent(self)
         self.schema = AccessControlSchemaComponent(self)
         self.session_core = AccessControlSessionCoreComponent(self)
         self.identity = AccessControlIdentityComponent(self)
