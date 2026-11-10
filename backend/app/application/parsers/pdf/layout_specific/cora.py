@@ -43,7 +43,7 @@ _IGNORED_LINE_PREFIXES = (
 
 @dataclass(frozen=True, slots=True)
 class CoraLayoutParser:
-    layout_names: frozenset[str] = frozenset({CORA_AVAILABLE_BALANCE_LAYOUT})
+    layout_names: frozenset[str] = frozenset({CORA_AVAILABLE_BALANCE_LAYOUT, "cora_extrato_periodo_transacoes_v1"})
 
     def parse(
         self,
@@ -53,6 +53,10 @@ class CoraLayoutParser:
         context: LayoutSpecificParseContext,
     ) -> LayoutSpecificParseResult | None:
         _ = context
+        if layout_name == "cora_extrato_periodo_transacoes_v1":
+            from app.application.parsers.pdf.cora_daily_groups import parse_cora_daily_groups
+
+            return LayoutSpecificParseResult(parse_cora_daily_groups(lines), "layout_specific_cora", "signed_amounts_in_daily_groups")
         if layout_name != CORA_AVAILABLE_BALANCE_LAYOUT:
             return None
 

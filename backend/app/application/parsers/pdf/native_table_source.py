@@ -126,7 +126,16 @@ def read_native_table_source(raw, *, decorative_history=None):
                 if not chars:
                     # White image objects also occur on otherwise empty pages.
                     # Verify actual pixels and preserve the physical page number.
-                    if page.render(scale=2).to_pil().convert("RGB").getextrema() == ((255, 255),) * 3:
+                    rendered = page.render(scale=2).to_pil().convert("RGB")
+                    from PIL import Image, ImageChops
+
+                    marks = ImageChops.difference(rendered, Image.new("RGB", rendered.size, "white")).getbbox()
+                    # A faint scanner edge can leave a few pixels outside the
+                    # usable page. Never ignore marks in the interior, text, or
+                    # a larger image region merely because extraction is empty.
+                    edge_only = (marks is not None and (marks[2] <= 2 or marks[0] >= rendered.width-2)
+                                 and marks[3]-marks[1] <= 24 and min(lo for lo, _ in rendered.getextrema()) >= 230)
+                    if marks is None or edge_only:
                         pages.append(ExtractedPage(page_index + 1, lines=[], words=[]))
                         empty += 1
                         continue

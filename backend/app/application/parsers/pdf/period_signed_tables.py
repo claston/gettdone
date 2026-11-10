@@ -170,12 +170,17 @@ def _c6(pages):
                 finish_month()
                 scope = _period(*month.groups())
                 month_rows, totals = [], {}
+                for total in re.finditer(rf"(ENTRADAS|SAIDAS):\s*R\$\s*({NUMBER})", normalized[month.end():]):
+                    if total[1] in totals:
+                        fail("Há totais mensais repetidos sem separação de bloco.")
+                    totals[total[1]] = money(total[2])
                 continue
-            total = re.fullmatch(rf"(ENTRADAS|SAIDAS):\s*R\$\s*({NUMBER})", normalized)
-            if total and scope:
-                if total[1] in totals:
-                    fail("Há totais mensais repetidos sem separação de bloco.")
-                totals[total[1]] = money(total[2])
+            printed_totals = list(re.finditer(rf"(ENTRADAS|SAIDAS):\s*R\$\s*({NUMBER})", normalized))
+            if printed_totals and scope:
+                for total in printed_totals:
+                    if total[1] in totals:
+                        fail("Há totais mensais repetidos sem separação de bloco.")
+                    totals[total[1]] = money(total[2])
                 continue
             if normalized.startswith("SALDO DO DIA"):
                 flush()
@@ -198,6 +203,13 @@ def _c6(pages):
                     fail("O saldo diário não está legível.")
             if normalized.startswith(("INFORMACOES SUJEITAS", "ATENDIMENTO 24", "OUVIDORIA")):
                 flush()
+                continue
+            inline_row = re.fullmatch(r"(\d{2}/\d{2})\s+(\d{2}/\d{2})\s+(.+)", normalized)
+            if inline_row and scope:
+                flush()
+                pending = (page, line, [inline_row[1], inline_row[2]], [inline_row[3]])
+                if "R$" in inline_row[3]:
+                    flush()
                 continue
             dates = re.fullmatch(r"(\d{2}/\d{2})(?:\s+(\d{2}/\d{2}))?", normalized)
             if dates and scope:

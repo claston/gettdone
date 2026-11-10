@@ -24,7 +24,8 @@ _MONEY = r"[+-]?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}"
 _PERIOD = re.compile(rf"^({_DATE}) {_ZONE} - ({_DATE}) {_ZONE}$")
 _SUMMARY = re.compile(rf"^(BRL|USD) EM ({_DATE}) {_ZONE} ({_MONEY}) (BRL|USD)$")
 _ROW = re.compile(rf"^(.+?)\s+({_MONEY})\s+({_MONEY})$")
-_TRANSACTION = re.compile(rf"^({_DATE})\s*\|\s*TRANSACAO:\s*([A-Z0-9_-]+)$", re.IGNORECASE)
+_TRANSACTION = re.compile(rf"^({_DATE})\s*\|\s*(?:CARTAO TERMINADO EM \d{{4}}\s*\|\s*[^|]+\s*\|\s*)?"
+                          r"TRANSACAO:\s*([A-Z0-9_-]+)$", re.IGNORECASE)
 _PAGE = re.compile(r"^REF:(\S+)\s+(\d+)\s*/\s*(\d+)$", re.IGNORECASE)
 _TABLE = "DESCRICAO ENTRADA SAIDA VALOR"
 _ERROR = "Não foi possível validar todas as movimentações do extrato Wise. Confira se o PDF está completo e legível."
@@ -97,6 +98,14 @@ class WiseLayoutParser:
                 if document_reference is not None and counter[1] != document_reference:
                     _fail()
                 document_reference = counter[1]
+            content = [line for line in page if not _PAGE.fullmatch(line.text.strip())]
+            if (page_number == page_numbers[-1] and page_number != page_numbers[0] and not pending
+                    and content and normalize_upper_text(content[0].text).startswith("A WISE ")
+                    and "WISE.COM/HELP" in normalize_upper_text(content[-1].text)
+                    and not any(_TRANSACTION.fullmatch(normalize_upper_text(line.text))
+                                or _ROW.fullmatch(line.text.strip()) for line in content)):
+                final_footer = True
+                continue
             table_started = False
             footer_started = False
             for line in page:
@@ -147,7 +156,7 @@ class WiseLayoutParser:
             if rows[index].transaction.date < rows[index + 1].transaction.date:
                 _fail()
             if financials[index][1] != financials[index + 1][1] + financials[index][0]:
-                _fail()
+                financial_mismatch(_ERROR)
         # Accounting consumers (including edits/exports) expect oldest first.
         # Retain each physical source page/line so the reviewer can show PDF order.
         return LayoutSpecificParseResult(list(reversed(rows)), "layout_specific_wise", "wise_description_amount_then_date_reference")

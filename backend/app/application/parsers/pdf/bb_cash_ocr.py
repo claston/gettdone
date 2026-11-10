@@ -437,7 +437,7 @@ def parse_bb_cash_ocr(extraction):
                 and item not in values
                 and re.fullmatch(r"[\d.,]+", item.text)
             ]
-            if has_document and len(refs) != 1:
+            if has_document and len(refs) > 1:
                 fail()
             if not has_document:
                 refs = []

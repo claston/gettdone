@@ -486,6 +486,18 @@ def _parse_pdf_transactions_strict(
         from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
 
         validate_statement_completeness(native_pages)
+        from app.application.sweep_statement_detection import PAGBANK, identify_sweep_statement
+
+        if identify_sweep_statement("\n".join(native_pages)) == PAGBANK:
+            from app.application.financial_event_projection import project_financial_document
+            from app.application.parsers.pdf.native_table_source import read_native_table_source
+            from app.application.parsers.pdf.pagbank_financial_ocr import parse_pagbank_financial
+
+            source = read_native_table_source(raw_bytes)
+            result = project_financial_document(parse_pagbank_financial(source), native_pages, native=True)
+            return _with_parse_observability(replace(result, source_extraction=source,
+                source_layout_lines=tuple(tuple(p.lines) for p in source.pages)),
+                native_text_detected=1, textract_attempted=0, extraction_provider="native_pdfium_text")
         from app.application.parsers.pdf.itau_complete_table import parse_itau_complete_table
 
         complete_table = parse_itau_complete_table(raw_bytes, native_pages)

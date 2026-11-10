@@ -85,6 +85,7 @@ def parse_sicoob_native_split_cd(source):
     used, rows, opening, controls = set(), [], None, {}
     non_cash = 0
     opening_position, row_positions = None, []
+    opening_date = None
     days_with_rows = set()
     for index, (pos, page, anchor) in enumerate(anchors):
         stop = anchors[index+1][0] if index+1 < len(anchors) else end_pos
@@ -109,6 +110,10 @@ def parse_sicoob_native_split_cd(source):
             if sign != "*":
                 fail()
             continue
+        if label == "SALDO BLOQ.JUD.ANT.":
+            if sign not in {"C", "D"}:
+                fail("O saldo judicial SISBR está sem sinal explícito.")
+            continue
         if sign == "*" and is_blocked_cheque_history(label):
             if not start <= date <= end:
                 fail("Um depósito pendente SISBR está fora do período confirmado.")
@@ -118,9 +123,10 @@ def parse_sicoob_native_split_cd(source):
             fail("Um movimento SISBR está sem sinal C/D explícito.")
         value = money(match[1]) * (-1 if sign == "D" else 1)
         if label == "SALDO ANTERIOR":
-            if opening is not None or date >= start:
+            if opening is not None or date > end:
                 fail()
             opening, opening_position = value, pos
+            opening_date = date
         elif label == "SALDO DO DIA":
             controls.setdefault(date, []).append((value, band))
         else:
@@ -134,11 +140,14 @@ def parse_sicoob_native_split_cd(source):
             row = _row(page.page_number, anchor.line_index, date, description, value, None, refs[0])
             rows.append(_attach_evidence(row, band))
             row_positions.append(pos)
-    if used != {(p.page_number, line.id) for _, p, line in financial} or not rows or opening is None:
+    if used != {(p.page_number, line.id) for _, p, line in financial} or opening is None:
         fail("Há um valor SISBR sem movimento ou controle associado.")
     if not days_with_rows.issubset(controls):
         fail("Um dia SISBR está sem seu fechamento.")
-    rows = chronological_rows(rows, opening_position=opening_position, first_row_position=row_positions[0])
+    if rows:
+        rows = chronological_rows(rows, opening_position=opening_position, first_row_position=row_positions[0])
+        if opening_date > rows[0].transaction.date:
+            fail("O saldo anterior SISBR é posterior ao primeiro movimento.")
     validate_idle_day_controls(rows, opening, {date: [value for value, _ in entries] for date, entries in controls.items()})
     running = opening
     for index, row in enumerate(rows):
@@ -151,11 +160,13 @@ def parse_sicoob_native_split_cd(source):
             rows[index] = replace(row, running_balance=float(next(iter(values))) if len(values) == 1 else None)
             for _, band in printed:
                 rows[index] = _attach_evidence(rows[index], band)
-    closing_labels = [line for line in last_page.lines if upper(line.text) == "(+) SALDO EM CONTA:"]
+    closing_labels = [(page, line) for pos, page, line in witnesses
+                      if pos > end_pos and upper(line.text) == "(+) SALDO EM CONTA:"]
     if len(closing_labels) != 1:
         fail()
+    last_page, closing_label = closing_labels[0]
     closing_values = [line for line in last_page.lines if line.bbox["left"] >= value_left
-        and abs(line.bbox["top"] - closing_labels[0].bbox["top"]) < height
+        and abs(line.bbox["top"] - closing_label.bbox["top"]) < height
         and _VALUE.fullmatch(upper(line.text))]
     if len(closing_values) != 1 or not (match := re.fullmatch(rf"({NUMBER})\s*([CD])", upper(closing_values[0].text))):
         fail("O saldo final SISBR está sem seu sinal C/D legível.")

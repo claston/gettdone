@@ -61,6 +61,21 @@ def _kind(text):
 
 
 def parse_followup_native_tables(raw, page_texts):
+    compact = upper("\n".join(page_texts)).replace(" ", "")
+    inactive_matrix = all(marker in compact for marker in ("SICREDI", "PERIODO:DE", "DEBITO", "CREDITO", "SALDOATUAL"))
+    if "ACONTANAOFOIMOVIMENTADA" in compact or inactive_matrix:
+        from app.application.parsers.pdf.inactive_cash_tables import parse_inactive_cash_table
+
+        source = read_native_table_source(raw)
+        inactive = parse_inactive_cash_table(raw, source)
+        if inactive is not None:
+            return inactive, source
+    from app.application.parsers.pdf.period_signed_tables import C6, identify_period_signed_table, parse_period_signed_table
+
+    if identify_period_signed_table("\n".join(page_texts)) == C6:
+        source = read_native_table_source(raw)
+        pages = ["\n".join(line.text for line in page.lines) for page in source.pages]
+        return parse_period_signed_table(pages, C6), source
     from app.application.parsers.pdf.daily_balance_groups import is_daily_balance_groups, parse_daily_balance_groups
 
     if is_daily_balance_groups("\n".join(page_texts)):

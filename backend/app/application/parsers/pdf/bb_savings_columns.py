@@ -18,8 +18,18 @@ def is_bb_savings(text):
 
 def parse_bb_savings(source):
     rows, opening, closing, carry = [], None, None, None
+    value_left, balance_left, header_y = .815, .87, .27
+    headings = [w for w in source.pages[0].words if w.bbox and upper(w.text) == "VALOR"]
+    for heading in headings:
+        balances = [w for w in source.pages[0].words if w.bbox and upper(w.text) == "SALDO"
+                    and w.bbox["left"] > heading.bbox["left"]
+                    and abs(w.bbox["top"]-heading.bbox["top"]) < .01]
+        if len(balances) == 1:
+            value_left, balance_left = heading.bbox["left"]-.025, balances[0].bbox["left"]-.008
+            header_y = heading.bbox["top"] + heading.bbox["height"]
+            break
     for original in source.pages:
-        page = split_native_columns(original, [0.17, 0.25, 0.45, 0.59, 0.80, 0.87])
+        page = split_native_columns(original, [0.17, 0.25, 0.45, 0.59, value_left, balance_left])
         stop = min((line.bbox["top"] for line in page.lines if line.bbox and upper(line.text) == "SALDO ATUAL"), default=1)
         dates = [
             w
@@ -28,7 +38,7 @@ def parse_bb_savings(source):
             and 0.08 < w.bbox["left"] < 0.14
             and re.fullmatch(DATE, w.text)
             and w.bbox["top"] < stop
-            and (page.page_number > 1 or w.bbox["top"] > 0.27)
+            and (page.page_number > 1 or w.bbox["top"] > header_y)
         ]
         # LINE anchors retain source line numbers; date WORDs separate the two
         # independently printed dates when the content stream merged them.
@@ -43,10 +53,10 @@ def parse_bb_savings(source):
         for word in page.words:
             if (
                 word.bbox
-                and 0.815 < word.bbox["left"] < 0.87
+                and value_left < word.bbox["left"] < balance_left
                 and word.bbox["top"] < stop
                 and re.fullmatch(rf"{NUMBER}(?:[CD])?", word.text)
-                and (page.page_number > 1 or word.bbox["top"] > 0.29)
+                and (page.page_number > 1 or word.bbox["top"] > header_y)
             ):
                 parents = [line for line in page.lines if word.id in line.word_ids]
                 if len(parents) != 1:
@@ -61,7 +71,7 @@ def parse_bb_savings(source):
             history = [
                 line
                 for line in page.lines
-                if line.bbox and 0.27 < line.bbox["left"] < 0.80 and nearest_row(line, anchors, max_distance=0.02) is anchor
+                if line.bbox and 0.27 < line.bbox["left"] < value_left and nearest_row(line, anchors, max_distance=0.02) is anchor
             ]
             description = " ".join(line.text for line in sorted(history, key=lambda line: (line.bbox["top"], line.bbox["left"])))
             if "SALDO ANTERIOR" in upper(description):
@@ -69,13 +79,14 @@ def parse_bb_savings(source):
                     line
                     for line in page.lines
                     if line.bbox
-                    and line.bbox["left"] > 0.87
+                    and line.bbox["left"] > balance_left
                     and abs(line.bbox["top"] - anchor.bbox["top"]) < 0.015
-                    and re.fullmatch(NUMBER, line.text)
+                    and re.fullmatch(rf"{NUMBER}(?:\s*[CD])?", line.text)
                 ]
                 if len(values) != 1:
                     fail()
-                opening = money(values[0].text)
+                token = re.fullmatch(rf"({NUMBER})(?:\s*([CD]))?", values[0].text)
+                opening = money(token[1]) * (-1 if token[2] == "D" else 1)
                 continue
             previous = carry if i == 0 else None
             cells = associated or ([previous[1]] if previous else [])
@@ -86,7 +97,7 @@ def parse_bb_savings(source):
                 w
                 for w in page.words
                 if w.bbox
-                and 0.80 < w.bbox["left"] < 0.87
+                and value_left < w.bbox["left"] < balance_left
                 and w.text in {"C", "D"}
                 and nearest_row(w, anchors, max_distance=0.015) is anchor
             ]
@@ -117,7 +128,7 @@ def parse_bb_savings(source):
             history = [
                 line
                 for line in page.lines
-                if line.bbox and 0.27 < line.bbox["left"] < 0.80 and abs(line.bbox["top"] - value.bbox["top"]) < 0.008
+                if line.bbox and 0.27 < line.bbox["left"] < value_left and abs(line.bbox["top"] - value.bbox["top"]) < 0.008
             ]
             carry = (page, value, history)
         labels = [line for line in page.lines if upper(line.text) == "SALDO TOTAL"]

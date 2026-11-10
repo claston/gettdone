@@ -87,6 +87,7 @@ def test_default_layout_parser_registry_contains_current_specific_families() -> 
             "banco_inter_extrato_conta_corrente_saldo_transacao_v1",
             "banco_inter_extrato_posicao_renda_fixa_v1",
             "cora_extrato_periodo_disponivel_v1",
+            "cora_extrato_periodo_transacoes_v1",
             "cresol_extrato_conta_corrente_legado_sinal_sufixo_v1",
             "cresol_extrato_consolidado_conta_corrente_valor_cd_v1",
             "cresol_extrato_lancamentos_saldo_dia_pix_credito_v1",

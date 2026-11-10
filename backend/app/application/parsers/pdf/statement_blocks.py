@@ -100,7 +100,8 @@ def statement_blocks(pages, *, validate_identity=True):
         positional_reset = month_key and positional_month and month_key != positional_month
         changed = period is not None and current is not None and period != current
         dated_reset = (period is None and current is None and opening_date and opening
-                       and opening_date != opening and opening_starts_ledger)
+                       and opening_date != opening and opening_starts_ledger
+                       and "ULTIMOS LANCAMENTOS" not in normalized)
         if index and (changed or dated_reset or positional_reset):
             blocks.append(StatementBlock(start, index, current))
             start, opening = index, None
