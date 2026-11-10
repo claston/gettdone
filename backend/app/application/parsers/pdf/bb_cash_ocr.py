@@ -199,8 +199,13 @@ def parse_bb_cash_ocr(extraction):
     separator_repairs = set()
     for page in extraction.pages:
         lines = [line for line in page.lines if line.bbox]
+        # The book date precedes the optional movement date. Native text and
+        # OCR may join both printed date cells into one LINE; keep its evidence
+        # and use the first date as the ledger anchor, never the nearest amount.
         dates = sorted(
-            [item for item in lines if item.bbox["left"] < 0.17 and re.fullmatch(DATE, item.text)], key=lambda item: item.bbox["top"]
+            [replace(item, text=match[1]) for item in lines if item.bbox["left"] < 0.17
+             and (match := re.fullmatch(rf"({DATE})(?:\s+{DATE})?", item.text))],
+            key=lambda item: item.bbox["top"],
         )
         if not dates:
             fail()

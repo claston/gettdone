@@ -1,4 +1,4 @@
-"""Wise PT-BR statements put each transaction's date below its financial row."""
+"""Wise PT-BR statements bind a dated transaction ID to one financial row."""
 
 import re
 from dataclasses import dataclass
@@ -24,8 +24,10 @@ _MONEY = r"[+-]?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}"
 _PERIOD = re.compile(rf"^({_DATE}) {_ZONE} - ({_DATE}) {_ZONE}$")
 _SUMMARY = re.compile(rf"^(BRL|USD) EM ({_DATE}) {_ZONE} ({_MONEY}) (BRL|USD)$")
 _ROW = re.compile(rf"^(.+?)\s+({_MONEY})\s+({_MONEY})$")
-_TRANSACTION = re.compile(rf"^({_DATE})\s*\|\s*(?:CARTAO TERMINADO EM \d{{4}}\s*\|\s*[^|]+\s*\|\s*)?"
-                          r"TRANSACAO:\s*([A-Z0-9_-]+)$", re.IGNORECASE)
+_FINANCIAL_LINE = re.compile(rf"^(?:.+?\s+)?({_MONEY})\s+({_MONEY})$")
+_TRANSACTION = re.compile(rf"^({_DATE})(?:\s*\|\s*|\s+)(?:CARTAO TERMINADO EM \d{{4}}\s*\|\s*[^|]+\s*\|\s*)?"
+                          r"TRANSACAO:\s*([A-Z0-9_-]+)(?:\s+(?:\|\s*)?REFERENCIA:\s*.+)?$", re.IGNORECASE)
+_ORIGINAL_REFERENCE = re.compile(r"transa[çc][ãa]o:\s*([a-z0-9_-]+)", re.IGNORECASE)
 _PAGE = re.compile(r"^REF:(\S+)\s+(\d+)\s*/\s*(\d+)$", re.IGNORECASE)
 _TABLE = "DESCRICAO ENTRADA SAIDA VALOR"
 _ERROR = "Não foi possível validar todas as movimentações do extrato Wise. Confira se o PDF está completo e legível."
@@ -90,7 +92,33 @@ class WiseLayoutParser:
         financials: list[tuple[Decimal, Decimal]] = []
         references: set[str] = set()
         pending: list[_PdfLine] = []
+        pending_date: _PdfLine | None = None
         final_footer = False
+
+        def finish(transaction_line):
+            nonlocal pending, pending_date
+            if any(_FINANCIAL_LINE.fullmatch(part.text.strip()) for part in pending[:-1]):
+                _fail()
+            match = _ROW.fullmatch(" ".join(part.text.strip() for part in pending))
+            transaction = _TRANSACTION.fullmatch(normalize_upper_text(transaction_line.text))
+            original = _ORIGINAL_REFERENCE.search(transaction_line.text)
+            if not match or not transaction or not original:
+                _fail()
+            transaction_date = _date(transaction[1])
+            reference = original[1]
+            if reference in references or not period_contains(transaction_date, metadata.start, metadata.end):
+                _fail()
+            amount, balance = _money(match[2]), _money(match[3])
+            rows.append(build_parsed_transaction(
+                date=transaction_date.isoformat(), description=match[1], amount=float(amount),
+                running_balance=float(balance), external_reference_id=reference,
+                source_page=pending[0].page_number, source_line=pending[0].line_number, has_explicit_amount_sign=True,
+                source_line_refs=tuple(sorted((part.page_number, part.line_number) for part in [*pending, transaction_line])),
+            ))
+            financials.append((amount, balance))
+            references.add(reference)
+            pending, pending_date = [], None
+
         for page_number in page_numbers:
             page = [line for line in lines if line.page_number == page_number]
             counters = [match for line in page if (match := _PAGE.fullmatch(line.text.strip()))]
@@ -125,27 +153,18 @@ class WiseLayoutParser:
                     continue
                 transaction = _TRANSACTION.fullmatch(normalized)
                 if transaction:
-                    if any(_ROW.fullmatch(part.text.strip()) for part in pending[:-1]):
+                    if pending_date is not None or not pending:
                         _fail()
-                    match = _ROW.fullmatch(" ".join(part.text.strip() for part in pending))
-                    if not match:
-                        _fail()
-                    transaction_date = _date(transaction[1])
-                    reference = line.text.rsplit(":", 1)[-1].strip()
-                    if reference in references or not period_contains(transaction_date, metadata.start, metadata.end):
-                        _fail()
-                    amount, balance = _money(match[2]), _money(match[3])
-                    rows.append(build_parsed_transaction(
-                        date=transaction_date.isoformat(), description=match[1], amount=float(amount),
-                        running_balance=float(balance), external_reference_id=reference,
-                        source_page=pending[0].page_number, source_line=pending[0].line_number, has_explicit_amount_sign=True,
-                        source_line_refs=tuple((part.page_number, part.line_number) for part in [*pending, line]),
-                    ))
-                    financials.append((amount, balance))
-                    references.add(reference)
-                    pending = []
+                    if _FINANCIAL_LINE.fullmatch(pending[-1].text.strip()):
+                        finish(line)
+                    else:
+                        # Some exports emit description, date/ID, then money.
+                        # The ID is mandatory; no date is borrowed from a row.
+                        pending_date = line
                 else:
                     pending.append(line)
+                    if pending_date is not None and _FINANCIAL_LINE.fullmatch(line.text.strip()):
+                        finish(pending_date)
             if not table_started:
                 _fail()
         if pending or not final_footer:
