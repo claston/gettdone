@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.application.access_control import AccessControlService
@@ -153,6 +154,61 @@ def test_product_event_rejects_missing_identity_and_unknown_event(tmp_path: Path
         assert unknown.status_code == 400
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize("identity_kind", ["missing", "anonymous", "invalid"])
+def test_client_area_visit_requires_registered_session(tmp_path: Path, identity_kind: str) -> None:
+    client, service, _clock, _buyer = _build_client(tmp_path)
+    try:
+        headers = {}
+        if identity_kind == "anonymous":
+            assert client.post("/auth/anonymous-session", json={}).status_code == 200
+        elif identity_kind == "invalid":
+            headers = {"Authorization": "Bearer invalid-token"}
+        response = client.post("/telemetry/events", json={"event_type": "client_area_view"}, headers=headers)
+        assert response.status_code == 401
+        with service._connect() as conn:
+            assert service._fetchone(conn, "SELECT COUNT(*) AS total FROM product_events")["total"] == 0
+    finally:
+        app.dependency_overrides.clear()
+        service.close()
+
+
+def test_client_area_counts_unique_registered_visitors_in_selected_period(tmp_path: Path) -> None:
+    client, service, clock, _buyer = _build_client(tmp_path)
+    try:
+        assert client.post("/admin/auth/login", json={"email": "admin@example.com", "password": "admin-pass"}).status_code == 200
+        assert client.get("/admin/dashboard").json()["summary"]["client_area_people_count"] == 0
+        assert client.post("/auth/session/login", json={"email": "buyer@example.com", "password": "strong-pass"}).status_code == 200
+        for _ in range(3):
+            response = client.post("/telemetry/events", json={"event_type": "client_area_view", "page_path": "/client-area.html"})
+            assert response.status_code == 202
+
+        visitor = service.register_user(name="Second visitor", email="second@example.com", password="strong-pass")
+        old_visitor = service.register_user(name="Earlier visitor", email="earlier@example.com", password="strong-pass")
+        future_visitor = service.register_user(name="Future visitor", email="future@example.com", password="strong-pass")
+        current_time = clock["now"]
+        for user, visited_at in (
+            (visitor, datetime(2026, 10, 1, 3, 0, tzinfo=timezone.utc)),
+            (old_visitor, datetime(2026, 10, 1, 2, 59, tzinfo=timezone.utc)),
+            (future_visitor, datetime(2026, 10, 2, 15, 0, tzinfo=timezone.utc)),
+        ):
+            clock["now"] = visited_at
+            service.record_product_event(
+                identity=service.resolve_identity(anonymous_fingerprint=None, user_token=user.token),
+                event_type="client_area_view",
+            )
+        clock["now"] = current_time
+        assert client.post("/admin/auth/login", json={"email": "admin@example.com", "password": "admin-pass"}).status_code == 200
+        for identity_type, days, expected in (("all", 1, 2), ("registered", 1, 2), ("anonymous", 1, 0), ("all", 30, 3)):
+            response = client.get("/admin/dashboard", params={"days": days, "identity_type": identity_type})
+            assert response.status_code == 200
+            assert response.json()["summary"]["client_area_people_count"] == expected
+            assert response.json()["summary"]["conversions_total"] == 0
+            assert response.json()["checkout_funnel"]["plans_page_people_count"] == 0
+    finally:
+        app.dependency_overrides.clear()
+        service.close()
 
 
 def test_dashboard_identifies_registered_plan_visitor_before_first_conversion(tmp_path: Path) -> None:

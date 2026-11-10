@@ -484,18 +484,25 @@
     try {
       const query = new URL(window.location.href).searchParams;
       const requestedIntentId = String(query.get("checkout_intent") || "").trim();
-      const mePromise = fetchJson(`${apiBase}/auth/me`, undefined, { attempts: 3 });
+      const mePromise = fetchJson(`${apiBase}/auth/me`, undefined, { attempts: 3 }).then((me) => {
+        // Count entry once authentication succeeds, even if optional page data fails.
+        void fetchJson(`${apiBase}/telemetry/events`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          keepalive: true,
+          body: JSON.stringify({ event_type: "client_area_view", page_path: "/client-area.html" }),
+        }).catch(() => {});
+        return me;
+      });
       const historyPromise = fetchJson(`${apiBase}/client/conversions?limit=20`, undefined, { attempts: 3 });
       const plansPromise = fetchJson(`${apiBase}/plans`, undefined, { attempts: 3 }).catch(() => ({ items: [] }));
 
-      const history = await historyPromise;
+      const [me, history] = await Promise.all([mePromise, historyPromise]);
       renderRows(history.items || []);
       if (viewAllLink && (!history.items || history.items.length < 20)) {
         viewAllLink.style.visibility = "hidden";
       }
       setStatus("", null);
-
-      const me = await mePromise;
 
       if (profileEmail) {
         profileEmail.textContent = me.email || "-";

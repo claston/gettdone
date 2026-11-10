@@ -6,7 +6,7 @@ from app.application.conversion.identity import IdentityContext
 
 WORKSPACE_EVENT_TYPES = frozenset({"workspace_opened", "conversion_selected", "suspicious_filter_used",
                                    "transaction_edited", "conversion_reviewed", "batch_export_requested"})
-CLIENT_PRODUCT_EVENT_TYPES = frozenset({"plans_view", "plan_cta_click", "checkout_view"}) | WORKSPACE_EVENT_TYPES
+CLIENT_PRODUCT_EVENT_TYPES = frozenset({"plans_view", "plan_cta_click", "checkout_view", "client_area_view"}) | WORKSPACE_EVENT_TYPES
 PRODUCT_EVENT_TYPES = CLIENT_PRODUCT_EVENT_TYPES | {"download"}
 DOWNLOAD_FORMATS = frozenset({"ofx", "xlsx", "csv"})
 
