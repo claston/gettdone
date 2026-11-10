@@ -184,6 +184,10 @@ export function ProSessionGate({
             onChange={(event) => setPassword(event.target.value)}
           />
 
+          <a href="https://www.ofxsimples.com.br/esqueci-senha.html">
+            Esqueci minha senha
+          </a>
+
           {error && (
             <p className="upload-error" role="alert">
               {error}

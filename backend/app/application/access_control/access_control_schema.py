@@ -47,6 +47,7 @@ class AccessControlSchemaComponent:
             "admin_user_role_events",
             "user_login_events",
             "email_verification_tokens",
+            "password_reset_tokens",
             "conversion_batches",
             "conversion_jobs",
             "conversion_outbox",
@@ -69,6 +70,7 @@ class AccessControlSchemaComponent:
                 "product_updates_consent_version",
                 "email_verification_status",
                 "email_verified_at",
+                "credential_version",
             ),
             "usage": ("window_started_at",),
             "user_conversions": (

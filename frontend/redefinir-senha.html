@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="referrer" content="no-referrer" />
+  <meta name="robots" content="noindex" />
+  <title>OFX Simples | Redefinir senha</title>
+  <link rel="icon" type="image/png" href="/assets/favicon.png" />
+  <link rel="stylesheet" href="./auth.css?v=3" />
+  <link rel="stylesheet" href="./topbar-unified.css?v=1" />
+</head>
+<body>
+  <nav class="top-nav-shell glass-header" aria-label="Navegação principal">
+    <div class="top-nav-inner">
+      <a class="top-brand" href="./index.html">OFX Simples</a>
+      <div class="top-auth-actions"><a class="top-auth-link" href="./login.html">Entrar</a></div>
+    </div>
+  </nav>
+  <main class="auth-page">
+    <section class="auth-shell">
+      <article class="card">
+        <header class="card-head">
+          <h1>Redefinir senha</h1>
+          <p>Escolha uma nova senha com 8 a 256 caracteres.</p>
+        </header>
+        <p id="status-msg" class="status" role="status" aria-live="polite"></p>
+        <form id="reset-password-form" class="form">
+          <label for="password">Nova senha</label>
+          <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="256" required />
+          <label for="confirm-password">Confirme a nova senha</label>
+          <input id="confirm-password" name="confirm-password" type="password" autocomplete="new-password" minlength="8" maxlength="256" required />
+          <button id="submit-btn" type="submit" class="btn btn-primary">Salvar nova senha</button>
+        </form>
+        <p class="footnote"><a href="./esqueci-senha.html">Solicitar um novo link</a></p>
+        <p class="footnote"><a href="./login.html">Voltar para entrar</a></p>
+        <p class="footnote"><a href="https://pro.ofxsimples.com.br">Entrar no OFX Simples PRO</a></p>
+        <noscript><p>Ative o JavaScript para redefinir sua senha.</p></noscript>
+      </article>
+    </section>
+  </main>
+  <script src="./password-reset.js?v=1" defer></script>
+</body>
+</html>

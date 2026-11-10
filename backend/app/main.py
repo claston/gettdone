@@ -168,6 +168,10 @@ async def early_convert_upload_size_guard(request: Request, call_next):
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    if _request.url.path in {"/auth/forgot-password", "/auth/reset-password"}:
+        return JSONResponse(status_code=400, headers={"Cache-Control": "no-store"}, content={
+            "detail": "Confira os campos informados. A senha deve ter entre 8 e 256 caracteres."
+        })
     return JSONResponse(
         status_code=400,
         content={

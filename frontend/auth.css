@@ -160,6 +160,7 @@ body {
   box-shadow: 0 4px 6px -1px rgba(0, 62, 199, 0.03), 0 10px 15px -3px rgba(0, 0, 0, 0.05);
 }
 
+.card-head h1,
 .card-head h2 {
   margin: 0;
   font-family: "Manrope", "Inter", sans-serif;
