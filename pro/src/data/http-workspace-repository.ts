@@ -176,6 +176,7 @@ export function createHttpWorkspaceRepository(
   const contexts = new Map<string, ConversionContext>();
   const documents = new Map<string, Blob>();
   const batches = new Map<string, Batch>();
+  const validators = new Map<string, string>();
   let cacheVersion = proSessionCacheVersion();
 
   const synchronizeSession = () => {
@@ -183,6 +184,7 @@ export function createHttpWorkspaceRepository(
     contexts.clear();
     documents.clear();
     batches.clear();
+    validators.clear();
     cacheVersion = proSessionCacheVersion();
   };
   const updateCachedConversion = (
@@ -209,7 +211,7 @@ export function createHttpWorkspaceRepository(
       documents.delete(documents.keys().next().value!);
   };
 
-  const request = async (path: string, init: RequestInit = {}) => {
+  const request = async (path: string, init: RequestInit = {}, allowNotModified = false) => {
     const response = await apiClient.request(path, {
       ...init,
       headers: {
@@ -218,7 +220,7 @@ export function createHttpWorkspaceRepository(
         ...init.headers,
       },
     });
-    if (!response.ok) {
+    if (!response.ok && !(allowNotModified && response.status === 304)) {
       let message = `Falha na API (${response.status}).`;
       try {
         const payload = (await response.json()) as { detail?: unknown };
@@ -380,7 +382,16 @@ export function createHttpWorkspaceRepository(
     const readPath = options.clientId
       ? `/api/pro/receipts/clients/${encodeURIComponent(options.clientId)}/workspace`
       : `/api/pro/conversion-batches/${encodeURIComponent(batchId)}`;
-    const response = await request(readPath, { signal });
+    const cachedBatch = batches.get(batchId);
+    const validator = cachedBatch ? validators.get(batchId) : undefined;
+    const response = await request(readPath, {
+      signal,
+      cache: "no-store",
+      headers: validator ? { "If-None-Match": validator } : {},
+    }, Boolean(validator));
+    if (signal?.aborted || version !== proSessionCacheVersion())
+      throw new DOMException("Session changed", "AbortError");
+    if (response.status === 304) return batches.get(batchId) ?? cachedBatch!;
     const payload = (await response.json()) as ApiBatch;
     while (options.clientId && payload.next_cursor != null) {
       const next = await request(
@@ -433,7 +444,20 @@ export function createHttpWorkspaceRepository(
     };
     batches.delete(batchId);
     batches.set(batchId, batch);
-    while (batches.size > 3) batches.delete(batches.keys().next().value!);
+    const etag = response.headers.get("ETag");
+    // A protected draft can retain an older editing version. Do not validate
+    // that snapshot as current: reverting the draft must still adopt remote rows.
+    const adopted = payload.jobs.every((job) =>
+      !job.result?.analysis?.version ||
+      contexts.get(job.job_id)?.version === job.result.analysis.version,
+    );
+    if (etag && adopted) validators.set(batchId, etag);
+    else validators.delete(batchId);
+    while (batches.size > 3) {
+      const oldest = batches.keys().next().value!;
+      batches.delete(oldest);
+      validators.delete(oldest);
+    }
     return batch;
   };
 

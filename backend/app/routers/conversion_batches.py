@@ -53,6 +53,7 @@ from app.routers.auth_session import (
 )
 from app.routers.canonical_pro import canonical_display_record, export_canonical_record, resolve_canonical, validate_export_checks
 from app.routers.pro_security import require_pro_browser_request
+from app.routers.workspace_refresh import unchanged_workspace
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -432,6 +433,9 @@ def list_conversion_batches(
 @router.get("/api/pro/conversion-batches/{batch_id}", response_model=ConversionBatchResponse)
 def get_conversion_batch(
     batch_id: str,
+    request: Request,
+    response: Response,
+    if_none_match: str | None = Header(default=None),
     anonymous_fingerprint: str | None = Query(default=None, max_length=500),
     user_token: str | None = Query(default=None, max_length=500),
     authorization: str | None = Header(default=None),
@@ -457,6 +461,11 @@ def get_conversion_batch(
         identity=identity,
         access_control_service=access_control_service,
     )
+    if request.url.path.startswith("/api/pro/") and identity.identity_type == "user" and identity.batch_conversion_enabled:
+        unchanged = unchanged_workspace(active_service.repository, response, if_none_match,
+                                        owner=identity.identity_id, batch_id=batch_id)
+        if unchanged is not None:
+            return unchanged
     snapshot = active_service.repository.get_for_owner(
         batch_id,
         identity_type=identity.identity_type,
