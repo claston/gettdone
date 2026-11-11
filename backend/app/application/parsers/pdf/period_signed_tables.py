@@ -185,14 +185,16 @@ def _c6(pages):
             if normalized.startswith("SALDO DO DIA"):
                 flush()
                 waiting_balance = scope is not None
-                inline = re.search(rf"R\$\s*([+-]?{NUMBER})", normalized)
+                # Preserve signs before R$ too. Capture the entire suffix so
+                # duplicated signs or damaged digits cannot be silently cut.
+                inline = re.search(r"(?:[+-]\s*)*R\$.*$", normalized)
                 if not inline:
                     continue
-                normalized = "R$ " + inline[1]
+                normalized = inline[0]
             if waiting_balance:
-                balance = re.fullmatch(rf"R\$\s*([+-]?{NUMBER})", normalized)
+                balance = re.fullmatch(rf"(?:[+-]\s*R\$\s*{NUMBER}|R\$\s*[+-]?{NUMBER})", normalized)
                 if balance:
-                    value = money(balance[1])
+                    value = money(balance[0].replace("R$", "").replace(" ", ""))
                     if previous_balance is not None:
                         if previous_balance + since_balance != value:
                             financial_mismatch("O saldo diário difere dos movimentos do extrato.")

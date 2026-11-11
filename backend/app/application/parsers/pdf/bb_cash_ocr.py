@@ -197,11 +197,20 @@ def parse_bb_cash_ocr(extraction):
     frames = []
     page_slopes = {}
     separator_repairs = set()
+    joined_movement_dates = {}
     for page in extraction.pages:
         lines = [line for line in page.lines if line.bbox]
-        dates = sorted(
-            [item for item in lines if item.bbox["left"] < 0.17 and re.fullmatch(DATE, item.text)], key=lambda item: item.bbox["top"]
-        )
+        # The book date precedes the optional movement date. Native text and
+        # OCR may join both printed date cells into one LINE; keep its evidence
+        # and use the first date as the ledger anchor, never the nearest amount.
+        dates = []
+        for item in lines:
+            match = re.fullmatch(rf'({DATE})(?:\s+({DATE}))?', item.text)
+            if item.bbox['left'] < .17 and match:
+                dates.append(replace(item, text=match[1]))
+                if match[2]:
+                    joined_movement_dates[page.page_number, item.id] = match[2]
+        dates.sort(key=lambda item: item.bbox['top'])
         if not dates:
             fail()
         date_x = median(item.bbox["left"] for item in dates)
@@ -447,7 +456,12 @@ def parse_bb_cash_ocr(extraction):
                               and re.fullmatch(DATE, item.text) and abs(item.bbox["top"] - top) < .008]
             if len(movement_dates) > 1:
                 fail()
-            date = movement_dates[0].text if movement_dates else anchor.text
+            # Keep the established movement-date priority regardless of whether
+            # OCR/PDF text joins that cell to the book-date geometry anchor.
+            joined_date = joined_movement_dates.get((page.page_number, anchor.id))
+            if joined_date and movement_dates and joined_date != movement_dates[0].text:
+                fail('Há datas de movimento conflitantes na mesma linha Banco do Brasil.')
+            date = joined_date or (movement_dates[0].text if movement_dates else anchor.text)
             carried = [item for item in incoming if item.anchor is anchor]
             reference = refs[0].text if refs else None
             row = _source(_row(page.page_number, anchor.line_index, day(date), description, amount, balance, reference),
