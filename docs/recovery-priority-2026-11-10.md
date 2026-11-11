@@ -70,8 +70,9 @@ anterior; nenhum rollback de banco é necessário.
 
 ## Revisão da PR #573
 
-A data exportada pelo leitor BB é a data de balancete, tanto quando balancete e
-movimento chegam na mesma célula quanto em células separadas. A segunda data
-permanece na evidência original e não substitui a primeira por causa do
-agrupamento de texto. A regressão compara diretamente nativo/OCR nas duas
+A data exportada pelo leitor BB é a data de movimento quando explicitamente
+impressa, tanto nas células unidas quanto separadas, preservando a política já
+existente. Na ausência da segunda data, usa-se a data de balancete. O balancete
+continua sendo a âncora geométrica, e ambas as datas permanecem na evidência
+original. A regressão compara diretamente nativo/OCR nas duas
 representações de 01/10/2026 e 30/09/2026, incluindo a data enviada no OFX via HTTP.
