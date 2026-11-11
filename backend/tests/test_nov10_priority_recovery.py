@@ -37,7 +37,7 @@ def bb_paired_dates_cells(*, amount="20,00 D", second_date="30/09/2026"):
 def test_bb_joined_book_and_movement_dates_do_not_merge_debit_into_opening(representation):
     result = parse_pages([bb_paired_dates_cells()], representation)
     assert [row.amount for row in result.transactions] == [-20, 20]
-    assert [row.date for row in result.transactions] == ["2026-10-01"] * 2
+    assert [row.date for row in result.transactions] == ["2026-09-30", "2026-10-01"]
     assert result.parse_metrics["verified_opening_balance"] == 100
     assert result.parse_metrics["verified_closing_balance"] == 100
     assert result.parse_metrics["financial_controls_validated"] == 1
