@@ -295,7 +295,8 @@ def parse_pdf_transactions(
     from app.application.transaction_source_regions import bind_transaction_source_regions
 
     scoped_accounts = any(row.statement_account for row in result.canonical_transactions or ())
-    issuer = None if scoped_accounts else resolve_statement_issuer(result.extracted_text)
+    management_report = 'management_ledger_status_category_columns' in (result.financial_document or {}).get('evidence', [])
+    issuer = None if scoped_accounts or management_report else resolve_statement_issuer(result.extracted_text)
     if issuer is not None:
         result = replace(result, parse_metrics={**result.parse_metrics, "statement_issuer_source": issuer.source})
     if issuer is not None and result.canonical_transactions is not None:
@@ -433,6 +434,13 @@ def _parse_pdf_transactions_strict(
     from app.application.parsers.pdf.period_report_source import EVIDENCES, parse_period_report_result
 
     report_identity = detect_financial_report("\n".join(native_pages)) if native_pages else None
+    if report_identity == ('cash_flow_report', 'management_ledger_status_category_columns'):
+        from app.application.parsers.pdf.management_ledger import parse_management_ledger_result
+        from app.application.parsers.pdf.native_table_source import read_native_table_source
+
+        return _with_parse_observability(parse_management_ledger_result(
+            read_native_table_source(raw_bytes, preserve_text_objects=True), native=True),
+            native_text_detected=1, extraction_provider='native_pdfium_text', textract_attempted=0)
     if report_identity and report_identity[1] in EVIDENCES:
         from app.application.parsers.pdf.native_table_source import read_native_table_source
 
@@ -968,7 +976,8 @@ def _parse_scanned_pdf_with_textract_gateway(raw_bytes: bytes) -> PdfParseResult
     segmentation = segment_pdf_pages(_textract_page_texts(extraction))
     daily_fragment = is_daily_cd_fragment(extraction)
     cash_report = detect_financial_report("\n".join(_textract_page_texts(extraction))) in {
-        ("investment_statement", "btg_investment_cash_ledger"), ("investment_statement", "btg_cdb_positions_and_details")}
+        ("investment_statement", "btg_investment_cash_ledger"), ("investment_statement", "btg_cdb_positions_and_details"),
+        ("cash_flow_report", "management_ledger_status_category_columns")}
     if daily_fragment or cash_report:
         segmentation = replace(segmentation, page_texts=_textract_page_texts(extraction), parts=[])
     statement_extraction = extraction
@@ -1144,6 +1153,11 @@ def _parse_scanned_pdf_with_textract_text_pages_strict(extraction) -> PdfParseRe
     from app.application.structured_statement_detection import is_bradesco_monthly_ocr
 
     _validate_ocr_statement_source(extraction)
+    if detect_financial_report('\n'.join(_textract_page_texts(extraction))) == (
+            'cash_flow_report', 'management_ledger_status_category_columns'):
+        from app.application.parsers.pdf.management_ledger import parse_management_ledger_result
+
+        return parse_management_ledger_result(extraction)
     from app.application.parsers.pdf.santander_account_blocks import parse_ocr_account_blocks
 
     accounts = parse_ocr_account_blocks(extraction, _parse_textract_text_pages_impl, _build_verified_statement_result)
