@@ -11,36 +11,71 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("documentos e lotes já abertos", () => {
-  it.each(["000ABC-01/2", null])("salva documento %s sem alterar a descrição", async (documentNumber) => {
-    const payload = structuredClone(batchPayload);
-    Object.assign(payload.jobs[0].result!.analysis.preview_transactions[0], { document_number: "001103" });
-    const serverRows = payload.jobs[0].result!.analysis.preview_transactions.map((row, index) => ({
-      ...row, document_number: index ? null : documentNumber,
-    }));
-    const fetcher = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({}))
-      .mockResolvedValueOnce(jsonResponse(payload))
-      .mockResolvedValueOnce(jsonResponse({ updated_at: "document-saved", preview_transactions: serverRows }));
-    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
-    const batch = await repository.getBatch("batch-real");
-    const rows = batch.conversions[0].transactions;
-    const saved = await repository.saveTransactions("job-ready", [{ ...rows[0], documentNumber }, ...rows.slice(1)]);
-    const patch = JSON.parse(String(fetcher.mock.calls.at(-1)?.[1]?.body)).edits[0];
-    expect(patch.document_number).toBe(documentNumber);
-    expect(patch.description).toBe(rows[0].description);
-    expect(saved?.[0].documentNumber).toBe(documentNumber);
-    expect(repository.getCachedBatch?.("batch-real")?.conversions[0].transactions[0].documentNumber).toBe(documentNumber);
-  });
+  it.each(["000ABC-01/2", null])(
+    "salva documento %s sem alterar a descrição",
+    async (documentNumber) => {
+      const payload = structuredClone(batchPayload);
+      Object.assign(payload.jobs[0].result!.analysis.preview_transactions[0], {
+        document_number: "001103",
+      });
+      const serverRows =
+        payload.jobs[0].result!.analysis.preview_transactions.map(
+          (row, index) => ({
+            ...row,
+            document_number: index ? null : documentNumber,
+          }),
+        );
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(jsonResponse({}))
+        .mockResolvedValueOnce(jsonResponse(payload))
+        .mockResolvedValueOnce(
+          jsonResponse({
+            updated_at: "document-saved",
+            preview_transactions: serverRows,
+          }),
+        );
+      const repository = createHttpWorkspaceRepository({
+        apiUrl: "/",
+        fetcher,
+      });
+      const batch = await repository.getBatch("batch-real");
+      const rows = batch.conversions[0].transactions;
+      const saved = await repository.saveTransactions("job-ready", [
+        { ...rows[0], documentNumber },
+        ...rows.slice(1),
+      ]);
+      const patch = JSON.parse(String(fetcher.mock.calls.at(-1)?.[1]?.body))
+        .edits[0];
+      expect(patch.document_number).toBe(documentNumber);
+      expect(patch.description).toBe(rows[0].description);
+      expect(saved?.[0].documentNumber).toBe(documentNumber);
+      expect(
+        repository.getCachedBatch?.("batch-real")?.conversions[0]
+          .transactions[0].documentNumber,
+      ).toBe(documentNumber);
+    },
+  );
   it("mantém a edição pendente se a API antiga não confirmar o documento", async () => {
-    const fetcher = vi.fn<typeof fetch>()
+    const fetcher = vi
+      .fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({}))
       .mockResolvedValueOnce(jsonResponse(batchPayload))
-      .mockResolvedValueOnce(jsonResponse({ preview_transactions: batchPayload.jobs[0].result!.analysis.preview_transactions }));
+      .mockResolvedValueOnce(
+        jsonResponse({
+          preview_transactions:
+            batchPayload.jobs[0].result!.analysis.preview_transactions,
+        }),
+      );
     const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
     const batch = await repository.getBatch("batch-real");
     const rows = batch.conversions[0].transactions;
-    await expect(repository.saveTransactions("job-ready", [{ ...rows[0], documentNumber: "000ABC" }, ...rows.slice(1)]))
-      .rejects.toThrow("Não foi possível confirmar o documento");
+    await expect(
+      repository.saveTransactions("job-ready", [
+        { ...rows[0], documentNumber: "000ABC" },
+        ...rows.slice(1),
+      ]),
+    ).rejects.toThrow("Não foi possível confirmar o documento");
   });
   it("preserva documento textual separado da descrição", async () => {
     const payload = structuredClone(batchPayload);
@@ -588,40 +623,47 @@ describe("HttpWorkspaceRepository", () => {
     });
     expect(conversion.statementBalanceCheck?.difference).toBe(-20);
   });
-  it("preserva a orientação de validação sem transformar os campos em erro", async () => {
-    const payload = structuredClone(batchPayload);
-    const analysis = {
-      ...payload.jobs[0].result!.analysis,
-      review_guidance: {
-        category: "validation_incomplete",
-        title: "Validação automática incompleta",
-        message: "Confira a cobertura.",
-      },
-      preview_transactions: [
-        {
-          ...payload.jobs[0].result!.analysis.preview_transactions[0],
-          warning_types: [],
+  it.each([
+    ["validation_incomplete", "NEEDS_REVIEW"],
+    ["information", "READY"],
+  ])(
+    "preserva orientação %s e status %s sem transformar os campos em erro",
+    async (category, status) => {
+      const payload = structuredClone(batchPayload);
+      const analysis = {
+        ...payload.jobs[0].result!.analysis,
+        review_guidance: {
+          category,
+          title: "Validação automática incompleta",
+          message: "Confira a cobertura.",
         },
-      ],
-    };
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({}))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          ...payload,
-          jobs: [{ ...payload.jobs[0], result: { analysis } }],
-        }),
-      );
-    const {
-      conversions: [conversion],
-    } = await createHttpWorkspaceRepository({ apiUrl: "/", fetcher }).getBatch(
-      "batch-real",
-    );
-    expect(conversion.reviewGuidance).toEqual(analysis.review_guidance);
-    expect(conversion.status).toBe("NEEDS_REVIEW");
-    expect(conversion.suspectedCount).toBe(0);
-  });
+        preview_transactions: [
+          {
+            ...payload.jobs[0].result!.analysis.preview_transactions[0],
+            warning_types: [],
+          },
+        ],
+      };
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(jsonResponse({}))
+        .mockResolvedValueOnce(
+          jsonResponse({
+            ...payload,
+            jobs: [{ ...payload.jobs[0], result: { analysis } }],
+          }),
+        );
+      const {
+        conversions: [conversion],
+      } = await createHttpWorkspaceRepository({
+        apiUrl: "/",
+        fetcher,
+      }).getBatch("batch-real");
+      expect(conversion.reviewGuidance).toEqual(analysis.review_guidance);
+      expect(conversion.status).toBe(status);
+      expect(conversion.suspectedCount).toBe(0);
+    },
+  );
 
   it("preserva a indicação de extrato parcial recebida do worker", async () => {
     const payload = structuredClone(batchPayload);

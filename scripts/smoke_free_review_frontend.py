@@ -156,12 +156,16 @@ def main():
                          "printed_balance_checks": 3, "statement_row_coverage_rate": 1,
                          "canonical_warning_types_list": ["shared_operation_reference", "manual_review_recommended"]}),
                         ("financial_discrepancy", {"balance_consistency_failed": 1}),
+                        ("information", {"confidence_band": "medium", "export_recommendation_reason": "medium_confidence_band",
+                         "selected_parser": "tabular"}),
                     ):
                         analysis = {"analysis_id": "an_guidance_smoke", "file_type": "pdf", "transactions_total": 1,
                                     "total_inflows": 10, "total_outflows": 0, "net_total": 10,
                                     "preview_transactions": [{"date": "2026-10-01", "description": "Crédito fictício",
                                                               "amount": 10, "warning_types": []}],
                                     "pdf_processing_metrics": {"export_recommendation": "review_recommended", **metrics}}
+                        if metrics.get('confidence_band') == 'medium':
+                            analysis.update(layout_inference_name='caixa_extrato_por_periodo_web_v1', layout_inference_confidence=.99)
                         analysis["review_guidance"] = build_pdf_review_guidance(analysis)
                         page.locator("#file-input").set_input_files({
                             "name": category + ".pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4\n%%EOF"})

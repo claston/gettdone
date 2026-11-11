@@ -14,6 +14,7 @@ def build_ofx_statement(
     bank_id: str | None = None,
     currency: str | None = None,
     fit_ids: list[str] | None = None,
+    statement_period: dict[str, str] | None = None,
 ) -> str:
     normalized_account_type = str(account_type or "").strip().lower()
     is_credit_card_statement = normalized_account_type in {"credit_card", "credit-card", "card", "cc"}
@@ -77,6 +78,13 @@ def build_ofx_statement(
         "        <BANKTRANLIST>",
     ]
 
+    period_end = None
+    if not transactions and statement_period:
+        start, end = (datetime.fromisoformat(statement_period[key]) for key in ('start_date', 'end_date'))
+        if start > end:
+            raise ValueError('Invalid statement period')
+        period_end = end.strftime('%Y%m%d000000')
+        lines.extend([f"          <DTSTART>{start.strftime('%Y%m%d000000')}", f'          <DTEND>{period_end}'])
     fit_ids = build_fit_id_sequence(transactions) if fit_ids is None else fit_ids
     for transaction, fit_id in zip(transactions, fit_ids, strict=True):
         reference_lines, memo = _document_reference(transaction)
@@ -105,7 +113,7 @@ def build_ofx_statement(
         ledger_lines = [
             "        <LEDGERBAL>",
             f"          <BALAMT>{float(closing_balance):.2f}",
-            f"          <DTASOF>{_resolve_ledger_asof(transactions)}",
+            f"          <DTASOF>{period_end or _resolve_ledger_asof(transactions)}",
             "        </LEDGERBAL>",
         ]
         insert_index = lines.index("        </BANKTRANLIST>") + 1

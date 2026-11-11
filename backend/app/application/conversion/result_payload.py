@@ -189,7 +189,8 @@ def _build_export_review_insight(
     if recommendation != "review_recommended":
         return None
     if guidance:
-        return Insight(type="pdf_export_review_recommended", title=guidance["title"], description=guidance["message"])
+        kind = 'pdf_extraction_information' if guidance['category'] == 'information' else 'pdf_export_review_recommended'
+        return Insight(type=kind, title=guidance["title"], description=guidance["message"])
     reason = str(_metrics_get(pdf_processing_metrics, "export_recommendation_reason", "")).strip()
     reason_suffix = f" ({reason})" if reason else ""
     return Insight(
