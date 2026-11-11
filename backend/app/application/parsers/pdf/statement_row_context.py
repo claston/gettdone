@@ -1,6 +1,7 @@
 """Printed context resolves row dates/order; controls never invent cash movements."""
 
 import re
+from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal
 
@@ -66,3 +67,29 @@ def validate_idle_day_controls(rows, opening, controls):
             financial_mismatch()
         checked += len(values)
     return checked
+
+
+def check_available_daily_intervals(rows, controls):
+    """Check intervals after a printed control, without deriving an opening."""
+    by_day = {}
+    for index, row in enumerate(rows):
+        by_day.setdefault(row.transaction.date, []).append(index)
+    rows = list(rows)
+    running, checked = None, 0
+    for date in sorted(set(by_day) | set(controls)):
+        indices = by_day.get(date, [])
+        if running is not None:
+            running += sum((Decimal(str(rows[i].transaction.amount)) for i in indices), Decimal(0))
+        values = controls.get(date, [])
+        if not values:
+            continue
+        if running is not None:
+            if any(value != running for value in values):
+                financial_mismatch()
+            checked += len(values)
+        if len(set(values)) > 1:
+            financial_mismatch()
+        running = values[0] if len(set(values)) == 1 else None
+        if indices:
+            rows[indices[-1]] = replace(rows[indices[-1]], running_balance=float(running) if running is not None else None)
+    return rows, checked

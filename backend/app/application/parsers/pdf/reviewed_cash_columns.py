@@ -11,6 +11,7 @@ from app.application.parsers.pdf.row_geometry import nearest_row
 from app.application.parsers.pdf.sicoob_cash_controls import is_blocked_cheque_history
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.statement_row_context import (
+    check_available_daily_intervals,
     chronological_rows,
     contextual_row_date,
     labelled_row_period,
@@ -122,6 +123,16 @@ def parse_reviewed_cash(source, kind):
         )
         if not anchors:
             continue
+        if kind == 'sicoob_modern' and rows:
+            continuation = [line for line in body if history_left <= line.bbox['left'] < value_left
+                            and line.bbox['top'] < anchors[0].bbox['top'] - .004]
+            if continuation:
+                previous = rows[-1]
+                evidence = _source(previous, page, continuation)
+                rows[-1] = replace(previous, transaction=replace(previous.transaction,
+                    description=previous.transaction.description + ' ' + ' '.join(line.text for line in continuation)),
+                    source_regions=(*previous.source_regions, *evidence.source_regions),
+                    source_line_refs=(*previous.source_line_refs, *evidence.source_line_refs))
         cash = [line for line in body if line.bbox["left"] >= value_left and re.search(r"\d,\d", line.text)]
         for index, anchor in enumerate(anchors):
             cells = [line for line in cash if nearest_row(line, anchors) is anchor]
@@ -177,12 +188,20 @@ def parse_reviewed_cash(source, kind):
                 if pending and is_blocked_cheque_history(primary):
                     non_cash += 1
                     continue
+                explicit = _AMOUNT.fullmatch(values[0].text.strip())
+                if not explicit or not any(explicit[index] for index in (1, 2, 4)):
+                    fail("Um movimento Sicoob está sem sinal financeiro explícito.")
                 if is_blocked_cheque_history(primary):
                     explicit = _AMOUNT.fullmatch(values[0].text.strip())
                     if not explicit or not any(explicit[index] for index in (1, 2, 4)):
                         fail("Um depósito Sicoob está sem marcador financeiro explícito.")
             coverage += 1
             row_positions.append((page.page_number, index))
+            references = [line for line in body if kind == 'sicoob_modern'
+                          and date_right <= line.bbox['left'] < history_left
+                          and abs(line.bbox['top'] - anchor.bbox['top']) < .004]
+            if len(references) > 1:
+                fail('Um movimento Sicoob tem referências de documento ambíguas.')
             rows.append(
                 _source(
                     _row(
@@ -192,9 +211,10 @@ def parse_reviewed_cash(source, kind):
                         description,
                         _amount(values[0]),
                         _amount(balances[0]) if balances else None,
+                        reference=references[0].text if references else None,
                     ),
                     page,
-                    [anchor, *history, *cells],
+                    [anchor, *references, *history, *cells],
                 )
             )
     if not rows:
@@ -206,6 +226,14 @@ def parse_reviewed_cash(source, kind):
     if any(a.transaction.date > b.transaction.date for a, b in zip(rows, rows[1:])):
         fail("A ordem de datas da tabela não pode ser confirmada.")
     inferred = opening is None
+    if inferred and kind == 'sicoob_modern' and rows[0].running_balance is None:
+        daily = {}
+        for date, value in controls:
+            daily.setdefault(date, []).append(value)
+        rows, checks = check_available_daily_intervals(rows, daily)
+        return VerifiedStatement(rows, f'{kind}_printed_cash_columns_v1', None, None,
+            balance_bounds_unavailable=True, candidate_rows=coverage,
+            printed_balance_checks=checks, non_cash_entries=non_cash)
     if inferred:
         if rows[0].running_balance is None:
             fail("O saldo anterior não pode ser identificado no documento.")

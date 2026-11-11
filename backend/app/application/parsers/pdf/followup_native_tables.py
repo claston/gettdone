@@ -26,8 +26,9 @@ def _kind(text):
         return "pagbank_daily"
     if is_sisbr_history_grid(text):
         return "sicoob_split_cd"
-    if (all(marker in compact for marker in ("EXTRATOPORPERIODO", "ORDENAR", "SALDODODIA", "SALDOANTERIOR", "COMPARTILHAR", "VOLTAR"))
-            and re.search(r"\d{2} DE [A-Z]+ DE \d{4}", upper(text))):
+    from app.application.parsers.pdf.descending_web_cards import is_period_web_cards
+
+    if is_period_web_cards(text):
         return "descending_cards"
     if all(marker in compact for marker in ("NDDIP", "CONTADIGITAL", "TOTALCREDITO", "TOTALDEBITO", "QUANTIDADEDEOPERACOES")):
         return "ndd"
