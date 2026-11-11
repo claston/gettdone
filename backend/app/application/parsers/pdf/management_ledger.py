@@ -6,6 +6,7 @@ from dataclasses import replace
 from datetime import date, timedelta
 from statistics import median
 
+from app.application.bank_catalog import load_bank_catalog, resolve_bank_code_from_name
 from app.application.financial_event_projection import project_financial_document
 from app.application.normalization.text import normalize_upper_text as upper
 from app.application.parsers.pdf.financial_reports import _check, _event
@@ -30,7 +31,7 @@ def _full_date(text):
 def _row_date(text, start, end, *, opening=False):
     if re.fullmatch(r'\d{2}/\d{2}/\d{4}', text):
         return _full_date(text)
-    if not re.fullmatch(r'\d{2}/\d{2}', text):
+    if not re.fullmatch(r'\d{2}/\d{2}', text) or start is None or end is None:
         fail(MESSAGE)
     candidates = []
     day, month = map(int, text.split('/'))
@@ -102,15 +103,15 @@ def _context(rows, previous):
     text = '\n'.join(row.normalized for row in rows)
     titles = [row.text[len('Extrato de '):] for row in rows if row.normalized.startswith('EXTRATO DE ')]
     periods = re.findall(r'PERIODO DE (\d{2}/\d{2}/\d{4}) ATE (\d{2}/\d{2}/\d{4})', text)
-    if 'PERIODO' in text and not periods:
-        fail('O período do relatório está ilegível; não é possível atribuir o ano aos lançamentos.')
     if len(titles) > 1 or len(periods) > 1:
         fail(MESSAGE)
     context = dict(previous or {})
     if titles:
-        context = {'title': titles[0]}
+        context = {'title': titles[0], 'start': None, 'end': None}
     if periods:
         context.update(start=_full_date(periods[0][0]), end=_full_date(periods[0][1]))
+    elif 'PERIODO' in text:
+        context.update(start=None, end=None)
     kinds = [row.text for row in rows if row.normalized in {'CONTA CORRENTE', 'ADMINISTRADORA DE CARTOES'}]
     if kinds:
         context['kind'] = kinds[0]
@@ -121,7 +122,20 @@ def _context(rows, previous):
         context['branch'], context['account'] = accounts[0]
     elif 'AGENCIA' in text or 'CONTA:' in text:
         fail(MESSAGE)
-    if not all(key in context for key in ('title', 'start', 'end', 'kind')) or context['start'] > context['end']:
+    banks = re.findall(r'^BANCO:\s*(.+)$', text, re.M)
+    if banks:
+        if len(set(banks)) != 1:
+            fail(MESSAGE)
+        code = re.fullmatch(r'(\d{3})(?:\s+.*)?', banks[0])
+        context['bank_code'] = (code[1] if code and code[1] in {b.code for b in load_bank_catalog()}
+                                else resolve_bank_code_from_name(banks[0]) if not code else None)
+    elif titles:
+        context['bank_code'] = resolve_bank_code_from_name(titles[0])
+    title_bank = resolve_bank_code_from_name(context.get('title'))
+    if title_bank and context.get('bank_code') and title_bank != context['bank_code']:
+        context['bank_code'] = None
+    if (not all(key in context for key in ('title', 'kind'))
+            or context.get('start') is not None and context['start'] > context['end']):
         fail(MESSAGE)
     counters = re.findall(r'\(PAGINA\s+(\d+)/(\d+)\)', text)
     context['counter'] = tuple(map(int, counters[0])) if len(counters) == 1 else None
@@ -131,7 +145,8 @@ def _context(rows, previous):
 def _identity(context):
     if (upper(context.get('kind', '')) == 'CONTA CORRENTE' and context.get('branch') and context.get('account')
             and not re.search(r'\bCART(?:AO|OES)\b', upper(context.get('title', '')))):
-        return ('current_account', context['branch'], context['account'])
+        return ('current_account', context.get('bank_code') or ('unconfirmed:' + upper(context['title'])),
+                context['branch'], context['account'])
     return tuple(upper(context.get(key, '')) for key in ('title', 'kind', 'branch', 'account'))
 
 
@@ -154,7 +169,7 @@ def parse_management_ledger_result(source, *, native=False):
             block['pages'].add(row.page.page_number)
             context, boundaries, pending = new, columns, []
             continue
-        if normalized.startswith('EXTRATO DE ') or pending or boundaries is None:
+        if normalized.startswith(('EXTRATO DE ', 'BANCO:')) or pending or boundaries is None:
             pending.append(row)
             continue
         footer = re.fullmatch(r'PAGINA (\d+) DE (\d+)', normalized)
@@ -176,7 +191,8 @@ def parse_management_ledger_result(source, *, native=False):
                 blocks.append(block)
             amount = decimal(balance)
             when = _row_date(day, context['start'], context['end'], opening=True)
-            checks.append(_check('management_opening_date', when, context['start']-timedelta(days=1), refs=row.refs))
+            checks.append(_check('management_opening_date', when,
+                context['start']-timedelta(days=1) if context['start'] is not None else None, refs=row.refs))
             block['opening'] = block['closing'] = amount
             observations.append({'observation_type': 'opening_balance', 'dates': {'as_of': when.isoformat()},
                 'amounts': {'opening': format(amount, '.2f')}, 'attributes': {'block': len(blocks),
@@ -204,7 +220,8 @@ def parse_management_ledger_result(source, *, native=False):
         when = _row_date(day, context['start'], context['end'])
         checks.append(_check('management_row_balance', running,
                              block['closing']+amount if block['closing'] is not None else None, refs=row.refs))
-        checks.append(_check('management_row_within_period', context['start'] <= when <= context['end'], True, refs=row.refs))
+        checks.append(_check('management_row_within_period',
+            context['start'] is not None and context['start'] <= when <= context['end'], True, refs=row.refs))
         settled = upper(status) == 'CONCILIADO'
         checks.append(_check('management_row_reconciled', settled, True, refs=row.refs))
         event = _event('cash_movement', dates={'transaction': when.isoformat()},
@@ -213,7 +230,7 @@ def parse_management_ledger_result(source, *, native=False):
             description=' | '.join(filter(None, (party, category, reference))), refs=row.refs,
             status='reconciled' if settled else 'reported', attributes={'category': category, 'printed_status': status,
                 'subaccount': context['title'], 'account_kind': context['kind'], 'source_account_number': context.get('account'),
-                'source_bank_branch': context.get('branch'), 'block': len(blocks),
+                'source_bank_branch': context.get('branch'), 'source_bank_code': context.get('bank_code'), 'block': len(blocks),
                 'source_fields': dict(zip(LABELS, fields, strict=True))})
         block['closing'] = running
         block['events'].append(event)
@@ -230,18 +247,25 @@ def parse_management_ledger_result(source, *, native=False):
         if complete:
             total = counters[0][1]
             complete = counters == [(i, total) for i in range(1, total+1)] and len(block['pages']) == total
-        coverage &= complete
+        period_known = context['start'] is not None and context['end'] is not None
+        coverage &= complete and period_known
         source_refs = refs(block['rows'])
         checks.append(_check('management_block_coverage', complete, True, refs=source_refs))
         checks.append(_check('management_opening_available', block['opening'] is not None, True, refs=source_refs))
         key = _identity(context)
+        checks.append(_check('management_period_coverage', period_known, True, refs=source_refs))
+        if key[0] == 'current_account':
+            checks.append(_check('management_source_institution', bool(context.get('bank_code')), True, refs=source_refs))
         if key in prior:
             end, closing = prior[key]
             checks.append(_check('management_blocks_continuity',
-                context['start'] == end+timedelta(days=1) and block['opening'] == closing, True, refs=source_refs))
+                period_known and end is not None and context['start'] == end+timedelta(days=1)
+                and block['opening'] == closing, True, refs=source_refs))
         prior[key] = context['end'], block['closing']
         metadata.append({'block': index, 'account': context['title'], 'kind': context['kind'],
-            'period_start': context['start'].isoformat(), 'period_end': context['end'].isoformat(),
+            'source_bank_code': context.get('bank_code'),
+            'period_start': context['start'].isoformat() if period_known else None,
+            'period_end': context['end'].isoformat() if period_known else None,
             'opening_balance': str(block['opening']), 'closing_balance': str(block['closing']), 'pages': sorted(block['pages'])})
     failed = any(c['status'] == 'failed' for c in checks)
     ofx = (not failed and len(prior) == 1 and upper(context['kind']) == 'CONTA CORRENTE'

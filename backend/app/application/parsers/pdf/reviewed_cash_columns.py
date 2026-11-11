@@ -86,6 +86,11 @@ def parse_reviewed_cash(source, kind):
     ended = False
     for original in source.pages:
         if ended:
+            if kind == 'sicoob_modern':
+                remainder = upper(' '.join(line.text for line in original.lines))
+                if all(word in remainder for word in ('DATA', 'DOCUMENTO', 'HISTORICO', 'VALOR')):
+                    fail('Há outra tabela Sicoob após o resumo; não é possível confirmar a cobertura de todos os lançamentos.')
+                continue
             break
         boundaries = [date_right, history_left, value_left, *([balance_left] if balance_left else [])]
         page = split_native_columns(original, boundaries)
@@ -121,6 +126,13 @@ def parse_reviewed_cash(source, kind):
             [line for line in body if line.bbox["left"] < date_right and re.fullmatch(r"\d{2}/\d{2}(?:/\d{4})?", line.text)],
             key=lambda line: line.bbox["top"],
         )
+        cash = [line for line in body if line.bbox['left'] >= value_left
+                and (re.search(r'\d,\d', line.text) or kind == 'sicoob_modern' and 'R$' in line.text)]
+        if kind == 'sicoob_modern':
+            unreadable_dates = [line for line in body if line.bbox['left'] < date_right
+                                and re.fullmatch(r'\S{2}/\S{2}(?:/\S{4})?', line.text) and line not in anchors]
+            if unreadable_dates or any(nearest_row(line, anchors) is None for line in cash):
+                fail('Há valores ou datas sem associação a um lançamento na tabela Sicoob; confira todas as páginas.')
         if not anchors:
             continue
         if kind == 'sicoob_modern' and rows:
@@ -133,7 +145,6 @@ def parse_reviewed_cash(source, kind):
                     description=previous.transaction.description + ' ' + ' '.join(line.text for line in continuation)),
                     source_regions=(*previous.source_regions, *evidence.source_regions),
                     source_line_refs=(*previous.source_line_refs, *evidence.source_line_refs))
-        cash = [line for line in body if line.bbox["left"] >= value_left and re.search(r"\d,\d", line.text)]
         for index, anchor in enumerate(anchors):
             cells = [line for line in cash if nearest_row(line, anchors) is anchor]
             values = [line for line in cells if balance_left is None or line.bbox["left"] < balance_left]

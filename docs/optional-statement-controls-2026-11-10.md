@@ -59,3 +59,12 @@ Os originais e diagnósticos continuam na pasta local privada, fora do commit.
 Este lote não reprocessa clientes nem faz deploy. Após eventual publicação,
 acompanhar recusas desses leitores, avisos financeiros e saldos exportados.
 Rollback: reverter o commit e publicar a versão anterior; sem migração a desfazer.
+
+## Revisão da PR #576
+
+Antes de aceitar o Sicoob, todos os valores da tabela precisam estar associados
+a uma linha com data legível. Uma página posterior sem datas válidas, com valor
+órfão ou com nova tabela depois do resumo não pode desaparecer do resultado.
+Esses casos são recusados explicitamente, sem criar relatório parcial como se
+estivesse completo. Regressões nativas/OCR cobrem data ausente, `??/07`, `xx/07`,
+presença de outra linha legível e resumo anterior; HTTP confirma a recusa.
