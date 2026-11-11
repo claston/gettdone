@@ -452,7 +452,9 @@ def parse_bb_cash_ocr(extraction):
                               and re.fullmatch(DATE, item.text) and abs(item.bbox["top"] - top) < .008]
             if len(movement_dates) > 1:
                 fail()
-            date = movement_dates[0].text if movement_dates else anchor.text
+            # Export the book date in both joined and separate representations.
+            # The optional movement date remains in the original source evidence.
+            date = anchor.text
             carried = [item for item in incoming if item.anchor is anchor]
             reference = refs[0].text if refs else None
             row = _source(_row(page.page_number, anchor.line_index, day(date), description, amount, balance, reference),

@@ -11,7 +11,7 @@ from tests.fixtures.recovery_acceptance import grid_pdf
 
 def ledger_page(*, title="Conta operacional", kind="Conta Corrente", period="01/10/2026 até 31/10/2026",
                 number="1/1", opening="100,00", day="01/10", status="Conciliado", amount="-20,00", balance="80,00"):
-    cells = [("Extrato de " + title, .15, .03), (kind, .15, .055),
+    cells = [("Banco: 001", .70, .012), ("Extrato de " + title, .15, .03), (kind, .15, .055),
              ("Agência: 1234 / Conta: 00123-4", .15, .08),
              (f"Período de {period} (Página {number})", .34, .10)]
     cells += [(text, x, .125) for text, x in zip(
