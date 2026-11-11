@@ -31,6 +31,26 @@ const batch = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status });
 
+it("does not cache a remote version withheld by an unsaved draft", async () => {
+  let current = analysis;
+  const tags: (string | null)[] = [];
+  const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+    if (!String(url).includes("conversion-batches")) return json({});
+    tags.push(new Headers(init?.headers).get("If-None-Match"));
+    return new Response(JSON.stringify({ ...batch, jobs: [{ ...batch.jobs[0], result: { analysis: current } }] }), {
+      headers: { ETag: `W/"v${current.version}"` },
+    });
+  });
+  const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+  const first = (await repository.getBatch("batch")).conversions[0];
+  repository.lockSnapshot!("job");
+  current = { ...analysis, version: 2, preview_transactions: [{ ...row, description: "Remote" }] };
+  expect((await repository.getBatch("batch")).conversions[0].transactions[0].description).toBe("Original");
+  await repository.saveTransactions("job", first.transactions);
+  expect((await repository.getBatch("batch")).conversions[0].transactions[0].description).toBe("Remote");
+  expect(tags).toEqual([null, 'W/"v1"', null]);
+});
+
 it("recovers a client document from a later page through its source batch", async () => {
   let saved = false;
   const latest = {

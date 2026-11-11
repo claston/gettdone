@@ -47,8 +47,9 @@ class PostgresMovementRepository:
         if self.failure_hook:
             self.failure_hook(stage)
 
-    def _source(self, conn, scope):
-        source = conn.execute(f"""SELECT j.*, b.expires_at AS batch_expires_at
+    def _source(self, conn, scope, *, for_read=False):
+        columns = "j.job_id" if for_read else "j.*"
+        source = conn.execute(f"""SELECT {columns}, b.expires_at AS batch_expires_at
             FROM {self.p}conversion_jobs j JOIN {self.p}conversion_batches b ON b.batch_id = j.batch_id
             JOIN {self.p}pro_organizations o ON o.id = %s AND o.owner_user_id = b.identity_id
             JOIN {self.p}users u ON u.id = o.owner_user_id AND u.is_active
@@ -59,7 +60,7 @@ class PostgresMovementRepository:
             (scope.organization_id, scope.job_id, scope.analysis_id, scope.actor_id, scope.actor_id)).fetchone()
         if source is None:
             raise AnalysisNotFoundError
-        context = conn.execute(f"""SELECT * FROM {self.p}pro_conversion_contexts
+        context = conn.execute(f"""SELECT client_id FROM {self.p}pro_conversion_contexts
             WHERE organization_id = %s AND job_id = %s FOR UPDATE""",
             (scope.organization_id, scope.job_id)).fetchone()
         # A pending client is valid, but caller cannot swap an identified client.
@@ -67,9 +68,10 @@ class PostgresMovementRepository:
             raise AnalysisNotFoundError
         return source
 
-    def _analysis(self, conn, scope):
-        source = self._source(conn, scope)
-        analysis = conn.execute(f"""SELECT * FROM {self.p}canonical_analyses
+    def _analysis(self, conn, scope, *, for_read=False):
+        source = self._source(conn, scope, for_read=for_read)
+        columns = "analysis_id, version, metadata, read_enabled, edit_enabled, ui_enabled" if for_read else "*"
+        analysis = conn.execute(f"""SELECT {columns} FROM {self.p}canonical_analyses
             WHERE analysis_id = %s AND organization_id = %s AND job_id = %s
                 AND client_id IS NOT DISTINCT FROM %s AND expires_at > clock_timestamp() FOR UPDATE""",
             (scope.analysis_id, scope.organization_id, scope.job_id, scope.client_id)).fetchone()
@@ -114,14 +116,19 @@ class PostgresMovementRepository:
 
     def read(self, scope: MovementScope):
         with self._connect() as conn:
-            analysis, _ = self._analysis(conn, scope)
+            analysis, _ = self._analysis(conn, scope, for_read=True)
             content = self._snapshot(conn, analysis)
             self._unexpired(conn, scope)
             return content
 
     def authorize_source(self, scope: MovementScope):
         with self._connect() as conn:
-            self._source(conn, scope)
+            self._source(conn, scope, for_read=True)
+
+    def authorize(self, scope: MovementScope):
+        with self._connect() as conn:
+            self._analysis(conn, scope, for_read=True)
+            self._unexpired(conn, scope)
 
     def _insert_row(self, conn, scope, row, ordinal, currency, *, baseline, account_id=None):
         legacy_id = row.get("transaction_id")

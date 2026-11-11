@@ -167,6 +167,10 @@ class PostgresConversionBatchRepository:
             row = self._fetch_job(conn, job_id)
             return self._record_from_row(row) if row is not None else None
 
+    def workspace_revision(self, *, owner, batch_id=None, client_id=None):
+        from app.adapters.conversion.workspace_revision import workspace_revision
+        return workspace_revision(self, owner=owner, batch_id=batch_id, client_id=client_id)
+
     def get_for_owner(
         self,
         batch_id: str,

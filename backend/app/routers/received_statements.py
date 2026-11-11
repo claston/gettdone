@@ -4,7 +4,7 @@ from io import BytesIO
 from typing import Literal
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.application import AccessControlService
@@ -23,6 +23,7 @@ from app.routers.canonical_pro import canonical_display_record, export_canonical
 from app.routers.conversion_batches import _find_convert_report, _unique_export_name
 from app.routers.pro_organization import organization_errors, organization_owner
 from app.routers.pro_security import require_pro_browser_request
+from app.routers.workspace_refresh import unchanged_workspace
 
 router = APIRouter(prefix="/api/pro/receipts", tags=["Received statements"])
 
@@ -106,9 +107,13 @@ def edit_client(client_id: str, request: ClientEdit, owner: str = Depends(organi
 
 
 @router.get("/clients/{client_id}/workspace")
-def workspace(client_id: str, owner: str = Depends(organization_owner), service=Depends(receipt_service),
-              cursor: str = Query("", max_length=100)):
+def workspace(client_id: str, response: Response, owner: str = Depends(organization_owner), service=Depends(receipt_service),
+              cursor: str = Query("", max_length=100), if_none_match: str | None = Header(default=None)):
     with organization_errors():
+        if not cursor:
+            unchanged = unchanged_workspace(service.repository, response, if_none_match, owner=owner, client_id=client_id)
+            if unchanged is not None:
+                return unchanged
         documents = service.documents(owner, client_id, after=cursor, limit=51)
         with service.db.connect() as conn:
             client = service._entity(conn, "pro_clients", service._organization(conn, owner), client_id)
