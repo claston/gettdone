@@ -15,6 +15,13 @@
   const dashboardIdentityTypeNode = document.getElementById("dashboard-identity-type");
   const dashboardRefreshBtn = document.getElementById("dashboard-refresh-btn");
   const dashboardStatusNode = document.getElementById("dashboard-status");
+  const dashboardDetailsBtn = document.getElementById("dashboard-details-btn");
+  const dashboardDetailsNode = document.getElementById("dashboard-details-content");
+  const dashboardDetailsStatusNode = document.getElementById("dashboard-details-status");
+  let dashboardGeneration = 0;
+  let dashboardDetailsGeneration = 0;
+  let dashboardOverviewReady = false;
+  let dashboardDetailsLoaded = false;
   const dashboardSummaryNode = document.getElementById("dashboard-summary");
   const dashboardFeedbackNode = document.getElementById("dashboard-conversion-feedback");
   const dashboardDailyChartNode = document.getElementById("dashboard-daily-chart");
@@ -151,6 +158,11 @@
 
   function setAuthenticatedView(isAuthenticated) {
     isAdminAuthenticated = isAuthenticated;
+    if (!isAuthenticated) {
+      dashboardGeneration++;
+      dashboardOverviewReady = false;
+      resetDashboardDetails();
+    }
     if (loginCard) loginCard.classList.toggle("hidden", isAuthenticated);
     if (navigationNode) navigationNode.classList.toggle("hidden", !isAuthenticated);
     setActiveAdminSection(activeAdminSection);
@@ -1046,7 +1058,7 @@
     dashboardRecentAttentionNode.appendChild(table);
   }
 
-  function renderDashboard(payload) {
+  function renderDashboardDetails(payload) {
     if (dashboardFeedbackNode) {
       dashboardFeedbackNode.replaceChildren();
       const feedback = payload.conversion_feedback || {};
@@ -1056,14 +1068,11 @@
           `${formatInteger(feedback[`${key}_count`] || 0)} conversões`, "");
       });
     }
-    renderDashboardSummary(payload.summary || {});
     renderDashboardChart(payload.daily || []);
     renderDashboardIdentities(payload.identities || {});
     renderDashboardErrors(payload.top_errors || []);
     renderDashboardQualityIssues(payload.top_quality_issues || []);
     renderDashboardCanonicalCapture(payload.canonical_capture || {});
-    renderDashboardCheckoutFunnel(payload.checkout_funnel || {});
-    renderDashboardCommercialInterest(payload.commercial_interest || []);
     renderDashboardHeavyUsers(payload.heavy_users || []);
     renderDashboardHeavyUsers(
       payload.returning_heavy_users || [],
@@ -1106,14 +1115,21 @@
 
   async function loadDashboard() {
     if (!dashboardPeriodNode || !dashboardIdentityTypeNode) return;
+    const generation = ++dashboardGeneration;
+    dashboardOverviewReady = false;
+    resetDashboardDetails();
+    [dashboardSummaryNode, dashboardCheckoutFunnelNode, dashboardCommercialInterestNode].forEach(function (node) {
+      if (node) node.replaceChildren();
+    });
     const days = String(dashboardPeriodNode.value || "30");
     const identityType = String(dashboardIdentityTypeNode.value || "all");
     setDashboardStatus("Carregando indicadores...", null);
     if (dashboardRefreshBtn) dashboardRefreshBtn.disabled = true;
     try {
       const { response, payload } = await apiRequest(
-        `/admin/dashboard?days=${encodeURIComponent(days)}&identity_type=${encodeURIComponent(identityType)}`,
+        `/admin/dashboard/overview?days=${encodeURIComponent(days)}&identity_type=${encodeURIComponent(identityType)}`,
       );
+      if (generation !== dashboardGeneration) return;
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
           setAuthenticatedView(false);
@@ -1121,12 +1137,68 @@
         setDashboardStatus(String(payload.detail || "Não foi possível carregar os indicadores."), "error");
         return;
       }
-      renderDashboard(payload);
+      renderDashboardSummary(payload.summary || {});
+      renderDashboardCheckoutFunnel(payload.checkout_funnel || {});
+      renderDashboardCommercialInterest(payload.commercial_interest || []);
+      dashboardOverviewReady = true;
+      if (dashboardDetailsBtn) dashboardDetailsBtn.disabled = false;
       setDashboardStatus(`Indicadores atualizados em ${formatDateTime(payload.end_at)}.`, "ok");
     } catch (_error) {
-      setDashboardStatus("Falha de rede ao carregar os indicadores.", "error");
+      if (generation === dashboardGeneration) setDashboardStatus("Falha de rede ao carregar os indicadores.", "error");
     } finally {
-      if (dashboardRefreshBtn) dashboardRefreshBtn.disabled = false;
+      if (generation === dashboardGeneration && dashboardRefreshBtn) dashboardRefreshBtn.disabled = false;
+    }
+  }
+
+  function resetDashboardDetails() {
+    dashboardDetailsGeneration++;
+    dashboardDetailsLoaded = false;
+    if (dashboardDetailsNode) dashboardDetailsNode.classList.add("hidden");
+    if (dashboardDetailsStatusNode) dashboardDetailsStatusNode.textContent = "";
+    if (dashboardDetailsBtn) {
+      dashboardDetailsBtn.textContent = "Ver detalhes das conversões";
+      dashboardDetailsBtn.setAttribute("aria-expanded", "false");
+      dashboardDetailsBtn.disabled = !dashboardOverviewReady;
+    }
+  }
+
+  async function loadDashboardDetails() {
+    if (!dashboardOverviewReady || !dashboardDetailsBtn || !dashboardDetailsNode) return;
+    if (!dashboardDetailsNode.classList.contains("hidden")) {
+      dashboardDetailsNode.classList.add("hidden");
+      dashboardDetailsBtn.textContent = "Ver detalhes das conversões";
+      dashboardDetailsBtn.setAttribute("aria-expanded", "false");
+      return;
+    }
+    const generation = ++dashboardDetailsGeneration;
+    dashboardDetailsBtn.disabled = true;
+    try {
+      if (!dashboardDetailsLoaded) {
+        if (dashboardDetailsStatusNode) dashboardDetailsStatusNode.textContent = "Carregando detalhes...";
+        const days = String(dashboardPeriodNode.value || "30");
+        const identityType = String(dashboardIdentityTypeNode.value || "all");
+        const { response, payload } = await apiRequest(
+          `/admin/dashboard?days=${encodeURIComponent(days)}&identity_type=${encodeURIComponent(identityType)}`,
+        );
+        if (generation !== dashboardDetailsGeneration) return;
+        if (!response.ok) {
+          if (response.status === 401 || response.status === 403) setAuthenticatedView(false);
+          throw new Error(String(payload.detail || "Não foi possível carregar os detalhes."));
+        }
+        renderDashboardDetails(payload);
+        dashboardDetailsLoaded = true;
+        if (dashboardDetailsStatusNode) dashboardDetailsStatusNode.textContent = `Detalhes atualizados em ${formatDateTime(payload.end_at)}.`;
+      }
+      dashboardDetailsNode.classList.remove("hidden");
+      dashboardDetailsBtn.textContent = "Ocultar detalhes";
+      dashboardDetailsBtn.setAttribute("aria-expanded", "true");
+    } catch (error) {
+      if (generation === dashboardDetailsGeneration && dashboardDetailsStatusNode)
+        dashboardDetailsStatusNode.textContent = error.name === "TypeError"
+          ? "Falha de rede ao carregar os detalhes. Tente novamente."
+          : error.message || "Falha de rede ao carregar os detalhes.";
+    } finally {
+      if (generation === dashboardDetailsGeneration) dashboardDetailsBtn.disabled = false;
     }
   }
 
@@ -1914,6 +1986,10 @@
     dashboardRefreshBtn.addEventListener("click", function () {
       void loadDashboard();
     });
+  }
+
+  if (dashboardDetailsBtn) {
+    dashboardDetailsBtn.addEventListener("click", function () { void loadDashboardDetails(); });
   }
 
   if (dashboardAttentionExportBtn) {

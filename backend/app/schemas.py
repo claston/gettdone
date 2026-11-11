@@ -538,6 +538,16 @@ class ConversionFeedbackSummary(BaseModel):
     unanswered_people: int = 0
 
 
+class AdminOverviewResponse(BaseModel):
+    days: int
+    start_at: str
+    end_at: str
+    timezone: str
+    summary: AdminDashboardSummary
+    checkout_funnel: AdminDashboardCheckoutFunnel
+    commercial_interest: list[AdminDashboardCommercialInterestItem]
+
+
 class AdminDashboardResponse(BaseModel):
     conversion_feedback: ConversionFeedbackSummary = Field(default_factory=ConversionFeedbackSummary)
     days: int

@@ -28,14 +28,25 @@ def main():
             for name, width, height in [("desktop", 1440, 1100), ("mobile", 390, 844)]:
                 page = browser.new_page(viewport={"width": width, "height": height}, timezone_id="America/Los_Angeles")
                 errors = []
+                reads = []
                 page.on("pageerror", lambda error: errors.append(str(error)))
 
                 def route(request):
                     path = urlparse(request.request.url).path
+                    if path.startswith("/admin/dashboard"):
+                        reads.append(path)
                     if path == "/admin/me":
                         request.fulfill(json={"is_admin": True})
                     elif path == "/admin/dashboard":
                         request.fulfill(json=payload)
+                    elif path == "/admin/dashboard/overview":
+                        request.fulfill(json={"summary": {"conversions_total": 3},
+                            "checkout_funnel": {"plans_page_people_count": 1, "plans_page_views_count": 2},
+                            "commercial_interest": [{"identity_type": "registered", "display_name": "Pessoa de teste",
+                                "email": "pessoa@example.invalid", "plans_page_views": 2, "plan_cta_clicks": 1,
+                                "checkout_entries": 0, "plan_codes": ["profissional"],
+                                "last_interest_at": payload["end_at"], "marketing_contact_allowed": False}],
+                            "end_at": payload["end_at"]})
                     elif path in ("/admin.html", "/admin.js", "/admin.css"):
                         content_type = {".html": "text/html", ".js": "application/javascript", ".css": "text/css"}[Path(path).suffix]
                         request.fulfill(body=(ROOT / "frontend" / path.lstrip("/")).read_bytes(), content_type=content_type)
@@ -44,6 +55,13 @@ def main():
 
                 page.route("**/*", route)
                 page.goto("http://127.0.0.1:8099/admin.html")
+                page.locator("#dashboard-summary .metric-card").first.wait_for()
+                assert reads == ["/admin/dashboard/overview"], reads
+                assert page.locator("#dashboard-details-content").is_hidden()
+                assert page.locator("#dashboard-commercial-interest").get_by_text("pessoa@example.invalid", exact=True).count() == 1
+                assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Overview overflow"
+                page.screenshot(path=str(output / f"{name}-overview.png"), full_page=True)
+                page.locator("#dashboard-details-btn").click()
                 section = page.locator("#dashboard-pdf-documents")
                 section.get_by_text("Mês do documento", exact=True).wait_for()
                 assert section.get_by_role("cell", name="09/2026", exact=True).count() == 1
@@ -54,6 +72,10 @@ def main():
                 assert not errors, errors
                 assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Page overflow"
                 section.screenshot(path=str(output / f"{name}.png"))
+                with page.expect_response(lambda response: "/admin/dashboard/overview" in response.url):
+                    page.locator("#dashboard-refresh-btn").click()
+                assert reads == ["/admin/dashboard/overview", "/admin/dashboard", "/admin/dashboard/overview"], reads
+                assert page.locator("#dashboard-details-content").is_hidden()
                 page.locator("#admin-logout-btn").click()
                 page.wait_for_function("document.getElementById('dashboard-pdf-documents').childElementCount === 0")
                 print(json.dumps({"viewport": name, "pdfs": 1, "failures": 2, "reviews": 1, "page_errors": errors}))

@@ -59,8 +59,8 @@
       <div class="panel-top dashboard-heading">
         <div>
           <p class="kicker">Saúde do produto</p>
-          <h2>Visão geral das conversões</h2>
-          <p class="muted">Indicadores consolidados sem depender da execução do worker.</p>
+          <h2>Resumo e interesse nos planos</h2>
+          <p class="muted">Totais do período e pessoas que consultaram os planos.</p>
         </div>
         <div class="actions dashboard-filters">
           <label>
@@ -87,12 +87,6 @@
       <p id="dashboard-status" class="status" aria-live="polite"></p>
       <div id="dashboard-summary" class="dashboard-summary" aria-label="Resumo das conversões"></div>
 
-      <section class="dashboard-block" aria-labelledby="dashboard-feedback-title">
-        <h3 id="dashboard-feedback-title">Avaliação dos usuários</h3>
-        <p>Pessoas que responderam sobre o sucesso da conversão e pessoas sem resposta, entre as pesquisas apresentadas no período. Uma pessoa pode aparecer em mais de uma categoria ao avaliar arquivos diferentes. Anônimos são identificados pelo navegador.</p>
-        <div id="dashboard-conversion-feedback" class="dashboard-summary" aria-label="Resultados da pesquisa de conversão"></div>
-      </section>
-
       <section class="dashboard-block" aria-labelledby="dashboard-checkout-title">
         <div class="dashboard-block-heading">
           <div>
@@ -108,6 +102,24 @@
           </div>
         </div>
         <div id="dashboard-commercial-interest" class="dashboard-table-wrap"></div>
+      </section>
+
+      <section class="dashboard-block" aria-labelledby="dashboard-details-title">
+        <div class="dashboard-block-heading">
+          <div>
+            <h3 id="dashboard-details-title">Detalhes das conversões</h3>
+            <p class="muted compact">Consulte gráficos, qualidade, rankings e arquivos que precisam de atenção.</p>
+          </div>
+          <button id="dashboard-details-btn" type="button" aria-expanded="false" aria-controls="dashboard-details-content" disabled>Ver detalhes das conversões</button>
+        </div>
+        <p id="dashboard-details-status" class="status" aria-live="polite"></p>
+      </section>
+
+      <div id="dashboard-details-content" class="hidden">
+      <section class="dashboard-block" aria-labelledby="dashboard-feedback-title">
+        <h3 id="dashboard-feedback-title">Avaliação dos usuários</h3>
+        <p>Pessoas que responderam sobre o sucesso da conversão e pessoas sem resposta, entre as pesquisas apresentadas no período. Uma pessoa pode aparecer em mais de uma categoria ao avaliar arquivos diferentes. Anônimos são identificados pelo navegador.</p>
+        <div id="dashboard-conversion-feedback" class="dashboard-summary" aria-label="Resultados da pesquisa de conversão"></div>
       </section>
 
       <section class="dashboard-block" aria-labelledby="dashboard-chart-title">
@@ -227,6 +239,7 @@
         </div>
         <div id="dashboard-recent-attention" class="dashboard-table-wrap"></div>
       </section>
+      </div>
     </section>
 
     <section id="admin-panel-card" class="card hidden" data-admin-panel="orders">
@@ -374,6 +387,6 @@
       </div>
     </section>
   </main>
-  <script src="./admin.js?v=20"></script>
+  <script src="./admin.js?v=21"></script>
 </body>
 </html>

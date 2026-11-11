@@ -74,6 +74,7 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
     with _run_http_server(tmp_path) as base_url:
         with LoopbackClient(timeout=5.0) as client:
             unauthorized = client.get(f"{base_url}/admin/dashboard")
+            unauthorized_overview = client.get(f"{base_url}/admin/dashboard/overview")
             login = client.post(
                 f"{base_url}/admin/auth/login",
                 json={"email": "admin@example.com", "password": "admin-pass"},
@@ -92,6 +93,8 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
                 f"{base_url}/admin/dashboard",
                 params={"days": 7, "identity_type": "registered"},
             )
+            overview = client.get(f"{base_url}/admin/dashboard/overview", params={"days": 7, "identity_type": "registered"})
+            invalid_overview = client.get(f"{base_url}/admin/dashboard/overview", params={"days": 0})
             attention_export = client.get(
                 f"{base_url}/admin/dashboard/attention.csv",
                 params={"identity_type": "registered"},
@@ -110,6 +113,13 @@ def test_admin_dashboard_real_http_requires_session_and_returns_metrics(tmp_path
             legacy_analyze = client.post(f"{base_url}/analyze")
 
     assert unauthorized.status_code == 401
+    assert unauthorized_overview.status_code == 401
+    assert invalid_overview.status_code == 400
+    assert overview.status_code == 200, overview.text
+    assert overview.headers["cache-control"] == "private, no-store"
+    for key in ("summary", "checkout_funnel", "commercial_interest"):
+        assert overview.json()[key] == dashboard.json()[key]
+    assert "daily" not in overview.json() and "pdf_documents" not in overview.json()
     assert login.status_code == 200
     assert telemetry.status_code == 202
     assert dashboard.status_code == 200
