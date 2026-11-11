@@ -60,7 +60,7 @@ def parse_financial_report_pages(page_texts: list[str]) -> dict | None:
     kind, evidence = detected
     from app.application.parsers.pdf.period_report_source import EVIDENCES
 
-    if evidence in EVIDENCES:
+    if evidence in EVIDENCES or evidence == 'management_ledger_status_category_columns':
         raise PdfFinancialValidationError('Este relatório exige as colunas originais do PDF ou OCR para preservar todos os campos.')
     if evidence == "btg_cdb_positions_and_details":
         raise PdfFinancialValidationError("A posição de CDB exige as colunas originais do PDF ou OCR para preservar os campos.")

@@ -12,6 +12,9 @@ def detect_financial_report(text: str) -> tuple[str, str] | None:
     lines = [normalize_upper_text(line) for line in text.splitlines() if line.strip()]
     header = " ".join(lines[:12])
     normalized = " ".join(lines)
+    if (any(line.startswith('EXTRATO DE ') for line in lines[:4])
+            and all(marker in header for marker in ('SITUACAO', 'CLIENTE OU FORNECEDOR', 'DOCUMENTO', 'CATEGORIA', 'VALOR', 'SALDO'))):
+        return 'cash_flow_report', 'management_ledger_status_category_columns'
     # Recognize the report before generic bank parsing, including damaged table
     # rows: an unreadable investment must never fall back to fabricated cash.
     if (any('EXTRATO' in line and 'DEPOSITO A PRAZO' in line for line in lines[:20])
