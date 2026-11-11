@@ -1,6 +1,8 @@
 """Whole-document paid analysis, pagination, cost boundaries and input lifetime."""
 
+import time
 from io import BytesIO
+from types import SimpleNamespace
 
 import pytest
 from botocore.exceptions import ClientError
@@ -131,8 +133,10 @@ def test_incomplete_or_failed_provider_result_never_becomes_complete_extraction(
 def test_timeout_does_not_delete_input_of_a_running_job(monkeypatch):
     from app.application import asynchronous_textract
 
+    real_monotonic = time.monotonic
     times = iter([0, 2])
-    monkeypatch.setattr(asynchronous_textract.time, "monotonic", lambda: next(times))
+    monkeypatch.setattr(asynchronous_textract, "time", SimpleNamespace(monotonic=lambda: next(times), sleep=time.sleep))
+    assert time.monotonic is real_monotonic, "The timeout simulation must preserve the clock used by asyncio and HTTP"
     s3 = S3()
     with pytest.raises(InvalidFileContentError):
         reader(s3, Textract([]), timeout_seconds=1).read(pdf(2), max_pages=2, request_token=TOKEN)
