@@ -37,6 +37,31 @@ function statement(metrics: Record<string, unknown> = {}) {
 }
 
 describe("free converter review findings", () => {
+  it("shows clean medium confidence as information without a manual review request", () => {
+    const result = collect({
+      ...statement(),
+      review_guidance: {
+        category: "information",
+        title: "Conversão concluída",
+        message: "Os lançamentos foram extraídos sem alertas de revisão.",
+      },
+    });
+    expect(Array.from(result)).toEqual([
+      "Os lançamentos foram extraídos sem alertas de revisão.",
+    ]);
+  });
+  it("preserves page and line details alongside concrete balance warnings", () => {
+    const result = collect({
+      ...statement({ balance_consistency_failed: 1 }),
+      review_guidance: {
+        category: "financial_discrepancy",
+        title: "Divergência financeira encontrada",
+        message: "Página 3, linha 12: saldo calculado 80,00, informado 79,00.",
+      },
+    });
+    expect(result[0]).toContain("Página 3, linha 12");
+    expect(result.join(" ")).toContain("inconsistências");
+  });
   it("shows explicit guidance when legacy recommendation metrics are absent", () => {
     expect(
       collect({

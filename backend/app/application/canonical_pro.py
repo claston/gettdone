@@ -34,7 +34,7 @@ class CanonicalProService:
     def resolve(self, actor_id, analysis_id):
         repo = self.repository
         with repo._connect() as conn:
-            row = conn.execute(f'''SELECT a.* FROM {repo.p}canonical_analyses a
+            row = conn.execute(f'''SELECT a.organization_id, a.job_id, a.client_id FROM {repo.p}canonical_analyses a
                 JOIN {repo.p}pro_organizations o ON o.id = a.organization_id
                 WHERE a.analysis_id = %s AND o.owner_user_id = %s''', (analysis_id, actor_id)).fetchone()
             if row is not None:
@@ -42,14 +42,14 @@ class CanonicalProService:
         if row is None:
             return None
         scope = MovementScope(actor_id, row["organization_id"], row["job_id"], analysis_id, row["client_id"])
-        repo.read(scope)  # Includes active user, source identity and original TTL.
+        repo.authorize(scope)  # Active user, source identity and original TTL, without movement rows.
         return scope
 
     def read(self, scope):
         repo = self.repository
         with repo._connect() as conn:
             self.assert_entitled(conn, scope.actor_id)
-            analysis, _ = repo._analysis(conn, scope)
+            analysis, _ = repo._analysis(conn, scope, for_read=True)
             if not analysis["read_enabled"]:
                 raise AnalysisEditConflictError
             result = repo._snapshot(conn, analysis)

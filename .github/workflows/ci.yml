@@ -293,7 +293,8 @@ jobs:
         run: >-
           python -m pytest tests/test_pro_organization_postgres.py tests/test_statement_period_migration.py
           tests/test_conversion_pro_migration.py tests/test_canonical_movements.py tests/test_canonical_movements_postgres.py
-          tests/test_canonical_pro.py tests/test_admin_overview.py tests/test_password_reset_migration.py -q
+          tests/test_canonical_pro.py tests/test_admin_overview.py tests/test_pro_workspace_refresh.py
+          tests/test_password_reset_migration.py -q
 
       - name: Run tests
         run: python -m pytest -m "not pdf_golden" -q -n 4 --dist=worksteal
