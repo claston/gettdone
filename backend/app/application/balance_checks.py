@@ -113,4 +113,10 @@ def enrich_legacy_conversion_result(payload: dict) -> dict:
     guidance = build_pdf_review_guidance(enriched)
     if guidance is not None or "review_guidance" in enriched:
         enriched = {**enriched, "review_guidance": guidance}
+    if guidance is not None and 'insights' in enriched:
+        enriched = {**enriched, 'insights': [
+            {**item, 'type': 'pdf_extraction_information' if guidance['category'] == 'information' else 'pdf_export_review_recommended',
+             'title': guidance['title'], 'description': guidance['message']}
+            if item.get('type') in {'pdf_export_review_recommended', 'pdf_extraction_information'} else item
+            for item in enriched['insights'] or []]}
     return {**payload, "analysis": enriched}

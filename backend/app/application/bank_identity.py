@@ -11,6 +11,7 @@ from app.application.statement_identity import NAME_LABEL, TAX_LABEL
 
 _GENERIC_LAYOUT_NAMES = {"generic_statement_ptbr"}
 VERIFIED_STATEMENT_BANKS = {
+    'bb_explicit_no_activity_v1': 'Banco do Brasil',
     "bradesco_unified_cash_flow_report_events_v1": "Bradesco",
     "bb_savings_native_value_columns_v1": "Banco do Brasil",
     "sicredi_visual_signed_cash_v1": "Sicredi",

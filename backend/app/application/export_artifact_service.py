@@ -13,6 +13,13 @@ from app.application.parsers.pdf.layout_specific.wise import WISE_CURRENCIES
 from app.application.statement_account_export import statement_scopes
 
 
+def inactive_statement_export_options(parts, metrics):
+    from app.application.statement_period_history import statement_period_from_parts
+
+    period = statement_period_from_parts(parts) if (metrics or {}).get('statement_no_activity') else None
+    return {'statement_period': period} if period else {}
+
+
 class ExportArtifactService:
     def write_analysis_report_workbook(
         self,
@@ -60,6 +67,7 @@ class ExportArtifactService:
         balance_bounds_unavailable: bool = False,
         statement_accounts: list[dict[str, object]] | None = None,
         allow_layout_bank_fallback: bool = True,
+        statement_period: dict[str, str] | None = None,
     ) -> None:
         if financial_document is not None:
             write_financial_artifacts(output_dir, financial_document, bank_code=bank_code,
@@ -98,6 +106,7 @@ class ExportArtifactService:
                 account_number=account_number,
                 bank_id=resolved_bank_code,
                 currency=WISE_CURRENCIES.get(layout_inference_name),
+                statement_period=statement_period,
             ),
             encoding="utf-8",
         )

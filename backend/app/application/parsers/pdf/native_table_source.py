@@ -1,6 +1,7 @@
 """Native glyph evidence in column fragments, preserving real PDF coordinates."""
 import hashlib
 from contextlib import closing
+from ctypes import c_void_p, cast
 from io import BytesIO
 from statistics import median
 
@@ -89,7 +90,7 @@ def split_native_columns(page, boundaries, *, include=None):
     return replace(page, lines=lines)
 
 
-def read_native_table_source(raw, *, decorative_history=None):
+def read_native_table_source(raw, *, decorative_history=None, preserve_text_objects=False):
     import pypdfium2 as pdfium
     from pypdf import PdfReader, PdfWriter
 
@@ -122,7 +123,8 @@ def read_native_table_source(raw, *, decorative_history=None):
                             excluded += 1
                             continue
                     if right > left and top > bottom:
-                        chars.append((left, bottom, right, top, char))
+                        object_id = cast(pdfium.raw.FPDFText_GetTextObject(tp, index), c_void_p).value if preserve_text_objects else None
+                        chars.append((left, bottom, right, top, char, object_id))
                 if not chars:
                     # White image objects also occur on otherwise empty pages.
                     # Verify actual pixels and preserve the physical page number.
@@ -176,16 +178,22 @@ def read_native_table_source(raw, *, decorative_history=None):
                         bbox=bbox(cells), word_ids=tuple(word_ids)))
 
                 for _, group in groups:
-                    fragment = []
-                    for cell in sorted(group, key=lambda c: c[0]):
-                        if fragment and cell[0] - fragment[-1][2] > max(8, char_width * 2.2):
+                    objects = {}
+                    for cell in group:
+                        objects.setdefault(cell[5], []).append(cell)
+                    for cells in objects.values():
+                        fragment = []
+                        for cell in sorted(cells, key=lambda c: c[0]):
+                            if fragment and cell[0] - fragment[-1][2] > max(8, char_width * 2.2):
+                                add_fragment(fragment)
+                                fragment = []
+                            fragment.append(cell)
+                        if fragment:
                             add_fragment(fragment)
-                            fragment = []
-                        fragment.append(cell)
-                    if fragment:
-                        add_fragment(fragment)
                 pages.append(ExtractedPage(page_index + 1, lines=lines, words=words))
     metrics = {"native_coordinates_used": 1}
+    if preserve_text_objects:
+        metrics['native_text_objects_preserved'] = 1
     if rotated:
         metrics["native_rotation_normalized"] = 1
     if empty:

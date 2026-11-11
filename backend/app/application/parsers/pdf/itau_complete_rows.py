@@ -1,6 +1,7 @@
 """Original cell geometry for the complete Itaú web statement."""
 import re
 from contextlib import closing
+from dataclasses import replace
 from statistics import median
 
 from app.application.normalization.text import normalize_upper_text as upper
@@ -68,16 +69,21 @@ def read_itau_complete_rows(raw, source):
     for page in source.pages:
         if finished and page.lines:
             fail("Há outra página após o encerramento do extrato Itaú.")
-        header = native_header_columns(page, _KEYS)
-        if header:
-            if pending:
-                fail("Um histórico Itaú entre páginas está sem movimento associado.")
-            columns = header
         summaries = [line for line in page.lines if upper(line.text) == "SALDO DA CONTA CORRENTE"]
         stops = [line.bbox["top"] for line in summaries]
         stops += [line.bbox["top"] for line in page.lines
                   if upper(line.text).startswith(("AVISO:", "ATUALIZADO EM", "EM CASO DE DUVIDAS"))]
         stop = min(stops, default=1)
+        # A summary on this same page has its own Valor/Saldo headings. Locate
+        # movement columns only inside the table, preserving the original IDs.
+        table_page = replace(page,
+            lines=[line for line in page.lines if line.bbox and _center(line) < stop],
+            words=[word for word in page.words if word.bbox and _center(word) < stop])
+        header = native_header_columns(table_page, _KEYS)
+        if header:
+            if pending:
+                fail("Um histórico Itaú entre páginas está sem movimento associado.")
+            columns = header
         counters = {identifier for line in page.lines if _page_counter(line) for identifier in line.word_ids}
         words = [word for word in page.words if word.bbox and _center(word) < stop and word.id not in counters]
         if header:

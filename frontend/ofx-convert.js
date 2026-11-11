@@ -1771,8 +1771,11 @@
         `Saldo linha a linha com inconsistências: ${balanceFailed} lançamento(s) não bateram no cálculo de saldo.`
       );
     }
+    const guidance = getReviewGuidance(analysis);
+    if (guidance && guidance.category !== "information" && !list.includes(guidance.message)) {
+      list.unshift(guidance.message);
+    }
     if (!list.length && !documentRequiresReview && reviewRecommended) {
-      const guidance = getReviewGuidance(analysis);
       list.push(guidance ? guidance.message : "Revise os lançamentos e confira os dados no documento original antes de exportar. A conversão foi concluída com recomendação de revisão manual.");
     }
     return [...documentNotices, ...list];

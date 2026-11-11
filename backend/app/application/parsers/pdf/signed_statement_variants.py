@@ -101,6 +101,12 @@ def _combined(pages, kind):
                     source_line_refs=(*row.source_line_refs, (page, line)),
                 )
             continue
+        control = re.fullmatch(rf'(\d{{2}}/\d{{2}}/\d{{4}})\s+\d+-\w\s+SALDO DO DIA'
+            rf'(?:\s+\d+){{0,2}}\s+({NUMBER})\s+([CD])', normalized)
+        if control:
+            day(control[1])
+            pending = None
+            continue  # Document/lot references are optional on combined balance controls.
         match = re.fullmatch(rf"(\d{{2}}/\d{{2}}/\d{{4}})\s+\d+-\w\s+(.+?)\s+(\d+)\s+(?:\d{{5}}\s+)?({NUMBER})\s+([CD])", raw)
         if not match:
             fail()
