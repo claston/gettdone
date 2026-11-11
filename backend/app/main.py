@@ -35,6 +35,7 @@ from app.routers.conversion_pro import router as conversion_pro_router
 from app.routers.financial_center import router as financial_center_router
 from app.routers.marketing import router as marketing_router
 from app.routers.pro_conversions import router as pro_conversions_router
+from app.routers.public_config import router as public_config_router
 from app.routers.received_statements import router as received_statements_router
 from app.routers.statement_works import router as statement_works_router
 from app.security_baseline import (
@@ -105,6 +106,7 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(banks_router)
 app.include_router(plans_router)
+app.include_router(public_config_router)
 app.include_router(admin_auth_router)
 app.include_router(marketing_router)
 app.include_router(convert_router)

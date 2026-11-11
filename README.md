@@ -331,6 +331,28 @@ Para desenvolvimento local, continue usando:
 - docs habilitadas por padrao
 - CORS com `localhost:3000` e `127.0.0.1:3000`
 
+### WhatsApp na página de planos
+
+Configure `WHATSAPP_SUPPORT_NUMBER` no ambiente do backend com código do país,
+DDD e telefone, somente dígitos (8 a 15, sem `+`, espaços ou pontuação). O número
+real deve ficar na configuração do ambiente, nunca nos arquivos versionados.
+Reinicie/reimplante o backend após alterar a variável.
+
+A rota pública `GET /public-config` expõe somente `whatsapp_support_number`, sem
+autenticação ou consulta ao banco e com `Cache-Control: no-store`. O número será
+visível no navegador e no link do WhatsApp. Parâmetro ausente, vazio ou com formato
+inválido retorna `null` e mantém o bloco oculto. A validação de formato não confirma
+se o número tem uma conta WhatsApp ativa.
+
+O bloco aparece abaixo dos cartões de planos e antes de “Regras transparentes”,
+com o botão “Tirar dúvidas pelo WhatsApp”. A conversa abre com a mensagem:
+“Olá! Estou na página de planos do OFX Simples e gostaria de tirar algumas dúvidas
+antes de escolher um plano. Podem me ajudar?”. A pessoa confirma o envio no WhatsApp.
+O carregamento é independente do catálogo de planos. Se a rota estiver indisponível
+(inclusive durante um deploy com backend antigo), a página continua funcionando
+com o bloco oculto. Para desativar, esvazie a variável e reinicie o backend; para
+rollback completo, reverta a alteração. Não há migração de banco.
+
 ### Formulário de contato via Hostinger
 
 O formulário pode usar o SMTP da Hostinger sem alterar o Resend usado pelos e-mails transacionais. Para ativar
