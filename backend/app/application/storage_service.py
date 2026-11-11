@@ -14,7 +14,7 @@ from openpyxl.utils import get_column_letter
 from app.application.analysis_lock import locked_analysis
 from app.application.bank_identity import resolve_conversion_model_label
 from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConflictError, AnalysisNotFoundError
-from app.application.export_artifact_service import ExportArtifactService
+from app.application.export_artifact_service import ExportArtifactService, inactive_statement_export_options
 from app.application.financial_document_export import assert_financial_export
 from app.application.legacy_analysis_state import LegacyAnalysisState
 from app.application.models import AnalysisData, TransactionRow
@@ -96,6 +96,7 @@ class TempAnalysisStorage(LegacyAnalysisState):
             allow_layout_bank_fallback=not (data.pdf_processing_metrics or {}).get("statement_issuer_source"),
             **({"financial_document": data.financial_document} if data.financial_document is not None else {}),
             **({"statement_accounts": statement_scopes(data.document_parts)} if statement_scopes(data.document_parts) else {}),
+            **inactive_statement_export_options(data.document_parts, data.pdf_processing_metrics),
         )
         return expires_at.isoformat()
 
@@ -378,6 +379,7 @@ class TempAnalysisStorage(LegacyAnalysisState):
             **({"financial_document": content["financial_document"]} if content.get("financial_document") is not None else {}),
             **({"statement_accounts": statement_scopes(content.get("document_parts"))}
                if statement_scopes(content.get("document_parts")) else {}),
+            **inactive_statement_export_options(content.get('document_parts'), content.get('pdf_processing_metrics')),
         )
 
     def save_reconcile_report(
@@ -567,6 +569,7 @@ class TempAnalysisStorage(LegacyAnalysisState):
             **({"financial_document": content["financial_document"]} if content.get("financial_document") is not None else {}),
             **({"statement_accounts": statement_scopes(content.get("document_parts"))}
                if statement_scopes(content.get("document_parts")) else {}),
+            **inactive_statement_export_options(content.get('document_parts'), content.get('pdf_processing_metrics')),
         )
 
     def _write_report_workbook(

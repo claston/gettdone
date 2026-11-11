@@ -1598,6 +1598,11 @@ def _explicit_inactive_result(page_texts):
         return None
     layout, controls = recognized
     result = _empty_statement_result(page_texts, structural=True)
+    if controls.get('statement_period_start') and controls.get('statement_period_end'):
+        result = replace(result, document_parts=[{'id': 'statement-1', 'document_type': 'bank_statement', 'pages': [1],
+            'included_in_statement': True, 'requires_review': False,
+            'period': {'start_date': controls['statement_period_start'], 'end_date': controls['statement_period_end'],
+                       'basis': 'document_metadata'}}])
     return replace(result, layout=PdfLayoutInference(layout, .99, False),
                    parse_metrics={**result.parse_metrics, **controls})
 
