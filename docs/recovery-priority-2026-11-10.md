@@ -67,3 +67,11 @@ O principal risco é uma variante não coberta de agrupamento textual. Os testes
 negativos mantêm rejeição de valores/datas ambíguos e os gates comparam o
 comportamento existente. Rollback: reverter o commit do lote e publicar a versão
 anterior; nenhum rollback de banco é necessário.
+
+## Revisão da PR #573
+
+A data exportada pelo leitor BB é a data de balancete, tanto quando balancete e
+movimento chegam na mesma célula quanto em células separadas. A segunda data
+permanece na evidência original e não substitui a primeira por causa do
+agrupamento de texto. A regressão compara diretamente nativo/OCR nas duas
+representações de 01/10/2026 e 30/09/2026, incluindo a data enviada no OFX via HTTP.

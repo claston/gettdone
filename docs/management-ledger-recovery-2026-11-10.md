@@ -21,7 +21,7 @@ e nos downloads CSV/Excel. Os saldos anteriores são observações, não movimen
 - Situações diferentes de `Conciliado` ficam preservadas sem inventar efeito de
   caixa confirmado e exigem revisão.
 - Cartões e administradoras têm CSV/Excel. OFX exige conta corrente explícita,
-  agência/conta legíveis, uma única identidade, movimentos conciliados e todos
+  instituição confirmada na origem, agência/conta legíveis, uma única identidade, movimentos conciliados e todos
   os controles aprovados. A conta de destino deve ser informada. O adaptador
   existente exporta movimentos sem inventar um saldo global.
 
@@ -55,3 +55,18 @@ persistidos não são reescritos. Uma nova conversão após implantação aplica
 leitor. Rollback: reverter este lote e publicar a versão anterior, sem operação
 de banco. Os casos BB sem atividade e os 34 casos inconclusivos não fazem parte
 deste lote.
+
+## Revisão da PR #574
+
+A identidade de conta inclui a instituição, além de agência e número. Código
+explícito ou nome exato reconhecido no catálogo identifica a origem; títulos
+genéricos, identificação ausente e indicadores conflitantes exigem revisão.
+Renomear uma conta mantém a comparação de continuidade quando banco, agência e
+número permanecem confirmados. Bancos diferentes nunca compartilham um OFX só
+porque os números coincidem. Os eventos e metadados dos blocos preservam o
+código de origem quando confirmado, sem mudar o contrato de exportação.
+
+Período de cobertura ausente ou ilegível não impede ler datas completas. Os
+limites ficam nulos e a cobertura exige revisão, com CSV/Excel disponíveis.
+Datas abreviadas continuam exigindo contexto inequívoco de ano. Não se deduz o
+período global a partir da primeira e da última transação.
