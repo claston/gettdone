@@ -11,6 +11,7 @@ from app.application import (
     InvalidUserTokenError,
 )
 from app.application.admin_dashboard_service import AdminDashboardService
+from app.application.admin_overview import AdminOverviewService
 from app.dependencies import get_access_control_service
 from app.routers.access_control_common import (
     SESSION_ACCESS_COOKIE_NAME,
@@ -26,6 +27,7 @@ from app.schemas import (
     AdminMarketingContactItem,
     AdminMarketingContactListResponse,
     AdminMeResponse,
+    AdminOverviewResponse,
     AdminSetUserRoleRequest,
     AdminSetUserStatusRequest,
     AdminUserItem,
@@ -132,6 +134,23 @@ def admin_me(
         name=user.name,
         email=user.email,
     )
+
+
+@router.get("/admin/dashboard/overview", response_model=AdminOverviewResponse)
+def get_admin_overview(
+    response: Response,
+    days: int = Query(default=30, ge=1, le=90),
+    identity_type: str = Query(default="all", pattern="^(all|registered|anonymous)$"),
+    x_admin_token: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
+) -> AdminOverviewResponse:
+    require_admin_user(x_admin_token=x_admin_token, authorization=authorization,
+                       access_cookie_token=access_cookie_token, access_control_service=access_control_service)
+    payload = AdminOverviewService(access_control_service).get_overview(days=days, identity_type=identity_type)
+    response.headers["Cache-Control"] = "private, no-store"
+    return AdminOverviewResponse(**payload)
 
 
 @router.get("/admin/dashboard", response_model=AdminDashboardResponse)
