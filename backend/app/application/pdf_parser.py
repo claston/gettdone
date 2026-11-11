@@ -1324,10 +1324,12 @@ def _parse_textract_text_pages_impl(extraction) -> PdfParseResult:
                                           else "invoice_controls_validated"))
         return replace(result, source_extraction=extraction,
                        source_layout_lines=tuple(tuple(page.lines) for page in extraction.pages))
+    from app.application.parsers.pdf.descending_web_cards import is_period_web_cards, parse_descending_web_cards
     from app.application.parsers.pdf.reviewed_cash_columns import parse_reviewed_cash, reviewed_cash_kind, supports_reviewed_cash_columns
 
     cash_kind = reviewed_cash_kind(joined_text)
-    controlled = (parse_reviewed_cash(extraction, cash_kind) if cash_kind and supports_reviewed_cash_columns(extraction,cash_kind)
+    controlled = (parse_descending_web_cards(extraction) if is_period_web_cards(joined_text)
+                  else parse_reviewed_cash(extraction, cash_kind) if cash_kind and supports_reviewed_cash_columns(extraction,cash_kind)
                   else parse_controlled_ocr(extraction))
     if controlled is not None:
         result = _build_verified_statement_result(controlled, page_texts)

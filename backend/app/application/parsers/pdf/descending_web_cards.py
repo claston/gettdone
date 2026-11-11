@@ -1,4 +1,4 @@
-"""Unbranded descending web cards, with printed dates and daily controls."""
+"""Unbranded web cards in either date order, with printed daily controls."""
 import re
 from dataclasses import replace
 from decimal import Decimal
@@ -13,6 +13,13 @@ _MONTHS = {name: index for index, name in enumerate(("JANEIRO", "FEVEREIRO", "MA
     "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"), 1)}
 _CASH = re.compile(rf"([+-]?)\s*R\$\s*({NUMBER})")
 _DATE = re.compile(r"(\d{2}) DE ([A-Z]+) DE (\d{4}), .+")
+
+
+def is_period_web_cards(text):
+    text = upper(text)
+    compact = re.sub(r'\s+', '', text)
+    return all(marker in compact for marker in ('EXTRATOPORPERIODO', 'ORDENAR', 'SALDODODIA',
+        'SALDOANTERIOR', 'COMPARTILHAR', 'VOLTAR')) and bool(re.search(r'\d{2} DE [A-Z]+ DE \d{4}', text))
 
 
 def _cash(line):
@@ -73,7 +80,8 @@ def parse_descending_web_cards(source):
             fail()
         date = day(f"{match[1]}/{month:02}/{match[3]}")
         tag = match[1] + match[2][:3]
-        stop = dates[index+1].bbox["top"] if index+1 < len(dates) else opening_label.bbox["top"]
+        stop = dates[index+1].bbox["top"] if index+1 < len(dates) else (
+            opening_label.bbox['top'] if opening_label.bbox['top'] > header.bbox['top'] else 1)
         cells = [line for line in page.lines if header.bbox["top"] < line.bbox["top"] < stop]
         balances = [line for line in cells if upper(line.text) == "SALDO DO DIA"]
         if len(balances) != 1:
@@ -100,10 +108,12 @@ def parse_descending_web_cards(source):
         days.append((date, total, _cash(balance_cell)))
     if used != {line.id for line in cash}:
         fail("Há um valor sem movimento ou saldo associado no extrato por período.")
-    if any(a[0] <= b[0] for a, b in zip(days, days[1:])):
+    ascending = all(a[0] < b[0] for a, b in zip(days, days[1:]))
+    descending = all(a[0] > b[0] for a, b in zip(days, days[1:]))
+    if not ascending and not descending:
         fail("A ordem dos dias do extrato por período não está confirmada.")
     running = opening
-    for _, total, printed in reversed(days):
+    for _, total, printed in (days if ascending else reversed(days)):
         if running + total != printed:
             financial_mismatch()
         running = printed
