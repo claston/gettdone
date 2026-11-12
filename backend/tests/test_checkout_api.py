@@ -15,6 +15,7 @@ class FakeContactService:
         self.support_email = "support@ofxsimples.com"
         self.sent_emails: list[dict[str, str]] = []
         self._next_error: Exception | None = None
+        self.delivery_mode = "resend"
 
     def fail_with(self, error: Exception) -> None:
         self._next_error = error
@@ -37,7 +38,7 @@ class FakeContactService:
                 "reply_to": reply_to or "",
             }
         )
-        return ContactDeliveryResult(delivery_mode="dry_run")
+        return ContactDeliveryResult(delivery_mode=self.delivery_mode)
 
 
 class _InMemoryConnCtx:
@@ -118,8 +119,8 @@ def test_checkout_creates_intent_and_sends_admin_and_customer_emails() -> None:
         assert payload["next_step"] == "SEND_PAYMENT_LINK"
         assert payload["plan_code"] == "profissional"
         assert payload["price_cents"] == 3990
-        assert payload["admin_delivery_mode"] == "dry_run"
-        assert payload["customer_delivery_mode"] == "dry_run"
+        assert payload["admin_delivery_mode"] == "resend"
+        assert payload["customer_delivery_mode"] == "resend"
         assert payload["intent_id"].startswith("chk_")
         assert payload["billing_period"] == "monthly"
         assert payload["message"] == "Pedido recebido. Enviaremos o link de pagamento por e-mail."
@@ -240,6 +241,16 @@ def test_checkout_status_read_and_admin_payment_link_update() -> None:
         assert updated_payload["status"] == "AWAITING_PAYMENT"
         assert updated_payload["next_step"] == "WAIT_FOR_PAYMENT"
         assert updated_payload["payment_link"] == "https://pay.example.com/order/chk_123"
+        assert updated_payload["payment_link_sent_at"]
+        assert len(fake_contact.sent_emails) == 3
+        payment_email = fake_contact.sent_emails[-1]
+        assert payment_email["to_email"] == "erica@example.com"
+        assert payment_email["reply_to"] == fake_contact.support_email
+        assert "Essencial" in payment_email["subject"]
+        assert f"Pedido: {intent_id}" in payment_email["text"]
+        assert "Plano: Essencial" in payment_email["text"]
+        assert "Valor: R$ 29,90/mês" in payment_email["text"]
+        assert "https://pay.example.com/order/chk_123" in payment_email["text"]
 
         second_status = client.get("/checkout/intents/" + intent_id, params={"user_token": user_token})
         assert second_status.status_code == 200
@@ -283,8 +294,102 @@ def test_admin_payment_link_rejects_script_url(payment_link: str) -> None:
 
         assert response.status_code == 400
         assert "http" in response.json()["detail"].lower()
+        assert len(fake_contact.sent_emails) == 2
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def payment_link_order():
+    contact = FakeContactService()
+    service = _AccessControlServiceInMemory(
+        state_file=Path("backend/tmp/checkout-payment-link-state.json"),
+        token_secret="test-secret",
+        admin_emails={"admin@example.com"},
+    )
+    app.dependency_overrides[get_access_control_service] = lambda: service
+    app.dependency_overrides[get_contact_service] = lambda: contact
+    try:
+        with TestClient(app) as client:
+            _create_admin_user(service)
+            _login_admin(client)
+            user_token = _create_user_token(service)
+            user = service.get_user_by_token(user_token=user_token)
+            order = service.create_checkout_intent(
+                user_id=user.user_id, plan_code="profissional", customer_name="Cliente de teste",
+                customer_email="checkout-customer@example.com", customer_whatsapp="11999990000",
+            )
+            yield client, service, contact, str(order["id"])
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize("already_awaiting", [False, True])
+@pytest.mark.parametrize("failure", ["provider_error", "not_configured", "dry_run"])
+def test_payment_link_failure_preserves_order_and_history(payment_link_order, already_awaiting, failure):
+    client, service, contact, intent_id = payment_link_order
+    if already_awaiting:
+        service.mark_checkout_intent_awaiting_payment(
+            intent_id=intent_id, payment_link="https://pay.example.com/previous",
+        )
+    before = service.read_checkout_intent_by_id(intent_id=intent_id)
+    history_before = service.list_checkout_intent_events_for_admin(intent_id=intent_id)
+    if failure == "provider_error":
+        contact.fail_with(ContactDeliveryError("private provider diagnostic"))
+    elif failure == "not_configured":
+        contact.fail_with(ContactProviderNotConfiguredError())
+    else:
+        contact.delivery_mode = "dry_run"
+
+    response = client.post(
+        f"/admin/checkout/intents/{intent_id}/payment-link",
+        json={"payment_link": "https://pay.example.com/replacement"},
+    )
+
+    assert response.status_code == (502 if failure == "provider_error" else 503)
+    assert "e-mail" in response.json()["detail"]
+    assert "private provider diagnostic" not in response.text
+    assert service.read_checkout_intent_by_id(intent_id=intent_id) == before
+    assert service.list_checkout_intent_events_for_admin(intent_id=intent_id) == history_before
+
+    # A retry must send, including legacy orders incorrectly marked as sent.
+    contact._next_error = None
+    contact.delivery_mode = "resend"
+    contact.sent_emails.clear()
+    retry = client.post(
+        f"/admin/checkout/intents/{intent_id}/payment-link",
+        json={"payment_link": "https://pay.example.com/replacement"},
+    )
+    assert retry.status_code == 200
+    assert retry.json()["status"] == "AWAITING_PAYMENT"
+    assert retry.json()["payment_link"] == "https://pay.example.com/replacement"
+    assert retry.json()["payment_link_sent_at"]
+    assert len(contact.sent_emails) == 1
+    assert contact.sent_emails[0]["to_email"] == "checkout-customer@example.com"
+    assert "https://pay.example.com/replacement" in contact.sent_emails[0]["text"]
+    assert len(service.list_checkout_intent_events_for_admin(intent_id=intent_id)) == len(history_before) + 1
+
+
+@pytest.mark.parametrize("rejection", ["unauthorized", "not_found", "released"])
+def test_payment_link_rejected_order_does_not_send_email(payment_link_order, rejection):
+    client, service, contact, intent_id = payment_link_order
+    if rejection == "unauthorized":
+        client.cookies.clear()
+        expected_status = 401
+    elif rejection == "not_found":
+        intent_id = "chk_not_found"
+        expected_status = 404
+    else:
+        assert client.post(f"/admin/checkout/intents/{intent_id}/release").status_code == 200
+        expected_status = 400
+    before = service.read_checkout_intent_by_id(intent_id=intent_id)
+    response = client.post(
+        f"/admin/checkout/intents/{intent_id}/payment-link",
+        json={"payment_link": "https://pay.example.com/rejected"},
+    )
+    assert response.status_code == expected_status
+    assert contact.sent_emails == []
+    assert service.read_checkout_intent_by_id(intent_id=intent_id) == before
 
 
 def test_checkout_status_read_accepts_bearer_token() -> None:
