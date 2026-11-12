@@ -31,6 +31,13 @@
 
   let selectedPlan = null;
   let currentIntentId = String(new URL(window.location.href).searchParams.get("intent") || "").trim();
+  const support = window.OfxWhatsApp?.create({
+    containerId: "checkout-support",
+    linkId: "checkout-whatsapp-link",
+    apiBase: resolveApiBase(),
+    enabled: true,
+    message: "Olá! Estou na página de contratação do OFX Simples e preciso de ajuda com a contratação.",
+  });
 
   if (yearNode) {
     yearNode.textContent = "(c) " + new Date().getFullYear() + " OFX Simples. Todos os direitos reservados.";
@@ -274,6 +281,13 @@
 
   function renderPlan(plan) {
     selectedPlan = plan || null;
+    const planName = String(plan?.name || "").trim();
+    support?.update({
+      enabled: true,
+      message: planName
+        ? `Olá! Estou contratando o plano ${planName} do OFX Simples e preciso de ajuda com a contratação.`
+        : "Olá! Estou na página de contratação do OFX Simples e preciso de ajuda com a contratação.",
+    });
     if (!planNameNode || !planPriceNode || !planDetailsNode) return;
     if (!plan) {
       planNameNode.textContent = "Plano indisponível";

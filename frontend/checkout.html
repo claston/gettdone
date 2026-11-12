@@ -11,6 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./topbar-unified.css?v=1" />
   <link rel="stylesheet" href="./checkout.css?v=1" />
+  <link rel="stylesheet" href="./whatsapp-support.css?v=1" />
   <script src="/privacy-consent.js?v=2" defer></script>
 </head>
 <body>
@@ -45,7 +46,7 @@
       <article class="checkout-card checkout-plan">
         <h2>Resumo do plano</h2>
         <p id="plan-name" class="plan-name">Carregando plano...</p>
-        <p id="plan-price" class="plan-price">R$ --,--/mes</p>
+        <p id="plan-price" class="plan-price">R$ --,--/mês</p>
         <ul id="plan-details">
           <li>Carregando limites...</li>
         </ul>
@@ -59,6 +60,17 @@
             <a id="order-payment-link" href="#" target="_blank" rel="noopener noreferrer">Abrir link</a>
           </p>
           <button id="order-refresh-btn" class="btn btn-outline" type="button">Atualizar status</button>
+        </section>
+        <section id="checkout-support" class="whatsapp-support hidden" aria-labelledby="checkout-support-title">
+          <h3 id="checkout-support-title">Precisa de ajuda com a contratação?</h3>
+          <p>Tire dúvidas sobre o plano, pagamento ou ativação.</p>
+          <a id="checkout-whatsapp-link" class="whatsapp-support-link" target="_blank" rel="noopener noreferrer">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+              <path d="M21 11.5a9 9 0 0 1-13.3 7.9L3 21l1.6-4.7A9 9 0 1 1 21 11.5Z" />
+              <path d="M8.5 7.5c-.7.2-1 1-.7 2.1.7 2.7 3.3 5.3 6 6 .9.2 1.8-.1 2.1-.8l.3-1-2.5-1.2-.8 1c-1.6-.7-2.7-1.8-3.4-3.4l1-.8-1.2-2.5Z" />
+            </svg>
+            Falar pelo WhatsApp
+          </a>
         </section>
       </article>
 
@@ -110,6 +122,7 @@
   </footer>
 
   <script src="/auth-session.js?v=1"></script>
-  <script src="./checkout.js?v=3"></script>
+  <script src="./whatsapp-support.js?v=1"></script>
+  <script src="./checkout.js?v=4"></script>
 </body>
 </html>
