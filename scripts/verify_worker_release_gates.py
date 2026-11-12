@@ -3,9 +3,13 @@ import json
 import os
 import re
 import subprocess
+import sys
+import time
 
 REQUIRED_JOBS = {"lint-and-tests", "pdf-golden", "pro-quality"}
 DEBIAN_JOBS = {"candidate-tests", "validate-image"}
+API_MAX_ATTEMPTS = 3
+RETRYABLE_HTTP_STATUSES = {429, 500, 502, 503, 504}
 
 
 def select_ci_run(runs, sha):
@@ -30,7 +34,25 @@ def api(endpoint, *, paginate=False):
     args = ["gh", "api", endpoint]
     if paginate:
         args += ["--paginate", "--slurp"]
-    return json.loads(subprocess.check_output(args, text=True, timeout=60))
+    for attempt in range(1, API_MAX_ATTEMPTS + 1):
+        try:
+            output = subprocess.check_output(args, text=True, timeout=60, stderr=subprocess.PIPE)
+        except subprocess.TimeoutExpired:
+            reason, retryable = "request timed out", True
+        except subprocess.CalledProcessError as exc:
+            status = re.search(r"\(HTTP (\d{3})\)", exc.stderr or "")
+            reason = f"HTTP {status[1]}" if status else "gh api failed"
+            retryable = status is not None and int(status[1]) in RETRYABLE_HTTP_STATUSES
+        else:
+            # Never use partial pagination output from a failed request.
+            return json.loads(output)
+        if not retryable or attempt == API_MAX_ATTEMPTS:
+            raise RuntimeError(
+                f"GitHub release-gate query failed ({reason}) after {attempt} attempts. Release remains blocked."
+            )
+        delay = 2 ** attempt
+        print(f"GitHub API {reason}; retrying in {delay}s (attempt {attempt + 1}/{API_MAX_ATTEMPTS}).", file=sys.stderr)
+        time.sleep(delay)
 
 
 def main():

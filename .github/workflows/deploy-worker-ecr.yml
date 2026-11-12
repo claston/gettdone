@@ -148,7 +148,7 @@ jobs:
           docker image inspect "$WORKER_IMAGE" > artifacts/image-inspect.json
 
       - name: Generate Debian image SBOM
-        if: ${{ always() && inputs.image_source == 'build-main' }}
+        if: ${{ always() && inputs.image_source == 'build-main' && steps.build.outcome == 'success' }}
         run: |
           mkdir -p artifacts
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/artifacts:/out" \
@@ -181,7 +181,7 @@ jobs:
             --output artifacts/trivy-security-decision.json
 
       - name: Preserve Debian runtime and security evidence
-        if: ${{ always() && inputs.image_source == 'build-main' }}
+        if: ${{ always() && inputs.image_source == 'build-main' && steps.build.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: worker-debian-release-${{ github.run_id }}-${{ github.run_attempt }}
