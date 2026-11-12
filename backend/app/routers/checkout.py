@@ -291,13 +291,14 @@ def read_checkout_intent(
 
 
 @router.post("/admin/checkout/intents/{intent_id}/payment-link", response_model=CheckoutIntentStatusResponse)
-def set_checkout_intent_payment_link(
+async def set_checkout_intent_payment_link(
     intent_id: str,
     payload: CheckoutIntentPaymentLinkRequest,
     x_admin_token: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
     access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
+    contact_service: ContactService = Depends(get_contact_service),
 ) -> CheckoutIntentStatusResponse:
     actor_kind, actor_user_id = require_admin_actor(
         access_control_service=access_control_service,
@@ -313,6 +314,45 @@ def set_checkout_intent_payment_link(
     if not _is_safe_payment_link(clean_payment_link):
         raise HTTPException(status_code=400, detail="payment_link must be a valid HTTP or HTTPS URL.")
 
+    intent = access_control_service.read_checkout_intent_by_id(intent_id=clean_intent_id)
+    if intent is None:
+        raise HTTPException(status_code=404, detail="checkout intent not found")
+    if str(intent["status"]) == CHECKOUT_STATUS_RELEASED_FOR_USE:
+        raise HTTPException(status_code=400, detail="checkout intent is already released")
+
+    plan_price = _format_price_brl(int(intent["price_cents"]))
+    billing_period = str(intent["billing_period"])
+    billing_period_label = {"monthly": "mês"}.get(billing_period, billing_period)
+    text_lines = [
+        f"Olá, {intent['customer_name']}!",
+        "",
+        "Seu link de pagamento do OFX Simples está disponível.",
+        "",
+        f"Pedido: {intent['id']}",
+        f"Plano: {intent['plan_name']}",
+        f"Valor: {plan_price}/{billing_period_label}",
+        "",
+        "Acesse o link para realizar o pagamento:",
+        clean_payment_link,
+        "",
+        "A ativação do plano será feita pela nossa equipe após a confirmação do pagamento.",
+        "Se precisar de ajuda, responda a este e-mail.",
+    ]
+    try:
+        delivery = await contact_service.send_text_email(
+            to_email=str(intent["customer_email"]),
+            subject=f"Link de pagamento do plano {intent['plan_name']} - OFX Simples",
+            text="\n".join(text_lines),
+            reply_to=contact_service.support_email,
+        )
+    except ContactProviderNotConfiguredError:
+        raise HTTPException(status_code=503, detail="O envio de e-mails não está configurado. O link não foi enviado.")
+    except ContactDeliveryError:
+        raise HTTPException(status_code=502, detail="Não foi possível enviar o link por e-mail. Tente novamente.")
+    if delivery.delivery_mode == "dry_run":
+        raise HTTPException(status_code=503, detail="O envio de e-mails está em modo de teste. O link não foi enviado.")
+
+    # Persist the sent timestamp and audit event only after provider acceptance.
     try:
         intent = access_control_service.mark_checkout_intent_awaiting_payment(
             intent_id=clean_intent_id,
