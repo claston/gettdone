@@ -169,6 +169,13 @@ def test_normal_release_tests_and_scans_the_actual_image_before_aws_and_push():
     assert 'release-${GITHUB_SHA::12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}' in workflow
 
 
+@pytest.mark.parametrize("name", ["Generate Debian image SBOM", "Preserve Debian runtime and security evidence"])
+def test_image_evidence_steps_require_a_successful_local_build(name):
+    block = _workflow().split(f"      - name: {name}\n", 1)[1].split("\n      - name:", 1)[0]
+    # Retain evidence after a runtime/scan failure, but not after a gate/build failure.
+    assert "always() && inputs.image_source == 'build-main' && steps.build.outcome == 'success'" in block
+
+
 def _step_script(name):
     block = _workflow().split(f"      - name: {name}\n", 1)[1].split("\n      - name:", 1)[0]
     return textwrap.dedent(block.split("        run: |\n", 1)[1]).strip("\n")

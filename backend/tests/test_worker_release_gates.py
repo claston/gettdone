@@ -1,5 +1,8 @@
 """Production release requires all product gates on the exact main commit."""
+import json
 import runpy
+import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -90,3 +93,97 @@ def test_historical_digest_promotion_keeps_its_own_evidence_gate(monkeypatch):
     monkeypatch.setenv("WORKER_IMAGE_SOURCE", "pr488-debian-canary")
     monkeypatch.setitem(gate["main"].__globals__, "api", api)
     gate["main"]()
+
+
+@pytest.fixture
+def github_api_responses(monkeypatch):
+    responses, calls, delays = [], [], []
+
+    def check_output(args, **kwargs):
+        calls.append((args, kwargs))
+        result = responses.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(subprocess, "check_output", check_output)
+    monkeypatch.setattr(time, "sleep", delays.append)
+    return responses, calls, delays
+
+
+def api_error(status):
+    return subprocess.CalledProcessError(
+        1, ["gh", "api"], output='[{"jobs": []}]', stderr=f"gh: Server Error (HTTP {status})\n",
+    )
+
+
+@pytest.mark.parametrize("failure", [500, 502, 503, 504, 429, "timeout"])
+def test_github_api_retries_transient_failure_and_discards_partial_output(github_api_responses, failure):
+    responses, calls, delays = github_api_responses
+    error = subprocess.TimeoutExpired(["gh", "api"], 60) if failure == "timeout" else api_error(failure)
+    expected = [{"jobs": jobs()}]
+    responses.extend([error, json.dumps(expected)])
+
+    assert gate["api"]("repos/example/repo/actions/runs/42/jobs", paginate=True) == expected
+    assert len(calls) == 2
+    assert calls[0] == calls[1]
+    assert calls[0][0][-2:] == ["--paginate", "--slurp"]
+    assert calls[0][1]["timeout"] == 60
+    assert calls[0][1]["stderr"] == subprocess.PIPE
+    assert delays == [2]
+
+
+@pytest.mark.parametrize("failure", [502, "timeout"])
+def test_github_api_stops_after_three_attempts_and_blocks_release(github_api_responses, failure):
+    responses, calls, delays = github_api_responses
+    error = subprocess.TimeoutExpired(["gh", "api"], 60) if failure == "timeout" else api_error(failure)
+    responses.extend([error] * 3)
+    with pytest.raises(RuntimeError, match="3 attempts.*Release remains blocked"):
+        gate["api"]("repos/example/repo/actions/runs")
+    assert len(calls) == 3
+    assert delays == [2, 4]
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 404, 422, "unknown"])
+def test_github_api_does_not_retry_permanent_or_unknown_errors(github_api_responses, status):
+    responses, calls, delays = github_api_responses
+    responses.append(api_error(status))
+    with pytest.raises(RuntimeError, match="Release remains blocked"):
+        gate["api"]("repos/example/repo/actions/runs")
+    assert len(calls) == 1
+    assert delays == []
+
+
+def test_github_api_rejects_invalid_json_without_retrying(github_api_responses):
+    responses, calls, delays = github_api_responses
+    responses.append("not json")
+    with pytest.raises(json.JSONDecodeError):
+        gate["api"]("repos/example/repo/actions/runs")
+    assert len(calls) == 1
+    assert delays == []
+
+
+@pytest.mark.parametrize("product_result", ["success", "skipped"])
+def test_release_gates_still_validate_jobs_after_github_502(monkeypatch, github_api_responses, product_result):
+    responses, calls, delays = github_api_responses
+    monkeypatch.setenv("GITHUB_REPOSITORY", "example/repo")
+    monkeypatch.setenv("GITHUB_SHA", SHA)
+    monkeypatch.setenv("WORKER_IMAGE_SOURCE", "build-main")
+    responses.extend([
+        json.dumps({"workflow_runs": [run()]}),
+        api_error(502),
+        json.dumps([{"jobs": jobs(**{"pdf-golden": product_result})}]),
+        json.dumps({"workflow_runs": [run(id=77)]}),
+        json.dumps([{"jobs": [
+            {"name": name, "status": "completed", "conclusion": "success"}
+            for name in ("candidate-tests", "validate-image")
+        ]}]),
+    ])
+    if product_result == "success":
+        gate["main"]()
+        assert len(calls) == 5
+    else:
+        with pytest.raises(ValueError, match="pdf-golden"):
+            gate["main"]()
+        assert len(calls) == 3
+    assert delays == [2]
