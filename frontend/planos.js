@@ -3,8 +3,6 @@
   const topAuthLoginLink = document.getElementById("top-auth-login-link");
   const topAuthPrimaryLink = document.getElementById("top-auth-primary-link");
   const pricingGrid = document.getElementById("pricing-grid");
-  const plansSupport = document.getElementById("plans-support");
-  const whatsappLink = document.getElementById("plans-whatsapp-link");
   const menuToggle = document.getElementById("menu-toggle");
   const topLinks = document.getElementById("top-links");
   const session = window.OfxSession;
@@ -189,21 +187,6 @@
     }
   }
 
-  async function loadSupportContact() {
-    if (!plansSupport || !whatsappLink) return;
-    try {
-      const apiBase = session ? session.apiBase : window.location.origin;
-      const payload = await fetchJsonWithRetry(`${apiBase}/public-config`, { cache: "no-store" }, 2);
-      const number = payload && payload.whatsapp_support_number;
-      if (typeof number !== "string" || !/^[1-9][0-9]{7,14}$/.test(number)) return;
-      const message = "Olá! Estou na página de planos do OFX Simples e gostaria de tirar algumas dúvidas antes de escolher um plano. Podem me ajudar?";
-      whatsappLink.href = `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
-      plansSupport.classList.remove("hidden");
-    } catch (_error) {
-      // O contato é opcional e permanece oculto se a configuração estiver indisponível.
-    }
-  }
-
   async function syncTopAuthBySession() {
     try {
       const currentUser = session ? await session.getCurrentUser() : null;
@@ -228,7 +211,13 @@
   });
 
   void loadPlansCatalog();
-  void loadSupportContact();
+  window.OfxWhatsApp?.create({
+    containerId: "plans-support",
+    linkId: "plans-whatsapp-link",
+    apiBase: session ? session.apiBase : window.location.origin,
+    enabled: true,
+    message: "Olá! Estou na página de planos do OFX Simples e gostaria de tirar algumas dúvidas antes de escolher um plano. Podem me ajudar?",
+  });
   void syncTopAuthBySession();
   void recordProductEvent("plans_view", null);
 })();

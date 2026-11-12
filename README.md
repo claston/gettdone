@@ -353,6 +353,23 @@ O carregamento é independente do catálogo de planos. Se a rota estiver indispo
 com o bloco oculto. Para desativar, esvazie a variável e reinicie o backend; para
 rollback completo, reverta a alteração. Não há migração de banco.
 
+O mesmo parâmetro atende a área do cliente e todos os planos do checkout:
+
+- Em `client-area.html`, o suporte aparece no “Painel da conta”, abaixo dos dados
+  do plano, somente quando `/auth/me` confirma a assinatura ativa por páginas
+  (`quota_mode=pages` e `plan_code` preenchido). Conta gratuita, assinatura encerrada
+  ou apenas pedido pendente não habilitam esse bloco. Saldo de páginas esgotado
+  não remove o suporte de uma assinatura ativa. A consulta é independente do histórico.
+- Em `checkout.html`, o contato fica no “Resumo do plano”, abaixo do status do pedido,
+  disponível também para visitantes e contas gratuitas. A mensagem inclui o nome
+  do plano carregado; enquanto o catálogo está indisponível, usa uma mensagem genérica.
+- Os links abrem em outra aba, com mensagem editável antes do envio, sem incluir
+  e-mail, CPF/CNPJ ou campos do formulário. A configuração e a validação do número
+  são compartilhadas pelas três páginas em `whatsapp-support.js`.
+
+Essa regra controla a exibição do atalho na área do cliente. O número continua
+público nas páginas comerciais. Não há novo parâmetro, endpoint ou migração.
+
 ### Formulário de contato via Hostinger
 
 O formulário pode usar o SMTP da Hostinger sem alterar o Resend usado pelos e-mails transacionais. Para ativar

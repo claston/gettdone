@@ -11,6 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./client-area.css" />
   <link rel="stylesheet" href="./topbar-unified.css?v=1" />
+  <link rel="stylesheet" href="./whatsapp-support.css?v=1" />
   <script>
     (function () {
       try {
@@ -110,6 +111,17 @@
             <p id="plan-text">-</p>
           </article>
         </div>
+        <section id="client-support" class="whatsapp-support hidden" aria-labelledby="client-support-title">
+          <h2 id="client-support-title">Precisa de ajuda?</h2>
+          <p>Fale com nosso suporte pelo WhatsApp.</p>
+          <a id="client-whatsapp-link" class="whatsapp-support-link" target="_blank" rel="noopener noreferrer">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+              <path d="M21 11.5a9 9 0 0 1-13.3 7.9L3 21l1.6-4.7A9 9 0 1 1 21 11.5Z" />
+              <path d="M8.5 7.5c-.7.2-1 1-.7 2.1.7 2.7 3.3 5.3 6 6 .9.2 1.8-.1 2.1-.8l.3-1-2.5-1.2-.8 1c-1.6-.7-2.7-1.8-3.4-3.4l1-.8-1.2-2.5Z" />
+            </svg>
+            Falar com o suporte
+          </a>
+        </section>
         <div id="activation-hint" class="account-info-card">
           <h2>Próximo passo sugerido</h2>
           <p id="activation-hint-text">Carregando informações da sua conta...</p>
@@ -226,6 +238,7 @@
   </main>
 
   <script src="/auth-session.js?v=1"></script>
-  <script src="./client-area.js?v=5"></script>
+  <script src="./whatsapp-support.js?v=1"></script>
+  <script src="./client-area.js?v=6"></script>
 </body>
 </html>

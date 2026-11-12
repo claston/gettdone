@@ -41,6 +41,11 @@
   let unlockRetryTimer = null;
 
   const apiBase = session ? session.apiBase : window.location.origin;
+  const support = window.OfxWhatsApp?.create({
+    containerId: "client-support",
+    linkId: "client-whatsapp-link",
+    apiBase,
+  });
 
   function forceUnlockTransientUi() {
     if (document.body) {
@@ -478,6 +483,7 @@
   }
 
   async function loadClientArea() {
+    support?.update({ enabled: false });
     forceUnlockTransientUi();
     scheduleForceUnlockTransientUi();
 
@@ -485,6 +491,14 @@
       const query = new URL(window.location.href).searchParams;
       const requestedIntentId = String(query.get("checkout_intent") || "").trim();
       const mePromise = fetchJson(`${apiBase}/auth/me`, undefined, { attempts: 3 }).then((me) => {
+        const paidPlan = me.quota_mode === "pages" && Boolean(String(me.plan_code || "").trim());
+        const planName = String(me.plan_name || "").trim();
+        support?.update({
+          enabled: paidPlan,
+          message: planName
+            ? `Olá! Sou cliente do OFX Simples, tenho o plano ${planName} e preciso de suporte.`
+            : "Olá! Sou cliente do OFX Simples e preciso de suporte.",
+        });
         // Count entry once authentication succeeds, even if optional page data fails.
         void fetchJson(`${apiBase}/telemetry/events`, {
           method: "POST",
@@ -569,6 +583,7 @@
 
   if (logoutBtn) {
     logoutBtn.addEventListener("click", async function () {
+      support?.update({ enabled: false });
       closeAccountMenu();
       if (session) await session.logout();
       window.location.replace("./ofx-convert.html?logout=1");
