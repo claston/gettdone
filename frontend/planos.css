@@ -160,6 +160,9 @@ h1 { font-size: clamp(2rem, 4.6vw, 3.6rem); letter-spacing: -0.02em; }
 }
 .price span { color: var(--ink-soft); font-weight: 600; font-size: 1rem; }
 .plan-card ul { margin: 0; padding-left: 18px; color: var(--ink-soft); display: grid; gap: 10px; flex: 1; }
+.plan-support { position: relative; list-style: none; }
+.plan-support-icon { position: absolute; left: -22px; top: 0.15em; }
+.plan-support-icon-whatsapp { color: #147d43; }
 .plan-card .btn { margin-top: 18px; }
 
 .rules, .audience, .faq, .cta, .plans-support {

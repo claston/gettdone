@@ -133,6 +133,17 @@
     throw lastError || new Error("catalog-unavailable");
   }
 
+  function renderSupportBenefit(plan) {
+    const isPaid = Number(plan.price_cents) > 0;
+    const channel = isPaid ? "whatsapp" : "email";
+    const label = isPaid ? "Suporte por WhatsApp" : "Suporte por e-mail";
+    const icon = isPaid
+      ? '<path d="M21 11.5a9 9 0 0 1-13.3 7.9L3 21l1.6-4.7A9 9 0 1 1 21 11.5Z" />' +
+        '<path d="M8.5 7.5c-.7.2-1 1-.7 2.1.7 2.7 3.3 5.3 6 6 .9.2 1.8-.1 2.1-.8l.3-1-2.5-1.2-.8 1c-1.6-.7-2.7-1.8-3.4-3.4l1-.8-1.2-2.5Z" />'
+      : '<rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />';
+    return `<li class="plan-support"><svg class="plan-support-icon plan-support-icon-${channel}" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${icon}</svg>${label}</li>`;
+  }
+
   function renderPlans(items) {
     if (!pricingGrid) return;
     const plans = Array.isArray(items) ? items.slice() : [];
@@ -167,7 +178,7 @@
           "<ul>",
           `<li>${Number(plan.quota_limit || 0)} páginas por mês</li>`,
           `<li>Tamanho máximo: ${Math.round(Number(plan.max_upload_size_bytes || 0) / (1024 * 1024))} MB por arquivo</li>`,
-          "<li>Suporte por contato</li>",
+          renderSupportBenefit(plan),
           "</ul>",
           `<a class="${ctaClass}" data-product-event="plan_cta_click" data-plan-code="${code}" href="./checkout.html?plan=${encodeURIComponent(code)}">Quero este plano</a>`,
           "</article>",
