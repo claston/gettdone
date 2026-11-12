@@ -580,7 +580,7 @@
     refreshTimer = window.setTimeout(() => { void refreshAccountOrders(); }, 30000);
   }
 
-  function refreshAccountOrders() {
+  function refreshAccountOrders(initialAccount = null) {
     if (pageStopped || !session) return Promise.resolve();
     if (refreshInFlight) return refreshInFlight;
     window.clearTimeout(refreshTimer);
@@ -589,7 +589,7 @@
       try {
         const requestedIntentId = new URL(window.location.href).searchParams.get("checkout_intent") || "";
         const [me, data] = await Promise.all([
-          fetchJson(`${apiBase}/auth/me`, { cache: "no-store" }, { attempts: 2 }),
+          initialAccount || fetchJson(`${apiBase}/auth/me`, { cache: "no-store" }, { attempts: 2 }),
           loadOrderData(requestedIntentId),
         ]);
         if (pageStopped) return;
@@ -641,7 +641,8 @@
         renderUpgrades();
         if (ordersLoaded) renderOrderStatus(openOrders[0] || null, plansByCode);
       }).catch(() => {});
-      await refreshAccountOrders();
+      // Reuse the identity just loaded; later refreshes must fetch a fresh plan.
+      await refreshAccountOrders(me);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao carregar área do cliente.";
       if (message.toLowerCase().includes("invalid user token")) {
