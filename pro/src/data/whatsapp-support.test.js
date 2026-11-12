@@ -99,6 +99,46 @@ it("shows paid support even with exhausted quota and unavailable history", async
   ).toBe("quick-metrics");
 });
 
+it("describes WhatsApp for paid plans and email for a future free plan", async () => {
+  const freePlan = {
+    ...plans[0],
+    code: "free",
+    name: "Gratuito",
+    price_cents: 0,
+  };
+  const dom = open("planos", {
+    config: { whatsapp_support_number: null },
+    override: (path) =>
+      path === "/plans" ? json({ items: [...plans, freePlan] }) : undefined,
+  });
+  await vi.waitFor(() =>
+    expect(dom.window.document.querySelectorAll(".plan-support")).toHaveLength(
+      4,
+    ),
+  );
+  const cards = [...dom.window.document.querySelectorAll(".plan-card")];
+  for (const card of cards) {
+    const isFree = card.querySelector("h2").textContent === "Gratuito";
+    const support = card.querySelector(".plan-support");
+    expect(support.textContent.trim()).toBe(
+      isFree ? "Suporte por e-mail" : "Suporte por WhatsApp",
+    );
+    expect(
+      support.querySelector(
+        isFree ? ".plan-support-icon-email" : ".plan-support-icon-whatsapp",
+      ),
+    ).not.toBeNull();
+    expect(support.querySelector("svg").getAttribute("aria-hidden")).toBe(
+      "true",
+    );
+    expect(support.querySelector("a")).toBeNull();
+  }
+  expect(cards[0].querySelector("h2").textContent).toBe("Gratuito");
+  expect(dom.window.document.body.textContent).not.toContain(
+    "Suporte por contato",
+  );
+});
+
 it.each([
   free,
   { ...free, pending_plan: "profissional" },
