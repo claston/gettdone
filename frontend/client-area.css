@@ -420,6 +420,129 @@ body.client-area-page .modal-backdrop {
   color: var(--on-surface-variant);
 }
 
+.status-msg:empty {
+  display: none;
+}
+
+.client-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--primary);
+  border-radius: 0.65rem;
+  background: var(--primary);
+  color: white;
+  font: 600 0.9rem "Inter", sans-serif;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.account-info-card a.client-action {
+  color: white;
+  word-break: normal;
+}
+
+.client-action-secondary,
+.account-info-card a.client-action-secondary {
+  background: white;
+  color: var(--primary);
+}
+
+.client-action:hover {
+  filter: brightness(0.92);
+}
+
+.client-action:focus-visible {
+  outline: 3px solid var(--primary-container);
+  outline-offset: 3px;
+}
+
+.client-action:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.client-actions,
+.pending-order-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.client-actions,
+#upgrade-profile {
+  margin-top: 1rem;
+}
+
+.pending-order {
+  border-left: 4px solid var(--primary);
+  background: #f0f4ff;
+  overflow-wrap: anywhere;
+}
+
+.pending-order-heading {
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.pending-order .status-chip {
+  animation: none;
+}
+
+.pending-order .pending-order-summary {
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+}
+
+.pending-order .pending-order-reference {
+  font-size: 0.8rem;
+  color: var(--on-surface-variant);
+  margin-top: 0.75rem;
+}
+
+#other-open-orders p {
+  margin-top: 1rem;
+}
+
+.upgrade-plans {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.upgrade-plan {
+  border: 1px solid var(--surface-container-high);
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+.upgrade-plan h3 {
+  margin: 0 0 0.75rem;
+}
+
+.upgrade-plan .client-action {
+  margin-top: 1rem;
+}
+
+@media (max-width: 820px) {
+  .overview-header {
+    flex-wrap: wrap;
+  }
+
+  .overview-header .history-divider {
+    display: none;
+  }
+
+  .client-actions > *,
+  .client-actions .client-action {
+    width: 100%;
+  }
+}
+
 .status-msg.error {
   color: #a5021e;
 }

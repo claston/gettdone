@@ -11,6 +11,7 @@ from app.application import (
 )
 from app.application.checkout_management import (
     CHECKOUT_STATUS_AWAITING_PAYMENT,
+    CHECKOUT_STATUS_PENDING_LEGACY,
     CHECKOUT_STATUS_RELEASED_FOR_USE,
     CHECKOUT_STATUS_REQUESTED,
 )
@@ -28,6 +29,7 @@ from app.schemas import (
     CheckoutIntentRequest,
     CheckoutIntentResponse,
     CheckoutIntentStatusResponse,
+    CheckoutOpenIntentsResponse,
 )
 
 router = APIRouter()
@@ -57,7 +59,7 @@ def _is_safe_payment_link(value: str) -> bool:
 
 
 def _next_step_for_status(status: str) -> str:
-    if status == CHECKOUT_STATUS_REQUESTED:
+    if status in (CHECKOUT_STATUS_REQUESTED, CHECKOUT_STATUS_PENDING_LEGACY):
         return "SEND_PAYMENT_LINK"
     if status == CHECKOUT_STATUS_AWAITING_PAYMENT:
         return "WAIT_FOR_PAYMENT"
@@ -255,6 +257,27 @@ def read_latest_checkout_intent(
     if intent is None:
         raise HTTPException(status_code=404, detail="No checkout order found for this user.")
     return _build_checkout_intent_status_response(intent)
+
+
+@router.get("/checkout/intents/open", response_model=CheckoutOpenIntentsResponse)
+def read_open_checkout_intents(
+    authorization: str | None = Header(default=None),
+    user_token: str | None = Query(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
+) -> CheckoutOpenIntentsResponse:
+    token = resolve_user_token_with_session(
+        access_control_service=access_control_service, authorization=authorization,
+        explicit_user_token=user_token, access_cookie_token=access_cookie_token,
+    )
+    if not token:
+        raise HTTPException(status_code=400, detail="user_token is required.")
+    try:
+        user = access_control_service.get_user_by_token(user_token=token)
+    except InvalidUserTokenError:
+        raise HTTPException(status_code=401, detail="Invalid user token.")
+    items = access_control_service.list_open_checkout_intents_for_user(user_id=user.user_id, customer_email=user.email)
+    return CheckoutOpenIntentsResponse(items=[_build_checkout_intent_status_response(item) for item in items])
 
 
 @router.get("/checkout/intents/{intent_id}", response_model=CheckoutIntentStatusResponse)

@@ -17,6 +17,9 @@ from app.application.checkout_management import (
     list_checkout_intents_for_admin as list_checkout_intents_for_admin_query,
 )
 from app.application.checkout_management import (
+    list_open_checkout_intents_for_user as list_open_checkout_intents_for_user_query,
+)
+from app.application.checkout_management import (
     mark_checkout_intent_awaiting_payment as mark_checkout_intent_awaiting_payment_query,
 )
 from app.application.checkout_management import (
@@ -417,6 +420,15 @@ class AccessControlCheckoutComponent:
                     fetchone=self._service._fetchone,
                     user_id=user_id,
                     customer_email=customer_email,
+                )
+
+    def list_open_checkout_intents_for_user(
+        self, *, user_id: str, customer_email: str | None = None,
+    ) -> list[dict]:
+        with self._service._lock:
+            with self._service._connect() as conn:
+                return list_open_checkout_intents_for_user_query(
+                    conn, fetchall=self._service._fetchall, user_id=user_id, customer_email=customer_email,
                 )
 
     def mark_checkout_intent_awaiting_payment(
