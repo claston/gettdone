@@ -48,6 +48,8 @@ class AccessControlAdminComponent:
         if row is None:
             return False
         keys = row.keys() if hasattr(row, "keys") else ()
+        if "initial_access_pending" in keys and self.row_bool_from_value(row["initial_access_pending"]):
+            return False
         if "is_active" not in keys:
             return True
         return self.row_bool_from_value(row["is_active"])
@@ -58,7 +60,7 @@ class AccessControlAdminComponent:
         for email in self._service.admin_emails:
             self._service._execute(
                 conn,
-                "UPDATE users SET is_admin = ? WHERE lower(email) = ?",
+                "UPDATE users SET is_admin = ? WHERE lower(email) = ? AND COALESCE(account_creation_source, '') <> 'checkout_admin'",
                 (self._service._true_value(), email),
             )
 
@@ -289,7 +291,7 @@ class AccessControlAdminComponent:
                 row = self._service._fetchone(
                     conn,
                     """
-                    SELECT id, name, email, is_admin, is_active, email_verification_status,
+                    SELECT id, name, email, is_admin, is_active, initial_access_pending, email_verification_status,
                            email_verified_at, created_at, updated_at
                     FROM users WHERE id = ?
                     """,
@@ -379,7 +381,7 @@ class AccessControlAdminComponent:
                 row = self._service._fetchone(
                     conn,
                     """
-                    SELECT id, name, email, is_admin, is_active, email_verification_status,
+                    SELECT id, name, email, is_admin, is_active, initial_access_pending, email_verification_status,
                            email_verified_at, created_at, updated_at
                     FROM users WHERE id = ?
                     """,
@@ -387,6 +389,8 @@ class AccessControlAdminComponent:
                 )
                 if row is None:
                     raise InvalidUserTokenError
+                if row["initial_access_pending"]:
+                    raise ValueError("Conclua ou reenvie o primeiro acesso pelo pedido antes de alterar a ativação da conta.")
                 previous_is_active = self.row_is_active(row)
                 self._service._execute(
                     conn,

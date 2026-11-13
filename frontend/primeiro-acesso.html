@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="referrer" content="no-referrer" />
+  <meta name="robots" content="noindex" />
+  <title>OFX Simples | Definir primeira senha</title>
+  <link rel="icon" type="image/png" href="/assets/favicon.png" />
+  <link rel="stylesheet" href="./auth.css?v=3" />
+  <link rel="stylesheet" href="./topbar-unified.css?v=1" />
+</head>
+<body>
+  <nav class="top-nav-shell glass-header" aria-label="Navegação principal">
+    <div class="top-nav-inner">
+      <a class="top-brand" href="./index.html">OFX Simples</a>
+      <div class="top-auth-actions"><a class="top-auth-link" href="./login.html">Entrar</a></div>
+    </div>
+  </nav>
+  <main class="auth-page">
+    <section class="auth-shell">
+      <article class="card">
+        <header class="card-head">
+          <h1>Definir primeira senha</h1>
+          <p>Seu plano foi liberado pela equipe. Escolha uma senha com 8 a 256 caracteres para concluir seu primeiro acesso.</p>
+        </header>
+        <p id="status-msg" class="status" role="status" aria-live="polite"></p>
+        <form id="initial-access-form" class="form">
+          <label for="password">Nova senha</label>
+          <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="256" required />
+          <label for="confirm-password">Confirme a nova senha</label>
+          <input id="confirm-password" name="confirm-password" type="password" autocomplete="new-password" minlength="8" maxlength="256" required />
+          <label class="footnote"><input id="accepted-terms" type="checkbox" required /> Li e aceito os <a href="./termos-de-uso.html" target="_blank" rel="noopener noreferrer">Termos de Uso</a> e a <a href="./politica-de-privacidade.html" target="_blank" rel="noopener noreferrer">Política de Privacidade</a>.</label>
+          <button id="submit-btn" type="submit" class="btn btn-primary">Definir senha e concluir</button>
+        </form>
+        <p class="footnote">Link expirado? Peça um novo link à equipe pelo <a href="./contato.html">formulário de contato</a>.</p>
+        <p class="footnote"><a href="./login.html">Voltar para entrar</a></p>
+        <p id="purchase-support" class="footnote hidden"><a id="purchase-whatsapp" rel="noopener noreferrer" target="_blank">Falar com a equipe pelo WhatsApp</a></p>
+        <noscript><p>Ative o JavaScript para redefinir sua senha.</p></noscript>
+      </article>
+    </section>
+  </main>
+  <script src="./whatsapp-support.js?v=1" defer></script>
+  <script src="./purchase-access.js?v=1" defer></script>
+</body>
+</html>

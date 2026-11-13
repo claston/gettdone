@@ -1,4 +1,4 @@
-# E-mails de compra — modelos para avaliação
+# E-mails de compra — galeria de avaliação
 
 Abra `index.html` no navegador. A galeria funciona offline, apresenta cinco e-mails em desktop/celular e permite alternar HTML/texto. No modelo de pagamento, clique em **Abrir página para copiar o link** para avaliar a página de cópia. Os outros links ficam inertes dentro da galeria. O pedido, cliente e link de pagamento são fictícios; nenhum envio, conta ou pagamento é executado.
 
@@ -10,7 +10,7 @@ Abra `index.html` no navegador. A galeria funciona offline, apresenta cinco e-ma
 | `04-primeiro-acesso.html` | Cliente com conta criada pelo administrador: definir senha |
 | `05-aviso-administrador.html` | Equipe: novo pedido para revisão |
 
-Cada HTML tem uma alternativa `.txt`. `flow.json` contém assuntos, preheaders, situação de uso e dados de exemplo. `preview-data.js` é gerado a partir desses arquivos para que a galeria possa abrir diretamente do disco, sem servidor.
+Os HTMLs e suas alternativas `.txt` estão em [`backend/app/email_templates/purchase`](../../../backend/app/email_templates/purchase), fonte única usada pelo backend e pela galeria. `flow.json` contém rótulos e dados fictícios de avaliação; assuntos efetivos estão no renderer de produção. `preview-data.js` é gerado para abrir a galeria diretamente do disco, sem servidor.
 
 Após editar HTML, texto ou `flow.json`, execute na raiz:
 
@@ -18,14 +18,14 @@ Após editar HTML, texto ou `flow.json`, execute na raiz:
 & backend/venv/Scripts/python.exe scripts/build_purchase_email_preview.py
 ```
 
-O [plano completo](../../../docs/purchase-flow-plan.md) descreve a criação de conta apenas na liberação administrativa, o primeiro acesso por link, as APIs propostas, compatibilidade, recuperação de falhas e critérios de aceite. Este pacote não está conectado ao backend.
+O [fluxo implementado](../../../docs/purchase-flow-plan.md) descreve criação de conta somente na liberação administrativa, primeiro acesso, APIs, compatibilidade, recuperação de falhas e implantação. Os templates estão integrados ao backend; esta galeria continua sendo apenas uma demonstração offline.
 
 ## Campos dos templates
 
-| Campo | Origem futura |
+| Campo | Origem |
 | --- | --- |
 | `name`, `customer_email`, `order_reference`, `plan_name`, `price_label` | Dados validados e retrato da compra no pedido |
-| `customer_whatsapp`, `customer_notes` | Pedido; somente no aviso interno |
+| `customer_whatsapp`, `customer_document`, `customer_notes`, `checkout_terms`, `requested_at` | Dados e aceite do pedido; aviso completo ao backoffice |
 | `payment_url` | Link de pagamento validado e gravado pelo administrador |
 | `payment_page_url` | Página de visualização/cópia com acesso restrito ao pedido |
 | `whatsapp_display`, `whatsapp_url` | Derivados de `WHATSAPP_SUPPORT_NUMBER`; omitir bloco se ausente/inválida |
@@ -34,8 +34,8 @@ O [plano completo](../../../docs/purchase-flow-plan.md) descreve a criação de 
 
 O número `5511911808493` da prévia foi lido de `GET https://www.ofxsimples.com.br/public-config` em 12/11/2026. É uma fotografia pública para avaliação visual. A integração deve sempre derivar o número da variável, sem copiar esse valor para uma constante de produção.
 
-Os marcadores não constituem um renderer de produção. Ao integrar: escape texto/atributos, valide URLs, rejeite campos obrigatórios ausentes e qualquer marcador restante. Envie HTML e texto na mesma mensagem; o assunto é um cabeçalho, não o `<title>`. São mensagens transacionais, sem adesão automática ao marketing e sem conteúdo promocional.
+O renderer de produção escapa texto/atributos, valida URLs e rejeita campos ausentes. HTML e texto seguem na mesma mensagem; o assunto é um cabeçalho. São mensagens transacionais, sem adesão automática ao marketing e sem conteúdo promocional.
 
 O e-mail usa link para a página de cópia porque JavaScript não é confiável em leitores de e-mail. Os cinco corpos HTML não têm script, formulário, iframe ou eventos inline. O JavaScript da pasta pertence somente à galeria. Referência: [limitações do HTML em e-mails](https://mailchimp.com/help/limitations-of-html-email/).
 
-As URLs com `DEMO` e o domínio `pagamento.example` não são rotas de produção. Não enviar estes exemplos a clientes. A galeria apresenta texto e fluxo propostos; a implantação depende de revisão e da implementação descrita no plano. Não houve teste de entrega/renderização real em Gmail, Outlook ou Apple Mail.
+As URLs com `DEMO` e o domínio `pagamento.example` são fictícios. A produção usa `pagamento.html` e `primeiro-acesso.html` com tokens próprios. Não enviar os exemplos da galeria a clientes. Não houve teste de entrega/renderização real em Gmail, Outlook ou Apple Mail.

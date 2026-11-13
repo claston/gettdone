@@ -347,7 +347,7 @@ class AccessControlCheckoutComponent:
     def create_checkout_intent(
         self,
         *,
-        user_id: str,
+        user_id: str | None,
         plan_code: str,
         customer_name: str,
         customer_email: str,
@@ -374,6 +374,13 @@ class AccessControlCheckoutComponent:
                     customer_document=customer_document,
                     customer_notes=customer_notes,
                 )
+                from app.application.purchase_flow import PurchaseFlow
+
+                self._service._execute(conn, "UPDATE checkout_intents SET terms_accepted_at = ? WHERE id = ?",
+                                       (now_iso, intent_id))
+                flow = PurchaseFlow(self._service)
+                flow.enqueue(conn, intent_id, "admin_receipt")
+                flow.enqueue(conn, intent_id, "customer_receipt")
                 self._service._append_checkout_intent_event_with_conn(
                     conn,
                     intent_id=str(intent["id"]),

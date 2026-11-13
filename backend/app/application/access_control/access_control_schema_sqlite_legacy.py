@@ -398,6 +398,10 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
         WHERE auth_provider IS NULL OR auth_provider = ''
         """
     )
+    if "initial_access_pending" not in user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN initial_access_pending INTEGER NOT NULL DEFAULT 0")
+    if "account_creation_source" not in user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN account_creation_source TEXT")
     service._sync_admin_emails(conn)
     conn.execute(
         """
@@ -663,3 +667,11 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
         conn.execute(statement)
     if not identity_table_existed:
         conn.execute(protect_existing_client_identities())
+
+    from app.application.purchase_schema import purchase_schema
+
+    checkout_columns = {row["name"] for row in conn.execute("PRAGMA table_info(checkout_intents)").fetchall()}
+    if "terms_accepted_at" not in checkout_columns:
+        conn.execute("ALTER TABLE checkout_intents ADD COLUMN terms_accepted_at TEXT")
+    for statement in purchase_schema():
+        conn.execute(statement)

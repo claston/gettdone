@@ -1,5 +1,5 @@
 {
-  "status": "review_only",
+  "status": "implemented",
   "whatsapp_source": "WHATSAPP_SUPPORT_NUMBER via GET /public-config; snapshot 2026-11-12",
   "sample": {
     "name": "Marina Oliveira",
@@ -18,7 +18,10 @@
     "admin_order_url": "https://www.ofxsimples.com.br/admin.html",
     "whatsapp_number": "5511911808493",
     "whatsapp_display": "+55 (11) 91180-8493",
-    "whatsapp_url": "https://wa.me/5511911808493?text=Ol%C3%A1%21%20Preciso%20de%20ajuda%20com%20o%20pedido%20PED-1042."
+    "whatsapp_url": "https://wa.me/5511911808493?text=Ol%C3%A1%21%20Preciso%20de%20ajuda%20com%20o%20pedido%20PED-1042.",
+    "customer_document": "123.456.789-00",
+    "checkout_terms": "Sim — aceite de contato para esta compra",
+    "requested_at": "12/11/2026 às 15:30"
   },
   "messages": [
     {

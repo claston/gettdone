@@ -117,7 +117,7 @@ class AccessControlAuthComponent:
                     conn,
                     """
                     SELECT id, name, email, is_admin, is_active, password_hash, password_salt,
-                           email_verification_status, email_verified_at
+                           initial_access_pending, email_verification_status, email_verified_at
                     FROM users
                     WHERE email = ?
                     """,
@@ -154,7 +154,7 @@ class AccessControlAuthComponent:
                     conn,
                     """
                     SELECT id, name, email, is_admin, is_active,
-                           email_verification_status, email_verified_at
+                           initial_access_pending, email_verification_status, email_verified_at
                     FROM users WHERE id = ?
                     """,
                     (user_id,),
@@ -184,7 +184,7 @@ class AccessControlAuthComponent:
                     conn,
                     """
                     SELECT id, name, email, is_admin, is_active,
-                           email_verification_status, email_verified_at
+                           initial_access_pending, email_verification_status, email_verified_at
                     FROM users WHERE lower(email) = ?
                     """,
                     (normalized_email,),
@@ -236,7 +236,7 @@ class AccessControlAuthComponent:
                     conn,
                     """
                     SELECT id, name, email, is_admin, is_active,
-                           email_verification_status, email_verified_at
+                           initial_access_pending, email_verification_status, email_verified_at
                     FROM users
                     WHERE auth_provider = 'google' AND provider_user_id = ?
                     """,
@@ -300,7 +300,7 @@ class AccessControlAuthComponent:
                     conn,
                     """
                     SELECT id, name, email, is_admin, is_active,
-                           email_verification_status, email_verified_at
+                           initial_access_pending, email_verification_status, email_verified_at
                     FROM users WHERE email = ?
                     """,
                     (normalized_email,),

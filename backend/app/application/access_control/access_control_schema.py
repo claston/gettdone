@@ -48,6 +48,8 @@ class AccessControlSchemaComponent:
             "user_login_events",
             "email_verification_tokens",
             "password_reset_tokens",
+            "purchase_tokens",
+            "checkout_notifications",
             "conversion_batches",
             "conversion_jobs",
             "conversion_outbox",
@@ -71,6 +73,8 @@ class AccessControlSchemaComponent:
                 "email_verification_status",
                 "email_verified_at",
                 "credential_version",
+                "initial_access_pending",
+                "account_creation_source",
             ),
             "usage": ("window_started_at",),
             "user_conversions": (
@@ -162,7 +166,7 @@ class AccessControlSchemaComponent:
                 "batch_conversion_enabled",
                 "batch_max_files",
             ),
-            "checkout_intents": ("user_id", "payment_link", "payment_link_sent_at", "released_at"),
+            "checkout_intents": ("terms_accepted_at", "user_id", "payment_link", "payment_link_sent_at", "released_at"),
             "user_login_events": ("user_id", "auth_method", "created_at"),
             "email_verification_tokens": (
                 "user_id",

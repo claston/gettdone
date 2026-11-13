@@ -140,6 +140,8 @@ async def security_headers_middleware(request: Request, call_next):
     else:
         response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
+    if request.url.path in {"/primeiro-acesso.html", "/pagamento.html", "/auth/initial-access", "/checkout/payment-page"}:
+        response.headers["Cache-Control"] = "no-store"
     if is_production_env():
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -171,7 +173,7 @@ async def early_convert_upload_size_guard(request: Request, call_next):
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
-    if _request.url.path in {"/auth/forgot-password", "/auth/reset-password"}:
+    if _request.url.path in {"/auth/forgot-password", "/auth/reset-password", "/auth/initial-access", "/checkout/payment-page"}:
         return JSONResponse(status_code=400, headers={"Cache-Control": "no-store"}, content={
             "detail": "Confira os campos informados. A senha deve ter entre 8 e 256 caracteres."
         })
