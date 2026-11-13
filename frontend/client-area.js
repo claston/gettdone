@@ -30,10 +30,7 @@
   const upgradeButtons = [document.getElementById("upgrade-top"), document.getElementById("upgrade-profile")].filter(Boolean);
   const upgradeOptions = document.getElementById("upgrade-options");
   const upgradePlans = document.getElementById("upgrade-plans");
-  const orderRefresh = document.getElementById("order-refresh");
   const ordersRefreshStatus = document.getElementById("orders-refresh-status");
-  const orderReviewLink = document.getElementById("order-review-link");
-  const otherOpenOrders = document.getElementById("other-open-orders");
   const OPEN_ORDER_STATUSES = new Set(["REQUESTED", "PENDING", "AWAITING_PAYMENT"]);
   let account = null;
   let plansByCode = new Map();
@@ -340,7 +337,6 @@
     if (orderNextStep) orderNextStep.textContent = "-";
     if (orderPaymentLinkLine) orderPaymentLinkLine.classList.add("hidden");
     if (orderPaymentLink) orderPaymentLink.setAttribute("href", "#");
-    if (otherOpenOrders) otherOpenOrders.replaceChildren();
     setOrderStatusVisible(false);
   }
 
@@ -395,9 +391,8 @@
     if (orderStatusValue) orderStatusValue.textContent = formatOrderStatus(data.status);
     const link = orderStatus === "AWAITING_PAYMENT" ? safePaymentLink(data.payment_link) : "";
     if (orderNextStep) orderNextStep.textContent = orderStatus === "AWAITING_PAYMENT"
-      ? (link ? formatOrderNextStep("WAIT_FOR_PAYMENT") : "Estamos preparando seu link de pagamento. Acompanhe o pedido ou fale com o suporte.")
+      ? (link ? formatOrderNextStep("WAIT_FOR_PAYMENT") : "Estamos preparando seu link de pagamento. Aguarde o envio por e-mail ou fale com o suporte.")
       : formatOrderNextStep("SEND_PAYMENT_LINK");
-    if (orderReviewLink) orderReviewLink.href = orderReviewUrl(data);
     if (link) {
       if (orderPaymentLink) orderPaymentLink.setAttribute("href", link);
       if (orderPaymentLinkLine) orderPaymentLinkLine.classList.remove("hidden");
@@ -479,10 +474,6 @@
     return OPEN_ORDER_STATUSES.has(String(item.status || "").trim().toUpperCase());
   }
 
-  function orderReviewUrl(item) {
-    return `./checkout.html?plan=${encodeURIComponent(item.plan_code)}&intent=${encodeURIComponent(item.intent_id)}`;
-  }
-
   function setUpgradeExpanded(expanded) {
     upgradeOptions?.classList.toggle("hidden", !expanded);
     upgradeButtons.forEach((button) => button.setAttribute("aria-expanded", String(expanded)));
@@ -503,12 +494,14 @@
     // Keep focused links intact when a background refresh has no visible changes.
     const markup = candidates.map((plan) => {
       const existing = openOrders.find((item) => String(item.plan_code).toLowerCase() === String(plan.code).toLowerCase());
-      const href = existing ? orderReviewUrl(existing) : `./checkout.html?plan=${encodeURIComponent(plan.code)}`;
+      const action = existing
+        ? '<p class="upgrade-order-status">Pedido em aberto</p>'
+        : `<a class="client-action" href="./checkout.html?plan=${escapeHtml(encodeURIComponent(plan.code))}">Escolher plano</a>`;
       return `<article class="upgrade-plan">
         <h3>${escapeHtml(plan.name)}</h3>
         <p><strong>${escapeHtml(formatPriceBRL(plan.price_cents))}/mês</strong></p>
         <p>${Number(plan.quota_limit)} páginas por mês</p>
-        <a class="client-action" href="${escapeHtml(href)}">${existing ? "Acompanhar pedido" : "Escolher plano"}</a>
+        ${action}
       </article>`;
     }).join("");
     if (upgradePlans.innerHTML !== markup) upgradePlans.innerHTML = markup;
@@ -518,7 +511,11 @@
     // The open list is authoritative. A network error must never mean completion.
     const payload = await fetchJson(`${apiBase}/checkout/intents/open`, { cache: "no-store" }, { attempts: 2 });
     if (!Array.isArray(payload.items)) throw new Error("Resposta de pedidos inválida.");
-    const pending = payload.items.filter(isOpenOrder);
+    // API order prioritizes payment readiness; the account banner shows the newest purchase.
+    const pending = payload.items.filter(isOpenOrder).sort((a, b) =>
+      (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0) ||
+      String(b.intent_id).localeCompare(String(a.intent_id))
+    );
     const orders = [];
     const seenIntentIds = new Set();
     function pushOrder(item) {
@@ -584,7 +581,6 @@
     if (pageStopped || !session) return Promise.resolve();
     if (refreshInFlight) return refreshInFlight;
     window.clearTimeout(refreshTimer);
-    if (orderRefresh) orderRefresh.disabled = true;
     refreshInFlight = (async () => {
       try {
         const requestedIntentId = new URL(window.location.href).searchParams.get("checkout_intent") || "";
@@ -598,10 +594,6 @@
         ordersLoaded = true;
         renderOrderRows(data.orders);
         renderOrderStatus(openOrders[0] || null, plansByCode);
-        if (otherOpenOrders) otherOpenOrders.innerHTML = openOrders.slice(1).map((item) =>
-          `<p><strong>${escapeHtml(item.plan_name)}</strong> · ${escapeHtml(formatOrderStatus(item.status))}
-          <a href="${escapeHtml(orderReviewUrl(item))}">Acompanhar pedido</a></p>`
-        ).join("");
         if (ordersRefreshStatus) ordersRefreshStatus.textContent = "";
         renderUpgrades();
       } catch (_error) {
@@ -612,7 +604,6 @@
         renderUpgrades();
       } finally {
         refreshInFlight = null;
-        if (orderRefresh) orderRefresh.disabled = false;
         scheduleOrderRefresh();
       }
     })();
@@ -667,7 +658,6 @@
     setUpgradeExpanded(false);
     upgradeOpener?.focus();
   });
-  orderRefresh?.addEventListener("click", () => { void refreshAccountOrders(); });
 
   if (logoutBtn) {
     logoutBtn.addEventListener("click", async function () {
