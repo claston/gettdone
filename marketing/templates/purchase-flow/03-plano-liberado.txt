@@ -1,0 +1,16 @@
+Olá, {{ name }}!
+
+Nossa equipe confirmou seu pagamento e liberou seu plano.
+Pedido: {{ order_reference }}
+Plano: {{ plan_name }}
+Valor: {{ price_label }}
+Conta: {{ customer_email }}
+
+Entrar na minha conta: {{ login_url }}
+Use a mesma senha ou a opção Entrar com Google que você já utiliza.
+
+Podemos ajudar? WhatsApp: {{ whatsapp_display }}
+{{ whatsapp_url }}
+
+Equipe OFX Simples
+Esta é uma mensagem sobre sua compra e seu acesso ao OFX Simples.
