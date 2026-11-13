@@ -39,7 +39,7 @@
     document.getElementById("subject").textContent = renderFields(message.subject);
     document.getElementById("preheader").textContent = message.preheader;
     document.getElementById("message-note").textContent = message.note;
-    document.getElementById("source").href = `${message.id}.html`;
+    document.getElementById("source").href = `../../../backend/app/email_templates/purchase/${message.id}.html`;
     frame.srcdoc = renderFields(message.html, true);
     text.textContent = renderFields(message.text);
     feedback.textContent = "";

@@ -1541,6 +1541,7 @@
     items.forEach(function (user) {
       const isAdmin = !!user.is_admin;
       const isActive = user.is_active !== false;
+      const initialAccessPending = !!user.initial_access_pending;
       const isEmailVerified = String(user.email_verification_status || "verified") === "verified";
       const card = document.createElement("article");
       card.className = "order-card";
@@ -1553,6 +1554,9 @@
       const badges = document.createElement("div");
       badges.className = "pill-row";
       badges.appendChild(createTextElement("span", `badge ${isActive ? "released" : "awaiting"}`, isActive ? "Ativo" : "Inativo"));
+      if (initialAccessPending) {
+        badges.appendChild(createTextElement("span", "badge awaiting", "Primeiro acesso pendente"));
+      }
       badges.appendChild(createTextElement("span", `badge ${isAdmin ? "released" : ""}`, isAdmin ? "Admin" : "Usuário"));
       badges.appendChild(
         createTextElement(
@@ -1590,10 +1594,11 @@
         "toggle-status",
         "userId",
         user.user_id,
-        isActive ? "Inativar usuário" : "Reativar usuário",
+        initialAccessPending ? "Revogar primeiro acesso" : (isActive ? "Inativar usuário" : "Reativar usuário"),
         { className: "ghost" },
       );
       statusButton.dataset.isActive = isActive ? "1" : "0";
+      statusButton.dataset.initialAccessPending = initialAccessPending ? "1" : "0";
       buttonRow.appendChild(statusButton);
       buttonRow.appendChild(
         createActionButton("user-login-history", "userId", user.user_id, "Ver histórico de logins", {
@@ -1880,11 +1885,14 @@
     }
   }
 
-  async function toggleUserStatus(userId, currentIsActive) {
-    const targetState = !currentIsActive;
+  async function toggleUserStatus(userId, currentIsActive, initialAccessPending) {
+    const targetState = initialAccessPending ? false : !currentIsActive;
+    const confirmation = initialAccessPending
+      ? "Revogar o primeiro acesso deste usuário? Os links já enviados serão invalidados. Para autorizar novamente, reenvie o primeiro acesso pelo pedido."
+      : "Inativar este usuário? As sessões atuais serão encerradas e novos acessos serão bloqueados.";
     if (
       !targetState &&
-      !window.confirm("Inativar este usuário? As sessões atuais serão encerradas e novos acessos serão bloqueados.")
+      !window.confirm(confirmation)
     ) {
       return;
     }
@@ -2243,7 +2251,7 @@
       }
       if (action === "toggle-status") {
         const currentIsActive = String(target.dataset.isActive || "") === "1";
-        void toggleUserStatus(userId, currentIsActive);
+        void toggleUserStatus(userId, currentIsActive, target.dataset.initialAccessPending === "1");
         return;
       }
       if (action === "user-role-history") {

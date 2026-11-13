@@ -241,3 +241,46 @@ def test_rollout_flags_and_guest_rate_limit(purchase, monkeypatch):
         assert client.post("/checkout/intents", json=payload).status_code == 400
     limited = client.post("/checkout/intents", json=payload)
     assert limited.status_code == 429 and limited.headers["retry-after"]
+
+
+@pytest.mark.parametrize("authenticated_first", [True, False])
+def test_open_order_is_unique_across_authenticated_and_guest_checkout(purchase, authenticated_first):
+    client, service, mail, _ = purchase
+    user = service.register_user(name="Marina", email="marina@example.com", password="original-pass")
+    payload = dict(plan_code="profissional", name="Marina", email=" Marina@Example.com ",
+                   whatsapp="11999999999", accepted_terms=True)
+    authenticated = {**payload, "user_token": user.token}
+    first, second = (authenticated, payload) if authenticated_first else (payload, authenticated)
+    assert client.post("/checkout/intents", json=first).status_code == 202
+    response = client.post("/checkout/intents", json=second)
+    assert response.status_code == 400 and "open order" in response.json()["detail"]
+    assert service._test_conn.execute("SELECT COUNT(*) FROM checkout_intents").fetchone()[0] == 1
+    assert len(mail.sent_emails) == 2
+
+
+def test_admin_suspension_revokes_all_pending_setup_links_and_requires_explicit_reissue(purchase):
+    client, service, mail, headers = purchase
+    intent = order(client)
+    path = f"/admin/checkout/intents/{intent}"
+    assert client.post(path + "/release", headers=headers, json={"create_account": True}).status_code == 200
+    token = re.search(r"#token=([\w-]+)", mail.sent_emails[-1]["text"])[1]
+    user_id = service.read_checkout_intent_by_id(intent_id=intent)["user_id"]
+    listed = client.get("/admin/users", headers=headers).json()["items"]
+    assert next(user for user in listed if user["user_id"] == user_id)["initial_access_pending"] is True
+    response = client.post("/admin/users/status", headers=headers, json={"user_id": user_id, "is_active": False})
+    assert response.status_code == 200, response.text
+    confirm = dict(token=token, password="secure-password", accepted_terms=True)
+    assert client.post("/auth/initial-access", json=confirm).status_code == 400
+    assert client.post("/admin/users/status", headers=headers,
+                       json={"user_id": user_id, "is_active": True}).status_code == 409
+    with pytest.raises(InvalidUserTokenError):
+        service.get_user_by_token(service._encode_token(user_id))
+    # Repeating release must not restore the revoked invitation.
+    before = len(mail.sent_emails)
+    assert client.post(path + "/release", headers=headers).status_code == 200
+    assert len(mail.sent_emails) == before
+    assert client.post("/auth/initial-access", json=confirm).status_code == 400
+    assert client.post(path + "/resend-notification", headers=headers).json()["notification_status"] == "sent"
+    newer = re.search(r"#token=([\w-]+)", mail.sent_emails[-1]["text"])[1]
+    assert newer != token
+    assert client.post("/auth/initial-access", json={**confirm, "token": newer}).status_code == 200

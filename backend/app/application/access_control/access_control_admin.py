@@ -127,6 +127,7 @@ class AccessControlAdminComponent:
                         users.email,
                         users.is_admin,
                         users.is_active,
+                        users.initial_access_pending,
                         users.email_verification_status,
                         users.email_verified_at,
                         users.created_at,
@@ -175,6 +176,7 @@ class AccessControlAdminComponent:
                             "email": str(row["email"] or ""),
                             "is_admin": self.row_is_admin(row),
                             "is_active": self.row_is_active(row),
+                            "initial_access_pending": bool(row["initial_access_pending"]),
                             "email_verification_status": str(
                                 row["email_verification_status"] or "verified"
                             ),
@@ -378,40 +380,56 @@ class AccessControlAdminComponent:
 
         with self._service._lock:
             with self._service._connect() as conn:
-                row = self._service._fetchone(
-                    conn,
-                    """
-                    SELECT id, name, email, is_admin, is_active, initial_access_pending, email_verification_status,
-                           email_verified_at, created_at, updated_at
-                    FROM users WHERE id = ?
-                    """,
-                    (normalized_user_id,),
-                )
-                if row is None:
-                    raise InvalidUserTokenError
-                if row["initial_access_pending"]:
-                    raise ValueError("Conclua ou reenvie o primeiro acesso pelo pedido antes de alterar a ativação da conta.")
-                previous_is_active = self.row_is_active(row)
-                self._service._execute(
-                    conn,
-                    "UPDATE users SET is_active = ?, updated_at = ? WHERE id = ?",
-                    (
-                        self._service._true_value() if is_active else self._service._false_value(),
-                        now_iso,
-                        normalized_user_id,
-                    ),
-                )
-                if not is_active:
-                    self._service._execute(
+                if not self._service._use_postgres:
+                    conn.execute("BEGIN IMMEDIATE")
+                lock_suffix = " FOR UPDATE" if self._service._use_postgres else ""
+                try:
+                    row = self._service._fetchone(
                         conn,
                         """
-                        UPDATE user_sessions
-                        SET revoked_at = COALESCE(revoked_at, ?), revoke_reason = COALESCE(revoke_reason, ?)
-                        WHERE user_id = ? AND revoked_at IS NULL
-                        """,
-                        (now_iso, "user_deactivated", normalized_user_id),
+                        SELECT id, name, email, is_admin, is_active, initial_access_pending, email_verification_status,
+                               email_verified_at, created_at, updated_at
+                        FROM users WHERE id = ?
+                        """ + lock_suffix,
+                        (normalized_user_id,),
                     )
-                conn.commit()
+                    if row is None:
+                        raise InvalidUserTokenError
+                    if row["initial_access_pending"] and is_active:
+                        raise ValueError("Conclua ou reenvie o primeiro acesso pelo pedido antes de alterar a ativação da conta.")
+                    previous_is_active = self.row_is_active(row)
+                    self._service._execute(
+                        conn,
+                        "UPDATE users SET is_active = ?, updated_at = ? WHERE id = ?",
+                        (
+                            self._service._true_value() if is_active else self._service._false_value(),
+                            now_iso,
+                            normalized_user_id,
+                        ),
+                    )
+                    if not is_active:
+                        # Pending accounts are already inactive. Revoking all setup links
+                        # prevents their previous invitation from activating the account.
+                        # Only an explicit administrative reissue can grant a new invitation.
+                        self._service._execute(
+                            conn,
+                            """UPDATE purchase_tokens SET invalidated_at = ? WHERE user_id = ?
+                               AND purpose = 'setup' AND consumed_at IS NULL AND invalidated_at IS NULL""",
+                            (now_iso, normalized_user_id),
+                        )
+                        self._service._execute(
+                            conn,
+                            """
+                            UPDATE user_sessions
+                            SET revoked_at = COALESCE(revoked_at, ?), revoke_reason = COALESCE(revoke_reason, ?)
+                            WHERE user_id = ? AND revoked_at IS NULL
+                            """,
+                            (now_iso, "user_deactivated", normalized_user_id),
+                        )
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
                 logger.info(
                     "admin_user_status_changed actor_user_id=%s target_user_id=%s previous_is_active=%s new_is_active=%s",
                     str(actor_user_id or "").strip() or "system",

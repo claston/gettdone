@@ -69,6 +69,11 @@ def test_payment_link_delivery_failure_and_retry_over_real_http():
                 "email": "checkout-customer@example.com", "whatsapp": "11999990000", "accepted_terms": True,
             })
             assert created.status_code == 202, created.text
+            duplicate = client.post("/checkout/intents", json={
+                "plan_code": "profissional", "name": "Cliente de teste",
+                "email": "checkout-customer@example.com", "whatsapp": "11999990000", "accepted_terms": True,
+            })
+            assert duplicate.status_code == 400 and "open order" in duplicate.json()["detail"]
             intent_id = created.json()["intent_id"]
             path = f"/admin/checkout/intents/{intent_id}/payment-link"
             body = {"payment_link": "https://pay.example.com/fictional-order?ref=123&plan=pro"}
@@ -146,6 +151,13 @@ def test_guest_purchase_release_first_access_over_real_http():
             assert guest.post("/checkout/payment-page", json={"token": payment_token}).json()["payment_link"] == "https://pay.example/guest"
             released = admin.post(path + "/release", json={"create_account": True})
             assert released.status_code == 200 and released.json()["notification_status"] == "sent"
+            setup_token = re.search(r"#token=([\w-]+)", messages[-1]["text"])[1]
+            user_id = access.read_checkout_intent_by_id(intent_id=intent_id)["user_id"]
+            assert admin.post("/admin/users/status", json={"user_id": user_id, "is_active": False}).status_code == 200
+            assert guest.post("/auth/initial-access", json={"token": setup_token, "password": "secure-password",
+                                                          "accepted_terms": True}).status_code == 400
+            assert admin.post("/admin/users/status", json={"user_id": user_id, "is_active": True}).status_code == 409
+            assert admin.post(path + "/resend-notification").json()["notification_status"] == "sent"
             setup_token = re.search(r"#token=([\w-]+)", messages[-1]["text"])[1]
             assert guest.get("/primeiro-acesso.html").headers["cache-control"] == "no-store"
             assert guest.post("/checkout/payment-page", json={"token": payment_token}).status_code == 400

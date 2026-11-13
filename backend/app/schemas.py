@@ -777,6 +777,7 @@ class AdminUserItem(BaseModel):
     email: str
     is_admin: bool
     is_active: bool
+    initial_access_pending: bool = False
     email_verification_status: str = "verified"
     email_verified_at: str | None = None
     created_at: str

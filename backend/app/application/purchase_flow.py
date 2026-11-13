@@ -150,6 +150,9 @@ class PurchaseFlow:
         s = self.s
         now = s.now_provider().isoformat()
         with s._lock, s._connect() as conn:
+            self.begin(conn)
+            s._fetchone(conn, "SELECT id FROM checkout_intents WHERE id = ?" + self.lock_suffix,
+                        (notification["intent_id"],))
             s._execute(conn, """UPDATE checkout_notifications SET status = ?, provider_message_id = ?, updated_at = ?
                 WHERE id = ? AND attempts = ?""", ("sent" if sent else "failed", provider_message_id, now,
                                                     notification["id"], notification["attempts"]))
@@ -223,6 +226,10 @@ class PurchaseFlow:
             self.begin(conn)
             try:
                 row = self._valid_token(conn, token, "setup")
+                # Release and reissue also lock the order before its user. The event FK
+                # needs the order lock, so taking only the user first can deadlock.
+                s._fetchone(conn, "SELECT id FROM checkout_intents WHERE id = ?" + self.lock_suffix,
+                            (row["intent_id"],))
                 user = s._fetchone(conn, "SELECT * FROM users WHERE id = ?" + self.lock_suffix, (row["user_id"],))
                 row = self._valid_token(conn, token, "setup")
                 if not user or not user["initial_access_pending"] or user["auth_provider"] != "local":

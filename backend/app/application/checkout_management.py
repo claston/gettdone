@@ -61,7 +61,7 @@ def create_checkout_intent(
         """
         SELECT id
         FROM checkout_intents
-        WHERE (user_id = ? OR (user_id IS NULL AND lower(customer_email) = ?))
+        WHERE (user_id = ? OR lower(customer_email) = ?)
           AND plan_code = ? AND status IN (?, ?, ?)
         ORDER BY created_at DESC
         LIMIT 1
