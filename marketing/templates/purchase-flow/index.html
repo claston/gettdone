@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fluxo de compra · Prévia dos e-mails · OFX Simples</title>
+  <link rel="stylesheet" href="preview.css">
+</head>
+<body>
+  <header class="masthead">
+    <a class="brand" href="../ofx-content-series/index.html"><strong>OFX</strong> Simples<span>.</span></a>
+    <span class="review-badge">Proposta para avaliação</span>
+  </header>
+  <main>
+    <section class="intro">
+      <p class="eyebrow">Experiência de compra</p>
+      <h1>Cada e-mail, um próximo passo claro.</h1>
+      <p>Do pedido ao primeiro acesso, com a mesma identidade visual das mensagens de marketing.</p>
+      <div class="review-note">Prévia local com pedido fictício. Não envia e-mails, não cria contas e não realiza pagamentos.</div>
+    </section>
+    <div class="layout">
+      <aside>
+        <p class="nav-heading">Mensagens do fluxo</p>
+        <nav id="messages" aria-label="Escolher e-mail"></nav>
+        <section class="sidebar-note">
+          <h2>A conta nasce na liberação.</h2>
+          <p>O administrador confirma o pagamento. Se o cliente ainda não tiver conta, cria o acesso e envia o link para definir a primeira senha.</p>
+          <a href="../../../docs/purchase-flow-plan.md">Ler o plano de implementação ↗</a>
+        </section>
+        <p class="config-note">WhatsApp da prévia: <strong data-support-number></strong><br>Origem: <code>WHATSAPP_SUPPORT_NUMBER</code>, consultada em 12/11/2026.</p>
+      </aside>
+      <section class="workspace" aria-label="Prévia da mensagem">
+        <div class="toolbar">
+          <div class="toggle" aria-label="Formato da mensagem">
+            <button id="html-mode" aria-pressed="true" type="button">E-mail HTML</button>
+            <button id="text-mode" aria-pressed="false" type="button">Texto simples</button>
+          </div>
+          <div class="toggle" aria-label="Largura da prévia">
+            <button id="desktop" aria-pressed="true" type="button">Desktop</button>
+            <button id="mobile" aria-pressed="false" type="button">Celular</button>
+          </div>
+        </div>
+        <div class="envelope">
+          <p class="mail-route"><span>De</span> Equipe OFX Simples <span>→</span> <strong id="recipient"></strong></p>
+          <h2 id="subject"></h2>
+          <p id="preheader"></p>
+        </div>
+        <div class="stage" id="email-stage">
+          <iframe id="email-frame" title="Conteúdo do e-mail selecionado" sandbox="allow-same-origin"></iframe>
+          <pre id="text-content" hidden></pre>
+        </div>
+        <div class="preview-detail"><p id="message-note"></p><a id="source" href="01-pedido-recebido.html" target="_blank" rel="noopener">Abrir HTML base ↗</a></div>
+        <p id="preview-feedback" class="feedback" role="status" aria-live="polite"></p>
+        <section id="copy-section" hidden aria-labelledby="copy-heading">
+          <div class="copy-preview-heading"><div><p class="eyebrow">Página aberta pelo e-mail</p><h2 id="copy-heading">Como será a cópia do link</h2></div><button id="close-copy" class="quiet-button" type="button">Fechar prévia</button></div>
+          <div class="payment-page">
+            <div class="brand"><strong>OFX</strong> Simples<span>.</span></div>
+            <p class="eyebrow">Pedido PED-1042</p>
+            <h3>Seu link de pagamento.</h3>
+            <p>Plano Profissional <strong>· R$ 39,90/mês</strong></p>
+            <label for="payment-link">Link para pagamento</label>
+            <textarea id="payment-link" readonly rows="3" spellcheck="false"></textarea>
+            <button id="copy-link" class="primary-button" type="button">Copiar link</button>
+            <button id="demo-payment" class="quiet-button" type="button">Ir para o pagamento ↗</button>
+            <p id="copy-status" class="feedback" role="status" aria-live="polite"></p>
+            <p class="payment-support">Precisa de ajuda? WhatsApp <strong data-support-number></strong></p>
+          </div>
+          <p class="prototype-note">Este painel demonstra a futura página. O endereço de pagamento é fictício; o botão copia somente esse exemplo.</p>
+        </section>
+      </section>
+    </div>
+  </main>
+  <footer class="page-footer">5 modelos HTML + texto · WhatsApp configurável · Criação de conta somente pelo administrador</footer>
+  <script src="preview-data.js"></script>
+  <script src="preview.js"></script>
+</body>
+</html>

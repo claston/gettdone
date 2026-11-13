@@ -1,0 +1,15 @@
+Olá, {{ name }}!
+
+Recebemos seu pedido do plano {{ plan_name }}. Nossa equipe enviará o link de pagamento para este e-mail.
+
+Pedido: {{ order_reference }}
+Plano: {{ plan_name }}
+Valor: {{ price_label }}
+
+Próximos passos: receber o link, realizar o pagamento e aguardar a confirmação e liberação do plano. As orientações de acesso serão enviadas após a liberação.
+
+Podemos ajudar? WhatsApp: {{ whatsapp_display }}
+{{ whatsapp_url }}
+
+Equipe OFX Simples
+Esta é uma mensagem sobre sua compra e seu acesso ao OFX Simples.

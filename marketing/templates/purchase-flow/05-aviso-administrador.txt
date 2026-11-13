@@ -1,0 +1,16 @@
+Novo pedido para revisão.
+
+Pedido: {{ order_reference }}
+Plano: {{ plan_name }}
+Valor: {{ price_label }}
+Cliente: {{ name }}
+E-mail: {{ customer_email }}
+WhatsApp do cliente: {{ customer_whatsapp }}
+Observações: {{ customer_notes }}
+
+Revisar pedido: {{ admin_order_url }}
+
+Envie o link, confirme o pagamento e só então libere o plano. A criação de conta, se necessária, ocorre somente na liberação administrativa.
+
+Equipe OFX Simples
+Mensagem interna sobre um pedido de compra.
