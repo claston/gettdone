@@ -102,11 +102,15 @@ def test_postgres_upgrade_existing_users_and_atomic_reset(tmp_path, monkeypatch)
         with pytest.raises(InvalidUserTokenError):
             services[0].get_user_by_token(user.token)
         assert services[0].authenticate_user(user.email, "new-password").user_id == user.user_id
+        with psycopg.connect(url) as conn:
+            revision_before = conn.execute(f'SELECT version_num FROM "{schema}".alembic_version').fetchone()
+            assert revision_before is not None
         result = migrate("downgrade", "20261103_01")
         assert result.returncode != 0
         assert "Retain password reset schema" in result.stderr
         with psycopg.connect(url) as conn:
-            assert conn.execute(f'SELECT version_num FROM "{schema}".alembic_version').fetchone() == ("20261109_01",)
+            # A rejected downgrade must preserve the current head, including later migrations.
+            assert conn.execute(f'SELECT version_num FROM "{schema}".alembic_version').fetchone() == revision_before
             assert conn.execute(f'SELECT credential_version FROM "{schema}".users WHERE id = %s', (user.user_id,)).fetchone() == (1,)
         with pytest.raises(InvalidUserTokenError):
             services[0].get_user_by_token(user.token)

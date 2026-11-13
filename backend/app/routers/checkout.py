@@ -1,4 +1,3 @@
-import re
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Request
@@ -40,6 +39,17 @@ from app.schemas import (
 from app.security_baseline import read_bool_env
 
 router = APIRouter()
+
+
+def _is_valid_checkout_email(value: str) -> bool:
+    # Keep validation linear even for repeated characters in untrusted input.
+    if not value or len(value) > 320 or any(character.isspace() for character in value):
+        return False
+    local, separator, domain = value.partition("@")
+    if not separator or not local or "@" in domain:
+        return False
+    domain_name, dot, suffix = domain.rpartition(".")
+    return bool(domain_name and dot and suffix)
 
 
 def _format_price_brl(price_cents: int) -> str:
@@ -146,7 +156,7 @@ async def create_checkout_intent(
         raise HTTPException(status_code=400, detail="Terms must be accepted before checkout.")
     if not clean_name or not clean_email or not clean_whatsapp or not clean_plan_code:
         raise HTTPException(status_code=400, detail="name, email, whatsapp, and plan_code are required.")
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", clean_email):
+    if not _is_valid_checkout_email(clean_email):
         raise HTTPException(status_code=400, detail="Enter a valid email address.")
 
     if not clean_user_token:
