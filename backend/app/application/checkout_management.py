@@ -266,7 +266,7 @@ def read_latest_checkout_intent_for_user(
           CASE
             WHEN status = ? AND payment_link IS NOT NULL AND payment_link <> '' THEN 0
             WHEN status = ? THEN 1
-            WHEN status = ? THEN 2
+            WHEN status IN (?, ?) THEN 2
             WHEN status = ? THEN 3
             ELSE 4
           END,
@@ -279,6 +279,7 @@ def read_latest_checkout_intent_for_user(
             CHECKOUT_STATUS_AWAITING_PAYMENT,
             CHECKOUT_STATUS_AWAITING_PAYMENT,
             CHECKOUT_STATUS_REQUESTED,
+            CHECKOUT_STATUS_PENDING_LEGACY,
             CHECKOUT_STATUS_RELEASED_FOR_USE,
         ),
     )
@@ -304,6 +305,38 @@ def read_latest_checkout_intent_for_user(
         "payment_link_sent_at": str(row["payment_link_sent_at"] or "") or None,
         "released_at": str(row["released_at"] or "") or None,
     }
+
+
+def list_open_checkout_intents_for_user(
+    conn,
+    *,
+    fetchall,
+    user_id: str,
+    customer_email: str | None = None,
+) -> list[dict]:
+    if not str(user_id or "").strip():
+        return []
+    rows = fetchall(
+        conn,
+        """
+        SELECT id, created_at, updated_at, status, plan_code, plan_name,
+               price_cents, currency, billing_period, payment_link,
+               payment_link_sent_at, released_at
+        FROM checkout_intents
+        WHERE (user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(customer_email) = ?))
+          AND status IN (?, ?, ?)
+        ORDER BY CASE
+            WHEN status = ? AND payment_link IS NOT NULL AND payment_link <> '' THEN 0
+            WHEN status = ? THEN 1
+            ELSE 2
+        END, created_at DESC, id DESC
+        """,
+        (
+            user_id.strip(), str(customer_email or "").strip().lower(),
+            *OPEN_CHECKOUT_STATUSES, CHECKOUT_STATUS_AWAITING_PAYMENT, CHECKOUT_STATUS_AWAITING_PAYMENT,
+        ),
+    )
+    return [dict(row) for row in rows]
 
 
 def mark_checkout_intent_awaiting_payment(

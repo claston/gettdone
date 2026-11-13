@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./client-area.css" />
+  <link rel="stylesheet" href="./client-area.css?v=7" />
   <link rel="stylesheet" href="./topbar-unified.css?v=1" />
   <link rel="stylesheet" href="./whatsapp-support.css?v=1" />
   <script>
@@ -96,11 +96,36 @@
 
     <section class="dashboard-content">
       <section id="overview" class="content-card anchor-target" aria-labelledby="overview-title">
-        <div class="history-header">
+        <div class="history-header overview-header">
           <h1 id="overview-title">Painel da conta</h1>
           <div class="history-divider" aria-hidden="true"></div>
+          <button id="upgrade-top" class="client-action hidden" type="button" aria-expanded="false" aria-controls="upgrade-options">Fazer upgrade</button>
         </div>
         <p id="status-msg" class="status-msg" role="status" aria-live="polite"></p>
+        <p id="orders-refresh-status" class="status-msg" role="status" aria-live="polite"></p>
+        <section id="order-status" class="account-info-card pending-order anchor-target hidden" aria-labelledby="pending-order-title">
+          <div class="pending-order-heading">
+            <h2 id="pending-order-title">Pedido em andamento</h2>
+            <span id="order-status-value" class="status-chip status-processing">-</span>
+          </div>
+          <p class="pending-order-summary"><strong id="order-plan-name">-</strong> · <span id="order-plan-price">-</span></p>
+          <p id="order-next-step">-</p>
+          <p class="pending-order-reference">Protocolo: <span id="order-intent-id">-</span> · Páginas por mês: <span id="order-plan-pages">-</span></p>
+          <div class="client-actions">
+            <span id="order-payment-link-line" class="hidden"><a id="order-payment-link" class="client-action" href="#" target="_blank" rel="noopener noreferrer">Concluir pagamento</a></span>
+            <a id="order-review-link" class="client-action client-action-secondary" href="#orders-section">Acompanhar pedido</a>
+            <button id="order-refresh" class="client-action client-action-secondary" type="button">Atualizar status</button>
+          </div>
+          <div id="other-open-orders"></div>
+        </section>
+        <section id="upgrade-options" class="account-info-card anchor-target hidden" aria-labelledby="upgrade-title">
+          <div class="pending-order-heading">
+            <h2 id="upgrade-title" tabindex="-1">Escolha seu próximo plano</h2>
+            <button id="upgrade-close" class="client-action client-action-secondary" type="button">Fechar</button>
+          </div>
+          <p>Confira os planos superiores ao seu. A mudança será concluída após o pagamento e a liberação.</p>
+          <div id="upgrade-plans" class="upgrade-plans"></div>
+        </section>
         <div class="quick-metrics">
           <article class="metric-card">
             <h2>Páginas restantes no mês</h2>
@@ -167,19 +192,6 @@
           <h1 id="orders-title">Pedidos e faturamento</h1>
           <div class="history-divider" aria-hidden="true"></div>
         </div>
-        <div id="order-status" class="account-info-card hidden">
-          <h2>Pedido em andamento</h2>
-          <p><strong>Protocolo:</strong> <span id="order-intent-id">-</span></p>
-          <p><strong>Plano:</strong> <span id="order-plan-name">-</span></p>
-          <p><strong>Valor:</strong> <span id="order-plan-price">-</span></p>
-          <p><strong>Páginas por mês:</strong> <span id="order-plan-pages">-</span></p>
-          <p><strong>Status:</strong> <span id="order-status-value">-</span></p>
-          <p><strong>Próximo passo:</strong> <span id="order-next-step">-</span></p>
-          <p id="order-payment-link-line" class="hidden">
-            <strong>Link de pagamento:</strong>
-            <a id="order-payment-link" href="#" target="_blank" rel="noopener noreferrer">Abrir link</a>
-          </p>
-        </div>
         <div class="table-card">
           <div class="table-wrap">
             <table>
@@ -194,7 +206,7 @@
               </thead>
               <tbody id="orders-rows">
                 <tr>
-                  <td colspan="5">Nenhum pedido encontrado.</td>
+                  <td colspan="5">Carregando pedidos...</td>
                 </tr>
               </tbody>
             </table>
@@ -211,6 +223,7 @@
           <p><strong>E-mail:</strong> <span id="profile-email">-</span></p>
           <p><strong>Plano:</strong> <span id="plan-summary">-</span></p>
           <p><strong>Modalidade:</strong> <span id="plan-mode-summary">-</span></p>
+          <button id="upgrade-profile" class="client-action hidden" type="button" aria-expanded="false" aria-controls="upgrade-options">Fazer upgrade</button>
         </div>
       </section>
 
@@ -239,6 +252,6 @@
 
   <script src="/auth-session.js?v=1"></script>
   <script src="./whatsapp-support.js?v=1"></script>
-  <script src="./client-area.js?v=6"></script>
+  <script src="./client-area.js?v=7"></script>
 </body>
 </html>

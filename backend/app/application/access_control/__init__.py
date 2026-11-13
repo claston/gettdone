@@ -696,6 +696,11 @@ class AccessControlService:
             customer_email=customer_email,
         )
 
+    def list_open_checkout_intents_for_user(
+        self, *, user_id: str, customer_email: str | None = None,
+    ) -> list[dict]:
+        return self.checkout.list_open_checkout_intents_for_user(user_id=user_id, customer_email=customer_email)
+
     def read_latest_checkout_intent_for_user(
         self,
         *,

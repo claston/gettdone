@@ -173,6 +173,33 @@ it("keeps support hidden until authentication finishes", async () => {
   expect(link(dom, "client-support").classList.contains("hidden")).toBe(true);
   resolveMe(json(paid));
   await visible(dom, "client-whatsapp-link");
+  await vi.waitFor(() =>
+    expect(link(dom, "orders-rows").textContent).toContain("Nenhum pedido encontrado."),
+  );
+  expect(
+    dom.window.fetch.mock.calls.filter(([url]) => url.endsWith("/auth/me")),
+  ).toHaveLength(1);
+});
+
+it("refreshes the paid identity when returning to the client area", async () => {
+  let identity = paid;
+  const dom = open("client-area", {
+    override: (path) => (path === "/auth/me" ? json(identity) : undefined),
+  });
+  await visible(dom, "client-whatsapp-link");
+  await vi.waitFor(() =>
+    expect(link(dom, "orders-rows").textContent).toContain("Nenhum pedido encontrado."),
+  );
+  identity = free;
+  dom.window.dispatchEvent(new dom.window.Event("focus"));
+  await vi.waitFor(() =>
+    expect(link(dom, "plan-summary").textContent).toBe("Plano gratuito"),
+  );
+  expect(link(dom, "client-support").classList.contains("hidden")).toBe(true);
+  expect(link(dom, "client-whatsapp-link").hasAttribute("href")).toBe(false);
+  expect(
+    dom.window.fetch.mock.calls.filter(([url]) => url.endsWith("/auth/me")),
+  ).toHaveLength(2);
 });
 
 it.each(plans)(

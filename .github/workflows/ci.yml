@@ -260,6 +260,10 @@ jobs:
         working-directory: .
         run: python scripts/smoke_playwright_navigation.py
 
+      - name: Customer upgrades and open orders (desktop and mobile)
+        working-directory: .
+        run: python scripts/smoke_client_upgrade.py
+
       - name: Free review guidance and warnings smoke (desktop and mobile)
         working-directory: .
         run: python scripts/smoke_free_review_frontend.py

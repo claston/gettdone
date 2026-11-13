@@ -715,6 +715,10 @@ class CheckoutIntentStatusResponse(BaseModel):
     next_step: str
 
 
+class CheckoutOpenIntentsResponse(BaseModel):
+    items: list[CheckoutIntentStatusResponse]
+
+
 class CheckoutIntentPaymentLinkRequest(BaseModel):
     payment_link: str
 
