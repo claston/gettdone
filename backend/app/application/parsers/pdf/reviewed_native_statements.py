@@ -107,7 +107,7 @@ def _credisis(source):
                 if columns["CODIGO"] - 0.02 <= line.bbox["left"] < columns["DESCRICAO"] - 0.01
                 and abs(line.bbox["top"] - anchor.bbox["top"]) < 0.003
             ]
-            if not history or len(references) != 1:
+            if not history or len(references) > 1:
                 fail("A descrição ou a referência Credisis não pode ser associada à linha.")
             rows.append(
                 _source(
@@ -118,7 +118,7 @@ def _credisis(source):
                         " ".join(line.text for line in history),
                         _cash(values[0]),
                         _cash(balances[0]),
-                        references[0].text,
+                        references[0].text if references else None,
                     ),
                     page,
                     [anchor, *history, *cells, *references],
