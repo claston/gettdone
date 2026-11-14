@@ -1,0 +1,70 @@
+{
+  "status": "review_only",
+  "whatsapp_source": "WHATSAPP_SUPPORT_NUMBER via GET /public-config; snapshot 2026-11-12",
+  "sample": {
+    "name": "Marina Oliveira",
+    "customer_email": "marina@example.com",
+    "customer_whatsapp": "(11) 90000-0000",
+    "customer_notes": "Gostaria de usar o plano para os documentos do meu escritório.",
+    "order_reference": "PED-1042",
+    "plan_name": "Profissional",
+    "price_label": "R$ 39,90/mês",
+    "site_url": "https://www.ofxsimples.com.br/",
+    "payment_url": "https://pagamento.example/pedido/PED-1042",
+    "payment_page_url": "https://www.ofxsimples.com.br/pagamento/DEMO",
+    "login_url": "https://www.ofxsimples.com.br/login.html",
+    "setup_url": "https://www.ofxsimples.com.br/primeiro-acesso/DEMO",
+    "setup_expiry_label": "24 horas",
+    "admin_order_url": "https://www.ofxsimples.com.br/admin.html",
+    "whatsapp_number": "5511911808493",
+    "whatsapp_display": "+55 (11) 91180-8493",
+    "whatsapp_url": "https://wa.me/5511911808493?text=Ol%C3%A1%21%20Preciso%20de%20ajuda%20com%20o%20pedido%20PED-1042."
+  },
+  "messages": [
+    {
+      "id": "01-pedido-recebido",
+      "label": "Pedido recebido",
+      "audience": "Cliente",
+      "stage": 1,
+      "subject": "Recebemos seu pedido {{ order_reference }} · OFX Simples",
+      "preheader": "Confira o resumo. O próximo passo é receber seu link de pagamento.",
+      "note": "Após o registro do pedido. Não informa pagamento aprovado nem conta criada."
+    },
+    {
+      "id": "02-link-pagamento",
+      "label": "Link de pagamento",
+      "audience": "Cliente",
+      "stage": 2,
+      "subject": "Seu link de pagamento está pronto · Pedido {{ order_reference }}",
+      "preheader": "Pague pelo botão ou abra a página para copiar o link. Seu plano será liberado após a confirmação.",
+      "note": "Após o administrador informar o link. A ação de copiar abre uma página, não executa dentro do e-mail."
+    },
+    {
+      "id": "03-plano-liberado",
+      "label": "Plano liberado",
+      "audience": "Cliente com conta",
+      "stage": 3,
+      "subject": "Seu plano {{ plan_name }} está liberado · OFX Simples",
+      "preheader": "Acesse sua conta com o mesmo e-mail e a forma de login que você já utiliza.",
+      "note": "Para quem já tem conta. Preserva a senha e o acesso por Google; não cria outra conta."
+    },
+    {
+      "id": "04-primeiro-acesso",
+      "label": "Primeiro acesso",
+      "audience": "Cliente sem conta",
+      "stage": 3,
+      "subject": "Seu plano foi liberado. Defina sua senha para começar.",
+      "preheader": "Sua conta foi preparada pela equipe. Escolha sua senha pelo link de primeiro acesso.",
+      "note": "Proposta recomendada: conta criada somente na liberação administrativa e senha definida pelo cliente."
+    },
+    {
+      "id": "05-aviso-administrador",
+      "label": "Novo pedido · equipe",
+      "audience": "Administrador",
+      "stage": 1,
+      "subject": "[Compra] Novo pedido {{ order_reference }} · {{ plan_name }}",
+      "preheader": "Revise os dados, envie o link e libere o plano após confirmar o pagamento.",
+      "note": "Aviso interno. O botão apenas abre o painel autenticado; não aprova pagamento nem cria usuário."
+    }
+  ]
+}

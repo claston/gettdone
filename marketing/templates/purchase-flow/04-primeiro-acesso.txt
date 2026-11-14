@@ -1,0 +1,17 @@
+Olá, {{ name }}!
+
+Confirmamos seu pagamento e preparamos sua conta com o e-mail do pedido.
+Pedido: {{ order_reference }}
+Plano: {{ plan_name }}
+Valor: {{ price_label }}
+E-mail da conta: {{ customer_email }}
+
+Definir minha senha e começar: {{ setup_url }}
+
+O link é válido por {{ setup_expiry_label }} e tem uso único. Você escolhe sua senha e confirma os dados e termos apresentados. Se expirar ou você não reconhecer esta compra, fale com nossa equipe.
+
+Podemos ajudar? WhatsApp: {{ whatsapp_display }}
+{{ whatsapp_url }}
+
+Equipe OFX Simples
+Esta é uma mensagem sobre sua compra e seu acesso ao OFX Simples.

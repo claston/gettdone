@@ -1,0 +1,69 @@
+:root{color-scheme:light;--ink:#172b4d;--muted:#536178;--blue:#003ec7;--line:#dbe3ef}
+*{box-sizing:border-box}
+body{margin:0;background:#eef2f8;color:var(--ink);font-family:Arial,Helvetica,sans-serif;line-height:1.5}
+a{color:var(--blue);text-underline-offset:3px}
+button{font:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible,textarea:focus-visible{outline:3px solid #4077ed;outline-offset:3px}
+[hidden]{display:none!important}
+.masthead{display:flex;justify-content:space-between;align-items:center;gap:16px;background:#fff;border-bottom:1px solid var(--line);padding:23px max(24px,calc((100vw - 1200px)/2))}
+.brand{font-size:24px;letter-spacing:-.8px;color:var(--blue);text-decoration:none;white-space:nowrap}
+.brand span{color:#6297f4}
+.review-badge{font-size:12px;color:#435168;border:1px solid var(--line);border-radius:99px;padding:6px 12px}
+main{max-width:1248px;margin:auto;padding:38px 24px}
+.intro{margin-bottom:30px}
+.eyebrow{font-size:11px;letter-spacing:1.3px;font-weight:bold;text-transform:uppercase;color:var(--blue);margin:0 0 10px}
+h1{font-size:32px;letter-spacing:-1px;line-height:1.2;margin:0 0 12px}
+.intro>p:not(.eyebrow){font-size:15px;color:var(--muted);margin:0 0 18px}
+.review-note{font-size:12px;color:var(--muted)}
+.layout{display:grid;grid-template-columns:260px minmax(0,1fr);gap:28px;align-items:start}
+.nav-heading{font-size:11px;text-transform:uppercase;letter-spacing:1.1px;color:var(--muted);margin:0 0 12px}
+nav{display:grid;gap:9px}
+.message-button{display:flex;align-items:center;gap:12px;width:100%;padding:15px;text-align:left;background:#fff;border:1px solid var(--line);border-radius:10px;color:var(--ink)}
+.message-button[aria-pressed=true]{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue);background:#f5f8ff}
+.ordinal{display:grid;place-items:center;flex:0 0 29px;width:29px;height:29px;font-size:11px;border-radius:50%;color:var(--muted);background:#eef2f8}
+.message-button[aria-pressed=true] .ordinal{background:var(--blue);color:white}
+.message-button strong{font-size:14px;display:block;line-height:1.35}
+.message-button small{display:block;color:var(--muted);font-size:11px;margin-top:4px}
+.sidebar-note{margin-top:24px;border-top:1px solid var(--line);padding-top:20px}
+.sidebar-note h2{font-size:15px;line-height:1.4;margin:0 0 8px}
+.sidebar-note p,.sidebar-note a,.config-note{font-size:12px;line-height:1.8;color:var(--muted)}
+.sidebar-note a{color:var(--blue)}
+.config-note{padding-top:12px;overflow-wrap:anywhere}
+.config-note strong{font-weight:normal;color:var(--ink)}
+.config-note code{font-size:10px}
+.workspace{min-width:0}
+.toolbar{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px}
+.toggle{display:flex;padding:3px;gap:3px;background:#e1e7f0;border-radius:8px}
+.toggle button{border:0;border-radius:6px;color:var(--muted);background:transparent;font-size:12px;padding:8px 11px}
+.toggle button[aria-pressed=true]{background:#fff;color:var(--ink);box-shadow:0 1px 4px #172b4d15}
+.envelope{padding:20px 24px;background:#fff;border:1px solid var(--line);border-radius:12px 12px 0 0}
+.envelope h2{font-size:17px;line-height:1.4;letter-spacing:-.2px;margin:8px 0 5px}
+.envelope>p{margin:0;font-size:12px;color:var(--muted)}
+.mail-route span{color:#7a879a;padding-right:5px}
+.mail-route strong{font-weight:normal}
+.stage{padding:14px 8px;background:#e1e7f0;border:1px solid var(--line);border-top:0;border-radius:0 0 12px 12px;overflow:hidden}
+iframe{display:block;border:0;background:#f2f5fa;width:100%;max-width:680px;height:1300px;margin:0 auto}
+iframe.mobile{max-width:375px}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.8 Arial,Helvetica,sans-serif;color:var(--ink);max-width:680px;margin:0 auto;background:white;padding:28px}
+.preview-detail{display:flex;justify-content:space-between;gap:20px;align-items:start;padding:12px 3px}
+.preview-detail p{margin:0;font-size:12px;line-height:1.7;color:var(--muted)}
+.preview-detail a{font-size:12px;white-space:nowrap}
+.feedback{font-size:13px;color:#17634b;min-height:20px;line-height:1.6;overflow-wrap:anywhere}
+.copy-preview-heading{display:flex;justify-content:space-between;align-items:center;gap:20px;margin:28px 0 20px}
+.copy-preview-heading h2{font-size:20px;margin:0;letter-spacing:-.4px}
+.copy-preview-heading .eyebrow{margin-bottom:5px}
+.payment-page{max-width:480px;margin:auto;background:#fff;border:1px solid var(--line);border-radius:16px;padding:32px}
+.payment-page .brand{margin-bottom:34px}
+.payment-page h3{font-size:28px;letter-spacing:-.8px;margin:0 0 12px;line-height:1.3}
+.payment-page>p:not(.eyebrow){font-size:14px;color:var(--muted)}
+.payment-page label{display:block;margin:26px 0 8px;font-size:12px;color:var(--muted)}
+.payment-page textarea{resize:none;width:100%;border:1px solid #c7d4e6;border-radius:8px;padding:14px;font:14px/1.7 Arial,Helvetica,sans-serif;background:#f5f8ff;color:var(--ink);overflow-wrap:anywhere}
+.primary-button{margin:16px 0 8px;display:block;width:100%;background:var(--blue);color:#fff;font-weight:bold;border:1px solid var(--blue);border-radius:8px;padding:14px}
+.quiet-button{background:transparent;border:1px solid #c7d4e6;color:var(--blue);border-radius:8px;padding:10px 14px;font-size:12px}
+.payment-page .quiet-button{width:100%}
+.payment-support{border-top:1px solid var(--line);padding-top:20px;margin-top:22px;font-size:12px!important}
+.payment-support strong{display:block;margin-top:6px}
+.prototype-note{font-size:12px;text-align:center;color:var(--muted);max-width:480px;margin:14px auto}
+.page-footer{padding:0 24px 30px;text-align:center;color:var(--muted);font-size:12px}
+@media(max-width:850px){.layout{grid-template-columns:210px minmax(0,1fr);gap:18px}.preview-detail{flex-direction:column;gap:8px}}
+@media(max-width:680px){.masthead{padding:18px 16px}.brand{font-size:21px}.review-badge{font-size:10px;padding:5px 8px}main{padding:26px 14px}.intro{margin-bottom:24px}h1{font-size:28px}.layout{display:block}nav{grid-template-columns:1fr 1fr;margin-bottom:24px}.message-button{padding:12px 10px;gap:8px}.message-button strong{font-size:12px}.ordinal{flex-basis:24px;width:24px;height:24px;font-size:10px}.sidebar-note,.config-note{display:none}.stage{padding:0}.envelope{padding:17px}.envelope h2{font-size:15px}.toolbar{gap:8px}.toggle button{font-size:11px;padding:7px 9px}.payment-page{padding:24px}.copy-preview-heading{align-items:start}.copy-preview-heading h2{font-size:17px}.copy-preview-heading .quiet-button{flex-shrink:0}}
