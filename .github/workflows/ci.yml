@@ -264,6 +264,10 @@ jobs:
         working-directory: .
         run: python scripts/smoke_client_upgrade.py
 
+      - name: Admin order confirmations and lost sales (desktop and mobile)
+        working-directory: .
+        run: python scripts/smoke_admin_orders.py
+
       - name: Free review guidance and warnings smoke (desktop and mobile)
         working-directory: .
         run: python scripts/smoke_free_review_frontend.py

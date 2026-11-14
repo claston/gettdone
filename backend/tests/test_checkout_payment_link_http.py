@@ -3,12 +3,14 @@
 import json
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
 from app.application.contact_service import ContactService
+from app.application.purchase_flow import PurchaseFlow
 from app.dependencies import get_contact_service
 from app.main import app
 from tests.http_runtime import LoopbackClient
@@ -21,6 +23,8 @@ pytestmark = pytest.mark.real_http
 def payment_email_provider():
     messages = []
     state = {"status": 200}
+    entered, resume = threading.Event(), threading.Event()
+    state.update(entered=entered, resume=resume, hold=False)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
@@ -30,6 +34,9 @@ def payment_email_provider():
             assert self.path == "/emails"
             assert self.headers["Authorization"] == "Bearer fictional-payment-key"
             payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            if state["hold"]:
+                entered.set()
+                assert resume.wait(timeout=10), "Test did not release the fictional provider"
             if state["status"] == 200:
                 messages.append(payload)
                 response = {"id": f"fictional-payment-{len(messages)}"}
@@ -48,6 +55,7 @@ def payment_email_provider():
     try:
         yield f"http://127.0.0.1:{server.server_port}", messages, state
     finally:
+        resume.set()
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
@@ -147,7 +155,10 @@ def test_guest_purchase_release_first_access_over_real_http():
             assert admin.post("/admin/auth/login", json={"email": "admin@example.com", "password": "strong-pass"}).status_code == 200
             assert admin.post(path + "/release").status_code == 409
             assert admin.post(path + "/payment-link", json={"payment_link": "https://pay.example/guest"}).status_code == 200
-            payment_token = re.search(r"#token=([\w-]+)", messages[-1]["text"])[1]
+            assert "pagamento.html" not in messages[-1]["text"]
+            assert "pagamento.html" not in messages[-1]["html"]
+            # Existing payment-page links remain supported, but new emails use the direct URL.
+            _, payment_token = PurchaseFlow(access).issue_token(intent_id, "payment")
             assert guest.post("/checkout/payment-page", json={"token": payment_token}).json()["payment_link"] == "https://pay.example/guest"
             released = admin.post(path + "/release", json={"create_account": True})
             assert released.status_code == 200 and released.json()["notification_status"] == "sent"
@@ -164,3 +175,53 @@ def test_guest_purchase_release_first_access_over_real_http():
             setup = guest.post("/auth/initial-access", json={"token": setup_token, "password": "secure-password", "accepted_terms": True})
             assert setup.status_code == 200 and "set-cookie" not in setup.headers
             assert access.authenticate_user("guest@example.com", "secure-password")
+
+
+def test_lost_sale_over_real_http_preserves_plan_and_serializes_payment_delivery():
+    with payment_email_provider() as (provider_url, messages, provider), _run_http_server(
+        admin_emails={"admin@example.com"},
+    ) as (base_url, service):
+        service.register_user(name="Admin", email="admin@example.com", password="strong-pass")
+        customer = service.register_user(name="Cliente", email="customer@example.com", password="strong-pass")
+        app.dependency_overrides[get_contact_service] = lambda: ContactService(
+            api_key="fictional-payment-key", from_email="billing@example.com", to_email="support@example.com",
+            dry_run=False, resend_api_base=provider_url)
+        with LoopbackClient(base_url=base_url, timeout=15) as admin, LoopbackClient(base_url=base_url, timeout=15) as sender, \
+                LoopbackClient(base_url=base_url, timeout=15) as client:
+            for session in (admin, sender):
+                assert session.post("/admin/auth/login", json={"email": "admin@example.com", "password": "strong-pass"}).status_code == 200
+            assert client.post("/auth/session/login", json={"email": customer.email, "password": "strong-pass"}).status_code == 200
+            payload = {"plan_code": "essencial", "name": "Cliente", "email": customer.email,
+                       "whatsapp": "11999990000", "accepted_terms": True}
+            first = client.post("/checkout/intents", json=payload).json()["intent_id"]
+            assert admin.post(f"/admin/checkout/intents/{first}/release").status_code == 200
+            before = client.get("/auth/me").json()
+            payload["plan_code"] = "profissional"
+            created = client.post("/checkout/intents", json=payload)
+            assert created.status_code == 202
+            intent = created.json()["intent_id"]
+            path = f"/admin/checkout/intents/{intent}"
+            _, old_token = PurchaseFlow(service).issue_token(intent, "payment")
+            provider["hold"] = True
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                pending = pool.submit(sender.post, path + "/payment-link", json={"payment_link": "https://pay.example/synthetic"})
+                try:
+                    assert provider["entered"].wait(timeout=5)
+                    assert admin.post(path + "/lose").status_code == 409
+                    assert admin.post(path + "/release").status_code == 409
+                    assert admin.post(path + "/payment-link", json={"payment_link": "https://pay.example/second"}).status_code == 409
+                finally:
+                    provider["resume"].set()
+                assert pending.result(timeout=10).status_code == 200
+            count = len(messages)
+            assert admin.post(path + "/lose").json()["status"] == "LOST"
+            assert client.get("/checkout/intents/open").json()["items"] == []
+            assert client.get(f"/checkout/intents/{intent}").json()["payment_link"] is None
+            assert client.post("/checkout/payment-page", json={"token": old_token}).status_code == 400
+            assert admin.post(path + "/payment-link", json={"payment_link": "https://pay.example/second"}).status_code == 409
+            assert admin.post(path + "/release").status_code == 409
+            assert len(messages) == count
+            after = client.get("/auth/me").json()
+            assert after["plan_code"] == before["plan_code"] == "essencial"
+            assert after["quota_remaining"] == before["quota_remaining"]
+            assert client.post("/checkout/intents", json=payload).status_code == 202

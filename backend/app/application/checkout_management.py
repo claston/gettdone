@@ -3,6 +3,7 @@ from __future__ import annotations
 CHECKOUT_STATUS_REQUESTED = "REQUESTED"
 CHECKOUT_STATUS_AWAITING_PAYMENT = "AWAITING_PAYMENT"
 CHECKOUT_STATUS_RELEASED_FOR_USE = "RELEASED_FOR_USE"
+CHECKOUT_STATUS_LOST = "LOST"
 CHECKOUT_STATUS_PENDING_LEGACY = "pending"
 
 OPEN_CHECKOUT_STATUSES: tuple[str, ...] = (
@@ -370,8 +371,10 @@ def mark_checkout_intent_awaiting_payment(
     current_status = str(existing["status"])
     if current_status == CHECKOUT_STATUS_RELEASED_FOR_USE:
         raise ValueError("checkout intent is already released")
+    if current_status not in OPEN_CHECKOUT_STATUSES:
+        raise ValueError("Pedido encerrado. O envio de link não está disponível.")
 
-    execute(
+    updated = execute(
         conn,
         """
         UPDATE checkout_intents
@@ -380,7 +383,7 @@ def mark_checkout_intent_awaiting_payment(
           payment_link = ?,
           payment_link_sent_at = ?,
           updated_at = ?
-        WHERE id = ?
+        WHERE id = ? AND status = ?
         """,
         (
             CHECKOUT_STATUS_AWAITING_PAYMENT,
@@ -388,8 +391,11 @@ def mark_checkout_intent_awaiting_payment(
             now_iso,
             now_iso,
             normalized_intent_id,
+            current_status,
         ),
     )
+    if updated.rowcount != 1:
+        raise ValueError("O pedido foi alterado. Atualize a lista antes de enviar o link.")
 
     row = fetchone(
         conn,
@@ -470,7 +476,7 @@ def mark_latest_checkout_intent_released_for_user_plan(
         return None
 
     intent_id = str(row["id"])
-    execute(
+    updated = execute(
         conn,
         """
         UPDATE checkout_intents
@@ -478,16 +484,17 @@ def mark_latest_checkout_intent_released_for_user_plan(
           status = ?,
           released_at = ?,
           updated_at = ?
-        WHERE id = ?
+        WHERE id = ? AND status IN (?, ?, ?)
         """,
         (
             CHECKOUT_STATUS_RELEASED_FOR_USE,
             now_iso,
             now_iso,
             intent_id,
+            *OPEN_CHECKOUT_STATUSES,
         ),
     )
-    return intent_id
+    return intent_id if updated.rowcount == 1 else None
 
 
 def mark_checkout_intent_released_by_id(
@@ -504,7 +511,7 @@ def mark_checkout_intent_released_by_id(
     row = fetchone(
         conn,
         """
-        SELECT id
+        SELECT id, status
         FROM checkout_intents
         WHERE id = ?
         LIMIT 1
@@ -513,7 +520,9 @@ def mark_checkout_intent_released_by_id(
     )
     if row is None:
         raise ValueError("checkout intent not found")
-    execute(
+    if row["status"] not in (*OPEN_CHECKOUT_STATUSES, CHECKOUT_STATUS_RELEASED_FOR_USE):
+        raise ValueError("Pedido encerrado. A liberação não está disponível.")
+    updated = execute(
         conn,
         """
         UPDATE checkout_intents
@@ -521,15 +530,18 @@ def mark_checkout_intent_released_by_id(
           status = ?,
           released_at = ?,
           updated_at = ?
-        WHERE id = ?
+        WHERE id = ? AND status = ?
         """,
         (
             CHECKOUT_STATUS_RELEASED_FOR_USE,
             now_iso,
             now_iso,
             normalized_intent_id,
+            row["status"],
         ),
     )
+    if updated.rowcount != 1:
+        raise ValueError("O pedido foi alterado. Atualize a lista antes de liberar o plano.")
     updated = fetchone(
         conn,
         """
