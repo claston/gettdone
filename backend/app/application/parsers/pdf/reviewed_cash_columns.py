@@ -281,13 +281,19 @@ def parse_reviewed_cash(source, kind):
                 financial_mismatch()
             rows[index] = replace(row, running_balance=float(values[0]) if len(set(values)) == 1 else None)
             checks += len(values)
+    # Opening comparisons and earlier checkpoints do not independently cover
+    # the tail. Only a closing-day (or later idle-day) control can certify it.
+    closing_control_available = kind != "sicoob_modern" or any(
+        date >= rows[-1].transaction.date for date in daily
+    )
     return VerifiedStatement(
         rows,
         f"{kind}_printed_cash_columns_v1",
         opening,
-        running,
+        running if closing_control_available else None,
         opening_inferred=inferred,
         candidate_rows=coverage,
         printed_balance_checks=checks,
         non_cash_entries=non_cash,
+        balance_bounds_unavailable=not closing_control_available,
     )

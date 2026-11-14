@@ -3,7 +3,12 @@ import pytest
 
 from tests.fixtures.recovery_acceptance import grid_pdf
 from tests.ocr_conversion_http_helpers import public_client
-from tests.test_nov14_recovery_boundaries import itau_without_summary, pagbank_single_day, sicoob_opening_controls
+from tests.test_nov14_recovery_boundaries import (
+    itau_without_summary,
+    pagbank_single_day,
+    sicoob_opening_controls,
+    sicoob_without_closing,
+)
 
 pytestmark = pytest.mark.real_http
 
@@ -16,6 +21,7 @@ def test_recovered_cash_and_review_survive_real_http(tmp_path, monkeypatch):
         ("pagbank.pdf", grid_pdf(pagbank_single_day()), [-20], "opening_inferred_from_closing"),
         ("sicoob.pdf", grid_pdf(sicoob_opening_controls()), [50, -10, -10], None),
         ("sicoob-review.pdf", grid_pdf(sicoob_opening_controls(mismatch=True)), [50, -10, -10], "financial_validation_failed"),
+        ("sicoob-no-closing.pdf", grid_pdf(sicoob_without_closing()), [50, -10, -10], "no_printed_balance_controls"),
         ("itau.pdf", grid_pdf(itau_without_summary()), [20, 20, -5, -15], "partial_statement"),
     ]
     with public_client(tmp_path) as client:
@@ -30,6 +36,9 @@ def test_recovered_cash_and_review_survive_real_http(tmp_path, monkeypatch):
                 metrics = analysis["pdf_processing_metrics"]
                 assert metrics["export_recommendation_reason"] == reason
                 assert metrics["financial_controls_validated"] == 0
+                if name == "sicoob-no-closing.pdf":
+                    assert metrics.get("verified_closing_balance") is None
+                    assert metrics["export_recommendation"] == "review_recommended"
             ident = analysis["analysis_id"]
             assert client.get("/report/" + ident, params=owner).status_code == 200
             for fmt in ("csv", "xlsx", "ofx"):

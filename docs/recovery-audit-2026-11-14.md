@@ -92,6 +92,29 @@ sinalizadas para conferência, sem redução dos alertas financeiros.
 
 ## Validação e compatibilidade
 
+### Ajuste da revisão da PR #592
+
+O [apontamento sobre certificação de fechamento](https://github.com/claston/gettdone/pull/592#discussion_r4575913448)
+foi reproduzido em PDF nativo e OCR. Duas impressões concordantes da abertura
+não validam os movimentos seguintes; tampouco um controle intermediário valida
+um trecho posterior sem fechamento. O leitor preserva esses movimentos e a
+evidência da abertura, mas só disponibiliza um fechamento verificado quando há
+controle independente na data do último movimento ou em dia posterior.
+
+Sem esse controle, `financial_controls_validated=0`, não há
+`verified_closing_balance` calculado e a recomendação é `review_recommended`.
+A conferência da abertura continua contada em `printed_balance_checks`, sem
+certificar o extrato inteiro. O mesmo comportamento é verificado no fluxo HTTP
+e nos downloads. Os dez cenários novos incluem crédito alterado, controle
+intermediário, dia sem movimentos anterior e fechamento independente posterior.
+Antes do ajuste, oito cenários falharam; depois, os 104 testes direcionados passaram.
+A suíte completa após a revisão terminou com `4976 passed, 89 skipped, 2 xfailed, 2 warnings in 437.23s (0:07:17)`.
+Os gates de 90 PDFs e 170 revisões passaram novamente, sem diferenças inesperadas.
+Os quatro documentos originais continuam extraindo 675 movimentos. Ruff e os
+lints de texto/navegação passaram; o runner removeu seu diretório temporário.
+
+### Validação original
+
 - Etapa vermelha: 8 falhas e 4 sucessos nas regressões novas.
 - Leitores relacionados: 105 testes aprovados após as correções.
 - Suíte completa pelo runner: **4.966 aprovados, 89 ignorados e 2 falhas esperadas**,

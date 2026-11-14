@@ -83,6 +83,55 @@ def test_sicoob_conflicting_opening_day_control_keeps_movements_for_review(repre
     assert "financial_validation_failed" in result.parse_metrics["canonical_warning_types"]
 
 
+def sicoob_without_closing(*, credit=50, intermediate=False, idle=None):
+    cells = sicoob_opening_controls(blocked=False)[0]
+    daily_positions = [y for text, _, y in cells if text == "SALDO DO DIA" and y > .34]
+    removed = daily_positions[-1:] if intermediate else daily_positions
+    cells = [(f"R$ {credit},00C" if text == "R$ 50,00C" else text, x, y)
+             for text, x, y in cells if y not in removed and y < .75]
+    if idle is not None:
+        date, balance = ("01/07", "100") if idle == "before" else ("03/07", str(credit + 80))
+        if idle == "before":
+            cells = [("02/07" if text == "01/07" else "03/07" if text == "02/07" else text, x, y)
+                     for text, x, y in cells]
+        cells += [(date, .05, .70), ("SALDO DO DIA", .24, .70), (f"R$ {balance},00C", .86, .70)]
+    return [cells]
+
+
+@pytest.mark.parametrize("representation", ["native", "ocr"])
+@pytest.mark.parametrize("credit", [50, 51])
+def test_sicoob_opening_comparison_cannot_certify_a_calculated_closing(representation, credit):
+    result = parse_pages(sicoob_without_closing(credit=credit), representation)
+    assert [r.amount for r in result.transactions] == [credit, -10, -10]
+    assert [r.date for r in result.transactions] == ["2026-07-01", "2026-07-02", "2026-07-02"]
+    assert result.parse_metrics["printed_balance_checks"] == 1
+    assert result.parse_metrics["financial_controls_validated"] == 0
+    assert result.parse_metrics["balance_validation_status"] == "not_available"
+    assert result.parse_metrics.get("verified_closing_balance") is None
+    assert result.parse_metrics["export_recommendation"] == "review_recommended"
+    assert result.parse_metrics["export_recommendation_reason"] == "no_printed_balance_controls"
+    assert all(r.source_regions and r.source_line_refs for r in result.canonical_transactions)
+
+
+@pytest.mark.parametrize("representation", ["native", "ocr"])
+@pytest.mark.parametrize("options", [{"intermediate": True}, {"idle": "before"}])
+def test_sicoob_control_before_last_movement_cannot_validate_the_uncontrolled_tail(representation, options):
+    result = parse_pages(sicoob_without_closing(**options), representation)
+    assert [r.amount for r in result.transactions] == [50, -10, -10]
+    assert result.parse_metrics["printed_balance_checks"] == 2
+    assert result.parse_metrics["financial_controls_validated"] == 0
+    assert result.parse_metrics.get("verified_closing_balance") is None
+    assert result.parse_metrics["export_recommendation"] == "review_recommended"
+
+
+@pytest.mark.parametrize("representation", ["native", "ocr"])
+def test_sicoob_independent_idle_day_after_movements_can_validate_closing(representation):
+    result = parse_pages(sicoob_without_closing(idle="after"), representation)
+    assert [r.amount for r in result.transactions] == [50, -10, -10]
+    assert result.parse_metrics["verified_closing_balance"] == 130
+    assert result.parse_metrics["financial_controls_validated"] == 1
+
+
 def itau_without_summary(*, bad_later=False):
     return [[(text, x, y) for text, x, y in page if not text.startswith("Página")]
             for page in itau_pages(bad_later=bad_later)[:2]]
