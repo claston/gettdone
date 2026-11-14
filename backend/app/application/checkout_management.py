@@ -268,7 +268,7 @@ def read_latest_checkout_intent_for_user(
             WHEN status = ? AND payment_link IS NOT NULL AND payment_link <> '' THEN 0
             WHEN status = ? THEN 1
             WHEN status IN (?, ?) THEN 2
-            WHEN status = ? THEN 3
+            WHEN status IN (?, ?) THEN 3
             ELSE 4
           END,
           created_at DESC
@@ -282,6 +282,7 @@ def read_latest_checkout_intent_for_user(
             CHECKOUT_STATUS_REQUESTED,
             CHECKOUT_STATUS_PENDING_LEGACY,
             CHECKOUT_STATUS_RELEASED_FOR_USE,
+            CHECKOUT_STATUS_LOST,
         ),
     )
     if row is None:

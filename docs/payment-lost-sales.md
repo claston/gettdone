@@ -13,6 +13,8 @@ O e-mail de pagamento tem o botão **Pagar agora** e o endereço de pagamento vi
 
 Na área do cliente, qualquer pedido aberto oculta os dois botões de upgrade e fecha a seleção de planos. O acompanhamento e o pagamento continuam disponíveis. A atualização automática libera novamente as opções elegíveis quando não houver mais pendências. Falhas na consulta mantêm os upgrades ocultos. Pedidos antigos múltiplos são preservados; o último encerramento é que libera as opções.
 
+A consulta `/checkout/intents/latest` mantém a prioridade dos pedidos abertos. Pedidos liberados e perdidos têm a mesma prioridade e são ordenados pela data de criação, do mais recente para o mais antigo. Assim, um upgrade perdido posterior aparece na tabela da área do cliente mesmo quando há uma compra anterior já liberada e o acesso não informa `checkout_intent` na URL.
+
 ## API e concorrência
 
 `POST /admin/checkout/intents/{intent_id}/lose` exige administrador. Retorna `200` com `status: LOST` e `next_step: ORDER_CLOSED`; repetir o encerramento retorna `200` sem duplicar o evento. Pedido inexistente retorna `404`; pedido liberado ou com envio em andamento retorna `409`. Envios e liberações posteriores também são recusados no servidor.

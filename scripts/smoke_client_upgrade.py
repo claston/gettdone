@@ -58,7 +58,7 @@ def run():
                                                         if item["status"] in ("REQUESTED", "AWAITING_PAYMENT", "pending")]})
                     elif path.startswith("/checkout/intents/"):
                         request.fulfill(status=200 if state["orders"] else 404,
-                                        json=state["orders"][0] if state["orders"] else {})
+                                        json=state.get("latest_order") or (state["orders"][0] if state["orders"] else {}))
                     elif path == "/telemetry/events":
                         request.fulfill(json={"ok": True})
                     elif Path(path).suffix in (".html", ".js", ".css") and (ROOT / "frontend" / path.lstrip("/")).is_file():
@@ -175,6 +175,22 @@ def run():
                 state["code"] = "retired-private-plan"
                 page.evaluate("window.dispatchEvent(new Event('focus'))")
                 expect(page.locator("#upgrade-top")).to_be_hidden()
+
+                # The real HTTP regressions verify /latest selects a newer lost upgrade
+                # over an older released plan. Verify the UI consumes that response on
+                # ordinary navigation, without a checkout_intent query parameter.
+                released = {**order("essencial", "RELEASED_FOR_USE"), "created_at": "2026-11-10T12:00:00Z"}
+                lost = {**order("profissional", "LOST"), "created_at": "2026-11-12T12:00:00Z"}
+                state.update(code="essencial", orders=[released, lost], latest_order=lost)
+                page.goto("http://127.0.0.1:8000/client-area.html")
+                expect(page.locator("#orders-rows")).to_contain_text("chk_profissional")
+                expect(page.locator("#orders-rows")).to_contain_text("Profissional")
+                expect(page.locator("#orders-rows")).to_contain_text("VENDA PERDIDA")
+                expect(page.locator("#order-status")).to_be_hidden()
+                expect(page.locator("#plan-summary")).to_have_text("Essencial")
+                expect(page.locator("#upgrade-top")).to_be_visible()
+                expect(page.locator("#upgrade-profile")).to_be_visible()
+                state.pop("latest_order")
 
                 # An unavailable history/catalog cannot hide a pending order.
                 state.update(code="essencial", orders=[order(status="pending")], fail_history=True, fail_plans=True)

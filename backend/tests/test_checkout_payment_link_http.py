@@ -216,6 +216,11 @@ def test_lost_sale_over_real_http_preserves_plan_and_serializes_payment_delivery
             count = len(messages)
             assert admin.post(path + "/lose").json()["status"] == "LOST"
             assert client.get("/checkout/intents/open").json()["items"] == []
+            # Normal client-area navigation has no checkout_intent query parameter:
+            # its history comes from /open and /latest, not the individual order URL.
+            latest = client.get("/checkout/intents/latest").json()
+            assert latest["intent_id"] == intent
+            assert latest["status"] == "LOST" and latest["plan_name"] == "Profissional"
             assert client.get(f"/checkout/intents/{intent}").json()["payment_link"] is None
             assert client.post("/checkout/payment-page", json={"token": old_token}).status_code == 400
             assert admin.post(path + "/payment-link", json={"payment_link": "https://pay.example/second"}).status_code == 409
