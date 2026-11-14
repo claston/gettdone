@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="referrer" content="no-referrer" />
+  <meta name="robots" content="noindex" />
+  <title>OFX Simples | Pagamento do pedido</title>
+  <link rel="icon" type="image/png" href="/assets/favicon.png" />
+  <link rel="stylesheet" href="./auth.css?v=3" />
+  <link rel="stylesheet" href="./topbar-unified.css?v=1" />
+</head>
+<body>
+  <nav class="top-nav-shell glass-header" aria-label="Navegação principal">
+    <div class="top-nav-inner">
+      <a class="top-brand" href="./index.html">OFX Simples</a>
+      <div class="top-auth-actions"><a class="top-auth-link" href="./login.html">Entrar</a></div>
+    </div>
+  </nav>
+  <main class="auth-page">
+    <section class="auth-shell">
+      <article class="card">
+        <header class="card-head"><h1>Pagamento do pedido</h1><p id="payment-summary">Carregando seu link de pagamento…</p></header>
+        <p id="status-msg" class="status" role="status" aria-live="polite"></p>
+        <div id="payment-actions" class="form" hidden>
+          <a id="pay-now" class="btn btn-primary" target="_blank" rel="noopener noreferrer">Pagar agora</a>
+          <label for="payment-url">Link de pagamento</label>
+          <input id="payment-url" type="text" readonly aria-describedby="copy-help" />
+          <button id="copy-payment" class="btn btn-primary" type="button">Copiar link</button>
+          <p id="copy-help" class="footnote">Você também pode selecionar e copiar o endereço acima.</p>
+        </div>
+        <p id="purchase-support" class="footnote hidden"><a id="purchase-whatsapp" rel="noopener noreferrer" target="_blank">Falar com a equipe pelo WhatsApp</a></p>
+        <noscript><p>Ative o JavaScript para carregar o link de pagamento.</p></noscript>
+      </article>
+    </section>
+  </main>
+  <script src="./whatsapp-support.js?v=1" defer></script>
+  <script src="./purchase-access.js?v=1" defer></script>
+</body>
+</html>

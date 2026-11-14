@@ -113,6 +113,7 @@ class ContactService:
         headers: dict[str, str] | None = None,
         idempotency_key: str | None = None,
         from_email: str | None = None,
+        html: str | None = None,
     ) -> ContactDeliveryResult:
         clean_to = to_email.strip()
         if not clean_to:
@@ -135,6 +136,8 @@ class ContactService:
             "subject": subject.strip() or "Mensagem",
             "text": text.strip() or "Mensagem",
         }
+        if html is not None:
+            payload["html"] = html
         clean_reply_to = (reply_to or "").strip()
         if clean_reply_to:
             payload["reply_to"] = clean_reply_to

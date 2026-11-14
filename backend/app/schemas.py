@@ -671,12 +671,12 @@ class AdminActivatePlanResponse(BaseModel):
 
 class CheckoutIntentRequest(BaseModel):
     user_token: str | None = None
-    plan_code: str
-    name: str
-    email: str
-    whatsapp: str
-    document: str | None = None
-    notes: str | None = None
+    plan_code: str = Field(max_length=80)
+    name: str = Field(max_length=200)
+    email: str = Field(max_length=320)
+    whatsapp: str = Field(max_length=40)
+    document: str | None = Field(default=None, max_length=80)
+    notes: str | None = Field(default=None, max_length=10000)
     accepted_terms: bool = False
 
 
@@ -700,6 +700,7 @@ class CheckoutIntentResponse(BaseModel):
 
 
 class CheckoutIntentStatusResponse(BaseModel):
+    notification_status: str | None = None
     intent_id: str
     status: str
     created_at: str
@@ -724,6 +725,8 @@ class CheckoutIntentPaymentLinkRequest(BaseModel):
 
 
 class AdminCheckoutIntentItem(BaseModel):
+    notification_status: str | None = None
+    receipt_status: str | None = None
     intent_id: str
     status: str
     next_step: str
@@ -774,6 +777,7 @@ class AdminUserItem(BaseModel):
     email: str
     is_admin: bool
     is_active: bool
+    initial_access_pending: bool = False
     email_verification_status: str = "verified"
     email_verified_at: str | None = None
     created_at: str

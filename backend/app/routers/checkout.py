@@ -1,6 +1,8 @@
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from app.application import (
     AccessControlService,
@@ -15,12 +17,15 @@ from app.application.checkout_management import (
     CHECKOUT_STATUS_RELEASED_FOR_USE,
     CHECKOUT_STATUS_REQUESTED,
 )
+from app.application.purchase_email_service import deliver_purchase_notification, render_purchase_email, site_url
+from app.application.purchase_flow import PurchaseConflict, PurchaseFlow
 from app.dependencies import get_access_control_service, get_contact_service
 from app.routers.access_control_common import (
     SESSION_ACCESS_COOKIE_NAME,
     require_admin_actor,
     resolve_user_token_with_session,
 )
+from app.routers.pro_security import ProSessionRateLimiter
 from app.schemas import (
     AdminCheckoutIntentHistoryResponse,
     AdminCheckoutIntentItem,
@@ -31,8 +36,20 @@ from app.schemas import (
     CheckoutIntentStatusResponse,
     CheckoutOpenIntentsResponse,
 )
+from app.security_baseline import read_bool_env
 
 router = APIRouter()
+
+
+def _is_valid_checkout_email(value: str) -> bool:
+    # Keep validation linear even for repeated characters in untrusted input.
+    if not value or len(value) > 320 or any(character.isspace() for character in value):
+        return False
+    local, separator, domain = value.partition("@")
+    if not separator or not local or "@" in domain:
+        return False
+    domain_name, dot, suffix = domain.rpartition(".")
+    return bool(domain_name and dot and suffix)
 
 
 def _format_price_brl(price_cents: int) -> str:
@@ -114,6 +131,7 @@ def _build_admin_checkout_intent_item(intent: dict[str, str | int | None]) -> Ad
 @router.post("/checkout/intents", response_model=CheckoutIntentResponse, status_code=202)
 async def create_checkout_intent(
     payload: CheckoutIntentRequest,
+    request: Request,
     authorization: str | None = Header(default=None),
     access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
@@ -132,23 +150,37 @@ async def create_checkout_intent(
     clean_document = (payload.document or "").strip()
     clean_notes = (payload.notes or "").strip()
 
-    if not clean_user_token:
-        raise HTTPException(status_code=400, detail="user_token is required.")
+    if not clean_user_token and not read_bool_env("CHECKOUT_GUEST_ENABLED", default=True):
+        raise HTTPException(status_code=503, detail="Entre na sua conta para enviar o pedido.")
     if not payload.accepted_terms:
         raise HTTPException(status_code=400, detail="Terms must be accepted before checkout.")
     if not clean_name or not clean_email or not clean_whatsapp or not clean_plan_code:
         raise HTTPException(status_code=400, detail="name, email, whatsapp, and plan_code are required.")
-    if "@" not in clean_email:
+    if not _is_valid_checkout_email(clean_email):
         raise HTTPException(status_code=400, detail="Enter a valid email address.")
 
-    try:
-        user = access_control_service.get_user_by_token(user_token=clean_user_token)
-    except InvalidUserTokenError:
-        raise HTTPException(status_code=401, detail="Invalid user token.")
+    if not clean_user_token:
+        component = access_control_service.checkout
+        if not hasattr(component, "guest_rate_limiter"):
+            component.guest_rate_limiter = ProSessionRateLimiter(limit=10, window_seconds=3600)
+        try:
+            component.guest_rate_limiter.enforce(request.client.host if request.client else "unknown")
+        except HTTPException as exc:
+            raise HTTPException(status_code=429, detail="Muitos pedidos enviados. Aguarde e tente novamente.",
+                                headers=exc.headers) from None
+
+    user = None
+    if clean_user_token:
+        try:
+            user = access_control_service.get_user_by_token(user_token=clean_user_token)
+        except InvalidUserTokenError:
+            raise HTTPException(status_code=401, detail="Invalid user token.") from None
+        if user.email.strip().lower() != clean_email:
+            raise HTTPException(status_code=400, detail="Use o e-mail da sua conta para solicitar este plano.")
 
     try:
         intent = access_control_service.create_checkout_intent(
-            user_id=user.user_id,
+            user_id=user.user_id if user else None,
             plan_code=clean_plan_code,
             customer_name=clean_name,
             customer_email=clean_email,
@@ -159,54 +191,10 @@ async def create_checkout_intent(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    plan_price = _format_price_brl(int(intent["price_cents"]))
-    billing_period_label = {"monthly": "mês"}.get(str(intent["billing_period"]), str(intent["billing_period"]))
-    admin_subject = f"[Compra] Novo pedido {intent['id']} - {intent['plan_name']}"
-    admin_text_lines = [
-        "Recebemos um novo pedido de plano no OFX Simples.",
-        "",
-        f"Pedido: {intent['id']}",
-        f"ID do usuário: {user.user_id}",
-        f"Plano: {intent['plan_name']} ({intent['plan_code']})",
-        f"Valor: {plan_price}/{billing_period_label}",
-        f"Nome: {clean_name}",
-        f"E-mail: {clean_email}",
-        f"WhatsApp: {clean_whatsapp}",
-        f"Documento: {clean_document or '-'}",
-        "",
-        "Observações:",
-        clean_notes or "-",
-        "",
-        "Próximo passo: enviar o link de pagamento e, após a confirmação do pagamento, ativar o plano.",
-    ]
-    customer_subject = f"Recebemos seu pedido do plano {intent['plan_name']}"
-    customer_text_lines = [
-        "Recebemos seu pedido de plano no OFX Simples.",
-        "",
-        f"Pedido: {intent['id']}",
-        f"Plano: {intent['plan_name']}",
-        f"Valor: {plan_price}/{billing_period_label}",
-        "",
-        "Enviaremos o link de pagamento por e-mail.",
-        "A ativação do plano será feita pela nossa equipe após a confirmação do pagamento.",
-    ]
-
-    try:
-        admin_delivery = await contact_service.send_text_email(
-            to_email=contact_service.support_email,
-            subject=admin_subject,
-            text="\n".join(admin_text_lines),
-            reply_to=clean_email,
-        )
-        customer_delivery = await contact_service.send_text_email(
-            to_email=clean_email,
-            subject=customer_subject,
-            text="\n".join(customer_text_lines),
-        )
-    except ContactProviderNotConfiguredError:
-        raise HTTPException(status_code=503, detail="Checkout contact channel is not configured.")
-    except ContactDeliveryError as exc:
-        raise HTTPException(status_code=502, detail=f"Failed to deliver checkout emails: {exc}")
+    admin_delivery = await deliver_purchase_notification(
+        access_control_service, contact_service, str(intent["id"]), "admin_receipt")
+    customer_delivery = await deliver_purchase_notification(
+        access_control_service, contact_service, str(intent["id"]), "customer_receipt")
 
     status = str(intent["status"])
     return CheckoutIntentResponse(
@@ -223,8 +211,8 @@ async def create_checkout_intent(
         payment_link_sent_at=(str(intent["payment_link_sent_at"]) if intent.get("payment_link_sent_at") else None),
         released_at=(str(intent["released_at"]) if intent.get("released_at") else None),
         next_step=_next_step_for_status(status),
-        admin_delivery_mode=admin_delivery.delivery_mode,
-        customer_delivery_mode=customer_delivery.delivery_mode,
+        admin_delivery_mode=admin_delivery,
+        customer_delivery_mode=customer_delivery,
         message="Pedido recebido. Enviaremos o link de pagamento por e-mail.",
     )
 
@@ -343,36 +331,29 @@ async def set_checkout_intent_payment_link(
     if str(intent["status"]) == CHECKOUT_STATUS_RELEASED_FOR_USE:
         raise HTTPException(status_code=400, detail="checkout intent is already released")
 
-    plan_price = _format_price_brl(int(intent["price_cents"]))
-    billing_period = str(intent["billing_period"])
-    billing_period_label = {"monthly": "mês"}.get(billing_period, billing_period)
-    text_lines = [
-        f"Olá, {intent['customer_name']}!",
-        "",
-        "Seu link de pagamento do OFX Simples está disponível.",
-        "",
-        f"Pedido: {intent['id']}",
-        f"Plano: {intent['plan_name']}",
-        f"Valor: {plan_price}/{billing_period_label}",
-        "",
-        "Acesse o link para realizar o pagamento:",
-        clean_payment_link,
-        "",
-        "A ativação do plano será feita pela nossa equipe após a confirmação do pagamento.",
-        "Se precisar de ajuda, responda a este e-mail.",
-    ]
+    flow = PurchaseFlow(access_control_service)
+    notification = flow.claim_notification(clean_intent_id, "payment", retry=True)
+    if notification is None:
+        raise HTTPException(status_code=409, detail="O envio deste pedido já está em andamento.")
+    token_id = None
     try:
+        token_id, token = flow.issue_token(clean_intent_id, "payment")
+        message = render_purchase_email("payment", intent, payment_url=clean_payment_link,
+                                        payment_page_url=site_url() + "/pagamento.html#token=" + token)
         delivery = await contact_service.send_text_email(
             to_email=str(intent["customer_email"]),
-            subject=f"Link de pagamento do plano {intent['plan_name']} - OFX Simples",
-            text="\n".join(text_lines),
+            **message,
             reply_to=contact_service.support_email,
+            idempotency_key=f"{notification['id']}/{notification['attempts']}",
         )
-    except ContactProviderNotConfiguredError:
-        raise HTTPException(status_code=503, detail="O envio de e-mails não está configurado. O link não foi enviado.")
+    except (ContactProviderNotConfiguredError, ValueError):
+        flow.finish_notification(notification, sent=False, token_id=token_id)
+        raise HTTPException(status_code=503, detail="O envio de e-mails não está configurado. O link não foi enviado.") from None
     except ContactDeliveryError:
-        raise HTTPException(status_code=502, detail="Não foi possível enviar o link por e-mail. Tente novamente.")
+        flow.finish_notification(notification, sent=False, token_id=token_id)
+        raise HTTPException(status_code=502, detail="Não foi possível enviar o link por e-mail. Tente novamente.") from None
     if delivery.delivery_mode == "dry_run":
+        flow.finish_notification(notification, sent=False, token_id=token_id)
         raise HTTPException(status_code=503, detail="O envio de e-mails está em modo de teste. O link não foi enviado.")
 
     # Persist the sent timestamp and audit event only after provider acceptance.
@@ -388,6 +369,7 @@ async def set_checkout_intent_payment_link(
         if "not found" in message:
             raise HTTPException(status_code=404, detail=message)
         raise HTTPException(status_code=400, detail=message)
+    flow.finish_notification(notification, sent=True, provider_message_id=delivery.provider_message_id)
     return _build_checkout_intent_status_response(intent)
 
 
@@ -430,8 +412,9 @@ def list_checkout_intents_for_admin(
         limit=limit,
         offset=offset,
     )
+    notifications = PurchaseFlow(access_control_service).notification_states([item["id"] for item in intents])
     return AdminCheckoutIntentListResponse(
-        items=[_build_admin_checkout_intent_item(item) for item in intents],
+        items=[_admin_item_with_notifications(item, notifications) for item in intents],
         total=total,
         limit=limit,
         offset=offset,
@@ -478,59 +461,131 @@ def list_checkout_intent_history_for_admin(
     )
 
 
-@router.post("/admin/checkout/intents/{intent_id}/release", response_model=CheckoutIntentStatusResponse)
-def release_checkout_intent_for_use(
+class ReleasePurchaseRequest(BaseModel):
+    create_account: bool = False
+
+
+@router.get("/admin/checkout/intents/{intent_id}/release-preview")
+def preview_purchase_release(
     intent_id: str,
     x_admin_token: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
     access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    service: AccessControlService = Depends(get_access_control_service),
+):
+    require_admin_actor(access_control_service=service, x_admin_token=x_admin_token,
+                        authorization=authorization, access_cookie_token=access_cookie_token)
+    intent = service.read_checkout_intent_by_id(intent_id=intent_id)
+    if not intent:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+    with service._lock, service._connect() as conn:
+        user = service._fetchone(conn, "SELECT id, is_active, initial_access_pending FROM users WHERE lower(email) = ?",
+                                (intent["customer_email"].strip().lower(),))
+    return JSONResponse(headers={"Cache-Control": "no-store"}, content={
+        "customer_email": intent["customer_email"], "account_exists": user is not None,
+        "initial_access_pending": bool(user and user["initial_access_pending"]),
+        "account_suspended": bool(user and not user["is_active"] and not user["initial_access_pending"]),
+        "account_mismatch": bool(intent["user_id"] and (not user or user["id"] != intent["user_id"])),
+    })
+
+
+def _notification_response(service, intent_id):
+    intent = service.read_checkout_intent_by_id(intent_id=intent_id)
+    result = _build_checkout_intent_status_response(intent)
+    notification = PurchaseFlow(service).notification(intent_id)
+    result.notification_status = notification["status"] if notification else None
+    return result
+
+
+@router.post("/admin/checkout/intents/{intent_id}/release", response_model=CheckoutIntentStatusResponse)
+async def release_checkout_intent_for_use(
+    intent_id: str,
+    payload: ReleasePurchaseRequest | None = None,
+    x_admin_token: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     access_control_service: AccessControlService = Depends(get_access_control_service),
+    contact_service: ContactService = Depends(get_contact_service),
 ) -> CheckoutIntentStatusResponse:
     actor_kind, actor_user_id = require_admin_actor(
-        access_control_service=access_control_service,
-        x_admin_token=x_admin_token,
-        authorization=authorization,
-        access_cookie_token=access_cookie_token,
-    )
-    clean_intent_id = intent_id.strip()
-    if not clean_intent_id:
-        raise HTTPException(status_code=400, detail="intent_id is required.")
-
-    intent = access_control_service.read_checkout_intent_by_id(intent_id=clean_intent_id)
-    if intent is None:
+        access_control_service=access_control_service, x_admin_token=x_admin_token,
+        authorization=authorization, access_cookie_token=access_cookie_token)
+    if access_control_service.read_checkout_intent_by_id(intent_id=intent_id) is None:
         raise HTTPException(status_code=404, detail="Checkout intent not found.")
-    user_id = str(intent["user_id"] or "").strip()
-    resolved_from_email = False
-    if not user_id:
-        customer_email = str(intent.get("customer_email") or "").strip().lower()
-        if not customer_email:
-            raise HTTPException(status_code=400, detail="Cannot release checkout intent without user reference.")
-        try:
-            user = access_control_service.get_user_by_email(customer_email)
-            user_id = user.user_id
-            resolved_from_email = True
-        except InvalidUserTokenError:
-            raise HTTPException(status_code=404, detail="User not found for checkout customer email.")
-
     try:
-        access_control_service.activate_user_plan(
-            user_id=user_id,
-            plan_code=str(intent["plan_code"]),
-            actor_kind=actor_kind,
-            actor_user_id=actor_user_id,
-        )
-        if resolved_from_email:
-            access_control_service.mark_checkout_intent_released_by_id(
-                intent_id=clean_intent_id,
-                actor_kind=actor_kind,
-                actor_user_id=actor_user_id,
-            )
-    except InvalidUserTokenError:
-        raise HTTPException(status_code=404, detail="User not found.")
+        PurchaseFlow(access_control_service).release(intent_id,
+            create_account=bool(payload and payload.create_account
+                                and read_bool_env("CHECKOUT_ADMIN_PROVISIONING_ENABLED", default=True)),
+            actor_kind=actor_kind, actor_user_id=actor_user_id)
+    except PurchaseConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    # Retrying the release never resets quota or resends a previously attempted email.
+    await deliver_purchase_notification(access_control_service, contact_service, intent_id, "release")
+    return _notification_response(access_control_service, intent_id)
 
-    updated = access_control_service.read_checkout_intent_by_id(intent_id=clean_intent_id)
-    if updated is None:
-        raise HTTPException(status_code=404, detail="Checkout intent not found.")
-    return _build_checkout_intent_status_response(updated)
+
+@router.post("/admin/checkout/intents/{intent_id}/resend-notification", response_model=CheckoutIntentStatusResponse)
+async def resend_purchase_notification(
+    intent_id: str,
+    kind: str = Query(default="release", pattern="^(release|admin_receipt|customer_receipt)$"),
+    x_admin_token: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    access_control_service: AccessControlService = Depends(get_access_control_service),
+    contact_service: ContactService = Depends(get_contact_service),
+):
+    actor_kind, actor_user_id = require_admin_actor(
+        access_control_service=access_control_service, x_admin_token=x_admin_token,
+        authorization=authorization, access_cookie_token=access_cookie_token)
+    intent = access_control_service.read_checkout_intent_by_id(intent_id=intent_id)
+    if not intent:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+    if kind == "release" and intent["status"] != "RELEASED_FOR_USE":
+        raise HTTPException(status_code=400, detail="Libere o plano antes de reenviar o acesso.")
+    flow = PurchaseFlow(access_control_service)
+    with access_control_service._lock, access_control_service._connect() as conn:
+        flow.event(conn, intent_id, "NOTIFICATION_RETRY_REQUESTED", actor_kind, actor_user_id, {"kind": kind})
+        conn.commit()
+    await deliver_purchase_notification(access_control_service, contact_service, intent_id, kind, retry=True)
+    return _notification_response(access_control_service, intent_id)
+
+
+class PurchaseTokenRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=128)
+
+
+class InitialAccessRequest(PurchaseTokenRequest):
+    password: str = Field(min_length=8, max_length=256)
+    accepted_terms: bool = False
+
+
+@router.post("/auth/initial-access")
+def confirm_initial_access(payload: InitialAccessRequest,
+                           service: AccessControlService = Depends(get_access_control_service)):
+    try:
+        PurchaseFlow(service).confirm(**payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return JSONResponse(headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+                        content={"message": "Senha definida. Entre com seu e-mail e a nova senha."})
+
+
+@router.post("/checkout/payment-page")
+def read_payment_page(payload: PurchaseTokenRequest,
+                      service: AccessControlService = Depends(get_access_control_service)):
+    try:
+        data = PurchaseFlow(service).payment_page(payload.token)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return JSONResponse(headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}, content=data)
+
+
+def _admin_item_with_notifications(intent, notifications):
+    item = _build_admin_checkout_intent_item(intent)
+    item.notification_status = notifications.get((intent["id"], "release"))
+    statuses = [notifications.get((intent["id"], kind), "pending") for kind in ("admin_receipt", "customer_receipt")]
+    item.receipt_status = ("failed" if "failed" in statuses else
+                           "sent" if statuses and all(value == "sent" for value in statuses) else "pending")
+    return item

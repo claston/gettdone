@@ -131,7 +131,7 @@ class AccessControlSessionCoreComponent:
             conn,
             """
             SELECT id, name, email, is_admin, is_active,
-                   email_verification_status, email_verified_at
+                   initial_access_pending, email_verification_status, email_verified_at
             FROM users WHERE id = ?
             """,
             (user_id,),

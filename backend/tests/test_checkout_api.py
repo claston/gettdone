@@ -27,6 +27,8 @@ class FakeContactService:
         subject: str,
         text: str,
         reply_to: str | None = None,
+        html: str | None = None,
+        idempotency_key: str | None = None,
     ) -> ContactDeliveryResult:
         if self._next_error is not None:
             raise self._next_error
@@ -35,6 +37,7 @@ class FakeContactService:
                 "to_email": to_email,
                 "subject": subject,
                 "text": text,
+                "html": html or "",
                 "reply_to": reply_to or "",
             }
         )
@@ -131,10 +134,11 @@ def test_checkout_creates_intent_and_sends_admin_and_customer_emails() -> None:
         assert admin_email["subject"] == f"[Compra] Novo pedido {payload['intent_id']} - Profissional"
         assert admin_email["reply_to"] == "erica@example.com"
         assert "Observações:\nPlease contact me on WhatsApp" in admin_email["text"]
-        assert "enviar o link de pagamento e, após a confirmação do pagamento, ativar o plano" in admin_email["text"]
+        assert "CPF/CNPJ: 123.456.789-00" in admin_email["text"]
+        assert "Aceite do checkout: Sim" in admin_email["html"]
         assert customer_email["subject"] == "Recebemos seu pedido do plano Profissional"
-        assert "Enviaremos o link de pagamento por e-mail." in customer_email["text"]
-        assert "A ativação do plano será feita pela nossa equipe após a confirmação do pagamento." in customer_email["text"]
+        assert "link de pagamento" in customer_email["text"]
+        assert "aguardar a confirmação e liberação do plano" in customer_email["text"]
         for email in fake_contact.sent_emails:
             assert f"Pedido: {payload['intent_id']}" in email["text"]
             assert "Plano: Profissional" in email["text"]
@@ -144,7 +148,7 @@ def test_checkout_creates_intent_and_sends_admin_and_customer_emails() -> None:
         app.dependency_overrides.clear()
 
 
-def test_checkout_requires_user_token() -> None:
+def test_checkout_accepts_guest_without_creating_user() -> None:
     fake_contact = FakeContactService()
     client, _service = build_client(fake_contact)
     try:
@@ -159,8 +163,8 @@ def test_checkout_requires_user_token() -> None:
                 "accepted_terms": True,
             },
         )
-        assert response.status_code == 400
-        assert "user_token" in response.json()["detail"]
+        assert response.status_code == 202
+        assert _service._test_conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
     finally:
         app.dependency_overrides.clear()
 
@@ -313,8 +317,7 @@ def payment_link_order():
         with TestClient(app) as client:
             _create_admin_user(service)
             _login_admin(client)
-            user_token = _create_user_token(service)
-            user = service.get_user_by_token(user_token=user_token)
+            user = service.register_user(name="Cliente", email="checkout-customer@example.com", password="strong-pass")
             order = service.create_checkout_intent(
                 user_id=user.user_id, plan_code="profissional", customer_name="Cliente de teste",
                 customer_email="checkout-customer@example.com", customer_whatsapp="11999990000",
@@ -350,7 +353,9 @@ def test_payment_link_failure_preserves_order_and_history(payment_link_order, al
     assert "e-mail" in response.json()["detail"]
     assert "private provider diagnostic" not in response.text
     assert service.read_checkout_intent_by_id(intent_id=intent_id) == before
-    assert service.list_checkout_intent_events_for_admin(intent_id=intent_id) == history_before
+    events = service.list_checkout_intent_events_for_admin(intent_id=intent_id)
+    assert [e for e in events if e["event_type"] != "NOTIFICATION_FAILED"] == history_before
+    assert any(event["event_type"] == "NOTIFICATION_FAILED" for event in events)
 
     # A retry must send, including legacy orders incorrectly marked as sent.
     contact._next_error = None
@@ -367,7 +372,7 @@ def test_payment_link_failure_preserves_order_and_history(payment_link_order, al
     assert len(contact.sent_emails) == 1
     assert contact.sent_emails[0]["to_email"] == "checkout-customer@example.com"
     assert "https://pay.example.com/replacement" in contact.sent_emails[0]["text"]
-    assert len(service.list_checkout_intent_events_for_admin(intent_id=intent_id)) == len(history_before) + 1
+    assert len(service.list_checkout_intent_events_for_admin(intent_id=intent_id)) == len(history_before) + 3
 
 
 @pytest.mark.parametrize("rejection", ["unauthorized", "not_found", "released"])
@@ -382,6 +387,7 @@ def test_payment_link_rejected_order_does_not_send_email(payment_link_order, rej
     else:
         assert client.post(f"/admin/checkout/intents/{intent_id}/release").status_code == 200
         expected_status = 400
+        contact.sent_emails.clear()
     before = service.read_checkout_intent_by_id(intent_id=intent_id)
     response = client.post(
         f"/admin/checkout/intents/{intent_id}/payment-link",
@@ -753,7 +759,7 @@ def test_checkout_latest_prioritizes_awaiting_payment_with_link() -> None:
         app.dependency_overrides.clear()
 
 
-def test_checkout_returns_503_when_contact_provider_not_configured() -> None:
+def test_checkout_keeps_order_and_marks_unconfigured_email_failed() -> None:
     fake_contact = FakeContactService()
     fake_contact.fail_with(ContactProviderNotConfiguredError())
     client, service = build_client(fake_contact)
@@ -770,12 +776,13 @@ def test_checkout_returns_503_when_contact_provider_not_configured() -> None:
                 "accepted_terms": True,
             },
         )
-        assert response.status_code == 503
+        assert response.status_code == 202
+        assert response.json()["admin_delivery_mode"] == "failed"
     finally:
         app.dependency_overrides.clear()
 
 
-def test_checkout_returns_502_when_contact_provider_fails() -> None:
+def test_checkout_keeps_order_and_marks_provider_failure_for_retry() -> None:
     fake_contact = FakeContactService()
     fake_contact.fail_with(ContactDeliveryError("provider timeout"))
     client, service = build_client(fake_contact)
@@ -792,7 +799,8 @@ def test_checkout_returns_502_when_contact_provider_fails() -> None:
                 "accepted_terms": True,
             },
         )
-        assert response.status_code == 502
-        assert "failed" in response.json()["detail"].lower()
+        assert response.status_code == 202
+        assert response.json()["customer_delivery_mode"] == "failed"
+        assert response.json()["intent_id"]
     finally:
         app.dependency_overrides.clear()

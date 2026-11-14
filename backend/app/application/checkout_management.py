@@ -20,7 +20,7 @@ def create_checkout_intent(
     true_value: bool | int,
     now_iso: str,
     intent_id: str,
-    user_id: str,
+    user_id: str | None,
     plan_code: str,
     customer_name: str,
     customer_email: str,
@@ -36,8 +36,6 @@ def create_checkout_intent(
     clean_document = str(customer_document or "").strip()
     clean_notes = str(customer_notes or "").strip()
 
-    if not normalized_user_id:
-        raise ValueError("user_id is required")
     if not normalized_code:
         raise ValueError("plan_code is required")
     if not clean_name or not clean_email or not clean_whatsapp:
@@ -63,12 +61,14 @@ def create_checkout_intent(
         """
         SELECT id
         FROM checkout_intents
-        WHERE user_id = ? AND plan_code = ? AND status IN (?, ?, ?)
+        WHERE (user_id = ? OR lower(customer_email) = ?)
+          AND plan_code = ? AND status IN (?, ?, ?)
         ORDER BY created_at DESC
         LIMIT 1
         """,
         (
             normalized_user_id,
+            clean_email,
             normalized_code,
             CHECKOUT_STATUS_REQUESTED,
             CHECKOUT_STATUS_AWAITING_PAYMENT,
@@ -122,7 +122,7 @@ def create_checkout_intent(
             now_iso,
             now_iso,
             CHECKOUT_STATUS_REQUESTED,
-            normalized_user_id,
+            normalized_user_id or None,
             str(plan["code"]),
             str(plan["name"]),
             int(plan["price_cents"]),
@@ -208,7 +208,7 @@ def read_checkout_intent_for_user(
         "created_at": str(row["created_at"]),
         "updated_at": str(row["updated_at"]),
         "status": str(row["status"]),
-        "user_id": str(row["user_id"]),
+        "user_id": row["user_id"],
         "plan_code": str(row["plan_code"]),
         "plan_name": str(row["plan_name"]),
         "price_cents": int(row["price_cents"]),
@@ -290,7 +290,7 @@ def read_latest_checkout_intent_for_user(
         "created_at": str(row["created_at"]),
         "updated_at": str(row["updated_at"]),
         "status": str(row["status"]),
-        "user_id": str(row["user_id"]),
+        "user_id": row["user_id"],
         "plan_code": str(row["plan_code"]),
         "plan_name": str(row["plan_name"]),
         "price_cents": int(row["price_cents"]),
@@ -420,7 +420,7 @@ def mark_checkout_intent_awaiting_payment(
         "created_at": str(row["created_at"]),
         "updated_at": str(row["updated_at"]),
         "status": str(row["status"]),
-        "user_id": str(row["user_id"]),
+        "user_id": row["user_id"],
         "plan_code": str(row["plan_code"]),
         "plan_name": str(row["plan_name"]),
         "price_cents": int(row["price_cents"]),
@@ -601,7 +601,8 @@ def read_checkout_intent_by_id(
           customer_notes,
           payment_link,
           payment_link_sent_at,
-          released_at
+          released_at,
+          terms_accepted_at
         FROM checkout_intents
         WHERE id = ?
         LIMIT 1
@@ -612,10 +613,11 @@ def read_checkout_intent_by_id(
         return None
     return {
         "id": str(row["id"]),
+        "terms_accepted_at": row["terms_accepted_at"],
         "created_at": str(row["created_at"]),
         "updated_at": str(row["updated_at"]),
         "status": str(row["status"]),
-        "user_id": str(row["user_id"] or ""),
+        "user_id": row["user_id"],
         "plan_code": str(row["plan_code"]),
         "plan_name": str(row["plan_name"]),
         "price_cents": int(row["price_cents"]),
@@ -698,7 +700,7 @@ def list_checkout_intents_for_admin(
                 "created_at": str(row["created_at"]),
                 "updated_at": str(row["updated_at"]),
                 "status": str(row["status"]),
-                "user_id": str(row["user_id"] or ""),
+                "user_id": row["user_id"],
                 "plan_code": str(row["plan_code"]),
                 "plan_name": str(row["plan_name"]),
                 "price_cents": int(row["price_cents"]),

@@ -665,7 +665,7 @@ class AccessControlService:
     def create_checkout_intent(
         self,
         *,
-        user_id: str,
+        user_id: str | None,
         plan_code: str,
         customer_name: str,
         customer_email: str,
@@ -931,7 +931,7 @@ class AccessControlService:
             with self._connect() as conn:
                 row = self._fetchone(
                     conn,
-                    "SELECT id, is_active, email_verification_status FROM users WHERE id = ?",
+                    "SELECT id, is_active, initial_access_pending, email_verification_status FROM users WHERE id = ?",
                     (user_id,),
                 )
                 return (

@@ -1448,6 +1448,7 @@
   function buildOrderCard(order) {
     const container = document.createElement("article");
     container.className = "order-card";
+    container.dataset.customerEmail = String(order.customer_email || "");
     const status = String(order.status || "");
     const isReleased = status.toUpperCase() === "RELEASED_FOR_USE";
     const hasUserReference =
@@ -1470,6 +1471,11 @@
     appendLabeledParagraph(grid, "Cliente", order.customer_name || "-");
     appendLabeledParagraph(grid, "E-mail", order.customer_email || "-");
     appendLabeledParagraph(grid, "WhatsApp", order.customer_whatsapp || "-");
+    appendLabeledParagraph(grid, "CPF/CNPJ", order.customer_document || "Não informado");
+    appendLabeledParagraph(grid, "Observações", order.customer_notes || "Não informadas");
+    const notificationLabels = { sent: "Enviado", failed: "Falha — reenvio necessário", pending: "Envio pendente", sending: "Enviando" };
+    appendLabeledParagraph(grid, "E-mails do pedido", notificationLabels[order.receipt_status] || "Sem registro");
+    if (isReleased) appendLabeledParagraph(grid, "E-mail de acesso", notificationLabels[order.notification_status] || "Sem registro");
     appendLabeledParagraph(grid, "User ID", order.user_id || "-");
     appendLabeledParagraph(grid, "Próximo passo", mapNextStepLabel(order.next_step));
     appendLabeledParagraph(grid, "Link atual", order.payment_link || "-");
@@ -1501,6 +1507,12 @@
     buttonRow.appendChild(
       createActionButton("history", "intentId", order.intent_id, "Ver histórico", { className: "ghost" }),
     );
+    if (isReleased) {
+      buttonRow.appendChild(createActionButton("resend-access", "intentId", order.intent_id, "Reenviar e-mail de acesso", { className: "ghost" }));
+    }
+    if (order.receipt_status !== "sent") {
+      buttonRow.appendChild(createActionButton("resend-receipts", "intentId", order.intent_id, "Reenviar avisos do pedido", { className: "ghost" }));
+    }
     actions.appendChild(buttonRow);
     const history = document.createElement("div");
     history.className = "history hidden";
@@ -1529,6 +1541,7 @@
     items.forEach(function (user) {
       const isAdmin = !!user.is_admin;
       const isActive = user.is_active !== false;
+      const initialAccessPending = !!user.initial_access_pending;
       const isEmailVerified = String(user.email_verification_status || "verified") === "verified";
       const card = document.createElement("article");
       card.className = "order-card";
@@ -1541,6 +1554,9 @@
       const badges = document.createElement("div");
       badges.className = "pill-row";
       badges.appendChild(createTextElement("span", `badge ${isActive ? "released" : "awaiting"}`, isActive ? "Ativo" : "Inativo"));
+      if (initialAccessPending) {
+        badges.appendChild(createTextElement("span", "badge awaiting", "Primeiro acesso pendente"));
+      }
       badges.appendChild(createTextElement("span", `badge ${isAdmin ? "released" : ""}`, isAdmin ? "Admin" : "Usuário"));
       badges.appendChild(
         createTextElement(
@@ -1578,10 +1594,11 @@
         "toggle-status",
         "userId",
         user.user_id,
-        isActive ? "Inativar usuário" : "Reativar usuário",
+        initialAccessPending ? "Revogar primeiro acesso" : (isActive ? "Inativar usuário" : "Reativar usuário"),
         { className: "ghost" },
       );
       statusButton.dataset.isActive = isActive ? "1" : "0";
+      statusButton.dataset.initialAccessPending = initialAccessPending ? "1" : "0";
       buttonRow.appendChild(statusButton);
       buttonRow.appendChild(
         createActionButton("user-login-history", "userId", user.user_id, "Ver histórico de logins", {
@@ -1782,17 +1799,38 @@
   }
 
   async function releaseOrder(intentId) {
-    setStatus("Liberando plano...", null);
     try {
+      const preview = await apiRequest(`/admin/checkout/intents/${encodeURIComponent(intentId)}/release-preview`);
+      if (!preview.response.ok) throw new Error("preview-failed");
+      if (preview.payload.account_suspended || preview.payload.account_mismatch) {
+        setStatus("Revise a conta vinculada: há suspensão ou divergência de e-mail.", "error");
+        return;
+      }
+      const createAccount = !preview.payload.account_exists;
+      const action = createAccount
+        ? "Será criada uma conta de cliente e enviado um link para definir a primeira senha."
+        : "O plano será vinculado à conta existente e o cliente receberá as orientações de acesso.";
+      if (!window.confirm(`Confirmar o pagamento e liberar o plano para ${preview.payload.customer_email}? ${action}`)) return;
+      setStatus("Liberando plano...", null);
       const { response, payload } = await apiRequest(`/admin/checkout/intents/${encodeURIComponent(intentId)}/release`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ create_account: createAccount }),
       });
       if (!response.ok) {
         setStatus(String(payload.detail || "Não foi possível liberar o plano."), "error");
         return;
       }
-      setStatus("Plano liberado com sucesso.", "ok");
+      if (payload.notification_status !== "sent") {
+        if (filterNode) filterNode.value = "released";
+        if (queryNode) queryNode.value = intentId;
+        ordersOffset = 0;
+      }
       await loadOrders();
+      setStatus(payload.notification_status === "sent"
+        ? "Plano liberado e e-mail de acesso enviado."
+        : "Plano liberado. O e-mail de acesso precisa de reenvio; use o botão no pedido.",
+        payload.notification_status === "sent" ? "ok" : "error");
     } catch (_error) {
       setStatus("Falha de rede ao liberar plano.", "error");
     }
@@ -1847,11 +1885,14 @@
     }
   }
 
-  async function toggleUserStatus(userId, currentIsActive) {
-    const targetState = !currentIsActive;
+  async function toggleUserStatus(userId, currentIsActive, initialAccessPending) {
+    const targetState = initialAccessPending ? false : !currentIsActive;
+    const confirmation = initialAccessPending
+      ? "Revogar o primeiro acesso deste usuário? Os links já enviados serão invalidados. Para autorizar novamente, reenvie o primeiro acesso pelo pedido."
+      : "Inativar este usuário? As sessões atuais serão encerradas e novos acessos serão bloqueados.";
     if (
       !targetState &&
-      !window.confirm("Inativar este usuário? As sessões atuais serão encerradas e novos acessos serão bloqueados.")
+      !window.confirm(confirmation)
     ) {
       return;
     }
@@ -2210,7 +2251,7 @@
       }
       if (action === "toggle-status") {
         const currentIsActive = String(target.dataset.isActive || "") === "1";
-        void toggleUserStatus(userId, currentIsActive);
+        void toggleUserStatus(userId, currentIsActive, target.dataset.initialAccessPending === "1");
         return;
       }
       if (action === "user-role-history") {
@@ -2234,4 +2275,23 @@
   setAuthenticatedView(false);
   updatePager();
   void verifyAdminSession();
+  document.addEventListener("click", async function (event) {
+    const button = event.target.closest?.("button[data-action]");
+    if (!button || !["resend-access", "resend-receipts"].includes(button.dataset.action)) return;
+    const access = button.dataset.action === "resend-access";
+    if (access && !window.confirm("Reenviar o acesso? Para contas com primeiro acesso pendente, o link anterior será invalidado.")) return;
+    button.disabled = true;
+    try {
+      for (const kind of (access ? ["release"] : ["admin_receipt", "customer_receipt"])) {
+        const { response } = await apiRequest(`/admin/checkout/intents/${encodeURIComponent(button.dataset.intentId)}/resend-notification?kind=${kind}`, { method: "POST" });
+        if (!response.ok) throw new Error("resend-failed");
+      }
+      await loadOrders();
+      setStatus("Tentativa de envio concluída. Confira o resultado no pedido.", "ok");
+    } catch (_error) {
+      setStatus("Não foi possível reenviar. Confira o pedido e tente novamente.", "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
 })();

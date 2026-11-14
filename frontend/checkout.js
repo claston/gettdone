@@ -30,6 +30,7 @@
   const COLD_START_TIMEOUT_MS = 5500;
 
   let selectedPlan = null;
+  let signedIn = false;
   let currentIntentId = String(new URL(window.location.href).searchParams.get("intent") || "").trim();
   const support = window.OfxWhatsApp?.create({
     containerId: "checkout-support",
@@ -191,6 +192,7 @@
         renderLoggedOutTop();
         return;
       }
+      signedIn = true;
       const name = String(payload.name || "").trim();
       const email = String(payload.email || "").trim();
       prefillCheckoutIdentity(name, email);
@@ -373,6 +375,11 @@
   }
 
   function redirectToClientAreaTracking() {
+    if (!signedIn) {
+      setCheckoutReadOnly(true);
+      setStatus(`Pedido ${currentIntentId} recebido. Acompanhe seu e-mail para receber o link de pagamento e as orientações de acesso.`, false);
+      return;
+    }
     if (!currentIntentId) {
       window.location.href = "./client-area.html#order-status";
       return;

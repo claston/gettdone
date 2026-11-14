@@ -6,7 +6,11 @@ Valor: {{ price_label }}
 Cliente: {{ name }}
 E-mail: {{ customer_email }}
 WhatsApp do cliente: {{ customer_whatsapp }}
-Observações: {{ customer_notes }}
+CPF/CNPJ: {{ customer_document }}
+Aceite do checkout: {{ checkout_terms }}
+Registrado em: {{ requested_at }}
+Observações:
+{{ customer_notes }}
 
 Revisar pedido: {{ admin_order_url }}
 
