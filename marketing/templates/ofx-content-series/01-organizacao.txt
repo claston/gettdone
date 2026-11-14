@@ -1,18 +1,72 @@
+Uma boa conversão começa no arquivo.
+
 Olá, {{ name }}!
 
-Encontrar o documento certo na hora de revisar uma movimentação faz diferença.
+Dois PDFs do mesmo banco podem parecer iguais e ser bem diferentes por dentro. A forma de baixar, imprimir ou digitalizar muda o que uma ferramenta consegue ler.
 
-1. Separe por empresa, conta e período.
-2. Preserve o documento original junto do arquivo convertido.
-3. Registre as pendências e a referência ao documento de origem.
-4. Reúna comprovantes e outros documentos de apoio.
+Estes são alguns dos cuidados que aprendemos ao trabalhar com extratos no OFX Simples.
+Exemplos ilustrativos, com dados fictícios.
 
-O OFX Simples ajuda na conversão dos arquivos. Essa organização complementa o trabalho e facilita a revisão.
+01. Baixar e imprimir são caminhos diferentes
 
-Abrir o OFX Simples: https://www.ofxsimples.com.br/
+O PDF baixado em “Baixar” ou “Exportar” no site ou app do banco costuma preservar melhor o texto e as colunas. Já “Imprimir / Salvar como PDF” pode reorganizar o conteúdo.
+
+Download do banco: data, descrição e valor juntos na mesma linha.
+05/11 | PIX RECEBIDO | + R$ 850,00
+
+Na impressão, a coluna de valores pode ir parar em outra página:
+05/11 | PIX RECEBIDO
+-------- Quebra de página --------
+                       + R$ 850,00
+
+Na prática: Prefira o download original. Um PDF impresso ainda pode funcionar e conter texto selecionável; confira se todas as colunas foram preservadas.
+
+02. Página torta, leitura mais difícil
+
+Ao escanear o papel ou fotografar uma página, o texto vira imagem. A leitura por reconhecimento de caracteres (OCR) fica mais difícil com inclinação, sombras ou desfoque.
+
+Exemplo de uma linha inclinada:
+06/11
+        TARIFA
+                 - R$ 18,90
+A inclinação pode dificultar a associação entre data e valor.
+
+Na prática: Digitalize com a folha reta, inteira e nítida. Antes de enviar, amplie um valor e confira se dá para distinguir os dígitos, a vírgula e o sinal.
+
+03. Um corte pode levar parte do valor
+
+Uma margem cortada pode esconder centavos, o sinal de débito ou parte da data. Uma página ausente também deixa movimentos de fora.
+
+Exemplo de borda direita cortada:
+07/11 | PAGAMENTO | - R$ 1.2… [corte]
+O valor está incompleto. Não dá para confirmar quanto saiu.
+
+Na prática: Baixe novamente ou refaça a digitalização com todas as bordas e páginas. A informação que ficou fora do arquivo precisa ser recuperada na origem.
+
+04. Mesmo banco, uma linha diferente
+
+Mesmo em um layout conhecido, uma descrição longa pode ocupar duas linhas. Números no histórico também podem se parecer com datas ou valores.
+
+Exemplo: duas linhas, um movimento.
+08/11 | PIX ENVIADO | - R$ 320,00
+      | LOJA EXEMPLO · PEDIDO 1234
+A segunda linha completa a descrição; “1234” é a referência do pedido.
+
+Na prática: Confira descrições que continuam na linha seguinte. Reconhecer o modelo do extrato ajuda, mas cada movimentação ainda precisa ser interpretada no contexto.
+
+Precisão também é saber quando pedir uma conferência.
+
+O OFX Simples prioriza a fidelidade às informações do documento: datas, valores e o sentido de cada entrada ou saída.
+
+Quando uma informação não pode ser confirmada, a conversão pode exigir revisão ou não ser concluída. Um dado ilegível precisa ser conferido na origem. A ferramenta não deve adivinhar o que falta.
+
+Para o seu próximo envio: Escolha o original mais legível, confira páginas e bordas e revise o resultado antes de importar no seu sistema.
+
+Converter meu extrato: https://www.ofxsimples.com.br/
 
 No próximo e-mail: como organizar as informações que ainda precisam de confirmação.
 
+Até a próxima,
 Equipe OFX Simples
 
 Você recebe esta mensagem porque autorizou conteúdos e ofertas de parceiros do OFX Simples.
