@@ -1,21 +1,60 @@
+Revise seu extrato com um roteiro simples.
+
 Olá, {{ name }}!
 
-Durante uma revisão contábil, esclarecer uma movimentação pode exigir uma busca entre extratos, contratos, relatórios e conversas com o cliente.
+Depois de converter, você pode conferir e corrigir os lançamentos no próprio OFX Simples FREE, antes de baixar o arquivo.
 
-Experimente manter um registro com três campos:
+Abra o PDF original em outra janela e acompanhe a etapa “2. Revisão”. Esta ordem ajuda a organizar a conferência:
+Resumo → Avisos → Edição → Download
 
-PENDÊNCIA: o que precisa ser esclarecido?
-DOCUMENTO DE APOIO: onde está a informação?
-RESPONSÁVEL: quem pode confirmar ou complementar?
+01. Comece pelo resumo
 
-Exemplo: pagamento a identificar; extrato da conta com data e valor; confirmar com o financeiro da empresa.
+Compare Transações, Páginas convertidas, Entradas e Saídas com o PDF. Confira também Saldo anterior e Saldo final, quando essas informações estiverem no documento.
 
-Esse registro ajuda a organizar as informações que serão avaliadas na preparação das demonstrações e das notas explicativas.
+Para um OFX de conta corrente, confira Banco, Agência e Conta. Use sempre os dados do extrato que está revisando.
 
-Para colocar em prática: escolha uma pendência da sua revisão e preencha os três campos.
+02. Use os avisos para definir a prioridade
 
-No próximo e-mail, vamos apresentar uma opção de capacitação para quem trabalha com essa etapa.
+Se houver avisos no topo ou marcas nas linhas, comece por eles. Leia o motivo e compare o trecho com o original. Depois, percorra os demais lançamentos.
 
+- Diferença nos saldos: confira os valores e movimentos envolvidos. Não altere números apenas para fechar a conta.
+- Validação incompleta: pode faltar informação para confirmar o resultado. Isso, por si só, não prova que um lançamento está errado.
+- Referências compartilhadas: o mesmo código pode aparecer em movimentos legítimos. Não apague uma linha só por ter a mesma referência.
+
+03. Corrija uma linha com o original em mãos
+
+Clique em Editar no lançamento. Confira Data, Histórico e Documento — este último é opcional. Corrija apenas o que conseguir confirmar no PDF.
+
+Para o valor, preencha somente Crédito (entrada) ou Débito (saída), com o valor positivo. Deixe o outro campo vazio.
+
+Exemplo da tela, com dados fictícios:
+Data: 08/11/2026
+Documento: 0001234
+Histórico: Pagamento de fornecedor — NF 1234
+Crédito: vazio
+Débito: 320,00
+
+Um pagamento de R$ 320,00 entra apenas em Débito. Clique em Salvar alterações e aguarde a edição ser concluída.
+
+Para desfazer: use Cancelar antes de salvar. Para desfazer uma edição já salva, abra o menu ⋯ da linha e escolha Voltar ao valor original.
+
+Para incluir um movimento: use Novo lançamento apenas se ele estiver confirmado no documento, com data, descrição e valor legíveis.
+
+04. Confira o resultado e baixe a versão final
+
+Após salvar, confira a linha corrigida e os totais exibidos. Se aparecer um erro ao salvar, resolva-o antes de baixar.
+
+Na etapa “3. Download”, use Baixar OFX para importar no seu sistema, ou Baixar Excel (.xlsx) / Baixar CSV para trabalhar em planilha.
+
+Após uma nova edição, baixe novamente. O arquivo que já está no seu computador não é atualizado pelas edições posteriores.
+
+Um saldo que fecha é uma conferência útil, mas não confirma sozinho as datas, as descrições ou a presença de todos os movimentos. Mantenha o PDF como referência até concluir a revisão.
+
+Abrir o conversor FREE: https://www.ofxsimples.com.br/converter-pdf-para-ofx.html
+
+No próximo extrato, experimente seguir esta ordem: resumo, avisos, edição e download.
+
+Até a próxima,
 Equipe OFX Simples
 
 Você recebe esta mensagem porque autorizou conteúdos e ofertas de parceiros do OFX Simples.
