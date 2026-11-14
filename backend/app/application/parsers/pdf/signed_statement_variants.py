@@ -76,6 +76,7 @@ def _totalbank(pages, kind):
 
 def _combined(pages, kind):
     rows = []
+    origin = r"(?:\d+-\w|\d{1,4})"
     pending = None
     current_page, in_table = None, False
     for page, line, raw in _lines(pages):
@@ -101,13 +102,13 @@ def _combined(pages, kind):
                     source_line_refs=(*row.source_line_refs, (page, line)),
                 )
             continue
-        control = re.fullmatch(rf'(\d{{2}}/\d{{2}}/\d{{4}})\s+\d+-\w\s+SALDO DO DIA'
+        control = re.fullmatch(rf'(\d{{2}}/\d{{2}}/\d{{4}})\s+{origin}\s+SALDO (?:DO DIA|ANTERIOR)'
             rf'(?:\s+\d+){{0,2}}\s+({NUMBER})\s+([CD])', normalized)
         if control:
             day(control[1])
             pending = None
             continue  # Document/lot references are optional on combined balance controls.
-        match = re.fullmatch(rf"(\d{{2}}/\d{{2}}/\d{{4}})\s+\d+-\w\s+(.+?)\s+(\d+)\s+(?:\d{{5}}\s+)?({NUMBER})\s+([CD])", raw)
+        match = re.fullmatch(rf"(\d{{2}}/\d{{2}}/\d{{4}})\s+{origin}\s+(.+?)\s+(\d+)\s+(?:\d{{5}}\s+)?({NUMBER})\s+([CD])", raw)
         if not match:
             fail()
         in_table = True  # Dated readable rows also establish a table without a printed header.

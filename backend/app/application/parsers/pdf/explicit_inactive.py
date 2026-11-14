@@ -9,12 +9,14 @@ from app.application.parsers.pdf.verified_statements import DATE, NUMBER, day, m
 XP = "xp_empresas_extrato_conta_digital_pj_v1"
 BRADESCO = "bradesco_net_empresa_explicit_no_activity_v1"
 BB = 'bb_explicit_no_activity_v1'
+NUBANK = 'nubank_explicit_no_activity_v1'
 
 
 def read_native_inactive(raw, pages):
     text = upper("\n".join(pages))
     if not any(marker in text for marker in (
-            'EXTRATO INEXISTENTE PARA O PERIODO SELECIONADO', 'SMI.WSE.0004', 'A CONTA NAO FOI MOVIMENTADA')):
+            'EXTRATO INEXISTENTE PARA O PERIODO SELECIONADO', 'SMI.WSE.0004', 'A CONTA NAO FOI MOVIMENTADA',
+            'NENHUMA MOVIMENTACAO REALIZADA.')):
         return None
     from app.application.parsers.pdf.mercado_pago_inactive import _image_in_ledger
     from app.application.parsers.pdf.native_table_source import read_native_table_source
@@ -29,6 +31,8 @@ def read_native_inactive(raw, pages):
         ("EXTRATO DE:", "EXTRATO DA CONTA DIGITAL PJ", 'CONSULTAS - EXTRATO DE CONTA CORRENTE'))]
     if recognized[0] == BB:
         boundaries = [line.bbox['top'] for line in lines if upper(line.text).startswith('DT. BALANCETE')]
+    if recognized[0] == NUBANK:
+        boundaries = [line.bbox['top'] for line in lines if upper(line.text) == 'VALORES EM R$']
     if not boundaries or _image_in_ledger(raw, min(boundaries), 1):
         return None
     return prepared, source
@@ -39,6 +43,8 @@ def recognize_explicit_inactive(pages):
         return None
     lines = [upper(line).strip() for line in pages[0].splitlines() if line.strip()]
     text = " ".join(lines)
+    if 'NENHUMA MOVIMENTACAO REALIZADA.' in text:
+        return _nubank(lines, text)
     if 'A CONTA NAO FOI MOVIMENTADA' in text:
         return _bb(lines, text)
     if "EXTRATO DA CONTA DIGITAL PJ" in text and "EXTRATO INEXISTENTE PARA O PERIODO SELECIONADO" in text:
@@ -46,6 +52,51 @@ def recognize_explicit_inactive(pages):
     if all(key in text for key in ("BRADESCO", "NET EMPRESA", "EXTRATO MENSAL / POR PERIODO", "SMI.WSE.0004")):
         return _bradesco(lines, text)
     return None
+
+
+def _nubank(lines, text):
+    from app.application.normalization.date import FULL_MONTH_PATTERN, parse_statement_date
+
+    declaration = 'NENHUMA MOVIMENTACAO REALIZADA.'
+    if (lines.count(declaration) != 1 or 'NUBANK.COM.BR/CONTATOS' not in text
+            or 'NU PAGAMENTOS S.A.' not in text or not re.search(r'AGENCIA\s+\d+\s+CONTA\s+[\d-]+', text)
+            or re.findall(r'\b(\d+) DE (\d+)\b', text) != [('1', '1')]):
+        return None
+    period_pattern = rf'(\d{{1,2}} DE (?:{FULL_MONTH_PATTERN}) DE \d{{4}}) A (\d{{1,2}} DE (?:{FULL_MONTH_PATTERN}) DE \d{{4}})'
+    periods = re.findall(period_pattern, text)
+    if len(periods) != 1:
+        return None
+    start, end = [parse_statement_date(value, fallback_year=None) for value in periods[0]]
+    if start > end or text.count('VALORES EM R$') != 1:
+        return None
+    header, body = text.split('VALORES EM R$', 1)
+    summary, footer = body.split(declaration)
+    # The large balance card repeats the final balance beside the five-field
+    # summary. Its label and currency-prefixed value can interleave those rows.
+    cards = re.findall(rf'R\$\s*(-?{NUMBER})', summary)
+    if len(cards) != 1 or summary.count('SALDO FINAL DO PERIODO') != 2:
+        return None
+    summary = summary.replace('SALDO FINAL DO PERIODO', '', 1)
+    summary = re.sub(rf'R\$\s*-?{NUMBER}', '', summary)
+    summary = ' '.join(summary.split())
+    match = re.fullmatch(rf'SALDO INICIAL (-?{NUMBER}) RENDIMENTO LIQUIDO \+0,00 '
+        rf'TOTAL DE ENTRADAS \+0,00 TOTAL DE SAIDAS -0,00 SALDO FINAL DO PERIODO (-?{NUMBER})', summary)
+    if not match or not money(match[1]) == money(match[2]) == money(cards[0]):
+        return None
+    # Reject additional amounts/dates anywhere outside the recognized summary.
+    if re.search(NUMBER, header + footer) or re.search(DATE, header + footer):
+        return None
+    allowed_footer = ('O SALDO LIQUIDO CORRESPONDE', 'NAO NOS RESPONSABILIZAMOS', 'ASSEGURAMOS A AUTENTICIDADE',
+        'NU FINANCEIRA S.A.', 'NU PAGAMENTOS S.A.', 'E INVESTIMENTO', 'INVESTIMENTO', 'CNPJ:',
+        'TEM ALGUMA DUVIDA?', 'METROPOLITANAS)', 'CASO A SOLUCAO', 'DISPONIVEIS EM NUBANK.COM.BR/CONTATOS',
+        'NUBANK.COM.BR/CONTATOS', 'EXTRATO GERADO DIA')
+    if any(line != '1 DE 1' and not line.startswith(allowed_footer) for line in lines[lines.index(declaration)+1:]):
+        return None
+    balance = float(money(match[1]))
+    return NUBANK, {'verified_opening_balance': balance, 'verified_closing_balance': balance,
+        'statement_period_start': start, 'statement_period_end': end, 'financial_controls_validated': 1,
+        'printed_balance_checks': 6, 'document_coverage_validated': 1,
+        'balance_validation_status': 'explicit_no_activity_period_balance'}
 
 
 def _bb(lines, text):
