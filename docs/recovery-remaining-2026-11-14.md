@@ -64,6 +64,12 @@ As seis entradas de outra natureza (três documentos fiscais, uma tabela tribut�
 
 ## Validação e implantação
 
-Testes de regressão foram executados antes das correções e reproduziram as falhas. A validação final inclui suíte completa, lint, varredura de texto UTF-8/mojibake, compatibilidade de PDF/revisão e HTTP real com PDF e CSV, consulta de relatório, exportação CSV/XLSX/OFX e erro de relatório inexistente. O endpoint legado `POST /analyze` está desativado na versão atual e retorna 405; o fluxo público equivalente é `POST /convert`.
+Testes de regressão foram executados antes das correções e reproduziram as falhas. Os testes de compatibilidade passaram em **90 casos PDF e 170 casos de revisão**, sem diferenças semânticas inesperadas. Também foram reprocessados **44 documentos reais de revisão**, incluindo os 13 dos leitores afetados: todos continuaram legíveis e mantiveram o mesmo multiconjunto de datas/valores. Essa comparação adicional não reexecutou os 250 documentos de revisão do levantamento inicial.
+
+As 20 capturas recuperadas eram registros de falha; as duas capturas OCR do documento recuperado foram revalidadas individualmente. As demais compartilham os mesmos PDFs nativos já verificados.
+
+A suíte completa passou: **4.972 testes aprovados, 89 ignorados e 2 falhas esperadas**, com duas advertências de depreciação FastAPI já existentes, em 506,37 segundos. O runner usou um processo por disponibilidade de memória e removeu seu diretório temporário. Ruff, lint de navegação, varredura de texto UTF-8/mojibake e `git diff --check` também passaram.
+
+O teste HTTP real cobriu PDF e CSV, consulta de relatório, exportação CSV/XLSX/OFX e erro de relatório inexistente. O endpoint legado `POST /analyze` está desativado na versão atual e retorna 405; o fluxo público equivalente é `POST /convert`.
 
 Não há migração de banco nem alteração de armazenamento. A publicação exige o fluxo habitual de revisão e implantação; reverter o commit restaura os leitores anteriores. Reprocessar arquivos em produção é uma operação separada, não executada nesta auditoria.
