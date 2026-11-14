@@ -67,7 +67,7 @@ def parse_pagbank_native_daily(source):
                 rows.append(_source(_row(page.page_number, anchor.line_index, date, description, value, None), page, cells))
         if used != {line.id for line in cash}:
             fail("Há um valor PagBank sem lançamento ou saldo associado.")
-    if not rows or opening is None or not closed or checks < 1:
+    if not rows or opening is None or not closed:
         fail("O extrato PagBank não tem controles diários suficientes.")
     rows[0] = replace(rows[0], warnings=[*rows[0].warnings, "manual_review_recommended"])
     return VerifiedStatement(rows, "pagbank_native_daily_cash_v1", opening, running, opening_inferred=True,

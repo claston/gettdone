@@ -81,6 +81,7 @@ def parse_reviewed_cash(source, kind):
         # Full transaction dates remain readable without optional coverage.
         year = None
     opening_position, row_positions = None, []
+    opening_date_token, opening_checks = None, 0
     rows, opening, controls, coverage = [], None, [], 0
     non_cash = 0
     ended = False
@@ -169,7 +170,7 @@ def parse_reviewed_cash(source, kind):
                 ]
             description = " ".join(line.text for line in sorted(history, key=lambda line: (line.bbox["top"], line.bbox["left"])))
             label = upper(description)
-            if label.startswith("SALDO BLOQUEADO"):
+            if label.startswith(("SALDO BLOQUEADO", "SALDO BLOQUEIO JUDICIAL")):
                 # Blocked deposits are a separate balance, never available cash.
                 continue
             if label.startswith("SALDO"):
@@ -180,6 +181,15 @@ def parse_reviewed_cash(source, kind):
                 if "ANTERIOR" in label:
                     opening = value
                     opening_position = (page.page_number, index)
+                    opening_date_token = anchor.text
+                elif (kind == "sicoob_modern" and not rows and opening is not None
+                      and label == "SALDO DO DIA" and anchor.text == opening_date_token):
+                    # This is a second observation of the printed opening,
+                    # often dated before the selected period. No movement year
+                    # needs to be invented to compare the two cash controls.
+                    if value != opening:
+                        financial_mismatch()
+                    opening_checks += 1
                 else:
                     controls.append(
                         (
@@ -249,7 +259,7 @@ def parse_reviewed_cash(source, kind):
         if rows[0].running_balance is None:
             fail("O saldo anterior não pode ser identificado no documento.")
         opening = Decimal(str(rows[0].running_balance)) - Decimal(str(rows[0].transaction.amount))
-    running, checks = opening, 0
+    running, checks = opening, opening_checks
     daily = {}
     for date, value in controls:
         if kind == "sicoob_modern":
@@ -271,13 +281,19 @@ def parse_reviewed_cash(source, kind):
                 financial_mismatch()
             rows[index] = replace(row, running_balance=float(values[0]) if len(set(values)) == 1 else None)
             checks += len(values)
+    # Opening comparisons and earlier checkpoints do not independently cover
+    # the tail. Only a closing-day (or later idle-day) control can certify it.
+    closing_control_available = kind != "sicoob_modern" or any(
+        date >= rows[-1].transaction.date for date in daily
+    )
     return VerifiedStatement(
         rows,
         f"{kind}_printed_cash_columns_v1",
         opening,
-        running,
+        running if closing_control_available else None,
         opening_inferred=inferred,
         candidate_rows=coverage,
         printed_balance_checks=checks,
         non_cash_entries=non_cash,
+        balance_bounds_unavailable=not closing_control_available,
     )
