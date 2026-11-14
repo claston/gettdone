@@ -7,7 +7,7 @@ template, atualize também sua cópia em `index.html` e a alternativa em texto.
 
 | Arquivo | Dia sugerido | Objetivo |
 | --- | --- | --- |
-| `01-organizacao.html` | 1 | Organização de documentos antes da revisão |
+| `01-organizacao.html` | 1 | Qualidade do arquivo, dificuldades de leitura e precisão na conversão |
 | `02-revisao.html` | 5 | Registro de pendências e documentos de apoio |
 | `03-curso.html` | 10 | Indicação do curso da Descomplicont |
 | `04-excel-powerbi.html` | A definir | Oferta alternativa de Excel e Power BI |
@@ -21,6 +21,36 @@ adapte também a mensagem educativa anterior para esse tema.
 Cada HTML possui uma alternativa `.txt`. `campaign.json` reúne os assuntos,
 preheaders e a ordem sugerida. Os dias são relativos ao início da sequência;
 não representam um agendamento implementado.
+
+## Primeiro e-mail: qualidade do arquivo (rascunho para revisão)
+
+Assunto: **Antes de converter: 4 detalhes para conferir no seu extrato**.
+O nome `01-organizacao` foi preservado para manter as referências existentes.
+A abertura agora usa quatro situações práticas: download original versus
+impressão em PDF, digitalização inclinada, informação cortada e descrição
+distribuída em duas linhas, mesmo em um layout conhecido.
+
+Os pequenos extratos são fictícios e desenhados com tabelas HTML e texto, sem
+imagens externas. Cada exemplo explica a dificuldade e orienta uma ação. A
+inclinação é esquemática, representada pelo deslocamento das células; o corte
+é indicado por reticências e uma borda tracejada. As legendas mantêm o sentido
+dos exemplos mesmo quando o cliente de e-mail altera a apresentação.
+
+O texto prioriza fidelidade e revisão quando há incerteza, sem prometer precisão
+absoluta, rejeitar todo PDF impresso ou tratar todo download como garantia de
+boa leitura. A alternativa `.txt` preserva o conteúdo e descreve os exemplos.
+
+Aprendizados usados como referência editorial interna:
+
+- `docs/pdf-split-sheet-recovery-20261021.md`: colunas separadas por impressão,
+  conteúdo sobreposto e preservação de informações sem inventar dígitos.
+- `docs/pdf-recovery-afternoon-20261021.md`: variações dentro dos layouts,
+  interpretação de sinais no contexto e controles financeiros.
+- `AGENTS.md`, visão de extração financeira: preservar o sentido dos movimentos
+  e explicitar ambiguidades sem completar dados ilegíveis.
+
+Este primeiro rascunho segue disponível na prévia para iterar texto e exemplos;
+nenhuma campanha foi ativada e nenhum e-mail foi enviado.
 
 ## Personalização
 
