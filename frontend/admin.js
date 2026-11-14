@@ -173,6 +173,7 @@
     if (normalized === "REQUESTED" || normalized === "PENDING") return "Solicitado";
     if (normalized === "AWAITING_PAYMENT") return "Aguardando pagamento";
     if (normalized === "RELEASED_FOR_USE") return "Liberado para uso";
+    if (normalized === "LOST") return "Venda perdida";
     return normalized || "-";
   }
 
@@ -181,6 +182,7 @@
     if (normalized === "SEND_PAYMENT_LINK") return "Enviar link de pagamento";
     if (normalized === "WAIT_FOR_PAYMENT") return "Aguardar pagamento";
     if (normalized === "READY_TO_USE") return "Plano liberado";
+    if (normalized === "ORDER_CLOSED") return "Pedido encerrado";
     return "Revisar pedido";
   }
 
@@ -1449,11 +1451,14 @@
     const container = document.createElement("article");
     container.className = "order-card";
     container.dataset.customerEmail = String(order.customer_email || "");
+    container.dataset.customerName = String(order.customer_name || "");
+    container.dataset.planName = String(order.plan_name || "");
     const status = String(order.status || "");
     const isReleased = status.toUpperCase() === "RELEASED_FOR_USE";
+    const isOpen = ["REQUESTED", "AWAITING_PAYMENT", "PENDING"].includes(status.toUpperCase());
     const hasUserReference =
       String(order.user_id || "").trim().length > 0 || String(order.customer_email || "").trim().length > 0;
-    const canRelease = !isReleased && hasUserReference;
+    const canRelease = isOpen && hasUserReference;
 
     const head = document.createElement("div");
     head.className = "order-head";
@@ -1474,7 +1479,9 @@
     appendLabeledParagraph(grid, "CPF/CNPJ", order.customer_document || "Não informado");
     appendLabeledParagraph(grid, "Observações", order.customer_notes || "Não informadas");
     const notificationLabels = { sent: "Enviado", failed: "Falha — reenvio necessário", pending: "Envio pendente", sending: "Enviando" };
-    appendLabeledParagraph(grid, "E-mails do pedido", notificationLabels[order.receipt_status] || "Sem registro");
+    appendLabeledParagraph(grid, "E-mails do pedido", status.toUpperCase() === "LOST"
+      ? "Pedido encerrado — avisos desativados"
+      : notificationLabels[order.receipt_status] || "Sem registro");
     if (isReleased) appendLabeledParagraph(grid, "E-mail de acesso", notificationLabels[order.notification_status] || "Sem registro");
     appendLabeledParagraph(grid, "User ID", order.user_id || "-");
     appendLabeledParagraph(grid, "Próximo passo", mapNextStepLabel(order.next_step));
@@ -1490,9 +1497,10 @@
     paymentInput.type = "url";
     paymentInput.placeholder = "https://pagamento.exemplo/link";
     paymentInput.value = String(order.payment_link || "");
+    paymentInput.disabled = !isOpen;
     inline.appendChild(paymentInput);
     inline.appendChild(
-      createActionButton("send-link", "intentId", order.intent_id, "Enviar link", { disabled: isReleased }),
+      createActionButton("send-link", "intentId", order.intent_id, "Enviar link", { disabled: !isOpen }),
     );
     actions.appendChild(inline);
 
@@ -1507,10 +1515,13 @@
     buttonRow.appendChild(
       createActionButton("history", "intentId", order.intent_id, "Ver histórico", { className: "ghost" }),
     );
+    if (isOpen) {
+      buttonRow.appendChild(createActionButton("lose", "intentId", order.intent_id, "Marcar como venda perdida", { className: "ghost" }));
+    }
     if (isReleased) {
       buttonRow.appendChild(createActionButton("resend-access", "intentId", order.intent_id, "Reenviar e-mail de acesso", { className: "ghost" }));
     }
-    if (order.receipt_status !== "sent") {
+    if ((isOpen || isReleased) && order.receipt_status !== "sent") {
       buttonRow.appendChild(createActionButton("resend-receipts", "intentId", order.intent_id, "Reenviar avisos do pedido", { className: "ghost" }));
     }
     actions.appendChild(buttonRow);
@@ -1774,12 +1785,23 @@
     });
   }
 
-  async function sendPaymentLink(intentId, paymentLink) {
+  const pendingOrderActions = new Set();
+
+  function orderRecipient(button) {
+    const card = button.closest(".order-card");
+    return `${card?.dataset.customerName || "Cliente"} — ${card?.dataset.customerEmail || "E-mail não informado"}\nPlano: ${card?.dataset.planName || "-"}`;
+  }
+
+  async function sendPaymentLink(intentId, paymentLink, button) {
+    if (pendingOrderActions.has(intentId)) return;
     const link = String(paymentLink || "").trim();
     if (!link) {
       setStatus("Informe o link de pagamento.", "error");
       return;
     }
+    if (!window.confirm(`Enviar o link de pagamento para ${orderRecipient(button)}?`)) return;
+    pendingOrderActions.add(intentId);
+    button.disabled = true;
     setStatus("Enviando link de pagamento...", null);
     try {
       const { response, payload } = await apiRequest(`/admin/checkout/intents/${encodeURIComponent(intentId)}/payment-link`, {
@@ -1795,6 +1817,31 @@
       await loadOrders();
     } catch (_error) {
       setStatus("Falha de rede ao enviar link.", "error");
+    } finally {
+      pendingOrderActions.delete(intentId);
+      button.disabled = false;
+    }
+  }
+
+  async function loseOrder(intentId, button) {
+    if (pendingOrderActions.has(intentId)) return;
+    if (!window.confirm(`Marcar como venda perdida o pedido de ${orderRecipient(button)}?\nO pedido será encerrado e não permitirá novos envios de link nem liberação do plano.\nUma cobrança externa já enviada precisa ser cancelada no provedor de pagamento.`)) return;
+    pendingOrderActions.add(intentId);
+    button.disabled = true;
+    setStatus("Encerrando pedido...", null);
+    try {
+      const { response, payload } = await apiRequest(`/admin/checkout/intents/${encodeURIComponent(intentId)}/lose`, { method: "POST" });
+      if (!response.ok) {
+        setStatus(String(payload.detail || "Não foi possível encerrar o pedido."), "error");
+        return;
+      }
+      await loadOrders();
+      setStatus("Pedido encerrado como venda perdida.", "ok");
+    } catch (_error) {
+      setStatus("Falha de rede ao encerrar pedido.", "error");
+    } finally {
+      pendingOrderActions.delete(intentId);
+      button.disabled = false;
     }
   }
 
@@ -2216,6 +2263,11 @@
       const action = String(target.dataset.action || "");
       const intentId = String(target.dataset.intentId || "").trim();
       if (!action || !intentId) return;
+      if (target.disabled || pendingOrderActions.has(intentId)) return;
+      if (action === "lose") {
+        void loseOrder(intentId, target);
+        return;
+      }
       if (action === "release") {
         void releaseOrder(intentId);
         return;
@@ -2224,7 +2276,7 @@
         const wrapper = target.closest(".admin-actions");
         const input = wrapper ? wrapper.querySelector("input[data-action='payment-link-input']") : null;
         const paymentLink = input instanceof HTMLInputElement ? input.value : "";
-        void sendPaymentLink(intentId, paymentLink);
+        void sendPaymentLink(intentId, paymentLink, target);
         return;
       }
       if (action === "history") {

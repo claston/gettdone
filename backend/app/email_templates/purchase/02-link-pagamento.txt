@@ -6,9 +6,8 @@ Plano: {{ plan_name }}
 Valor: {{ price_label }}
 
 Pagar agora: {{ payment_url }}
-Página para copiar o link: {{ payment_page_url }}
 
-Na página, toque em Copiar link. Você também pode selecionar e copiar o endereço deste e-mail. Após a confirmação do pagamento pela equipe, enviaremos a liberação e as orientações de acesso.
+Você pode selecionar e copiar o endereço deste e-mail. Após a confirmação do pagamento pela equipe, enviaremos a liberação e as orientações de acesso.
 
 Podemos ajudar? WhatsApp: {{ whatsapp_display }}
 {{ whatsapp_url }}

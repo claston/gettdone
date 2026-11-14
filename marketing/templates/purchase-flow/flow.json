@@ -39,8 +39,8 @@
       "audience": "Cliente",
       "stage": 2,
       "subject": "Seu link de pagamento está pronto · Pedido {{ order_reference }}",
-      "preheader": "Pague pelo botão ou abra a página para copiar o link. Seu plano será liberado após a confirmação.",
-      "note": "Após o administrador informar o link. A ação de copiar abre uma página, não executa dentro do e-mail."
+      "preheader": "Pague pelo botão ou copie o link deste e-mail. Seu plano será liberado após a confirmação.",
+      "note": "Após o administrador confirmar o destinatário e enviar o link. O botão Pagar agora abre o pagamento diretamente; o endereço também fica visível para copiar."
     },
     {
       "id": "03-plano-liberado",
