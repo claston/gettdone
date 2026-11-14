@@ -2,7 +2,7 @@ Revise seu extrato com um roteiro simples.
 
 Olá, {{ name }}!
 
-Depois de converter, você pode conferir e corrigir os lançamentos no próprio OFX Simples FREE, antes de baixar o arquivo.
+Depois de converter, você pode conferir e corrigir os lançamentos no próprio OFX Simples, antes de baixar o arquivo.
 
 Abra o PDF original em outra janela e acompanhe a etapa “2. Revisão”. Esta ordem ajuda a organizar a conferência:
 Resumo → Avisos → Edição → Download
@@ -50,7 +50,7 @@ Após uma nova edição, baixe novamente. O arquivo que já está no seu computa
 
 Um saldo que fecha é uma conferência útil, mas não confirma sozinho as datas, as descrições ou a presença de todos os movimentos. Mantenha o PDF como referência até concluir a revisão.
 
-Abrir o conversor FREE: https://www.ofxsimples.com.br/converter-pdf-para-ofx.html
+Abrir o OFX Simples: https://www.ofxsimples.com.br/converter-pdf-para-ofx.html
 
 No próximo extrato, experimente seguir esta ordem: resumo, avisos, edição e download.
 
