@@ -13,27 +13,35 @@
   "emails": [
     {
       "id": "01-organizacao",
-      "suggested_day": 1,
+      "suggested_day": null,
       "subject": "Antes de converter: 4 detalhes para conferir no seu extrato",
       "preheader": "PDF do banco, impressão, digitalização e descrições: veja o que pode dificultar a leitura.",
       "html_file": "01-organizacao.html",
       "text_file": "01-organizacao.txt"
     },
     {
-      "id": "02-revisao",
-      "suggested_day": 5,
-      "subject": "Você consegue explicar de onde veio esse número?",
-      "preheader": "Um registro com três campos pode ajudar a organizar as pendências da revisão contábil.",
-      "html_file": "02-revisao.html",
-      "text_file": "02-revisao.txt"
-    },
-    {
       "id": "03-curso",
-      "suggested_day": 10,
+      "suggested_day": null,
       "subject": "Demonstrações contábeis e notas explicativas: quer se aprofundar?",
       "preheader": "Conheça o curso da Descomplicont com o professor Laudelino Jochem e consulte a programação.",
       "html_file": "03-curso.html",
       "text_file": "03-curso.txt"
+    },
+    {
+      "id": "02-revisao",
+      "suggested_day": null,
+      "subject": "Como revisar seu extrato no OFX Simples FREE",
+      "preheader": "Confira o resumo, entenda os avisos e aprenda a editar um lançamento antes do download.",
+      "html_file": "02-revisao.html",
+      "text_file": "02-revisao.txt",
+      "inline_images": [
+        {
+          "file": "assets/free-review-editor.png",
+          "html_src": "assets/free-review-editor.png",
+          "content_id": "ofx-free-review-editor",
+          "content_type": "image/png"
+        }
+      ]
     },
     {
       "id": "04-excel-powerbi",
@@ -43,5 +51,6 @@
       "html_file": "04-excel-powerbi.html",
       "text_file": "04-excel-powerbi.txt"
     }
-  ]
+  ],
+  "delivery_mode": "manual"
 }
