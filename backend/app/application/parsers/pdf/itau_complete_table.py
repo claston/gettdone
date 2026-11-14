@@ -39,7 +39,7 @@ def parse_itau_complete_table(raw, native_pages):
     pages = ["\n".join(line.text for line in page.lines) for page in source.pages]
     periods = set(re.findall(rf"LANCAMENTOS DO PERIODO:\s*({DATE})\s+ATE\s+({DATE})", normalized))
     start, end = unique_document_period(periods)
-    records = read_itau_complete_rows(raw, source)
+    records, summary_seen = read_itau_complete_rows(raw, source)
     openings = [r for r in records if r["label"] == "SALDO ANTERIOR"]
     if len(openings) != 1 or start is not None and openings[0]["date"] >= start:
         fail("Falta o saldo anterior inequívoco do Itaú.")
@@ -82,4 +82,4 @@ def parse_itau_complete_table(raw, native_pages):
     rows = [replace(_row(r["page"], r["line"], r["date"], " ".join(" ".join(f.split()) for f in r["fields"]).strip(),
         r["value"], None), source_line_refs=tuple(r["refs"]), source_regions=r["regions"]) for r in records if not r["control"]]
     return VerifiedStatement(rows, "itau_empresas_extrato_completo_tabela_v1", opening, closing,
-        printed_balance_checks=checks, candidate_rows=len(rows), balance_checkpoints={}), pages
+        partial=not summary_seen, printed_balance_checks=checks, candidate_rows=len(rows), balance_checkpoints={}), pages
