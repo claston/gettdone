@@ -503,10 +503,6 @@ body.client-area-page .modal-backdrop {
   margin-top: 0.75rem;
 }
 
-#other-open-orders p {
-  margin-top: 1rem;
-}
-
 .upgrade-plans {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
@@ -526,6 +522,12 @@ body.client-area-page .modal-backdrop {
 
 .upgrade-plan .client-action {
   margin-top: 1rem;
+}
+
+.upgrade-plan .upgrade-order-status {
+  margin-top: 1rem;
+  font-weight: 600;
+  color: var(--on-surface-variant);
 }
 
 @media (max-width: 820px) {

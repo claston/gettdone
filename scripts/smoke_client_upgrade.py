@@ -72,11 +72,14 @@ def run():
                 expect(page.locator("#upgrade-top")).to_be_visible()
                 expect(page.locator("#upgrade-profile")).to_be_visible()
                 expect(page.locator("#order-status")).to_be_visible()
+                expect(page.get_by_role("link", name="Acompanhar pedido")).to_have_count(0)
+                expect(page.get_by_role("button", name="Atualizar status")).to_have_count(0)
                 assert page.locator("#order-status").bounding_box()["y"] < page.locator(".quick-metrics").bounding_box()["y"]
                 page.locator("#upgrade-top").click()
                 expect(page.locator("#upgrade-options")).to_be_visible()
                 expect(page.locator("#upgrade-options .upgrade-plan")).to_have_count(2)
-                expect(page.locator('#upgrade-options a[href*="intent=chk_profissional"]')).to_have_text("Acompanhar pedido")
+                expect(page.locator('#upgrade-options a[href*="intent="]')).to_have_count(0)
+                expect(page.locator("#upgrade-options").get_by_text("Pedido em aberto", exact=True)).to_be_visible()
                 expect(page.locator('#upgrade-options a[href="./checkout.html?plan=escritorio"]')).to_be_visible()
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Horizontal overflow"
                 page.evaluate("window.scrollTo(0, 0)")
@@ -98,19 +101,35 @@ def run():
                 popup.value.close()
                 expect(page.locator("#order-status")).to_be_visible()
 
-                # Unsafe links are never offered. Multiple open requests remain accessible.
+                # Unsafe links are never offered, including when refreshing automatically.
                 state["orders"][0]["payment_link"] = "javascript:alert(1)"
-                state["orders"].append(order("escritorio", "pending"))
-                page.locator("#order-refresh").click()
+                page.clock.run_for(31000)
                 expect(page.locator("#order-payment-link")).to_be_hidden()
-                expect(page.locator("#other-open-orders")).to_contain_text("Escritório")
-                expect(page.locator("#other-open-orders a")).to_have_attribute(
-                    "href", "./checkout.html?plan=escritorio&intent=chk_escritorio")
+
+                # The API prioritizes payable orders. The banner must instead use creation time,
+                # even when the older order has a payment link or a more recent update timestamp.
+                state["orders"][0].update(payment_link="https://pay.example.com/older", updated_at="2026-11-12T18:00:00Z")
+                newer = {**order("escritorio", "pending"), "created_at": "2026-11-12T13:00:00Z"}
+                state["orders"].append(newer)
+                page.evaluate("window.dispatchEvent(new Event('focus'))")
+                expect(page.locator("#order-intent-id")).to_have_text("chk_escritorio")
+                expect(page.locator("#order-plan-name")).to_have_text("Escritório")
+                expect(page.locator("#order-status")).not_to_contain_text("Profissional")
+                expect(page.locator("#order-payment-link")).to_be_hidden()
+                expect(page.locator("#order-status a")).to_have_count(1)
+                expect(page.locator("#order-status button")).to_have_count(0)
+                # After the newest completes, the next most recent open order becomes visible.
+                newer["status"] = "RELEASED_FOR_USE"
+                page.clock.run_for(31000)
+                expect(page.locator("#order-intent-id")).to_have_text("chk_profissional")
+                expect(page.locator("#order-payment-link")).to_have_attribute("href", "https://pay.example.com/older")
+                newer["status"] = "REQUESTED"
+                page.clock.run_for(31000)
+                expect(page.locator("#order-intent-id")).to_have_text("chk_escritorio")
 
                 # A failed refresh retains the visible pending request, then recovers on focus.
                 state["fail_orders"] = True
-                page.locator("#order-refresh").click()
-                page.clock.run_for(2000)
+                page.clock.run_for(33000)
                 expect(page.locator("#orders-refresh-status")).to_contain_text("Não foi possível")
                 expect(page.locator("#order-status")).to_be_visible()
                 expect(page.locator("#upgrade-top")).to_be_hidden()
