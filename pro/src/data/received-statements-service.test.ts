@@ -91,5 +91,15 @@ describe("busca de clientes", () => {
     ).toBe(true);
     await receivedService.list(undefined, abort.signal, undefined, "");
     expect(fetcher.mock.calls.at(-1)?.[0]).toBe("/api/pro/receipts?sort=name");
+    await receivedService.list(undefined, abort.signal, undefined, "", true);
+    expect(fetcher.mock.calls.at(-1)?.[0]).toBe(
+      "/api/pro/receipts?sort=name&active_only=true",
+    );
+    await receivedService.list("c2", abort.signal, undefined, "Padaria", true);
+    expect(JSON.parse(fetcher.mock.calls.at(-1)?.[1].body)).toMatchObject({
+      query: "Padaria",
+      active_only: true,
+      cursor: "c2",
+    });
   });
 });

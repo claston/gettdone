@@ -84,8 +84,15 @@ documento, edição do cliente, workspace e exportação por cliente. Todas usam
 autorização existente; escritas exigem origem permitida e o cabeçalho PRO. Não
 há nova concessão de degustação, acesso de equipe ou mudança de plano.
 
-O dashboard consulta metadados, com paginação independente de clientes e
-identificações. As abas **Identificados** e **Não identificados** contam,
+O dashboard abre na aba **Com conversões ativas**, que mostra clientes com pelo
+menos um recebimento cujo prazo ainda não venceu, incluindo processamento e
+casos que precisam de atenção. Clientes apenas com arquivos expirados ficam
+acessíveis em **Identificados**. Um cliente com arquivos ativos e expirados
+permanece na aba ativa; histórico e contagem de expirados são preservados.
+Os contadores de atenção e processamento consideram somente arquivos não expirados.
+
+O dashboard consulta metadados, com paginação independente de clientes ativos,
+todos os identificados e identificações pendentes. As abas **Identificados** e **Não identificados** contam,
 respectivamente, clientes encontrados e documentos disponíveis pendentes, além
 da página atual. A busca em Identificados aceita trechos de nome/razão social e
 nome fantasia sem diferenciar acentos/caixa; CPF/CNPJ são comparados pelos dígitos.
@@ -94,7 +101,22 @@ paginação. Limpar a busca restaura a lista; trocar de aba conserva o termo sem
 filtrar os documentos pendentes. A atualização tem debounce de 250 ms, cancelamento
 de requisições antigas, estado vazio e botão de limpeza, sem recarregar a página.
 
-`POST /api/pro/receipts/search` recebe `query`, `cursor`, `pending_cursor` e `sort`
+`GET /api/pro/receipts` e `POST /api/pro/receipts/search` aceitam `active_only`,
+opcional e falso por padrão para preservar consumidores anteriores. O filtro
+atua antes da paginação, inclusive na busca por nome ou documento. As respostas
+incluem `all_client_count`, `active_client_count`, `server_time` e
+`next_expiration_at`. A página usa o intervalo informado pelo servidor para
+reconsultar a lista quando o próximo arquivo expirar e também ao retornar à aba
+do navegador. A expiração reinicia a paginação; um cursor cujo cliente acabou
+de expirar ainda permite continuar pelos demais clientes. Reconsultas não
+reconvertem arquivos nem reiniciam a sincronização já em andamento.
+
+Esta mudança não altera a retenção de 24 horas, não modifica arquivos ou vínculos
+e não exige migração. Publicar o backend antes do frontend, pois a versão anterior
+da busca rejeita campos JSON desconhecidos. Para rollback, reverter primeiro o
+frontend; o backend novo mantém compatibilidade com a interface anterior.
+
+`POST /api/pro/receipts/search` recebe `query`, `cursor`, `pending_cursor`, `sort` e `active_only`
 no corpo JSON, evitando identificadores nas URLs/logs de acesso. Não emite eventos
 de analytics nem persiste termos. O GET anterior continua compatível; as respostas
 acrescentam `client_count` e `pending_count`. A implementação normaliza identidades

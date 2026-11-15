@@ -278,43 +278,54 @@ class ReceivedStatements(OrganizationService):
             return base64.urlsafe_b64encode(json.dumps([last.created_at.isoformat(), last.job_id]).encode()).decode().rstrip("=")
         return None
 
-    def dashboard(self, owner, *, now=None, after="", limit=30, pending_after="", sort="id", query=""):
+    def dashboard(self, owner, *, now=None, after="", limit=30, pending_after="", sort="id", query="", active_only=False):
         now = _utc(now or datetime.now(timezone.utc)).isoformat()
         with self.db.connect() as conn:
             organization = self._organization(conn, owner)
             if not organization:
                 return {"totals": {"statements": 0, "ready": 0, "attention": 0}, "clients": [], "pending": [],
-                        "next_cursor": None, "pending_next_cursor": None, "client_count": 0, "pending_count": 0}
+                        "next_cursor": None, "pending_next_cursor": None, "client_count": 0, "pending_count": 0,
+                        "all_client_count": 0, "active_client_count": 0, "next_expiration_at": None, "server_time": now}
             totals = self.db.fetchone(conn, "SELECT COUNT(*) AS statements, "
                 "COALESCE(SUM(CASE WHEN technical_status = 'ready' THEN 1 ELSE 0 END), 0) AS ready, "
-                "COALESCE(SUM(CASE WHEN technical_status = 'attention' THEN 1 ELSE 0 END), 0) AS attention "
+                "COALESCE(SUM(CASE WHEN technical_status = 'attention' THEN 1 ELSE 0 END), 0) AS attention, "
+                "MIN(expires_at) AS next_expiration_at "
                 "FROM pro_received_statements WHERE organization_id = ? AND expires_at > ?", (organization, now))
-            client_filter, client_params = "c.id > ?", [after]
             # Authorize first, normalize/filter before pagination. Only hydrate one
             # page; Python normalization is identical on SQLite and PostgreSQL.
             identities = self.db.fetchall(conn,
-                    "SELECT c.id, c.name, c.trade_name, c.tax_id FROM pro_clients c WHERE c.organization_id = ? AND EXISTS ("
-                    "SELECT 1 FROM pro_conversion_contexts x JOIN pro_received_statements r "
-                    "ON r.organization_id = x.organization_id AND r.job_id = x.job_id "
-                    "WHERE x.organization_id = c.organization_id AND x.client_id = c.id)",
-                    (organization,))
+                    "SELECT c.id, c.name, c.trade_name, c.tax_id, "
+                    "MAX(CASE WHEN r.expires_at > ? THEN 1 ELSE 0 END) AS has_active "
+                    "FROM pro_clients c JOIN pro_conversion_contexts x "
+                    "ON x.organization_id = c.organization_id AND x.client_id = c.id "
+                    "JOIN pro_received_statements r ON r.organization_id = x.organization_id AND r.job_id = x.job_id "
+                    "WHERE c.organization_id = ? GROUP BY c.id, c.name, c.trade_name, c.tax_id",
+                    (now, organization))
             identities = [row for row in identities if _matches_client(row, query)]
-            client_count = len(identities)
+            all_client_count = len(identities)
+            active_client_count = sum(bool(row["has_active"]) for row in identities)
+            client_count = active_client_count if active_only else all_client_count
             if sort == "name" or query.strip():
                 identities = sorted(identities, key=_client_name_order if sort == "name" else lambda row: row["id"])
+                # Locate the cursor in history even if its last document just expired.
                 start = next((index + 1 for index, row in enumerate(identities) if row["id"] == after), len(identities)) if after else 0
-                client_params = [row["id"] for row in identities[start:start + limit + 1]]
-                client_filter = f"c.id IN ({', '.join('?' for _ in client_params)})" if client_params else "1 = 0"
+                identities = identities[start:]
+            else:
+                identities = sorted((row for row in identities if row["id"] > after), key=lambda row: row["id"])
+            if active_only:
+                identities = [row for row in identities if row["has_active"]]
+            client_params = [row["id"] for row in identities[:limit + 1]]
+            client_filter = f"c.id IN ({', '.join('?' for _ in client_params)})" if client_params else "1 = 0"
             rows = self.db.fetchall(conn, "SELECT c.id, c.name, c.tax_id, c.trade_name, c.updated_at, COUNT(*) AS historical_count, "
                 "SUM(CASE WHEN r.expires_at > ? THEN 1 ELSE 0 END) AS available_count, "
-                "SUM(CASE WHEN r.technical_status = 'attention' THEN 1 ELSE 0 END) AS attention_count, "
-                "SUM(CASE WHEN r.technical_status = 'processing' THEN 1 ELSE 0 END) AS processing_count "
+                "SUM(CASE WHEN r.expires_at > ? AND r.technical_status = 'attention' THEN 1 ELSE 0 END) AS attention_count, "
+                "SUM(CASE WHEN r.expires_at > ? AND r.technical_status = 'processing' THEN 1 ELSE 0 END) AS processing_count "
                 "FROM pro_received_statements r JOIN pro_conversion_contexts x "
                 "ON x.organization_id = r.organization_id AND x.job_id = r.job_id "
                 "JOIN pro_clients c ON c.organization_id = x.organization_id AND c.id = x.client_id "
                 f"WHERE r.organization_id = ? AND {client_filter} "
                 "GROUP BY c.id, c.name, c.tax_id, c.trade_name, c.updated_at ORDER BY c.id LIMIT ?",
-                (now, organization, *client_params, limit + 1))
+                (now, now, now, organization, *client_params, limit + 1))
             if sort == "name":
                 rows = sorted(rows, key=_client_name_order)
             clients = []
@@ -340,7 +351,10 @@ class ReceivedStatements(OrganizationService):
                 "LEFT JOIN pro_conversion_contexts x ON x.organization_id = r.organization_id AND x.job_id = r.job_id "
                 "WHERE r.organization_id = ? AND x.client_id IS NULL AND r.expires_at > ? AND r.job_id > ? ORDER BY r.job_id LIMIT 51",
                 (organization, now, pending_after))
-            return {"totals": dict(totals), "clients": clients, "client_count": client_count, "pending_count": pending_count,
+            return {"totals": {key: totals[key] for key in ("statements", "ready", "attention")},
+                    "clients": clients, "client_count": client_count, "pending_count": pending_count,
+                    "all_client_count": all_client_count, "active_client_count": active_client_count,
+                    "next_expiration_at": totals["next_expiration_at"], "server_time": now,
                     "pending": [{"job_id": row["job_id"], "batch_id": row["batch_id"], "filename": row["filename"],
                                  "version": row["version"], "source": json.loads(row["source_json"])} for row in pending[:50]],
                     "pending_next_cursor": pending[49]["job_id"] if len(pending) > 50 else None,

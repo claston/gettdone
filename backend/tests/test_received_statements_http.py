@@ -187,6 +187,11 @@ def test_receipts_real_http_multi_batch_workspace_export_permissions_and_expiry(
             batches.repository._jobs.pop(jobs[0][1])
             batches.repository._batch_jobs[jobs[0][0]].remove(jobs[0][1])
             refreshed_page = client.get("/api/pro/receipts").json()
+            live_page = client.get("/api/pro/receipts", params={"active_only": "true"}).json()
+            assert live_page["active_client_count"] == live_page["all_client_count"] == 2
+            assert live_page["next_expiration_at"] and live_page["server_time"]
+            live_search = client.post("/api/pro/receipts/search", json={"query": "Padaria", "active_only": True})
+            assert live_search.status_code == 200 and live_search.json()["client_count"] == 1
             assert refreshed_page["totals"] == {"statements": 2, "ready": 2, "attention": 0}
             person = next(c for c in refreshed_page["clients"] if c["id"] == person["id"])
             assert (person["historical_count"], person["available_count"], person["expired_count"]) == (2, 1, 1)
@@ -199,6 +204,11 @@ def test_receipts_real_http_multi_batch_workspace_export_permissions_and_expiry(
             assert all_expired["totals"] == {"statements": 0, "ready": 0, "attention": 0}
             assert sum(item["historical_count"] for item in all_expired["clients"]) == 3
             assert sum(item["expired_count"] for item in all_expired["clients"]) == 3
+            empty_active = client.get("/api/pro/receipts", params={"active_only": "true"}).json()
+            assert empty_active["clients"] == [] and empty_active["all_client_count"] == 2
+            assert empty_active["active_client_count"] == 0 and empty_active["next_expiration_at"] is None
+            empty_search = client.post("/api/pro/receipts/search", json={"query": "Padaria", "active_only": True}).json()
+            assert empty_search["clients"] == [] and empty_search["all_client_count"] == 1
             monkeypatch.setenv("PRO_ORGANIZATION_ENABLED", "false")
             assert client.get("/api/pro/receipts").status_code == 503
             assert client.get("/api/pro/conversions").status_code == 200

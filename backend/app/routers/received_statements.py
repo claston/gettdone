@@ -54,8 +54,8 @@ class ClientEdit(BaseModel):
 @router.get("")
 def dashboard(owner: str = Depends(organization_owner), service=Depends(receipt_service),
               cursor: str = Query("", max_length=100), pending_cursor: str = Query("", max_length=100),
-              sort: Literal["id", "name"] = Query("id")):
-    return service.dashboard(owner, after=cursor, pending_after=pending_cursor, sort=sort)
+              sort: Literal["id", "name"] = Query("id"), active_only: bool = False):
+    return service.dashboard(owner, after=cursor, pending_after=pending_cursor, sort=sort, active_only=active_only)
 
 
 @router.post("/refresh", dependencies=[Depends(require_pro_browser_request)])
@@ -71,12 +71,14 @@ class ClientSearch(BaseModel):
     cursor: str = Field(default="", max_length=100)
     pending_cursor: str = Field(default="", max_length=100)
     sort: Literal["id", "name"] = "name"
+    active_only: bool = False
 
 
 @router.post("/search", dependencies=[Depends(require_pro_browser_request)])
 def search_clients(request: ClientSearch, owner: str = Depends(organization_owner), service=Depends(receipt_service)):
     # Search terms stay out of URLs/access logs and are never sent to analytics.
-    return service.dashboard(owner, after=request.cursor, pending_after=request.pending_cursor, sort=request.sort, query=request.query)
+    return service.dashboard(owner, after=request.cursor, pending_after=request.pending_cursor, sort=request.sort,
+                             query=request.query, active_only=request.active_only)
 
 
 def live_record(service, owner, document):

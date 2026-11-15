@@ -41,6 +41,10 @@ export interface ReceivedPage {
   next_cursor: string | null;
   pending_next_cursor?: string | null;
   client_count?: number;
+  all_client_count?: number;
+  active_client_count?: number;
+  server_time?: string;
+  next_expiration_at?: string | null;
   pending_count?: number;
 }
 export interface ClientEdit {
@@ -60,6 +64,7 @@ export interface ReceivedService {
     signal?: AbortSignal,
     pendingCursor?: string,
     query?: string,
+    activeOnly?: boolean,
   ): Promise<ReceivedPage>;
   refresh(signal?: AbortSignal): Promise<void>;
   edit(id: string, value: ClientEdit): Promise<unknown>;
@@ -107,7 +112,7 @@ async function read(path: string, init?: RequestInit) {
   return response.json();
 }
 export const receivedService: ReceivedService = {
-  list: (cursor, signal, pendingCursor, search = "") => {
+  list: (cursor, signal, pendingCursor, search = "", activeOnly = false) => {
     if (search.trim())
       return read("/search", {
         method: "POST",
@@ -117,12 +122,14 @@ export const receivedService: ReceivedService = {
           cursor: cursor ?? "",
           pending_cursor: pendingCursor ?? "",
           sort: "name",
+          ...(activeOnly ? { active_only: true } : {}),
         }),
         signal,
         cache: "no-store",
       });
     const query = new URLSearchParams();
     query.set("sort", "name");
+    if (activeOnly) query.set("active_only", "true");
     if (cursor) query.set("cursor", cursor);
     if (pendingCursor) query.set("pending_cursor", pendingCursor);
     return read(query.size ? `?${query}` : "", {

@@ -258,7 +258,7 @@ export function financialDemoRepository(scenario: FinancialScenario) {
   return repository;
 }
 export const financialDemoClients: ReceivedService = {
-  async list(_cursor, _signal, _pendingCursor, query = "") {
+  async list(_cursor, _signal, _pendingCursor, query = "", activeOnly = false) {
     const clients = financialScenarios
       .filter((item) =>
         item.client.name
@@ -289,7 +289,13 @@ export const financialDemoClients: ReceivedService = {
         })),
       }));
     return {
-      clients,
+      clients: activeOnly
+        ? clients.filter((client) => client.available_count > 0)
+        : clients,
+      all_client_count: clients.length,
+      active_client_count: clients.filter(
+        (client) => client.available_count > 0,
+      ).length,
       pending: [],
       next_cursor: null,
       totals: {
