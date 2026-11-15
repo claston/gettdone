@@ -9,13 +9,13 @@ from app.application.organization_suggestions import build_source_evidence
 
 TAX = r"(?:\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}|\d{3}\.?\d{3}\.?\d{3}-?\d{2})(?!\d|[./-]\d)"
 FORMATTED_TAX = r"(?:\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2})"
-IDENTITY_VERSION = 6
+IDENTITY_VERSION = 7
 MASKED_TAX = r"(?=[\d.*•/-]*[*•])[\d.*•/-]{11,22}"
 IDENTIFIER = r"\d[\d.]*(?:-[\dXx]+)?(?=$|[\s/|A-Za-zÀ-ÿ])"
-ORIGIN_LABEL = r"(?:COOPERATIVA|COOP\.|AG[EÊ]NCIA|AG\.?|CONTA(?:\s+(?:CORRENTE|INVESTIMENTO))?|C/C|CC|BANCO)"
+ORIGIN_LABEL = r"(?:COOPERATIVA|COOP\.?|AG[EÊ]NCIA|(?<![A-ZÀ-Ÿ])AG\.?|CONTA(?:\s+(?:CORRENTE|INVESTIMENTO))?|C/C|CC|BANCO)"
 TAX_LABEL = r"(?:CPF\s*/\s*CNPJ|CNPJ\s*/\s*CPF|CNPJ|CPF)"
 NAME_LABEL = r"(?:TITULAR|NOME DO TITULAR|RAZAO SOCIAL|ASSOCIADO|EMPRESA/CNPJ|CLIENTE|CONTRATANTE|NOME)"
-HEADER_FIELDS = re.compile(r"(?=(?<!/)(?:" + ORIGIN_LABEL + r"|PER[IÍ]ODO|" + TAX_LABEL + r")\s*(?::|(?=\d)))", re.I)
+HEADER_FIELDS = re.compile(r"(?=(?<!/)(?:" + ORIGIN_LABEL + r"|PER[IÍ]ODO|" + TAX_LABEL + r"|" + NAME_LABEL + r")\s*(?::|(?=\d)))", re.I)
 
 
 def normalized(value):
@@ -41,6 +41,11 @@ def account_signature(source):
 def _ordered_identity_columns(raw):
     """Recover the owner tax/agency/account columns in either native reading order."""
     plain = _plain(raw.strip())
+    reversed_account = re.fullmatch(
+        r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s*IMPRESSO EM\s*(" + IDENTIFIER
+        + r")\s+CONTA CORRENTE:\s*(\d{3,5})\s*COOPERATIVA:", plain)
+    if reversed_account:
+        return f"Cooperativa: {reversed_account[3]} Conta Corrente: {reversed_account[2]} Impresso em {reversed_account[1]}"
     combined_account = re.match(r"AGENCIA\s*/\s*CONTA\s*:?\s*(\d[\d.]*-?\d)\s*/\s*(\d[\d.]*-?\d)(?=$|\s+SALDO\b)", plain)
     if combined_account:
         return f"Conta: {combined_account[2]} Agência: {combined_account[1]}" + plain[combined_account.end():]
@@ -59,9 +64,53 @@ def _ordered_identity_columns(raw):
     return raw
 
 
+def _identity_column_lines(lines):
+    """Recover explicitly labelled columns without guessing unlabeled numbers or moving line references."""
+    lines = list(lines)
+    labels = {
+        "NOME": "Nome", "CLIENTE": "Cliente", "DOCUMENTO": "CNPJ/CPF", "CNPJ": "CNPJ", "CPF": "CPF",
+        "AGENCIA": "Agência", "AGENCIA (PREFIXO/DV)": "Agência", "CONTA": "Conta", "CONTA NO/DV": "Conta",
+        "INSTITUICAO": "", "CLIENTE CORRENTE": "", "GS": "", "POSICAO": "", "DATA DE EMISSAO": "",
+        "DATA DA ABERTURA": "",
+    }
+    months = r"(?:JANEIRO|FEVEREIRO|MARCO|ABRIL|MAIO|JUNHO|JULHO|AGOSTO|SETEMBRO|OUTUBRO|NOVEMBRO|DEZEMBRO)"
+    for index, raw in enumerate(lines):
+        # Normalize spaces around punctuation only in a complete formatted tax ID.
+        raw = re.sub(r"(?<![\d.])\d{2}\s*\.\s*\d{3}\s*\.\s*\d{3}\s*/\s*\d{4}\s*-\s*\d{2}(?!\d)",
+                     lambda m: re.sub(r"\s+", "", m[0]), raw)
+        lines[index] = raw
+        cells = re.split(r"\s{2,}", raw.strip())
+        keys = [_plain(cell).rstrip(":") for cell in cells]
+        if len(keys) < 2 or any(key not in labels for key in keys):
+            continue
+        next_index = next((j for j in range(index + 1, min(index + 4, len(lines))) if lines[j].strip()), None)
+        if next_index is None:
+            continue
+        values = re.split(r"\s{2,}", lines[next_index].strip())
+        if len(values) < len(keys):
+            continue
+        fields = []
+        for key, value in zip(keys, values):
+            label = labels[key]
+            if label in {"Nome", "Cliente"}:
+                value = re.split(months + r"/\d{4}(?:\s|$)", value, maxsplit=1, flags=re.I)[0].strip()
+            if label:
+                fields.append(f"{label}: {value}")
+        lines[index] = ""
+        lines[next_index] = " ".join(fields)
+    for index in range(len(lines) - 1):
+        # The document label may end the name column while its value wraps below.
+        wrapped = re.match(r"^(.+?)\s+(CNPJ|CPF)\s*(?=(?:AG[EÊ]NCIA|CONTA|$))", lines[index].strip(), re.I)
+        if wrapped and _unlabelled_holder(wrapped[1]) and re.fullmatch(TAX, lines[index + 1].strip()):
+            tail = lines[index].strip()[wrapped.end():]
+            lines[index] = f"Titular: {wrapped[1]} {wrapped[2]}: {lines[index + 1].strip()} {tail}"
+            lines[index + 1] = f"{wrapped[2]}: {lines[index + 1].strip()}"
+    return lines
+
+
 def _header_blocks(text):
     block, active = [], True
-    lines = str(text).splitlines()
+    lines = _identity_column_lines(str(text).splitlines())
     for index in range(len(lines) - 1):
         for prefix_pattern, tail_pattern in ((r"\d{2}\.\d{3}\.\d{3}/\d{4}-", r"\d{2}"),
                                              (r"\d{2}\.\d{3}\.\d{3}", r"/\d{4}-\d{2}")):
@@ -80,15 +129,19 @@ def _header_blocks(text):
         raw = re.sub(r"(" + TAX_LABEL + r"\s*:\s*" + TAX + r")\s+(\d+)\s+(\d[\d.-]*)"
                      r"\s*Ag[eê]ncia:\s*Conta:", r"\1 Agência: \2 Conta: \3", raw, flags=re.I)
         raw = _ordered_identity_columns(raw)
+        titled_name = re.fullmatch(r"(.+?)\s*-\s*EXTRATO DE CONTA CORRENTE\s*(.*)", raw.strip(), re.I)
+        if titled_name and _unlabelled_holder(titled_name[1]):
+            raw = f"Titular: {titled_name[1]} {titled_name[2]}"
         unseparated_customer = re.fullmatch(r"Cliente\s*([A-ZÀ-Ý].+)", raw.strip())
-        if unseparated_customer and active and any("EXTRATO" in _plain(value) for _, value in block):
+        if (unseparated_customer and _plain(raw.strip()) != "CLIENTE CORRENTE"
+                and active and any("EXTRATO" in _plain(value) for _, value in block)):
             raw = "Cliente: " + unseparated_customer[1]
         if index > 1 and any("RELATORIO DE MOVIMENTACOES" in _plain(value) for value in lines[max(0, index - 3):index - 1]):
             report_account = re.fullmatch(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ .&]*\s+[-–]\s+(\d{3,6})\s+[-–]\s+(\d[\d.]*-\d)", raw.strip())
             if report_account:
                 raw = f"Agência: {report_account[1]} Conta: {report_account[2]}"
         plain = _plain(raw.strip())
-        if re.match(r"^EXTRATO(?:\s+(?:CONSOLIDADO\s+)?(?:DE\s+)?CONTA|\s+BANCARIO)\b", plain):
+        if re.match(r"^EXTRATO(?:\s+(?:CONSOLIDADO\s+)?(?:DE\s+)?CONTA|\s+BANCARIO|\s+MENSAL(?:\s*/\s*POR PERIODO)?$)\b", plain):
             if block:
                 yield block
             block, active = [], True
@@ -102,7 +155,11 @@ def _header_blocks(text):
                                                 for _, line in block[-8:]):
             header_date = True
         dated_movement = re.match(r"^\d{1,2}[/.-]\d{1,2}\b", plain) and not header_date
-        if (dated_movement
+        fund_section = (re.search(r"\b(?:FUNDO|FIC|FIF|RF|RENDA FIXA)\b.*\bCNPJ\s*:", plain)
+                        and any(re.search(r"EXTRATOS?.*INVESTIMENTOS?|MES/ANO REFERENCIA", _plain(value)) for _, value in block)
+                        and any(re.match(r"^CONTA(?:\s+CORRENTE)?\s*:?\s*" + IDENTIFIER, _plain(value)) for _, value in block)
+                        and not re.match(r"^" + NAME_LABEL + r"\s*:", plain))
+        if (dated_movement or fund_section
                 or "VALORES EM R$" in plain
                 or plain.startswith(("HISTORICO DE MOVIMENTACAO", "MOVIMENTACOES", "LANCAMENTOS"))
                 or plain.startswith(("FALE COM NOSSA CENTRAL", "OUVIDORIA:", "SAC:", "©", "COPYRIGHT"))
@@ -129,7 +186,7 @@ def _joined_header_fields(block):
         line_number, line = block[index]
         if (re.fullmatch(labels + r"\s*:?\s*", _plain(line)) and index + 1 < len(block)
                 and not re.match(r"^[^:]+:", block[index + 1][1])
-                and not re.fullmatch(labels, _plain(block[index + 1][1]))):
+                and not re.match(r"^(?:" + labels + r")(?:\s|$)", _plain(block[index + 1][1]))):
             line = line.rstrip(":") + ": " + block[index + 1][1]
             index += 1
         result.append((line_number, line))
@@ -145,6 +202,8 @@ def _holder_candidate(value):
     value = re.sub(r"^Per[ií]odo\s+de\s+\d{1,2}/\d{1,2}/\d{4}\s+a\s+\d{1,2}/\d{1,2}/\d{4}\s+[–-]\s+", "", value, flags=re.I)
     plain = _plain(value)
     if (not 3 <= len(value) <= 160 or not re.search(r"[A-Z]", plain) or ":" in value
+            or plain in {"CLIENTE", "CLIENTE CORRENTE", "CORRENTE", "CONSULTAS"}
+            or re.match(r"^(?:SOLICITADO POR|NOME DO USUARIO|OPERADOR)\b", plain)
             or re.match(r"^(?:CEP\s*:?\s*)?\d{5}-\d{3}(?:\s|$)", plain)
             or re.match(r"^\d{3}\s*[-–]\s+", plain)
             or re.match(r"^(?:CONTA|AGENCIA)(?=\d)", plain)
@@ -180,10 +239,21 @@ def _adjacent_holders(block, *, statement_title=False, issue_codes=None):
                 yield name, normalized(pair[2]), (line_number, ref)
     initial_owner = (statement_title and len(block) > 1 and _unlabelled_holder(block[0][1])
                      and re.match(r"^" + TAX_LABEL + r"\s*:\s*" + TAX + r"$", _plain(block[1][1])))
-    if not origin and not initial_owner:
+    monthly_title = any(re.fullmatch(r"EXTRATO MENSAL(?:\s*/\s*POR PERIODO)?", _plain(value)) for _, value in block)
+    for position, (line_number, line) in enumerate(block):
+        # A printed name directly below a statement title and above an account-shaped value.
+        # Recover the name only: an unlabeled number is not enough to assign an account role.
+        if (position and position + 1 < len(block) and "EXTRATO DE CONTA CORRENTE" in _plain(block[position - 1][1])
+                and re.fullmatch(r"\d{3,12}-[\dX]", block[position + 1][1])
+                and (name := _unlabelled_holder(line))):
+            yield name, "", (line_number,)
+        masked_pair = re.fullmatch(r"(.+?)\s+-\s+([\d.*•/-]*[*•][\d.*•/-]*)", line)
+        if origin and masked_pair and (name := _unlabelled_holder(masked_pair[1])):
+            yield name, "", (line_number,)
+    if not origin and not initial_owner and not monthly_title:
         return
     for position, (line_number, line) in enumerate(block):
-        if not origin and position != 1:
+        if not origin and not monthly_title and position != 1:
             continue
         plain = _plain(line)
         pair = re.fullmatch(r"(.+?)\s+[•|]\s*(" + FORMATTED_TAX + ")", line)
@@ -208,6 +278,29 @@ def _adjacent_holders(block, *, statement_title=False, issue_codes=None):
         if tax:
             # Tax labels belonging to a bank/issuer do not establish holder identity.
             candidates = [((line_number,), line[tax.end():])]
+            # OCR can interleave a logo and agency column. Cross only those fields,
+            # and only when the tax is physically beside an explicit origin account.
+            nearby_account = any(abs(ref - line_number) <= 1 and re.match(
+                r"^(?:CONTA(?:\s+(?:CORRENTE|INVESTIMENTO))?|C/C|CC)\s*:?\s*" + IDENTIFIER, _plain(value)
+            ) for ref, value in block)
+            if nearby_account:
+                crossed_logo = False
+                crossed_agency = False
+                same_line_account = any(ref == line_number and re.match(
+                    r"^CONTA(?:\s+(?:CORRENTE|INVESTIMENTO))?\s*:?\s*" + IDENTIFIER, _plain(value)
+                ) for ref, value in block)
+                for ref, value in reversed(block[max(0, position - 3):position]):
+                    if line_number - ref > 3:
+                        break
+                    if resolve_bank_code_from_name(value.strip()) or _plain(value) == "NU":
+                        crossed_logo = True
+                        continue
+                    if re.fullmatch(r"(?:AGENCIA|AG\.?)\s*:?\s*" + IDENTIFIER, _plain(value)):
+                        crossed_agency = True
+                        continue
+                    if crossed_logo and (same_line_account or crossed_agency) and _unlabelled_holder(value):
+                        candidates.append(((ref,), value))
+                    break
             if position and line_number - block[position - 1][0] <= 1:
                 previous_number, previous = block[position - 1]
                 previous_refs = (previous_number,)
@@ -291,6 +384,8 @@ def identify_statement(analysis, *, page_texts=(), representation="native"):
                 tax = re.match(r"^(?:CPF\s*/\s*CNPJ|CNPJ\s*/\s*CPF|CPF|CNPJ)\s+(?:DO\s+)?TITULAR\s*[:\-]?\s*(" + TAX + r")\b", plain)
                 if not tax and name:
                     tax = re.search(r"\b(" + TAX + r")\b", plain)
+                    if not tax and position and block[position - 1][0] == line_number:
+                        tax = re.fullmatch(TAX_LABEL + r"\s*:\s*(" + TAX + r")", _plain(block[position - 1][1]))
                     if not tax and position + 1 < len(block):
                         tax = re.match(r"^\s*(?:CPF\s*/\s*CNPJ|CNPJ|CPF)\s*:\s*(" + TAX + r")\b", _plain(block[position + 1][1]))
                 if tax:

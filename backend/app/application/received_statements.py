@@ -252,10 +252,15 @@ class ReceivedStatements(OrganizationService):
 
             document = self.document_store.load(record.job.document)
             pages = [page.extract_text() or "" for page in PdfReader(BytesIO(document.raw_bytes)).pages]
+            # Previous recognizer output is not independent document metadata: seeding
+            # it would retain rejected fund IDs and create false name conflicts on upgrade.
             source = identify_native_statement({"bank_code": original.get("bank_code"), "bank_branch": original.get("branch"),
-                "account_number": original.get("account_number"), "financial_document": {"metadata": {
-                    "owner_name": original.get("holder_name"), "owner_tax_id": original.get("holder_tax_id")}}},
+                "account_number": original.get("account_number")},
                 raw_bytes=document.raw_bytes, page_texts=pages)
+            if source["confidence"] == "missing":
+                # A scanned PDF may have no native identity evidence. Keep its saved
+                # OCR result and review state; never upgrade its confidence by seeding it.
+                source = {**original, "version": IDENTITY_VERSION}
             return {**source, "native_identity_checked": True} if record.expires_at > datetime.now(timezone.utc) else None
         except Exception as exc:
             logger.warning("pro_receipt_identity_recovery_failed", extra={"job_id": record.job.job_id, "error_class": type(exc).__name__})
