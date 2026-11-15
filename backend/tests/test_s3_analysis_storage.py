@@ -34,6 +34,19 @@ class FakeS3Client:
         }
 
 
+@pytest.mark.parametrize("file_format", ["ofx", "csv", "xlsx"])
+def test_report_download_without_overrides_does_not_republish_legacy_metadata(tmp_path, monkeypatch, file_format):
+    from app.application.report_service import ReportService
+
+    client = FakeS3Client()
+    storage = S3AnalysisStorage(root_dir=tmp_path, bucket="private", s3_client=client)
+    storage.save_analysis(_analysis())
+    def forbidden(**kwargs):
+        pytest.fail("Read-only downloads must not overwrite a concurrent canonical fence")
+    monkeypatch.setattr(client, "put_object", forbidden)
+    assert ReportService(storage).get_convert_report_path("an_shared123", file_format).exists()
+
+
 def _analysis() -> AnalysisData:
     rows = [
         TransactionRow(

@@ -151,6 +151,19 @@ def get_canonical_pro_service():
                                canonical_objects(storage))
 
 
+def get_canonical_receipt_recovery():
+    # Enable only after all API processes have the legacy publication guard.
+    if not read_bool_env("CANONICAL_PRO_RECOVERY_ENABLED", default=False):
+        return None
+    from app.application.canonical_receipt_recovery import CanonicalReceiptRecovery
+
+    service = get_canonical_pro_service()
+    if service is None:
+        return None
+    storage = (get_async_conversion_report_service() or get_report_service()).storage
+    return CanonicalReceiptRecovery(service.repository, storage)
+
+
 def get_analysis_repository() -> AnalysisRepository:
     return _storage
 

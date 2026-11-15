@@ -45,6 +45,43 @@ const page = {
 };
 
 describe("Clientes", () => {
+  it("mantém a lista acessível e informa integrações parciais sem tratá-las como erro global", async () => {
+    const service = {
+      list: vi.fn().mockResolvedValue(page),
+      refresh: vi
+        .fn()
+        .mockResolvedValue({ unavailable: 1, review_required: 1, pending: 1 }),
+      edit: vi.fn(),
+      confirm: vi.fn(),
+    };
+    render(<ReceivedStatementsPage service={service} />);
+    expect(
+      await screen.findByText(
+        /Alguns extratos ainda não estão na Central Financeira/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/origem indisponível ou expirada/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/precisam de conferência/)).toBeInTheDocument();
+    expect(screen.getByText(/integração pendente/)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("Padaria São José")).toBeInTheDocument();
+    expect(service.list).toHaveBeenCalledTimes(2);
+    service.refresh.mockResolvedValue({
+      unavailable: 0,
+      review_required: 0,
+      pending: 0,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Atualizar extratos" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByText(
+          /Alguns extratos ainda não estão na Central Financeira/,
+        ),
+      ).toBeNull(),
+    );
+  });
   it("abre o PDF somente ao conferir a pendência e preserva a confirmação inline", async () => {
     const service = {
       list: vi.fn().mockResolvedValue({

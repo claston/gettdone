@@ -26,6 +26,7 @@ from app.application.conversion.contracts.preflight import DocumentPreflightResu
 from app.application.conversion.conversion_batch import ConversionBatch, ConversionBatchStatus, resolve_conversion_batch_status
 from app.application.conversion.conversion_job import ConversionJob
 from app.application.conversion.identity import IdentityContext
+from app.application.errors import AnalysisEditConflictError
 
 _SCHEMA_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 ConnectionFactory = Callable[[], Any]
@@ -371,6 +372,8 @@ class PostgresConversionBatchRepository:
             if current.status != ConversionJobStatus.COMPLETED or current.result is None:
                 raise ValueError("Only completed conversion jobs can be reviewed.")
             payload = dict(current.result.payload or {})
+            if payload.get("authority") == "postgres_v1":
+                raise AnalysisEditConflictError
             payload["reviewed_at"] = normalized_reviewed_at
             with conn.cursor() as cursor:
                 cursor.execute(

@@ -35,7 +35,7 @@ from app.routers.auth_session import (
     resolve_anonymous_fingerprint_with_cookie,
     resolve_user_token_with_session,
 )
-from app.routers.canonical_pro import canonical_bytes, resolve_canonical
+from app.routers.canonical_pro import canonical_bytes, legacy_analysis_guard, resolve_canonical
 from app.routers.pro_security import require_pro_browser_request
 from app.schemas import ConversionFeedbackRequest, ConvertEditsRequest, ConvertEditsResponse
 
@@ -262,35 +262,36 @@ def get_convert_report(
             anonymous_fingerprint=resolved_anonymous_fingerprint,
             user_token=resolved_user_token or None,
         )
-        active_service = _select_convert_report_service(
-            analysis_id=processing_id,
-            legacy_service=service,
-            async_service=async_service,
-            runtime=runtime,
-            rollout_policy=rollout_policy,
-            identity=identity,
-            access_control_service=access_control_service,
-        )
-        if hasattr(active_service, "canonical"):
-            if any(value is not None for value in (closing_balance, bank_branch, account_number, bank_code)):
-                raise HTTPException(409, "Salve os ajustes antes de exportar a análise canônica.")
-            data, version = canonical_bytes(active_service.canonical, active_service.scope,
-                                            f"converted.{file_format}", expected_version=expected_version)
-            filename = _build_convert_download_filename(processing_id, active_service.get_upload_filename(processing_id), file_format)
-            from urllib.parse import quote
-            return Response(data, media_type={"ofx": "application/x-ofx", "csv": "text/csv; charset=utf-8",
-                            "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}[file_format],
-                            headers={"Cache-Control": "private, no-store", "X-Analysis-Version": str(version),
-                                     "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
-        report_path = active_service.get_convert_report_path(
-            processing_id,
-            file_format=file_format,
-            closing_balance=closing_balance if file_format == "ofx" else None,
-            bank_branch=bank_branch if file_format == "ofx" else None,
-            account_number=account_number if file_format == "ofx" else None,
-            bank_code=bank_code if file_format == "ofx" else None,
-        )
-        upload_filename = active_service.get_upload_filename(processing_id)
+        with legacy_analysis_guard(identity, processing_id):
+            active_service = _select_convert_report_service(
+                analysis_id=processing_id,
+                legacy_service=service,
+                async_service=async_service,
+                runtime=runtime,
+                rollout_policy=rollout_policy,
+                identity=identity,
+                access_control_service=access_control_service,
+            )
+            if hasattr(active_service, "canonical"):
+                if any(value is not None for value in (closing_balance, bank_branch, account_number, bank_code)):
+                    raise HTTPException(409, "Salve os ajustes antes de exportar a análise canônica.")
+                data, version = canonical_bytes(active_service.canonical, active_service.scope,
+                                                f"converted.{file_format}", expected_version=expected_version)
+                filename = _build_convert_download_filename(processing_id, active_service.get_upload_filename(processing_id), file_format)
+                from urllib.parse import quote
+                return Response(data, media_type={"ofx": "application/x-ofx", "csv": "text/csv; charset=utf-8",
+                                "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}[file_format],
+                                headers={"Cache-Control": "private, no-store", "X-Analysis-Version": str(version),
+                                         "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
+            report_path = active_service.get_convert_report_path(
+                processing_id,
+                file_format=file_format,
+                closing_balance=closing_balance if file_format == "ofx" else None,
+                bank_branch=bank_branch if file_format == "ofx" else None,
+                account_number=account_number if file_format == "ofx" else None,
+                bank_code=bank_code if file_format == "ofx" else None,
+            )
+            upload_filename = active_service.get_upload_filename(processing_id)
     except AnalysisEditConflictError:
         raise HTTPException(409, "A análise aguarda a conclusão da revisão canônica.") from None
     except InvalidFileContentError as exc:
@@ -385,50 +386,51 @@ def apply_convert_edits(
             record = next((item for item in snapshot.jobs if item.job.job_id == payload.job_id), None) if snapshot else None
             if record is None or record.result is None or record.result.analysis_id != processing_id:
                 raise HTTPException(status_code=404, detail="Conversion job not found.")
-        active_service = _select_convert_report_service(
-            analysis_id=processing_id,
-            legacy_service=service,
-            async_service=async_service,
-            runtime=runtime,
-            rollout_policy=rollout_policy,
-            identity=identity,
-            access_control_service=access_control_service,
-        )
-        if confirming:
-            result = active_service.get_convert_edit_operation(processing_id, operation_id)
-            if result is None:
-                raise HTTPException(status_code=404, detail="Edit operation not found.")
+        with legacy_analysis_guard(identity, processing_id):
+            active_service = _select_convert_report_service(
+                analysis_id=processing_id,
+                legacy_service=service,
+                async_service=async_service,
+                runtime=runtime,
+                rollout_policy=rollout_policy,
+                identity=identity,
+                access_control_service=access_control_service,
+            )
+            if confirming:
+                result = active_service.get_convert_edit_operation(processing_id, operation_id)
+                if result is None:
+                    raise HTTPException(status_code=404, detail="Edit operation not found.")
+                return _edit_response(result)
+            operation_options = {"operation_id": payload.operation_id} if payload.operation_id else {}
+            if hasattr(active_service, "canonical"):
+                operation_options.update(expected_version=payload.expected_version,
+                                         expected_movement_versions=payload.expected_movement_versions)
+            elif payload.expected_version is not None or any(item.movement_id for item in payload.edits):
+                raise AnalysisEditConflictError
+            result = active_service.apply_convert_edits(
+                analysis_id=processing_id,
+                edits=[{
+                    **item.model_dump(exclude_none=True),
+                    **({"document_number": item.document_number} if "document_number" in item.model_fields_set else {}),
+                } for item in payload.edits],
+                expected_updated_at=payload.expected_updated_at,
+                opening_balance=payload.opening_balance,
+                closing_balance=payload.closing_balance,
+                bank_branch=payload.bank_branch,
+                account_number=payload.account_number,
+                bank_code=payload.bank_code,
+                **operation_options,
+            )
+            if payload.job_id and batch_service and result.get("authority") != "postgres_v1":
+                try:
+                    batch_service.repository.update_analysis(payload.job_id, analysis=ConvertEditsResponse(**result).model_dump())
+                except Exception:
+                    # Artifacts are already committed. Never report a failed save after success,
+                    # which would make a retry conflict with the newly persisted version.
+                    logger.exception("conversion_batch_analysis_sync_failed job_id=%s", payload.job_id)
+            logger.info("conversion_edit_saved processing_id=%s job_id=%s operation_id=%s version=%s",
+                        processing_id, payload.job_id, payload.operation_id, result.get("updated_at"))
             return _edit_response(result)
-        operation_options = {"operation_id": payload.operation_id} if payload.operation_id else {}
-        if hasattr(active_service, "canonical"):
-            operation_options.update(expected_version=payload.expected_version,
-                                     expected_movement_versions=payload.expected_movement_versions)
-        elif payload.expected_version is not None or any(item.movement_id for item in payload.edits):
-            raise AnalysisEditConflictError
-        result = active_service.apply_convert_edits(
-            analysis_id=processing_id,
-            edits=[{
-                **item.model_dump(exclude_none=True),
-                **({"document_number": item.document_number} if "document_number" in item.model_fields_set else {}),
-            } for item in payload.edits],
-            expected_updated_at=payload.expected_updated_at,
-            opening_balance=payload.opening_balance,
-            closing_balance=payload.closing_balance,
-            bank_branch=payload.bank_branch,
-            account_number=payload.account_number,
-            bank_code=payload.bank_code,
-            **operation_options,
-        )
-        if payload.job_id and batch_service and result.get("authority") != "postgres_v1":
-            try:
-                batch_service.repository.update_analysis(payload.job_id, analysis=ConvertEditsResponse(**result).model_dump())
-            except Exception:
-                # Artifacts are already committed. Never report a failed save after success,
-                # which would make a retry conflict with the newly persisted version.
-                logger.exception("conversion_batch_analysis_sync_failed job_id=%s", payload.job_id)
-        logger.info("conversion_edit_saved processing_id=%s job_id=%s operation_id=%s version=%s",
-                    processing_id, payload.job_id, payload.operation_id, result.get("updated_at"))
-        return _edit_response(result)
     except AnalysisNotFoundError:
         raise HTTPException(status_code=404, detail="Analysis not found")
     except AnalysisAccessDeniedError:

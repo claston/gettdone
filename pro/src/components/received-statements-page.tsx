@@ -9,6 +9,7 @@ import {
   type ReceivedPage,
   type ReceivedClient,
   type PendingStatement,
+  type RecoverySummary,
 } from "@/data/received-statements-service";
 import styles from "./received-statements.module.css";
 import { IdentityDocumentPreview } from "./identity-document-preview";
@@ -195,6 +196,8 @@ export function ReceivedStatementsPage({
   const [page, setPage] = useState<ReceivedPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | undefined>();
+  const [recoverySummary, setRecoverySummary] =
+    useState<RecoverySummary | null>(null);
   const [activeCursor, setActiveCursor] = useState<string | undefined>();
   const [pendingCursor, setPendingCursor] = useState<string | undefined>();
   const [attempt, setAttempt] = useState(0);
@@ -216,7 +219,7 @@ export function ReceivedStatementsPage({
   } | null>(null);
   const synchronization = useRef<{
     controller: AbortController;
-    promise: Promise<void>;
+    promise: Promise<RecoverySummary | void>;
   } | null>(null);
   useEffect(() => {
     return () => {
@@ -308,14 +311,16 @@ export function ReceivedStatementsPage({
           return;
         // Changing the list filter must not restart an ingestion already in flight.
         if (!synchronization.current) {
+          setRecoverySummary(null);
           const controller = new AbortController();
           synchronization.current = {
             controller,
             promise: service.refresh(controller.signal),
           };
         }
-        await synchronization.current.promise;
+        const recovered = await synchronization.current.promise;
         if (abort.signal.aborted) return;
+        setRecoverySummary(recovered ?? null);
         synchronized.current = { service, attempt };
         const updated = await service.list(
           selectedCursor,
@@ -418,6 +423,36 @@ export function ReceivedStatementsPage({
           </button>
         </div>
       )}
+      {recoverySummary &&
+        recoverySummary.unavailable +
+          recoverySummary.review_required +
+          recoverySummary.pending >
+          0 && (
+          <div role="status">
+            <p>
+              A lista foi atualizada. Alguns extratos ainda não estão na Central
+              Financeira.
+            </p>
+            {recoverySummary.unavailable > 0 && (
+              <p>
+                {recoverySummary.unavailable} extrato(s) com origem indisponível
+                ou expirada.
+              </p>
+            )}
+            {recoverySummary.review_required > 0 && (
+              <p>
+                {recoverySummary.review_required} extrato(s) precisam de
+                conferência antes da integração.
+              </p>
+            )}
+            {recoverySummary.pending > 0 && (
+              <p>
+                {recoverySummary.pending} extrato(s) continuam com integração
+                pendente. Atualize os extratos para tentar novamente.
+              </p>
+            )}
+          </div>
+        )}
       {!page ? (
         !error && (
           <div className={styles.loadingState}>

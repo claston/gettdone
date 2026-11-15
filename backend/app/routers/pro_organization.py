@@ -14,6 +14,7 @@ from app.application import AccessControlService, InvalidUserTokenError
 from app.application.conversion.conversion_batch_service import ConversionBatchService
 from app.application.organization_suggestions import build_source_evidence, suggest_organization
 from app.application.pro_organization import OrganizationConflict, OrganizationService
+from app.application.received_statements import ReceiptRecoveryPending
 from app.dependencies import get_access_control_service, get_conversion_batch_service
 from app.routers.auth_session import SESSION_ACCESS_COOKIE_NAME, resolve_user_token_with_session
 from app.routers.pro_security import require_pro_browser_request
@@ -105,6 +106,15 @@ class BulkContextRequest(BaseModel):
 def organization_errors():
     try:
         yield
+    except ReceiptRecoveryPending as exc:
+        if exc.status == "unavailable":
+            raise HTTPException(410, "A identificação está salva, mas a origem da análise está indisponível ou expirada. "
+                                "Os demais extratos podem ser atualizados normalmente.") from None
+        if exc.status == "review_required":
+            raise HTTPException(409, "A identificação está salva, mas este extrato precisa de conferência antes da integração "
+                                "com a Central Financeira. Os demais extratos podem ser atualizados normalmente.") from None
+        raise HTTPException(503, "A identificação está salva, mas a integração com a Central Financeira está pendente. "
+                            "Atualize a lista de extratos para tentar novamente.") from None
     except OrganizationConflict as exc:
         raise HTTPException(409, str(exc)) from exc
     except KeyError as exc:

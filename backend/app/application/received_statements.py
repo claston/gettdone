@@ -21,6 +21,14 @@ from app.application.statement_identity import (
 logger = logging.getLogger(__name__)
 
 
+class ReceiptRecoveryPending(RuntimeError):
+    """Identity is saved; the caller must surface this document's recovery status."""
+
+    def __init__(self, status="pending"):
+        super().__init__(status)
+        self.status = status
+
+
 def _utc(value):
     return datetime.fromisoformat(value).astimezone(timezone.utc) if isinstance(value, str) else value.astimezone(timezone.utc)
 
@@ -60,10 +68,21 @@ def technical_status(record):
 
 
 class ReceivedStatements(OrganizationService):
-    def __init__(self, db, repository=None, *, document_store=None):
+    def __init__(self, db, repository=None, *, document_store=None, recovery=None):
         super().__init__(db)
         self.repository = repository
         self.document_store = document_store
+        self.recovery = recovery
+
+    def _recover_movements(self, owner, job_id):
+        if self.recovery is not None:
+            try:
+                status = self.recovery.recover(owner, job_id)
+            except Exception as exc:
+                logger.warning("pro_receipt_recovery_pending", extra={"job_id": job_id, "error_class": type(exc).__name__})
+                raise ReceiptRecoveryPending from None
+            if status in {"unavailable", "review_required"}:
+                raise ReceiptRecoveryPending(status)
 
     def _lock(self, conn, owner):
         organization = self._organization(conn, owner, create=True)
@@ -267,8 +286,9 @@ class ReceivedStatements(OrganizationService):
             return None
 
     def sync(self, owner, cursor=None):
+        result = {"next_cursor": None, "recovery_issues": []}
         if self.repository is None:
-            return None
+            return result
         import base64
 
         from app.routers.pro_organization import decode_cursor
@@ -278,10 +298,16 @@ class ReceivedStatements(OrganizationService):
             record = self.repository.get(summary.job_id)
             if record and record.job.identity.identity_type == "user" and record.job.identity.identity_id == owner:
                 self.receive(record, recovered_source=self._recover_native_source(owner, record))
+                try:
+                    self._recover_movements(owner, record.job.job_id)
+                except ReceiptRecoveryPending as exc:
+                    # A source-specific failure must not strand this or later pages.
+                    result["recovery_issues"].append({"job_id": record.job.job_id, "status": exc.status})
         if len(summaries) == 100:
             last = summaries[-1]
-            return base64.urlsafe_b64encode(json.dumps([last.created_at.isoformat(), last.job_id]).encode()).decode().rstrip("=")
-        return None
+            boundary = json.dumps([last.created_at.isoformat(), last.job_id]).encode()
+            result["next_cursor"] = base64.urlsafe_b64encode(boundary).decode().rstrip("=")
+        return result
 
     def dashboard(self, owner, *, now=None, after="", limit=30, pending_after="", sort="id", query="", active_only=False):
         now = _utc(now or datetime.now(timezone.utc)).isoformat()
@@ -409,7 +435,8 @@ class ReceivedStatements(OrganizationService):
                                                      period_ids=periods, expected_version=expected_version)
             self._confirm_identity(conn, organization, client_id)
             conn.commit()
-            return result
+        self._recover_movements(owner, job_id)
+        return result
 
     def edit_client(self, owner, client_id, *, name, tax_id, expected_updated_at):
         name, tax = self._text(name), normalized(tax_id)
