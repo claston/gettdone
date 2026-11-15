@@ -64,7 +64,36 @@ def _ordered_identity_columns(raw):
     return raw
 
 
-def _identity_column_lines(lines):
+def _column_values(raw, value_line, keys, labels):
+    """Use printed column boundaries; whitespace token counts do not establish field roles."""
+    columns = list(re.finditer(r"\S(?:.*?\S)?(?=\s{2,}|$)", raw))
+    gaps = list(re.finditer(r"\s{2,}", value_line))
+    boundaries = [0]
+    for column in columns[1:]:
+        # Native text can shift a value one or two character positions from its label.
+        gap = next((gap for gap in gaps if gap.start() <= column.start() <= gap.end() + 2), None)
+        if gap is None:
+            break
+        boundary = min(column.start(), gap.end())
+        if boundary <= boundaries[-1]:
+            break
+        boundaries.append(boundary)
+    if len(boundaries) != len(keys):
+        return None
+    values = [value_line[start:end].strip() for start, end in zip(boundaries, [*boundaries[1:], len(value_line)])]
+    for key, value in zip(keys, values):
+        label = labels[key]
+        if label in {"Agência", "Conta"} and not re.fullmatch(IDENTIFIER, value):
+            return None
+        if label in {"CNPJ", "CPF", "CNPJ/CPF"} and not re.fullmatch(
+                r"(?:" + TAX + "|" + MASKED_TAX + ")", re.sub(r"\s+", "", value)):
+            return None
+        if label in {"Nome", "Cliente"} and not _holder_candidate(value):
+            return None
+    return values
+
+
+def _identity_column_lines(lines, ambiguous_lines):
     """Recover explicitly labelled columns without guessing unlabeled numbers or moving line references."""
     lines = list(lines)
     labels = {
@@ -86,8 +115,9 @@ def _identity_column_lines(lines):
         next_index = next((j for j in range(index + 1, min(index + 4, len(lines))) if lines[j].strip()), None)
         if next_index is None:
             continue
-        values = re.split(r"\s{2,}", lines[next_index].strip())
-        if len(values) < len(keys):
+        values = _column_values(raw, lines[next_index], keys, labels)
+        if values is None:
+            ambiguous_lines.add(index + 1)
             continue
         fields = []
         for key, value in zip(keys, values):
@@ -108,9 +138,23 @@ def _identity_column_lines(lines):
     return lines
 
 
-def _header_blocks(text):
+def _header_has_named_holder(block):
+    """A product section needs a separate, already printed customer identity."""
+    joined = _joined_header_fields(block)
+    for _, line in joined:
+        name = re.match(r"^" + NAME_LABEL + r"\s*[:\-]\s*(.+)", line, re.I)
+        account = re.match(r"^CONTA(?:\s+(?:CORRENTE|INVESTIMENTO))?\s*:?\s*" + IDENTIFIER, line, re.I)
+        if name and _holder_candidate(name[1]):
+            return True
+        if account and _unlabelled_holder(line[account.end():]):
+            return True
+    return any(name for name, _, _ in _adjacent_holders(joined))
+
+
+def _header_blocks(text, *, issue_codes=None):
     block, active = [], True
-    lines = _identity_column_lines(str(text).splitlines())
+    ambiguous_lines = set()
+    lines = _identity_column_lines(str(text).splitlines(), ambiguous_lines)
     for index in range(len(lines) - 1):
         for prefix_pattern, tail_pattern in ((r"\d{2}\.\d{3}\.\d{3}/\d{4}-", r"\d{2}"),
                                              (r"\d{2}\.\d{3}\.\d{3}", r"/\d{4}-\d{2}")):
@@ -155,10 +199,11 @@ def _header_blocks(text):
                                                 for _, line in block[-8:]):
             header_date = True
         dated_movement = re.match(r"^\d{1,2}[/.-]\d{1,2}\b", plain) and not header_date
-        fund_section = (re.search(r"\b(?:FUNDO|FIC|FIF|RF|RENDA FIXA)\b.*\bCNPJ\s*:", plain)
-                        and any(re.search(r"EXTRATOS?.*INVESTIMENTOS?|MES/ANO REFERENCIA", _plain(value)) for _, value in block)
+        fund_section = (re.search(r"\b(?:FUNDO|FIC|FIF|RF|RENDA FIXA)\b.*\s[-–]\s*CNPJ\s*:", plain)
+                        and any(re.match(r"^MES/ANO REFERENCIA", _plain(value)) for _, value in block)
                         and any(re.match(r"^CONTA(?:\s+CORRENTE)?\s*:?\s*" + IDENTIFIER, _plain(value)) for _, value in block)
-                        and not re.match(r"^" + NAME_LABEL + r"\s*:", plain))
+                        and not re.match(r"^" + NAME_LABEL + r"\s*:", plain)
+                        and _header_has_named_holder(block))
         if (dated_movement or fund_section
                 or "VALORES EM R$" in plain
                 or plain.startswith(("HISTORICO DE MOVIMENTACAO", "MOVIMENTACOES", "LANCAMENTOS"))
@@ -172,6 +217,8 @@ def _header_blocks(text):
                 yield block
             block, active = [], False
         if active:
+            if index in ambiguous_lines and issue_codes is not None:
+                issue_codes.add("ambiguous_header_columns")
             # Native PDFs can concatenate adjacent columns without spaces; keep their physical line reference.
             block.extend((index, part.strip()) for part in HEADER_FIELDS.split(raw) if part.strip())
     if block:
@@ -354,7 +401,7 @@ def identify_statement(analysis, *, page_texts=(), representation="native"):
     if source["holder_tax_id"]:
         taxes.add(source["holder_tax_id"])
     for page, text in enumerate(page_texts or (), 1):
-        for block in _header_blocks(text):
+        for block in _header_blocks(text, issue_codes=issue_codes):
             block = _joined_header_fields(block)
             branches, cooperatives, numbers = set(), set(), set()
             block_has_account = any(re.match(r"^(?:CONTA(?:\s+(?:CORRENTE|INVESTIMENTO))?|C/C|CC)\s*:?\s*" + IDENTIFIER,

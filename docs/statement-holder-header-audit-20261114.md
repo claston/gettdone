@@ -14,6 +14,17 @@ O reconhecedor compartilhado, versão 7, passa a:
 - Reconhecer cabeçalhos mensais deslocados para depois dos movimentos na ordem textual.
 - Recuperar corretamente cooperativa e conta quando os valores aparecem antes dos rótulos, evitando conflito artificial entre representações nativas.
 
+### Ajustes após revisão da PR #595
+
+Os dois apontamentos da revisão foram reproduzidos antes da correção, em PDF nativo e OCR:
+
+- **Colunas e espaços internos:** os espaços duplos do nome não são mais tratados como novas células. A associação usa os limites impressos dos rótulos e valida o valor completo de cada campo. Valores excedentes, desalinhamento ou campos incompatíveis geram `ambiguous_header_columns`, com confiança ambígua e sem cadastro automático. A quantidade de partes separadas por espaços não é usada como alternativa para adivinhar colunas. Os testes também conferem o cliente e a conta efetivamente persistidos por `ReceivedStatements.receive`.
+- **Fundo titular versus produto:** um título de investimentos e a palavra “FUNDO” não encerram o cabeçalho do titular. A delimitação do produto exige um titular independente já identificado, a referência mensal e a forma de apresentação do produto. O fundo titular é preservado antes ou depois da referência mensal; dois pares distintos de titular/documento continuam ambíguos.
+
+As regressões adicionais cobrem números dentro do nome, coluna vazia, conta excedente, tipos incompatíveis, tabelas no corpo e titular que investe em outro fundo. Não houve mudança de versão publicada: a PR permanece na versão 7, ainda sem implantação.
+
+A repetição dos 298 PDFs após esses ajustes preservou os nomes, documentos, bancos/agências/contas, cooperativas e níveis de confiança verificados na etapa anterior, inclusive os 34 exemplos manuais. Os novos casos da revisão são sintéticos e exercitam situações que não estavam representadas nessa coleção.
+
 CPF/CNPJ ausente ou mascarado não é inventado. Documento malformado continua sujeito a revisão. Conflitos reais entre titulares continuam ambíguos. A extração de movimentos, valores, datas e conciliação não é alterada.
 
 ## Amostra e limites
@@ -48,7 +59,7 @@ Quando não há evidência nativa de identidade, o resultado e a confiança do O
 ## Validação reproduzível
 
 ```powershell
-backend/venv/Scripts/python.exe -m pytest backend/tests/test_statement_identity_audit_headers.py backend/tests/test_statement_identity_native_remaining.py backend/tests/test_statement_identity_native_headers.py backend/tests/test_statement_identity_native_continuations.py backend/tests/test_statement_holder_headers.py backend/tests/test_asaas_statement_identity.py -q
+backend/venv/Scripts/python.exe -m pytest backend/tests/test_statement_identity_pr595_review.py backend/tests/test_statement_identity_audit_headers.py backend/tests/test_statement_identity_native_remaining.py backend/tests/test_statement_identity_native_headers.py backend/tests/test_statement_identity_native_continuations.py backend/tests/test_statement_holder_headers.py backend/tests/test_asaas_statement_identity.py -q
 backend/venv/Scripts/python.exe -m ruff check backend
 backend/venv/Scripts/python.exe scripts/test_backend.py
 ```
@@ -57,9 +68,9 @@ No ambiente Windows do Codex, os comandos pytest e o runner devem ser executados
 
 Os testes cobrem reconhecimento positivo, isolamento das contrapartes, CNPJ do emissor, solicitante, fundo investido versus fundo titular, máscara, documento malformado, conflitos entre titulares, atualização da versão anterior, idempotência, expiração e confirmações existentes.
 
-A suíte direcionada passou com `131 passed`, incluindo 31 novos casos sintéticos. O lint retornou `All checks passed!`.
+A suíte direcionada passou com `153 passed`, incluindo 53 novos casos sintéticos na PR (22 deles adicionados após a revisão). O lint retornou `All checks passed!`.
 
-A suíte completa terminou com `5033 passed, 89 skipped, 2 xfailed, 2 warnings in 583.38s`, usando um processo selecionado automaticamente pela memória disponível. O diretório temporário do runner foi removido ao final. A execução inclui requisições HTTP reais de conversão, download de relatório e caminhos negativos; o endpoint atual é `/convert`, e `/analyze` permanece desativado com resposta 405.
+A suíte completa após a revisão terminou com `5055 passed, 89 skipped, 2 xfailed, 2 warnings in 385.15s`, usando um processo selecionado automaticamente pela memória disponível. O diretório temporário do runner foi removido ao final. A execução inclui requisições HTTP reais de conversão, download de relatório e caminhos negativos; o endpoint atual é `/convert`, e `/analyze` permanece desativado com resposta 405.
 
 ## Implantação e reversão
 
