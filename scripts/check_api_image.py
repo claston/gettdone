@@ -108,7 +108,10 @@ def check_api_image() -> list[str]:
             raise RuntimeError("Marketing email assets are missing or invalid.")
     with patch.dict(os.environ, TEXTRACT_ENABLED="false", TEXTRACT_FORCE="false"):
         native = run_checks()
-    return ["runtime_inventory", "api_import", "sqlite", "migration_assets", "marketing_assets", *native["checks"], *check_textract_runtime()]
+    return [
+        "runtime_inventory", "api_import", "sqlite", "migration_assets", "marketing_assets",
+        *native["checks"], *check_textract_runtime(),
+    ]
 
 
 if __name__ == "__main__":
