@@ -43,6 +43,19 @@ class PostgresMovementRepository:
     def _connect(self):
         return psycopg.connect(self.database_url, row_factory=dict_row)
 
+    @contextmanager
+    def legacy_guard(self, analysis_id):
+        """Serialize legacy publication and adoption across API processes.
+
+        Acquire before source/organization locks. Closing the transaction also
+        releases the guard after a crash; the durable storage fence survives.
+        """
+        with self._connect() as conn:
+            conn.execute("SET LOCAL lock_timeout = '10s'")
+            conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                         (f"{self.schema}:legacy-adoption:{analysis_id}",))
+            yield conn
+
     def _hook(self, stage):
         if self.failure_hook:
             self.failure_hook(stage)
@@ -155,11 +168,19 @@ class PostgresMovementRepository:
                rollout: CanonicalRollout, connection=None, resolve_accounts=False):
         if not rollout.allows(organization_id=scope.organization_id, product=product, new_analysis=new_analysis):
             raise ValueError("Canonical ingestion is disabled for this document")
+        return self._ingest(scope, content, currency=currency, connection=connection, resolve_accounts=resolve_accounts)
+
+    def import_legacy(self, scope, content, *, currency, connection):
+        """Recovery coordinator owns eligibility, storage fence and caller transaction."""
+        return self._ingest(scope, content, currency=currency, connection=connection,
+                            resolve_accounts=True, legacy_snapshot=True)
+
+    def _ingest(self, scope, content, *, currency, connection=None, resolve_accounts=False, legacy_snapshot=False):
         if content.get("financial_document") is not None or content.get("analysis_id") != scope.analysis_id:
             raise ValueError("Canonical ingestion requires an identified bank statement")
         if not re.fullmatch(r"[A-Z]{3}", currency):
             raise ValueError("An explicit currency is required")
-        if content.get("edit_operations") or content.get("authority"):
+        if content.get("authority") or (content.get("edit_operations") and not legacy_snapshot):
             raise ValueError("Active legacy migration is not supported")
         rows = content.get("report_transactions", [])
         if rows != content.get("preview_transactions"):
@@ -186,15 +207,25 @@ class PostgresMovementRepository:
             # select silently between a human-corrected job and an older JSON file.
             payload = source["result_payload"] or {}
             source_rows = (payload.get("analysis") or {}).get("preview_transactions")
-            if payload.get("reviewed_at") or source_rows != content["preview_transactions"]:
+            if not legacy_snapshot and (payload.get("reviewed_at") or source_rows != content["preview_transactions"]):
                 raise AnalysisEditConflictError
             for key in ("updated_at", "opening_balance", "closing_balance"):
                 source_analysis = payload.get("analysis") or {}
-                if key in source_analysis and source_analysis[key] != content.get(key):
+                if not legacy_snapshot and key in source_analysis and source_analysis[key] != content.get(key):
                     raise AnalysisEditConflictError
             expiration = min(expiration, source["expires_at"], source["batch_expires_at"])
             baseline = deepcopy(content)
             content = deepcopy(content)
+            if legacy_snapshot:
+                # This is the retained legacy state, not a reconstructed extraction
+                # history. Preserve receipts and identify the import's provenance.
+                content["legacy_edit_operations"] = content.pop("edit_operations", {})
+                content["canonical_import"] = {"kind": "legacy_snapshot", "job_id": scope.job_id}
+                source_analysis = payload.get("analysis") or {}
+                content.pop("reviewed_at", None)
+                if (payload.get("reviewed_at") and source_analysis.get("updated_at") == content.get("updated_at")
+                        and source_rows == content["preview_transactions"]):
+                    content["reviewed_at"] = payload["reviewed_at"]
             content["expires_at"] = expiration.isoformat()
             conn.execute(f"""INSERT INTO {self.p}canonical_analyses
                 (analysis_id,job_id,organization_id,client_id,currency,metadata,baseline,ingestion_hash,expires_at,projection)
@@ -206,6 +237,10 @@ class PostgresMovementRepository:
                 # Only documented source evidence can resolve a catalog account.
                 # A manually selected document/export account is never inherited.
                 self._insert_row(conn, scope, row, ordinal, currency, baseline=True, account_id=accounts[ordinal])
+            if legacy_snapshot:
+                conn.execute(f'''UPDATE {self.p}bank_movements SET
+                    provenance=jsonb_set(provenance,'{{origin}}','"legacy_snapshot"'::jsonb), review_state=%s
+                    WHERE analysis_id=%s''', ("reviewed" if content.get("reviewed_at") else "pending", scope.analysis_id))
             analysis, _ = self._analysis(conn, scope)
             snapshot = self._snapshot(conn, analysis)
             self._project(conn, scope, snapshot, source)
@@ -227,20 +262,34 @@ class PostgresMovementRepository:
 
     def confirm(self, scope, operation_id):
         with self._connect() as conn:
-            self._analysis(conn, scope)
+            analysis, _ = self._analysis(conn, scope)
             receipt = conn.execute(f"""SELECT response FROM {self.p}movement_operations
                 WHERE analysis_id = %s AND operation_id = %s AND actor_id = %s""",
                 (scope.analysis_id, operation_id, scope.actor_id)).fetchone()
             self._unexpired(conn, scope)
-            return receipt["response"] if receipt else None
+            if receipt:
+                return receipt["response"]
+            return self._legacy_receipt(conn, analysis, operation_id)
+
+    def _legacy_receipt(self, conn, analysis, operation_id, *, edits=None, expected_updated_at=None, overrides=None):
+        receipts = analysis["metadata"].get("legacy_edit_operations") or {}
+        if operation_id not in receipts:
+            return None
+        snapshot = self._snapshot(conn, analysis)
+        content = {**snapshot, "edit_operations": receipts}
+        commands = ReviewCommandService()
+        if edits is not None:
+            commands.apply(content, deepcopy(edits), expected_updated_at=expected_updated_at,
+                           operation_id=operation_id, **(overrides or {}))
+        result = commands.confirm(content, operation_id)
+        return {**result, "authority": "postgres_v1", "version": analysis["version"],
+                "movement_ids": snapshot["movement_ids"], "movement_versions": snapshot["movement_versions"]}
 
     def apply(self, scope: MovementScope, edits: list[dict], *, expected_version: int | None = None, operation_id: str,
               channel: str, expected_updated_at: str | None = None, expected_movement_versions: dict | None = None,
               mark_reviewed: bool = False, require_edit_enabled: bool = False, **overrides):
         if not operation_id or len(operation_id) > 128 or not channel or len(channel) > 80:
             raise ValueError("An operation identity and source channel are required")
-        if expected_version is None and not expected_updated_at:
-            raise AnalysisEditConflictError
         if expected_version is not None and (
                 not isinstance(expected_version, int) or isinstance(expected_version, bool) or expected_version < 1):
             raise ValueError("A positive expected version is required")
@@ -276,6 +325,16 @@ class PostgresMovementRepository:
                     raise AnalysisEditConflictError
                 self._unexpired(conn, scope)
                 return receipt["response"]
+            if operation_id in (analysis["metadata"].get("legacy_edit_operations") or {}) and (
+                    mark_reviewed or expected_version is not None or expected_movement_versions):
+                raise AnalysisEditConflictError
+            legacy_receipt = self._legacy_receipt(conn, analysis, operation_id, edits=edits,
+                                                  expected_updated_at=expected_updated_at, overrides=overrides)
+            if legacy_receipt is not None:
+                self._unexpired(conn, scope)
+                return legacy_receipt
+            if expected_version is None and not expected_updated_at:
+                raise AnalysisEditConflictError
             if require_edit_enabled and not (analysis["read_enabled"] and analysis["edit_enabled"]):
                 raise AnalysisEditConflictError
             if expected_version is not None and analysis["version"] != expected_version:

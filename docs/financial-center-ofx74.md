@@ -287,6 +287,10 @@ Arquivos principais para revisão:
 
 ## Próximas etapas
 
+A confirmação manual e a recuperação explícita de extratos legados passam a ter
+um caminho controlado, desligado por padrão. Ver implantação, preservação das
+revisões e rollback em [recuperação após identificação manual](manual-client-financial-center-recovery.md).
+
 - OFX-73: identidade entre fontes diferentes, confirmação de sobreposição e diff
   de reprocessamento, sem confundir possíveis repetições com duplicatas provadas.
 - Autorizações canônicas específicas da degustação e reassociação versionada de

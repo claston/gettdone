@@ -1,4 +1,5 @@
 """Small adapters used by existing HTTP routes; no parallel financial writer."""
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timezone
 
@@ -6,6 +7,18 @@ from fastapi import HTTPException
 
 from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConflictError, AnalysisNotFoundError
 from app.dependencies import get_canonical_pro_service
+
+
+@contextmanager
+def legacy_analysis_guard(identity, analysis_id):
+    """Always deployed before enabling receipt recovery; Free has no SQL dependency."""
+    service = (get_canonical_pro_service() if identity.identity_type == "user"
+               and identity.batch_conversion_enabled else None)
+    if service is None:
+        yield
+    else:
+        with service.repository.legacy_guard(analysis_id):
+            yield
 
 
 def canonical_display_record(record, owner):
