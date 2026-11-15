@@ -65,7 +65,7 @@ def refresh(owner: str = Depends(organization_owner), service=Depends(receipt_se
             cursor: str | None = Query(None, max_length=500)):
     # Explicit bounded ingestion of existing jobs; viewing the dashboard never reconverts a PDF.
     with organization_errors():
-        return {"next_cursor": service.sync(owner, cursor)}
+        return service.sync(owner, cursor)
 
 
 class ClientSearch(BaseModel):

@@ -58,6 +58,11 @@ export interface Confirmation {
   expected_version: number;
   client_id?: string | null;
 }
+export interface RecoverySummary {
+  unavailable: number;
+  review_required: number;
+  pending: number;
+}
 export interface ReceivedService {
   list(
     cursor?: string,
@@ -66,7 +71,7 @@ export interface ReceivedService {
     query?: string,
     activeOnly?: boolean,
   ): Promise<ReceivedPage>;
-  refresh(signal?: AbortSignal): Promise<void>;
+  refresh(signal?: AbortSignal): Promise<RecoverySummary | void>;
   edit(id: string, value: ClientEdit): Promise<unknown>;
   confirm(id: string, value: Confirmation): Promise<unknown>;
 }
@@ -139,13 +144,24 @@ export const receivedService: ReceivedService = {
   },
   async refresh(signal) {
     let cursor: string | null = null;
+    const summary: RecoverySummary = {
+      unavailable: 0,
+      review_required: 0,
+      pending: 0,
+    };
     do {
       const result = await read(
         `/refresh${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
         { method: "POST", signal },
       );
+      for (const issue of result.recovery_issues ?? []) {
+        if (issue.status === "unavailable") summary.unavailable += 1;
+        if (issue.status === "review_required") summary.review_required += 1;
+        if (issue.status === "pending") summary.pending += 1;
+      }
       cursor = result.next_cursor;
     } while (cursor != null && !signal?.aborted);
+    return summary;
   },
   edit: (id, value) =>
     read(`/clients/${encodeURIComponent(id)}`, {

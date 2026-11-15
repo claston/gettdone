@@ -3,6 +3,7 @@ from datetime import datetime
 
 from app.application.canonical_movements import MovementScope
 from app.application.canonical_pro import CanonicalProService
+from app.application.errors import AnalysisEditConflictError, AnalysisNotFoundError
 from app.application.parsers.pdf.layout_specific.wise import WISE_CURRENCIES
 
 
@@ -45,17 +46,25 @@ class CanonicalReceiptRecovery:
             if not cohort or not all(cohort[key] for key in ("ingestion_enabled", "read_enabled", "ui_enabled")):
                 return "disabled"
             CanonicalProService(repo, None).assert_entitled(conn, owner)
-            candidate = self.storage.read_canonical_candidate(analysis_id)
+            try:
+                candidate = self.storage.read_canonical_candidate(analysis_id)
+            except AnalysisNotFoundError:
+                return "unavailable"
+            except (ValueError, TypeError, KeyError, AnalysisEditConflictError):
+                return "review_required"
             if candidate.get("financial_document") is not None:
                 return "unsupported"
-            content = {key: value for key, value in candidate.items() if key not in {"authority", "canonical_completion"}}
-            content["expires_at"] = min(datetime.fromisoformat(content["expires_at"]),
-                                        datetime.fromisoformat(selected["receipt_expires_at"])).isoformat()
-            currency = WISE_CURRENCIES.get(content.get("layout_inference_name"), "BRL")
             # Validate the complete SQL representation before fencing legacy access.
             # Unsupported/ambiguous sources remain usable in their original reader.
-            with conn.transaction(force_rollback=True):
-                repo.import_legacy(scope, content, currency=currency, connection=conn)
+            try:
+                content = {key: value for key, value in candidate.items() if key not in {"authority", "canonical_completion"}}
+                content["expires_at"] = min(datetime.fromisoformat(content["expires_at"]),
+                                            datetime.fromisoformat(selected["receipt_expires_at"])).isoformat()
+                currency = WISE_CURRENCIES.get(content.get("layout_inference_name"), "BRL")
+                with conn.transaction(force_rollback=True):
+                    repo.import_legacy(scope, content, currency=currency, connection=conn)
+            except (ValueError, TypeError, KeyError, AnalysisEditConflictError):
+                return "review_required"
             self.storage.fence_canonical_analysis(analysis_id)
             repo._hook("recovery_fenced")
             repo.import_legacy(scope, content, currency=currency, connection=conn)

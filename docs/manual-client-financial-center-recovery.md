@@ -13,6 +13,14 @@ Não é necessário reenviar nem converter novamente os PDFs. A consulta GET da
 Central continua somente leitura. A paginação existente limita cada atualização
 a 100 documentos; o cliente deve continuar seguindo `next_cursor`.
 
+Uma origem problemática não interrompe os demais documentos nem as páginas
+seguintes. A atualização retorna `200` com `next_cursor` e `recovery_issues`,
+uma lista de pares `job_id`/`status`: `unavailable` para origem ausente/expirada,
+`review_required` para snapshot inválido ou divergente e `pending` para falha
+transitória. O frontend percorre todos os cursores, recarrega a lista e mostra
+as contagens por situação, sem esconder os extratos válidos. Repetir a
+atualização retoma os pendentes, preservando os marcadores de proteção.
+
 O caminho usa a última versão do armazenamento de análise, que é a autoridade
 dos documentos legados. O payload do job pode estar atrasado após uma edição;
 ele não é usado para sobrescrever os valores revisados. Datas, valores, sinais,
@@ -38,9 +46,12 @@ uma edição posterior deixa os movimentos pendentes de revisão.
 - Antes de bloquear o leitor legado, a representação SQL completa é validada em
   um savepoint revertido. Depois disso, o marcador durável impede novas escritas
   legadas e a transação publica movimentos e projeção atomicamente.
-- Uma interrupção após o marcador mantém a identificação salva. A API informa
-  `503`, sem expor detalhes financeiros, e orienta atualizar a lista. A nova
-  tentativa recupera o snapshot pendente; não há fallback para escrita legada.
+- Uma interrupção após o marcador mantém a identificação salva. A confirmação
+  informa `503`, sem expor detalhes financeiros, e orienta atualizar a lista.
+  Na atualização, essa falha aparece como `pending` no resultado do documento.
+  A nova tentativa recupera o snapshot pendente; não há fallback para escrita
+  legada. Na confirmação, origem indisponível retorna `410` e necessidade de
+  conferência retorna `409`, sempre informando que a identificação está salva.
 - Repetir a confirmação ou atualizar a lista não insere novamente a mesma análise
   nem muda os controles de uma autoridade existente. Uploads distintos já
   revisados não são fundidos: a Central mantém sua sinalização de possível
@@ -61,7 +72,8 @@ Novas revisões continuam na trilha canônica existente.
 ## Implantação
 
 1. Publicar API com esta versão, mantendo `CANONICAL_PRO_RECOVERY_ENABLED=false`
-   (padrão). Não é necessária alteração no frontend nem no esquema.
+   (padrão). Não há alteração de esquema. Publicar também o frontend para
+   exibir as pendências; o campo adicional é compatível com clientes anteriores.
 2. Drenar todos os processos antigos da API. A proteção de edição/exportação
    fica ativa mesmo com a recuperação desligada; não habilitar recuperação
    enquanto houver processos antigos capazes de publicar análises legadas.
@@ -80,8 +92,9 @@ coorte; o teste local não estabelece um SLA. Não há reprocessamento ou consum
 de nova conversão. Os locks duram a integração de um documento, não o lote todo;
 uma disputa por lock acima de 10 segundos interrompe a tentativa de recuperação.
 
-Monitorar `pro_receipt_recovery_pending`, respostas 503 na confirmação/atualização,
-contagem de fontes legadas e duração das requisições. O log inclui somente job e
+Monitorar `pro_receipt_recovery_pending`, respostas 503 na confirmação,
+`recovery_issues` na atualização, contagem de fontes legadas e duração das
+requisições. O log inclui somente job e
 classe de erro. Uma pendência deve ser retomada antes da expiração, sem remover
 marcadores ou devolver o documento a escritores legados.
 
@@ -114,19 +127,35 @@ No Windows, executar pytest e o runner fora do sandbox conforme `AGENTS.md`.
 O runner completo administra e remove seu próprio diretório temporário. O
 basetemp do comando direcionado deve ser removido após a validação.
 
-Os 19 testes novos passaram. O fluxo HTTP cobriu edição legada, confirmação,
+Os 24 testes de recuperação passaram sem skips em PostgreSQL. O fluxo HTTP
+cobriu edição legada, confirmação,
 Central, replay, workspace, `/report`, exportações OFX/CSV/XLSX, origem inexistente
 e retomada após erro. `/analyze` permanece desativado com 405; não foi reativado.
+
+As regressões da revisão da PR 596 cobrem origem expirada, ausente, divergente
+e falha após o marcador, cada uma seguida por documento válido. Um caso com
+101 documentos confirma que o cursor continua disponível após a falha e que
+o extrato válido da página seguinte é recuperado. A etapa SQL do CI inclui
+explicitamente `tests/test_canonical_receipt_recovery.py` com
+`CANONICAL_MOVEMENTS_TEST_DATABASE_URL`, evitando que esses testes sejam apenas
+ignorados na etapa geral sem PostgreSQL. Os testes de frontend verificam a
+agregação das pendências entre páginas e o aviso sem bloquear a lista.
 
 A validação local com os três PDFs indicados pelo usuário mostrou 46, 38 e 38
 movimentos de julho, agosto e setembro de 2026 na Central, respectivamente,
 preservando todos os registros extraídos. Atualizar novamente manteve 122
 movimentos. Os arquivos e dados privados não fazem parte do repositório.
 
-A suíte completa com PostgreSQL terminou com **5.136 passed, 27 skipped e
-2 xfailed em 683,85 s**. Essa execução iniciou antes do último ajuste que torna
-downloads S3 sem overrides somente leitura. O estado final dos módulos afetados
-foi revalidado separadamente: **41 passed**, incluindo as três regressões novas
-de download OFX/CSV/XLSX, recuperação e HTTP. Ruff e a varredura de mojibake
-passaram. O runner removeu seu basetemp; o banco PostgreSQL descartável e os
-diretórios temporários das validações direcionadas foram encerrados/removidos.
+A suíte completa desta revisão executou todos os casos com PostgreSQL. O disco
+local ficou sem espaço durante a execução: **4.937 passed, 125 failed,
+82 errors, 27 skipped e 2 xfailed em 900,67 s**. Os relatórios preservam essa
+falha ambiental; todos os 207 casos afetados passaram na nova execução
+em 82,10 s, após remover somente os temporários e o banco descartável desta
+tarefa. Os runners removeram seus basetemps. No conjunto das duas execuções,
+os 5.144 casos não ignorados passaram; isso não representa uma única execução
+integral sem falhas ambientais.
+
+A suíte completa do frontend passou: **392 testes em 66 arquivos**. Ruff,
+ESLint, checagem de tipos, Prettier dos arquivos alterados e verificações de
+UTF-8/navegação passaram. As três ocorrências de `Ã` nos arquivos PRO são
+parte da palavra válida `DEMONSTRAÇÃO`, sem texto corrompido.

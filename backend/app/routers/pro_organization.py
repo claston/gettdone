@@ -106,7 +106,13 @@ class BulkContextRequest(BaseModel):
 def organization_errors():
     try:
         yield
-    except ReceiptRecoveryPending:
+    except ReceiptRecoveryPending as exc:
+        if exc.status == "unavailable":
+            raise HTTPException(410, "A identificação está salva, mas a origem da análise está indisponível ou expirada. "
+                                "Os demais extratos podem ser atualizados normalmente.") from None
+        if exc.status == "review_required":
+            raise HTTPException(409, "A identificação está salva, mas este extrato precisa de conferência antes da integração "
+                                "com a Central Financeira. Os demais extratos podem ser atualizados normalmente.") from None
         raise HTTPException(503, "A identificação está salva, mas a integração com a Central Financeira está pendente. "
                             "Atualize a lista de extratos para tentar novamente.") from None
     except OrganizationConflict as exc:

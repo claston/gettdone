@@ -409,3 +409,89 @@ def test_confirmed_empty_statement_can_be_imported_without_inventing_movements(d
     receipts.confirm(scope.actor_id, record.job.job_id, expected_version=0, name="Cliente", client_id=scope.client_id)
     snapshot = database[4].get(record.job.job_id).result.payload["analysis"]
     assert snapshot["authority"] == "postgres_v1" and snapshot["preview_transactions"] == []
+
+
+@pytest.mark.real_http
+@pytest.mark.parametrize("problem", ["expired", "missing", "divergent", "transient"])
+def test_refresh_isolates_problematic_origin_and_recovers_older_valid_document(database, tmp_path, monkeypatch, problem):
+    from datetime import datetime, timedelta, timezone
+
+    repo, scope, _, _, batches, _ = database
+    with recovery_http(database, tmp_path, monkeypatch) as (client, storage):
+        good, _, _ = unidentified(database, storage, "goodolder")
+        bad, content, path = unidentified(database, storage, "badnewer")
+        legacy = ReceivedStatements(repo.test_access.db, batches)
+        for record in (good, bad):
+            legacy.confirm(scope.actor_id, record.job.job_id, expected_version=0, name="Cliente", client_id=scope.client_id)
+        with repo._connect() as conn:
+            conn.execute(f"UPDATE {repo.p}conversion_jobs SET created_at=clock_timestamp()-interval '1 day' WHERE job_id=%s",
+                         (good.job.job_id,))
+        if problem == "missing":
+            path.unlink()
+        elif problem in {"expired", "divergent"}:
+            if problem == "expired":
+                content["expires_at"] = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+            else:
+                content["report_transactions"][0]["amount"] = 99
+            path.write_text(json.dumps(content), encoding="utf-8")
+        else:
+            original = storage.fence_canonical_analysis
+            def fail_bad(analysis_id, **kwargs):
+                result = original(analysis_id, **kwargs)
+                if analysis_id == bad.result.analysis_id:
+                    raise OSError("private injected failure")
+                return result
+            monkeypatch.setattr(storage, "fence_canonical_analysis", fail_bad)
+        status = {"expired": "unavailable", "missing": "unavailable", "divergent": "review_required", "transient": "pending"}[problem]
+        for _ in range(2):
+            refreshed = client.post("/api/pro/receipts/refresh")
+            assert refreshed.status_code == 200, refreshed.text
+            assert refreshed.json()["next_cursor"] is None
+            assert refreshed.json()["recovery_issues"] == [{"job_id": bad.job.job_id, "status": status}]
+            assert "private injected failure" not in refreshed.text
+            assert batches.get(good.job.job_id).result.payload["authority"] == "postgres_v1"
+            assert "authority" not in batches.get(bad.job.job_id).result.payload
+            central = client.get(f"/api/pro/financial-center/clients/{scope.client_id}").json()
+            assert len(central["movements"]) == 1
+            assert central["legacy_sources"] == 1
+        if problem == "transient":
+            assert json.loads(path.read_text(encoding="utf-8"))["authority"] == "canonical_pending"
+            monkeypatch.setattr(storage, "fence_canonical_analysis", original)
+            assert client.post("/api/pro/receipts/refresh").json()["recovery_issues"] == []
+            assert len(client.get(f"/api/pro/financial-center/clients/{scope.client_id}").json()["movements"]) == 2
+
+
+@pytest.mark.real_http
+def test_refresh_returns_cursor_after_failed_origin_and_recovers_next_page(database, tmp_path, monkeypatch):
+    from app.application.conversion.conversion_batch import ConversionBatch
+    from app.application.conversion.conversion_job import ConversionJob
+
+    repo, scope, _, _, batches, _ = database
+    with recovery_http(database, tmp_path, monkeypatch) as (client, storage):
+        good, _, _ = unidentified(database, storage, "olderpage")
+        bad, _, path = unidentified(database, storage, "brokenpage")
+        legacy = ReceivedStatements(repo.test_access.db, batches)
+        for record in (good, bad):
+            legacy.confirm(scope.actor_id, record.job.job_id, expected_version=0, name="Cliente", client_id=scope.client_id)
+        path.unlink()
+        identity = repo.test_access.resolve_identity(anonymous_fingerprint=None, user_token=repo.test_user.token)
+        for offset in range(0, 98, 12):
+            count = min(12, 98 - offset)
+            batch = ConversionBatch.create(identity_type="user", identity_id=scope.actor_id,
+                                            files_count=count, idempotency_key=f"padding-{offset}")
+            jobs = [ConversionJob.create(batch_id=batch.batch_id, identity=identity, idempotency_key=f"padding-{offset + index}",
+                                         document=bad.job.document) for index in range(count)]
+            batches.create(batch=batch, jobs=jobs)
+        with repo._connect() as conn:
+            conn.execute(f"UPDATE {repo.p}conversion_jobs SET created_at=clock_timestamp()-interval '1 day' WHERE job_id=%s",
+                         (good.job.job_id,))
+        first = client.post("/api/pro/receipts/refresh")
+        assert first.status_code == 200, first.text
+        assert first.json()["recovery_issues"] == [{"job_id": bad.job.job_id, "status": "unavailable"}]
+        cursor = first.json()["next_cursor"]
+        assert cursor
+        assert "authority" not in batches.get(good.job.job_id).result.payload
+        second = client.post("/api/pro/receipts/refresh", params={"cursor": cursor})
+        assert second.status_code == 200, second.text
+        assert second.json() == {"next_cursor": None, "recovery_issues": []}
+        assert batches.get(good.job.job_id).result.payload["authority"] == "postgres_v1"
