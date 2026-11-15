@@ -24,6 +24,8 @@ const banks: Record<string, string> = {
   "748": "Sicredi",
   "756": "Sicoob",
 };
+type ClientTab = "active" | "clients" | "pending";
+const tabOrder: ClientTab[] = ["active", "clients", "pending"];
 function taxLabel(value: string | null) {
   if (!value) return "CPF/CNPJ a confirmar";
   return value.length === 14
@@ -193,21 +195,40 @@ export function ReceivedStatementsPage({
   const [page, setPage] = useState<ReceivedPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | undefined>();
+  const [activeCursor, setActiveCursor] = useState<string | undefined>();
   const [pendingCursor, setPendingCursor] = useState<string | undefined>();
   const [attempt, setAttempt] = useState(0);
   const [editing, setEditing] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(true);
-  const [activeTab, setActiveTab] = useState<"clients" | "pending">("clients");
+  const [activeTab, setActiveTab] = useState<ClientTab>("active");
+  const activeOnly = activeTab === "active";
+  const selectedCursor = activeOnly ? activeCursor : cursor;
+  const setSelectedCursor = activeOnly ? setActiveCursor : setCursor;
+  const [loadedActiveOnly, setLoadedActiveOnly] = useState(true);
+  const [refreshAt, setRefreshAt] = useState<number | null>(null);
+  const [expiredSnapshot, setExpiredSnapshot] = useState(false);
+  const [reload, setReload] = useState(0);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const synchronized = useRef<{
     service: ReceivedService;
     attempt: number;
   } | null>(null);
+  const synchronization = useRef<{
+    controller: AbortController;
+    promise: Promise<void>;
+  } | null>(null);
+  useEffect(() => {
+    return () => {
+      synchronization.current?.controller.abort();
+      synchronization.current = null;
+    };
+  }, [service, attempt]);
   useEffect(() => {
     if (search.trim() === query) return;
     const timer = setTimeout(() => {
       setCursor(undefined);
+      setActiveCursor(undefined);
       setEditing(null);
       setQuery(search.trim());
     }, 250);
@@ -215,42 +236,95 @@ export function ReceivedStatementsPage({
   }, [search, query]);
   const tabId = useId();
   const clientTab = useRef<HTMLButtonElement>(null);
+  const activeClientTab = useRef<HTMLButtonElement>(null);
   const pendingTab = useRef<HTMLButtonElement>(null);
-  const selectTab = (tab: "clients" | "pending", focus = false) => {
+  const selectTab = (tab: ClientTab, focus = false) => {
     if (tab !== activeTab) setEditing(null);
     setActiveTab(tab);
-    if (focus) (tab === "clients" ? clientTab : pendingTab).current?.focus();
+    if (focus)
+      ({ active: activeClientTab, clients: clientTab, pending: pendingTab })[
+        tab
+      ].current?.focus();
   };
   useEffect(() => {
+    if (refreshAt === null) return;
+    const timer = setTimeout(
+      () => {
+        setExpiredSnapshot(true);
+        setCursor(undefined);
+        setActiveCursor(undefined);
+        setPendingCursor(undefined);
+        setReload((value) => value + 1);
+      },
+      Math.min(2_147_483_647, Math.max(0, refreshAt - Date.now())),
+    );
+    return () => clearTimeout(timer);
+  }, [refreshAt]);
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible")
+        setReload((value) => value + 1);
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, []);
+  useEffect(() => {
     const abort = new AbortController();
+    function acceptPage(value: ReceivedPage) {
+      setPage(value);
+      setLoadedActiveOnly(activeOnly);
+      setExpiredSnapshot(false);
+      const remaining =
+        value.next_expiration_at && value.server_time
+          ? Date.parse(value.next_expiration_at) - Date.parse(value.server_time)
+          : null;
+      setRefreshAt(
+        remaining !== null && Number.isFinite(remaining)
+          ? Date.now() + Math.max(0, remaining) + 100
+          : null,
+      );
+    }
     async function load() {
       setError(null);
       setRefreshing(true);
       try {
         const first = await service.list(
-          cursor,
+          selectedCursor,
           abort.signal,
           pendingCursor,
           query,
+          activeOnly,
         );
         if (abort.signal.aborted) return;
-        setPage(first);
+        acceptPage(first);
         if (
-          query &&
           synchronized.current?.service === service &&
           synchronized.current.attempt === attempt
         )
           return;
-        await service.refresh(abort.signal);
+        // Changing the list filter must not restart an ingestion already in flight.
+        if (!synchronization.current) {
+          const controller = new AbortController();
+          synchronization.current = {
+            controller,
+            promise: service.refresh(controller.signal),
+          };
+        }
+        await synchronization.current.promise;
         if (abort.signal.aborted) return;
         synchronized.current = { service, attempt };
         const updated = await service.list(
-          cursor,
+          selectedCursor,
           abort.signal,
           pendingCursor,
           query,
+          activeOnly,
         );
-        if (!abort.signal.aborted) setPage(updated);
+        if (!abort.signal.aborted) acceptPage(updated);
       } catch (caught) {
         if (!abort.signal.aborted)
           setError(
@@ -264,17 +338,28 @@ export function ReceivedStatementsPage({
     }
     void load();
     return () => abort.abort();
-  }, [service, cursor, pendingCursor, attempt, query]);
+  }, [
+    service,
+    selectedCursor,
+    pendingCursor,
+    attempt,
+    query,
+    activeOnly,
+    reload,
+  ]);
   const saved = () => {
     setEditing(null);
     setPendingCursor(undefined);
     setAttempt((value) => value + 1);
   };
-  const clients = [...(page?.clients ?? [])].sort(
-    (a, b) =>
-      a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" }) ||
-      a.id.localeCompare(b.id),
-  );
+  const scopeReady = loadedActiveOnly === activeOnly && !expiredSnapshot;
+  const clients = (scopeReady ? [...(page?.clients ?? [])] : [])
+    .filter((client) => !activeOnly || client.available_count > 0)
+    .sort(
+      (a, b) =>
+        a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" }) ||
+        a.id.localeCompare(b.id),
+    );
   return (
     <section className={`standard-page ${styles.page}`}>
       <div className="page-title">
@@ -385,6 +470,7 @@ export function ReceivedStatementsPage({
           >
             {(
               [
+                ["active", "Com conversões ativas", activeClientTab],
                 ["clients", "Identificados", clientTab],
                 ["pending", "Não identificados", pendingTab],
               ] as const
@@ -408,26 +494,33 @@ export function ReceivedStatementsPage({
                     event.preventDefault();
                     selectTab(
                       event.key === "Home"
-                        ? "clients"
+                        ? "active"
                         : event.key === "End"
                           ? "pending"
-                          : tab === "clients"
-                            ? "pending"
-                            : "clients",
+                          : tabOrder[
+                              (tabOrder.indexOf(tab) +
+                                (event.key === "ArrowRight" ? 1 : 2)) %
+                                3
+                            ],
                       true,
                     );
                   }
                 }}
               >
                 {label} (
-                {tab === "clients"
-                  ? (page.client_count ?? page.clients.length)
-                  : (page.pending_count ?? page.pending.length)}
+                {tab === "active"
+                  ? (page.active_client_count ??
+                    page.clients.filter((c) => c.available_count > 0).length)
+                  : tab === "clients"
+                    ? (page.all_client_count ??
+                      page.client_count ??
+                      page.clients.length)
+                    : (page.pending_count ?? page.pending.length)}
                 )
               </button>
             ))}
           </div>
-          {(["clients", "pending"] as const).map((tab) => (
+          {tabOrder.map((tab) => (
             <div
               key={tab}
               role="tabpanel"
@@ -439,7 +532,7 @@ export function ReceivedStatementsPage({
               className={styles.tabPanel}
             >
               {activeTab === tab &&
-                (tab === "clients" ? (
+                (tab !== "pending" ? (
                   <>
                     <div
                       className={styles.search}
@@ -501,11 +594,13 @@ export function ReceivedStatementsPage({
                                     : styles.ready
                                 }
                               >
-                                {client.attention_count
-                                  ? `${client.attention_count} ${client.attention_count === 1 ? "precisa" : "precisam"} de atenção`
-                                  : client.processing_count
-                                    ? `${client.processing_count} em processamento`
-                                    : "Todos prontos"}
+                                {!client.available_count
+                                  ? "Nenhuma conversão ativa"
+                                  : client.attention_count
+                                    ? `${client.attention_count} ${client.attention_count === 1 ? "precisa" : "precisam"} de atenção`
+                                    : client.processing_count
+                                      ? `${client.processing_count} em processamento`
+                                      : "Todos prontos"}
                               </span>
                               <span>
                                 {client.available_count}{" "}
@@ -582,29 +677,34 @@ export function ReceivedStatementsPage({
                         </article>
                       ))}
                     </div>
-                    {!page.clients.length && (
+                    {!scopeReady && (
+                      <p role="status">Atualizando clientes...</p>
+                    )}
+                    {scopeReady && !clients.length && (
                       <p role="status">
                         {query
                           ? "Nenhum cliente encontrado"
-                          : "Seus clientes aparecerão aqui conforme os titulares forem identificados nos documentos recebidos."}
+                          : activeOnly
+                            ? "Nenhum cliente com conversões ativas no momento."
+                            : "Seus clientes aparecerão aqui conforme os titulares forem identificados nos documentos recebidos."}
                       </p>
                     )}
-                    {(cursor || page.next_cursor) && (
+                    {scopeReady && (selectedCursor || page.next_cursor) && (
                       <nav
                         className={styles.actions}
                         aria-label="Paginação de clientes"
                       >
                         <button
                           className="secondary-button"
-                          disabled={refreshing || !cursor}
-                          onClick={() => setCursor(undefined)}
+                          disabled={refreshing || !selectedCursor}
+                          onClick={() => setSelectedCursor(undefined)}
                         >
                           Início
                         </button>
                         <button
                           className="secondary-button"
                           disabled={refreshing || !page.next_cursor}
-                          onClick={() => setCursor(page.next_cursor!)}
+                          onClick={() => setSelectedCursor(page.next_cursor!)}
                         >
                           Próxima
                         </button>
