@@ -182,3 +182,45 @@ def test_refresh_never_reads_or_reassigns_a_confirmed_document(receipts):
     assert service._recover_native_source(owner, item) is None
     service.receive(item)
     assert service.dashboard(owner)["clients"][0]["name"] == "Titular conferido"
+
+
+@pytest.mark.parametrize("old_name,old_tax,confidence,header,expected_name,expected_tax", [
+    ("", "98765432000110", "ambiguous",
+     "Extratos - Investimentos Fundos - Mensal\nCliente\nAgência 0001-2\nConta 00123-4 EMPRESA AURORA LTDA\n"
+     "Mês/ano referência SETEMBRO/2026\nBB RF CP Automático - CNPJ: 98.765.432/0001-10",
+     "EMPRESA AURORA LTDA", ""),
+    ("EMPRESA AURORA LTDA CNPJ", "", "name",
+     "EMPRESA AURORA LTDA CNPJ Agência 0001 Conta 00123-4\n12.345.678/0001-90", "EMPRESA AURORA LTDA", "12345678000190"),
+])
+def test_refresh_discards_previous_recognizer_candidates(receipts, old_name, old_tax, confidence, header, expected_name, expected_tax):
+    from app.application.statement_identity import IDENTITY_VERSION
+    from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
+
+    service, owner, _ = receipts
+    item = record(owner, days=30, source={"version": 6, "bank_code": "001", "holder_name": old_name,
+                                        "holder_tax_id": old_tax, "confidence": confidence})
+    service.receive(item)
+    raw = generate_native_text_pdf((tuple((header + "\nData Histórico Valor").splitlines()),))
+    service.document_store = SimpleNamespace(load=lambda _: SimpleNamespace(raw_bytes=raw))
+    result_before, expiry = dict(item.result.payload), item.expires_at
+    recovered = service._recover_native_source(owner, item)
+    assert recovered["holder_name"] == expected_name and recovered["holder_tax_id"] == expected_tax
+    assert recovered["version"] == IDENTITY_VERSION
+    assert recovered["confidence"] != "ambiguous"
+    service.receive(item, recovered_source=recovered)
+    assert service._recover_native_source(owner, item) is None
+    assert item.result.payload == result_before and item.expires_at == expiry
+
+
+def test_refresh_without_native_text_keeps_previous_ocr_evidence_and_confidence(receipts):
+    from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
+
+    service, owner, _ = receipts
+    original = {"version": 6, "holder_name": "EMPRESA AURORA LTDA", "holder_tax_id": "", "confidence": "name"}
+    item = record(owner, days=30, source=original)
+    service.receive(item)
+    raw = generate_native_text_pdf((("Documento digitalizado sem texto de titular",),))
+    service.document_store = SimpleNamespace(load=lambda _: SimpleNamespace(raw_bytes=raw))
+    recovered = service._recover_native_source(owner, item)
+    assert recovered["holder_name"] == original["holder_name"]
+    assert recovered["confidence"] == "name" and recovered["native_identity_checked"]
