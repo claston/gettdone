@@ -13,6 +13,12 @@
 !backend/scripts/run_alembic_migrations.py
 !frontend/
 !frontend/**
+!marketing/
+!marketing/templates/
+!marketing/templates/ofx-content-series/
+!marketing/templates/ofx-content-series/campaign.json
+!marketing/templates/ofx-content-series/01-organizacao.html
+!marketing/templates/ofx-content-series/01-organizacao.txt
 
 **/__pycache__
 **/*.pyc

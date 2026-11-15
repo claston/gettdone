@@ -1,6 +1,6 @@
 # Templates de e-mail — OFX Simples / conteúdo e cursos
 
-Templates editoriais em HTML, independentes do backend. Abra `index.html` no
+Templates editoriais em HTML. Abra `index.html` no
 navegador para comparar as quatro mensagens em desktop e celular. A prévia usa
 dados fictícios e uma cópia dos templates, e não envia e-mails. Ao editar um
 template, atualize também sua cópia em `index.html` e a alternativa em texto.
@@ -24,13 +24,20 @@ não representam um agendamento implementado.
 
 ## Personalização
 
-Substitua os quatro campos em HTML e texto antes de enviar:
+O e-mail 01 usa `name`, `unsubscribe_url`, `sender_company` e `sender_cnpj`.
+No teste do admin, empresa e CNPJ vêm de `MARKETING_SENDER_COMPANY` e
+`MARKETING_SENDER_CNPJ`, configurados privadamente no backend no Render.
+Não versionar os dados reais do remetente.
+Nos demais modelos, substitua os quatro campos em HTML e texto antes de enviar:
 
 - `{{ name }}`: nome do destinatário; use `cliente` se não estiver disponível.
 - `{{ unsubscribe_url }}`: URL HTTPS individual de descadastro, gerada pelo
   serviço existente de marketing. Não substituir por um endereço genérico.
 - `{{ sender_company }}`: identificação real da empresa/remetente.
 - `{{ sender_address }}`: endereço postal real do remetente.
+
+O campo `{{ sender_cnpj }}` é usado somente no e-mail 01. A prévia local usa
+empresa e documento fictícios, sem depender da configuração do Render.
 
 Os campos são marcadores, sem dependência de um motor de templates. Escape
 valores de texto para HTML e atributos (incluindo aspas) na versão HTML. Valide
@@ -72,8 +79,16 @@ oferta devem ser conferidas na página do produtor antes de cada campanha.
 - Verificação visual em navegador não substitui testes em Gmail, Outlook e
   Apple Mail. Ainda não houve envio real para esses clientes.
 
-Os arquivos não estão conectados às rotas da aplicação e não modificam o envio
-fixo de teste. Não há mudança de banco, API, worker ou agendamento. A futura
-integração deve registrar campanha/destinatário para evitar duplicidades e
-reutilizar o descadastro existente. Para rollback deste pacote, basta remover
-os arquivos; os links de descadastro do serviço continuam intactos.
+O e-mail **01-organizacao** está conectado ao teste individual do admin, com
+CTA **Conhecer os planos** para `https://www.ofxsimples.com.br/planos.html`.
+O backend lê diretamente seu HTML, texto e assunto do `campaign.json`; o teste
+acrescenta `[TESTE]` ao assunto. Nome e URL individual de descadastro vêm da
+conta de teste, com escape dos valores no HTML. Consulte
+[`docs/admin-marketing-email.md`](../../../docs/admin-marketing-email.md).
+
+Os e-mails 02–04 permanecem editoriais. Não há disparo em massa nem agendamento
+implementado. A futura integração deve registrar campanha/destinatário para
+evitar duplicidades e reutilizar o descadastro existente. Não remova os três
+arquivos usados pelo backend enquanto o teste do e-mail 01 estiver habilitado.
+Para rollback, restaure primeiro o frontend anterior e depois o backend;
+preserve as rotas de descadastro e os consentimentos revogados.

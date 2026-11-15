@@ -26,6 +26,7 @@ COPY backend/alembic ./backend/alembic
 COPY backend/alembic.ini ./backend/alembic.ini
 COPY backend/scripts/run_alembic_migrations.py ./backend/scripts/run_alembic_migrations.py
 COPY frontend ./frontend
+COPY marketing/templates/ofx-content-series/campaign.json marketing/templates/ofx-content-series/01-organizacao.html marketing/templates/ofx-content-series/01-organizacao.txt ./marketing/templates/ofx-content-series/
 
 EXPOSE 8000
 

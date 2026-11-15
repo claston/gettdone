@@ -7,9 +7,9 @@ Encontrar o documento certo na hora de revisar uma movimentação faz diferença
 3. Registre as pendências e a referência ao documento de origem.
 4. Reúna comprovantes e outros documentos de apoio.
 
-O OFX Simples ajuda na conversão dos arquivos. Essa organização complementa o trabalho e facilita a revisão.
+Transforme essa organização em uma rotina mais prática com o OFX Simples. Conheça os planos e escolha a opção que combina com o volume de documentos do seu escritório.
 
-Abrir o OFX Simples: https://www.ofxsimples.com.br/
+Conhecer os planos: https://www.ofxsimples.com.br/planos.html
 
 No próximo e-mail: como organizar as informações que ainda precisam de confirmação.
 
@@ -18,4 +18,4 @@ Equipe OFX Simples
 Você recebe esta mensagem porque autorizou conteúdos e ofertas de parceiros do OFX Simples.
 Cancelar recebimento: {{ unsubscribe_url }}
 {{ sender_company }}
-{{ sender_address }}
+CNPJ: {{ sender_cnpj }}

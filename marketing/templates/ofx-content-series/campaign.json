@@ -8,6 +8,7 @@
     "name",
     "unsubscribe_url",
     "sender_company",
+    "sender_cnpj",
     "sender_address"
   ],
   "emails": [

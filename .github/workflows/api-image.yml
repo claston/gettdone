@@ -8,6 +8,7 @@ on:
       - ".dockerignore"
       - "backend/**"
       - "frontend/**"
+      - "marketing/templates/ofx-content-series/**"
       - "scripts/check_api_image.py"
       - "scripts/smoke_api_http.py"
       - ".github/workflows/api-image.yml"

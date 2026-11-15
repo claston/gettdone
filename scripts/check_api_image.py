@@ -93,6 +93,7 @@ def check_api_image() -> list[str]:
     import sqlite3
 
     import alembic  # noqa: F401
+    from app.application.marketing_email_service import render_organization_email
     from app.main import app
     from app.workers.worker_image_canary import run_checks
 
@@ -101,9 +102,13 @@ def check_api_image() -> list[str]:
             raise RuntimeError("API SQLite runtime is unavailable.")
     if not any(getattr(route, "path", None) == "/convert" for route in app.routes):
         raise RuntimeError("Conversion route was not loaded.")
+    with patch.dict(os.environ, MARKETING_SENDER_COMPANY="Synthetic sender", MARKETING_SENDER_CNPJ="00.000.000/0000-00"):
+        _, text, html = render_organization_email(name="Test", unsubscribe_url="https://example.com/marketing/unsubscribe?token=test")
+        if "https://www.ofxsimples.com.br/planos.html" not in html or "{{" in html or "{{" in text:
+            raise RuntimeError("Marketing email assets are missing or invalid.")
     with patch.dict(os.environ, TEXTRACT_ENABLED="false", TEXTRACT_FORCE="false"):
         native = run_checks()
-    return ["runtime_inventory", "api_import", "sqlite", "migration_assets", *native["checks"], *check_textract_runtime()]
+    return ["runtime_inventory", "api_import", "sqlite", "migration_assets", "marketing_assets", *native["checks"], *check_textract_runtime()]
 
 
 if __name__ == "__main__":
