@@ -4,7 +4,7 @@ from datetime import timedelta
 
 import pytest
 
-from app.application.errors import ContactDeliveryError, ContactProviderNotConfiguredError
+from app.application.errors import ContactDeliveryError, ContactDeliveryRejectedError, ContactProviderNotConfiguredError
 from app.application.marketing_campaign_service import MarketingCampaignConflict, MarketingCampaignService
 from app.application.marketing_email_service import MarketingEmailService
 from tests.test_marketing_email_api import login, marketing  # noqa: F401
@@ -214,3 +214,63 @@ def test_campaign_missing_migration_does_not_break_individual_test(campaign, mon
         mailer=mailer, public_base_url="https://www.ofxsimples.com.br", request_id="test-only",
     ))
     assert len(mailer.messages) == 1
+
+
+def test_rejection_then_timeout_starts_new_uncertain_window_and_later_rejection_keeps_it(campaign):
+    client, access, _, mailer = campaign
+    start = access.now_provider()
+    login(client)
+    assert prepare(client).status_code == 200
+    mailer.error = ContactDeliveryRejectedError("daily quota")
+    assert advance(client).status_code == 502
+    access.now_provider = lambda: start + timedelta(hours=24)
+    login(client)
+    mailer.error = ContactDeliveryError("timeout")
+    assert advance(client).status_code == 502
+    with access._connect() as conn:
+        first = access._fetchone(conn, "SELECT first_attempt_at FROM marketing_campaign_deliveries")["first_attempt_at"]
+    assert first == access.now_provider().isoformat()
+    access.now_provider = lambda: start + timedelta(hours=25)
+    login(client)
+    mailer.error = ContactDeliveryRejectedError("rate limit")
+    assert advance(client).status_code == 502
+    with access._connect() as conn:
+        assert access._fetchone(conn, "SELECT first_attempt_at FROM marketing_campaign_deliveries")["first_attempt_at"] == first
+    access.now_provider = lambda: start + timedelta(hours=48)
+    login(client)
+    mailer.error = None
+    assert advance(client).json()["review"] == 1
+    assert not mailer.messages
+
+
+def test_confirmed_refusal_does_not_erase_evidence_owned_by_replacement_sender(campaign):
+    client, access, _, mailer = campaign
+    login(client)
+    assert prepare(client).status_code == 200
+
+    async def rejected_after_lease_replaced(**_message):
+        with access._connect() as conn:
+            access._execute(conn, "UPDATE marketing_campaigns SET lease_token = 'replacement'")
+            conn.commit()
+        raise ContactDeliveryRejectedError("quota")
+
+    mailer.send_text_email = rejected_after_lease_replaced
+    assert advance(client).status_code == 502
+    with access._connect() as conn:
+        assert access._fetchone(conn, "SELECT first_attempt_at FROM marketing_campaign_deliveries")["first_attempt_at"]
+        assert access._fetchone(conn, "SELECT lease_token FROM marketing_campaigns")["lease_token"] == "replacement"
+
+
+def test_unsubscribe_after_confirmed_rejection_skips_without_sending(campaign):
+    client, access, user, mailer = campaign
+    login(client)
+    assert prepare(client).status_code == 200
+    mailer.error = ContactDeliveryRejectedError("quota")
+    assert advance(client).status_code == 502
+    with access._connect() as conn:
+        access._execute(conn, "UPDATE users SET product_updates_opt_in = 0 WHERE id = ?", (user.user_id,))
+        conn.commit()
+    mailer.error = None
+    result = advance(client).json()
+    assert result["skipped"] == 1 and result["review"] == 0
+    assert not mailer.messages

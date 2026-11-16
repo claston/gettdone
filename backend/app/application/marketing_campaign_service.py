@@ -7,7 +7,7 @@ from html import escape
 from urllib.parse import urlencode, urlsplit
 from uuid import uuid4
 
-from app.application.errors import ContactDeliveryError
+from app.application.errors import ContactDeliveryError, ContactDeliveryRejectedError
 from app.application.marketing_email_service import MarketingConfigurationError, MarketingEmailService, render_organization_email
 
 CAMPAIGN_ID = "statement-guide-v1"
@@ -128,7 +128,14 @@ class MarketingCampaignService:
                 self._mark(conn, user_id, "review")
                 return None
             if delivery["payload"]:
-                return user_id, json.loads(delivery["payload"])
+                if not first:
+                    # A prior confirmed refusal retained the payload but has no uncertain attempt.
+                    self.access._execute(conn, """
+                        UPDATE marketing_campaign_deliveries SET first_attempt_at = ?, updated_at = ?
+                        WHERE campaign_id = ? AND user_id = ?
+                    """, (self._now().isoformat(), self._now().isoformat(), CAMPAIGN_ID, user_id))
+                    conn.commit()
+                return user_id, json.loads(delivery["payload"]), bool(first)
             campaign = self.access._fetchone(conn, "SELECT * FROM marketing_campaigns WHERE id = ?", (CAMPAIGN_ID,))
             marketing = MarketingEmailService(self.access)
             token = f"{user_id}.{marketing._signature(user)}"
@@ -147,7 +154,17 @@ class MarketingCampaignService:
                 WHERE campaign_id = ? AND user_id = ?
             """, (json.dumps(payload, ensure_ascii=True), self._now().isoformat(), self._now().isoformat(), CAMPAIGN_ID, user_id))
             conn.commit()
-            return user_id, payload
+            return user_id, payload, bool(first)
+
+    def _clear_confirmed_rejection(self, user_id, lease):
+        with self.access._lock, self.access._connect() as conn:
+            # A stale sender must not clear evidence recorded by a newer lease holder.
+            self.access._execute(conn, """
+                UPDATE marketing_campaign_deliveries SET first_attempt_at = NULL, updated_at = ?
+                WHERE campaign_id = ? AND user_id = ? AND status = 'pending'
+                  AND EXISTS (SELECT 1 FROM marketing_campaigns WHERE id = ? AND lease_token = ?)
+            """, (self._now().isoformat(), CAMPAIGN_ID, user_id, CAMPAIGN_ID, lease))
+            conn.commit()
 
     async def send_next(self, *, mailer):
         mailer.require_live_sender()
@@ -164,8 +181,13 @@ class MarketingCampaignService:
         try:
             item = self._next_payload()
             if item:
-                user_id, payload = item
-                result = await mailer.send_text_email(**payload)
+                user_id, payload, prior_uncertain_attempt = item
+                try:
+                    result = await mailer.send_text_email(**payload)
+                except ContactDeliveryRejectedError:
+                    if not prior_uncertain_attempt:
+                        self._clear_confirmed_rejection(user_id, lease)
+                    raise
                 if result.delivery_mode != "resend" or not result.provider_message_id:
                     raise ContactDeliveryError("Campaign delivery was not confirmed by the provider.")
                 with self.access._lock, self.access._connect() as conn:

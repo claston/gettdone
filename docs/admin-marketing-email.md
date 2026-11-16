@@ -68,7 +68,8 @@ demais funcionalidades permanecem disponíveis. SQLite local usa o bootstrap.
 
 ### Continuidade e falhas
 
-O banco registra público, conteúdo, remetente, estado, primeira tentativa e ID
+O banco registra público, conteúdo, remetente, estado, primeira tentativa de
+aceitação ainda não esclarecida (ou aceita) e ID
 aceito pelo provedor. Os registros incluem e-mails, corpo personalizado e link
 de descadastro; ficam restritos ao armazenamento do backend. Não registrar esses
 dados ou URLs em logs. O resumo autenticado lista até 200 contatos que precisam
@@ -86,6 +87,17 @@ uma tentativa incerta também exige conferência, pois o provedor pode já ter
 aceitado a mensagem. Consulte o histórico do provedor; não apague o registro
 para forçar nova tentativa. Limites de envio/quota do provedor podem interromper
 a campanha; a interface preserva os pendentes e mostra a falha.
+
+Recusas explícitas reconhecidas do provedor, como `429 daily_quota_exceeded`,
+não iniciam essa janela de incerteza quando não existia tentativa incerta
+anterior. O destinatário continua pendente e pode ser retomado após a renovação
+da cota, inclusive no dia seguinte, com o mesmo corpo e chave. A retomada confere
+novamente o consentimento. Se a nova tentativa perder a resposta, registra-se
+uma nova janela antes de chamar o provedor. Uma recusa posterior nunca apaga a
+evidência de uma tentativa anterior incerta; a limpeza também exige que o
+processo ainda detenha o bloqueio da campanha. Timeouts, respostas desconhecidas,
+conflitos de idempotência e erros `5xx` continuam conservadoramente incertos.
+Referência: [erros e limites do Resend](https://resend.com/docs/api-reference/errors#daily_quota_exceeded).
 
 Rollback: interrompa o envio no admin e restaure frontend/backend anteriores.
 Preserve as tabelas e as rotas de descadastro. O downgrade desta migração mantém

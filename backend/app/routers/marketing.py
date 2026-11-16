@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.application.access_control import AccessControlService
 from app.application.contact_service import ContactService
-from app.application.errors import ContactDeliveryError, ContactProviderNotConfiguredError
+from app.application.errors import ContactDeliveryError, ContactDeliveryRejectedError, ContactProviderNotConfiguredError
 from app.application.marketing_campaign_service import MarketingCampaignConflict, MarketingCampaignService
 from app.application.marketing_email_service import (
     TEST_TEMPLATE_ID,
@@ -54,6 +54,8 @@ def campaign_service(
 def campaign_error(exc):
     if isinstance(exc, MarketingCampaignConflict):
         return HTTPException(409, str(exc))
+    if isinstance(exc, ContactDeliveryRejectedError):
+        return HTTPException(502, "O provedor recusou esta tentativa. Confira a cota e a configuração no Resend e retome após resolver.")
     if isinstance(exc, ContactDeliveryError):
         return HTTPException(502, "Envio interrompido. O provedor pode ter aceitado a mensagem. Retome para verificar sem duplicar.")
     return HTTPException(503, "Campanha indisponível. Confira a migração do banco, os dados do remetente, "

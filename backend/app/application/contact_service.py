@@ -8,7 +8,19 @@ from email.message import EmailMessage
 
 import httpx
 
-from app.application.errors import ContactDeliveryError, ContactProviderNotConfiguredError, FileTooLargeError
+from app.application.errors import ContactDeliveryError, ContactDeliveryRejectedError, ContactProviderNotConfiguredError, FileTooLargeError
+
+# Only documented request refusals prove non-acceptance of this attempt.
+# Unknown responses, 409 idempotency conflicts and 5xx must remain ambiguous.
+RESEND_CONFIRMED_REJECTIONS = {
+    400: {"invalid_idempotency_key", "validation_error"},
+    401: {"missing_api_key", "restricted_api_key", "validation_error"},
+    403: {"invalid_permission", "restricted_api_key", "suspended_api_key", "validation_error"},
+    404: {"not_found"},
+    405: {"method_not_allowed"},
+    422: {"invalid_attachment", "invalid_parameter", "missing_required_field", "missing_required_parameter"},
+    429: {"daily_quota_exceeded", "monthly_quota_exceeded", "rate_limit_exceeded"},
+}
 
 
 @dataclass(frozen=True)
@@ -169,6 +181,13 @@ class ContactService:
                 response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             provider_message = exc.response.text.strip() or "Resend returned an error."
+            try:
+                error_body = exc.response.json()
+            except ValueError:
+                error_body = None
+            error_name = error_body.get("name") if isinstance(error_body, dict) else None
+            if isinstance(error_name, str) and error_name in RESEND_CONFIRMED_REJECTIONS.get(exc.response.status_code, set()):
+                raise ContactDeliveryRejectedError(provider_message) from exc
             raise ContactDeliveryError(provider_message) from exc
         except httpx.HTTPError as exc:
             raise ContactDeliveryError("Unable to reach email provider.") from exc
