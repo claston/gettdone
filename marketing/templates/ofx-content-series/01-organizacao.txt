@@ -62,7 +62,7 @@ Quando uma informação não pode ser confirmada, a conversão pode exigir revis
 
 Para o seu próximo envio: Escolha o original mais legível, confira páginas e bordas e revise o resultado antes de importar no seu sistema.
 
-Converter meu extrato: https://www.ofxsimples.com.br/
+Conhecer os planos: https://www.ofxsimples.com.br/planos.html
 
 No próximo e-mail: uma indicação de curso sobre demonstrações contábeis e notas explicativas.
 
@@ -72,4 +72,4 @@ Equipe OFX Simples
 Você recebe esta mensagem porque autorizou conteúdos e ofertas de parceiros do OFX Simples.
 Cancelar recebimento: {{ unsubscribe_url }}
 {{ sender_company }}
-{{ sender_address }}
+CNPJ: {{ sender_cnpj }}

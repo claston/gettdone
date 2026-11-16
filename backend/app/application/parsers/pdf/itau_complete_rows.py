@@ -152,6 +152,6 @@ def read_itau_complete_rows(raw, source):
             if pending:
                 fail("O último histórico Itaú está sem movimento associado.")
             finished = True
-    if pending or not finished or not records:
+    if pending or not records:
         fail("A tabela completa Itaú não pôde ser delimitada.")
-    return records
+    return records, finished

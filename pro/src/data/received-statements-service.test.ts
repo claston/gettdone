@@ -6,6 +6,36 @@ afterEach(() => {
 });
 
 describe("busca de clientes", () => {
+  it("continua todas as páginas e soma pendências sem interromper os documentos válidos", async () => {
+    const fetcher = vi.fn().mockImplementation(async (path) => {
+      if (path === "/api/pro/receipts/refresh")
+        return Response.json({
+          next_cursor: "next-page",
+          recovery_issues: [
+            { job_id: "expired", status: "unavailable" },
+            { job_id: "retry", status: "pending" },
+          ],
+        });
+      if (path === "/api/pro/receipts/refresh?cursor=next-page")
+        return Response.json({
+          next_cursor: null,
+          recovery_issues: [{ job_id: "review", status: "review_required" }],
+        });
+      return Response.json({});
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const { receivedService } = await import("./received-statements-service");
+    await expect(receivedService.refresh()).resolves.toEqual({
+      unavailable: 1,
+      review_required: 1,
+      pending: 1,
+    });
+    expect(
+      fetcher.mock.calls.filter(([path]) =>
+        path.startsWith("/api/pro/receipts/refresh"),
+      ),
+    ).toHaveLength(2);
+  });
   it("mostra uma mensagem em português quando a rede falha", async () => {
     vi.stubGlobal(
       "fetch",
@@ -91,5 +121,15 @@ describe("busca de clientes", () => {
     ).toBe(true);
     await receivedService.list(undefined, abort.signal, undefined, "");
     expect(fetcher.mock.calls.at(-1)?.[0]).toBe("/api/pro/receipts?sort=name");
+    await receivedService.list(undefined, abort.signal, undefined, "", true);
+    expect(fetcher.mock.calls.at(-1)?.[0]).toBe(
+      "/api/pro/receipts?sort=name&active_only=true",
+    );
+    await receivedService.list("c2", abort.signal, undefined, "Padaria", true);
+    expect(JSON.parse(fetcher.mock.calls.at(-1)?.[1].body)).toMatchObject({
+      query: "Padaria",
+      active_only: true,
+      cursor: "c2",
+    });
   });
 });

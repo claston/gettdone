@@ -54,10 +54,11 @@ def run():
                     elif path == "/checkout/intents/open":
                         state["requests"] += 1
                         request.fulfill(status=503 if state["fail_orders"] else 200,
-                                        json={"items": [item for item in state["orders"] if item["status"] != "RELEASED_FOR_USE"]})
+                                        json={"items": [item for item in state["orders"]
+                                                        if item["status"] in ("REQUESTED", "AWAITING_PAYMENT", "pending")]})
                     elif path.startswith("/checkout/intents/"):
                         request.fulfill(status=200 if state["orders"] else 404,
-                                        json=state["orders"][0] if state["orders"] else {})
+                                        json=state.get("latest_order") or (state["orders"][0] if state["orders"] else {}))
                     elif path == "/telemetry/events":
                         request.fulfill(json={"ok": True})
                     elif Path(path).suffix in (".html", ".js", ".css") and (ROOT / "frontend" / path.lstrip("/")).is_file():
@@ -69,33 +70,23 @@ def run():
                 page.route("**/*", route)
                 page.goto("http://127.0.0.1:8000/client-area.html")
                 page.get_by_role("button", name="Recusar opcionais").click()
-                expect(page.locator("#upgrade-top")).to_be_visible()
-                expect(page.locator("#upgrade-profile")).to_be_visible()
+                expect(page.locator("#upgrade-top")).to_be_hidden()
+                expect(page.locator("#upgrade-profile")).to_be_hidden()
                 expect(page.locator("#order-status")).to_be_visible()
                 expect(page.get_by_role("link", name="Acompanhar pedido")).to_have_count(0)
                 expect(page.get_by_role("button", name="Atualizar status")).to_have_count(0)
                 assert page.locator("#order-status").bounding_box()["y"] < page.locator(".quick-metrics").bounding_box()["y"]
-                page.locator("#upgrade-top").click()
-                expect(page.locator("#upgrade-options")).to_be_visible()
-                expect(page.locator("#upgrade-options .upgrade-plan")).to_have_count(2)
-                expect(page.locator('#upgrade-options a[href*="intent="]')).to_have_count(0)
-                expect(page.locator("#upgrade-options").get_by_text("Pedido em aberto", exact=True)).to_be_visible()
-                expect(page.locator('#upgrade-options a[href="./checkout.html?plan=escritorio"]')).to_be_visible()
+                expect(page.locator("#upgrade-options")).to_be_hidden()
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Horizontal overflow"
                 page.evaluate("window.scrollTo(0, 0)")
                 page.screenshot(path=str(output / f"{viewport}.png"), full_page=True)
-                page.locator("#upgrade-close").click()
-                expect(page.locator("#upgrade-top")).to_be_focused()
-                page.locator("#upgrade-profile").click()
-                expect(page.locator("#upgrade-title")).to_be_focused()
-                page.locator("#upgrade-close").click()
-                expect(page.locator("#upgrade-profile")).to_be_focused()
 
                 # Pending requests receive a payment link without reloading the page.
                 state["orders"][0].update(status="AWAITING_PAYMENT", payment_link="https://pay.example.com/synthetic")
                 page.clock.run_for(31000)
                 expect(page.locator("#order-payment-link")).to_be_visible()
                 expect(page.locator("#order-payment-link")).to_have_attribute("href", "https://pay.example.com/synthetic")
+                expect(page.locator("#upgrade-top")).to_be_hidden()
                 with page.expect_popup() as popup:
                     page.locator("#order-payment-link").click()
                 popup.value.close()
@@ -155,6 +146,28 @@ def run():
                 expect(page.locator("#upgrade-top")).to_be_visible()
                 page.locator("#upgrade-top").click()
                 expect(page.locator("#upgrade-options .upgrade-plan")).to_have_count(3)
+                # A new pending order closes an expanded upgrade chooser.
+                state["orders"] = [order()]
+                page.evaluate("window.dispatchEvent(new Event('focus'))")
+                expect(page.locator("#upgrade-options")).to_be_hidden()
+                expect(page.locator("#upgrade-profile")).to_be_hidden()
+                # Losing one of several orders must not unblock upgrades prematurely.
+                state["orders"].append(order("escritorio", "pending"))
+                state["orders"][0]["status"] = "LOST"
+                page.evaluate("window.dispatchEvent(new Event('focus'))")
+                expect(page.locator("#order-intent-id")).to_have_text("chk_escritorio")
+                expect(page.locator("#upgrade-top")).to_be_hidden()
+                state["orders"][1]["status"] = "LOST"
+                page.clock.run_for(31000)
+                expect(page.locator("#order-status")).to_be_hidden()
+                expect(page.locator("#upgrade-top")).to_be_visible()
+                expect(page.locator("#upgrade-profile")).to_be_visible()
+                expect(page.locator("#orders-rows")).to_contain_text("VENDA PERDIDA")
+                page.locator("#upgrade-profile").click()
+                expect(page.locator("#upgrade-title")).to_be_focused()
+                page.locator("#upgrade-close").click()
+                expect(page.locator("#upgrade-profile")).to_be_focused()
+                page.locator("#upgrade-top").click()
                 state["code"] = "profissional"
                 page.evaluate("window.dispatchEvent(new Event('focus'))")
                 expect(page.locator("#upgrade-options .upgrade-plan")).to_have_count(1)
@@ -162,6 +175,22 @@ def run():
                 state["code"] = "retired-private-plan"
                 page.evaluate("window.dispatchEvent(new Event('focus'))")
                 expect(page.locator("#upgrade-top")).to_be_hidden()
+
+                # The real HTTP regressions verify /latest selects a newer lost upgrade
+                # over an older released plan. Verify the UI consumes that response on
+                # ordinary navigation, without a checkout_intent query parameter.
+                released = {**order("essencial", "RELEASED_FOR_USE"), "created_at": "2026-11-10T12:00:00Z"}
+                lost = {**order("profissional", "LOST"), "created_at": "2026-11-12T12:00:00Z"}
+                state.update(code="essencial", orders=[released, lost], latest_order=lost)
+                page.goto("http://127.0.0.1:8000/client-area.html")
+                expect(page.locator("#orders-rows")).to_contain_text("chk_profissional")
+                expect(page.locator("#orders-rows")).to_contain_text("Profissional")
+                expect(page.locator("#orders-rows")).to_contain_text("VENDA PERDIDA")
+                expect(page.locator("#order-status")).to_be_hidden()
+                expect(page.locator("#plan-summary")).to_have_text("Essencial")
+                expect(page.locator("#upgrade-top")).to_be_visible()
+                expect(page.locator("#upgrade-profile")).to_be_visible()
+                state.pop("latest_order")
 
                 # An unavailable history/catalog cannot hide a pending order.
                 state.update(code="essencial", orders=[order(status="pending")], fail_history=True, fail_plans=True)

@@ -21,6 +21,14 @@ from app.application.statement_identity import (
 logger = logging.getLogger(__name__)
 
 
+class ReceiptRecoveryPending(RuntimeError):
+    """Identity is saved; the caller must surface this document's recovery status."""
+
+    def __init__(self, status="pending"):
+        super().__init__(status)
+        self.status = status
+
+
 def _utc(value):
     return datetime.fromisoformat(value).astimezone(timezone.utc) if isinstance(value, str) else value.astimezone(timezone.utc)
 
@@ -60,10 +68,21 @@ def technical_status(record):
 
 
 class ReceivedStatements(OrganizationService):
-    def __init__(self, db, repository=None, *, document_store=None):
+    def __init__(self, db, repository=None, *, document_store=None, recovery=None):
         super().__init__(db)
         self.repository = repository
         self.document_store = document_store
+        self.recovery = recovery
+
+    def _recover_movements(self, owner, job_id):
+        if self.recovery is not None:
+            try:
+                status = self.recovery.recover(owner, job_id)
+            except Exception as exc:
+                logger.warning("pro_receipt_recovery_pending", extra={"job_id": job_id, "error_class": type(exc).__name__})
+                raise ReceiptRecoveryPending from None
+            if status in {"unavailable", "review_required"}:
+                raise ReceiptRecoveryPending(status)
 
     def _lock(self, conn, owner):
         organization = self._organization(conn, owner, create=True)
@@ -252,18 +271,24 @@ class ReceivedStatements(OrganizationService):
 
             document = self.document_store.load(record.job.document)
             pages = [page.extract_text() or "" for page in PdfReader(BytesIO(document.raw_bytes)).pages]
+            # Previous recognizer output is not independent document metadata: seeding
+            # it would retain rejected fund IDs and create false name conflicts on upgrade.
             source = identify_native_statement({"bank_code": original.get("bank_code"), "bank_branch": original.get("branch"),
-                "account_number": original.get("account_number"), "financial_document": {"metadata": {
-                    "owner_name": original.get("holder_name"), "owner_tax_id": original.get("holder_tax_id")}}},
+                "account_number": original.get("account_number")},
                 raw_bytes=document.raw_bytes, page_texts=pages)
+            if source["confidence"] == "missing":
+                # A scanned PDF may have no native identity evidence. Keep its saved
+                # OCR result and review state; never upgrade its confidence by seeding it.
+                source = {**original, "version": IDENTITY_VERSION}
             return {**source, "native_identity_checked": True} if record.expires_at > datetime.now(timezone.utc) else None
         except Exception as exc:
             logger.warning("pro_receipt_identity_recovery_failed", extra={"job_id": record.job.job_id, "error_class": type(exc).__name__})
             return None
 
     def sync(self, owner, cursor=None):
+        result = {"next_cursor": None, "recovery_issues": []}
         if self.repository is None:
-            return None
+            return result
         import base64
 
         from app.routers.pro_organization import decode_cursor
@@ -273,48 +298,65 @@ class ReceivedStatements(OrganizationService):
             record = self.repository.get(summary.job_id)
             if record and record.job.identity.identity_type == "user" and record.job.identity.identity_id == owner:
                 self.receive(record, recovered_source=self._recover_native_source(owner, record))
+                try:
+                    self._recover_movements(owner, record.job.job_id)
+                except ReceiptRecoveryPending as exc:
+                    # A source-specific failure must not strand this or later pages.
+                    result["recovery_issues"].append({"job_id": record.job.job_id, "status": exc.status})
         if len(summaries) == 100:
             last = summaries[-1]
-            return base64.urlsafe_b64encode(json.dumps([last.created_at.isoformat(), last.job_id]).encode()).decode().rstrip("=")
-        return None
+            boundary = json.dumps([last.created_at.isoformat(), last.job_id]).encode()
+            result["next_cursor"] = base64.urlsafe_b64encode(boundary).decode().rstrip("=")
+        return result
 
-    def dashboard(self, owner, *, now=None, after="", limit=30, pending_after="", sort="id", query=""):
+    def dashboard(self, owner, *, now=None, after="", limit=30, pending_after="", sort="id", query="", active_only=False):
         now = _utc(now or datetime.now(timezone.utc)).isoformat()
         with self.db.connect() as conn:
             organization = self._organization(conn, owner)
             if not organization:
                 return {"totals": {"statements": 0, "ready": 0, "attention": 0}, "clients": [], "pending": [],
-                        "next_cursor": None, "pending_next_cursor": None, "client_count": 0, "pending_count": 0}
+                        "next_cursor": None, "pending_next_cursor": None, "client_count": 0, "pending_count": 0,
+                        "all_client_count": 0, "active_client_count": 0, "next_expiration_at": None, "server_time": now}
             totals = self.db.fetchone(conn, "SELECT COUNT(*) AS statements, "
                 "COALESCE(SUM(CASE WHEN technical_status = 'ready' THEN 1 ELSE 0 END), 0) AS ready, "
-                "COALESCE(SUM(CASE WHEN technical_status = 'attention' THEN 1 ELSE 0 END), 0) AS attention "
+                "COALESCE(SUM(CASE WHEN technical_status = 'attention' THEN 1 ELSE 0 END), 0) AS attention, "
+                "MIN(expires_at) AS next_expiration_at "
                 "FROM pro_received_statements WHERE organization_id = ? AND expires_at > ?", (organization, now))
-            client_filter, client_params = "c.id > ?", [after]
             # Authorize first, normalize/filter before pagination. Only hydrate one
             # page; Python normalization is identical on SQLite and PostgreSQL.
             identities = self.db.fetchall(conn,
-                    "SELECT c.id, c.name, c.trade_name, c.tax_id FROM pro_clients c WHERE c.organization_id = ? AND EXISTS ("
-                    "SELECT 1 FROM pro_conversion_contexts x JOIN pro_received_statements r "
-                    "ON r.organization_id = x.organization_id AND r.job_id = x.job_id "
-                    "WHERE x.organization_id = c.organization_id AND x.client_id = c.id)",
-                    (organization,))
+                    "SELECT c.id, c.name, c.trade_name, c.tax_id, "
+                    "MAX(CASE WHEN r.expires_at > ? THEN 1 ELSE 0 END) AS has_active "
+                    "FROM pro_clients c JOIN pro_conversion_contexts x "
+                    "ON x.organization_id = c.organization_id AND x.client_id = c.id "
+                    "JOIN pro_received_statements r ON r.organization_id = x.organization_id AND r.job_id = x.job_id "
+                    "WHERE c.organization_id = ? GROUP BY c.id, c.name, c.trade_name, c.tax_id",
+                    (now, organization))
             identities = [row for row in identities if _matches_client(row, query)]
-            client_count = len(identities)
+            all_client_count = len(identities)
+            active_client_count = sum(bool(row["has_active"]) for row in identities)
+            client_count = active_client_count if active_only else all_client_count
             if sort == "name" or query.strip():
                 identities = sorted(identities, key=_client_name_order if sort == "name" else lambda row: row["id"])
+                # Locate the cursor in history even if its last document just expired.
                 start = next((index + 1 for index, row in enumerate(identities) if row["id"] == after), len(identities)) if after else 0
-                client_params = [row["id"] for row in identities[start:start + limit + 1]]
-                client_filter = f"c.id IN ({', '.join('?' for _ in client_params)})" if client_params else "1 = 0"
+                identities = identities[start:]
+            else:
+                identities = sorted((row for row in identities if row["id"] > after), key=lambda row: row["id"])
+            if active_only:
+                identities = [row for row in identities if row["has_active"]]
+            client_params = [row["id"] for row in identities[:limit + 1]]
+            client_filter = f"c.id IN ({', '.join('?' for _ in client_params)})" if client_params else "1 = 0"
             rows = self.db.fetchall(conn, "SELECT c.id, c.name, c.tax_id, c.trade_name, c.updated_at, COUNT(*) AS historical_count, "
                 "SUM(CASE WHEN r.expires_at > ? THEN 1 ELSE 0 END) AS available_count, "
-                "SUM(CASE WHEN r.technical_status = 'attention' THEN 1 ELSE 0 END) AS attention_count, "
-                "SUM(CASE WHEN r.technical_status = 'processing' THEN 1 ELSE 0 END) AS processing_count "
+                "SUM(CASE WHEN r.expires_at > ? AND r.technical_status = 'attention' THEN 1 ELSE 0 END) AS attention_count, "
+                "SUM(CASE WHEN r.expires_at > ? AND r.technical_status = 'processing' THEN 1 ELSE 0 END) AS processing_count "
                 "FROM pro_received_statements r JOIN pro_conversion_contexts x "
                 "ON x.organization_id = r.organization_id AND x.job_id = r.job_id "
                 "JOIN pro_clients c ON c.organization_id = x.organization_id AND c.id = x.client_id "
                 f"WHERE r.organization_id = ? AND {client_filter} "
                 "GROUP BY c.id, c.name, c.tax_id, c.trade_name, c.updated_at ORDER BY c.id LIMIT ?",
-                (now, organization, *client_params, limit + 1))
+                (now, now, now, organization, *client_params, limit + 1))
             if sort == "name":
                 rows = sorted(rows, key=_client_name_order)
             clients = []
@@ -340,7 +382,10 @@ class ReceivedStatements(OrganizationService):
                 "LEFT JOIN pro_conversion_contexts x ON x.organization_id = r.organization_id AND x.job_id = r.job_id "
                 "WHERE r.organization_id = ? AND x.client_id IS NULL AND r.expires_at > ? AND r.job_id > ? ORDER BY r.job_id LIMIT 51",
                 (organization, now, pending_after))
-            return {"totals": dict(totals), "clients": clients, "client_count": client_count, "pending_count": pending_count,
+            return {"totals": {key: totals[key] for key in ("statements", "ready", "attention")},
+                    "clients": clients, "client_count": client_count, "pending_count": pending_count,
+                    "all_client_count": all_client_count, "active_client_count": active_client_count,
+                    "next_expiration_at": totals["next_expiration_at"], "server_time": now,
                     "pending": [{"job_id": row["job_id"], "batch_id": row["batch_id"], "filename": row["filename"],
                                  "version": row["version"], "source": json.loads(row["source_json"])} for row in pending[:50]],
                     "pending_next_cursor": pending[49]["job_id"] if len(pending) > 50 else None,
@@ -390,7 +435,8 @@ class ReceivedStatements(OrganizationService):
                                                      period_ids=periods, expected_version=expected_version)
             self._confirm_identity(conn, organization, client_id)
             conn.commit()
-            return result
+        self._recover_movements(owner, job_id)
+        return result
 
     def edit_client(self, owner, client_id, *, name, tax_id, expected_updated_at):
         name, tax = self._text(name), normalized(tax_id)

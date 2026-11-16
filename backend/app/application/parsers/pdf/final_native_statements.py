@@ -47,18 +47,20 @@ def _english(pages, kind):
             continue
         if not re.match(rf"^{DATE}\b", raw):
             continue
-        match = re.fullmatch(rf"({DATE})\s+(DEP|DEBIT)\s+(.+?)\s+(-?)R\$\s*({US_MONEY})", raw)
+        match = re.fullmatch(rf"({DATE})\s+(DEP|DEBIT|CHECK)\s+(.+?)\s+(-?)R\$\s*({US_MONEY})", raw)
         if not match:
             fail("Uma linha do extrato em inglês está incompleta ou contém um tipo não reconhecido.")
         date = day(match[1], "%m/%d/%Y")
-        if not period_contains(date, start, end) or (match[2] == "DEBIT") != bool(match[4]):
+        if not period_contains(date, start, end) or (
+                match[2] != "CHECK" and (match[2] == "DEBIT") != bool(match[4])):
             fail()
         amount = Decimal(match[5].replace(",", "")) * (-1 if match[4] else 1)
         rows.append(_row(page, line, date, match[3], amount))
     credits = sum((Decimal(str(r.transaction.amount)) for r in rows if r.transaction.amount >= 0), Decimal(0))
     debits = -sum((Decimal(str(r.transaction.amount)) for r in rows if r.transaction.amount < 0), Decimal(0))
-    def header(label):
-        values = re.findall(re.escape(label) + rf"\s*R\$\s*({US_MONEY})", text, re.I)
+    def header(label, *, signed=False):
+        value = rf"-?{US_MONEY}" if signed else US_MONEY
+        values = re.findall(re.escape(label) + rf"\s*R\$\s*({value})", text, re.I)
         if len(values) != 1:
             fail()
         return Decimal(values[0].replace(",", ""))
@@ -67,7 +69,7 @@ def _english(pages, kind):
         fail("A contagem ou os totais do extrato em inglês não correspondem aos movimentos.")
     if totals != [(format(credits, ",.2f"), format(debits, ",.2f"))]:
         fail()
-    closing = header("Current Balance")
+    closing = header("Current Balance", signed=True)
     rows.sort(key=lambda r: r.transaction.date)
     opening = closing - credits + debits
     return VerifiedStatement(rows, kind, opening, closing, opening_inferred=True, candidate_rows=int(expected[1]))

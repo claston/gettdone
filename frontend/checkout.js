@@ -244,6 +244,7 @@
     if (status === "REQUESTED" || status === "pending") return "Solicitado";
     if (status === "AWAITING_PAYMENT") return "Aguardando pagamento";
     if (status === "RELEASED_FOR_USE") return "Liberado para uso";
+    if (status === "LOST") return "Venda perdida";
     return status || "-";
   }
 
@@ -251,6 +252,7 @@
     if (nextStep === "SEND_PAYMENT_LINK") return "Enviar link de pagamento";
     if (nextStep === "WAIT_FOR_PAYMENT") return "Aguardar pagamento";
     if (nextStep === "READY_TO_USE") return "Plano liberado para uso";
+    if (nextStep === "ORDER_CLOSED") return "Pedido encerrado";
     return "Acompanhar pedido";
   }
 
@@ -271,7 +273,7 @@
     orderStatusValueNode.textContent = mapStatusLabel(String(data.status || ""));
     orderNextStepNode.textContent = mapNextStepLabel(String(data.next_step || ""));
 
-    const paymentLink = safePaymentLink(data.payment_link);
+    const paymentLink = data.status === "AWAITING_PAYMENT" ? safePaymentLink(data.payment_link) : "";
     if (paymentLink) {
       orderPaymentLinkNode.setAttribute("href", paymentLink);
       orderPaymentLinkLineNode.classList.remove("hidden");

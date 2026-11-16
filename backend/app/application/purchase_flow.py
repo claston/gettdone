@@ -6,6 +6,7 @@ import secrets
 from datetime import timedelta
 from uuid import uuid4
 
+from app.application.checkout_management import CHECKOUT_STATUS_LOST, OPEN_CHECKOUT_STATUSES
 from app.application.plan_management import activate_user_plan
 
 
@@ -33,12 +34,42 @@ class PurchaseFlow:
             "NOTIFICATION_FAILED": "Falha no envio do e-mail. Reenvio disponível no pedido.",
             "NOTIFICATION_RETRY_REQUESTED": "Reenvio de e-mail solicitado pelo administrador.",
             "INITIAL_ACCESS_COMPLETED": "Primeiro acesso concluído pelo cliente.",
+            "SALE_LOST": "Pedido encerrado como venda perdida pelo administrador.",
         }
         self.s._append_checkout_intent_event_with_conn(
             conn, intent_id=intent_id, event_type=event_type, event_message=messages[event_type],
             actor_kind=actor_kind, actor_user_id=actor_user_id, payload=payload or {},
             created_at=self.s.now_provider().isoformat(),
         )
+
+    def lose(self, intent_id, *, actor_kind, actor_user_id):
+        s = self.s
+        now = s.now_provider().isoformat()
+        with s._lock, s._connect() as conn:
+            self.begin(conn)
+            try:
+                intent = s._fetchone(conn, "SELECT status FROM checkout_intents WHERE id = ?" + self.lock_suffix, (intent_id,))
+                if intent is None:
+                    raise ValueError("Pedido não encontrado.")
+                if intent["status"] == CHECKOUT_STATUS_LOST:
+                    conn.rollback()
+                    return False
+                if intent["status"] not in OPEN_CHECKOUT_STATUSES:
+                    raise PurchaseConflict("Somente pedidos em aberto podem ser encerrados como venda perdida.")
+                sending = s._fetchone(conn, """SELECT id FROM checkout_notifications
+                    WHERE intent_id = ? AND status = 'sending' LIMIT 1""", (intent_id,))
+                if sending:
+                    raise PurchaseConflict("Aguarde o envio de e-mail em andamento antes de encerrar o pedido.")
+                s._execute(conn, "UPDATE checkout_intents SET status = ?, updated_at = ? WHERE id = ?",
+                           (CHECKOUT_STATUS_LOST, now, intent_id))
+                s._execute(conn, """UPDATE purchase_tokens SET invalidated_at = ? WHERE intent_id = ?
+                    AND purpose = 'payment' AND invalidated_at IS NULL""", (now, intent_id))
+                self.event(conn, intent_id, "SALE_LOST", actor_kind, actor_user_id, {"previous_status": intent["status"]})
+                conn.commit()
+                return True
+            except Exception:
+                conn.rollback()
+                raise
 
     def release(self, intent_id, *, create_account=False, actor_kind, actor_user_id):
         s = self.s
@@ -52,6 +83,8 @@ class PurchaseFlow:
                 if intent["status"] == "RELEASED_FOR_USE":
                     conn.rollback()
                     return False
+                if intent["status"] not in OPEN_CHECKOUT_STATUSES:
+                    raise PurchaseConflict("Pedido encerrado. A liberação não está disponível.")
                 payment = s._fetchone(conn, "SELECT * FROM checkout_notifications WHERE intent_id = ? AND kind = 'payment'",
                                      (intent_id,))
                 if payment and payment["status"] == "sending":
@@ -119,7 +152,8 @@ class PurchaseFlow:
             self.begin(conn)
             try:
                 intent = s._fetchone(conn, "SELECT status FROM checkout_intents WHERE id = ?" + self.lock_suffix, (intent_id,))
-                if not intent or (kind == "payment" and intent["status"] == "RELEASED_FOR_USE"):
+                if (not intent or intent["status"] == CHECKOUT_STATUS_LOST
+                        or (kind == "payment" and intent["status"] not in OPEN_CHECKOUT_STATUSES)):
                     conn.rollback()
                     return None
                 self.enqueue(conn, intent_id, kind)
@@ -178,7 +212,7 @@ class PurchaseFlow:
                     s._execute(conn, """UPDATE purchase_tokens SET invalidated_at = ? WHERE user_id = ?
                         AND purpose = 'setup' AND consumed_at IS NULL AND invalidated_at IS NULL""", (now.isoformat(), user["id"]))
                 else:
-                    if purpose != "payment" or intent["status"] == "RELEASED_FOR_USE":
+                    if purpose != "payment" or intent["status"] not in OPEN_CHECKOUT_STATUSES:
                         raise ValueError("Link de pagamento indisponível.")
                     # Previous links remain usable and always resolve to the current, stored URL.
                 token, token_id = secrets.token_urlsafe(32), f"pt_{uuid4().hex}"

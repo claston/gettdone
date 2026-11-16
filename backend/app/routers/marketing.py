@@ -1,6 +1,7 @@
 import logging
 import os
 from html import escape
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Response
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 class MarketingTestEmailRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     request_id: UUID
+    template_id: Literal["marketing-test-v1", "01-organizacao"] = TEST_TEMPLATE_ID
 
 
 class MarketingTestEmailResponse(BaseModel):
@@ -56,23 +58,27 @@ async def send_marketing_test_email(
             mailer=mailer,
             public_base_url=os.getenv("MARKETING_PUBLIC_BASE_URL", "https://www.ofxsimples.com.br").strip(),
             request_id=str(payload.request_id),
+            template_id=payload.template_id,
         )
     except MarketingRecipientUnavailableError:
         raise HTTPException(
-            409, "O destinatário configurado precisa existir, estar ativo, ter e-mail verificado e consentimento de marketing.",
+            409, "O destinatário configurado precisa existir, estar ativo, ter e-mail verificado e consentimento de marketing. "
+            "O e-mail 01 exige consentimento versão 2.",
         )
     except (ContactProviderNotConfiguredError, MarketingConfigurationError):
         raise HTTPException(
-            503, "O envio de marketing não está configurado. Verifique o destinatário, o Resend e a URL pública de descadastro.",
+            503, "O envio de marketing não está configurado. Verifique o destinatário, o Resend, "
+            "a URL pública de descadastro e o modelo. Para o e-mail 01, configure também "
+            "MARKETING_SENDER_COMPANY e MARKETING_SENDER_CNPJ no backend.",
         )
     except ContactDeliveryError:
-        logger.warning("marketing_test_delivery_failed admin_id=%s template_id=%s", admin.user_id, TEST_TEMPLATE_ID)
+        logger.warning("marketing_test_delivery_failed admin_id=%s template_id=%s", admin.user_id, payload.template_id)
         raise HTTPException(502, "Não foi possível confirmar o envio pelo Resend. Tente novamente para verificar o mesmo disparo.")
     response.headers["Cache-Control"] = "no-store"
     logger.info("marketing_test_delivery_finished admin_id=%s template_id=%s mode=%s provider_message_id=%s",
-                admin.user_id, TEST_TEMPLATE_ID, delivery.delivery_mode, delivery.provider_message_id)
+                admin.user_id, payload.template_id, delivery.delivery_mode, delivery.provider_message_id)
     return MarketingTestEmailResponse(
-        recipient=service.test_recipient, template_id=TEST_TEMPLATE_ID,
+        recipient=service.test_recipient, template_id=payload.template_id,
         delivery_mode=delivery.delivery_mode, provider_message_id=delivery.provider_message_id,
     )
 

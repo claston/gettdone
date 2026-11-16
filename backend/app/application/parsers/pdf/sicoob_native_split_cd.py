@@ -33,18 +33,23 @@ def parse_sicoob_native_split_cd(source):
     value_left = columns["VALOR"] - .04 if columns else None
     if source.provider == "native_pdfium_text":
         columns = native_header_columns(source.pages[0], ("DATA", "HISTORICO", "VALOR"))
-        if columns:
-            # Amounts are right aligned; long values legitimately start before
-            # the heading. Require their boxes to reach the financial column.
-            value_left = min([columns["VALOR"] - .04, *[
-                cell.bbox["left"] for page in source.pages for cell in (*page.lines, *page.words)
-                if cell.bbox and _VALUE.fullmatch(upper(cell.text))
-                and cell.bbox["left"] > (columns["HISTORICO"] + columns["VALOR"]) / 2
-                and cell.bbox["left"] + cell.bbox["width"] >= columns["VALOR"]]])
-            source = replace(source, pages=[split_native_columns(page,
-                [columns["HISTORICO"] - .02, value_left],
+    if columns:
+        # Amounts are right aligned; long values legitimately start before
+        # the heading. Require their boxes to reach the financial column.
+        value_left = min([columns["VALOR"] - .04, *[
+            cell.bbox["left"] for page in source.pages for cell in (*page.lines, *page.words)
+            if cell.bbox and _VALUE.fullmatch(upper(cell.text))
+            and cell.bbox["left"] > (columns["HISTORICO"] + columns["VALOR"]) / 2
+            and cell.bbox["left"] + cell.bbox["width"] >= columns["VALOR"]]])
+        pages = []
+        for page in source.pages:
+            financial_words = {word.id for word in page.words if word.bbox
+                and word.bbox["left"] >= value_left and _VALUE.fullmatch(upper(word.text))}
+            pages.append(split_native_columns(page, [columns["HISTORICO"] - .02, value_left],
                 include=lambda line: bool(re.match(r"^\d{2}/\d{2}\s+", line.text)
-                    or upper(line.text).startswith("DATA ") and "HISTORICO" in upper(line.text))) for page in source.pages])
+                    or upper(line.text).startswith("DATA ") and "HISTORICO" in upper(line.text)
+                    or financial_words.intersection(line.word_ids))))
+        source = replace(source, pages=pages)
     if not columns:
         labels = [upper(line.text) for page in source.pages for line in page.lines]
         dated = [text for text in labels if re.match(r"^\d{2}/\d{2}(?:\s|$)", text)]
@@ -106,7 +111,7 @@ def parse_sicoob_native_split_cd(source):
         if not history:
             fail()
         label = upper(history[0].text)
-        if label in {"SALDO BLOQ.ANTERIOR", "SALDO BLOQUEADO ANTERIOR"}:
+        if label in {"SALDO BLOQ.ANTERIOR", "SALDO BLOQ. ANTERIOR", "SALDO BLOQUEADO ANTERIOR"}:
             if sign != "*":
                 fail()
             continue
@@ -161,7 +166,7 @@ def parse_sicoob_native_split_cd(source):
             for _, band in printed:
                 rows[index] = _attach_evidence(rows[index], band)
     closing_labels = [(page, line) for pos, page, line in witnesses
-                      if pos > end_pos and upper(line.text) == "(+) SALDO EM CONTA:"]
+                      if pos > end_pos and upper(line.text).replace(" ", "") in {"(+)SALDOEMCONTA:", "SALDOEMC.CORRENTE(+):"}]
     if len(closing_labels) != 1:
         fail()
     last_page, closing_label = closing_labels[0]

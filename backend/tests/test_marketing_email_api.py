@@ -31,6 +31,8 @@ class FakeResend:
 def marketing(tmp_path, monkeypatch):
     monkeypatch.setenv("MARKETING_TEST_RECIPIENT", "marketing-test@example.com")
     monkeypatch.delenv("MARKETING_FROM_EMAIL", raising=False)
+    monkeypatch.setenv("MARKETING_SENDER_COMPANY", 'Empresa & "Teste"')
+    monkeypatch.setenv("MARKETING_SENDER_CNPJ", "00.000.000/0000-00")
     service = AccessControlService(
         state_file=tmp_path / "access.json",
         token_secret="marketing-test-secret",
@@ -86,6 +88,127 @@ def test_admin_send_finishes_inline_and_includes_unsubscribe(marketing):
     assert message["idempotency_key"].endswith(str(request_id))
     assert message["headers"]["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
     assert unsubscribe_path(mailer) in message["headers"]["List-Unsubscribe"]
+
+
+def send_organization_test(client, request_id=None):
+    return client.post("/admin/marketing/test-email", json={
+        "request_id": str(request_id or uuid4()), "template_id": "01-organizacao",
+    })
+
+
+def test_organization_email_has_sales_cta_and_real_unsubscribe(marketing):
+    client, service, user, mailer = marketing
+    with service._connect() as conn:
+        service._execute(conn, "UPDATE users SET name = ? WHERE id = ?", ('Ana <img src=x> & Bia', user.user_id))
+        conn.commit()
+    login(client)
+    request_id = uuid4()
+    response = send_organization_test(client, request_id)
+    assert response.status_code == 200, response.text
+    assert response.json()["template_id"] == "01-organizacao"
+    message = mailer.messages[-1]
+    assert message["subject"] == "[TESTE] Antes de converter: 4 detalhes para conferir no seu extrato"
+    assert message["idempotency_key"] == f"marketing-test/01-organizacao/{request_id}"
+    assert message["to_email"] == "marketing-test@example.com"
+    for body in (message["html"], message["text"]):
+        assert "Conhecer os planos" in body
+        assert "https://www.ofxsimples.com.br/planos.html" in body
+        assert "{{" not in body
+        assert "CNPJ: 00.000.000/0000-00" in body
+    assert "Empresa &amp; &quot;Teste&quot;" in message["html"]
+    assert 'Empresa & "Teste"' in message["text"]
+    assert "Ana &lt;img src=x&gt; &amp; Bia" in message["html"]
+    assert "Ana <img src=x> & Bia" in message["text"]
+    path = unsubscribe_path(mailer)
+    assert path in message["html"]
+    assert path in message["headers"]["List-Unsubscribe"]
+    client.cookies.clear()
+    assert client.get(path).status_code == 200
+    assert service.list_marketing_contacts_for_admin()[1] == 1
+    assert client.post(path).status_code == 200
+    assert service.list_marketing_contacts_for_admin()[1] == 0
+    login(client)
+    assert send_organization_test(client).status_code == 409
+    assert send(client).status_code == 409
+    assert len(mailer.messages) == 1
+
+
+@pytest.mark.parametrize("column,value", [
+    ("product_updates_opt_in", 0), ("is_active", 0), ("email_verification_status", "pending"),
+    ("product_updates_consent_version", 1), ("product_updates_consent_version", None),
+])
+def test_organization_test_rechecks_consent(marketing, column, value):
+    client, service, user, mailer = marketing
+    login(client)
+    with service._connect() as conn:
+        service._execute(conn, f"UPDATE users SET {column} = ? WHERE id = ?", (value, user.user_id))
+        conn.commit()
+    assert send_organization_test(client).status_code == 409
+    assert not mailer.messages
+
+
+def test_unknown_marketing_template_cannot_send(marketing):
+    client, _, _, mailer = marketing
+    login(client)
+    response = client.post("/admin/marketing/test-email", json={
+        "request_id": str(uuid4()), "template_id": "../../secrets",
+    })
+    assert response.status_code == 400
+    assert not mailer.messages
+
+
+@pytest.mark.parametrize("key,value", [
+    ("MARKETING_SENDER_COMPANY", None), ("MARKETING_SENDER_CNPJ", None),
+    ("MARKETING_SENDER_COMPANY", "   "), ("MARKETING_SENDER_CNPJ", "{{ sender_cnpj }}"),
+])
+def test_organization_test_requires_private_sender_configuration(marketing, monkeypatch, key, value):
+    client, _, _, mailer = marketing
+    if value is None:
+        monkeypatch.delenv(key, raising=False)
+    else:
+        monkeypatch.setenv(key, value)
+    login(client)
+    assert send_organization_test(client).status_code == 503
+    assert not mailer.messages
+    assert send(client).status_code == 200
+
+
+def test_template_switch_uses_separate_provider_idempotency_keys(marketing):
+    client, _, _, mailer = marketing
+    login(client)
+    request_id = uuid4()
+    assert send(client, request_id).status_code == 200
+    assert send_organization_test(client, request_id).status_code == 200
+    assert mailer.messages[0]["idempotency_key"] != mailer.messages[1]["idempotency_key"]
+    assert send_organization_test(client, request_id).status_code == 200
+    assert mailer.messages[1] == mailer.messages[2]
+
+
+def test_missing_template_assets_block_delivery(marketing, monkeypatch, tmp_path):
+    from app.application import marketing_email_service
+
+    client, _, _, mailer = marketing
+    monkeypatch.setattr(marketing_email_service, "CONTENT_TEMPLATE_ROOT", tmp_path)
+    login(client)
+    assert send_organization_test(client).status_code == 503
+    assert not mailer.messages
+
+
+@pytest.mark.parametrize("placeholder", ["{{ unknown }}", "{{ invalid-template }}"])
+def test_unresolved_template_fields_block_delivery(marketing, monkeypatch, tmp_path, placeholder):
+    from app.application import marketing_email_service
+
+    client, _, _, mailer = marketing
+    (tmp_path / "campaign.json").write_text(json.dumps({"emails": [
+        {"id": "01-organizacao", "subject": "Teste"},
+    ]}), encoding="utf-8")
+    (tmp_path / "01-organizacao.txt").write_text("Olá, {{ name }}!", encoding="utf-8")
+    (tmp_path / "01-organizacao.html").write_text(placeholder, encoding="utf-8")
+    monkeypatch.setattr(marketing_email_service, "CONTENT_TEMPLATE_ROOT", tmp_path)
+    login(client)
+    assert send_organization_test(client).status_code == 503
+    assert not mailer.messages
+    assert send(client).status_code == 200
 
 
 def test_send_requires_admin_and_disallows_arbitrary_recipient(marketing):

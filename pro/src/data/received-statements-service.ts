@@ -41,6 +41,10 @@ export interface ReceivedPage {
   next_cursor: string | null;
   pending_next_cursor?: string | null;
   client_count?: number;
+  all_client_count?: number;
+  active_client_count?: number;
+  server_time?: string;
+  next_expiration_at?: string | null;
   pending_count?: number;
 }
 export interface ClientEdit {
@@ -54,14 +58,20 @@ export interface Confirmation {
   expected_version: number;
   client_id?: string | null;
 }
+export interface RecoverySummary {
+  unavailable: number;
+  review_required: number;
+  pending: number;
+}
 export interface ReceivedService {
   list(
     cursor?: string,
     signal?: AbortSignal,
     pendingCursor?: string,
     query?: string,
+    activeOnly?: boolean,
   ): Promise<ReceivedPage>;
-  refresh(signal?: AbortSignal): Promise<void>;
+  refresh(signal?: AbortSignal): Promise<RecoverySummary | void>;
   edit(id: string, value: ClientEdit): Promise<unknown>;
   confirm(id: string, value: Confirmation): Promise<unknown>;
 }
@@ -107,7 +117,7 @@ async function read(path: string, init?: RequestInit) {
   return response.json();
 }
 export const receivedService: ReceivedService = {
-  list: (cursor, signal, pendingCursor, search = "") => {
+  list: (cursor, signal, pendingCursor, search = "", activeOnly = false) => {
     if (search.trim())
       return read("/search", {
         method: "POST",
@@ -117,12 +127,14 @@ export const receivedService: ReceivedService = {
           cursor: cursor ?? "",
           pending_cursor: pendingCursor ?? "",
           sort: "name",
+          ...(activeOnly ? { active_only: true } : {}),
         }),
         signal,
         cache: "no-store",
       });
     const query = new URLSearchParams();
     query.set("sort", "name");
+    if (activeOnly) query.set("active_only", "true");
     if (cursor) query.set("cursor", cursor);
     if (pendingCursor) query.set("pending_cursor", pendingCursor);
     return read(query.size ? `?${query}` : "", {
@@ -132,13 +144,24 @@ export const receivedService: ReceivedService = {
   },
   async refresh(signal) {
     let cursor: string | null = null;
+    const summary: RecoverySummary = {
+      unavailable: 0,
+      review_required: 0,
+      pending: 0,
+    };
     do {
       const result = await read(
         `/refresh${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
         { method: "POST", signal },
       );
+      for (const issue of result.recovery_issues ?? []) {
+        if (issue.status === "unavailable") summary.unavailable += 1;
+        if (issue.status === "review_required") summary.review_required += 1;
+        if (issue.status === "pending") summary.pending += 1;
+      }
       cursor = result.next_cursor;
     } while (cursor != null && !signal?.aborted);
+    return summary;
   },
   edit: (id, value) =>
     read(`/clients/${encodeURIComponent(id)}`, {

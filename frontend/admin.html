@@ -260,6 +260,7 @@
               <option value="requested">Solicitado</option>
               <option value="awaiting_payment">Aguardando pagamento</option>
               <option value="released">Liberado</option>
+              <option value="lost">Venda perdida</option>
               <option value="all">Todos</option>
             </select>
           </label>
@@ -367,13 +368,20 @@
       </div>
       <div class="order-card">
         <h3>Disparo de teste</h3>
-        <p>Envie um modelo de teste com link de descadastro somente para o destinatário configurado para testes de marketing.</p>
+        <p>Envie somente para o destinatário configurado para testes de marketing.</p>
+        <label for="marketing-test-template">Modelo do teste</label>
+        <select id="marketing-test-template">
+          <option value="01-organizacao" selected>E-mail 01 — Guia do extrato e planos</option>
+          <option value="marketing-test-v1">Teste básico — Entrega e descadastro</option>
+        </select>
         <details>
-          <summary>Ver modelo do e-mail</summary>
-          <p><strong>Assunto:</strong> OFX Simples — e-mail de teste</p>
-          <p>Olá! Este é um e-mail de teste do OFX Simples. Estamos preparando conteúdos e novidades para ajudar na sua rotina financeira.</p>
-          <p>O e-mail inclui um link individual para deixar de receber comunicações de marketing.</p>
+          <summary>Sobre os modelos e o descadastro</summary>
+          <p><strong>E-mail 01:</strong> [TESTE] Antes de converter: 4 detalhes para conferir no seu extrato.</p>
+          <p>Inclui quatro cuidados para preparar o extrato para conversão e o botão <a href="/planos.html" target="_blank" rel="noopener noreferrer">Conhecer os planos</a>.</p>
+          <p><strong>Teste básico:</strong> OFX Simples — e-mail de teste. Mensagem simples para verificar a entrega.</p>
+          <p>Os dois modelos incluem um link individual de descadastro. Abra o link no e-mail e confirme o cancelamento para deixar de receber marketing, inclusive novos testes. Depois, atualize a lista de contatos para conferir a exclusão.</p>
         </details>
+        <p class="muted">Este botão faz um teste individual. Ele não agenda nem envia a campanha para a lista.</p>
         <button id="marketing-send-test-btn" type="button">Enviar e-mail de teste</button>
         <p id="marketing-send-status" class="status" role="status" aria-live="polite"></p>
       </div>

@@ -660,12 +660,8 @@ class TempAnalysisStorage(LegacyAnalysisState):
             raise AnalysisEditConflictError
 
     @locked_analysis
-    def fence_canonical_analysis(self, analysis_id: str, *, completion: dict | None = None) -> dict:
-        """Fence a new, not-yet-exposed PRO document before SQL adoption.
-
-        A retry can recover the extraction from the pending marker. Old binaries
-        must be drained before rollout; their code cannot honor this barrier.
-        """
+    def read_canonical_candidate(self, analysis_id: str) -> dict:
+        """Internal recovery read, including a previous durable pending fence."""
         path = self._resolve_analysis_dir(analysis_id) / "analysis.json"
         try:
             content = json.loads(path.read_text(encoding="utf-8"))
@@ -676,6 +672,17 @@ class TempAnalysisStorage(LegacyAnalysisState):
             raise AnalysisNotFoundError
         if content.get("authority") not in {None, "canonical_pending"}:
             raise AnalysisEditConflictError
+        return content
+
+    @locked_analysis
+    def fence_canonical_analysis(self, analysis_id: str, *, completion: dict | None = None) -> dict:
+        """Fence PRO state before SQL adoption. Recovery also holds its SQL guard.
+
+        A retry can recover the snapshot from the pending marker. Old binaries
+        must be drained before rollout; their code cannot honor this barrier.
+        """
+        content = self.read_canonical_candidate(analysis_id)
+        path = self._resolve_analysis_dir(analysis_id) / "analysis.json"
         if completion is not None:
             previous = content.get("canonical_completion")
             if previous is not None and previous != completion:

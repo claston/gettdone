@@ -54,3 +54,38 @@ def test_client_open_orders_preserve_all_pending_orders_and_isolate_customers():
             service._execute(conn, "UPDATE checkout_intents SET status = 'RELEASED_FOR_USE' WHERE id = ?", (legacy,))
             conn.commit()
         assert client.get("/checkout/intents/open").json() == {"items": []}
+
+
+@pytest.mark.parametrize("latest_status", ["LOST", "RELEASED_FOR_USE"])
+def test_latest_order_sorts_terminal_states_by_date_and_preserves_open_priority(latest_status):
+    with _run_http_server() as (url, service), LoopbackClient(base_url=url, timeout=10) as client:
+        customer = service.register_user(name="Cliente", email="customer@example.com", password="strong-pass")
+
+        def create(code, status, date):
+            intent = service.create_checkout_intent(
+                user_id=customer.user_id, plan_code=code, customer_name="Cliente",
+                customer_email=customer.email, customer_whatsapp="11999990000",
+            )["id"]
+            with service._connect() as conn:
+                service._execute(conn, "UPDATE checkout_intents SET status = ?, created_at = ? WHERE id = ?",
+                                 (status, date, intent))
+                conn.commit()
+            return intent
+
+        earlier_status = "RELEASED_FOR_USE" if latest_status == "LOST" else "LOST"
+        earlier = create("essencial", earlier_status, "2026-11-10T12:00:00+00:00")
+        latest = create("profissional", latest_status, "2026-11-12T12:00:00+00:00")
+        assert client.post("/auth/session/login", json={"email": customer.email, "password": "strong-pass"}).status_code == 200
+        assert client.get("/checkout/intents/open").json()["items"] == []
+        response = client.get("/checkout/intents/latest").json()
+        assert response["intent_id"] == latest
+        assert response["status"] == latest_status
+
+        # Historical pending requests still take precedence, regardless of their age.
+        pending = create("escritorio", "pending", "2026-11-09T12:00:00+00:00")
+        assert client.get("/checkout/intents/latest").json()["intent_id"] == pending
+        with service._connect() as conn:
+            service._execute(conn, "UPDATE checkout_intents SET status = 'AWAITING_PAYMENT', payment_link = ? WHERE id = ?",
+                             ("https://pay.example/fictional", earlier))
+            conn.commit()
+        assert client.get("/checkout/intents/latest").json()["intent_id"] == earlier

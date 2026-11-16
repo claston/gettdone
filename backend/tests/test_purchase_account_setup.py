@@ -5,6 +5,7 @@ from datetime import timedelta
 import pytest
 
 from app.application import InvalidUserTokenError
+from app.application import checkout_management as checkout_queries
 from app.application.purchase_email_service import render_purchase_email
 from app.application.purchase_flow import PurchaseFlow
 from app.main import app
@@ -100,16 +101,127 @@ def test_failed_release_email_keeps_plan_and_admin_can_reissue(purchase):
 def test_payment_copy_token_is_scoped_and_current_link_is_server_controlled(purchase):
     client, service, mail, headers = purchase
     intent = order(client)
+    # Simulate a link from an email sent before the payment email was simplified.
+    _, token = PurchaseFlow(service).issue_token(intent, "payment")
     response = client.post(f"/admin/checkout/intents/{intent}/payment-link", headers=headers,
                            json={"payment_link": "https://pay.example/123?a=1&b=2"})
     assert response.status_code == 200, response.text
-    token = re.search(r"#token=([\w-]+)", mail.sent_emails[-1]["text"])[1]
+    for content in (mail.sent_emails[-1]["text"], mail.sent_emails[-1]["html"]):
+        assert "pagamento.html" not in content
+        assert "payment_page_url" not in content
+        assert "Na página" not in content
+        assert "Pagar agora" in content
     result = client.post("/checkout/payment-page", json={"token": token})
     assert result.status_code == 200
     assert result.json()["payment_link"] == "https://pay.example/123?a=1&b=2"
     assert result.headers["cache-control"] == "no-store"
     assert client.post("/checkout/payment-page", json={"token": intent}).status_code == 400
     assert client.post("/auth/initial-access", json=dict(token=token, password="12345678", accepted_terms=True)).status_code == 400
+
+
+@pytest.mark.parametrize("status", ["REQUESTED", "AWAITING_PAYMENT", "pending"])
+def test_lost_sale_is_final_audited_and_allows_new_purchase(purchase, status):
+    client, service, mail, headers = purchase
+    user = service.register_user(name="Marina", email="marina@example.com", password="original-pass")
+    intent = order(client)
+    flow = PurchaseFlow(service)
+    _, token = flow.issue_token(intent, "payment")
+    service._test_conn.execute("UPDATE checkout_intents SET status = ?, payment_link = ? WHERE id = ?",
+                              (status, "https://pay.example/old", intent))
+    service._test_conn.commit()
+    path = f"/admin/checkout/intents/{intent}"
+    before = len(mail.sent_emails)
+    assert client.post(path + "/lose").status_code == 401
+    customer_headers = {"Authorization": f"Bearer {service.create_user_session(user_id=user.user_id).access_token}"}
+    assert client.post(path + "/lose", headers=customer_headers).status_code == 403
+    result = client.post(path + "/lose", headers=headers)
+    assert result.status_code == 200, result.text
+    assert result.json()["status"] == "LOST"
+    assert result.json()["next_step"] == "ORDER_CLOSED"
+    assert result.json()["payment_link"] is None
+    assert client.post(path + "/lose", headers=headers).status_code == 200
+    events = client.get(path + "/history", headers=headers).json()["items"]
+    lost = [event for event in events if event["event_type"] == "SALE_LOST"]
+    assert len(lost) == 1 and lost[0]["actor_user_id"] and lost[0]["created_at"]
+    assert client.get("/checkout/intents/open", params={"user_token": user.token}).json()["items"] == []
+    assert client.get("/admin/checkout/intents?status=lost", headers=headers).json()["items"][0]["intent_id"] == intent
+    assert client.get("/admin/checkout/intents?status=open", headers=headers).json()["items"] == []
+    assert client.post(path + "/payment-link", headers=headers, json={"payment_link": "https://pay.example/new"}).status_code == 409
+    assert client.post(path + "/release", headers=headers, json={"create_account": True}).status_code == 409
+    for kind in ("release", "customer_receipt", "admin_receipt"):
+        assert client.post(path + f"/resend-notification?kind={kind}", headers=headers).status_code == 409
+    assert client.post("/checkout/payment-page", json={"token": token}).status_code == 400
+    assert flow.claim_notification(intent, "payment", retry=True) is None
+    with pytest.raises(ValueError):
+        flow.issue_token(intent, "payment")
+    with pytest.raises(ValueError):
+        service.mark_checkout_intent_awaiting_payment(intent_id=intent, payment_link="https://pay.example/new")
+    with pytest.raises(ValueError):
+        service.mark_checkout_intent_released_by_id(intent_id=intent)
+    assert len(mail.sent_emails) == before
+    assert service._test_conn.execute("SELECT COUNT(*) FROM user_plan_subscriptions").fetchone()[0] == 0
+    assert service.read_checkout_intent_by_id(intent_id=intent)["payment_link"] == "https://pay.example/old"
+    assert order(client) != intent
+
+
+def test_lost_sale_rejects_released_missing_and_in_flight_notifications(purchase):
+    client, service, _, headers = purchase
+    intent = order(client)
+    flow = PurchaseFlow(service)
+    path = f"/admin/checkout/intents/{intent}"
+    for kind in ("payment", "customer_receipt"):
+        sending = flow.claim_notification(intent, kind, retry=True)
+        assert client.post(path + "/lose", headers=headers).status_code == 409
+        assert service.read_checkout_intent_by_id(intent_id=intent)["status"] == "REQUESTED"
+        flow.finish_notification(sending, sent=False)
+    assert client.post(path + "/release", headers=headers, json={"create_account": True}).status_code == 200
+    assert client.post(path + "/lose", headers=headers).status_code == 409
+    assert client.post("/admin/checkout/intents/missing/lose", headers=headers).status_code == 404
+
+
+def test_lost_sale_rolls_back_if_audit_fails(purchase, monkeypatch):
+    client, service, _, _ = purchase
+    intent = order(client)
+    flow = PurchaseFlow(service)
+    _, token = flow.issue_token(intent, "payment")
+    service.mark_checkout_intent_awaiting_payment(intent_id=intent, payment_link="https://pay.example/old")
+
+    def fail_event(*args, **kwargs):
+        raise RuntimeError("simulated audit failure")
+
+    monkeypatch.setattr(flow, "event", fail_event)
+    with pytest.raises(RuntimeError):
+        flow.lose(intent, actor_kind="admin_user", actor_user_id=None)
+    assert service.read_checkout_intent_by_id(intent_id=intent)["status"] == "AWAITING_PAYMENT"
+    assert flow.payment_page(token)["payment_link"] == "https://pay.example/old"
+
+
+@pytest.mark.parametrize("operation", ["payment", "release", "activate"])
+def test_legacy_order_updates_cannot_overwrite_a_concurrent_lost_sale(purchase, operation):
+    client, service, _, _ = purchase
+    user = service.register_user(name="Marina", email="marina@example.com", password="original-pass")
+    intent = order(client, user_token=user.token)
+
+    def close_before_update(conn, query, params=()):
+        if "UPDATE checkout_intents" in query:
+            # Model another transaction winning after the old state was read.
+            service._execute(conn, "UPDATE checkout_intents SET status = 'LOST' WHERE id = ?", (intent,))
+        return service._execute(conn, query, params)
+
+    args = dict(fetchone=service._fetchone, execute=close_before_update, now_iso=service.now_provider().isoformat())
+    with service._connect() as conn:
+        if operation == "activate":
+            result = checkout_queries.mark_latest_checkout_intent_released_for_user_plan(
+                conn, **args, user_id=user.user_id, plan_code="profissional")
+            assert result is None
+        else:
+            with pytest.raises(ValueError, match="alterado"):
+                if operation == "payment":
+                    checkout_queries.mark_checkout_intent_awaiting_payment(
+                        conn, **args, intent_id=intent, payment_link="https://pay.example/new")
+                else:
+                    checkout_queries.mark_checkout_intent_released_by_id(conn, **args, intent_id=intent)
+        assert service._fetchone(conn, "SELECT status FROM checkout_intents WHERE id = ?", (intent,))["status"] == "LOST"
 
 
 def test_existing_account_credentials_preserved_and_only_selected_order_released(purchase):

@@ -286,6 +286,7 @@
     if (normalized === "REQUESTED" || normalized === "PENDING") return "Solicitado";
     if (normalized === "AWAITING_PAYMENT") return "Aguardando pagamento";
     if (normalized === "RELEASED_FOR_USE") return "Liberado para uso";
+    if (normalized === "LOST") return "Venda perdida";
     return normalized || "-";
   }
 
@@ -483,7 +484,7 @@
     const code = String(account?.plan_code || "").trim().toLowerCase();
     const current = plansByCode.get(code);
     const free = account && !code && account.quota_mode !== "pages";
-    const candidates = !ordersLoaded || (!free && !current) ? [] : [...plansByCode.values()].filter((plan) =>
+    const candidates = !ordersLoaded || openOrders.length > 0 || (!free && !current) ? [] : [...plansByCode.values()].filter((plan) =>
       plan.code !== code && Number.isFinite(Number(plan.price_cents)) &&
       Number(plan.price_cents) > (free ? 0 : Number(current.price_cents)) &&
       plan.currency === (current?.currency || "BRL") && plan.billing_period === (current?.billing_period || "monthly")
@@ -493,10 +494,7 @@
     if (!upgradePlans) return;
     // Keep focused links intact when a background refresh has no visible changes.
     const markup = candidates.map((plan) => {
-      const existing = openOrders.find((item) => String(item.plan_code).toLowerCase() === String(plan.code).toLowerCase());
-      const action = existing
-        ? '<p class="upgrade-order-status">Pedido em aberto</p>'
-        : `<a class="client-action" href="./checkout.html?plan=${escapeHtml(encodeURIComponent(plan.code))}">Escolher plano</a>`;
+      const action = `<a class="client-action" href="./checkout.html?plan=${escapeHtml(encodeURIComponent(plan.code))}">Escolher plano</a>`;
       return `<article class="upgrade-plan">
         <h3>${escapeHtml(plan.name)}</h3>
         <p><strong>${escapeHtml(formatPriceBRL(plan.price_cents))}/mês</strong></p>

@@ -15,6 +15,7 @@ from app.application.report_service import ReportService
 from app.dependencies import (
     get_access_control_service,
     get_async_conversion_report_service,
+    get_canonical_receipt_recovery,
     get_conversion_batch_document_store,
     get_conversion_batch_service,
     get_report_service,
@@ -30,10 +31,11 @@ router = APIRouter(prefix="/api/pro/receipts", tags=["Received statements"])
 
 def receipt_service(access: AccessControlService = Depends(get_access_control_service),
                     batches: ConversionBatchService | None = Depends(get_conversion_batch_service),
-                    documents: ConversionDocumentStore = Depends(get_conversion_batch_document_store)):
+                    documents: ConversionDocumentStore = Depends(get_conversion_batch_document_store),
+                    recovery=Depends(get_canonical_receipt_recovery)):
     if batches is None:
         raise HTTPException(503, "Os extratos não estão disponíveis agora. Tente novamente.")
-    return ReceivedStatements(access.db, batches.repository, document_store=documents)
+    return ReceivedStatements(access.db, batches.repository, document_store=documents, recovery=recovery)
 
 
 class Confirmation(BaseModel):
@@ -54,15 +56,16 @@ class ClientEdit(BaseModel):
 @router.get("")
 def dashboard(owner: str = Depends(organization_owner), service=Depends(receipt_service),
               cursor: str = Query("", max_length=100), pending_cursor: str = Query("", max_length=100),
-              sort: Literal["id", "name"] = Query("id")):
-    return service.dashboard(owner, after=cursor, pending_after=pending_cursor, sort=sort)
+              sort: Literal["id", "name"] = Query("id"), active_only: bool = False):
+    return service.dashboard(owner, after=cursor, pending_after=pending_cursor, sort=sort, active_only=active_only)
 
 
 @router.post("/refresh", dependencies=[Depends(require_pro_browser_request)])
 def refresh(owner: str = Depends(organization_owner), service=Depends(receipt_service),
             cursor: str | None = Query(None, max_length=500)):
     # Explicit bounded ingestion of existing jobs; viewing the dashboard never reconverts a PDF.
-    return {"next_cursor": service.sync(owner, cursor)}
+    with organization_errors():
+        return service.sync(owner, cursor)
 
 
 class ClientSearch(BaseModel):
@@ -71,12 +74,14 @@ class ClientSearch(BaseModel):
     cursor: str = Field(default="", max_length=100)
     pending_cursor: str = Field(default="", max_length=100)
     sort: Literal["id", "name"] = "name"
+    active_only: bool = False
 
 
 @router.post("/search", dependencies=[Depends(require_pro_browser_request)])
 def search_clients(request: ClientSearch, owner: str = Depends(organization_owner), service=Depends(receipt_service)):
     # Search terms stay out of URLs/access logs and are never sent to analytics.
-    return service.dashboard(owner, after=request.cursor, pending_after=request.pending_cursor, sort=request.sort, query=request.query)
+    return service.dashboard(owner, after=request.cursor, pending_after=request.pending_cursor, sort=request.sort,
+                             query=request.query, active_only=request.active_only)
 
 
 def live_record(service, owner, document):

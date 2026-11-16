@@ -78,8 +78,12 @@ class S3AnalysisStorage(TempAnalysisStorage):
         return expires_at
 
     @locked_analysis
-    def fence_canonical_analysis(self, analysis_id: str, *, completion: dict | None = None) -> dict:
+    def read_canonical_candidate(self, analysis_id: str) -> dict:
         self._materialize_analysis(analysis_id)
+        return super().read_canonical_candidate(analysis_id)
+
+    @locked_analysis
+    def fence_canonical_analysis(self, analysis_id: str, *, completion: dict | None = None) -> dict:
         content = super().fence_canonical_analysis(analysis_id, completion=completion)
         path = self._resolve_analysis_dir(analysis_id) / "analysis.json"
         params = {"Bucket": self.bucket, "Key": self._object_key(analysis_id, "analysis.json"),
@@ -119,7 +123,10 @@ class S3AnalysisStorage(TempAnalysisStorage):
     def get_convert_report_path(self, analysis_id: str, file_format: str, **kwargs) -> Path:
         self._materialize_analysis(analysis_id)
         path = super().get_convert_report_path(analysis_id, file_format, **kwargs)
-        if kwargs:
+        # ReportService passes optional keys even for read-only batch exports.
+        # Republishing that cache could undo a concurrently committed SQL fence.
+        if file_format == "ofx" and (kwargs.get("closing_balance") is not None or any(
+                str(kwargs.get(key) or "").strip() for key in ("bank_branch", "account_number", "bank_code"))):
             self._upload_analysis(analysis_id)
         return path
 

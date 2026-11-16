@@ -131,7 +131,7 @@ def _bb(extraction):
             value = values[0]
             used.add(value.id)
             description = " ".join(line.text for line in sorted(labels, key=lambda line: line.line_index))
-            if upper(description).startswith("SALDO DO DIA"):
+            if upper(description).startswith("SALDO DO DIA") or upper(labels[0].text) == "SALDO ANTERIOR":
                 pending = None
                 continue
             refs = [line for line in cells if columns["DOCUMENTO"]-.08 <= line.bbox["left"] < columns["LOTE"]-.02

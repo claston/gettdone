@@ -45,6 +45,43 @@ const page = {
 };
 
 describe("Clientes", () => {
+  it("mantém a lista acessível e informa integrações parciais sem tratá-las como erro global", async () => {
+    const service = {
+      list: vi.fn().mockResolvedValue(page),
+      refresh: vi
+        .fn()
+        .mockResolvedValue({ unavailable: 1, review_required: 1, pending: 1 }),
+      edit: vi.fn(),
+      confirm: vi.fn(),
+    };
+    render(<ReceivedStatementsPage service={service} />);
+    expect(
+      await screen.findByText(
+        /Alguns extratos ainda não estão na Central Financeira/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/origem indisponível ou expirada/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/precisam de conferência/)).toBeInTheDocument();
+    expect(screen.getByText(/integração pendente/)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("Padaria São José")).toBeInTheDocument();
+    expect(service.list).toHaveBeenCalledTimes(2);
+    service.refresh.mockResolvedValue({
+      unavailable: 0,
+      review_required: 0,
+      pending: 0,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Atualizar extratos" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByText(
+          /Alguns extratos ainda não estão na Central Financeira/,
+        ),
+      ).toBeNull(),
+    );
+  });
   it("abre o PDF somente ao conferir a pendência e preserva a confirmação inline", async () => {
     const service = {
       list: vi.fn().mockResolvedValue({
@@ -150,6 +187,7 @@ describe("Clientes", () => {
         expect.any(AbortSignal),
         undefined,
         "",
+        true,
       ),
     );
     const input = screen.getByRole("searchbox", {
@@ -162,6 +200,7 @@ describe("Clientes", () => {
       expect.any(AbortSignal),
       undefined,
       "inexistente",
+      true,
     );
     fireEvent.click(screen.getByRole("tab", { name: "Não identificados (1)" }));
     expect(
@@ -196,6 +235,7 @@ describe("Clientes", () => {
       confirm: vi.fn(),
     };
     render(<ReceivedStatementsPage service={service} />);
+    fireEvent.click(await screen.findByRole("tab", { name: /^Identificados/ }));
     expect(
       await screen.findByText("0 disponíveis / 4 extratos no histórico"),
     ).toBeInTheDocument();
@@ -352,7 +392,7 @@ describe("Clientes", () => {
     );
   });
 
-  it("separa as listas em abas acessíveis, ordena nomes com acentos e não consulta novamente ao trocar de aba", async () => {
+  it("separa três abas acessíveis, ordena nomes com acentos e mantém navegação por teclado", async () => {
     const service = {
       list: vi.fn().mockResolvedValue({
         ...page,
@@ -372,7 +412,7 @@ describe("Clientes", () => {
         screen.getByRole("button", { name: "Atualizar extratos" }),
       ).toBeEnabled(),
     );
-    const clients = screen.getByRole("tab", { name: /^Identificados/ });
+    const clients = screen.getByRole("tab", { name: /^Com conversões ativas/ });
     for (const tab of screen.getAllByRole("tab")) {
       expect(
         document.getElementById(tab.getAttribute("aria-controls")!),
@@ -380,11 +420,11 @@ describe("Clientes", () => {
     }
     expect(clients).toHaveAttribute("aria-selected", "true");
     expect(
-      within(screen.getByRole("tabpanel", { name: /^Identificados/ }))
+      within(screen.getByRole("tabpanel", { name: /^Com conversões ativas/ }))
         .getAllByRole("link")
         .map((link) => link.textContent?.split("CNPJ")[0]),
     ).toEqual(["Álvaro", "beatriz", "Zulu"]);
-    fireEvent.keyDown(clients, { key: "ArrowRight" });
+    fireEvent.keyDown(clients, { key: "End" });
     const pending = screen.getByRole("tab", { name: /^Não identificados/ });
     expect(pending).toHaveFocus();
     expect(pending).toHaveAttribute("aria-selected", "true");
@@ -397,7 +437,8 @@ describe("Clientes", () => {
     fireEvent.keyDown(pending, { key: "Home" });
     expect(clients).toHaveFocus();
     expect(clients).toHaveAttribute("aria-selected", "true");
-    expect(service.list).toHaveBeenCalledTimes(2);
+    await screen.findByRole("link", { name: /Álvaro/ });
+    expect(service.refresh).toHaveBeenCalledTimes(1);
   });
 
   it("preserva a aba e a página de cada lista ao navegar e ao confirmar uma identificação", async () => {
@@ -427,6 +468,10 @@ describe("Clientes", () => {
         screen.getByRole("button", { name: "Atualizar extratos" }),
       ).toBeEnabled(),
     );
+    fireEvent.click(screen.getByRole("tab", { name: /^Identificados/ }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Próxima" })).toBeEnabled(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Próxima" }));
     await waitFor(() =>
       expect(service.list).toHaveBeenLastCalledWith(
@@ -434,6 +479,7 @@ describe("Clientes", () => {
         expect.any(AbortSignal),
         undefined,
         "",
+        false,
       ),
     );
     await waitFor(() =>
@@ -456,6 +502,7 @@ describe("Clientes", () => {
       expect.any(AbortSignal),
       "p2",
       "",
+      false,
     );
     fireEvent.click(screen.getByRole("tab", { name: /^Identificados/ }));
     expect(screen.getByRole("button", { name: "Início" })).toBeEnabled();
@@ -478,6 +525,7 @@ describe("Clientes", () => {
         expect.any(AbortSignal),
         undefined,
         "",
+        false,
       ),
     );
     expect(

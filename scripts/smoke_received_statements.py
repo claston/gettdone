@@ -32,10 +32,12 @@ def run(base):
     document_state = {"requests": 0, "unavailable": True}
     original_pdf = synthetic_pdf(6)
 
-    def dashboard(selected=None):
+    def dashboard(selected=None, active_only=False):
         selected = clients if selected is None else selected
-        return {"totals": {"statements": 3, "ready": 2, "attention": 1}, "clients": selected,
-                "pending": pending, "next_cursor": None, "client_count": len(selected), "pending_count": len(pending)}
+        active = [c for c in selected if c["available_count"] > 0]
+        return {"totals": {"statements": 3, "ready": 2, "attention": 1}, "clients": active if active_only else selected,
+                "pending": pending, "next_cursor": None, "client_count": len(active if active_only else selected),
+                "all_client_count": len(selected), "active_client_count": len(active), "pending_count": len(pending)}
 
     def intercept(route):
         path = urlsplit(route.request.url).path
@@ -61,7 +63,7 @@ def run(base):
             if loading["hold_list"]:
                 held_lists.append(route)
                 return
-            route.fulfill(json=dashboard())
+            route.fulfill(json=dashboard(active_only=parse_qs(urlsplit(route.request.url).query).get("active_only") == ["true"]))
         elif path == "/api/pro/receipts/search":
             assert method == "POST" and not urlsplit(route.request.url).query
             term = route.request.post_data_json["query"]
@@ -70,7 +72,7 @@ def run(base):
             selected = [c for c in clients if text in "".join(
                 x for x in unicodedata.normalize("NFD", c["name"].casefold()) if not unicodedata.combining(x))
                 or (digits and digits in c["tax_id"])]
-            route.fulfill(json=dashboard(selected))
+            route.fulfill(json=dashboard(selected, active_only=route.request.post_data_json.get("active_only", False)))
         elif path == "/api/pro/receipts/refresh":
             if loading["hold_refresh"]:
                 held_refreshes.append(route)
@@ -120,7 +122,7 @@ def run(base):
             expect(page.get_by_label("Resumo dos extratos").locator("strong")).to_have_text(["3", "2", "1"])
             expect(page.get_by_text("3 expirados", exact=True)).to_be_visible()
             expect(page.get_by_text("Itaú · Conta ••1234")).to_be_visible()
-            expect(page.get_by_role("tab", name="Identificados (1)", exact=True)).to_have_attribute("aria-selected", "true")
+            expect(page.get_by_role("tab", name="Com conversões ativas (1)", exact=True)).to_have_attribute("aria-selected", "true")
             expect(page.get_by_role("link", name="Conferir identificar.pdf")).to_have_count(0)
             page.get_by_role("tab", name="Não identificados (1)", exact=True).click()
             expect(page.get_by_role("heading", name="Identificação pendente")).to_be_visible()
@@ -133,6 +135,18 @@ def run(base):
             assert len(held_refreshes) == 1, "Tab switching must not restart synchronization"
             held_refreshes.pop().fulfill(json={"next_cursor": None})
             expect(page.get_by_role("button", name="Atualizar extratos", exact=True)).to_be_enabled()
+            # An expired-only client remains in history but never appears in the active list.
+            clients.append({**clients[0], "id": "expired_browser", "name": "Cliente expirado",
+                            "available_count": 0, "historical_count": 1, "expired_count": 1, "attention_count": 0})
+            page.get_by_role("tab", name=re.compile(r"^Com conversões ativas")).click()
+            expect(page.get_by_role("tab", name="Identificados (2)", exact=True)).to_be_visible()
+            expect(page.get_by_text("Cliente expirado", exact=True)).to_have_count(0)
+            page.get_by_role("tab", name="Identificados (2)", exact=True).click()
+            expect(page.get_by_text("Cliente expirado", exact=True)).to_be_visible()
+            expect(page.get_by_text("Nenhuma conversão ativa", exact=True)).to_be_visible()
+            clients.pop()
+            page.get_by_role("button", name="Atualizar extratos", exact=True).click()
+            expect(page.get_by_role("tab", name="Identificados (1)", exact=True)).to_be_visible()
             assert document_state["requests"] == 0, "PDF must load only when checking identity"
             page.get_by_role("tab", name="Não identificados (1)", exact=True).click()
             page.get_by_role("button", name="Conferir identificação", exact=True).click()
@@ -192,6 +206,7 @@ def run(base):
             page.set_viewport_size({"width": 390, "height": 844})
             expect(page.locator(".mobile-menu")).to_be_visible()
             expect(page.get_by_role("tab", name="Identificados (1)", exact=True)).to_be_visible()
+            expect(page.get_by_role("tab", name="Com conversões ativas (1)", exact=True)).to_be_visible()
             expect(page.get_by_role("tab", name="Não identificados (1)", exact=True)).to_be_visible()
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Mobile overflow"
             page.screenshot(path=str(output / "received-mobile.png"), full_page=True)

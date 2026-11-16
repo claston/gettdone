@@ -13,11 +13,13 @@ from app.application import (
 )
 from app.application.checkout_management import (
     CHECKOUT_STATUS_AWAITING_PAYMENT,
+    CHECKOUT_STATUS_LOST,
     CHECKOUT_STATUS_PENDING_LEGACY,
     CHECKOUT_STATUS_RELEASED_FOR_USE,
     CHECKOUT_STATUS_REQUESTED,
+    OPEN_CHECKOUT_STATUSES,
 )
-from app.application.purchase_email_service import deliver_purchase_notification, render_purchase_email, site_url
+from app.application.purchase_email_service import deliver_purchase_notification, render_purchase_email
 from app.application.purchase_flow import PurchaseConflict, PurchaseFlow
 from app.dependencies import get_access_control_service, get_contact_service
 from app.routers.access_control_common import (
@@ -82,6 +84,8 @@ def _next_step_for_status(status: str) -> str:
         return "WAIT_FOR_PAYMENT"
     if status == CHECKOUT_STATUS_RELEASED_FOR_USE:
         return "READY_TO_USE"
+    if status == CHECKOUT_STATUS_LOST:
+        return "ORDER_CLOSED"
     return "REVIEW_ORDER"
 
 
@@ -97,7 +101,7 @@ def _build_checkout_intent_status_response(intent: dict[str, str | int | None]) 
         price_cents=int(intent["price_cents"]),
         currency=str(intent["currency"]),
         billing_period=str(intent["billing_period"]),
-        payment_link=(str(intent["payment_link"]) if intent.get("payment_link") else None),
+        payment_link=(str(intent["payment_link"]) if intent.get("payment_link") and status != CHECKOUT_STATUS_LOST else None),
         payment_link_sent_at=(str(intent["payment_link_sent_at"]) if intent.get("payment_link_sent_at") else None),
         released_at=(str(intent["released_at"]) if intent.get("released_at") else None),
         next_step=_next_step_for_status(status),
@@ -330,16 +334,15 @@ async def set_checkout_intent_payment_link(
         raise HTTPException(status_code=404, detail="checkout intent not found")
     if str(intent["status"]) == CHECKOUT_STATUS_RELEASED_FOR_USE:
         raise HTTPException(status_code=400, detail="checkout intent is already released")
+    if str(intent["status"]) not in OPEN_CHECKOUT_STATUSES:
+        raise HTTPException(status_code=409, detail="Pedido encerrado. O envio de link não está disponível.")
 
     flow = PurchaseFlow(access_control_service)
     notification = flow.claim_notification(clean_intent_id, "payment", retry=True)
     if notification is None:
         raise HTTPException(status_code=409, detail="O envio deste pedido já está em andamento.")
-    token_id = None
     try:
-        token_id, token = flow.issue_token(clean_intent_id, "payment")
-        message = render_purchase_email("payment", intent, payment_url=clean_payment_link,
-                                        payment_page_url=site_url() + "/pagamento.html#token=" + token)
+        message = render_purchase_email("payment", intent, payment_url=clean_payment_link)
         delivery = await contact_service.send_text_email(
             to_email=str(intent["customer_email"]),
             **message,
@@ -347,13 +350,13 @@ async def set_checkout_intent_payment_link(
             idempotency_key=f"{notification['id']}/{notification['attempts']}",
         )
     except (ContactProviderNotConfiguredError, ValueError):
-        flow.finish_notification(notification, sent=False, token_id=token_id)
+        flow.finish_notification(notification, sent=False)
         raise HTTPException(status_code=503, detail="O envio de e-mails não está configurado. O link não foi enviado.") from None
     except ContactDeliveryError:
-        flow.finish_notification(notification, sent=False, token_id=token_id)
+        flow.finish_notification(notification, sent=False)
         raise HTTPException(status_code=502, detail="Não foi possível enviar o link por e-mail. Tente novamente.") from None
     if delivery.delivery_mode == "dry_run":
-        flow.finish_notification(notification, sent=False, token_id=token_id)
+        flow.finish_notification(notification, sent=False)
         raise HTTPException(status_code=503, detail="O envio de e-mails está em modo de teste. O link não foi enviado.")
 
     # Persist the sent timestamp and audit event only after provider acceptance.
@@ -394,13 +397,15 @@ def list_checkout_intents_for_admin(
     normalized_status = status.strip().lower()
     statuses: tuple[str, ...] | None
     if normalized_status in {"open", "pending"}:
-        statuses = (CHECKOUT_STATUS_REQUESTED, CHECKOUT_STATUS_AWAITING_PAYMENT)
+        statuses = OPEN_CHECKOUT_STATUSES
     elif normalized_status in {"requested", "request"}:
         statuses = (CHECKOUT_STATUS_REQUESTED,)
     elif normalized_status in {"awaiting_payment", "awaiting"}:
         statuses = (CHECKOUT_STATUS_AWAITING_PAYMENT,)
     elif normalized_status in {"released", "released_for_use"}:
         statuses = (CHECKOUT_STATUS_RELEASED_FOR_USE,)
+    elif normalized_status == "lost":
+        statuses = (CHECKOUT_STATUS_LOST,)
     elif normalized_status in {"all", "*"}:
         statuses = None
     else:
@@ -465,6 +470,26 @@ class ReleasePurchaseRequest(BaseModel):
     create_account: bool = False
 
 
+@router.post("/admin/checkout/intents/{intent_id}/lose", response_model=CheckoutIntentStatusResponse)
+def lose_checkout_intent(
+    intent_id: str,
+    x_admin_token: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    service: AccessControlService = Depends(get_access_control_service),
+):
+    actor_kind, actor_user_id = require_admin_actor(
+        access_control_service=service, x_admin_token=x_admin_token,
+        authorization=authorization, access_cookie_token=access_cookie_token)
+    try:
+        PurchaseFlow(service).lose(intent_id, actor_kind=actor_kind, actor_user_id=actor_user_id)
+    except PurchaseConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    return _build_checkout_intent_status_response(service.read_checkout_intent_by_id(intent_id=intent_id))
+
+
 @router.get("/admin/checkout/intents/{intent_id}/release-preview")
 def preview_purchase_release(
     intent_id: str,
@@ -478,6 +503,8 @@ def preview_purchase_release(
     intent = service.read_checkout_intent_by_id(intent_id=intent_id)
     if not intent:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+    if intent["status"] == CHECKOUT_STATUS_LOST:
+        raise HTTPException(status_code=409, detail="Pedido encerrado como venda perdida.")
     with service._lock, service._connect() as conn:
         user = service._fetchone(conn, "SELECT id, is_active, initial_access_pending FROM users WHERE lower(email) = ?",
                                 (intent["customer_email"].strip().lower(),))
@@ -542,6 +569,8 @@ async def resend_purchase_notification(
     intent = access_control_service.read_checkout_intent_by_id(intent_id=intent_id)
     if not intent:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+    if intent["status"] == CHECKOUT_STATUS_LOST:
+        raise HTTPException(status_code=409, detail="Pedido encerrado. O reenvio de e-mails não está disponível.")
     if kind == "release" and intent["status"] != "RELEASED_FOR_USE":
         raise HTTPException(status_code=400, detail="Libere o plano antes de reenviar o acesso.")
     flow = PurchaseFlow(access_control_service)
