@@ -16,6 +16,10 @@ if TYPE_CHECKING:
 
 def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) -> None:
     """Legacy SQLite bootstrap kept isolated while Postgres moved to migration-first startup."""
+    from app.application.marketing_campaign_schema_v1 import marketing_campaign_schema_v1
+
+    for statement in marketing_campaign_schema_v1():
+        conn.execute(statement)
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS users (

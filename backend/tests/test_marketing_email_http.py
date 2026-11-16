@@ -18,10 +18,11 @@ pytestmark = pytest.mark.real_http
 
 
 @contextmanager
-def fake_resend_server():
+def fake_resend_server(failures=None):
     messages = []
     requests = []
     seen = {}
+    failures = list(failures or [])
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
@@ -33,6 +34,15 @@ def fake_resend_server():
             key = self.headers["Idempotency-Key"]
             payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             requests.append(key)
+            if failures:
+                status, body = failures.pop(0)
+                raw = json.dumps(body).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+                return
             if key not in seen:
                 messages.append(payload)
                 seen[key] = {"id": f"fictional-message-{len(messages)}"}

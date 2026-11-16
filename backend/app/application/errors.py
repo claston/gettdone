@@ -125,6 +125,10 @@ class ContactDeliveryError(Exception):
     """Raised when contact message delivery fails at provider level."""
 
 
+class ContactDeliveryRejectedError(ContactDeliveryError):
+    """The provider explicitly refused this request; earlier attempts may still be uncertain."""
+
+
 class GoogleOAuthNotConfiguredError(Exception):
     """Raised when Google OAuth env/config is missing."""
 

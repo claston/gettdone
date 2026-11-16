@@ -22,6 +22,11 @@ async def main():
                 page.on("pageerror", lambda error: errors.append(str(error)))
                 calls = []
                 release = asyncio.Event()
+                campaign_calls = []
+                campaign_release = asyncio.Event()
+                campaign = {"prepared": False, "eligible": 2, "total": 0, "pending": 0, "sent": 0,
+                            "skipped": 0, "review": 0, "busy": False,
+                            "subject": "Antes de converter: 4 detalhes para conferir no seu extrato"}
 
                 async def route(request):
                     path = urlparse(request.request.url).path
@@ -31,6 +36,22 @@ async def main():
                         await request.fulfill(json={})
                     elif path == "/admin/marketing-contacts":
                         await request.fulfill(json={"items": [], "total": 0})
+                    elif path == "/admin/marketing/statement-guide":
+                        await request.fulfill(json=campaign)
+                    elif path == "/admin/marketing/statement-guide/prepare":
+                        assert request.request.post_data_json == {"expected_eligible": 2}
+                        campaign.update(prepared=True, total=2, pending=2)
+                        await request.fulfill(json=campaign)
+                    elif path == "/admin/marketing/statement-guide/send-next":
+                        campaign_calls.append(request.request.post_data_json)
+                        attempt = len(campaign_calls)
+                        if attempt == 1:
+                            await campaign_release.wait()
+                        if attempt == 2:
+                            await request.fulfill(status=502, json={"detail": "Envio interrompido. Retome para verificar sem duplicar."})
+                        else:
+                            campaign.update(pending=campaign["pending"] - 1, sent=campaign["sent"] + 1)
+                            await request.fulfill(json=campaign)
                     elif path == "/admin/marketing/test-email":
                         calls.append(request.request.post_data_json)
                         attempt = len(calls)
@@ -77,10 +98,37 @@ async def main():
                 await expect(button).to_be_enabled()
                 assert calls[-1]["template_id"] == "marketing-test-v1"
                 assert calls[-1]["request_id"] != calls[-2]["request_id"]
+                campaign_send = page.locator("#marketing-campaign-send")
+                campaign_status = page.locator("#marketing-campaign-status")
+                await expect(page.locator("#marketing-campaign-summary")).to_contain_text("2 contatos elegíveis")
+                await expect(campaign_send).to_be_disabled()
+                await page.locator("#marketing-campaign-prepare").click()
+                await expect(campaign_send).to_be_enabled()
+                assert not campaign_calls, "Preview and preparation must never send emails"
+                await campaign_send.click()
+                await expect(campaign_send).to_be_disabled()
+                await expect(page.locator("#marketing-campaign-refresh")).to_be_disabled()
+                await page.locator("#marketing-campaign-pause").click()
+                campaign_release.set()
+                await expect(campaign_status).to_contain_text("Envio pausado")
+                assert len(campaign_calls) == 1
+                await campaign_send.click()
+                await expect(campaign_status).to_contain_text("Envio interrompido")
+                await expect(campaign_send).to_be_enabled()
+                await campaign_send.click()
+                await expect(campaign_status).to_contain_text("Envio concluído")
+                await expect(campaign_send).to_be_disabled()
+                assert len(campaign_calls) == 3
+                assert all(call == {"confirmed": True} for call in campaign_calls)
+                await page.reload()
+                await page.get_by_role("tab", name="Marketing", exact=True).click()
+                await expect(page.locator("#marketing-campaign-summary")).to_contain_text("Aceitos pelo provedor: 2")
+                await expect(campaign_send).to_be_disabled()
                 assert not errors, errors
                 assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Page overflow"
                 await page.locator("#admin-marketing-card").screenshot(path=str(output / f"{name}.png"))
-                print(json.dumps({"viewport": name, "attempts": len(calls), "retry_same_key": True, "page_errors": errors}))
+                print(json.dumps({"viewport": name, "attempts": len(calls), "retry_same_key": True,
+                                  "campaign_pause_resume_reload": True, "page_errors": errors}))
                 await page.close()
         finally:
             await browser.close()

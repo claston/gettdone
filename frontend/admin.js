@@ -71,6 +71,14 @@
   const marketingSendTestBtn = document.getElementById("marketing-send-test-btn");
   const marketingTestTemplateNode = document.getElementById("marketing-test-template");
   const marketingSendStatusNode = document.getElementById("marketing-send-status");
+  const campaignRefreshBtn = document.getElementById("marketing-campaign-refresh");
+  const campaignPrepareBtn = document.getElementById("marketing-campaign-prepare");
+  const campaignSendBtn = document.getElementById("marketing-campaign-send");
+  const campaignPauseBtn = document.getElementById("marketing-campaign-pause");
+  const campaignStatusNode = document.getElementById("marketing-campaign-status");
+  let campaignSummary = null;
+  let campaignSending = false;
+  let campaignPaused = false;
   const activeUsersPeriodNode = document.getElementById("active-users-period");
   const activeUsersIdentityTypeNode = document.getElementById("active-users-identity-type");
   const activeUsersProspectOnlyNode = document.getElementById("active-users-prospect-only");
@@ -1388,7 +1396,114 @@
     marketingSendTestBtn.addEventListener("click", function () { void sendMarketingTestEmail(); });
   }
 
+  function renderCampaign(summary) {
+    campaignSummary = summary;
+    const subject = document.getElementById("marketing-campaign-subject");
+    const counts = document.getElementById("marketing-campaign-summary");
+    if (subject) subject.textContent = `Assunto: ${summary.subject}`;
+    if (counts) counts.textContent = summary.prepared
+      ? `Lista preparada: ${summary.total}. Aceitos pelo provedor: ${summary.sent}. Pendentes: ${summary.pending}. Não enviados por alteração no cadastro: ${summary.skipped}. Para conferência: ${summary.review}.`
+      : `${summary.eligible} contatos elegíveis para receber o guia. A campanha inclui a lista completa, independentemente do filtro de busca abaixo.`;
+    if (campaignPrepareBtn) {
+      campaignPrepareBtn.disabled = campaignSending || summary.prepared || !summary.eligible;
+      campaignPrepareBtn.textContent = summary.prepared ? "Lista preparada" : "Preparar lista de destinatários";
+    }
+    if (campaignSendBtn) {
+      campaignSendBtn.disabled = campaignSending || !summary.prepared || !summary.pending || summary.busy;
+      campaignSendBtn.textContent = summary.prepared && !summary.pending
+        ? (summary.review ? "Envio encerrado com mensagens para conferência" : "Envio concluído")
+        : `Confirmar envio para ${summary.pending} contato(s) pendente(s)`;
+    }
+    if (campaignRefreshBtn) campaignRefreshBtn.disabled = campaignSending;
+    if (campaignPauseBtn) campaignPauseBtn.classList.toggle("hidden", !campaignSending);
+    const review = document.getElementById("marketing-campaign-review");
+    const reviewList = document.getElementById("marketing-campaign-review-list");
+    if (review) review.classList.toggle("hidden", !summary.review);
+    if (reviewList) {
+      reviewList.replaceChildren();
+      (summary.review_items || []).forEach((item) => {
+        const row = document.createElement("li");
+        row.textContent = item.email;
+        reviewList.appendChild(row);
+      });
+    }
+  }
+
+  function campaignStatus(message, error = false) {
+    if (campaignStatusNode) {
+      campaignStatusNode.textContent = message;
+      campaignStatusNode.className = error ? "status error" : "status";
+    }
+  }
+
+  async function campaignRequest(suffix = "", body) {
+    const init = body === undefined ? undefined : {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    };
+    const { response, payload } = await apiRequest(`/admin/marketing/statement-guide${suffix}`, init);
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) setAuthenticatedView(false);
+      throw new Error(String(payload.detail || "Não foi possível consultar a campanha."));
+    }
+    return payload;
+  }
+
+  async function loadMarketingCampaign() {
+    if (campaignSending || !campaignRefreshBtn) return;
+    try {
+      renderCampaign(await campaignRequest());
+      campaignStatus(campaignSummary.busy ? "Há um envio em andamento. Aguarde e atualize o resumo." : "Resumo atualizado.");
+    } catch (error) {
+      campaignStatus(error.message || "Falha de rede ao consultar a campanha.", true);
+    }
+  }
+
+  if (campaignRefreshBtn) campaignRefreshBtn.addEventListener("click", () => { void loadMarketingCampaign(); });
+  if (campaignPrepareBtn) campaignPrepareBtn.addEventListener("click", async () => {
+    if (!campaignSummary || campaignSending) return;
+    campaignPrepareBtn.disabled = true;
+    try {
+      renderCampaign(await campaignRequest("/prepare", { expected_eligible: campaignSummary.eligible }));
+      campaignStatus("Lista preparada. Confira o assunto e a quantidade; confirme o envio quando quiser começar.");
+    } catch (error) {
+      campaignStatus(error.message || "Falha de rede. Atualize o resumo antes de tentar novamente.", true);
+      campaignPrepareBtn.disabled = false;
+    }
+  });
+  if (campaignPauseBtn) campaignPauseBtn.addEventListener("click", () => {
+    campaignPaused = true;
+    campaignStatus("Pausando após a confirmação do envio atual...");
+  });
+  if (campaignSendBtn) campaignSendBtn.addEventListener("click", async () => {
+    if (campaignSending || !campaignSummary?.prepared || !campaignSummary.pending) return;
+    campaignSending = true;
+    campaignPaused = false;
+    renderCampaign(campaignSummary);
+    campaignStatus("Enviando o guia. Mantenha esta página aberta.");
+    try {
+      while (!campaignPaused && campaignSummary.pending > 0) {
+        renderCampaign(await campaignRequest("/send-next", { confirmed: true }));
+        if (campaignSummary.pending > 0 && !campaignPaused) {
+          await new Promise((resolve) => window.setTimeout(resolve, 1100));
+        }
+      }
+      campaignStatus(campaignSummary.pending > 0
+        ? "Envio pausado. Você pode retomar pelos contatos pendentes."
+        : campaignSummary.review > 0
+          ? "Envio encerrado com mensagens para conferência no provedor. Elas não serão reenviadas automaticamente."
+          : "Envio concluído. Os e-mails aceitos pelo provedor não serão reenviados nesta campanha.");
+    } catch (error) {
+      campaignStatus(error instanceof TypeError
+        ? "Conexão interrompida. Atualize o resumo e retome; o registro do envio será conferido antes de repetir."
+        : error.message, true);
+    } finally {
+      campaignSending = false;
+      renderCampaign(campaignSummary);
+    }
+  });
+
   async function loadMarketingContacts() {
+    void loadMarketingCampaign();
     if (!marketingContactsListNode || !marketingEmptyNode) return;
     const query = String(marketingQueryNode?.value || "").trim();
     setMarketingStatus("Carregando contatos...", null);
