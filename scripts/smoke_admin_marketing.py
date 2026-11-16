@@ -40,7 +40,7 @@ async def main():
                             await request.fulfill(status=502, json={"detail": "Falha simulada do Resend."})
                         else:
                             await request.fulfill(json={
-                                "recipient": "marketing-test@example.com", "template_id": "marketing-test-v1",
+                                "recipient": "marketing-test@example.com", "template_id": calls[-1]["template_id"],
                                 "delivery_mode": "dry_run" if attempt == 1 else "resend",
                                 "provider_message_id": "fictional-message-1",
                             })
@@ -55,8 +55,11 @@ async def main():
                 await page.get_by_role("tab", name="Marketing", exact=True).click()
                 button = page.locator("#marketing-send-test-btn")
                 status = page.locator("#marketing-send-status")
+                template = page.locator("#marketing-test-template")
+                await expect(template).to_have_value("01-organizacao")
                 await button.click()
                 await expect(button).to_be_disabled()
+                await expect(template).to_be_disabled()
                 await expect(status).to_contain_text("Aguardando")
                 release.set()
                 await expect(status).to_contain_text("Nenhum e-mail foi enviado")
@@ -68,6 +71,12 @@ async def main():
                 await expect(status).to_contain_text("Envio aceito pelo Resend para marketing-test@example.com")
                 assert calls[0]["request_id"] != calls[1]["request_id"]
                 assert calls[1]["request_id"] == calls[2]["request_id"], "Retry must keep the same idempotency key"
+                assert all(call["template_id"] == "01-organizacao" for call in calls)
+                await template.select_option("marketing-test-v1")
+                await button.click()
+                await expect(button).to_be_enabled()
+                assert calls[-1]["template_id"] == "marketing-test-v1"
+                assert calls[-1]["request_id"] != calls[-2]["request_id"]
                 assert not errors, errors
                 assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Page overflow"
                 await page.locator("#admin-marketing-card").screenshot(path=str(output / f"{name}.png"))

@@ -69,6 +69,7 @@
   const marketingNextBtn = document.getElementById("marketing-next-btn");
   const marketingPageLabelNode = document.getElementById("marketing-page-label");
   const marketingSendTestBtn = document.getElementById("marketing-send-test-btn");
+  const marketingTestTemplateNode = document.getElementById("marketing-test-template");
   const marketingSendStatusNode = document.getElementById("marketing-send-status");
   const activeUsersPeriodNode = document.getElementById("active-users-period");
   const activeUsersIdentityTypeNode = document.getElementById("active-users-identity-type");
@@ -88,6 +89,7 @@
   let marketingOffset = 0;
   let marketingTotal = 0;
   let marketingTestRequestId = null;
+  let marketingTestTemplateId = null;
   let activeUsersOffset = 0;
   let activeUsersTotal = 0;
   let activeAdminSection = "dashboard";
@@ -1339,17 +1341,23 @@
   async function sendMarketingTestEmail() {
     if (!marketingSendTestBtn || marketingSendTestBtn.disabled) return;
     marketingSendTestBtn.disabled = true;
+    if (marketingTestTemplateNode) marketingTestTemplateNode.disabled = true;
     marketingSendTestBtn.textContent = "Enviando...";
     if (marketingSendStatusNode) {
       marketingSendStatusNode.textContent = "Aguardando confirmação do envio...";
       marketingSendStatusNode.className = "status";
     }
     try {
+      const templateId = marketingTestTemplateNode?.value || "marketing-test-v1";
+      if (marketingTestTemplateId !== templateId) {
+        marketingTestRequestId = null;
+        marketingTestTemplateId = templateId;
+      }
       if (!marketingTestRequestId) marketingTestRequestId = window.crypto.randomUUID();
       const { response, payload } = await apiRequest("/admin/marketing/test-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ request_id: marketingTestRequestId }),
+        body: JSON.stringify({ request_id: marketingTestRequestId, template_id: templateId }),
       });
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) setAuthenticatedView(false);
@@ -1371,6 +1379,7 @@
       }
     } finally {
       marketingSendTestBtn.disabled = false;
+      if (marketingTestTemplateNode) marketingTestTemplateNode.disabled = false;
       marketingSendTestBtn.textContent = "Enviar e-mail de teste";
     }
   }

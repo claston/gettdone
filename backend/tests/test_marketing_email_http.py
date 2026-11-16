@@ -54,9 +54,12 @@ def fake_resend_server():
         thread.join(timeout=5)
 
 
-def test_inline_send_retries_and_unsubscribe_over_real_http(monkeypatch):
+@pytest.mark.parametrize("template_id", ["marketing-test-v1", "01-organizacao"])
+def test_inline_send_retries_and_unsubscribe_over_real_http(monkeypatch, template_id):
     monkeypatch.setenv("MARKETING_TEST_RECIPIENT", "marketing-test@example.com")
     monkeypatch.setenv("MARKETING_FROM_EMAIL", "OFX Simples <novidades@example.com>")
+    monkeypatch.setenv("MARKETING_SENDER_COMPANY", "Empresa de Teste")
+    monkeypatch.setenv("MARKETING_SENDER_CNPJ", "00.000.000/0000-00")
     with fake_resend_server() as (provider_url, messages, requests), _run_http_server(
         admin_emails={"admin@example.com"},
     ) as (base_url, access):
@@ -73,12 +76,13 @@ def test_inline_send_retries_and_unsubscribe_over_real_http(monkeypatch):
         )
         with LoopbackClient(base_url=base_url, timeout=10) as client:
             path = "/admin/marketing/test-email"
-            body = {"request_id": str(uuid4())}
+            body = {"request_id": str(uuid4()), "template_id": template_id}
             assert client.post(path, json=body).status_code == 401
             assert client.post("/admin/auth/login", json={"email": "admin@example.com", "password": "strong-pass"}).status_code == 200
             sent = client.post(path, json=body)
             assert sent.status_code == 200, sent.text
             assert sent.json()["recipient"] == "marketing-test@example.com"
+            assert sent.json()["template_id"] == template_id
             assert sent.json()["provider_message_id"] == "fictional-message-1"
             assert client.post(path, json=body).json() == sent.json()
             assert len(requests) == 2 and len(messages) == 1
@@ -88,6 +92,12 @@ def test_inline_send_retries_and_unsubscribe_over_real_http(monkeypatch):
             assert message["headers"]["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
             unsubscribe_url = message["headers"]["List-Unsubscribe"].strip("<>")
             assert unsubscribe_url in message["text"]
+            if template_id == "01-organizacao":
+                assert unsubscribe_url in message["html"]
+                assert 'href="https://www.ofxsimples.com.br/planos.html"' in message["html"]
+                assert "Conhecer os planos" in message["html"]
+                assert "{{" not in message["html"]
+                assert "{{" not in message["text"]
             # A supported CSV upload exercises the production replacement for /analyze.
             converted = client.post("/convert", files={
                 "file": ("fictional.csv", b"date,description,amount\n2026-10-29,TESTE,40.00\n", "text/csv"),
@@ -102,5 +112,6 @@ def test_inline_send_retries_and_unsubscribe_over_real_http(monkeypatch):
                 assert recipient.post(unsubscribe_url, data={"List-Unsubscribe": "One-Click"}).status_code == 200
                 assert recipient.post(unsubscribe_url).status_code == 200
             assert client.post(path, json={"request_id": str(uuid4())}).status_code == 409
+            assert client.post(path, json={"request_id": str(uuid4()), "template_id": template_id}).status_code == 409
             assert len(messages) == 1
             assert access.list_marketing_contacts_for_admin()[1] == 0
