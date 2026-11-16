@@ -9,7 +9,7 @@ template, atualize também sua cópia em `index.html` e a alternativa em texto.
 | --- | --- | --- |
 | `01-organizacao.html` | 1º | Qualidade do arquivo, dificuldades de leitura e precisão na conversão |
 | `03-curso.html` | 2º | Indicação do curso da Descomplicont |
-| `02-revisao.html` | 3º | Guia prático de revisão dentro do OFX Simples FREE |
+| `02-revisao.html` | 3º | Guia prático de revisão dentro do OFX Simples |
 | `04-excel-powerbi.html` | Alternativa | Oferta alternativa de Excel e Power BI |
 
 O quarto arquivo é uma opção independente de oferta, sem data de disparo. Não
@@ -54,9 +54,9 @@ Aprendizados usados como referência editorial interna:
 Este primeiro rascunho segue disponível na prévia para iterar texto e exemplos;
 nenhuma campanha foi ativada e nenhum e-mail foi enviado.
 
-## E-mail de revisão no FREE
+## E-mail de revisão no OFX Simples
 
-Assunto: **Como revisar seu extrato no OFX Simples FREE**.
+Assunto: **Como revisar seu extrato no OFX Simples**.
 Abra `index.html#02-revisao` para ir diretamente a essa mensagem. O guia segue
 a interface compartilhada das páginas gratuitas, com quatro passos: resumo,
 avisos, edição e download. Ensina a usar os campos do editor, salvar, cancelar,
@@ -71,7 +71,7 @@ devem ser ajustados apenas para eliminar diferenças.
 Fontes de conferência internas:
 
 - `frontend/ofx-convert.js` e `frontend/ofx-convert.css`: resumo, avisos,
-  editor, ações da linha e exportação nas páginas FREE.
+  editor, ações da linha e exportação nas páginas do conversor.
 - `docs/pdf-review-guidance.md`: significado e limites dos avisos.
 - `scripts/smoke_free_editor.py` e `scripts/smoke_free_review_frontend.py`:
   navegação e edição exercitadas em navegador, desktop e celular.
