@@ -196,6 +196,10 @@ def handle_sqs_event(
             body = json.loads(str(record.get("body") or ""))
             if not isinstance(body, dict):
                 raise ValueError("Conversion queue body must be an object.")
+            if body.get("schema_version") == 1 and body.get("event_type") == "pro.fiscal.requested":
+                from app.adapters.conversion.pro_fiscal_runtime import process_fiscal_message
+                process_fiscal_message(body)
+                continue
             if body.get("schema_version") != 1 or body.get("event_type") != "conversion.requested":
                 raise ValueError("Unsupported conversion queue message contract.")
             attributes = record.get("attributes") if isinstance(record.get("attributes"), dict) else {}
@@ -224,6 +228,9 @@ _outbox_publisher: SqsConversionQueuePublisher | None = None
 
 def lambda_handler(event, context):
     global _outbox_publisher, _processor
+    if event.get("action") == "fiscal_maintenance":
+        from app.adapters.conversion.pro_fiscal_runtime import fiscal_maintenance
+        return fiscal_maintenance()
     if _processor is None:
         _processor = build_lambda_processor()
     if not event.get("Records"):

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 from uuid import uuid4
 
+from app.application.pro_fiscal_documents import tax_identifier
 from app.application.pro_organization import OrganizationConflict, OrganizationService
 from app.application.statement_identity import (
     IDENTITY_VERSION,
@@ -407,7 +408,7 @@ class ReceivedStatements(OrganizationService):
         now = _utc(now or datetime.now(timezone.utc))
         name = self._text(name)
         tax = normalized(tax_id)
-        if tax and (not tax.isdigit() or len(tax) not in (11, 14)):
+        if tax and not tax_identifier(tax_id):
             raise ValueError("Confira o CPF/CNPJ do titular.")
         with self.db.connect() as conn:
             organization = self._lock(conn, owner)
@@ -440,7 +441,7 @@ class ReceivedStatements(OrganizationService):
 
     def edit_client(self, owner, client_id, *, name, tax_id, expected_updated_at):
         name, tax = self._text(name), normalized(tax_id)
-        if tax and (not tax.isdigit() or len(tax) not in (11, 14)):
+        if tax and not tax_identifier(tax_id):
             raise ValueError("Confira o CPF/CNPJ do titular.")
         with self.db.connect() as conn:
             organization = self._lock(conn, owner)
