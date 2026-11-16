@@ -10,7 +10,7 @@ A conta deve existir, estar ativa, ter e-mail verificado
 e `product_updates_opt_in` habilitado. O sistema não cria usuários nem concede
 consentimento automaticamente. O seletor oferece dois modelos:
 
-- **E-mail 01 — Organização e planos** (`01-organizacao`): HTML e texto da
+- **E-mail 01 — Guia do extrato e planos** (`01-organizacao`): HTML e texto da
   campanha, com CTA **Conhecer os planos** para
   `https://www.ofxsimples.com.br/planos.html`, assunto prefixado por `[TESTE]`
   e link individual de descadastro. Exige consentimento versão 2.

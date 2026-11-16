@@ -107,7 +107,7 @@ def test_organization_email_has_sales_cta_and_real_unsubscribe(marketing):
     assert response.status_code == 200, response.text
     assert response.json()["template_id"] == "01-organizacao"
     message = mailer.messages[-1]
-    assert message["subject"] == "[TESTE] Seu próximo fechamento começa na organização dos documentos"
+    assert message["subject"] == "[TESTE] Antes de converter: 4 detalhes para conferir no seu extrato"
     assert message["idempotency_key"] == f"marketing-test/01-organizacao/{request_id}"
     assert message["to_email"] == "marketing-test@example.com"
     for body in (message["html"], message["text"]):
