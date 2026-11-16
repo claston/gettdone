@@ -10,9 +10,8 @@ A conta deve existir, estar ativa, ter e-mail verificado
 e `product_updates_opt_in` habilitado. O sistema não cria usuários nem concede
 consentimento automaticamente. O seletor oferece dois modelos:
 
-- **E-mail 01 — Guia do extrato e planos** (`01-organizacao`): HTML e texto da
-  campanha, com CTA **Conhecer os planos** para
-  `https://www.ofxsimples.com.br/planos.html`, assunto prefixado por `[TESTE]`
+- **E-mail 01 — Guia do extrato** (`01-organizacao`): HTML e texto educativos,
+  sem botão de planos, link para converter ou chamada de curso, assunto prefixado por `[TESTE]`
   e link individual de descadastro. Exige consentimento versão 2.
 - **Teste básico — Entrega e descadastro** (`marketing-test-v1`): mantém a
   mensagem simples anterior.
@@ -24,6 +23,12 @@ individualmente. Os dados reais do remetente não devem ser versionados.
 O admin seleciona o e-mail 01 inicialmente. A API mantém o teste básico como
 padrão quando `template_id` é omitido, preservando os clientes anteriores.
 Nenhum desses testes agenda ou dispara mensagens para a lista completa.
+
+O Gmail classifica mensagens automaticamente. Um guia sem chamada comercial
+não garante a aba Principal; trocar o CTA de planos por um link de conversão
+também não oferece essa garantia. Confira a classificação no teste real,
+mantendo identificação e descadastro. Referência:
+[categorias do Gmail](https://support.google.com/mail/answer/3094499?hl=pt-BR).
 
 ## Configuração
 
@@ -107,7 +112,8 @@ a abrangência da versão 2).
 
 Para testar antes da campanha: configure os parâmetros privados no Render, publique o backend e o
 frontend, selecione **E-mail 01** e clique em **Enviar e-mail de teste**. Confira
-o CTA e, no e-mail recebido, abra **Cancelar recebimento de e-mails** e confirme
+o conteúdo educativo e a ausência de chamadas comerciais. No e-mail recebido,
+abra **Cancelar recebimento de e-mails** e confirme
 o cancelamento. Atualize a lista de contatos no admin: a conta deve deixar de
 aparecer e novas tentativas de teste devem ser recusadas. O descadastro é real
 e não é desfeito automaticamente ao terminar o teste.

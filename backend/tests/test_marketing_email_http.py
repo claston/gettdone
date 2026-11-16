@@ -94,8 +94,9 @@ def test_inline_send_retries_and_unsubscribe_over_real_http(monkeypatch, templat
             assert unsubscribe_url in message["text"]
             if template_id == "01-organizacao":
                 assert unsubscribe_url in message["html"]
-                assert 'href="https://www.ofxsimples.com.br/planos.html"' in message["html"]
-                assert "Conhecer os planos" in message["html"]
+                assert "Uma boa conversão começa no arquivo." in message["html"]
+                assert "/planos.html" not in message["html"]
+                assert "/converter-pdf-para-ofx.html" not in message["html"]
                 assert "{{" not in message["html"]
                 assert "{{" not in message["text"]
             # A supported CSV upload exercises the production replacement for /analyze.

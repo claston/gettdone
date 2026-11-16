@@ -51,8 +51,9 @@ Aprendizados usados como referência editorial interna:
 - `AGENTS.md`, visão de extração financeira: preservar o sentido dos movimentos
   e explicitar ambiguidades sem completar dados ilegíveis.
 
-Este guia está disponível na prévia e no teste individual do admin, com CTA
-**Conhecer os planos** e descadastro individual. A campanha continua manual,
+Este guia está disponível na prévia e no teste individual do admin, somente
+com conteúdo educativo e descadastro individual. Não inclui botão de planos,
+link para converter nem chamada de curso. A campanha continua manual,
 sem disparo em massa ou agendamento automático.
 
 ## E-mail de revisão no OFX Simples
@@ -170,8 +171,8 @@ oferta devem ser conferidas na página do produtor antes de cada campanha.
 - Verificação visual em navegador não substitui testes em Gmail, Outlook e
   Apple Mail. Ainda não houve envio real para esses clientes.
 
-O e-mail **01-organizacao** está conectado ao teste individual do admin, com
-CTA **Conhecer os planos** para `https://www.ofxsimples.com.br/planos.html`.
+O e-mail **01-organizacao** está conectado ao teste individual do admin como
+guia informativo, sem botão nem chamada comercial.
 O backend lê diretamente seu HTML, texto e assunto do `campaign.json`; o teste
 acrescenta `[TESTE]` ao assunto. Nome e URL individual de descadastro vêm da
 conta de teste, com escape dos valores no HTML. Consulte
