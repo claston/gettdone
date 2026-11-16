@@ -385,6 +385,25 @@
         <button id="marketing-send-test-btn" type="button">Enviar e-mail de teste</button>
         <p id="marketing-send-status" class="status" role="status" aria-live="polite"></p>
       </div>
+      <div class="card">
+        <h3>Enviar o guia para a lista</h3>
+        <p>Envio único do guia do extrato, sem “[TESTE]”, sem botão nem chamada comercial. Somente contas ativas, verificadas e com consentimento vigente para esta campanha.</p>
+        <p id="marketing-campaign-subject"></p>
+        <p id="marketing-campaign-summary" role="status" aria-live="polite">Atualize o resumo antes de preparar o envio.</p>
+        <details id="marketing-campaign-review" class="hidden">
+          <summary>Mensagens que precisam de conferência</summary>
+          <p>Confira estes destinatários no histórico do provedor. O resultado de uma tentativa anterior pode ser incerto; estas mensagens não serão reenviadas automaticamente. Exibimos até 200 contatos.</p>
+          <ul id="marketing-campaign-review-list"></ul>
+        </details>
+        <div class="actions">
+          <button id="marketing-campaign-refresh" class="ghost" type="button">Atualizar resumo da campanha</button>
+          <button id="marketing-campaign-prepare" type="button" disabled>Preparar lista de destinatários</button>
+          <button id="marketing-campaign-send" type="button" disabled>Confirmar envio do guia</button>
+          <button id="marketing-campaign-pause" class="ghost hidden" type="button">Pausar após o envio atual</button>
+        </div>
+        <p>Mantenha esta página aberta durante o envio. Se fechar ou pausar, volte e retome pelos contatos pendentes. Preparar a lista não envia e-mails; novos inscritos após a preparação não entram neste envio.</p>
+        <p id="marketing-campaign-status" class="status" role="status" aria-live="polite"></p>
+      </div>
       <p id="marketing-status" class="status" aria-live="polite"></p>
       <div id="marketing-empty" class="empty hidden">Nenhum contato com consentimento encontrado.</div>
       <div id="marketing-contacts-list" class="orders-list"></div>

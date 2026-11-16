@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict
 from app.application.access_control import AccessControlService
 from app.application.contact_service import ContactService
 from app.application.errors import ContactDeliveryError, ContactProviderNotConfiguredError
+from app.application.marketing_campaign_service import MarketingCampaignConflict, MarketingCampaignService
 from app.application.marketing_email_service import (
     TEST_TEMPLATE_ID,
     InvalidMarketingUnsubscribeTokenError,
@@ -23,6 +24,72 @@ from app.routers.access_control_common import SESSION_ACCESS_COOKIE_NAME, requir
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+class PrepareMarketingCampaignRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_eligible: int
+
+
+class SendMarketingCampaignRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirmed: Literal[True]
+
+
+def campaign_service(
+    response: Response,
+    x_admin_token: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    access_control: AccessControlService = Depends(get_access_control_service),
+):
+    admin = require_admin_user(
+        x_admin_token=x_admin_token, authorization=authorization, access_cookie_token=access_cookie_token,
+        access_control_service=access_control,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return MarketingCampaignService(access_control, admin.user_id)
+
+
+def campaign_error(exc):
+    if isinstance(exc, MarketingCampaignConflict):
+        return HTTPException(409, str(exc))
+    if isinstance(exc, ContactDeliveryError):
+        return HTTPException(502, "Envio interrompido. O provedor pode ter aceitado a mensagem. Retome para verificar sem duplicar.")
+    return HTTPException(503, "Campanha indisponível. Confira a migração do banco, os dados do remetente, "
+                         "o Resend e CONTACT_RESEND_DRY_RUN=false no backend.")
+
+
+@router.get("/admin/marketing/statement-guide")
+def get_statement_guide_campaign(service: MarketingCampaignService = Depends(campaign_service)):
+    try:
+        return service.summary()
+    except MarketingConfigurationError as exc:
+        raise campaign_error(exc) from exc
+
+
+@router.post("/admin/marketing/statement-guide/prepare")
+def prepare_statement_guide_campaign(
+    payload: PrepareMarketingCampaignRequest,
+    service: MarketingCampaignService = Depends(campaign_service),
+    mailer: ContactService = Depends(get_contact_service),
+):
+    try:
+        return service.prepare(mailer=mailer, expected_eligible=payload.expected_eligible)
+    except (MarketingConfigurationError, ContactProviderNotConfiguredError, MarketingCampaignConflict) as exc:
+        raise campaign_error(exc) from exc
+
+
+@router.post("/admin/marketing/statement-guide/send-next")
+async def send_next_statement_guide_email(
+    payload: SendMarketingCampaignRequest,
+    service: MarketingCampaignService = Depends(campaign_service),
+    mailer: ContactService = Depends(get_contact_service),
+):
+    try:
+        return await service.send_next(mailer=mailer)
+    except (MarketingConfigurationError, ContactProviderNotConfiguredError, MarketingCampaignConflict, ContactDeliveryError) as exc:
+        raise campaign_error(exc) from exc
 
 
 class MarketingTestEmailRequest(BaseModel):

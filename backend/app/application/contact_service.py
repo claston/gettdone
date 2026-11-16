@@ -69,6 +69,12 @@ class ContactService:
     def support_email(self) -> str:
         return self._to_email
 
+    def require_live_sender(self) -> str:
+        """Campaigns must never record dry-run responses as real delivery."""
+        if self._dry_run or not self._api_key or not self._from_email:
+            raise ContactProviderNotConfiguredError
+        return self._from_email
+
     async def deliver(self, contact: ContactMessage) -> ContactDeliveryResult:
         if contact.attachment and len(contact.attachment.raw_bytes) > self._max_attachment_bytes:
             raise FileTooLargeError

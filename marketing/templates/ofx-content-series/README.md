@@ -53,8 +53,9 @@ Aprendizados usados como referência editorial interna:
 
 Este guia está disponível na prévia e no teste individual do admin, somente
 com conteúdo educativo e descadastro individual. Não inclui botão de planos,
-link para converter nem chamada de curso. A campanha continua manual,
-sem disparo em massa ou agendamento automático.
+link para converter nem chamada de curso. O admin também oferece o envio manual
+da edição `statement-guide-v1` para a lista elegível, com preparação, confirmação
+e registro dos envios. Não há agendamento automático.
 
 ## E-mail de revisão no OFX Simples
 
@@ -178,9 +179,10 @@ acrescenta `[TESTE]` ao assunto. Nome e URL individual de descadastro vêm da
 conta de teste, com escape dos valores no HTML. Consulte
 [`docs/admin-marketing-email.md`](../../../docs/admin-marketing-email.md).
 
-Os e-mails 02–04 permanecem editoriais. Não há disparo em massa nem agendamento
-implementado. A futura integração deve registrar campanha/destinatário para
-evitar duplicidades e reutilizar o descadastro existente. Não remova os três
+Os e-mails 02–04 permanecem editoriais. O envio para a lista está disponível
+somente para o guia 01, com registro por campanha/destinatário e reutilização do
+descadastro existente; consulte os passos de migração e envio manual na
+documentação do admin. Não há agendamento. Não remova os três
 arquivos usados pelo backend enquanto o teste do e-mail 01 estiver habilitado.
 Para rollback, restaure primeiro o frontend anterior e depois o backend;
 preserve as rotas de descadastro e os consentimentos revogados.
