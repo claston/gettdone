@@ -27,8 +27,11 @@ def month(client_id: str, month: str | None = Query(default=None, pattern=r"^20\
           pending: bool = False, limit: int = Query(default=50, ge=1, le=100), cursor: str | None = Query(default=None, max_length=200),
           owner: str = Depends(organization_owner), service=Depends(financial_service)):
     try:
-        return service.month(owner, client_id, month=date.fromisoformat(month+"-01") if month else None, accounts=account,
-                             day=day, pending=pending, limit=limit, cursor=cursor)
+        result = service.month(owner, client_id, month=date.fromisoformat(month+"-01") if month else None, accounts=account,
+                               day=day, pending=pending, limit=limit, cursor=cursor)
+        from app.routers.pro_fiscal import features
+        result["features"] = features()
+        return result
     except AnalysisNotFoundError:
         raise HTTPException(404, "Cliente ou conta não disponível.") from None
     except AnalysisAccessDeniedError:

@@ -32,6 +32,7 @@ export interface CanonicalMovement {
   };
 }
 export interface FinancialMonth {
+  features?: { invoices: boolean; taxes: boolean; revenue: boolean };
   client: { id: string; name: string; tax_id: string | null };
   month: string;
   accounts: Array<{ id: string; label: string }>;

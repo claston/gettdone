@@ -17,11 +17,14 @@ import {
 } from "@/data/financial-center-service";
 import { dateLabel, monthLabel, shiftMonth } from "@/domain/financial-center";
 import styles from "./financial-center.module.css";
+import { FiscalWorkspace } from "./fiscal-workspace";
+import type { FiscalMovement } from "@/data/fiscal-service";
 
 const tabs = [
   "Calendário",
   "Lançamentos",
   "Conciliação",
+  "Gestão Tributária",
   "Fechamento",
   "Relatórios",
 ] as const;
@@ -47,6 +50,9 @@ export function LiveFinancialCenter({
     tabs.find((value) => value === initial.get("tab")) ?? "Calendário",
   );
   const [cursor, setCursor] = useState("");
+  const [fiscalMovement, setFiscalMovement] = useState<FiscalMovement | null>(
+    null,
+  );
   const [attempt, setAttempt] = useState(0);
   const [snapshot, setSnapshot] = useState<{
     key: string;
@@ -135,6 +141,7 @@ export function LiveFinancialCenter({
   }, [data?.access_expires_at]);
 
   function changeMonth(delta: number) {
+    setFiscalMovement(null);
     setMonth(shiftMonth(month, delta));
     setDay("");
     setCursor("");
@@ -213,6 +220,40 @@ export function LiveFinancialCenter({
                   <td>{dateLabel(row.date)}</td>
                   <td>
                     {row.description}
+                    {data.features?.invoices && (
+                      <button
+                        className="secondary-button small"
+                        onClick={() => {
+                          setFiscalMovement({
+                            ...row,
+                            classification: null,
+                            tax_suggestion: null,
+                          });
+                          setTab("Conciliação");
+                        }}
+                      >
+                        Notas vinculadas / vincular nota
+                      </button>
+                    )}
+                    {(data.features?.taxes || data.features?.revenue) && (
+                      <button
+                        className="secondary-button small"
+                        onClick={() => {
+                          setFiscalMovement({
+                            ...row,
+                            classification: null,
+                            tax_suggestion: null,
+                          });
+                          setTab(
+                            data.features?.taxes
+                              ? "Gestão Tributária"
+                              : "Relatórios",
+                          );
+                        }}
+                      >
+                        Classificar movimento
+                      </button>
+                    )}
                     {row.possible_duplicate && (
                       <small className={styles.warning}>
                         Possível duplicidade entre extratos · conferir
@@ -270,7 +311,7 @@ export function LiveFinancialCenter({
     <main className={styles.page}>
       <div className={styles.demoNotice}>
         <strong>Consulta de movimentos bancários</strong>
-        <span>Somente leitura. Correções continuam no conversor PRO.</span>
+        <span>Correções dos valores bancários continuam no conversor PRO.</span>
       </div>
       <div className={styles.breadcrumb}>
         <Link href="/dashboard">Clientes</Link>
@@ -322,6 +363,7 @@ export function LiveFinancialCenter({
             value={account}
             onChange={(event) => {
               setAccount(event.target.value);
+              setFiscalMovement(null);
               setCursor("");
             }}
           >
@@ -404,18 +446,23 @@ export function LiveFinancialCenter({
             </p>
           )}
           <nav className={styles.tabs} aria-label="Áreas da Central Financeira">
-            {tabs.map((item) => (
-              <button
-                key={item}
-                aria-pressed={tab === item}
-                onClick={() => {
-                  setTab(item);
-                  setCursor("");
-                }}
-              >
-                {item}
-              </button>
-            ))}
+            {tabs
+              .filter(
+                (item) => item !== "Gestão Tributária" || data.features?.taxes,
+              )
+              .map((item) => (
+                <button
+                  key={item}
+                  aria-pressed={tab === item}
+                  onClick={() => {
+                    setTab(item);
+                    setCursor("");
+                    setFiscalMovement(null);
+                  }}
+                >
+                  {item}
+                </button>
+              ))}
           </nav>
           {tab === "Calendário" ? (
             <section
@@ -508,6 +555,23 @@ export function LiveFinancialCenter({
             </section>
           ) : tab === "Lançamentos" ? (
             <section className={styles.panel}>{table}</section>
+          ) : (tab === "Conciliação" && data.features?.invoices) ||
+            (tab === "Gestão Tributária" && data.features?.taxes) ||
+            (tab === "Relatórios" && data.features?.revenue) ? (
+            <FiscalWorkspace
+              key={`${clientId}:${month}:${account}:${tab}:${fiscalMovement?.id ?? ""}`}
+              clientId={clientId}
+              month={month}
+              account={account}
+              initialMovementId={fiscalMovement?.id}
+              mode={
+                tab === "Conciliação"
+                  ? "invoices"
+                  : tab === "Gestão Tributária"
+                    ? "taxes"
+                    : "revenue"
+              }
+            />
           ) : (
             <section className={styles.panel}>
               <h2>{tab} · em planejamento</h2>

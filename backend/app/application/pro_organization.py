@@ -1,9 +1,10 @@
 """Manual organization metadata; never submits jobs or changes quota/ownership."""
 
-import re
 from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING
 from uuid import uuid4
+
+from app.application.pro_fiscal_documents import tax_identifier
 
 if TYPE_CHECKING:
     from app.application.access_control.access_control_db import AccessControlDbComponent
@@ -125,11 +126,9 @@ class OrganizationService:
             return result
 
     def save_client(self, owner: str, *, name: str, tax_id: str | None = None, trade_name: str = "", entity_id: str | None = None) -> dict:
-        normalized_tax = re.sub(r"\D", "", tax_id or "") or None
-        if tax_id and tax_id.strip() and (
-            len(normalized_tax or "") not in (11, 14) or not re.fullmatch(r"[\d./\s-]+", tax_id)
-        ):
-            raise ValueError("Informe CPF com 11 dígitos ou CNPJ com 14 dígitos.")
+        normalized_tax = tax_identifier(tax_id)
+        if tax_id and tax_id.strip() and normalized_tax is None:
+            raise ValueError("Informe CPF com 11 dígitos ou CNPJ com 14 posições.")
         return self._save(
             owner,
             "clients",

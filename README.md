@@ -453,6 +453,8 @@ Comportamento de frontend em deploy:
 
 ## Endpoints fundacao
 
+Gestão fiscal exclusiva do PRO: [funcionalidades, retenção e rollout](docs/pro-fiscal-management.md).
+
 - `GET /health`
 - `POST /analyze` (stub funcional)
 - `GET /report/{analysis_id}` (stub funcional com XLSX)
