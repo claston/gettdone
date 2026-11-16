@@ -67,6 +67,15 @@ conferido contra os bytes; reenviar a mesma identidade não renova sua retençã
 O evento SQS `pro.fiscal.requested` contém apenas o identificador da importação.
 A linha `queued` funciona como outbox; manutenção redispara em até cinco minutos.
 O worker usa lease de 12 minutos, até três tentativas, e processa fora dos locks.
+O limite é conferido antes de ler o objeto ou executar OCR, inclusive ao retomar
+uma tentativa interrompida por timeout ou falta de memória. Uma terceira tentativa
+com lease ativo pode terminar normalmente; uma reserva vencida com orçamento
+esgotado é encerrada como falha, sem novo processamento.
+
+Substituições de NFS-e são resolvidas nos dois sentidos, independentemente da
+ordem de processamento dos arquivos. A chegada da original após a substituta
+também a exclui das vendas documentadas. Cadeias de substituições preservam os
+dados extraídos, registram as mudanças no histórico e invalidam vínculos antigos.
 
 Retenção máxima deste piloto: **24 horas**, limitada também por
 `ANALYSIS_TTL_SECONDS` e `CONVERSION_JOB_ACTIVE_TTL_SECONDS`. Não é arquivo fiscal
@@ -123,7 +132,8 @@ rollback destrutivo das tabelas antigas continua bloqueado pelas dependências.
   sentidos, valores exatos, sugestões e bases independentes de receita.
 - `test_pro_fiscal_service.py`: PostgreSQL real, dono/expiração, idempotência,
   concorrência de alocações, revisão de origem/empresa, paginação, substituição,
-  retenção e limpeza.
+  retenção e limpeza. Inclui substituta antes da original, cadeias fora de ordem
+  e limite de tentativas após interrupção abrupta.
 - `test_pro_fiscal_http.py`: servidor HTTP real; importação, download, vínculo,
   classificação, CSV, negativas de origem/acesso e downgrade/upgrade com dados.
 - `test_pro_fiscal_runtime.py`: integridade dos bytes, roteamento SQS e limpeza
@@ -135,6 +145,8 @@ rollback destrutivo das tabelas antigas continua bloqueado pelas dependências.
   Capturas sintéticas ficam em `tmp/pro-fiscal-browser/`.
 
 Usar `CANONICAL_MOVEMENTS_TEST_DATABASE_URL` somente com PostgreSQL descartável.
+No CI, os módulos de serviço e HTTP fiscal fazem parte da seleção explícita da
+etapa PostgreSQL, que fornece essa variável; não dependem da etapa geral sem banco.
 No Windows seguir `AGENTS.md`: pytest fora do sandbox, runner completo
 `scripts/test-backend.ps1`, lint e suíte PRO. `/analyze` está aposentado (405);
 compatibilidade HTTP é validada pelo fluxo vigente `/convert` e download.

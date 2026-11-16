@@ -186,6 +186,15 @@ class ProFiscalService:
                 return
             if row["state"] == "processing" and row["lease_until"] > datetime.now(timezone.utc):
                 raise ConnectionError("Fiscal import already processing")
+            # Timeouts/OOM may bypass the exception handler after claiming an
+            # attempt. Enforce the budget before any new object read or OCR.
+            if row["attempts"] >= 3:
+                conn.execute(
+                    f"""UPDATE {self.repo.p}pro_fiscal_imports SET state='failed',error=%s,
+                    lease_until=NULL WHERE id=%s""",
+                    ("Limite de três tentativas de processamento atingido.", row["id"]),
+                )
+                return
             conn.execute(
                 f"""UPDATE {self.repo.p}pro_fiscal_imports SET state='processing',attempts=attempts+1,
                 lease_until=clock_timestamp()+interval '12 minutes' WHERE id=%s""",
@@ -226,41 +235,7 @@ class ProFiscalService:
                         (id,organization_id,client_id,identity_key,payload,expires_at) VALUES (%s,%s,%s,%s,%s,%s)""",
                         (document_id, client["organization_id"], client["id"], payload["identity_key"], Jsonb(payload), row["expires_at"]),
                     )
-                replaced = payload.get("replaced_document_key")
-                if replaced:
-                    prior = conn.execute(
-                        f"""SELECT * FROM {self.repo.p}pro_fiscal_documents
-                        WHERE organization_id=%s AND client_id=%s AND identity_key=%s
-                        AND id<>%s AND expires_at>clock_timestamp() FOR UPDATE""",
-                        (client["organization_id"], client["id"], "nfse:NFS" + replaced.removeprefix("NFS"), document_id),
-                    ).fetchone()
-                    if prior:
-                        changed = {**prior["payload"], "status": "substituted"}
-                        conn.execute(
-                            f"UPDATE {self.repo.p}pro_fiscal_documents SET payload=%s,version=version+1 WHERE id=%s",
-                            (Jsonb(changed), prior["id"]),
-                        )
-                        audit = {
-                            "kind": "document_replacement",
-                            "id": str(prior["id"]),
-                            "source_import": str(row["id"]),
-                            "before": prior["payload"],
-                            "after": changed,
-                        }
-                        conn.execute(
-                            f"""INSERT INTO {self.repo.p}pro_fiscal_operations
-                            (organization_id,client_id,operation_id,request_hash,actor_id,result,expires_at)
-                            VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
-                            (
-                                client["organization_id"],
-                                client["id"],
-                                "replacement:" + str(row["id"]),
-                                hashlib.sha256(json.dumps(audit, sort_keys=True).encode()).hexdigest(),
-                                row["actor_id"],
-                                Jsonb(audit),
-                                min(row["expires_at"], prior["expires_at"]),
-                            ),
-                        )
+                self._resolve_replacements(conn, client, document_id, row)
                 conn.execute(
                     f"""UPDATE {self.repo.p}pro_fiscal_imports SET state='ready',document_id=%s,
                     extraction=%s,lease_until=NULL,expires_at=LEAST(expires_at,%s) WHERE id=%s""",
@@ -283,6 +258,53 @@ class ProFiscalService:
                 )
             if not final:
                 raise
+
+    def _resolve_replacements(self, conn, client, document_id, source_import):
+        # Either end of an edge may arrive last, including the middle of a
+        # replacement chain. Keep extraction baselines unchanged; version only
+        # the affected documents so existing links require review.
+        priors = conn.execute(
+            f"""SELECT prior.*, replacement.id AS replacement_id, replacement.expires_at AS replacement_expiry
+            FROM {self.repo.p}pro_fiscal_documents prior
+            JOIN {self.repo.p}pro_fiscal_documents replacement
+                ON replacement.organization_id=prior.organization_id AND replacement.client_id=prior.client_id
+                AND prior.identity_key='nfse:NFS' || regexp_replace(replacement.payload->>'replaced_document_key','^NFS','')
+            WHERE prior.organization_id=%s AND prior.client_id=%s AND prior.id<>replacement.id
+                AND prior.expires_at>clock_timestamp() AND replacement.expires_at>clock_timestamp()
+                AND prior.payload->>'status'<>'substituted' AND (prior.id=%s OR replacement.id=%s)
+            ORDER BY prior.id,replacement.id FOR UPDATE OF prior""",
+            (client["organization_id"], client["id"], document_id, document_id),
+        ).fetchall()
+        changed_ids = set()
+        for prior in priors:
+            if prior["id"] in changed_ids:
+                continue
+            changed_ids.add(prior["id"])
+            changed = {**prior["payload"], "status": "substituted"}
+            conn.execute(
+                f"UPDATE {self.repo.p}pro_fiscal_documents SET payload=%s,version=version+1 WHERE id=%s",
+                (Jsonb(changed), prior["id"]),
+            )
+            audit = {
+                "kind": "document_replacement",
+                "id": str(prior["id"]),
+                "source_import": str(source_import["id"]),
+                "replacement_id": str(prior["replacement_id"]),
+                "before": prior["payload"],
+                "after": changed,
+            }
+            conn.execute(
+                f"""INSERT INTO {self.repo.p}pro_fiscal_operations
+                (organization_id,client_id,operation_id,request_hash,actor_id,result,expires_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                (
+                    client["organization_id"], client["id"],
+                    f"replacement:{source_import['id']}:{prior['id']}",
+                    hashlib.sha256(json.dumps(audit, sort_keys=True).encode()).hexdigest(),
+                    source_import["actor_id"], Jsonb(audit),
+                    min(source_import["expires_at"], prior["expires_at"], prior["replacement_expiry"]),
+                ),
+            )
 
     def _command(self, conn, client, actor, operation_id, request, execute):
         if not operation_id or len(operation_id) > 100:

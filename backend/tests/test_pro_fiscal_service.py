@@ -3,6 +3,7 @@
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
@@ -175,6 +176,126 @@ class Queue:
 
     def publish(self, identifier):
         self.messages.append(identifier)
+
+
+def ingest(service, scope, raw):
+    digest = hashlib.sha256(raw).hexdigest()
+    service.objects.data[digest] = raw
+    imported = service.prepare_import(scope.actor_id, scope.client_id, filename="nota.xml", size_bytes=len(raw), digest=digest)
+    service.submit_import(scope.actor_id, scope.client_id, imported["id"])
+    service.complete_import(imported["id"], lambda data, kind: parse_fiscal_xml(data))
+    return imported["id"]
+
+
+@pytest.mark.parametrize("replacement_first", [False, True])
+def test_replacement_resolves_both_import_orders_without_double_counting(database, replacement_first):
+    service, scope, movement = setup(database)
+    service.objects, service.queue = Objects(), Queue()
+    original = nfse()
+    replacement = original.replace(b'Id="NFS' + b"1" * 50, b'Id="NFS' + b"2" * 50).replace(b"<nNFSe>7", b"<nNFSe>8")
+    replacement = replacement.replace(b"</infDPS>", b"<subst><chSubstda>" + b"1" * 50 + b"</chSubstda></subst></infDPS>")
+    first = ingest(service, scope, replacement if replacement_first else original)
+    first_note = service.workspace(scope.actor_id, scope.client_id, month="2026-11")["documents"][0]
+    if not replacement_first:
+        service.link(
+            scope.actor_id, scope.client_id, first_note["id"], movement,
+            amount="10.00", document_version=1, movement_version=1, operation_id="before-replacement",
+        )
+    second = ingest(service, scope, original if replacement_first else replacement)
+    result = service.workspace(scope.actor_id, scope.client_id, month="2026-11")
+    assert result["summary"]["documented_sales"] == "100.00"
+    notes = {note["number"]: note for note in result["documents"]}
+    assert (notes["7"]["status"], notes["7"]["version"]) == ("substituted", 2)
+    assert (notes["8"]["status"], notes["8"]["version"]) == ("reported", 1)
+    if not replacement_first:
+        assert result["links"][0]["state"] == "review_required"
+    with service.repo._connect() as conn:
+        sources = conn.execute(f"SELECT extraction FROM {service.repo.p}pro_fiscal_imports").fetchall()
+        assert len(sources) == 2 and all(source["extraction"]["status"] == "reported" for source in sources)
+        audits = conn.execute(
+            f"SELECT result FROM {service.repo.p}pro_fiscal_operations WHERE result->>'kind'='document_replacement'"
+        ).fetchall()
+        assert len(audits) == 1
+        assert audits[0]["result"]["id"] == notes["7"]["id"]
+        assert audits[0]["result"]["before"]["status"] == "reported"
+        assert audits[0]["result"]["after"]["status"] == "substituted"
+    # SQS redelivery cannot repeat the mutation/version bump or the extraction.
+    for identifier in (first, second):
+        service.complete_import(identifier, lambda *_: pytest.fail("must not reparse"))
+    assert service.workspace(scope.actor_id, scope.client_id, month="2026-11")["documents"] == result["documents"]
+
+
+def test_replacement_chain_resolves_both_edges_when_middle_arrives_last(database):
+    service, scope, _ = setup(database)
+    service.objects, service.queue = Objects(), Queue()
+    for number in (3, 1, 2):
+        raw = nfse().replace(b'Id="NFS' + b"1" * 50, b'Id="NFS' + str(number).encode() * 50)
+        raw = raw.replace(b"<nNFSe>7", f"<nNFSe>{number}".encode())
+        if number > 1:
+            raw = raw.replace(
+                b"</infDPS>", b"<subst><chSubstda>" + str(number - 1).encode() * 50 + b"</chSubstda></subst></infDPS>"
+            )
+        ingest(service, scope, raw)
+    result = service.workspace(scope.actor_id, scope.client_id, month="2026-11")
+    assert result["summary"]["documented_sales"] == "100.00"
+    assert {n["number"]: n["status"] for n in result["documents"]} == {"1": "substituted", "2": "substituted", "3": "reported"}
+    with service.repo._connect() as conn:
+        audits = conn.execute(f"SELECT result FROM {service.repo.p}pro_fiscal_operations").fetchall()
+        assert len(audits) == 2 and len({a["result"]["id"] for a in audits}) == 2
+
+
+@pytest.mark.parametrize("state,attempts", [("processing", 3), ("queued", 3), ("processing", 4)])
+def test_exhausted_import_is_failed_before_object_read_or_parse(database, state, attempts):
+    service, scope, _ = setup(database)
+    service.objects, service.queue = Objects(), Queue()
+    raw = nfse()
+    imported = service.prepare_import(
+        scope.actor_id, scope.client_id, filename="nota.xml", size_bytes=len(raw), digest=hashlib.sha256(raw).hexdigest()
+    )
+    with service.repo._connect() as conn:
+        conn.execute(
+            f"""UPDATE {service.repo.p}pro_fiscal_imports SET state=%s,attempts=%s,
+            lease_until=clock_timestamp()-interval '1 second' WHERE id=%s""",
+            (state, attempts, imported["id"]),
+        )
+    service.objects.read = Mock(side_effect=AssertionError("exhausted import must not read objects"))
+    parse = Mock(side_effect=AssertionError("exhausted import must not parse"))
+    service.complete_import(imported["id"], parse)
+    service.objects.read.assert_not_called()
+    parse.assert_not_called()
+    with service.repo._connect() as conn:
+        row = conn.execute(f"SELECT * FROM {service.repo.p}pro_fiscal_imports WHERE id=%s", (imported["id"],)).fetchone()
+        assert row["state"] == "failed" and row["attempts"] == attempts
+        assert row["error"] and row["lease_until"] is None
+        assert row["document_id"] is None and row["extraction"] is None
+    assert service.dispatch() == 0
+    service.complete_import(imported["id"], parse)
+    service.objects.read.assert_not_called()
+
+
+def test_last_attempt_can_finish_but_an_active_lease_cannot_be_reclaimed(database):
+    service, scope, _ = setup(database)
+    service.objects, service.queue = Objects(), Queue()
+    raw = nfse()
+    digest = hashlib.sha256(raw).hexdigest()
+    service.objects.data[digest] = raw
+    imported = service.prepare_import(scope.actor_id, scope.client_id, filename="nota.xml", size_bytes=len(raw), digest=digest)
+    with service.repo._connect() as conn:
+        conn.execute(
+            f"""UPDATE {service.repo.p}pro_fiscal_imports SET state='processing',attempts=2,
+            lease_until=clock_timestamp()-interval '1 second' WHERE id=%s""", (imported["id"],),
+        )
+
+    def parse(data, kind):
+        with pytest.raises(ConnectionError, match="already processing"):
+            service.complete_import(imported["id"], lambda *_: pytest.fail("must not steal an active lease"))
+        return parse_fiscal_xml(data)
+
+    service.complete_import(imported["id"], parse)
+    with service.repo._connect() as conn:
+        row = conn.execute(f"SELECT * FROM {service.repo.p}pro_fiscal_imports WHERE id=%s", (imported["id"],)).fetchone()
+        assert row["state"] == "ready" and row["attempts"] == 3
+    assert service.workspace(scope.actor_id, scope.client_id, month="2026-11")["summary"]["documented_sales"] == "100.00"
 
 
 def test_async_import_idempotency_routing_and_cleanup(database):
