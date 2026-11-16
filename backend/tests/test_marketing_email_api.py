@@ -96,7 +96,7 @@ def send_organization_test(client, request_id=None):
     })
 
 
-def test_organization_email_has_sales_cta_and_real_unsubscribe(marketing):
+def test_organization_email_is_informational_with_real_unsubscribe(marketing):
     client, service, user, mailer = marketing
     with service._connect() as conn:
         service._execute(conn, "UPDATE users SET name = ? WHERE id = ?", ('Ana <img src=x> & Bia', user.user_id))
@@ -111,8 +111,12 @@ def test_organization_email_has_sales_cta_and_real_unsubscribe(marketing):
     assert message["idempotency_key"] == f"marketing-test/01-organizacao/{request_id}"
     assert message["to_email"] == "marketing-test@example.com"
     for body in (message["html"], message["text"]):
-        assert "Conhecer os planos" in body
-        assert "https://www.ofxsimples.com.br/planos.html" in body
+        assert "Uma boa conversão começa no arquivo." in body
+        assert "Conhecer os planos" not in body
+        assert "/planos.html" not in body
+        assert "/converter-pdf-para-ofx.html" not in body
+        assert "No próximo e-mail" not in body
+        assert "hotmart.com" not in body
         assert "{{" not in body
         assert "CNPJ: 00.000.000/0000-00" in body
     assert "Empresa &amp; &quot;Teste&quot;" in message["html"]
