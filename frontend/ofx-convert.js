@@ -3169,6 +3169,7 @@
 
   async function runAsyncBatchConvert(files) {
     setLoading(true);
+    renderBatchResults(state.batchResults);
     setStatus(`Preparando ${files.length} arquivo(s)...`, null);
     showProgressBar();
     setProgressTarget(3);
@@ -3209,7 +3210,6 @@
         },
         body: JSON.stringify({ files: fileContracts }),
       });
-      state.activeBatchId = created.batch_id;
       await uploadPreparedBatchFiles(files, created.uploads || []);
       setStatus(files.length === 1 ? "Arquivo enviado. Iniciando processamento..." : "Uploads concluídos. Enviando o lote para processamento...", null);
       setProgressTarget(48);
@@ -3219,6 +3219,8 @@
         body: "{}",
       });
       const completed = await pollConversionBatch(created.batch_id);
+      // Keep displayed jobs paired with their batch if upload, submit or polling fails.
+      state.activeBatchId = created.batch_id;
       renderBatchResults(completed.jobs);
       const successfulJobs = completed.jobs.filter(function (job) {
         return job.status === "completed" && job.result && job.result.analysis;

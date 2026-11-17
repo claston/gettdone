@@ -217,11 +217,8 @@ def _original_visual_provenance(result, original, visual):
     if result.financial_document is None and result.canonical_transactions:
         covered = {row.source_page for row in result.canonical_transactions}
         covered.update(page for row in result.canonical_transactions for page, _ in row.source_line_refs or ())
-        annexes = {"fiscal_invoice", "bank_receipt", "fiscal_summary", "investment_statement", "receivables_report",
-                   "accounts_payable_report", "accounts_receivable_report"}
-        covered.update(page for part in result.document_parts or []
-                       if part.get("document_type") in annexes and part.get("included_in_statement") is False
-                       and not part.get("requires_review") for page in part.get("pages", []))
+        # Page-level annex labels do not prove exclusivity: a headerless bank
+        # continuation can share a page with a DANFE. Inspect every unread page.
         missing = []
         for page, text in enumerate(result.source_page_texts or (), 1):
             if page in covered:
