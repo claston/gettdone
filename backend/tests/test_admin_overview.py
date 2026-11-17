@@ -143,16 +143,22 @@ def test_overview_rejects_authenticated_non_admin(sample):
         app.dependency_overrides.clear()
 
 
-def test_course_metrics_nonempty_sql_and_filtered_visitors(sample):
+@pytest.mark.parametrize("source", ["conversao", "pagina", "email"])
+def test_course_metrics_nonempty_sql_and_filtered_visitors(sample, source):
     identity = sample.resolve_identity(anonymous_fingerprint="course-synthetic-browser", user_token=None)
+    events = ["course_page_view", "course_outbound_click"]
+    if source == "conversao":
+        events = ["course_cta_view", "course_cta_click", *events]
     for _ in range(2):
-        for event in ("course_cta_view", "course_cta_click", "course_page_view", "course_outbound_click"):
-            path = "/ofx-convert.html" if event.startswith("course_cta_") else "/curso-notas-explicativas.html?from=conversao"
+        for event in events:
+            path = "/ofx-convert.html" if event.startswith("course_cta_") else f"/curso-notas-explicativas.html?from={source}"
             sample.record_product_event(identity=identity, event_type=event, page_path=path)
     full = AdminDashboardService(sample).get_dashboard()["course_funnel"]
     assert AdminOverviewService(sample).get_overview()["course_funnel"] == full
-    assert full[0]["cta_view_people"] == 1 and full[0]["cta_ctr"] == 100
-    assert full[0]["page_view_people"] == 1 and full[0]["page_ctr"] == 100
+    metrics = next(row for row in full if row["source"] == source)
+    assert metrics["cta_view_people"] == (1 if source == "conversao" else 0)
+    assert metrics["cta_ctr"] == (100 if source == "conversao" else None)
+    assert metrics["page_view_people"] == 1 and metrics["page_ctr"] == 100
     visitors = AdminDashboardService(sample).get_active_users(course_interest="visited")
     assert visitors["total"] == 1
     assert visitors["items"][0]["course_page_views"] == 2

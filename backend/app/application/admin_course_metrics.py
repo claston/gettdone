@@ -7,14 +7,17 @@ SOURCES = ("conversao", "pagina", "email")
 def _course_cte(service, *, start_at, end_at, identity_type):
     stamp = "e.created_at::timestamptz" if service._use_postgres else "julianday(e.created_at)"
     identity_filter = "" if identity_type == "all" else " AND e.identity_type = ?"
-    params = (start_at, end_at) if identity_type == "all" else (start_at, end_at, identity_type)
+    # URL query strings contain '?' too: bind them as values before the DB adapter
+    # translates qmark placeholders for PostgreSQL.
+    paths = tuple(f"/curso-notas-explicativas.html?from={source}" for source in ("conversao", "email", "pagina"))
+    params = (*paths, start_at, end_at) if identity_type == "all" else (*paths, start_at, end_at, identity_type)
     return f"""WITH course_events AS (
         SELECT e.*, {stamp} AS stamp, CASE
           WHEN e.event_type IN ('course_cta_view', 'course_cta_click') AND e.page_path IN
             ('/ofx-convert.html', '/converter-pdf-para-ofx.html', '/converter-pdf-para-excel.html') THEN 'conversao'
-          WHEN e.page_path = '/curso-notas-explicativas.html?from=conversao' THEN 'conversao'
-          WHEN e.page_path = '/curso-notas-explicativas.html?from=email' THEN 'email'
-          WHEN e.page_path IN ('/curso-notas-explicativas.html', '/curso-notas-explicativas.html?from=pagina') THEN 'pagina'
+          WHEN e.page_path = ? THEN 'conversao'
+          WHEN e.page_path = ? THEN 'email'
+          WHEN e.page_path IN ('/curso-notas-explicativas.html', ?) THEN 'pagina'
           ELSE NULL END AS source
         FROM product_events e
         WHERE e.created_at >= ? AND e.created_at <= ? {identity_filter}
