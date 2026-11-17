@@ -49,7 +49,7 @@ A API existente `/telemetry/events` passa a aceitar quatro eventos em
 
 | Evento | Interpretação |
 | --- | --- |
-| `course_cta_view` | Chamada apresentada no resultado gratuito; não prova leitura |
+| `course_cta_view` | Pelo menos 50% da chamada na área visível da tela, com a aba visível; não prova leitura |
 | `course_cta_click` | Clique em “Saiba como” |
 | `course_page_view` | Abertura da página interna |
 | `course_outbound_click` | Clique para visitar a oferta via Hotlink |
@@ -59,10 +59,46 @@ normalizada. A identidade usa os cookies existentes; `plan_code` não é usado
 para armazenar campanhas. Os indicadores de compra de planos não mudam.
 
 A apresentação é deduplicada por conversão na sessão da aba (últimos 100 IDs).
+Inserir a chamada fora da tela não registra impressão. O observador é encerrado
+ao trocar ou limpar o resultado. Rolar, redimensionar ou voltar à aba permite
+registrar a exposição. A fila de eventos mantém a exposição/visita antes do
+respectivo clique quando a conexão está lenta.
 Outra aba, limpeza ou indisponibilidade do armazenamento pode gerar repetição.
-Cliques e visitas não são deduplicados. Falhas de rede ou bloqueios de scripts
+Cliques e visitas brutos não são deduplicados. Falhas de rede ou bloqueios de scripts
 podem subcontar eventos, sem bloquear navegação ou download. Identidades anônimas
 representam navegadores, não necessariamente pessoas únicas.
+
+### Painel e marcações por pessoa
+
+O resumo do admin inclui **Interesse no curso parceiro**, com os mesmos filtros
+de período (dias em Brasília) e identidade do painel. O seletor de origem
+separa conversor, acesso direto e e-mail. Os números são agregados no banco;
+o resumo recebe no máximo três linhas, sem carregar históricos de conversões.
+
+- **CTR da chamada**: identidades que clicaram depois de uma exposição, divididas
+  pelas identidades expostas na mesma origem e período.
+- **CTR da página**: identidades que clicaram para ir à Hotmart depois de uma
+  visita à nossa página, divididas pelos visitantes na mesma origem e período.
+- Repetições contam uma vez em cada taxa. Sem denominador, o resultado é `null`
+  na API e “—” na interface. Cliques sem exposição/visita anterior no período
+  não entram no numerador. Não somar taxas ou identidades entre origens/dias.
+- Administradores cadastrados (`users.is_admin`) são excluídos das métricas do
+  curso. Outras contas de teste precisam ser consideradas na análise; não são
+  identificadas por adivinhação. Cadastro/login ou outro navegador podem separar
+  a atividade em identidades diferentes.
+
+**Usuários ativos → Interesse no curso** oferece os filtros “Visitou o curso”
+e “Clicou para ver a oferta”. Eles incluem visitantes sem conversões no período.
+O botão do funil abre a lista de todas as origens, preservando período e tipo
+de identidade. Cada cartão mostra badges, contagens brutas e último acesso/clique
+no período. Esses sinais não alteram o perfil de compra de planos, o consentimento
+de marketing nem os dados de conversão. Sem filtro de curso, a lista mantém a
+regra anterior de exigir conversão no período.
+
+As respostas de `/admin/dashboard/overview` e `/admin/dashboard` recebem
+`course_funnel`; `/admin/active-users` recebe campos opcionais de interesse e
+aceita `course_interest=all|visited|outbound`. Autorização administrativa e
+`Cache-Control: no-store` permanecem. Não há mudança de schema.
 
 Consulta somente de leitura, para exportação no editor do Neon:
 
@@ -82,7 +118,8 @@ GROUP BY 1, 2, 3, 4
 ORDER BY 1, 2, 3, 4;
 ```
 
-O relatório inclui testes e administradores se navegarem nesse fluxo. Excluir
+Esta consulta de eventos brutos inclui testes e administradores, diferentemente
+dos indicadores do curso no painel. Excluir
 as identidades de teste conhecidas antes da análise comercial; não somar
 identidades distintas entre dias ou etapas como se fossem pessoas novas.
 
@@ -100,10 +137,16 @@ Nenhum novo serviço, segredo, tabela ou dependência é necessário.
 - `backend/tests/test_product_telemetry_api.py`: identidade e persistência,
   sem contaminar o funil de compra de planos.
 - `backend/tests/test_course_telemetry_http.py`: servidor HTTP local, eventos,
-  conversão, downloads e caminhos negativos. `/analyze` continua aposentado
+  conversão, downloads, indicadores e marcações no admin e caminhos negativos. `/analyze` continua aposentado
   (405); a conversão usa `/convert`.
 - `scripts/smoke_conversion_feedback.py`: pesquisa e restauração com o teste
   de parceria desativado, incluindo o caminho de rollback.
+- `backend/tests/test_admin_course_metrics.py`: coortes em ordem, deduplicação,
+  origem, exclusão de admin, filtros/paginação e visitantes sem conversão.
+  `test_admin_overview.py` cobre paridade e SQL não vazio em SQLite/PostgreSQL.
+- `scripts/smoke_admin_course_metrics.py`: seis indicadores, troca de origem,
+  taxas sem denominador, badges, filtros, datas, consentimento e logout em
+  390/1440 px, com dados sintéticos. Capturas em `tmp/course-promotion-preview/`.
 
 Para encerrar o teste, mudar `ENABLED` para `false` em `course-promotion.js`,
 incrementar a versão desse script nas quatro páginas e publicar o frontend.

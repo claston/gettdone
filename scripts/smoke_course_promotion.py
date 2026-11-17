@@ -70,6 +70,8 @@ def check(browser, filename, width, identity):
     if page.locator("#privacy-deny").is_visible():
         page.locator("#privacy-deny").click()
     expect(page.locator("#course-promotion")).to_have_count(0)
+    # Keep the prompt off screen until an explicit scroll: DOM insertion is not an impression.
+    page.add_style_tag(content="#course-promotion { margin-top: 1800px !important; }")
     page.locator("#file-input").set_input_files({"name": "synthetic.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4 synthetic"})
     page.locator("#convert-btn").click()
     download = page.locator("#download-ofx-btn, #download-report-btn").first
@@ -83,6 +85,10 @@ def check(browser, filename, width, identity):
         expect(card).to_be_visible()
         expect(card).to_contain_text("Parceria")
         expect(page.locator("#conversion-feedback")).to_be_hidden()
+        assert not any(event["event_type"] == "course_cta_view" for event in events)
+        with page.expect_request(lambda request: request.url.endswith("/telemetry/events")
+                                 and request.post_data_json.get("event_type") == "course_cta_view"):
+            card.scroll_into_view_if_needed()
         with page.expect_download():
             download.click()
         page.reload()

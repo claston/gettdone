@@ -8,6 +8,7 @@ from statistics import median
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
+from app.application.admin_course_metrics import attach_course_interest, course_funnel, course_people
 from app.application.admin_pdf_metrics import build_pdf_document_metrics
 from app.application.admin_statement_periods import attach_existing_statement_periods, build_statement_period_summary
 from app.application.conversion_feedback import feedback_summary
@@ -90,6 +91,10 @@ class AdminDashboardService:
                     self._service, conn, start_at=start_utc.isoformat(), end_at=now_utc.isoformat(),
                     identity_type=normalized_identity_type,
                 )
+                course_metrics = course_funnel(
+                    self._service, conn, start_at=start_utc.isoformat(), end_at=now_utc.isoformat(),
+                    identity_type=normalized_identity_type,
+                )
                 prior_identity_keys = self._load_prior_identity_keys(
                     conn,
                     before=start_utc.isoformat(),
@@ -135,6 +140,7 @@ class AdminDashboardService:
             product_events=product_events,
         )
         payload["conversion_feedback"] = conversion_feedback
+        payload["course_funnel"] = course_metrics
         return payload
 
     def get_attention_export_rows(
@@ -227,6 +233,7 @@ class AdminDashboardService:
         days: int = 30,
         identity_type: str = "all",
         prospect_only: bool = False,
+        course_interest: str = "all",
         limit: int = 50,
         offset: int = 0,
     ) -> dict[str, object]:
@@ -236,6 +243,8 @@ class AdminDashboardService:
             raise ValueError("Unsupported identity_type")
         normalized_limit = max(1, min(int(limit), 200))
         normalized_offset = max(0, int(offset))
+        if course_interest not in {"all", "visited", "outbound"}:
+            raise ValueError("Unsupported course_interest")
 
         now_utc = _as_aware_utc(self._service.now_provider())
         now_local = now_utc.astimezone(DASHBOARD_TIMEZONE)
@@ -266,6 +275,10 @@ class AdminDashboardService:
                     events=conversion_events,
                     extra_registered_ids=_registered_product_identity_ids(product_events),
                 )
+                course_visitors = course_people(
+                    self._service, conn, start_at=start_utc.isoformat(), end_at=now_utc.isoformat(),
+                    identity_type=normalized_identity_type,
+                )
 
         conversion_events = [
             event for event in conversion_events if not _is_non_conversion_event(event)
@@ -276,12 +289,15 @@ class AdminDashboardService:
             registered_profiles=registered_profiles,
         )
         items = _enrich_active_users(
-            items,
+            attach_course_interest(items, course_visitors, registered_profiles, include_visitors=course_interest != "all"),
             product_events=product_events,
             registered_profiles=registered_profiles,
         )
         if prospect_only:
             items = [item for item in items if item["plan_code"] == "free"]
+        if course_interest != "all":
+            field = "course_page_views" if course_interest == "visited" else "course_outbound_clicks"
+            items = [item for item in items if item[field] > 0]
         items.sort(
             key=lambda item: (
                 -int(item["purchase_score"]),

@@ -6,7 +6,7 @@
   const COURSE_PATH = "/curso-notas-explicativas.html";
   const SOURCES = { conversao: "ofxs|conversao|dcne", email: "ofxs|email|dcne", pagina: "ofxs|pagina|dcne" };
   const session = window.OfxSession;
-  const seenKey = "ofx_course_cta_seen_v1";
+  const seenKey = "ofx_course_cta_seen_v2";
   let seen = new Set();
   try {
     const stored = JSON.parse(window.sessionStorage.getItem(seenKey) || "[]");
@@ -15,8 +15,17 @@
   let identityPromise;
   let revision = 0;
   let panel;
+  let impressionId;
+  let observer;
+  let telemetryQueue = Promise.resolve();
 
-  async function recordEvent(eventType, pagePath) {
+  function recordEvent(eventType, pagePath) {
+    // Keep exposure/visit before its click even on a slow connection.
+    telemetryQueue = telemetryQueue.then(function () { return sendEvent(eventType, pagePath); });
+    return telemetryQueue;
+  }
+
+  async function sendEvent(eventType, pagePath) {
     try {
       if (!session) return;
       if (!identityPromise) {
@@ -41,17 +50,43 @@
     }
   }
 
-  function trackLink(link, eventType, pagePath) {
-    link.addEventListener("click", function () { void recordEvent(eventType, pagePath); });
+  function trackLink(link, eventType, pagePath, beforeClick) {
+    function record() {
+      if (beforeClick) beforeClick();
+      void recordEvent(eventType, pagePath);
+    }
+    link.addEventListener("click", record);
     link.addEventListener("auxclick", function (event) {
-      if (event.button === 1) void recordEvent(eventType, pagePath);
+      if (event.button === 1) record();
     });
   }
 
   function hide() {
     revision += 1;
+    impressionId = null;
+    if (observer) observer.disconnect();
     if (panel) panel.classList.add("hidden");
   }
+
+  function recordVisibleImpression() {
+    if (!impressionId || !panel || panel.classList.contains("hidden") || document.visibilityState !== "visible") return;
+    const rect = panel.getBoundingClientRect();
+    const visibleWidth = Math.max(0, Math.min(rect.right, window.innerWidth) - Math.max(rect.left, 0));
+    const visibleHeight = Math.max(0, Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0));
+    if (!rect.width || !rect.height || visibleWidth * visibleHeight < rect.width * rect.height * 0.5) return;
+    const processingId = impressionId;
+    impressionId = null;
+    if (observer) observer.disconnect();
+    if (seen.has(processingId)) return;
+    seen.add(processingId);
+    seen = new Set(Array.from(seen).slice(-100));
+    try { window.sessionStorage.setItem(seenKey, JSON.stringify(Array.from(seen))); } catch (_error) { /* Optional. */ }
+    void recordEvent("course_cta_view", window.location.pathname);
+  }
+
+  document.addEventListener("visibilitychange", recordVisibleImpression);
+  window.addEventListener("scroll", recordVisibleImpression, { passive: true });
+  window.addEventListener("resize", recordVisibleImpression, { passive: true });
 
   async function show(processingId, quotaMode) {
     hide();
@@ -79,7 +114,7 @@
       link.target = "_blank";
       link.rel = "noopener";
       link.textContent = "Saiba como";
-      trackLink(link, "course_cta_click", window.location.pathname);
+      trackLink(link, "course_cta_click", window.location.pathname, recordVisibleImpression);
       const label = document.createElement("small");
       label.textContent = "Parceria";
       panel.append(title, link, label);
@@ -87,10 +122,12 @@
     }
     panel.classList.remove("hidden");
     if (!seen.has(processingId)) {
-      seen.add(processingId);
-      seen = new Set(Array.from(seen).slice(-100));
-      try { window.sessionStorage.setItem(seenKey, JSON.stringify(Array.from(seen))); } catch (_error) { /* Optional. */ }
-      void recordEvent("course_cta_view", window.location.pathname);
+      impressionId = processingId;
+      if (typeof IntersectionObserver === "function") {
+        if (!observer) observer = new IntersectionObserver(recordVisibleImpression, { threshold: 0.5 });
+        observer.observe(panel);
+      }
+      recordVisibleImpression();
     }
     return true;
   }

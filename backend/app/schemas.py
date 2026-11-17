@@ -538,7 +538,18 @@ class ConversionFeedbackSummary(BaseModel):
     unanswered_people: int = 0
 
 
+class CourseFunnelMetrics(BaseModel):
+    source: Literal["conversao", "pagina", "email"]
+    cta_view_people: int = 0
+    cta_click_people: int = 0
+    page_view_people: int = 0
+    outbound_click_people: int = 0
+    cta_ctr: float | None = None
+    page_ctr: float | None = None
+
+
 class AdminOverviewResponse(BaseModel):
+    course_funnel: list[CourseFunnelMetrics] = Field(default_factory=list)
     days: int
     start_at: str
     end_at: str
@@ -549,6 +560,7 @@ class AdminOverviewResponse(BaseModel):
 
 
 class AdminDashboardResponse(BaseModel):
+    course_funnel: list[CourseFunnelMetrics] = Field(default_factory=list)
     conversion_feedback: ConversionFeedbackSummary = Field(default_factory=ConversionFeedbackSummary)
     days: int
     start_at: str
@@ -583,6 +595,10 @@ class AdminActiveUserDownloadFormat(BaseModel):
 
 
 class AdminActiveUserItem(BaseModel):
+    course_page_views: int = 0
+    course_outbound_clicks: int = 0
+    last_course_page_view_at: str | None = None
+    last_course_outbound_click_at: str | None = None
     identity_type: str
     identity_reference: str
     display_name: str

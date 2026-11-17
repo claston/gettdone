@@ -2,6 +2,7 @@
 from datetime import datetime, time, timedelta, timezone
 from hashlib import sha256
 
+from app.application.admin_course_metrics import course_funnel
 from app.application.admin_dashboard_service import (
     DASHBOARD_TIMEZONE,
     DASHBOARD_TIMEZONE_NAME,
@@ -46,8 +47,9 @@ class AdminOverviewService:
             funnel, client_people = self._funnel(conn, period, identity_type)
             summary["client_area_people_count"] = client_people
             interested = self._interested(conn, period, identity_type)
+            course_metrics = course_funnel(self.service, conn, start_at=period[0], end_at=period[1], identity_type=identity_type)
         return {"days": days, "start_at": start.isoformat(), "end_at": end.isoformat(), "timezone": DASHBOARD_TIMEZONE_NAME,
-                "summary": summary, "checkout_funnel": funnel, "commercial_interest": interested}
+                "summary": summary, "checkout_funnel": funnel, "commercial_interest": interested, "course_funnel": course_metrics}
 
     def _history(self, identity_type):
         tables = [("registered", "user_conversions", "user_id"), ("anonymous", "anonymous_conversion_events", "anonymous_fingerprint")]

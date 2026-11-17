@@ -104,6 +104,25 @@
         <div id="dashboard-commercial-interest" class="dashboard-table-wrap"></div>
       </section>
 
+      <section class="dashboard-block" aria-labelledby="dashboard-course-title">
+        <div class="dashboard-block-heading">
+          <div>
+            <h3 id="dashboard-course-title">Interesse no curso parceiro</h3>
+            <p class="muted compact">Pessoas distintas por origem e período, excluindo administradores. Anônimos representam navegadores.</p>
+          </div>
+          <label>Origem
+            <select id="dashboard-course-source">
+              <option value="conversao">Após a conversão</option>
+              <option value="pagina">Acesso direto à página</option>
+              <option value="email">E-mail</option>
+            </select>
+          </label>
+        </div>
+        <div id="dashboard-course-funnel" class="dashboard-summary" aria-label="Funil do curso parceiro"></div>
+        <p class="muted compact">Os CTRs consideram cliques posteriores à exposição ou visita, na mesma origem e período. A saída para a Hotmart não confirma uma compra.</p>
+        <button id="dashboard-course-visitors-btn" class="ghost" type="button">Ver visitantes de todas as origens</button>
+      </section>
+
       <section class="dashboard-block" aria-labelledby="dashboard-details-title">
         <div class="dashboard-block-heading">
           <div>
@@ -310,12 +329,13 @@
       <div class="panel-top">
         <div>
           <h2>Usuários ativos e potencial de compra</h2>
-          <p class="muted">Pessoas que fizeram ao menos uma conversão no período. O perfil é um sinal operacional, não uma garantia de compra.</p>
+          <p class="muted">Pessoas com conversões no período. Os filtros do curso também incluem visitantes sem conversões. O perfil de compra considera o uso do conversor.</p>
         </div>
         <div class="actions">
           <label>
             Período
             <select id="active-users-period">
+              <option value="1">Hoje</option>
               <option value="7">Últimos 7 dias</option>
               <option value="30" selected>Últimos 30 dias</option>
               <option value="90">Últimos 90 dias</option>
@@ -332,6 +352,13 @@
           <label class="checkbox-filter">
             <input id="active-users-prospect-only" type="checkbox" />
             Apenas sem plano pago
+          </label>
+          <label>Interesse no curso
+            <select id="active-users-course-interest">
+              <option value="all">Todos os usuários ativos</option>
+              <option value="visited">Visitou o curso</option>
+              <option value="outbound">Clicou para ver a oferta</option>
+            </select>
           </label>
           <button id="active-users-refresh-btn" type="button">Atualizar</button>
         </div>
@@ -414,6 +441,6 @@
       </div>
     </section>
   </main>
-  <script src="./admin.js?v=22"></script>
+  <script src="./admin.js?v=23"></script>
 </body>
 </html>

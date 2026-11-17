@@ -70,7 +70,7 @@ def sample(request, tmp_path):
 def test_overview_matches_existing_totals_and_commercial_interest(sample, identity_type, days):
     full = AdminDashboardService(sample).get_dashboard(days=days, identity_type=identity_type)
     overview = AdminOverviewService(sample).get_overview(days=days, identity_type=identity_type)
-    assert set(overview) == {"days", "start_at", "end_at", "timezone", "summary", "checkout_funnel", "commercial_interest"}
+    assert set(overview) == {"days", "start_at", "end_at", "timezone", "summary", "checkout_funnel", "commercial_interest", "course_funnel"}
     for key in overview:
         assert overview[key] == full[key], key
 
@@ -141,3 +141,19 @@ def test_overview_rejects_authenticated_non_admin(sample):
         assert response.status_code == 403
     finally:
         app.dependency_overrides.clear()
+
+
+def test_course_metrics_nonempty_sql_and_filtered_visitors(sample):
+    identity = sample.resolve_identity(anonymous_fingerprint="course-synthetic-browser", user_token=None)
+    for _ in range(2):
+        for event in ("course_cta_view", "course_cta_click", "course_page_view", "course_outbound_click"):
+            path = "/ofx-convert.html" if event.startswith("course_cta_") else "/curso-notas-explicativas.html?from=conversao"
+            sample.record_product_event(identity=identity, event_type=event, page_path=path)
+    full = AdminDashboardService(sample).get_dashboard()["course_funnel"]
+    assert AdminOverviewService(sample).get_overview()["course_funnel"] == full
+    assert full[0]["cta_view_people"] == 1 and full[0]["cta_ctr"] == 100
+    assert full[0]["page_view_people"] == 1 and full[0]["page_ctr"] == 100
+    visitors = AdminDashboardService(sample).get_active_users(course_interest="visited")
+    assert visitors["total"] == 1
+    assert visitors["items"][0]["course_page_views"] == 2
+    assert visitors["items"][0]["conversions"] == 0
