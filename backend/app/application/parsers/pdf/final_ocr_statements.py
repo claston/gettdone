@@ -14,6 +14,7 @@ from app.application.parsers.pdf.document_period import (
 )
 from app.application.parsers.pdf.final_native_statements import MONTHS
 from app.application.parsers.pdf.followup_ocr import _headers, _source
+from app.application.parsers.pdf.native_table_source import split_leading_date_words
 from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
@@ -164,6 +165,7 @@ def _sicredi(extraction):
     rows, opening, running, checks = [], None, None, 0
     previous_columns = None
     for page in extraction.pages:
+        page = split_leading_date_words(page, re.compile(DATE))
         lines = [line for line in page.lines if line.bbox]
         stop = min((line.bbox["top"] for line in lines if upper(line.text).startswith("LANCAMENTOS FUTUROS")), default=1)
         columns = _headers(page, ("DATA", "DESCRICAO", "DOCUMENTO", "VALOR", "SALDO"))
@@ -214,8 +216,10 @@ def _sicredi(extraction):
                 printed = money("2"+balance.text[1:])
             else:
                 printed = _number(balance)
-            if running is None or not period_contains(date, start, end) or running + amount != printed:
+            if running is None or not period_contains(date, start, end) or repaired and running + amount != printed:
                 fail("Os valores Sicredi não fecham com os saldos impressos.")
+            if running + amount != printed:
+                financial_mismatch("Os valores Sicredi não fecham com os saldos impressos.")
             descriptions = [line.text for line in cells if columns["DESCRICAO"]-.02 <= line.bbox["left"] < columns["DOCUMENTO"]-.02]
             if not descriptions or rows and date < rows[-1].transaction.date:
                 fail()

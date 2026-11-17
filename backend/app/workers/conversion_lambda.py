@@ -23,6 +23,7 @@ from app.application.conversion.conversion_job import ConversionExecutionHooks
 from app.application.conversion.conversion_pipeline_result import ConversionPipelineStatus
 from app.application.conversion.document_conversion_pipeline import DocumentConversionPipeline
 from app.application.default_conversion_pipeline import build_default_conversion_pipeline
+from app.application.errors import UnsupportedDocumentContentError
 from app.application.report_service import ReportService
 from app.application.s3_analysis_storage import S3AnalysisStorage
 
@@ -156,13 +157,15 @@ class ConversionLambdaProcessor:
                 )
                 raise RetryableConversionError(str(exc)) from exc
 
-            self.repository.mark_failed(job_id, code=type(exc).__name__, message=str(exc))
+            failure_code = ("fiscal_invoice" if isinstance(exc, UnsupportedDocumentContentError)
+                            and exc.document_type == "fiscal_invoice" else type(exc).__name__)
+            self.repository.mark_failed(job_id, code=failure_code, message=str(exc))
             self._log_outcome(
                 claimed.job,
                 trace_id=trace_id,
                 outcome="failed",
                 started_at=started_at,
-                error_code=type(exc).__name__,
+                error_code=failure_code,
             )
             if retryable:
                 raise RetryableConversionError(str(exc)) from exc
@@ -175,6 +178,7 @@ class ConversionLambdaProcessor:
             job_id=job.job_id,
             batch_id=job.batch_id,
             trace_id=trace_id,
+            document_sha256=job.document.sha256_hex,
             outcome=outcome,
             duration_ms=duration_ms,
             error_code=error_code,

@@ -15,6 +15,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import type { Conversion, WorkspaceRepository } from "@/domain/workspace";
+import { isFiscalInvoiceFailure } from "@/domain/conversion-failure";
 import { RealDocumentViewer } from "./real-document-viewer";
 import type { PdfReviewControls } from "./pdf-interactions";
 
@@ -39,7 +40,12 @@ export function DocumentViewer({
 }) {
   const [zoom, setZoom] = useState<"page-width" | number>("page-width");
   const isDemo = conversion.pdf?.url.startsWith("/mock-statement");
-  if (conversion.pdf && !isDemo && conversion.status !== "FAILED") {
+  if (
+    conversion.pdf &&
+    !isDemo &&
+    (conversion.status !== "FAILED" ||
+      isFiscalInvoiceFailure(conversion.errorCode, conversion.errorMessage))
+  ) {
     return (
       <RealDocumentViewer
         conversion={conversion}

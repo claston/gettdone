@@ -680,9 +680,24 @@ tr.row-deleted td:not(.actions-cell) {
   border-left: 4px solid #16a34a;
 }
 
+.batch-result-details {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.batch-result-details p {
+  margin: 0.4rem 0 0;
+  font-size: 0.875rem;
+  color: #475569;
+}
+
 .batch-result-failed,
 .batch-result-expired {
   border-left: 4px solid #dc2626;
+}
+
+.batch-result-fiscal {
+  border-left-color: #d97706;
 }
 
 @media (max-width: 640px) {

@@ -11,6 +11,85 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("documentos e lotes já abertos", () => {
+  it.each(["fiscal_invoice", "UnsupportedDocumentContentError"])(
+    "permite conferir o PDF da nota antes de importar: %s",
+    async (code) => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(jsonResponse({}))
+        .mockResolvedValueOnce(
+          jsonResponse({
+            batch_id: "fiscal-batch",
+            status: "failed",
+            jobs: [
+              {
+                job_id: "note",
+                filename: "nota.pdf",
+                status: "failed",
+                error_code: code,
+                error_message:
+                  "Este arquivo é uma nota fiscal eletrônica (NF-e ou NFS-e).",
+              },
+            ],
+          }),
+        );
+      const repository = createHttpWorkspaceRepository({
+        apiUrl: "/",
+        fetcher,
+      });
+      const note = (await repository.getBatch("fiscal-batch")).conversions[0];
+      expect(note.status).toBe("FAILED");
+      expect(note.pdf?.url).toContain("/fiscal-batch/jobs/note/document");
+      expect(note.transactions).toEqual([]);
+    },
+  );
+
+  it.each([
+    [
+      "PdfFinancialValidationError",
+      "Confira o saldo na página 2.",
+      "Confira o saldo na página 2.",
+    ],
+    [
+      "OcrFinancialAmbiguityError",
+      "Confira as páginas 2, 3.",
+      "Confira as páginas 2, 3.",
+    ],
+    [
+      "fiscal_invoice",
+      "Nota fiscal identificada.",
+      "Nota fiscal identificada.",
+    ],
+    [
+      "InvalidFileContentError",
+      "PDF text was extracted, but no transaction rows were found.",
+      "O texto foi lido, mas não foi possível associar datas e valores aos lançamentos. Confira o PDF original.",
+    ],
+  ])("preserva diagnóstico público de %s", async (code, message, expected) => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          batch_id: "failed-diagnostic",
+          status: "failed",
+          jobs: [
+            {
+              job_id: "failed-job",
+              filename: "teste.pdf",
+              status: "failed",
+              error_code: code,
+              error_message: message,
+            },
+          ],
+        }),
+      );
+    const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+    expect(
+      (await repository.getBatch("failed-diagnostic")).conversions[0],
+    ).toMatchObject({ errorCode: code, errorMessage: expected });
+  });
+
   it.each(["000ABC-01/2", null])(
     "salva documento %s sem alterar a descrição",
     async (documentNumber) => {

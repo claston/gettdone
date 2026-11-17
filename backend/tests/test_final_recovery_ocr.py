@@ -4,6 +4,7 @@ from dataclasses import replace
 import pytest
 
 from app.application import pdf_parser
+from app.application.document_extraction_models import ExtractedWord
 from app.application.errors import PdfFinancialValidationError
 from tests.test_recovery_sweep_ocr import extraction
 
@@ -37,6 +38,50 @@ def test_sicredi_ocr_rejects_inconsistent_balance_and_orphan_amount():
     changed = [replace(line, text="49.901,00") if line.text == "49.900,00" else line for line in source.pages[0].lines]
     with pytest.raises(PdfFinancialValidationError):
         pdf_parser._parse_textract_text_pages(replace(source, pages=[replace(source.pages[0], lines=changed)]))
+
+
+def merged_sicredi_continuation():
+    source = sicredi()
+    first = replace(source.pages[0], lines=[line for line in source.pages[0].lines if line.bbox["top"] < .3])
+    second = extraction([
+        ("03/09/2026 PIX RECEBIDO CLIENTE", .1, .05), ("20,00", .75, .05), ("49.920,00", .88, .05),
+        ("03/09/2026 PIX RECEBIDO CLIENTE", .1, .1), ("20,00", .75, .1), ("49.940,00", .88, .1),
+    ]).pages[0]
+    words, lines = [], []
+    for line in second.lines:
+        line = replace(line, page_number=2)
+        if line.text.startswith("03/09/2026"):
+            children = [ExtractedWord(f"p2-{line.id}-{i}", 2, i, text, text_type="PRINTED",
+                                     bbox={"left": left, "top": line.bbox["top"], "width": .07, "height": .008})
+                        for i, (text, left) in enumerate([("03/09/2026", .1), ("PIX RECEBIDO CLIENTE", .2)])]
+            words.extend(children)
+            line = replace(line, word_ids=tuple(word.id for word in children))
+        lines.append(line)
+    return replace(source, pages=[first, replace(second, page_number=2, lines=lines, words=words)])
+
+
+def test_sicredi_continuation_recovers_merged_date_from_words_without_dropping_repeats():
+    result = pdf_parser._parse_scanned_pdf_with_textract_text_pages(merged_sicredi_continuation())
+    assert [row.amount for row in result.transactions] == [50000, -100, 20, 20]
+    assert [row.source_page for row in result.canonical_transactions] == [1, 1, 2, 2]
+    assert result.parse_metrics["verified_closing_balance"] == 49940
+    assert result.parse_metrics["financial_controls_validated"] == 1
+
+
+def test_merged_continuation_without_positioned_words_cannot_be_silently_omitted():
+    source = merged_sicredi_continuation()
+    source = replace(source, pages=[source.pages[0], replace(source.pages[1], words=[])])
+    with pytest.raises(PdfFinancialValidationError):
+        pdf_parser._parse_scanned_pdf_with_textract_text_pages(source)
+
+
+def test_readable_sicredi_amounts_survive_arithmetic_discrepancy_for_review():
+    source = sicredi()
+    lines = [replace(line, text="49.901,00") if line.text == "49.900,00" else line for line in source.pages[0].lines]
+    result = pdf_parser._parse_scanned_pdf_with_textract_text_pages(replace(source, pages=[replace(source.pages[0], lines=lines)]))
+    assert [row.amount for row in result.transactions] == [50000, -100]
+    assert result.parse_metrics["financial_controls_validated"] == 0
+    assert result.parse_metrics["export_recommendation"] == "review_recommended"
 
 
 def test_bradesco_scan_small_column_skew_does_not_hide_opening_balance():
