@@ -29,7 +29,8 @@ INVESTMENT_SUMMARY_REJECTION_MIN_CONFIDENCE = 0.90
 
 FISCAL_INVOICE_REJECTION_MESSAGE = (
     "Este arquivo é uma nota fiscal eletrônica (NF-e ou NFS-e), não um extrato bancário. "
-    "A conciliação de notas fiscais ainda não está disponível."
+    "Importe a nota na gestão fiscal do PRO, quando habilitada, e selecione a empresa correspondente. "
+    "O envio da nota não cria um lançamento bancário nem confirma seu pagamento."
 )
 
 

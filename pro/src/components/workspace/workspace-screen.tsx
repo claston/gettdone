@@ -46,6 +46,8 @@ import type {
 } from "@/domain/workspace";
 import { useWorkspaceController } from "./use-workspace-controller";
 import { DocumentViewer } from "./document-viewer";
+import { FiscalConversionImport } from "./fiscal-conversion-import";
+import { isFiscalInvoiceFailure } from "@/domain/conversion-failure";
 import { TransactionGrid } from "./transaction-grid";
 import { FinancialReportReview } from "./financial-report-review";
 import { ReviewPanels } from "./review-panels";
@@ -564,7 +566,8 @@ export function WorkspaceScreen({
         <div className="batch-heading">
           <Link href={reviewReturnTo(returnTo)} className="back-link">
             <ChevronLeft size={16} />{" "}
-            {(reviewReturnTo(returnTo).startsWith("/demo/financial/") || reviewReturnTo(returnTo).startsWith("/financial/"))
+            {reviewReturnTo(returnTo).startsWith("/demo/financial/") ||
+            reviewReturnTo(returnTo).startsWith("/financial/")
               ? "Voltar à Central Financeira"
               : clientMode || returnTo === "/dashboard"
                 ? "Clientes"
@@ -815,7 +818,19 @@ export function WorkspaceScreen({
             {activeConversion.status === "FAILED" ? (
               <section className="transactions-panel viewer-state error">
                 <RotateCcw size={28} />
-                {activeConversion.errorCode === "upload_failed" ? (
+                {isFiscalInvoiceFailure(
+                  activeConversion.errorCode,
+                  activeConversion.errorMessage,
+                ) ? (
+                  <FiscalConversionImport
+                    key={activeConversion.id}
+                    conversionId={activeConversion.id}
+                    filename={activeConversion.fileName}
+                    loadDocument={activeRepository.loadDocument?.bind(
+                      activeRepository,
+                    )}
+                  />
+                ) : activeConversion.errorCode === "upload_failed" ? (
                   <>
                     <h3>Falha no envio do arquivo</h3>
                     <p>

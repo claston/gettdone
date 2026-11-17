@@ -20,6 +20,7 @@ from app.application.parsers.pdf.statement_row_context import (
 from app.application.parsers.pdf.verified_statements import NUMBER, VerifiedStatement, _row, fail, money
 
 _AMOUNT = re.compile(rf"([+-]?)\s*(?:R\$\s*)?([+-]?)({NUMBER})\s*([CD])?", re.I)
+_BALANCE_CONTROL = re.compile(r"^SALDO(?:$| (?:ANTERIOR|INICIAL|FINAL|ATUAL|DO DIA|DIA|DISPONIVEL|EM C/C)\b)")
 
 
 def reviewed_cash_kind(text):
@@ -173,7 +174,11 @@ def parse_reviewed_cash(source, kind):
             if label.startswith(("SALDO BLOQUEADO", "SALDO BLOQUEIO JUDICIAL")):
                 # Blocked deposits are a separate balance, never available cash.
                 continue
-            if label.startswith("SALDO"):
+            # A history mentioning a balance can still be a movement. Require
+            # independent value/balance cells; real control labels remain strict.
+            balance_movement = (balance_left is not None and len(values) == len(balances) == 1
+                                and not _BALANCE_CONTROL.match(label))
+            if label.startswith("SALDO") and not balance_movement:
                 control = balances if balance_left is not None else values
                 if len(control) != 1 or balance_left is not None and values:
                     fail("Uma linha de saldo possui colunas financeiras ambíguas.")

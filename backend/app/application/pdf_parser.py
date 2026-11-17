@@ -208,20 +208,33 @@ def _attach_parse_observability(exc: Exception, **values: object) -> Exception:
 
 
 def _original_visual_provenance(result, original, visual):
+    source = result.source_extraction
+    if source is not None:
+        source = replace(source, document_hash=hashlib.sha256(original).hexdigest(),
+                         metrics={**source.metrics, "visual_input_sha256": hashlib.sha256(visual).hexdigest()})
     # Generic OCR can parse the first page as rows and silently lose later
     # column-oriented pages. A review warning cannot make that extraction whole.
     if result.financial_document is None and result.canonical_transactions:
         covered = {row.source_page for row in result.canonical_transactions}
         covered.update(page for row in result.canonical_transactions for page, _ in row.source_line_refs or ())
+        # Page-level annex labels do not prove exclusivity: a headerless bank
+        # continuation can share a page with a DANFE. Inspect every unread page.
+        missing = []
         for page, text in enumerate(result.source_page_texts or (), 1):
             if page in covered:
                 continue
             dates = re.findall(r"(?m)^\s*\d{2}/\d{2}(?:/\d{2,4})?\b", text)
             amounts = re.findall(r"\d[\d.]*,\d{2}\b", text)
             if len(dates) >= 2 and len(amounts) >= 2:
-                raise OcrFinancialAmbiguityError(
-                    "A leitura visual deixou uma página com possíveis movimentos sem extrair. "
-                    "Reenvie o extrato original ou uma cópia mais legível.")
+                missing.append(page)
+        if missing:
+            error = OcrFinancialAmbiguityError(
+                f"A leitura visual deixou possíveis movimentos sem extrair nas páginas {', '.join(map(str, missing))}. "
+                "Confira essas páginas e envie o extrato original ou uma cópia mais legível.")
+            if source is not None:
+                setattr(error, "_ocr_source_extraction", source)
+            raise _attach_parse_observability(error, **{**result.parse_metrics,
+                "unextracted_pages": ",".join(map(str, missing)), "ocr_validation_failed": 1})
     metrics = {**result.parse_metrics, "native_text_layer_ignored":1}
     canonical = result.canonical_transactions
     if not metrics.get("financial_controls_validated"):
@@ -230,10 +243,6 @@ def _original_visual_provenance(result, original, visual):
         metrics.update(build_canonical_quality_metrics(canonical))
         metrics.update(confidence_band="low",export_recommendation="review_recommended",
                        export_recommendation_reason="unverified_visual_recovery")
-    source = result.source_extraction
-    if source is not None:
-        source = replace(source, document_hash=hashlib.sha256(original).hexdigest(),
-                         metrics={**source.metrics,"visual_input_sha256":hashlib.sha256(visual).hexdigest()})
     return replace(result,parse_metrics=metrics,source_extraction=source,canonical_transactions=canonical)
 
 

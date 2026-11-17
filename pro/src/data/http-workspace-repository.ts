@@ -1,4 +1,5 @@
 import { validSourceRegions } from "@/domain/source-regions";
+import { isFiscalInvoiceFailure } from "@/domain/conversion-failure";
 import {
   documentReviewWarnings,
   reviewFields,
@@ -53,6 +54,11 @@ interface ApiTransaction {
 
 const publicFailureCodes = new Set([
   "InvalidFileContentError",
+  "PdfFinancialValidationError",
+  "OcrFinancialAmbiguityError",
+  "UnsupportedDocumentContentError",
+  "CrossPageTransactionSplitError",
+  "fiscal_invoice",
   "ConversionProAccessError",
   "ConversionProQuotaError",
   "invalid_pdf_content",
@@ -69,6 +75,8 @@ const publicFailureCodes = new Set([
 
 function publicFailureMessage(job: ApiJob): string | undefined {
   if (!publicFailureCodes.has(job.error_code ?? "")) return undefined;
+  if (job.error_message?.startsWith("PDF text was extracted"))
+    return "O texto foi lido, mas não foi possível associar datas e valores aos lançamentos. Confira o PDF original.";
   return job.error_message?.trim().slice(0, 500) || undefined;
 }
 
@@ -898,7 +906,8 @@ function mapConversion({
     suspectedCount,
     editedCount: countEdited(transactions),
     pdf:
-      fileType !== "pdf" || job.status === "failed" || job.status === "expired"
+      fileType !== "pdf" || job.status === "expired" ||
+      (job.status === "failed" && !isFiscalInvoiceFailure(job.error_code, job.error_message))
         ? null
         : {
             url: `${apiUrl}/api/pro/conversion-batches/${encodeURIComponent(batchId)}/jobs/${encodeURIComponent(job.job_id)}/document`,
