@@ -1114,6 +1114,7 @@
     state.processingId = null;
     state.feedback = null;
     feedbackPanel.classList.add("hidden");
+    if (window.OfxCoursePromotion) window.OfxCoursePromotion.hide();
     state.restoredFileMeta = null;
     state.previewRows = [];
     state.originalRows = [];
@@ -2820,9 +2821,15 @@
       : "");
   }
 
-  function showConversionFeedback() {
+  async function showConversionFeedback() {
     const processingId = state.processingId || state.analysisId;
     if (!processingId) return;
+    feedbackPanel.classList.add("hidden");
+    state.feedback = null;
+    if (window.OfxCoursePromotion) {
+      const promoted = await window.OfxCoursePromotion.show(processingId, state.quotaMode);
+      if (promoted || processingId !== (state.processingId || state.analysisId)) return;
+    }
     state.feedback = { processingId, answer: null, pending: false, revision: 0 };
     feedbackPanel.classList.remove("hidden");
     renderConversionFeedback();
