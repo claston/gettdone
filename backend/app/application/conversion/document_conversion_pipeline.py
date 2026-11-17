@@ -1379,6 +1379,8 @@ def _build_failure_diagnostics(exc: Exception) -> dict[str, str | int | bool | l
     }
     if isinstance(exc, UnsupportedDocumentContentError):
         diagnostics["unsupported_document_type"] = exc.document_type
+    if parse_observability.get("unextracted_pages"):
+        diagnostics["unextracted_pages"] = str(parse_observability["unextracted_pages"])
     if isinstance(exc, CrossPageTransactionSplitError):
         diagnostics["cross_page_split_kind"] = exc.split_kind
         diagnostics["cross_page_description_page"] = exc.description_page

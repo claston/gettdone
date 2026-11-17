@@ -173,6 +173,7 @@
     },
     batchResults: [],
     activeBatchFilename: null,
+    activeBatchId: null,
     feedback: null,
   };
   let bankCodeOptions = [{ code: "", label: "Selecione o banco", name: "", short_name: "", aliases: [] }];
@@ -1134,6 +1135,7 @@
     state.bankCodeOverride = "";
     state.batchResults = [];
     state.activeBatchFilename = null;
+    state.activeBatchId = null;
     batchResultsPanel.innerHTML = "";
     batchResultsPanel.classList.add("hidden");
     markChangedRow(null);
@@ -3041,10 +3043,57 @@
     await Promise.all(workers);
   }
 
+  function isFiscalBatchJob(job) {
+    return job.error_code === "fiscal_invoice" || (
+      ["UnsupportedDocumentContentError", "unsupported_document_type"].includes(job.error_code) &&
+      String(job.error_message || "").startsWith("Este arquivo é uma nota fiscal eletrônica (NF-e ou NFS-e)")
+    );
+  }
+
+  function batchFailureMessage(job) {
+    if (job.status === "expired") return "O arquivo expirou. Selecione-o novamente para converter.";
+    if (isFiscalBatchJob(job)) return "Nota fiscal identificada. No PRO, selecione a empresa e importe a nota na gestão fiscal, quando habilitada.";
+    if (job.error_code === "upload_failed") return "O envio deste arquivo falhou. Selecione-o novamente para enviar.";
+    const publicCodes = ["InvalidFileContentError", "PdfFinancialValidationError", "OcrFinancialAmbiguityError",
+      "UnsupportedDocumentContentError", "CrossPageTransactionSplitError", "invalid_pdf_content", "insufficient_text",
+      "pages_limit_exceeded", "quota_exceeded", "password_protected_pdf", "file_too_large", "unsupported_document_type",
+      "unsupported_type", "cross_page_transaction_split", "ocr_service_unavailable"];
+    const message = publicCodes.includes(job.error_code) ? String(job.error_message || "").trim().slice(0, 500) : "";
+    if (message.startsWith("PDF text was extracted")) return "O texto foi lido, mas não foi possível associar datas e valores aos lançamentos. Confira o PDF original.";
+    return message || "Não foi possível concluir este arquivo. Confira o original antes de tentar novamente.";
+  }
+
+  async function retryBatchJob(job) {
+    const batchId = state.activeBatchId;
+    if (state.isLoading || !batchId) return;
+    setLoading(true);
+    renderBatchResults(state.batchResults);
+    setStatus(`Processando novamente ${job.filename}...`, null);
+    try {
+      const queued = await fetchBatchJson(`/api/conversion-batches/${encodeURIComponent(batchId)}/jobs/${encodeURIComponent(job.job_id)}/retry`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+      });
+      if (state.activeBatchId !== batchId) return;
+      renderBatchResults(queued.jobs);
+      const completed = await pollConversionBatch(batchId);
+      if (state.activeBatchId !== batchId) return;
+      renderBatchResults(completed.jobs);
+      const retried = completed.jobs.find((item) => item.job_id === job.job_id);
+      setStatus(retried && retried.status === "completed"
+        ? `${job.filename} foi convertido. Escolha Revisar para abrir o resultado.`
+        : `${job.filename} ainda precisa de atenção. Confira o motivo na lista.`, null);
+    } catch (error) {
+      if (state.activeBatchId === batchId) setStatus(error instanceof Error ? error.message : "Não foi possível repetir o processamento.", "error");
+    } finally {
+      setLoading(false);
+      if (state.activeBatchId === batchId) renderBatchResults(state.batchResults);
+    }
+  }
+
   function renderBatchResults(jobs) {
     state.batchResults = Array.isArray(jobs) ? jobs : [];
     batchResultsPanel.innerHTML = "";
-    if (state.batchResults.length <= 1) {
+    if (!state.batchResults.length) {
       batchResultsPanel.classList.add("hidden");
       return;
     }
@@ -3057,13 +3106,23 @@
       const row = document.createElement("div");
       row.className = `batch-result-row batch-result-${String(job.status || "unknown")}`;
       const label = document.createElement("span");
+      const details = document.createElement("div");
+      details.className = "batch-result-details";
       const statusLabel = job.status === "completed"
         ? "Concluído"
+        : isFiscalBatchJob(job) ? "Nota fiscal identificada"
         : job.status === "failed" || job.status === "expired"
           ? "Falhou"
           : "Processando";
       label.textContent = `${job.filename}: ${statusLabel}`;
-      row.appendChild(label);
+      details.appendChild(label);
+      if (["failed", "expired"].includes(job.status)) {
+        const message = document.createElement("p");
+        message.textContent = batchFailureMessage(job);
+        details.appendChild(message);
+      }
+      row.appendChild(details);
+      if (isFiscalBatchJob(job)) row.classList.add("batch-result-fiscal");
       if (job.result && job.result.analysis) {
         const reviewButton = document.createElement("button");
         reviewButton.type = "button";
@@ -3076,6 +3135,16 @@
           reviewSection.scrollIntoView({ behavior: "smooth", block: "start" });
         });
         row.appendChild(reviewButton);
+      } else if (job.status === "failed" && !isFiscalBatchJob(job) && job.ocr_mode !== "pro" &&
+        !["upload_failed", "unsupported_type", "unsupported_document_type", "UnsupportedDocumentContentError",
+          "file_too_large", "pages_limit_exceeded", "password_protected_pdf"].includes(job.error_code)) {
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.className = "btn btn-inline btn-ghost";
+        retry.textContent = "Tentar este arquivo novamente";
+        retry.disabled = state.isLoading || !state.activeBatchId;
+        retry.addEventListener("click", () => void retryBatchJob(job));
+        row.appendChild(retry);
       }
       list.appendChild(row);
     });
@@ -3107,6 +3176,7 @@
 
   async function runAsyncBatchConvert(files) {
     setLoading(true);
+    renderBatchResults(state.batchResults);
     setStatus(`Preparando ${files.length} arquivo(s)...`, null);
     showProgressBar();
     setProgressTarget(3);
@@ -3156,13 +3226,15 @@
         body: "{}",
       });
       const completed = await pollConversionBatch(created.batch_id);
+      // Keep displayed jobs paired with their batch if upload, submit or polling fails.
+      state.activeBatchId = created.batch_id;
       renderBatchResults(completed.jobs);
       const successfulJobs = completed.jobs.filter(function (job) {
         return job.status === "completed" && job.result && job.result.analysis;
       });
       if (!successfulJobs.length) {
         const firstFailure = completed.jobs.find((job) => job.error_message);
-        throw new Error(firstFailure ? firstFailure.error_message : "Nenhum arquivo do lote pôde ser convertido.");
+        throw new Error(firstFailure ? batchFailureMessage(firstFailure) : "Nenhum arquivo do lote pôde ser convertido.");
       }
       state.activeBatchFilename = successfulJobs[0].filename;
       applyConversionPayload(successfulJobs[0].result);
@@ -3188,6 +3260,7 @@
       setStatus(error instanceof Error ? error.message : "Falha ao processar o lote.", "error");
     } finally {
       setLoading(false);
+      renderBatchResults(state.batchResults);
     }
   }
 
