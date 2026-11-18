@@ -3,6 +3,9 @@ package br.com.ofxsimples.shadow;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.file.Path;
+import java.net.InetSocketAddress;
+import java.util.concurrent.atomic.AtomicInteger;
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -11,8 +14,23 @@ import static org.junit.jupiter.api.Assertions.*;
 class OfficialEngineTest {
     static OfficialEngine engine;
     static ObjectMapper mapper = new ObjectMapper();
-    @BeforeAll static void start() { engine = new OfficialEngine(Path.of(System.getProperty("receita.database"))); }
+    static AtomicInteger onlineVersionCalls = new AtomicInteger();
+    @BeforeAll static void start() throws Exception {
+        var trap = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        trap.createContext("/", exchange -> {
+            onlineVersionCalls.incrementAndGet();
+            byte[] body = "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            try (var response = exchange.getResponseBody()) { response.write(body); }
+        });
+        trap.start();
+        System.setProperty("versao.url", "http://127.0.0.1:" + trap.getAddress().getPort());
+        try { engine = new OfficialEngine(Path.of(System.getProperty("receita.database"))); }
+        finally { trap.stop(0); System.clearProperty("versao.url"); }
+    }
     @AfterAll static void stop() { engine.close(); }
+    @Test void startupDoesNotQueryOnlineVersion() { assertEquals(0, onlineVersionCalls.get()); }
     static ObjectNode request(String ncm, String classification) {
         var request = mapper.createObjectNode();
         request.put("schema_version", 1).put("run_id", "test").put("input_hash", "test")

@@ -35,8 +35,11 @@ base e do ZIP. Artefatos e relatórios ficam disponíveis no GitHub Actions.
 
 O adaptador inicializa o Spring original uma vez por ambiente Lambda, com porta
 efêmera em loopback para compatibilidade da configuração servlet. Ele chama os
-serviços Java diretamente. Nenhuma API pública ou Function URL é criada. Medir
-cold start, duração e memória na primeira implantação AWS; teste no runner não
+serviços Java diretamente. Nenhuma API pública ou Function URL é criada.
+O adaptador exclui apenas o controlador e o listener de consulta remota de
+versões do perfil offline oficial e desliga a porta de gestão. A inicialização
+não consulta a Receita pela internet; as regras e a base permanecem fixadas.
+Medir cold start, duração e memória na primeira implantação AWS; teste no runner não
 substitui teste no runtime real do Lambda.
 
 ## Infraestrutura e implantação

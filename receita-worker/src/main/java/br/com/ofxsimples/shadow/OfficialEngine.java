@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.boot.SpringApplication;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.context.ConfigurableApplicationContext;
 
 /** Calls the pinned official services. No copied formulas, text inference or automatic tax decisions. */
@@ -31,11 +32,24 @@ public final class OfficialEngine implements AutoCloseable {
         if (!database.toFile().isFile()) throw new IllegalStateException("Missing pinned official database");
         // The original application's servlet/security configuration is retained.
         // Bind only to loopback; Lambda invokes services directly, never an HTTP endpoint.
-        context = SpringApplication.run(CalculadoraTributoApplication.class,
+        var application = new SpringApplication(CalculadoraTributoApplication.class);
+        application.addInitializers(ctx -> ctx.addBeanFactoryPostProcessor(factory -> {
+            // The upstream offline profile checks the online version at startup
+            // with an unbounded HTTP timeout. Omit only its update-check endpoint
+            // and listener; keep the original fiscal services and pinned data.
+            var registry = (BeanDefinitionRegistry) factory;
+            for (String name : factory.getBeanDefinitionNames()) {
+                String type = factory.getBeanDefinition(name).getBeanClassName();
+                if ("br.gov.serpro.rtc.domain.service.offline.VersaoOfflineService".equals(type)
+                        || "br.gov.serpro.rtc.api.controller.VersaoOfflineController".equals(type))
+                    registry.removeBeanDefinition(name);
+            }
+        }));
+        context = application.run(
             "--spring.profiles.active=offline", "--server.address=127.0.0.1", "--server.port=0",
             "--spring.datasource.url=jdbc:sqlite:file:" + database.toAbsolutePath() + "?mode=ro&date_class=TEXT&date_string_format=yyyy-MM-dd",
             "--spring.sql.init.mode=never", "--spring.flyway.enabled=false", "--management.tracing.enabled=false",
-            "--spring.main.banner-mode=off", "--logging.level.root=WARN");
+            "--management.server.port=-1", "--spring.main.banner-mode=off", "--logging.level.root=WARN");
         data = context.getBean(DadosAbertosService.class);
         classifications = context.getBean(ClassificacaoTributariaService.class);
         annexes = context.getBean(NcmAplicavelRepository.class);
