@@ -13,6 +13,67 @@ from app.application import AccessControlService
 from app.application.login_rate_limit import LoginRateLimitedError, enforce_password_login_budget
 
 
+def test_shadow_and_login_migrations_have_one_deployable_head():
+    from alembic.script import ScriptDirectory
+
+    scripts = ScriptDirectory(str(Path(__file__).resolve().parents[1] / "alembic"))
+    head = scripts.get_current_head()
+    assert head is not None
+    for deployed in ("20261117_01", "20261118_01"):
+        assert list(scripts.iterate_revisions(head, deployed))
+
+
+@pytest.mark.skipif(not os.getenv("AUTH_RATE_LIMIT_TEST_DATABASE_URL"), reason="Requires isolated local PostgreSQL")
+@pytest.mark.parametrize("deployed", ["20261117_01", "20261118_01"])
+def test_upgrade_from_either_reviewed_head_and_rollback_preserve_data(deployed):
+    import psycopg
+
+    url = os.environ["AUTH_RATE_LIMIT_TEST_DATABASE_URL"]
+    assert urlparse(url).hostname in {"127.0.0.1", "localhost"}
+    schema = "test_review_merge_" + uuid4().hex[:12]
+    env = {**os.environ, "DATABASE_URL": url, "DATABASE_SCHEMA": schema}
+    backend = Path(__file__).resolve().parents[1]
+    run_id = str(uuid4())
+
+    def migrate(direction, revision):
+        result = subprocess.run([sys.executable, "-m", "alembic", direction, revision], cwd=backend, env=env,
+                                capture_output=True, text=True, timeout=120)
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    def seed_shadow(conn):
+        conn.execute(f'''INSERT INTO "{schema}".classification_shadow_runs
+            (id, organization_id, client_id, actor_id, source_kind, source_id, source_version,
+             engine_version, input_hash, request, state, expires_at)
+            VALUES (%s, 'org', 'client', 'actor', 'movement', %s, 1, 'test', 'evidence', '{{}}', 'ready', now() + interval '1 day')''',
+                     (run_id, str(uuid4())))
+        conn.execute(f'''INSERT INTO "{schema}".classification_shadow_feedback(run_id, item_id, verdict, actor_id)
+            VALUES (%s, 'movement', 'agree', 'actor')''', (run_id,))
+
+    def seed_budget(conn):
+        conn.execute(f'''INSERT INTO "{schema}".password_login_budgets(budget_key, window_started_at, attempts)
+            VALUES ('synthetic-budget', 12345, 10)''')
+
+    try:
+        migrate("upgrade", deployed)
+        with psycopg.connect(url) as conn:
+            (seed_shadow if deployed == "20261117_01" else seed_budget)(conn)
+            conn.execute(f'''INSERT INTO "{schema}".users(id, name, email, password_hash, password_salt, created_at, updated_at)
+                VALUES ('usr_old', 'Old writer', 'old@example.test', 'hash', 'salt', '2026-11-18', '2026-11-18')''')
+        migrate("upgrade", "head")
+        with psycopg.connect(url) as conn:
+            (seed_budget if deployed == "20261117_01" else seed_shadow)(conn)
+        for direction, revision in (("downgrade", "20261116_01"), ("upgrade", "head")):
+            migrate(direction, revision)
+            with psycopg.connect(url) as conn:
+                assert str(conn.execute(f'SELECT id FROM "{schema}".classification_shadow_runs').fetchone()[0]) == run_id
+                assert conn.execute(f'SELECT verdict FROM "{schema}".classification_shadow_feedback').fetchone() == ("agree",)
+                assert conn.execute(f'SELECT attempts FROM "{schema}".password_login_budgets').fetchone() == (10,)
+                conn.execute(f'UPDATE "{schema}".users SET name=\'Compatible writer\' WHERE id=\'usr_old\'')
+    finally:
+        with psycopg.connect(url, autocommit=True) as conn:
+            conn.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+
+
 def exercise_concurrent_budget(services):
     def attempt(index):
         try:
