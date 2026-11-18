@@ -35,7 +35,9 @@ class AccessControlAuthComponent:
         product_updates_consent_version: int | None = None,
     ) -> RegisteredUser:
         normalized_email = email.strip().lower()
-        is_admin = normalized_email in self._service.admin_emails
+        # An address supplied to public registration is not proof of ownership.
+        # Local administrators must be provisioned explicitly by an operator.
+        is_admin = False
         now = self._service.now_provider().isoformat()
         user_id = f"usr_{uuid4().hex[:12]}"
         salt = secrets.token_hex(8)
@@ -116,14 +118,14 @@ class AccessControlAuthComponent:
                 user = self._service._fetchone(
                     conn,
                     """
-                    SELECT id, name, email, is_admin, is_active, password_hash, password_salt,
+                    SELECT id, name, email, is_admin, is_active, password_hash, password_salt, auth_provider,
                            initial_access_pending, email_verification_status, email_verified_at
                     FROM users
                     WHERE email = ?
                     """,
                     (normalized_email,),
                 )
-                if user is None:
+                if user is None or user["auth_provider"] != "local":
                     raise InvalidCredentialsError
                 if not self._service._verify_password(
                     password=password,
@@ -317,6 +319,9 @@ class AccessControlAuthComponent:
                             name = ?,
                             auth_provider = 'google',
                             provider_user_id = ?,
+                            password_hash = '',
+                            password_salt = '',
+                            credential_version = credential_version + 1,
                             email_verification_status = 'verified',
                             email_verified_at = COALESCE(email_verified_at, ?),
                             terms_accepted_at = COALESCE(?, terms_accepted_at),
@@ -348,6 +353,12 @@ class AccessControlAuthComponent:
                             user_id,
                         ),
                     )
+                    self._service._execute(conn,
+                        "UPDATE user_sessions SET revoked_at = ?, revoke_reason = 'google_link' "
+                        "WHERE user_id = ? AND revoked_at IS NULL", (now, user_id))
+                    self._service._execute(conn,
+                        "UPDATE password_reset_tokens SET invalidated_at = ? "
+                        "WHERE user_id = ? AND consumed_at IS NULL AND invalidated_at IS NULL", (now, user_id))
                     conn.commit()
                     return self._service._registered_user_factory(
                         user_id=user_id,
@@ -422,3 +433,22 @@ class AccessControlAuthComponent:
                     email_verification_status="verified",
                     email_verified_at=now,
                 )
+
+    def retire_google_password_credentials(self) -> None:
+        """Idempotently retire credentials retained by older account-linking code."""
+        now = self._service.now_provider().isoformat()
+        with self._service._lock, self._service._connect() as conn:
+            rows = self._service._fetchall(conn, """
+                UPDATE users SET password_hash = '', password_salt = '',
+                    credential_version = credential_version + 1, updated_at = ?
+                WHERE auth_provider = 'google' AND password_hash <> ''
+                RETURNING id
+                """, (now,))
+            for row in rows:
+                self._service._execute(conn,
+                    "UPDATE user_sessions SET revoked_at = ?, revoke_reason = 'google_link' "
+                    "WHERE user_id = ? AND revoked_at IS NULL", (now, row["id"]))
+                self._service._execute(conn,
+                    "UPDATE password_reset_tokens SET invalidated_at = ? "
+                    "WHERE user_id = ? AND consumed_at IS NULL AND invalidated_at IS NULL", (now, row["id"]))
+            conn.commit()

@@ -151,9 +151,9 @@ def test_column_and_footer_geometry_follow_page_scale(monkeypatch, scale):
     monkeypatch.setattr(pdf_parser, "is_textract_enabled", lambda: False)
     reader = PdfReader(BytesIO(accounts_payable_pdf(footer=True)))
     writer = PdfWriter()
-    for page in reader.pages:
+    for source_page in reader.pages:
+        page = writer.add_page(source_page)
         page.scale_by(scale)
-        writer.add_page(page)
     raw = BytesIO()
     writer.write(raw)
     parsed = pdf_parser.parse_pdf_transactions(raw.getvalue())

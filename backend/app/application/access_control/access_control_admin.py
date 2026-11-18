@@ -60,7 +60,8 @@ class AccessControlAdminComponent:
         for email in self._service.admin_emails:
             self._service._execute(
                 conn,
-                "UPDATE users SET is_admin = ? WHERE lower(email) = ? AND COALESCE(account_creation_source, '') <> 'checkout_admin'",
+                "UPDATE users SET is_admin = ? WHERE lower(email) = ? AND auth_provider = 'google' "
+                "AND email_verification_status = 'verified' AND COALESCE(account_creation_source, '') <> 'checkout_admin'",
                 (self._service._true_value(), email),
             )
 

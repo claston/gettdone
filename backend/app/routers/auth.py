@@ -1,7 +1,8 @@
 import logging
 import os
 import re
-from urllib.parse import urlencode
+import secrets
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -65,6 +66,11 @@ router = APIRouter()
 router.include_router(password_reset_router)
 logger = logging.getLogger(__name__)
 _LEGACY_ANONYMOUS_FINGERPRINT_PATTERN = re.compile(r"^anon-\d{10,16}-[0-9a-f]{4,32}$")
+GOOGLE_STATE_COOKIE_NAME = "__Host-ofx_google_state" if is_production_env() else "ofx_google_state"
+
+
+def _clear_google_state_cookie(response):
+    response.delete_cookie(GOOGLE_STATE_COOKIE_NAME, path="/", secure=is_production_env(), httponly=True, samesite="lax")
 
 
 def _session_auth_response(*, service: AccessControlService, session_bundle: SessionTokenBundle) -> JSONResponse:
@@ -631,7 +637,14 @@ def google_start(
         next_path,
         getattr(oauth_service.config, "redirect_uri", ""),
     )
-    return RedirectResponse(url=auth_url, status_code=307)
+    state = parse_qs(urlparse(auth_url).query).get("state", [""])[0]
+    if not state:
+        raise HTTPException(status_code=503, detail="Google OAuth did not provide a state.")
+    response = RedirectResponse(url=auth_url, status_code=307)
+    response.headers["Cache-Control"] = "no-store"
+    response.set_cookie(GOOGLE_STATE_COOKIE_NAME, state, max_age=oauth_service.config.state_ttl_seconds,
+                        path="/", secure=is_production_env(), httponly=True, samesite="lax")
+    return response
 
 
 @router.get("/auth/google/callback")
@@ -639,20 +652,17 @@ def google_callback(
     request: Request,
     code: str = Query(...),
     state: str = Query(...),
+    browser_state: str | None = Cookie(default=None, alias=GOOGLE_STATE_COOKIE_NAME),
     oauth_service: GoogleOAuthService = Depends(get_google_oauth_service),
 ) -> RedirectResponse:
     try:
+        if not browser_state or not secrets.compare_digest(browser_state.encode(), state.encode()):
+            raise GoogleOAuthStateError
         callback_result = oauth_service.complete_callback(code=code, state=state)
     except GoogleOAuthNotConfiguredError:
         raise HTTPException(status_code=503, detail="Google OAuth is not configured.")
     except (GoogleOAuthStateError, GoogleOAuthExchangeError) as exc:
-        logger.exception(
-            "google_oauth_callback_failed state=%s redirect_uri=%s frontend_base_url=%s error=%s",
-            state,
-            getattr(oauth_service.config, "redirect_uri", ""),
-            getattr(oauth_service.config, "frontend_base_url", ""),
-            exc,
-        )
+        logger.warning("google_oauth_callback_failed error_type=%s", type(exc).__name__)
         payload = {
             "error": "google_oauth_failed",
             "next": "/client-area.html",
@@ -663,10 +673,12 @@ def google_callback(
         fallback = f"{oauth_service.config.frontend_base_url}/auth-callback.html?{params}"
         response = RedirectResponse(url=fallback, status_code=307)
         response.headers["Cache-Control"] = "no-store"
+        _clear_google_state_cookie(response)
         return response
     logger.info("google_oauth_callback_succeeded")
     response = RedirectResponse(url=callback_result.redirect_url, status_code=307)
     response.headers["Cache-Control"] = "no-store"
+    _clear_google_state_cookie(response)
     if callback_result.user is not None:
         session_bundle = oauth_service.access_control_service.create_user_session(
             user_id=callback_result.user.user_id,

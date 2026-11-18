@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from app.application.access_control import AccessControlService
 from app.dependencies import get_access_control_service
 from app.main import app
+from tests.admin_setup import register_admin
 
 
 def _login_admin(client: TestClient, *, email: str = "admin@example.com", password: str = "admin-pass") -> None:
@@ -42,7 +43,7 @@ def test_admin_activate_plan_updates_user_subscription(tmp_path) -> None:
         token_secret="test-secret",
         admin_emails={"admin@example.com"},
     )
-    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    register_admin(service, name="Admin", email="admin@example.com", password="admin-pass")
     created = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
     intent = service.create_checkout_intent(
         user_id=created.user_id,
@@ -83,7 +84,7 @@ def test_admin_activate_plan_requires_admin_session(tmp_path) -> None:
         token_secret="test-secret",
         admin_emails={"admin@example.com"},
     )
-    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    register_admin(service, name="Admin", email="admin@example.com", password="admin-pass")
     created = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
     service.create_checkout_intent(
         user_id=created.user_id,
@@ -112,7 +113,7 @@ def test_admin_activate_plan_rejects_query_string_admin_token(tmp_path) -> None:
         token_secret="test-secret",
         admin_emails={"admin@example.com"},
     )
-    admin_user = service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    admin_user = register_admin(service, name="Admin", email="admin@example.com", password="admin-pass")
     created = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
     service.create_checkout_intent(
         user_id=created.user_id,
@@ -141,7 +142,7 @@ def test_admin_activate_plan_accepts_admin_session_cookie(tmp_path) -> None:
         token_secret="test-secret",
         admin_emails={"admin@example.com"},
     )
-    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    register_admin(service, name="Admin", email="admin@example.com", password="admin-pass")
     created = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
     app.dependency_overrides[get_access_control_service] = lambda: service
     client = TestClient(app)

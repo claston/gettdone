@@ -10,6 +10,7 @@ from app.application.access_control import AccessControlService
 from app.application.admin_dashboard_service import AdminDashboardService
 from app.dependencies import get_access_control_service
 from app.main import app
+from tests.admin_setup import register_admin
 
 
 def _build_client(tmp_path: Path):
@@ -20,7 +21,7 @@ def _build_client(tmp_path: Path):
         admin_emails={"admin@example.com"},
         now_provider=lambda: clock["now"],
     )
-    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    register_admin(service, name="Admin", email="admin@example.com", password="admin-pass")
     buyer = service.register_user(
         name="Possível Cliente",
         email="buyer@example.com",

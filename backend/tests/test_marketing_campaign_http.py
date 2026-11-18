@@ -6,6 +6,7 @@ from app.application.contact_service import ContactService
 from app.application.errors import ContactDeliveryError
 from app.dependencies import get_contact_service
 from app.main import app
+from tests.admin_setup import register_admin
 from tests.http_runtime import LoopbackClient
 from tests.test_auth_session_http_real_api import _run_http_server
 from tests.test_marketing_campaign_api import BASE
@@ -21,7 +22,7 @@ def test_campaign_real_http_replays_accepted_message_after_lost_response(monkeyp
         admin_emails={"admin@example.com"},
     ) as (base_url, access):
         monkeypatch.setenv("MARKETING_PUBLIC_BASE_URL", base_url)
-        access.register_user(name="Admin", email="admin@example.com", password="strong-pass")
+        register_admin(access, name="Admin", email="admin@example.com", password="strong-pass")
         access.register_user(name="Cliente", email="recipient@example.com", password="strong-pass",
                              product_updates_opt_in=True, product_updates_consent_version=2,
                              product_updates_opted_in_at="2026-11-15T00:00:00+00:00")
@@ -72,7 +73,7 @@ def test_campaign_http_quota_rejection_can_resume_next_day_unless_prior_attempt_
         admin_emails={"admin@example.com"},
     ) as (base_url, access):
         monkeypatch.setenv("MARKETING_PUBLIC_BASE_URL", base_url)
-        access.register_user(name="Admin", email="admin@example.com", password="strong-pass")
+        register_admin(access, name="Admin", email="admin@example.com", password="strong-pass")
         access.register_user(name="Cliente", email="recipient@example.com", password="strong-pass",
                              product_updates_opt_in=True, product_updates_consent_version=2,
                              product_updates_opted_in_at="2026-11-15T00:00:00+00:00")

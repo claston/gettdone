@@ -4,6 +4,7 @@ import pytest
 
 from app.dependencies import get_access_control_service
 from app.main import app
+from tests.admin_setup import register_admin
 from tests.ocr_conversion_http_helpers import public_client
 
 pytestmark = pytest.mark.real_http
@@ -31,7 +32,7 @@ def test_course_tracking_and_existing_downloads_over_http(tmp_path):
         assert client.get("/admin/dashboard/overview").status_code == 401
         service = app.dependency_overrides[get_access_control_service]()
         service.admin_emails.add("course-admin@example.test")
-        service.register_user(name="Admin", email="course-admin@example.test", password="strong-test-password")
+        register_admin(service, name="Admin", email="course-admin@example.test", password="strong-test-password")
         assert client.post("/admin/auth/login", json={"email": "course-admin@example.test",
                                                       "password": "strong-test-password"}).status_code == 200
         overview = client.get("/admin/dashboard/overview?days=1")

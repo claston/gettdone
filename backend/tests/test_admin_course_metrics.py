@@ -20,6 +20,8 @@ def course_data(tmp_path):
     users = {}
     for name in ("buyer", "visitor", "admin"):
         account = service.register_user(name=name, email=f"{name}@example.test", password="strong-test-password")
+        if name == "admin":
+            service.set_user_admin_role(user_id=account.user_id, is_admin=True)
         users[name] = service.resolve_identity(anonymous_fingerprint=None, user_token=account.token)
     users["anonymous"] = service.resolve_identity(anonymous_fingerprint="private-browser", user_token=None)
 

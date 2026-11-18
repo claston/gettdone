@@ -45,6 +45,7 @@ from app.security_baseline import (
     read_bool_env,
     validate_production_security_baseline,
 )
+from app.upload_limits import UploadBodyLimitMiddleware
 
 logger = logging.getLogger(__name__)
 EARLY_CONVERT_UPLOAD_MAX_BYTES = 10 * 1024 * 1024
@@ -103,6 +104,7 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["ETag"],
 )
+app.add_middleware(UploadBodyLimitMiddleware)
 
 app.include_router(health_router)
 app.include_router(pro_fiscal_router)

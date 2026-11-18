@@ -115,12 +115,11 @@ def test_bb_native_watermark_and_opening_on_period_start(scale):
              "02/07/2026 Saldo do dia 150,00 (+)", "31/07/2026 Saldo 150,00 (+)")
     reader = PdfReader(BytesIO(generate_native_text_pdf((lines,))))
     writer = PdfWriter()
-    page = reader.pages[0]
+    page = writer.add_page(reader.pages[0])
     stream = DecodedStreamObject()
     stream.set_data(b"BT /F1 18 Tf .707 .707 -.707 .707 100 350 Tm (OPERADOR TESTE 9.999,00) Tj ET")
     page[NameObject("/Contents")] = ArrayObject([page[NameObject("/Contents")], writer._add_object(stream)])
     page.scale_by(scale)
-    writer.add_page(page)
     output = BytesIO()
     writer.write(output)
     result = pdf_parser.parse_pdf_transactions(output.getvalue())
