@@ -13,8 +13,9 @@ class ShadowTransport:
         self.bucket = os.environ["CLASSIFICATION_SHADOW_BUCKET"]
         self.queue = os.environ["CLASSIFICATION_SHADOW_QUEUE_URL"]
         config = Config(connect_timeout=3, read_timeout=5, retries={"max_attempts": 1})
-        self.s3 = boto3.client("s3", config=config)
-        self.sqs = boto3.client("sqs", config=config)
+        region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
+        self.s3 = boto3.client("s3", region_name=region, config=config)
+        self.sqs = boto3.client("sqs", region_name=region, config=config)
 
     @staticmethod
     def key(identifier, kind):
