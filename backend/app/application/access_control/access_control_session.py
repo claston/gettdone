@@ -127,7 +127,7 @@ class AccessControlSessionComponent:
             with self._service._connect() as conn:
                 row = self._service._fetchone(
                     conn,
-                    "SELECT refresh_token_hash FROM user_sessions WHERE id = ?",
+                    "SELECT refresh_token_hash, refresh_token_family FROM user_sessions WHERE id = ?",
                     (session_id,),
                 )
                 if row is None:
@@ -135,10 +135,11 @@ class AccessControlSessionComponent:
                 expected_hash = str(row["refresh_token_hash"] or "").strip()
                 if not hmac.compare_digest(expected_hash, refresh_hash):
                     return
-                self._service._execute(
-                    conn,
-                    "UPDATE user_sessions SET revoked_at = ?, revoke_reason = ? WHERE id = ? AND revoked_at IS NULL",
-                    (now_iso, "logout", session_id),
+                self._service._revoke_session_family_with_conn(
+                    conn=conn,
+                    family_id=str(row["refresh_token_family"] or "").strip(),
+                    reason="logout",
+                    now_iso=now_iso,
                 )
                 conn.commit()
 

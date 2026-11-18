@@ -45,6 +45,32 @@ def test_admin_logout_revokes_replay_but_preserves_another_session(runtime):
     assert access.get_user_by_session_access_token(other.access_token).user_id == admin.user_id
 
 
+@pytest.mark.real_http
+@pytest.mark.parametrize("logout_path", ["/auth/session/logout", "/admin/auth/logout"])
+def test_logout_revokes_rotated_family_over_real_http(runtime, logout_path):
+    from tests.http_runtime import LoopbackClient, serve_http
+
+    access, _, _, _ = runtime
+    admin = register_admin(access, name="Admin", email="rotated@example.test", password="test-password")
+    independent = access.create_user_session(user_id=admin.user_id)
+    with serve_http(app) as url, LoopbackClient(base_url=url) as original, LoopbackClient(base_url=url) as copied:
+        assert original.post("/admin/auth/login", json={"email": admin.email, "password": "test-password"}).status_code == 200
+        old_access = original.cookies[SESSION_ACCESS_COOKIE_NAME]
+        old_refresh = original.cookies[SESSION_REFRESH_COOKIE_NAME]
+        response = copied.post("/auth/session/refresh", headers={"Cookie": f"{SESSION_REFRESH_COOKIE_NAME}={old_refresh}"})
+        assert response.status_code == 200
+        assert copied.get("/admin/me").status_code == 200
+        assert original.post(logout_path).status_code == 200
+        assert copied.get("/admin/me").status_code == 401
+        assert copied.post("/auth/session/refresh").status_code == 401
+        assert original.get("/admin/me", headers={"Cookie": f"{SESSION_ACCESS_COOKIE_NAME}={old_access}"}).status_code == 401
+        assert original.post("/auth/session/refresh", headers={"Cookie": f"{SESSION_REFRESH_COOKIE_NAME}={old_refresh}"}).status_code == 401
+        assert original.post(logout_path).status_code == 200
+    assert access.get_user_by_session_access_token(independent.access_token).user_id == admin.user_id
+    renewed = access.refresh_user_session(refresh_token=independent.refresh_token)
+    assert access.get_user_by_session_access_token(renewed.access_token).user_id == admin.user_id
+
+
 def test_logout_all_also_invalidates_legacy_bearer_tokens(runtime):
     access, _, _, _ = runtime
     user = access.register_user("Owner", "owner@example.test", "test-password")
