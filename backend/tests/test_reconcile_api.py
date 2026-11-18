@@ -88,6 +88,7 @@ def test_reconcile_rejects_unsupported_bank_file_type() -> None:
 
 def test_reconcile_accepts_bank_pdf_without_sample_dependency(monkeypatch) -> None:
     from app.routers import reconcile as reconcile_router
+    from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
 
     monkeypatch.setattr(
         reconcile_router,
@@ -106,7 +107,7 @@ def test_reconcile_accepts_bank_pdf_without_sample_dependency(monkeypatch) -> No
     response = client.post(
         "/reconcile",
         files={
-            "bank_file": ("bank.pdf", b"%PDF synthetic", "application/pdf"),
+            "bank_file": ("bank.pdf", generate_native_text_pdf((("Synthetic bank statement",),)), "application/pdf"),
             "sheet_file": ("sheet.csv", b"data,valor,descricao\n2023-11-06,1069.04,PIX RECEBIDO", "text/csv"),
         },
     )

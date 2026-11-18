@@ -1,3 +1,4 @@
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -25,8 +26,14 @@ def recovery(tmp_path):
 
 
 def request_token(client, mail):
+    before = len(mail.messages)
     response = client.post("/auth/forgot-password", json={"email": " ERICA@example.com "})
     assert response.status_code == 202
+    # A real HTTP 202 can arrive before its background delivery has completed.
+    deadline = time.monotonic() + 5
+    while len(mail.messages) == before and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert len(mail.messages) > before, "Password recovery email was not delivered"
     return mail.messages[-1]["text"].split("#token=", 1)[1].splitlines()[0]
 
 
