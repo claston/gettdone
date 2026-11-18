@@ -97,7 +97,7 @@ function Evaluation({
       window.clearTimeout(expiry);
     };
   }, [clientId, run]);
-  async function execute(path: string, body: object) {
+  async function execute(path: string, body?: object) {
     setBusy(true);
     setError("");
     try {
@@ -132,6 +132,11 @@ function Evaluation({
         Avaliar classificação
       </button>
       {error && <p role="alert">{error}</p>}
+      {error && run?.state === "queued" && (
+        <button disabled={busy} onClick={() => void execute(`/runs/${run.id}`)}>
+          Tentar consultar novamente
+        </button>
+      )}
       {run?.state === "queued" && (
         <p role="status">Processando a avaliação fiscal…</p>
       )}

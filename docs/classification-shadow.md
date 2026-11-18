@@ -83,7 +83,9 @@ mensagem SQS contendo apenas o UUID. Repetir o pedido devolve a mesma execução
 Enquanto o painel consulta o status, publicações pendentes podem ser reenviadas
 a cada dois minutos, até cinco tentativas. SQS também faz suas tentativas, com
 resposta parcial; resultado imutável impede duplicação. Após 15 minutos sem
-resultado, a interface indica falha. Reabrir uma execução não aplica nada.
+resultado, a interface indica falha. Solicitar novamente uma execução que falhou
+reinicia as tentativas, preservando a entrada e o prazo de expiração originais.
+Reabrir uma execução não aplica nada.
 
 Runs e avaliações expiram em até 24 horas, limitados pela validade do documento
 original. Toda consulta e avaliação reconfere proprietário, plano, origem e

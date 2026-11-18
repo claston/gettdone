@@ -4,7 +4,8 @@ from unittest.mock import Mock
 
 import pytest
 from test_canonical_movements_postgres import DSN
-from test_pro_fiscal_service import setup
+from test_classification_shadow import invoice
+from test_pro_fiscal_service import insert_note, setup
 
 from alembic import command
 from alembic.config import Config
@@ -86,3 +87,25 @@ def test_populated_upgrade_rollback_and_expiry_cleanup(database, monkeypatch):
     fiscal.cleanup()
     with fiscal.repo._connect() as conn:
         assert conn.execute(f"SELECT count(*) AS n FROM {fiscal.repo.p}classification_shadow_runs").fetchone()["n"] == 0
+
+
+def test_fiscal_outbox_rejects_partial_or_wrong_results_and_keeps_all_items(database):
+    fiscal, scope, _ = setup(database)
+    identifier = insert_note(fiscal, scope)
+    fiscal.source = Mock(return_value=(invoice(), {"file_type": "xml"}))
+    transport = Mock()
+    transport.result.return_value = None
+    transport.publish.side_effect = RuntimeError("temporary queue failure")
+    service = ShadowService(fiscal, transport)
+    run = service.start(scope.actor_id, scope.client_id, source_kind="invoice", source_id=identifier, source_version=1)
+    assert run["state"] == "queued"
+    request = transport.publish.call_args.args[0]
+    transport.result.return_value = {**request, "items": []}
+    with pytest.raises(ValueError, match="corresponde"):
+        service.read(scope.actor_id, scope.client_id, run["id"])
+    transport.result.return_value = {**request, "input_hash": "wrong"}
+    with pytest.raises(ValueError, match="corresponde"):
+        service.read(scope.actor_id, scope.client_id, run["id"])
+    transport.result.return_value = {**request, "items": [{"id": "1", "status": "review_required", "candidates": []}]}
+    assert service.read(scope.actor_id, scope.client_id, run["id"])["state"] == "ready"
+    assert transport.publish.call_count == 1

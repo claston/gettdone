@@ -13,6 +13,7 @@ def shadow_schema(schema="public"):
             source_version BIGINT NOT NULL, engine_version TEXT NOT NULL, input_hash TEXT NOT NULL,
             request JSONB NOT NULL, result JSONB, state TEXT NOT NULL CHECK(state IN ('queued','ready','failed')),
             next_dispatch_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(), dispatch_attempts INTEGER NOT NULL DEFAULT 0,
+            attempt_started_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
             created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(), expires_at TIMESTAMPTZ NOT NULL,
             UNIQUE(organization_id,client_id,input_hash)
         )""",

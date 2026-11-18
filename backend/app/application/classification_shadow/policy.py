@@ -23,7 +23,8 @@ def classify_movement(row):
     matches = []
     if Decimal(str(row["amount"])) < 0 and not re.search(r"\b(?:ESTORNO|DEVOLUCAO|REEMBOLSO)\b", text):
         for category, pattern in (("bank_fee", r"^TARIFA\b|^TAR\.?\s+BANCARIA\b"),
-                                  ("interest", r"\bJUROS\b"), ("iof", r"^IOF\b|^DEBITO\s+IOF\b")):
+                                  ("interest", r"^(?:JUROS|DEBITO JUROS|TARIFA.*\bJUROS)\b"),
+                                  ("iof", r"^IOF\b|^DEBITO\s+IOF\b")):
             if re.search(pattern, text):
                 matches.append(category)
         if re.search(r"^(?:PAGAMENTO|PAGTO|PGTO|ARRECADACAO|TRIBUTOS|IMPOSTO)\b", text):

@@ -42,12 +42,19 @@ class ShadowService:
                                                   "description": source["description"], "provenance": source["provenance"]}]}
             engine = FISCAL_VERSION if fiscal_input else RULE_VERSION
             signature = digest({"kind": source_kind, "id": str(source_id), "version": source_version, "engine": engine, "data": payload})
-            existing = conn.execute(f"""SELECT id FROM {self.repo.p}classification_shadow_runs
+            existing = conn.execute(f"""SELECT id,state FROM {self.repo.p}classification_shadow_runs
                 WHERE organization_id=%s AND client_id=%s AND input_hash=%s AND expires_at>clock_timestamp()""",
                 (client["organization_id"], client_id, signature)).fetchone()
             if existing:
                 identifier = str(existing["id"])
+                if existing["state"] == "failed":
+                    conn.execute(f"""UPDATE {self.repo.p}classification_shadow_runs SET state='queued',
+                        dispatch_attempts=0,next_dispatch_at=clock_timestamp(),attempt_started_at=clock_timestamp() WHERE id=%s""",
+                        (existing["id"],))
             else:
+                conn.execute(f"""DELETE FROM {self.repo.p}classification_shadow_runs
+                    WHERE organization_id=%s AND client_id=%s AND input_hash=%s AND expires_at<=clock_timestamp()""",
+                    (client["organization_id"], client_id, signature))
                 count = conn.execute(f"""SELECT count(*) AS n FROM {self.repo.p}classification_shadow_runs
                     WHERE organization_id=%s AND expires_at>clock_timestamp()""", (client["organization_id"],)).fetchone()["n"]
                 if count >= 100:
@@ -90,7 +97,7 @@ class ShadowService:
                     run["result"], run["state"] = result, "ready"
                     conn.execute(f"UPDATE {self.repo.p}classification_shadow_runs SET result=%s,state='ready' WHERE id=%s",
                                  (Jsonb(result), run["id"]))
-                elif datetime.now(timezone.utc) > run["created_at"] + timedelta(minutes=15):
+                elif datetime.now(timezone.utc) > run["attempt_started_at"] + timedelta(minutes=15):
                     run["state"] = "failed"
                     conn.execute(f"UPDATE {self.repo.p}classification_shadow_runs SET state='failed' WHERE id=%s", (run["id"],))
                 elif run["next_dispatch_at"] <= datetime.now(timezone.utc) and run["dispatch_attempts"] < 5:

@@ -11,6 +11,7 @@ from app.application.classification_shadow.policy import classify_movement, extr
     ("-10.00", "PAGAMENTO DARF", "tax_federal_unknown"),
     ("-10.00", "PAGAMENTO DAS", "tax_simples"),
     ("-10.00", "PIX LOJA DAS FLORES", None),
+    ("-10.00", "PIX JUROS LTDA", None),
     ("10.00", "PIX RECEBIDO", None),
     ("10.00", "ESTORNO TARIFA", None),
     ("-10.00", "TRANSFERENCIA", None),
