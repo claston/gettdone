@@ -98,7 +98,7 @@
     if (revision !== expectedRevision) return true;
     // The current entitlement and the completed conversion must both be free.
     if (user && (user.quota_mode !== "conversion" || (user.plan_code && user.plan_code !== "free"))) return false;
-    const container = document.getElementById("download-section");
+    const container = document.querySelector("#download-section .download-summary");
     if (!container) return false;
     if (!panel) {
       panel = document.createElement("aside");
@@ -115,9 +115,7 @@
       link.rel = "noopener";
       link.textContent = "Saiba como";
       trackLink(link, "course_cta_click", window.location.pathname, recordVisibleImpression);
-      const label = document.createElement("small");
-      label.textContent = "Parceria";
-      panel.append(title, link, label);
+      panel.append(title, link);
       container.appendChild(panel);
     }
     panel.classList.remove("hidden");

@@ -7,8 +7,10 @@ disponível e nenhum envio de e-mail foi habilitado por esta alteração.
 ## Experiência
 
 - Nas três páginas que usam `ofx-convert.js`, um resultado gratuito concluído
-  apresenta “Quer aprender a elaborar demonstrações contábeis?”, “Saiba como”
-  e “Parceria”, abaixo dos downloads. O link abre a página interna em outra aba.
+  apresenta “Quer aprender a elaborar demonstrações contábeis?” e “Saiba como”
+  abaixo das conversões restantes, à esquerda dos downloads no desktop e acima
+  deles no celular, sem divisor ou legenda sob o botão. O link abre a página
+  interna em outra aba.
 - Usuários anônimos e cadastrados gratuitos são elegíveis. O modo da conversão
   deve ser `conversion`; se houver conta, o plano atual também deve ser gratuito.
   Planos pagos e o aplicativo PRO não recebem essa chamada.

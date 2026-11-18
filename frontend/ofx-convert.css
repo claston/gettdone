@@ -1014,12 +1014,16 @@ body.quota-locked {
 }
 .course-promotion {
   margin-top: 24px;
-  padding: 20px 0 4px;
-  border-top: 1px solid #dce3ed;
 }
 .course-promotion h3 { margin: 0 0 12px; font-size: 1rem; line-height: 1.5; }
-.course-promotion .btn { width: auto; min-height: 44px; text-decoration: none; }
-.course-promotion small { display: block; margin-top: 8px; color: #596674; font-size: .8rem; }
+.course-promotion .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-height: 44px;
+  text-decoration: none;
+}
 
 .conversion-feedback {
   min-width: 0;
