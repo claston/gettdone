@@ -94,7 +94,10 @@ async def reconcile(
     submitted = False
     try:
         limit = min(RECONCILE_MAX_FILE_BYTES, identity.max_upload_size_bytes)
-        bank_bytes = await _read_bounded(bank_file, limit)
+        # PDF type is determined by preflight after a bounded read. Native PDFs
+        # may use the shared 10 MiB allowance even for a 5 MiB identity.
+        bank_limit = RECONCILE_MAX_FILE_BYTES if _file_extension(bank_file.filename) == "pdf" else limit
+        bank_bytes = await _read_bounded(bank_file, bank_limit)
         sheet_bytes = await _read_bounded(sheet_file, limit)
         future = capacity.submit(lease, partial(
             _process_reconcile, bank_filename=bank_file.filename or "", sheet_filename=sheet_file.filename or "",
