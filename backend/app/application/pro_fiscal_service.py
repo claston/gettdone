@@ -788,6 +788,8 @@ class ProFiscalService:
     def cleanup(self):
         removed = 0
         with self.repo._connect() as conn:
+            if conn.execute("SELECT to_regclass(%s) AS relation", (self.repo.p + "classification_shadow_runs",)).fetchone()["relation"]:
+                conn.execute(f"DELETE FROM {self.repo.p}classification_shadow_runs WHERE expires_at<=clock_timestamp()")
             if not conn.execute("SELECT to_regclass(%s) AS relation", (self.repo.p + "pro_fiscal_imports",)).fetchone()["relation"]:
                 return 0  # Empty-schema rollback has no retained fiscal data.
             rows = conn.execute(f"""SELECT * FROM {self.repo.p}pro_fiscal_imports WHERE expires_at<=clock_timestamp()

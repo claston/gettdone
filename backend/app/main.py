@@ -31,6 +31,7 @@ from app.routers import (
     report_router,
     telemetry_router,
 )
+from app.routers.classification_shadow import router as classification_shadow_router
 from app.routers.conversion_pro import router as conversion_pro_router
 from app.routers.financial_center import router as financial_center_router
 from app.routers.marketing import router as marketing_router
@@ -106,6 +107,7 @@ app.add_middleware(
 
 app.include_router(health_router)
 app.include_router(pro_fiscal_router)
+app.include_router(classification_shadow_router)
 app.include_router(banks_router)
 app.include_router(plans_router)
 app.include_router(public_config_router)
