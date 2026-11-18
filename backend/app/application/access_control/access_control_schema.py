@@ -48,6 +48,7 @@ class AccessControlSchemaComponent:
             "user_login_events",
             "email_verification_tokens",
             "password_reset_tokens",
+            "password_login_budgets",
             "purchase_tokens",
             "checkout_notifications",
             "conversion_batches",

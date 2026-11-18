@@ -38,6 +38,7 @@ from app.routers.access_control_common import (
     set_anonymous_identity_cookie,
     set_session_cookies,
 )
+from app.routers.password_login_security import enforce_login_limit
 from app.routers.password_reset import router as password_reset_router
 from app.routers.pro_security import (
     ProSessionRateLimiter,
@@ -392,8 +393,10 @@ async def resend_email_verification(
 @router.post("/auth/login", response_model=LoginResponse)
 def login(
     payload: LoginRequest,
+    request: Request,
     service: AccessControlService = Depends(get_access_control_service),
 ) -> LoginResponse:
+    enforce_login_limit(service, request, payload.email)
     try:
         user = service.authenticate_user(email=payload.email, password=payload.password)
     except EmailVerificationRequiredError:
@@ -474,6 +477,7 @@ def session_login(
     request: Request,
     service: AccessControlService = Depends(get_access_control_service),
 ) -> JSONResponse:
+    enforce_login_limit(service, request, payload.email)
     try:
         user = service.authenticate_user(email=payload.email, password=payload.password)
     except EmailVerificationRequiredError:

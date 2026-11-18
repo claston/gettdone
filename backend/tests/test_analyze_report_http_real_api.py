@@ -44,6 +44,10 @@ class FakeReportService:
         *,
         allow_unowned: bool = False,
     ) -> None:
+        if analysis_id != "an_http123":
+            from app.application import AnalysisNotFoundError
+
+            raise AnalysisNotFoundError
         owner = self._owners.get(analysis_id)
         if owner is None:
             if allow_unowned:

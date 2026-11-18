@@ -13,6 +13,7 @@ from app.application.models import NormalizedTransaction
 from app.application.ofx_identity import build_fit_id_sequence
 from app.application.ofx_writer import build_ofx_statement
 from app.application.reconciliation import ReconciliationResult
+from app.application.spreadsheet_safety import safe_csv_value
 
 
 def reconcile_account_rows(transactions, scopes, reconcile):
@@ -160,7 +161,8 @@ def write_account_artifacts(output_dir, rows, *, format_sheet, format_date, scop
                     + (["document_number"] if has_document else []))
     for row in rows:
         if not row.is_deleted:
-            writer.writerow([row.date, row.description, row.amount, row.category, row.reconciliation_status] + _account_columns(row)
-                            + ([row.document_number] if has_document else []))
+            writer.writerow([safe_csv_value(value) for value in
+                            [row.date, row.description, row.amount, row.category, row.reconciliation_status] + _account_columns(row)
+                            + ([row.document_number] if has_document else [])])
     (output_dir / "converted.csv").write_text(buffer.getvalue(), encoding="utf-8")
     write_account_workbook(output_dir / "converted.xlsx", rows, format_sheet=format_sheet, format_date=format_date, scopes=scopes)

@@ -38,6 +38,7 @@ class FakeReportService:
         *,
         allow_unowned: bool = False,
     ) -> None:
+        self.get_report_path(analysis_id)
         owner = self._owners.get(analysis_id)
         if owner is None:
             if allow_unowned:

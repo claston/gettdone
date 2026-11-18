@@ -2393,7 +2393,7 @@
   if (logoutBtn) {
     logoutBtn.addEventListener("click", async function () {
       try {
-        await fetch(`${resolveApiBase()}/admin/auth/logout`, {
+        await fetch(`${resolveApiBase()}/auth/session/logout`, {
           method: "POST",
           credentials: "include",
         });

@@ -10,6 +10,7 @@ from app.application.errors import InvalidFileContentError
 from app.application.financial_event_projection import event_date
 from app.application.models import NormalizedTransaction
 from app.application.ofx_writer import build_ofx_statement
+from app.application.spreadsheet_safety import force_text_cells, safe_csv_value
 
 LABELS = {
     "amounts.redemptions": "Resgates informados", "amounts.paid_income": "Rendimentos pagos",
@@ -122,6 +123,7 @@ def _sheet(workbook, title, rows, *, default_headers=(), labels=None):
                 cell.number_format = "#,##0.00"
             if isinstance(cell.value, str):
                 cell.data_type = "s"
+    force_text_cells(sheet)
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = sheet.dimensions
     for column in sheet.columns:
@@ -165,8 +167,8 @@ def write_financial_artifacts(output_dir: Path, document: dict, *, bank_code=Non
         writer = csv.DictWriter(target, fieldnames=headers)
         writer.writeheader()
         for row in rows:
-            writer.writerow({key: "'" + value if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@"))
-                             and key not in {"amount", "cash_effect"} and not key.startswith("amounts.") else value
+            writer.writerow({key: safe_csv_value(value)
+                             if key not in {"amount", "cash_effect"} and not key.startswith("amounts.") else value
                              for key, value in row.items()})
     write_financial_workbook(output_dir / "converted.xlsx", document)
     if "ofx" not in document["export"]["available_formats"] or not all((bank_code, bank_branch, account_number)):

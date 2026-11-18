@@ -190,7 +190,8 @@ def test_edit_document_persists_clears_and_exports_without_changing_identity(tmp
             assert re.findall(r"<FITID>([^\n<]+)", ofx.text) == identities
             assert parse_ofx_transactions(ofx.content)[0].document_number == document
             exported = client.get("/convert-report/" + identifier, params={**owner, "format": "csv"})
-            assert list(csv.DictReader(StringIO(exported.text)))[0]["document_number"] == (document or "")
+            expected_csv_document = "'=1+1" if document == "=1+1" else (document or "")
+            assert list(csv.DictReader(StringIO(exported.text)))[0]["document_number"] == expected_csv_document
             for endpoint in ("/report/", "/convert-report/"):
                 exported = client.get(endpoint + identifier, params={**owner, "format": "xlsx"})
                 assert exported.status_code == 200, exported.text
