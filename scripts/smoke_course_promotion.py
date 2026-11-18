@@ -83,7 +83,7 @@ def check(browser, filename, width, identity):
     else:
         card = page.locator("#course-promotion")
         expect(card).to_be_visible()
-        expect(card).to_contain_text("Parceria")
+        expect(card).not_to_contain_text("Parceria")
         expect(page.locator("#conversion-feedback")).to_be_hidden()
         assert not any(event["event_type"] == "course_cta_view" for event in events)
         with page.expect_request(lambda request: request.url.endswith("/telemetry/events")
@@ -117,6 +117,7 @@ def check(browser, filename, width, identity):
             OUTPUT.mkdir(parents=True, exist_ok=True)
             landing.screenshot(path=str(OUTPUT / f"course-{width}.png"), full_page=True)
             card.screenshot(path=str(OUTPUT / f"cta-{width}.png"))
+            page.locator("#download-section").screenshot(path=str(OUTPUT / f"download-cta-{width}.png"))
         with page.expect_download():
             download.click()
         page.locator("#clear-file-btn").click()
