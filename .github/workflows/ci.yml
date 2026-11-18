@@ -276,6 +276,14 @@ jobs:
         working-directory: .
         run: python scripts/smoke_free_editor.py
 
+      - name: Affiliate course and uninterrupted downloads (desktop and mobile)
+        working-directory: .
+        run: python scripts/smoke_course_promotion.py
+
+      - name: Course funnel, visitor badges and filters (desktop and mobile)
+        working-directory: .
+        run: python scripts/smoke_admin_course_metrics.py
+
       - name: Preserve fictional Free editor previews
         if: always()
         uses: actions/upload-artifact@v4

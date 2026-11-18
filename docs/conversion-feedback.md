@@ -1,5 +1,11 @@
 # Pesquisa de sucesso da conversão (OFX-63)
 
+Durante o [teste do curso parceiro](affiliate-course.md), a chamada do curso
+substitui a pesquisa nas conversões gratuitas concluídas. Nesses resultados,
+não é enviado `answer: null`: nenhuma impressão ou ausência de resposta é
+registrada para uma pesquisa que não foi oferecida. Planos pagos mantêm a
+pesquisa; as respostas históricas e a API permanecem disponíveis.
+
 O conversor mostra a pergunta “Na sua avaliação, a conversão foi realizada com
 sucesso?” abaixo dos downloads, com **Sim** e **Não**. A pesquisa é opcional e
 não condiciona a exportação. Uma falha ao salvar permite tentar novamente.

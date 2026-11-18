@@ -220,6 +220,7 @@ def list_active_users_for_admin(
     days: int = Query(default=30, ge=1, le=90),
     identity_type: str = Query(default="all", pattern="^(all|registered|anonymous)$"),
     prospect_only: bool = Query(default=False),
+    course_interest: str = Query(default="all", pattern="^(all|visited|outbound)$"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     x_admin_token: str | None = Header(default=None),
@@ -237,6 +238,7 @@ def list_active_users_for_admin(
         days=days,
         identity_type=identity_type,
         prospect_only=prospect_only,
+        course_interest=course_interest,
         limit=limit,
         offset=offset,
     )

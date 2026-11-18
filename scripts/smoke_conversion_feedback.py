@@ -31,7 +31,11 @@ def check_converter(browser, width, count, filename):
         source = ROOT / "frontend" / path.lstrip("/")
         if source.is_file():
             mime = {".js": "application/javascript", ".css": "text/css", ".html": "text/html"}.get(source.suffix, "image/png")
-            request.fulfill(body=source.read_bytes(), content_type=mime)
+            content = source.read_bytes()
+            # Exercise the supported rollback switch while the affiliate experiment is active.
+            if source.name == "course-promotion.js":
+                content = content.replace(b"const ENABLED = true;", b"const ENABLED = false;")
+            request.fulfill(body=content, content_type=mime)
         elif path == "/auth/me":
             request.fulfill(status=401, json={})
         elif path == "/auth/session/refresh":
@@ -135,6 +139,8 @@ def check_admin(browser, width):
             request.fulfill(body=source.read_bytes(), content_type=mime)
         elif path == "/admin/me":
             request.fulfill(json={"is_admin": True})
+        elif path == "/admin/dashboard/overview":
+            request.fulfill(json={"summary": {}, "checkout_funnel": {}, "commercial_interest": []})
         elif path == "/admin/dashboard":
             request.fulfill(json={"conversion_feedback": {"yes_people": 7, "no_people": 2, "unanswered_people": 3,
                                                           "yes_count": 9, "no_count": 2, "unanswered_count": 4}})
@@ -143,6 +149,9 @@ def check_admin(browser, width):
 
     page.route("**/*", route)
     page.goto("http://127.0.0.1:8099/admin.html")
+    if page.locator("#privacy-deny").is_visible():
+        page.locator("#privacy-deny").click()
+    page.locator("#dashboard-details-btn").click()
     feedback = page.locator("#dashboard-conversion-feedback")
     expect(feedback.locator(".metric-card")).to_have_count(3)
     expect(feedback).to_contain_text("Sem resposta")

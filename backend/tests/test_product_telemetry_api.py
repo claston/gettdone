@@ -137,6 +137,33 @@ def test_anonymous_event_identity_is_taken_from_signed_cookie(tmp_path: Path) ->
         app.dependency_overrides.clear()
 
 
+@pytest.mark.parametrize("registered", [False, True])
+def test_course_events_preserve_identity_without_becoming_purchase_signals(tmp_path: Path, registered: bool) -> None:
+    client, service, _clock, _buyer = _build_client(tmp_path)
+    events = ("course_cta_view", "course_cta_click", "course_page_view", "course_outbound_click")
+    try:
+        if registered:
+            client.post("/auth/session/login", json={"email": "buyer@example.com", "password": "strong-pass"})
+        else:
+            client.post("/auth/anonymous-session", json={})
+        for event in events:
+            response = client.post("/telemetry/events", json={
+                "event_type": event, "page_path": "/curso-notas-explicativas.html?from=conversao",
+            })
+            assert response.status_code == 202
+        with service._connect() as conn:
+            rows = service._fetchall(conn, "SELECT event_type, identity_type, plan_code FROM product_events")
+        assert {row["event_type"] for row in rows} == set(events)
+        assert all(row["identity_type"] == ("registered" if registered else "anonymous") for row in rows)
+        assert all(row["plan_code"] is None for row in rows)
+        funnel = AdminDashboardService(service).get_dashboard()["checkout_funnel"]
+        assert funnel["checkout_entry_people_count"] == 0
+    finally:
+        app.dependency_overrides.clear()
+        client.close()
+        service.close()
+
+
 def test_product_event_rejects_missing_identity_and_unknown_event(tmp_path: Path) -> None:
     client, _service, _clock, _buyer = _build_client(tmp_path)
     try:

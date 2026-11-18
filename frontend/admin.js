@@ -23,6 +23,10 @@
   let dashboardOverviewReady = false;
   let dashboardDetailsLoaded = false;
   const dashboardSummaryNode = document.getElementById("dashboard-summary");
+  const dashboardCourseNode = document.getElementById("dashboard-course-funnel");
+  const dashboardCourseSource = document.getElementById("dashboard-course-source");
+  const dashboardCourseVisitorsBtn = document.getElementById("dashboard-course-visitors-btn");
+  let courseFunnel = [];
   const dashboardFeedbackNode = document.getElementById("dashboard-conversion-feedback");
   const dashboardDailyChartNode = document.getElementById("dashboard-daily-chart");
   const dashboardIdentitiesNode = document.getElementById("dashboard-identities");
@@ -82,6 +86,7 @@
   const activeUsersPeriodNode = document.getElementById("active-users-period");
   const activeUsersIdentityTypeNode = document.getElementById("active-users-identity-type");
   const activeUsersProspectOnlyNode = document.getElementById("active-users-prospect-only");
+  const activeUsersCourseInterestNode = document.getElementById("active-users-course-interest");
   const activeUsersRefreshBtn = document.getElementById("active-users-refresh-btn");
   const activeUsersSummaryNode = document.getElementById("active-users-summary");
   const activeUsersStatusNode = document.getElementById("active-users-status");
@@ -835,6 +840,27 @@
     dashboardLayoutsNode.appendChild(table);
   }
 
+  function renderCourseFunnel() {
+    if (!dashboardCourseNode) return;
+    dashboardCourseNode.replaceChildren();
+    const source = dashboardCourseSource?.value || "conversao";
+    const row = courseFunnel.find(function (item) { return item.source === source; });
+    if (!row) {
+      dashboardCourseNode.appendChild(createTextElement("p", "muted", "Indicadores do curso indisponíveis."));
+      return;
+    }
+    if (source === "conversao") {
+      appendMetricCard(dashboardCourseNode, "Viram a chamada", formatInteger(row.cta_view_people), "ao menos metade visível na tela", "");
+      appendMetricCard(dashboardCourseNode, "Clicaram em Saiba como", formatInteger(row.cta_click_people), "entre as pessoas expostas", "");
+      appendMetricCard(dashboardCourseNode, "CTR da chamada", row.cta_ctr == null ? "—" : formatPercent(row.cta_ctr),
+        `${formatInteger(row.cta_click_people)} / ${formatInteger(row.cta_view_people)} pessoas`, "clean");
+    }
+    appendMetricCard(dashboardCourseNode, "Visitaram o curso", formatInteger(row.page_view_people), "visita à nossa página", "");
+    appendMetricCard(dashboardCourseNode, "Clicaram para ver a oferta", formatInteger(row.outbound_click_people), "entre os visitantes da página", "");
+    appendMetricCard(dashboardCourseNode, "CTR da página", row.page_ctr == null ? "—" : formatPercent(row.page_ctr),
+      `${formatInteger(row.outbound_click_people)} / ${formatInteger(row.page_view_people)} visitantes`, "clean");
+  }
+
   function renderDashboardCheckoutFunnel(funnel) {
     if (!dashboardCheckoutFunnelNode) return;
     dashboardCheckoutFunnelNode.replaceChildren();
@@ -1129,6 +1155,8 @@
     if (!dashboardPeriodNode || !dashboardIdentityTypeNode) return;
     const generation = ++dashboardGeneration;
     dashboardOverviewReady = false;
+    courseFunnel = [];
+    if (dashboardCourseNode) dashboardCourseNode.replaceChildren();
     resetDashboardDetails();
     [dashboardSummaryNode, dashboardCheckoutFunnelNode, dashboardCommercialInterestNode].forEach(function (node) {
       if (node) node.replaceChildren();
@@ -1152,6 +1180,8 @@
       renderDashboardSummary(payload.summary || {});
       renderDashboardCheckoutFunnel(payload.checkout_funnel || {});
       renderDashboardCommercialInterest(payload.commercial_interest || []);
+      courseFunnel = Array.isArray(payload.course_funnel) ? payload.course_funnel : [];
+      renderCourseFunnel();
       dashboardOverviewReady = true;
       if (dashboardDetailsBtn) dashboardDetailsBtn.disabled = false;
       setDashboardStatus(`Indicadores atualizados em ${formatDateTime(payload.end_at)}.`, "ok");
@@ -1547,11 +1577,12 @@
     const days = String(activeUsersPeriodNode?.value || "30");
     const identityType = String(activeUsersIdentityTypeNode?.value || "all");
     const prospectOnly = activeUsersProspectOnlyNode?.checked ? "true" : "false";
+    const courseInterest = activeUsersCourseInterestNode?.value || "all";
     setActiveUsersStatus("Carregando usuários ativos...", null);
     if (activeUsersRefreshBtn) activeUsersRefreshBtn.disabled = true;
     try {
       const { response, payload } = await apiRequest(
-        `/admin/active-users?days=${encodeURIComponent(days)}&identity_type=${encodeURIComponent(identityType)}&prospect_only=${prospectOnly}&limit=${ACTIVE_USERS_PAGE_SIZE}&offset=${activeUsersOffset}`,
+        `/admin/active-users?days=${encodeURIComponent(days)}&identity_type=${encodeURIComponent(identityType)}&prospect_only=${prospectOnly}&course_interest=${encodeURIComponent(courseInterest)}&limit=${ACTIVE_USERS_PAGE_SIZE}&offset=${activeUsersOffset}`,
       );
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) setAuthenticatedView(false);
@@ -1828,7 +1859,7 @@
   function renderActiveUsersSummary(summary) {
     if (!activeUsersSummaryNode) return;
     activeUsersSummaryNode.replaceChildren();
-    appendMetricCard(activeUsersSummaryNode, "Pessoas ativas", formatInteger(summary.active_people), "com conversão no período", "");
+    appendMetricCard(activeUsersSummaryNode, "Pessoas listadas", formatInteger(summary.active_people), "conforme os filtros do período", "");
     appendMetricCard(activeUsersSummaryNode, "Cadastradas", formatInteger(summary.registered_people), "identificadas por conta", "clean");
     appendMetricCard(activeUsersSummaryNode, "Anônimas", formatInteger(summary.anonymous_people), "identificadas de forma protegida", "");
     appendMetricCard(activeUsersSummaryNode, "Páginas", formatInteger(summary.pages_total), "processadas no período", "");
@@ -1864,6 +1895,8 @@
       const badges = document.createElement("div");
       badges.className = "pill-row";
       badges.appendChild(createTextElement("span", "badge", isRegistered ? "Cadastrada" : "Anônima"));
+      if (Number(user.course_page_views) > 0) badges.appendChild(createTextElement("span", "badge", "Visitou o curso"));
+      if (Number(user.course_outbound_clicks) > 0) badges.appendChild(createTextElement("span", "badge released", "Clicou para ver a oferta"));
       badges.appendChild(
         createTextElement(
           "span",
@@ -1891,14 +1924,18 @@
       appendLabeledParagraph(grid, "Páginas", formatInteger(user.pages));
       appendLabeledParagraph(grid, "Sucessos", formatInteger(user.successes));
       appendLabeledParagraph(grid, "Falhas", formatInteger(user.failures));
-      appendLabeledParagraph(grid, "Dias ativos", formatInteger(user.active_days));
-      appendLabeledParagraph(grid, "Última atividade", formatDateTime(user.last_activity_at));
+      appendLabeledParagraph(grid, "Dias com conversões", formatInteger(user.active_days));
+      appendLabeledParagraph(grid, "Última conversão", formatDateTime(user.last_activity_at));
       appendLabeledParagraph(grid, "Modelos mais usados", formatActiveUserModels(user.top_models));
       appendLabeledParagraph(grid, "Downloads", `${formatInteger(user.downloads_total)} — ${formatDownloadFormats(user.download_formats)}`);
       appendLabeledParagraph(grid, "Visitas a planos", formatInteger(user.plans_page_views));
       appendLabeledParagraph(grid, "Cliques em plano", formatInteger(user.plan_cta_clicks));
       appendLabeledParagraph(grid, "Entradas no checkout", formatInteger(user.checkout_entries));
-      appendLabeledParagraph(grid, "Recorrente", user.is_returning ? "Sim" : "Não");
+      appendLabeledParagraph(grid, "Visitas ao curso", formatInteger(user.course_page_views));
+      appendLabeledParagraph(grid, "Última visita ao curso", formatDateTime(user.last_course_page_view_at));
+      appendLabeledParagraph(grid, "Cliques para ver a oferta", formatInteger(user.course_outbound_clicks));
+      appendLabeledParagraph(grid, "Último clique na oferta", formatDateTime(user.last_course_outbound_click_at));
+      appendLabeledParagraph(grid, "Recorrente no conversor", user.is_returning ? "Sim" : "Não");
       card.appendChild(grid);
       appendLabeledParagraph(
         card,
@@ -2204,6 +2241,17 @@
     dashboardDetailsBtn.addEventListener("click", function () { void loadDashboardDetails(); });
   }
 
+  if (dashboardCourseSource) dashboardCourseSource.addEventListener("change", renderCourseFunnel);
+  if (dashboardCourseVisitorsBtn) dashboardCourseVisitorsBtn.addEventListener("click", function () {
+    if (activeUsersPeriodNode) activeUsersPeriodNode.value = dashboardPeriodNode?.value || "30";
+    if (activeUsersIdentityTypeNode) activeUsersIdentityTypeNode.value = dashboardIdentityTypeNode?.value || "all";
+    if (activeUsersProspectOnlyNode) activeUsersProspectOnlyNode.checked = false;
+    if (activeUsersCourseInterestNode) activeUsersCourseInterestNode.value = "visited";
+    activeUsersOffset = 0;
+    setActiveAdminSection("active-users");
+    void loadActiveUsers();
+  });
+
   if (dashboardAttentionExportBtn) {
     dashboardAttentionExportBtn.addEventListener("click", function () {
       void downloadAttentionExport(true);
@@ -2249,7 +2297,7 @@
     });
   }
 
-  [activeUsersPeriodNode, activeUsersIdentityTypeNode, activeUsersProspectOnlyNode].forEach(function (node) {
+  [activeUsersPeriodNode, activeUsersIdentityTypeNode, activeUsersProspectOnlyNode, activeUsersCourseInterestNode].forEach(function (node) {
     if (!node) return;
     node.addEventListener("change", function () {
       activeUsersOffset = 0;
@@ -2358,6 +2406,8 @@
       setMarketingStatus("", null);
       setActiveUsersStatus("", null);
       if (dashboardSummaryNode) dashboardSummaryNode.replaceChildren();
+      courseFunnel = [];
+      if (dashboardCourseNode) dashboardCourseNode.replaceChildren();
       if (dashboardFeedbackNode) dashboardFeedbackNode.replaceChildren();
       if (dashboardDailyChartNode) dashboardDailyChartNode.replaceChildren();
       if (dashboardIdentitiesNode) dashboardIdentitiesNode.replaceChildren();
