@@ -180,6 +180,9 @@ def _is_stone_fee_credit_pair(
     *,
     tolerance: float,
 ) -> bool:
+    # Both printed orders share the balance after the credit and its fee.
+    if fee.amount > 0 and credit.amount < 0:
+        fee, credit = credit, fee
     fee_layout = str(fee.layout_name or "").strip().lower()
     credit_layout = str(credit.layout_name or "").strip().lower()
     return (
@@ -283,7 +286,9 @@ def annotate_balance_consistency(
             continue
 
         if descending:
-            if _is_stone_fee_credit_pair(
+            # Pair only adjacent movements, once: a third row with the same
+            # balance still needs its own check, as do intervening movements.
+            if previous_balance_row is canonical_transactions[index - 1] and _is_stone_fee_credit_pair(
                 previous_balance_row,
                 current,
                 tolerance=tolerance,
