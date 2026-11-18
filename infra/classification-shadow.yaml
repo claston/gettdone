@@ -68,6 +68,8 @@ Resources:
   WorkerRole:
     Type: AWS::IAM::Role
     Properties:
+      Path: /gettdone/
+      RoleName: GettDoneClassificationRuntimeRole
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -95,6 +97,7 @@ Resources:
   Worker:
     Type: AWS::Lambda::Function
     Properties:
+      FunctionName: gettdone-classification-shadow-worker
       Runtime: java21
       Handler: br.com.ofxsimples.shadow.Handler::handleRequest
       Role: !GetAtt WorkerRole.Arn

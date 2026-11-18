@@ -1,15 +1,12 @@
-name: Deploy classification shadow ZIP
+name: CD | Deploy Classification Worker (ZIP)
 on:
   workflow_dispatch:
     inputs:
-      build_run_id:
-        description: Successful Official Receita ZIP workflow run for the current main commit
+      deploy:
+        description: Confirm publication of the fiscal worker ZIP from main
         required: true
-        type: string
-      enable_queue:
-        description: Enable only the new shadow queue consumer
-        default: false
         type: boolean
+        default: false
 permissions:
   contents: read
   actions: read
@@ -17,44 +14,56 @@ permissions:
 concurrency:
   group: deploy-classification-shadow
   cancel-in-progress: false
+env:
+  AWS_REGION: us-east-1
 jobs:
-  deploy:
-    if: github.ref == 'refs/heads/main'
-    environment: classification-shadow
+  deploy-worker:
+    if: ${{ github.ref == 'refs/heads/main' && inputs.deploy }}
+    environment: production-worker
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
-      BUILD_RUN_ID: ${{ inputs.build_run_id }}
-      AWS_REGION: ${{ vars.AWS_REGION }}
-      ARTIFACT_BUCKET: ${{ vars.AWS_CLASSIFICATION_ARTIFACT_BUCKET }}
-      PRODUCER_ROLE: ${{ vars.AWS_CLASSIFICATION_PRODUCER_ROLE_NAME }}
-      ENABLE_QUEUE: ${{ inputs.enable_queue }}
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      AWS_WORKER_DEPLOY_ROLE_ARN: ${{ vars.AWS_WORKER_DEPLOY_ROLE_ARN }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - name: Verify exact successful build and download its artifact
+      - name: Validate existing production deployment configuration
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$BUILD_RUN_ID" =~ ^[0-9]+$ ]]
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" > /tmp/shadow-run.json
-          python - <<'PY'
-          import json, os
-          run = json.load(open('/tmp/shadow-run.json'))
-          assert run['conclusion'] == 'success'
-          assert run['head_sha'] == os.environ['GITHUB_SHA']
-          assert run['path'] == '.github/workflows/classification-shadow.yml'
-          assert run['head_repository']['full_name'] == os.environ['GITHUB_REPOSITORY']
-          PY
-          gh run download "$BUILD_RUN_ID" --name "receita-shadow-$GITHUB_SHA" --dir /tmp/shadow-artifact
-      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c
+          [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]
+          [[ "$AWS_WORKER_DEPLOY_ROLE_ARN" == "arn:aws:iam::${AWS_ACCOUNT_ID}:role/gettdone/GettDoneGitHubWorkerDeploy" ]]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with: {python-version: '3.12'}
+      - name: Require successful product gates for this exact main commit
+        run: python scripts/verify_classification_shadow_release.py
+      - uses: actions/setup-java@v4
         with:
-          role-to-assume: ${{ vars.AWS_CLASSIFICATION_DEPLOY_ROLE_ARN }}
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Build and test official source, adapter and final ZIP
+        run: python scripts/build_receita_worker.py
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c
+        with:
+          role-to-assume: ${{ vars.AWS_WORKER_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-      - name: Deploy isolated stack from tested ZIP
+          role-session-name: gettdone-classification-${{ github.run_id }}
+          role-duration-seconds: 900
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          mask-aws-account-id: true
+      - name: Publish ZIP through a reviewed code-only change set
         run: |
           python -m pip install boto3
-          python scripts/deploy_classification_shadow.py --artifacts /tmp/shadow-artifact \
-            --bucket "$ARTIFACT_BUCKET" --producer-role "$PRODUCER_ROLE" --enable-queue "$ENABLE_QUEUE"
+          python scripts/deploy_classification_shadow.py --artifacts tmp/receita-worker
+      - name: Preserve build and release evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: classification-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tmp/receita-worker/
+          retention-days: 30
+          if-no-files-found: warn

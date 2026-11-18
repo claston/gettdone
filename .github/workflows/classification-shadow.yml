@@ -2,7 +2,12 @@ name: Classification shadow | Official Receita ZIP
 
 on:
   pull_request:
-    paths: ["receita-worker/**", "scripts/build_receita_worker.py", ".github/workflows/classification-shadow.yml", "infra/classification-shadow.yaml"]
+    paths:
+      - "receita-worker/**"
+      - "scripts/*classification_shadow*.py"
+      - "scripts/build_receita_worker.py"
+      - ".github/workflows/*classification-shadow.yml"
+      - "infra/classification-shadow*.yaml"
   workflow_dispatch:
 
 permissions:
@@ -27,7 +32,8 @@ jobs:
       - name: Check infrastructure
         run: |
           python -m pip install cfn-lint
-          cfn-lint infra/classification-shadow.yaml
+          cfn-lint infra/classification-shadow.yaml infra/classification-shadow-bootstrap.yaml
+          python scripts/classification_shadow_deploy_policy.py --account 123456789012 > tmp/receita-worker/deploy-policy-example.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:

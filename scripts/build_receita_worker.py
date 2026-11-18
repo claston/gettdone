@@ -62,7 +62,8 @@ def main():
         run("java", "-cp", str(extracted / "lib/*"), "br.com.ofxsimples.shadow.PackagedSmoke", cwd=extracted)
         if hashlib.sha256((extracted / "calculadora/db/calculadora-pro.db").read_bytes()).hexdigest() != manifest["database_sha256"]:
             raise SystemExit("Official database was modified")
-        evidence = {**manifest, "zip_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+        application_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+        evidence = {**manifest, "application_commit": application_commit, "zip_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
                     "uncompressed_bytes": size, "packaged_smoke": "passed", "upstream_tests": "passed", "adapter_tests": "passed"}
         (output / "evidence.json").write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(evidence, indent=2))

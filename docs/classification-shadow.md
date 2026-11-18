@@ -49,21 +49,77 @@ SQS, DLQ, bucket privado com expiração, IAM restrito e alarme de DLQ. Inicialm
 usa 2 GiB, timeout de 180 segundos e concorrência 2, a ajustar com medições.
 A fila nasce desabilitada. Não altera o worker de conversão.
 
-O workflow manual `Deploy classification shadow ZIP` aceita o ID de uma execução
-bem-sucedida da esteira do ZIP no mesmo commit de `main`, confere o hash do
-artefato e implanta somente a stack `gettdone-classification-shadow`. Configurar
-as variáveis do ambiente GitHub `classification-shadow`:
+O workflow manual `CD | Deploy Classification Worker (ZIP)` segue o padrão da
+conversão: branch `main`, confirmação `deploy=true`, ambiente protegido
+`production-worker`, aprovação existente e credenciais temporárias pela role
+`gettdone/GettDoneGitHubWorkerDeploy`. Reutiliza as variáveis `AWS_ACCOUNT_ID` e
+`AWS_WORKER_DEPLOY_ROLE_ARN`; não exige um ambiente novo nem ID de outro build.
+A região é `us-east-1`, como na conversão.
 
-- `AWS_CLASSIFICATION_DEPLOY_ROLE_ARN`: role OIDC autorizada para a stack shadow,
-  seus recursos e upload no bucket de artefatos;
-- `AWS_CLASSIFICATION_ARTIFACT_BUCKET`: bucket existente com versionamento ativo;
-- `AWS_REGION`: região da stack e do bucket;
-- `AWS_CLASSIFICATION_PRODUCER_ROLE_NAME`: role IAM já usada pelo backend, para
-  anexar apenas a política de publicação e leitura do shadow.
+Depois da aprovação, confere a CI de produto do commit exato, compila e testa a
+Receita e o adaptador, executa o ZIP, publica no S3 versionado e prepara um
+change set. Só aceita mudança no código da Lambda fiscal, sem substituição do
+recurso. Preserva todos os outros parâmetros, inclusive `EnableQueue` e
+`ProducerRoleName`. Confere o hash do código implantado e registra as coordenadas
+do ZIP anterior para rollback. Não altera a esteira nem os recursos da conversão.
 
-Revisar o PR e passar a CI antes da implantação. O workflow não é executado em
-PR nem instala recursos automaticamente. O build em PR não recebe credenciais
-AWS. Para habilitar o consumidor, informar `enable_queue=true` no dispatch.
+A role CloudFormation `gettdone/GettDoneClassificationCloudFormationExecutionRole`
+tem leitura do artefato e APIs de atualização restritas a essa Lambda. O
+CloudFormation pode chamar tanto `UpdateFunctionCode` quanto
+`UpdateFunctionConfiguration`, por isso ambas constam na role; o bloqueio de
+mudanças de configuração é feito pela validação integral do change set e pela
+preservação dos parâmetros. `iam:PassRole` aceita somente a role de runtime
+fiscal para o serviço Lambda. Ver a
+[documentação AWS](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-lambda-function.html).
+A
+preparação da infraestrutura é uma operação administrativa única, como ocorreu
+com o worker de conversão. Não é executada pela role de publicação de código.
+
+### Preparação única na AWS
+
+1. Na conta de produção, em `us-east-1`, criar a stack
+   `gettdone-classification-bootstrap` com
+   `infra/classification-shadow-bootstrap.yaml`, reconhecendo
+   `CAPABILITY_NAMED_IAM`. O template cria o bucket privado versionado
+   `gettdone-classification-artifacts-<CONTA>-us-east-1` e a role CloudFormation
+   de atualização de código. Manter as versões dos artefatos para rollback.
+2. Gerar a policy adicional abaixo, revisar e anexar como policy inline
+   `GettDoneClassificationZipRelease` à role **existente**
+   `gettdone/GettDoneGitHubWorkerDeploy`. Não substituir suas policies atuais
+   nem mudar a trust policy OIDC do ambiente `production-worker`.
+
+   ```powershell
+   backend\venv\Scripts\python.exe scripts/classification_shadow_deploy_policy.py --account <CONTA>
+   ```
+
+3. Após o merge, executar `Classification shadow | Official Receita ZIP` em
+   `main`. Baixar o artefato, localizar `receita-shadow.zip` e `evidence.json`,
+   conferir SHA-256, `application_commit` e os três resultados `passed`.
+   Com credenciais administrativas, enviar **esse ZIP** ao bucket de artefatos
+   na chave `classification-shadow/releases/<zip_sha256>.zip`, com SSE-S3.
+   Guardar o `VersionId` retornado pelo S3. Esta primeira carga é necessária
+   porque o Lambda Java precisa de um pacote válido para ser criado.
+4. Criar a stack `gettdone-classification-shadow` com
+   `infra/classification-shadow.yaml`, parâmetros `ArtifactBucket`,
+   `ArtifactKey`, `ArtifactVersion`, `EnableQueue=false` e o nome da role
+   efetivamente usada pelo backend em `ProducerRoleName`, se houver.
+   Reconhecer `CAPABILITY_NAMED_IAM`. A Lambda terá nome
+   `gettdone-classification-shadow-worker`. Usar credenciais/permissões de
+   provisionamento; a role de atualização de código do passo 1 não cria
+   infraestrutura. Se o backend usa um usuário IAM, deixar `ProducerRoleName`
+   vazio e conceder as ações da `ProducerPolicy` à identidade real em uma
+   operação administrativa própria; não inventar uma role de backend.
+5. Publicar a aplicação/migração e configurar o backend conforme abaixo.
+   Habilitar `EnableQueue=true` em uma atualização administrativa da stack para
+   o teste com NF-e sintética. As publicações seguintes preservam esse valor.
+
+O workflow de publicação atualiza uma stack que já existe; não cria roles,
+filas, buckets ou a Lambda. Depois da preparação, basta selecioná-lo em Actions,
+usar `main`, marcar `deploy=true` e aprovar no ambiente `production-worker`.
+Os artefatos `deployment-before.json`, `change-set.json` e `deployment.json`
+registram o pacote anterior, o diff revisado e o resultado. Se o processo falhar,
+consultar os eventos da stack; as coordenadas de rollback são salvas antes da
+alteração. O build em PR não recebe credenciais AWS.
 
 No backend, configurar com os outputs da stack:
 
@@ -107,9 +163,14 @@ PostgreSQL verifica dados existentes, upgrade/downgrade/reupgrade e expiração.
 
 Para desligar, configurar `CLASSIFICATION_SHADOW_MODE=off` e desabilitar o
 EventSourceMapping. Manter a limpeza fiscal e o Lifecycle ativos. Reimplantar
-um ZIP anterior pelo S3 versionado se necessário, junto à versão correspondente
-do backend (o contrato rejeita versões diferentes). Não fazer DROP de dados como
-parte de rollback operacional.
+um ZIP anterior pelo S3 versionado se necessário, usando `ArtifactKey` e
+`ArtifactVersion` salvos em `deployment-before.json`, junto à versão correspondente
+do backend (o contrato rejeita versões diferentes). Fazer a atualização por
+CloudFormation para manter o estado da stack. Não fazer DROP de dados como
+parte de rollback operacional. Depois de uma publicação, a stack usa a role
+CloudFormation limitada a código; alterações administrativas em filas, IAM ou
+configurações exigem uma role de provisionamento apropriada, explicitamente
+selecionada na atualização. O workflow de código não faz essa elevação.
 
 ## Validação e acompanhamento
 
