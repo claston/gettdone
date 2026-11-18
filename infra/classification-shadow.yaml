@@ -1,0 +1,164 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Isolated deterministic Receita shadow worker, Java ZIP with no Docker.
+Parameters:
+  ArtifactBucket:
+    Type: String
+  ArtifactKey:
+    Type: String
+  ArtifactVersion:
+    Type: String
+    Description: Immutable S3 version of the tested ZIP.
+  ProducerRoleName:
+    Type: String
+    Default: ''
+    Description: Existing backend IAM role to grant access to this shadow only.
+  EnableQueue:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+Conditions:
+  QueueEnabled: !Equals [!Ref EnableQueue, 'true']
+  AttachProducer: !Not [!Equals [!Ref ProducerRoleName, '']]
+Resources:
+  ShadowBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireShadow
+            Status: Enabled
+            ExpirationInDays: 1
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 1}
+  ShadowBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ShadowBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource: [!GetAtt ShadowBucket.Arn, !Sub '${ShadowBucket.Arn}/*']
+            Condition: {Bool: {'aws:SecureTransport': 'false'}}
+  DeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      SqsManagedSseEnabled: true
+      MessageRetentionPeriod: 86400
+  ShadowQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      SqsManagedSseEnabled: true
+      VisibilityTimeout: 1080
+      MessageRetentionPeriod: 86400
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: 3
+  WorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns: [!Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole']
+      Policies:
+        - PolicyName: ShadowOnly
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['sqs:ReceiveMessage', 'sqs:DeleteMessage', 'sqs:GetQueueAttributes']
+                Resource: !GetAtt ShadowQueue.Arn
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub '${ShadowBucket.Arn}/classification-shadow/*'
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt ShadowBucket.Arn
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub '${ShadowBucket.Arn}/classification-shadow/*/result.json'
+  Worker:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: java21
+      Handler: br.com.ofxsimples.shadow.Handler::handleRequest
+      Role: !GetAtt WorkerRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactBucket
+        S3Key: !Ref ArtifactKey
+        S3ObjectVersion: !Ref ArtifactVersion
+      MemorySize: 2048
+      Timeout: 180
+      ReservedConcurrentExecutions: 2
+      Architectures: [x86_64]
+      Environment:
+        Variables:
+          CLASSIFICATION_SHADOW_BUCKET: !Ref ShadowBucket
+          JAVA_TOOL_OPTIONS: '-Djava.io.tmpdir=/tmp'
+  WorkerLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${Worker}'
+      RetentionInDays: 14
+  EventSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt ShadowQueue.Arn
+      FunctionName: !Ref Worker
+      BatchSize: 1
+      Enabled: !If [QueueEnabled, true, false]
+      FunctionResponseTypes: [ReportBatchItemFailures]
+      ScalingConfig: {MaximumConcurrency: 2}
+  ProducerPolicy:
+    Type: AWS::IAM::Policy
+    Condition: AttachProducer
+    Properties:
+      PolicyName: ReceitaClassificationShadow
+      Roles: [!Ref ProducerRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: s3:PutObject
+            Resource: !Sub '${ShadowBucket.Arn}/classification-shadow/*/request.json'
+          - Effect: Allow
+            Action: s3:GetObject
+            Resource: !Sub '${ShadowBucket.Arn}/classification-shadow/*/result.json'
+          - Effect: Allow
+            Action: s3:ListBucket
+            Resource: !GetAtt ShadowBucket.Arn
+          - Effect: Allow
+            Action: sqs:SendMessage
+            Resource: !GetAtt ShadowQueue.Arn
+  DeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Receita shadow has exhausted SQS retries.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions: [{Name: QueueName, Value: !GetAtt DeadLetterQueue.QueueName}]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+Outputs:
+  Bucket: {Value: !Ref ShadowBucket}
+  QueueUrl: {Value: !Ref ShadowQueue}
+  FunctionName: {Value: !Ref Worker}

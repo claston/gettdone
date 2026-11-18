@@ -1,0 +1,39 @@
+name: Classification shadow | Official Receita ZIP
+
+on:
+  pull_request:
+    paths: ["receita-worker/**", "scripts/build_receita_worker.py", ".github/workflows/classification-shadow.yml", "infra/classification-shadow.yaml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  official-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Official tests, adapter tests and packaged ZIP smoke
+        run: python scripts/build_receita_worker.py
+      - name: Check infrastructure
+        run: |
+          python -m pip install cfn-lint
+          cfn-lint infra/classification-shadow.yaml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: receita-shadow-${{ github.sha }}
+          path: |
+            tmp/receita-worker/
+            receita-worker/target/surefire-reports/
+          retention-days: 14
+          if-no-files-found: error

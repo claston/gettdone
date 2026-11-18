@@ -1,0 +1,36 @@
+.panel {
+  padding: 1rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.75rem;
+  margin-block: 1rem;
+  overflow-wrap: anywhere;
+}
+.panel summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.panel select {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin-block: 0.5rem 1rem;
+  padding: 0.6rem;
+}
+.item {
+  border-top: 1px solid #cbd5e1;
+  padding-block: 1rem;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.actions button {
+  padding: 0.5rem 0.8rem;
+  border: 1px solid #94a3b8;
+  border-radius: 0.4rem;
+}
+.actions button[aria-pressed="true"] {
+  background: #dbeafe;
+  border-color: #2563eb;
+}

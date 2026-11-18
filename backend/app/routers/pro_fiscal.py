@@ -124,6 +124,9 @@ def workspace(
             movement_id=str(movement_id) if movement_id else None,
         )
     )
+    from app.routers.classification_shadow import enabled_for
+
+    result["classification_shadow_enabled"] = enabled_for(owner)
     return visible_workspace(result)
 
 

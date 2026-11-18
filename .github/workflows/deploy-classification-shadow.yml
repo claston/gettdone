@@ -1,0 +1,60 @@
+name: Deploy classification shadow ZIP
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Successful Official Receita ZIP workflow run for the current main commit
+        required: true
+        type: string
+      enable_queue:
+        description: Enable only the new shadow queue consumer
+        default: false
+        type: boolean
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+concurrency:
+  group: deploy-classification-shadow
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    environment: classification-shadow
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_RUN_ID: ${{ inputs.build_run_id }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ARTIFACT_BUCKET: ${{ vars.AWS_CLASSIFICATION_ARTIFACT_BUCKET }}
+      PRODUCER_ROLE: ${{ vars.AWS_CLASSIFICATION_PRODUCER_ROLE_NAME }}
+      ENABLE_QUEUE: ${{ inputs.enable_queue }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Verify exact successful build and download its artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" > /tmp/shadow-run.json
+          python - <<'PY'
+          import json, os
+          run = json.load(open('/tmp/shadow-run.json'))
+          assert run['conclusion'] == 'success'
+          assert run['head_sha'] == os.environ['GITHUB_SHA']
+          assert run['path'] == '.github/workflows/classification-shadow.yml'
+          assert run['head_repository']['full_name'] == os.environ['GITHUB_REPOSITORY']
+          PY
+          gh run download "$BUILD_RUN_ID" --name "receita-shadow-$GITHUB_SHA" --dir /tmp/shadow-artifact
+      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c
+        with:
+          role-to-assume: ${{ vars.AWS_CLASSIFICATION_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Deploy isolated stack from tested ZIP
+        run: |
+          python -m pip install boto3
+          python scripts/deploy_classification_shadow.py --artifacts /tmp/shadow-artifact \
+            --bucket "$ARTIFACT_BUCKET" --producer-role "$PRODUCER_ROLE" --enable-queue "$ENABLE_QUEUE"
