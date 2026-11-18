@@ -60,6 +60,44 @@ def test_reconcile_bounds_file_size_before_parsing(runtime, monkeypatch):
     assert response.status_code == 413
 
 
+@pytest.mark.real_http
+@pytest.mark.parametrize("kind,size_mib,status", [
+    ("native", 6, 200), ("native", 11, 413), ("scanned", 6, 413), ("csv", 6, 413), ("sheet", 6, 413),
+])
+def test_reconcile_preserves_native_pdf_limit_over_real_http(runtime, monkeypatch, kind, size_mib, status):
+    from test_pdf_parser_bradesco_daily_order import native_pdf, statement_pages
+
+    from app.application.conversion.document_preflight_service import DocumentPreflightService
+    from tests.http_runtime import LoopbackClient, serve_http
+
+    payload = files()
+    padding = b"x" * (size_mib * 1024 * 1024)
+    if kind in {"native", "scanned"}:
+        writer = PdfWriter(BytesIO(native_pdf(list(statement_pages())))) if kind == "native" else PdfWriter()
+        if kind == "scanned":
+            writer.add_blank_page(width=100, height=100)
+        writer.add_attachment("synthetic-padding.txt", padding)
+        buffer = BytesIO()
+        writer.write(buffer)
+        raw = buffer.getvalue()
+        inspected = DocumentPreflightService().inspect_raw_bytes(filename="bank.pdf", raw_bytes=raw)
+        assert inspected.scanned_likely is (kind == "scanned")
+        payload["bank_file"] = ("bank.pdf", raw, "application/pdf")
+    else:
+        field = "sheet_file" if kind == "sheet" else "bank_file"
+        payload[field] = ("large.csv", padding, "text/csv")
+    if status == 413:
+        def forbidden(**kwargs):
+            pytest.fail("Oversized upload must not reach classification")
+        monkeypatch.setattr(module, "classify_document", forbidden)
+    with serve_http(app) as url, LoopbackClient(base_url=url) as client:
+        response = client.post("/reconcile", files=payload)
+    assert response.status_code == status, response.text
+    if status == 200:
+        assert response.json()["bank_rows_parsed"] > 0
+    assert runtime[1].active_count == 0
+
+
 def test_reconcile_persists_anonymous_owner_and_enforces_quota(runtime, monkeypatch):
     original = module.classify_document
     threads = []
