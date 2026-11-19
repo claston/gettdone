@@ -10,6 +10,7 @@ from app.application.financial_document_export import write_financial_artifacts,
 from app.application.models import AnalysisData, NormalizedTransaction, TransactionRow
 from app.application.ofx_writer import build_ofx_statement
 from app.application.parsers.pdf.layout_specific.wise import WISE_CURRENCIES
+from app.application.spreadsheet_safety import force_text_cells, safe_csv_value
 from app.application.statement_account_export import statement_scopes
 
 
@@ -117,8 +118,9 @@ class ExportArtifactService:
         writer.writerow(["date", "description", "amount", "category", "reconciliation_status"]
                         + (["document_number"] if has_document else []))
         for item in active_rows:
-            writer.writerow([item.date, item.description, item.amount, item.category, item.reconciliation_status]
-                            + ([item.document_number] if has_document else []))
+            writer.writerow([safe_csv_value(value) for value in
+                            [item.date, item.description, item.amount, item.category, item.reconciliation_status]
+                            + ([item.document_number] if has_document else [])])
         (output_dir / "converted.csv").write_text(csv_buffer.getvalue(), encoding="utf-8")
 
         workbook = Workbook()
@@ -165,6 +167,7 @@ class ExportArtifactService:
         cell.number_format = "@"
 
     def _format_sheet(self, sheet) -> None:
+        force_text_cells(sheet)
         if sheet.max_row >= 1 and sheet.max_column >= 1:
             sheet.freeze_panes = "A2"
             sheet.auto_filter.ref = sheet.dimensions

@@ -1,7 +1,7 @@
 import csv
 import io
 
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Response
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from app.application import (
@@ -19,6 +19,7 @@ from app.routers.access_control_common import (
     require_admin_user,
     set_session_cookies,
 )
+from app.routers.password_login_security import enforce_login_limit
 from app.schemas import (
     AdminActiveUserListResponse,
     AdminDashboardResponse,
@@ -81,8 +82,10 @@ ATTENTION_EXPORT_COLUMNS = (
 @router.post("/admin/auth/login", response_model=AdminLoginResponse)
 def admin_login(
     payload: AdminLoginRequest,
+    request: Request,
     access_control_service: AccessControlService = Depends(get_access_control_service),
 ) -> JSONResponse:
+    enforce_login_limit(access_control_service, request, payload.email)
     try:
         user = access_control_service.authenticate_user(email=payload.email, password=payload.password)
     except EmailVerificationRequiredError:
@@ -261,7 +264,12 @@ def _attention_csv_value(key: str, value: object) -> str:
 
 
 @router.post("/admin/auth/logout")
-def admin_logout() -> JSONResponse:
+def admin_logout(
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
+    service: AccessControlService = Depends(get_access_control_service),
+) -> JSONResponse:
+    if access_cookie_token:
+        service.session.revoke_user_session_by_access_token(access_cookie_token)
     response = JSONResponse(content={"status": "ok"})
     response.headers["Cache-Control"] = "no-store"
     clear_session_cookies(response)

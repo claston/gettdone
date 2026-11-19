@@ -132,7 +132,7 @@ def get_report(
             analysis_id=analysis_id,
             identity_type=identity.identity_type,
             identity_id=identity.identity_id,
-            allow_unowned=True,
+            allow_unowned=False,
         )
         report_path = service.get_report_path(analysis_id)
     except AnalysisEditConflictError:
@@ -198,7 +198,7 @@ def get_reconcile_report(
             analysis_id=analysis_id,
             identity_type=identity.identity_type,
             identity_id=identity.identity_id,
-            allow_unowned=True,
+            allow_unowned=False,
         )
         report_path = service.get_reconcile_report_path(analysis_id=analysis_id, file_format=file_format)
     except AnalysisNotFoundError:

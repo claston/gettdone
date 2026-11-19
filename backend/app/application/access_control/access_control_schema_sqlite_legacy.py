@@ -16,8 +16,11 @@ if TYPE_CHECKING:
 
 def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) -> None:
     """Legacy SQLite bootstrap kept isolated while Postgres moved to migration-first startup."""
+    from app.application.login_rate_limit import login_rate_limit_schema
     from app.application.marketing_campaign_schema_v1 import marketing_campaign_schema_v1
 
+    for statement in login_rate_limit_schema():
+        conn.execute(statement)
     for statement in marketing_campaign_schema_v1():
         conn.execute(statement)
     conn.executescript(

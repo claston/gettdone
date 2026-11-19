@@ -19,6 +19,7 @@ from app.application.financial_document_export import assert_financial_export
 from app.application.legacy_analysis_state import LegacyAnalysisState
 from app.application.models import AnalysisData, TransactionRow
 from app.application.review_commands import ReviewCommandResult, ReviewCommandService
+from app.application.spreadsheet_safety import force_text_cells, safe_csv_value
 from app.application.statement_account_export import statement_scopes
 from app.application.structured_conversion import build_structured_conversion_result_from_analysis_data
 
@@ -213,7 +214,7 @@ class TempAnalysisStorage(LegacyAnalysisState):
             metadata_filename="analysis.json",
             identity_type=identity_type,
             identity_id=identity_id,
-            allow_unowned=True,
+            allow_unowned=False,
         )
 
     def set_reconcile_owner(self, analysis_id: str, identity_type: str, identity_id: str) -> None:
@@ -755,6 +756,7 @@ class TempAnalysisStorage(LegacyAnalysisState):
         analysis_dir.rmdir()
 
     def _format_transacoes_sheet(self, sheet) -> None:
+        force_text_cells(sheet)
         if sheet.max_row >= 1 and sheet.max_column >= 1:
             sheet.freeze_panes = "A2"
             sheet.auto_filter.ref = sheet.dimensions
@@ -771,6 +773,7 @@ class TempAnalysisStorage(LegacyAnalysisState):
         return f"{prefix}_{uuid4().hex[:12]}"
 
     def _escape_csv_value(self, value: object) -> str:
+        value = safe_csv_value(value)
         text = "" if value is None else str(value)
         if any(char in text for char in [",", "\"", "\n", "\r"]):
             return f"\"{text.replace('\"', '\"\"')}\""

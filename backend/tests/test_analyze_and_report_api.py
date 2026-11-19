@@ -38,6 +38,10 @@ class FakeReportService:
         *,
         allow_unowned: bool = False,
     ) -> None:
+        if analysis_id != "an_test123":
+            from app.application import AnalysisNotFoundError
+
+            raise AnalysisNotFoundError
         owner = self._owners.get(analysis_id)
         if owner is None:
             if allow_unowned:
@@ -90,6 +94,8 @@ def test_analyze_route_is_disabled() -> None:
 
 def test_report_happy_path_and_not_found() -> None:
     client = build_client()
+    service = app.dependency_overrides[get_report_service]()
+    service.set_report_owner("an_test123", "anonymous", "anon_fp-report-test")
 
     ok = client.get("/report/an_test123", params={"anonymous_fingerprint": "fp-report-test"})
     assert ok.status_code == 200
