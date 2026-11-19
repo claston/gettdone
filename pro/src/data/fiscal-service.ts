@@ -40,6 +40,7 @@ export interface FiscalMovement {
   source: { job_id: string; batch_id: string; filename: string };
 }
 export interface FiscalWorkspaceData {
+  classification_shadow_enabled?: boolean;
   features: { invoices: boolean; taxes: boolean; revenue: boolean };
   documents: FiscalNote[];
   imports: Array<{
