@@ -14,6 +14,7 @@ import {
 import { decimalCents, financialMoney } from "@/data/financial-center-service";
 import { dateLabel } from "@/domain/financial-center";
 import styles from "./fiscal-workspace.module.css";
+import { ClassificationShadow } from "./classification-shadow";
 
 const money = (value: string | null, currency = "BRL") =>
   value === null ? "A conferir" : financialMoney(decimalCents(value), currency);
@@ -206,6 +207,30 @@ export function FiscalWorkspace({
             {account &&
               " O filtro de conta aplica-se aos movimentos; as notas pertencem à empresa."}
           </p>
+          {data.classification_shadow_enabled && (
+            <ClassificationShadow
+              key={clientId}
+              clientId={clientId}
+              sources={[
+                ...data.movements.map((row) => ({
+                  id: row.id,
+                  version: row.version,
+                  kind: "movement" as const,
+                  label: row.description,
+                })),
+                ...data.documents
+                  .filter(
+                    (row) => row.kind === "nfe" && row.source.format === "xml",
+                  )
+                  .map((row) => ({
+                    id: row.id,
+                    version: row.version,
+                    kind: "invoice" as const,
+                    label: `NF-e ${row.number ?? "sem número"}`,
+                  })),
+              ]}
+            />
+          )}
           {mode === "revenue" && (
             <div className={styles.metrics}>
               <Metric
