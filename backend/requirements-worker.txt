@@ -2,7 +2,7 @@
 boto3==1.39.8
 openpyxl==3.1.5
 pydantic==2.11.3
-pypdf==6.21.4
+pypdf==7.1.0
 pypdfium2==5.8.0
 # Keep PDF rendering without the unused local OCR wrapper.
 Pillow>=8.0.0

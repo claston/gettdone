@@ -11,6 +11,7 @@ from app.routers.auth import SESSION_ACCESS_COOKIE_NAME, SESSION_REFRESH_COOKIE_
 
 class _FakeConfig:
     frontend_base_url = "http://localhost:3000"
+    state_ttl_seconds = 600
 
 
 class FakeGoogleOAuthService:
@@ -26,7 +27,7 @@ class FakeGoogleOAuthService:
         product_updates_opt_in: bool = False,
     ) -> str:
         _ = (flow_mode, terms_accepted, product_updates_opt_in)
-        return f"https://accounts.google.com/mock?next={next_path}"
+        return f"https://accounts.google.com/mock?next={next_path}&state=state123"
 
     def complete_callback(self, *, code: str, state: str) -> GoogleOAuthCallbackResult:
         return GoogleOAuthCallbackResult(
@@ -80,6 +81,7 @@ def test_google_auth_start_redirects_to_google() -> None:
 def test_google_auth_callback_redirects_to_frontend_callback() -> None:
     app.dependency_overrides[get_google_oauth_service] = lambda: FakeGoogleOAuthService()
     client = TestClient(app)
+    client.get("/auth/google/start", follow_redirects=False)
 
     response = client.get("/auth/google/callback?code=abc123&state=state123", follow_redirects=False)
     assert response.status_code == 307
@@ -214,6 +216,8 @@ def test_google_callback_sets_http_only_session_without_url_credential(tmp_path)
     app.dependency_overrides[get_access_control_service] = lambda: access_control
     client = TestClient(app)
     try:
+        started = client.get("/auth/google/start?flow=signup&accepted_terms=true", follow_redirects=False)
+        state = parse_qs(urlparse(started.headers["location"]).query)["state"][0]
         response = client.get(
             f"/auth/google/callback?code=google-code&state={state}",
             follow_redirects=False,

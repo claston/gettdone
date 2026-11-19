@@ -12,6 +12,7 @@ from app.application.contact_service import ContactDeliveryResult, ContactServic
 from app.application.errors import ContactDeliveryError, ContactProviderNotConfiguredError
 from app.dependencies import get_access_control_service, get_contact_service
 from app.main import app
+from tests.admin_setup import register_admin
 
 
 class FakeResend:
@@ -38,7 +39,7 @@ def marketing(tmp_path, monkeypatch):
         token_secret="marketing-test-secret",
         admin_emails={"admin@example.com"},
     )
-    service.register_user(name="Admin", email="admin@example.com", password="strong-pass")
+    register_admin(service, name="Admin", email="admin@example.com", password="strong-pass")
     user = service.register_user(
         name="Teste", email="marketing-test@example.com", password="strong-pass",
         product_updates_opt_in=True,

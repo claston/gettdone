@@ -948,6 +948,7 @@ class AccessControlService:
 
     def _init_db(self) -> None:
         self.schema.init_db()
+        self.auth.retire_google_password_credentials()
 
     def _is_quota_window_expired(self, window_started_at: datetime, now: datetime, *, quota_window_days: int) -> bool:
         return self.helpers.is_quota_window_expired(

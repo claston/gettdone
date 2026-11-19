@@ -9,6 +9,7 @@ from app.application.access_control import AccessControlService
 from app.application.admin_dashboard_service import AdminDashboardService
 from app.dependencies import get_access_control_service
 from app.main import app
+from tests.admin_setup import register_admin
 
 
 def _record_user_conversion(
@@ -142,7 +143,7 @@ def _build_dashboard_client(tmp_path: Path) -> tuple[TestClient, AccessControlSe
         admin_emails={"admin@example.com"},
         now_provider=lambda: clock["now"],
     )
-    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    register_admin(service, name="Admin", email="admin@example.com", password="admin-pass")
     user = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
     app.dependency_overrides[get_access_control_service] = lambda: service
     return TestClient(app), service, clock, user.user_id

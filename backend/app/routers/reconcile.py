@@ -1,11 +1,16 @@
+import asyncio
+from functools import partial
+from io import BytesIO
 from pathlib import Path
 
-from fastapi import APIRouter, Cookie, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Cookie, Depends, File, Form, Header, HTTPException, Response, UploadFile
 
 from app.application import (
     AccessControlService,
+    ConversionCapacityController,
     InvalidFileContentError,
     InvalidUserTokenError,
+    QuotaExceededError,
     ReportService,
     classify_reconciliation_rows,
     generate_reconciliation_problems,
@@ -13,10 +18,14 @@ from app.application import (
     parse_bank_statement_rows,
     parse_operational_sheet_rows,
 )
+from app.application.conversion.document_preflight_service import TEXT_PDF_MAX_PAGES_PER_FILE, DocumentPreflightService
 from app.application.document_classifier import classify_document
+from app.application.errors import FileTooLargeError, MaxPagesPerFileExceededError
 from app.application.models import NormalizedTransaction
 from app.application.normalization.transaction_normalizer import normalize_transactions
-from app.dependencies import get_access_control_service, get_report_service
+from app.application.parsers.pdf.reader import open_pdf_reader
+from app.dependencies import get_access_control_service, get_conversion_capacity_controller, get_report_service
+from app.routers.access_control_common import set_anonymous_identity_cookie
 from app.routers.auth_session import (
     ANONYMOUS_IDENTITY_COOKIE_NAME,
     SESSION_ACCESS_COOKIE_NAME,
@@ -30,6 +39,17 @@ router = APIRouter()
 _BANK_ALLOWED_EXTENSIONS = {"csv", "xlsx", "ofx", "pdf"}
 _SHEET_ALLOWED_EXTENSIONS = {"csv", "xlsx"}
 _SHEET_BANK_STATEMENT_WARN_THRESHOLD = 0.55
+RECONCILE_MAX_FILE_BYTES = 10 * 1024 * 1024
+
+
+async def _read_bounded(file: UploadFile, limit: int) -> bytes:
+    content = bytearray()
+    while chunk := await file.read(min(1024 * 1024, limit + 1 - len(content))):
+        content.extend(chunk)
+        if len(content) > limit:
+            raise HTTPException(413, "O arquivo excede o tamanho máximo permitido.")
+    return bytes(content)
+
 
 def _file_extension(filename: str | None) -> str:
     if not filename:
@@ -39,6 +59,7 @@ def _file_extension(filename: str | None) -> str:
 
 @router.post("/reconcile", response_model=ReconcileIntakeResponse)
 async def reconcile(
+    response: Response,
     bank_file: UploadFile = File(...),
     sheet_file: UploadFile = File(...),
     anonymous_fingerprint: str | None = Form(default=None),
@@ -48,9 +69,51 @@ async def reconcile(
     anonymous_cookie_token: str | None = Cookie(default=None, alias=ANONYMOUS_IDENTITY_COOKIE_NAME),
     report_service: ReportService = Depends(get_report_service),
     access_control_service: AccessControlService = Depends(get_access_control_service),
+    capacity: ConversionCapacityController = Depends(get_conversion_capacity_controller),
 ) -> ReconcileIntakeResponse:
-    bank_filename = bank_file.filename or ""
-    sheet_filename = sheet_file.filename or ""
+    try:
+        token = resolve_user_token_with_session(
+            access_control_service=access_control_service, authorization=authorization,
+            explicit_user_token=user_token, access_cookie_token=access_cookie_token)
+        fingerprint = resolve_anonymous_fingerprint_with_cookie(
+            access_control_service=access_control_service, anonymous_cookie_token=anonymous_cookie_token,
+            legacy_fingerprint=anonymous_fingerprint)
+        if not token and not fingerprint:
+            fingerprint = access_control_service.generate_anonymous_fingerprint()
+            set_anonymous_identity_cookie(response, token=access_control_service.issue_anonymous_identity_token(fingerprint=fingerprint))
+        identity = access_control_service.resolve_identity(anonymous_fingerprint=fingerprint, user_token=token)
+        access_control_service.ensure_quota_available(identity)
+    except InvalidUserTokenError:
+        raise HTTPException(401, "Identidade inválida. Inicie uma sessão ou entre novamente.") from None
+    except QuotaExceededError:
+        raise HTTPException(429, "Limite de processamento atingido.") from None
+    lease = capacity.try_acquire(source="/reconcile")
+    if lease is None:
+        raise HTTPException(503, "Aguarde a conclusão dos arquivos em processamento.",
+                            headers={"Retry-After": str(capacity.retry_after_seconds)})
+    submitted = False
+    try:
+        limit = min(RECONCILE_MAX_FILE_BYTES, identity.max_upload_size_bytes)
+        # PDF type is determined by preflight after a bounded read. Native PDFs
+        # may use the shared 10 MiB allowance even for a 5 MiB identity.
+        bank_limit = RECONCILE_MAX_FILE_BYTES if _file_extension(bank_file.filename) == "pdf" else limit
+        bank_bytes = await _read_bounded(bank_file, bank_limit)
+        sheet_bytes = await _read_bounded(sheet_file, limit)
+        future = capacity.submit(lease, partial(
+            _process_reconcile, bank_filename=bank_file.filename or "", sheet_filename=sheet_file.filename or "",
+            bank_bytes=bank_bytes, sheet_bytes=sheet_bytes, identity=identity,
+            report_service=report_service, access_control_service=access_control_service))
+        submitted = True
+        return await asyncio.wrap_future(future)
+    except QuotaExceededError:
+        raise HTTPException(429, "Limite de processamento atingido.") from None
+    finally:
+        if not submitted:
+            lease.release(outcome="reconcile_rejected")
+
+
+def _process_reconcile(*, bank_filename, sheet_filename, bank_bytes, sheet_bytes, identity,
+                       report_service, access_control_service):
     bank_extension = _file_extension(bank_filename)
     sheet_extension = _file_extension(sheet_filename)
 
@@ -60,14 +123,32 @@ async def reconcile(
     if sheet_extension not in _SHEET_ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Unsupported sheet file type. Use CSV or XLSX.")
 
-    bank_bytes = await bank_file.read()
+    required_units = 1
+    if bank_extension == "pdf":
+        try:
+            pages = len(open_pdf_reader(BytesIO(bank_bytes)).pages)
+            if pages > TEXT_PDF_MAX_PAGES_PER_FILE:
+                raise HTTPException(413, "O PDF excede o limite de páginas permitido.")
+            preflight = DocumentPreflightService()
+            inspected = preflight.inspect_raw_bytes(filename=bank_filename, raw_bytes=bank_bytes)
+            preflight.build_policy(identity=identity, filename=bank_filename,
+                                   staged_upload_size_bytes=len(bank_bytes), preflight_result=inspected)
+        except (FileTooLargeError, MaxPagesPerFileExceededError):
+            raise HTTPException(413, "O PDF excede os limites de tamanho ou páginas permitidos.") from None
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(400, "Não foi possível ler o PDF enviado.") from None
+        if identity.quota_mode == "pages":
+            required_units = max(1, pages)
+    access_control_service.ensure_quota_available(identity, required_units=required_units)
+
     bank_classification = classify_document(filename=bank_filename, raw_bytes=bank_bytes)
     try:
         bank_rows = parse_bank_statement_rows(filename=bank_filename, raw_bytes=bank_bytes)
     except InvalidFileContentError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    sheet_bytes = await sheet_file.read()
     sheet_classification = classify_document(filename=sheet_filename, raw_bytes=sheet_bytes)
     try:
         parsed_sheet = parse_operational_sheet_rows(filename=sheet_filename, raw_bytes=sheet_bytes)
@@ -174,39 +255,14 @@ async def reconcile(
         "pending_count": classification_result.pending_count,
         "divergent_count": classification_result.divergent_count,
     }
+    access_control_service.consume_quota(identity, consumed_units=required_units)
     analysis_id, expires_at = report_service.save_reconcile_report(
         summary=summary,
         reconciliation_rows=reconciliation_rows,
         problems=problems,
     )
-    resolved_user_token = resolve_user_token_with_session(
-        access_control_service=access_control_service,
-        authorization=authorization,
-        explicit_user_token=user_token,
-        access_cookie_token=access_cookie_token,
-    )
-    resolved_anonymous_fingerprint = resolve_anonymous_fingerprint_with_cookie(
-        access_control_service=access_control_service,
-        anonymous_cookie_token=anonymous_cookie_token,
-        legacy_fingerprint=anonymous_fingerprint,
-    )
-    has_identity_hint = bool(resolved_anonymous_fingerprint or resolved_user_token)
-    if has_identity_hint:
-        try:
-            identity = access_control_service.resolve_identity(
-                anonymous_fingerprint=resolved_anonymous_fingerprint,
-                user_token=resolved_user_token,
-            )
-        except InvalidUserTokenError:
-            raise HTTPException(
-                status_code=400,
-                detail="Missing or invalid identity context. Start an anonymous session or authenticate.",
-            )
-        report_service.set_reconcile_owner(
-            analysis_id=analysis_id,
-            identity_type=identity.identity_type,
-            identity_id=identity.identity_id,
-        )
+    report_service.set_reconcile_owner(
+        analysis_id=analysis_id, identity_type=identity.identity_type, identity_id=identity.identity_id)
 
     return ReconcileIntakeResponse(
         analysis_id=analysis_id,

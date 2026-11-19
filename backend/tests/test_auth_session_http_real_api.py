@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
@@ -10,6 +10,7 @@ from app.application import AccessControlService
 from app.dependencies import get_access_control_service
 from app.main import app
 from app.routers.auth import SESSION_ACCESS_COOKIE_NAME, SESSION_REFRESH_COOKIE_NAME
+from tests.admin_setup import register_admin
 from tests.http_runtime import LoopbackClient
 
 pytestmark = pytest.mark.real_http
@@ -134,7 +135,7 @@ def test_http_pro_session_login_rejects_invalid_origin_and_sets_secure_session(m
 
 def test_http_admin_lists_marketing_contacts_with_session_cookie() -> None:
     with _run_http_server(admin_emails={"admin@example.com"}) as (base_url, access_control):
-        access_control.register_user(
+        register_admin(access_control,
             name="Admin",
             email="admin@example.com",
             password="admin-pass",
@@ -289,6 +290,7 @@ def test_http_admin_deactivation_blocks_user_login() -> None:
                 },
             )
             assert admin.status_code == 200
+            _access_control.set_user_admin_role(user_id=admin.json()["user_id"], is_admin=True)
             user = admin_client.post(
                 f"{base_url}/auth/register",
                 json={

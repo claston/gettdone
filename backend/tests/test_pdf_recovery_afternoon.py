@@ -212,14 +212,14 @@ def test_colmeia_native_watermark_does_not_hide_rows_or_create_transactions(scal
     monkeypatch.setenv("PDF_OCR_ENABLED", "false")
     raw = generate_native_text_pdf(tuple(tuple(p.splitlines()) for p in colmeia_pages()))
     reader, writer = PdfReader(BytesIO(raw)), PdfWriter()
-    for page in reader.pages:
+    for source_page in reader.pages:
+        page = writer.add_page(source_page)
         stream = DecodedStreamObject()
         stream.set_data(b"BT /F1 18 Tf .707 .707 -.707 .707 100 350 Tm "
                         b"(OPERADOR TESTE 21/10/2026 12:00 VALOR 9.999,00 C) Tj ET")
         previous = page[NameObject("/Contents")]
         page[NameObject("/Contents")] = ArrayObject([previous, writer._add_object(stream)])
         page.scale_by(scale)
-        writer.add_page(page)
     payload = BytesIO()
     writer.write(payload)
     result = pdf_parser.parse_pdf_transactions(payload.getvalue())

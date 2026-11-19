@@ -9,6 +9,7 @@ import pytest
 from app.application.access_control import AccessControlService
 from app.dependencies import get_access_control_service
 from app.main import app
+from tests.admin_setup import register_admin
 from tests.http_runtime import LoopbackClient
 
 pytestmark = pytest.mark.real_http
@@ -22,7 +23,7 @@ def _run_http_server(tmp_path: Path):
         admin_emails={"admin@example.com"},
         now_provider=lambda: datetime(2026, 9, 9, 15, 0, tzinfo=timezone.utc),
     )
-    admin = access_control.register_user(
+    admin = register_admin(access_control,
         name="Admin",
         email="admin@example.com",
         password="admin-pass",

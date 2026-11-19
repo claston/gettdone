@@ -13,6 +13,7 @@ from app.application.contact_service import ContactService
 from app.application.purchase_flow import PurchaseFlow
 from app.dependencies import get_contact_service
 from app.main import app
+from tests.admin_setup import register_admin
 from tests.http_runtime import LoopbackClient
 from tests.test_auth_session_http_real_api import _run_http_server
 
@@ -65,7 +66,7 @@ def test_payment_link_delivery_failure_and_retry_over_real_http():
     with payment_email_provider() as (provider_url, messages, provider), _run_http_server(
         admin_emails={"admin@example.com"},
     ) as (base_url, access):
-        access.register_user(name="Admin", email="admin@example.com", password="strong-pass")
+        register_admin(access, name="Admin", email="admin@example.com", password="strong-pass")
         customer = access.register_user(name="Cliente de teste", email="checkout-customer@example.com", password="strong-pass")
         app.dependency_overrides[get_contact_service] = lambda: ContactService(
             api_key="fictional-payment-key", from_email="billing@example.com", to_email="support@example.com",
@@ -139,7 +140,7 @@ def test_guest_purchase_release_first_access_over_real_http():
     with payment_email_provider() as (provider_url, messages, _), _run_http_server(
         admin_emails={"admin@example.com"},
     ) as (base_url, access):
-        access.register_user(name="Admin", email="admin@example.com", password="strong-pass")
+        register_admin(access, name="Admin", email="admin@example.com", password="strong-pass")
         app.dependency_overrides[get_contact_service] = lambda: ContactService(
             api_key="fictional-payment-key", from_email="billing@example.com", to_email="support@example.com",
             dry_run=False, resend_api_base=provider_url)
@@ -181,7 +182,7 @@ def test_lost_sale_over_real_http_preserves_plan_and_serializes_payment_delivery
     with payment_email_provider() as (provider_url, messages, provider), _run_http_server(
         admin_emails={"admin@example.com"},
     ) as (base_url, service):
-        service.register_user(name="Admin", email="admin@example.com", password="strong-pass")
+        register_admin(service, name="Admin", email="admin@example.com", password="strong-pass")
         customer = service.register_user(name="Cliente", email="customer@example.com", password="strong-pass")
         app.dependency_overrides[get_contact_service] = lambda: ContactService(
             api_key="fictional-payment-key", from_email="billing@example.com", to_email="support@example.com",

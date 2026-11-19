@@ -11,6 +11,7 @@ import pytest
 from app.application.contact_service import ContactService
 from app.dependencies import get_contact_service
 from app.main import app
+from tests.admin_setup import register_admin
 from tests.http_runtime import LoopbackClient
 from tests.test_auth_session_http_real_api import _run_http_server
 
@@ -73,7 +74,7 @@ def test_inline_send_retries_and_unsubscribe_over_real_http(monkeypatch, templat
     with fake_resend_server() as (provider_url, messages, requests), _run_http_server(
         admin_emails={"admin@example.com"},
     ) as (base_url, access):
-        access.register_user(name="Admin", email="admin@example.com", password="strong-pass")
+        register_admin(access, name="Admin", email="admin@example.com", password="strong-pass")
         access.register_user(
             name="Cliente de teste", email="marketing-test@example.com", password="strong-pass",
             product_updates_opt_in=True, product_updates_opted_in_at="2026-10-29T12:00:00+00:00",

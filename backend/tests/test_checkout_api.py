@@ -8,6 +8,7 @@ from app.application import ContactDeliveryError, ContactDeliveryResult, Contact
 from app.application.access_control import AccessControlService
 from app.dependencies import get_access_control_service, get_contact_service
 from app.main import app
+from tests.admin_setup import register_admin
 
 
 class FakeContactService:
@@ -99,7 +100,7 @@ def _create_checkout_intent(client: TestClient, user_token: str, plan_code: str 
 
 
 def _create_admin_user(service: AccessControlService) -> str:
-    admin = service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    admin = register_admin(service, name="Admin", email="admin@example.com", password="admin-pass")
     return admin.token
 
 

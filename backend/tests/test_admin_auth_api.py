@@ -6,6 +6,7 @@ from app.application.access_control import AccessControlService
 from app.dependencies import get_access_control_service
 from app.main import app
 from app.routers.auth import SESSION_ACCESS_COOKIE_NAME, SESSION_REFRESH_COOKIE_NAME
+from tests.admin_setup import register_admin
 
 
 def test_admin_session_cookie_names_are_dev_safe_by_default() -> None:
@@ -19,7 +20,7 @@ def test_admin_login_sets_session_cookies_for_admin_user(tmp_path) -> None:
         token_secret="test-secret",
         admin_emails={"admin@example.com"},
     )
-    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    register_admin(service, name="Admin", email="admin@example.com", password="admin-pass")
     app.dependency_overrides[get_access_control_service] = lambda: service
     client = TestClient(app)
 
@@ -65,7 +66,7 @@ def test_admin_me_accepts_cookie_session_for_admin_user(tmp_path) -> None:
         token_secret="test-secret",
         admin_emails={"admin@example.com"},
     )
-    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    register_admin(service, name="Admin", email="admin@example.com", password="admin-pass")
     app.dependency_overrides[get_access_control_service] = lambda: service
     client = TestClient(app)
 
@@ -90,7 +91,7 @@ def test_admin_can_list_users_and_filter_admins(tmp_path) -> None:
         token_secret="test-secret",
         admin_emails={"admin@example.com"},
     )
-    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    register_admin(service, name="Admin", email="admin@example.com", password="admin-pass")
     service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
     app.dependency_overrides[get_access_control_service] = lambda: service
     client = TestClient(app)
@@ -122,7 +123,7 @@ def test_admin_can_list_only_marketing_contacts_with_consent_date(tmp_path) -> N
         token_secret="test-secret",
         admin_emails={"admin@example.com"},
     )
-    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    register_admin(service, name="Admin", email="admin@example.com", password="admin-pass")
     opted_in_user = service.register_user(
         name="Erica Marketing",
         email="erica.marketing@example.com",
@@ -192,7 +193,7 @@ def test_admin_can_deactivate_and_reactivate_another_user(tmp_path) -> None:
         token_secret="test-secret",
         admin_emails={"admin@example.com"},
     )
-    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    register_admin(service, name="Admin", email="admin@example.com", password="admin-pass")
     user = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
     app.dependency_overrides[get_access_control_service] = lambda: service
     client = TestClient(app)
@@ -246,7 +247,7 @@ def test_admin_cannot_deactivate_own_user(tmp_path) -> None:
         token_secret="test-secret",
         admin_emails={"admin@example.com"},
     )
-    admin = service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    admin = register_admin(service, name="Admin", email="admin@example.com", password="admin-pass")
     app.dependency_overrides[get_access_control_service] = lambda: service
     client = TestClient(app)
 
@@ -274,7 +275,7 @@ def test_admin_can_grant_and_revoke_admin_role_for_other_user(tmp_path) -> None:
         token_secret="test-secret",
         admin_emails={"admin@example.com"},
     )
-    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    register_admin(service, name="Admin", email="admin@example.com", password="admin-pass")
     user = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
     app.dependency_overrides[get_access_control_service] = lambda: service
     client = TestClient(app)
@@ -308,7 +309,7 @@ def test_admin_user_role_history_tracks_actor_and_transitions(tmp_path) -> None:
         token_secret="test-secret",
         admin_emails={"admin@example.com"},
     )
-    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    register_admin(service, name="Admin", email="admin@example.com", password="admin-pass")
     user = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
     app.dependency_overrides[get_access_control_service] = lambda: service
     client = TestClient(app)
@@ -354,7 +355,7 @@ def test_admin_can_see_login_counts_and_history_by_auth_method(tmp_path) -> None
         admin_emails={"admin@example.com"},
         now_provider=lambda: now,
     )
-    service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    register_admin(service, name="Admin", email="admin@example.com", password="admin-pass")
     user = service.register_user(name="Erica", email="erica@example.com", password="strong-pass")
     service.record_successful_login(user_id=user.user_id, auth_method="local_password")
     # This test checks chronological history; tied wall-clock readings exercise a different case.
@@ -399,7 +400,7 @@ def test_admin_rejects_query_string_token_even_if_valid(tmp_path) -> None:
         token_secret="test-secret",
         admin_emails={"admin@example.com"},
     )
-    admin = service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    admin = register_admin(service, name="Admin", email="admin@example.com", password="admin-pass")
     app.dependency_overrides[get_access_control_service] = lambda: service
     client = TestClient(app)
 

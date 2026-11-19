@@ -19,6 +19,7 @@ def purchase(monkeypatch):
     client, service = build_client(mail)
     service.admin_emails = {"admin@example.com"}
     admin = service.register_user(name="Admin", email="admin@example.com", password="admin-pass")
+    service.set_user_admin_role(user_id=admin.user_id, is_admin=True)
     bundle = service.create_user_session(user_id=admin.user_id)
     yield client, service, mail, {"Authorization": f"Bearer {bundle.access_token}"}
     app.dependency_overrides.clear()

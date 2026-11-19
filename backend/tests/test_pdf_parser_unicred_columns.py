@@ -173,9 +173,9 @@ def test_native_unicred_preserves_financial_histories_that_resemble_footer_label
 def test_native_unicred_column_positions_follow_page_scaling(scale):
     reader = PdfReader(BytesIO(build_unicred_columns_pdf()))
     writer = PdfWriter()
-    for page in reader.pages:
+    for source_page in reader.pages:
+        page = writer.add_page(source_page)
         page.scale_by(scale)
-        writer.add_page(page)
     raw = BytesIO()
     writer.write(raw)
 
