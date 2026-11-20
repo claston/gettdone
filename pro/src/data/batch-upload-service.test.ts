@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createBatchUploadService } from "./batch-upload-service";
+import { forgetProSession, rememberProSession } from "./pro-session-cache";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -66,6 +67,88 @@ it("envia um PDF PRO e confere páginas antes de submeter ao worker", async () =
 });
 
 describe("BatchUploadService", () => {
+  it.each([12, 1])(
+    "renova a sessão após inatividade e respeita o limite autenticado de %i arquivos",
+    async (authenticatedLimit) => {
+      const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+      try {
+        rememberProSession("paid-user");
+        now.mockReturnValue(1000 + 20 * 60 * 1000);
+        let authenticated = false;
+        const fetcher = vi
+          .fn<typeof fetch>()
+          .mockImplementation(async (input) => {
+            const url = String(input);
+            if (url === "/auth/me")
+              return jsonResponse({ detail: "Access session expired." }, 401);
+            if (url === "/auth/session/refresh") {
+              authenticated = true;
+              return jsonResponse({ user_id: "paid-user" });
+            }
+            if (url === "/api/conversion-runtime")
+              return jsonResponse({
+                direct_batch_enabled: true,
+                upload_mode: "direct_s3",
+                execution_mode: "sqs_lambda",
+                batch_max_files: authenticated ? authenticatedLimit : 1,
+              });
+            if (url === "/api/pro/conversion-batches")
+              return jsonResponse(
+                {
+                  batch_id: "after-idle",
+                  uploads: [1, 2].map((number) => ({
+                    job_id: `job-${number}`,
+                    url: `https://uploads.example.test/${number}`,
+                    fields: {},
+                  })),
+                },
+                201,
+              );
+            if (url.startsWith("https://uploads.example.test/"))
+              return new Response(null, { status: 204 });
+            if (url === "/api/pro/conversion-batches/after-idle/submit")
+              return jsonResponse({ batch_id: "after-idle" }, 202);
+            throw new Error(`Unexpected request: ${url}`);
+          });
+        const digestFile = vi.fn().mockResolvedValue("a".repeat(64));
+        const service = createBatchUploadService({
+          apiUrl: "/",
+          fetcher,
+          digestFile,
+          createIdempotencyKey: () => "after-idle-key",
+        });
+        const upload = service.createAndSubmit([
+          new File(["first statement"], "primeiro.ofx"),
+          new File(["second statement"], "segundo.ofx"),
+        ]);
+        if (authenticatedLimit === 12) {
+          await expect(upload).resolves.toEqual({ batchId: "after-idle" });
+          expect(digestFile).toHaveBeenCalledTimes(2);
+        } else {
+          await expect(upload).rejects.toThrow(
+            "Este ambiente permite no máximo 1 arquivo(s) por lote.",
+          );
+          expect(digestFile).not.toHaveBeenCalled();
+          expect(
+            fetcher.mock.calls.some(([url]) =>
+              String(url).includes("/api/pro/conversion-batches"),
+            ),
+          ).toBe(false);
+        }
+        expect(
+          fetcher.mock.calls.slice(0, 3).map(([url]) => String(url)),
+        ).toEqual([
+          "/auth/me",
+          "/auth/session/refresh",
+          "/api/conversion-runtime",
+        ]);
+      } finally {
+        forgetProSession();
+        now.mockRestore();
+      }
+    },
+  );
+
   it.each(["http", "network", "all"])(
     "submete o lote e identifica somente uploads com falha: %s",
     async (failure) => {
