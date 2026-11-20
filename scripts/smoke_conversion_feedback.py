@@ -87,11 +87,10 @@ def check_converter(browser, width, count, filename):
     yes_box, no_box = survey.evaluate("node => [...node.querySelectorAll('button')].map(button => button.getBoundingClientRect().toJSON())")
     assert 90 <= yes_box["width"] <= 120 and yes_box["height"] >= 42, "Survey buttons must be compact with a usable target"
     assert abs(yes_box["y"] - no_box["y"]) <= 1 and no_box["x"] > yes_box["x"], "Survey answers must sit side by side"
+    # The result list also stays visible for one file, including retry/fiscal states.
+    expect(page.locator("#batch-results-panel .batch-result-row")).to_have_count(count)
     if count == 1:
-        expect(page.locator("#batch-results-panel")).to_be_hidden()
         expect(page.locator("#status-msg")).not_to_contain_text("Escolha")
-    else:
-        expect(page.locator("#batch-results-panel .batch-result-row")).to_have_count(count)
     # Downloads remain available before any answer and after a failed submission.
     download_button = page.locator("#download-ofx-btn, #download-report-btn").first
     expect(download_button).to_be_enabled()

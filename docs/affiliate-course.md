@@ -7,8 +7,11 @@ disponível e nenhum envio de e-mail foi habilitado por esta alteração.
 ## Experiência
 
 - Nas três páginas que usam `ofx-convert.js`, um resultado gratuito concluído
-  apresenta “Quer aprender a elaborar demonstrações contábeis?” e “Saiba como”
-  abaixo das conversões restantes, à esquerda dos downloads no desktop e acima
+  apresenta “Você prepara balanços e notas explicativas para clientes?”, a descrição
+  “Conheça o curso da Descomplicont sobre a estrutura das demonstrações e o conteúdo
+  das notas explicativas.” e o botão “Ver programa do curso”, com uma ilustração
+  decorativa de documentos contábeis abaixo das conversões restantes,
+  à esquerda dos downloads no desktop e acima
   deles no celular, sem divisor ou legenda sob o botão. O link abre a página
   interna em outra aba.
 - Usuários anônimos e cadastrados gratuitos são elegíveis. O modo da conversão
@@ -19,6 +22,66 @@ disponível e nenhum envio de e-mail foi habilitado por esta alteração.
   profissionais. Conteúdo conferido em <https://descomplicont.com/dcne-2023>.
 - Downloads continuam diretos. O CTA não altera arquivos, cotas ou resultados.
   A pesquisa substituída não registra impressões, mantendo seu histórico intacto.
+
+### Avaliação da nova chamada
+
+A referência informada para a chamada anterior foi 1 clique em 287 pessoas
+(0,35%) e nenhum avanço à oferta. Confirmar que as 287 correspondem às
+identidades expostas no indicador **CTR da chamada**, usando a mesma origem,
+exclusão de administradores e filtro de identidade da comparação.
+
+Após a publicação, registrar o commit e a data/hora do deploy do frontend.
+O merge da PR sozinho não confirma publicação. No admin, em **Interesse no
+curso parceiro**, selecionar a origem **Após a conversão**. Usar dias completos em
+Brasília, começando no primeiro dia após o deploy; excluir o dia da troca
+para reduzir mistura entre versões e evitar somar identidades únicas diárias.
+Comparar períodos de mesma duração e dias da semana, mantendo o filtro de
+identidade. Abas abertas com a versão antiga ainda podem registrar eventos.
+
+Registrar em cada período:
+
+| Indicador | O que comparar |
+| --- | --- |
+| Expostos e cliques qualificados | Numerador e denominador do CTR da chamada, além da taxa |
+| Visitantes e saídas para a oferta | Contagens e CTR da página na mesma origem |
+| Downloads e erros de telemetria | Verificar se a oferta ou falhas de medição prejudicaram o fluxo |
+
+Fazer uma primeira leitura após pelo menos sete dias completos e 287
+identidades expostas à nova apresentação. Esse marco serve para revisão
+inicial, não garante significância estatística. Se ainda houver poucos
+cliques, prolongar a observação antes de declarar melhora. O histórico com
+apenas um clique é muito incerto; a ausência de clique de saída entre um único
+visitante não permite concluir que a landing page seja o problema.
+
+Esta é uma comparação antes/depois, sem distribuição aleatória: mudanças
+de público, período e tráfego também podem afetar o resultado. Texto e imagem
+mudam juntos; os dados não isolam o efeito de cada um. Um aumento do CTR da
+chamada deve ser acompanhado de avanço à oferta; cliques isolados não provam
+vendas. Os eventos e códigos de origem existentes são preservados, sem
+apagar o histórico ou enviar atributos novos à API. Não há monitoramento
+agendado ou resultado pós-publicação disponível nesta alteração.
+
+### Ilustração
+
+`frontend/assets/course-accounting-v1.png` é uma ilustração decorativa original
+gerada com a ferramenta integrada `image_gen`, dimensionada para 336 × 336 px
+para servir até três vezes o tamanho de exibição no desktop. Não é a capa
+oficial do curso. O texto da oferta permanece em HTML e a imagem tem `alt=""`
+para não repetir a informação no leitor de tela. Largura e altura reservam
+espaço antes do carregamento.
+
+Prompt usado:
+
+> Use case: ads-marketing. Create a square editorial illustration for a small
+> thumbnail next to a Portuguese accounting course recommendation in a financial
+> document converter website. Subject: a tidy accounting workspace with neatly
+> layered financial statement sheets, simple column lines and a small bar chart,
+> a dark navy calculator and a teal pen. Elegant tactile paper-cut / softly
+> rendered 3D style, professional and calm, pale mint background, navy and teal
+> accents, warm off-white paper. Compact centered composition that stays legible
+> at 120px, generous edge padding, soft natural shadows. No text, letters, logos,
+> currency symbols, people, watermarks, or decorative growth arrows. This is an
+> illustrative thumbnail, not an official course cover. Output square image.
 
 ## Tracking Hotmart
 
@@ -52,7 +115,7 @@ A API existente `/telemetry/events` passa a aceitar quatro eventos em
 | Evento | Interpretação |
 | --- | --- |
 | `course_cta_view` | Pelo menos 50% da chamada na área visível da tela, com a aba visível; não prova leitura |
-| `course_cta_click` | Clique em “Saiba como” |
+| `course_cta_click` | Clique em “Ver programa do curso” (antes: “Saiba como”) |
 | `course_page_view` | Abertura da página interna |
 | `course_outbound_click` | Clique para visitar a oferta via Hotlink |
 
