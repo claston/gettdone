@@ -1,6 +1,7 @@
 **
 !scripts/
 !scripts/check_worker_zlib.py
+!scripts/check_worker_glibc.py
 !Dockerfile.lambda.debian
 !backend/
 !backend/requirements-worker.txt
