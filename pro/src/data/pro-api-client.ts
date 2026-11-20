@@ -145,7 +145,13 @@ export function createProApiClient(options: ProApiClientOptions): ProApiClient {
       );
       // Reads are authorized by their own endpoint. Avoid serializing them
       // behind /auth/me after idle; an expired cookie still triggers renewal.
-      if (!isRead || (!sessionEstablished && !hasVerifiedProSession()))
+      // Runtime discovery also succeeds for visitors, with a one-file limit.
+      // Check the session first because that 200 response cannot trigger renewal.
+      if (
+        !isRead ||
+        path === "/api/conversion-runtime" ||
+        (!sessionEstablished && !hasVerifiedProSession())
+      )
         await bootstrap();
       checkAbort();
       let response = await execute(path, init);
