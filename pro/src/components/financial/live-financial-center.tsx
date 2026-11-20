@@ -30,6 +30,16 @@ const tabs = [
 ] as const;
 type Tab = (typeof tabs)[number];
 
+function missingStatementsMessage(data: FinancialMonth) {
+  // The API does not identify documents or guarantee disjoint source counts.
+  if (data.legacy_sources > 0 && data.unavailable_sources > 0)
+    return "Há extratos da empresa que não estão incluídos nesta consulta.";
+  const count = data.legacy_sources || data.unavailable_sources;
+  return count === 1
+    ? "1 extrato da empresa não está incluído nesta consulta."
+    : `${count} extratos da empresa não estão incluídos nesta consulta.`;
+}
+
 export function LiveFinancialCenter({
   clientId,
   initialQuery = "",
@@ -392,16 +402,18 @@ export function LiveFinancialCenter({
         <>
           {(data.legacy_sources > 0 || data.unavailable_sources > 0) && (
             <p className={styles.warning} role="status">
-              Consulta parcial: {data.legacy_sources} extrato(s) ainda usam o
-              conversor anterior e {data.unavailable_sources} origem(ns) estão
-              suspensas para consulta. Não estão incluídos nos valores abaixo.
+              {missingStatementsMessage(data)} Os totais podem estar
+              incompletos.{" "}
+              <Link href="/dashboard" className={styles.sourceLink}>
+                Conferir extratos em Clientes
+              </Link>
             </p>
           )}
           <section className={styles.metrics} aria-label="Resumo bancário">
             <div className={styles.metric}>
               <span>Movimentações</span>
               <strong>{count}</strong>
-              <small>Registros canônicos acessíveis</small>
+              <small>Lançamentos incluídos nesta consulta</small>
             </div>
             <div className={styles.metric}>
               <span>Entradas bancárias</span>

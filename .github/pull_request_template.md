@@ -41,6 +41,7 @@ If manual operation is required, describe it:
 - [ ] Code reviewed locally
 - [ ] Tests added/updated when relevant
 - [ ] Docs updated when relevant
+- [ ] Customer-facing messages reviewed: clear impact, real next step, no unnecessary internal jargon (or N/A with reason)
 - [ ] Backward-compatibility considered
 - [ ] API endpoints validated manually (`POST /analyze`, `GET /report/{analysis_id}`)
 - [ ] Reconciliation behavior validated when changed
