@@ -5,7 +5,6 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import expect, sync_playwright
-
 from smoke_conversion_feedback import conversion
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -83,6 +82,8 @@ def check(browser, filename, width, identity):
     else:
         card = page.locator("#course-promotion")
         expect(card).to_be_visible()
+        page.wait_for_function("document.querySelector('#course-promotion img').naturalWidth > 0")
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         expect(card).not_to_contain_text("Parceria")
         expect(page.locator("#conversion-feedback")).to_be_hidden()
         assert not any(event["event_type"] == "course_cta_view" for event in events)
@@ -97,7 +98,7 @@ def check(browser, filename, width, identity):
         assert sum(e["event_type"] == "course_cta_view" for e in events) == 1, events
         assert not feedback, "Hidden survey must not register an unanswered impression"
         with page.expect_popup() as opened:
-            card.get_by_role("link", name="Saiba como").click()
+            card.get_by_role("link", name="Ver programa do curso").click()
         landing = opened.value
         landing.on("pageerror", lambda error: errors.append(str(error)))
         expect(landing.get_by_role("heading", level=1)).to_contain_text("Aprenda a elaborar")
