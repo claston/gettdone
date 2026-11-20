@@ -67,6 +67,41 @@ beforeEach(() => {
   window.history.replaceState(null, "", "/");
 });
 describe("Central canônica", () => {
+  it.each([
+    [1, 0, "1 extrato da empresa não está incluído nesta consulta."],
+    [2, 0, "2 extratos da empresa não estão incluídos nesta consulta."],
+    [0, 1, "1 extrato da empresa não está incluído nesta consulta."],
+    [0, 3, "3 extratos da empresa não estão incluídos nesta consulta."],
+    [1, 1, "Há extratos da empresa que não estão incluídos nesta consulta."],
+  ])(
+    "explica o impacto dos extratos ausentes e oferece uma ação (%i, %i)",
+    async (legacy, unavailable, message) => {
+      vi.mocked(loadFinancialMonth).mockResolvedValue({
+        ...result,
+        legacy_sources: legacy,
+        unavailable_sources: unavailable,
+      });
+      render(<LiveFinancialCenter clientId="client_test" />);
+      await screen.findByRole("heading", { name: "Cliente real" });
+      const notice = screen.getByRole("status");
+      expect(notice).toHaveTextContent(message);
+      expect(notice).toHaveTextContent("Os totais podem estar incompletos.");
+      expect(notice).not.toHaveTextContent(
+        /conversor anterior|origem|suspens|0 extrato/,
+      );
+      expect(
+        screen.getByRole("link", { name: "Conferir extratos em Clientes" }),
+      ).toHaveAttribute("href", "/dashboard");
+    },
+  );
+  it("não exibe aviso de extratos ausentes quando as contagens são zero", async () => {
+    render(<LiveFinancialCenter clientId="client_test" />);
+    await screen.findByRole("heading", { name: "Cliente real" });
+    expect(screen.queryByText("Os totais podem estar incompletos.")).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: "Conferir extratos em Clientes" }),
+    ).toBeNull();
+  });
   it("aguarda a resolução do mês sem publicar um período provisório", async () => {
     let resolve!: (data: FinancialMonth) => void;
     vi.mocked(loadFinancialMonth).mockReturnValue(

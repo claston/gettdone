@@ -32,6 +32,15 @@ This document defines the default execution rules for the `gettdone` repository.
    - before finalizing, run a mojibake scan for common broken sequences (for example: `Ã`, `Â`, `â€`, `�`)
    - if mojibake is found, fix the source text in-file (never rely on browser/runtime workarounds)
 
+## Customer-facing Messages
+
+1. Translate technical states into the customer's problem, its practical impact, and a real next step. This applies to frontend copy and backend messages displayed by the frontend. Keep implementation details (for example, canonical records, legacy converters, workers, queues, feature flags, and internal source states) in logs or support diagnostics unless they are necessary for a customer decision. Useful terms such as PDF, XML, and OFX are allowed when relevant to the task.
+2. Keep the primary message short. Omit zero-count conditions, repeated warnings, and irrelevant status details. Use correct singular/plural forms. Optional details must help the customer understand or resolve the issue rather than expose implementation history.
+3. Preserve the financial meaning: explicitly disclose incomplete totals, excluded documents, uncertainty, and genuine extraction ambiguity. Do not conceal a problem to simplify the screen, invent its cause, or claim that a company-wide count applies to the selected month/account. Do not add potentially overlapping counts without a deduplication guarantee.
+4. Offer only actions that exist and match the label. Verify the destination and what it can actually do. Do not promise automatic recovery, request another upload by default, or label a general document list as a specific pending file when the API does not identify that file.
+5. If the code and product context do not establish an accurate, clear message or appropriate next step, ask the user/product owner before publishing that message. Explain the unresolved meaning and propose wording when possible; do not guess or fall back to internal jargon. Continue independent work while awaiting clarification.
+6. Review customer-facing copy in every affected flow before delivery, including API error text surfaced in that flow. Record the review in the PR checklist (or mark it not applicable with a reason). For critical financial warnings, validate the warning's presence, relevant states, and action destination; do not create tests for every wording-only edit.
+
 ## Financial Extraction Product Vision
 
 1. The product extracts financial transactions from documents, primarily bank statements but not exclusively. Supported financial reports must preserve their original financial meaning.
