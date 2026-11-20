@@ -208,6 +208,8 @@ def _attach_parse_observability(exc: Exception, **values: object) -> Exception:
 
 
 def _original_visual_provenance(result, original, visual):
+    from app.application.visual_page_coverage import possible_movement_dates
+
     source = result.source_extraction
     if source is not None:
         source = replace(source, document_hash=hashlib.sha256(original).hexdigest(),
@@ -220,10 +222,11 @@ def _original_visual_provenance(result, original, visual):
         # Page-level annex labels do not prove exclusivity: a headerless bank
         # continuation can share a page with a DANFE. Inspect every unread page.
         missing = []
+        source_pages = {page.page_number: page for page in source.pages} if source else {}
         for page, text in enumerate(result.source_page_texts or (), 1):
             if page in covered:
                 continue
-            dates = re.findall(r"(?m)^\s*\d{2}/\d{2}(?:/\d{2,4})?\b", text)
+            dates = possible_movement_dates(text, source_pages.get(page))
             amounts = re.findall(r"\d[\d.]*,\d{2}\b", text)
             if len(dates) >= 2 and len(amounts) >= 2:
                 missing.append(page)
