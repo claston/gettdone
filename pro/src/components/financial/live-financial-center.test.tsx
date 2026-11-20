@@ -11,10 +11,16 @@ import {
   type FinancialMonth,
 } from "@/data/financial-center-service";
 import { LiveFinancialCenter } from "./live-financial-center";
+import { loadFiscalWorkspace, uploadFiscalNote } from "@/data/fiscal-service";
 
 vi.mock("@/data/financial-center-service", async (original) => ({
   ...(await original<typeof import("@/data/financial-center-service")>()),
   loadFinancialMonth: vi.fn(),
+}));
+vi.mock("@/data/fiscal-service", async (original) => ({
+  ...(await original<typeof import("@/data/fiscal-service")>()),
+  loadFiscalWorkspace: vi.fn(),
+  uploadFiscalNote: vi.fn(),
 }));
 const result: FinancialMonth = {
   client: { id: "client_test", name: "Cliente real", tax_id: "••••1234" },
@@ -64,9 +70,88 @@ const result: FinancialMonth = {
 };
 beforeEach(() => {
   vi.mocked(loadFinancialMonth).mockReset().mockResolvedValue(result);
+  vi.mocked(loadFiscalWorkspace).mockReset();
+  vi.mocked(uploadFiscalNote).mockReset();
   window.history.replaceState(null, "", "/");
 });
 describe("Central canônica", () => {
+  it.each(["upload", "cancel"])(
+    "preserva o seletor e retoma a atualização após a seleção (%s)",
+    async (outcome) => {
+      vi.mocked(loadFinancialMonth).mockResolvedValue({
+        ...result,
+        features: { invoices: true, taxes: false, revenue: false },
+      });
+      vi.mocked(loadFiscalWorkspace).mockResolvedValue({
+        features: { invoices: true, taxes: false, revenue: false },
+        documents: [],
+        imports: [],
+        movements: [],
+        links: [],
+        suggestions: [],
+        categories: {},
+        movement_count: 0,
+        next_offset: null,
+        access_expires_at: null,
+        truncated: false,
+        summary: {
+          documented_sales: null,
+          operating_receipts: null,
+          unclassified_inflows: null,
+          excluded_inflows: null,
+          tax_payments: {},
+          pending_documents: 0,
+          coverage: "unknown",
+          consolidation: "observed",
+          basis: "",
+        },
+      });
+      render(
+        <LiveFinancialCenter
+          clientId="client_test"
+          initialQuery="month=2026-11&tab=Concilia%C3%A7%C3%A3o"
+        />,
+      );
+      const input = await screen.findByLabelText("Importar nota XML ou PDF");
+      fireEvent.click(input);
+      await act(async () => {
+        fireEvent.focus(window);
+      });
+      expect(input).toBeInTheDocument();
+      expect(loadFinancialMonth).toHaveBeenCalledTimes(1);
+      expect(loadFiscalWorkspace).toHaveBeenCalledTimes(1);
+      if (outcome === "upload") {
+        let finish!: () => void;
+        vi.mocked(uploadFiscalNote).mockReturnValue(
+          new Promise((resolve) => {
+            finish = () => resolve({ id: "i1", state: "queued" });
+          }),
+        );
+        const file = new File(["<NFe/>"], "arroz.xml");
+        fireEvent.change(input, { target: { files: [file] } });
+        await act(async () => {
+          fireEvent.focus(window);
+        });
+        expect(input).toBeInTheDocument();
+        expect(input).toBeDisabled();
+        expect(uploadFiscalNote).toHaveBeenCalledWith(
+          "client_test",
+          file,
+          expect.any(AbortSignal),
+        );
+        expect(loadFinancialMonth).toHaveBeenCalledTimes(1);
+        await act(async () => finish());
+      } else {
+        await act(async () => {
+          fireEvent(input, new Event("cancel"));
+        });
+      }
+      await act(async () => {
+        fireEvent.focus(window);
+      });
+      await waitFor(() => expect(loadFinancialMonth).toHaveBeenCalledTimes(2));
+    },
+  );
   it.each([
     [1, 0, "1 extrato da empresa não está incluído nesta consulta."],
     [2, 0, "2 extratos da empresa não estão incluídos nesta consulta."],

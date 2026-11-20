@@ -48,6 +48,7 @@ export interface FiscalWorkspaceData {
     state: string;
     error: string | null;
     filename: string;
+    document_id?: string | null;
   }>;
   movements: FiscalMovement[];
   movement_count: number;
@@ -113,16 +114,45 @@ export async function fiscalCommand(
   client: string,
   path: string,
   body: object,
+  signal?: AbortSignal,
 ) {
   return (
     await checked(`${base(client)}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal,
     })
   ).json();
 }
-export async function uploadFiscalNote(client: string, file: File) {
+export interface FiscalUploadReceipt {
+  id: string;
+  state: "queued" | "processing" | "ready";
+}
+
+function uploadReceipt(value: {
+  id?: string;
+  state?: string;
+}): FiscalUploadReceipt {
+  if (value.state === "failed")
+    throw new Error(
+      "Este arquivo já foi enviado, mas não pôde ser processado. Confira o aviso da nota antes de tentar novamente.",
+    );
+  if (
+    !value.id ||
+    !["queued", "processing", "ready"].includes(value.state ?? "")
+  )
+    throw new Error(
+      "Não foi possível confirmar o envio da nota. Atualize a lista e confira se o arquivo aparece antes de tentar novamente.",
+    );
+  return { id: value.id, state: value.state as FiscalUploadReceipt["state"] };
+}
+
+export async function uploadFiscalNote(
+  client: string,
+  file: File,
+  signal?: AbortSignal,
+): Promise<FiscalUploadReceipt> {
   if (
     !/\.(xml|pdf)$/i.test(file.name) ||
     file.size === 0 ||
@@ -136,32 +166,50 @@ export async function uploadFiscalNote(client: string, file: File) {
   )
     .map((value) => value.toString(16).padStart(2, "0"))
     .join("");
-  const prepared = await fiscalCommand(client, "/fiscal/imports", {
-    filename: file.name,
-    size_bytes: file.size,
-    digest,
-  });
+  const prepared = await fiscalCommand(
+    client,
+    "/fiscal/imports",
+    {
+      filename: file.name,
+      size_bytes: file.size,
+      digest,
+    },
+    signal,
+  );
   if (prepared.upload) {
     const form = new FormData();
     Object.entries(prepared.upload.fields as Record<string, string>).forEach(
       ([key, value]) => form.append(key, value),
     );
     form.append("file", file);
-    const response = await fetch(prepared.upload.url, {
-      method: "POST",
-      body: form,
-      credentials: "omit",
-    });
+    let response: Response;
+    try {
+      response = await fetch(prepared.upload.url, {
+        method: "POST",
+        body: form,
+        credentials: "omit",
+        signal,
+      });
+    } catch (caught) {
+      if (signal?.aborted) throw caught;
+      throw new Error(
+        "Não foi possível enviar a nota. Verifique sua conexão e tente novamente.",
+      );
+    }
     if (!response.ok)
       throw new Error(
         "Não foi possível enviar a nota. Selecione o arquivo para tentar novamente.",
       );
-    await fiscalCommand(
-      client,
-      `/fiscal/imports/${encodeURIComponent(prepared.id)}/submit`,
-      {},
+    return uploadReceipt(
+      await fiscalCommand(
+        client,
+        `/fiscal/imports/${encodeURIComponent(prepared.id)}/submit`,
+        {},
+        signal,
+      ),
     );
   }
+  return uploadReceipt(prepared);
 }
 export async function downloadFiscal(
   client: string,

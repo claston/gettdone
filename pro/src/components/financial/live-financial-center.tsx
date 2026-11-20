@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CalendarDays,
   ChevronLeft,
@@ -64,6 +64,10 @@ export function LiveFinancialCenter({
     null,
   );
   const [attempt, setAttempt] = useState(0);
+  const fiscalUploadInteraction = useRef(false);
+  const setFiscalUploadInteraction = useCallback((active: boolean) => {
+    fiscalUploadInteraction.current = active;
+  }, []);
   const [snapshot, setSnapshot] = useState<{
     key: string;
     data: FinancialMonth;
@@ -127,7 +131,11 @@ export function LiveFinancialCenter({
       setAttempt((value) => value + 1);
     };
     const focus = () => {
-      if (document.visibilityState === "visible") refresh();
+      if (
+        document.visibilityState === "visible" &&
+        !fiscalUploadInteraction.current
+      )
+        refresh();
     };
     window.addEventListener("focus", focus);
     document.addEventListener("visibilitychange", focus);
@@ -573,6 +581,7 @@ export function LiveFinancialCenter({
             <FiscalWorkspace
               key={`${clientId}:${month}:${account}:${tab}:${fiscalMovement?.id ?? ""}`}
               clientId={clientId}
+              onUploadInteractionChange={setFiscalUploadInteraction}
               month={month}
               account={account}
               initialMovementId={fiscalMovement?.id}
