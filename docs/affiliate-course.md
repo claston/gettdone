@@ -32,7 +32,7 @@ exclusão de administradores e filtro de identidade da comparação.
 
 Após a publicação, registrar o commit e a data/hora do deploy do frontend.
 O merge da PR sozinho não confirma publicação. No admin, em **Interesse no
-curso parceiro**, selecionar a origem **Conversor**. Usar dias completos em
+curso parceiro**, selecionar a origem **Após a conversão**. Usar dias completos em
 Brasília, começando no primeiro dia após o deploy; excluir o dia da troca
 para reduzir mistura entre versões e evitar somar identidades únicas diárias.
 Comparar períodos de mesma duração e dias da semana, mantendo o filtro de
