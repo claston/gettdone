@@ -15,6 +15,7 @@ on:
       - "scripts/smoke_worker_candidate_image.py"
       - "scripts/check_api_image.py"
       - "scripts/check_worker_zlib.py"
+      - "scripts/check_worker_glibc.py"
       - "scripts/check_worker_vulnerabilities.py"
       - ".github/worker-vulnerability-exceptions.json"
       - ".github/workflows/worker-debian-candidate.yml"
@@ -103,6 +104,8 @@ jobs:
           cache-to: type=gha,mode=max,scope=worker-debian-candidate
       - name: Check official Lambda client and native dependencies
         run: |
+          docker run --rm --read-only --entrypoint /usr/local/bin/python3.12 \
+            "$CANDIDATE_IMAGE" /opt/check_worker_glibc.py > artifacts/glibc-runtime.json
           docker run --rm --read-only --entrypoint /usr/local/bin/python3.12 --ulimit core=0 \
             "$CANDIDATE_IMAGE" /opt/check_worker_zlib.py > artifacts/zlib-after.json
           python scripts/smoke_worker_candidate_image.py \
