@@ -74,13 +74,17 @@ def _automatic_detail(value, lines):
     if not headings:
         return False
     start = min(headings)
+    end = min((top for label, top in labels if top > start and label.startswith("CONTA CORRENTE")), default=1.0)
+    if not start < value.bbox["top"] < end:
+        return False
     if not (any(label == "SALDO FINAL" and top < start for label, top in labels)
             and any(label == "TOTALIZADOR DE APLICACOES AUTOMATICAS" and top < start for label, top in labels)
-            and any("SALDO DE PRINCIPAL" in label and top > start for label, top in labels)
-            and any("RENDIMENTO" in label and top > start for label, top in labels)
-            and any(label.startswith("MOVIMENTACAO APLICACOES/RESGATES") and top > start for label, top in labels)):
+            and any("SALDO DE PRINCIPAL" in label and start < top < value.bbox["top"] for label, top in labels)
+            and any("RENDIMENTO" in label and start < top < value.bbox["top"] for label, top in labels)
+            and any(label.startswith("MOVIMENTACAO APLICACOES/RESGATES")
+                    and start < top < value.bbox["top"] for label, top in labels)):
         return False
-    if value.bbox["top"] <= start or not re.fullmatch(r"\d{2}/\d{2}", value.text.strip()):
+    if not re.fullmatch(r"\d{2}/\d{2}", value.text.strip()):
         return False
     # Every cell on the dated row must be numeric (plus harmless table labels).
     # A movement description in that row keeps the date under coverage checks.

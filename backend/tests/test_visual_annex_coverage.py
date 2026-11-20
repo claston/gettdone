@@ -100,3 +100,14 @@ def test_automatic_table_does_not_exempt_free_form_descriptions():
     ]).lines])
     with pytest.raises(OcrFinancialAmbiguityError):
         _original_visual_provenance(result_with(source), b"original", b"visual")
+
+
+def test_automatic_detail_scope_ends_when_another_account_section_starts():
+    source = automatic_details()
+    source = replace(source, lines=[*source.lines, *page([
+        ("Conta Corrente Movimentação", .1, .5),
+        ("03/06", .1, .6), ("20,00", .3, .6), ("0,00", .5, .6), ("100,00", .8, .6),
+        ("04/06", .1, .62), ("10,00", .3, .62), ("0,00", .5, .62), ("90,00", .8, .62),
+    ]).lines])
+    with pytest.raises(OcrFinancialAmbiguityError):
+        _original_visual_provenance(result_with(source), b"original", b"visual")
