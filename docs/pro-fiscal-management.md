@@ -25,6 +25,28 @@ Sobreposição possível entre extratos, moedas diferentes de BRL e limites de
 consulta impedem apresentar uma soma bancária como conferida. Ausência de dados
 não comprova faturamento zero; a cobertura é sempre informada como desconhecida.
 
+## Retorno durante a importação
+
+Ao selecionar o arquivo, o PRO mostra o nome e o estado do envio. A confirmação
+de recebimento só aparece depois do upload e da confirmação pela API; ela é
+distinta de “Nota importada”, que depende da conclusão da leitura. Ao concluir,
+“Ver nota importada” seleciona o documento disponível na lista. O estado do
+último arquivo também aparece ao voltar à tela, sem listar todas as conclusões
+anteriores. Um arquivo já recebido não é reenviado; uma tentativa anterior com
+falha não é apresentada como sucesso.
+
+O seletor permanece montado ao retornar da janela de arquivos e durante o
+envio. Atualizações por foco e consultas periódicas aguardam essa interação;
+a expiração do acesso continua sendo verificada. Cancelar a seleção libera a
+atualização normal. Envios sem resposta são interrompidos após dois minutos,
+orientando conferir a lista antes de repetir, pois o recebimento pode ter sido
+confirmado sem que a resposta chegasse ao navegador.
+
+As notas acessíveis pertencem à empresa, independentemente do mês selecionado;
+o recorte mensal se aplica aos totais e aos movimentos bancários. Por exemplo,
+o XML sintético do arroz, emitido em 10/03/2027, pode ser conferido na lista em
+outro mês sem ser incluído nas vendas documentadas desse outro período.
+
 ## Leitura e revisão
 
 Suporte inicial: NF-e XML 4.00 e NFS-e do padrão nacional com DPS incorporada;

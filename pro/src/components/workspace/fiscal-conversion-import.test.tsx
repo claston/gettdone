@@ -23,7 +23,7 @@ beforeEach(() => {
   vi.mocked(loadFinancialMonth).mockResolvedValue({
     features: { invoices: true },
   } as Awaited<ReturnType<typeof loadFinancialMonth>>);
-  vi.mocked(uploadFiscalNote).mockResolvedValue(undefined);
+  vi.mocked(uploadFiscalNote).mockResolvedValue({ id: "i1", state: "queued" });
 });
 
 it("só importa o original após escolher a empresa e confirmar, sem associar movimentos", async () => {

@@ -10,6 +10,7 @@ import {
   type FiscalMovement,
   type FiscalNote,
   type FiscalWorkspaceData,
+  type FiscalUploadReceipt,
 } from "@/data/fiscal-service";
 import { decimalCents, financialMoney } from "@/data/financial-center-service";
 import { dateLabel } from "@/domain/financial-center";
@@ -33,6 +34,7 @@ type Props = {
   mode: "invoices" | "taxes" | "revenue";
   initialMovementId?: string;
   onSaved?: () => void;
+  onUploadInteractionChange?: (active: boolean) => void;
 };
 
 export function FiscalWorkspace({
@@ -42,6 +44,7 @@ export function FiscalWorkspace({
   mode,
   initialMovementId,
   onSaved,
+  onUploadInteractionChange,
 }: Props) {
   const [offset, setOffset] = useState(0);
   const [selectedId, setSelectedId] = useState("");
@@ -56,6 +59,26 @@ export function FiscalWorkspace({
   } | null>(null);
   const [actionError, setActionError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [uploadFeedback, setUploadFeedback] = useState<{
+    client: string;
+    filename: string;
+    receipt: FiscalUploadReceipt | null;
+  } | null>(null);
+  const uploadInteraction = useRef(false);
+  const uploadAbort = useRef<AbortController | null>(null);
+  const setUploadInteraction = (active: boolean) => {
+    uploadInteraction.current = active;
+    onUploadInteractionChange?.(active);
+  };
+  useEffect(
+    () => () => {
+      uploadAbort.current?.abort();
+      uploadAbort.current = null;
+      uploadInteraction.current = false;
+      onUploadInteractionChange?.(false);
+    },
+    [clientId, onUploadInteractionChange],
+  );
   const [chosenMovement, setChosenMovement] = useState<FiscalMovement | null>(
     null,
   );
@@ -100,7 +123,8 @@ export function FiscalWorkspace({
       setRevision((value) => value + 1);
     };
     const focus = () => {
-      if (document.visibilityState === "visible") update();
+      if (document.visibilityState === "visible" && !uploadInteraction.current)
+        update();
     };
     const pending = data?.imports.some((item) =>
       ["queued", "processing"].includes(item.state),
@@ -108,18 +132,82 @@ export function FiscalWorkspace({
     const untilExpiry = data?.access_expires_at
       ? Math.max(0, Date.parse(data.access_expires_at) - Date.now())
       : Infinity;
-    const delay = Math.min(untilExpiry, pending ? 4000 : Infinity, 2147483647);
-    const timer = Number.isFinite(delay)
-      ? window.setTimeout(update, delay)
+    const expiryTimer = Number.isFinite(untilExpiry)
+      ? window.setTimeout(
+          () => {
+            uploadAbort.current?.abort();
+            uploadInteraction.current = false;
+            onUploadInteractionChange?.(false);
+            setUploadFeedback(null);
+            update();
+          },
+          Math.min(untilExpiry, 2147483647),
+        )
+      : undefined;
+    const pollingTimer = pending
+      ? window.setInterval(() => {
+          if (!uploadInteraction.current) update();
+        }, 4000)
       : undefined;
     window.addEventListener("focus", focus);
     document.addEventListener("visibilitychange", focus);
     return () => {
-      window.clearTimeout(timer);
+      window.clearTimeout(expiryTimer);
+      window.clearInterval(pollingTimer);
       window.removeEventListener("focus", focus);
       document.removeEventListener("visibilitychange", focus);
     };
-  }, [data]);
+  }, [data, onUploadInteractionChange]);
+
+  async function upload(file: File) {
+    if (uploadAbort.current) return;
+    const controller = new AbortController();
+    uploadAbort.current = controller;
+    setUploadInteraction(true);
+    setBusy(true);
+    setActionError("");
+    setUploadFeedback({ client: clientId, filename: file.name, receipt: null });
+    const timeout = window.setTimeout(
+      () =>
+        controller.abort(new DOMException("Upload timeout", "TimeoutError")),
+      120000,
+    );
+    let stopWaiting!: () => void;
+    const aborted = new Promise<never>((_resolve, reject) => {
+      stopWaiting = () => reject(controller.signal.reason);
+      controller.signal.addEventListener("abort", stopWaiting, { once: true });
+    });
+    try {
+      const receipt = await Promise.race([
+        uploadFiscalNote(clientId, file, controller.signal),
+        aborted,
+      ]);
+      if (controller.signal.aborted) return;
+      setUploadFeedback({ client: clientId, filename: file.name, receipt });
+      refresh();
+      onSaved?.();
+    } catch (caught) {
+      if (
+        controller.signal.aborted &&
+        controller.signal.reason?.name !== "TimeoutError"
+      )
+        return;
+      setUploadFeedback(null);
+      setActionError(
+        controller.signal.reason?.name === "TimeoutError"
+          ? "O envio demorou mais que o esperado. Atualize a lista e confira se o arquivo aparece antes de tentar novamente."
+          : errorText(caught),
+      );
+    } finally {
+      window.clearTimeout(timeout);
+      controller.signal.removeEventListener("abort", stopWaiting);
+      if (uploadAbort.current === controller) {
+        uploadAbort.current = null;
+        setBusy(false);
+        setUploadInteraction(false);
+      }
+    }
+  }
 
   async function action(run: () => Promise<unknown>, reload = true) {
     if (busy) return;
@@ -156,6 +244,20 @@ export function FiscalWorkspace({
     chosenMovement ??
     visibleMovements.find((row) => row.id === initialMovementId) ??
     null;
+  const latestImport = mode === "invoices" ? data?.imports[0] : undefined;
+  const feedback =
+    uploadFeedback?.client === clientId
+      ? uploadFeedback
+      : latestImport
+        ? {
+            filename: latestImport.filename,
+            receipt: { id: latestImport.id, state: latestImport.state },
+          }
+        : null;
+  const imported = data?.imports.find(
+    (item) => item.id === feedback?.receipt?.id,
+  );
+  const uploadState = imported?.state ?? feedback?.receipt?.state;
   return (
     <section
       className={styles.panel}
@@ -190,6 +292,40 @@ export function FiscalWorkspace({
       </div>
       {error && <p role="alert">{error}</p>}
       {actionError && <p role="alert">{actionError}</p>}
+      {feedback && !error && !actionError && (
+        <div
+          className={styles.notice}
+          role={uploadState === "failed" ? "alert" : "status"}
+        >
+          <p>
+            {!feedback.receipt
+              ? `Enviando ${feedback.filename}…`
+              : data && !imported
+                ? `Não foi possível localizar ${feedback.filename} na lista atual. Atualize a lista para conferir.`
+                : uploadState === "uploading"
+                  ? `O envio de ${feedback.filename} ainda não foi concluído. Selecione o arquivo novamente para continuar.`
+                  : uploadState === "ready"
+                    ? `Nota ${feedback.filename} importada.`
+                    : uploadState === "failed"
+                      ? `Não foi possível ler a nota ${feedback.filename}. ${imported?.error ?? "Confira o arquivo antes de tentar novamente."}`
+                      : uploadState === "processing"
+                        ? `Arquivo ${feedback.filename} recebido. Lendo os dados da nota…`
+                        : `Arquivo ${feedback.filename} recebido. Aguardando a leitura da nota.`}
+          </p>
+          {uploadState === "ready" &&
+            imported?.document_id &&
+            data?.documents.some(
+              (item) => item.id === imported.document_id,
+            ) && (
+              <button
+                className="secondary-button"
+                onClick={() => setSelectedId(imported.document_id!)}
+              >
+                Ver nota importada
+              </button>
+            )}
+        </div>
+      )}
       {!data && !error && (
         <p role="status">Consultando documentos e movimentos…</p>
       )}
@@ -288,11 +424,22 @@ export function FiscalWorkspace({
                   type="file"
                   accept=".xml,.pdf"
                   disabled={busy}
+                  onClick={() => setUploadInteraction(true)}
+                  ref={(input) => {
+                    if (!input) return;
+                    const cancel = () => {
+                      setUploadInteraction(false);
+                      refresh();
+                    };
+                    // Input cancellation is a native event, unlike dialog onCancel.
+                    input.addEventListener("cancel", cancel);
+                    return () => input.removeEventListener("cancel", cancel);
+                  }}
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     event.target.value = "";
-                    if (file)
-                      void action(() => uploadFiscalNote(clientId, file));
+                    if (file) void upload(file);
+                    else setUploadInteraction(false);
                   }}
                 />
               </label>
@@ -303,7 +450,11 @@ export function FiscalWorkspace({
                 horas, conforme a retenção do PRO.
               </p>
               {data.imports
-                .filter((item) => item.state !== "ready")
+                .filter(
+                  (item) =>
+                    item.state !== "ready" &&
+                    (item.id !== feedback?.receipt?.id || Boolean(actionError)),
+                )
                 .map((item) => (
                   <p key={item.id} role="status">
                     {item.filename}:{" "}
@@ -342,9 +493,10 @@ export function FiscalWorkspace({
                   ))}
                 </select>
               </label>
-              {!data.documents.length && (
+              {!data.documents.length && !feedback && (
                 <p>
-                  Nenhuma nota acessível. Importe um documento para começar.
+                  Nenhuma nota importada nesta empresa. Selecione um XML ou PDF
+                  para começar.
                 </p>
               )}
               {note && (
