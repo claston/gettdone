@@ -131,6 +131,17 @@ def _column_lines(page, columns):
     normalized = []
     for line in result:
         pair = re.fullmatch(rf"({NUMBER}\s*[CD*])\s+({NUMBER}\s*[CD]?)", line.text.strip(), re.I)
+        if pair is None:
+            # OCR can join the amount and balance into one WORD without a
+            # separator. Only two complete, explicitly signed tokens spanning
+            # both columns are recoverable; keep their shared original region.
+            pair = re.fullmatch(rf"({NUMBER}\s*[CD])\s*({NUMBER}\s*[CD])", line.text.strip(), re.I)
+            if pair and (
+                line.bbox["left"] < columns["VALOR R$"] - .035
+                or line.bbox["left"] + line.bbox["width"] < columns["SALDO"] - .005
+                or any(word.id in line.word_ids and word.text_type == "HANDWRITING" for word in page.words)
+            ):
+                fail("Não foi possível separar o valor e o saldo impressos nesta linha.")
         if pair:
             if (line.bbox["left"] > columns["VALOR R$"] + .06
                     or line.bbox["left"] + line.bbox["width"] < columns["SALDO"] - .03):
