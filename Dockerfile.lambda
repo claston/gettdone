@@ -62,6 +62,7 @@ COPY --from=build /runtime-libs/ /
 COPY --from=build /runtime-status/ /var/lib/dpkg/status.d/
 COPY scripts/check_worker_zlib.py /opt/check_worker_zlib.py
 COPY scripts/check_worker_glibc.py /opt/check_worker_glibc.py
+COPY scripts/check_worker_openssl.py /opt/check_worker_openssl.py
 USER 65532:65532
 RUN ["/usr/local/bin/python3.12", "/opt/check_worker_glibc.py"]
 RUN ["/usr/local/bin/python3.12", "/opt/check_worker_zlib.py"]
