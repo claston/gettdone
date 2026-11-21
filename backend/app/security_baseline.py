@@ -1,8 +1,8 @@
 import os
 
+from app.application.runtime_environment import read_bool_env as read_bool_env
+
 _PRODUCTION_ENV_NAMES = {"production", "prod"}
-_TRUE_VALUES = {"1", "true", "yes", "on"}
-_FALSE_VALUES = {"0", "false", "no", "off"}
 _LOCALHOST_MARKERS = ("localhost", "127.0.0.1")
 _INSECURE_DEFAULT_TOKEN_SECRET = "dev-access-control-secret"
 
@@ -14,18 +14,6 @@ def get_app_env() -> str:
 
 def is_production_env() -> bool:
     return get_app_env() in _PRODUCTION_ENV_NAMES
-
-
-def read_bool_env(name: str, *, default: bool) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    normalized = raw.strip().lower()
-    if normalized in _TRUE_VALUES:
-        return True
-    if normalized in _FALSE_VALUES:
-        return False
-    return default
 
 
 def parse_cors_allow_origins(raw: str) -> list[str]:

@@ -147,7 +147,7 @@ print(json.dumps(run_checks()))
                             capture_output=True, text=True, timeout=45)
     payload = json.loads(result.stdout)
     assert payload["status"] == "passed"
-    assert payload["checks"] == ["csv", "xlsx", "ofx", "pdf", "pdfium", "psycopg"]
+    assert payload["checks"] == ["csv", "xlsx", "ofx", "pdf", "pdfium", "psycopg", "fiscal_xml"]
 
 
 @pytest.mark.parametrize("canonical_enabled", ["false", "true"])
@@ -197,6 +197,47 @@ print("Worker bootstrap passed")
                             capture_output=True, text=True, timeout=45)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Worker bootstrap passed" in result.stdout
+
+
+def test_fiscal_queue_and_maintenance_work_without_api_security_module() -> None:
+    script = r'''
+import importlib.abc
+import json
+import os
+import sys
+from types import SimpleNamespace
+
+class WorkerBoundary(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname in {"app.security_baseline", "fastapi", "sqlite3", "_sqlite3"}:
+            raise ModuleNotFoundError("Excluded from worker image: " + fullname, name=fullname)
+
+sys.meta_path.insert(0, WorkerBoundary())
+os.environ["PRO_FISCAL_ENABLED"] = "true"
+from app.workers import conversion_lambda as worker
+from app.adapters.conversion import pro_fiscal_runtime as fiscal
+calls = []
+fiscal.build_pro_fiscal_service = lambda: SimpleNamespace(
+    complete_import=lambda identifier, parser: calls.append((identifier, parser)),
+    cleanup=lambda: 1, dispatch=lambda: 2,
+)
+identifier = "00000000-0000-0000-0000-000000000001"
+event = {"Records": [{"messageId": "fiscal-1", "body": json.dumps({
+    "schema_version": 1, "event_type": "pro.fiscal.requested", "import_id": identifier,
+})}]}
+worker._processor = object()  # No conversion/bank processing is involved.
+assert worker.lambda_handler(event, None) == {"batchItemFailures": []}
+assert calls == [(identifier, fiscal.extract_fiscal)]
+assert worker.lambda_handler({"action": "fiscal_maintenance"}, None) == {
+    "fiscal_sources_removed": 1, "fiscal_messages_published": 2,
+}
+assert "app.security_baseline" not in sys.modules
+print("Fiscal runtime passed")
+'''
+    result = subprocess.run([sys.executable, "-c", script], cwd=BACKEND_ROOT,
+                            capture_output=True, text=True, timeout=45)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Fiscal runtime passed" in result.stdout
 
 
 @pytest.mark.parametrize("filename", ["Dockerfile.lambda", "Dockerfile.lambda.debian"])

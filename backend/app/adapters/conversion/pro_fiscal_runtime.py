@@ -14,7 +14,7 @@ from app.adapters.conversion.direct_upload import S3DirectUploadService
 from app.adapters.conversion.sqs_queue import SqsConversionQueuePublisher
 from app.application.pro_fiscal_documents import MAX_FISCAL_BYTES, parse_fiscal_pages, parse_fiscal_xml
 from app.application.pro_fiscal_service import ProFiscalService
-from app.security_baseline import read_bool_env
+from app.application.runtime_environment import read_bool_env
 
 
 class FiscalObjects:
