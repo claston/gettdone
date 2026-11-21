@@ -114,6 +114,26 @@ notas pertencem à empresa.
 
 ## Ativação e rollback
 
+### Importação recebida que não chega ao resultado
+
+Atualizar a tela consulta o estado da importação; não executa a leitura do arquivo.
+O limite de espera do navegador não corrige falhas no processamento do worker.
+Se a nota permanece em `queued`, conferir os logs, a fila/DLQ, a versão da imagem
+e `PRO_FISCAL_ENABLED` no worker, além da agenda `fiscal_maintenance`.
+
+O adaptador fiscal usa a leitura de flags em `app.application.runtime_environment`,
+disponível na API e na imagem reduzida. `app.security_baseline` continua exclusivo
+da API. O contrato de build importa também o adaptador fiscal e sua manutenção;
+o canário executa `fiscal_xml` com uma NF-e sintética de 35 itens. Assim, uma
+dependência ausente nesse caminho bloqueia a release antes da publicação.
+
+Após publicar o worker corrigido e confirmar suas flags, a manutenção fiscal pode
+redisparar importações pendentes ainda dentro da retenção. Verificar a agenda e o
+resultado antes de orientar o cliente. Não renovar o prazo dos arquivos, alterar
+estados manualmente nem solicitar um novo upload como recuperação padrão.
+
+### Procedimento de implantação
+
 1. Aplicar `backend/venv/Scripts/python.exe -m alembic upgrade head` com o banco
    de homologação configurado. Validar migração e smoke tests antes da produção.
 2. Publicar API e worker compatíveis com o novo evento antes de liberar imports;

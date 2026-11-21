@@ -14,7 +14,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-EXPECTED_CHECKS = ["csv", "xlsx", "ofx", "pdf", "pdfium", "psycopg"]
+EXPECTED_CHECKS = ["csv", "xlsx", "ofx", "pdf", "pdfium", "psycopg", "fiscal_xml"]
 
 
 def smoke(image: str, output: Path, database_url: str | None = None, timeout: int = 120) -> dict:
