@@ -78,6 +78,26 @@ def check_postgres(url: str) -> str:
     return "passed"
 
 
+def check_fiscal_xml() -> None:
+    from app.adapters.conversion.pro_fiscal_runtime import extract_fiscal
+
+    # The real fiscal adapter must load and read XML inside the slim worker,
+    # where API security modules are deliberately absent. No customer data/IO.
+    items = "".join(f'<det nItem="{i}"><prod><CFOP>5102</CFOP></prod></det>' for i in range(1, 36))
+    raw = f'''<NFe xmlns="http://www.portalfiscal.inf.br/nfe"><infNFe
+      Id="NFe35261112345678000195550010000001231123456789" versao="4.00">
+      <ide><nNF>123</nNF><serie>1</serie><dhEmi>2026-11-01T10:00:00-03:00</dhEmi><tpNF>1</tpNF><finNFe>1</finNFe></ide>
+      <emit><CNPJ>12345678000195</CNPJ><xNome>SYNTHETIC ISSUER</xNome></emit>
+      <dest><CNPJ>98765432000198</CNPJ><xNome>SYNTHETIC RECIPIENT</xNome></dest>
+      {items}<total><ICMSTot><vNF>100.00</vNF><vICMS>18.00</vICMS></ICMSTot></total>
+      </infNFe></NFe>'''.encode()
+    note = extract_fiscal(raw, "xml")
+    expected = {"kind": "nfe", "number": "123", "gross_amount": "100.00", "operation": "sale", "issued_on": "2026-11-01"}
+    if (any(note.get(key) != value for key, value in expected.items())
+            or note["taxes"].get("ICMS") != "18.00" or note["source"]["format"] != "xml"):
+        raise RuntimeError("Fiscal XML adapter failed the synthetic invoice check")
+
+
 def run_checks() -> dict:
     import psycopg
     import pypdfium2
@@ -155,5 +175,7 @@ NEWFILEUID:NONE
     if psycopg.pq.__impl__ != "binary" or psycopg.pq.version() <= 0:
         raise RuntimeError("The binary PostgreSQL client is unavailable.")
     checks.append("psycopg")
+    check_fiscal_xml()
+    checks.append("fiscal_xml")
     database_url = os.environ.get("WORKER_CANARY_DATABASE_URL")
     return {"status": "passed", "checks": checks, "postgres": check_postgres(database_url) if database_url else "not_configured"}

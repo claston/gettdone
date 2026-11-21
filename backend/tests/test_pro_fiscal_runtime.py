@@ -12,6 +12,22 @@ from app.adapters.conversion import pro_fiscal_runtime as runtime
 from app.workers.conversion_lambda import handle_sqs_event, lambda_handler
 
 
+@pytest.mark.parametrize("raw,expected", [
+    ("true", True), ("1", True), (" YES ", True), ("on", True),
+    ("false", False), ("0", False), (" NO ", False), ("off", False),
+    ("invalid", None), ("", None), (None, None),
+])
+@pytest.mark.parametrize("default", [True, False])
+def test_fiscal_flags_keep_api_parsing_contract(monkeypatch, raw, expected, default):
+    from app.security_baseline import read_bool_env
+
+    monkeypatch.delenv("PRO_FISCAL_ENABLED", raising=False)
+    if raw is not None:
+        monkeypatch.setenv("PRO_FISCAL_ENABLED", raw)
+    assert runtime.read_bool_env("PRO_FISCAL_ENABLED", default=default) is (default if expected is None else expected)
+    assert runtime.read_bool_env is read_bool_env
+
+
 def test_fiscal_storage_checks_content_not_only_declared_digest():
     raw = b"<NFSe/>"
     client = SimpleNamespace(get_object=lambda **_: {"Body": BytesIO(raw)})

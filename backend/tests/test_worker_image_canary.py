@@ -26,7 +26,7 @@ def test_synthetic_conversions_preserve_amounts_and_exports(monkeypatch, tmp_pat
     monkeypatch.delenv("WORKER_CANARY_DATABASE_URL", raising=False)
     result = canary.run_checks()
     assert result["status"] == "passed"
-    assert result["checks"] == ["csv", "xlsx", "ofx", "pdf", "pdfium", "psycopg"]
+    assert result["checks"] == ["csv", "xlsx", "ofx", "pdf", "pdfium", "psycopg", "fiscal_xml"]
     assert result["postgres"] == "not_configured"
 
 
@@ -37,3 +37,13 @@ def test_canary_runs_runtime_boundary_before_checks(monkeypatch):
     monkeypatch.setattr(canary, "run_checks", lambda: calls.append("checks") or {"status": "passed"})
     assert canary.lambda_handler({"contract": "worker-image-v1"}, None) == {"status": "passed"}
     assert calls == ["boundary", "checks"]
+
+
+def test_fiscal_canary_rejects_incorrect_invoice_result(monkeypatch):
+    from app.adapters.conversion import pro_fiscal_runtime
+
+    canary.check_fiscal_xml()
+    original = pro_fiscal_runtime.extract_fiscal
+    monkeypatch.setattr(pro_fiscal_runtime, "extract_fiscal", lambda *args: {**original(*args), "gross_amount": "0.00"})
+    with pytest.raises(RuntimeError, match="Fiscal XML"):
+        canary.check_fiscal_xml()

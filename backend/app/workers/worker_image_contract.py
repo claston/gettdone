@@ -9,6 +9,7 @@ FORBIDDEN_MODULE_PREFIXES = (
     "app.api",
     "app.main",
     "app.schemas",
+    "app.security_baseline",
     "app.routers",
     "app.application.admin_dashboard_service",
     "app.application.access_control",
@@ -65,6 +66,7 @@ def verify_worker_imports() -> None:
     # the resumer must remain available for already-adopted jobs. Check their
     # complete dependency graph in the packaged image, before the first request.
     from app.adapters.conversion.canonical_movements import PostgresMovementRepository  # noqa: F401
+    from app.adapters.conversion.pro_fiscal_runtime import fiscal_maintenance, process_fiscal_message  # noqa: F401
     from app.application.canonical_pro import CanonicalCompletion  # noqa: F401
     from app.workers import ai_recovery_lambda, conversion_lambda  # noqa: F401
 
