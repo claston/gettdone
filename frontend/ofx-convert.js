@@ -1754,7 +1754,7 @@
       "ocr_control_confidence_unconfirmed", "ocr_controls_unavailable", "ocr_structure_review_required",
       "ocr_date_confidence_unconfirmed", "ocr_amount_confidence_unconfirmed",
       "scheduled_transactions_excluded", "pending_deposits_excluded", "ocr_duplicate_sign_normalized",
-      "amount_sign_from_printed_balances", "ocr_sign_stroke_overlap_confirmed", "ocr_trailing_mark_confirmed",
+      "amount_sign_from_printed_balances", "amount_sign_from_explicit_payment_label", "ocr_sign_stroke_overlap_confirmed", "ocr_trailing_mark_confirmed",
       "printed_totals_differ_from_extracted_movements"]) {
       if (warningTypes.includes(warning)) list.push(mapWarningTypeExplanation(warning));
     }
@@ -2422,6 +2422,7 @@
     if (value === "ocr_trailing_mark_confirmed") return "Marca junto ao valor conferida";
     if (value === "printed_totals_differ_from_extracted_movements") return "Totais a conferir";
     if (value === "amount_sign_from_printed_balances") return "Sinal conferido pelos saldos";
+    if (value === "amount_sign_from_explicit_payment_label") return "Débito a conferir";
     if (value === "opening_balance_ambiguous") return "Saldo inicial a conferir";
     if (value === "accounts_payable_pending") return "Pendente";
     if (value === "accounts_payable_partial") return "Parcial / pendente";
@@ -2461,6 +2462,7 @@
   }
 
   function mapWarningTypeExplanation(value) {
+    if (value === "amount_sign_from_explicit_payment_label") return "A indicação de débito não foi lida. O lançamento foi tratado como saída pelo histórico de pagamento e pela conferência do saldo impresso. Confira a indicação no PDF antes de exportar.";
     if (value === "ocr_date_confidence_unconfirmed") return "A leitura da data teve confiança abaixo do limite. Confira a data deste lançamento no PDF.";
     if (value === "ocr_amount_confidence_unconfirmed") return "A leitura do valor teve confiança abaixo do limite. Confira o valor deste lançamento no PDF.";
     if (value === "ocr_control_confidence_unconfirmed") return "Confira os saldos no PDF: a leitura desses valores teve confiança abaixo do limite. Esse aviso se refere aos controles do documento.";

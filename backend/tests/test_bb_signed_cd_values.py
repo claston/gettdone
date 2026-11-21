@@ -42,6 +42,40 @@ def test_explicit_plus_and_credit_are_not_double_counted():
     assert result.parse_metrics["verified_closing_balance"] == 120
 
 
+@pytest.mark.parametrize("token", ["-1,200,00D", "-1,200,00 D", "- 1,200,00 D"])
+def test_ocr_grouping_repair_preserves_repeated_debit_signs(token):
+    source = signed_cash(debit=token, opening="100,00 C", closing="-1.100,00 D")
+    result = pdf_parser._parse_scanned_pdf_with_textract_text_pages(source)
+    assert [row.amount for row in result.transactions] == [-1200]
+    assert result.parse_metrics["verified_closing_balance"] == -1100
+    assert result.parse_metrics["financial_controls_validated"] == 1
+    assert any(line.text == token for line in source.pages[0].lines)
+
+
+def boleto_without_cd(*, label="109 Pagamento de Boleto", closing="80,00 C"):
+    source = signed_cash(debit="20,00", opening="100,00 C", closing=closing)
+    page = source.pages[0]
+    return replace(source, pages=[replace(page, lines=[
+        replace(line, text=label) if line.text == "144 Pix Enviado" else line for line in page.lines
+    ])])
+
+
+def test_explicit_boleto_payment_with_printed_balance_requires_review_when_cd_is_missing():
+    result = pdf_parser._parse_scanned_pdf_with_textract_text_pages(boleto_without_cd())
+    assert [row.amount for row in result.transactions] == [-20]
+    assert result.parse_metrics["verified_closing_balance"] == 80
+    assert result.parse_metrics["export_recommendation"] == "review_recommended"
+    assert "amount_sign_from_explicit_payment_label" in result.canonical_transactions[0].warnings
+
+
+@pytest.mark.parametrize("label,closing", [("109 Lançamento", "80,00 C"), ("999 Pagamento de Boleto", "80,00 C"),
+                                        ("109 Pagamento de Boleto", "120,00 C"),
+                                        ("109 Pagamento de Boleto", "81,00 C")])
+def test_missing_cd_requires_both_explicit_payment_identity_and_matching_balance(label, closing):
+    with pytest.raises(InvalidFileContentError):
+        pdf_parser._parse_scanned_pdf_with_textract_text_pages(boleto_without_cd(label=label, closing=closing))
+
+
 def test_native_pdf_uses_the_same_repeated_sign_policy(monkeypatch):
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
     monkeypatch.setenv("PDF_OCR_ENABLED", "false")
@@ -53,7 +87,7 @@ def test_native_pdf_uses_the_same_repeated_sign_policy(monkeypatch):
     assert result.parse_metrics["verified_closing_balance"] == -120
 
 
-@pytest.mark.parametrize("token", ["+20,00 D", "-20,00 C", "--20,00 D", "-2O,00 D", "-20,000 D"])
+@pytest.mark.parametrize("token", ["+20,00 D", "-20,00 C", "--20,00 D", "-2O,00 D", "-20,000 D", "+1,200,00D", "-1,200,00C"])
 def test_conflicting_or_unreadable_movement_signs_remain_blocked(token):
     with pytest.raises(InvalidFileContentError):
         pdf_parser._parse_scanned_pdf_with_textract_text_pages(signed_cash(debit=token))

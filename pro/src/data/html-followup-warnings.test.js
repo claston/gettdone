@@ -14,6 +14,7 @@ describe("avisos objetivos dos extratos recuperados", () => {
     ["pending_deposits_excluded", "bloqueados"],
     ["ocr_duplicate_sign_normalized", "sinal duplicado"],
     ["amount_sign_from_printed_balances", "saldos impressos"],
+    ["amount_sign_from_explicit_payment_label", "histórico de pagamento"],
     ["opening_balance_ambiguous", "saldos iniciais diferentes"],
     ["ocr_sign_stroke_overlap_confirmed", "caractere junto ao sinal"],
     ["ocr_trailing_mark_confirmed", "marca após o valor"],
