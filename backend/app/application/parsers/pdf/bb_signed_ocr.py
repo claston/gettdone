@@ -2,7 +2,6 @@
 
 import re
 from dataclasses import replace
-from decimal import Decimal
 
 from app.application.errors import OcrFinancialAmbiguityError
 from app.application.normalization.explicit_signed_money import parse_parenthesized_signed_money
@@ -80,25 +79,31 @@ def parse_bb_signed_ocr(extraction):
                 opening = running = amount
                 continue
             if is_control:
-                if running is None or not rows:
+                if not rows:
                     fail(MESSAGE)
-                if running != amount:
-                    financial_mismatch()
+                if running is not None:
+                    if running != amount:
+                        financial_mismatch()
+                    checks += 1
+                else:
+                    # The first printed checkpoint anchors subsequent movements;
+                    # it cannot validate or reconstruct an absent opening balance.
+                    running = amount
                 rows[-1] = replace(rows[-1], running_balance=float(amount),
                     source_line_refs=(*rows[-1].source_line_refs, (page.page_number, value.line_index)))
-                checks += 1
                 if compact in {"SALDO", "SALDOATUAL"}:
                     closing = amount
                     break
                 continue
-            if running is None or not label or rows and current < rows[-1].transaction.date:
+            if not label or rows and current < rows[-1].transaction.date:
                 fail(MESSAGE)
             references = [line.text.strip() for line in cells
                           if columns["DOCUMENTO"] - .02 <= line.bbox["left"] < columns["HISTORICO"] - .02
                           and re.fullmatch(r"[\d.]+", line.text.strip())]
             if len(references) > 1:
                 raise OcrFinancialAmbiguityError(MESSAGE)
-            running += amount
+            if running is not None:
+                running += amount
             rows.append(_source(_row(page.page_number, anchor.line_index, current, label, amount,
                                      reference=references[0] if references else None), page, cells))
             if date_text != anchor.text.strip():
@@ -107,7 +112,10 @@ def parse_bb_signed_ocr(extraction):
             raise OcrFinancialAmbiguityError(MESSAGE)
     if not rows:
         fail(MESSAGE)
-    if closing is None:
-        financial_mismatch()
-        closing = Decimal(str(rows[-1].running_balance)) if rows[-1].running_balance is not None else running
-    return VerifiedStatement(rows, LAYOUT, opening, closing, printed_balance_checks=checks)
+    bounds_unavailable = opening is None or closing is None
+    if bounds_unavailable:
+        rows[0] = replace(rows[0], warnings=list(dict.fromkeys([
+            *rows[0].warnings, "manual_review_recommended", "balance_bounds_unavailable",
+        ])))
+    return VerifiedStatement(rows, LAYOUT, opening, closing, printed_balance_checks=checks,
+                             balance_bounds_unavailable=bounds_unavailable)
