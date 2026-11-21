@@ -11,6 +11,10 @@ from app.application.source_regions import evidence_regions
 
 
 def parse_controlled_ocr(extraction):
+    from app.application.parsers.pdf.protocol_daily_cash import is_protocol_daily_cash, parse_protocol_daily_cash
+
+    if is_protocol_daily_cash("\n".join(line.text for page in extraction.pages for line in page.lines)):
+        return parse_protocol_daily_cash(extraction)
     from app.application.parsers.pdf.sicredi_visual_cash import is_sicredi_visual_cash, parse_sicredi_visual_cash
 
     if is_sicredi_visual_cash(extraction):

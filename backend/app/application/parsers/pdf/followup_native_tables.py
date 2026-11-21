@@ -62,6 +62,11 @@ def _kind(text):
 
 
 def parse_followup_native_tables(raw, page_texts):
+    from app.application.parsers.pdf.protocol_daily_cash import is_protocol_daily_cash, parse_protocol_daily_cash
+
+    if is_protocol_daily_cash("\n".join(page_texts)):
+        source = read_native_table_source(raw)
+        return parse_protocol_daily_cash(source), source
     compact = upper("\n".join(page_texts)).replace(" ", "")
     inactive_matrix = all(marker in compact for marker in ("SICREDI", "PERIODO:DE", "DEBITO", "CREDITO", "SALDOATUAL"))
     if "ACONTANAOFOIMOVIMENTADA" in compact or inactive_matrix:
