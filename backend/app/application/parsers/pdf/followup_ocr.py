@@ -117,6 +117,7 @@ def parse_stone_credit_debit(extraction):
 
 def parse_bradesco_columns(extraction):
     from app.application.parsers.pdf.final_ocr_statements import column_slope
+    from app.application.parsers.pdf.native_table_source import split_native_columns
 
     def value(text):
         if re.fullmatch(r"-?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}", text.strip()):
@@ -139,6 +140,15 @@ def parse_bradesco_columns(extraction):
     printed_totals = []
     pages = []
     for page in extraction.pages:
+        # Textract can join history and document into one LINE. Only split at
+        # the printed column when every child WORD has positional evidence;
+        # a numeric suffix in the history alone is not a document reference.
+        words = {word.id: word for word in page.words if word.bbox}
+        header_bottom = max((line.bbox["top"] + line.bbox.get("height", 0) for line in page.lines
+                             if line.bbox and upper(line.text) == "DCTO."), default=0)
+        page = split_native_columns(page, (columns["DCTO."] - .025,),
+            include=lambda line: line.bbox and line.bbox["top"] > header_bottom
+            and bool(line.word_ids) and all(key in words for key in line.word_ids))
         latest = min((line.bbox["top"] for line in page.lines if line.bbox and upper(line.text) == "ULTIMOS LANCAMENTOS"), default=1)
         page_totals = [line for line in page.lines if line.bbox and upper(line.text) == "TOTAL" and line.bbox["top"] < latest]
         if len(page_totals) > 1:
@@ -193,6 +203,9 @@ def parse_bradesco_columns(extraction):
             running += amount
             if running != value(balance.text):
                 financial_mismatch("Os lançamentos Bradesco não fecham com os saldos impressos.")
+            # Retain the printed control, including after a page gap. Review
+            # records the discrepancy; it must never rewrite the source balance.
+            running = value(balance.text)
             checks += 1
             y = position_y(page, anchor)
             lower = (position_y(page, anchors[index-1]) + y) / 2 if index else y - .01
@@ -211,7 +224,7 @@ def parse_bradesco_columns(extraction):
     return VerifiedStatement(rows, "bradesco_ocr_columns_validated_v1", seed, running,
                              partial=validate_statement_completeness(["\n".join(line.text for line in page.lines)
                                                                       for page in extraction.pages]),
-                             printed_balance_checks=checks, candidate_rows=candidates)
+                             printed_balance_checks=checks, candidate_rows=candidates, balances_are_printed=True)
 
 
 def parse_banrisul_columns(extraction):
