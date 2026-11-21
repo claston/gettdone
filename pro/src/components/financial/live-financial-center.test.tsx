@@ -146,10 +146,25 @@ describe("Central canônica", () => {
           fireEvent(input, new Event("cancel"));
         });
       }
+      const mountedInput = screen.getByLabelText("Importar nota XML ou PDF");
+      let finishRefresh!: (data: FinancialMonth) => void;
+      vi.mocked(loadFinancialMonth).mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishRefresh = resolve;
+        }),
+      );
       await act(async () => {
         fireEvent.focus(window);
       });
       await waitFor(() => expect(loadFinancialMonth).toHaveBeenCalledTimes(2));
+      expect(mountedInput).toBeInTheDocument();
+      await act(async () =>
+        finishRefresh({
+          ...result,
+          features: { invoices: true, taxes: false, revenue: false },
+        }),
+      );
+      expect(mountedInput).toBeInTheDocument();
     },
   );
   it.each([

@@ -70,6 +70,7 @@ export function LiveFinancialCenter({
   }, []);
   const [snapshot, setSnapshot] = useState<{
     key: string;
+    attempt: number;
     data: FinancialMonth;
   } | null>(null);
   const [failure, setFailure] = useState<{
@@ -84,27 +85,40 @@ export function LiveFinancialCenter({
   if (cursor) query.set("cursor", cursor);
   if (month) query.set("month", month);
   const request = query.toString();
-  const key = `${clientId}:${request}:${attempt}`;
+  const key = `${clientId}:${request}`;
+  const attemptKey = `${key}:${attempt}`;
   const data = snapshot?.key === key ? snapshot.data : null;
-  const error = failure?.key === key ? failure.message : null;
+  const error = failure?.key === attemptKey ? failure.message : null;
   const context = new URLSearchParams({ month, accounts: account, tab });
   if (day) context.set("day", day);
   if (pending) context.set("pending", "true");
   const returnTo = `/financial/${encodeURIComponent(clientId)}?${context}`;
 
   useEffect(() => {
-    if (snapshot?.key === key || failure?.key === key) return;
+    if (
+      (snapshot?.key === key && snapshot.attempt === attempt) ||
+      failure?.key === attemptKey
+    )
+      return;
     const controller = new AbortController();
     void loadFinancialMonth(clientId, request, controller.signal)
       .then((result) => {
         if (controller.signal.aborted) return;
+        if (
+          result.access_expires_at &&
+          Date.parse(result.access_expires_at) <= Date.now()
+        )
+          throw new Error(
+            "O acesso a um dos documentos expirou. Atualize a lista para conferir os dados disponíveis.",
+          );
         const resolvedQuery = new URLSearchParams(request);
         if (!resolvedQuery.has("month")) {
           resolvedQuery.set("month", result.month);
           setMonth(result.month);
         }
         setSnapshot({
-          key: `${clientId}:${resolvedQuery}:${attempt}`,
+          key: `${clientId}:${resolvedQuery}`,
+          attempt,
           data: result,
         });
       })
@@ -112,7 +126,7 @@ export function LiveFinancialCenter({
         if (!controller.signal.aborted) {
           setSnapshot(null);
           setFailure({
-            key,
+            key: attemptKey,
             message:
               caught instanceof Error
                 ? caught.message
@@ -121,13 +135,12 @@ export function LiveFinancialCenter({
         }
       });
     return () => controller.abort();
-  }, [clientId, request, key, attempt, snapshot, failure]);
+  }, [clientId, request, key, attemptKey, attempt, snapshot, failure]);
   useEffect(() => {
     if (month) window.history.replaceState(null, "", returnTo);
   }, [returnTo, month]);
   useEffect(() => {
     const refresh = () => {
-      setSnapshot(null);
       setAttempt((value) => value + 1);
     };
     const focus = () => {
@@ -141,7 +154,10 @@ export function LiveFinancialCenter({
     document.addEventListener("visibilitychange", focus);
     const timer = data?.access_expires_at
       ? window.setTimeout(
-          refresh,
+          () => {
+            setSnapshot(null);
+            refresh();
+          },
           Math.max(
             0,
             Math.min(
