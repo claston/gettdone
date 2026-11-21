@@ -75,13 +75,22 @@ def verify_package(root=Path("/")):
         raise RuntimeError("Unexpected OpenSSL Debian package inventory")
 
 
+def loaded_version():
+    # CPython retains the legacy five-part layout: OpenSSL 3.5.7 is
+    # (3, 5, 0, 7, 0), not (3, 5, 7, ...). Read the loaded library's text.
+    match = re.match(r"OpenSSL (\d+\.\d+\.\d+) ", ssl.OPENSSL_VERSION)
+    if not match:
+        raise RuntimeError(f"Unexpected loaded OpenSSL version format: {ssl.OPENSSL_VERSION}")
+    return match[1]
+
+
 def main():
     if sys.version_info[:2] != (3, 12):
         raise RuntimeError("CPython version changed; renew the OpenSSL assessment")
     verify_package()
-    runtime = ".".join(map(str, ssl.OPENSSL_VERSION_INFO[:3]))
+    runtime = loaded_version()
     if runtime != EXPECTED_RUNTIME:
-        raise RuntimeError("Loaded OpenSSL differs from the assessed version")
+        raise RuntimeError(f"Loaded OpenSSL differs from the assessed version: {runtime}")
     maps = Path("/proc/self/maps").read_text()
     for library in ("libssl.so.3", "libcrypto.so.3"):
         paths = {line.split()[-1] for line in maps.splitlines() if library in line}
@@ -97,6 +106,7 @@ def main():
     source_count = verify_application(Path("/var/task/app"))
     native_count = verify_native_callers([Path("/var/task"), Path("/usr/local/lib/python3.12/lib-dynload")])
     context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     if not context.get_ca_certs() or context.verify_mode != ssl.CERT_REQUIRED or not context.check_hostname:
         raise RuntimeError("Default TLS certificate verification is not available")
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:

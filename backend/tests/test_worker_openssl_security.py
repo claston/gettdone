@@ -81,3 +81,16 @@ def test_ci_and_deploy_require_and_preserve_the_applicability_assessment(name):
 def test_both_worker_contexts_include_the_assessment_checker(name):
     assert "COPY scripts/check_worker_openssl.py /opt/check_worker_openssl.py" in (ROOT / name).read_text(encoding="utf-8")
     assert "!scripts/check_worker_openssl.py" in (ROOT / f"{name}.dockerignore").read_text(encoding="utf-8")
+
+
+def test_loaded_openssl_patch_uses_runtime_version_not_legacy_tuple_layout(checker, monkeypatch):
+    monkeypatch.setattr(checker.ssl, "OPENSSL_VERSION_INFO", (3, 5, 0, 7, 0))
+    monkeypatch.setattr(checker.ssl, "OPENSSL_VERSION", "OpenSSL 3.5.7 4 Aug 2026")
+    assert checker.loaded_version() == "3.5.7"
+
+
+@pytest.mark.parametrize("version", ["LibreSSL 3.5.7", "OpenSSL 3.5.7-dev 4 Aug 2026", "unknown"])
+def test_unreviewed_runtime_version_format_is_rejected(checker, monkeypatch, version):
+    monkeypatch.setattr(checker.ssl, "OPENSSL_VERSION", version)
+    with pytest.raises(RuntimeError):
+        checker.loaded_version()
