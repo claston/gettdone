@@ -21,6 +21,14 @@ def test_normalizes_exact_thousands_groups_preserving_digits_and_signs(raw, expe
     assert normalize_ocr_numeric_separators(raw) == expected
 
 
+@pytest.mark.parametrize("raw,expected", [("-1,200,00D", "-1.200,00D"), ("+1,200,00C", "+1.200,00C"),
+                                        ("+1,200,00D", "+1,200,00D"), ("-1,200,00C", "-1,200,00C"),
+                                        ("-1,200,00-", "-1,200,00-")])
+def test_repeated_signs_require_an_explicit_reader_contract_and_agreeing_cd(raw, expected):
+    assert normalize_ocr_numeric_separators(raw) == raw
+    assert normalize_ocr_numeric_separators(raw, allow_repeated_cd_sign=True) == expected
+
+
 @pytest.mark.parametrize("raw", ["20,00,00-", "20,000,0-", "20,000.00-", "-20,000,00-", "20,000,00--",
                                 "NOTA20,000,00", "UUID-20,000,00", "20,000,00/9", "20.000,00", "1.234,56", "20,00"])
 def test_preserves_malformed_tokens_references_and_already_valid_values(raw):

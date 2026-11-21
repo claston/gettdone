@@ -8,9 +8,12 @@ from app.application.document_extraction_models import RawDocumentExtraction
 _TOKEN = re.compile(r"(?<![\w.,/+\-])([+-]?)(\d{1,3}(?:,\d{3})+),(\d{2})([+\-CDcd]?)(?![\w.,/+\-])")
 
 
-def normalize_ocr_numeric_separators(text: str, *, allowed: set[str] | None = None) -> str:
+def normalize_ocr_numeric_separators(
+    text: str, *, allowed: set[str] | None = None, allow_repeated_cd_sign: bool = False,
+) -> str:
     def repair(match):
-        if (match[1] and match[4]) or (allowed is not None and match[0] not in allowed):
+        consistent_cd = allow_repeated_cd_sign and (match[1], match[4].upper()) in {("-", "D"), ("+", "C")}
+        if (match[1] and match[4] and not consistent_cd) or (allowed is not None and match[0] not in allowed):
             return match[0]
         return f"{match[1]}{match[2].replace(',', '.')},{match[3]}{match[4]}"
 
