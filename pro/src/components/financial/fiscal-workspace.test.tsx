@@ -108,6 +108,227 @@ it("mostra o envio imediatamente e acompanha o arquivo recebido", async () => {
     await screen.findByLabelText("Importar nota XML ou PDF"),
   ).toBeEnabled();
 });
+
+it.each(["ready", "failed"])(
+  "consulta sem desmontar a tela e para ao receber %s",
+  async (state) => {
+    vi.useFakeTimers();
+    try {
+      const pending = {
+        ...fixture,
+        imports: [
+          { id: "i1", filename: "nota.xml", state: "queued", error: null },
+        ],
+      };
+      vi.mocked(loadFiscalWorkspace).mockResolvedValue(pending);
+      await act(async () => {
+        render(
+          <FiscalWorkspace
+            clientId="c1"
+            month="2026-07"
+            account=""
+            mode="invoices"
+          />,
+        );
+      });
+      const input = screen.getByLabelText("Importar nota XML ou PDF");
+      let finish!: (result: typeof pending) => void;
+      vi.mocked(loadFiscalWorkspace).mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4000);
+      });
+      expect(loadFiscalWorkspace).toHaveBeenCalledTimes(2);
+      expect(input).toBeInTheDocument();
+      expect(
+        screen.queryByText("Consultando documentos e movimentos…"),
+      ).toBeNull();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(12000);
+      });
+      expect(loadFiscalWorkspace).toHaveBeenCalledTimes(2);
+      await act(async () =>
+        finish({ ...pending, imports: [{ ...pending.imports[0], state }] }),
+      );
+      expect(input).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          state === "ready"
+            ? "Nota nota.xml importada."
+            : /Não foi possível ler a nota nota.xml/,
+        ),
+      ).toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120000);
+      });
+      expect(loadFiscalWorkspace).toHaveBeenCalledTimes(2);
+      expect(uploadFiscalNote).not.toHaveBeenCalled();
+      expect(fiscalCommand).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
+it("limita a espera automática e só retoma a consulta por Atualizar", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(loadFiscalWorkspace).mockResolvedValue({
+      ...fixture,
+      imports: [
+        { id: "i1", filename: "nota.xml", state: "queued", error: null },
+      ],
+    });
+    await act(async () => {
+      render(
+        <FiscalWorkspace
+          clientId="c1"
+          month="2026-07"
+          account=""
+          mode="invoices"
+        />,
+      );
+    });
+    for (let i = 0; i < 30; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4000);
+      });
+    }
+    expect(
+      screen.getByText(/A consulta automática foi pausada/),
+    ).toBeInTheDocument();
+    const count = vi.mocked(loadFiscalWorkspace).mock.calls.length;
+    await act(async () => {
+      fireEvent.focus(window);
+      await vi.advanceTimersByTimeAsync(120000);
+    });
+    expect(loadFiscalWorkspace).toHaveBeenCalledTimes(count);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Atualizar" }));
+    });
+    expect(loadFiscalWorkspace).toHaveBeenCalledTimes(count + 1);
+    expect(screen.queryByText(/A consulta automática foi pausada/)).toBeNull();
+    expect(uploadFiscalNote).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("encerra uma consulta sem resposta, ignora resposta tardia e permite consultar novamente", async () => {
+  vi.useFakeTimers();
+  try {
+    let finish!: (result: typeof fixture) => void;
+    vi.mocked(loadFiscalWorkspace).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await act(async () => {
+      render(
+        <FiscalWorkspace
+          clientId="c1"
+          month="2026-07"
+          account=""
+          mode="invoices"
+        />,
+      );
+    });
+    const signal = vi.mocked(loadFiscalWorkspace).mock.calls[0][2];
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30000);
+    });
+    expect(signal.aborted).toBe(true);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "A consulta demorou mais que o esperado",
+    );
+    await act(async () => finish(fixture));
+    expect(screen.queryByLabelText("Importar nota XML ou PDF")).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Atualizar" }));
+    });
+    expect(loadFiscalWorkspace).toHaveBeenCalledTimes(2);
+    expect(
+      screen.getByLabelText("Importar nota XML ou PDF"),
+    ).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("não repete imediatamente a consulta quando o servidor retorna acesso já expirado", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(loadFiscalWorkspace).mockResolvedValue({
+      ...fixture,
+      access_expires_at: new Date(Date.now() - 1000).toISOString(),
+    });
+    await act(async () => {
+      render(
+        <FiscalWorkspace
+          clientId="c1"
+          month="2026-07"
+          account=""
+          mode="invoices"
+        />,
+      );
+    });
+    for (let i = 0; i < 5; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+    }
+    expect(loadFiscalWorkspace).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("alert")).toHaveTextContent("Atualize a lista");
+    expect(screen.queryByLabelText("Importar nota XML ou PDF")).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("cancela a consulta ao trocar de empresa e ao sair, sem aplicar a resposta antiga", async () => {
+  let finish!: (result: typeof fixture) => void;
+  vi.mocked(loadFiscalWorkspace).mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const view = render(
+    <FiscalWorkspace
+      clientId="c1"
+      month="2026-07"
+      account=""
+      mode="invoices"
+    />,
+  );
+  const oldSignal = vi.mocked(loadFiscalWorkspace).mock.calls[0][2];
+  view.rerender(
+    <FiscalWorkspace
+      clientId="c2"
+      month="2026-07"
+      account=""
+      mode="invoices"
+    />,
+  );
+  expect(oldSignal.aborted).toBe(true);
+  await screen.findByLabelText("Importar nota XML ou PDF");
+  await act(async () =>
+    finish({
+      ...fixture,
+      movements: [
+        { ...fixture.movements[0], description: "DADOS DA EMPRESA ANTERIOR" },
+      ],
+    }),
+  );
+  expect(screen.queryByText("DADOS DA EMPRESA ANTERIOR")).toBeNull();
+  vi.mocked(loadFiscalWorkspace).mockReturnValueOnce(new Promise(() => {}));
+  fireEvent.click(screen.getByRole("button", { name: "Atualizar" }));
+  const lastSignal = vi.mocked(loadFiscalWorkspace).mock.lastCall![2];
+  view.unmount();
+  expect(lastSignal.aborted).toBe(true);
+});
 it("mostra erro de envio e permite selecionar o mesmo arquivo novamente", async () => {
   vi.mocked(uploadFiscalNote).mockRejectedValue(
     new Error("Não foi possível enviar a nota."),

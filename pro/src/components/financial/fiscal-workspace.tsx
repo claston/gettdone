@@ -49,8 +49,12 @@ export function FiscalWorkspace({
   const [offset, setOffset] = useState(0);
   const [selectedId, setSelectedId] = useState("");
   const [revision, setRevision] = useState(0);
+  const [pollingAttempt, setPollingAttempt] = useState(0);
+  const [pausedPoll, setPausedPoll] = useState("");
+  const requestAbort = useRef<AbortController | null>(null);
   const [snapshot, setSnapshot] = useState<{
     key: string;
+    revision: number;
     data: FiscalWorkspaceData;
   } | null>(null);
   const [failure, setFailure] = useState<{
@@ -89,46 +93,103 @@ export function FiscalWorkspace({
   if (selectedId) query.set("document_id", selectedId);
   if (initialMovementId) query.set("movement_id", initialMovementId);
   const request = query.toString();
-  const key = `${clientId}:${request}:${revision}`;
+  // A refresh does not change the document context or unmount its controls.
+  const key = `${clientId}:${request}`;
+  const attemptKey = `${key}:${revision}`;
   const data = snapshot?.key === key ? snapshot.data : null;
-  const error = failure?.key === key ? failure.message : null;
+  const error = failure?.key === attemptKey ? failure.message : null;
+  const querying = !error && (!data || snapshot?.revision !== revision);
+  const pendingIds =
+    data?.imports
+      .filter((item) => ["queued", "processing"].includes(item.state))
+      .map((item) => item.id)
+      .sort()
+      .join(",") ?? "";
+  const pollKey = `${clientId}:${pendingIds}:${pollingAttempt}`;
+  const pollingPaused = Boolean(pendingIds) && pausedPoll === pollKey;
   const note = data?.documents.find((item) => item.id === selectedId);
   const refresh = () => {
-    setSnapshot(null);
     setChosenMovement(null);
+    setPollingAttempt((value) => value + 1);
     setRevision((value) => value + 1);
   };
 
   useEffect(() => {
     const controller = new AbortController();
+    requestAbort.current = controller;
+    const timeout = window.setTimeout(() => {
+      controller.abort();
+      setSnapshot(null);
+      setFailure({
+        key: attemptKey,
+        message:
+          "A consulta demorou mais que o esperado. Use Atualizar para conferir novamente.",
+      });
+    }, 30000);
     void loadFiscalWorkspace(clientId, request, controller.signal)
       .then((result) => {
         if (!controller.signal.aborted) {
-          setSnapshot({ key, data: result });
+          // Do not display expired financial evidence or schedule a zero-delay loop.
+          if (
+            result.access_expires_at &&
+            Date.parse(result.access_expires_at) <= Date.now()
+          )
+            throw new Error(
+              "O acesso a um dos documentos expirou. Atualize a lista para conferir os dados disponíveis.",
+            );
+          setSnapshot({ key, revision, data: result });
           setFailure(null);
         }
       })
       .catch((caught) => {
         if (!controller.signal.aborted) {
           setSnapshot(null);
-          setFailure({ key, message: errorText(caught) });
+          setFailure({ key: attemptKey, message: errorText(caught) });
         }
+      })
+      .finally(() => {
+        window.clearTimeout(timeout);
+        if (requestAbort.current === controller) requestAbort.current = null;
       });
-    return () => controller.abort();
-  }, [clientId, request, key]);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeout);
+      if (requestAbort.current === controller) requestAbort.current = null;
+    };
+  }, [clientId, request, key, attemptKey, revision]);
+
+  useEffect(() => {
+    if (!pendingIds) return;
+    const timer = window.setTimeout(() => setPausedPoll(pollKey), 120000);
+    return () => window.clearTimeout(timer);
+  }, [pendingIds, pollKey]);
+
+  useEffect(() => {
+    if (!pendingIds || pollingPaused || querying || error) return;
+    const timer = window.setInterval(() => {
+      if (
+        !uploadInteraction.current &&
+        !requestAbort.current &&
+        document.visibilityState === "visible"
+      )
+        setRevision((value) => value + 1);
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [pendingIds, pollingPaused, querying, error, revision]);
 
   useEffect(() => {
     const update = () => {
-      setSnapshot(null);
       setRevision((value) => value + 1);
     };
     const focus = () => {
-      if (document.visibilityState === "visible" && !uploadInteraction.current)
+      if (
+        document.visibilityState === "visible" &&
+        !uploadInteraction.current &&
+        !requestAbort.current &&
+        !pollingPaused
+      )
         update();
     };
-    const pending = data?.imports.some((item) =>
-      ["queued", "processing"].includes(item.state),
-    );
     const untilExpiry = data?.access_expires_at
       ? Math.max(0, Date.parse(data.access_expires_at) - Date.now())
       : Infinity;
@@ -139,25 +200,20 @@ export function FiscalWorkspace({
             uploadInteraction.current = false;
             onUploadInteractionChange?.(false);
             setUploadFeedback(null);
+            setSnapshot(null);
             update();
           },
           Math.min(untilExpiry, 2147483647),
         )
       : undefined;
-    const pollingTimer = pending
-      ? window.setInterval(() => {
-          if (!uploadInteraction.current) update();
-        }, 4000)
-      : undefined;
     window.addEventListener("focus", focus);
     document.addEventListener("visibilitychange", focus);
     return () => {
       window.clearTimeout(expiryTimer);
-      window.clearInterval(pollingTimer);
       window.removeEventListener("focus", focus);
       document.removeEventListener("visibilitychange", focus);
     };
-  }, [data, onUploadInteractionChange]);
+  }, [data?.access_expires_at, onUploadInteractionChange, pollingPaused]);
 
   async function upload(file: File) {
     if (uploadAbort.current) return;
@@ -292,6 +348,12 @@ export function FiscalWorkspace({
       </div>
       {error && <p role="alert">{error}</p>}
       {actionError && <p role="alert">{actionError}</p>}
+      {pollingPaused && !error && (
+        <p role="status">
+          A leitura ainda não terminou. A consulta automática foi pausada. Use
+          Atualizar para conferir novamente, sem reenviar o arquivo.
+        </p>
+      )}
       {feedback && !error && !actionError && (
         <div
           className={styles.notice}

@@ -148,6 +148,27 @@ DDL breves, com tempo de aplicação a verificar na infraestrutura de produção
 Se o schema vazio foi removido, a limpeza retorna zero. Com registros retidos,
 rollback destrutivo das tabelas antigas continua bloqueado pelas dependências.
 
+## Acompanhamento da importação no PRO
+
+A lista fiscal consulta importações pendentes a cada quatro segundos, sem
+desmontar os documentos e controles já exibidos. Uma nova consulta periódica
+só começa depois da conclusão da anterior; cada consulta tem limite de 30 segundos.
+Respostas tardias são descartadas após cancelamento, troca de contexto ou saída da tela.
+Atualizações da Central ao retornar à aba também preservam a tela fiscal.
+
+Após dois minutos com o mesmo conjunto de importações pendentes, a consulta
+automática é pausada e o PRO oferece o botão existente **Atualizar**. Essa ação
+consulta o andamento e reinicia a janela de acompanhamento, sem reenviar o XML
+nem iniciar outra avaliação na calculadora Java. A pausa do navegador não cancela
+o processamento já enviado. Conclusão, falha e erro de consulta interrompem o
+acompanhamento automático. Respostas com acesso já expirado são ocultadas e
+não provocam ciclos de atualização imediata.
+
+Se a importação continuar pendente, conferir seu estado no backend e o consumo
+da fila de conversão. Um `GET /fiscal` com HTTP 200 confirma a leitura da lista,
+não a conclusão da nota. O acompanhamento da importação é independente das
+consultas de resultado de `classification-shadow`.
+
 ## Validação reproduzível
 
 - `test_pro_fiscal_documents.py`: leituras, campos ausentes, XML malicioso,
