@@ -15,8 +15,17 @@ from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
 LAYOUT = "banco_do_brasil_autoatendimento_cd_ocr_v1"
-_MONEY = re.compile(rf"({NUMBER}|\d+\.\d{{2}})\s*(?:[Il|1]\s*(?=[CD]|$))?([CD]|(?<=\s)0)?(?:\s+&)?", re.IGNORECASE)
+_PREFIX = r"(?:[+\-−]\s*)?"
+_MONEY = re.compile(rf"{_PREFIX}({NUMBER}|\d+\.\d{{2}})\s*(?:[Il|1]\s*(?=[CD]|$))?([CD]|(?<=\s)0)?(?:\s+&)?", re.IGNORECASE)
 _PENDING_AMOUNT = re.compile(rf"{NUMBER}\s*\*")
+
+
+def _directional_value(cell, magnitude, direction):
+    debit = direction.upper() == "D"
+    prefix = cell.text.strip()[0]
+    if prefix in {"+", "-", "−"} and (prefix in {"-", "−"}) != debit:
+        fail("O sinal e a indicação de crédito ou débito deste valor divergem. Confira o valor no documento original.")
+    return magnitude * (-1 if debit else 1)
 
 
 def _duplicated_sign_stroke(page, cell):
@@ -130,12 +139,12 @@ def _column_lines(page, columns):
         result.append(line)
     normalized = []
     for line in result:
-        pair = re.fullmatch(rf"({NUMBER}\s*[CD*])\s+({NUMBER}\s*[CD]?)", line.text.strip(), re.I)
+        pair = re.fullmatch(rf"({_PREFIX}{NUMBER}\s*[CD*])\s+({_PREFIX}{NUMBER}\s*[CD]?)", line.text.strip(), re.I)
         if pair is None:
             # OCR can join the amount and balance into one WORD without a
             # separator. Only two complete, explicitly signed tokens spanning
             # both columns are recoverable; keep their shared original region.
-            pair = re.fullmatch(rf"({NUMBER}\s*[CD])\s*({NUMBER}\s*[CD])", line.text.strip(), re.I)
+            pair = re.fullmatch(rf"({_PREFIX}{NUMBER}\s*[CD])\s*({_PREFIX}{NUMBER}\s*[CD])", line.text.strip(), re.I)
             if pair and (
                 line.bbox["left"] < columns["VALOR R$"] - .035
                 or line.bbox["left"] + line.bbox["width"] < columns["SALDO"] - .005
@@ -253,7 +262,7 @@ def parse_bb_cash_ocr(extraction):
                     item = replace(item, text=f"{split_decimal[1]},{split_decimal[2]} {split_decimal[3]}")
                 repaired.append(item)
             lines = repaired
-            lines = [replace(item, text=normalize_ocr_numeric_separators(item.text))
+            lines = [replace(item, text=normalize_ocr_numeric_separators(item.text, allow_repeated_cd_sign=True))
                      if item.bbox["left"] >= columns["VALOR R$"]-.035 else item for item in lines]
             lines = [replace(item, text=re.sub(r"^(\d{1,3}(?:,\d{3})+)\.(\d{2})(\s*[CD])$",
                      lambda match: match[1].replace(",", ".")+","+match[2]+match[3], item.text))
@@ -353,6 +362,7 @@ def parse_bb_cash_ocr(extraction):
             balances = [item for item in values if item not in amounts]
 
             inferred_signs = set()
+            payment_signs = set()
             recovered_strokes = set()
             recovered_marks = set()
 
@@ -383,7 +393,7 @@ def parse_bb_cash_ocr(extraction):
                                     and other_signed[2] is None)
                     ]
                     if len(signs) == 1:
-                        return amount * (-1 if signs[0] == "D" else 1)
+                        return _directional_value(cell, amount, signs[0])
                     if signs:
                         fail()
                     if re.search(r"[Il|]\s*$", cell.text):
@@ -391,12 +401,14 @@ def parse_bb_cash_ocr(extraction):
                     # Both the numeric history code and its explicit received
                     # label must agree; the complete printed ledger still closes.
                     explicit_direction = ("821 PIX RECEBIDO", "144 PIX ENVIADO", "102 CHEQUE COMPENSADO",
-                                          "429 TAR PROCESSAMENTO CHEQUE")
+                                          "429 TAR PROCESSAMENTO CHEQUE", "109 PAGAMENTO DE BOLETO")
                     if cell not in amounts or not label.startswith(explicit_direction):
                         fail("Um valor Banco do Brasil está sem indicador C/D legível. Envie uma digitalização mais nítida.")
                     inferred_signs.add(cell.id)
-                    return amount * (1 if label.startswith("821 PIX RECEBIDO") else -1)
-                return amount * (-1 if signed[2].upper() == "D" else 1)
+                    if label.startswith("109 PAGAMENTO DE BOLETO"):
+                        payment_signs.add(cell.id)
+                    return _directional_value(cell, amount, "C" if label.startswith("821 PIX RECEBIDO") else "D")
+                return _directional_value(cell, amount, signed[2])
 
             pending = [cell for cell in amounts if _PENDING_AMOUNT.fullmatch(cell.text.strip())]
             if pending:
@@ -423,9 +435,11 @@ def parse_bb_cash_ocr(extraction):
                 opening = running = copies.pop()
                 continue
             if label.replace(" ", "").removeprefix("999") == "SALDO":
-                if amounts or len(balances) != 1 or running != value(balances[0]):
+                if amounts or len(balances) != 1:
                     fail()
-                closing = running
+                closing = value(balances[0])
+                if running != closing:
+                    financial_mismatch("Os valores do Banco do Brasil não fecham com o saldo impresso. Confira o documento original.")
                 checks += 1
                 break
             if opening is None or len(amounts) != 1 or len(balances) > 1 or not history:
@@ -443,6 +457,8 @@ def parse_bb_cash_ocr(extraction):
                 if abs(running) != magnitude:
                     fail()
             balance = value(balances[0]) if balances and not unreadable_balance_sign else None
+            if payment_signs and (balance is None or balance != running):
+                fail("Não foi possível confirmar se este lançamento é uma entrada ou saída. Confira a indicação no documento original.")
             if (recovered_strokes or recovered_marks) and (balance is None or balance != running):
                 fail("A recuperação do caractere BB não foi confirmada pelo saldo impresso da linha.")
             if balance is not None:
@@ -482,7 +498,8 @@ def parse_bb_cash_ocr(extraction):
                 row = replace(row, source_regions=(*row.source_regions, *evidence.source_regions),
                               source_line_refs=(*row.source_line_refs, *evidence.source_line_refs))
             if amounts[0].id in inferred_signs or unreadable_balance_sign:
-                row = replace(row, warnings=[*row.warnings, "manual_review_recommended", "amount_sign_from_explicit_pix_label"])
+                warning = "amount_sign_from_explicit_payment_label" if payment_signs else "amount_sign_from_explicit_pix_label"
+                row = replace(row, warnings=[*row.warnings, "manual_review_recommended", warning])
             if recovered_strokes:
                 row = replace(row, warnings=[*row.warnings, "manual_review_recommended", "ocr_sign_stroke_overlap_confirmed"])
             if recovered_marks:
@@ -497,4 +514,4 @@ def parse_bb_cash_ocr(extraction):
             or any(a.transaction.date > b.transaction.date for a, b in zip(rows, rows[1:]))):
         fail()
     return VerifiedStatement(rows, LAYOUT, opening, closing, printed_balance_checks=checks, non_cash_entries=non_cash,
-                             partial=partial, balance_bounds_unavailable=partial)
+                             partial=partial, balance_bounds_unavailable=partial, balances_are_printed=True)
