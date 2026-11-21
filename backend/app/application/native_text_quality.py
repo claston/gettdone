@@ -22,6 +22,7 @@ class NativeTextQuality:
         if not self.requires_visual_extraction:
             return {}
         reason = ("image_pages_without_usable_text" if "sparse_native_text_on_image_pages" in self.evidence else
+                  "financial_cells_without_native_text" if "rasterized_financial_cells" in self.evidence else
                   "vector_pages_without_usable_text" if "sparse_native_text_on_vector_pages" in self.evidence else
                   "unmapped_font_glyphs" if "unmapped_font_glyphs" in self.evidence else "embedded_ocr_text_unreliable")
         return {"native_text_quality_requires_visual": 1, "native_text_quality_reason": reason}
@@ -178,6 +179,20 @@ def assess_native_text_quality(raw_bytes, page_texts, *, reader=None):
             return NativeTextQuality(True, ("embedded_text_quality_low", "unmapped_font_glyphs"))
     try:
         reader = reader or PdfReader(BytesIO(raw_bytes))
+        if any(_dereference(page.get("/Resources", {})).get("/XObject") for page in reader.pages):
+            from app.application.hybrid_table_evidence import has_rasterized_financial_cells
+
+            # Preflight supplies an already-open reader without raw bytes.
+            # Inspect the same document while preserving the reader's cursor.
+            if not raw_bytes:
+                position = reader.stream.tell()
+                try:
+                    reader.stream.seek(0)
+                    raw_bytes = reader.stream.read()
+                finally:
+                    reader.stream.seek(position)
+            if has_rasterized_financial_cells(raw_bytes):
+                return NativeTextQuality(True, ("rasterized_financial_cells",))
         # A few native header characters must not hide scanned ledger pages.
         # Inspect every page: a scan can occur between otherwise native pages.
         # Dense vector exports need OCR too when only a header remains as text.
