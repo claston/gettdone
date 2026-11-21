@@ -15,8 +15,17 @@ from app.application.parsers.pdf.statement_review import financial_mismatch
 from app.application.parsers.pdf.verified_statements import DATE, NUMBER, VerifiedStatement, _row, day, fail, money
 
 LAYOUT = "banco_do_brasil_autoatendimento_cd_ocr_v1"
-_MONEY = re.compile(rf"({NUMBER}|\d+\.\d{{2}})\s*(?:[Il|1]\s*(?=[CD]|$))?([CD]|(?<=\s)0)?(?:\s+&)?", re.IGNORECASE)
+_PREFIX = r"(?:[+\-−]\s*)?"
+_MONEY = re.compile(rf"{_PREFIX}({NUMBER}|\d+\.\d{{2}})\s*(?:[Il|1]\s*(?=[CD]|$))?([CD]|(?<=\s)0)?(?:\s+&)?", re.IGNORECASE)
 _PENDING_AMOUNT = re.compile(rf"{NUMBER}\s*\*")
+
+
+def _directional_value(cell, magnitude, direction):
+    debit = direction.upper() == "D"
+    prefix = cell.text.strip()[0]
+    if prefix in {"+", "-", "−"} and (prefix in {"-", "−"}) != debit:
+        fail("O sinal e a indicação de crédito ou débito deste valor divergem. Confira o valor no documento original.")
+    return magnitude * (-1 if debit else 1)
 
 
 def _duplicated_sign_stroke(page, cell):
@@ -130,12 +139,12 @@ def _column_lines(page, columns):
         result.append(line)
     normalized = []
     for line in result:
-        pair = re.fullmatch(rf"({NUMBER}\s*[CD*])\s+({NUMBER}\s*[CD]?)", line.text.strip(), re.I)
+        pair = re.fullmatch(rf"({_PREFIX}{NUMBER}\s*[CD*])\s+({_PREFIX}{NUMBER}\s*[CD]?)", line.text.strip(), re.I)
         if pair is None:
             # OCR can join the amount and balance into one WORD without a
             # separator. Only two complete, explicitly signed tokens spanning
             # both columns are recoverable; keep their shared original region.
-            pair = re.fullmatch(rf"({NUMBER}\s*[CD])\s*({NUMBER}\s*[CD])", line.text.strip(), re.I)
+            pair = re.fullmatch(rf"({_PREFIX}{NUMBER}\s*[CD])\s*({_PREFIX}{NUMBER}\s*[CD])", line.text.strip(), re.I)
             if pair and (
                 line.bbox["left"] < columns["VALOR R$"] - .035
                 or line.bbox["left"] + line.bbox["width"] < columns["SALDO"] - .005
@@ -383,7 +392,7 @@ def parse_bb_cash_ocr(extraction):
                                     and other_signed[2] is None)
                     ]
                     if len(signs) == 1:
-                        return amount * (-1 if signs[0] == "D" else 1)
+                        return _directional_value(cell, amount, signs[0])
                     if signs:
                         fail()
                     if re.search(r"[Il|]\s*$", cell.text):
@@ -395,8 +404,8 @@ def parse_bb_cash_ocr(extraction):
                     if cell not in amounts or not label.startswith(explicit_direction):
                         fail("Um valor Banco do Brasil está sem indicador C/D legível. Envie uma digitalização mais nítida.")
                     inferred_signs.add(cell.id)
-                    return amount * (1 if label.startswith("821 PIX RECEBIDO") else -1)
-                return amount * (-1 if signed[2].upper() == "D" else 1)
+                    return _directional_value(cell, amount, "C" if label.startswith("821 PIX RECEBIDO") else "D")
+                return _directional_value(cell, amount, signed[2])
 
             pending = [cell for cell in amounts if _PENDING_AMOUNT.fullmatch(cell.text.strip())]
             if pending:
@@ -423,9 +432,11 @@ def parse_bb_cash_ocr(extraction):
                 opening = running = copies.pop()
                 continue
             if label.replace(" ", "").removeprefix("999") == "SALDO":
-                if amounts or len(balances) != 1 or running != value(balances[0]):
+                if amounts or len(balances) != 1:
                     fail()
-                closing = running
+                closing = value(balances[0])
+                if running != closing:
+                    financial_mismatch("Os valores do Banco do Brasil não fecham com o saldo impresso. Confira o documento original.")
                 checks += 1
                 break
             if opening is None or len(amounts) != 1 or len(balances) > 1 or not history:
@@ -497,4 +508,4 @@ def parse_bb_cash_ocr(extraction):
             or any(a.transaction.date > b.transaction.date for a, b in zip(rows, rows[1:]))):
         fail()
     return VerifiedStatement(rows, LAYOUT, opening, closing, printed_balance_checks=checks, non_cash_entries=non_cash,
-                             partial=partial, balance_bounds_unavailable=partial)
+                             partial=partial, balance_bounds_unavailable=partial, balances_are_printed=True)
