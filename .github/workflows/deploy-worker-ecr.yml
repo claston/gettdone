@@ -144,6 +144,8 @@ jobs:
             "$base" /checks/check_worker_zlib.py --expect-vulnerable > artifacts/zlib-before.json
           docker run --rm --read-only --entrypoint /usr/local/bin/python3.12 --ulimit core=0 \
             "$WORKER_IMAGE" /opt/check_worker_zlib.py > artifacts/zlib-after.json
+          docker run --rm --read-only --entrypoint /usr/local/bin/python3.12 \
+            "$WORKER_IMAGE" /opt/check_worker_openssl.py > artifacts/openssl-runtime.json
           python3 scripts/smoke_worker_candidate_image.py \
             --image "$WORKER_IMAGE" --output artifacts/runtime.json \
             --database-url postgresql://worker_canary:synthetic_only@127.0.0.1:5432/worker_canary
@@ -179,7 +181,7 @@ jobs:
           print(f"Scan coverage verified: {len(native)} OS packages; {len(packages)} Python packages.")
           PY
           python3 scripts/check_worker_vulnerabilities.py --scanner trivy \
-            --report artifacts/vulnerabilities.json --runtime-evidence artifacts/zlib-after.json \
+            --report artifacts/vulnerabilities.json --runtime-evidence artifacts/zlib-after.json --openssl-evidence artifacts/openssl-runtime.json \
             --output artifacts/trivy-security-decision.json
 
       - name: Preserve Debian runtime and security evidence
@@ -421,7 +423,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
           python3 scripts/check_worker_vulnerabilities.py --scanner ecr \
-            --report artifacts/ecr-vulnerabilities.json --runtime-evidence artifacts/zlib-after.json \
+            --report artifacts/ecr-vulnerabilities.json --runtime-evidence artifacts/zlib-after.json --openssl-evidence artifacts/openssl-runtime.json \
             --image-digest "$IMAGE_DIGEST" --verified-image-digest "$VERIFIED_IMAGE_DIGEST" \
             --output artifacts/ecr-security-decision.json
 

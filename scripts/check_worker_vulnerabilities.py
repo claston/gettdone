@@ -85,7 +85,20 @@ def ecr_findings(report, *, image_digest, verified_image_digest):
     return findings
 
 
-def evaluate(report, *, scanner, policy, evidence, today, image_digest="", verified_image_digest=""):
+def runtime_matches(rule, evidence, openssl_evidence):
+    if rule["package"] == "libssl3t64" and rule["id"] == "CVE-2026-124709":
+        proof = openssl_evidence or {}
+        checks = ("inventory", "dependencies", "application", "native_callers", "tls_client", "datagram_rejected")
+        return (proof.get("package") == rule["version"] and proof.get("runtime") == rule["runtime"]
+                and proof.get("assessment") == "lambda-client-no-quic-server-v1"
+                and all(proof.get(check) == "passed" for check in checks)
+                and all(type(proof.get(key)) is int and proof[key] > 0
+                        for key in ("source_files", "native_files", "distribution_count")))
+    return (evidence.get("package") == rule["version"] and evidence.get("runtime") == rule["runtime"]
+            and evidence.get("regression") == "passed")
+
+
+def evaluate(report, *, scanner, policy, evidence, today, image_digest="", verified_image_digest="", openssl_evidence=None):
     validate_policy(policy)
     if scanner == "trivy":
         findings = trivy_findings(report)
@@ -100,8 +113,7 @@ def evaluate(report, *, scanner, policy, evidence, today, image_digest="", verif
         match = next((rule for rule in policy["exceptions"]
                       if item["eligible"] and all(rule[key] == item[key] for key in ("id", "package", "version", "severity"))
                       and today < date.fromisoformat(rule["expires_at"])
-                      and evidence.get("package") == rule["version"] and evidence.get("runtime") == rule["runtime"]
-                      and evidence.get("regression") == "passed"), None)
+                      and runtime_matches(rule, evidence, openssl_evidence)), None)
         item = {key: value for key, value in item.items() if key != "eligible"}
         if match:
             decision["accepted"].append({**item, **{key: match[key] for key in ("reason", "expires_at", "references")}})
@@ -116,6 +128,7 @@ def main():
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--policy", type=Path, default=Path(".github/worker-vulnerability-exceptions.json"))
     parser.add_argument("--runtime-evidence", type=Path)
+    parser.add_argument("--openssl-evidence", type=Path)
     parser.add_argument("--image-digest", default="")
     parser.add_argument("--verified-image-digest", default="")
     parser.add_argument("--output", type=Path, required=True)
@@ -123,10 +136,13 @@ def main():
     evidence = {}
     if args.runtime_evidence and args.runtime_evidence.is_file():
         evidence = json.loads(args.runtime_evidence.read_text(encoding="utf-8"))
+    openssl_evidence = None
+    if args.openssl_evidence and args.openssl_evidence.is_file():
+        openssl_evidence = json.loads(args.openssl_evidence.read_text(encoding="utf-8"))
     decision = evaluate(json.loads(args.report.read_text(encoding="utf-8")), scanner=args.scanner,
                         policy=json.loads(args.policy.read_text(encoding="utf-8")), evidence=evidence,
                         today=datetime.now(timezone.utc).date(), image_digest=args.image_digest,
-                        verified_image_digest=args.verified_image_digest)
+                        verified_image_digest=args.verified_image_digest, openssl_evidence=openssl_evidence)
     output = json.dumps(decision, indent=2)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(output + "\n", encoding="utf-8")

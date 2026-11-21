@@ -16,6 +16,7 @@ on:
       - "scripts/check_api_image.py"
       - "scripts/check_worker_zlib.py"
       - "scripts/check_worker_glibc.py"
+      - "scripts/check_worker_openssl.py"
       - "scripts/check_worker_vulnerabilities.py"
       - ".github/worker-vulnerability-exceptions.json"
       - ".github/workflows/worker-debian-candidate.yml"
@@ -108,6 +109,8 @@ jobs:
             "$CANDIDATE_IMAGE" /opt/check_worker_glibc.py > artifacts/glibc-runtime.json
           docker run --rm --read-only --entrypoint /usr/local/bin/python3.12 --ulimit core=0 \
             "$CANDIDATE_IMAGE" /opt/check_worker_zlib.py > artifacts/zlib-after.json
+          docker run --rm --read-only --entrypoint /usr/local/bin/python3.12 \
+            "$CANDIDATE_IMAGE" /opt/check_worker_openssl.py > artifacts/openssl-runtime.json
           python scripts/smoke_worker_candidate_image.py \
             --image "$CANDIDATE_IMAGE" --output artifacts/runtime.json \
             --database-url postgresql://worker_canary:synthetic_only@127.0.0.1:5432/worker_canary
@@ -148,7 +151,7 @@ jobs:
           print(f"Scan coverage verified: {len(os_packages)} OS packages; {len(python_packages)} Python packages.")
           PY
           python scripts/check_worker_vulnerabilities.py --scanner trivy \
-            --report artifacts/vulnerabilities.json --runtime-evidence artifacts/zlib-after.json \
+            --report artifacts/vulnerabilities.json --runtime-evidence artifacts/zlib-after.json --openssl-evidence artifacts/openssl-runtime.json \
             --output artifacts/trivy-security-decision.json
       - name: Save approved candidate for isolated Lambda validation
         if: github.event_name == 'workflow_dispatch'
