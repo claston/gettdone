@@ -1,4 +1,4 @@
-# OpenSSL: avaliação temporária de CVE-2026-124709
+# OpenSSL: avaliações temporárias de aplicabilidade no worker
 
 ## Incidente e alcance
 
@@ -68,3 +68,62 @@ Não há alteração de dados, esquema, API, extração financeira ou biblioteca
 instaladas. Para rollback desta política, reverter o PR: a CVE volta a bloquear
 novas releases. Isso não reverte uma imagem já implantada; usar o digest anterior
 registrado pelo fluxo de deploy se um rollback de produção for necessário.
+
+## Achados adicionais do ECR em 21/11/2026
+
+A [execução 44970863088](https://github.com/claston/gettdone/actions/runs/44970863088)
+publicou a imagem, mas parou antes de criar ou executar o change set de produção.
+O ECR apontou sete HIGH adicionais no mesmo `libssl3t64=3.5.7-1~deb13u3`.
+A exceção anterior de servidor QUIC não os cobria. O usuário solicitou a
+dispensa temporária de recursos não usados pelo worker; a política mantém
+registros separados por CVE e expiração em **02/12/2026 UTC**, sem renovação automática.
+
+| CVE | Condição relevante | Avaliação da arquitetura do worker |
+| --- | --- | --- |
+| CVE-2026-121482 | Verificação CMS/PKCS#7 SignedData com CRL | Não verifica assinaturas CMS/PKCS#7 dos documentos recebidos. TLS continua verificando certificados. |
+| CVE-2026-84786 | Cliente configurado com DANE/TLSA | Os clientes AWS/PostgreSQL usam TLS convencional, sem configuração DANE. |
+| CVE-2026-95691 | Cliente OpenSSL QUIC | O worker não utiliza QUIC, inclusive como cliente. |
+| CVE-2026-88823 | AAD incremental no AES-GCM-SIV | Não usa AES-GCM-SIV; AES-GCM de TLS é outro algoritmo. |
+| CVE-2026-95692 | IV fornecido ao AES-GCM-SIV | Não usa essa operação de criptografia. |
+| CVE-2026-107496 | Criptografia CMS para certificado EC fornecido | Não cifra mensagens CMS para certificados de destinatários enviados pelo cliente. |
+| CVE-2026-107493 | PEM_X509_INFO_read com pilha fornecida pelo chamador | Não há uso direto dessa família nos consumidores revisados. Segundo o fornecedor, o carregamento interno de CAs pelo OpenSSL passa NULL e não aciona essa condição. |
+
+Fontes: [OpenSSL, 10/11](https://openssl-library.org/news/secadv/20261110.txt),
+[OpenSSL, 17/11](https://openssl-library.org/news/secadv/20261117.txt),
+[Debian, CMS/PKCS#7](https://security-tracker.debian.org/tracker/CVE-2026-121482)
+e [Debian, DANE](https://security-tracker.debian.org/tracker/CVE-2026-84786).
+Os avisos OpenSSL agendam releases para 01/12; isso não garante a disponibilidade
+de um pacote Debian corrigido nessa data. A expiração não depende dessa disponibilidade.
+
+### Evidência adicional obrigatória
+
+As sete regras exigem `optional_crypto_assessment=lambda-client-no-optional-crypto-v1`,
+resultado `passed` e inventários não vazios de fontes Python e consumidores nativos,
+além de todos os checks anteriores. Evidência antiga de servidor QUIC sozinha
+continua bloqueando os sete achados. O relatório bruto do scanner não é alterado.
+
+Na preparação desta alteração, a inspeção dos wheels Linux das 23 versões do
+inventário encontrou 854 arquivos Python e 44 binários ELF consumidores sem
+referências às APIs verificadas. Essa evidência parcial não substitui a execução
+do verificador no build completo, que também inclui CPython e bibliotecas do sistema.
+
+O verificador amplia a inspeção para as dependências Python empacotadas e para
+os consumidores nativos em `/var/task`, extensões CPython e bibliotecas do sistema.
+Referências a APIs QUIC, DANE, AES-GCM-SIV, CMS/PKCS#7 e PEM_X509_INFO_read exigem
+nova revisão, mesmo se aparecerem apenas em documentação. As próprias bibliotecas
+libssl/libcrypto ficam fora da busca de consumidores: elas **contêm** os recursos
+afetados. Nenhuma regra afirma que o binário está corrigido ou que essas APIs foram removidas.
+
+O inventário de dependências continua fixo. Os checks detectam mudanças em relação
+à arquitetura revisada, mas não provam a ausência de chamadas construídas dinamicamente.
+A exceção é uma avaliação limitada a este worker e a esta versão, apoiada na revisão
+de uso e nos checks da imagem real. Não se aplica à API, outros pacotes/versões,
+CVEs desconhecidas ou severidade CRITICAL. No ECR, exige também correspondência
+com o digest construído e validado pela mesma execução.
+
+Antes de publicar, o workflow Worker Debian deve executar o verificador ampliado
+na imagem Linux real, com testes de conversão, TLS e PostgreSQL. Após merge, o deploy
+repete os checks e o scan do ECR; qualquer achado sem exceção válida continua bloqueando.
+Remover estas regras quando houver pacote corrigido e validar novamente runtime,
+conversões e scanners. Rollback: reverter as regras/checks deste incremento;
+novos deploys voltam a bloquear os sete achados, sem alteração de dados ou schema.
