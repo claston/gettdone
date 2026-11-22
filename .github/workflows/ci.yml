@@ -154,7 +154,6 @@ jobs:
             tmp/pro-organization/
             tmp/pro-browser-suites/
             tmp/ofx79-browser/
-            tmp/ofx70-browser.xml
             tmp/ofx61-browser/
             tmp/ofx70-browser.xml
           if-no-files-found: ignore
