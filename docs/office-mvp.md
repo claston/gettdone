@@ -78,3 +78,13 @@ Antes de lançar: conferir primeiro lote misto → organização → revisão �
 - HTTP real: lote com extrato/nota/comprovante, conferência e correção de tipo, downloads, pacote, edição invalidando prévia, usuário alheio, expiração sem metadados no manifesto, limites de tamanho/quantidade; OFX/CSV/XLSX com cota esgotada sem novos débitos; cadastro e ativação administrativa autenticados. O endpoint `/analyze` está aposentado (405); o caminho vigente é `/convert`/lote, com `GET /report/{id}` e negativos exercitados.
 
 Essas evidências usam arquivos sintéticos e serviços locais; não atestam deploy AWS, configuração de produção nem aceitação por um escritório cliente.
+
+<a id="atualizacao-da-base-apos-o-merge-da-ofx-59"></a>
+
+## Atualização da base após o merge da OFX-59
+
+O squash de #628 entrou na `main` como `cd6b2fb`, com árvore idêntica ao commit `f665a71` já incorporado pelo #629. A integração preserva integralmente o código do produto validado em `09ed1f8` (árvore `backend/app`: `2a502e0edf081c83aaa64058f6dfe62aa2ade496`). Não introduz outro parser, revisão ou fluxo.
+
+O usuário já havia determinado que o Free continuasse como no início desta tarefa, na base `11f69a3`. A nova base contém o identificador global de classificação da OFX-59. Comparada com ela, a implementação isolada do #629 restaura somente o metadado de versão de `2026-11-22.1` para `2026-10-27.1`: três diferenças na conversão e 80 na revisão, todas em campos `document_classification_version` ou `financial_document.classification.version`. Os 90 casos de conversão e 170 de revisão não apresentam nenhuma outra diferença de caracterização; o baseline congelado também passa.
+
+As diferenças exatas estão em `transaction-document-approvals.json`, vinculadas exclusivamente à referência `cd6b2fb` e à árvore de aplicação acima, como evidência da preservação já autorizada do Free. Não há wildcard, relaxamento do teste, alteração de baseline congelado ou autorização para mudar movimentos, valores, sinais, FITIDs e procedência. Contra a base original `11f69a3`, seguem as comparações já aprovadas sem diferenças. Os 80 testes dos arquivos envolvidos na integração foram repetidos e aprovados, incluindo HTTP real do Escritório.
