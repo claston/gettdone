@@ -9,6 +9,7 @@ const workspaceRoutes = [
   "/api/pro/conversion-options",
   "/api/pro/conversion-batches/:path*",
   "/api/pro/conversions",
+  "/api/pro/documents",
   "/api/pro/receipts/:path*",
   "/api/pro/financial-center/:path*",
   "/api/pro/works/:path*",
