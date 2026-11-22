@@ -1,17 +1,69 @@
 import hashlib
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
 
 from app.application.conversion.contracts.batches import ConversionFileSummary
-from app.dependencies import get_access_control_service
+from app.dependencies import get_access_control_service, get_conversion_batch_service
 from app.main import app
 from app.routers.pro_documents import document_category, documents
 from tests.http_runtime import LoopbackClient
 from tests.test_conversion_workspace_http_real_api import _run_pro_upload_http_server
 
 pytestmark = pytest.mark.real_http
+
+
+def test_expired_imports_are_hidden_for_all_clients_without_deleting_records(tmp_path, monkeypatch):
+    from app.application.conversion.contracts.jobs import ConversionJobStatus
+
+    monkeypatch.setenv("PRO_ORGANIZATION_ENABLED", "true")
+    with _run_pro_upload_http_server(tmp_path) as (base_url, publisher, token):
+        repository = app.dependency_overrides[get_conversion_batch_service]().repository
+        headers = {"Authorization": f"Bearer {token}", "Origin": "http://localhost:3000", "X-OFX-Pro-Client": "web"}
+        with LoopbackClient(base_url=base_url, headers=headers) as client:
+            customers = [client.post("/api/pro/organization/clients", json={"name": name}).json()["id"]
+                         for name in ("Cliente A", "Cliente B")]
+            live_ids = []
+            for index, customer in enumerate([*customers, None, None]):
+                result = client.post("/api/pro/conversion-batches", headers={"Idempotency-Key": f"expiry-{index}"},
+                    json={"files": [{"filename": f"{kind}.csv", "content_type": "text/csv", "size_bytes": 20,
+                                     "sha256_hex": "0" * 64} for kind in ("disponivel", "prazo", "estado")]})
+                assert result.status_code == 201, result.text
+                batch = result.json()
+                for position, job in enumerate(batch["jobs"]):
+                    job_id = job["job_id"]
+                    if customer:
+                        saved = client.put(f"/api/pro/organization/batches/{batch['batch_id']}/jobs/{job_id}/context",
+                                           json={"client_id": customer})
+                        assert saved.status_code == 200, saved.text
+                    record = repository.get(job_id)
+                    if position == 1 or index == 3:
+                        repository._jobs[job_id] = replace(record, expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+                    elif position == 2:
+                        repository._jobs[job_id] = replace(record, status=ConversionJobStatus.EXPIRED)
+                    else:
+                        repository._jobs[job_id] = replace(record, expires_at=datetime.now(timezone.utc) + timedelta(minutes=5))
+                        live_ids.append(job_id)
+            for path in ("/api/pro/documents", "/api/pro/organization/conversions", "/api/pro/conversions"):
+                response = client.get(path, params={"limit": 2})
+                assert response.status_code == 200, response.text
+                first = response.json()
+                assert len(first["items"]) == 2 and first["next_cursor"]
+                last = client.get(path, params={"limit": 2, "cursor": first["next_cursor"]}).json()
+                assert len(last["items"]) == 1 and last["next_cursor"] is None
+                assert {row["job_id"] for row in first["items"] + last["items"]} == set(live_ids)
+            for customer, job_id in zip(customers, live_ids):
+                rows = client.get("/api/pro/documents", params={"client_id": customer}).json()["items"]
+                assert [row["job_id"] for row in rows] == [job_id]
+            batches = client.get("/api/pro/conversion-batches").json()
+            assert len(batches["items"]) == 3 and batches["next_cursor"] is None
+            assert all(not row["is_expired"] for row in batches["items"])
+            for row in batches["items"]:
+                assert datetime.fromisoformat(row["expires_at"]) == repository.get(row["first_job_id"]).expires_at
+            assert len(repository._jobs) == 12 and len(repository._batches) == 4
+            assert publisher.calls == []
 
 
 def test_documents_inventory_is_scoped_paginated_and_does_not_assume_pdf_is_statement(tmp_path, monkeypatch):
@@ -82,8 +134,8 @@ def test_document_inventory_bounded_sparse_pagination_and_expiration():
     assert second["next_cursor"] is None and "private_financial_rows" not in str(second)
     rows[:] = [ConversionFileSummary("job_old", "batch_a", "arquivo.pdf", "completed", now - timedelta(days=2), now - timedelta(days=1))]
     calls.clear()
-    expired = documents(**{**args, "category": "all"})["items"][0]
-    assert expired["is_expired"] and expired["review_url"] is None and calls == []
+    expired = documents(**{**args, "category": "all"})
+    assert expired == {"items": [], "next_cursor": None} and calls == []
     rows[:] = [ConversionFileSummary("job_missing", "batch_a", "arquivo.pdf", "completed", now, now + timedelta(hours=1))]
     args["batches"].repository.get = lambda _: None
     unavailable = documents(**{**args, "category": "all"})["items"][0]

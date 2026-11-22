@@ -297,10 +297,15 @@ def conversion_page(owner, batches, service, cursor, limit, client_id, period_id
     # Scan bounded metadata chunks until the *filtered* page and its lookahead are full.
     # Never load financial payloads, even when matches are sparse across many pages.
     matches = []
+    now = datetime.now(timezone.utc)
     while len(matches) <= limit:
-        summaries = batches.repository.list_files_for_owner(identity_type="user", identity_id=owner, limit=100, before=before)
+        summaries = batches.repository.list_files_for_owner(
+            identity_type="user", identity_id=owner, limit=100, before=before, active_only=True,
+        )
         contexts = service.contexts(owner, [record.job_id for record in summaries]) if service else {}
         for record in summaries:
+            if record.expires_at <= now or record.status == "expired":
+                continue
             context = contexts.get(record.job_id, {"client_id": None, "account_id": None, "period_ids": [], "version": 0})
             if ((client_id and context["client_id"] != client_id) or (unassigned and context["client_id"])
                     or (period_id and period_id not in context["period_ids"])
@@ -324,6 +329,7 @@ def conversion_page(owner, batches, service, cursor, limit, client_id, period_id
                 "status": "expired" if expired else record.status,
                 "is_expired": expired,
                 "created_at": record.created_at.isoformat(),
+                "expires_at": record.expires_at.isoformat(),
                 "context": context,
                 "movement_start_date": None,
                 "movement_end_date": None,

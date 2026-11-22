@@ -43,6 +43,7 @@ export interface OrganizedConversion {
   status: string;
   is_expired: boolean;
   created_at: string;
+  expires_at?: string;
   movement_start_date: string | null;
   movement_end_date: string | null;
   review_url: string | null;

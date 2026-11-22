@@ -18,7 +18,10 @@ import {
 } from "@/data/documents-service";
 import { receivedService } from "@/data/received-statements-service";
 import { ConversionOrganization } from "../organization/conversion-organization";
-import { FiscalWorkspace } from "../financial/fiscal-workspace";
+import {
+  documentAvailability,
+  useAvailableImports,
+} from "../use-available-imports";
 import { NewConversionForm } from "../new-conversion-form";
 import styles from "./documents.module.css";
 import {
@@ -65,14 +68,8 @@ export function DocumentsPage({
   const request = query.toString();
   const key = request;
   const current = snapshot?.key === key ? snapshot : null;
+  const items = useAvailableImports(current?.data?.items, documentAvailability);
   const returnTo = documentsUrl(clientId, category, batchId);
-  const [month] = useState(() =>
-    new Intl.DateTimeFormat("sv-SE", {
-      timeZone: "America/Sao_Paulo",
-      year: "numeric",
-      month: "2-digit",
-    }).format(new Date()),
-  );
 
   useEffect(() => {
     const abort = new AbortController();
@@ -303,14 +300,8 @@ export function DocumentsPage({
         </div>
       ) : (
         <>
-          {(category === "all" || category === "invoices") && (
-            <p>
-              Arquivos recebidos pelo Conversor ou pela importação de
-              documentos:
-            </p>
-          )}
           <div className={styles.list}>
-            {current.data?.items.map((item) => (
+            {items.map((item) => (
               <DocumentRow
                 key={`${item.job_id}:${item.context.version}`}
                 item={item}
@@ -322,7 +313,7 @@ export function DocumentsPage({
               />
             ))}
           </div>
-          {!current.data?.items.length && (
+          {!items.length && (
             <p>
               {current.data?.next_cursor
                 ? "Nenhum documento com esses filtros nesta página. Consulte a próxima página."
@@ -353,25 +344,6 @@ export function DocumentsPage({
             )}
           </div>
         </>
-      )}
-      {!batchId && (category === "all" || category === "invoices") && (
-        <section id="notas-fiscais" aria-label="Notas fiscais importadas">
-          {!client && <h2>Notas fiscais importadas</h2>}
-          {client ? (
-            <FiscalWorkspace
-              key={client.id}
-              clientId={client.id}
-              month={month}
-              account=""
-              mode="invoices"
-              documentsOnly
-            />
-          ) : (
-            <p>
-              Selecione um cliente para consultar e importar suas notas fiscais.
-            </p>
-          )}
-        </section>
       )}
     </main>
   );

@@ -219,7 +219,9 @@ def run(base):
             expect(page.get_by_role("article", name="comprovante.pdf")).to_be_visible()
             types.get_by_role("link", name="Notas fiscais", exact=True).click()
             expect(page.get_by_role("article")).to_have_count(0)
-            expect(page.get_by_label("Importar nota XML ou PDF")).to_be_attached()
+            expect(page.get_by_label("Importar nota XML ou PDF")).to_have_count(0)
+            expect(page.get_by_role("region", name="Notas fiscais importadas")).to_have_count(0)
+            expect(page.get_by_role("button", name="Importar documentos", exact=True)).to_be_enabled()
             expect(page.get_by_role("combobox", name="Cliente", exact=True)).to_have_value("client_browser")
             types.get_by_role("link", name="Todos", exact=True).click()
             expect(types.get_by_role("link", name="Todos", exact=True)).to_have_attribute("aria-current", "page")
@@ -232,9 +234,8 @@ def run(base):
             expect(page.get_by_role("article")).to_have_count(0)
             page.get_by_role("combobox", name="Cliente", exact=True).select_option("client_expired")
             expired = page.get_by_role("article", name="expirado.ofx")
-            expect(expired).to_be_visible()
-            expect(expired).to_contain_text("O arquivo expirou.")
-            expect(expired.get_by_role("link", name="Abrir revisão")).to_have_count(0)
+            expect(expired).to_have_count(0)
+            expect(page.get_by_text("Nenhum documento encontrado nesta lista com os filtros selecionados.")).to_be_visible()
             page.screenshot(path=str(output / "expired-document.png"), full_page=True)
 
             # Import any document through the client context, including a fiscal PDF.
@@ -298,7 +299,8 @@ def run(base):
             summary = {"result": "PASS", "writes": writes, "browser_errors": errors, "unexpected_requests": unexpected,
                        "checks": ["client and document loading", "client roster without documents", "accent and tax ID search",
                                   "client creation and optimistic edit", "explicit refresh across filters", "document categories",
-                                  "unassigned documents", "expired document review blocked", "review return preserves filters",
+                                  "unassigned documents", "expired documents hidden", "separate fiscal upload hidden",
+                                  "review return preserves filters",
                                   "client-context fiscal PDF import and persisted association", "multi-batch editor compatibility", "original batch review",
                                   "scoped export", "desktop/mobile", "independent converter", "legacy screens hidden"]}
             (output / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")

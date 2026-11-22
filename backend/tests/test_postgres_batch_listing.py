@@ -57,5 +57,31 @@ def test_postgres_listing_query_limits_owner_headers_before_aggregating_metadata
         assert all(item.completed_count == item.files_count == 1 for item in first + last)
         assert all("result_payload" not in query and "document" not in query for query in queries)
         assert all("LIMIT" in query and "identity_type = %s AND identity_id = %s" in query for query in queries)
+        # Newer expired headers, expired children and cleaned-up children must
+        # not consume a page ahead of older available batches.
+        future = (now + timedelta(hours=1)).isoformat()
+        past = (now - timedelta(hours=1)).isoformat()
+        for number, header_expiry, child_status, child_expiry in [
+            (5, past, "completed", future),
+            (6, future, "completed", past),
+            (7, future, "expired", future),
+            (8, future, None, future),
+        ]:
+            db.execute("INSERT INTO conversion_batches VALUES (?, 'completed', 1, ?, ?, 'user', 'owner')",
+                       (f"batch_{number}", future, header_expiry))
+            if child_status:
+                db.execute("INSERT INTO conversion_jobs VALUES (?, ?, ?, ?)",
+                           (f"batch_{number}", f"job_{number}", child_status, child_expiry))
+        active = repository.list_for_owner(identity_type="user", identity_id="owner", limit=2, active_only=True)
+        assert [item.batch_id for item in active] == ["batch_2", "batch_1"]
+        assert repository.list_for_owner(identity_type="user", identity_id="owner", limit=2, active_only=True,
+                                        before=(active[-1].created_at, active[-1].batch_id)) == ()
+        # A mixed batch remains available through its surviving child.
+        live_expiry = now + timedelta(minutes=5)
+        db.execute("INSERT INTO conversion_jobs VALUES ('batch_7', 'job_live', 'failed', ?)", (live_expiry.isoformat(),))
+        mixed = repository.list_for_owner(identity_type="user", identity_id="owner", limit=1, active_only=True)
+        assert mixed[0].batch_id == "batch_7" and mixed[0].first_job_id == "job_live"
+        assert mixed[0].expires_at == live_expiry
+        assert db.execute("SELECT COUNT(*) FROM conversion_batches").fetchone()[0] == 8
     finally:
         db.close()

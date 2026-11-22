@@ -55,7 +55,7 @@ def documents(
     next_cursor = None
     # A bounded source page keeps sparse category filters affordable. An empty
     # filtered page can have a continuation; clients must expose that explicitly.
-    rows = batches.repository.list_files_for_owner(identity_type="user", identity_id=owner, limit=100, before=before)
+    rows = batches.repository.list_files_for_owner(identity_type="user", identity_id=owner, limit=100, before=before, active_only=True)
     contexts = service.contexts(owner, [row.job_id for row in rows])
     for index, row in enumerate(rows):
         context = contexts.get(row.job_id, {"client_id": None, "account_id": None, "period_ids": [], "version": 0})
@@ -81,7 +81,7 @@ def documents(
                     available = False
                     status = "unavailable"
             kind = document_category(payload)
-            if category == "all" or kind == category:
+            if not expired and (category == "all" or kind == category):
                 items.append({
                     "job_id": row.job_id, "batch_id": row.batch_id, "filename": row.filename,
                     "status": "expired" if expired else status, "is_expired": expired,

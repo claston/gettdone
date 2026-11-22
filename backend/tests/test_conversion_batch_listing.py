@@ -59,7 +59,7 @@ def test_batch_listing_is_authenticated_paginated_metadata_only_and_owner_scoped
         assert client.get(url).status_code == 401
         headers = {"Authorization": f"Bearer {user.token}"}
         items, cursor = [], None
-        for _ in range(3):
+        for _ in range(2):
             response = client.get(url, headers=headers, params={"limit": 2, **({"cursor": cursor} if cursor else {})})
             assert response.status_code == 200
             assert "no-store" in response.headers["cache-control"]
@@ -67,10 +67,10 @@ def test_batch_listing_is_authenticated_paginated_metadata_only_and_owner_scoped
             items.extend(payload["items"])
             cursor = payload["next_cursor"]
         assert cursor is None
-        assert [item["batch_id"] for item in items] == sorted([batch.batch_id for batch in batches], reverse=True) + [expired.batch_id]
-        assert len({item["batch_id"] for item in items}) == 5
-        assert items[-1]["is_expired"]
-        assert items[-1]["first_job_id"] is None
+        assert [item["batch_id"] for item in items] == sorted([batch.batch_id for batch in batches], reverse=True)
+        assert len({item["batch_id"] for item in items}) == 4
+        assert all(not item["is_expired"] and item["first_job_id"] for item in items)
+        assert repository.get_for_owner(batch_id=expired.batch_id, identity_type="user", identity_id=owner.identity_id) is not None
         assert "PRIVATE FINANCIAL DATA" not in str(items)
         assert "private-name.pdf" not in str(items)
         assert all(item["completed_count"] == 1 for item in items)

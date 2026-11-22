@@ -55,6 +55,29 @@ function services(items = [file]) {
 }
 
 describe("Documentos", () => {
+  it.each(["all", "invoices"] as const)(
+    "usa a importação comum sem painel fiscal separado em %s",
+    async (category) => {
+      render(
+        <DocumentsPage
+          {...services()}
+          clientId="client_a"
+          category={category}
+        />,
+      );
+      await screen.findByRole("link", { name: "Abrir revisão" });
+      expect(screen.queryByText("Notas do cliente")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("region", { name: "Notas fiscais importadas" }),
+      ).not.toBeInTheDocument();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Importar documentos" }),
+      );
+      expect(
+        screen.getByRole("region", { name: "Importação de documentos" }),
+      ).toBeVisible();
+    },
+  );
   it("abre um único painel de importação e mantém notas fiscais na categoria própria", async () => {
     render(
       <DocumentsPage
@@ -152,7 +175,7 @@ describe("Documentos", () => {
       }),
     );
   });
-  it("não associa automaticamente um documento de outro cliente nem abre um arquivo expirado", async () => {
+  it("não exibe um documento expirado nem oferece associação ou revisão", async () => {
     const props = services([
       {
         ...file,
@@ -161,7 +184,8 @@ describe("Documentos", () => {
       },
     ]);
     render(<DocumentsPage {...props} clientId="client_a" batchId="batch_a" />);
-    await screen.findByText(/Este arquivo está associado a outro cliente/);
+    await screen.findByText(/Nenhum documento encontrado/);
+    expect(screen.queryByText(file.filename)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Confirmar associação ao cliente" }),
     ).not.toBeInTheDocument();
