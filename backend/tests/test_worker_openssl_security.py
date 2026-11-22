@@ -54,6 +54,34 @@ def test_empty_application_is_not_evidence(tmp_path, checker):
         checker.verify_application(tmp_path)
 
 
+@pytest.mark.parametrize("reference", [
+    "OSSL_QUIC_client_method", "SSL_dane_enable", "SSL_CTX_dane_enable",
+    "AES-256-GCM-SIV", "EVP_aes_128_gcm_siv", "CMS_encrypt_ex", "CMS_verify",
+    "PKCS7_verify", "PEM_X509_INFO_read_bio_ex",
+])
+@pytest.mark.parametrize("native", [False, True])
+def test_optional_crypto_references_in_dependencies_block_assessment(tmp_path, checker, reference, native):
+    (tmp_path / "client.py").write_text("import ssl", encoding="utf-8")
+    (tmp_path / "client.so").write_bytes(b"\x7fELF TLS_client_method")
+    target = tmp_path / ("dependency.so" if native else "dependency.py")
+    target.write_bytes((b"\x7fELF" if native else b"# ") + reference.encode())
+    with pytest.raises(RuntimeError, match="Optional OpenSSL"):
+        checker.verify_optional_crypto([tmp_path], [tmp_path])
+
+
+def test_optional_crypto_inventory_includes_dependencies_and_preserves_tls(tmp_path, checker):
+    (tmp_path / "client.py").write_text("ssl.create_default_context()", encoding="utf-8")
+    (tmp_path / "client.so").write_bytes(b"\x7fELF TLS_client_method SSL_CTX_new")
+    # Definitions in the affected library are not evidence that a consumer uses them.
+    (tmp_path / "libcrypto.so.3").write_bytes(b"\x7fELF CMS_verify")
+    assert checker.verify_optional_crypto([tmp_path], [tmp_path]) == {"python_files": 1, "native_files": 1}
+
+
+def test_optional_crypto_missing_inventory_is_not_evidence(tmp_path, checker):
+    with pytest.raises(RuntimeError):
+        checker.verify_optional_crypto([tmp_path], [tmp_path])
+
+
 def test_package_inventory_rejects_old_or_duplicate_records(tmp_path, checker):
     status = tmp_path / "var/lib/dpkg/status.d"
     status.mkdir(parents=True)

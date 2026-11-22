@@ -17,6 +17,8 @@ from pathlib import Path
 BLOCKING = {"HIGH", "CRITICAL"}
 SEVERITIES = BLOCKING | {"MEDIUM", "LOW", "INFORMATIONAL", "UNDEFINED", "UNKNOWN", "NONE"}
 RULE_FIELDS = {"id", "package", "version", "severity", "runtime", "expires_at", "reason", "references"}
+OPTIONAL_OPENSSL_CVES = {"CVE-2026-121482", "CVE-2026-84786", "CVE-2026-95691", "CVE-2026-88823",
+                         "CVE-2026-107493", "CVE-2026-107496", "CVE-2026-95692"}
 
 
 def validate_policy(policy):
@@ -86,8 +88,16 @@ def ecr_findings(report, *, image_digest, verified_image_digest):
 
 
 def runtime_matches(rule, evidence, openssl_evidence):
-    if rule["package"] == "libssl3t64" and rule["id"] == "CVE-2026-124709":
+    if rule["package"] == "libssl3t64":
+        if rule["id"] not in OPTIONAL_OPENSSL_CVES | {"CVE-2026-124709"}:
+            return False
         proof = openssl_evidence or {}
+        if rule["id"] in OPTIONAL_OPENSSL_CVES:
+            if (proof.get("optional_crypto_assessment") != "lambda-client-no-optional-crypto-v1"
+                    or proof.get("optional_crypto") != "passed"
+                    or not all(type(proof.get(key)) is int and proof[key] > 0
+                               for key in ("optional_python_files", "optional_native_files"))):
+                return False
         checks = ("inventory", "dependencies", "application", "native_callers", "tls_client", "datagram_rejected")
         return (proof.get("package") == rule["version"] and proof.get("runtime") == rule["runtime"]
                 and proof.get("assessment") == "lambda-client-no-quic-server-v1"

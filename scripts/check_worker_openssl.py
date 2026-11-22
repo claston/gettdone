@@ -28,6 +28,36 @@ QUIC_SERVER_SYMBOLS = (b"OSSL_QUIC_server_method", b"SSL_new_listener", b"SSL_ac
 SERVER_PATTERN = re.compile(
     r"quic|SSL_new_listener|SSL_accept_connection|SOCK_DGRAM|PROTOCOL_TLS_SERVER|\.\s*(?:bind|listen)\s*\(", re.I,
 )
+OPTIONAL_CRYPTO_PATTERN = re.compile(
+    rb"OSSL_QUIC_|SSL_(?:CTX_)?dane_|SSL_(?:new_listener|accept_connection)|"
+    rb"(?:AES[-_]\d+[-_]GCM[-_]SIV|EVP_aes_\d+_gcm_siv)|"
+    rb"CMS_(?:encrypt|verify)|PKCS7_verify|PEM_X509_INFO_read", re.I,
+)
+
+
+def verify_optional_crypto(python_roots, native_roots):
+    """Conservative drift check of application/dependencies and native consumers.
+
+    Does not prove absence of dynamic calls or patch the library. Any reference,
+    including documentation, requires a new review instead of silently accepting it.
+    """
+    counts = {"python_files": 0, "native_files": 0}
+    for kind, roots, pattern in (("python_files", python_roots, "*.py"), ("native_files", native_roots, "*.so*")):
+        for root in roots:
+            for path in root.rglob(pattern):
+                if not path.is_file():
+                    continue
+                if kind == "native_files" and path.name.startswith(("libssl", "libcrypto")):
+                    continue  # Definitions are present; assess the consumers separately.
+                data = path.read_bytes()
+                if kind == "native_files" and not data.startswith(b"\x7fELF"):
+                    continue
+                counts[kind] += 1
+                if OPTIONAL_CRYPTO_PATTERN.search(data):
+                    raise RuntimeError(f"Optional OpenSSL API reference requires review: {path}")
+    if not all(counts.values()):
+        raise RuntimeError("Missing optional OpenSSL consumer inventory")
+    return counts
 
 
 def verify_distributions(installed):
@@ -105,6 +135,10 @@ def main():
     verify_distributions(installed)
     source_count = verify_application(Path("/var/task/app"))
     native_count = verify_native_callers([Path("/var/task"), Path("/usr/local/lib/python3.12/lib-dynload")])
+    optional = verify_optional_crypto(
+        [Path("/var/task")],
+        [Path("/var/task"), Path("/usr/local/lib/python3.12/lib-dynload"), Path("/usr/lib/x86_64-linux-gnu")],
+    )
     context = ssl.create_default_context()
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     if not context.get_ca_certs() or context.verify_mode != ssl.CERT_REQUIRED or not context.check_hostname:
@@ -121,6 +155,8 @@ def main():
         "inventory": "passed", "dependencies": "passed", "application": "passed", "native_callers": "passed",
         "tls_client": "passed", "datagram_rejected": "passed", "source_files": source_count,
         "native_files": native_count, "distribution_count": len(installed),
+        "optional_crypto_assessment": "lambda-client-no-optional-crypto-v1", "optional_crypto": "passed",
+        "optional_python_files": optional["python_files"], "optional_native_files": optional["native_files"],
     }))
 
 
